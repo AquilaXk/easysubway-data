@@ -12,15 +12,12 @@ import {
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
+import { createRetainedGwangjuTestInput } from "./gwangju-retained-test-fixture.mjs";
 
 import {
-  parseMolitDaejeonStationMappings,
   parseMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
-import { materializeBusanRouteTopology, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 import {
   buildRetainedGwangjuServiceCalendars,
   buildRetainedGwangjuTransitTables,
@@ -32,34 +29,32 @@ import {
 
 const retainedServices = { "평일": "weekday", "토요일": "saturday", "휴일": "holiday", "명절": "special" };
 
-test("retained Gwangju calendars select weekday, Saturday, Sunday, and public-holiday exceptions", () => {
-  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20400105", endDate: "20400108", serviceIds: retainedServices,
-    publicHolidayDates: new Set(["20400105", "20400108"]), specialServiceDates: new Set() });
-  assert.deepEqual(result.serviceCalendars.map(({ serviceId, monday, tuesday, wednesday, thursday, friday, saturday, sunday }) =>
-    ({ serviceId, monday, tuesday, wednesday, thursday, friday, saturday, sunday })), [
-    { serviceId: "weekday", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false },
-    { serviceId: "saturday", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false },
-    { serviceId: "holiday", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true },
-    { serviceId: "special", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: false },
-  ]);
+test("retained Gwangju calendars apply owner weekend selection without duplicate native services", () => {
+  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20400105", endDate: "20400110", serviceIds: retainedServices,
+    publicHolidayDates: new Set(["20400104", "20400105", "20400108", "20400109", "20400111"]) });
+  const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  // 합성 달력: 평일 공휴일, 보통 평일, 토/일요일, 대체공휴일 순으로 실제 활성 서비스를 평가한다.
+  for (const [date, expected] of [["20400105", "special"], ["20400106", "weekday"],
+    ["20400107", "special"], ["20400108", "special"], ["20400109", "special"], ["20400110", "weekday"]]) {
+    const day = new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T00:00:00Z`).getUTCDay();
+    const active = new Set(result.serviceCalendars.filter(row => row[weekdays[day]]).map(row => row.serviceId));
+    for (const row of result.serviceCalendarDates.filter(row => row.date === date)) {
+      if (row.exceptionType === 1) active.add(row.serviceId);
+      else active.delete(row.serviceId);
+    }
+    assert.deepEqual([...active], [expected], date);
+  }
+  assert.deepEqual(result.serviceCalendars.map(row => row.serviceId), Object.values(retainedServices));
   assert.deepEqual(result.serviceCalendarDates, [
-    { serviceId: "weekday", date: "20400105", exceptionType: 2 }, { serviceId: "holiday", date: "20400105", exceptionType: 1 },
-  ]);
-});
-
-test("retained Gwangju special dates take precedence and valid out-of-range dates are ignored", () => {
-  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20400106", endDate: "20400107", serviceIds: retainedServices,
-    publicHolidayDates: new Set(["20400106", "20400105"]), specialServiceDates: new Set(["20400106", "20400107", "20400108"]) });
-  assert.deepEqual(result.serviceCalendarDates, [
-    { serviceId: "weekday", date: "20400106", exceptionType: 2 }, { serviceId: "special", date: "20400106", exceptionType: 1 },
-    { serviceId: "saturday", date: "20400107", exceptionType: 2 }, { serviceId: "special", date: "20400107", exceptionType: 1 },
+    { serviceId: "weekday", date: "20400105", exceptionType: 2 }, { serviceId: "special", date: "20400105", exceptionType: 1 },
+    { serviceId: "weekday", date: "20400109", exceptionType: 2 }, { serviceId: "special", date: "20400109", exceptionType: 1 },
   ]);
 });
 
 test("retained Gwangju calendars reject missing sets, invalid dates, and duplicate service identities", () => {
-  const valid = { startDate: "20400101", endDate: "20400102", serviceIds: retainedServices, publicHolidayDates: new Set(), specialServiceDates: new Set() };
-  for (const input of [{ ...valid, publicHolidayDates: [] }, { ...valid, specialServiceDates: undefined },
-    { ...valid, specialServiceDates: new Set(["20400230"]) },
+  const valid = { startDate: "20400101", endDate: "20400102", serviceIds: retainedServices, publicHolidayDates: new Set() };
+  for (const input of [{ ...valid, publicHolidayDates: [] }, { ...valid, publicHolidayDates: undefined },
+    { ...valid, publicHolidayDates: new Set(["20400230"]) },
     { ...valid, serviceIds: { ...retainedServices, "명절": "holiday" } }]) {
     assert.throws(() => buildRetainedGwangjuServiceCalendars(input), /calendar input/);
   }
@@ -138,6 +133,179 @@ function retainedTimetableEvidence() {
     directedEdges: retainedEdges, excludedEndpointLabels: [] };
 }
 
+async function retainedProductionInput() {
+  const [topologySnapshot, stationMap, sourceInventory] = await Promise.all([
+    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
+    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+    readJson("tools/datapack/source-inventory.json"),
+  ]);
+  const mappings = parseMolitGwangjuStationMappings(stationMap);
+  const arrays = ["sourceInventory", "operators", "lines", "stations", "stationLines", "networkEdges", "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes", "transitFeedInfo"];
+  const pack = Object.fromEntries(arrays.map((key) => [key, []]));
+  Object.assign(pack, { id: "base", version: "1", artifactKind: "production", url: "", minimumTableRows: {} });
+  return createRetainedGwangjuTestInput({
+    baseFixture: { manifest: { activePack: { id: "base", version: "1" } }, packs: [pack] },
+    topologySnapshot,
+    inventory: projectHistoricalRegionalMaterializeInventory(sourceInventory),
+    canonicalStationMappings: mappings,
+  });
+}
+
+test("retained production Gwangju emits receipt-bound native tables without cyber source", async () => {
+  const input = await retainedProductionInput();
+  const fixture = materializeGwangjuTimetable({ ...input, canonicalStationMappings: input.mappings, now });
+  const pack = fixture.packs[0], [trip] = pack.transitTrips;
+  assert.equal(trip.sourceId, "kric-nationwide-timetable-file");
+  assert.equal(pack.transitStopTimes.length, 2);
+  assert.deepEqual(pack.transitStopTimes.map(({ arrivalSeconds, departureSeconds }) => [arrivalSeconds, departureSeconds]), [[86400, 86430], [86460, 86490]]);
+  assert.ok(pack.sourceInventory.some(({ id }) => id === "kric-nationwide-timetable-file"));
+  assert.ok(pack.sourceInventory.every(({ id }) => id !== "gwangju-transportation-cyberstation-timetable"));
+  assert.equal(pack.networkEdges.length, input.topologySnapshot.edges.length);
+  assert.match(pack.id, /^nationwide-gwangju-schedule-[a-f0-9]{64}$/);
+  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: pack.version });
+  assert.equal(pack.version, input.retainedTimetable.observation.observedAt.slice(0, 10).replaceAll("-", ""));
+  const topologyEvidence = input.inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+    .topologyAdmissionEvidence;
+  const topologyMembershipEvidence = input.inventory.sources.find(({ id }) =>
+    id === "gwangju-transportation-route-topology").membershipAdmissionEvidence;
+  const membershipEvidence = input.inventory.sources.find(({ id }) =>
+    id === "molit-urban-rail-full-route-gwangju-membership").membershipAdmissionEvidence;
+  const stationLines = pack.stationLines.filter(({ lineId }) => lineId === "line-e57a361e8892");
+  assert.equal(stationLines.length, input.mappings.length);
+  assert.ok(pack.networkEdges.every(({ sourceId, sourceSnapshotId, evidenceHash }) =>
+    sourceId === "gwangju-transportation-route-topology"
+      && sourceSnapshotId === topologyEvidence.snapshotId
+      && evidenceHash === input.topologySnapshot.contentSha256));
+  assert.ok(stationLines.every(({ fieldProvenance }) =>
+    fieldProvenance.station_code.sourceId === "gwangju-transportation-route-topology"
+      && fieldProvenance.station_code.sourceSnapshotId === topologyEvidence.snapshotId
+      && fieldProvenance.station_code.evidenceHash === input.topologySnapshot.contentSha256));
+  assert.deepEqual(topologyMembershipEvidence, membershipEvidence);
+  assert.equal(trip.providerRecordHash, digest(JSON.stringify(input.retainedTimetable.observation.records.map(({ sourceRowSha256 }) => sourceRowSha256))));
+});
+
+test("retained production Gwangju rejects receipt, contract, and source-admission drift", async () => {
+  const input = await retainedProductionInput();
+  const invoke = (value) => materializeGwangjuTimetable({ ...value, canonicalStationMappings: value.mappings, now });
+  const badReceipt = structuredClone(input); badReceipt.retainedTimetable.receipt.sha256 = "b".repeat(64);
+  assert.throws(() => invoke(badReceipt), /TIMETABLE_RECEIPT/);
+  const badContract = structuredClone(input); badContract.retainedTimetable.routeBindings[0].tripHeadsign = "changed";
+  assert.throws(() => invoke(badContract), /inventory evidence/);
+  const missingSource = structuredClone(input); missingSource.inventory.sources = missingSource.inventory.sources.filter(({ id }) => id !== "kric-nationwide-timetable-file");
+  assert.throws(() => invoke(missingSource), /inventory evidence/);
+  const dualEvidence = structuredClone(input); dualEvidence.inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file").scheduleAdmissionEvidence = {};
+  assert.throws(() => invoke(dualEvidence), /inventory evidence/);
+  const foreignBinding = structuredClone(input);
+  foreignBinding.retainedTimetable.stationBindings[0].stationId = foreignBinding.mappings[2].stationId;
+  const contract = { ...foreignBinding.retainedTimetable }; delete contract.observation; delete contract.receipt;
+  foreignBinding.inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file")
+    .retainedScheduleAdmissionEvidence.retainedContractSha256 = digest(canonicalJson(contract));
+  assert.throws(() => invoke(foreignBinding), /canonical membership/);
+});
+
+test("retained production Gwangju preserves topology freshness and membership validation", async () => {
+  const input = await retainedProductionInput();
+  const invoke = (overrides) => materializeGwangjuTimetable({ ...input, canonicalStationMappings: input.mappings, now, ...overrides });
+  const topologySnapshot = structuredClone(input.topologySnapshot);
+  topologySnapshot.edges[0].durationSeconds += 1;
+  assert.throws(() => invoke({ topologySnapshot }), /topology snapshot/);
+  assert.throws(() => invoke({ now: new Date(input.topologySnapshot.freshUntil) }), /stale/);
+  const inventory = structuredClone(input.inventory);
+  const verifiedAt = new Date(now.getTime() + 1).toISOString();
+  for (const id of ["molit-urban-rail-full-route-gwangju-membership", "gwangju-transportation-route-topology"]) {
+    inventory.sources.find((source) => source.id === id).membershipAdmissionEvidence.verifiedAt = verifiedAt;
+  }
+  assert.doesNotThrow(() => invoke({ inventory }));
+  for (const id of ["molit-urban-rail-full-route-gwangju-membership", "gwangju-transportation-route-topology"]) {
+    inventory.sources.find((source) => source.id === id).membershipAdmissionEvidence.verifiedAt = "invalid";
+  }
+  assert.throws(() => invoke({ inventory }), /membership evidence is invalid/);
+  assert.throws(() => invoke({ now: new Date(Date.parse(input.topologySnapshot.capturedAt) - 1) }), /future-dated/);
+});
+
+test("retained production Gwangju accepts a hash-bound three-station scope and rejects non-chain edges", async () => {
+  const input = await retainedProductionInput();
+  const rebind = (value) => {
+    const topology = value.topologySnapshot;
+    topology.scopeSha256 = digest(JSON.stringify(topology.scope));
+    topology.edgesSha256 = digest(JSON.stringify(topology.edges));
+    topology.contentSha256 = digest(JSON.stringify({ scope: topology.scope, edges: topology.edges }));
+    const mappings = value.mappings.slice(0, 3);
+    mappings.sourceRawSha256 = value.mappings.sourceRawSha256;
+    value.mappings = mappings;
+    const topologySource = value.inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology");
+    const membershipSource = value.inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-gwangju-membership");
+    const membership = membershipSource.membershipAdmissionEvidence;
+    membership.stationCount = mappings.length;
+    membership.mappingSha256 = digest(JSON.stringify(mappings));
+    membership.stationCodesSha256 = digest(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
+    membership.stationCodeContentSha256 = topology.contentSha256;
+    topologySource.topologyAdmissionEvidence.stationCount = topology.stationCount;
+    topologySource.topologyAdmissionEvidence.edgeCount = topology.edgeCount;
+    topologySource.topologyAdmissionEvidence.contentSha256 = topology.contentSha256;
+    topologySource.membershipAdmissionEvidence = structuredClone(membership);
+    const schedule = value.inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file")
+      .retainedScheduleAdmissionEvidence;
+    schedule.topologyContentSha256 = topology.contentSha256;
+  };
+  const synthetic = structuredClone(input);
+  synthetic.topologySnapshot.scope = synthetic.topologySnapshot.scope.slice(0, 3);
+  const codes = new Set(synthetic.topologySnapshot.scope.map(({ stationCode }) => stationCode));
+  synthetic.topologySnapshot.edges = synthetic.topologySnapshot.edges.filter(({ fromStationCode, toStationCode }) =>
+    codes.has(fromStationCode) && codes.has(toStationCode));
+  synthetic.topologySnapshot.requestCount = codes.size;
+  synthetic.topologySnapshot.stationCount = codes.size;
+  synthetic.topologySnapshot.odRowCount = codes.size * (codes.size - 1);
+  synthetic.topologySnapshot.edgeCount = synthetic.topologySnapshot.edges.length;
+  rebind(synthetic);
+  assert.doesNotThrow(() => materializeGwangjuTimetable({
+    ...synthetic, canonicalStationMappings: synthetic.mappings, now,
+  }));
+  for (const mutate of [
+    (value) => { value.topologySnapshot.edges.pop(); value.topologySnapshot.edgeCount = value.topologySnapshot.edges.length; },
+    (value) => { value.topologySnapshot.edges.push(structuredClone(value.topologySnapshot.edges[0])); value.topologySnapshot.edgeCount = value.topologySnapshot.edges.length; },
+    (value) => { value.topologySnapshot.edges[0].toStationCode = value.topologySnapshot.scope.at(-1).stationCode; },
+  ]) {
+    const invalid = structuredClone(synthetic);
+    mutate(invalid);
+    rebind(invalid);
+    assert.throws(() => materializeGwangjuTimetable({ ...invalid, canonicalStationMappings: invalid.mappings, now }),
+      /invalid Gwangju topology edge|invalid Gwangju topology snapshot/);
+  }
+});
+
+test("retained production Gwangju CLI serializes the native result and rejects the old input flag", async () => {
+  const input = await retainedProductionInput();
+  const directory = await mkdtemp(path.join(tmpdir(), "gwangju-retained-cli-"));
+  try {
+    const paths = Object.fromEntries(["base", "retained", "inventory", "invalid", "output"].map((name) => [name, path.join(directory, `${name}.json`)]));
+    await writeFile(paths.base, JSON.stringify(input.baseFixture));
+    await writeFile(paths.retained, JSON.stringify(input.retainedTimetable));
+    await writeFile(paths.inventory, JSON.stringify(input.inventory));
+    const argv = ["--base-fixture", paths.base, "--retained-timetable", paths.retained,
+      "--inventory", paths.inventory, "--station-map", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
+      "--output", paths.output];
+    await runGwangjuTimetableMaterializer(argv, { now, repositoryRoot: root });
+    const actual = JSON.parse(await readFile(paths.output, "utf8"));
+    const expected = JSON.parse(JSON.stringify(materializeGwangjuTimetable({ ...input, canonicalStationMappings: input.mappings, now })));
+    assert.deepEqual(actual, expected);
+    const explicitTopology = [...argv.slice(0, 4), "--topology-snapshot",
+      path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"), ...argv.slice(4)];
+    await assert.rejects(() => runGwangjuTimetableMaterializer(explicitTopology, { now, repositoryRoot: root }), /usage:/);
+    for (const snapshotPath of ["../gwangju-route-topology.json", "tools/datapack/sources/mismatched.json"]) {
+      const inventory = structuredClone(input.inventory);
+      inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+        .topologyAdmissionEvidence.snapshotPath = snapshotPath;
+      await writeFile(paths.invalid, JSON.stringify(inventory));
+      const invalidArgv = argv.map((value) => value === paths.inventory ? paths.invalid : value);
+      await assert.rejects(() => runGwangjuTimetableMaterializer(invalidArgv, { now, repositoryRoot: root }), /topology snapshot path/);
+    }
+    assert.deepEqual(JSON.parse(await readFile(paths.output, "utf8")), expected);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("retained Gwangju transit tables preserve native identities, clocks, row order, and provenance", () => {
   const records = [
     retainedNativeRecord(1, "A", { arrivalTime: { value: "24:00:00" }, departureTime: { value: "24:00:30" } }),
@@ -147,7 +315,7 @@ test("retained Gwangju transit tables preserve native identities, clocks, row or
   ];
   const projection = retainedProjection(records), before = structuredClone(projection);
   const tables = buildRetainedGwangjuTransitTables({ projection, lineId: "line-test",
-    routeBindings: [{ originStationName: "A", destinationStationName: "B", routeId: "route-a", directionId: "up", tripHeadsign: "B" }],
+    routeBindings: [{ originStationName: "A", destinationStationName: "B", routeId: "route-a", directionId: "up", tripHeadsign: "B", stationCodes: ["A", "B"] }],
     serviceIds: { WEEKDAY: "weekday" }, servicePatterns: { LOCAL: "LOCAL" }, serviceDayStartSeconds: 10,
     provenance: { sourceId: "source", sourceSnapshotId: "snapshot", evidenceHash: "e".repeat(64), updatedAt: "2040-01-01T00:00:00.000Z" } });
   assert.deepEqual(projection, before);
@@ -175,6 +343,33 @@ test("retained Gwangju transit tables reject a missing route mapping", () => {
   assert.throws(() => buildRetainedGwangjuTransitTables({ projection, lineId: "line", routeBindings: [],
     serviceIds: { WEEKDAY: "weekday" }, servicePatterns: { LOCAL: "LOCAL" }, serviceDayStartSeconds: 0,
     provenance: { sourceId: "source", sourceSnapshotId: "snapshot", evidenceHash: "e", updatedAt: "2040-01-01T00:00:00.000Z" } }), /mapping is missing/);
+});
+
+test("retained Gwangju transit tables bind identical endpoints by the directed native stop path", () => {
+  const reverseEdges = [{ fromStationCode: "A", toStationCode: "B" }, { fromStationCode: "B", toStationCode: "A" }];
+  const records = [
+    retainedNativeRecord(1, "A"),
+    retainedNativeRecord(2, "B", { arrivalTime: { value: "24:01:00" }, departureTime: { value: "24:01:00" } }),
+    retainedNativeRecord(3, "B", { trainNumber: "1002", arrivalTime: { value: "25:00:00" }, departureTime: { value: "25:00:00" } }),
+    retainedNativeRecord(4, "A", { trainNumber: "1002", arrivalTime: { value: "25:01:00" }, departureTime: { value: "25:01:00" } }),
+  ];
+  const projection = retainedProjection(records, { directedEdges: reverseEdges });
+  const bindings = [
+    { originStationName: "A", destinationStationName: "B", routeId: "route-forward", directionId: "forward", tripHeadsign: "B", stationCodes: ["A", "B"] },
+    { originStationName: "A", destinationStationName: "B", routeId: "route-reverse", directionId: "reverse", tripHeadsign: "A", stationCodes: ["B", "A"] },
+  ];
+  const input = { projection, lineId: "line", routeBindings: bindings,
+    serviceIds: { WEEKDAY: "weekday" }, servicePatterns: { LOCAL: "LOCAL" }, serviceDayStartSeconds: 0,
+    provenance: { sourceId: "source", sourceSnapshotId: "snapshot", evidenceHash: "e", updatedAt: "2040-01-01T00:00:00.000Z" } };
+  assert.deepEqual(buildRetainedGwangjuTransitTables(input).transitTrips.map(({ routeId, directionId }) =>
+    ({ routeId, directionId })), [
+    { routeId: "route-forward", directionId: "forward" },
+    { routeId: "route-reverse", directionId: "reverse" },
+  ]);
+  assert.throws(() => buildRetainedGwangjuTransitTables({ ...input, routeBindings: [bindings[0]] }), /mapping is missing/);
+  assert.throws(() => buildRetainedGwangjuTransitTables({ ...input, routeBindings: [...bindings,
+    { ...bindings[0], routeId: "route-ambiguous" }] }), /route binding is ambiguous/);
+  assert.throws(() => buildRetainedGwangjuTransitTables({ ...input, routeBindings: [{ ...bindings[0], stationCodes: ["A", "C"] }] }), /mapping is missing/);
 });
 
 test("retained native trip projection은 source 행 순서와 24시 이후 시각·원문 근거를 보존한다", () => {
@@ -253,299 +448,90 @@ test("retained native trip projection은 한 승객 정류장 그룹을 비운�
   assert.equal(projected.nonRoutableGroups[0].excludedEndpoints[0].record.stationName, "외부");
 });
 
-test("광주 공식 topology·시간표를 20역·38 edge·810 trip·14171 stop_time으로 materialize한다", async () => {
-  const values = await inputs();
-  const pack = values.fixture.packs[0];
-  const timetableSourceId = "gwangju-transportation-cyberstation-timetable";
-  const topologySourceId = "gwangju-transportation-route-topology";
-  const trips = pack.transitTrips.filter(({ sourceId }) => sourceId === timetableSourceId);
-  const stopTimes = pack.transitStopTimes.filter(({ sourceId }) => sourceId === timetableSourceId);
-  const calendars = pack.serviceCalendars.filter(({ sourceId }) => sourceId === timetableSourceId);
-  const edges = pack.networkEdges.filter(({ sourceId }) => sourceId === topologySourceId);
-
-  assert.match(pack.id, /^nationwide-gwangju-schedule-[a-f0-9]{64}$/);
-  assert.deepEqual(values.fixture.manifest.activePack, { id: pack.id, version: "20260720" });
-  assert.equal(pack.stationLines.filter(({ lineId }) => lineId === "line-e57a361e8892").length, 20);
-  assert.equal(edges.length, 38);
-  assert.equal(calendars.length, 4);
-  assert.equal(trips.length, 810);
-  assert.equal(stopTimes.length, 14_171);
-  assert.equal(stopTimes.filter(({ derivationKind }) => derivationKind === "OFFICIAL").length, 13_360);
-  assert.equal(stopTimes.filter(({ derivationKind }) => derivationKind === "GENERATED").length, 811);
-  assert.deepEqual(Object.fromEntries(calendars.map(({ serviceId }) => [serviceId,
-    trips.filter((trip) => trip.serviceId === serviceId).length])), {
-    "gwangju-weekday-2026": 240,
-    "gwangju-saturday-2026": 206,
-    "gwangju-holiday-2026": 162,
-    "gwangju-sunday-2026": 202,
-  });
-  const correctedHolidayDates = new Set(["20260301", "20260501", "20260524", "20260717"]);
-  assert.deepEqual(pack.serviceCalendarDates
-    .filter(({ date }) => correctedHolidayDates.has(date))
-    .map(({ serviceId, date, exceptionType }) => ({ serviceId, date, exceptionType }))
-    .sort((left, right) => `${left.date}:${left.serviceId}`.localeCompare(`${right.date}:${right.serviceId}`, "en")), [
-    { serviceId: "gwangju-holiday-2026", date: "20260301", exceptionType: 1 },
-    { serviceId: "gwangju-sunday-2026", date: "20260301", exceptionType: 2 },
-    { serviceId: "gwangju-holiday-2026", date: "20260501", exceptionType: 1 },
-    { serviceId: "gwangju-weekday-2026", date: "20260501", exceptionType: 2 },
-    { serviceId: "gwangju-holiday-2026", date: "20260524", exceptionType: 1 },
-    { serviceId: "gwangju-sunday-2026", date: "20260524", exceptionType: 2 },
-    { serviceId: "gwangju-holiday-2026", date: "20260717", exceptionType: 1 },
-    { serviceId: "gwangju-weekday-2026", date: "20260717", exceptionType: 2 },
-  ]);
-  const repaired = stopTimes.filter(({ repairReason }) => repairReason === "OFFICIAL_ADJACENT_TIMES_AND_TOPOLOGY");
-  assert.equal(repaired.length, 1);
-  assert.equal(repaired[0].arrivalSeconds, 75_570);
-  assert.equal(repaired[0].stationId,
-    values.gwangjuMappings.find(({ stationNumber }) => stationNumber === "105").stationId);
-  assert.ok(edges.every(({ sourceSnapshotId, evidenceHash }) =>
-    sourceSnapshotId === "gwangju-transportation-route-topology-20260720"
-      && evidenceHash === values.gwangjuTopology.contentSha256));
-  assert.ok(pack.stationLines.filter(({ lineId }) => lineId === "line-e57a361e8892")
-    .every(({ fieldProvenance }) =>
-      fieldProvenance.station_code.sourceId === "gwangju-transportation-route-topology"
-      && fieldProvenance.station_code.sourceSnapshotId === "gwangju-transportation-route-topology-20260720"
-      && fieldProvenance.station_code.evidenceHash === values.gwangjuTopology.contentSha256));
-  assert.deepEqual(values.inventory.sources.find(({ id }) => id === topologySourceId).membershipAdmissionEvidence,
-    values.inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-gwangju-membership")
-      .membershipAdmissionEvidence);
-});
-
-test("광주 materializer는 완결되지 않은 일요일 0756 열차 2행만 exact tuple로 격리한다", async () => {
-  const values = await inputs({ materialize: false });
-  assert.deepEqual(values.gwangjuTimetable.rows.filter(({ dayCode, direction, stationCode, time }) =>
-    dayCode === "DAYOFF" && direction === "st"
-      && ((stationCode === "119" && time === "0756") || (stationCode === "118" && time === "0759")))
-    .map(({ dayCode, direction, stationCode, time }) => ({ dayCode, direction, stationCode, time })), [
-    { dayCode: "DAYOFF", direction: "st", stationCode: "119", time: "0756" },
-    { dayCode: "DAYOFF", direction: "st", stationCode: "118", time: "0759" },
-  ]);
-
-  const mutated = structuredClone(values.gwangjuTimetable);
-  mutated.rows.find((row) => row.dayCode === "DAYOFF" && row.direction === "st"
-    && row.stationCode === "118" && row.time === "0759").time = "0800";
-  mutated.rowsSha256 = createHash("sha256").update(JSON.stringify(mutated.rows)).digest("hex");
-  mutated.contentSha256 = createHash("sha256").update(JSON.stringify({
-    fragments: mutated.fragments.map(({ stationId, rawSha256 }) => ({ stationId, rawSha256 })),
-    rowsSha256: mutated.rowsSha256,
-  })).digest("hex");
-  const inventory = structuredClone(values.inventory);
-  const evidence = inventory.sources.find(({ id }) => id === "gwangju-transportation-cyberstation-timetable")
-    .scheduleAdmissionEvidence;
-  evidence.rowsSha256 = mutated.rowsSha256;
-  evidence.contentSha256 = mutated.contentSha256;
-  assert.throws(() => materializeGwangjuTimetable({
-    baseFixture: values.baseFixture,
-    timetableSnapshot: mutated,
-    topologySnapshot: values.gwangjuTopology,
-    inventory,
-    canonicalStationMappings: values.gwangjuMappings,
-    now,
-  }), /quarantine tuple/);
-});
-
-test("광주 materializer는 snapshot·inventory·freshness·topology lineage 변조를 fail closed한다", async () => {
-  const values = await inputs({ materialize: false });
-  const badTopology = structuredClone(values.gwangjuTopology);
-  badTopology.edges[0].durationSeconds += 60;
-  assert.throws(() => materializeGwangjuTimetable({
-    baseFixture: values.baseFixture,
-    timetableSnapshot: values.gwangjuTimetable,
-    topologySnapshot: badTopology,
-    inventory: values.inventory,
-    canonicalStationMappings: values.gwangjuMappings,
-    now,
-  }), /topology snapshot/);
-  assert.throws(() => materializeGwangjuTimetable({
-    baseFixture: values.baseFixture,
-    timetableSnapshot: values.gwangjuTimetable,
-    topologySnapshot: values.gwangjuTopology,
-    inventory: values.inventory,
-    canonicalStationMappings: values.gwangjuMappings,
-    now: new Date("2026-07-21T13:08:47.161Z"),
-  }), /stale/);
-});
-
-test("광주 materializer는 evaluation instant 이후 membership verification을 거부한다", async () => {
-  const values = await inputs({ materialize: false });
-  const inventory = structuredClone(values.inventory);
-  const verifiedAt = new Date(now.getTime() + 1).toISOString();
-  inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-gwangju-membership")
-    .membershipAdmissionEvidence.verifiedAt = verifiedAt;
-  inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
-    .membershipAdmissionEvidence.verifiedAt = verifiedAt;
-
-  assert.throws(() => materializeGwangjuTimetable({
-    baseFixture: values.baseFixture,
-    timetableSnapshot: values.gwangjuTimetable,
-    topologySnapshot: values.gwangjuTopology,
-    inventory,
-    canonicalStationMappings: values.gwangjuMappings,
-    now,
-  }), /molit-urban-rail-full-route-gwangju-membership membership evidence is future-dated/);
-});
-
-test("MOLIT 광주 station mapping과 materializer CLI를 고정한다", async () => {
-  const values = await inputs({ materialize: false });
-  assert.equal(values.gwangjuMappings.length, 20);
-  assert.deepEqual(values.gwangjuMappings.slice(0, 2).map(({ stationName, stationNumber }) =>
-    ({ stationName, stationNumber })), [
-    { stationName: "녹동", stationNumber: "100" },
-    { stationName: "소태", stationNumber: "101" },
-  ]);
-  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-gwangju-pack-"));
-  try {
-    const baseFixturePath = path.join(directory, "base.json");
-    const inventoryPath = path.join(directory, "inventory.json");
-    const outputPath = path.join(directory, "output.json");
-    await Promise.all([
-      writeFile(baseFixturePath, JSON.stringify(values.baseFixture)),
-      writeFile(inventoryPath, JSON.stringify(values.inventory)),
-    ]);
-    await runGwangjuTimetableMaterializer([
-      "--base-fixture", baseFixturePath,
-      "--timetable-snapshot", path.join(root, "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
-      "--topology-snapshot", path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-      "--inventory", inventoryPath,
-      "--station-map", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
-      "--output", outputPath,
-    ], { now });
-    const fixture = JSON.parse(await readFile(outputPath, "utf8"));
-    assert.equal(fixture.packs[0].transitTrips.filter(({ sourceId }) =>
-      sourceId === "gwangju-transportation-cyberstation-timetable").length, 810);
-    await assert.rejects(execFileAsync(process.execPath, [
-      path.join(root, "tools/datapack/materialize-gwangju-timetable.mjs"),
-    ]), (error) => {
-      assert.match(error.stderr, /usage: materialize-gwangju-timetable/);
-      return true;
-    });
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("materialized SQLite·provenance가 광주 membership·topology·schedule 3건을 SUPPORTED로 만든다", async (context) => {
-  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-gwangju-runtime-pack-"));
-  context.after(() => rm(outputDir, { recursive: true, force: true }));
-  const fixturePath = path.join(outputDir, "fixture.json");
-  const packOutput = path.join(outputDir, "pack");
-  const reportPath = path.join(outputDir, "coverage.json");
-  const { fixture } = await inputs();
-  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-  await mkdir(packOutput, { recursive: true });
+// 기존 경계 검증을 제거하기 전에 FILE 입력의 실제 직렬화·출처·coverage를 증명한다.
+test("retained Gwangju SQLite preserves native stops, provenance, and coverage", async (context) => {
+  const input = await retainedProductionInput();
+  const baseFixture = projectRegionalMaterializeFixture(
+    await readJson("tools/datapack/release/capital-production-reviewed-pack.json"));
+  const fixture = materializeGwangjuTimetable({ ...input, baseFixture,
+    canonicalStationMappings: input.mappings, now });
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-gwangju-retained-sqlite-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const fixturePath = path.join(directory, "fixture.json");
+  const inventoryPath = path.join(directory, "inventory.json");
+  const packOutput = path.join(directory, "pack");
+  const reportPath = path.join(directory, "coverage.json");
+  await writeFile(fixturePath, JSON.stringify(fixture));
+  await writeFile(inventoryPath, JSON.stringify(input.inventory));
+  await mkdir(packOutput);
   const { privateKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
-  await execFileAsync(process.execPath, [
-    "tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutput,
-  ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey } });
+  await execFileAsync(process.execPath, ["tools/datapack/build-datapack.mjs",
+    "--fixture", fixturePath, "--output", packOutput],
+  { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey } });
   await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
   const manifestPath = path.join(packOutput, "current.json");
+  const provenancePath = path.join(packOutput, "current.provenance.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const sqlitePath = path.join(packOutput,
     new URL(manifest.packs[0].url).pathname.split("/").slice(-2).join("/")).replace(/\.gz$/, "");
+  const sourceId = input.retainedTimetable.observation.sourceId;
+  const expectedTrips = fixture.packs[0].transitTrips.filter((trip) => trip.sourceId === sourceId);
+  const tripIds = new Set(expectedTrips.map((trip) => trip.id));
+  const expectedStops = fixture.packs[0].transitStopTimes.filter((stop) => tripIds.has(stop.tripId));
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM network_edges WHERE source_id = ?")
-    .get("gwangju-transportation-route-topology").count, 38);
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_trips WHERE id LIKE 'trip-gwangju-%'")
-    .get().count, 810);
-  assert.equal(database.prepare(`
-    SELECT COUNT(*) AS count FROM transit_stop_times st
-    JOIN transit_trips t ON t.id = st.trip_id WHERE t.id LIKE 'trip-gwangju-%'
-  `).get().count, 14_171);
-  database.close();
-
-  const provenance = JSON.parse(await readFile(path.join(packOutput, "current.provenance.json"), "utf8"));
-  const records = provenance.packs.flatMap(({ records: rows }) => rows);
-  assert.ok(records.some(({ sourceId, field }) =>
-    sourceId === "gwangju-transportation-route-topology" && field === "network_edges"));
-  assert.ok(records.some(({ sourceId, field }) =>
-    sourceId === "gwangju-transportation-cyberstation-timetable" && field === "trip"));
-  assert.ok(records.some(({ sourceId, field }) =>
-    sourceId === "gwangju-transportation-cyberstation-timetable" && field === "stop_time"));
-
-  await execFileAsync(process.execPath, [
-    "tools/datapack/report-coverage-gaps.mjs",
+  try {
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM network_edges WHERE source_id = ?")
+      .get("gwangju-transportation-route-topology").count, input.topologySnapshot.edges.length);
+    const lineId = input.inventory.sources.find(({ id }) => id === sourceId).coverageScope.lineIds[0];
+    const trips = database.prepare(`SELECT t.id FROM transit_trips t
+      JOIN transit_routes r ON r.id = t.route_id WHERE r.line_id = ? ORDER BY t.id`).all(lineId);
+    assert.deepEqual(trips.map(({ id }) => id), [...tripIds].sort());
+    const stops = database.prepare(`SELECT st.trip_id, st.station_id, st.stop_sequence,
+      st.arrival_seconds, st.departure_seconds FROM transit_stop_times st
+      JOIN transit_trips t ON t.id = st.trip_id
+      JOIN transit_routes r ON r.id = t.route_id WHERE r.line_id = ?
+      ORDER BY st.trip_id, st.stop_sequence`).all(lineId);
+    assert.deepEqual(stops.map((row) => ({ ...row })), expectedStops.map((stop) => ({
+      trip_id: stop.tripId, station_id: stop.stationId, stop_sequence: stop.stopSequence,
+      arrival_seconds: stop.arrivalSeconds, departure_seconds: stop.departureSeconds,
+    })).sort((a, b) => a.trip_id.localeCompare(b.trip_id) || a.stop_sequence - b.stop_sequence));
+  } finally {
+    database.close();
+  }
+  const provenance = JSON.parse(await readFile(provenancePath, "utf8"));
+  const records = provenance.packs.flatMap(({ records }) => records);
+  for (const field of ["trip", "stop_time", "service_calendar"]) {
+    assert.ok(records.some((record) => record.sourceId === sourceId && record.field === field));
+  }
+  assert.ok(records.some((record) => record.sourceId === "gwangju-transportation-route-topology"
+    && record.field === "network_edges"));
+  await execFileAsync(process.execPath, ["tools/datapack/report-coverage-gaps.mjs",
     "--targets", "tools/datapack/nationwide-coverage-targets.json",
-    "--inventory", "tools/datapack/source-inventory.json",
-    "--manifest", manifestPath,
-    "--provenance", path.join(packOutput, "current.provenance.json"),
+    "--inventory", inventoryPath, "--manifest", manifestPath, "--provenance", provenancePath,
     "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
     "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
-    "--output", reportPath,
-    "--allow-gaps",
-  ], { cwd: root });
+    "--output", reportPath, "--allow-gaps"], { cwd: root });
   const report = JSON.parse(await readFile(reportPath, "utf8"));
-  const gwangjuRequirements = report.requirements.filter(({ regionId, operatorId, lineId }) =>
+  const requirements = report.requirements.filter(({ regionId, operatorId, lineId }) =>
     regionId === "gwangju" && operatorId === "gwangju-metropolitan-rapid-transit"
-      && lineId === "line-e57a361e8892");
-  assert.deepEqual(gwangjuRequirements.filter(({ status }) => status === "SUPPORTED")
-    .map(({ sourceDomain }) => sourceDomain), [
-    "station_line_membership", "route_graph_topology", "schedule_timetable",
-  ], JSON.stringify(gwangjuRequirements, null, 2));
-  const membership = gwangjuRequirements.find(({ sourceDomain }) => sourceDomain === "station_line_membership");
+    && lineId === "line-e57a361e8892");
+  assert.deepEqual(requirements.filter(({ status }) => status === "SUPPORTED")
+    .map(({ sourceDomain }) => sourceDomain),
+  ["station_line_membership", "route_graph_topology", "schedule_timetable"]);
+  const membership = requirements.find(({ sourceDomain }) => sourceDomain === "station_line_membership");
   assert.deepEqual(Object.fromEntries(membership.fieldCoverage.map(({ field, sourceIds }) => [field, sourceIds])), {
     line: ["molit-urban-rail-full-route-gwangju-membership"],
     station_name: ["molit-urban-rail-full-route-gwangju-membership"],
     station_code: ["gwangju-transportation-route-topology"],
   });
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: 22,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 244,
-    supportedRatio: 0.0815,
-    terminalResolutionRatio: 0.0963,
-    completionReady: false,
-  });
+  const schedule = requirements.find(({ sourceDomain }) => sourceDomain === "schedule_timetable");
+  assert.ok(schedule.fieldCoverage.length > 0);
+  for (const { sourceIds } of schedule.fieldCoverage) assert.deepEqual(sourceIds, [sourceId]);
 });
-
-async function inputs({ materialize = true } = {}) {
-  const [base, busanTopology, busanTimetable, busanRouteMapBytes, daejeonTopology, daejeonTimetable,
-    gwangjuTopology, gwangjuTimetable, inventory, regionalMap, molitMap] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
-  ]);
-  const busanTopologyFixture = materializeBusanRouteTopology({
-    baseFixture: base, snapshot: busanTopology, inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(regionalMap),
-    now: new Date("2026-07-19T18:14:03.004Z"),
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: busanTopologyFixture, timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology, inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitMap), now,
-  });
-  const busanTimetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture, timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology, inventory, now,
-  });
-  const baseFixture = materializeBusanRouteMapPositions({
-    baseFixture: busanTimetableFixture,
-    snapshot: JSON.parse(busanRouteMapBytes),
-    snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
-    topologySnapshot: busanTopology,
-    inventory,
-    now,
-  });
-  const gwangjuMappings = parseMolitGwangjuStationMappings(molitMap);
-  const fixture = materialize ? materializeGwangjuTimetable({
-    baseFixture, timetableSnapshot: gwangjuTimetable, topologySnapshot: gwangjuTopology,
-    inventory, canonicalStationMappings: gwangjuMappings, now,
-  }) : undefined;
-  return { baseFixture, fixture, gwangjuMappings, gwangjuTimetable, gwangjuTopology, inventory };
-}
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));

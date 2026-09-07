@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "2202adb683ca942c1e5f5fd2cbd84f83bbbe3be85d5ef9e00e69d2c3d643c63c"
+      "sha256": "b617b156f078c90a04268b7fbffcdd5bc04e0c672aa7531e7acda3460e5acff7"
     },
     "resolutions": {
       "entryCount": 4,
@@ -7030,7 +7030,7 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "gwangju-transportation-cyberstation-timetable"
+          "kric-nationwide-timetable-file"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,

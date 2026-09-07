@@ -66939,5 +66939,41 @@
       "evaluatedAt": "2026-09-04T20:50:46.368Z",
       "predecessorSnapshotIds": []
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "kric-nationwide-timetable-file",
+    "snapshotId": "kric-nationwide-timetable-file-b32951f497b40b973c7bde2c5fb6f00e3bdad278eaef28f59ea10326fb7f71b2",
+    "previousSnapshotId": null,
+    "observedAt": "2026-09-07T10:50:18.169Z",
+    "capturedAt": "2026-09-07T10:50:18.169Z",
+    "retrievedAt": "2026-09-07T10:50:18.169Z",
+    "sourceUpdatedAt": null,
+    "provider": "국가철도공단",
+    "rowCount": 15881,
+    "coverageCount": 15537,
+    "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+    "contentSha256": "b32951f497b40b973c7bde2c5fb6f00e3bdad278eaef28f59ea10326fb7f71b2",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/sources/kric-nationwide-timetable-file/2d1a0f11ce3d77e0c2d75e5869750db987d8600966cc5a1cc89cc038e5d33c79/observation.json",
+    "rawObjectSha256": "2d1a0f11ce3d77e0c2d75e5869750db987d8600966cc5a1cc89cc038e5d33c79",
+    "rawReceiptSha256": "77b1500d99bb3d83abfc01675980d976a43f6c452aa3c153eb24b3c4d5657033",
+    "byteSize": 161172676,
+    "freshUntil": "2026-09-14T10:50:18.169Z",
+    "freshnessExpiresAt": "2026-09-14T10:50:18.169Z",
+    "rawRetentionExpiresAt": "2026-12-06T10:50:18.169Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "0c2e1728c846c825b997294ea209617b14f1d846741e790cfa588b9d3d266caf",
+    "schemaFingerprint": "6b3d4bb90d1c0160da3ef1bef74d0ffc26870da92e93bce5e764223f4a1cca85",
+    "redactedRequestFingerprint": "d677d6f7bba03cd4b8be0b553eceb249252c082c9b3c6e390e9f35d209e6bcfe",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "0b76feaf745458345d9efb46e346d85abf4b71b71ec61f5f62825422645084a4"
+    }
   }
 ]
