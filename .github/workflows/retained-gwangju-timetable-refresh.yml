@@ -1,0 +1,119 @@
+name: Retained Gwangju Timetable Refresh
+
+on:
+  schedule:
+    - cron: "43 */2 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: retained-gwangju-timetable-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: datapack-release-check
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Read retained timetable due state
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state_root="${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}"
+          mkdir -p "${state_root}"
+          node tools/ci/decide-retained-gwangju-timetable-refresh.mjs > "${state_root}/due.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${state_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/504-retained-gwangju-timetable-refresh-*" > "${state_root}/claims.txt"
+          STATE_ROOT="${state_root}" node --input-type=module -e '
+            import { appendFile, readFile } from "node:fs/promises";
+            import { classifyRetainedGwangjuRefreshDelivery, parseRetainedGwangjuRefreshClaims } from "./tools/ci/retained-gwangju-refresh-delivery.mjs";
+            const root = process.env.STATE_ROOT;
+            const result = classifyRetainedGwangjuRefreshDelivery({ decision: JSON.parse(await readFile(root + "/due.json")), repository: process.env.GITHUB_REPOSITORY, claims: parseRetainedGwangjuRefreshClaims(await readFile(root + "/claims.txt", "utf8")), pullRequests: JSON.parse(await readFile(root + "/prs.json", "utf8")) });
+            await appendFile(process.env.GITHUB_OUTPUT, `state=${result.state}\nbranch=${result.branch ?? ""}\n`);
+          '
+          printf 'RETAINED_GWANGJU_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
+      - name: Recover completed retained timetable claim
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="${{ steps.decision.outputs.branch }}"
+          git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+          [[ "$(git rev-list --count "origin/${branch}^^..origin/${branch}")" == "2" ]] || { echo "retained timetable claim must have one claim and one output commit" >&2; exit 1; }
+          git merge-base --is-ancestor "origin/${branch}^^" origin/main || { echo "retained timetable claim source main is not an origin/main ancestor" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}^")" == "Claim retained Gwangju timetable refresh" ]] || { echo "retained timetable claim commit is invalid" >&2; exit 1; }
+          [[ "$(git log -1 --format=%s "origin/${branch}")" == "Refresh retained Gwangju timetable" ]] || { echo "retained timetable output commit is invalid" >&2; exit 1; }
+          git diff --quiet "origin/${branch}^^" "origin/${branch}^" || { echo "retained timetable claim must be empty" >&2; exit 1; }
+          changed="${RETAINED_GWANGJU_STATE_ROOT}/recovery-changed.txt"; deleted="${RETAINED_GWANGJU_STATE_ROOT}/recovery-deleted.txt"
+          git diff --name-only --diff-filter=ACMR "origin/${branch}^" "origin/${branch}" > "${changed}"
+          git diff --name-only --diff-filter=D "origin/${branch}^" "origin/${branch}" > "${deleted}"
+          CHANGED="${changed}" DELETED="${deleted}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { validateRetainedGwangjuRefreshOutputPaths } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; await validateRetainedGwangjuRefreshOutputPaths({ changedPaths: (await readFile(process.env.CHANGED, "utf8")).split("\n").filter(Boolean), deletedPaths: (await readFile(process.env.DELETED, "utf8")).split("\n").filter(Boolean) });'
+          existing="${RETAINED_GWANGJU_STATE_ROOT}/recovery-prs.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
+          [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "retained timetable claim already has a pull request" >&2; exit 1; }
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh retained Gwangju timetable" --body "Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504"
+      - name: Create retained timetable claim before provider access
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/504-retained-gwangju-timetable-refresh-${GITHUB_RUN_ID}"
+          main_sha="$(git rev-parse HEAD)"
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${main_sha}" ]] || { echo "retained timetable source main changed before claim" >&2; exit 1; }
+          git switch -c "${branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Claim retained Gwangju timetable refresh"
+          gh auth setup-git
+          git push origin "${branch}"
+          git switch --detach "${main_sha}"
+          printf 'RETAINED_GWANGJU_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+      - name: Refresh due retained Gwangju timetable
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its claimed main" >&2; exit 1; }
+          node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation"
+      - name: Finalize retained timetable claim
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ -z "$(git ls-files --others --exclude-standard)" ]] || { echo "retained timetable controller left untracked checkout files" >&2; exit 1; }
+          git switch "${RETAINED_GWANGJU_BRANCH}"
+          [[ "$(git rev-parse HEAD^)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable claim is not based on its source main" >&2; exit 1; }
+          git add -A
+          changed="${RETAINED_GWANGJU_STATE_ROOT}/changed.txt"; deleted="${RETAINED_GWANGJU_STATE_ROOT}/deleted.txt"
+          git diff --cached --name-only --diff-filter=ACMR > "${changed}"
+          git diff --cached --name-only --diff-filter=D > "${deleted}"
+          CHANGED="${changed}" DELETED="${deleted}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { validateRetainedGwangjuRefreshOutputPaths } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; validateRetainedGwangjuRefreshOutputPaths({ changedPaths: (await readFile(process.env.CHANGED, "utf8")).split("\n").filter(Boolean), deletedPaths: (await readFile(process.env.DELETED, "utf8")).split("\n").filter(Boolean) });'
+          git diff --cached --quiet && { echo "retained timetable controller produced no registration output" >&2; exit 1; }
+          git diff --quiet "${RETAINED_GWANGJU_MAIN_SHA}" -- tools/datapack/source-governance-policy.json release/product-gates/datapack-freshness-sla.json || { echo "retained timetable changed governance or freshness policy" >&2; exit 1; }
+          git commit -m "Refresh retained Gwangju timetable"
+          git push origin "${RETAINED_GWANGJU_BRANCH}"
+      - name: Create retained timetable draft pull request
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${RETAINED_GWANGJU_BRANCH}" --title "Refresh retained Gwangju timetable" --body $'Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504'
