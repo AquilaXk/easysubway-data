@@ -117,10 +117,16 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
       canonicalCatalogPath, canonicalCatalogSha256: hash(catalogBytes), lineId: "L",
     };
     const observation = await buildRetainedKorailTopologyObservation(input);
-    const tables = buildKorailTimetableTables({ observation,
-      startDate: "20400101", endDate: "20400110", publicHolidayDates: new Set(["20400102"]),
+    const holidayRaw = Buffer.from('<response><header><resultCode>00</resultCode></header><body><items><item><locdate>20400102</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>');
+    const tableInput = { observation,
+      startDate: "20400101", endDate: "20400110",
+      holidayMonths: [{ raw: holidayRaw, sha256: hash(holidayRaw), year: 2040, month: 1 }],
       serviceIds: { "평일": "weekday", "휴일": "holiday" }, routeIds: { up: "route-up", down: "route-down" },
-    });
+    };
+    const tables = buildKorailTimetableTables(tableInput);
+    assert.equal(tables.holidayCalendarSources[0].rawSha256, hash(holidayRaw));
+    assert.throws(() => buildKorailTimetableTables({ ...tableInput, endDate: "20400201" }), /month coverage/);
+    assert.throws(() => buildKorailTimetableTables({ ...tableInput, holidayMonths: [] }), /month coverage/);
     assert.equal(tables.transitTrips[0].serviceId, "weekday");
     assert.deepEqual(tables.transitStopTimes.map(({ arrivalSeconds, departureSeconds, pickupType, dropOffType }) =>
       ({ arrivalSeconds, departureSeconds, pickupType, dropOffType })), [

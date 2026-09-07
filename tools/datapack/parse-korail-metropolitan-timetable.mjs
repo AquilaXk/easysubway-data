@@ -5,9 +5,26 @@ import path from "node:path";
 import { unzipEntry, parseWorkbookSheetRefs, parseSharedStrings, parseWorksheetRows } from "./parse-kric-code-catalog.mjs";
 import { selectRetainedKricStationLine } from "./build-kric-retained-file-pending-handoff.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
+import { parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
 
 /** 원문 관측은 불변으로 두고 기존 provider-neutral 코어에 calendar·trip 행을 연결한다. */
-export function buildKorailTimetableTables({ observation, startDate, endDate, publicHolidayDates, serviceIds, routeIds }) {
+export function buildKorailTimetableTables({ observation, startDate, endDate, holidayMonths, serviceIds, routeIds }) {
+  const publicHolidayDates = new Set();
+  korailServiceDayLabel({ serviceDate: startDate, publicHolidayDates });
+  korailServiceDayLabel({ serviceDate: endDate, publicHolidayDates });
+  if (!Array.isArray(holidayMonths) || holidayMonths.length === 0) throw new Error("holiday month coverage missing");
+  const months = holidayMonths.map(parseRetainedKasiHolidayMonth);
+  const monthKey = (year, month) => year * 12 + month - 1;
+  const keys = new Set(months.map(({ year, month }) => monthKey(year, month)));
+  if (keys.size !== months.length) throw new Error("holiday month coverage duplicated");
+  const firstMonth = monthKey(Number(startDate.slice(0, 4)), Number(startDate.slice(4, 6)));
+  const lastMonth = monthKey(Number(endDate.slice(0, 4)), Number(endDate.slice(4, 6)));
+  for (let month = firstMonth; month <= lastMonth; month += 1) {
+    if (!keys.has(month)) throw new Error("holiday month coverage missing");
+  }
+  for (const month of months) for (const date of month.holidayDates) publicHolidayDates.add(date);
+  const holidayCalendarSources = months.map(({ holidayDates, ...identity }) => identity)
+    .sort((a, b) => a.year - b.year || a.month - b.month);
   const calendars = buildKorailServiceCalendars({ startDate, endDate, publicHolidayDates, serviceIds });
   const lineId = observation.selection.lineId;
   const lineSequenceByStationLine = Object.fromEntries(observation.stationBindings.map(({ stationId }, index) =>
@@ -29,7 +46,7 @@ export function buildKorailTimetableTables({ observation, startDate, endDate, pu
     routeIdByLineDirection: { [`${lineId}|up`]: routeIds?.up, [`${lineId}|down`]: routeIds?.down },
     serviceIdByDayCd: serviceIds,
   });
-  return { ...calendars, ...timetable };
+  return { ...calendars, ...timetable, holidayCalendarSources };
 }
 
 /** 적용 기간과 공휴일 자료는 호출자가 결속한다. 주말에 중복 예외를 만들지 않는다. */
