@@ -73,6 +73,89 @@
   ],
   "candidates": [
     {
+      "id": "kasi-public-holiday-calendar",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": { "regionIds": ["all"], "operatorIds": ["all-urban-metropolitan-rail-operators"] },
+      "displayName": "한국천문연구원 특일 정보 — 공휴일 달력",
+      "detailUrl": "https://www.data.go.kr/data/15012690/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "not_collected",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15012690/openapi.do",
+        "license": "unrestricted",
+        "formats": ["XML"],
+        "notes": "Register the existing monthly collector without claiming source admission. Retain response bytes and month coverage; operator-specific timetable categories remain separate. Existing transport retry behavior is unchanged."
+      },
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo",
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "ServiceKey",
+          "valueEncoding": "url-search-params-once", "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": ["ServiceKey", "solYear", "solMonth"],
+        "fixedParameters": { "pageNo": "1", "numOfRows": "100" },
+        "responseEnvelope": "response.header + response.body.items.item + response.body.totalCount",
+        "responseFields": ["locdate", "dateName", "isHoliday", "dateKind", "seq"],
+        "runner": {
+          "command": "node tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+          "arguments": ["--year", "[year]", "--months", "[requested-months]", "--output-directory", "[new-absolute-operation-directory]"],
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      }
+    },
+    {
+      "id": "korail-metropolitan-timetable-file",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": ["daegu"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-8f7ed01f290a"]
+      },
+      "displayName": "한국철도공사 광역전철 시각표 — 대경선",
+      "topologyRegistration": {
+        "sourceClassId": "route_graph_topology",
+        "retentionClassId": "standard-90d",
+        "ownerRole": "datapack-source-owner",
+        "stewardRole": "datapack-data-steward",
+        "approvalRole": "datapack-release-approver",
+        "derivationPolicy": "MIN_OBSERVED_SCHEDULED_DURATION_V1"
+      },
+      "detailUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+      "requestUrl": "https://www.korail.com/ticket/reserve/train-timeTable",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "retained_file_parsed",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+        "license": "unrestricted",
+        "formats": ["XLSX"],
+        "retainedReader": "tools/datapack/parse-korail-metropolitan-timetable.mjs#parseRetainedKorailWorkbook",
+        "provider": "한국철도공사",
+        "collectionContract": {
+          "collector": "tools/datapack/collect-korail-metropolitan-timetable-file.mjs#collectKorailMetropolitanTimetableFile",
+          "officialAttachmentOrigin": "https://www.korail.com",
+          "officialAttachmentPathPrefix": "/file/cubedata/COMMON/jfile/",
+          "expectedAttachmentSha256Required": true,
+          "requestTimeoutMs": 30000,
+          "maximumBytes": 134217728,
+          "maxRetries": 0,
+          "redirect": "error",
+          "receiptIsAdmission": false
+        },
+        "membershipSourceId": "kric-current-station-line-file",
+        "coverage": "DaeGyeong passenger topology and source-native scheduled segment observations",
+        "notes": "The distribution page is not a download operation. Retained attachment SHA is supplied to the reader; no provider runner, calendar applicability or production admission is claimed."
+      }
+    },
+    {
       "id": "kric-nationwide-timetable-file",
       "priority": "P0",
       "domain": "schedule_timetable",
