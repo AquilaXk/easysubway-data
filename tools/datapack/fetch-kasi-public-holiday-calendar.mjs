@@ -79,7 +79,16 @@ export async function fetchKasiPublicHolidayCalendarObservation({
   const holidays = new Set();
   const observations = [];
   for (const month of requestedMonths) {
-    const { response, attemptCount } = await fetchKasiMonth({ normalizedServiceKey, year, month, fetchImpl, httpsRequestImpl });
+    const url = new URL(ENDPOINT);
+    url.searchParams.set("ServiceKey", normalizedServiceKey);
+    url.searchParams.set("pageNo", "1");
+    url.searchParams.set("numOfRows", "100");
+    url.searchParams.set("solYear", String(year));
+    url.searchParams.set("solMonth", String(month).padStart(2, "0"));
+    const request = fetchImpl
+      ? (options) => fetchImpl(url, options)
+      : (options) => nativeHttpsGet(url, options, httpsRequestImpl);
+    const { response, attemptCount } = await fetchKasiMonth(request);
     if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
     let xml;
     try {
@@ -100,14 +109,12 @@ export async function fetchKasiPublicHolidayCalendarObservation({
   return { holidays, months: observations };
 }
 
-async function fetchKasiMonth({ normalizedServiceKey, year, month, fetchImpl, httpsRequestImpl }) {
-  const url = new URL(ENDPOINT);
-  for (const [name, value] of [["ServiceKey", normalizedServiceKey], ["pageNo", "1"], ["numOfRows", "100"], ["solYear", String(year)], ["solMonth", String(month).padStart(2, "0")]]) url.searchParams.set(name, value);
+async function fetchKasiMonth(request) {
   const transportAttempts = [];
   for (let attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
     try {
       const options = { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml, text/xml" } };
-      const response = fetchImpl ? await fetchImpl(url, options) : await nativeHttpsGet(url, options, httpsRequestImpl);
+      const response = await request(options);
       return { response, attemptCount };
     } catch (error) {
       const attempt = closedTransportAttempt(error, attemptCount);
