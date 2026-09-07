@@ -1,9 +1,27 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { request as httpsRequest } from "node:https";
+import { createHash } from "node:crypto";
 
 const ENDPOINT = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
 
-export async function fetchKasiPublicHolidayCalendar({
+/** 보관 원문만 소비한다. 조회 월과 원문 해시는 유지하고 수집 시각은 새로 만들지 않는다. */
+export function parseRetainedKasiHolidayMonth({ raw, sha256, year, month }) {
+  if (!(raw instanceof Uint8Array) || !/^[a-f0-9]{64}$/.test(sha256 ?? "")
+    || !Number.isInteger(year) || year < 2000 || year > 9999
+    || !Number.isInteger(month) || month < 1 || month > 12) throw new Error("retained KASI month identity is invalid");
+  if (createHash("sha256").update(raw).digest("hex") !== sha256) throw new Error("retained KASI digest mismatch");
+  const xml = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  const dates = parseMonth(xml, { year, month });
+  return { year, month, rawSha256: sha256, rawByteLength: raw.byteLength, holidayDates: [...dates].sort() };
+}
+
+export async function fetchKasiPublicHolidayCalendar(input = {}) {
+  const observation = await fetchKasiPublicHolidayCalendarObservation(input);
+  return observation.holidays;
+}
+
+/** 기존 요청 한 번에서 날짜 집합과 보관 가능한 월별 XML을 함께 얻는다. */
+export async function fetchKasiPublicHolidayCalendarObservation({
   serviceKey,
   year,
   months,
@@ -17,6 +35,7 @@ export async function fetchKasiPublicHolidayCalendar({
     throw new Error("KASI public holiday months are invalid");
   }
   const holidays = new Set();
+  const observations = [];
   for (const month of requestedMonths) {
     const url = new URL(ENDPOINT);
     url.searchParams.set("ServiceKey", normalizedServiceKey);
@@ -62,8 +81,10 @@ export async function fetchKasiPublicHolidayCalendar({
       throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount);
     }
     for (const date of dates) holidays.add(date);
+    observations.push({ year, month, xml, sha256: createHash("sha256").update(xml, "utf8").digest("hex"),
+      retrievedAt: new Date().toISOString() });
   }
-  return holidays;
+  return { holidays, months: observations };
 }
 
 function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {

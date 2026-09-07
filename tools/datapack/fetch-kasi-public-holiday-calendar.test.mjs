@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
 
-import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
 
 test("KASI calendar는 유효한 year·months에서 malformed credential을 request URL·provider 호출 전에 거부한다", async () => {
   let calls = 0;
@@ -11,6 +12,36 @@ test("KASI calendar는 유효한 year·months에서 malformed credential을 requ
 
 const holidayXml = (items, totalCount = items.length) => `<?xml version="1.0" encoding="UTF-8"?>
 <response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items>${items.map(({ date, holiday }) => `<item><locdate>${date}</locdate><isHoliday>${holiday}</isHoliday></item>`).join("")}</items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>${totalCount}</totalCount></body></response>`;
+
+test("retained KASI month binds original bytes and reuses complete month validation", () => {
+  const raw = Buffer.from(holidayXml([{ date: "20400102", holiday: "Y" }, { date: "20400103", holiday: "N" }]));
+  const sha256 = createHash("sha256").update(raw).digest("hex");
+  const input = { raw, sha256, year: 2040, month: 1 };
+  assert.deepEqual(parseRetainedKasiHolidayMonth(input), {
+    year: 2040, month: 1, rawSha256: sha256, rawByteLength: raw.length, holidayDates: ["20400102"],
+  });
+  assert.throws(() => parseRetainedKasiHolidayMonth({ ...input, sha256: "0".repeat(64) }), /digest/);
+  assert.throws(() => parseRetainedKasiHolidayMonth({ ...input, month: 2 }), /month coverage/);
+  const incomplete = Buffer.from(holidayXml([], 1));
+  assert.throws(() => parseRetainedKasiHolidayMonth({ ...input, raw: incomplete,
+    sha256: createHash("sha256").update(incomplete).digest("hex") }), /month coverage/);
+});
+
+test("KASI observation retains reusable monthly XML without an extra request", async () => {
+  let calls = 0;
+  const xml = holidayXml([{ date: "20400102", holiday: "Y" }]);
+  const result = await fetchKasiPublicHolidayCalendarObservation({ serviceKey: "test-key", year: 2040, months: [1, 1],
+    fetchImpl: async () => { calls += 1; return { ok: true, text: async () => xml }; } });
+  assert.equal(calls, 1);
+  assert.deepEqual([...result.holidays], ["20400102"]);
+  assert.equal(result.months.length, 1);
+  const month = result.months[0];
+  assert.equal(month.xml, xml);
+  assert.deepEqual(parseRetainedKasiHolidayMonth({ raw: Buffer.from(month.xml), sha256: month.sha256,
+    year: month.year, month: month.month }).holidayDates, ["20400102"]);
+  assert.equal(Number.isFinite(Date.parse(month.retrievedAt)), true);
+  assert.ok(!JSON.stringify(result).includes("test-key"));
+});
 
 test("KASI 기본 전송은 내장 HTTPS request seam으로 정확한 GET 요청을 한 번 종료한다", async () => {
   const requests = [];

@@ -29,6 +29,16 @@ const TIMETABLE_CELL_KEYS = TIMETABLE_RECORD_KEYS.slice(8, 13);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code) => { throw new Error(`KRIC_RETAINED_FILE_PENDING_HANDOFF_${code}`); };
 
+/** 보관 receipt와 원문 행 검증을 재사용하며 다른 시간표 전체를 읽지 않는다. */
+export function selectRetainedKricStationLine({ observation, receipt, operatorName, lineName }) {
+  const { summary } = validateStationLine(observation, receipt);
+  if (!normalizedText(operatorName) || !normalizedText(lineName)) fail("STATION_LINE_SELECTION");
+  const records = observation.records.filter((record) =>
+    record.operatorName === operatorName && record.lineName === lineName);
+  if (records.length === 0) fail("STATION_LINE_SELECTION");
+  return { summary, records };
+}
+
 export function buildKricRetainedFilePendingHandoff(input = {}) {
   assertExactKeys(input, ["stationLineObservation", "stationLineReceipt", "timetableObservation", "timetableReceipt"], "INPUT");
   const timetable = validateTimetable(input.timetableObservation, input.timetableReceipt);

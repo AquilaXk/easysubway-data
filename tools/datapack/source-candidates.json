@@ -73,6 +73,32 @@
   ],
   "candidates": [
     {
+      "id": "korail-metropolitan-timetable-file",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": ["daegu"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-8f7ed01f290a"]
+      },
+      "displayName": "한국철도공사 광역전철 시각표 — 대경선",
+      "detailUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+      "requestUrl": "https://www.korail.com/ticket/reserve/train-timeTable",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "retained_file_parsed",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+        "license": "unrestricted",
+        "formats": ["XLSX"],
+        "retainedReader": "tools/datapack/parse-korail-metropolitan-timetable.mjs#parseRetainedKorailWorkbook",
+        "membershipSourceId": "kric-current-station-line-file",
+        "coverage": "DaeGyeong passenger topology and source-native scheduled segment observations",
+        "notes": "The distribution page is not a download operation. Retained attachment SHA is supplied to the reader; no provider runner, calendar applicability or production admission is claimed."
+      }
+    },
+    {
       "id": "kric-nationwide-timetable-file",
       "priority": "P0",
       "domain": "schedule_timetable",
