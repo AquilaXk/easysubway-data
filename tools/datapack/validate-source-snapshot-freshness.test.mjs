@@ -663,9 +663,18 @@ test("production 필수 source가 build snapshot에서 빠지면 governance GO�
   );
 });
 
-test("합성 current public successor build spec은 source inventory에 결합되어 governance를 통과한다", async (t) => {
+test("합성 current public successor governance는 선택된 source의 실제 승인 시각을 준수한다", async (t) => {
   const repositoryRoot = await syntheticCurrentRepository(t, "public-route-map-freshness-governance-");
-  const { stdout } = await execFileAsync(process.execPath, [
+  const [buildSpec, governancePolicy] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "utf8").then(JSON.parse),
+  ]);
+  const selectedSourceIds = new Set(buildSpec.sourceSnapshots.map(({ sourceId }) => sourceId));
+  const reviews = governancePolicy.sources.filter(({ sourceId }) => selectedSourceIds.has(sourceId));
+  assert.equal(reviews.length, selectedSourceIds.size);
+  const hasLaterApproval = reviews.some(({ licenseReview }) =>
+    Date.parse(licenseReview.reviewedAt) > Date.parse(syntheticCurrentEvaluationAt));
+  const operation = () => execFileAsync(process.execPath, [
     path.join(root, "tools/datapack/validate-source-snapshot-freshness.mjs"),
     "--build-spec", "tools/datapack/release/candidate-build-spec.json",
     "--policy", "release/product-gates/datapack-freshness-sla.json",
@@ -673,8 +682,13 @@ test("합성 current public successor build spec은 source inventory에 결합�
     "--inventory", "tools/datapack/source-inventory.json",
     "--evaluation-at", syntheticCurrentEvaluationAt,
   ], { cwd: repositoryRoot });
-
-  assert.equal(JSON.parse(stdout).governanceDecision, "GO");
+  if (hasLaterApproval) {
+    await assert.rejects(operation, error => error.code === 1
+      && error.stderr.trim() === "LICENSE_REVIEW_REQUIRED");
+  } else {
+    const { stdout } = await operation();
+    assert.equal(JSON.parse(stdout).governanceDecision, "GO");
+  }
 });
 
 test("합성 current public successor build spec은 inventory와 snapshot set에 결합된다", async (t) => {
