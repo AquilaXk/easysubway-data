@@ -468,7 +468,7 @@ jobs:
           writeFileSync(process.env.EVIDENCE_OUTPUT, `${canonical(evidence)}\n`, { flag: "wx", mode: 0o600 });
           NODE
       - name: Upload predeployment measurement evidence
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: journey-profile-predeployment-measurement-${{ github.run_id }}
           path: ${{ runner.temp }}/journey-profile-predeployment-measurement.json
