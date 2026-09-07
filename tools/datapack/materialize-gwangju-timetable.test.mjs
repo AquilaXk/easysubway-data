@@ -22,10 +22,46 @@ import { materializeBusanRouteTopology, parseCanonicalBusanStationMappings } fro
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import {
+  buildRetainedGwangjuServiceCalendars,
   materializeGwangjuTimetable,
   projectRetainedGwangjuTrips,
   runGwangjuTimetableMaterializer,
 } from "./materialize-gwangju-timetable.mjs";
+
+const retainedServices = { "평일": "weekday", "토요일": "saturday", "휴일": "holiday", "명절": "special" };
+
+test("retained Gwangju calendars select weekday, Saturday, Sunday, and public-holiday exceptions", () => {
+  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20400105", endDate: "20400108", serviceIds: retainedServices,
+    publicHolidayDates: new Set(["20400105", "20400108"]), specialServiceDates: new Set() });
+  assert.deepEqual(result.serviceCalendars.map(({ serviceId, monday, tuesday, wednesday, thursday, friday, saturday, sunday }) =>
+    ({ serviceId, monday, tuesday, wednesday, thursday, friday, saturday, sunday })), [
+    { serviceId: "weekday", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false },
+    { serviceId: "saturday", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false },
+    { serviceId: "holiday", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true },
+    { serviceId: "special", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: false },
+  ]);
+  assert.deepEqual(result.serviceCalendarDates, [
+    { serviceId: "weekday", date: "20400105", exceptionType: 2 }, { serviceId: "holiday", date: "20400105", exceptionType: 1 },
+  ]);
+});
+
+test("retained Gwangju special dates take precedence and valid out-of-range dates are ignored", () => {
+  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20400106", endDate: "20400107", serviceIds: retainedServices,
+    publicHolidayDates: new Set(["20400106", "20400105"]), specialServiceDates: new Set(["20400106", "20400107", "20400108"]) });
+  assert.deepEqual(result.serviceCalendarDates, [
+    { serviceId: "weekday", date: "20400106", exceptionType: 2 }, { serviceId: "special", date: "20400106", exceptionType: 1 },
+    { serviceId: "saturday", date: "20400107", exceptionType: 2 }, { serviceId: "special", date: "20400107", exceptionType: 1 },
+  ]);
+});
+
+test("retained Gwangju calendars reject missing sets, invalid dates, and duplicate service identities", () => {
+  const valid = { startDate: "20400101", endDate: "20400102", serviceIds: retainedServices, publicHolidayDates: new Set(), specialServiceDates: new Set() };
+  for (const input of [{ ...valid, publicHolidayDates: [] }, { ...valid, specialServiceDates: undefined },
+    { ...valid, specialServiceDates: new Set(["20400230"]) },
+    { ...valid, serviceIds: { ...retainedServices, "명절": "holiday" } }]) {
+    assert.throws(() => buildRetainedGwangjuServiceCalendars(input), /calendar input/);
+  }
+});
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";

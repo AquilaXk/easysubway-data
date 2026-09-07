@@ -153,6 +153,54 @@ export function materializeGwangjuTimetable({
   return fixture;
 }
 
+export function buildRetainedGwangjuServiceCalendars({
+  startDate, endDate, serviceIds, publicHolidayDates, specialServiceDates,
+}) {
+  validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates, specialServiceDates });
+  const baseByDay = ["휴일", "평일", "평일", "평일", "평일", "평일", "토요일"];
+  const serviceCalendars = [
+    calendar(serviceIds["평일"], startDate, endDate, [true, true, true, true, true, false, false]),
+    calendar(serviceIds["토요일"], startDate, endDate, [false, false, false, false, false, true, false]),
+    calendar(serviceIds["휴일"], startDate, endDate, [false, false, false, false, false, false, true]),
+    calendar(serviceIds["명절"], startDate, endDate, [false, false, false, false, false, false, false]),
+  ];
+  const dates = new Set([...publicHolidayDates, ...specialServiceDates]);
+  const serviceCalendarDates = [];
+  for (const date of [...dates].sort(utf16Compare)) {
+    if (date < startDate || date > endDate) continue;
+    const ordinary = baseByDay[utcDay(date)];
+    const selected = specialServiceDates.has(date) ? "명절" : "휴일";
+    if (ordinary !== selected) {
+      serviceCalendarDates.push({ serviceId: serviceIds[ordinary], date, exceptionType: 2 });
+      serviceCalendarDates.push({ serviceId: serviceIds[selected], date, exceptionType: 1 });
+    }
+  }
+  return { serviceCalendars, serviceCalendarDates };
+}
+
+function validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates, specialServiceDates }) {
+  if (!validDate(startDate) || !validDate(endDate) || startDate > endDate
+    || !(publicHolidayDates instanceof Set) || !(specialServiceDates instanceof Set)
+    || !serviceIds || JSON.stringify(Object.keys(serviceIds).sort(utf16Compare)) !== JSON.stringify(["평일", "토요일", "휴일", "명절"].sort(utf16Compare))
+    || Object.values(serviceIds).some((value) => typeof value !== "string" || value.trim() === "")
+    || new Set(Object.values(serviceIds)).size !== 4
+    || [...publicHolidayDates, ...specialServiceDates].some((date) => !validDate(date))) {
+    throw new Error("retained Gwangju service calendar input is invalid");
+  }
+}
+
+function calendar(serviceId, startDate, endDate, [monday, tuesday, wednesday, thursday, friday, saturday, sunday]) {
+  return { serviceId, monday, tuesday, wednesday, thursday, friday, saturday, sunday, startDate, endDate, timezone: "Asia/Seoul" };
+}
+function validDate(value) {
+  if (typeof value !== "string" || !/^\d{8}$/u.test(value)) return false;
+  const iso = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  const date = new Date(`${iso}T00:00:00Z`);
+  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === iso;
+}
+function utcDay(date) { return new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T00:00:00Z`).getUTCDay(); }
+function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
+
 const RETAINED_TRIP_GROUP_FIELDS = Object.freeze([
   "trainNumber", "routeNumber", "routeName", "originStationName", "destinationStationName",
   "serviceType", "weekdayType",
