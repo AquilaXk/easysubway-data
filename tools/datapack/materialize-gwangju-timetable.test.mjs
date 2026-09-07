@@ -23,6 +23,7 @@ import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import {
   buildRetainedGwangjuServiceCalendars,
+  buildRetainedGwangjuTransitTables,
   materializeGwangjuTimetable,
   projectRetainedGwangjuTrips,
   runGwangjuTimetableMaterializer,
@@ -86,6 +87,45 @@ const retainedBindings = Object.freeze([
 const retainedEdges = Object.freeze([{ fromStationCode: "A", toStationCode: "B" }]);
 const retainedProjection = (records, overrides = {}) => projectRetainedGwangjuTrips({
   records, stationBindings: retainedBindings, directedEdges: retainedEdges, excludedEndpointLabels: ["외부"], ...overrides,
+});
+
+test("retained Gwangju transit tables preserve native identities, clocks, row order, and provenance", () => {
+  const records = [
+    retainedNativeRecord(1, "A", { arrivalTime: { value: "24:00:00" }, departureTime: { value: "24:00:30" } }),
+    retainedNativeRecord(2, "B", { arrivalTime: { value: "24:00:30" }, departureTime: { value: "25:01:30" }, sourceRowSha256: "b".repeat(64) }),
+    retainedNativeRecord(3, "A", { routeName: "other", arrivalTime: { value: "26:00:00" }, departureTime: { value: "26:00:00" } }),
+    retainedNativeRecord(4, "B", { routeName: "other", arrivalTime: { value: "26:01:00" }, departureTime: { value: "26:01:10" } }),
+  ];
+  const projection = retainedProjection(records), before = structuredClone(projection);
+  const tables = buildRetainedGwangjuTransitTables({ projection, lineId: "line-test",
+    routeBindings: [{ originStationName: "A", destinationStationName: "B", routeId: "route-a", directionId: "up", tripHeadsign: "B" }],
+    serviceIds: { WEEKDAY: "weekday" }, servicePatterns: { LOCAL: "LOCAL" }, serviceDayStartSeconds: 10,
+    provenance: { sourceId: "source", sourceSnapshotId: "snapshot", evidenceHash: "e".repeat(64), updatedAt: "2040-01-01T00:00:00.000Z" } });
+  assert.deepEqual(projection, before);
+  assert.equal(tables.transitTrips.length, 2);
+  assert.notEqual(tables.transitTrips[0].id, tables.transitTrips[1].id);
+  assert.deepEqual(tables.transitStopTimes.map(({ stopSequence, arrivalSeconds, departureSeconds, pickupType, dropOffType }) =>
+    ({ stopSequence, arrivalSeconds, departureSeconds, pickupType, dropOffType })), [
+    { stopSequence: 1, arrivalSeconds: 86400, departureSeconds: 86430, pickupType: 0, dropOffType: 1 },
+    { stopSequence: 2, arrivalSeconds: 86430, departureSeconds: 90090, pickupType: 1, dropOffType: 0 },
+    { stopSequence: 1, arrivalSeconds: 93600, departureSeconds: 93600, pickupType: 0, dropOffType: 1 },
+    { stopSequence: 2, arrivalSeconds: 93660, departureSeconds: 93670, pickupType: 1, dropOffType: 0 },
+  ]);
+  assert.equal(tables.transitStopTimes[0].providerRecordHash, records[0].sourceRowSha256);
+  assert.equal(tables.transitStopTimes[1].providerRecordHash, records[1].sourceRowSha256);
+  assert.equal(tables.transitTrips[0].providerRecordHash,
+    createHash("sha256").update(JSON.stringify(records.slice(0, 2).map((row) => row.sourceRowSha256))).digest("hex"));
+  assert.deepEqual(tables.transitStopTimes.slice(0, 2).map((row) => row.stationId), ["station-a", "station-b"]);
+  assert.equal(tables.transitTrips[0].sourceSnapshotId, "snapshot");
+});
+
+test("retained Gwangju transit tables reject a missing route mapping", () => {
+  const projection = retainedProjection([retainedNativeRecord(1, "A"), retainedNativeRecord(2, "B", {
+    arrivalTime: { value: "24:01:00" }, departureTime: { value: "24:01:30" },
+  })]);
+  assert.throws(() => buildRetainedGwangjuTransitTables({ projection, lineId: "line", routeBindings: [],
+    serviceIds: { WEEKDAY: "weekday" }, servicePatterns: { LOCAL: "LOCAL" }, serviceDayStartSeconds: 0,
+    provenance: { sourceId: "source", sourceSnapshotId: "snapshot", evidenceHash: "e", updatedAt: "2040-01-01T00:00:00.000Z" } }), /mapping is missing/);
 });
 
 test("retained native trip projection은 source 행 순서와 24시 이후 시각·원문 근거를 보존한다", () => {
