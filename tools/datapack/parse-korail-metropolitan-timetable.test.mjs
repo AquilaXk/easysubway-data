@@ -10,9 +10,20 @@ import {
   parseKorailMetropolitanSheet,
   projectKorailPassengerTopology,
   bindKorailCanonicalStations,
+  korailServiceDayLabel,
   parseRetainedKorailWorkbook,
   buildRetainedKorailTopologyObservation,
 } from "./parse-korail-metropolitan-timetable.mjs";
+
+test("owner calendar policy selects weekends and supplied public holidays without a year list", () => {
+  const publicHolidayDates = new Set(["20400102"]);
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400102", publicHolidayDates }), "휴일");
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400103", publicHolidayDates }), "평일");
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400107", publicHolidayDates }), "휴일");
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400108", publicHolidayDates }), "휴일");
+  assert.throws(() => korailServiceDayLabel({ serviceDate: "20400230", publicHolidayDates }));
+  assert.throws(() => korailServiceDayLabel({ serviceDate: "20400103" }));
+});
 
 test("canonical join preserves IDs and rejects ambiguous names and inconsistent order", () => {
   const stations = [{ id: "s-a", nameKo: "가역" }, { id: "s-b", nameKo: "나" }, { id: "s-c", nameKo: "다" }];

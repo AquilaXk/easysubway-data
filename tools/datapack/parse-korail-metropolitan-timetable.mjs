@@ -5,6 +5,20 @@ import path from "node:path";
 import { unzipEntry, parseWorkbookSheetRefs, parseSharedStrings, parseWorksheetRows } from "./parse-kric-code-catalog.mjs";
 import { selectRetainedKricStationLine } from "./build-kric-retained-file-pending-handoff.mjs";
 
+/** 사용자 확정 정책이다. 공휴일 집합은 검증된 달력 입력에서 받아야 하며 원문 기관의 선언으로 위장하지 않는다. */
+export function korailServiceDayLabel({ serviceDate, publicHolidayDates }) {
+  if (typeof serviceDate !== "string" || !/^\d{8}$/.test(serviceDate)
+    || !(publicHolidayDates instanceof Set)) throw new Error("service date and public holiday calendar are required");
+  const isoDate = `${serviceDate.slice(0, 4)}-${serviceDate.slice(4, 6)}-${serviceDate.slice(6, 8)}`;
+  // 지역 시각 변환이 아니라 서비스 날짜 자체의 요일을 계산한다.
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== isoDate) {
+    throw new Error("service date is invalid");
+  }
+  const day = date.getUTCDay();
+  return day === 0 || day === 6 || publicHolidayDates.has(serviceDate) ? "휴일" : "평일";
+}
+
 /** 같은 노선의 기존 ID만 연결한다. 공식 번호와 카탈로그 순번을 같은 코드로 취급하지 않는다. */
 export function bindKorailCanonicalStations({ stations, stationLines, lineId, orders }) {
   const fail = () => { throw new Error("canonical passenger station binding mismatch"); };
