@@ -3035,6 +3035,7 @@
       "operation": {
         "method": "GET",
         "endpoint": "https://openapi.kric.go.kr/rips/download.file?answerId=17&fileId=1&id=17&type=L",
+        "maxRetries": 0,
         "auth": {
           "placement": "none"
         },

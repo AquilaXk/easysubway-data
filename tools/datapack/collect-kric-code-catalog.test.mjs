@@ -11,6 +11,7 @@ const candidate = {
   requestUrl: "https://openapi.kric.go.kr/rips/download.file?answerId=99&fileId=1&id=99&type=L",
   operation: {
     method: "GET",
+    maxRetries: 0,
     endpoint: "https://openapi.kric.go.kr/rips/download.file?answerId=99&fileId=1&id=99&type=L",
     auth: { placement: "none" },
   },
@@ -66,6 +67,7 @@ test("KRIC 코드 정본은 malformed candidate를 fetch 전에 거부한다", a
     undefined,
     { ...candidate, requestUrl: "https://example.com/download" },
     { ...candidate, operation: { ...candidate.operation, auth: { placement: "query" } } },
+    { ...candidate, operation: { ...candidate.operation, maxRetries: 1 } },
     { ...candidate, detailUrl: candidate.detailUrl.replace("https://", "https://user:secret@") },
   ]) {
     await assert.rejects(downloadKricCodeCatalog({
@@ -85,20 +87,7 @@ test("KRIC 코드 정본은 HTTP·schema·크기 오류를 fail closed 한다", 
         return new Response("unavailable", { status: 503 });
       },
     }), /HTTP 503/);
-    assert.equal(attempts, 2);
-  });
-  await context.test("HTTP 5xx recovery", async () => {
-    let attempts = 0;
-    const catalog = await download({
-      fetchImpl: async () => {
-        attempts += 1;
-        return attempts === 1
-          ? new Response("unavailable", { status: 503 })
-          : new Response(XLSX_PREFIX, { status: 200, headers: { "content-type": "application/octet-stream" } });
-      },
-    });
-    assert.equal(attempts, 2);
-    assert.deepEqual(catalog.bytes, XLSX_PREFIX);
+    assert.equal(attempts, 1);
   });
   await context.test("HTTP 4xx", async () => {
     let attempts = 0;
@@ -174,8 +163,10 @@ test("KRIC 코드 정본은 동일 host HTTPS redirect만 한 번 따른다", as
 
 test("KRIC transport 실패는 비밀 없는 원인 코드만 노출한다", async () => {
   const secret = "never-print-provider-value";
+  let attempts = 0;
   await assert.rejects(download({
     fetchImpl: async () => {
+      attempts += 1;
       throw new Error(`fetch failed ${secret}`, { cause: { code: "ECONNRESET" } });
     },
   }), (error) => {
@@ -183,4 +174,5 @@ test("KRIC transport 실패는 비밀 없는 원인 코드만 노출한다", asy
     assert.doesNotMatch(error.message, new RegExp(secret));
     return true;
   });
+  assert.equal(attempts, 1);
 });

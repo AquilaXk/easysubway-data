@@ -20,7 +20,7 @@ export async function downloadKricCodeCatalog({
 } = {}) {
   if (!Number.isInteger(maximumBytes) || maximumBytes < 1) throw new Error("maximumBytes is invalid");
   const selected = validateCandidate(candidate);
-  const response = await fetchWithRetry(selected.endpoint, fetchImpl);
+  const response = await fetchCatalog(selected.endpoint, fetchImpl);
   if (!response.ok) throw new Error(`KRIC code catalog HTTP ${response.status}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
   if (!CONTENT_TYPES.has(contentType)) {
@@ -70,6 +70,7 @@ function validateCandidate(candidate) {
   if (typeof candidate?.id !== "string" || candidate.id.length === 0
     || candidate?.operation?.method !== "GET"
     || candidate?.operation?.auth?.placement !== "none"
+    || candidate.operation.maxRetries !== 0
     || candidate.requestUrl !== endpoint
     || typeof candidate.detailUrl !== "string"
     || !isOfficial(endpoint, "/rips/download.file")
@@ -89,20 +90,13 @@ function isOfficial(value, pathname) {
   }
 }
 
-async function fetchWithRetry(endpoint, fetchImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetchWithBoundedRedirect(endpoint, fetchImpl);
-      if (response.status < 500 || response.status > 599 || attempt === 1) return response;
-      await response.body?.cancel().catch(() => {});
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("KRIC code catalog redirect")) throw error;
-      if (attempt === 1) {
-        throw new Error(`KRIC code catalog transport failure (${transportReason(error)})`, { cause: error });
-      }
-    }
+async function fetchCatalog(endpoint, fetchImpl) {
+  try {
+    return await fetchWithBoundedRedirect(endpoint, fetchImpl);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("KRIC code catalog redirect")) throw error;
+    throw new Error(`KRIC code catalog transport failure (${transportReason(error)})`);
   }
-  throw new Error("KRIC code catalog transport failure");
 }
 
 function transportReason(error) {
