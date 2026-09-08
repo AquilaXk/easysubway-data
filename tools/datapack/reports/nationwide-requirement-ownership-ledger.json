@@ -15,11 +15,11 @@
       },
       "tally": {
         "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-        "sha256": "c6073db04867bac18078969b8fc865297b23ed010165c5ea15a9818933b6400f"
+        "sha256": "80da4ee71c1bb20ea7518127c12a44f2a22c5de35dcd54b65bbb97a14fc8061e"
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "95dc6a843c0fd5bec9a5d0781220f67f91bbac24374b197fc3a09ba138a77fba"
+        "sha256": "0960d0b0bb73aed004a7f1ac45a18ab2acac309b928bff5067076c8d079c17c1"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,7 +27,7 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "f6874a69d3f9cf3cf9da41b634d02144bd5686567ddbb831405a4f008453df61"
+        "sha256": "d1a1b4c9bfeb72c35e404be5ad923ffdad136983ab50401d1e95d67347da18e6"
       },
       "candidateBuildSpec": {
         "path": "tools/datapack/release/candidate-build-spec.json",
@@ -38,10 +38,10 @@
   "summary": {
     "launchRequired": {
       "totalCount": 270,
-      "inventoryAdmittedCount": 71,
+      "inventoryAdmittedCount": 72,
       "explicitlyUnsupportedWithEvidenceCount": 4,
-      "missingCount": 195,
-      "terminalCount": 75
+      "missingCount": 194,
+      "terminalCount": 76
     },
     "enhancement": {
       "totalCount": 45,
@@ -21921,39 +21921,69 @@
       "sourceDomain": "route_graph_topology",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "korail-metropolitan-timetable-file"
+        ]
       },
       "childOwner": {
         "issue": 457,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 457,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "korail-metropolitan-timetable-file",
+            "provider": "한국철도공사",
+            "datasetUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+            "sourceSystem": "공공데이터포털"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 457,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "korail-metropolitan-timetable-file",
+              "license": {
+                "type": "PUBLIC_DATA_FREE_USE",
+                "name": "공공데이터 이용허락범위 제한없음",
+                "attribution": "한국철도공사",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://www.data.go.kr/data/15052169/fileData.do"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 457,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "korail-metropolitan-timetable-file",
+              "observedDataUpdatedAt": "2026-09-07",
+              "retrievedAt": "2026-09-07",
+              "admissionEvidence": [
+                {
+                  "kind": "topologyAdmissionEvidence",
+                  "capturedAt": "2026-09-07T04:10:09.965Z",
+                  "freshUntil": "2026-09-08T04:10:09.965Z"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
+                }
+              ],
+              "currentHead": null
+            }
+          ]
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -21965,7 +21995,7 @@
         },
         "artifactLineage": {
           "state": "PENDING",
-          "reason": "CONTRACT_GAP",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
           "owner": {
             "issue": 457,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457"

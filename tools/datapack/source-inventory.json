@@ -8467,6 +8467,91 @@
       "admissionEvidence": {
         "licenseEvidenceHash": "0b76feaf745458345d9efb46e346d85abf4b71b71ec61f5f62825422645084a4"
       }
+    },
+    {
+      "id": "korail-metropolitan-timetable-file",
+      "displayName": "한국철도공사 광역전철 시각표 — 대경선",
+      "owner": "한국철도공사",
+      "provider": "한국철도공사",
+      "providerDepartment": "",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+      "datasetKind": "fileData",
+      "coverage": "한국철도공사 광역전철 시각표 — 대경선",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "korail"
+        ],
+        "lineIds": [
+          "line-8f7ed01f290a"
+        ],
+        "sourceDomains": [
+          "route_graph_topology"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "productionUseAllowed": true,
+      "updateFrequency": "P1D",
+      "observedDataUpdatedAt": "2026-09-07",
+      "retrievedAt": "2026-09-07",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터 이용허락범위 제한없음",
+        "attribution": "한국철도공사",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15052169/fileData.do"
+      },
+      "fieldsProvided": [
+        "network_edges",
+        "duration_seconds"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "updateFrequency": "P1D",
+          "coverageStatus": "TOPOLOGY_ONLY",
+          "unsupportedNotes": "Service calendars are not admitted by topology registration."
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "updateFrequency": "not applicable",
+          "coverageStatus": "NO_REALTIME_FIELDS",
+          "unsupportedNotes": "The source contains a static timetable, not live train observations."
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "updateFrequency": "not applicable",
+          "coverageStatus": "NO_FACILITY_FIELDS",
+          "unsupportedNotes": "The source contains no facility observations."
+        }
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 457,
+        "materializer": "tools/datapack/materialize-korail-route-topology.mjs",
+        "verificationTest": "tools/datapack/materialize-korail-route-topology.test.mjs",
+        "snapshotId": "korail-metropolitan-timetable-file-8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f",
+        "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f.json",
+        "capturedAt": "2026-09-07T04:10:09.965Z",
+        "freshUntil": "2026-09-08T04:10:09.965Z",
+        "stationCount": 8,
+        "edgeCount": 14,
+        "excludedTransferCount": 0,
+        "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+        "contentSha256": "8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f"
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
+      }
     }
   ]
 }

@@ -160,7 +160,8 @@
     {
       "id": "route_graph_topology",
       "sourceIds": [
-        "capital-route-topology"
+        "capital-route-topology",
+        "korail-metropolitan-timetable-file"
       ],
       "examples": [
         "official capital route graph topology"

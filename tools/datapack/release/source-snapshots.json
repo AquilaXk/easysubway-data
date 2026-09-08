@@ -67255,5 +67255,40 @@
         "credentialRedacted": true
       }
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "korail-metropolitan-timetable-file",
+    "snapshotId": "korail-metropolitan-timetable-file-8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-07T04:10:09.965Z",
+    "retrievedAt": "2026-09-07T04:10:09.965Z",
+    "sourceUpdatedAt": null,
+    "provider": "한국철도공사",
+    "rowCount": 14,
+    "coverageCount": 8,
+    "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "contentSha256": "8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20260907/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
+    "rawObjectSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "rawReceiptSha256": "17d462a2c8c411ce1afa6887ec23b669a52e0237d9952c425b16fe534cdfa548",
+    "byteSize": 51799,
+    "freshUntil": "2026-09-08T04:10:09.965Z",
+    "freshnessExpiresAt": "2026-09-08T04:10:09.965Z",
+    "rawRetentionExpiresAt": "2026-12-06T04:10:09.965Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "b383a721b43da00d0e6ab5498b49297953b305462c6a9a191dc34cb9e53f9779",
+    "schemaFingerprint": "c23122e2baffd9af79c9256707208d649fc39e0bb1f6eafd2edb46ffc8793c2a",
+    "redactedRequestFingerprint": "5a1b7a80110e4729400959211151473a70be6cc685ce883d3d5d734cb874bd84",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
+    }
   }
 ]
