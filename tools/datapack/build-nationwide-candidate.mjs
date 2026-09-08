@@ -10,11 +10,13 @@ import { CANDIDATE_RELEASE_OUTPUTS, createCandidateReleaseTransaction } from "./
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+// locale에 따라 release bytes가 달라지지 않도록 기존 문자열 코드 순서를 유지한다.
+const compareIdentity = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 
 // 지원 범위를 선언할 입력을 계산할 뿐, 운영 승인이나 source 검증 성공을 만들지 않는다.
 export function deriveNationwideProductionScope({ policyScope, scopeId, targets, fanIn,
   ownershipLedger, fixture, routeEdges }) {
-  const unique = (values) => [...new Set(values)].sort();
+  const unique = (values) => [...new Set(values)].sort(compareIdentity);
   const key = ({ regionId, operatorId, lineId }) => JSON.stringify([regionId, operatorId, lineId]);
   const active = targets.activeLineScopes;
   const packs = fixture.packs;
@@ -306,8 +308,11 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = proc
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().then((result) => process.stdout.write(`${JSON.stringify(result)}\n`)).catch((error) => {
+  try {
+    const result = await main();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+  } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;
-  });
+  }
 }

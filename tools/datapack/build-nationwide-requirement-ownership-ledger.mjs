@@ -137,7 +137,7 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
 }
 
 export function buildNationwideRequirementOwnershipLedger(inputs) {
-  const { targets, tally, inventory, ownership, sourceSnapshots, inputBytes = {} } = inputs;
+  const { targets, tally, inventory, ownership, inputBytes = {} } = inputs;
   if (targets.targetVersion !== tally.targetVersion || targets.targetVersion !== ownership.targetVersion) throw new Error("targetVersion drift");
   if (!Array.isArray(ownership.ownerRules) || ownership.ownerRules.length === 0) throw new Error("owner rules are required");
   const current = currentFanIn(inputs);
