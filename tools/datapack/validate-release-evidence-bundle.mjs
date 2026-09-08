@@ -296,11 +296,11 @@ function validateLaunchDenominatorReport(
     throw new Error("launch denominator report identity linkage matrix mismatch");
   }
   if (
-    report.nationwideBlocksV1 !== false
-    || report.coverage?.nationwide?.blocksV1 !== false
-    || scope.nationwideRoadmapScope?.blocksRoutingLaunch !== false
+    report.nationwideBlocksV1 !== true
+    || report.coverage?.nationwide?.blocksV1 !== true
+    || scope.nationwideRoadmapScope?.blocksRoutingLaunch !== true
   ) {
-    throw new Error("nationwide roadmap must remain nonblocking for v1 launch");
+    throw new Error("nationwide roadmap must block v1 launch");
   }
   if (bundle.nationwideTargetsSha256 !== nationwideTargetsSha256) {
     throw new Error("nationwide targets sha256 must match canonical targets bytes");

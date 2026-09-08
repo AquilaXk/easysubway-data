@@ -16,6 +16,7 @@ import {
 } from "./launch-candidate-binding.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
+import { launchScope } from "./test-fixtures/launch-scope.mjs";
 import { validateRouteGraphTopologyIntegrity } from "./validate-release-evidence-bundle.mjs";
 
 test("release topology cannot defer violations", () => {
@@ -391,17 +392,20 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   await mkdir(outputDir, { recursive: true });
   const bundlePath = path.join(outputDir, "release-evidence-bundle.json");
   const hash = "a".repeat(64);
-  const scopeRaw = await readFile(path.join(root, "release/product-gates/production-datapack-scope.json"), "utf8");
-  const scope = JSON.parse(scopeRaw);
-  const nationwideTargetsRaw = await readFile(path.join(root, scope.nationwideRoadmapScope.targets));
   const sha256 = (raw) => createHash("sha256").update(raw).digest("hex");
   const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-  const scopeArgs = ["--scope", "release/product-gates/production-datapack-scope.json"];
+  const targetsPath = path.join(outputDir, "nationwide-targets.json");
+  const nationwideTargetsRaw = Buffer.from("{\"fixture\":true}\n");
+  await writeFile(targetsPath, nationwideTargetsRaw);
+  const scope = launchScope({ targets: targetsPath });
+  const scopeRaw = json(scope);
+  const scopePath = path.join(outputDir, "launch-scope.json");
+  await writeFile(scopePath, scopeRaw);
+  const scopeArgs = ["--scope", scopePath];
   const launchReportPath = path.join(outputDir, "launch-denominator-go.json");
   const accessibilityReportPath = path.join(outputDir, "accessibility-source-coverage.json");
   const accessibilityReportRaw = `${JSON.stringify({ decision: "GO" }, null, 2)}\n`;
   await writeFile(accessibilityReportPath, accessibilityReportRaw);
-  const currentLaunchReportPath = "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
   const identity = {
     canonicalStationVersion: "station-catalog-v18",
     corridorId: "capital-gyeongchun-v1",
@@ -460,8 +464,14 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
         identity,
       },
       safety: { signatureValid: true, rollbackVerified: true, freshness: "FRESH", lineage: "VERIFIED" },
+      claims: {
+        accessibilityScopeId: scope.verifiedAccessibilityScope.id,
+        routingScopeId: scope.routingLaunchScope.id,
+        serviceIds: [...scope.routingLaunchScope.serviceIds],
+      },
       forbiddenEvidence: [],
       forbiddenEvidenceStatus: "VERIFIED",
+      nationwide: { missingCount: 0 },
     },
   });
   const serverEvidenceRaw = json({
@@ -541,7 +551,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     },
     forbiddenEvidence: [],
     forbiddenEvidenceStatus: "VERIFIED",
-    nationwide: { missingCount: 270 },
+    nationwide: { missingCount: 0 },
     candidateBinding,
   });
   assert.equal(goReport.decision, "GO");
@@ -1044,8 +1054,10 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   bindLaunchReport(bundle, goReport, goReportRaw);
   bundle.strictRouteRegressionSha256 = candidateBinding.serverEvidence.sha256;
 
-  const currentLaunchReportRaw = await readFile(path.join(root, currentLaunchReportPath), "utf8");
-  const currentLaunchReport = JSON.parse(currentLaunchReportRaw);
+  const currentLaunchReportPath = path.join(outputDir, "launch-denominator-no-go.json");
+  const currentLaunchReport = buildLaunchDenominatorReport(scope, {});
+  const currentLaunchReportRaw = json(currentLaunchReport);
+  await writeFile(currentLaunchReportPath, currentLaunchReportRaw);
   bindLaunchReport(bundle, currentLaunchReport, currentLaunchReportRaw);
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
   await execFileAsync(process.execPath, [
