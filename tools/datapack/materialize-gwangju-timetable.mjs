@@ -39,19 +39,21 @@ export function materializeGwangjuTimetable({
   for (const id of [SOURCE_ID, TOPOLOGY_SOURCE_ID, MEMBERSHIP_SOURCE_ID]) {
     if (pack.sourceInventory.some((source) => source.id === id)) throw new Error(`${id} already exists`);
   }
-  if (pack.lines.some(({ id }) => id === LINE_ID) || pack.operators.some(({ id }) => id === OPERATOR_ID)) {
-    throw new Error("Gwangju line already exists in base fixture");
-  }
+  const generatedTopology = { stations: [], stationLines: [], networkEdges: [] };
+  addStationsAndTopology(generatedTopology, topologySnapshot, canonicalStationMappings, sources);
+  bindCumulativeGwangjuTopology(pack, generatedTopology);
 
   pack.sourceInventory.push(
     packSource(sources.membership, sources.membership.membershipAdmissionEvidence.verifiedAt),
     packSource(sources.topology, topologySnapshot.capturedAt),
     packSource(sources.timetable, retained.projection.source.observedAt),
   );
-  pack.operators.push({ id: OPERATOR_ID, nameKo: "광주교통공사", nameEn: "" });
-  pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "광주 1호선", nameEn: "", color: "#009088" });
-
-  addStationsAndTopology(pack, topologySnapshot, canonicalStationMappings, sources);
+  if (!pack.operators.some(({ id }) => id === OPERATOR_ID)) {
+    pack.operators.push({ id: OPERATOR_ID, nameKo: "광주교통공사", nameEn: "" });
+  }
+  if (!pack.lines.some(({ id }) => id === LINE_ID)) {
+    pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "광주 1호선", nameEn: "", color: "#009088" });
+  }
   const scheduleProvenance = provenanceForRetainedSchedule(sources.timetable, retained.projection, retained.retainedContractSha256);
   const tables = buildRetainedGwangjuTransitTables({ projection: retained.projection, lineId: LINE_ID,
     routeBindings: retainedTimetable.routeBindings, serviceIds: retainedTimetable.serviceIds,
@@ -602,6 +604,101 @@ function requiredSources(inventory, retained, topologySnapshot, mappings, now) {
     }
   }
   return { timetable, topology, membership };
+}
+
+function bindCumulativeGwangjuTopology(pack, generated) {
+  const existingOperator = pack.operators.filter(({ id }) => id === OPERATOR_ID);
+  const existingLine = pack.lines.filter(({ id }) => id === LINE_ID);
+  if (existingOperator.length > 1 || existingLine.length > 1
+    || existingLine.some(({ operatorId }) => operatorId !== OPERATOR_ID)) {
+    throw new Error("Gwangju cumulative line identity mismatch");
+  }
+  const hasExistingTopology = existingOperator.length === 1 || existingLine.length === 1;
+  const timetableRows = [
+    ...pack.transitRoutes.filter(({ lineId }) => lineId === LINE_ID),
+    ...pack.transitStopTimes.filter(({ lineId }) => lineId === LINE_ID),
+  ];
+  if (timetableRows.length > 0 || pack.transitTrips.some(({ routeId }) =>
+    pack.transitRoutes.some((route) => route.id === routeId && route.lineId === LINE_ID))) {
+    throw new Error("Gwangju cumulative timetable already exists");
+  }
+  const expectedMembership = new Map(generated.stationLines.map((row) => [
+    `${row.stationId}\0${row.lineSequence}`, row,
+  ]));
+  const actualMembership = pack.stationLines.filter(({ lineId }) => lineId === LINE_ID);
+  const edgeKey = ({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`;
+  const expectedEdges = new Map(generated.networkEdges.map((row) => [edgeKey(row), row]));
+  const actualEdges = pack.networkEdges.filter((row) => row.edgeType === "RIDE" && expectedEdges.has(edgeKey(row)));
+  const lineRideEdges = pack.networkEdges.filter((row) => row.edgeType === "RIDE"
+    && (row.fromNodeId?.endsWith(`:${LINE_ID}`) || row.toNodeId?.endsWith(`:${LINE_ID}`)));
+  if (hasExistingTopology && (actualMembership.length === 0 || lineRideEdges.length === 0)) {
+    throw new Error("Gwangju cumulative topology is partial");
+  }
+  if (actualMembership.length > 0) {
+    const actualKeys = new Set(actualMembership.map(({ stationId, lineSequence }) =>
+      `${stationId}\0${lineSequence}`));
+    if (actualKeys.size !== actualMembership.length || actualKeys.size !== expectedMembership.size
+      || [...actualKeys].some((key) => !expectedMembership.has(key))) {
+      throw new Error("Gwangju cumulative membership mismatch");
+    }
+    for (const row of actualMembership) {
+      if (hasExistingAuthority(row)) {
+        throw new Error("Gwangju cumulative membership source mismatch");
+      }
+      const expected = expectedMembership.get(`${row.stationId}\0${row.lineSequence}`);
+      row.stationCode = expected.stationCode;
+      assignAuthorityFields(row, expected);
+    }
+  } else {
+    pack.stationLines.push(...generated.stationLines);
+  }
+  const expectedStations = new Map(generated.stations.map((row) => [row.id, row]));
+  const actualStations = pack.stations.filter(({ id }) => expectedStations.has(id));
+  if (actualStations.length > 0 && (actualStations.length !== expectedStations.size
+    || new Set(actualStations.map(({ id }) => id)).size !== actualStations.length)) {
+    throw new Error("Gwangju cumulative station mismatch");
+  }
+  if (actualStations.length === 0) pack.stations.push(...generated.stations);
+  else for (const row of actualStations) {
+    if (normalizedName(row.nameKo) !== normalizedName(expectedStations.get(row.id).nameKo)) {
+      throw new Error("Gwangju cumulative station name mismatch");
+    }
+    if (hasExistingAuthority(row)) {
+      throw new Error("Gwangju cumulative station source mismatch");
+    }
+    assignAuthorityFields(row, expectedStations.get(row.id));
+  }
+  if (lineRideEdges.length > 0) {
+    const actualKeys = new Set(actualEdges.map(edgeKey));
+    if (actualEdges.length !== lineRideEdges.length || actualKeys.size !== actualEdges.length
+      || actualKeys.size !== expectedEdges.size || [...actualKeys].some((key) => !expectedEdges.has(key))) {
+      throw new Error("Gwangju cumulative RIDE topology mismatch");
+    }
+    for (const row of actualEdges) {
+      if (hasExistingAuthority(row)) {
+        throw new Error("Gwangju cumulative RIDE source mismatch");
+      }
+      const id = row.id;
+      Object.assign(row, structuredClone(expectedEdges.get(edgeKey(row))), { id });
+    }
+  } else {
+    pack.networkEdges.push(...generated.networkEdges);
+  }
+}
+
+function assignAuthorityFields(target, source) {
+  for (const key of [
+    "sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "provenanceKind",
+    "derivationKind", "verificationStatus", "lastVerifiedAt", "fieldProvenance",
+  ]) {
+    if (Object.hasOwn(source, key)) target[key] = structuredClone(source[key]);
+  }
+}
+
+function hasExistingAuthority(row) {
+  return row.sourceId !== undefined || row.sourceSnapshotId !== undefined || row.providerRecordHash !== undefined
+    || row.evidenceHash !== undefined || row.fieldProvenance !== undefined || row.provenanceKind !== undefined
+    || row.derivationKind !== undefined || row.verificationStatus !== undefined;
 }
 
 function addStationsAndTopology(pack, snapshot, mappings, sources) {

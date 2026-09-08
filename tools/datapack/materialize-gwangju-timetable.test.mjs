@@ -206,6 +206,46 @@ test("retained production Gwangju emits receipt-bound native tables without cybe
   assert.equal(trip.providerRecordHash, digest(JSON.stringify(input.retainedTimetable.observation.records.map(({ sourceRowSha256 }) => sourceRowSha256))));
 });
 
+test("cumulative Gwangju topology keeps canonical IDs and replaces source-free station codes", async () => {
+  const input = await retainedProductionInput();
+  const cumulative = structuredClone(input.baseFixture);
+  const pack = cumulative.packs[0];
+  const lineId = "line-e57a361e8892";
+  pack.lines.push({ id: lineId, operatorId: "gwangju-metropolitan-rapid-transit", nameEn: "Preserve display metadata" });
+  pack.operators.push({ id: "gwangju-metropolitan-rapid-transit", nameEn: "Operator metadata" });
+  pack.stations = input.mappings.map((row) => ({ id: row.stationId, nameKo: row.stationName,
+    lastVerifiedAt: input.topologySnapshot.capturedAt, customLabel: "retain" }));
+  pack.stationLines = input.mappings.map((row, index) => ({ stationId: row.stationId, lineId,
+    stationCode: String(index + 1), lineSequence: index + 1, platformInfo: "retain" }));
+  const byCode = new Map(input.mappings.map((row) => [row.stationNumber, row.stationId]));
+  pack.networkEdges = input.topologySnapshot.edges.map((row, index) => ({ id: `canonical-edge-${index}`,
+    fromNodeId: `${byCode.get(row.fromStationCode)}:${lineId}`, toNodeId: `${byCode.get(row.toStationCode)}:${lineId}`,
+    edgeType: "RIDE", durationSeconds: 1, distanceMeters: 0, customLabel: "retain" }));
+  const foreign = { id: "foreign-route", lineId: "foreign-line", customLabel: "retain" };
+  pack.transitRoutes.push(foreign);
+  const beforeIds = pack.stationLines.filter(({ lineId }) => lineId === "line-e57a361e8892")
+    .map(({ stationId, lineSequence }) => ({ stationId, lineSequence }));
+  const adopted = materializeGwangjuTimetable({ ...input, baseFixture: cumulative, canonicalStationMappings: input.mappings, now });
+  const adoptedLines = adopted.packs[0].stationLines.filter(({ lineId }) => lineId === "line-e57a361e8892");
+  assert.deepEqual(adoptedLines.map(({ stationId, lineSequence }) => ({ stationId, lineSequence })), beforeIds);
+  assert.deepEqual(adoptedLines.map(({ stationCode }) => stationCode), input.mappings.map(({ stationNumber }) => stationNumber));
+  assert.deepEqual(adopted.packs[0].networkEdges.map(({ id }) => id), cumulative.packs[0].networkEdges.map(({ id }) => id));
+  assert.deepEqual(adopted.packs[0].networkEdges.map(({ durationSeconds, distanceMeters }) => [durationSeconds, distanceMeters]),
+    input.topologySnapshot.edges.map(({ durationSeconds, distanceMeters }) => [durationSeconds, distanceMeters]));
+  assert.deepEqual(adopted.packs[0].transitRoutes.find(({ id }) => id === foreign.id), foreign);
+  assert.ok(adopted.packs[0].networkEdges.every(({ customLabel }) => customLabel === "retain"));
+  for (const mutate of [
+    (value) => { value.stationLines.pop(); },
+    (value) => { value.networkEdges[0].sourceId = "another-source"; },
+    (value) => { value.stations[0].nameKo = "Different station"; },
+    (value) => { value.transitRoutes.push({ id: "already-scheduled", lineId }); },
+  ]) {
+    const conflict = structuredClone(cumulative); mutate(conflict.packs[0]);
+    assert.throws(() => materializeGwangjuTimetable({ ...input, baseFixture: conflict,
+      canonicalStationMappings: input.mappings, now }), /Gwangju cumulative/);
+  }
+});
+
 test("retained production Gwangju rejects receipt, contract, and source-admission drift", async () => {
   const input = await retainedProductionInput();
   const invoke = (value) => materializeGwangjuTimetable({ ...value, canonicalStationMappings: value.mappings, now });
