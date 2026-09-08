@@ -7,8 +7,9 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
+import { collectGwangjuAccessibility } from "./collect-gwangju-accessibility.mjs";
 import {
-  loadRegionalGwangjuTimetablePrefix,
+  loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
@@ -29,24 +30,57 @@ const SOURCE_ID = "gwangju-transportation-accessibility";
 const LINE_ID = "line-e57a361e8892";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const ACCESSIBILITY_FIELDS = Object.freeze([
-  "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
+  "elevator", "escalator", "status", "verified_at",
 ]);
 
+test("schema2 미관측 시설은 materialized 부재 evidence가 되지 않는다", async () => {
+  const { accessibilityFixture, accessibilitySnapshot, gwangjuFixture, gwangjuTopology, inventory } = await loadRegionalGwangjuAccessibilityPrefix({
+    baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+    inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+    readJson, topologyNow, timetableNow, gwangjuAccessibilityNow: accessibilityNow,
+  });
+  const pack = accessibilityFixture.packs[0];
+  const facilities = pack.facilities.filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const expected = accessibilitySnapshot.rows.reduce((sum, row) => sum
+    + [row.elevator, row.escalator].filter((count) => count !== null).length, 0);
+  assert.equal(facilities.length, expected);
+  assert.equal(evidence.length, expected);
+  assert.ok(facilities.every(({ type, installationStatus }) =>
+    type !== "WHEELCHAIR_LIFT" && installationStatus !== "NOT_INSTALLED"));
+  assert.ok(evidence.every(({ operationalStatus, strictRouteEligible }) =>
+    operationalStatus === "UNKNOWN" && strictRouteEligible === false));
+  const elevatorBytes = await readFile(path.join(root, "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041385.csv"));
+  const escalatorBytes = await readFile(path.join(root, "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041362.csv"));
+  // 자체 hash가 유효해도 admission 원문과 다르면 소비할 수 없다.
+  // 행 수가 같은 원문 변경과 잘린 원문을 모두 실제 collector로 재생성한다.
+  for (const alteredBytes of [
+    Buffer.concat([elevatorBytes, Buffer.from("\n")]),
+    Buffer.from(elevatorBytes.toString("utf8").split(/\r?\n/).slice(0, 2).join("\n")),
+  ]) {
+    const altered = collectGwangjuAccessibility({
+      elevatorBytes: alteredBytes, escalatorBytes, topologySnapshot: gwangjuTopology,
+      topologySource: inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology"),
+      now: accessibilityNow,
+    });
+    assert.notEqual(altered.rawSha256, accessibilitySnapshot.rawSha256);
+    assert.throws(() => materializeGwangjuAccessibility({
+      baseFixture: gwangjuFixture, accessibilitySnapshot: altered,
+      topologySnapshot: gwangjuTopology, inventory, now: accessibilityNow,
+    }), /inventory evidence does not match snapshot/);
+  }
+});
+
 async function inputs() {
-  const [
-    regional,
-    accessibilitySnapshot,
-  ] = await Promise.all([
-    loadRegionalGwangjuTimetablePrefix({
+  const regional = await loadRegionalGwangjuAccessibilityPrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
       inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
       readJson,
       topologyNow,
       timetableNow,
-    }),
-    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-  ]);
-  const { gwangjuFixture, gwangjuTopology: topologySnapshot, inventory } = regional;
+      gwangjuAccessibilityNow: accessibilityNow,
+    });
+  const { gwangjuFixture, gwangjuTopology: topologySnapshot, inventory, accessibilitySnapshot } = regional;
   return {
     gwangjuFixture,
     topologySnapshot,
@@ -55,7 +89,7 @@ async function inputs() {
   };
 }
 
-test("광주 공식 20역 편의시설을 facility·evidence 60건으로 materialize한다", async () => {
+test("광주 공식 관측 시설만 facility·evidence로 materialize한다", async () => {
   const { gwangjuFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   gwangjuFixture.packs[0].sourceInventory = gwangjuFixture.packs[0].sourceInventory
     .filter(({ id }) => id !== "kric-nationwide-timetable-file");
@@ -77,22 +111,20 @@ test("광주 공식 20역 편의시설을 facility·evidence 60건으로 materia
   const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
 
-  assert.equal(facilities.length, 60);
-  assert.equal(evidence.length, 60);
-  assert.equal(new Set(facilities.map(({ id }) => id)).size, 60);
+  const expectedCount = accessibilitySnapshot.rows.reduce((sum, row) => sum
+    + [row.elevator, row.escalator].filter((count) => count !== null).length, 0);
+  assert.equal(facilities.length, expectedCount);
+  assert.equal(evidence.length, expectedCount);
+  assert.equal(new Set(facilities.map(({ id }) => id)).size, expectedCount);
   assert.equal(new Set(evidence.map(({ stationId, lineId, facilityType }) =>
-    `${stationId}:${lineId}:${facilityType}`)).size, 60);
+    `${stationId}:${lineId}:${facilityType}`)).size, expectedCount);
   assert.deepEqual([...new Set(facilities.map(({ type }) => type))].sort(), [
-    "ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT",
+    "ELEVATOR", "ESCALATOR",
   ]);
   assert.equal(new Set(facilities.map(({ lineId }) => lineId)).size, 1);
   assert.deepEqual([...new Set(facilities.map(({ lineId }) => lineId))], [LINE_ID]);
-  assert.equal(facilities.filter(({ type }) => type === "WHEELCHAIR_LIFT")
-    .every(({ installationStatus }) => installationStatus === "NOT_INSTALLED"), true);
-  assert.ok(facilities.some(({ type, installationStatus }) =>
-    type === "ELEVATOR" && installationStatus === "NOT_INSTALLED"));
-  assert.ok(facilities.some(({ type, installationStatus }) =>
-    type === "ESCALATOR" && installationStatus === "NOT_INSTALLED"));
+  assert.equal(facilities.filter(({ type }) => type === "WHEELCHAIR_LIFT").length, 0);
+  assert.ok(facilities.every(({ installationStatus }) => installationStatus !== "NOT_INSTALLED"));
   assert.ok(facilities.every(({ status, statusMeaning, provenanceKind, derivationKind, operationalStatus }) => (
     status === "UNKNOWN"
       && statusMeaning === "STATIC_LOCATION"
@@ -238,15 +270,17 @@ test("materialized SQLite와 provenance가 광주 accessibility_facilities 1건�
     new URL(manifest.packs[0].url).pathname.split("/").slice(-2).join("/"),
   ).replace(/\.gz$/, "");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  const expectedCount = accessibilitySnapshot.rows.reduce((sum, row) => sum
+    + [row.elevator, row.escalator].filter((count) => count !== null).length, 0);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM facilities WHERE source_id = ?")
-    .get(SOURCE_ID).count, 60);
+    .get(SOURCE_ID).count, expectedCount);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_facility_evidence WHERE source_id = ?")
-    .get(SOURCE_ID).count, 60);
+    .get(SOURCE_ID).count, expectedCount);
   assert.equal(database.prepare(`
     SELECT COUNT(DISTINCT facility_type) AS count
     FROM station_facility_evidence
     WHERE source_id = ?
-  `).get(SOURCE_ID).count, 3);
+  `).get(SOURCE_ID).count, 2);
   database.close();
 
   const provenance = JSON.parse(await readFile(path.join(packOutput, "current.provenance.json"), "utf8"));

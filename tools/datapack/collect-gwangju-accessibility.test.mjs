@@ -22,8 +22,39 @@ async function loadInputs() {
     readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"), "utf8")
       .then(JSON.parse),
   ]);
-  return { elevatorBytes, escalatorBytes, topologySnapshot };
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const topologySource = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology");
+  return { elevatorBytes, escalatorBytes, topologySnapshot, topologySource };
 }
+
+test("선택된 topology 변경을 파생하고 미관측 시설을 부재로 합성하지 않는다", async () => {
+  const inputs = await loadInputs();
+  const topologySnapshot = structuredClone(inputs.topologySnapshot);
+  const topologySource = structuredClone(inputs.topologySource);
+  topologySnapshot.scope.push({ providerStationId: "synthetic-terminal", stationCode: "synthetic-terminal", stationName: "테스트종점" });
+  topologySnapshot.stationCount = topologySnapshot.scope.length;
+  const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  topologySnapshot.scopeSha256 = hash(topologySnapshot.scope);
+  topologySnapshot.contentSha256 = hash({ scope: topologySnapshot.scope, edges: topologySnapshot.edges });
+  Object.assign(topologySource.topologyAdmissionEvidence, {
+    stationCount: topologySnapshot.stationCount,
+    contentSha256: topologySnapshot.contentSha256,
+  });
+  const snapshot = collectGwangjuAccessibility({
+    ...inputs, topologySnapshot, topologySource,
+    now: new Date(topologySnapshot.capturedAt),
+  });
+  assert.equal(snapshot.stationCount, topologySnapshot.scope.length);
+  assert.equal(snapshot.topologyLineages[0].contentSha256, topologySnapshot.contentSha256);
+  const terminal = snapshot.rows.find(({ stationCode }) => stationCode === "synthetic-terminal");
+  assert.equal(terminal.elevator, null);
+  assert.equal(terminal.escalator, null);
+  assert.equal(terminal.wheelchair_lift, null);
+  assert.ok(snapshot.rows.every(({ wheelchair_lift }) => wheelchair_lift === null));
+  assert.throws(() => collectGwangjuAccessibility({
+    ...inputs, topologySnapshot, now: new Date(topologySnapshot.capturedAt),
+  }), /topology/);
+});
 
 test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV를 topology 20역에 join한다", async () => {
   const inputs = await loadInputs();
@@ -32,7 +63,7 @@ test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV�
     now: new Date("2026-07-24T03:00:00.000Z"),
   });
 
-  assert.equal(snapshot.schemaVersion, 1);
+  assert.equal(snapshot.schemaVersion, 2);
   assert.equal(snapshot.artifactKind, "gwangju-accessibility-snapshot");
   assert.equal(snapshot.sourceId, "gwangju-transportation-accessibility");
   assert.deepEqual(snapshot.datasetIds, ["15041385", "15041362"]);
@@ -61,7 +92,7 @@ test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV�
   assert.equal(snapshot.rowsSha256, createHash("sha256").update(JSON.stringify(snapshot.rows)).digest("hex"));
   assert.equal(snapshot.scopeSha256, createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex"));
   assert.deepEqual(snapshot.fieldsProvided, [
-    "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
+    "elevator", "escalator", "status", "verified_at",
   ]);
   assert.equal(snapshot.topologyLineages.length, 1);
   assert.deepEqual(snapshot.topologyLineages[0], {
@@ -72,22 +103,22 @@ test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV�
   });
   assert.equal(snapshot.rows.every((row) => (
     row.lineId === LINE_ID
-      && Number.isInteger(row.elevator) && row.elevator >= 0
-      && Number.isInteger(row.escalator) && row.escalator >= 0
-      && row.wheelchair_lift === 0
+      && (row.elevator == null || Number.isInteger(row.elevator) && row.elevator >= 0)
+      && (row.escalator == null || Number.isInteger(row.escalator) && row.escalator >= 0)
+      && row.wheelchair_lift === null
   )), true);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.elevator, 0), 62);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.escalator, 0), 99);
   const byCode = Object.fromEntries(snapshot.rows.map((row) => [row.stationCode, row]));
   assert.equal(byCode["100"].stationName, "녹동");
-  assert.equal(byCode["100"].elevator, 0);
-  assert.equal(byCode["100"].escalator, 0);
+  assert.equal(byCode["100"].elevator, null);
+  assert.equal(byCode["100"].escalator, null);
   assert.equal(byCode["111"].stationName, "쌍촌");
   assert.ok(byCode["111"].elevator >= 1);
-  assert.equal(byCode["111"].escalator, 0);
+  assert.equal(byCode["111"].escalator, null);
   assert.equal(byCode["112"].stationName, "운천");
   assert.ok(byCode["112"].elevator >= 1);
-  assert.equal(byCode["112"].escalator, 0);
+  assert.equal(byCode["112"].escalator, null);
   assert.equal(byCode["117"].stationName, "광주송정");
   assert.ok(byCode["117"].elevator >= 1);
   assert.ok(byCode["117"].escalator >= 1);
@@ -117,14 +148,19 @@ test("광주 accessibility collector는 schema·join·count 변조를 fail close
     elevatorBytes: badJoin,
   }), /join failed/);
 
-  const truncated = Buffer.from(
+  // 원문 무결성은 materializer의 admission SHA 결속으로 검증한다.
+  // parser는 선택된 topology의 실제 관측 행을 집계한다.
+  const changedRows = Buffer.from(
     "철도운영기관명,선명,역명,출입구번호,상세위치,정원_인원,정원_중량\n광주교통공사,1호선,소태,1,위치,15,1000\n",
     "utf8",
   );
-  assert.throws(() => parseGwangjuAccessibilityCsv({
+  const parsed = parseGwangjuAccessibilityCsv({
     ...inputs,
-    elevatorBytes: truncated,
-  }), /row count|aggregated facility/);
+    elevatorBytes: changedRows,
+  });
+  assert.equal(parsed.reduce((sum, row) => sum + (row.elevator ?? 0), 0), 1);
+  assert.equal(parsed.filter(({ elevator }) => elevator !== null).length, 1);
+  assert.equal(parsed.length, inputs.topologySnapshot.scope.length);
 
   const badTopology = {
     ...inputs.topologySnapshot,
@@ -141,7 +177,8 @@ test("광주 accessibility collector CLI는 absolute output 경로를 강제한�
   await assert.rejects(runGwangjuAccessibilityCollector([
     "--elevator-input", ELEVATOR_CSV,
     "--escalator-input", ESCALATOR_CSV,
-    "--topology-snapshot", path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
+    "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
     "--output", "relative.json",
-  ]), /usage: collect-gwangju-accessibility/);
+    "--captured-at", "2026-07-24T03:00:00.000Z",
+  ]), /collector arguments mismatch/);
 });

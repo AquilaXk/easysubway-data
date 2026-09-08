@@ -16,13 +16,7 @@ const ESCALATOR_DETAIL_URL = `https://www.data.go.kr/data/${ESCALATOR_DATASET_ID
 const SOURCE_ID = "gwangju-transportation-accessibility";
 const ARTIFACT_KIND = "gwangju-accessibility-snapshot";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
-const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
-const LINE_ID = "line-e57a361e8892";
-const EXPECTED_STATION_COUNT = 20;
-const EXPECTED_ELEVATOR_ROWS = 62;
-const EXPECTED_ESCALATOR_ROWS = 99;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
-const STATION_CODES = Object.freeze(Array.from({ length: EXPECTED_STATION_COUNT }, (_, index) => String(100 + index)));
 const ELEVATOR_HEADERS = Object.freeze([
   "철도운영기관명", "선명", "역명", "출입구번호", "상세위치", "정원_인원", "정원_중량",
 ]);
@@ -42,6 +36,7 @@ export function parseGwangjuAccessibilityCsv({
   elevatorBytes,
   escalatorBytes,
   topologySnapshot,
+  topologySource,
 }) {
   if (!(elevatorBytes instanceof Uint8Array) || elevatorBytes.byteLength === 0) {
     throw new Error("Gwangju elevator CSV bytes are required");
@@ -49,51 +44,42 @@ export function parseGwangjuAccessibilityCsv({
   if (!(escalatorBytes instanceof Uint8Array) || escalatorBytes.byteLength === 0) {
     throw new Error("Gwangju escalator CSV bytes are required");
   }
-  const scope = validateTopologySnapshot(topologySnapshot);
+  const { scope, lineId } = validateGwangjuAccessibilityTopology(topologySnapshot, topologySource);
   const scopeByNorm = new Map(scope.map((station) => [
     normalizedGwangjuStationName(station.stationName),
     station,
   ]));
-  if (scopeByNorm.size !== EXPECTED_STATION_COUNT) {
+  if (scopeByNorm.size !== scope.length) {
     throw new Error("Gwangju accessibility topology normalization collided");
   }
 
   const elevatorCounts = countFacilityRows({
     bytes: elevatorBytes,
     expectedHeaders: ELEVATOR_HEADERS,
-    expectedRowCount: EXPECTED_ELEVATOR_ROWS,
     label: "elevator",
     scopeByNorm,
   });
   const escalatorCounts = countFacilityRows({
     bytes: escalatorBytes,
     expectedHeaders: ESCALATOR_HEADERS,
-    expectedRowCount: EXPECTED_ESCALATOR_ROWS,
     label: "escalator",
     scopeByNorm,
   });
 
-  // topology 20역 전량 admit. CSV에 없는 역은 공식 미게재로 count=0(장비 발명 금지).
+  // CSV에 없는 station/type 관측은 부재가 아니라 미관측이다.
   const rows = scope.map((station) => ({
     stationCode: station.stationCode,
     stationName: station.stationName,
-    lineId: LINE_ID,
-    wheelchair_lift: 0,
-    elevator: elevatorCounts.get(station.stationCode) ?? 0,
-    escalator: escalatorCounts.get(station.stationCode) ?? 0,
+    lineId,
+    wheelchair_lift: null,
+    elevator: elevatorCounts.get(station.stationCode) ?? null,
+    escalator: escalatorCounts.get(station.stationCode) ?? null,
   })).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
 
-  if (rows.length !== EXPECTED_STATION_COUNT) {
-    throw new Error(`Gwangju accessibility station count mismatch: ${rows.length}`);
-  }
+  if (rows.length !== scope.length) throw new Error("Gwangju accessibility station count mismatch");
   const codes = new Set(rows.map(({ stationCode }) => stationCode));
-  if (codes.size !== EXPECTED_STATION_COUNT
-    || STATION_CODES.some((code) => !codes.has(code))) {
+  if (codes.size !== rows.length) {
     throw new Error("Gwangju accessibility station code scope mismatch");
-  }
-  if (rows.reduce((sum, row) => sum + row.elevator, 0) !== EXPECTED_ELEVATOR_ROWS
-    || rows.reduce((sum, row) => sum + row.escalator, 0) !== EXPECTED_ESCALATOR_ROWS) {
-    throw new Error("Gwangju accessibility aggregated facility counts mismatch");
   }
   return rows;
 }
@@ -102,25 +88,27 @@ export function collectGwangjuAccessibility({
   elevatorBytes,
   escalatorBytes,
   topologySnapshot,
-  now = new Date(),
+  topologySource,
+  now,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const rows = parseGwangjuAccessibilityCsv({
     elevatorBytes,
     escalatorBytes,
     topologySnapshot,
+    topologySource,
   });
   const scope = rows.map(({ stationCode, stationName, lineId }) => ({ stationCode, stationName, lineId }));
   const topologyLineages = [{
     sourceId: TOPOLOGY_SOURCE_ID,
-    snapshotId: TOPOLOGY_SNAPSHOT_ID,
+    snapshotId: topologySource.topologyAdmissionEvidence.snapshotId,
     contentSha256: topologySnapshot.contentSha256,
-    lineId: LINE_ID,
+    lineId: topologySource.coverageScope.lineIds[0],
   }];
   const elevatorSha256 = sha256(Buffer.from(elevatorBytes));
   const escalatorSha256 = sha256(Buffer.from(escalatorBytes));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: ARTIFACT_KIND,
     sourceId: SOURCE_ID,
     detailUrl: ELEVATOR_DETAIL_URL,
@@ -138,10 +126,10 @@ export function collectGwangjuAccessibility({
     credentialRedacted: true,
     stationCount: rows.length,
     rowCount: rows.length,
-    elevatorRowCount: EXPECTED_ELEVATOR_ROWS,
-    escalatorRowCount: EXPECTED_ESCALATOR_ROWS,
-    lineIds: [LINE_ID],
-    fieldsProvided: ["elevator", "escalator", "wheelchair_lift", "status", "verified_at"],
+    elevatorRowCount: rows.reduce((sum, row) => sum + (row.elevator ?? 0), 0),
+    escalatorRowCount: rows.reduce((sum, row) => sum + (row.escalator ?? 0), 0),
+    lineIds: [...topologySource.coverageScope.lineIds],
+    fieldsProvided: ["elevator", "escalator", "status", "verified_at"],
     license: {
       type: "PUBLIC_DATA_FREE_USE",
       attribution: "광주교통공사, 공공데이터포털 이용허락범위 제한 없음",
@@ -162,7 +150,7 @@ export function collectGwangjuAccessibility({
   };
 }
 
-function countFacilityRows({ bytes, expectedHeaders, expectedRowCount, label, scopeByNorm }) {
+function countFacilityRows({ bytes, expectedHeaders, label, scopeByNorm }) {
   const table = parseCsv(decodeOfficialCsv(bytes));
   if (table.length < 2) throw new Error(`Gwangju ${label} CSV has no data rows`);
   const header = table[0];
@@ -193,21 +181,26 @@ function countFacilityRows({ bytes, expectedHeaders, expectedRowCount, label, sc
     }
     counts.set(station.stationCode, (counts.get(station.stationCode) ?? 0) + 1);
   }
-  if (table.length - 1 !== expectedRowCount) {
-    throw new Error(`Gwangju ${label} row count mismatch: ${table.length - 1}`);
-  }
   return counts;
 }
 
-function validateTopologySnapshot(topologySnapshot) {
+export function validateGwangjuAccessibilityTopology(topologySnapshot, topologySource) {
+  const evidence = topologySource?.topologyAdmissionEvidence;
   if (topologySnapshot?.schemaVersion !== 1
     || topologySnapshot.artifactKind !== "gwangju-route-topology-snapshot"
     || topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
     || topologySnapshot.credentialRedacted !== true
-    || topologySnapshot.stationCount !== EXPECTED_STATION_COUNT
-    || topologySnapshot.scope?.length !== EXPECTED_STATION_COUNT
-    || topologySnapshot.edgeCount !== 38
-    || topologySnapshot.edges?.length !== 38
+    || topologySource?.id !== TOPOLOGY_SOURCE_ID
+    || topologySource.coverageScope?.lineIds?.length !== 1
+    || typeof topologySource.coverageScope.lineIds[0] !== "string"
+    || typeof evidence?.snapshotId !== "string" || !evidence.snapshotId
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
+    || !Array.isArray(topologySnapshot.scope) || !topologySnapshot.scope.length
+    || !Array.isArray(topologySnapshot.edges)
+    || topologySnapshot.stationCount !== topologySnapshot.scope.length
+    || topologySnapshot.edgeCount !== topologySnapshot.edges.length
+    || ["stationCount", "edgeCount", "rawSha256", "contentSha256", "capturedAt", "freshUntil"]
+      .some((key) => evidence[key] !== topologySnapshot[key])
     || topologySnapshot.contentSha256 !== sha256(JSON.stringify({
       scope: topologySnapshot.scope,
       edges: topologySnapshot.edges,
@@ -216,13 +209,13 @@ function validateTopologySnapshot(topologySnapshot) {
     throw new Error("invalid Gwangju topology snapshot");
   }
   const codes = topologySnapshot.scope.map(({ stationCode }) => stationCode);
-  if (JSON.stringify(codes) !== JSON.stringify([...STATION_CODES])
+  if (new Set(codes).size !== codes.length || codes.some((code) => typeof code !== "string" || !code)
     || topologySnapshot.scope.some((station) => (
       typeof station.stationName !== "string" || station.stationName.trim() === ""
     ))) {
     throw new Error("invalid Gwangju topology snapshot scope");
   }
-  return topologySnapshot.scope;
+  return { scope: topologySnapshot.scope, lineId: topologySource.coverageScope.lineIds[0], evidence };
 }
 
 function parseCsv(text) {
@@ -275,31 +268,35 @@ function sha256(value) {
 
 function parseArgs(argv) {
   const args = {};
+  const required = ["elevator-input", "escalator-input", "inventory", "output", "captured-at"];
   for (let index = 0; index < argv.length; index += 2) {
-    if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-gwangju-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --output <absolute.json> [--captured-at <iso>]");
-    }
-    args[argv[index].slice(2)] = argv[index + 1];
+    const key = argv[index]?.slice(2);
+    if (!argv[index]?.startsWith("--") || !required.includes(key) || Object.hasOwn(args, key) || !argv[index + 1]) throw new Error("Gwangju collector arguments mismatch");
+    args[key] = argv[index + 1];
   }
-  if (!args["elevator-input"] || !args["escalator-input"] || !args["topology-snapshot"]
-    || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-gwangju-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --output <absolute.json> [--captured-at <iso>]");
-  }
+  if (required.some((key) => !args[key]) || !path.isAbsolute(args.output)) throw new Error("Gwangju collector arguments mismatch");
   return args;
 }
 
 export async function runGwangjuAccessibilityCollector(argv) {
   const args = parseArgs(argv);
-  const [elevatorBytes, escalatorBytes, topologySnapshot] = await Promise.all([
+  const [elevatorBytes, escalatorBytes, inventory] = await Promise.all([
     readFile(args["elevator-input"]),
     readFile(args["escalator-input"]),
-    readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
+    readFile(args.inventory, "utf8").then(JSON.parse),
   ]);
+  const selected = inventory.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
+  if (selected.length !== 1) throw new Error("Gwangju topology source selection mismatch");
+  const topologySource = selected[0];
+  const relative = topologySource.topologyAdmissionEvidence?.snapshotPath;
+  if (typeof relative !== "string" || path.isAbsolute(relative) || relative.split(/[\\/]/u).includes("..")) throw new Error("Gwangju topology path mismatch");
+  const topologySnapshot = JSON.parse(await readFile(path.resolve(relative), "utf8"));
   const snapshot = collectGwangjuAccessibility({
     elevatorBytes,
     escalatorBytes,
     topologySnapshot,
-    now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
+    topologySource,
+    now: new Date(args["captured-at"]),
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
   console.log(`Gwangju accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);

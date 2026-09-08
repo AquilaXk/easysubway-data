@@ -20,6 +20,7 @@ import {
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
+import { collectGwangjuAccessibility } from "./collect-gwangju-accessibility.mjs";
 import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
 import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
 import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route-map-positions.mjs";
@@ -252,19 +253,42 @@ export async function loadRegionalGwangjuTimetablePrefix(options) {
 }
 
 export async function loadRegionalGwangjuAccessibilityPrefix(options) {
-  const { readJson, gwangjuAccessibilityNow } = options;
-  const [regional, accessibilitySnapshot] = await Promise.all([
+  const { gwangjuAccessibilityNow } = options;
+  const [regional, elevatorBytes, escalatorBytes] = await Promise.all([
     loadRegionalGwangjuTimetablePrefix(options),
-    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041385.csv")),
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041362.csv")),
   ]);
+  // 테스트 원문과 명시한 fixture 시각만 사용하며 운영 snapshot·승인 기록은 수정하지 않는다.
+  const inventory = structuredClone(regional.inventory);
+  const topologySource = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology");
+  const accessibilitySnapshot = collectGwangjuAccessibility({ elevatorBytes, escalatorBytes,
+    topologySnapshot: regional.gwangjuTopology, topologySource, now: gwangjuAccessibilityNow });
+  const source = inventory.sources.find(({ id }) => id === "gwangju-transportation-accessibility");
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(new Date(accessibilitySnapshot.capturedAt)).replaceAll("-", "");
+  const snapshotId = `${source.id}-${date}`;
+  source.fieldsProvided = accessibilitySnapshot.fieldsProvided;
+  source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence,
+    snapshotId, snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+    capturedAt: accessibilitySnapshot.capturedAt, freshUntil: accessibilitySnapshot.freshUntil,
+    stationCount: accessibilitySnapshot.stationCount, rowCount: accessibilitySnapshot.rowCount,
+    facilityCount: accessibilitySnapshot.rows.reduce((total, row) => total
+      + [row.elevator, row.escalator, row.wheelchair_lift].filter((value) => value !== null).length, 0),
+    rawSha256: accessibilitySnapshot.rawSha256, rowsSha256: accessibilitySnapshot.rowsSha256,
+    datasetIds: accessibilitySnapshot.datasetIds, topologySourceId: topologySource.id,
+    topologySnapshotId: topologySource.topologyAdmissionEvidence.snapshotId,
+    topologyContentSha256: regional.gwangjuTopology.contentSha256,
+    topologyLineages: accessibilitySnapshot.topologyLineages };
   return {
     ...regional,
+    inventory,
     accessibilitySnapshot,
     accessibilityFixture: materializeGwangjuAccessibility({
       baseFixture: regional.gwangjuFixture,
       accessibilitySnapshot,
       topologySnapshot: regional.gwangjuTopology,
-      inventory: regional.inventory,
+      inventory,
       now: gwangjuAccessibilityNow,
     }),
   };
