@@ -67399,5 +67399,41 @@
       "licenseEvidenceHash": "c95b17313528bec500646e6e22900d998d936d5f3f9824704335cddc60875583"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "daejeon-station-distance-fare",
+    "snapshotId": "daejeon-station-distance-fare-8ad2f0ce04aff883391c84df3d13b78a59e17434246054416f26fc8a22d8bab7",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-08T17:05:47.932Z",
+    "retrievedAt": "2026-09-08T17:05:47.932Z",
+    "sourceUpdatedAt": null,
+    "provider": "대전교통공사",
+    "rowCount": 42,
+    "coverageCount": 22,
+    "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
+    "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/daejeon-station-distance-fare/20260908/8ad2f0ce04aff883391c84df3d13b78a59e17434246054416f26fc8a22d8bab7.json",
+    "rawObjectSha256": "8ad2f0ce04aff883391c84df3d13b78a59e17434246054416f26fc8a22d8bab7",
+    "rawReceiptSha256": "a92f6fb3698fa9118b1c6f09ca33f912d6c8b9d7e405a0ffb1cc33f3a1d19103",
+    "byteSize": 30122,
+    "freshUntil": "2026-09-09T17:05:47.932Z",
+    "freshnessExpiresAt": "2026-09-09T17:05:47.932Z",
+    "rawRetentionExpiresAt": "2026-12-07T17:05:47.932Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "176706fe1ca06890cb913dda878663bd98cd0a185a655842fa458f2595a580bd",
+    "schemaFingerprint": "e4def6342dde770cfc8b791e1107276cf75e52496bdcda279398711602a71e07",
+    "redactedRequestFingerprint": "817e7a909294a517d1656de27d11aac3ded438ccdc2f4a9a72b5f82dab753b01",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "8790a427f3f87892951d529c118cffa50b3ecc517f829b4fc46b382647bb034d"
+    },
+    "diffSummary": null
   }
 ]
