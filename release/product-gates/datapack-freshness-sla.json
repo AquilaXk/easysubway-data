@@ -192,6 +192,19 @@
         "official timetable revision notice"
       ],
       "providerValidityEndField": "serviceEffectiveUntil"
+    },
+    {
+      "id": "daejeon_timetable_observation",
+      "sourceIds": [
+        "daejeon-train-timetable"
+      ],
+      "basisField": "observedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
     }
   ],
   "monitoring": {

@@ -67435,5 +67435,42 @@
       "licenseEvidenceHash": "8790a427f3f87892951d529c118cffa50b3ecc517f829b4fc46b382647bb034d"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "daejeon-train-timetable",
+    "snapshotId": "daejeon-train-timetable-20260909",
+    "previousSnapshotId": null,
+    "observedAt": "2026-09-08T17:29:24.923Z",
+    "capturedAt": "2026-09-08T17:29:24.923Z",
+    "retrievedAt": "2026-09-08T17:29:24.923Z",
+    "sourceUpdatedAt": null,
+    "provider": "대전교통공사",
+    "rowCount": 1628,
+    "coverageCount": 460,
+    "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
+    "contentSha256": "5888ab731dbe76b9b4791c30224664a12c37a25da50c5423d4266bc3c02c44a9",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/daejeon-train-timetable/20260909/7b0be7989ed4cec73d9a9431041308be4189ff2a9a4386e80d0e12e41d825669.json",
+    "rawObjectSha256": "7b0be7989ed4cec73d9a9431041308be4189ff2a9a4386e80d0e12e41d825669",
+    "rawReceiptSha256": "d44bd6949c9d1908b09223439331b43c902531de7c80de003da4c4e420673018",
+    "byteSize": 497762,
+    "freshUntil": "2026-09-09T17:29:24.923Z",
+    "freshnessExpiresAt": "2026-10-08T17:29:24.923Z",
+    "rawRetentionExpiresAt": "2026-12-07T17:29:24.923Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "39bbc9dd4418f29a0cb97cec9d98924f108e92920584104b65f0dded5db51513",
+    "schemaFingerprint": "62debbf95ec4fd3ebe5a719b28a3ff5998d3dd1de7c9635350cf39a692cd7655",
+    "redactedRequestFingerprint": "ef2b24dae088944d70b0ed9c6873306ca541e78da93d892b319017a28a7c62b1",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "01b8a44e329e5a4efa9ac332c73f03e2485bfe93002479d0b9e1df1eb0d5b2aa"
+    },
+    "diffSummary": null
   }
 ]
