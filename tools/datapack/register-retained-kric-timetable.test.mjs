@@ -32,9 +32,10 @@ test("receipt-bound retained registration projects exactly four CAS outputs and 
   assert.equal(new Set(registered[0].inputs.map(({ absolute }) => absolute)).size, registered[0].inputs.length);
   assert.ok(registered[0].inputs.some(({ absolute }) => absolute.endsWith(fixture.molitObservationPath)));
   assert.ok(registered[0].inputs.every(({ absolute }) => !absolute.endsWith("molit-urban-rail-full-route-20251211.csv")));
-  assert.throws(() => materializeGwangjuTimetable({
-    ...fixture.materializerInput, inventory: JSON.parse(registered[0].bytes), now: fixture.now,
-  }), /evidence is stale/);
+  // 개발 변환은 원문으로 재현한다. 운영 만료는 publication 경계에서 거부한다.
+  assert.doesNotThrow(() => materializeGwangjuTimetable({
+    ...fixture.materializerInput, inventory: JSON.parse(registered[0].bytes),
+  }));
   await assert.rejects(() => commitRetainedKricTimetableRegistrationOutputs({
     repositoryRoot: fixture.repositoryRoot, outputs: registered, failAfter: 1,
   }), /injected/);

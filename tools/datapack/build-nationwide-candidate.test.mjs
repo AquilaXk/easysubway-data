@@ -242,7 +242,8 @@ test("nationwide candidate constructor serializes native schedule and topology a
 test("nationwide preparation CLI consumes serialized inputs and writes the bound candidate", async (context) => {
   const input = await inputs(context);
   const targets = JSON.parse(input.inputBytes.targets);
-  const pack = JSON.parse(await readFile(path.join(input.repositoryRoot, "pack.json"))).packs[0];
+  const fixture = JSON.parse(await readFile(path.join(input.repositoryRoot, "pack.json")));
+  const pack = fixture.packs[0];
   pack.coverageLineOperatorScopes = targets.activeLineScopes;
   pack.stations = [{ id: "station-a" }];
   pack.stationLines = targets.activeLineScopes.map(({ lineId }) => ({ stationId: "station-a", lineId }));
@@ -257,7 +258,7 @@ test("nationwide preparation CLI consumes serialized inputs and writes the bound
     await mkdir(path.dirname(path.join(input.repositoryRoot, relative)), { recursive: true });
     await writeFile(path.join(input.repositoryRoot, relative), bytes);
   };
-  await put("pack.json", fixtureBytes({ packs: [pack] }));
+  await put("pack.json", fixtureBytes(fixture));
   for (const [name, relative] of Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS)) await put(relative, input.inputBytes[name]);
   for (const relative of CANDIDATE_RELEASE_OUTPUTS) await put(relative, fixtureBytes({ original: relative }));
   const policyScope = JSON.parse(input.inputBytes.productionScope);

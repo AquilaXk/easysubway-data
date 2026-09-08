@@ -343,7 +343,7 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       rawSha256: snapshot.rawSha256,
       ...(snapshot.contentSha256 === undefined ? {} : { contentSha256: snapshot.contentSha256 }),
       rawObjectUri: snapshot.rawObjectUri,
-      rowCount: snapshot.rowCount,
+      ...(snapshot.rowCount === undefined ? {} : { rowCount: snapshot.rowCount }),
       coverageCount: snapshot.coverageCount,
       freshnessExpiresAt: snapshot.freshnessExpiresAt,
       inventoryRecordSha256: sha256(Buffer.from(canonical(source))),
