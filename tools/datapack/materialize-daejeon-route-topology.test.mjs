@@ -33,7 +33,7 @@ test("Daejeon cumulative binder preserves canonical metadata and binds official 
   const lineId = "line-7051a9c2525c";
   const generated = {
     stations: ["a", "b"].map((key) => ({
-      id: `station-${key}`, nameKo: key, dataQualityLevel: "LEVEL_2",
+      id: `station-${key}`, nameKo: `${key}(부역명)`, dataQualityLevel: "LEVEL_2",
       dataSourceType: "OFFICIAL_FILE", sourceId: "membership",
       sourceSnapshotId: "membership-snapshot", providerRecordHash: "a".repeat(64),
       evidenceHash: "b".repeat(64), derivationKind: "OFFICIAL",
@@ -71,7 +71,11 @@ test("Daejeon cumulative binder preserves canonical metadata and binds official 
   const competing = structuredClone(pack);
   competing.stationLines[0].sourceId = "other";
   assert.throws(() => bindCumulativeDaejeonTopology(competing, generated), /topology mismatch/);
+  const wrongName = structuredClone(pack);
+  wrongName.stations[0].nameKo = "different";
+  assert.throws(() => bindCumulativeDaejeonTopology(wrongName, generated), /station mismatch/);
   bindCumulativeDaejeonTopology(pack, generated);
+  assert.equal(pack.stations[0].nameKo, "a");
   assert.equal(pack.stations[0].nameEn, "canonical");
   assert.equal(pack.stations[0].latitude, 1);
   assert.equal(pack.stationLines[0].platformInfo, "keep");

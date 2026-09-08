@@ -210,7 +210,9 @@ function hasAuthority(row) {
     || row.derivationKind !== undefined || row.verificationStatus !== undefined;
 }
 function normalizedName(value) {
-  return String(value).normalize("NFKC").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+  // 동일 canonical ID의 본역명을 비교한다. 공식 괄호 부역명은 표시명 차이다.
+  return String(value).normalize("NFKC").replace(/\([^)]*\)/gu, "")
+    .replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
 }
 
 function validateSnapshot(snapshot) {
