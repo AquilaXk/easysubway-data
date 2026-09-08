@@ -374,13 +374,21 @@ test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes 
 
 test("FINAL closure는 bundle보다 이른 source freshness cutoff를 거부한다", async (t) => {
   installSigningEnvironment(t);
+  const sourceWindow = await selectedSourceWindow();
+  const sourceExpiry = Date.parse(sourceWindow.freshUntil);
+  const candidateFreshUntil = kstInstant(sourceExpiry + 1);
+  assert.ok(Date.parse(sourceWindow.evaluationAt) < sourceExpiry && sourceExpiry < Date.parse(candidateFreshUntil));
   const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
-    freshUntil: "2026-09-09T00:00:00.000+09:00",
+    evaluationAt: sourceWindow.evaluationAt,
+    freshUntil: candidateFreshUntil,
   });
+  const fixtureWindow = await selectedSourceWindow(fixture.repositoryRoot);
+  assert.ok(Date.parse(fixtureWindow.evaluationAt) < Date.parse(fixtureWindow.freshUntil)
+    && Date.parse(fixtureWindow.freshUntil) < Date.parse(candidateFreshUntil));
   const output = path.join(fixture.temp, "release-rejected-source-cutoff");
   await assert.rejects(
-    () => build(fixture, output, FRESH_AT, releaseEvidence, {
-      clock: () => Date.parse(FRESH_AT),
+    () => build(fixture, output, fixtureWindow.evaluationAt, releaseEvidence, {
+      clock: () => Date.parse(fixtureWindow.evaluationAt),
     }),
     /source freshness cutoff must cover candidate freshUntil/,
   );
@@ -1162,18 +1170,19 @@ async function createReleaseEvidence(fixture, prePublicationFinal) {
 
 async function prepareSignedReleaseFixture(t, options = {}) {
   const fixture = await createFixture(t, options);
+  const evaluationAt = options.evaluationAt ?? FRESH_AT;
   const signedRoot = path.join(fixture.temp, "signed-release-fixture");
   await signServerRouteBundle({ input: fixture.artifactRoot, output: signedRoot });
   fixture.artifactRoot = signedRoot;
   const provisionalOutput = path.join(fixture.temp, "provisional-fixture");
-  await build(fixture, provisionalOutput, FRESH_AT);
+  await build(fixture, provisionalOutput, evaluationAt);
   const eligibilityReportPath = await createEligibilityReport(
     fixture,
     provisionalOutput,
     "fixture-eligibility.json",
   );
   const prePublicationOutput = path.join(fixture.temp, "pre-publication-fixture");
-  await build(fixture, prePublicationOutput, FRESH_AT, undefined, { eligibilityReportPath });
+  await build(fixture, prePublicationOutput, evaluationAt, undefined, { eligibilityReportPath });
   const prePublicationFinal = await readJson(
     path.join(prePublicationOutput, "server-route-bundle-final.json"),
   );

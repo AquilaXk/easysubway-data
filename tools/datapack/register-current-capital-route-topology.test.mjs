@@ -105,12 +105,19 @@ test("shared freshness membership preserves Capital semantics without extending 
   const policy = JSON.parse(await readFile(policyPath));
   const sourceClass = policy.sourceClasses.find((entry) => entry.sourceIds.includes("capital-route-topology"));
   const before = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
-  sourceClass.sourceIds.push("korail-metropolitan-timetable-file");
+  // 운영 source 등록 여부와 무관한 예제로 class 확장 계약을 검증한다.
+  const additionalSourceId = "fixture-additional-topology-source";
+  assert.equal(sourceClass.sourceIds.includes(additionalSourceId), false);
+  sourceClass.sourceIds.push(additionalSourceId);
   await writeJson(policyPath, policy);
   const after = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
   assert.equal(after.topology.freshUntil, before.topology.freshUntil);
   assert.equal(after.freshnessClassSha256, before.freshnessClassSha256);
   assert.deepEqual(after.freshnessPolicy, policy);
+  sourceClass.sourceIds.push(additionalSourceId);
+  await writeJson(policyPath, policy);
+  await assert.rejects(readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now }), /policy binding/);
+  sourceClass.sourceIds.pop();
   sourceClass.reverificationCadence = "P2D";
   await writeJson(policyPath, policy);
   await assert.rejects(readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now }), /policy binding/);

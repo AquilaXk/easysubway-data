@@ -88,6 +88,25 @@ test("canonical join preserves IDs and rejects ambiguous names and inconsistent 
   assert.throws(() => bind({ orders: [{ stations: members.slice(1) }] }));
 });
 
+// 등록 이력에 이미 결속된 prestate를 읽는다. 운영 정책을 수정하거나 날짜를 되돌리지 않는다.
+function registrationPrestate(bytes, sourceId) {
+  let policy = JSON.parse(bytes);
+  while (policy.sources.some((source) => source.sourceId === sourceId)) {
+    const lineage = policy.registrationLineage;
+    assert.ok(lineage?.addedSourceIds.length > 0, "first registration requires a recorded predecessor");
+    assert.deepEqual(policy.sources.slice(-lineage.addedSourceIds.length).map((source) => source.sourceId),
+      lineage.addedSourceIds);
+    const predecessor = { ...policy, sources: policy.sources.slice(0, -lineage.addedSourceIds.length) };
+    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
+    else predecessor.registrationLineage = lineage.predecessorLineage;
+    bytes = Buffer.from(lineage.predecessorPolicyText ?? `${JSON.stringify(predecessor, null, 2)}\n`);
+    assert.equal(hash(bytes), lineage.predecessorPolicySha256);
+    assert.deepEqual(JSON.parse(bytes), predecessor);
+    policy = predecessor;
+  }
+  return bytes;
+}
+
 test("retained XLSX parsing binds exact bytes and keeps native sparse row coordinates", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "korail-workbook-test-"));
   try {
@@ -162,7 +181,11 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
     assert.equal(collected.sources.timetable.collectionReceiptSha256,
       hash(await readFile(path.join(collectionDirectory, "receipt.json"))));
     const baseFreshness = JSON.parse(await readFile(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url)));
-    const freshnessPolicy = { ...baseFreshness, sourceClasses: [...baseFreshness.sourceClasses, { id: "fixture_topology", sourceIds: [receipt.sourceId],
+    // 최초 등록 예제는 운영에서 이미 등록된 source의 class와 섞지 않는다.
+    const fixtureClasses = baseFreshness.sourceClasses.map((entry) => ({
+      ...entry, sourceIds: entry.sourceIds.filter((sourceId) => sourceId !== receipt.sourceId),
+    }));
+    const freshnessPolicy = { ...baseFreshness, sourceClasses: [...fixtureClasses, { id: "fixture_topology", sourceIds: [receipt.sourceId],
       basisField: "retrievedAt", reverificationCadence: "P2D" }] };
     const snapshot = await buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
       freshnessPolicy, evaluationAt: receipt.capturedAt });
@@ -179,10 +202,14 @@ test("retained XLSX parsing binds exact bytes and keeps native sparse row coordi
       evidence: { license: "unrestricted", provider: "한국철도공사",
         collectionContract: { collector: "fixture FILE collector", maxRetries: 0 },
         licenseEvidenceUrl: "https://www.data.go.kr/data/15052169/fileData.do" } };
-    const unregisteredPolicy = { ...baseFreshness, sourceClasses: [...baseFreshness.sourceClasses,
+    const unregisteredPolicy = { ...baseFreshness, sourceClasses: [...fixtureClasses,
       { ...freshnessPolicy.sourceClasses.at(-1), sourceIds: [] }] };
-    const governancePolicyBytes = await readFile(new URL("./source-governance-policy.json", import.meta.url));
+    const governancePolicyBytes = registrationPrestate(
+      await readFile(new URL("./source-governance-policy.json", import.meta.url)), receipt.sourceId,
+    );
+    const fixtureSourceIds = new Set(JSON.parse(governancePolicyBytes).sources.map(({ sourceId }) => sourceId));
     const inventory = JSON.parse(await readFile(new URL("./source-inventory.json", import.meta.url)));
+    inventory.sources = inventory.sources.filter(({ id }) => fixtureSourceIds.has(id));
     const license = { type: "unrestricted", provider: "한국철도공사", evidenceUrl: candidate.detailUrl,
       redistributionAllowed: true };
     const governanceEntry = { sourceId: candidate.id, ...candidate.topologyRegistration,

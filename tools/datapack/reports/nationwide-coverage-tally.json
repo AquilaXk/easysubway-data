@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "d9dd0515dd2789f5efa1b9d21ff2dfb47a5515bde76df780e81c9b78e19fc938"
+      "sha256": "9b82a505af6f284d6bb955ec4a0baad986b67e8e18286a032cbce8934be1474a"
     },
     "resolutions": {
       "entryCount": 4,
@@ -1127,17 +1127,17 @@
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 12,
-        "inventoryAdmittedRatio": 0.2667,
+        "inventoryAdmittedCount": 13,
+        "inventoryAdmittedRatio": 0.2889,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 1,
-          "NO_ADMITTED_SOURCE": 32
+          "NO_ADMITTED_SOURCE": 31
         },
-        "missingCount": 33,
+        "missingCount": 32,
         "sourceDomain": "route_graph_topology",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 12,
-        "terminalRatio": 0.2667,
+        "terminalCount": 13,
+        "terminalRatio": 0.2889,
         "totalCount": 45
       },
       {
@@ -1225,17 +1225,17 @@
       {
         "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
         "explicitlyUnsupportedWithEvidenceCount": 3,
-        "inventoryAdmittedCount": 15,
-        "inventoryAdmittedRatio": 0.625,
+        "inventoryAdmittedCount": 16,
+        "inventoryAdmittedRatio": 0.6667,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 0,
-          "NO_ADMITTED_SOURCE": 6
+          "NO_ADMITTED_SOURCE": 5
         },
-        "missingCount": 6,
+        "missingCount": 5,
         "regionId": "daegu",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 18,
-        "terminalRatio": 0.75,
+        "terminalCount": 19,
+        "terminalRatio": 0.7917,
         "totalCount": 24
       },
       {
@@ -1273,13 +1273,13 @@
     ],
     "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
     "explicitlyUnsupportedWithEvidenceCount": 4,
-    "inventoryAdmittedCount": 71,
-    "inventoryAdmittedRatio": 0.263,
+    "inventoryAdmittedCount": 72,
+    "inventoryAdmittedRatio": 0.2667,
     "missingByKind": {
       "DUAL_OPERATOR_UNMATCHED": 4,
-      "NO_ADMITTED_SOURCE": 191
+      "NO_ADMITTED_SOURCE": 190
     },
-    "missingCount": 195,
+    "missingCount": 194,
     "requirements": [
       {
         "admissionRatio": 1,
@@ -6744,13 +6744,15 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 1,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "korail-metropolitan-timetable-file"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-8f7ed01f290a",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "korail",
         "regionId": "daegu",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -6758,11 +6760,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "route_graph_topology",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "network_edges",
-          "duration_seconds"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0,
@@ -7073,8 +7072,8 @@
       }
     ],
     "supportStartedResolutionCount": 0,
-    "terminalCount": 75,
-    "terminalRatio": 0.2778,
+    "terminalCount": 76,
+    "terminalRatio": 0.2815,
     "totalCount": 270
   },
   "parentIssue": 2138,

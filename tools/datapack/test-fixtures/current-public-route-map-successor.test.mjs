@@ -15,8 +15,36 @@ import {
 } from "./current-public-route-map-successor.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
+const FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS = [
+  "seoul-metro-route-map-positions",
+  "kric-subway-timetable",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+  "incheon-transit-accessibility",
+  "seoul-metro-transfer-distance-duration",
+];
+const FIXTURE_PACK_SOURCE_IDS = [
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+  "seoul-metro-route-map-positions",
+  "kric-subway-timetable",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares",
+  "seoul-metro-transfer-distance-duration",
+  "incheon-transit-station-info",
+  "incheon-transit-accessibility",
+  "incheon-line1-train-timetable",
+  "incheon-line2-train-timetable",
+];
+const FIXTURE_SOURCE_IDS = new Set([
+  ...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS,
+  ...FIXTURE_PACK_SOURCE_IDS,
+]);
 
-test("current public fixture copies registered and topology-admission source evidence snapshots", async (t) => {
+test("current public fixture copies evidence only for its declared source universe", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-registered-source-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, root, {
@@ -24,11 +52,15 @@ test("current public fixture copies registered and topology-admission source evi
     activatePublicRouteMap: false,
   });
 
-  const inventory = JSON.parse(await readFile(
-    path.join(repositoryRoot, "tools/datapack/source-inventory.json"),
-    "utf8",
-  ));
-  const snapshotPaths = inventory.sources.flatMap((source) => [
+  const [sourceInventory, fixtureInventory] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.deepEqual(
+    fixtureInventory.sources.filter(({ requiredForProductionPack }) => requiredForProductionPack).map(({ id }) => id).sort(),
+    [...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS].sort(),
+  );
+  const snapshotPaths = sourceInventory.sources.filter(({ id }) => FIXTURE_SOURCE_IDS.has(id)).flatMap((source) => [
     typeof source.registrationEvidence?.snapshotId === "string"
       ? `tools/datapack/sources/${source.registrationEvidence.snapshotId}.json`
       : null,
@@ -43,6 +75,49 @@ test("current public fixture copies registered and topology-admission source evi
   }
 });
 
+test("current public fixture does not auto-enroll a new required production source", async (t) => {
+  const sourceRoot = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-source-"));
+  const baselineRoot = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-baseline-"));
+  const targetRoot = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-target-"));
+  t.after(() => Promise.all([sourceRoot, baselineRoot, targetRoot].map((root) => rm(root, { recursive: true, force: true }))));
+  const now = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
+  await Promise.all([
+    copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, sourceRoot, { now, activatePublicRouteMap: false }),
+    copySyntheticCurrentPublicRouteMapRepository(repositoryRoot, baselineRoot, { now, activatePublicRouteMap: false }),
+  ]);
+  const inventoryPath = path.join(sourceRoot, "tools/datapack/source-inventory.json");
+  const sourceInventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  sourceInventory.sources.push({
+    ...structuredClone(sourceInventory.sources[0]),
+    id: "fixture-unrelated-required-production-source",
+    requiredForProductionPack: true,
+  });
+  await writeFile(inventoryPath, `${JSON.stringify(sourceInventory, null, 2)}\n`);
+  await copySyntheticCurrentPublicRouteMapRepository(sourceRoot, targetRoot, { now, activatePublicRouteMap: false });
+
+  const relativeInputs = [
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/capital-production-canonical-pack.json",
+    "release/product-gates/production-datapack-scope.json",
+  ];
+  for (const relative of relativeInputs) {
+    assert.deepEqual(
+      await readFile(path.join(targetRoot, relative)),
+      await readFile(path.join(baselineRoot, relative)),
+      relative,
+    );
+  }
+  const [candidate, pack, scope] = await Promise.all([
+    readFile(path.join(targetRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(targetRoot, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+    readFile(path.join(targetRoot, "release/product-gates/production-datapack-scope.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.deepEqual(candidate.sourceSnapshots.map(({ sourceId }) => sourceId), FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS);
+  assert.deepEqual(scope.productionSourceSet.requiredSourceIds, FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS);
+  assert.deepEqual(pack.packs.find(({ id }) => id === "capital").sourceInventory.map(({ id }) => id), FIXTURE_PACK_SOURCE_IDS);
+});
+
 test("current public candidate slot derives a same-source public V2 successor on a topology-only refresh", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-predecessor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -50,21 +125,13 @@ test("current public candidate slot derives a same-source public V2 successor on
     now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
   });
 
-  const [before, sourceCanonical, fixtureCanonical, sourceInventory] = await Promise.all([
+  const [before, fixtureCanonical] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
-    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
   ]);
-  const inheritedSourceIds = sourceCanonical.packs[0].sourceInventory.map(({ id }) => id);
-  const newlyRequiredSourceIds = sourceInventory.sources
-    .filter(({ id, requiredForProductionPack, coverageScope }) => requiredForProductionPack
-      && coverageScope.sourceDomains.includes("schedule_timetable")
-      && !inheritedSourceIds.includes(id))
-    .map(({ id }) => id);
   assert.deepEqual(
     fixtureCanonical.packs[0].sourceInventory.map(({ id }) => id),
-    [...inheritedSourceIds, ...newlyRequiredSourceIds],
+    FIXTURE_PACK_SOURCE_IDS,
   );
   const beforePublicIndex = before.sourceSnapshots.findIndex(({ sourceId }) =>
     sourceId === "seoul-metro-route-map-positions");

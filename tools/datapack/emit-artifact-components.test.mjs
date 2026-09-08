@@ -475,8 +475,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const snapshotPath = path.join(fixtureRoot, buildSpec.sourceSnapshotEvidencePath);
   const originalSnapshots = await readFile(snapshotPath);
   const independentExpiry = Math.min(...independent.snapshots.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  const independentActiveAt = Date.parse(independent.evaluationAt);
+  assert.ok(Number.isFinite(independentActiveAt) && independentActiveAt < independentExpiry);
   const independentCurrent = { ...current, expiresAt: new Date(independentExpiry).toISOString() };
-  const temporalInputs = { builtAt: independent.evaluationAt, evaluationAt: independent.evaluationAt,
+  const temporalInputs = { activeFrom: kstInstant(independentActiveAt), builtAt: independent.evaluationAt, evaluationAt: independent.evaluationAt,
     freshUntil: kstInstant(independentExpiry) };
   try {
     await writeFile(snapshotPath, JSON.stringify(independent.snapshots));
