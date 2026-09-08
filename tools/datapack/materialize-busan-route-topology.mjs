@@ -293,7 +293,7 @@ function canonicalStationIdFor(mappings, station) {
   return stationId;
 }
 
-function canonicalStationMappingHash(mappings, scope) {
+export function canonicalStationMappingHash(mappings, scope) {
   return sha256(JSON.stringify(canonicalStationMappingEntries(mappings, scope)));
 }
 

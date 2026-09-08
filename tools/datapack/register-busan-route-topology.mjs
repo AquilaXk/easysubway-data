@@ -9,6 +9,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { admitBusanRouteTopology, collectBusanRouteTopology } from "./collect-busan-route-topology.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { canonicalStationMappingHash, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
@@ -19,17 +20,20 @@ const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
-export async function prepareBusanTopologyRegistration({ repositoryRoot, snapshotPath, now = new Date() } = {}) {
+export async function prepareBusanTopologyRegistration({ repositoryRoot, snapshotPath, stationMapPath, now = new Date() } = {}) {
   const root = absolute(repositoryRoot, "repository root");
   const inputPath = absolute(snapshotPath, "snapshot path");
+  const stationMapInputPath = absolute(stationMapPath, "station map path");
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("Busan topology registration time is invalid");
-  const [currentBytes, candidateBytes, snapshotBytes] = await Promise.all([
+  const [currentBytes, candidateBytes, snapshotBytes, stationMapBytes] = await Promise.all([
     Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))),
     readFile(path.join(root, "tools/datapack/source-candidates.json")),
     readFile(inputPath),
+    readFile(stationMapInputPath),
   ]);
   const [inventory, ledger, governance, freshness] = currentBytes.map((bytes) => parse(bytes, "registration output"));
   const snapshot = parse(snapshotBytes, "Busan topology snapshot");
+  const canonicalStationMappings = parseCanonicalBusanStationMappings(stationMapBytes.toString("utf8"));
   await replayRetainedSnapshot(snapshot);
   admitBusanRouteTopology(snapshot, { now });
   const source = select(inventory.sources, ({ id }) => id === SOURCE_ID, "inventory source");
@@ -45,6 +49,12 @@ export async function prepareBusanTopologyRegistration({ repositoryRoot, snapsho
   const snapshotSha256 = sha(snapshotBytes);
   const snapshotId = `${SOURCE_ID}-${snapshotSha256}`;
   const snapshotRelative = `tools/datapack/sources/${snapshotId}.json`;
+  const membership = refreshedMembershipAdmissionEvidence({
+    source,
+    snapshot,
+    snapshotId,
+    canonicalStationMappings,
+  });
   const nextSource = {
     ...source,
     admissionEvidence: { ...source.admissionEvidence, licenseEvidenceHash: sha(canonicalJson(source.license)) },
@@ -60,13 +70,14 @@ export async function prepareBusanTopologyRegistration({ repositoryRoot, snapsho
       rawSha256: snapshot.rawSha256,
       contentSha256: snapshot.contentSha256,
     },
+    membershipAdmissionEvidence: membership,
     observedDataUpdatedAt: snapshot.capturedAt.slice(0, 10),
     retrievedAt: snapshot.capturedAt.slice(0, 10),
   };
   const nextInventory = { ...inventory, sources: inventory.sources.map((row) => row.id === SOURCE_ID ? nextSource : row) };
   validateSourceGovernancePolicy({ policy: projectedGovernance, inventory: nextInventory, freshnessPolicy: projectedFreshness });
   return {
-    root, inputPath, snapshotBytes, snapshot, snapshotSha256, snapshotId, snapshotRelative,
+    root, inputPath, stationMapInputPath, snapshotBytes, stationMapBytes, snapshot, snapshotSha256, snapshotId, snapshotRelative,
     currentBytes, inventory: nextInventory, ledger, governance: projectedGovernance, freshness: projectedFreshness, candidateBytes,
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: projectedGovernance, sourceId: SOURCE_ID, retrievedAt: snapshot.capturedAt }),
   };
@@ -138,6 +149,7 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
   await writeImmutableSnapshot(snapshotFile, prepared.snapshotBytes);
   const inputs = [
     { absolute: prepared.inputPath, bytes: prepared.snapshotBytes },
+    { absolute: prepared.stationMapInputPath, bytes: prepared.stationMapBytes },
     { absolute: path.join(prepared.root, "tools/datapack/source-candidates.json"), bytes: prepared.candidateBytes },
     { absolute: receiptFile, bytes: receiptBytes },
     { absolute: snapshotFile, bytes: prepared.snapshotBytes },
@@ -239,6 +251,32 @@ async function replayRetainedSnapshot(snapshot) {
   }
 }
 
+function refreshedMembershipAdmissionEvidence({ source, snapshot, snapshotId, canonicalStationMappings }) {
+  const metadata = source?.membershipAdmissionEvidence;
+  if (!Number.isInteger(metadata?.issue) || metadata.issue <= 0
+    || typeof metadata.materializer !== "string" || metadata.materializer.length === 0
+    || typeof metadata.verificationTest !== "string" || metadata.verificationTest.length === 0) {
+    throw new Error("Busan topology membership metadata is required");
+  }
+  return {
+    issue: metadata.issue,
+    materializer: metadata.materializer,
+    verificationTest: metadata.verificationTest,
+    snapshotId,
+    verifiedAt: snapshot.capturedAt,
+    stationCount: snapshot.stationCount,
+    lineIds: structuredClone(snapshot.lineIds),
+    membershipSourceId: SOURCE_ID,
+    membershipSourceRawSha256: snapshot.rawSha256,
+    membershipSourceSnapshotSha256: snapshot.scopeSha256,
+    mappingSha256: canonicalStationMappingHash(canonicalStationMappings, snapshot.scope),
+    stationCodesSha256: sha(JSON.stringify(snapshot.scope.map(({ stationCode }) => stationCode))),
+    stationCodeSourceId: SOURCE_ID,
+    stationCodeSnapshotId: snapshotId,
+    stationCodeContentSha256: snapshot.contentSha256,
+  };
+}
+
 function validateRecordedAdmission({ source, candidate, governanceEntry, freshness, snapshot, now }) {
   const review = governanceEntry?.licenseReview;
   const classId = governanceEntry?.sourceClassId;
@@ -301,13 +339,19 @@ function instant(value) { return typeof value === "string" && Number.isFinite(Da
 
 function parseArgs(argv) {
   const publish = argv[0] === "publish-register";
-  if ((!publish && argv[0] !== "register") || argv.length !== (publish ? 7 : 5)
-    || argv[1] !== "--snapshot" || argv[3] !== "--receipt"
-    || !path.isAbsolute(argv[2]) || !path.isAbsolute(argv[4])
-    || (publish && (argv[5] !== "--expected-head" || !/^[a-f0-9]{40}$/u.test(argv[6])))) {
-    throw new Error("usage: register-busan-route-topology.mjs register|publish-register --snapshot <absolute.json> --receipt <absolute.json> [--expected-head <sha>]");
+  if ((!publish && argv[0] !== "register") || argv.length !== (publish ? 9 : 7)
+    || argv[1] !== "--snapshot" || argv[3] !== "--station-map" || argv[5] !== "--receipt"
+    || !path.isAbsolute(argv[2]) || !path.isAbsolute(argv[4]) || !path.isAbsolute(argv[6])
+    || (publish && (argv[7] !== "--expected-head" || !/^[a-f0-9]{40}$/u.test(argv[8])))) {
+    throw new Error("usage: register-busan-route-topology.mjs register|publish-register --snapshot <absolute.json> --station-map <absolute.csv> --receipt <absolute.json> [--expected-head <sha>]");
   }
-  return { publish, snapshotPath: argv[2], receiptPath: argv[4], ...(publish ? { expectedHeadSha: argv[6] } : {}) };
+  return {
+    publish,
+    snapshotPath: argv[2],
+    stationMapPath: argv[4],
+    receiptPath: argv[6],
+    ...(publish ? { expectedHeadSha: argv[8] } : {}),
+  };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {

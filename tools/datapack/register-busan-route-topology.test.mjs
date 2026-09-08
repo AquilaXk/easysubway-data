@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { BUSAN_LINES, collectBusanRouteTopology } from "./collect-busan-route-topology.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { canonicalStationMappingHash, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
 
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import * as registration from "./register-busan-route-topology.mjs";
@@ -39,10 +40,19 @@ test("register retained Busan topology through source transaction", async (t) =>
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const snapshotPath = path.join(root, "retained-busan.json");
   await writeFile(snapshotPath, snapshotBytes);
+  const stationMapPath = path.join(root, "busan-station-map.csv");
+  const stationMapCsv = scope.map(({ lineId, stationName }, index) =>
+    `"부산권",station-${(index + 1).toString(16).padStart(12, "0")},${lineId},"${stationName}"`).join("\n");
+  await writeFile(stationMapPath, stationMapCsv);
 
   const source = { id: sourceId, provider: "Test operator", datasetUrl: "https://example.org/dataset",
     productionUseAllowed: true, requiredForProductionPack: false,
-    license: { redistributionAllowed: true, evidenceUrl: "https://example.org/license" } };
+    license: { redistributionAllowed: true, evidenceUrl: "https://example.org/license" },
+    membershipAdmissionEvidence: {
+      issue: 1,
+      materializer: "fixture-membership-materializer",
+      verificationTest: "fixture-membership-test",
+    } };
   const termsHash = sha(canonicalJson(source.license));
   const governanceEntry = {
     sourceId,
@@ -85,7 +95,7 @@ test("register retained Busan topology through source transaction", async (t) =>
 
   const env = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" };
   let receiptPath = path.join(root, "receipt.json");
-  const options = { repositoryRoot: root, snapshotPath, receiptPath, now, env };
+  const options = { repositoryRoot: root, snapshotPath, stationMapPath, receiptPath, now, env };
   const prepared = await prepareBusanTopologyRegistration(options);
   const receipt = receiptFor(prepared);
   await writeFile(receiptPath, `${JSON.stringify({ ...receipt, rawObjectSha256: "0".repeat(64) })}\n`);
@@ -107,6 +117,24 @@ test("register retained Busan topology through source transaction", async (t) =>
   const [registeredInventory, registeredLedger, registeredGovernance, registeredFreshness] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS
     .map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(registeredInventory.sources[0].topologyAdmissionEvidence.snapshotId, prepared.snapshotId);
+  assert.deepEqual(registeredInventory.sources[0].membershipAdmissionEvidence, {
+    issue: source.membershipAdmissionEvidence.issue,
+    materializer: source.membershipAdmissionEvidence.materializer,
+    verificationTest: source.membershipAdmissionEvidence.verificationTest,
+    snapshotId: prepared.snapshotId,
+    verifiedAt: snapshot.capturedAt,
+    stationCount: snapshot.stationCount,
+    lineIds: snapshot.lineIds,
+    membershipSourceId: sourceId,
+    membershipSourceRawSha256: snapshot.rawSha256,
+    membershipSourceSnapshotSha256: snapshot.scopeSha256,
+    mappingSha256: canonicalStationMappingHash(parseCanonicalBusanStationMappings(stationMapCsv), snapshot.scope),
+    stationCodesSha256: sha(JSON.stringify(snapshot.scope.map(({ stationCode }) => stationCode))),
+    stationCodeSourceId: sourceId,
+    stationCodeSnapshotId: prepared.snapshotId,
+    stationCodeContentSha256: snapshot.contentSha256,
+  });
+  assert.equal(registeredInventory.sources[0].requiredForProductionPack, true);
   assert.equal(registeredLedger[0].rawObjectSha256, prepared.snapshotSha256);
   assert.equal(registeredLedger[0].rawReceiptSha256, sha(await readFile(receiptPath)));
   assert.deepEqual(registeredGovernance.sources, [governanceEntry]);
