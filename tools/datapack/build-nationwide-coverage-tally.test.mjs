@@ -202,6 +202,30 @@ test("입력 기반 참조 판정은 독립적인 네 상태와 support-started 
   assert.deepEqual(states(), Array.from({ length: 4 }, () => ["MISSING", "NO_ADMITTED_SOURCE"]));
 });
 
+test("CLI derives an omitted denominator from current target dimensions", async (context) => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "coverage-tally-default-"));
+  context.after(() => rm(workspace, { recursive: true, force: true }));
+  const targets = fixtureTargets();
+  await writeFile(path.join(workspace, "inventory.json"), JSON.stringify(fixtureInventory([operatorAMembershipSource()])));
+  await writeFile(path.join(workspace, "resolutions.json"), JSON.stringify(fixtureResolutions()));
+  const run = async (expected) => {
+    await execFileAsync(process.execPath, [path.join(root, TOOL_PATH),
+      "--targets", "targets.json", "--inventory", "inventory.json",
+      "--resolutions", "resolutions.json", "--output", "ledger.json",
+      ...(expected === undefined ? [] : ["--expected-launch-required-total", String(expected)]),
+    ], { cwd: workspace });
+    return readFile(path.join(workspace, "ledger.json"), "utf8");
+  };
+  for (const expected of [2, 3]) {
+    if (expected === 3) targets.activeLineScopes.push({ lineId: "line-b", regionId: "capital", operatorId: "operator-a" });
+    await writeFile(path.join(workspace, "targets.json"), JSON.stringify(targets));
+    const derived = await run();
+    assert.equal(JSON.parse(derived).denominator.expectedLaunchRequiredTotal, expected);
+    assert.equal(derived, await run(expected));
+  }
+  await assert.rejects(run(2), /launch-required denominator drift/);
+});
+
 test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 단위로 재생성된다", async () => {
   const workspace = await stageWorkspace();
   try {

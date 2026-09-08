@@ -670,7 +670,11 @@ async function main(argv) {
       inventory: inventory.input,
       resolutions: resolutions.input,
     },
-    expectedLaunchRequiredTotal: expectedRaw === undefined ? null : Number(expectedRaw),
+    // CLI 재생성은 현재 target에서 분모를 파생한다. 명시된 기대값의 drift 검사는 유지한다.
+    expectedLaunchRequiredTotal: expectedRaw === undefined
+      ? targets.document.activeLineScopes.length
+        * targets.document.requiredSourceDomains.filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED").length
+      : Number(expectedRaw),
   });
 
   const outputDirectory = path.dirname(outputPath);
