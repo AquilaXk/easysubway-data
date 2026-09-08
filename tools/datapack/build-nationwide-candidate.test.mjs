@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildNationwideCandidateSpec, buildNationwideReleaseArtifacts, commitNationwideReleaseArtifacts } from "./build-nationwide-candidate.mjs";
+import { buildNationwideCandidateSpec, buildNationwideReleaseArtifacts, commitNationwideReleaseArtifacts,
+  deriveNationwideProductionScope } from "./build-nationwide-candidate.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { NATIONWIDE_CANDIDATE_INPUT_PATHS } from "./validate-candidate-source-set.mjs";
 import { CANDIDATE_RELEASE_OUTPUTS, CANDIDATE_RELEASE_JOURNAL_PATH, CANDIDATE_RELEASE_LOCK_PATH,
@@ -47,6 +48,44 @@ async function inputs(context, { admitted = true } = {}) {
 
 test("nationwide candidate constructor requires its actual inputs", async () => {
   await assert.rejects(buildNationwideCandidateSpec({}), /targets input bytes are required/);
+});
+
+test("nationwide scope derives multi-line rows and route sets without pilot counts or approval", () => {
+  const source = fiveRegionCandidateSourceSetInput();
+  const active = source.targets.activeLineScopes;
+  const stationLines = active.map(({ lineId }, index) => ({ stationId: `station-${index}`, lineId }));
+  stationLines.push({ stationId: stationLines[0].stationId, lineId: stationLines[1].lineId });
+  const fixture = { packs: [{ coverageLineOperatorScopes: active, stationLines,
+    stations: active.map((_, index) => ({ id: `station-${index}` })) }] };
+  const routeEdges = stationLines.flatMap(({ stationId, lineId }) => [
+    { edgeId: `entry-${stationId}-${lineId}`, edgeType: "ENTRY", fromNodeId: stationId, toNodeId: `${stationId}:${lineId}` },
+    { edgeId: `exit-${stationId}-${lineId}`, edgeType: "EXIT", fromNodeId: `${stationId}:${lineId}`, toNodeId: stationId },
+  ]);
+  routeEdges.push({ edgeId: "transfer", edgeType: "IN_STATION_TRANSFER",
+    fromNodeId: `${stationLines[0].stationId}:${active[0].lineId}`,
+    toNodeId: `${stationLines[0].stationId}:${active[1].lineId}` },
+  { edgeId: "ride", edgeType: "RIDE", serviceClass: "SUBWAY" });
+  const policyScope = { ...source.productionScope,
+    decision: { approvalState: "old-approved", approvedAt: "historical" },
+    verifiedAccessibilityScope: { requiredFacilityTypes: ["ELEVATOR", "ESCALATOR"] },
+    productionPromotionCriteria: { routeSafetyRequired: true, releaseModeAllowGaps: false } };
+  const args = { policyScope, scopeId: "fixture-nationwide", targets: source.targets,
+    fanIn: source.fanIn, ownershipLedger: source.ownershipLedger, fixture, routeEdges };
+  const actual = deriveNationwideProductionScope(args);
+  assert.deepEqual(actual.productionPromotionCriteria, policyScope.productionPromotionCriteria);
+  assert.equal(actual.verifiedAccessibilityScope.facilityCoverageDenominator.expectedRows, stationLines.length * 2);
+  assert.ok(actual.verifiedAccessibilityScope.requiredRowIds.includes(`${stationLines[0].stationId}|${active[1].lineId}|ELEVATOR`));
+  assert.deepEqual(actual.routingLaunchScope.requiredTransferStationIds, [stationLines[0].stationId]);
+  assert.deepEqual(actual.routingLaunchScope.requiredTransferEdgeIds, ["transfer"]);
+  assert.equal(actual.routingLaunchScope.requiredBaseEdgeIds.length, stationLines.length * 2);
+  assert.equal(actual.decision.currentLaunchDecision, "NO_GO");
+  assert.equal(Object.hasOwn(actual.decision, "approvedAt"), false);
+  assert.equal(actual.nationwideRoadmapScope.blocksRoutingLaunch, true);
+  assert.equal(actual.nationwideRoadmapScope.launchRequiredCount, source.ownershipLedger.summary.launchRequired.totalCount);
+  const missing = structuredClone(fixture);
+  missing.packs[0].coverageLineOperatorScopes.pop();
+  assert.throws(() => deriveNationwideProductionScope({ ...args, fixture: missing }), /target operator-line pair/);
+  assert.throws(() => deriveNationwideProductionScope({ ...args, routeEdges: routeEdges.filter((row) => row.edgeId !== "transfer") }), /materialized access edges/);
 });
 
 test("nationwide candidate transaction rolls back partial replacement and commits one bound tuple", async (context) => {

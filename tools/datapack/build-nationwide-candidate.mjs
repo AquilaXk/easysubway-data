@@ -10,6 +10,79 @@ import { CANDIDATE_RELEASE_OUTPUTS, createCandidateReleaseTransaction } from "./
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
+// 지원 범위를 선언할 입력을 계산할 뿐, 운영 승인이나 source 검증 성공을 만들지 않는다.
+export function deriveNationwideProductionScope({ policyScope, scopeId, targets, fanIn,
+  ownershipLedger, fixture, routeEdges }) {
+  const unique = (values) => [...new Set(values)].sort();
+  const key = ({ regionId, operatorId, lineId }) => JSON.stringify([regionId, operatorId, lineId]);
+  const active = targets.activeLineScopes;
+  const packs = fixture.packs;
+  const facilityTypes = policyScope.verifiedAccessibilityScope.requiredFacilityTypes;
+  if (typeof scopeId !== "string" || !scopeId.trim() || !Array.isArray(active) || !active.length
+    || !Array.isArray(packs) || !packs.length || !Array.isArray(facilityTypes) || !facilityTypes.length
+    || new Set(facilityTypes).size !== facilityTypes.length || !Array.isArray(routeEdges)) {
+    throw new Error("nationwide scope materialization inputs are invalid");
+  }
+  const regionIds = unique(active.map((row) => row.regionId));
+  if (JSON.stringify(regionIds) !== JSON.stringify(unique(fanIn.scope.regionIds))) throw new Error("scope fan-in regions mismatch");
+  const represented = new Set(packs.flatMap((pack) => pack.coverageLineOperatorScopes ?? []).map(key));
+  if (active.some((row) => !represented.has(key(row)))) throw new Error("scope materialization is missing a target operator-line pair");
+  const lineIds = unique(active.map((row) => row.lineId));
+  const operatorIds = unique(active.map((row) => row.operatorId));
+  const selectedLines = new Set(lineIds);
+  const stations = new Set(packs.flatMap((pack) => pack.stations.map((row) => row.id)));
+  const pairs = new Map();
+  for (const row of packs.flatMap((pack) => pack.stationLines)) {
+    if (!selectedLines.has(row.lineId)) continue;
+    if (!stations.has(row.stationId)) throw new Error("scope station membership is missing");
+    pairs.set(JSON.stringify([row.stationId, row.lineId]), row);
+  }
+  if (JSON.stringify(unique([...pairs.values()].map((row) => row.lineId))) !== JSON.stringify(lineIds)) {
+    throw new Error("scope materialization is missing a target line");
+  }
+  const stationIds = unique([...pairs.values()].map((row) => row.stationId));
+  const endpoints = new Map(stationIds.map((id) => [id, id]));
+  for (const row of pairs.values()) endpoints.set(`${row.stationId}:${row.lineId}`, row.stationId);
+  const baseEdges = routeEdges.filter((row) => ["ENTRY", "EXIT"].includes(row.edgeType));
+  const transferEdges = routeEdges.filter((row) => ["TRANSFER", "IN_STATION_TRANSFER"].includes(row.edgeType));
+  const accessEdges = [...baseEdges, ...transferEdges];
+  if (!baseEdges.length || !transferEdges.length || accessEdges.some((row) => !row.edgeId
+    || !endpoints.has(row.fromNodeId) || !endpoints.has(row.toNodeId))) {
+    throw new Error("scope requires materialized access edges with canonical endpoints");
+  }
+  const serviceIds = unique(routeEdges.filter((row) => row.edgeType === "RIDE").map((row) => row.serviceClass));
+  if (!serviceIds.length || serviceIds.some((id) => typeof id !== "string" || !id)) throw new Error("scope route services are missing");
+  const requiredRowIds = unique([...pairs.values()].flatMap(({ stationId, lineId }) =>
+    facilityTypes.map((type) => `${stationId}|${lineId}|${type}`)));
+  const scope = structuredClone(policyScope);
+  const access = { ...scope.verifiedAccessibilityScope, id: scopeId, regionIds,
+    includedOperatorIds: operatorIds, includedLineIds: lineIds, includedStationIds: stationIds,
+    requiredRowIds, facilityCoverageDenominator: { kind: "station_line_x_required_facility_type", expectedRows: requiredRowIds.length },
+    supportedClaimKo: "전국 도시철도 지원 범위 — 운영 evidence 검증 전",
+    supportedClaimPolicyKo: "생성한 scope는 지원 성공 주장이 아니다. 운영 evidence가 통과한 범위만 표시한다." };
+  scope.verifiedAccessibilityScope = access;
+  scope.supportScope = structuredClone(access);
+  scope.decision = { currentLaunchDecision: "NO_GO", supportScope: scopeId, blocker: "RELEASE_EVIDENCE_PENDING" };
+  scope.routingLaunchScope = { ...scope.routingLaunchScope, id: scopeId, regionIds, operatorIds, lineIds, serviceIds,
+    baseRoutingStationIds: stationIds, requiredBaseEdgeIds: unique(baseEdges.map((row) => row.edgeId)),
+    requiredTransferEdgeIds: unique(transferEdges.map((row) => row.edgeId)),
+    requiredTransferStationIds: unique(transferEdges.flatMap((row) => [endpoints.get(row.fromNodeId), endpoints.get(row.toNodeId)])) };
+  const total = ownershipLedger.summary.launchRequired.totalCount;
+  if (!Number.isSafeInteger(total) || total < 1) throw new Error("scope launch denominator is invalid");
+  scope.nationwideRoadmapScope = { ...scope.nationwideRoadmapScope, id: scopeId,
+    targets: NATIONWIDE_CANDIDATE_INPUT_PATHS.targets, launchRequiredCount: total, blocksRoutingLaunch: true };
+  const requiredSourceIds = unique(fanIn.selectedSources.map((row) => row.sourceId));
+  scope.productionSourceSet = { ...scope.productionSourceSet,
+    sourceInventory: NATIONWIDE_CANDIDATE_INPUT_PATHS.inventory, requiredSourceIds };
+  for (const field of ["optionalAccessibilitySourceIds", "excludedFromV1SupportClaims"]) {
+    if (Array.isArray(scope.productionSourceSet[field])) scope.productionSourceSet[field] = scope.productionSourceSet[field].filter((id) => !requiredSourceIds.includes(id));
+  }
+  scope.nationwideCoverageContract = { ...scope.nationwideCoverageContract,
+    activeLaunchRequiredDomains: targets.requiredSourceDomains.filter((row) => row.releaseTier === "LAUNCH_REQUIRED").map((row) => row.id),
+    enhancementDomains: targets.requiredSourceDomains.filter((row) => row.releaseTier === "ENHANCEMENT").map((row) => row.id) };
+  return scope;
+}
+
 // 준비 scope는 교체할 출력이다. 이를 불변 외부 입력으로 다시 검사하면
 // 자기 자신의 첫 write를 drift로 오인하므로 출력 prestate CAS로 보호한다.
 export async function commitNationwideReleaseArtifacts({ repositoryRoot, productionScopeBytes,
