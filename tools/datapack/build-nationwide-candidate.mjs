@@ -150,7 +150,7 @@ export async function buildNationwideReleaseArtifacts({ authority, ...input } = 
   if (violations.length) throw new Error(`release authority binding failed: ${violations.join("; ")}`);
   const selectedIds = new Set(candidate.sourceSnapshotIds);
   const selected = JSON.parse(input.inputBytes.sourceSnapshots).filter((row) => selectedIds.has(row.snapshotId));
-  const admission = new Map(candidate.sourceSnapshots.map((row) => [row.snapshotId, row.adminReviewRecordHash]));
+  const admission = new Map(candidate.sourceSnapshots.map((row) => [row.snapshotId, row]));
   const evidence = {
     schemaVersion: 1, artifactKind: "datapack-build-spec-hash-evidence",
     builderGitSha: candidate.builderGitSha, builderVersion: candidate.builderVersion,
@@ -161,7 +161,9 @@ export async function buildNationwideReleaseArtifacts({ authority, ...input } = 
     overrides: prepared.overridesBinding,
     identifiers: { candidateId: { value: candidate.candidateId }, approvalId: { value: authority.approvalId } },
     perSourceEvidence: selected.map((row) => ({ sourceId: row.sourceId, snapshotId: row.snapshotId,
-      rawSha256: row.rawSha256, adminReviewRecordHash: admission.get(row.snapshotId),
+      rawSha256: row.rawSha256, ...(admission.get(row.snapshotId).adminReviewRecordHash
+        ? { adminReviewRecordHash: admission.get(row.snapshotId).adminReviewRecordHash }
+        : { admissionRecordSha256s: admission.get(row.snapshotId).admissionRecordSha256s }),
       perSourceSnapshotSetHash: sha256(JSON.stringify([row])) })),
   };
   return { ...prepared, candidateBytes, productionScopeBytes: Buffer.from(input.inputBytes.productionScope),
@@ -219,16 +221,26 @@ export async function buildNationwideCandidateSpec({
   const selected = snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   const bySource = new Map(inventory.sources.map((source) => [source.id, source]));
   const sourceSnapshots = selected.map((snapshot) => {
-    const adminReviewRecordHash = bySource.get(snapshot.sourceId)?.admissionEvidence?.adminReviewRecordHash;
-    if (!/^[a-f0-9]{64}$/.test(adminReviewRecordHash ?? "")) throw new Error("source admission adminReviewRecordHash is required");
-    return {
+    const source = bySource.get(snapshot.sourceId);
+    if (!source) throw new Error("candidate source inventory binding is required");
+    const common = {
       snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,
       rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
       schemaFingerprint: snapshot.schemaFingerprint, licenseStatus: snapshot.licenseStatus,
-      redistributionAllowed: snapshot.redistributionAllowed, adminReviewRecordHash,
+      redistributionAllowed: snapshot.redistributionAllowed,
       snapshotStatus: snapshot.snapshotStatus, credentialRedacted: snapshot.credentialRedacted,
       freshnessExpiresAt: snapshot.freshnessExpiresAt,
     };
+    if (source.admissionEvidence !== undefined) {
+      const adminReviewRecordHash = source.admissionEvidence?.adminReviewRecordHash;
+      if (!/^[a-f0-9]{64}$/.test(adminReviewRecordHash ?? "")) throw new Error("source admission adminReviewRecordHash is required");
+      return { ...common, adminReviewRecordHash };
+    }
+    const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === snapshot.sourceId);
+    if (!source.scheduleAdmissionEvidence || !Array.isArray(head?.admissionRecordSha256s)) {
+      throw new Error("native schedule admission records are required");
+    }
+    return { ...common, admissionRecordSha256s: structuredClone(head.admissionRecordSha256s) };
   });
   const buildSpec = {
     schemaVersion: 1, artifactKind: "datapack-candidate-build-spec",

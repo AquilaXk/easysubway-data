@@ -151,6 +151,59 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
   assert.equal(fanIn.scopeSha256, sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(fanIn.scope))));
 });
 
+test("native schedule admission binds a production materialization approval without invented approval fields", () => {
+  const input = fixture();
+  const source = input.inventory.sources[0];
+  delete source.admissionEvidence;
+  source.capabilities = { schedule: { productionUseAllowed: true } };
+  source.scheduleAdmissionEvidence = {
+    issue: 454,
+    materializer: "tools/datapack/materialize-korail-timetable.mjs",
+    verificationTest: "tools/datapack/materialize-korail-timetable.test.mjs",
+    snapshotId: input.sourceSnapshots[0].snapshotId,
+    snapshotPath: `tools/datapack/sources/${input.sourceSnapshots[0].snapshotId}.json`,
+    capturedAt: "2026-09-02T00:00:00.000Z",
+    freshUntil: "2026-09-04T00:00:00.000Z",
+    rawSha256: SHA,
+    rowsSha256: "b".repeat(64),
+    topologySourceId: "korail-metropolitan-timetable-file",
+    topologySnapshotId: "topology-1",
+    topologyContentSha256: "d".repeat(64),
+    rowCount: 2,
+    departureCount: 2,
+    tripCount: 1,
+    stopTimeCount: 2,
+  };
+  input.inputBytes.inventory = bytes(input.inventory);
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(input));
+  const copy = () => ({ ...structuredClone(input),
+    inputBytes: Object.fromEntries(Object.entries(input.inputBytes).map(([key, value]) => [key, Buffer.from(value)])) });
+
+  const missingCapability = copy();
+  delete missingCapability.inventory.sources[0].capabilities;
+  missingCapability.inputBytes.inventory = bytes(missingCapability.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(missingCapability), /admission.*approval/);
+
+  const incomplete = copy();
+  delete incomplete.inventory.sources[0].scheduleAdmissionEvidence.rowsSha256;
+  incomplete.inputBytes.inventory = bytes(incomplete.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(incomplete), /admission.*approval/);
+
+  const badDigest = copy();
+  badDigest.inventory.sources[0].scheduleAdmissionEvidence.rawSha256 = "e".repeat(64);
+  badDigest.inputBytes.inventory = bytes(badDigest.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(badDigest), /admission.*digest/);
+
+  const stale = copy();
+  stale.inventory.sources[0].scheduleAdmissionEvidence.freshUntil = EVALUATED_AT;
+  stale.inputBytes.inventory = bytes(stale.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(stale), /admission.*freshness/);
+
+  const byteDrift = copy();
+  byteDrift.inventory.sources[0].scheduleAdmissionEvidence.tripCount = 2;
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(byteDrift), /inventory input bytes/);
+});
+
 test("#687 keeps enhancement heads non-blocking until their tier is promoted", () => {
   const unknownTier = fixture();
   unknownTier.targets.requiredSourceDomains[0].releaseTier = "LUNCH_REQUIRED";

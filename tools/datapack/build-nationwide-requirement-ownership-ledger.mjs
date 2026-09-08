@@ -126,7 +126,9 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
     licenseLineage: sources.length > 0 && licenses.length === sources.length ? evidenced(licenses) : pending(pendingReason, childOwner),
     freshnessLineage: freshEnough ? evidenced(fresh) : pending(pendingReason, childOwner),
     admissionLineage: sources.length > 0 && sources.every((source) => source.productionUseAllowed === true
-      && admittedEvidence(source).some(({ decision }) => decision === "APPROVED"))
+      && (admittedEvidence(source).some(({ decision }) => decision === "APPROVED")
+        || (source.admissionEvidence === undefined
+          && heads.get(source.id)?.admissionRecordSha256s?.some(({ kind }) => kind === "scheduleAdmissionEvidence"))))
       ? evidenced(sources.map(({ id, productionUseAllowed }) => ({ sourceId: id, productionUseAllowed, admissions: admittedEvidence(sources.find((source) => source.id === id)) })))
       : pending("PRODUCTION_ADMISSION_REQUIRED", childOwner),
     artifactLineage: allCentral

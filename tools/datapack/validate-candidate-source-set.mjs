@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import { canonicalCurrentFiveRegionSourceFanInJson } from "./build-current-five-region-source-fan-in.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
@@ -151,6 +152,30 @@ function sameRegions(value, expected, label) {
   }
 }
 
+function validateAdmissionProjection({ projection, source, head }) {
+  const hasGeneric = Object.hasOwn(projection, "adminReviewRecordHash");
+  const hasNative = Object.hasOwn(projection, "admissionRecordSha256s");
+  if (hasGeneric && hasNative) throw new Error("candidate source admission projection is mixed");
+  if (hasGeneric) {
+    if (requireSha256(projection.adminReviewRecordHash, "candidate admin review record")
+      !== source?.admissionEvidence?.adminReviewRecordHash) {
+      throw new Error("candidate generic admission binding mismatch");
+    }
+    return;
+  }
+  const evidence = source?.scheduleAdmissionEvidence;
+  if (!evidence || source.admissionEvidence !== undefined
+    || evidence.snapshotId !== head.snapshotId || evidence.rawSha256 !== head.rawSha256
+    || !Array.isArray(projection.admissionRecordSha256s)
+    || !isDeepStrictEqual(projection.admissionRecordSha256s, head.admissionRecordSha256s)
+    || !isDeepStrictEqual(projection.admissionRecordSha256s, [{
+      kind: "scheduleAdmissionEvidence",
+      sha256: sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(evidence))),
+    }])) {
+    throw new Error("candidate native schedule admission binding mismatch");
+  }
+}
+
 // 후보 생성 전의 release 경계에서만 fan-in, 원본 ledger, scope를 함께 고정한다.
 export function validateNationwideCandidateSourceSet({ candidate, inputBytes }) {
   const bytes = inputBytes ?? {};
@@ -212,6 +237,8 @@ export function validateNationwideCandidateSourceSet({ candidate, inputBytes }) 
       || projection.freshnessExpiresAt !== head.freshnessExpiresAt) {
       throw new Error("candidate source head binding mismatch");
     }
+    const source = inputs.inventory.sources?.find(({ id }) => id === projection.sourceId);
+    validateAdmissionProjection({ projection, source, head });
     if (requiredUtcInstant(head.freshnessExpiresAt, "fan-in head freshness") <= publishedAt) {
       throw new Error("candidate source head freshness expired");
     }

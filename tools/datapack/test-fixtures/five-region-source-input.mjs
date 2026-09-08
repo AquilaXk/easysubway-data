@@ -66,6 +66,7 @@ export function independentFiveRegionFixture({ runtimeEvidence = false } = {}) {
     admissionEvidence: {
       decision: "APPROVED", sourceId, snapshotId: `${sourceId}-snapshot`, rawSha256,
       capturedAt: "2040-01-01T00:00:00.000Z", freshUntil: "2040-01-03T00:00:00.000Z",
+      adminReviewRecordHash: "d".repeat(64),
     },
     ...(runtimeEvidence ? { runtimeLineageEvidence: { operationId: "fixture-runtime" } } : {}),
   };
@@ -131,7 +132,9 @@ export function fiveRegionCandidateSourceSetInput({ runtimeEvidence = true } = {
   const candidate = {
     sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId),
     sourceSnapshots: selected.map(({ sourceId, snapshotId, rawSha256, freshnessExpiresAt }) =>
-      ({ sourceId, snapshotId, rawSha256, freshnessExpiresAt })),
+      ({ sourceId, snapshotId, rawSha256, freshnessExpiresAt,
+        adminReviewRecordHash: input.inventory.sources.find(({ id }) => id === sourceId)
+          ?.admissionEvidence?.adminReviewRecordHash })),
     sourceSnapshotSetHash: hash(Buffer.from(JSON.stringify(selected))),
     sourceInventorySha256: hash(Buffer.from(JSON.stringify(input.inventory))),
     networkEdgeEvidence: {

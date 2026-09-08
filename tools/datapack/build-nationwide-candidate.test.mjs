@@ -18,11 +18,26 @@ import { fiveRegionCandidateSourceSetInput, fixtureBytes, fixtureLedgerInput } f
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
-async function inputs(context, { admitted = true } = {}) {
+async function inputs(context, { admitted = true, native = false, malformedGeneric = false } = {}) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-test-"));
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const source = fiveRegionCandidateSourceSetInput();
-  if (admitted) source.inventory.sources[0].admissionEvidence.adminReviewRecordHash = "d".repeat(64);
+  if (native) {
+    const inventorySource = source.inventory.sources[0];
+    delete inventorySource.admissionEvidence;
+    inventorySource.capabilities = { schedule: { productionUseAllowed: true } };
+    inventorySource.scheduleAdmissionEvidence = {
+      issue: 1, materializer: "fixture-materializer", verificationTest: "fixture-test",
+      snapshotId: source.sourceSnapshots[0].snapshotId,
+      snapshotPath: `tools/datapack/sources/${source.sourceSnapshots[0].snapshotId}.json`,
+      capturedAt: source.sourceSnapshots[0].retrievedAt, freshUntil: source.sourceSnapshots[0].freshnessExpiresAt,
+      rawSha256: source.sourceSnapshots[0].rawSha256, rowsSha256: "e".repeat(64), contentSha256: "f".repeat(64),
+      topologySourceId: "fixture-topology", topologySnapshotId: "fixture-topology-snapshot",
+      topologyContentSha256: "a".repeat(64), rowCount: 1, departureCount: 1, tripCount: 1, stopTimeCount: 1,
+    };
+    if (malformedGeneric) inventorySource.admissionEvidence = { adminReviewRecordHash: "invalid" };
+  } else if (admitted) source.inventory.sources[0].admissionEvidence.adminReviewRecordHash = "d".repeat(64);
+  else delete source.inventory.sources[0].admissionEvidence.adminReviewRecordHash;
   const bound = fixtureLedgerInput(source);
   const inputBytes = {
     ...bound.inputBytes,
@@ -50,6 +65,17 @@ async function inputs(context, { admitted = true } = {}) {
 
 test("nationwide candidate constructor requires its actual inputs", async () => {
   await assert.rejects(buildNationwideCandidateSpec({}), /targets input bytes are required/);
+});
+
+test("nationwide candidate constructor serializes native schedule admission records", async (context) => {
+  const input = await inputs(context, { native: true });
+  const result = await buildNationwideCandidateSpec(input);
+  assert.deepEqual(result.buildSpec.sourceSnapshots[0].admissionRecordSha256s,
+    JSON.parse(input.inputBytes.fanIn).selectedSources[0].admissionRecordSha256s);
+  assert.equal(Object.hasOwn(result.buildSpec.sourceSnapshots[0], "adminReviewRecordHash"), false);
+
+  const mixed = await inputs(context, { native: true, malformedGeneric: true });
+  await assert.rejects(buildNationwideCandidateSpec(mixed), /adminReviewRecordHash/);
 });
 
 test("nationwide preparation CLI consumes serialized inputs and writes the bound candidate", async (context) => {

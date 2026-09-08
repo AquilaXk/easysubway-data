@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
+import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 import {
   canonicalJson,
   stagedPackPath,
@@ -1125,6 +1126,12 @@ async function validateCandidateBuildSpec(
     "buildSpec.sourceSnapshots",
     now,
   );
+  if (sourceSnapshots.some((snapshot) => snapshot.admissionRecordSha256s)) {
+    const inputBytes = Object.fromEntries(await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS)
+      .map(async ([name, relative]) => [name, await readFile(path.join(repositoryRoot, relative))])));
+    inputBytes.productionScope = await readFile(path.join(repositoryRoot, buildSpec.productionScope.path));
+    validateNationwideCandidateSourceSet({ candidate: buildSpec, inputBytes });
+  }
   assertSourceSnapshotSet(buildSpec.sourceSnapshotIds, sourceSnapshots);
   for (const field of candidateBuildSpecHashFields) {
     sha256HexString(buildSpec[field], `buildSpec.${field}`);
@@ -3015,11 +3022,24 @@ function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
       schemaFingerprint: sha256HexString(snapshot.schemaFingerprint, `${prefix}.schemaFingerprint`),
       licenseStatus: requiredString(snapshot.licenseStatus, `${prefix}.licenseStatus`),
       redistributionAllowed: snapshot.redistributionAllowed,
-      adminReviewRecordHash: sha256HexString(snapshot.adminReviewRecordHash, `${prefix}.adminReviewRecordHash`),
       snapshotStatus: requiredString(snapshot.snapshotStatus, `${prefix}.snapshotStatus`),
       credentialRedacted: snapshot.credentialRedacted,
       freshnessExpiresAt: requiredUtcDateString(snapshot.freshnessExpiresAt, `${prefix}.freshnessExpiresAt`),
     };
+    const hasGeneric = Object.hasOwn(snapshot, "adminReviewRecordHash");
+    const hasNative = Object.hasOwn(snapshot, "admissionRecordSha256s");
+    if (hasGeneric === hasNative) {
+      throw new Error(`${prefix} must contain exactly one admission projection`);
+    }
+    if (hasGeneric) {
+      normalized.adminReviewRecordHash = sha256HexString(snapshot.adminReviewRecordHash, `${prefix}.adminReviewRecordHash`);
+    } else if (!Array.isArray(snapshot.admissionRecordSha256s) || snapshot.admissionRecordSha256s.length === 0
+      || snapshot.admissionRecordSha256s.some((record) => record?.kind !== "scheduleAdmissionEvidence"
+        || !/^[a-f0-9]{64}$/.test(record.sha256 ?? ""))) {
+      throw new Error(`${prefix}.admissionRecordSha256s is invalid`);
+    } else {
+      normalized.admissionRecordSha256s = structuredClone(snapshot.admissionRecordSha256s);
+    }
     if (normalized.licenseStatus !== "PASS") {
       throw new Error(`${prefix}.licenseStatus must be PASS`);
     }

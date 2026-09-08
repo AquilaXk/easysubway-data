@@ -129,11 +129,14 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     && (evidence.sourceId === undefined || evidence.sourceId === sourceId));
   if (matching.length === 0) throw new Error(`admission snapshot mismatch for ${sourceId}`);
 
-  const approved = matching.filter(([, evidence]) => evidence.decision === "APPROVED"
-    || evidence.productionUseAllowed === true);
-  if (approved.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
+  const approved = matching.filter(([kind, evidence]) => kind !== "scheduleAdmissionEvidence"
+    && (evidence.decision === "APPROVED" || evidence.productionUseAllowed === true));
+  const native = matching.filter(([kind, evidence]) => kind === "scheduleAdmissionEvidence"
+    && validNativeScheduleAdmission(source, evidence, snapshot, sourceId));
+  const recognized = [...approved, ...native];
+  if (recognized.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
 
-  const bound = approved.filter(([, evidence]) => evidence.rawSha256 === snapshot.rawSha256);
+  const bound = recognized.filter(([, evidence]) => evidence.rawSha256 === snapshot.rawSha256);
   if (bound.length === 0) throw new Error(`admission digest mismatch for ${sourceId}`);
 
   const current = bound.filter(([, evidence]) => {
@@ -156,6 +159,26 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     kind,
     sha256: sha256(Buffer.from(canonical(evidence))),
   })).sort((left, right) => compare(left.kind, right.kind));
+}
+
+function validNativeScheduleAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (source.requiredForProductionPack !== true || source.productionUseAllowed !== true
+    || source.capabilities?.schedule?.productionUseAllowed !== true) return false;
+  if (!Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId || !SHA256.test(evidence.rawSha256 ?? "")
+    || !SHA256.test(evidence.rowsSha256 ?? "")
+    || (Object.hasOwn(evidence, "contentSha256") && !SHA256.test(evidence.contentSha256))
+    || !SHA256.test(evidence.topologyContentSha256 ?? "") || typeof evidence.topologySourceId !== "string"
+    || evidence.topologySourceId.length === 0 || typeof evidence.topologySnapshotId !== "string"
+    || evidence.topologySnapshotId.length === 0
+    || !["rowCount", "departureCount", "tripCount", "stopTimeCount"].every((key) => Number.isInteger(evidence[key]) && evidence[key] > 0)) {
+    return false;
+  }
+  return true;
 }
 
 function isImmutableOciObjectUri(value) {

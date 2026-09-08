@@ -4,7 +4,7 @@ import test from "node:test";
 
 import * as candidateSourceSet from "./validate-candidate-source-set.mjs";
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
-import { fiveRegionCandidateSourceSetInput } from "./test-fixtures/five-region-source-input.mjs";
+import { fixtureBytes, fixtureLedgerInput, independentFiveRegionFixture, fiveRegionCandidateSourceSetInput } from "./test-fixtures/five-region-source-input.mjs";
 
 const { readProductionSourceSet, validateCandidateSourceSet } = candidateSourceSet;
 
@@ -180,4 +180,49 @@ test("#6 binds a GO five-region candidate to exact source, ledger, and scope byt
   const expired = fiveRegionCandidateSourceSetInput();
   expired.candidate.publishedAt = "2040-01-03T00:00:00.000Z";
   assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(expired), /fresh|expire/i);
+});
+
+test("native schedule admission records bind the selected inventory and fan-in head", () => {
+  const source = independentFiveRegionFixture({ runtimeEvidence: true });
+  const inventorySource = source.inventory.sources[0];
+  delete inventorySource.admissionEvidence;
+  inventorySource.capabilities = { schedule: { productionUseAllowed: true } };
+  inventorySource.scheduleAdmissionEvidence = {
+    issue: 1, materializer: "fixture-materializer", verificationTest: "fixture-test",
+    snapshotId: source.sourceSnapshots[0].snapshotId,
+    snapshotPath: `tools/datapack/sources/${source.sourceSnapshots[0].snapshotId}.json`,
+    capturedAt: source.sourceSnapshots[0].retrievedAt, freshUntil: source.sourceSnapshots[0].freshnessExpiresAt,
+    rawSha256: source.sourceSnapshots[0].rawSha256, rowsSha256: "d".repeat(64), contentSha256: "e".repeat(64),
+    topologySourceId: "fixture-topology", topologySnapshotId: "fixture-topology-snapshot",
+    topologyContentSha256: "f".repeat(64), rowCount: 1, departureCount: 1, tripCount: 1, stopTimeCount: 1,
+  };
+  source.inputBytes.inventory = fixtureBytes(source.inventory);
+  const bound = fixtureLedgerInput(source);
+  const regions = bound.fanIn.scope.regionIds;
+  const productionScope = { productionSourceSet: { sourceInventory: INVENTORY_PATH,
+    requiredSourceIds: bound.fanIn.selectedSources.map(({ sourceId }) => sourceId) },
+  verifiedAccessibilityScope: { id: "fixture", regionIds: regions }, supportScope: { id: "fixture", regionIds: regions },
+  routingLaunchScope: { id: "fixture", regionIds: regions },
+  nationwideRoadmapScope: { blocksRoutingLaunch: true, launchRequiredCount: bound.tally.launchRequired.requirements.length } };
+  const selected = bound.sourceSnapshots;
+  const candidate = { sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map((row) => ({
+    sourceId: row.sourceId, snapshotId: row.snapshotId, rawSha256: row.rawSha256,
+    freshnessExpiresAt: row.freshnessExpiresAt, admissionRecordSha256s: bound.fanIn.selectedSources[0].admissionRecordSha256s,
+  })), sourceSnapshotSetHash: sha(JSON.stringify(selected)), sourceInventorySha256: sha(JSON.stringify(bound.inventory)),
+  networkEdgeEvidence: { sourceInventory: { path: INVENTORY_PATH, sha256: sha(bound.inputBytes.inventory) } },
+  publishedAt: bound.evaluatedAt, productionScope: { path: "release/product-gates/production-datapack-scope.json", sha256: sha(fixtureBytes(productionScope)) },
+  productionScopePolicy: { path: "tools/datapack/nationwide-coverage-targets.json", sha256: sha(bound.inputBytes.targets) }, productionScopeId: "fixture" };
+  const input = { candidate, inputBytes: { ...bound.inputBytes, productionScope: fixtureBytes(productionScope),
+    ownershipLedger: fixtureBytes(buildNationwideRequirementOwnershipLedger(bound)) } };
+  assert.doesNotThrow(() => candidateSourceSet.validateNationwideCandidateSourceSet(input));
+  for (const mutate of [
+    (value) => { value.candidate.sourceSnapshots[0].admissionRecordSha256s[0].sha256 = "0".repeat(64); },
+    (value) => { value.inventory.sources[0].scheduleAdmissionEvidence.rawSha256 = "0".repeat(64); value.inputBytes.inventory = fixtureBytes(value.inventory); },
+    (value) => { value.candidate.sourceSnapshots[0].adminReviewRecordHash = "0".repeat(64); },
+  ]) {
+    const value = structuredClone({ ...input, inventory: bound.inventory });
+    value.inputBytes = Object.fromEntries(Object.entries(input.inputBytes).map(([key, bytes]) => [key, Buffer.from(bytes)]));
+    mutate(value);
+    assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(value), /admission|binding|semantic/i);
+  }
 });
