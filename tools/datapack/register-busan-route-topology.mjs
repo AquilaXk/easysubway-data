@@ -34,7 +34,7 @@ export async function prepareBusanTopologyRegistration({ repositoryRoot, snapsho
   const [inventory, ledger, governance, freshness] = currentBytes.map((bytes) => parse(bytes, "registration output"));
   const snapshot = parse(snapshotBytes, "Busan topology snapshot");
   const canonicalStationMappings = parseCanonicalBusanStationMappings(stationMapBytes.toString("utf8"));
-  await replayRetainedSnapshot(snapshot);
+  await replayRetainedSnapshot(snapshot, now);
   admitBusanRouteTopology(snapshot, { now });
   const source = select(inventory.sources, ({ id }) => id === SOURCE_ID, "inventory source");
   const candidate = select(parse(candidateBytes, "source candidates").candidates, ({ id }) => id === SOURCE_ID, "source candidate");
@@ -227,9 +227,14 @@ export async function publishAndRegisterBusanTopology({
   return transaction.commit({ repositoryRoot: root, outputs });
 }
 
-async function replayRetainedSnapshot(snapshot) {
+async function replayRetainedSnapshot(snapshot, registrationNow) {
   if (!Array.isArray(snapshot?.rawResponses) || snapshot.rawResponses.length !== snapshot.scope?.length) {
     throw new Error("Busan topology retained raw responses are required");
+  }
+  const admittedAt = snapshot.admission?.admittedAt;
+  if (!instant(snapshot.capturedAt) || !instant(admittedAt) || Date.parse(snapshot.capturedAt) > Date.parse(admittedAt)
+    || Date.parse(admittedAt) > registrationNow.valueOf()) {
+    throw new Error("Busan topology retained admission clock is invalid");
   }
   let cursor = 0;
   const replay = await collectBusanRouteTopology({
@@ -248,7 +253,7 @@ async function replayRetainedSnapshot(snapshot) {
   });
   const expected = {
     ...replay,
-    admission: admitBusanRouteTopology(replay, { now: new Date(snapshot.capturedAt) }),
+    admission: admitBusanRouteTopology(replay, { now: new Date(admittedAt) }),
   };
   if (cursor !== snapshot.rawResponses.length || !isDeepStrictEqual(snapshot, expected)) {
     throw new Error("Busan topology retained snapshot replay mismatch");

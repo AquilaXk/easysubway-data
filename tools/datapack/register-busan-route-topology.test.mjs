@@ -26,7 +26,8 @@ test("register retained Busan topology through source transaction", async (t) =>
     stationCode: `${lineNumber}0${stop}`, stationName: `역${lineNumber}${stop}`, lineId,
     neighborCodes: [`${lineNumber}0${3 - stop}`],
   })));
-  const collectedSnapshot = await collectBusanRouteTopology({ serviceKey: "test-key", stationScopes: scope, now,
+  const capturedAt = new Date(now.valueOf() - 1_000);
+  const collectedSnapshot = await collectBusanRouteTopology({ serviceKey: "test-key", stationScopes: scope, now: capturedAt,
     fetchImpl: async (url) => {
       const from = scope.find(({ stationCode }) => stationCode === new URL(url).searchParams.get("scode"));
       const to = scope.find(({ stationCode }) => stationCode === from.neighborCodes[0]);
@@ -41,6 +42,7 @@ test("register retained Busan topology through source transaction", async (t) =>
     ...collectedSnapshot,
     admission: admitBusanRouteTopology(collectedSnapshot, { now }),
   };
+  assert.notEqual(snapshot.capturedAt, snapshot.admission.admittedAt);
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const snapshotPath = path.join(root, "retained-busan.json");
   await writeFile(snapshotPath, snapshotBytes);

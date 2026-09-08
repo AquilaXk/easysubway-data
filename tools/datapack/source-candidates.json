@@ -643,8 +643,8 @@
           "licenseReview": {
             "status": "APPROVED",
             "termsHash": "c95b17313528bec500646e6e22900d998d936d5f3f9824704335cddc60875583",
-            "reviewedAt": "2026-09-08T15:44:42Z",
-            "nextReviewAt": "2027-09-08T15:44:42Z",
+            "reviewedAt": "2026-09-08T15:44:42.000Z",
+            "nextReviewAt": "2027-09-08T15:44:42.000Z",
             "termsUrl": "https://www.data.go.kr/data/15001019/openapi.do",
             "reviewedProvider": "부산교통공사",
             "reviewedDatasetUrl": "https://www.data.go.kr/data/15001019/openapi.do",
