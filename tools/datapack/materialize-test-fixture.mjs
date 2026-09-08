@@ -9,8 +9,15 @@ import {
   parseCurrentMolitDaeguStationMappings,
   parseCurrentMolitDaejeonStationMappings,
   parseCurrentMolitGwangjuStationMappings,
+  parseMolitDaejeonStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
 import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
+import {
+  materializeBusanRouteTopology,
+  parseCanonicalBusanStationMappings,
+} from "./materialize-busan-route-topology.mjs";
+import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
+import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 
 const ITX_TOKEN = /(?:^|[^A-Z0-9])ITX(?:[_-]|$)/;
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -126,6 +133,44 @@ export function projectRegionalMaterializeFixture(input) {
   }
   rejectItxReference(fixture, "fixture");
   return fixture;
+}
+
+/** 하위 materializer 테스트가 공유하는 부산 topology·대전 timetable·부산 timetable prefix. */
+export function materializeRegionalBusanTimetablePrefix({
+  baseFixture,
+  busanTopology,
+  busanTimetable,
+  daejeonTopology,
+  daejeonTimetable,
+  inventory,
+  stationMapCsv,
+  molitStationMapCsv,
+  topologyNow,
+  timetableNow,
+}) {
+  const busanTopologyFixture = materializeBusanRouteTopology({
+    baseFixture,
+    snapshot: busanTopology,
+    inventory,
+    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
+    now: topologyNow,
+  });
+  const daejeonFixture = materializeDaejeonTimetable({
+    baseFixture: busanTopologyFixture,
+    timetableSnapshot: daejeonTimetable,
+    topologySnapshot: daejeonTopology,
+    inventory,
+    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
+    now: timetableNow,
+  });
+  const busanTimetableFixture = materializeBusanTimetable({
+    baseFixture: daejeonFixture,
+    timetableSnapshot: busanTimetable,
+    topologySnapshot: busanTopology,
+    inventory,
+    now: timetableNow,
+  });
+  return { busanTopologyFixture, daejeonFixture, busanTimetableFixture };
 }
 
 /**

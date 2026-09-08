@@ -3,19 +3,13 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { projectHistoricalRegionalMaterializeInventory } from "./materialize-test-fixture.mjs";
+import {
+  materializeRegionalBusanTimetablePrefix,
+  projectHistoricalRegionalMaterializeInventory,
+} from "./materialize-test-fixture.mjs";
 
-import {
-  parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
+import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { listCapitalWideRailRouteMapPositionLines } from "./collect-kric-capital-wide-rail-route-map-positions.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
 import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
 import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
@@ -76,27 +70,9 @@ async function inputs() {
     readFile(path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`)),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
   ]);
-  const busanTopologyFixture = materializeBusanRouteTopology({
-    baseFixture,
-    snapshot: busanTopology,
-    inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: busanTopologyFixture,
-    timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
-  const busanTimetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
+  const { busanTimetableFixture } = materializeRegionalBusanTimetablePrefix({
+    baseFixture, busanTopology, busanTimetable, daejeonTopology, daejeonTimetable,
+    inventory, stationMapCsv, molitStationMapCsv, topologyNow, timetableNow,
   });
   const gwangjuFixture = materializeRetainedGwangjuTestFixture({
     baseFixture: busanTimetableFixture,

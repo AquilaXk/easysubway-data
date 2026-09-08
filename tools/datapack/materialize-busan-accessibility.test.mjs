@@ -8,22 +8,16 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  materializeRegionalBusanTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
-import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import {
   materializeBusanAccessibility,
   materializedBusanAccessibilityPackContentHash,
 } from "./materialize-busan-accessibility.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -64,27 +58,17 @@ async function inputs() {
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
-  const topologyFixture = materializeBusanRouteTopology({
+  const { busanTimetableFixture: timetableFixture } = materializeRegionalBusanTimetablePrefix({
     baseFixture,
-    snapshot: topologySnapshot,
+    busanTopology: topologySnapshot,
+    busanTimetable: timetableSnapshot,
+    daejeonTopology: daejeonTopologySnapshot,
+    daejeonTimetable: daejeonTimetableSnapshot,
     inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: topologyFixture,
-    timetableSnapshot: daejeonTimetableSnapshot,
-    topologySnapshot: daejeonTopologySnapshot,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: routeMapNow,
-  });
-  const timetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot,
-    topologySnapshot,
-    inventory,
-    now: routeMapNow,
+    stationMapCsv,
+    molitStationMapCsv,
+    topologyNow,
+    timetableNow: routeMapNow,
   });
   return {
     timetableFixture,

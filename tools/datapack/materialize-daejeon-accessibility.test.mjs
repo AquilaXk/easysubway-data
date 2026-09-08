@@ -8,22 +8,16 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  materializeRegionalBusanTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
-import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import {
   materializeDaejeonAccessibility,
   materializedDaejeonAccessibilityPackContentHash,
 } from "./materialize-daejeon-accessibility.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -59,27 +53,9 @@ async function inputs() {
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
-  const topologyFixture = materializeBusanRouteTopology({
-    baseFixture,
-    snapshot: busanTopology,
-    inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: topologyFixture,
-    timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
-  const timetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
+  const { busanTimetableFixture: timetableFixture } = materializeRegionalBusanTimetablePrefix({
+    baseFixture, busanTopology, busanTimetable, daejeonTopology, daejeonTimetable,
+    inventory, stationMapCsv, molitStationMapCsv, topologyNow, timetableNow,
   });
   return {
     timetableFixture,
