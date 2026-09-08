@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { projectRegionalFixtureSourceBindings } from "./materialize-test-fixture.mjs";
 
 import {
   collectGwangjuAccessibility,
@@ -22,7 +23,11 @@ async function loadInputs() {
     readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"), "utf8")
       .then(JSON.parse),
   ]);
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8")),
+    gwangjuTopology: topologySnapshot,
+    molitStationMapCsv: await readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+  });
   const topologySource = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology");
   return { elevatorBytes, escalatorBytes, topologySnapshot, topologySource };
 }

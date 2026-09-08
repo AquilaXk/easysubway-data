@@ -11,7 +11,6 @@ const root = path.resolve(import.meta.dirname, "../..");
 const MOLIT_ROSTER_PATH = "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv";
 const EXEMPTIONS_PATH = "tools/datapack/route-map-coverage-scope-exemptions.json";
 const SEOUL_SNAPSHOT_PATH = "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json";
-const GWANGJU_SNAPSHOT_PATH = "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json";
 const DAEGU_SNAPSHOT_PATH = "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json";
 
 // #2499·#2508에서 배선한 dual-operator containment는 전 scope 감사의 부분집합으로 유지한다.
@@ -328,9 +327,11 @@ test("current admission이 전진해도 면제의 snapshot 날짜를 수정하�
 
 test("admitted snapshot에서 커버 역이 사라지면 containment가 실패한다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
-  const snapshot = structuredClone(inputs.snapshotsByPath.get(GWANGJU_SNAPSHOT_PATH));
+  const gwangjuSnapshotPath = inputs.inventory.sources.find(({ id }) =>
+    id === "gwangju-transportation-route-map-positions").routeMapAdmissionEvidence.snapshotPath;
+  const snapshot = structuredClone(inputs.snapshotsByPath.get(gwangjuSnapshotPath));
   snapshot.positions = snapshot.positions.filter(({ stationName }) => stationName !== "광주송정");
-  const snapshotsByPath = new Map(inputs.snapshotsByPath).set(GWANGJU_SNAPSHOT_PATH, snapshot);
+  const snapshotsByPath = new Map(inputs.snapshotsByPath).set(gwangjuSnapshotPath, snapshot);
 
   const result = auditRouteMapCoverageScopes({ ...inputs, snapshotsByPath });
 

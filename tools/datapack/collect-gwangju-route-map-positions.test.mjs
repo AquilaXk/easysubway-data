@@ -18,7 +18,6 @@ const SCHEMATIC_PATH = path.join(
 );
 const TOPOLOGY_PATH = path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json");
 const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
-const SNAPSHOT_PATH = path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json");
 const METRO_MAP_PACK_DIR = path.join(root, "apps/mobile/assets/datapacks/metro_map_pack");
 const CAPITAL_SQLITE_GZ = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
 const capturedAt = "2026-07-25T02:00:00.000Z";
@@ -144,12 +143,12 @@ test("snapshot hash나 좌표가 바뀌면 admission을 거부한다", async () 
 });
 
 test("#2494 inventory·candidate는 snapshot byte identity와 자유 이용 근거를 고정한다", async () => {
-  const [snapshotBytes, inventory, candidates] = await Promise.all([
-    readFile(SNAPSHOT_PATH),
+  const [inventory, candidates] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
   ]);
   const source = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-map-positions");
+  const snapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
   const candidate = candidates.candidates.find(({ id }) => id === source.id);
   assert.equal(source.productionUseAllowed, true);
   assert.equal(source.license.redistributionAllowed, true);

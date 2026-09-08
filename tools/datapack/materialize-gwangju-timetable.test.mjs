@@ -9,6 +9,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import {
   materializeRegionalProductionCandidate,
+  projectRegionalFixtureSourceBindings,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
@@ -165,10 +166,15 @@ async function retainedProductionInput() {
   const arrays = ["sourceInventory", "operators", "lines", "stations", "stationLines", "networkEdges", "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes", "transitFeedInfo"];
   const pack = Object.fromEntries(arrays.map((key) => [key, []]));
   Object.assign(pack, { id: "base", version: "1", artifactKind: "production", url: "", minimumTableRows: {} });
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: projectHistoricalRegionalMaterializeInventory(sourceInventory),
+    gwangjuTopology: topologySnapshot,
+    molitStationMapCsv: stationMap,
+  });
   return createRetainedGwangjuTestInput({
     baseFixture: { manifest: { activePack: { id: "base", version: "1" } }, packs: [pack] },
     topologySnapshot,
-    inventory: projectHistoricalRegionalMaterializeInventory(sourceInventory),
+    inventory,
     canonicalStationMappings: mappings,
   });
 }
