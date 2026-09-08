@@ -31,7 +31,7 @@ export async function collectBusanTimetable({
 } = {}) {
   const capturedAt = validDate(now, "now");
   const key = normalizeDataGoKrServiceKey(serviceKey);
-  const scope = validateScope(stationScopes);
+  const scope = normalizeBusanTimetableScope(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   const requests = scope.flatMap((station) => DAYS.map((day) => ({ station, day })));
   const responses = new Array(requests.length);
@@ -151,7 +151,12 @@ function validateRow(values, { station, day, byCode, index }) {
   if (values.scode !== station.stationCode) invalid.push("scode");
   if (values.line !== expectedLine) invalid.push("line");
   if (!end || LINE_CODES[end.lineId] !== expectedLine) invalid.push("endcode");
-  if (invalid.length > 0) throw new Error(`Busan timetable schema mismatch: item[${index}] values=${invalid.join(",")}`);
+  if (invalid.length > 0) {
+    const endcodeState = !end ? "UNKNOWN_STATION"
+      : LINE_CODES[end.lineId] !== expectedLine ? "OTHER_LINE" : "MATCHED";
+    throw new Error(`Busan timetable schema mismatch: item[${index}] values=${invalid.join(",")}; `
+      + `stationCode=${station.stationCode}; day=${day}; endcodeState=${endcodeState}`);
+  }
   return { ...values, hour: String(hour).padStart(2, "0"), time: String(minute).padStart(2, "0") };
 }
 
@@ -171,7 +176,7 @@ function validateCompleteRows(rows, scope) {
   }
 }
 
-function validateScope(scope) {
+export function normalizeBusanTimetableScope(scope) {
   if (!Array.isArray(scope) || scope.length !== 114) throw new Error("Busan timetable scope must contain 114 stations");
   const codes = new Set();
   const normalized = scope.map((entry) => {
