@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
-  loadRegionalBusanTimetablePrefix,
+  loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
@@ -16,12 +16,10 @@ import {
 
 import {
   parseMolitDaeguStationMappings,
-  parseMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
-import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
 import {
   materializeDaeguRouteMapPositions,
   materializedDaeguRouteMapPackContentHash,
@@ -38,25 +36,19 @@ const LINE_IDS = Object.freeze(DAEGU_LINES.map(({ lineId }) => lineId));
 
 async function inputs() {
   const [
-    regional, gwangjuTopology, daeguAccessibility, daeguSnapshotBytes,
+    regional, daeguAccessibility, daeguSnapshotBytes,
   ] = await Promise.all([
-    loadRegionalBusanTimetablePrefix({
+    loadRegionalGwangjuTimetablePrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
       inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
       readJson,
       topologyNow: new Date("2026-07-19T18:14:03.004Z"),
       timetableNow,
     }),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/daegu-transportation-accessibility-20260724.json"),
     readFile(path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json")),
   ]);
-  const { busanTimetableFixture, inventory, molitStationMapCsv: molitMap } = regional;
-  const gwangjuFixture = materializeRetainedGwangjuTestFixture({
-    baseFixture: busanTimetableFixture,
-    topologySnapshot: gwangjuTopology, inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitMap, gwangjuTopology), now: timetableNow,
-  });
+  const { gwangjuFixture, inventory, molitStationMapCsv: molitMap } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const mappings = {};

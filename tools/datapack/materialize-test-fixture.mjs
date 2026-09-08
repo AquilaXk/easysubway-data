@@ -10,6 +10,7 @@ import {
   parseCurrentMolitDaejeonStationMappings,
   parseCurrentMolitGwangjuStationMappings,
   parseMolitDaejeonStationMappings,
+  parseMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
 import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 import {
@@ -18,6 +19,11 @@ import {
 } from "./materialize-busan-route-topology.mjs";
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
+import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
+import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
+import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
+import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route-map-positions.mjs";
+import { materializeSeoul9Phase1RouteMapPositions } from "./materialize-seoul9-phase1-route-map-positions.mjs";
 
 const ITX_TOKEN = /(?:^|[^A-Z0-9])ITX(?:[_-]|$)/;
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -219,6 +225,118 @@ export async function loadRegionalBusanTimetablePrefix({
       molitStationMapCsv,
       topologyNow,
       timetableNow,
+    }),
+  };
+}
+
+export async function loadRegionalGwangjuTimetablePrefix(options) {
+  const { readJson, timetableNow } = options;
+  const [regional, gwangjuTopology] = await Promise.all([
+    loadRegionalBusanTimetablePrefix(options),
+    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
+  ]);
+  return {
+    ...regional,
+    gwangjuTopology,
+    gwangjuFixture: materializeRetainedGwangjuTestFixture({
+      baseFixture: regional.busanTimetableFixture,
+      topologySnapshot: gwangjuTopology,
+      inventory: regional.inventory,
+      canonicalStationMappings: parseMolitGwangjuStationMappings(
+        regional.molitStationMapCsv,
+        gwangjuTopology,
+      ),
+      now: timetableNow,
+    }),
+  };
+}
+
+export async function loadRegionalGwangjuAccessibilityPrefix(options) {
+  const { readJson, gwangjuAccessibilityNow } = options;
+  const [regional, accessibilitySnapshot] = await Promise.all([
+    loadRegionalGwangjuTimetablePrefix(options),
+    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
+  ]);
+  return {
+    ...regional,
+    accessibilitySnapshot,
+    accessibilityFixture: materializeGwangjuAccessibility({
+      baseFixture: regional.gwangjuFixture,
+      accessibilitySnapshot,
+      topologySnapshot: regional.gwangjuTopology,
+      inventory: regional.inventory,
+      now: gwangjuAccessibilityNow,
+    }),
+  };
+}
+
+export async function loadRegionalGwangjuRouteMapPrefix(options) {
+  const { gwangjuRouteMapNow } = options;
+  const [regional, gwangjuSnapshotBytes] = await Promise.all([
+    loadRegionalGwangjuAccessibilityPrefix(options),
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),
+  ]);
+  const gwangjuSnapshot = JSON.parse(gwangjuSnapshotBytes);
+  const gwangjuSnapshotSha256 = sha256(gwangjuSnapshotBytes);
+  return {
+    ...regional,
+    gwangjuSnapshot,
+    gwangjuSnapshotSha256,
+    gwangjuRouteMapFixture: materializeGwangjuRouteMapPositions({
+      baseFixture: regional.accessibilityFixture,
+      snapshot: gwangjuSnapshot,
+      snapshotSha256: gwangjuSnapshotSha256,
+      topologySnapshot: regional.gwangjuTopology,
+      inventory: regional.inventory,
+      now: gwangjuRouteMapNow,
+    }),
+  };
+}
+
+export async function loadRegionalDaejeonRouteMapPrefix(options) {
+  const { daejeonRouteMapNow } = options;
+  const [regional, daejeonSnapshotBytes] = await Promise.all([
+    loadRegionalGwangjuRouteMapPrefix(options),
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json")),
+  ]);
+  const daejeonSnapshot = JSON.parse(daejeonSnapshotBytes);
+  const daejeonSnapshotSha256 = sha256(daejeonSnapshotBytes);
+  return {
+    ...regional,
+    daejeonSnapshot,
+    daejeonSnapshotSha256,
+    daejeonRouteMapFixture: materializeDaejeonRouteMapPositions({
+      baseFixture: regional.gwangjuRouteMapFixture,
+      snapshot: daejeonSnapshot,
+      snapshotSha256: daejeonSnapshotSha256,
+      topologySnapshot: regional.daejeonTopology,
+      inventory: regional.inventory,
+      now: daejeonRouteMapNow,
+    }),
+  };
+}
+
+export async function loadRegionalSeoul9Phase1RouteMapPrefix(options) {
+  const { readJson, seoul9RouteMapNow } = options;
+  const [regional, phase1SnapshotBytes, capitalTopology] = await Promise.all([
+    loadRegionalDaejeonRouteMapPrefix(options),
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json")),
+    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
+  ]);
+  const phase1Snapshot = JSON.parse(phase1SnapshotBytes);
+  const phase1SnapshotSha256 = sha256(phase1SnapshotBytes);
+  return {
+    ...regional,
+    phase1Snapshot,
+    phase1SnapshotSha256,
+    capitalTopology,
+    seoul9Fixture: materializeSeoul9Phase1RouteMapPositions({
+      baseFixture: regional.daejeonRouteMapFixture,
+      snapshot: phase1Snapshot,
+      snapshotSha256: phase1SnapshotSha256,
+      topologySnapshot: capitalTopology,
+      inventory: regional.inventory,
+      now: seoul9RouteMapNow,
     }),
   };
 }

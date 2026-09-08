@@ -8,17 +8,12 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
-  loadRegionalBusanTimetablePrefix,
+  loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
-import {
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
-import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
-import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
 import {
   admittedIncheonAccessibilityEvidence,
   materializeIncheonAccessibility,
@@ -60,38 +55,21 @@ async function inputs({ materializeIncheon = true } = {}) {
   assert.equal(typeof accessibilityAdmission?.snapshotId, "string");
   const [
     regional,
-    gwangjuTopology,
-    gwangjuAccessibilitySnapshot,
     incheonBytes,
     accessibilityBytes,
   ] = await Promise.all([
-    loadRegionalBusanTimetablePrefix({
+    loadRegionalGwangjuAccessibilityPrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
       inventoryPromise: Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
       readJson,
       topologyNow,
       timetableNow,
+      gwangjuAccessibilityNow,
     }),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
     readFile(path.join(root, incheonAdmission.snapshotPath)),
     readFile(path.join(root, `tools/datapack/sources/${accessibilityAdmission.snapshotId}.json`)),
   ]);
-  const { busanTimetableFixture, inventory, molitStationMapCsv } = regional;
-  const gwangjuFixture = materializeRetainedGwangjuTestFixture({
-    baseFixture: busanTimetableFixture,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology),
-    now: timetableNow,
-  });
-  const gwangjuAccessibilityFixture = materializeGwangjuAccessibility({
-    baseFixture: gwangjuFixture,
-    accessibilitySnapshot: gwangjuAccessibilitySnapshot,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: gwangjuAccessibilityNow,
-  });
+  const { accessibilityFixture: gwangjuAccessibilityFixture, inventory } = regional;
   const incheonSnapshot = JSON.parse(incheonBytes.toString("utf8"));
   const accessibilitySnapshot = JSON.parse(accessibilityBytes.toString("utf8"));
   const incheonFixture = materializeIncheon

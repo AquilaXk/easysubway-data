@@ -8,20 +8,16 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
-  loadRegionalBusanTimetablePrefix,
+  loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
-import {
   materializeGwangjuAccessibility,
   materializedGwangjuAccessibilityPackContentHash,
 } from "./materialize-gwangju-accessibility.mjs";
-import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -39,30 +35,21 @@ const ACCESSIBILITY_FIELDS = Object.freeze([
 async function inputs() {
   const [
     regional,
-    gwangjuTopology,
     accessibilitySnapshot,
   ] = await Promise.all([
-    loadRegionalBusanTimetablePrefix({
+    loadRegionalGwangjuTimetablePrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
       inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
       readJson,
       topologyNow,
       timetableNow,
     }),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
   ]);
-  const { busanTimetableFixture, inventory, molitStationMapCsv } = regional;
-  const gwangjuFixture = materializeRetainedGwangjuTestFixture({
-    baseFixture: busanTimetableFixture,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology),
-    now: timetableNow,
-  });
+  const { gwangjuFixture, gwangjuTopology: topologySnapshot, inventory } = regional;
   return {
     gwangjuFixture,
-    topologySnapshot: gwangjuTopology,
+    topologySnapshot,
     accessibilitySnapshot,
     inventory,
   };

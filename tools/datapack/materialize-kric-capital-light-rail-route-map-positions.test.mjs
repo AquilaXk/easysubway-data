@@ -4,17 +4,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import {
-  loadRegionalBusanTimetablePrefix,
+  loadRegionalSeoul9Phase1RouteMapPrefix,
   projectHistoricalRegionalMaterializeInventory,
 } from "./materialize-test-fixture.mjs";
 
-import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { listCapitalLightRailRouteMapPositionLines } from "./collect-kric-capital-light-rail-route-map-positions.mjs";
-import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
-import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
-import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
-import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route-map-positions.mjs";
-import { materializeSeoul9Phase1RouteMapPositions } from "./materialize-seoul9-phase1-route-map-positions.mjs";
 import {
   materializeCapitalLightRailRouteMapPositions,
   materializedCapitalLightRailRouteMapPackContentHash,
@@ -39,66 +33,17 @@ async function readJson(relativePath) {
 async function inputs() {
   const [
     regional,
-    gwangjuTopology,
-    accessibilitySnapshot,
-    gwangjuSnapshotBytes,
-    daejeonSnapshotBytes,
-    phase1SnapshotBytes,
     sampleSnapshotBytes,
-    capitalTopology,
   ] = await Promise.all([
-    loadRegionalBusanTimetablePrefix({
+    loadRegionalSeoul9Phase1RouteMapPrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
       inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-      readJson, topologyNow, timetableNow,
+      readJson, topologyNow, timetableNow, gwangjuAccessibilityNow: accessibilityNow,
+      gwangjuRouteMapNow, daejeonRouteMapNow, seoul9RouteMapNow,
     }),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),
-    readFile(path.join(root, "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json")),
-    readFile(path.join(root, "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json")),
     readFile(path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`)),
-    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
   ]);
-  const { busanTimetableFixture, daejeonTopology, inventory, molitStationMapCsv } = regional;
-  const gwangjuFixture = materializeRetainedGwangjuTestFixture({
-    baseFixture: busanTimetableFixture,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology),
-    now: timetableNow,
-  });
-  const accessibilityFixture = materializeGwangjuAccessibility({
-    baseFixture: gwangjuFixture,
-    accessibilitySnapshot,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: accessibilityNow,
-  });
-  const gwangjuRouteMapFixture = materializeGwangjuRouteMapPositions({
-    baseFixture: accessibilityFixture,
-    snapshot: JSON.parse(gwangjuSnapshotBytes),
-    snapshotSha256: createHash("sha256").update(gwangjuSnapshotBytes).digest("hex"),
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: gwangjuRouteMapNow,
-  });
-  const daejeonRouteMapFixture = materializeDaejeonRouteMapPositions({
-    baseFixture: gwangjuRouteMapFixture,
-    snapshot: JSON.parse(daejeonSnapshotBytes),
-    snapshotSha256: createHash("sha256").update(daejeonSnapshotBytes).digest("hex"),
-    topologySnapshot: daejeonTopology,
-    inventory,
-    now: daejeonRouteMapNow,
-  });
-  const seoul9Fixture = materializeSeoul9Phase1RouteMapPositions({
-    baseFixture: daejeonRouteMapFixture,
-    snapshot: JSON.parse(phase1SnapshotBytes),
-    snapshotSha256: createHash("sha256").update(phase1SnapshotBytes).digest("hex"),
-    topologySnapshot: capitalTopology,
-    inventory,
-    now: seoul9RouteMapNow,
-  });
+  const { seoul9Fixture, capitalTopology, inventory } = regional;
   return {
     baseFixture: seoul9Fixture,
     sampleSnapshot: JSON.parse(sampleSnapshotBytes),
