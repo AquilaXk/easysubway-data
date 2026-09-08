@@ -11,6 +11,7 @@ import { collectDaejeonRouteTopology } from "./collect-daejeon-route-topology.mj
 import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { buildDaejeonTopologyDependents } from "./lib/daejeon-topology-dependents.mjs";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
 import { validateSnapshot } from "./materialize-daejeon-route-topology.mjs";
@@ -32,6 +33,9 @@ const LINE_ID = "line-7051a9c2525c";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+const DEPENDENT_INPUT_KEYS = Object.freeze([
+  "mapXlsxPath", "schematicCanvasPath", "elevatorPath", "escalatorPath",
+]);
 
 /** 재수집 없이 보존한 topology 원문과 현재 MOLIT membership을 하나의 등록 입력으로 묶는다. */
 export async function prepareDaejeonTopologyRegistration({ repositoryRoot, snapshotPath, now = new Date() } = {}) {
@@ -54,6 +58,31 @@ export async function prepareDaejeonTopologyRegistration({ repositoryRoot, snaps
   const source = select(inventory.sources, ({ id }) => id === SOURCE_ID, "inventory source");
   const membershipSource = select(inventory.sources, ({ id }) => id === MEMBERSHIP_SOURCE_ID, "membership source");
   const candidate = select(parse(candidateBytes, "source candidates").candidates, ({ id }) => id === SOURCE_ID, "source candidate");
+  const dependentInputs = candidate.registrationMetadata?.dependentInputs;
+  if (!DEPENDENT_INPUT_KEYS.every((key) => typeof dependentInputs?.[key] === "string")) {
+    throw new Error("Daejeon topology dependent inputs are required");
+  }
+  const dependentPaths = Object.fromEntries(DEPENDENT_INPUT_KEYS.map((key) => [
+    key,
+    dependentInputPath(root, dependentInputs[key]),
+  ]));
+  const timetableSource = select(inventory.sources, ({ id }) => id === "daejeon-train-timetable", "timetable source");
+  const timetablePath = admittedSnapshotPath(root, timetableSource.scheduleAdmissionEvidence?.snapshotPath);
+  const [mapXlsxBytes, schematicCanvasBytes, elevatorBytes, escalatorBytes, timetableSnapshotBytes] = await Promise.all([
+    readFile(dependentPaths.mapXlsxPath),
+    readFile(dependentPaths.schematicCanvasPath),
+    readFile(dependentPaths.elevatorPath),
+    readFile(dependentPaths.escalatorPath),
+    readFile(timetablePath),
+  ]);
+  const registrationInputs = [
+    { absolute: candidatePath, bytes: candidateBytes },
+    { absolute: dependentPaths.mapXlsxPath, bytes: mapXlsxBytes },
+    { absolute: dependentPaths.schematicCanvasPath, bytes: schematicCanvasBytes },
+    { absolute: dependentPaths.elevatorPath, bytes: elevatorBytes },
+    { absolute: dependentPaths.escalatorPath, bytes: escalatorBytes },
+    { absolute: timetablePath, bytes: timetableSnapshotBytes },
+  ];
   const governanceEntry = candidate.registrationMetadata?.governance;
   const projectedFreshness = structuredClone(freshness);
   const sourceClass = select(projectedFreshness.sourceClasses, ({ id }) => id === governanceEntry?.sourceClassId, "freshness class");
@@ -130,6 +159,18 @@ export async function prepareDaejeonTopologyRegistration({ repositoryRoot, snaps
       ? { ...row, membershipAdmissionEvidence: membership }
       : row),
   };
+  const dependents = buildDaejeonTopologyDependents({
+    inventory: stagedInventory,
+    topologySnapshot: snapshot,
+    topologySource: select(stagedInventory.sources, ({ id }) => id === SOURCE_ID, "staged topology source"),
+    mapXlsxBytes,
+    schematicCanvas: parse(schematicCanvasBytes, "Daejeon schematic canvas"),
+    elevatorBytes,
+    escalatorBytes,
+    canonicalStationMappings: mappings,
+    timetableSnapshotBytes,
+  });
+  stagedInventory = dependents.inventory;
   validateSourceGovernancePolicy({
     policy: projectedGovernance,
     inventory: stagedInventory,
@@ -146,6 +187,8 @@ export async function prepareDaejeonTopologyRegistration({ repositoryRoot, snaps
     currentBytes,
     candidatePath,
     candidateBytes,
+    registrationInputs,
+    dependentSnapshots: dependents.snapshots,
     inventory: stagedInventory,
     ledger,
     governance: projectedGovernance,
@@ -226,12 +269,18 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
   validateLineage([...prepared.ledger.filter(({ sourceId }) => sourceId === SOURCE_ID), row]);
   const snapshotFile = path.join(prepared.root, prepared.snapshotRelative);
   await writeImmutableSnapshot(snapshotFile, prepared.snapshotBytes);
+  for (const dependent of prepared.dependentSnapshots) {
+    await writeImmutableSnapshot(path.join(prepared.root, dependent.relative), dependent.bytes);
+  }
   const inputs = [
     { absolute: prepared.inputPath, bytes: prepared.snapshotBytes },
-    { absolute: prepared.candidatePath, bytes: prepared.candidateBytes },
+    ...prepared.registrationInputs,
     { absolute: path.join(prepared.root, prepared.currentMolit.observationPath), bytes: prepared.currentMolit.observationBytes },
     { absolute: receiptFile, bytes: receiptBytes },
     { absolute: snapshotFile, bytes: prepared.snapshotBytes },
+    ...prepared.dependentSnapshots.map((dependent) => ({
+      absolute: path.join(prepared.root, dependent.relative), bytes: dependent.bytes,
+    })),
   ];
   const values = [json(registeredInventory), json([...prepared.ledger, row]), governanceBytes, json(prepared.freshness)];
   return OUTPUTS.map((relative, index) => ({
@@ -449,6 +498,21 @@ async function writeImmutableSnapshot(file, bytes) {
   await writeFile(file, bytes, { flag: "wx", mode: 0o600 }).catch(async (error) => {
     if (error?.code !== "EEXIST" || !(await readFile(file)).equals(bytes)) throw error;
   });
+}
+
+function dependentInputPath(root, relative) {
+  if (typeof relative !== "string" || !relative || path.isAbsolute(relative)
+    || relative.split(/[\\/]/u).includes("..")) {
+    throw new Error("Daejeon topology dependent input path is invalid");
+  }
+  return path.join(root, relative);
+}
+
+function admittedSnapshotPath(root, relative) {
+  if (typeof relative !== "string" || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(relative)) {
+    throw new Error("Daejeon timetable admitted snapshot path is invalid");
+  }
+  return path.join(root, relative);
 }
 
 function select(rows, predicate, label) {
