@@ -12,6 +12,10 @@
     "tools/routes"
   ],
   "owners": {
+    "data6": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/6",
+      "title": "Deliver one eligible five-region production candidate"
+    },
     "data504": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/504",
       "title": "Admit the retained official Gwangju timetable"
@@ -388,6 +392,7 @@
     {"path":"tools/datapack/build-kric-retained-file-pending-handoff.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-current-five-region-source-fan-in.test.mjs","semanticOwner":"data449","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-nationwide-coverage-tally.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":905},
+    {"path":"tools/datapack/build-nationwide-candidate.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":78},
     {"path":"tools/datapack/build-nationwide-requirement-ownership-ledger.test.mjs","semanticOwner":"data449","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-molit-nationwide-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":127},
     {"path":"tools/datapack/build-public-static-network-v2-observations.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":220},
