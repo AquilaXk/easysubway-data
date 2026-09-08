@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
 import {
   DAEJEON_LINE1_STATION_NUMBERS,
   collectDaejeonRouteTopology,
 } from "./collect-daejeon-route-topology.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import {
+  prepareDaejeonTopologyRegistration,
+  registerDaejeonTopology,
+} from "./register-daejeon-route-topology.mjs";
+import { createCurrentMolitObservationFixture } from "./test-fixtures/current-molit-observation.mjs";
+
+const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 test("대전 topology collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
@@ -105,3 +116,194 @@ test("대전 topology collector는 인접 OD가 단일 row가 아니면 fail clo
     ),
   }), /must return exactly one row/);
 });
+
+test("Daejeon topology registration replays retained sources and refreshes current MOLIT membership", async () => {
+  const authority = await createCurrentMolitObservationFixture(fullMolitProjection());
+  const now = new Date(Date.parse(authority.observation.capturedAt) + 86_400_000);
+  const responseBytes = Buffer.from(
+    "<response><header><resultCode>00</resultCode></header><body><items><item>"
+      + "<distfloat>1.2</distfloat><fee>1400</fee><min>2</min><sec>30</sec>"
+      + "</item></items></body></response>",
+  );
+  const snapshot = await collectDaejeonRouteTopology({
+    serviceKey: "test-key",
+    now: new Date(now.valueOf() - 60_000),
+    fetchImpl: async () => new Response(responseBytes, { headers: { "content-type": "application/xml" } }),
+  });
+  const snapshotPath = path.join(authority.root, "retained-daejeon-topology.json");
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  await writeFile(snapshotPath, snapshotBytes);
+
+  const sourceId = "daejeon-station-distance-fare";
+  const membershipSourceId = "molit-urban-rail-full-route-daejeon-membership";
+  const source = {
+    id: sourceId,
+    provider: "Test Daejeon operator",
+    datasetUrl: "https://example.test/daejeon",
+    productionUseAllowed: true,
+    requiredForProductionPack: false,
+    license: { redistributionAllowed: true, evidenceUrl: "https://example.test/license" },
+    topologyAdmissionEvidence: { issue: 1, materializer: "topology", verificationTest: "topology-test" },
+    membershipAdmissionEvidence: { issue: 2, materializer: "membership", verificationTest: "membership-test" },
+  };
+  const membershipSource = {
+    id: membershipSourceId,
+    productionUseAllowed: true,
+    requiredForProductionPack: false,
+    license: { redistributionAllowed: true, evidenceUrl: "https://example.test/molit-license" },
+    membershipAdmissionEvidence: structuredClone(source.membershipAdmissionEvidence),
+  };
+  const governanceEntry = governanceFor(source, now);
+  const inventory = { sources: [authority.inventory.sources[0], source, membershipSource] };
+  const ledger = [authority.current];
+  const governance = governancePolicy(governanceEntry);
+  const freshness = { sourceClasses: [{
+    id: "route_graph_topology",
+    sourceIds: [sourceId],
+    basisField: "retrievedAt",
+    reverificationCadence: "P1D",
+  }] };
+  const candidate = {
+    candidates: [{ id: sourceId, domain: "route_graph_topology", registrationMetadata: { governance: governanceEntry } }],
+  };
+  for (const [index, relative] of SOURCE_REGISTRATION_OUTPUTS.entries()) {
+    await mkdir(path.dirname(path.join(authority.root, relative)), { recursive: true });
+    await writeFile(path.join(authority.root, relative), `${JSON.stringify([inventory, ledger, governance, freshness][index], null, 2)}\n`);
+  }
+  await writeFile(path.join(authority.root, "tools/datapack/source-candidates.json"), `${JSON.stringify(candidate)}\n`);
+
+  const env = {
+    EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:
+      "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/",
+  };
+  const receiptPath = path.join(authority.root, "daejeon-receipt.json");
+  const options = { repositoryRoot: authority.root, snapshotPath, receiptPath, now, env };
+  const prepared = await prepareDaejeonTopologyRegistration(options);
+  await writeFile(receiptPath, `${JSON.stringify(receiptFor(prepared, now))}\n`);
+  await registerDaejeonTopology(options);
+
+  const [registeredInventory, registeredLedger] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS.slice(0, 2)
+    .map(async (relative) => JSON.parse(await readFile(path.join(authority.root, relative), "utf8"))));
+  const registeredTopology = registeredInventory.sources.find(({ id }) => id === sourceId);
+  const registeredMembership = registeredInventory.sources.find(({ id }) => id === membershipSourceId);
+  assert.equal(registeredTopology.requiredForProductionPack, true);
+  assert.equal(registeredTopology.topologyAdmissionEvidence.snapshotId, prepared.snapshotId);
+  assert.equal(registeredTopology.topologyAdmissionEvidence.rawSha256, snapshot.rawSha256);
+  assert.deepEqual(registeredTopology.membershipAdmissionEvidence, registeredMembership.membershipAdmissionEvidence);
+  assert.equal(registeredTopology.membershipAdmissionEvidence.verifiedAt, authority.current.retrievedAt);
+  assert.equal(registeredTopology.membershipAdmissionEvidence.membershipSourceRawSha256, authority.current.rawSha256);
+  assert.equal(registeredTopology.membershipAdmissionEvidence.stationCodeSnapshotId, prepared.snapshotId);
+  assert.equal(registeredLedger.at(-1).snapshotId, prepared.snapshotId);
+  assert.equal(registeredLedger.at(-1).coverageCount, snapshot.stationNumbers.length);
+  assert.deepEqual(await readFile(path.join(authority.root, prepared.snapshotRelative)), snapshotBytes);
+});
+
+function governanceFor(source, now) {
+  const termsHash = sha(canonicalJson(source.license));
+  source.admissionEvidence = { licenseEvidenceHash: termsHash };
+  return {
+    sourceId: source.id,
+    sourceClassId: "route_graph_topology",
+    retentionClassId: "standard-90d",
+    ownerRole: "data-owner",
+    stewardRole: "data-steward",
+    approvalRole: "data-owner",
+    escalationHours: 24,
+    alertRoute: "data-owner",
+    licenseReview: {
+      status: "APPROVED",
+      termsHash,
+      termsUrl: source.license.evidenceUrl,
+      reviewedProvider: source.provider,
+      reviewedDatasetUrl: source.datasetUrl,
+      reviewedAt: new Date(now.valueOf() - 86_400_000).toISOString(),
+      nextReviewAt: new Date(now.valueOf() + 86_400_000).toISOString(),
+      redistributionScopes: ["DERIVED_DATAPACK"],
+      approvedByRole: "data-owner",
+    },
+  };
+}
+
+function governancePolicy(entry) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "datapack-source-governance-policy",
+    policyVersion: "2026-09-09",
+    sources: [entry],
+    retentionClasses: [{ id: "standard-90d", retentionDays: 90 }],
+    reasonCodeEscalations: [{
+      responsibleRole: "data-owner",
+      alertRoute: "data-owner",
+      escalationHours: 24,
+      reasonCodes: [
+        "SOURCE_LINEAGE_BROKEN", "SOURCE_DIFF_MISSING", "SOURCE_FRESHNESS_POLICY_MISSING",
+        "SOURCE_SNAPSHOT_EXPIRED", "RAW_RETENTION_OVERDUE", "LEGAL_HOLD_INVALID",
+        "LICENSE_REVIEW_REQUIRED", "REDISTRIBUTION_NOT_APPROVED", "SOURCE_GOVERNANCE_OWNER_MISSING",
+      ],
+    }],
+  };
+}
+
+function receiptFor(prepared, now) {
+  const date = prepared.snapshot.observedAt.slice(0, 10).replaceAll("-", "");
+  const objectKey = `source-raw/daejeon-station-distance-fare/${date}/${prepared.snapshotSha256}.json`;
+  return {
+    schemaVersion: 1,
+    artifactKind: "static-network-source-raw-object-receipt",
+    sourceId: "daejeon-station-distance-fare",
+    snapshotId: prepared.snapshotId,
+    capturedAt: prepared.snapshot.observedAt,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`,
+    rawObjectSha256: prepared.snapshotSha256,
+    byteSize: prepared.snapshotBytes.length,
+    storedAt: now.toISOString(),
+    rawRetentionExpiresAt: prepared.rawRetentionExpiresAt,
+    ociNamespace: "axvym6vk8g7i",
+    bucket: "easysubway-datapacks",
+    objectKey,
+    contentType: "application/json",
+  };
+}
+
+function fullMolitProjection() {
+  const operatorCounts = {
+    "공항철도주식회사": 14, "광주교통공사": 20, "구리도시공사": 3, "김포골드라인운영주식회사": 10,
+    "남서울경전철주식회사": 11, "남양주도시공사": 5, "네오트랜스주식회사": 16, "대구교통공사": 94,
+    "대전교통공사": 22, "부산교통공사": 114, "부산김해경전철주식회사": 21, "서울교통공사": 277,
+    "서울시메트로9호선주식회사": 38, "서해철도주식회사": 12, "용인경량전철주식회사": 15,
+    "우이신설경전철주식회사": 13, "의정부경량전철주식회사": 15, "인천교통공사": 68,
+    "인천국제공항공사": 6, "주식회사 SR": 1, "지티엑스에이운영": 8, "코레일": 320,
+  };
+  const rows = [];
+  for (let sequence = 1; sequence <= 22; sequence += 1) {
+    rows.push({
+      region_code: "05",
+      region_name: "대전",
+      operator_name: "대전교통공사",
+      line_name: "1호선",
+      station_sequence: sequence,
+      station_name: `대전역${sequence}`,
+    });
+  }
+  for (const [operator, count] of Object.entries(operatorCounts)) {
+    if (operator === "대전교통공사") continue;
+    for (let sequence = 1; sequence <= count; sequence += 1) {
+      rows.push({
+        region_code: "01",
+        region_name: "수도권",
+        operator_name: operator,
+        line_name: "검증선",
+        station_sequence: sequence,
+        station_name: `${operator}-${sequence}`,
+      });
+    }
+  }
+  const regionalCounts = new Map([["01", 802], ["02", 158], ["03", 101], ["04", 20], ["05", 22]]);
+  for (const row of rows.filter(({ region_code: regionCode }) => regionCode === "01")) {
+    const next = [...regionalCounts.entries()].find(([, count]) => count > 0);
+    row.region_code = next[0];
+    row.region_name = next[0] === "04" ? "광주" : next[0] === "02" ? "부산" : next[0] === "03" ? "대구" : "수도권";
+    regionalCounts.set(next[0], next[1] - 1);
+  }
+  return rows;
+}

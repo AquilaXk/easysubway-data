@@ -36,8 +36,7 @@ export function materializeDaejeonRouteTopology({
   }
 
   const pack = fixture.packs[0];
-  const version = /-(\d{8})$/.exec(source.topologyAdmissionEvidence.snapshotId)?.[1];
-  if (!version) throw new Error(`${SOURCE_ID} snapshotId must end with YYYYMMDD`);
+  const version = snapshotVersion(snapshot.observedAt);
   pack.id = `${PACK_ID}-${compositionSha256}`;
   pack.version = version;
   pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${pack.id}-v${version}.sqlite.gz`;
@@ -215,7 +214,7 @@ function normalizedName(value) {
     .replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
 }
 
-function validateSnapshot(snapshot) {
+export function validateSnapshot(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "daejeon-route-topology-collection"
     || snapshot.sourceId !== SOURCE_ID || snapshot.endpoint !== DAEJEON_TOPOLOGY_ENDPOINT
     || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "EXPECTED"
@@ -245,6 +244,21 @@ function validateSnapshot(snapshot) {
       throw new Error(`Daejeon adjacent topology is incomplete: ${station}:${station + 1}`);
     }
   }
+}
+
+function snapshotVersion(observedAt) {
+  if (typeof observedAt !== "string" || !Number.isFinite(Date.parse(observedAt))
+    || new Date(observedAt).toISOString() !== observedAt) {
+    throw new Error(`${SOURCE_ID} snapshot observedAt is invalid`);
+  }
+  return compactSeoulDate(observedAt);
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }
 
 function requiredSource(inventory, snapshot) {
