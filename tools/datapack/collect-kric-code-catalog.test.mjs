@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { downloadKricCodeCatalog, parseArgs } from "./collect-kric-code-catalog.mjs";
 
 const XLSX_PREFIX = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+const candidate = {
+  id: "synthetic-kric-catalog",
+  detailUrl: "https://openapi.kric.go.kr/rips/M_04_02/detail.do?id=99",
+  requestUrl: "https://openapi.kric.go.kr/rips/download.file?answerId=99&fileId=1&id=99&type=L",
+  operation: {
+    method: "GET",
+    endpoint: "https://openapi.kric.go.kr/rips/download.file?answerId=99&fileId=1&id=99&type=L",
+    auth: { placement: "none" },
+  },
+};
+const download = (options = {}) => downloadKricCodeCatalog({ candidate, ...options });
 
 test("KRIC 코드 정본 CLI는 두 absolute output 인자를 요구한다", () => {
   assert.deepEqual(parseArgs([
@@ -22,12 +34,12 @@ test("KRIC 코드 정본 CLI는 두 absolute output 인자를 요구한다", () 
 });
 
 test("KRIC 최신 코드 정본은 XLSX 경계와 sanitized metadata를 검증한다", async () => {
-  const catalog = await downloadKricCodeCatalog({
+  const catalog = await download({
     now: new Date("2026-07-19T00:00:00.000Z"),
     fetchImpl: async (url) => {
       assert.equal(
         String(url),
-        "https://data.kric.go.kr/rips/download.file?answerId=395&fileId=1&id=395&type=N",
+        candidate.operation.endpoint,
       );
       return new Response(XLSX_PREFIX, {
         status: 200,
@@ -40,13 +52,34 @@ test("KRIC 최신 코드 정본은 XLSX 경계와 sanitized metadata를 검증�
   assert.equal(catalog.metadata.capturedAt, "2026-07-19T00:00:00.000Z");
   assert.equal(catalog.metadata.byteCount, XLSX_PREFIX.length);
   assert.match(catalog.metadata.sha256, /^[a-f0-9]{64}$/);
+  const expectedSha256 = createHash("sha256").update(XLSX_PREFIX).digest("hex");
+  assert.equal(catalog.metadata.sha256, expectedSha256);
+  assert.equal(catalog.metadata.sourceId, `${candidate.id}-${expectedSha256}`);
+  assert.equal(catalog.metadata.endpoint, candidate.operation.endpoint);
+  assert.equal(catalog.metadata.detailUrl, candidate.detailUrl);
   assert.deepEqual(catalog.bytes, XLSX_PREFIX);
+});
+
+test("KRIC 코드 정본은 malformed candidate를 fetch 전에 거부한다", async () => {
+  let fetched = false;
+  for (const invalid of [
+    undefined,
+    { ...candidate, requestUrl: "https://example.com/download" },
+    { ...candidate, operation: { ...candidate.operation, auth: { placement: "query" } } },
+    { ...candidate, detailUrl: candidate.detailUrl.replace("https://", "https://user:secret@") },
+  ]) {
+    await assert.rejects(downloadKricCodeCatalog({
+      candidate: invalid,
+      fetchImpl: async () => { fetched = true; return new Response(XLSX_PREFIX); },
+    }), /candidate is invalid/);
+  }
+  assert.equal(fetched, false);
 });
 
 test("KRIC 코드 정본은 HTTP·schema·크기 오류를 fail closed 한다", async (context) => {
   await context.test("HTTP", async () => {
     let attempts = 0;
-    await assert.rejects(downloadKricCodeCatalog({
+    await assert.rejects(download({
       fetchImpl: async () => {
         attempts += 1;
         return new Response("unavailable", { status: 503 });
@@ -56,7 +89,7 @@ test("KRIC 코드 정본은 HTTP·schema·크기 오류를 fail closed 한다", 
   });
   await context.test("HTTP 5xx recovery", async () => {
     let attempts = 0;
-    const catalog = await downloadKricCodeCatalog({
+    const catalog = await download({
       fetchImpl: async () => {
         attempts += 1;
         return attempts === 1
@@ -69,7 +102,7 @@ test("KRIC 코드 정본은 HTTP·schema·크기 오류를 fail closed 한다", 
   });
   await context.test("HTTP 4xx", async () => {
     let attempts = 0;
-    await assert.rejects(downloadKricCodeCatalog({
+    await assert.rejects(download({
       fetchImpl: async () => {
         attempts += 1;
         return new Response("not found", { status: 404 });
@@ -78,13 +111,13 @@ test("KRIC 코드 정본은 HTTP·schema·크기 오류를 fail closed 한다", 
     assert.equal(attempts, 1);
   });
   await context.test("schema", async () => {
-    await assert.rejects(downloadKricCodeCatalog({
+    await assert.rejects(download({
       fetchImpl: async () => new Response("<html/>", { status: 200, headers: { "content-type": "text/html" } }),
     }), /schema mismatch/);
   });
   await context.test("size", async () => {
     let cancelled = false;
-    await assert.rejects(downloadKricCodeCatalog({
+    await assert.rejects(download({
       maximumBytes: 5,
       fetchImpl: async () => ({
         ok: true,
@@ -110,7 +143,7 @@ test("KRIC 코드 정본은 HTTP·schema·크기 오류를 fail closed 한다", 
 
 test("KRIC 코드 정본은 동일 host HTTPS redirect만 한 번 따른다", async () => {
   const requests = [];
-  const catalog = await downloadKricCodeCatalog({
+  const catalog = await download({
     fetchImpl: async (url) => {
       requests.push(String(url));
       if (requests.length === 1) {
@@ -127,11 +160,11 @@ test("KRIC 코드 정본은 동일 host HTTPS redirect만 한 번 따른다", as
   });
   assert.equal(catalog.metadata.byteCount, XLSX_PREFIX.length);
   assert.deepEqual(requests, [
-    "https://data.kric.go.kr/rips/download.file?answerId=395&fileId=1&id=395&type=N",
-    "https://data.kric.go.kr/rips/files/catalog.xlsx",
+    candidate.operation.endpoint,
+    "https://openapi.kric.go.kr/rips/files/catalog.xlsx",
   ]);
 
-  await assert.rejects(downloadKricCodeCatalog({
+  await assert.rejects(download({
     fetchImpl: async () => new Response(null, {
       status: 302,
       headers: { location: "https://example.com/catalog.xlsx" },
@@ -141,7 +174,7 @@ test("KRIC 코드 정본은 동일 host HTTPS redirect만 한 번 따른다", as
 
 test("KRIC transport 실패는 비밀 없는 원인 코드만 노출한다", async () => {
   const secret = "never-print-provider-value";
-  await assert.rejects(downloadKricCodeCatalog({
+  await assert.rejects(download({
     fetchImpl: async () => {
       throw new Error(`fetch failed ${secret}`, { cause: { code: "ECONNRESET" } });
     },

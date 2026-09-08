@@ -3030,11 +3030,11 @@
       "priority": "P0",
       "domain": "station_line_membership",
       "displayName": "국가철도공단 운영기관·노선·역 API 코드정보",
-      "detailUrl": "https://data.kric.go.kr/rips/M_04_01/detail.do?id=395",
-      "requestUrl": "https://data.kric.go.kr/rips/download.file?answerId=395&fileId=1&id=395&type=N",
+      "detailUrl": "https://openapi.kric.go.kr/rips/M_04_02/detail.do?id=17",
+      "requestUrl": "https://openapi.kric.go.kr/rips/download.file?answerId=17&fileId=1&id=17&type=L",
       "operation": {
         "method": "GET",
-        "endpoint": "https://data.kric.go.kr/rips/download.file?answerId=395&fileId=1&id=395&type=N",
+        "endpoint": "https://openapi.kric.go.kr/rips/download.file?answerId=17&fileId=1&id=17&type=L",
         "auth": {
           "placement": "none"
         },
@@ -3096,7 +3096,7 @@
         "liveSampleRawSha256": "ef1f8b094e32e81c7390e8566984293dcefcc85e7fadacfe4433e77ddcc61272",
         "liveSampleNote": "공식 2026-02-28 XLSX를 credential-free tracked collector로 수집하고 ZIP·workbook·6개 column·1,108 station row를 검증한 뒤 provider-line 정본으로 축약했습니다. 공개 다운로드는 확인했지만 포털 약관만으로 재배포 허용을 확정할 수 없어 code mapping 외 production admission과 mobile embedding은 금지합니다."
       },
-      "nextAction": "재배포 범위의 명시적 승인을 확보한 뒤 license evidence를 재검토하고, 공식 코드 변경 공지 시 동일 collector로 재수집해 provider-line diff를 검토한다"
+      "nextAction": "Collect the registered official attachment and review its code relationships before admission. Preserve the historical sample evidence; it does not validate the newly selected attachment. Resolve redistribution rights separately. Latest-notice discovery is not yet automated."
     },
     {
       "id": "kric-seohae-route-map-positions",

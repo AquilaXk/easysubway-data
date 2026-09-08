@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const ENDPOINT = "https://data.kric.go.kr/rips/download.file?answerId=395&fileId=1&id=395&type=N";
+const OFFICIAL_ORIGIN = "https://openapi.kric.go.kr";
 const CONTENT_TYPES = new Set([
   "application/octet-stream",
   "application/vnd.ms-excel",
@@ -13,12 +13,14 @@ const CONTENT_TYPES = new Set([
 const DEFAULT_MAXIMUM_BYTES = 20 * 1024 * 1024;
 
 export async function downloadKricCodeCatalog({
+  candidate,
   fetchImpl = fetch,
   now = new Date(),
   maximumBytes = DEFAULT_MAXIMUM_BYTES,
 } = {}) {
   if (!Number.isInteger(maximumBytes) || maximumBytes < 1) throw new Error("maximumBytes is invalid");
-  const response = await fetchWithRetry(fetchImpl);
+  const selected = validateCandidate(candidate);
+  const response = await fetchWithRetry(selected.endpoint, fetchImpl);
   if (!response.ok) throw new Error(`KRIC code catalog HTTP ${response.status}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
   if (!CONTENT_TYPES.has(contentType)) {
@@ -46,26 +48,51 @@ export async function downloadKricCodeCatalog({
   if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) {
     throw new Error("KRIC code catalog schema mismatch: XLSX ZIP signature missing");
   }
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
   return {
     bytes,
     metadata: {
       schemaVersion: 1,
       artifactKind: "kric-provider-code-catalog-download",
-      sourceId: "kric-provider-code-catalog-20260228",
-      detailUrl: "https://data.kric.go.kr/rips/M_04_01/detail.do?id=395",
-      endpoint: ENDPOINT,
+      sourceId: `${selected.id}-${sha256}`,
+      detailUrl: selected.detailUrl,
+      endpoint: selected.endpoint,
       capturedAt: now.toISOString(),
       byteCount: bytes.length,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
+      sha256,
       credentialRequired: false,
     },
   };
 }
 
-async function fetchWithRetry(fetchImpl) {
+function validateCandidate(candidate) {
+  const endpoint = candidate?.operation?.endpoint;
+  if (typeof candidate?.id !== "string" || candidate.id.length === 0
+    || candidate?.operation?.method !== "GET"
+    || candidate?.operation?.auth?.placement !== "none"
+    || candidate.requestUrl !== endpoint
+    || typeof candidate.detailUrl !== "string"
+    || !isOfficial(endpoint, "/rips/download.file")
+    || !isOfficial(candidate.detailUrl, "/rips/M_04_02/detail.do")) {
+    throw new Error("KRIC code catalog candidate is invalid");
+  }
+  return { id: candidate.id, endpoint, detailUrl: candidate.detailUrl };
+}
+
+function isOfficial(value, pathname) {
+  try {
+    const url = new URL(value);
+    return url.origin === OFFICIAL_ORIGIN && url.pathname === pathname
+      && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchWithRetry(endpoint, fetchImpl) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const response = await fetchWithBoundedRedirect(ENDPOINT, fetchImpl);
+      const response = await fetchWithBoundedRedirect(endpoint, fetchImpl);
       if (response.status < 500 || response.status > 599 || attempt === 1) return response;
       await response.body?.cancel().catch(() => {});
     } catch (error) {
@@ -96,7 +123,7 @@ async function fetchWithBoundedRedirect(initialUrl, fetchImpl) {
     const location = response.headers.get("location");
     if (!location) throw new Error("KRIC code catalog redirect location missing");
     const redirected = new URL(location, url);
-    if (redirected.protocol !== "https:" || redirected.origin !== "https://data.kric.go.kr") {
+    if (redirected.origin !== OFFICIAL_ORIGIN || redirected.username || redirected.password) {
       throw new Error("KRIC code catalog redirect origin is not allowed");
     }
     url = redirected.href;
@@ -116,7 +143,10 @@ export function parseArgs(argv) {
 
 async function main(argv) {
   const args = parseArgs(argv);
-  const catalog = await downloadKricCodeCatalog();
+  const candidates = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+  const matches = candidates.candidates?.filter((candidate) => candidate.id === "kric-provider-code-catalog") ?? [];
+  if (matches.length !== 1) throw new Error("KRIC code catalog candidate is invalid");
+  const catalog = await downloadKricCodeCatalog({ candidate: matches[0] });
   await writeFile(args.output, catalog.bytes, { mode: 0o600 });
   await writeFile(args.metadataOutput, `${JSON.stringify(catalog.metadata, null, 2)}\n`, { mode: 0o600 });
   console.log(`sanitized KRIC code catalog ready: bytes=${catalog.metadata.byteCount} sha256=${catalog.metadata.sha256}`);
