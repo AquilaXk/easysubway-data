@@ -18,13 +18,101 @@ import {
   parseMolitDaeguStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
-import { materializeDaeguTimetable, runDaeguTimetableMaterializer } from "./materialize-daegu-timetable.mjs";
+import {
+  bindCumulativeDaeguTopology,
+  materializeDaeguTimetable,
+  runDaeguTimetableMaterializer,
+} from "./materialize-daegu-timetable.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const now = new Date("2026-07-20T16:00:00.000Z");
 const execFileAsync = promisify(execFile);
 const LINE_IDS = { 1: "line-5b8d9b05e7e6", 2: "line-e2938a4cc492", 3: "line-0ffaa95b1b5d" };
+
+test("Daegu cumulative binder preserves canonical metadata and binds official rows", () => {
+  const lineId = LINE_IDS[1];
+  const generated = {
+    lineConfigs: [{ lineNumber: 1, lineId }],
+    stations: ["a", "b"].map((key) => ({
+      id: `station-${key}`,
+      nameKo: key,
+      dataQualityLevel: "LEVEL_2",
+      dataSourceType: "OFFICIAL_FILE",
+      sourceId: "membership",
+      sourceSnapshotId: "membership-snapshot",
+      providerRecordHash: "a".repeat(64),
+      evidenceHash: "b".repeat(64),
+      derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    stationLines: ["a", "b"].map((key, index) => ({
+      stationId: `station-${key}`,
+      lineId,
+      stationCode: `10${index}`,
+      lineSequence: index + 1,
+      sourceId: "membership",
+      sourceSnapshotId: "membership-snapshot",
+      providerRecordHash: "a".repeat(64),
+      evidenceHash: "b".repeat(64),
+      fieldProvenance: { station_code: {} },
+      derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    networkEdges: [{
+      id: "official-edge",
+      fromNodeId: `station-a:${lineId}`,
+      toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE",
+      durationSeconds: 3,
+      distanceMeters: 4,
+      sourceId: "topology",
+      sourceSnapshotId: "topology-snapshot",
+      providerRecordHash: "c".repeat(64),
+      evidenceHash: "d".repeat(64),
+      provenanceKind: "OFFICIAL_SOURCE",
+      derivationKind: "OFFICIAL",
+      verificationStatus: "VERIFIED",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    }],
+  };
+  const pack = {
+    operators: [{ id: "daegu-transportation" }],
+    lines: [{ id: lineId, operatorId: "daegu-transportation" }],
+    stations: [{ id: "station-a", nameKo: "a", nameEn: "canonical", latitude: 1 },
+      { id: "station-b", nameKo: "b" }],
+    stationLines: [
+      { stationId: "station-a", lineId, lineSequence: 1, stationCode: "ordinal-a", platformInfo: "keep" },
+      { stationId: "station-b", lineId, lineSequence: 2, stationCode: "ordinal-b" },
+    ],
+    networkEdges: [{
+      id: "canonical-edge",
+      fromNodeId: `station-a:${lineId}`,
+      toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE",
+      durationSeconds: 1,
+    }],
+    transitRoutes: [],
+    transitStopTimes: [],
+    transitTrips: [],
+  };
+  const competing = structuredClone(pack);
+  competing.stationLines[0].sourceId = "other";
+  assert.throws(() => bindCumulativeDaeguTopology(competing, generated), /topology mismatch/);
+  const scheduled = structuredClone(pack);
+  scheduled.transitRoutes = [{ id: "route-existing", lineId }];
+  scheduled.transitTrips = [{ id: "trip-existing", routeId: "route-existing" }];
+  assert.throws(() => bindCumulativeDaeguTopology(scheduled, generated), /timetable already exists/);
+
+  bindCumulativeDaeguTopology(pack, generated);
+
+  assert.equal(pack.stations[0].nameEn, "canonical");
+  assert.equal(pack.stations[0].latitude, 1);
+  assert.equal(pack.stationLines[0].platformInfo, "keep");
+  assert.equal(pack.stationLines[0].stationCode, "100");
+  assert.equal(pack.networkEdges[0].id, "canonical-edge");
+  assert.equal(pack.networkEdges[0].durationSeconds, 3);
+});
 
 test("대구 1·2·3호선 공식 topology·시각표를 94역·182 edge·2540 trip·77970 stop_time으로 materialize한다", async () => {
   const values = await inputs();

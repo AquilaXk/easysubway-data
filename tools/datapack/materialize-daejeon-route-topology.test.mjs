@@ -15,6 +15,7 @@ import {
 import test from "node:test";
 
 import {
+  bindCumulativeDaejeonTopology,
   materializeDaejeonRouteTopology,
 } from "./materialize-daejeon-route-topology.mjs";
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
@@ -27,6 +28,57 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const evidenceNow = new Date("2026-07-20T04:00:00.000Z");
+
+test("Daejeon cumulative binder preserves canonical metadata and binds official rows", () => {
+  const lineId = "line-7051a9c2525c";
+  const generated = {
+    stations: ["a", "b"].map((key) => ({
+      id: `station-${key}`, nameKo: key, dataQualityLevel: "LEVEL_2",
+      dataSourceType: "OFFICIAL_FILE", sourceId: "membership",
+      sourceSnapshotId: "membership-snapshot", providerRecordHash: "a".repeat(64),
+      evidenceHash: "b".repeat(64), derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    stationLines: ["a", "b"].map((key, index) => ({
+      stationId: `station-${key}`, lineId, stationCode: `10${index}`, lineSequence: index + 1,
+      sourceId: "membership", sourceSnapshotId: "membership-snapshot",
+      providerRecordHash: "a".repeat(64), evidenceHash: "b".repeat(64),
+      fieldProvenance: { station_code: {} }, derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    networkEdges: [{
+      id: "official", fromNodeId: `station-a:${lineId}`, toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE", durationSeconds: 3, distanceMeters: 4, sourceId: "topology",
+      sourceSnapshotId: "topology-snapshot", providerRecordHash: "c".repeat(64),
+      evidenceHash: "d".repeat(64), provenanceKind: "OFFICIAL_SOURCE",
+      derivationKind: "OFFICIAL", verificationStatus: "VERIFIED",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    }],
+  };
+  const pack = {
+    operators: [{ id: "daejeon-transportation" }],
+    lines: [{ id: lineId, operatorId: "daejeon-transportation" }],
+    stations: [{ id: "station-a", nameKo: "a", nameEn: "canonical", latitude: 1 },
+      { id: "station-b", nameKo: "b" }],
+    stationLines: [
+      { stationId: "station-a", lineId, lineSequence: 1, stationCode: "ordinal-a", platformInfo: "keep" },
+      { stationId: "station-b", lineId, lineSequence: 2, stationCode: "ordinal-b" },
+    ],
+    networkEdges: [{ id: "canonical", fromNodeId: `station-a:${lineId}`,
+      toNodeId: `station-b:${lineId}`, edgeType: "RIDE", durationSeconds: 1 }],
+    transitRoutes: [], transitStopTimes: [], transitTrips: [],
+  };
+  const competing = structuredClone(pack);
+  competing.stationLines[0].sourceId = "other";
+  assert.throws(() => bindCumulativeDaejeonTopology(competing, generated), /topology mismatch/);
+  bindCumulativeDaejeonTopology(pack, generated);
+  assert.equal(pack.stations[0].nameEn, "canonical");
+  assert.equal(pack.stations[0].latitude, 1);
+  assert.equal(pack.stationLines[0].platformInfo, "keep");
+  assert.equal(pack.stationLines[0].stationCode, "100");
+  assert.equal(pack.networkEdges[0].id, "canonical");
+  assert.equal(pack.networkEdges[0].durationSeconds, 3);
+});
 
 async function inputs() {
   const [baseFixture, snapshot, inventory, stationMapCsv] = await Promise.all([
