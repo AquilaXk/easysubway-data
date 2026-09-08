@@ -35,6 +35,11 @@ test("대전 topology collector는 encoded percent credential을 provider에 한
 test("대전 topology collector는 22개 역 인접 21구간을 양방향으로 검증한다", async () => {
   const secret = "do-not-store-daejeon-key";
   const requests = [];
+  const responseBytes = Buffer.from(
+    "<response><header><resultCode>00</resultCode></header><body><items><item>"
+      + "<distfloat>1.2</distfloat><fee>1400</fee><min>2</min><sec>30</sec>"
+      + "</item></items></body></response>",
+  );
   const artifact = await collectDaejeonRouteTopology({
     serviceKey: secret,
     now: new Date("2026-07-20T00:00:00.000Z"),
@@ -45,12 +50,7 @@ test("대전 topology collector는 22개 역 인접 21구간을 양방향으로 
         to: parsed.searchParams.get("endstnno"),
         key: parsed.searchParams.get("serviceKey"),
       });
-      return new Response(
-        "<response><header><resultCode>00</resultCode></header><body><items><item>"
-          + "<distfloat>1.2</distfloat><fee>1400</fee><min>2</min><sec>30</sec>"
-          + "</item></items></body></response>",
-        { status: 200, headers: { "content-type": "application/xml" } },
-      );
+      return new Response(responseBytes, { status: 200, headers: { "content-type": "application/xml" } });
     },
   });
 
@@ -60,6 +60,13 @@ test("대전 topology collector는 22개 역 인접 21구간을 양방향으로 
   assert.ok(requests.every(({ key }) => key === secret));
   assert.equal(artifact.rowCount, 42);
   assert.equal(artifact.rows.length, 42);
+  assert.deepEqual(artifact.rawResponses, requests.map(({ from, to }) => ({
+    fromStationNumber: from,
+    toStationNumber: to,
+    bytesBase64: responseBytes.toString("base64"),
+  })));
+  assert.ok(artifact.rows.every(({ responseSha256 }) => responseSha256
+    === createHash("sha256").update(responseBytes).digest("hex")));
   assert.deepEqual(artifact.rows[0], {
     fromStationNumber: "101",
     toStationNumber: "102",
