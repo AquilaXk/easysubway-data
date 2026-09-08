@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildNationwideCandidateSpec, buildNationwideReleaseArtifacts } from "./build-nationwide-candidate.mjs";
+import { buildNationwideCandidateSpec, buildNationwideReleaseArtifacts, commitNationwideReleaseArtifacts } from "./build-nationwide-candidate.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { NATIONWIDE_CANDIDATE_INPUT_PATHS } from "./validate-candidate-source-set.mjs";
+import { CANDIDATE_RELEASE_OUTPUTS, CANDIDATE_RELEASE_JOURNAL_PATH, CANDIDATE_RELEASE_LOCK_PATH,
+  createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
 import { fiveRegionCandidateSourceSetInput, fixtureBytes, fixtureLedgerInput } from "./test-fixtures/five-region-source-input.mjs";
 
@@ -44,6 +47,42 @@ async function inputs(context, { admitted = true } = {}) {
 
 test("nationwide candidate constructor requires its actual inputs", async () => {
   await assert.rejects(buildNationwideCandidateSpec({}), /targets input bytes are required/);
+});
+
+test("nationwide candidate transaction rolls back partial replacement and commits one bound tuple", async (context) => {
+  const input = await inputs(context);
+  const put = async (relative, bytes) => {
+    const target = path.join(input.repositoryRoot, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, bytes);
+  };
+  const before = CANDIDATE_RELEASE_OUTPUTS.map((relative) => fixtureBytes({ original: relative }));
+  for (const [index, relative] of CANDIDATE_RELEASE_OUTPUTS.entries()) await put(relative, before[index]);
+  for (const [name, relative] of Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS)) await put(relative, input.inputBytes[name]);
+  const authority = { candidateId: input.releaseIdentity.candidateId,
+    scopeId: JSON.parse(input.inputBytes.productionScope).routingLaunchScope.id,
+    approvalId: "fixture-approval", requestedBy: "fixture-requester", approvedBy: "fixture-owner" };
+  const args = { ...input, authority, productionScopeBytes: input.inputBytes.productionScope };
+  const readOutputs = () => Promise.all(CANDIDATE_RELEASE_OUTPUTS.map((relative) => readFile(path.join(input.repositoryRoot, relative))));
+  await assert.rejects(commitNationwideReleaseArtifacts({ ...args, failAfter: 1 }), /injected/);
+  assert.deepEqual(await readOutputs(), before);
+  const result = await commitNationwideReleaseArtifacts(args);
+  const [candidateBytes, scopeBytes, requestBytes, evidenceBytes] = await readOutputs();
+  const candidate = JSON.parse(candidateBytes), request = JSON.parse(requestBytes);
+  assert.equal(result.buildSpecSha256, sha(candidateBytes));
+  assert.equal(candidate.productionScope.sha256, sha(scopeBytes));
+  assert.deepEqual(releaseRequestBindingViolations({ buildSpec: candidate,
+    buildSpecSha256: sha(candidateBytes), releaseRequest: request }), []);
+  assert.equal(JSON.parse(evidenceBytes).identifiers.candidateId.value, candidate.candidateId);
+  for (const relative of [CANDIDATE_RELEASE_JOURNAL_PATH, CANDIDATE_RELEASE_LOCK_PATH]) {
+    await assert.rejects(readFile(path.join(input.repositoryRoot, relative)), { code: "ENOENT" });
+  }
+  // 오래된 prestate로 다른 작업의 변경을 덮어쓰지 않는다.
+  const transaction = createCandidateReleaseTransaction({ label: "fixture", validateOutputs() {} });
+  await assert.rejects(transaction.commit({ repositoryRoot: input.repositoryRoot,
+    outputs: CANDIDATE_RELEASE_OUTPUTS.map((relative, index) => ({ relative, prestateBytes: before[index],
+      bytes: before[index], inputs: [] })) }), /preserves foreign replacement/);
+  assert.deepEqual(await readOutputs(), [candidateBytes, scopeBytes, requestBytes, evidenceBytes]);
 });
 
 test("nationwide release preparation binds recorded authority to exact candidate bytes", async (context) => {

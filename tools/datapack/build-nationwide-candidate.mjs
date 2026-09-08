@@ -3,11 +3,46 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { exportLedgerHash } from "./export-ledger-hashes.mjs";
-import { validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
+import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { CANDIDATE_RELEASE_OUTPUTS, createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+
+// 준비 scope는 교체할 출력이다. 이를 불변 외부 입력으로 다시 검사하면
+// 자기 자신의 첫 write를 drift로 오인하므로 출력 prestate CAS로 보호한다.
+export async function commitNationwideReleaseArtifacts({ repositoryRoot, productionScopeBytes,
+  materialization, releaseIdentity, builderIdentity, authority, failAfter = null } = {}) {
+  if (!path.isAbsolute(repositoryRoot ?? "") || !Buffer.isBuffer(productionScopeBytes)) {
+    throw new Error("candidate commit requires an absolute root and prepared scope bytes");
+  }
+  const prestate = await Promise.all(CANDIDATE_RELEASE_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  const inputs = await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS).map(async ([name, relative]) =>
+    ({ name, relative, bytes: await readFile(path.join(repositoryRoot, relative)) })));
+  const prepared = await buildNationwideReleaseArtifacts({ repositoryRoot, materialization,
+    releaseIdentity, builderIdentity, authority,
+    inputBytes: { ...Object.fromEntries(inputs.map(({ name, bytes }) => [name, bytes])), productionScope: productionScopeBytes } });
+  for (const binding of [prepared.fixtureBinding, prepared.overridesBinding]) {
+    if (CANDIDATE_RELEASE_OUTPUTS.includes(binding.path)) throw new Error("materialization overlaps candidate outputs");
+    const bytes = await readFile(materializedPath(repositoryRoot, binding.path));
+    if (sha256(bytes) !== binding.sha256) throw new Error("materialization input drift detected");
+    inputs.push({ relative: binding.path, bytes });
+  }
+  const next = [prepared.candidateBytes, prepared.productionScopeBytes, prepared.requestBytes, prepared.hashEvidenceBytes];
+  const outputs = CANDIDATE_RELEASE_OUTPUTS.map((relative, index) =>
+    ({ relative, bytes: next[index], prestateBytes: prestate[index], inputs }));
+  const transaction = createCandidateReleaseTransaction({ label: "nationwide candidate", validateOutputs(values) {
+    if (!Array.isArray(values) || values.length !== CANDIDATE_RELEASE_OUTPUTS.length
+      || values.some((value, index) => value.relative !== CANDIDATE_RELEASE_OUTPUTS[index]
+        || !Buffer.isBuffer(value.bytes) || !Buffer.isBuffer(value.prestateBytes))) {
+      throw new Error("candidate transaction outputs mismatch");
+    }
+  } });
+  await transaction.commit({ repositoryRoot, outputs, failAfter });
+  return { candidateId: prepared.buildSpec.candidateId, buildSpecSha256: sha256(prepared.candidateBytes),
+    targets: CANDIDATE_RELEASE_OUTPUTS };
+}
 
 // 승인 사실은 입력으로만 받는다. 계산된 해시나 과거 후보의 승인으로 대체하지 않는다.
 // 네 결과를 먼저 준비하며, 실제 파일 교체는 호출자의 단일 transaction이 담당한다.

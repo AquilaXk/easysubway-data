@@ -10,7 +10,7 @@ import { validateLineage } from "./source-snapshot-policy.mjs";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const PRODUCTION_SCOPE_PATH = "release/product-gates/production-datapack-scope.json";
 const TARGETS_PATH = "tools/datapack/nationwide-coverage-targets.json";
-const INPUT_PATHS = Object.freeze({
+export const NATIONWIDE_CANDIDATE_INPUT_PATHS = Object.freeze({
   targets: TARGETS_PATH,
   tally: "tools/datapack/reports/nationwide-coverage-tally.json",
   ownership: "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -238,7 +238,7 @@ async function main() {
   const candidatePath = argValue(args, "--build-spec");
   const scopePath = argValue(args, "--scope");
   if (!candidatePath || !scopePath) throw new Error("candidate source set arguments mismatch");
-  const records = await Promise.all(Object.entries(INPUT_PATHS).map(async ([name, inputPath]) =>
+  const records = await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS).map(async ([name, inputPath]) =>
     [name, await readFile(inputPath)]));
   const inputBytes = Object.fromEntries(records);
   inputBytes.productionScope = await readFile(scopePath);

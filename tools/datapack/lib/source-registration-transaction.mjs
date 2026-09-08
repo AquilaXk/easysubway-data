@@ -13,6 +13,14 @@ export const SOURCE_REGISTRATION_JOURNAL_PATH =
   "tools/datapack/.capital-route-topology-registration-transaction.json";
 export const SOURCE_REGISTRATION_LOCK_PATH =
   "tools/datapack/.capital-route-topology-registration.lock";
+export const CANDIDATE_RELEASE_OUTPUTS = Object.freeze([
+  "tools/datapack/release/candidate-build-spec.json",
+  "release/product-gates/production-datapack-scope.json",
+  "tools/datapack/release/release-request.json",
+  "tools/datapack/release/hash-evidence.json",
+]);
+export const CANDIDATE_RELEASE_JOURNAL_PATH = "tools/datapack/.nationwide-candidate-transaction.json";
+export const CANDIDATE_RELEASE_LOCK_PATH = "tools/datapack/.nationwide-candidate.lock";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -21,16 +29,14 @@ async function syncParent(file) {
   try { await directory.sync(); } finally { await directory.close(); }
 }
 
-export function createSourceRegistrationTransaction({ label, validateOutputs }) {
+function createTransaction({ label, validateOutputs, outputs: allowedOutputs, journalPath, lockPath }) {
   const prefix = `${label} transaction`;
   const rootPath = (value) => {
     if (!path.isAbsolute(value ?? "")) throw new Error(`${label} registration requires an absolute repository root`);
     return path.resolve(value);
   };
   const target = (root, relative) => {
-    const allowed = SOURCE_REGISTRATION_OUTPUTS.includes(relative)
-      || relative === SOURCE_REGISTRATION_JOURNAL_PATH
-      || relative === SOURCE_REGISTRATION_LOCK_PATH;
+    const allowed = allowedOutputs.includes(relative) || relative === journalPath || relative === lockPath;
     if (!allowed) throw new Error(`${label} registration target is invalid`);
     const file = path.resolve(root, relative);
     if (!file.startsWith(root + path.sep)) throw new Error(`${label} registration target escapes repository`);
@@ -81,14 +87,14 @@ export function createSourceRegistrationTransaction({ label, validateOutputs }) 
   }
   const journalRecords = (outputs) => outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, beforeBase64: prestateBytes.toString("base64"), beforeSha256: sha(prestateBytes), nextBase64: bytes.toString("base64"), nextSha256: sha(bytes) }));
   function validateJournal(journal) {
-    if (journal?.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== SOURCE_REGISTRATION_OUTPUTS.length || JSON.stringify(journal.records.map(({ relative }) => relative)) !== JSON.stringify(SOURCE_REGISTRATION_OUTPUTS)) throw new Error(`${prefix} recovery is invalid`);
+    if (journal?.schemaVersion !== 1 || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== allowedOutputs.length || JSON.stringify(journal.records.map(({ relative }) => relative)) !== JSON.stringify(allowedOutputs)) throw new Error(`${prefix} recovery is invalid`);
     for (const record of journal.records) {
       const before = Buffer.from(record.beforeBase64 ?? "", "base64"), next = Buffer.from(record.nextBase64 ?? "", "base64");
       if (before.toString("base64") !== record.beforeBase64 || next.toString("base64") !== record.nextBase64 || sha(before) !== record.beforeSha256 || sha(next) !== record.nextSha256) throw new Error(`${prefix} recovery is invalid`);
     }
   }
   async function recover(root) {
-    const journal = await currentBytes(target(root, SOURCE_REGISTRATION_JOURNAL_PATH));
+    const journal = await currentBytes(target(root, journalPath));
     if (journal == null) return;
     let parsed; try { parsed = JSON.parse(journal); } catch { throw new Error(`${prefix} journal is invalid JSON`); }
     validateJournal(parsed);
@@ -103,12 +109,12 @@ export function createSourceRegistrationTransaction({ label, validateOutputs }) 
       if (!actual.equals(prestate)) throw new Error(`${prefix} preserves foreign replacement`);
       await atomicWrite(file, desired, prestate);
     }
-    const journalFile = target(root, SOURCE_REGISTRATION_JOURNAL_PATH);
+    const journalFile = target(root, journalPath);
     await unlink(journalFile);
     await syncParent(journalFile);
   }
   async function acquireLock(root) {
-    const lock = target(root, SOURCE_REGISTRATION_LOCK_PATH); await safeParent(lock);
+    const lock = target(root, lockPath); await safeParent(lock);
     try { await mkdir(lock, { mode: 0o700 }); } catch (error) {
       if (error?.code === "EEXIST") throw new Error(`${prefix} lock residue exists`);
       throw error;
@@ -125,7 +131,7 @@ export function createSourceRegistrationTransaction({ label, validateOutputs }) 
       try {
         await recover(root); for (const output of outputs) await assertBytes(target(root, output.relative), output.prestateBytes);
         await assertInputs(root, outputs[0].inputs);
-        const records = journalRecords(outputs), journal = target(root, SOURCE_REGISTRATION_JOURNAL_PATH);
+        const records = journalRecords(outputs), journal = target(root, journalPath);
         await atomicWrite(journal, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "PREPARED", records })), null);
         try {
           for (const [index, record] of records.entries()) {
@@ -136,8 +142,28 @@ export function createSourceRegistrationTransaction({ label, validateOutputs }) 
         } catch (error) { await recover(root); throw error; }
         const prepared = await currentBytes(journal);
         await atomicWrite(journal, Buffer.from(JSON.stringify({ schemaVersion: 1, state: "COMMITTED", records })), prepared);
-        await recover(root); return { targets: SOURCE_REGISTRATION_OUTPUTS };
+        await recover(root); return { targets: allowedOutputs };
       } finally { await release(); }
     },
   };
+}
+
+export function createSourceRegistrationTransaction({ label, validateOutputs }) {
+  return createTransaction({
+    label,
+    validateOutputs,
+    outputs: SOURCE_REGISTRATION_OUTPUTS,
+    journalPath: SOURCE_REGISTRATION_JOURNAL_PATH,
+    lockPath: SOURCE_REGISTRATION_LOCK_PATH,
+  });
+}
+
+export function createCandidateReleaseTransaction({ label, validateOutputs }) {
+  return createTransaction({
+    label,
+    validateOutputs,
+    outputs: CANDIDATE_RELEASE_OUTPUTS,
+    journalPath: CANDIDATE_RELEASE_JOURNAL_PATH,
+    lockPath: CANDIDATE_RELEASE_LOCK_PATH,
+  });
 }
