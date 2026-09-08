@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import {
   buildLaunchDenominatorReport,
@@ -23,15 +24,10 @@ import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const STATUSES = new Set(["PASS", "FAIL", "BLOCKED_EXTERNAL"]);
-// 필드별 허용 status set의 단일 소스. DEFERRED가 포함된 필드는 곧 deferred 허용 필드다
-// (headway는 evidence 미도래, route_graph_topology는 capital pilot의 deferred domain — pilot targets의
-// knownSourceDomains에만 존재). deferred domain 위반은 게시를 차단하지 않고 DEFERRED로 정직 기록하되,
-// 위반 수치는 routeGraphTopologyViolationCount와 topology report SHA로 evidence에 전량 남긴다(은폐 금지).
-// 이 맵 하나에서 allowedStatusesFor와 DEFERRED 허용 여부를 함께 파생한다(중복 상수 제거).
+// DEFERRED는 아직 headway evidence에만 허용한다.
 const DEFERRABLE_STATUSES = new Set([...STATUSES, "DEFERRED"]);
 const FIELD_STATUS_SETS = new Map([
   ["headwayReportStatus", DEFERRABLE_STATUSES],
-  ["routeGraphTopologyStatus", DEFERRABLE_STATUSES],
 ]);
 const CANDIDATE_EVIDENCE_PATHS = Object.freeze({
   eligibility: "server-route-bundle-evidence/route-accessibility-eligibility.json",
@@ -86,16 +82,12 @@ function validateNonNegativeInteger(bundle, field) {
   return value;
 }
 
-// route_graph_topology의 status와 위반 수치는 워크플로에서 함께 파생된다:
-// violationCount === 0 이면 PASS, 위반이 있으면 deferred scope에서 DEFERRED(그 외 FAIL/BLOCKED_EXTERNAL).
-// 손 조립 bundle에서 이 정합이 깨진 조합(예: DEFERRED + violationCount 0 → 위반 은폐)을 런타임에서 차단한다.
-function validateRouteGraphTopologyIntegrity(bundle) {
+// route_graph_topology는 게시 필수 게이트다. 위반 수치는 항상 남기고 DEFERRED는 허용하지 않는다.
+export function validateRouteGraphTopologyIntegrity(bundle) {
   const violationCount = validateNonNegativeInteger(bundle, "routeGraphTopologyViolationCount");
   const status = bundle.routeGraphTopologyStatus;
-  if (status === "DEFERRED" && violationCount === 0) {
-    throw new Error(
-      "routeGraphTopologyStatus DEFERRED requires routeGraphTopologyViolationCount > 0 (위반 은폐 차단)",
-    );
+  if (status === "DEFERRED") {
+    throw new Error("routeGraphTopologyStatus must be a release gate status");
   }
   if (status === "PASS" && violationCount !== 0) {
     throw new Error("routeGraphTopologyStatus PASS requires routeGraphTopologyViolationCount 0");
@@ -963,7 +955,9 @@ async function candidateServerRouteOnly(args) {
   });
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

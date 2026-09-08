@@ -16,6 +16,22 @@ import {
 } from "./launch-candidate-binding.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
+import { validateRouteGraphTopologyIntegrity } from "./validate-release-evidence-bundle.mjs";
+
+test("release topology cannot defer violations", () => {
+  assert.throws(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "DEFERRED", routeGraphTopologyViolationCount: 1,
+  }), /routeGraphTopologyStatus must be a release gate status/);
+  assert.throws(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "PASS", routeGraphTopologyViolationCount: 1,
+  }), /PASS requires routeGraphTopologyViolationCount 0/);
+  assert.doesNotThrow(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "FAIL", routeGraphTopologyViolationCount: 1,
+  }));
+  assert.doesNotThrow(() => validateRouteGraphTopologyIntegrity({
+    routeGraphTopologyStatus: "PASS", routeGraphTopologyViolationCount: 0,
+  }));
+});
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -1185,14 +1201,13 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   );
 
   bundle.headwayReportStatus = "PASS";
-  // route_graph_topology는 capital pilot deferred domain이므로 위반 기록 시 DEFERRED가 publish gate를 통과한다.
+  // topology 위반은 게시에서 DEFERRED로 미룰 수 없다.
   bundle.routeGraphTopologyStatus = "DEFERRED";
   bundle.routeGraphTopologyViolationCount = 4;
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    [...validatorCommand, "--require-pass"],
-    { cwd: root },
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /routeGraphTopologyStatus must be a release gate status/,
   );
 
   // deferred가 아닌 다른 게이트(예: routeMapPositionCoverageStatus)는 DEFERRED를 허용하지 않는다.
@@ -1219,9 +1234,9 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     /validatorStatus must be a release gate status/,
   );
 
-  // route_graph_topology status와 위반 수치의 정합을 런타임에서 강제한다.
+  // topology status와 위반 수치의 정합을 런타임에서 강제한다.
   bundle.validatorStatus = "PASS";
-  // DEFERRED인데 위반 0 → 위반 은폐 모순, 거부.
+  // DEFERRED는 위반 수치와 무관하게 거부.
   bundle.routeGraphTopologyStatus = "DEFERRED";
   bundle.routeGraphTopologyViolationCount = 0;
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
@@ -1231,7 +1246,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
       [...validatorCommand, "--require-pass"],
       { cwd: root },
     ),
-    /routeGraphTopologyStatus DEFERRED requires routeGraphTopologyViolationCount > 0/,
+    /routeGraphTopologyStatus must be a release gate status/,
   );
 
   // PASS인데 위반 수치가 0이 아님 → 모순, 거부.
@@ -1273,14 +1288,13 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     /release evidence bundle missing routeGraphTopologyViolationCount/,
   );
 
-  // 실데이터 경로(위반 4, DEFERRED) 정합 → 통과 유지.
+  // DEFERRED와 위반 4도 거부한다.
   bundle.routeGraphTopologyStatus = "DEFERRED";
   bundle.routeGraphTopologyViolationCount = 4;
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
-  await execFileAsync(
-    process.execPath,
-    [...validatorCommand, "--require-pass"],
-    { cwd: root },
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /routeGraphTopologyStatus must be a release gate status/,
   );
 });
 
