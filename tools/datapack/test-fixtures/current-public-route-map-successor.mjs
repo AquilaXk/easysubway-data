@@ -23,7 +23,6 @@ import {
 } from "../materialize-seoul-route-map-positions.mjs";
 import {
   deriveReleaseProjection,
-  requireCurrentCanonicalSourceRoster,
 } from "../rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
@@ -35,6 +34,36 @@ const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const CAPITAL_TOPOLOGY_SOURCE_ID = "capital-route-topology";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+// 이 fixture의 수명주기는 production roster가 아니라 이 명시적 입력 집합으로만 정한다.
+// 새 production source는 이 fixture에 자동 편입되지 않는다.
+const FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS = Object.freeze([
+  "seoul-metro-route-map-positions",
+  "kric-subway-timetable",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+  "incheon-transit-accessibility",
+  "seoul-metro-transfer-distance-duration",
+]);
+const FIXTURE_PACK_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+  "seoul-metro-route-map-positions",
+  "kric-subway-timetable",
+  "seoul-metro-accessibility",
+  "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares",
+  "seoul-metro-transfer-distance-duration",
+  "incheon-transit-station-info",
+  "incheon-transit-accessibility",
+  "incheon-line1-train-timetable",
+  "incheon-line2-train-timetable",
+]);
+const FIXTURE_SOURCE_IDS = Object.freeze([...new Set([
+  ...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS,
+  ...FIXTURE_PACK_SOURCE_IDS,
+])]);
 const SHA_KEYS = Object.freeze([
   "layoutAlgorithmVersion", "topologySnapshotId", "topologySnapshotSha256",
   "topologySnapshotIdentity", "lineOrderSha256", "aliasLedgerVersion", "aliasLedgerSha256",
@@ -98,238 +127,73 @@ function addFixtureTopologySelection(candidate, snapshot) {
   candidate.sourceSnapshots.splice(transferIndex, 0, snapshot.projection);
 }
 
-function requiredFixtureSourceHeads(inventory, snapshots) {
-  const requiredSources = inventory?.sources?.filter(({ requiredForProductionPack }) =>
-    requiredForProductionPack === true);
-  if (!Array.isArray(requiredSources) || requiredSources.length === 0
-    || new Set(requiredSources.map(({ id }) => id)).size !== requiredSources.length) {
-    throw new Error("synthetic required source inventory is invalid");
+function fixtureSourceRows(inventory, sourceIds, label) {
+  const sourceById = new Map(inventory?.sources?.map((source) => [source.id, source]));
+  if (!(sourceById instanceof Map) || sourceById.size !== inventory?.sources?.length
+    || sourceIds.some((sourceId) => !sourceById.has(sourceId))) {
+    throw new Error(`synthetic ${label} source universe is incomplete`);
   }
-  const { headsBySource } = validateLineage(snapshots);
-  return requiredSources.map((source) => {
-    const snapshotId = headsBySource[source.id];
-    const matches = snapshots.filter((snapshot) => snapshot.snapshotId === snapshotId);
-    if (typeof snapshotId !== "string" || matches.length !== 1 || matches[0].sourceId !== source.id) {
-      throw new Error("synthetic required source ledger head is incomplete");
-    }
-    return { source, snapshot: matches[0] };
-  });
+  return sourceIds.map((sourceId) => structuredClone(sourceById.get(sourceId)));
 }
 
-export function buildFixtureRequiredSourceRows(source, capital, fixtureClock) {
-  const domains = source.coverageScope?.sourceDomains;
-  if (JSON.stringify(domains) === JSON.stringify(["schedule_timetable"])) {
-    return { calendar: {
-      serviceId: `fixture-inactive-${source.id}`,
-      monday: false, tuesday: false, wednesday: false, thursday: false,
-      friday: false, saturday: false, sunday: false,
-      startDate: fixtureClock.slice(0, 10).replaceAll("-", ""),
-      endDate: fixtureClock.slice(0, 10).replaceAll("-", ""), timezone: "Asia/Seoul",
-    } };
-  }
-  if (JSON.stringify(domains) !== JSON.stringify(["route_graph_topology"])) {
-    throw new Error("missing fixture source requires an explicit domain materializer");
-  }
-  const lineIds = source.coverageScope.lineIds;
-  if (!Array.isArray(lineIds) || lineIds.length === 0 || new Set(lineIds).size !== lineIds.length
-    || lineIds.some((id) => typeof id !== "string" || id.length === 0)) {
-    throw new Error("topology fixture line scope is invalid");
-  }
-  const networkEdges = lineIds.flatMap((lineId) => {
-    const rows = capital.networkEdges.filter((edge) => edge.edgeType === "RIDE"
-      && edge.fromNodeId.endsWith(`:${lineId}`) && edge.toNodeId.endsWith(`:${lineId}`));
-    if (rows.length === 0 || rows.some((edge) => edge.sourceId != null || edge.sourceSnapshotId != null)) {
-      throw new Error("topology fixture requires unowned scoped RIDE rows");
-    }
-    return rows;
-  });
-  return { networkEdges: structuredClone(networkEdges) };
-}
-
-async function materializeMissingFixtureRequiredSources({
-  root, now, inventory, snapshots, candidate, pack, governancePolicy, governanceBytes, freshnessPolicy,
-}) {
-  const selectedSourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
-  if (!Array.isArray(candidate?.sourceSnapshotIds) || candidate.sourceSnapshotIds.length !== selectedSourceIds?.length
-    || new Set(selectedSourceIds).size !== selectedSourceIds.length
+function projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory, governancePolicy, scope }) {
+  const sourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
+  if (!Array.isArray(sourceIds) || !Array.isArray(candidate?.sourceSnapshotIds)
+    || candidate.sourceSnapshotIds.length !== sourceIds.length
+    || new Set(sourceIds).size !== sourceIds.length
+    || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
     || candidate.sourceSnapshots.some(({ snapshotId }, index) => snapshotId !== candidate.sourceSnapshotIds[index])) {
-    throw new Error("synthetic candidate source selection is invalid");
+    throw new Error("synthetic fixture candidate source selection is invalid");
   }
-  const missing = requiredFixtureSourceHeads(inventory, snapshots)
-    .filter(({ source }) => !selectedSourceIds.includes(source.id));
-  for (const { source, snapshot } of missing) {
-    const fixtureClock = now.toISOString();
-    const capital = pack.packs[0];
-    const fixtureRows = buildFixtureRequiredSourceRows(source, capital, fixtureClock);
-    const { calendar, networkEdges } = fixtureRows;
-    if (capital.sourceInventory.some(({ id }) => id === source.id)
-      || (calendar && capital.serviceCalendars.some(({ serviceId }) => serviceId === calendar.serviceId))) {
-      throw new Error("synthetic required source materialization already exists");
-    }
-    const sourceRecord = {
-      schemaVersion: 1,
-      artifactKind: "fixture-required-source-initial-record",
-      testOnly: true,
-      sourceId: source.id,
-      fixtureClock,
-      ...fixtureRows,
-      terminalLedgerHead: {
-        snapshotId: snapshot.snapshotId,
-        rawSha256: snapshot.rawSha256,
-        contentSha256: snapshot.contentSha256,
-      },
-    };
-    const sourceRecordBytes = Buffer.from(`${canonicalJson(sourceRecord)}\n`);
-    const rawSha256 = sha256(sourceRecordBytes);
-    const contentSha256 = sha256(Buffer.from(canonicalJson({
-      sourceId: source.id,
-      fixtureClock,
-      sourceRecordSha256: rawSha256,
-    })));
-    const snapshotId = `${source.id}-fixture-initial-${contentSha256}`;
-    const sourceClass = freshnessPolicy.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(source.id));
-    if (!sourceClass || typeof sourceClass.basisField !== "string") {
-      throw new Error("synthetic required source freshness policy is incomplete");
-    }
-    const fixtureSnapshot = {
-      ...structuredClone(snapshot),
-      ...(networkEdges ? {
-        rowCount: networkEdges.length,
-        coverageCount: new Set(networkEdges.flatMap(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId])).size,
-      } : {}),
-      snapshotId,
-      previousSnapshotId: null,
-      observedAt: fixtureClock,
-      capturedAt: fixtureClock,
-      retrievedAt: fixtureClock,
-      sourceUpdatedAt: fixtureClock,
-      rawSha256,
-      contentSha256,
-      rawObjectUri: `oci://fixture/fixture-required-sources/${source.id}/${snapshotId}.json`,
-      rawObjectSha256: rawSha256,
-      rawReceiptSha256: sha256(Buffer.from(canonicalJson({ sourceId: source.id, snapshotId, rawSha256 }))),
-      byteSize: sourceRecordBytes.length,
-      redactedRequestFingerprint: sha256(Buffer.from(canonicalJson({ sourceId: source.id, snapshotId, testOnly: true }))),
-      schemaFingerprint: sha256(Buffer.from(canonicalJson({ artifactKind: sourceRecord.artifactKind, sourceId: source.id }))),
-      snapshotStatus: "LOCKED",
-      schemaStatus: "PASS",
-      licenseStatus: "PASS",
-      fetchStatus: "SUCCESS",
-      redistributionAllowed: true,
-      credentialRedacted: true,
-      testOnly: true,
-      admissionEvidence: {
-        ...(snapshot.admissionEvidence ?? {}),
-        testOnly: true,
-      },
-    };
-    fixtureSnapshot.freshnessExpiresAt = deriveFreshnessExpiresAt({
-      policy: freshnessPolicy,
-      sourceClassId: sourceClass.id,
-      basisAt: fixtureSnapshot[sourceClass.basisField],
-      providerValidUntil: sourceClass.providerValidityEndField
-        ? fixtureSnapshot[sourceClass.providerValidityEndField]
-        : undefined,
-      evaluationAt: fixtureClock,
-    });
-    fixtureSnapshot.freshUntil = fixtureSnapshot.freshnessExpiresAt;
-    fixtureSnapshot.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({
-      policy: governancePolicy,
-      sourceId: source.id,
-      retrievedAt: fixtureClock,
-    });
-    fixtureSnapshot.governancePolicyVersion = governancePolicy.policyVersion;
-    fixtureSnapshot.governancePolicySha256 = sha256(governanceBytes);
-    const admissionRecord = {
-      schemaVersion: 1,
-      artifactKind: "fixture-required-source-initial-admission-record",
-      testOnly: true,
-      sourceId: source.id,
-      snapshotId,
-      rawSha256,
-      contentSha256,
-      policyVersion: governancePolicy.policyVersion,
-      policySha256: fixtureSnapshot.governancePolicySha256,
-      licenseEvidenceHash: source.admissionEvidence?.licenseEvidenceHash,
-    };
-    const admissionRecordBytes = Buffer.from(`${canonicalJson(admissionRecord)}\n`);
-    const adminReviewRecordHash = sha256(admissionRecordBytes);
-    source.admissionEvidence = {
-      ...source.admissionEvidence,
-      adminReviewRecordHash,
-      testOnly: true,
-    };
-    fixtureSnapshot.adminReviewRecordHash = adminReviewRecordHash;
-    fixtureSnapshot.admissionEvidence.adminReviewRecordHash = adminReviewRecordHash;
-    source.registrationEvidence = {
-      testOnly: true, sourceId: source.id, snapshotId,
-      rawObjectUri: fixtureSnapshot.rawObjectUri, rawObjectSha256: rawSha256, contentSha256,
-    };
-    const sourceRecordPath = `tools/datapack/release/fixture-required-source-${contentSha256}-record.json`;
-    const admissionRecordPath = `tools/datapack/release/fixture-required-source-${adminReviewRecordHash}-admission-record.json`;
-    await Promise.all([
-      writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), sourceRecordBytes),
-      writeFile(path.join(root, sourceRecordPath), sourceRecordBytes),
-      writeFile(path.join(root, admissionRecordPath), admissionRecordBytes),
-    ]);
-    capital.sourceInventory.push({
-      id: source.id, owner: source.owner, url: source.datasetUrl,
-      license: source.license.name, licenseStatus: "redistributable",
-      redistributionAllowed: source.license.redistributionAllowed,
-      updateFrequency: source.updateFrequency, updatedAt: fixtureClock,
-      fields: [...source.fieldsProvided], coverageScope: structuredClone(source.coverageScope),
-    });
-    if (calendar) {
-      // 운행을 추가하지 않는 독립 합성 행이며 기존 달력의 출처는 보존한다.
-      capital.serviceCalendars.push({
-        ...calendar, sourceId: source.id, sourceSnapshotId: snapshotId,
-        providerRecordHash: sha256(canonicalJson(calendar)), evidenceHash: rawSha256,
-        updatedAt: fixtureClock,
-      });
-      capital.minimumTableRows.service_calendars = capital.serviceCalendars.length;
-    } else {
-      // 기존 fixture 그래프의 의미는 유지하고 출처 없는 행에만 합성 증거를 결속한다.
-      const records = new Map(networkEdges.map((edge) => [edge.id, edge]));
-      capital.networkEdges = capital.networkEdges.map((edge) => records.has(edge.id) ? {
-        ...edge, sourceId: source.id, sourceSnapshotId: snapshotId,
-        providerRecordHash: sha256(canonicalJson(records.get(edge.id))), evidenceHash: rawSha256,
-        updatedAt: fixtureClock,
-      } : edge);
-    }
-    snapshots = snapshots.filter(({ sourceId }) => sourceId !== source.id);
-    snapshots.push(fixtureSnapshot);
+  const projectionsBySourceId = new Map(candidate.sourceSnapshots.map((projection) => [projection.sourceId, projection]));
+  if (FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.some((sourceId) => !projectionsBySourceId.has(sourceId))) {
+    throw new Error("synthetic fixture candidate is missing a declared source");
   }
-  const requiredHeads = requiredFixtureSourceHeads(inventory, snapshots);
-  const existingSourceIds = candidate.sourceSnapshots.map(({ sourceId }) => sourceId);
-  for (const { source, snapshot } of requiredHeads) {
-    if (existingSourceIds.includes(source.id)) continue;
-    const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID);
-    if (transferIndex < 0 || transferIndex !== candidate.sourceSnapshots.length - 1) {
-      throw new Error("synthetic candidate source selection must keep TRANSFER terminal");
-    }
-    const projection = deriveReleaseProjection({
-      snapshot,
-      sourceInventory: inventory,
-      governancePolicy,
-      governancePolicyBytes: governanceBytes,
-      freshnessPolicy,
-      nowMillis: now.getTime(),
-    });
-    candidate.sourceSnapshotIds.splice(transferIndex, 0, snapshot.snapshotId);
-    candidate.sourceSnapshots.splice(transferIndex, 0, projection);
-    existingSourceIds.splice(transferIndex, 0, source.id);
+  candidate.sourceSnapshots = FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.map((sourceId) =>
+    structuredClone(projectionsBySourceId.get(sourceId)));
+  candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+  const selectedSnapshotIds = new Set(candidate.sourceSnapshotIds);
+  if (FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.some((sourceId, index) => {
+    const matches = snapshots.filter(({ snapshotId }) => snapshotId === candidate.sourceSnapshotIds[index]);
+    return matches.length !== 1 || matches[0].sourceId !== sourceId;
+  })) {
+    throw new Error("synthetic fixture candidate snapshot binding is invalid");
   }
-  return snapshots;
+  const fixtureSnapshots = snapshots.filter(({ sourceId }) => FIXTURE_SOURCE_IDS.includes(sourceId));
+  if (fixtureSnapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId)).length !== selectedSnapshotIds.size) {
+    throw new Error("synthetic fixture initial candidate ledger is incomplete");
+  }
+  const capital = pack?.packs?.find(({ id }) => id === "capital");
+  if (!capital) throw new Error("synthetic fixture capital pack is incomplete");
+  const fixturePack = structuredClone(pack);
+  fixturePack.packs.find(({ id }) => id === "capital").sourceInventory = fixtureSourceRows(
+    { sources: capital.sourceInventory }, FIXTURE_PACK_SOURCE_IDS, "pack",
+  );
+  const governedSourceIds = governancePolicy?.sources?.map(({ sourceId }) => sourceId);
+  if (!Array.isArray(governedSourceIds) || new Set(governedSourceIds).size !== governedSourceIds.length) {
+    throw new Error("synthetic fixture governance catalog is invalid");
+  }
+  // 닫힌 governance epoch을 검증하려고 catalog metadata는 유지한다. 다만 이
+  // fixture의 required/admitted source 선택과 evidence 복사는 아래 고정 집합만 사용한다.
+  const fixtureInventory = {
+    ...structuredClone(inventory),
+    sources: fixtureSourceRows(inventory, [...new Set([...governedSourceIds, ...FIXTURE_SOURCE_IDS])], "inventory")
+      .map((source) => ({
+        ...source,
+        requiredForProductionPack: FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.includes(source.id),
+      })),
+  };
+  bindFixtureRequiredSourceScope(scope, candidate);
+  return { snapshots: fixtureSnapshots, pack: fixturePack, inventory: fixtureInventory };
 }
 
-function bindFixtureRequiredSourceScope(scope, candidate, inventory) {
-  const requiredSourceIds = inventory?.sources?.filter(({ requiredForProductionPack }) =>
-    requiredForProductionPack === true).map(({ id }) => id);
+function bindFixtureRequiredSourceScope(scope, candidate) {
   const selectedSourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
-  if (!Array.isArray(requiredSourceIds) || !Array.isArray(selectedSourceIds)
-    || requiredSourceIds.length !== selectedSourceIds.length
-    || new Set(requiredSourceIds).size !== requiredSourceIds.length
-    || requiredSourceIds.some((sourceId) => !selectedSourceIds.includes(sourceId))
+  const expectedSourceIds = selectedSourceIds?.includes(CAPITAL_TOPOLOGY_SOURCE_ID)
+    ? [...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.slice(0, -1), CAPITAL_TOPOLOGY_SOURCE_ID, TRANSFER_SOURCE_ID]
+    : FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS;
+  if (!Array.isArray(selectedSourceIds)
+    || !isDeepStrictEqual(selectedSourceIds, expectedSourceIds)
     || selectedSourceIds.at(-1) !== TRANSFER_SOURCE_ID) {
     throw new Error("synthetic required source scope is invalid");
   }
@@ -426,10 +290,10 @@ async function registerFixtureCapitalTopology({ root, now, paths, inventory, sna
 
 function orderCurrentCapitalSources(document) {
   const capital = document?.packs?.find(({ id }) => id === "capital");
-  const entries = capital?.sourceInventory;
-  const sourceIds = requireCurrentCanonicalSourceRoster(capital);
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  capital.sourceInventory = sourceIds.map((sourceId) => structuredClone(byId.get(sourceId)));
+  if (!capital) throw new Error("synthetic fixture capital pack is incomplete");
+  capital.sourceInventory = fixtureSourceRows(
+    { sources: capital.sourceInventory }, FIXTURE_PACK_SOURCE_IDS, "pack",
+  );
 }
 
 async function readJson(root, relative) {
@@ -607,12 +471,20 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     regularRoot(sourceRoot),
     regularRoot(targetRoot, { create: true }),
   ]);
-  const [candidate, inventory, itxContract, facilityAdmission] = await Promise.all([
+  const [candidate, request, hashes, inventory, snapshots, pack, governanceBytes, scope, itxContract, facilityAdmission] = await Promise.all([
     readJson(source, "tools/datapack/release/candidate-build-spec.json"),
+    readJson(source, "tools/datapack/release/release-request.json"),
+    readJson(source, "tools/datapack/release/hash-evidence.json"),
     readJson(source, "tools/datapack/source-inventory.json"),
+    readJson(source, "tools/datapack/release/source-snapshots.json"),
+    readJson(source, "tools/datapack/release/capital-production-canonical-pack.json"),
+    readFile(path.join(source, "tools/datapack/source-governance-policy.json")),
+    readJson(source, "release/product-gates/production-datapack-scope.json"),
     readJson(source, "tools/datapack/itx-cheongchun-coverage-contract.json"),
     readJson(source, "tools/datapack/release/current-capital-facility-source-admission.json"),
   ]);
+  const governancePolicy = JSON.parse(governanceBytes);
+  const fixture = projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory, governancePolicy, scope });
   const historicalTopologyEvidence = candidate.networkEdgeEvidence?.capitalTopology;
   if (!historicalTopologyEvidence
     || !/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u.test(historicalTopologyEvidence.path ?? "")
@@ -629,20 +501,20 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ...Object.values(candidate.networkEdgeEvidence ?? {})
       .map((evidence) => evidence?.path)
       .filter((relative) => relative !== historicalTopologyEvidence.path),
-    ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
-    ...inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
-    ...inventory.sources.map((source) => {
+    ...fixture.inventory.sources.map((source) => source.routeMapAdmissionEvidence?.snapshotPath),
+    ...fixture.inventory.sources.map((source) => source.routeMapAdmissionEvidence?.currentLayoutAdmission?.snapshotPath),
+    ...fixture.inventory.sources.map((source) => {
       const snapshotId = source.routeMapAdmissionEvidence?.currentLayoutAdmission?.topologySnapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
     }),
-    ...inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
-    ...inventory.sources.map((source) => source.transferAdmissionEvidence?.snapshotPath),
-    ...inventory.sources.map((source) => source.topologyAdmissionEvidence?.snapshotPath),
-    ...inventory.sources.map((source) => {
+    ...fixture.inventory.sources.map((source) => source.accessibilityAdmissionEvidence?.snapshotPath),
+    ...fixture.inventory.sources.map((source) => source.transferAdmissionEvidence?.snapshotPath),
+    ...fixture.inventory.sources.map((source) => source.topologyAdmissionEvidence?.snapshotPath),
+    ...fixture.inventory.sources.map((source) => {
       const snapshotId = source.registrationEvidence?.snapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
     }),
-    ...inventory.sources.map((source) => {
+    ...fixture.inventory.sources.map((source) => {
       const snapshotId = source.routeMapAdmissionEvidence?.currentTopologyAdmission?.topologySnapshotId;
       return typeof snapshotId === "string" ? `tools/datapack/sources/${snapshotId}.json` : null;
     }),
@@ -662,6 +534,29 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     ]);
     await cp(sourceFile, destination, { force: true });
   }
+  await Promise.all([
+    writeFile(path.join(target, "tools/datapack/release/source-snapshots.json"), jsonBytes(fixture.snapshots)),
+    writeFile(path.join(target, "tools/datapack/release/capital-production-canonical-pack.json"), jsonBytes(fixture.pack)),
+    writeFile(path.join(target, "tools/datapack/source-inventory.json"), jsonBytes(fixture.inventory)),
+    writeFile(path.join(target, "release/product-gates/production-datapack-scope.json"), jsonBytes(scope)),
+  ]);
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
+    fixture.snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
+  ));
+  candidate.sourceInventorySha256 = sha256(JSON.stringify(fixture.inventory));
+  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(jsonBytes(fixture.inventory));
+  const candidateBytes = await bindCurrentProductionScopePolicy(candidate, target);
+  const packBytes = jsonBytes(fixture.pack);
+  const selectedSnapshots = fixture.snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
+  bindSyntheticReleaseArtifacts({
+    candidate, candidateBytes, request, hashes, packBytes, selectedSnapshots, inventory: fixture.inventory,
+  });
+  await Promise.all([
+    writeFile(path.join(target, "tools/datapack/release/candidate-build-spec.json"), candidateBytes),
+    writeFile(path.join(target, "tools/datapack/release/release-request.json"), jsonBytes(request)),
+    writeFile(path.join(target, "tools/datapack/release/hash-evidence.json"), jsonBytes(hashes)),
+  ]);
   await writeSyntheticCurrentExitOciReceipt(target);
   if (!activatePublicRouteMap) return null;
   return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
@@ -1139,21 +1034,10 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   inventory = topologyRegistration.inventory;
   snapshots = topologyRegistration.snapshots;
   addFixtureTopologySelection(candidate, topologyRegistration.topologySnapshot);
-  snapshots = await materializeMissingFixtureRequiredSources({
-    root,
-    now,
-    inventory,
-    snapshots,
-    candidate,
-    pack,
-    governancePolicy: topologyRegistration.governancePolicy,
-    governanceBytes: topologyRegistration.governanceBytes,
-    freshnessPolicy: topologyRegistration.freshnessPolicy,
-  });
   governancePolicy = topologyRegistration.governancePolicy;
   governanceBytes = topologyRegistration.governanceBytes;
   freshnessPolicy = topologyRegistration.freshnessPolicy;
-  bindFixtureRequiredSourceScope(scope, candidate, inventory);
+  bindFixtureRequiredSourceScope(scope, candidate);
   const inventoryBytes = jsonBytes(inventory);
   const scopeBytes = jsonBytes(scope);
   const selectedIds = new Set(candidate.sourceSnapshotIds);
