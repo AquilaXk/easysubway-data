@@ -265,13 +265,13 @@ test("retained production Gwangju rejects receipt, contract, and source-admissio
   assert.throws(() => invoke(foreignBinding), /canonical membership/);
 });
 
-test("retained production Gwangju preserves topology freshness and membership validation", async () => {
+test("retained production Gwangju preserves topology provenance and membership validation", async () => {
   const input = await retainedProductionInput();
   const invoke = (overrides) => materializeGwangjuTimetable({ ...input, canonicalStationMappings: input.mappings, now, ...overrides });
   const topologySnapshot = structuredClone(input.topologySnapshot);
   topologySnapshot.edges[0].durationSeconds += 1;
   assert.throws(() => invoke({ topologySnapshot }), /topology snapshot/);
-  assert.throws(() => invoke({ now: new Date(input.topologySnapshot.freshUntil) }), /stale/);
+  assert.doesNotThrow(() => invoke({ now: new Date(input.topologySnapshot.freshUntil) }));
   const inventory = structuredClone(input.inventory);
   const verifiedAt = new Date(now.getTime() + 1).toISOString();
   for (const id of ["molit-urban-rail-full-route-gwangju-membership", "gwangju-transportation-route-topology"]) {
@@ -282,7 +282,7 @@ test("retained production Gwangju preserves topology freshness and membership va
     inventory.sources.find((source) => source.id === id).membershipAdmissionEvidence.verifiedAt = "invalid";
   }
   assert.throws(() => invoke({ inventory }), /membership evidence is invalid/);
-  assert.throws(() => invoke({ now: new Date(Date.parse(input.topologySnapshot.capturedAt) - 1) }), /future-dated/);
+  assert.doesNotThrow(() => invoke({ now: new Date(Date.parse(input.topologySnapshot.capturedAt) - 1) }));
 });
 
 test("retained production Gwangju accepts a hash-bound three-station scope and rejects non-chain edges", async () => {
@@ -356,6 +356,7 @@ test("retained production Gwangju CLI serializes the native result and rejects t
     await runGwangjuTimetableMaterializer(argv, { now, repositoryRoot: root });
     const actual = JSON.parse(await readFile(paths.output, "utf8"));
     const expected = JSON.parse(JSON.stringify(materializeGwangjuTimetable({ ...input, canonicalStationMappings: input.mappings, now })));
+    expected.fixtureClass = "TEST_ONLY";
     assert.deepEqual(actual, expected);
     const explicitTopology = [...argv.slice(0, 4), "--topology-snapshot",
       path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"), ...argv.slice(4)];

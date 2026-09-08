@@ -10,6 +10,7 @@ import {
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { loadCurrentMolitGwangjuStationMappings } from "./current-molit-observation.mjs";
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
+import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { materializeBusanRouteTopology, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
@@ -73,12 +74,14 @@ export async function materializeCurrentNationwideInput({
   }
   const inventory = parseJson(inventoryBytes, "source inventory");
   const snapshots = parseJson(snapshotsBytes, "source snapshot ledger");
-  const selected = (sourceId, evidenceKind) => readSelectedSourceSnapshot({
-    inventory,
-    sourceId,
-    evidenceKind,
-    readTracked,
-  });
+  const consumedHeads = [];
+  const selected = async (sourceId, evidenceKind) => {
+    const snapshot = await readSelectedSourceSnapshot({ inventory, sourceId, evidenceKind, readTracked });
+    const evidence = inventory.sources.find(({ id }) => id === sourceId)[evidenceKind];
+    consumedHeads.push({ sourceId, snapshotId: evidence.snapshotId,
+      rawSha256: evidence.rawSha256, freshnessExpiresAt: evidence.freshUntil });
+    return snapshot;
+  };
   const [korailTimetable, busanTopology, busanTimetable, daejeonTopology, daejeonTimetable, gwangjuTopology,
     ...daeguSnapshots] = await Promise.all([
     selected("korail-metropolitan-planned-timetable", "scheduleAdmissionEvidence"),
@@ -131,7 +134,6 @@ export async function materializeCurrentNationwideInput({
     snapshot: busanTopology,
     inventory,
     canonicalStationMappings: parseCanonicalBusanStationMappings(busanStationMapBytes.toString("utf8")),
-    now,
   });
   fixture = materializeDaejeonTimetable({
     baseFixture: fixture,
@@ -139,14 +141,12 @@ export async function materializeCurrentNationwideInput({
     topologySnapshot: daejeonTopology,
     inventory,
     canonicalStationMappings: daejeonMappings,
-    now,
   });
   fixture = materializeBusanTimetable({
     baseFixture: fixture,
     timetableSnapshot: busanTimetable,
     topologySnapshot: busanTopology,
     inventory,
-    now,
   });
   fixture = materializeGwangjuTimetable({
     baseFixture: fixture,
@@ -154,7 +154,6 @@ export async function materializeCurrentNationwideInput({
     topologySnapshot: gwangjuTopology,
     inventory,
     canonicalStationMappings: currentMolit.mappings,
-    now,
   });
   fixture = materializeDaeguTimetable({
     baseFixture: fixture,
@@ -162,9 +161,22 @@ export async function materializeCurrentNationwideInput({
     timetableSnapshots: daeguTimetableSnapshots,
     inventory,
     canonicalStationMappings: daeguMappings,
-    now,
   });
 
+  // 조립에 실제 사용한 입력만 기록한다. 운영 적격성이나 전체 fan-in 성공 주장은 아니다.
+  const retainedEvidence = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file")
+    .retainedScheduleAdmissionEvidence;
+  const retainedHead = snapshots.find(({ sourceId, snapshotId }) =>
+    sourceId === "kric-nationwide-timetable-file" && snapshotId === retainedEvidence.snapshotId);
+  fixture.assemblyInputs = buildNationwideAssemblyInputs({
+    baseFixtureBytes,
+    selectedSources: [...consumedHeads, retainedHead, currentMolit.current],
+    auxiliaryInputs: {
+      retainedGwangjuObservation: retainedGwangjuObservationBytes,
+      busanStationMap: busanStationMapBytes,
+      molitObservation: currentMolit.observationBytes,
+    },
+  });
   await assertTrackedInputsStable(trackedBytes);
   await writeFile(path.resolve(outputPath), `${JSON.stringify(fixture, null, 2)}\n`, {
     flag: "wx",

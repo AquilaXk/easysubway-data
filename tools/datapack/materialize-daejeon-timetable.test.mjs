@@ -126,11 +126,15 @@ test("대전 시간표 admission은 snapshot·inventory·freshness·topology lin
   const cases = [
     [{ ...values, timetableSnapshot: { ...values.timetableSnapshot, endpoint: "https://example.invalid" } }, /snapshot/],
     [{ ...values, timetableSnapshot: { ...values.timetableSnapshot, rowsSha256: "0".repeat(64) } }, /snapshot/],
-    [{ ...values, now: new Date("2026-07-21T01:16:46.435Z") }, /stale/],
   ];
   for (const [input, expected] of cases) {
     assert.throws(() => materializeDaejeonTimetable({ ...input, now: input.now ?? evidenceNow }), expected);
   }
+
+  assert.doesNotThrow(() => materializeDaejeonTimetable({
+    ...values,
+    now: new Date("2026-07-21T01:16:46.435Z"),
+  }));
 
   const mismatchedInventory = structuredClone(values.inventory);
   mismatchedInventory.sources.find(({ id }) => id === "daejeon-train-timetable")

@@ -13,11 +13,59 @@ import { releaseRequestBindingViolations } from "./verify-release-request-bindin
 import { NATIONWIDE_CANDIDATE_INPUT_PATHS } from "./validate-candidate-source-set.mjs";
 import { CANDIDATE_RELEASE_OUTPUTS, CANDIDATE_RELEASE_JOURNAL_PATH, CANDIDATE_RELEASE_LOCK_PATH,
   createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
+import { assertNationwideAssemblyInputs, buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
 import { readSelectedSourceSnapshot } from "./materialize-current-nationwide-input.mjs";
 import { fiveRegionCandidateSourceSetInput, fixtureBytes, fixtureLedgerInput } from "./test-fixtures/five-region-source-input.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+
+test("nationwide assembly carrier binds the exact selected source subset", () => {
+  const selectedSources = [
+    {
+      sourceId: "source-b",
+      snapshotId: "snapshot-b",
+      rawSha256: "b".repeat(64),
+      freshnessExpiresAt: "2040-01-02T00:00:00.000Z",
+    },
+    {
+      sourceId: "source-a",
+      snapshotId: "snapshot-a",
+      rawSha256: "a".repeat(64),
+      freshnessExpiresAt: "2040-01-01T00:00:00.000Z",
+    },
+    {
+      sourceId: "unconsumed-source",
+      snapshotId: "snapshot-extra",
+      rawSha256: "c".repeat(64),
+      freshnessExpiresAt: "2040-01-03T00:00:00.000Z",
+    },
+  ];
+  const assemblyInputs = buildNationwideAssemblyInputs({
+    baseFixtureBytes: Buffer.from("base fixture"),
+    selectedSources: selectedSources.slice(0, 2),
+    auxiliaryInputs: { stationMap: Buffer.from("map"), retainedObservation: Buffer.from("observation") },
+  });
+
+  assert.deepEqual(assemblyInputs.selectedSourceHeads.map(({ sourceId }) => sourceId), ["source-a", "source-b"]);
+  assert.doesNotThrow(() => assertNationwideAssemblyInputs({
+    assemblyInputs,
+    expectedSourceIds: ["source-b", "source-a"],
+    selectedSources,
+  }));
+  assert.throws(() => assertNationwideAssemblyInputs({
+    assemblyInputs,
+    expectedSourceIds: ["source-a", "missing-source"],
+    selectedSources,
+  }), /roster mismatch/);
+  const changedSnapshot = structuredClone(selectedSources);
+  changedSnapshot[1].snapshotId = "snapshot-a-replaced";
+  assert.throws(() => assertNationwideAssemblyInputs({
+    assemblyInputs,
+    expectedSourceIds: ["source-a", "source-b"],
+    selectedSources: changedSnapshot,
+  }), /tuple mismatch: source-a/);
+});
 
 test("selected source input loader reads the admission path and rejects missing or unsafe paths", async (context) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "selected-source-input-"));
@@ -92,12 +140,17 @@ async function inputs(context, { admitted = true, native = false, malformedGener
       evidenceHash: "e".repeat(64), providerRecordHash: "f".repeat(64) }],
     networkEdges: [{ id: "edge-a", fromNodeId: "node-a", toNodeId: "node-b", edgeType: "RIDE" }],
   }] };
+  const selectedSources = JSON.parse(inputBytes.fanIn).selectedSources;
+  fixture.assemblyInputs = buildNationwideAssemblyInputs({
+    baseFixtureBytes: fixtureBytes(fixture), selectedSources, auxiliaryInputs: {},
+  });
   const overrides = { artifactKind: "datapack-manual-override-ledger", ledgerSource: "manual_overrides", facilityStatusUpdates: [] };
   await writeFile(path.join(repositoryRoot, "pack.json"), fixtureBytes(fixture));
   await writeFile(path.join(repositoryRoot, "overrides.json"), fixtureBytes(overrides));
   return {
     repositoryRoot, inputBytes,
     materialization: { fixturePath: "pack.json", overridesPath: "overrides.json",
+      assemblySourceIds: selectedSources.map(({ sourceId }) => sourceId),
       networkEdgeEvidence: { preparedReference: { path: "evidence.json", sha256: "e".repeat(64) } },
       officialOdFareEvidence: { sourceId: "fixture-fares" } },
     releaseIdentity: { candidateId: "fixture-nationwide-candidate", publishedAt: source.evaluatedAt, releaseSequence: 1 },
@@ -109,12 +162,43 @@ test("nationwide candidate constructor requires its actual inputs", async () => 
   await assert.rejects(buildNationwideCandidateSpec({}), /targets input bytes are required/);
 });
 
+test("nationwide candidate preparation rejects development-only assembly", async (context) => {
+  const input = await inputs(context);
+  const fixturePath = path.join(input.repositoryRoot, input.materialization.fixturePath);
+  const fixture = JSON.parse(await readFile(fixturePath));
+  fixture.fixtureClass = "TEST_ONLY";
+  await writeFile(fixturePath, fixtureBytes(fixture));
+  await assert.rejects(buildNationwideReleaseArtifacts({
+    ...input,
+    authority: {
+      candidateId: input.releaseIdentity.candidateId,
+      scopeId: JSON.parse(input.inputBytes.productionScope).routingLaunchScope.id,
+      approvalId: "development-boundary-test",
+      requestedBy: "fixture-requester",
+      approvedBy: "fixture-approver",
+    },
+  }), /TEST_ONLY artifact cannot be used as datapack build input/);
+});
+
 test("nationwide candidate constructor serializes native schedule admission records", async (context) => {
   const input = await inputs(context, { native: true });
   const result = await buildNationwideCandidateSpec(input);
   assert.deepEqual(result.buildSpec.sourceSnapshots[0].admissionRecordSha256s,
     JSON.parse(input.inputBytes.fanIn).selectedSources[0].admissionRecordSha256s);
   assert.equal(Object.hasOwn(result.buildSpec.sourceSnapshots[0], "adminReviewRecordHash"), false);
+  const fixturePath = path.join(input.repositoryRoot, input.materialization.fixturePath);
+  const bytes = await readFile(fixturePath);
+  assert.equal(result.buildSpec.fixtureSha256, sha(bytes));
+  assert.deepEqual(result.buildSpec.assemblySourceIds, [...input.materialization.assemblySourceIds].sort());
+  const differentInput = JSON.parse(bytes);
+  differentInput.assemblyInputs.selectedSourceHeads[0].snapshotId = "another-snapshot";
+  await writeFile(fixturePath, fixtureBytes(differentInput));
+  await assert.rejects(buildNationwideCandidateSpec(input), /selected source tuple mismatch/);
+  await writeFile(fixturePath, bytes);
+  await assert.rejects(buildNationwideCandidateSpec({
+    ...input,
+    materialization: { ...input.materialization, assemblySourceIds: ["missing-contributor"] },
+  }), /expected source roster mismatch/);
 
   const mixed = await inputs(context, { native: true, malformedGeneric: true });
   await assert.rejects(buildNationwideCandidateSpec(mixed), /adminReviewRecordHash/);

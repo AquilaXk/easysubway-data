@@ -80,13 +80,13 @@ test("부산 timetable admission은 snapshot·inventory·freshness·topology lin
     now,
   }), /snapshot/);
 
-  assert.throws(() => materializeBusanTimetable({
+  assert.doesNotThrow(() => materializeBusanTimetable({
     baseFixture: values.cumulativeFixture,
     timetableSnapshot: values.busanTimetable,
     topologySnapshot: values.busanTopology,
     inventory: values.inventory,
     now: new Date("2026-07-21T08:37:16.931Z"),
-  }), /freshness/);
+  }));
 
   const badInventory = structuredClone(values.inventory);
   badInventory.sources.find(({ id }) => id === "busan-transportation-timetable")

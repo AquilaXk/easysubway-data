@@ -35,10 +35,9 @@ export function materializeBusanTimetable({
   timetableSnapshot,
   topologySnapshot,
   inventory,
-  now = new Date(),
 }) {
   const rows = validateSnapshot(timetableSnapshot);
-  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot, now);
+  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1) throw new Error("Busan timetable requires one cumulative pack");
@@ -155,7 +154,7 @@ function validateSnapshot(snapshot) {
   return snapshot.rows;
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot, now) {
+function requiredSource(inventory, snapshot, topologySnapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.scheduleAdmissionEvidence;
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
@@ -188,9 +187,7 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   }
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
@@ -346,7 +343,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runBusanTimetableMaterializer(argv, { now = new Date() } = {}) {
+export async function runBusanTimetableMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, timetableSnapshot, topologySnapshot, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -354,7 +351,8 @@ export async function runBusanTimetableMaterializer(argv, { now = new Date() } =
     readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
     readFile(args.inventory, "utf8").then(JSON.parse),
   ]);
-  const fixture = materializeBusanTimetable({ baseFixture, timetableSnapshot, topologySnapshot, inventory, now });
+  const fixture = materializeBusanTimetable({ baseFixture, timetableSnapshot, topologySnapshot, inventory });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Busan timetable materialized: trips=${EXPECTED_TRIP_COUNT} stopTimes=${EXPECTED_ROW_COUNT}`);
 }

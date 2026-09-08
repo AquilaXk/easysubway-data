@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { admitBusanRouteTopology } from "./collect-busan-route-topology.mjs";
+import { validateBusanRouteTopologySnapshot } from "./collect-busan-route-topology.mjs";
 
 const SOURCE_ID = "busan-transportation-route-topology";
 const OPERATOR_ID = "busan-transportation";
@@ -21,9 +21,8 @@ export function materializeBusanRouteTopology({
   snapshot,
   inventory,
   canonicalStationMappings,
-  now = new Date(),
 }) {
-  admitBusanRouteTopology(snapshot, { now });
+  validateBusanRouteTopologySnapshot(snapshot);
   const source = requiredSource(inventory, snapshot, canonicalStationMappings);
   const fixture = structuredClone(baseFixture);
   if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1 || fixture.packs[0].artifactKind !== "production") {
@@ -336,6 +335,7 @@ async function main(argv) {
   const fixture = materializeBusanRouteTopology({
     baseFixture, snapshot, inventory, canonicalStationMappings,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Busan route topology materialized: stations=${snapshot.stationCount} edges=${snapshot.edgeCount}`);
 }

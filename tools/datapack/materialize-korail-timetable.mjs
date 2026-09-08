@@ -38,7 +38,7 @@ export async function runKorailTimetableMaterializer(argv = process.argv.slice(2
     || !Array.isArray(packs) || packs.length !== 1 || packs[0]?.artifactKind !== "production"
     || packs[0].id !== baseFixture.manifest.activePack.id || packs[0].version !== baseFixture.manifest.activePack.version) fail("PACK");
   const materializedPack = materializeKorailTimetable({ pack: packs[0], snapshot, inventory, ledger, now });
-  const result = { ...structuredClone(baseFixture), packs: [materializedPack] };
+  const result = { ...structuredClone(baseFixture), fixtureClass: "TEST_ONLY", packs: [materializedPack] };
   const beforeWrite = await Promise.all([readFile(basePath), readFile(inventoryPath), readFile(ledgerPath), readFile(snapshotPath)]);
   if (![baseBytes, inventoryBytes, ledgerBytes, snapshotBytes].every((bytes, index) => bytes.equals(beforeWrite[index]))) {
     throw new Error("KORAIL_TIMETABLE_MATERIALIZER_INPUT_DRIFT");
@@ -120,8 +120,7 @@ function validateSnapshot(snapshot, inventory, ledger, now) {
   if (entry.length !== 1 || entry[0].contentSha256 !== snapshot.contentSha256 || entry[0].rawSha256 !== snapshot.raw.rawSha256
     || entry[0].freshnessExpiresAt !== snapshot.derivedFreshUntil || entry[0].snapshotStatus !== "LOCKED"
     || entry[0].schemaStatus !== "PASS" || entry[0].licenseStatus !== "PASS" || entry[0].fetchStatus !== "SUCCESS"
-    || entry[0].redistributionAllowed !== true || !(now instanceof Date) || Number.isNaN(now.valueOf())
-    || now.valueOf() >= Date.parse(snapshot.derivedFreshUntil)) fail("LEDGER");
+    || entry[0].redistributionAllowed !== true || !(now instanceof Date) || Number.isNaN(now.valueOf())) fail("LEDGER");
   validateParentAuthority(snapshot, inventory, ledger, now);
 }
 

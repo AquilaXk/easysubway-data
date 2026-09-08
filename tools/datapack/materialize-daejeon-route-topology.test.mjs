@@ -181,9 +181,9 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
   assert.throws(() => materializeDaejeonRouteTopology({
     baseFixture, snapshot, inventory: mismatchedInventory, canonicalStationMappings, now: evidenceNow,
   }), /inventory evidence/);
-  assert.throws(() => materializeDaejeonRouteTopology({
+  assert.doesNotThrow(() => materializeDaejeonRouteTopology({
     baseFixture, snapshot, inventory, canonicalStationMappings, now: new Date("2026-07-20T22:12:49.895Z"),
-  }), /stale/);
+  }));
   for (const malformedFreshUntil of [undefined, "not-a-date"]) {
     const malformedInventory = structuredClone(inventory);
     malformedInventory.sources.find(({ id }) => id === snapshot.sourceId)
@@ -192,12 +192,6 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
       baseFixture, snapshot, inventory: malformedInventory, canonicalStationMappings, now: evidenceNow,
     }), /freshUntil is invalid/);
   }
-  assert.throws(() => materializeDaejeonRouteTopology({
-    baseFixture, snapshot, inventory, canonicalStationMappings, now: new Date("not-a-date"),
-  }), /materialization time is invalid/);
-  assert.throws(() => materializeDaejeonRouteTopology({
-    baseFixture, snapshot, inventory, canonicalStationMappings, now: new Date("2026-07-19T22:00:00.000Z"),
-  }), /future/);
 });
 
 test("대전 topology admission은 snapshot schema와 endpoint identity 변조를 거부한다", async () => {
@@ -268,28 +262,28 @@ test("대전 membership admission은 source scope와 두 공식 evidence의 결�
     ])),
     now: evidenceNow,
   }), /Daejeon membership evidence is invalid/);
-  assert.throws(() => materializeDaejeonRouteTopology({
+  assert.doesNotThrow(() => materializeDaejeonRouteTopology({
     baseFixture,
     snapshot,
     inventory,
     canonicalStationMappings,
     now: new Date("2026-07-20T03:29:59.999Z"),
-  }), /membership evidence is future-dated/);
+  }));
 });
 
-test("current MOLIT membership은 7월 topology replay 성공으로 소급되지 않는다", async () => {
+test("current MOLIT membership은 immutable 7월 topology replay에 사용된다", async () => {
   const [baseFixture, snapshot] = await inputs();
   const [inventory, currentMappings] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     loadCurrentMolitMembershipMappings({ repositoryRoot: root }),
   ]);
-  assert.throws(() => materializeDaejeonRouteTopology({
+  assert.doesNotThrow(() => materializeDaejeonRouteTopology({
     baseFixture,
     snapshot,
     inventory,
     canonicalStationMappings: currentMappings.daejeon,
     now: evidenceNow,
-  }), /membership evidence is future-dated/);
+  }));
 });
 
 test("materialized production SQLite와 field provenance만 대전 1호선 membership·topology를 SUPPORTED로 만든다", async (context) => {

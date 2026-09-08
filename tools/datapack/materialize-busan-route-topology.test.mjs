@@ -120,7 +120,7 @@ test("부산 topology snapshot을 실제 production pack 입력으로 materializ
     ],
   );
 
-  assert.throws(
+  assert.doesNotThrow(
     () => materializeBusanRouteTopology({
       baseFixture,
       snapshot,
@@ -128,7 +128,6 @@ test("부산 topology snapshot을 실제 production pack 입력으로 materializ
       canonicalStationMappings,
       now: new Date(snapshot.freshUntil),
     }),
-    /stale/,
   );
   const mismatchedInventory = structuredClone(inventory);
   mismatchedInventory.sources.find(({ id }) => id === snapshot.sourceId)

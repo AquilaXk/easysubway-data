@@ -31,7 +31,7 @@ const HOLIDAYS_2026 = Object.freeze([
   "20260817", "20260924", "20260925", "20260926", "20261003", "20261005", "20261009", "20261225",
 ]);
 export function materializeDaeguTimetable({
-  baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings, now = new Date(),
+  baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings,
 }) {
   const lines = DAEGU_LINES.map((config) => {
     const topology = topologySnapshots[config.lineNumber];
@@ -39,7 +39,7 @@ export function materializeDaeguTimetable({
     validateTopologySnapshot(topology, config);
     validateTimetableSnapshot(timetable, config, topology);
     const mappings = canonicalStationMappings[config.lineNumber];
-    const sources = requiredSources(inventory, config, topology, timetable, mappings, now);
+    const sources = requiredSources(inventory, config, topology, timetable, mappings);
     return { config, topology, timetable, mappings, sources };
   });
 
@@ -318,7 +318,7 @@ function validateTimetableSnapshot(snapshot, config, topology) {
   if (stopTotal !== config.stopTimeCount) throw new Error(`Daegu line ${config.lineNumber} stop time total mismatch`);
 }
 
-function requiredSources(inventory, config, topology, timetable, mappings, now) {
+function requiredSources(inventory, config, topology, timetable, mappings) {
   const topologyId = `daegu-line${config.lineNumber}-route-topology`;
   const timetableId = `daegu-line${config.lineNumber}-train-timetable`;
   const membershipId = `molit-urban-rail-full-route-daegu-line${config.lineNumber}-membership`;
@@ -380,19 +380,14 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
     || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${membershipId} membership evidence is invalid`);
   }
-  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() < membershipVerifiedAt) {
-    throw new Error(`${membershipId} membership evidence is future-dated`);
-  }
   for (const [label, capturedAt, freshUntil] of [
     [topologyId, topologyEvidence.capturedAt, topologyEvidence.freshUntil],
     [timetableId, scheduleEvidence.capturedAt, scheduleEvidence.freshUntil],
   ]) {
     const captured = Date.parse(capturedAt);
     const fresh = Date.parse(freshUntil);
-    const current = now instanceof Date ? now.getTime() : Number.NaN;
-    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS
-      || !Number.isFinite(current) || current < captured || current >= fresh) {
-      throw new Error(`${label} evidence is stale or future-dated`);
+    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS) {
+      throw new Error(`${label} evidence freshness relationship is invalid`);
     }
   }
   return { topology: topologySource, timetable: timetableSource, membership: membershipSource };
@@ -623,7 +618,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runDaeguTimetableMaterializer(argv, { now = new Date() } = {}) {
+export async function runDaeguTimetableMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, inventory, stationMapBytes] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -646,8 +641,9 @@ export async function runDaeguTimetableMaterializer(argv, { now = new Date() } =
     canonicalStationMappings[config.lineNumber] = parseMolitDaeguStationMappings(stationMapBytes, config.lineName);
   }
   const fixture = materializeDaeguTimetable({
-    baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings, now,
+    baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   const trips = new Set(Object.values(timetableSnapshots).flatMap(({ trips: rows }) => rows.map(({ id }) => id)));
   const stopTimes = Object.values(timetableSnapshots).reduce(

@@ -7,6 +7,7 @@ import { exportLedgerHash } from "./export-ledger-hashes.mjs";
 import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { CANDIDATE_RELEASE_OUTPUTS, createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
+import { assertNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
@@ -201,6 +202,15 @@ export async function buildNationwideCandidateSpec({
   const fixtureBytes = await readFile(fixturePath);
   const overridesBytes = await readFile(overridesPath);
   const fixture = JSON.parse(fixtureBytes);
+  // 개발 조립 결과는 운영 candidate/request/hash evidence의 입력이 아니다.
+  if (fixture.fixtureClass === "TEST_ONLY") {
+    throw new Error("TEST_ONLY artifact cannot be used as datapack build input");
+  }
+  assertNationwideAssemblyInputs({
+    assemblyInputs: fixture.assemblyInputs,
+    expectedSourceIds: materialization.assemblySourceIds,
+    selectedSources: fanIn.selectedSources,
+  });
   if (!Array.isArray(fixture.packs) || fixture.packs.length === 0
     || !fixture.packs.every((pack) => Array.isArray(pack.stationFacilityEvidence) && pack.stationFacilityEvidence.length > 0)) {
     throw new Error("prepared packs require stationFacilityEvidence");
@@ -247,6 +257,8 @@ export async function buildNationwideCandidateSpec({
     candidateId: releaseIdentity.candidateId, publishedAt: releaseIdentity.publishedAt,
     releaseSequence: releaseIdentity.releaseSequence, builderGitSha: builderIdentity.gitSha,
     builderVersion: builderIdentity.version, fixturePath: materialization.fixturePath,
+    fixtureSha256: sha256(fixtureBytes),
+    assemblySourceIds: [...materialization.assemblySourceIds].sort(compareIdentity),
     sourceSnapshotEvidencePath: "tools/datapack/release/source-snapshots.json",
     sourceSnapshotIds: sourceSnapshots.map(({ snapshotId }) => snapshotId), sourceSnapshots,
     sourceSnapshotSetHash: sha256(JSON.stringify(selected)), sourceInventorySha256: sha256(JSON.stringify(inventory)),

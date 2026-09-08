@@ -26,11 +26,10 @@ export function materializeGwangjuTimetable({
   topologySnapshot,
   inventory,
   canonicalStationMappings,
-  now = new Date(),
 }) {
   validateTopologySnapshot(topologySnapshot);
   const retained = validateRetainedTimetable(retainedTimetable, topologySnapshot, canonicalStationMappings);
-  const sources = requiredSources(inventory, retained, topologySnapshot, canonicalStationMappings, now);
+  const sources = requiredSources(inventory, retained, topologySnapshot, canonicalStationMappings);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -533,7 +532,7 @@ function validateRetainedTimetable(value, topologySnapshot, canonicalStationMapp
   return { projection, retainedContractSha256: sha256(canonicalJson(contract)) };
 }
 
-function requiredSources(inventory, retained, topologySnapshot, mappings, now) {
+function requiredSources(inventory, retained, topologySnapshot, mappings) {
   const timetable = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const topology = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID);
   const membership = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_SOURCE_ID);
@@ -591,16 +590,13 @@ function requiredSources(inventory, retained, topologySnapshot, mappings, now) {
     || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is invalid`);
   }
-  // 관측 시각은 provenance다. replay 가능 시각은 아래 topology 유효 구간으로 판단한다.
   for (const [label, capturedAt, freshUntil] of [
     [TOPOLOGY_SOURCE_ID, topologyEvidence.capturedAt, topologyEvidence.freshUntil],
   ]) {
     const captured = Date.parse(capturedAt);
     const fresh = Date.parse(freshUntil);
-    const current = now instanceof Date ? now.getTime() : Number.NaN;
-    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS
-      || !Number.isFinite(current) || current < captured || current >= fresh) {
-      throw new Error(`${label} evidence is stale or future-dated`);
+    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS) {
+      throw new Error(`${label} evidence freshness relationship is invalid`);
     }
   }
   return { timetable, topology, membership };
@@ -898,7 +894,7 @@ function resolveTopologySnapshotPath(inventory, repositoryRoot) {
 }
 
 export async function runGwangjuTimetableMaterializer(argv, {
-  now = new Date(), repositoryRoot = path.resolve(import.meta.dirname, "../.."),
+  repositoryRoot = path.resolve(import.meta.dirname, "../.."),
 } = {}) {
   const args = parseArgs(argv);
   const inventory = JSON.parse(await readFile(args.inventory, "utf8"));
@@ -916,8 +912,8 @@ export async function runGwangjuTimetableMaterializer(argv, {
     topologySnapshot,
     inventory,
     canonicalStationMappings: parseMolitGwangjuStationMappings(stationMap, topologySnapshot),
-    now,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Gwangju timetable materialized: trips=${fixture.packs[0].transitTrips.length} stopTimes=${fixture.packs[0].transitStopTimes.length}`);
 }

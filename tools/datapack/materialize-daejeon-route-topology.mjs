@@ -24,12 +24,11 @@ export function materializeDaejeonRouteTopology({
   snapshot,
   inventory,
   canonicalStationMappings,
-  now = new Date(),
 }) {
   validateSnapshot(snapshot);
-  const source = requiredSource(inventory, snapshot, now);
+  const source = requiredSource(inventory, snapshot);
   const mappings = requiredMappings(canonicalStationMappings);
-  const membershipSource = requiredMembershipSource(inventory, snapshot, mappings, now);
+  const membershipSource = requiredMembershipSource(inventory, snapshot, mappings);
   const compositionSha256 = sha256(JSON.stringify({ baseFixture, snapshot, source, membershipSource, mappings }));
   const fixture = structuredClone(baseFixture);
   if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1 || fixture.packs[0].artifactKind !== "production") {
@@ -246,7 +245,7 @@ function validateSnapshot(snapshot) {
   }
 }
 
-function requiredSource(inventory, snapshot, now) {
+function requiredSource(inventory, snapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true) {
     throw new Error(`${SOURCE_ID} is not admitted for production use`);
@@ -264,10 +263,6 @@ function requiredSource(inventory, snapshot, now) {
   if (freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} topology evidence freshness contract is invalid`);
   }
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(observedNow)) throw new Error("materialization time is invalid");
-  if (observedNow < capturedAt) throw new Error(`${SOURCE_ID} topology evidence is future-dated`);
-  if (observedNow >= freshUntil) throw new Error(`${SOURCE_ID} topology evidence is stale`);
   return source;
 }
 
@@ -279,7 +274,7 @@ function requiredMappings(mappings) {
   return mappings;
 }
 
-function requiredMembershipSource(inventory, snapshot, mappings, now) {
+function requiredMembershipSource(inventory, snapshot, mappings) {
   const source = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_SOURCE_ID);
   const rawSource = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_RAW_SOURCE_ID);
   const stationCodeSource = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
@@ -306,9 +301,6 @@ function requiredMembershipSource(inventory, snapshot, mappings, now) {
     || evidence.membershipSourceSnapshotSha256 !== mappings.sourceRawSha256
     || !Number.isFinite(verifiedAt) || new Date(verifiedAt).toISOString() !== evidence.verifiedAt) {
     throw new Error(`${MEMBERSHIP_SOURCE_ID} Daejeon membership evidence is invalid`);
-  }
-  if (now.getTime() < verifiedAt) {
-    throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is future-dated`);
   }
   return source;
 }
@@ -370,6 +362,7 @@ async function main(argv) {
     inventory,
     canonicalStationMappings: parseMolitDaejeonStationMappings(stationMapCsv),
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Daejeon route topology materialized: stations=${snapshot.stationNumbers.length} edges=${snapshot.rowCount}`);
 }
