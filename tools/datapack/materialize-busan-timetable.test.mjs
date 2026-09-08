@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectHistoricalRegionalMaterializeInventory } from "./materialize-test-fixture.mjs";
+import { projectHistoricalRegionalMaterializeInventory, projectRegionalFixtureSourceBindings } from "./materialize-test-fixture.mjs";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import {
@@ -196,7 +196,7 @@ test("부산 timetable materializer CLI가 cumulative fixture를 출력한다", 
 
 async function inputs({ materialize = true } = {}) {
   const [baseFixture, busanTopology, busanTimetable, daejeonTimetable, daejeonTopology,
-    inventory, busanMap, daejeonMap] = await Promise.all([
+    sourceInventory, busanMap, daejeonMap] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
@@ -206,6 +206,9 @@ async function inputs({ materialize = true } = {}) {
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: sourceInventory, busanTopology, busanTimetable, stationMapCsv: busanMap,
+  });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture,
     snapshot: busanTopology,

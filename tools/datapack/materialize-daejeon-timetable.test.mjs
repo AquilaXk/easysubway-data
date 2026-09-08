@@ -10,6 +10,7 @@ import {
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
+  projectRegionalFixtureSourceBindings,
 } from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
@@ -279,6 +280,10 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 88/270 
     readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
   ]);
+  values.inventory = projectRegionalFixtureSourceBindings({
+    inventory: values.inventory, busanTopology: busanSnapshot,
+    busanTimetable: busanTimetableSnapshot, stationMapCsv: busanStationMapCsv,
+  });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture: values.baseFixture,
     snapshot: busanSnapshot,
