@@ -222,9 +222,15 @@ async function outputsFromPrepared(prepared, receiptPath, now) {
     throw new Error("Gwangju topology OCI receipt binding mismatch");
   }
   if (ledger.some((row) => row.snapshotId === snapshotId)) throw new Error("Gwangju topology snapshot already registered");
+  const registeredInventory = {
+    ...inventory,
+    sources: inventory.sources.map((source) => source.id === SOURCE_ID
+      ? { ...source, requiredForProductionPack: true }
+      : source),
+  };
   const previous = ledger.filter((row) => row.sourceId === SOURCE_ID).at(-1);
   const relative = `tools/datapack/sources/${snapshotId}.json`;
-  const source = select(inventory.sources, ({ id }) => id === SOURCE_ID);
+  const source = select(registeredInventory.sources, ({ id }) => id === SOURCE_ID);
   const governanceBytes = json(governance);
   const row = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: SOURCE_ID, snapshotId,
     previousSnapshotId: previous?.snapshotId ?? null, capturedAt: snapshot.capturedAt, retrievedAt: snapshot.capturedAt,
@@ -262,7 +268,7 @@ async function outputsFromPrepared(prepared, receiptPath, now) {
       absolute: path.join(root, dependent.relative), bytes: dependent.bytes,
     })),
   ];
-  const values = [json(inventory), json([...ledger, row]), governanceBytes, json(freshness)];
+  const values = [json(registeredInventory), json([...ledger, row]), governanceBytes, json(freshness)];
   return SOURCE_REGISTRATION_OUTPUTS.map((relative, index) => ({ relative, bytes: values[index], prestateBytes: prepared.currentBytes[index], inputs }));
 }
 

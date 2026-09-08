@@ -158,6 +158,7 @@ test("register retained Gwangju response bytes through the existing source trans
   assert.equal(JSON.parse(await readFile(verifiedReceiptPath, "utf8")).rawObjectSha256, prepared.snapshotSha256);
   const [inventory, ledger] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS.slice(0, 2).map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(inventory.sources[0].topologyAdmissionEvidence.snapshotId, prepared.snapshotId);
+  assert.equal(inventory.sources[0].requiredForProductionPack, true);
   const topologyLedger = ledger.find(({ sourceId: rowSourceId }) => rowSourceId === sourceId);
   assert.equal(topologyLedger.rawObjectSha256, prepared.snapshotSha256);
   assert.equal(topologyLedger.rawSha256, snapshot.rawSha256);
