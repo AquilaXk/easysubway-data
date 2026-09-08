@@ -16,7 +16,11 @@ const SOURCE_FAMILY_ID = "korail-metropolitan-timetable-file";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
-const order = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+function order(a, b) {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
 
 export function buildKorailScheduleIds({ lineId, directions = ["up", "down"], dayLabels = ["평일", "휴일"] } = {}) {
   if (!text(lineId) || !same(directions, ["up", "down"]) || !same(dayLabels, ["평일", "휴일"])) fail("IDS");
@@ -51,9 +55,9 @@ export function buildKorailScheduleSnapshot(input = {}) {
 export async function buildKorailTimetableRegistrationOutputs({ repositoryRoot, sourceInputPath, now = new Date() } = {}) {
   const context = await prepareKorailTimetableRegistration({ repositoryRoot, sourceInputPath, now });
   const { root, inputPath, inputBytes, input, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidateBytes,
-    inventory, ledger, candidate, topologySource, topologySnapshot, rawBytes, collectionReceiptBytes, collectionReceipt,
+    inventory, ledger, candidate, topologySource, rawBytes, collectionReceiptBytes,
     membershipBytes, membershipReceiptBytes, catalogBytes, publicationReceiptBytes, calendarManifestBytes, calendarFiles,
-    tables, snapshot, registration, freshness, scheduleCadence } = context;
+    snapshot, registration, freshness, scheduleCadence } = context;
   if (inventory.sources.some((entry) => entry?.id === SOURCE_ID) || ledger.some((entry) => entry?.sourceId === SOURCE_ID)) fail("FIRST_ONLY");
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotBytes = json(snapshot);
   await writeDerivedSnapshot(path.join(root, snapshotRelative), snapshotBytes);
@@ -97,7 +101,7 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
     ...OUTPUTS.map((relative) => readFile(path.join(root, relative))), readFile(path.join(root, "tools/datapack/source-candidates.json")), readFile(inputPath),
   ]);
   const input = exactInput(parse(inputBytes, "SOURCE_INPUT"));
-  const [inventory, ledger, governance, freshnessBase, candidates] = [parse(inventoryBytes, "INVENTORY"), parse(ledgerBytes, "LEDGER"), parse(governanceBytes, "GOVERNANCE"), parse(freshnessBytes, "FRESHNESS"), parse(candidateBytes, "CANDIDATES")];
+  const [inventory, ledger, freshnessBase, candidates] = [parse(inventoryBytes, "INVENTORY"), parse(ledgerBytes, "LEDGER"), parse(freshnessBytes, "FRESHNESS"), parse(candidateBytes, "CANDIDATES")];
   const candidate = only(candidates.candidates, (entry) => entry?.id === SOURCE_ID, "CANDIDATE");
   const topologySource = only(inventory.sources, (entry) => entry?.id === SOURCE_FAMILY_ID, "TOPOLOGY_SOURCE");
   const topologyEvidence = topologySource.topologyAdmissionEvidence;
@@ -125,8 +129,10 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
     || parentLedger.rawObjectUri !== publicationReceipt.rawObjectUri || parentLedger.rawObjectSha256 !== sha(rawBytes)
     || parentLedger.byteSize !== rawBytes.length || parentLedger.rawRetentionExpiresAt !== publicationReceipt.rawRetentionExpiresAt) fail("PARENT_BINDING");
   const sourceClass = only(freshnessBase.sourceClasses, (entry) => entry?.id === "planned_timetable", "FRESHNESS_CLASS");
-  const freshness = structuredClone(freshnessBase); const nextClass = freshness.sourceClasses.find((entry) => entry.id === sourceClass.id);
-  if (nextClass.sourceIds.includes(SOURCE_ID)) fail("FIRST_ONLY"); nextClass.sourceIds = [...nextClass.sourceIds, SOURCE_ID].sort(order);
+  const freshness = structuredClone(freshnessBase);
+  const nextClass = freshness.sourceClasses.find((entry) => entry.id === sourceClass.id);
+  if (nextClass.sourceIds.includes(SOURCE_ID)) fail("FIRST_ONLY");
+  nextClass.sourceIds = [...nextClass.sourceIds, SOURCE_ID].sort(order);
   const retainedLicenseHash = topologySource.admissionEvidence?.licenseEvidenceHash;
   if (!hash(retainedLicenseHash) || retainedLicenseHash !== licenseHash(candidate)) fail("LICENSE_BINDING");
   const registration = buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governanceBytes, addedSources: [verifiedGovernance(input.governanceEntry, candidate, now, retainedLicenseHash)] });
@@ -173,9 +179,29 @@ function inventorySource({ candidate, input, snapshot, topologySource, scheduleC
 }
 
 function unsupported(coverageStatus) { return { status: "UNSUPPORTED", productionUseAllowed: false, liveEtaEligible: false, rateLimitStatus: "NOT_APPLICABLE", updateFrequency: "not applicable", coverageStatus, unsupportedNotes: "Official static timetable does not provide this capability." }; }
-function verifiedGovernance(entry, candidate, now, retainedLicenseHash) { const expected = licenseHash(candidate), review = entry?.licenseReview; if (!hash(retainedLicenseHash) || retainedLicenseHash !== expected || !entry || entry.sourceId !== SOURCE_ID || entry.sourceClassId !== "planned_timetable" || entry.retentionClassId !== "standard-90d" || !review || review.status !== "APPROVED" || review.termsHash !== retainedLicenseHash || review.reviewedProvider !== candidate.evidence.provider || review.reviewedDatasetUrl !== candidate.detailUrl || review.termsUrl !== candidate.evidence.licenseEvidenceUrl || !utc(review.reviewedAt) || !utc(review.nextReviewAt) || Date.parse(review.reviewedAt) > now.valueOf() || Date.parse(review.nextReviewAt) <= now.valueOf()) fail("GOVERNANCE"); return structuredClone(entry); }
+function verifiedGovernance(entry, candidate, now, retainedLicenseHash) {
+  const expected = licenseHash(candidate);
+  const review = entry?.licenseReview;
+  if (!hash(retainedLicenseHash) || retainedLicenseHash !== expected || !entry || entry.sourceId !== SOURCE_ID
+    || entry.sourceClassId !== "planned_timetable" || entry.retentionClassId !== "standard-90d"
+    || !review || review.status !== "APPROVED" || review.termsHash !== retainedLicenseHash
+    || review.reviewedProvider !== candidate.evidence.provider || review.reviewedDatasetUrl !== candidate.detailUrl
+    || review.termsUrl !== candidate.evidence.licenseEvidenceUrl || !utc(review.reviewedAt)
+    || !utc(review.nextReviewAt) || Date.parse(review.reviewedAt) > now.valueOf()
+    || Date.parse(review.nextReviewAt) <= now.valueOf()) fail("GOVERNANCE");
+  return structuredClone(entry);
+}
 function licenseHash(candidate) { return sha(canonicalJson({ type: candidate.evidence?.license, provider: candidate.evidence?.provider, evidenceUrl: candidate.evidence?.licenseEvidenceUrl, redistributionAllowed: true })); }
-function exactInput(value) { const keys = ["schemaVersion", "artifactKind", "retainedWorkbookPath", "collectionReceiptPath", "publicationReceiptPath", "topologySnapshotPath", "stationLineObservationPath", "stationLineReceiptPath", "canonicalCatalogPath", "canonicalCatalogSha256", "calendarDirectory", "calendarWindow", "serviceEffectiveAt", "serviceEffectiveUntil", "operatorName", "lineName", "lineId", "governanceEntry"].sort(order); if (value?.schemaVersion !== 1 || value.artifactKind !== "korail-timetable-registration-input" || !same(Object.keys(value).sort(order), keys) || [value.retainedWorkbookPath, value.collectionReceiptPath, value.publicationReceiptPath, value.topologySnapshotPath, value.stationLineObservationPath, value.stationLineReceiptPath, value.canonicalCatalogPath, value.calendarDirectory].some((item) => !path.isAbsolute(item ?? "")) || !hash(value.canonicalCatalogSha256) || !validWindow(value.calendarWindow) || !utc(value.serviceEffectiveAt) || !(value.serviceEffectiveUntil === null || utc(value.serviceEffectiveUntil)) || [value.operatorName, value.lineName, value.lineId].some((item) => !text(item)) || !value.governanceEntry) fail("SOURCE_INPUT"); return value; }
+function exactInput(value) {
+  const keys = ["schemaVersion", "artifactKind", "retainedWorkbookPath", "collectionReceiptPath", "publicationReceiptPath", "topologySnapshotPath", "stationLineObservationPath", "stationLineReceiptPath", "canonicalCatalogPath", "canonicalCatalogSha256", "calendarDirectory", "calendarWindow", "serviceEffectiveAt", "serviceEffectiveUntil", "operatorName", "lineName", "lineId", "governanceEntry"].sort(order);
+  if (value?.schemaVersion !== 1 || value.artifactKind !== "korail-timetable-registration-input"
+    || !same(Object.keys(value).sort(order), keys)
+    || [value.retainedWorkbookPath, value.collectionReceiptPath, value.publicationReceiptPath, value.topologySnapshotPath, value.stationLineObservationPath, value.stationLineReceiptPath, value.canonicalCatalogPath, value.calendarDirectory].some((item) => !path.isAbsolute(item ?? ""))
+    || !hash(value.canonicalCatalogSha256) || !validWindow(value.calendarWindow)
+    || !utc(value.serviceEffectiveAt) || !(value.serviceEffectiveUntil === null || utc(value.serviceEffectiveUntil))
+    || [value.operatorName, value.lineName, value.lineId].some((item) => !text(item)) || !value.governanceEntry) fail("SOURCE_INPUT");
+  return value;
+}
 function exactOutputs(outputs) { const inputs = outputs?.[0]?.inputs; if (!Array.isArray(outputs) || outputs.length !== OUTPUTS.length || !same(outputs.map(({ relative }) => relative), OUTPUTS) || !Array.isArray(inputs) || outputs.some((item) => item.inputs !== inputs || !Buffer.isBuffer(item.bytes) || !Buffer.isBuffer(item.prestateBytes))) fail("OUTPUTS"); }
 const transaction = createSourceRegistrationTransaction({ label: "Korail timetable", validateOutputs: exactOutputs });
 export async function recoverKorailTimetableRegistration({ repositoryRoot } = {}) { return transaction.recover({ repositoryRoot: rootPath(repositoryRoot) }); }
@@ -190,15 +216,30 @@ function validWindow(value) { return validDate(value?.startDate) && validDate(va
 function windowInside(window, start, until) { const first = serviceDayStart(window.startDate), last = serviceDayEnd(window.endDate); return Date.parse(start) <= Date.parse(first) && (until === null || Date.parse(until) >= Date.parse(last)); }
 function serviceDayStart(value) { return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00.000+09:00`; }
 function serviceDayEnd(value) { return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T23:59:59.999+09:00`; }
-function validDate(value) { if (!/^\d{8}$/u.test(value ?? "")) return false; const day = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`, instant = `${day}T00:00:00.000Z`; return Number.isFinite(Date.parse(instant)) && new Date(instant).toISOString().slice(0, 10) === day; }
+function validDate(value) {
+  if (!/^\d{8}$/u.test(value ?? "")) return false;
+  const day = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  const instant = `${day}T00:00:00.000Z`;
+  return Number.isFinite(Date.parse(instant)) && new Date(instant).toISOString().slice(0, 10) === day;
+}
 function utc(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value; }
 function hash(value) { return /^[a-f0-9]{64}$/u.test(value ?? ""); }
 function text(value) { return typeof value === "string" && value.length > 0; }
 function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
-function only(rows, predicate, code) { const matches = Array.isArray(rows) ? rows.filter(predicate) : []; if (matches.length !== 1) fail(code); return matches[0]; }
+function only(rows, predicate, code) {
+  const matches = Array.isArray(rows) ? rows.filter((item) => predicate(item)) : [];
+  if (matches.length !== 1) fail(code);
+  return matches[0];
+}
 function parse(bytes, code) { try { return JSON.parse(bytes); } catch { fail(code); } }
-function rootPath(value) { if (!path.isAbsolute(value ?? "")) fail("ROOT"); return path.resolve(value); }
-function absolute(value, code) { if (!path.isAbsolute(value ?? "")) fail(code); return path.resolve(value); }
+function rootPath(value) {
+  if (!path.isAbsolute(value ?? "")) fail("ROOT");
+  return path.resolve(value);
+}
+function absolute(value, code) {
+  if (!path.isAbsolute(value ?? "")) fail(code);
+  return path.resolve(value);
+}
 function validateParentSnapshot(snapshot) { const { snapshotId, contentSha256, ...content } = snapshot ?? {}; if (!text(snapshotId) || !hash(contentSha256) || sha(canonicalJson(content)) !== contentSha256) fail("TOPOLOGY_BINDING"); }
 function validateParentPublicationReceipt({ bytes, topologySnapshot, parentLedger, collectionReceiptBytes, rawBytes, now }) {
   const value = parse(bytes, "PUBLICATION_RECEIPT");

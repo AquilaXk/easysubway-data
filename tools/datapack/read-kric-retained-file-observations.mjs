@@ -12,7 +12,13 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 const MAXIMUM_BUNDLE_BYTES = 64 * 1024;
 const SOURCE_IDS = ["kric-nationwide-timetable-file", "kric-current-station-line-file"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
-const canonical = (value) => Array.isArray(value) ? value.map(canonical) : !value || typeof value !== "object" ? value : Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right)).map((key) => [key, canonical(value[key])]));
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value)
+    .sort((left, right) => left.localeCompare(right))
+    .map((key) => [key, canonical(value[key])]));
+}
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(canonical(value))}\n`);
 const fail = (code) => { throw new Error(`KRIC_RETAINED_FILE_OBSERVATION_READER_${code}`); };
 
@@ -153,8 +159,15 @@ async function readExact(reader, key, maximumBytes, expectedHash, label) {
 
 async function writeOutput(outputDir, result) {
   const target = requiredOutputDirectory(outputDir);
-  try { await lstat(target); fail("OUTPUT_EXISTS"); } catch (error) { if (error?.message?.startsWith("KRIC_RETAINED_FILE_OBSERVATION_READER_")) throw error; if (error?.code !== "ENOENT") fail("OUTPUT_DIR"); }
-  const parent = path.dirname(target); let physicalParent;
+  try {
+    await lstat(target);
+    fail("OUTPUT_EXISTS");
+  } catch (error) {
+    if (error?.message?.startsWith("KRIC_RETAINED_FILE_OBSERVATION_READER_")) throw error;
+    if (error?.code !== "ENOENT") fail("OUTPUT_DIR");
+  }
+  const parent = path.dirname(target);
+  let physicalParent;
   try { physicalParent = await realpath(parent); } catch { fail("OUTPUT_DIR"); }
   if (physicalParent !== parent) fail("OUTPUT_DIR");
   try { await mkdir(target, { mode: 0o700 }); } catch { fail("OUTPUT_DIR"); }
@@ -167,9 +180,26 @@ async function writePrivate(target, bytes) {
   let handle; try { handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); await handle.writeFile(bytes); } catch { fail("OUTPUT_WRITE"); } finally { await handle?.close(); }
 }
 
-function requiredOutputDirectory(value) { if (typeof value !== "string" || !path.isAbsolute(value)) fail("OUTPUT_DIR"); const resolved = path.resolve(value); if (resolved === path.parse(resolved).root) fail("OUTPUT_DIR"); return resolved; }
-function requiredSha(value, label) { if (typeof value !== "string" || !SHA256.test(value)) fail(label); return value; }
-function parseJson(bytes, label) { try { const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); if (!value || typeof value !== "object" || Array.isArray(value)) fail(label); return value; } catch (error) { if (error?.message?.startsWith("KRIC_RETAINED_FILE_OBSERVATION_READER_")) throw error; fail(label); } }
+function requiredOutputDirectory(value) {
+  if (typeof value !== "string" || !path.isAbsolute(value)) fail("OUTPUT_DIR");
+  const resolved = path.resolve(value);
+  if (resolved === path.parse(resolved).root) fail("OUTPUT_DIR");
+  return resolved;
+}
+function requiredSha(value, label) {
+  if (typeof value !== "string" || !SHA256.test(value)) fail(label);
+  return value;
+}
+function parseJson(bytes, label) {
+  try {
+    const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (!value || typeof value !== "object" || Array.isArray(value)) fail(label);
+    return value;
+  } catch (error) {
+    if (error?.message?.startsWith("KRIC_RETAINED_FILE_OBSERVATION_READER_")) throw error;
+    fail(label);
+  }
+}
 function validateIdentity(value, label) { exactKeys(value, ["objectKey", "sha256", "sizeBytes"], label); if (typeof value.objectKey !== "string" || value.objectKey === "" || value.objectKey.startsWith("/") || value.objectKey.includes("..") || !Number.isSafeInteger(value.sizeBytes) || value.sizeBytes < 1 || !SHA256.test(value.sha256)) fail(label); }
 function exactKeys(value, keys, label) { if (!value || typeof value !== "object" || Array.isArray(value) || JSON.stringify(Object.keys(value).sort((left, right) => left.localeCompare(right))) !== JSON.stringify([...keys].sort((left, right) => left.localeCompare(right)))) fail(label); }
 function sameJson(left, right) { return jsonBytes(left).equals(jsonBytes(right)); }

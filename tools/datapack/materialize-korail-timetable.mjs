@@ -91,27 +91,58 @@ function validatePack(pack, lineId) {
 function validateTables(tables, lineId) {
   if (!tables || JSON.stringify(Object.keys(tables).sort()) !== JSON.stringify([...TABLE_KEYS].sort())
     || TABLE_KEYS.some((key) => !Array.isArray(tables[key]))) fail("TABLES");
-  const routeIds = new Set(), serviceIds = new Set(), tripIds = new Set(), calendarDateKeys = new Set();
-  for (const row of tables.serviceCalendars) {
+  const serviceIds = validateServiceCalendars(tables.serviceCalendars);
+  validateServiceCalendarDates(tables.serviceCalendarDates, serviceIds);
+  const routeIds = validateTransitRoutes(tables.transitRoutes, lineId);
+  const tripIds = validateTransitTrips(tables.transitTrips, routeIds, serviceIds);
+  validateTransitStopTimes(tables.transitStopTimes, tripIds, lineId);
+}
+
+function validateServiceCalendars(rows) {
+  const serviceIds = new Set();
+  for (const row of rows) {
     if (!text(row.serviceId) || serviceIds.has(row.serviceId) || !validWindow({ startDate: row.startDate, endDate: row.endDate })) fail("TABLES");
     serviceIds.add(row.serviceId);
   }
-  for (const row of tables.serviceCalendarDates) {
+  return serviceIds;
+}
+
+function validateServiceCalendarDates(rows, serviceIds) {
+  const calendarDateKeys = new Set();
+  for (const row of rows) {
     const key = `${row.serviceId}:${row.date}`;
     if (!serviceIds.has(row.serviceId) || !validDate(row.date) || ![1, 2].includes(row.exceptionType) || calendarDateKeys.has(key)) fail("TABLES");
     calendarDateKeys.add(key);
   }
-  for (const row of tables.transitRoutes) {
-    if (!text(row.id) || routeIds.has(row.id) || row.lineId !== lineId) fail("TABLES"); routeIds.add(row.id);
+}
+
+function validateTransitRoutes(rows, lineId) {
+  const routeIds = new Set();
+  for (const row of rows) {
+    if (!text(row.id) || routeIds.has(row.id) || row.lineId !== lineId) fail("TABLES");
+    routeIds.add(row.id);
   }
-  for (const row of tables.transitTrips) {
-    if (!text(row.id) || tripIds.has(row.id) || !routeIds.has(row.routeId) || !serviceIds.has(row.serviceId)) fail("TABLES"); tripIds.add(row.id);
+  return routeIds;
+}
+
+function validateTransitTrips(rows, routeIds, serviceIds) {
+  const tripIds = new Set();
+  for (const row of rows) {
+    if (!text(row.id) || tripIds.has(row.id) || !routeIds.has(row.routeId) || !serviceIds.has(row.serviceId)) fail("TABLES");
+    tripIds.add(row.id);
   }
+  return tripIds;
+}
+
+function validateTransitStopTimes(rows, tripIds, lineId) {
   const stopsByTrip = new Map();
-  for (const row of tables.transitStopTimes) {
+  for (const row of rows) {
     if (!tripIds.has(row.tripId) || row.lineId !== lineId || !text(row.stationId) || !Number.isSafeInteger(row.stopSequence) || row.stopSequence < 1
       || !Number.isSafeInteger(row.arrivalSeconds) || !Number.isSafeInteger(row.departureSeconds) || row.arrivalSeconds > row.departureSeconds) fail("TABLES");
-    if (!stopsByTrip.has(row.tripId)) stopsByTrip.set(row.tripId, []); stopsByTrip.get(row.tripId).push(row);
+    if (!stopsByTrip.has(row.tripId)) {
+      stopsByTrip.set(row.tripId, []);
+    }
+    stopsByTrip.get(row.tripId).push(row);
   }
   if (stopsByTrip.size !== tripIds.size) fail("TABLES");
   for (const rows of stopsByTrip.values()) {
@@ -193,7 +224,12 @@ function validWindow(value) { return validDate(value?.startDate) && validDate(va
 function windowInsideEffective(snapshot) { const start = serviceDayStart(snapshot.calendarWindow.startDate), end = serviceDayEnd(snapshot.calendarWindow.endDate); return Date.parse(snapshot.serviceEffectiveAt) <= Date.parse(start) && (snapshot.serviceEffectiveUntil === null || Date.parse(snapshot.serviceEffectiveUntil) >= Date.parse(end)); }
 function serviceDayStart(value) { return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00.000+09:00`; }
 function serviceDayEnd(value) { return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T23:59:59.999+09:00`; }
-function validDate(value) { if (!/^\d{8}$/u.test(value ?? "")) return false; const day = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`, instant = `${day}T00:00:00.000Z`; return Number.isFinite(Date.parse(instant)) && new Date(instant).toISOString().slice(0, 10) === day; }
+function validDate(value) {
+  if (!/^\d{8}$/u.test(value ?? "")) return false;
+  const day = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  const instant = `${day}T00:00:00.000Z`;
+  return Number.isFinite(Date.parse(instant)) && new Date(instant).toISOString().slice(0, 10) === day;
+}
 function validInstant(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value; }
 function hash(value) { return /^[a-f0-9]{64}$/u.test(value ?? ""); }
 function text(value) { return typeof value === "string" && value.length > 0; }
