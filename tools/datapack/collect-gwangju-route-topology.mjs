@@ -19,6 +19,7 @@ export async function collectGwangjuRouteTopology({
   const scopeInput = validateStationScope(stationScope);
   const scopeById = new Map(scopeInput.map((row) => [row.providerStationId, row]));
   const responses = [];
+  const rawResponses = [];
   const namesById = new Map();
   const odRows = [];
   for (const { providerStationId: stationId } of scopeInput) {
@@ -28,6 +29,8 @@ export async function collectGwangjuRouteTopology({
     if (!response.ok) throw new Error(`Gwangju route topology HTTP ${response.status}`);
     const bytes = Buffer.from(await response.arrayBuffer());
     responses.push(sha256(bytes));
+    // OCI 등록 시 재호출하지 않고 수집 당시 원문과 파생 topology를 함께 결속한다.
+    rawResponses.push({ providerStationId: stationId, bytesBase64: bytes.toString("base64") });
     let rows;
     try {
       rows = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -101,6 +104,7 @@ export async function collectGwangjuRouteTopology({
     scopeSha256: sha256(JSON.stringify(scope)),
     edgesSha256: sha256(JSON.stringify(edges)),
     rawSha256: sha256(JSON.stringify(responses)),
+    rawResponses,
     contentSha256,
     credentialRedacted: true,
   };

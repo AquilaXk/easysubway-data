@@ -163,6 +163,8 @@ test("CLI resolves admitted schema-1 seed scope before collecting fresh topology
     repositoryRoot: root, fetchImpl: fakeFetch, now: new Date("2026-09-01T00:00:00.000Z"),
   });
   assert.equal(calls, scope.length);
+  assert.equal(result.rawResponses.length, scope.length);
+  assert.equal(result.rawSha256, createHash("sha256").update(JSON.stringify(result.rawResponses.map(({ bytesBase64 }) => createHash("sha256").update(Buffer.from(bytesBase64, "base64")).digest("hex")))).digest("hex"));
   const expectedScope = scope.map((row, index) => ({ ...row, stationName: ["가", "나", "다"][index] }));
   assert.deepEqual(result.scope, expectedScope);
   assert.deepEqual(JSON.parse(await readFile(output, "utf8")).scope, expectedScope);

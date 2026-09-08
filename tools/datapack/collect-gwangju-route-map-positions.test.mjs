@@ -17,6 +17,7 @@ const SCHEMATIC_PATH = path.join(
   "tools/datapack/fixtures/gwangju-route-map-positions-raw/owner-self-drawn-sma-schematic-canvas-20260725.json",
 );
 const TOPOLOGY_PATH = path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json");
+const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
 const SNAPSHOT_PATH = path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json");
 const METRO_MAP_PACK_DIR = path.join(root, "apps/mobile/assets/datapacks/metro_map_pack");
 const CAPITAL_SQLITE_GZ = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
@@ -41,6 +42,7 @@ test("광주 공식 FILE 위경도 + schematic canvas를 1호선 20역 snapshot�
   const snapshot = collectGwangjuRouteMapPositions({
     csvBytes,
     topologySnapshot,
+    topologySnapshotId: TOPOLOGY_SNAPSHOT_ID,
     schematicCanvas,
     now: new Date(capturedAt),
   });
@@ -104,7 +106,7 @@ test("좌표 누락·topology/schematic 미매칭은 fail closed 한다", async 
   const lines = text.split(/\r?\n/).filter((line) => line.length > 0);
   const broken = Buffer.from(lines.filter((_, index) => index !== 1).join("\n"), "utf8");
   assert.throws(
-    () => parseGwangjuRouteMapPositionsCsv({ csvBytes: broken, topologySnapshot, schematicCanvas }),
+    () => parseGwangjuRouteMapPositionsCsv({ csvBytes: broken, topologySnapshot, topologySnapshotId: TOPOLOGY_SNAPSHOT_ID, schematicCanvas }),
     /station count mismatch|station code scope mismatch|join failed/,
   );
   const unknown = Buffer.from(
@@ -112,7 +114,7 @@ test("좌표 누락·topology/schematic 미매칭은 fail closed 한다", async 
     "utf8",
   );
   assert.throws(
-    () => parseGwangjuRouteMapPositionsCsv({ csvBytes: unknown, topologySnapshot, schematicCanvas }),
+    () => parseGwangjuRouteMapPositionsCsv({ csvBytes: unknown, topologySnapshot, topologySnapshotId: TOPOLOGY_SNAPSHOT_ID, schematicCanvas }),
     /station count mismatch|join failed|duplicate|scope mismatch/,
   );
   const missingCanvas = schematicCanvas.filter(({ stationName }) => stationName !== "문화전당");
@@ -120,6 +122,7 @@ test("좌표 누락·topology/schematic 미매칭은 fail closed 한다", async 
     () => parseGwangjuRouteMapPositionsCsv({
       csvBytes,
       topologySnapshot,
+      topologySnapshotId: TOPOLOGY_SNAPSHOT_ID,
       schematicCanvas: missingCanvas,
     }),
     /schematic canvas/,
@@ -131,6 +134,7 @@ test("snapshot hash나 좌표가 바뀌면 admission을 거부한다", async () 
   const snapshot = collectGwangjuRouteMapPositions({
     csvBytes,
     topologySnapshot,
+    topologySnapshotId: TOPOLOGY_SNAPSHOT_ID,
     schematicCanvas,
     now: new Date(capturedAt),
   });
