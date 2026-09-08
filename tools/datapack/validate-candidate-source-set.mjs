@@ -1,8 +1,24 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
+import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
+const PRODUCTION_SCOPE_PATH = "release/product-gates/production-datapack-scope.json";
+const TARGETS_PATH = "tools/datapack/nationwide-coverage-targets.json";
+const INPUT_PATHS = Object.freeze({
+  targets: TARGETS_PATH,
+  tally: "tools/datapack/reports/nationwide-coverage-tally.json",
+  ownership: "tools/datapack/release/nationwide-requirement-ownership.json",
+  inventory: INVENTORY_PATH,
+  sourceSnapshots: "tools/datapack/release/source-snapshots.json",
+  fanIn: "tools/datapack/release/current-five-region-source-fan-in.json",
+  ownershipLedger: "tools/datapack/reports/nationwide-requirement-ownership-ledger.json",
+});
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -114,4 +130,125 @@ export function validateCandidateSourceSet({ productionScopeBytes, sourceInvento
     throw new Error("candidate source inventory raw binding mismatch");
   }
   return { selected, requiredSourceIds, headsBySource: lineage.headsBySource };
+}
+
+function requireSha256(value, label) {
+  if (!/^[a-f0-9]{64}$/.test(value ?? "")) throw new Error(`${label} must be sha256`);
+  return value;
+}
+
+function requireCandidateFileBinding(candidate, field, path, bytes, label) {
+  const binding = candidate?.[field];
+  if (binding?.path !== path || requireSha256(binding?.sha256, `${label} sha256`) !== sha256(bytes)) {
+    throw new Error(`${label} raw binding mismatch`);
+  }
+}
+
+function sameRegions(value, expected, label) {
+  const regions = uniqueStrings(value?.regionIds, `${label} regions`);
+  if (!sameSet(new Set(regions), new Set(expected))) {
+    throw new Error(`${label} region set mismatch`);
+  }
+}
+
+// 후보 생성 전의 release 경계에서만 fan-in, 원본 ledger, scope를 함께 고정한다.
+export function validateNationwideCandidateSourceSet({ candidate, inputBytes }) {
+  const bytes = inputBytes ?? {};
+  const required = ["targets", "tally", "ownership", "inventory", "sourceSnapshots", "fanIn", "ownershipLedger", "productionScope"];
+  if (required.some((name) => !Buffer.isBuffer(bytes[name]))) {
+    throw new Error("nationwide candidate input bytes are required");
+  }
+  const inputs = Object.fromEntries(required.map((name) => [name, parseExactBytes(bytes[name], name)]));
+  requireCandidateFileBinding(candidate, "productionScope", PRODUCTION_SCOPE_PATH, bytes.productionScope, "production scope");
+  requireCandidateFileBinding(candidate, "productionScopePolicy", TARGETS_PATH, bytes.targets, "production scope policy");
+
+  const sourceSet = validateCandidateSourceSet({
+    productionScopeBytes: bytes.productionScope,
+    sourceInventoryBytes: bytes.inventory,
+    candidate,
+    ledger: inputs.sourceSnapshots,
+  });
+  const rebuiltLedger = buildNationwideRequirementOwnershipLedger({
+    targets: inputs.targets,
+    tally: inputs.tally,
+    ownership: inputs.ownership,
+    inventory: inputs.inventory,
+    sourceSnapshots: inputs.sourceSnapshots,
+    fanIn: inputs.fanIn,
+    inputBytes: Object.fromEntries(["targets", "tally", "ownership", "inventory", "sourceSnapshots", "fanIn"]
+      .map((name) => [name, bytes[name]])),
+  });
+  if (!isDeepStrictEqual(rebuiltLedger, inputs.ownershipLedger)) {
+    throw new Error("nationwide ownership ledger binding mismatch");
+  }
+  if (rebuiltLedger.summary.nationwideEligibility !== "GO") {
+    throw new Error("nationwide ownership ledger must be GO");
+  }
+
+  const fanInRegions = inputs.fanIn.scope?.regionIds;
+  sameRegions(inputs.productionScope.verifiedAccessibilityScope, fanInRegions, "verified accessibility scope");
+  sameRegions(inputs.productionScope.supportScope, fanInRegions, "support scope");
+  sameRegions(inputs.productionScope.routingLaunchScope, fanInRegions, "routing launch scope");
+  if (inputs.productionScope.nationwideRoadmapScope?.blocksRoutingLaunch !== true
+    || inputs.productionScope.nationwideRoadmapScope.launchRequiredCount
+      !== rebuiltLedger.summary.launchRequired.totalCount) {
+    throw new Error("nationwide roadmap scope binding mismatch");
+  }
+  if (candidate?.productionScopeId !== inputs.productionScope.routingLaunchScope?.id) {
+    throw new Error("candidate production scope ID mismatch");
+  }
+
+  const publishedAt = requiredUtcInstant(candidate?.publishedAt, "candidate publishedAt");
+  const evaluatedAt = requiredUtcInstant(inputs.fanIn.evaluatedAt, "fan-in evaluatedAt");
+  if (publishedAt < evaluatedAt) throw new Error("candidate publishedAt precedes fan-in evaluation");
+  const fanInBySource = new Map(inputs.fanIn.selectedSources.map((head) => [head.sourceId, head]));
+  if (sourceSet.selected.length !== fanInBySource.size) {
+    throw new Error("candidate source head set mismatch");
+  }
+  for (const projection of candidate.sourceSnapshots) {
+    const head = fanInBySource.get(projection.sourceId);
+    if (!head || projection.snapshotId !== head.snapshotId
+      || projection.rawSha256 !== head.rawSha256
+      || projection.freshnessExpiresAt !== head.freshnessExpiresAt) {
+      throw new Error("candidate source head binding mismatch");
+    }
+    if (requiredUtcInstant(head.freshnessExpiresAt, "fan-in head freshness") <= publishedAt) {
+      throw new Error("candidate source head freshness expired");
+    }
+  }
+  return {
+    sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+    fanInSha256: inputs.fanIn.fanInSha256,
+    ownershipLedgerSha256: sha256(bytes.ownershipLedger),
+    productionScopeSha256: sha256(bytes.productionScope),
+    targetSha256: sha256(bytes.targets),
+  };
+}
+
+function argValue(args, name) {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.length !== 4 || !args.includes("--build-spec") || !args.includes("--scope")) {
+    throw new Error("candidate source set arguments mismatch");
+  }
+  const candidatePath = argValue(args, "--build-spec");
+  const scopePath = argValue(args, "--scope");
+  if (!candidatePath || !scopePath) throw new Error("candidate source set arguments mismatch");
+  const records = await Promise.all(Object.entries(INPUT_PATHS).map(async ([name, inputPath]) =>
+    [name, await readFile(inputPath)]));
+  const inputBytes = Object.fromEntries(records);
+  inputBytes.productionScope = await readFile(scopePath);
+  const candidate = parseExactBytes(await readFile(candidatePath), "build spec");
+  process.stdout.write(`${JSON.stringify(validateNationwideCandidateSourceSet({ candidate, inputBytes }))}\n`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }

@@ -19,6 +19,27 @@ test("release workflow는 owned deterministic-release subset만 실행한다", (
   assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
 });
 
+test("nationwide candidate binding은 candidate effects 전에 release 경계에서 검증한다", () => {
+  assert.match(yml, /EASYSUBWAY_DATAPACK_SCOPE_POLICY: release\/product-gates\/production-datapack-scope\.json/);
+  const step = yml.match(
+    /- name: Data Pack Release \/ Validate nationwide candidate binding[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(step, "nationwide candidate binding 검증 스텝을 찾지 못함");
+  assert.match(step, /mode == 'release-candidate' \|\| steps\.release-mode\.outputs\.mode == 'candidate-create'/);
+  assert.match(step, /node tools\/datapack\/validate-candidate-source-set\.mjs --build-spec "\$\{EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH\}" --scope "\$\{EASYSUBWAY_DATAPACK_SCOPE_POLICY\}"/);
+  assert.ok(
+    yml.indexOf("Data Pack Release / Stage product contracts")
+      < yml.indexOf("Data Pack Release / Validate nationwide candidate binding")
+      && yml.indexOf("Data Pack Release / Validate nationwide candidate binding")
+        < yml.indexOf("Data Pack Release / Validate source snapshot freshness"),
+    "candidate binding은 contracts 뒤, freshness와 credential effects 전에 있어야 한다",
+  );
+  assert.ok(
+    yml.indexOf("Data Pack Release / Validate nationwide candidate binding")
+      < yml.indexOf("Data Pack Release / Restore candidate signing credentials"),
+  );
+});
+
 test("current release freshness gate는 deterministic-release와 같은 조건에서 evidence generation 전에 실행된다", () => {
   const step = (name) => yml.match(
     new RegExp(`- name: ${name}[\\s\\S]*?\\n\\s+- name:`),

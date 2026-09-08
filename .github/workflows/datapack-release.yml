@@ -53,7 +53,7 @@ jobs:
       EASYSUBWAY_HUB_REPOSITORY: AquilaXk/easysubway
       EASYSUBWAY_DATAPACK_FRESHNESS_POLICY: build/contracts/datapack/datapack-freshness-sla.json
       EASYSUBWAY_DATAPACK_ACCEPTANCE_POLICY: build/contracts/datapack/datapack-manifest-acceptance-policy.json
-      EASYSUBWAY_DATAPACK_SCOPE_POLICY: build/contracts/datapack/production-datapack-scope.json
+      EASYSUBWAY_DATAPACK_SCOPE_POLICY: release/product-gates/production-datapack-scope.json
       EASYSUBWAY_TRAIN_SEARCH_ITX_POLICY: build/contracts/datapack/train-search-itx-exclusion-gate.json
       EASYSUBWAY_MOBILITY_PROFILE_POLICY: build/contracts/datapack/mobility-profile-policy.json
 
@@ -406,6 +406,10 @@ jobs:
       - name: Data Pack Release / Stage product contracts
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: node tools/datapack/stage-contracts.mjs
+
+      - name: Data Pack Release / Validate nationwide candidate binding
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' || steps.release-mode.outputs.mode == 'candidate-create' }}
+        run: node tools/datapack/validate-candidate-source-set.mjs --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" --scope "${EASYSUBWAY_DATAPACK_SCOPE_POLICY}"
 
       - name: Data Pack Release / Validate source snapshot freshness
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}

@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { readProductionSourceSet, validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
+import * as candidateSourceSet from "./validate-candidate-source-set.mjs";
+import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import { fiveRegionCandidateSourceSetInput } from "./test-fixtures/five-region-source-input.mjs";
+
+const { readProductionSourceSet, validateCandidateSourceSet } = candidateSourceSet;
 
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -129,4 +133,51 @@ test("raw/semantic inventory hash, ledger hash, non-head selection을 거부한�
     const input = fixture(); mutate(input);
     assert.throws(() => validateCandidateSourceSet(input), expected);
   }
+});
+
+test("#6 binds a GO five-region candidate to exact source, ledger, and scope bytes", () => {
+  const input = fiveRegionCandidateSourceSetInput();
+  assert.equal(buildNationwideRequirementOwnershipLedger(input).summary.nationwideEligibility, "GO");
+  assert.equal(typeof candidateSourceSet.validateNationwideCandidateSourceSet, "function");
+  assert.deepEqual(candidateSourceSet.validateNationwideCandidateSourceSet(input), {
+    sourceSnapshotSetHash: input.candidate.sourceSnapshotSetHash,
+    fanInSha256: input.fanIn.fanInSha256,
+    ownershipLedgerSha256: sha(input.inputBytes.ownershipLedger),
+    productionScopeSha256: sha(input.inputBytes.productionScope),
+    targetSha256: sha(input.inputBytes.targets),
+  });
+
+  const sourceSetMismatch = fiveRegionCandidateSourceSetInput();
+  sourceSetMismatch.productionScope.productionSourceSet.requiredSourceIds = [];
+  sourceSetMismatch.inputBytes.productionScope = Buffer.from(JSON.stringify(sourceSetMismatch.productionScope));
+  sourceSetMismatch.candidate.productionScope.sha256 = sha(sourceSetMismatch.inputBytes.productionScope);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(sourceSetMismatch), /required source IDs|source set/i);
+
+  const rawScopeMismatch = fiveRegionCandidateSourceSetInput();
+  rawScopeMismatch.candidate.productionScope.sha256 = "0".repeat(64);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(rawScopeMismatch), /scope.*raw|raw.*scope/i);
+
+  const targetHashMismatch = fiveRegionCandidateSourceSetInput();
+  targetHashMismatch.candidate.productionScopePolicy.sha256 = "0".repeat(64);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(targetHashMismatch), /production scope policy raw binding mismatch/);
+
+  const duplicateRegion = fiveRegionCandidateSourceSetInput();
+  duplicateRegion.productionScope.routingLaunchScope.regionIds.push(
+    duplicateRegion.productionScope.routingLaunchScope.regionIds[0],
+  );
+  duplicateRegion.inputBytes.productionScope = Buffer.from(JSON.stringify(duplicateRegion.productionScope));
+  duplicateRegion.candidate.productionScope.sha256 = sha(duplicateRegion.inputBytes.productionScope);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(duplicateRegion), /region.*unique|region set mismatch/);
+
+  const ledgerDrift = fiveRegionCandidateSourceSetInput();
+  ledgerDrift.ownershipLedger.summary.nationwideEligibility = "NO_GO";
+  ledgerDrift.inputBytes.ownershipLedger = Buffer.from(JSON.stringify(ledgerDrift.ownershipLedger));
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(ledgerDrift), /ownership ledger binding mismatch/);
+
+  const noGo = fiveRegionCandidateSourceSetInput({ runtimeEvidence: false });
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(noGo), /GO/);
+
+  const expired = fiveRegionCandidateSourceSetInput();
+  expired.candidate.publishedAt = "2040-01-03T00:00:00.000Z";
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(expired), /fresh|expire/i);
 });
