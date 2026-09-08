@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   DAEJEON_COVERAGE_OPERATIONS,
   probeDaejeonCoverageApi,
 } from "./probe-daejeon-coverage-api.mjs";
+import {
+  prepareDaejeonTimetableRegistration,
+  registerDaejeonTimetable,
+} from "./register-daejeon-timetable.mjs";
 
 test("Daejeon probe는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
@@ -24,6 +32,166 @@ const timetableRowsEvidence = JSON.parse(await readFile(
 const distanceFareEvidence = JSON.parse(await readFile(
   new URL("./sources/daejeon-station-distance-fare-20260714.json", import.meta.url), "utf8",
 ));
+const FROZEN_TIMETABLE_ROWS = JSON.parse(await readFile(
+  new URL("./sources/daejeon-train-timetable-20260720.json", import.meta.url), "utf8",
+)).rows;
+const FROZEN_TOPOLOGY_BYTES = await readFile(new URL(
+  "./sources/daejeon-station-distance-fare-8ad2f0ce04aff883391c84df3d13b78a59e17434246054416f26fc8a22d8bab7.json",
+  import.meta.url,
+));
+const FROZEN_MOLIT_BYTES = await readFile(new URL(
+  "./sources/molit-urban-rail-full-route-current-20260824T114822985Z.json",
+  import.meta.url,
+));
+
+test("Daejeon timetable registration replays frozen provider rows through the source transaction", async (context) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "daejeon-timetable-register-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const observedAt = new Date("2026-03-02T00:00:00.000Z");
+  const now = new Date(observedAt.valueOf() + 60_000);
+  const snapshot = await probeDaejeonCoverageApi({
+    sourceId: "daejeon-train-timetable",
+    serviceKey: "fixture-key",
+    now: observedAt,
+    fetchImpl: async () => new Response(timetableXml(FROZEN_TIMETABLE_ROWS), {
+      headers: { "content-type": "application/xml" },
+    }),
+  });
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const snapshotPath = path.join(root, "retained-timetable.json");
+  const topologySnapshot = JSON.parse(FROZEN_TOPOLOGY_BYTES);
+  const topologySnapshotId = "frozen-daejeon-topology";
+  const topologyRelative = `tools/datapack/sources/${topologySnapshotId}.json`;
+  const molitObservation = JSON.parse(FROZEN_MOLIT_BYTES);
+  const molitLedger = {
+    schemaVersion: 1,
+    artifactKind: "official-source-snapshot",
+    sourceId: molitObservation.sourceId,
+    snapshotId: molitObservation.snapshotId,
+    previousSnapshotId: null,
+    capturedAt: molitObservation.capturedAt,
+    retrievedAt: molitObservation.capturedAt,
+    sourceUpdatedAt: null,
+    provider: "fixture MOLIT",
+    rowCount: molitObservation.rowCount,
+    coverageCount: molitObservation.rowCount,
+    rawSha256: molitObservation.rawSha256,
+    contentSha256: molitObservation.contentSha256,
+    rawObjectUri: "oci://fixture/molit.json",
+    redactedRequestFingerprint: "1".repeat(64),
+    schemaFingerprint: molitObservation.schemaFingerprint,
+    snapshotStatus: "LOCKED",
+    schemaStatus: "PASS",
+    licenseStatus: "PASS",
+    fetchStatus: "SUCCESS",
+    redistributionAllowed: true,
+    credentialRedacted: true,
+    diffSummary: null,
+    normalizedObservationSha256: createHash("sha256").update(FROZEN_MOLIT_BYTES).digest("hex"),
+    providerRecordHashes: molitObservation.providerRecordHashes,
+  };
+  const sourceId = "daejeon-train-timetable";
+  const license = { redistributionAllowed: true, evidenceUrl: "https://example.test/license" };
+  const licenseHash = createHash("sha256").update(canonicalJson(license)).digest("hex");
+  const freshness = {
+    id: "daejeon_timetable_observation",
+    sourceIds: [sourceId],
+    basisField: "observedAt",
+    reverificationCadence: "P30D",
+    futureBasisAllowed: false,
+    providerValidityEndField: null,
+    eventTriggers: ["official timetable revision"],
+  };
+  const governance = governancePolicy({
+    sourceId,
+    sourceClassId: freshness.id,
+    licenseHash,
+    license,
+    now,
+  });
+  const source = {
+    id: sourceId,
+    provider: "fixture Daejeon operator",
+    datasetUrl: "https://example.test/timetable",
+    productionUseAllowed: true,
+    requiredForProductionPack: false,
+    license,
+    admissionEvidence: { licenseEvidenceHash: licenseHash },
+    scheduleAdmissionEvidence: {
+      issue: 1,
+      materializer: "fixture-materializer",
+      verificationTest: "fixture-test",
+      capturedAt: new Date(observedAt.valueOf() - 24 * 60 * 60 * 1_000).toISOString(),
+      freshUntil: observedAt.toISOString(),
+    },
+  };
+  const topologySource = {
+    id: "daejeon-station-distance-fare",
+    productionUseAllowed: true,
+    requiredForProductionPack: false,
+    license: { redistributionAllowed: true },
+    topologyAdmissionEvidence: {
+      snapshotId: topologySnapshotId,
+      snapshotPath: topologyRelative,
+      capturedAt: topologySnapshot.observedAt,
+      stationCount: topologySnapshot.stationNumbers.length,
+      edgeCount: topologySnapshot.rowCount,
+      rawSha256: topologySnapshot.rawSha256,
+      contentSha256: topologySnapshot.contentSha256,
+    },
+  };
+  const molitSource = {
+    id: molitObservation.sourceId,
+    requiredForProductionPack: false,
+    admissionEvidence: {
+      sourceId: molitObservation.sourceId,
+      decision: "APPROVED",
+      snapshotId: molitObservation.snapshotId,
+      rawSha256: molitObservation.rawSha256,
+    },
+  };
+  const inventory = { sources: [source, topologySource, molitSource] };
+  const outputValues = [
+    inventory,
+    [molitLedger],
+    governance,
+    { sourceClasses: [] },
+  ];
+  for (const [index, relative] of SOURCE_REGISTRATION_OUTPUTS.entries()) {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, `${JSON.stringify(outputValues[index], null, 2)}\n`);
+  }
+  await mkdir(path.join(root, "tools/datapack/sources"), { recursive: true });
+  await writeFile(path.join(root, topologyRelative), FROZEN_TOPOLOGY_BYTES);
+  await writeFile(path.join(root, `tools/datapack/sources/${molitObservation.snapshotId}.json`), FROZEN_MOLIT_BYTES);
+  await writeFile(snapshotPath, snapshotBytes);
+  await writeFile(path.join(root, "tools/datapack/source-candidates.json"), JSON.stringify({ candidates: [{
+    id: sourceId,
+    domain: "schedule_timetable",
+    registrationMetadata: { governance: governance.sources[0], freshness },
+  }] }));
+
+  const receiptPath = path.join(root, "receipt.json");
+  const options = { repositoryRoot: root, snapshotPath, receiptPath, now, env: fixtureOciEnv() };
+  const prepared = await prepareDaejeonTimetableRegistration(options);
+  await writeFile(receiptPath, `${JSON.stringify(receiptFor(prepared, now))}\n`);
+  await registerDaejeonTimetable(options);
+
+  const [registeredInventory, registeredLedger, , registeredFreshness] = await Promise.all(
+    SOURCE_REGISTRATION_OUTPUTS.map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))),
+  );
+  const registered = registeredInventory.sources.find(({ id }) => id === sourceId);
+  assert.equal(registered.requiredForProductionPack, true);
+  assert.equal(registered.scheduleAdmissionEvidence.snapshotId, prepared.snapshotId);
+  assert.equal(registered.scheduleAdmissionEvidence.rawSha256, snapshot.rawSha256);
+  assert.equal(registered.scheduleAdmissionEvidence.rowsSha256, snapshot.rowsSha256);
+  assert.equal(registered.scheduleAdmissionEvidence.topologySnapshotId, topologySnapshotId);
+  assert.equal(registeredLedger.at(-1).observedAt, snapshot.observedAt);
+  assert.equal(registeredLedger.at(-1).freshUntil, registered.scheduleAdmissionEvidence.freshUntil);
+  assert.equal(registeredFreshness.sourceClasses.at(-1).id, freshness.id);
+  assert.deepEqual(await readFile(path.join(root, registered.scheduleAdmissionEvidence.snapshotPath)), snapshotBytes);
+});
 
 test("대전 coverage probe는 시간표 XML을 검증하고 credential을 제거한다", async () => {
   const secret = "never-print-this-key";
@@ -329,3 +497,76 @@ test("대전 coverage probe는 provider/schema 오류를 fail closed한다", asy
     "daejeon-train-timetable",
   ]);
 });
+
+function timetableXml(rows) {
+  const items = rows.map((row) => `<item>${["dayType", "drctType", "stNum", "tmList", "tmZone"]
+    .map((field) => `<${field}>${row[field]}</${field}>`).join("")}</item>`).join("");
+  return `<?xml version="1.0"?><response><header><resultCode>00</resultCode></header><body><items>${items}</items></body></response>`;
+}
+
+function governancePolicy({ sourceId, sourceClassId, licenseHash, license, now }) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "datapack-source-governance-policy",
+    policyVersion: "2026-03-01",
+    sources: [{
+      sourceId,
+      sourceClassId,
+      retentionClassId: "standard-90d",
+      ownerRole: "data-owner",
+      stewardRole: "data-steward",
+      approvalRole: "data-owner",
+      escalationHours: 24,
+      alertRoute: "data-owner",
+      licenseReview: {
+        status: "APPROVED",
+        termsHash: licenseHash,
+        termsUrl: license.evidenceUrl,
+        reviewedProvider: "fixture Daejeon operator",
+        reviewedDatasetUrl: "https://example.test/timetable",
+        reviewedAt: new Date(now.valueOf() - 60_000).toISOString(),
+        nextReviewAt: new Date(now.valueOf() + 60_000).toISOString(),
+        redistributionScopes: ["DERIVED_DATAPACK"],
+        approvedByRole: "data-owner",
+      },
+    }],
+    retentionClasses: [{ id: "standard-90d", retentionDays: 90 }],
+    reasonCodeEscalations: [{
+      responsibleRole: "data-owner",
+      alertRoute: "data-owner",
+      escalationHours: 24,
+      reasonCodes: [
+        "SOURCE_LINEAGE_BROKEN", "SOURCE_DIFF_MISSING", "SOURCE_FRESHNESS_POLICY_MISSING",
+        "SOURCE_SNAPSHOT_EXPIRED", "RAW_RETENTION_OVERDUE", "LEGAL_HOLD_INVALID",
+        "LICENSE_REVIEW_REQUIRED", "REDISTRIBUTION_NOT_APPROVED", "SOURCE_GOVERNANCE_OWNER_MISSING",
+      ],
+    }],
+  };
+}
+
+function fixtureOciEnv() {
+  return {
+    EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:
+      "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/",
+  };
+}
+
+function receiptFor(prepared, now) {
+  const objectKey = `source-raw/daejeon-train-timetable/${prepared.snapshotId.slice(-8)}/${prepared.snapshotSha256}.json`;
+  return {
+    schemaVersion: 1,
+    artifactKind: "static-network-source-raw-object-receipt",
+    sourceId: "daejeon-train-timetable",
+    snapshotId: prepared.snapshotId,
+    capturedAt: prepared.snapshot.observedAt,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`,
+    rawObjectSha256: prepared.snapshotSha256,
+    byteSize: prepared.snapshotBytes.length,
+    storedAt: now.toISOString(),
+    rawRetentionExpiresAt: prepared.rawRetentionExpiresAt,
+    ociNamespace: "axvym6vk8g7i",
+    bucket: "easysubway-datapacks",
+    objectKey,
+    contentType: "application/json",
+  };
+}
