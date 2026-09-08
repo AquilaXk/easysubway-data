@@ -4,8 +4,55 @@ import path from "node:path";
 
 import { exportLedgerHash } from "./export-ledger-hashes.mjs";
 import { validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+
+// 승인 사실은 입력으로만 받는다. 계산된 해시나 과거 후보의 승인으로 대체하지 않는다.
+// 네 결과를 먼저 준비하며, 실제 파일 교체는 호출자의 단일 transaction이 담당한다.
+export async function buildNationwideReleaseArtifacts({ authority, ...input } = {}) {
+  if (!authority || ["candidateId", "scopeId", "approvalId", "requestedBy", "approvedBy"]
+    .some((key) => typeof authority[key] !== "string" || !authority[key].trim())
+    || authority.requestedBy === authority.approvedBy
+    || authority.candidateId !== input.releaseIdentity?.candidateId
+    || !Buffer.isBuffer(input.inputBytes?.productionScope)
+    || authority.scopeId !== JSON.parse(input.inputBytes.productionScope).routingLaunchScope?.id) {
+    throw new Error("release authority must identify this candidate, scope and distinct actors");
+  }
+  const prepared = await buildNationwideCandidateSpec(input);
+  const candidate = prepared.buildSpec;
+  const candidateBytes = jsonBytes(candidate);
+  const request = {
+    schemaVersion: 1, artifactKind: "datapack-release-request",
+    candidateId: candidate.candidateId, scopeId: candidate.productionScopeId,
+    buildSpecSha256: sha256(candidateBytes), sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,
+    approvedLedgerHash: candidate.approvedAliasLedgerHash,
+    requestedBy: authority.requestedBy, approvedBy: authority.approvedBy,
+    approvalId: authority.approvalId, targetChannel: "production",
+  };
+  const violations = releaseRequestBindingViolations({ buildSpec: candidate,
+    buildSpecSha256: sha256(candidateBytes), releaseRequest: request, expectedApprovalId: authority.approvalId });
+  if (violations.length) throw new Error(`release authority binding failed: ${violations.join("; ")}`);
+  const selectedIds = new Set(candidate.sourceSnapshotIds);
+  const selected = JSON.parse(input.inputBytes.sourceSnapshots).filter((row) => selectedIds.has(row.snapshotId));
+  const admission = new Map(candidate.sourceSnapshots.map((row) => [row.snapshotId, row.adminReviewRecordHash]));
+  const evidence = {
+    schemaVersion: 1, artifactKind: "datapack-build-spec-hash-evidence",
+    builderGitSha: candidate.builderGitSha, builderVersion: candidate.builderVersion,
+    productionScopeId: candidate.productionScopeId, ledgerHashes: prepared.ledgerEvidence,
+    sourceSnapshotSetHash: { value: candidate.sourceSnapshotSetHash },
+    sourceInventorySha256: { value: candidate.sourceInventorySha256 },
+    fixturePath: { value: prepared.fixtureBinding.path, sha256: prepared.fixtureBinding.sha256 },
+    overrides: prepared.overridesBinding,
+    identifiers: { candidateId: { value: candidate.candidateId }, approvalId: { value: authority.approvalId } },
+    perSourceEvidence: selected.map((row) => ({ sourceId: row.sourceId, snapshotId: row.snapshotId,
+      rawSha256: row.rawSha256, adminReviewRecordHash: admission.get(row.snapshotId),
+      perSourceSnapshotSetHash: sha256(JSON.stringify([row])) })),
+  };
+  return { ...prepared, candidateBytes, productionScopeBytes: Buffer.from(input.inputBytes.productionScope),
+    requestBytes: jsonBytes(request), hashEvidenceBytes: jsonBytes(evidence) };
+}
 
 // 실제 materialization에서 후보 입력을 준비한다. 승인·전체 pack 검증·발행은
 // 기존 admission/build/release 경계의 책임이며, 이 함수는 파일을 쓰지 않는다.

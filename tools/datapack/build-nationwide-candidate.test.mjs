@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildNationwideCandidateSpec } from "./build-nationwide-candidate.mjs";
+import { buildNationwideCandidateSpec, buildNationwideReleaseArtifacts } from "./build-nationwide-candidate.mjs";
+import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
 import { fiveRegionCandidateSourceSetInput, fixtureBytes, fixtureLedgerInput } from "./test-fixtures/five-region-source-input.mjs";
 
@@ -43,6 +44,33 @@ async function inputs(context, { admitted = true } = {}) {
 
 test("nationwide candidate constructor requires its actual inputs", async () => {
   await assert.rejects(buildNationwideCandidateSpec({}), /targets input bytes are required/);
+});
+
+test("nationwide release preparation binds recorded authority to exact candidate bytes", async (context) => {
+  const input = await inputs(context);
+  const authority = { candidateId: input.releaseIdentity.candidateId,
+    scopeId: JSON.parse(input.inputBytes.productionScope).routingLaunchScope.id,
+    approvalId: "fixture-release-approval", requestedBy: "fixture-requester", approvedBy: "fixture-owner" };
+  const result = await buildNationwideReleaseArtifacts({ ...input, authority });
+  const candidate = JSON.parse(result.candidateBytes);
+  const request = JSON.parse(result.requestBytes);
+  const evidence = JSON.parse(result.hashEvidenceBytes);
+  assert.deepEqual(releaseRequestBindingViolations({ buildSpec: candidate,
+    buildSpecSha256: sha(result.candidateBytes), releaseRequest: request,
+    expectedApprovalId: authority.approvalId }), []);
+  assert.equal(request.scopeId, authority.scopeId);
+  assert.deepEqual(result.productionScopeBytes, input.inputBytes.productionScope);
+  assert.equal(evidence.identifiers.approvalId.value, authority.approvalId);
+  assert.equal(evidence.fixturePath.sha256, sha(await readFile(path.join(input.repositoryRoot, "pack.json"))));
+  assert.equal(evidence.ledgerHashes.approvedAliasLedgerHash.value, candidate.approvedAliasLedgerHash);
+  const selected = JSON.parse(input.inputBytes.sourceSnapshots);
+  assert.deepEqual(evidence.perSourceEvidence.map((row) => row.perSourceSnapshotSetHash),
+    selected.map((row) => sha(JSON.stringify([row]))));
+  assert.equal(Object.hasOwn(evidence, "buildDryRun"), false);
+  for (const changedAuthority of [undefined, { ...authority, candidateId: "other" },
+    { ...authority, scopeId: "other" }, { ...authority, approvedBy: authority.requestedBy }]) {
+    await assert.rejects(buildNationwideReleaseArtifacts({ ...input, authority: changedAuthority }), /release authority/);
+  }
 });
 
 test("nationwide candidate derives hashes from the prepared pack, not a previous spec", async (context) => {
