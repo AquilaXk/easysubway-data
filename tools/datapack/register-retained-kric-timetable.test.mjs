@@ -7,9 +7,10 @@ import test from "node:test";
 import { decideRetainedGwangjuTimetableRefresh } from "../ci/decide-retained-gwangju-timetable-refresh.mjs";
 
 import { parseCurrentMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
-import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { governanceBeforeSource } from "./test-fixtures/independent-source-governance.mjs";
 import { materializeGwangjuTimetable, restoreAdmittedGwangjuTimetable, validateRetainedGwangjuSource } from "./materialize-gwangju-timetable.mjs";
 import { createRetainedGwangjuTestInput } from "./gwangju-retained-test-fixture.mjs";
 import {
@@ -254,28 +255,5 @@ async function replaceWithSuccessor(fixture) {
 }
 
 // 실제 등록 이력에서 테스트 대상만 제외해 재구성한다. 다른 source가 추가돼도 날짜나 SHA를 갱신하지 않는다.
-function governanceBeforeSource(current, sourceId) {
-  const batches = [];
-  let policy = structuredClone(current);
-  while (policy.sources.some(row => row.sourceId === sourceId)) {
-    const lineage = policy.registrationLineage;
-    assert.ok(lineage, "test source must belong to append-only registration lineage");
-    const additions = policy.sources.filter(row => lineage.addedSourceIds.includes(row.sourceId));
-    batches.unshift(additions.filter(row => row.sourceId !== sourceId));
-    const predecessor = { ...policy, sources: policy.sources.filter(row => !lineage.addedSourceIds.includes(row.sourceId)) };
-    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
-    else predecessor.registrationLineage = lineage.predecessorLineage;
-    const bytes = lineage.predecessorPolicyText === null
-      ? Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`) : Buffer.from(lineage.predecessorPolicyText);
-    assert.equal(sha(bytes), lineage.predecessorPolicySha256);
-    policy = JSON.parse(bytes);
-  }
-  for (const addedSources of batches.filter(rows => rows.length > 0)) {
-    policy = buildAppendOnlyGovernancePolicyRegistration({
-      predecessorPolicyBytes: Buffer.from(`${JSON.stringify(policy, null, 2)}\n`), addedSources,
-    }).policy;
-  }
-  return policy;
-}
 async function readJson(file) { return JSON.parse(await readFile(file, "utf8")); }
 async function outputBytes(repositoryRoot) { return Promise.all(outputs.map((relative) => readFile(path.join(repositoryRoot, relative)))); }
