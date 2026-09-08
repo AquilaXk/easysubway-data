@@ -14,6 +14,7 @@ import {
 } from "./build-molit-nationwide-fixture.mjs";
 import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 import {
+  canonicalStationMappingHash,
   materializeBusanRouteTopology,
   parseCanonicalBusanStationMappings,
 } from "./materialize-busan-route-topology.mjs";
@@ -180,6 +181,153 @@ export function materializeRegionalBusanTimetablePrefix({
   return { busanTopologyFixture, daejeonFixture, busanTimetableFixture };
 }
 
+/**
+ * TEST-only projection: keep the caller's inventory metadata, but bind its
+ * snapshot-sensitive fields to the retained inputs that this fixture actually
+ * materializes. Production inventory and source artifacts stay unchanged.
+ */
+export function projectRegionalFixtureSourceBindings({
+  inventory,
+  busanTopology = null,
+  busanTimetable = null,
+  stationMapCsv = null,
+  gwangjuTopology = null,
+  molitStationMapCsv = null,
+  gwangjuRouteMapSnapshot = null,
+  gwangjuRouteMapSnapshotBytes = null,
+}) {
+  const projected = structuredClone(inventory);
+  if (busanTopology) {
+    const topology = source(projected, busanTopology.sourceId);
+    const snapshotId = fixtureSnapshotId(topology.id, busanTopology.capturedAt);
+    const topologyEvidence = {
+      ...topology.topologyAdmissionEvidence,
+      snapshotId,
+      snapshotPath: fixtureSnapshotPath(snapshotId),
+      capturedAt: busanTopology.capturedAt,
+      freshUntil: busanTopology.freshUntil,
+      stationCount: busanTopology.stationCount,
+      edgeCount: busanTopology.edgeCount,
+      excludedTransferCount: busanTopology.excludedTransferCount,
+      rawSha256: busanTopology.rawSha256,
+      contentSha256: busanTopology.contentSha256,
+    };
+    const canonicalMappings = parseCanonicalBusanStationMappings(stationMapCsv);
+    topology.topologyAdmissionEvidence = topologyEvidence;
+    topology.membershipAdmissionEvidence = {
+      ...topology.membershipAdmissionEvidence,
+      snapshotId,
+      verifiedAt: busanTopology.capturedAt,
+      stationCount: busanTopology.stationCount,
+      lineIds: structuredClone(busanTopology.lineIds),
+      membershipSourceId: topology.id,
+      membershipSourceRawSha256: busanTopology.rawSha256,
+      membershipSourceSnapshotSha256: busanTopology.scopeSha256,
+      mappingSha256: canonicalStationMappingHash(canonicalMappings, busanTopology.scope),
+      stationCodesSha256: sha256(JSON.stringify(busanTopology.scope.map(({ stationCode }) => stationCode))),
+      stationCodeSourceId: topology.id,
+      stationCodeSnapshotId: snapshotId,
+      stationCodeContentSha256: busanTopology.contentSha256,
+    };
+    if (busanTimetable) {
+      const timetable = source(projected, busanTimetable.sourceId);
+      timetable.scheduleAdmissionEvidence = {
+        ...timetable.scheduleAdmissionEvidence,
+        topologySourceId: topology.id,
+        topologySnapshotId: snapshotId,
+        topologyContentSha256: busanTopology.contentSha256,
+      };
+    }
+  }
+  if (gwangjuTopology) {
+    const topology = source(projected, gwangjuTopology.sourceId);
+    const membership = source(projected, "molit-urban-rail-full-route-gwangju-membership");
+    const snapshotId = fixtureSnapshotId(topology.id, gwangjuTopology.capturedAt);
+    const mappings = parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology);
+    const mappingSha256 = sha256(JSON.stringify(mappings));
+    const stationCodesSha256 = sha256(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
+    topology.topologyAdmissionEvidence = {
+      ...topology.topologyAdmissionEvidence,
+      snapshotId,
+      snapshotPath: fixtureSnapshotPath(snapshotId),
+      capturedAt: gwangjuTopology.capturedAt,
+      freshUntil: gwangjuTopology.freshUntil,
+      stationCount: gwangjuTopology.stationCount,
+      edgeCount: gwangjuTopology.edgeCount,
+      rawSha256: gwangjuTopology.rawSha256,
+      contentSha256: gwangjuTopology.contentSha256,
+    };
+    const membershipEvidence = {
+      ...membership.membershipAdmissionEvidence,
+      stationCount: mappings.length,
+      membershipSourceSnapshotSha256: mappings.sourceRawSha256,
+      mappingSha256,
+      stationCodesSha256,
+      stationCodeSourceId: topology.id,
+      stationCodeSnapshotId: snapshotId,
+      stationCodeContentSha256: gwangjuTopology.contentSha256,
+    };
+    membership.membershipAdmissionEvidence = membershipEvidence;
+    topology.membershipAdmissionEvidence = structuredClone(membershipEvidence);
+  }
+  if (gwangjuRouteMapSnapshot) {
+    if (!(gwangjuRouteMapSnapshotBytes instanceof Uint8Array)) {
+      throw new Error("regional Gwangju route map fixture bytes are required");
+    }
+    const routeMap = source(projected, gwangjuRouteMapSnapshot.sourceId);
+    const topology = source(projected, gwangjuRouteMapSnapshot.topologyLineages?.[0]?.sourceId);
+    const snapshotId = fixtureSnapshotId(routeMap.id, gwangjuRouteMapSnapshot.capturedAt);
+    const topologyEvidence = topology.topologyAdmissionEvidence;
+    routeMap.routeMapAdmissionEvidence = {
+      ...routeMap.routeMapAdmissionEvidence,
+      snapshotId,
+      snapshotPath: fixtureSnapshotPath(snapshotId),
+      snapshotSha256: sha256(gwangjuRouteMapSnapshotBytes),
+      capturedAt: gwangjuRouteMapSnapshot.capturedAt,
+      stationCount: gwangjuRouteMapSnapshot.stationCount,
+      rawStationCount: gwangjuRouteMapSnapshot.rawStationCount,
+      quarantinedCount: gwangjuRouteMapSnapshot.quarantinedCount,
+      datasetId: gwangjuRouteMapSnapshot.datasetId,
+      datasetIds: structuredClone(gwangjuRouteMapSnapshot.datasetIds),
+      rawSha256: gwangjuRouteMapSnapshot.rawSha256,
+      positionsSha256: gwangjuRouteMapSnapshot.positionsSha256,
+      lineIds: structuredClone(gwangjuRouteMapSnapshot.lineIds),
+      lineStationCounts: structuredClone(gwangjuRouteMapSnapshot.lineStationCounts),
+      observedDataUpdatedAt: gwangjuRouteMapSnapshot.observedDataUpdatedAt,
+      topologySourceId: topology.id,
+      topologySnapshotId: topologyEvidence.snapshotId,
+      topologyContentSha256: gwangjuTopology.contentSha256,
+      topologyLineages: gwangjuRouteMapSnapshot.topologyLineages.map((lineage) => ({
+        ...lineage,
+        snapshotId: topologyEvidence.snapshotId,
+        contentSha256: gwangjuTopology.contentSha256,
+      })),
+    };
+  }
+  return projected;
+}
+
+function source(inventory, sourceId) {
+  const matches = inventory?.sources?.filter(({ id }) => id === sourceId) ?? [];
+  if (matches.length !== 1) throw new Error(`regional fixture source is invalid: ${sourceId}`);
+  return matches[0];
+}
+
+function fixtureSnapshotId(sourceId, capturedAt) {
+  return `${sourceId}-${compactSeoulDate(capturedAt)}`;
+}
+
+function fixtureSnapshotPath(snapshotId) {
+  return `tools/datapack/sources/${snapshotId}.json`;
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
 export async function loadRegionalBusanTimetablePrefix({
   baseFixturePromise,
   inventoryPromise,
@@ -206,13 +354,19 @@ export async function loadRegionalBusanTimetablePrefix({
     readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  const projectedInventory = projectRegionalFixtureSourceBindings({
+    inventory,
+    busanTopology,
+    busanTimetable,
+    stationMapCsv,
+  });
   return {
     baseFixture,
     busanTopology,
     busanTimetable,
     daejeonTopology,
     daejeonTimetable,
-    inventory,
+    inventory: projectedInventory,
     stationMapCsv,
     molitStationMapCsv,
     ...materializeRegionalBusanTimetablePrefix({
@@ -221,7 +375,7 @@ export async function loadRegionalBusanTimetablePrefix({
       busanTimetable,
       daejeonTopology,
       daejeonTimetable,
-      inventory,
+      inventory: projectedInventory,
       stationMapCsv,
       molitStationMapCsv,
       topologyNow,
@@ -236,13 +390,19 @@ export async function loadRegionalGwangjuTimetablePrefix(options) {
     loadRegionalBusanTimetablePrefix(options),
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
   ]);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: regional.inventory,
+    gwangjuTopology,
+    molitStationMapCsv: regional.molitStationMapCsv,
+  });
   return {
     ...regional,
     gwangjuTopology,
+    inventory,
     gwangjuFixture: materializeRetainedGwangjuTestFixture({
       baseFixture: regional.busanTimetableFixture,
       topologySnapshot: gwangjuTopology,
-      inventory: regional.inventory,
+      inventory,
       canonicalStationMappings: parseMolitGwangjuStationMappings(
         regional.molitStationMapCsv,
         gwangjuTopology,
@@ -302,16 +462,24 @@ export async function loadRegionalGwangjuRouteMapPrefix(options) {
   ]);
   const gwangjuSnapshot = JSON.parse(gwangjuSnapshotBytes);
   const gwangjuSnapshotSha256 = sha256(gwangjuSnapshotBytes);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: regional.inventory,
+    gwangjuTopology: regional.gwangjuTopology,
+    molitStationMapCsv: regional.molitStationMapCsv,
+    gwangjuRouteMapSnapshot: gwangjuSnapshot,
+    gwangjuRouteMapSnapshotBytes: gwangjuSnapshotBytes,
+  });
   return {
     ...regional,
     gwangjuSnapshot,
     gwangjuSnapshotSha256,
+    inventory,
     gwangjuRouteMapFixture: materializeGwangjuRouteMapPositions({
       baseFixture: regional.accessibilityFixture,
       snapshot: gwangjuSnapshot,
       snapshotSha256: gwangjuSnapshotSha256,
       topologySnapshot: regional.gwangjuTopology,
-      inventory: regional.inventory,
+      inventory,
       now: gwangjuRouteMapNow,
     }),
   };

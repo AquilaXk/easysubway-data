@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import {
   materializeRegionalProductionCandidate,
   projectRegionalMaterializeFixture,
+  projectRegionalFixtureSourceBindings,
 } from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
@@ -68,7 +69,9 @@ async function inputs() {
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
   ]);
-  return [baseFixture, snapshot, inventory, parseCanonicalBusanStationMappings(stationMapCsv)];
+  return [baseFixture, snapshot, projectRegionalFixtureSourceBindings({
+    inventory, busanTopology: snapshot, stationMapCsv,
+  }), parseCanonicalBusanStationMappings(stationMapCsv)];
 }
 
 test("부산 topology snapshot을 실제 production pack 입력으로 materialize한다", async () => {
