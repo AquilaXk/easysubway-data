@@ -995,7 +995,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     now: new Date("2026-07-15T00:00:00Z"),
   });
   assert.equal(emptyPayloadBinding.status, "BOUND", "candidate bytes alone remain bound");
-  const emptyPayloadInput = bindAuthoritativeLaunchEvidence(goReport.evaluatorInput, {
+  const emptyPayloadInput = bindAuthoritativeLaunchEvidence({
     sourceEvidenceRaw: emptySourceRaw,
     serverEvidenceRaw: emptyServerRaw,
     mobileEvidenceRaw: emptyMobileRaw,

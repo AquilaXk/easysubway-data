@@ -313,7 +313,7 @@ function validateLaunchDenominatorReport(
     throw new Error("launch denominator candidate binding must match current artifacts");
   }
   if (candidateBinding) {
-    const authoritativeInput = bindAuthoritativeLaunchEvidence(report.evaluatorInput, {
+    const authoritativeInput = bindAuthoritativeLaunchEvidence({
       ...candidateArtifactRaw,
       candidateBinding,
     });

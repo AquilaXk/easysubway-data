@@ -794,6 +794,7 @@ test("release evidence는 canonical launch denominator report identity와 decisi
   assert.ok(evidenceStep, "release evidence bundle 스텝을 찾지 못함");
   assert.match(evidenceStep, /EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT/);
   assert.match(evidenceStep, /buildLaunchCandidateBinding/);
+  assert.doesNotMatch(evidenceStep, /launchTemplate|launchDenominatorTemplatePath|android-v1-launch-denominator-20260715/);
   assert.match(evidenceStep, /buildLaunchDenominatorReport/);
   assert.match(evidenceStep, /launchDenominatorReportRaw/);
   assert.match(evidenceStep, /verifiedAccessibilityScopeSha256:\s*launchReport\.scopes\.verifiedAccessibilityScope\.sha256/);

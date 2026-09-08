@@ -1085,9 +1085,6 @@ jobs:
           const buildSpecPath = process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH;
           const buildSpecRaw = fs.readFileSync(buildSpecPath, "utf8");
           const buildSpec = JSON.parse(buildSpecRaw);
-          const launchDenominatorTemplatePath =
-            "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
-          const launchTemplate = JSON.parse(fs.readFileSync(launchDenominatorTemplatePath, "utf8"));
           const productionScope = JSON.parse(
             fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_SCOPE_POLICY, "utf8"),
           );
@@ -1111,7 +1108,7 @@ jobs:
             mobileEvidenceRaw: optionalRaw(androidEvidence),
           };
           const candidateBinding = buildLaunchCandidateBinding(launchEvidenceRaw);
-          const evaluatorInput = bindAuthoritativeLaunchEvidence(launchTemplate.evaluatorInput, {
+          const evaluatorInput = bindAuthoritativeLaunchEvidence({
             ...launchEvidenceRaw,
             candidateBinding,
           });
