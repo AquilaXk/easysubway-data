@@ -166,102 +166,6 @@
       "fareStationLineMappingLedgerHash": "9c327840275be5c4583fc9e9cfdd16d2e4ecc06f660d08fd682bf9fe27d72390"
     },
     {
-      "id": "busan-transportation-route-map-positions",
-      "displayName": "부산교통공사_도시철도 노선도·사이버스테이션",
-      "owner": "부산교통공사",
-      "provider": "부산교통공사",
-      "providerDepartment": "IT지원단",
-      "sourceSystem": "부산교통공사·공공데이터포털",
-      "datasetUrl": "https://www.data.go.kr/data/15054957/fileData.do",
-      "datasetKind": "official-web-offline-snapshot",
-      "coverage": "부산교통공사 1~4호선 114개 역 노선도 좌표·label polygon·공식 연결선",
-      "coverageScope": {
-        "regionIds": [
-          "busan"
-        ],
-        "operatorIds": [
-          "busan-transportation"
-        ],
-        "lineIds": [
-          "line-ab1a041f6266",
-          "line-d74614a04530",
-          "line-d812a5bc1e5f",
-          "line-eb7b47920390"
-        ],
-        "sourceDomains": [
-          "route_map_positions"
-        ]
-      },
-      "requiredForProductionPack": false,
-      "productionUseAllowed": true,
-      "updateFrequency": "on-change",
-      "observedDataUpdatedAt": "2025-11-04",
-      "retrievedAt": "2026-07-20",
-      "license": {
-        "type": "PUBLIC_DATA_FREE_USE",
-        "name": "공공데이터포털 이용허락범위 제한 없음",
-        "attribution": "부산교통공사 · 공공데이터포털 이용허락범위 제한 없음",
-        "commercialUseAllowed": true,
-        "derivativeWorkAllowed": true,
-        "redistributionAllowed": true,
-        "evidenceUrl": "https://www.data.go.kr/data/15054957/fileData.do"
-      },
-      "fieldsProvided": [
-        "route_map_position",
-        "route_map_label_polygon",
-        "route_map_line_track"
-      ],
-      "capabilities": {
-        "schedule": {
-          "status": "UNSUPPORTED",
-          "productionUseAllowed": false,
-          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
-          "updateFrequency": "on-change",
-          "unsupportedNotes": "source does not provide scheduled timetable data"
-        },
-        "realtime": {
-          "status": "UNSUPPORTED",
-          "productionUseAllowed": false,
-          "liveEtaEligible": false,
-          "rateLimitStatus": "NOT_APPLICABLE",
-          "coverageStatus": "OFFLINE_ROUTE_MAP_SNAPSHOT_ONLY",
-          "updateFrequency": "on-change",
-          "unsupportedNotes": "source does not provide realtime arrivals"
-        },
-        "facility": {
-          "status": "UNSUPPORTED",
-          "productionUseAllowed": false,
-          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
-          "updateFrequency": "on-change",
-          "unsupportedNotes": "source does not provide accessibility facility records"
-        }
-      },
-      "routeMapAdmissionEvidence": {
-        "issue": 2379,
-        "materializer": "tools/datapack/materialize-busan-route-map-positions.mjs",
-        "verificationTest": "tools/datapack/materialize-busan-route-map-positions.test.mjs",
-        "snapshotId": "busan-transportation-route-map-positions-20260720",
-        "snapshotPath": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
-        "snapshotSha256": "6ef6db7e6127c4628ead06fb5d8140ea3ec209b5a60ea08316c592245a45cf53",
-        "capturedAt": "2026-07-20T11:13:18.000Z",
-        "stationCount": 114,
-        "htmlSha256": "491568c86676bd2ed26594af3be1da54e36f407fe4deff4b8b019e003e28f7f3",
-        "cssSha256": "2247ab29d55938677e544dd5cc264a0524dc68d01d6baf133be236df2bea4569",
-        "connectorEvidencePath": "tools/datapack/sources/busan-transportation-route-map-connectors-20260720.json",
-        "connectorEvidenceSha256": "16ab42c0e0949eb267169108f990f44e35aab8ac1f7efe789ded36f158019859",
-        "connectorAssetSetSha256": "ddc72cb299d80f51182d4e1c4b3a7e0e01ff99f16d54b6d6e9f4a0d935c03037",
-        "rawSha256": "bcb19874de43bd8d2de526e1d3f468285c7950725a17a6d5dc6ec820576b4028",
-        "positionsSha256": "59ef85ae09d81c05f189a3532c98cb74081217b080d036ffc9468cabc064f27d",
-        "connectorsSha256": "6ea628dab25b93c861e398637af643c3222eb282a5a107a6a83eecefceb8d81a",
-        "connectorCount": 110,
-        "connectorAssetCount": 32,
-        "topologySourceId": "busan-transportation-route-topology",
-        "topologySnapshotId": "busan-transportation-route-topology-20260720",
-        "topologyContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc",
-        "freshUntil": "2027-07-20T11:13:18.000Z"
-      }
-    },
-    {
       "id": "busan-transportation-route-topology",
       "displayName": "부산교통공사_도시철도 역간 거리·소요시간",
       "owner": "부산교통공사",
@@ -1861,93 +1765,6 @@
       }
     },
     {
-      "id": "gwangju-transportation-cyberstation-timetable",
-      "displayName": "광주교통공사 사이버스테이션 열차시각표",
-      "owner": "광주교통공사",
-      "provider": "광주교통공사",
-      "providerDepartment": "IT전략팀",
-      "sourceSystem": "광주교통공사 사이버스테이션",
-      "datasetUrl": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
-      "datasetKind": "official-web-timetable",
-      "coverage": "광주 1호선 4개 요일 유형 810개 완결 운행과 14171개 stop time",
-      "coverageScope": {
-        "regionIds": [
-          "gwangju"
-        ],
-        "operatorIds": [
-          "gwangju-metropolitan-rapid-transit"
-        ],
-        "lineIds": [
-          "line-e57a361e8892"
-        ],
-        "sourceDomains": [
-          "schedule_timetable"
-        ]
-      },
-      "requiredForProductionPack": false,
-      "productionUseAllowed": true,
-      "updateFrequency": "daily admission refresh",
-      "observedDataUpdatedAt": "2026-07-20",
-      "retrievedAt": "2026-07-20",
-      "license": {
-        "type": "PUBLIC_DATA_FREE_USE",
-        "name": "공공데이터포털 이용허락범위 제한 없음",
-        "attribution": "광주교통공사, 공공데이터포털 이용허락범위 제한 없음",
-        "commercialUseAllowed": true,
-        "derivativeWorkAllowed": true,
-        "redistributionAllowed": true,
-        "evidenceUrl": "https://www.data.go.kr/data/15111298/openapi.do"
-      },
-      "fieldsProvided": [
-        "service_calendar",
-        "trip",
-        "stop_time"
-      ],
-      "capabilities": {
-        "schedule": {
-          "status": "SUPPORTED",
-          "productionUseAllowed": true,
-          "coverageStatus": "GWANGJU_LINE_1_CURRENT_COMPLETE_TRIPS",
-          "updateFrequency": "daily admission refresh",
-          "unsupportedNotes": "계획 시간표이며 실시간 도착 정보가 아니다"
-        },
-        "realtime": {
-          "status": "UNSUPPORTED",
-          "productionUseAllowed": false,
-          "liveEtaEligible": false,
-          "rateLimitStatus": "NOT_APPLICABLE",
-          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
-          "updateFrequency": "daily admission refresh",
-          "unsupportedNotes": "source does not provide realtime arrivals"
-        },
-        "facility": {
-          "status": "UNSUPPORTED",
-          "productionUseAllowed": false,
-          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
-          "updateFrequency": "daily admission refresh",
-          "unsupportedNotes": "source does not provide accessibility facility records"
-        }
-      },
-      "scheduleAdmissionEvidence": {
-        "issue": 2383,
-        "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
-        "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
-        "snapshotId": "gwangju-transportation-cyberstation-timetable-20260720",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
-        "capturedAt": "2026-07-20T12:55:50.079Z",
-        "freshUntil": "2026-07-21T12:55:50.079Z",
-        "rowCount": 13362,
-        "departureCount": 13360,
-        "tripCount": 810,
-        "stopTimeCount": 14171,
-        "rawSha256": "852b75f79ca7cccf8dfefc65ee4fe226f833e6cd2e52f5e721efdfac2efdc31a",
-        "rowsSha256": "2eec08dc30a97c50fd349dc607e77677829881790b5ca896856caa4b9bbd3ccd",
-        "topologySourceId": "gwangju-transportation-route-topology",
-        "topologySnapshotId": "gwangju-transportation-route-topology-20260720",
-        "topologyContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43"
-      }
-    },
-    {
       "id": "gwangju-transportation-route-map-positions",
       "displayName": "광주교통공사_문화노선도 현황",
       "owner": "광주교통공사",
@@ -2923,7 +2740,7 @@
       "sourceSystem": "국가철도공단·공공데이터포털",
       "datasetUrl": "https://www.data.go.kr/data/15041326/fileData.do",
       "datasetKind": "official-file-data",
-      "coverage": "국가철도공단 data.go.kr FILE 15041326 용인에버라인 역위치 CSV 14역 admit(전대·에버랜드 FILE 잉여 무시, 운동장·송담대→용인중앙시장 rename join). coverage operator는 operator-b2d80436b438. canvas join + pack station_code(위경도 투영 금지).",
+      "coverage": "Official route-map position data joined to approved schematic geometry; geographic projection is not used.",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -2986,34 +2803,34 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs",
-        "snapshotId": "kric-everline-route-map-positions-20260725",
-        "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
-        "snapshotSha256": "28e9ca549190c7a0003d476208efc8f8bbe96cab8741643f0495cbb94e9e9a82",
+        "snapshotId": "kric-everline-route-map-positions-ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9",
+        "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9.json",
+        "snapshotSha256": "ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9",
         "capturedAt": "2026-07-25T06:00:00.000Z",
-        "stationCount": 14,
-        "rawStationCount": 14,
+        "stationCount": 15,
+        "rawStationCount": 15,
         "quarantinedCount": 0,
         "datasetId": "15041326",
         "datasetIds": [
           "15041326"
         ],
         "rawSha256": "2160020177352775418c863ebd9846ab5cc0df08c1da0f4b435dbf599b214187",
-        "positionsSha256": "cda5fa54ab66e79de7b6fa025c81c7276a3dbd21dbcf8d57db6a4097e3f2651a",
+        "positionsSha256": "29e4b1017adf05916ad38c7cce94dadb1658b40b4c203937cf7704680f1a9d72",
         "lineIds": [
           "line-828f04afc588"
         ],
         "lineStationCounts": {
-          "everline": 14
+          "everline": 15
         },
         "observedDataUpdatedAt": "2024-10-15",
         "topologySourceId": "capital-route-topology",
-        "topologySnapshotId": "capital-route-topology-20260724",
-        "topologyContentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
         "topologyLineages": [
           {
             "sourceId": "capital-route-topology",
-            "snapshotId": "capital-route-topology-20260724",
-            "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
             "lineId": "line-828f04afc588"
           }
         ],
@@ -3025,7 +2842,7 @@
           "status": "ADMITTED",
           "topologySnapshotId": "capital-route-topology-20260904",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-          "positionSnapshotSha256": "28e9ca549190c7a0003d476208efc8f8bbe96cab8741643f0495cbb94e9e9a82",
+          "positionSnapshotSha256": "ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9",
           "reviewedAt": "2026-09-04T17:29:18.428Z",
           "freshUntil": "2026-09-05T17:29:18.428Z",
           "topologyLineages": [
@@ -3036,7 +2853,8 @@
               "lineId": "line-828f04afc588"
             }
           ]
-        }
+        },
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a"
       }
     },
     {
@@ -5921,7 +5739,7 @@
       "sourceSystem": "국가철도공단·공공데이터포털",
       "datasetUrl": "https://www.data.go.kr/data/15041324/fileData.do",
       "datasetKind": "official-file-data",
-      "coverage": "국가철도공단 data.go.kr FILE 15041324 우이신설 역사정보 XLSX(정규화 CSV) 12역 admit(신설동 FILE 잉여 무시, 위경도는 KRIC 1294 overlay). coverage operator는 operator-3c623bf1a427. canvas join + pack station_code(위경도 투영 금지).",
+      "coverage": "Official route-map position data joined to approved schematic geometry; geographic projection is not used.",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -5984,12 +5802,12 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs",
-        "snapshotId": "kric-ui-sinseol-route-map-positions-20260725",
-        "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
-        "snapshotSha256": "1f5e9778790df73b73dd2faaa131415df6b87e977d61eb1d73e729f1c192d1c4",
+        "snapshotId": "kric-ui-sinseol-route-map-positions-ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf",
+        "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf.json",
+        "snapshotSha256": "ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf",
         "capturedAt": "2026-07-25T06:00:00.000Z",
-        "stationCount": 12,
-        "rawStationCount": 12,
+        "stationCount": 13,
+        "rawStationCount": 13,
         "quarantinedCount": 0,
         "datasetId": "15041324",
         "datasetIds": [
@@ -5997,22 +5815,22 @@
           "1294"
         ],
         "rawSha256": "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055",
-        "positionsSha256": "432088124437b63148bcacf7274472d02147f53d5e32a310c0c065f5e4cbd8ed",
+        "positionsSha256": "a3bbf767216f7074cfcdb7742807dcf43be259272b4a592f9e53b4b63a62560b",
         "lineIds": [
           "line-30886152e4f8"
         ],
         "lineStationCounts": {
-          "ui": 12
+          "ui": 13
         },
         "observedDataUpdatedAt": "2024-10-15",
         "topologySourceId": "capital-route-topology",
-        "topologySnapshotId": "capital-route-topology-20260724",
-        "topologyContentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
         "topologyLineages": [
           {
             "sourceId": "capital-route-topology",
-            "snapshotId": "capital-route-topology-20260724",
-            "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
             "lineId": "line-30886152e4f8"
           }
         ],
@@ -6024,7 +5842,7 @@
           "status": "ADMITTED",
           "topologySnapshotId": "capital-route-topology-20260904",
           "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-          "positionSnapshotSha256": "1f5e9778790df73b73dd2faaa131415df6b87e977d61eb1d73e729f1c192d1c4",
+          "positionSnapshotSha256": "ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf",
           "reviewedAt": "2026-09-04T17:29:18.428Z",
           "freshUntil": "2026-09-05T17:29:18.428Z",
           "topologyLineages": [
@@ -6035,7 +5853,8 @@
               "lineId": "line-30886152e4f8"
             }
           ]
-        }
+        },
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a"
       }
     },
     {
@@ -8561,6 +8380,92 @@
         "freshnessClassSha256": "f62b2344b7339d7c97fc26092b4093f8260a1ba2b3643c14ed7c6c2e762ef5eb",
         "evaluatedAt": "2026-09-04T20:50:46.368Z",
         "predecessorSnapshotIds": []
+      }
+    },
+    {
+      "id": "kric-nationwide-timetable-file",
+      "displayName": "전체_도시철도운행정보_20260630",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "국가철도공단 철도산업정보센터",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=900",
+      "datasetKind": "official-static-file",
+      "coverage": "광주 1호선 retained official timetable admission",
+      "coverageScope": {
+        "regionIds": [
+          "gwangju"
+        ],
+        "operatorIds": [
+          "gwangju-metropolitan-rapid-transit"
+        ],
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "productionUseAllowed": true,
+      "updateFrequency": "P7D",
+      "observedDataUpdatedAt": "2026-07-06",
+      "retrievedAt": "2026-09-07",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "unrestricted",
+        "attribution": "국가철도공단",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15013206/standard.do"
+      },
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "updateFrequency": "P7D",
+          "coverageStatus": "GWANGJU_LINE_1",
+          "unsupportedNotes": "Admission covers the retained Gwangju timetable only; other routes require separate admission."
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "updateFrequency": "not applicable",
+          "coverageStatus": "NO_REALTIME_FIELDS",
+          "unsupportedNotes": "Official static timetable does not provide this capability."
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "updateFrequency": "not applicable",
+          "coverageStatus": "NO_FACILITY_FIELDS",
+          "unsupportedNotes": "Official static timetable does not provide this capability."
+        }
+      },
+      "retainedScheduleAdmissionEvidence": {
+        "snapshotId": "kric-nationwide-timetable-file-b32951f497b40b973c7bde2c5fb6f00e3bdad278eaef28f59ea10326fb7f71b2",
+        "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+        "recordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
+        "observationIdentitySha256": "b32951f497b40b973c7bde2c5fb6f00e3bdad278eaef28f59ea10326fb7f71b2",
+        "receiptSha256": "fd65a999d8a93b671c2cd519d237998a810f0c32617680ac4ae3510b95621d91",
+        "observedAt": "2026-09-07T10:50:18.169Z",
+        "retainedContractSha256": "29105fe949c36437b3f86dbd579e51c17c30287d20812dc0e1434bdb9c10a21e",
+        "topologySourceId": "gwangju-transportation-route-topology",
+        "topologySnapshotId": "gwangju-transportation-route-topology-20260720",
+        "topologyContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43"
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "0b76feaf745458345d9efb46e346d85abf4b71b71ec61f5f62825422645084a4"
       }
     }
   ]

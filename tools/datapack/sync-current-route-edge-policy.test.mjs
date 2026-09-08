@@ -10,7 +10,7 @@ import {
   syncCurrentRouteEdgePolicyFile,
 } from "./sync-current-route-edge-policy.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
-import { readAdmittedItxRideEdgeSetSha256 } from "./apply-itx-topology-to-bundled-pack.mjs";
+import * as itxTopology from "./apply-itx-topology-to-bundled-pack.mjs";
 
 test("policy CLI는 current full-capital route output만 소비한다", () => {
   assert.equal(
@@ -34,12 +34,12 @@ test("current route edge policy는 exact RIDE partition digest만 동기화한�
   assert.throws(() => syncCurrentRouteEdgePolicy({ candidate: { policyVersion: "v1" }, routeEdges: [edge("a", "SUBWAY", "LOCAL"), edge("candidate-tamper", "ITX_CHEONGCHUN", "EXPRESS")] }, policy, admittedItxDigest), /ITX EXPRESS edge set identity mismatch/);
 });
 
-test("tracked ITX policy digest는 current approved source bytes에서 독립 유도된다", async () => {
+test("immutable ITX policy digest는 approved source bytes에서 독립 유도된다", async () => {
   const repositoryRoot = path.resolve(import.meta.dirname, "../..");
   const policy = JSON.parse(await readFile(path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"), "utf8"));
   assert.equal(
     policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256,
-    await readAdmittedItxRideEdgeSetSha256(repositoryRoot),
+    await itxTopology.readImmutableItxRideEdgeSetSha256(repositoryRoot),
   );
 });
 

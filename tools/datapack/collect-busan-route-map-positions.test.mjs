@@ -147,24 +147,24 @@ test("snapshot 시점과 다른 connector evidence는 결합하지 않는다", a
   );
 });
 
-test("#2379 inventory·candidate는 snapshot byte identity와 자유 이용 근거를 고정한다", async () => {
-  const [snapshotBytes, connectorEvidenceBytes, inventory, candidates] = await Promise.all([
+test("WEB_UI_ONLY Busan route-map assets stay outside production selection", async () => {
+  const [snapshotBytes, connectorEvidenceBytes, inventory, candidates, buildSpec] = await Promise.all([
     readFile(new URL("./sources/busan-transportation-route-map-positions-20260720.json", import.meta.url)),
     readFile(new URL("./sources/busan-transportation-route-map-connectors-20260720.json", import.meta.url)),
     readFile(new URL("./source-inventory.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("./source-candidates.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("./release/candidate-build-spec.json", import.meta.url), "utf8").then(JSON.parse),
   ]);
-  const source = inventory.sources.find(({ id }) => id === "busan-transportation-route-map-positions");
-  const candidate = candidates.candidates.find(({ id }) => id === source.id);
-  assert.equal(source.productionUseAllowed, true);
-  assert.equal(source.license.redistributionAllowed, true);
-  assert.equal(source.license.derivativeWorkAllowed, true);
-  assert.equal(source.license.evidenceUrl, "https://www.data.go.kr/data/15054957/fileData.do");
-  assert.equal(
-    source.routeMapAdmissionEvidence.snapshotSha256,
-    createHash("sha256").update(snapshotBytes).digest("hex"),
-  );
-  assert.equal(candidate.admissionStatus, "production_route_map_positions_materialized");
+  const sourceId = "busan-transportation-route-map-positions";
+  const source = inventory.sources.find(({ id }) => id === sourceId);
+  const candidate = candidates.candidates.find(({ id }) => id === sourceId);
+  assert.equal(source, undefined);
+  assert.ok(Array.isArray(buildSpec.sourceSnapshots));
+  assert.equal(buildSpec.sourceSnapshots.some(({ sourceId: id }) => id === sourceId), false);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  assert.equal(candidate.mobileEmbeddingAllowed, false);
+  assert.equal(candidate.productionInventoryReferenceId, undefined);
+  assert.equal(candidate.evidence.coverageAssessment, undefined);
   assert.equal(
     candidate.evidence.connectorEvidenceArtifactSha256,
     createHash("sha256").update(connectorEvidenceBytes).digest("hex"),
@@ -173,5 +173,4 @@ test("#2379 inventory·candidate는 snapshot byte identity와 자유 이용 근�
     JSON.parse(snapshotBytes).connectorEvidenceSha256,
     createHash("sha256").update(JSON.stringify(JSON.parse(connectorEvidenceBytes))).digest("hex"),
   );
-  assert.equal(candidate.evidence.coverageAssessment.requirementCount, 4);
 });

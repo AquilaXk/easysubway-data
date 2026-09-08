@@ -268,12 +268,15 @@ test("current canonical pack binds public positions and TRANSFER, never CyberSta
   const kric = rebound.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
   assert.equal(kric.snapshotId, next.snapshotId);
   assert.equal(rebound.sourceSnapshotIds.includes(next.snapshotId), true);
-  assert.equal(rebound.sourceSnapshotIds.includes("kric-station-convenience-standard-20260813T200604805Z"), false);
+  const previousFacility = old.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
+  assert.notEqual(previousFacility.snapshotId, next.snapshotId);
+  assert.equal(rebound.sourceSnapshotIds.includes(previousFacility.snapshotId), false);
   assert.deepEqual(
     rebound.sourceSnapshots
       .map(({ sourceId }) => sourceId)
       .filter((sourceId) => capitalSourceIds.slice(CURRENT_CAPITAL_BASE_SOURCE_IDS.length).includes(sourceId)),
-    ["incheon-transit-accessibility"],
+    old.sourceSnapshots.map(({ sourceId }) => sourceId)
+      .filter(sourceId => capitalSourceIds.slice(CURRENT_CAPITAL_BASE_SOURCE_IDS.length).includes(sourceId)),
   );
   assert.notEqual(rebound.sourceSnapshotSetHash, old.sourceSnapshotSetHash);
   const selectedIds = new Set(rebound.sourceSnapshotIds);

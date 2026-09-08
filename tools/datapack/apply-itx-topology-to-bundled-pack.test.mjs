@@ -707,6 +707,52 @@ test("expired schedule source는 fresh semantic topology-only admission으로만
   ), /approval identity is invalid/);
 });
 
+test("immutable integrity는 만료된 동일 identity를 검증하고 current release freshness는 거부한다", async () => {
+  const documents = await admittedDocuments();
+  const sourceSha256 = sha256(documents.sourceBytes);
+  const completenessSha256 = sha256(documents.completenessBytes);
+
+  assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    documents.reference,
+    documents.source,
+    documents.completeness,
+    sourceSha256,
+    completenessSha256,
+    { verificationMode: "immutable-integrity" },
+  ));
+  assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    documents.reference,
+    documents.source,
+    documents.completeness,
+    sourceSha256,
+    completenessSha256,
+    { verificationMode: "current", buildNow: new Date(documents.reference.freshUntil) },
+  ), /source artifact is expired/);
+
+  const tamperedSource = structuredClone(documents.source);
+  tamperedSource.stationCatalogPackIdentity.payloadSha256 = "0".repeat(64);
+  assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    documents.reference,
+    tamperedSource,
+    documents.completeness,
+    sourceSha256,
+    completenessSha256,
+    { verificationMode: "immutable-integrity" },
+  ), /station catalog identity mismatch/);
+  assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    documents.reference,
+    documents.source,
+    documents.completeness,
+    sourceSha256,
+    completenessSha256,
+    { verificationMode: "unknown" },
+  ), /unknown ITX topology verification mode/);
+});
+
 test("authenticated completeness도 exact station identity와 no-legacy를 요구한다", async (context) => {
   const cases = [
     ["missing", (completeness) => { delete completeness.stationCatalogPackIdentity; }],

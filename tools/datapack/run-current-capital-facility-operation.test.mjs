@@ -288,9 +288,9 @@ test("collect records failure after COLLECTION_STARTED and never resumes a provi
   const root = path.join(temporaryRoot, "operation");
   const repositoryRoot = await currentReleaseFixture(t);
   const sha = EXACT_MAIN;
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: sha, expectedFacilityHeadSha: sha, execFileImpl: exactMainExec });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: sha, expectedFacilityHeadSha: sha, execFileImpl: exactMainExec, now: NOW });
   let calls = 0;
-  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, serviceKey: "test", execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: args[0] === "sts" ? "123456789012\n" : "" }), collectImpl: async () => { calls += 1; throw new Error("network"); } }), /network/);
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, serviceKey: "test", now: NOW, execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: args[0] === "sts" ? "123456789012\n" : "" }), collectImpl: async () => { calls += 1; throw new Error("network"); } }), /network/);
   assert.equal(calls, 1);
   assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "COLLECTION_FAILED");
   await assert.rejects(collectCurrentCapitalFacilityOperation({ operationRoot: root, serviceKey: "test", collectImpl: async () => { calls += 1; } }), /PREPARED/);
@@ -301,11 +301,11 @@ test("collect journals a complete exact terminal observation as COLLECTED withou
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-"));
   const operationRoot = path.join(temporaryRoot, "operation");
   const repositoryRoot = await currentReleaseFixture(t);
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
   const plan = JSON.parse(await readFile(path.join(operationRoot, "plan.json"), "utf8"));
   const result = await collectCurrentCapitalFacilityOperation({
     repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: async (file, args) => file === "git" ? exactMainExec(file, args) : ({ stdout: args[0] === "sts" ? "123456789012\n" : "" }),
-    collectImpl: async () => terminalObservationFor(plan),
+    now: NOW, collectImpl: async () => terminalObservationFor(plan),
   });
   assert.deepEqual(result, { snapshotId: nextSnapshot(plan).snapshotId, requestCount: plan.counts.providerTupleCount, status: "COLLECTED" });
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "COLLECTED");
@@ -332,9 +332,9 @@ test("collection preflight accepts the scope-bound expanded source set", async (
 test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const root = path.join(temporaryRoot, "operation");
   const repositoryRoot = await currentReleaseFixture(t); const sha = EXACT_MAIN;
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: sha, expectedFacilityHeadSha: sha, execFileImpl: exactMainExec });
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, expectedMainSha: sha, expectedFacilityHeadSha: sha, execFileImpl: exactMainExec, now: NOW });
   let calls = 0;
-  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, serviceKey: "test", env: {}, execFileImpl: exactMainExec, collectImpl: async () => { calls += 1; } }), /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/);
+  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, serviceKey: "test", env: {}, now: NOW, execFileImpl: exactMainExec, collectImpl: async () => { calls += 1; } }), /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/);
   assert.equal(calls, 0); assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "PREPARED");
 });
 

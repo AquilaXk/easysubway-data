@@ -223,12 +223,12 @@ export async function publishImmutableObjectPlan({ plan, root, client = null, en
 async function putImmutableObject(client, root, step) {
   const bytes = await readAndVerifySource(root, step);
   if (await client.putObjectIfAbsent(step.objectKey, bytes, step)) return;
-  const existing = await client.readObject(step.objectKey);
+  const existing = await client.readObject(step.objectKey, { maxResponseBytes: step.sizeBytes });
   if (!exactStoredObject(existing, step)) throw new Error(`${step.objectKey} immutable violation`);
 }
 
 async function verifyImmutableObject(client, step) {
-  const stored = await client.readObject(step.objectKey);
+  const stored = await client.readObject(step.objectKey, { maxResponseBytes: step.sizeBytes });
   if (!exactStoredObject(stored, step)) throw new Error(`${step.objectKey} uploaded checksum mismatch`);
 }
 

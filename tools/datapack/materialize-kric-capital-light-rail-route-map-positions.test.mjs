@@ -3,37 +3,17 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { projectHistoricalRegionalMaterializeInventory } from "./materialize-test-fixture.mjs";
+import {
+  loadRegionalCapitalKricRouteMapPrefix,
+} from "./materialize-test-fixture.mjs";
 
-import {
-  parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
 import { listCapitalLightRailRouteMapPositionLines } from "./collect-kric-capital-light-rail-route-map-positions.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
-import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
-import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
-import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
-import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route-map-positions.mjs";
-import { materializeSeoul9Phase1RouteMapPositions } from "./materialize-seoul9-phase1-route-map-positions.mjs";
 import {
   materializeCapitalLightRailRouteMapPositions,
   materializedCapitalLightRailRouteMapPackContentHash,
 } from "./materialize-kric-capital-light-rail-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const topologyNow = new Date("2026-07-19T18:14:03.004Z");
-const timetableNow = new Date("2026-07-20T13:09:00.000Z");
-const accessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const gwangjuRouteMapNow = new Date("2026-07-25T02:00:00.000Z");
-const daejeonRouteMapNow = new Date("2026-07-25T03:00:00.000Z");
-const seoul9RouteMapNow = new Date("2026-07-25T05:00:00.000Z");
 const routeMapNow = new Date("2026-07-25T06:00:00.000Z");
 const SAMPLE_SOURCE_ID = "kric-gimpo-goldline-route-map-positions";
 const SAMPLE_LINE_ID = "line-5500c1600f71";
@@ -44,119 +24,9 @@ async function readJson(relativePath) {
 }
 
 async function inputs() {
-  const [
-    baseFixture,
-    busanTopology,
-    busanTimetable,
-    busanRouteMapBytes,
-    daejeonTopology,
-    daejeonTimetable,
-    gwangjuTopology,
-    gwangjuTimetable,
-    accessibilitySnapshot,
-    inventory,
-    stationMapCsv,
-    molitStationMapCsv,
-    gwangjuSnapshotBytes,
-    daejeonSnapshotBytes,
-    phase1SnapshotBytes,
-    sampleSnapshotBytes,
-    capitalTopology,
-  ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
-    readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),
-    readFile(path.join(root, "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json")),
-    readFile(path.join(root, "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json")),
-    readFile(path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`)),
-    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
-  ]);
-  const busanTopologyFixture = materializeBusanRouteTopology({
-    baseFixture,
-    snapshot: busanTopology,
-    inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: busanTopologyFixture,
-    timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
-  const busanTimetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const routeMapFixture = materializeBusanRouteMapPositions({
-    baseFixture: busanTimetableFixture,
-    snapshot: JSON.parse(busanRouteMapBytes),
-    snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const gwangjuFixture = materializeGwangjuTimetable({
-    baseFixture: routeMapFixture,
-    timetableSnapshot: gwangjuTimetable,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
-  const accessibilityFixture = materializeGwangjuAccessibility({
-    baseFixture: gwangjuFixture,
-    accessibilitySnapshot,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: accessibilityNow,
-  });
-  const gwangjuRouteMapFixture = materializeGwangjuRouteMapPositions({
-    baseFixture: accessibilityFixture,
-    snapshot: JSON.parse(gwangjuSnapshotBytes),
-    snapshotSha256: createHash("sha256").update(gwangjuSnapshotBytes).digest("hex"),
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: gwangjuRouteMapNow,
-  });
-  const daejeonRouteMapFixture = materializeDaejeonRouteMapPositions({
-    baseFixture: gwangjuRouteMapFixture,
-    snapshot: JSON.parse(daejeonSnapshotBytes),
-    snapshotSha256: createHash("sha256").update(daejeonSnapshotBytes).digest("hex"),
-    topologySnapshot: daejeonTopology,
-    inventory,
-    now: daejeonRouteMapNow,
-  });
-  const seoul9Fixture = materializeSeoul9Phase1RouteMapPositions({
-    baseFixture: daejeonRouteMapFixture,
-    snapshot: JSON.parse(phase1SnapshotBytes),
-    snapshotSha256: createHash("sha256").update(phase1SnapshotBytes).digest("hex"),
-    topologySnapshot: capitalTopology,
-    inventory,
-    now: seoul9RouteMapNow,
-  });
-  return {
-    baseFixture: seoul9Fixture,
-    sampleSnapshot: JSON.parse(sampleSnapshotBytes),
-    sampleSnapshotSha256: createHash("sha256").update(sampleSnapshotBytes).digest("hex"),
-    topologySnapshot: capitalTopology,
-    inventory,
-  };
+  return loadRegionalCapitalKricRouteMapPrefix(
+    path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`),
+  );
 }
 
 test("공식 김포골드라인 역사좌표 snapshot을 누적 production candidate pack에 materialize한다", async () => {
@@ -267,14 +137,67 @@ test("dual-operator 노선은 카탈로그 등재 집합과 정본이 같을 때
   }
 });
 
+test("current geometry successors are consumed with their immutable identity", async () => {
+  const inventory = await readJson("tools/datapack/source-inventory.json");
+  const schematicCanvas = await readJson("tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json");
+  let fixture = await readJson("tools/datapack/release/capital-production-reviewed-pack.json");
+  for (const line of listCapitalLightRailRouteMapPositionLines().filter(({ geometryLine }) => geometryLine)) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
+    const evidence = source.routeMapAdmissionEvidence;
+    const bytes = await readFile(path.join(root, evidence.snapshotPath));
+    const snapshot = JSON.parse(bytes);
+    const topologySnapshot = await readJson(`tools/datapack/sources/${evidence.topologySnapshotId}.json`);
+    fixture = materializeCapitalLightRailRouteMapPositions({
+      baseFixture: fixture, snapshot,
+      snapshotSha256: createHash("sha256").update(bytes).digest("hex"),
+      topologySnapshot, schematicCanvas, inventory, now: new Date(snapshot.capturedAt),
+    });
+    const rows = fixture.packs[0].routeMapPositions.filter(({ sourceId }) => sourceId === source.id);
+    assert.deepEqual(rows.map(({ stationId }) => stationId).sort(), snapshot.positions.map(({ stationId }) => stationId).sort());
+    assert.ok(rows.every(({ sourceSnapshotId }) => sourceSnapshotId === evidence.snapshotId));
+    assert.equal(fixture.packs[0].version, snapshot.capturedAt.slice(0, 10).replaceAll("-", ""));
+  }
+});
+
+test("self-consistent empty or incomplete snapshots cannot escape current topology", async () => {
+  const { baseFixture, sampleSnapshot, topologySnapshot, inventory } = await inputs();
+  for (const positions of [[], sampleSnapshot.positions.slice(1)]) {
+    const snapshot = structuredClone(sampleSnapshot);
+    snapshot.positions = positions;
+    snapshot.quarantinedPositions = [];
+    snapshot.stationCount = positions.length;
+    snapshot.quarantinedCount = 0;
+    snapshot.rawStationCount = positions.length;
+    snapshot.lineStationCounts = { gimpo: positions.length };
+    snapshot.scope = positions.map(({ lineId, stationCode, stationName, stationId }) => ({
+      lineId, stationCode, stationName, stationId,
+    }));
+    snapshot.scopeSha256 = createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex");
+    snapshot.positionsSha256 = createHash("sha256").update(JSON.stringify(positions)).digest("hex");
+    const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+    const changedInventory = structuredClone(inventory);
+    const evidence = changedInventory.sources.find(({ id }) => id === SAMPLE_SOURCE_ID).routeMapAdmissionEvidence;
+    evidence.snapshotSha256 = createHash("sha256").update(snapshotBytes).digest("hex");
+    evidence.stationCount = snapshot.stationCount;
+    evidence.rawStationCount = snapshot.rawStationCount;
+    evidence.quarantinedCount = snapshot.quarantinedCount;
+    evidence.lineStationCounts = structuredClone(snapshot.lineStationCounts);
+    evidence.positionsSha256 = snapshot.positionsSha256;
+    assert.throws(() => materializeCapitalLightRailRouteMapPositions({
+      baseFixture, snapshot, snapshotSha256: evidence.snapshotSha256,
+      topologySnapshot, inventory: changedInventory, now: routeMapNow,
+    }), /topology lineage mismatch/);
+  }
+});
+
 test("5노선 inventory evidence·snapshot byte identity가 모두 맞물린다", async () => {
   const inventory = await readJson("tools/datapack/source-inventory.json");
   for (const line of listCapitalLightRailRouteMapPositionLines()) {
+    const source = inventory.sources.find(({ id }) => id === line.sourceId);
     const snapshotBytes = await readFile(
-      path.join(root, "tools/datapack/sources", `${line.sourceId}-20260725.json`),
+      path.join(root, source.routeMapAdmissionEvidence.snapshotPath),
     );
     const snapshot = JSON.parse(snapshotBytes);
-    const source = inventory.sources.find(({ id }) => id === line.sourceId);
     assert.ok(source, line.sourceId);
     assert.equal(
       source.routeMapAdmissionEvidence.snapshotSha256,

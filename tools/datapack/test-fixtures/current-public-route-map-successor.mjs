@@ -82,21 +82,6 @@ function outputBytes(outputs, relative) {
   return matches[0].bytes;
 }
 
-function addFixtureTopologyScope(scope) {
-  const requiredSourceIds = scope?.productionSourceSet?.requiredSourceIds;
-  if (!Array.isArray(requiredSourceIds) || new Set(requiredSourceIds).size !== requiredSourceIds.length) {
-    throw new Error("synthetic production source scope is invalid");
-  }
-  const withoutTopology = requiredSourceIds.filter((sourceId) => sourceId !== CAPITAL_TOPOLOGY_SOURCE_ID);
-  const transferIndex = withoutTopology.indexOf(TRANSFER_SOURCE_ID);
-  if (transferIndex < 0 || transferIndex !== withoutTopology.length - 1) {
-    throw new Error("synthetic production source scope must keep TRANSFER terminal");
-  }
-  scope.productionSourceSet.requiredSourceIds = [
-    ...withoutTopology.slice(0, -1), CAPITAL_TOPOLOGY_SOURCE_ID, TRANSFER_SOURCE_ID,
-  ];
-}
-
 function addFixtureTopologySelection(candidate, snapshot) {
   const projectionIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === CAPITAL_TOPOLOGY_SOURCE_ID);
   const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID);
@@ -111,6 +96,208 @@ function addFixtureTopologySelection(candidate, snapshot) {
   }
   candidate.sourceSnapshotIds.splice(transferIndex, 0, snapshot.snapshotId);
   candidate.sourceSnapshots.splice(transferIndex, 0, snapshot.projection);
+}
+
+function requiredFixtureSourceHeads(inventory, snapshots) {
+  const requiredSources = inventory?.sources?.filter(({ requiredForProductionPack }) =>
+    requiredForProductionPack === true);
+  if (!Array.isArray(requiredSources) || requiredSources.length === 0
+    || new Set(requiredSources.map(({ id }) => id)).size !== requiredSources.length) {
+    throw new Error("synthetic required source inventory is invalid");
+  }
+  const { headsBySource } = validateLineage(snapshots);
+  return requiredSources.map((source) => {
+    const snapshotId = headsBySource[source.id];
+    const matches = snapshots.filter((snapshot) => snapshot.snapshotId === snapshotId);
+    if (typeof snapshotId !== "string" || matches.length !== 1 || matches[0].sourceId !== source.id) {
+      throw new Error("synthetic required source ledger head is incomplete");
+    }
+    return { source, snapshot: matches[0] };
+  });
+}
+
+async function materializeMissingFixtureRequiredSources({
+  root, now, inventory, snapshots, candidate, pack, governancePolicy, governanceBytes, freshnessPolicy,
+}) {
+  const selectedSourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
+  if (!Array.isArray(candidate?.sourceSnapshotIds) || candidate.sourceSnapshotIds.length !== selectedSourceIds?.length
+    || new Set(selectedSourceIds).size !== selectedSourceIds.length
+    || candidate.sourceSnapshots.some(({ snapshotId }, index) => snapshotId !== candidate.sourceSnapshotIds[index])) {
+    throw new Error("synthetic candidate source selection is invalid");
+  }
+  const missing = requiredFixtureSourceHeads(inventory, snapshots)
+    .filter(({ source }) => !selectedSourceIds.includes(source.id));
+  for (const { source, snapshot } of missing) {
+    const fixtureClock = now.toISOString();
+    if (JSON.stringify(source.coverageScope?.sourceDomains) !== JSON.stringify(["schedule_timetable"])) {
+      throw new Error("missing fixture source requires an explicit domain materializer");
+    }
+    // 운행을 추가하지 않는 독립 합성 행으로 출처를 증명한다. 기존 달력의 출처를 바꾸지 않는다.
+    const calendar = {
+      serviceId: `fixture-inactive-${source.id}`,
+      monday: false, tuesday: false, wednesday: false, thursday: false,
+      friday: false, saturday: false, sunday: false,
+      startDate: fixtureClock.slice(0, 10).replaceAll("-", ""),
+      endDate: fixtureClock.slice(0, 10).replaceAll("-", ""), timezone: "Asia/Seoul",
+    };
+    const capital = pack.packs[0];
+    if (capital.sourceInventory.some(({ id }) => id === source.id)
+      || capital.serviceCalendars.some(({ serviceId }) => serviceId === calendar.serviceId)) {
+      throw new Error("synthetic required source materialization already exists");
+    }
+    const sourceRecord = {
+      schemaVersion: 1,
+      artifactKind: "fixture-required-source-initial-record",
+      testOnly: true,
+      sourceId: source.id,
+      fixtureClock,
+      calendar,
+      terminalLedgerHead: {
+        snapshotId: snapshot.snapshotId,
+        rawSha256: snapshot.rawSha256,
+        contentSha256: snapshot.contentSha256,
+      },
+    };
+    const sourceRecordBytes = Buffer.from(`${canonicalJson(sourceRecord)}\n`);
+    const rawSha256 = sha256(sourceRecordBytes);
+    const contentSha256 = sha256(Buffer.from(canonicalJson({
+      sourceId: source.id,
+      fixtureClock,
+      sourceRecordSha256: rawSha256,
+    })));
+    const snapshotId = `${source.id}-fixture-initial-${contentSha256}`;
+    const sourceClass = freshnessPolicy.sourceClasses?.find(({ sourceIds }) => sourceIds?.includes(source.id));
+    if (!sourceClass || typeof sourceClass.basisField !== "string") {
+      throw new Error("synthetic required source freshness policy is incomplete");
+    }
+    const fixtureSnapshot = {
+      ...structuredClone(snapshot),
+      snapshotId,
+      previousSnapshotId: null,
+      observedAt: fixtureClock,
+      capturedAt: fixtureClock,
+      retrievedAt: fixtureClock,
+      sourceUpdatedAt: fixtureClock,
+      rawSha256,
+      contentSha256,
+      rawObjectUri: `oci://fixture/fixture-required-sources/${source.id}/${snapshotId}.json`,
+      rawObjectSha256: rawSha256,
+      rawReceiptSha256: sha256(Buffer.from(canonicalJson({ sourceId: source.id, snapshotId, rawSha256 }))),
+      byteSize: sourceRecordBytes.length,
+      redactedRequestFingerprint: sha256(Buffer.from(canonicalJson({ sourceId: source.id, snapshotId, testOnly: true }))),
+      schemaFingerprint: sha256(Buffer.from(canonicalJson({ artifactKind: sourceRecord.artifactKind, sourceId: source.id }))),
+      snapshotStatus: "LOCKED",
+      schemaStatus: "PASS",
+      licenseStatus: "PASS",
+      fetchStatus: "SUCCESS",
+      redistributionAllowed: true,
+      credentialRedacted: true,
+      testOnly: true,
+      admissionEvidence: {
+        ...(snapshot.admissionEvidence ?? {}),
+        testOnly: true,
+      },
+    };
+    fixtureSnapshot.freshnessExpiresAt = deriveFreshnessExpiresAt({
+      policy: freshnessPolicy,
+      sourceClassId: sourceClass.id,
+      basisAt: fixtureSnapshot[sourceClass.basisField],
+      providerValidUntil: sourceClass.providerValidityEndField
+        ? fixtureSnapshot[sourceClass.providerValidityEndField]
+        : undefined,
+      evaluationAt: fixtureClock,
+    });
+    fixtureSnapshot.freshUntil = fixtureSnapshot.freshnessExpiresAt;
+    fixtureSnapshot.rawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+      policy: governancePolicy,
+      sourceId: source.id,
+      retrievedAt: fixtureClock,
+    });
+    fixtureSnapshot.governancePolicyVersion = governancePolicy.policyVersion;
+    fixtureSnapshot.governancePolicySha256 = sha256(governanceBytes);
+    const admissionRecord = {
+      schemaVersion: 1,
+      artifactKind: "fixture-required-source-initial-admission-record",
+      testOnly: true,
+      sourceId: source.id,
+      snapshotId,
+      rawSha256,
+      contentSha256,
+      policyVersion: governancePolicy.policyVersion,
+      policySha256: fixtureSnapshot.governancePolicySha256,
+      licenseEvidenceHash: source.admissionEvidence?.licenseEvidenceHash,
+    };
+    const admissionRecordBytes = Buffer.from(`${canonicalJson(admissionRecord)}\n`);
+    const adminReviewRecordHash = sha256(admissionRecordBytes);
+    source.admissionEvidence = {
+      ...source.admissionEvidence,
+      adminReviewRecordHash,
+      testOnly: true,
+    };
+    fixtureSnapshot.adminReviewRecordHash = adminReviewRecordHash;
+    fixtureSnapshot.admissionEvidence.adminReviewRecordHash = adminReviewRecordHash;
+    source.registrationEvidence = {
+      testOnly: true, sourceId: source.id, snapshotId,
+      rawObjectUri: fixtureSnapshot.rawObjectUri, rawObjectSha256: rawSha256, contentSha256,
+    };
+    const sourceRecordPath = `tools/datapack/release/fixture-required-source-${contentSha256}-record.json`;
+    const admissionRecordPath = `tools/datapack/release/fixture-required-source-${adminReviewRecordHash}-admission-record.json`;
+    await Promise.all([
+      writeFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`), sourceRecordBytes),
+      writeFile(path.join(root, sourceRecordPath), sourceRecordBytes),
+      writeFile(path.join(root, admissionRecordPath), admissionRecordBytes),
+    ]);
+    capital.sourceInventory.push({
+      id: source.id, owner: source.owner, url: source.datasetUrl,
+      license: source.license.name, licenseStatus: "redistributable",
+      redistributionAllowed: source.license.redistributionAllowed,
+      updateFrequency: source.updateFrequency, updatedAt: fixtureClock,
+      fields: [...source.fieldsProvided], coverageScope: structuredClone(source.coverageScope),
+    });
+    capital.serviceCalendars.push({
+      ...calendar, sourceId: source.id, sourceSnapshotId: snapshotId,
+      providerRecordHash: sha256(canonicalJson(calendar)), evidenceHash: rawSha256,
+      updatedAt: fixtureClock,
+    });
+    capital.minimumTableRows.service_calendars = capital.serviceCalendars.length;
+    snapshots = snapshots.filter(({ sourceId }) => sourceId !== source.id);
+    snapshots.push(fixtureSnapshot);
+  }
+  const requiredHeads = requiredFixtureSourceHeads(inventory, snapshots);
+  const existingSourceIds = candidate.sourceSnapshots.map(({ sourceId }) => sourceId);
+  for (const { source, snapshot } of requiredHeads) {
+    if (existingSourceIds.includes(source.id)) continue;
+    const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID);
+    if (transferIndex < 0 || transferIndex !== candidate.sourceSnapshots.length - 1) {
+      throw new Error("synthetic candidate source selection must keep TRANSFER terminal");
+    }
+    const projection = deriveReleaseProjection({
+      snapshot,
+      sourceInventory: inventory,
+      governancePolicy,
+      governancePolicyBytes: governanceBytes,
+      freshnessPolicy,
+      nowMillis: now.getTime(),
+    });
+    candidate.sourceSnapshotIds.splice(transferIndex, 0, snapshot.snapshotId);
+    candidate.sourceSnapshots.splice(transferIndex, 0, projection);
+    existingSourceIds.splice(transferIndex, 0, source.id);
+  }
+  return snapshots;
+}
+
+function bindFixtureRequiredSourceScope(scope, candidate, inventory) {
+  const requiredSourceIds = inventory?.sources?.filter(({ requiredForProductionPack }) =>
+    requiredForProductionPack === true).map(({ id }) => id);
+  const selectedSourceIds = candidate?.sourceSnapshots?.map(({ sourceId }) => sourceId);
+  if (!Array.isArray(requiredSourceIds) || !Array.isArray(selectedSourceIds)
+    || requiredSourceIds.length !== selectedSourceIds.length
+    || new Set(requiredSourceIds).size !== requiredSourceIds.length
+    || requiredSourceIds.some((sourceId) => !selectedSourceIds.includes(sourceId))
+    || selectedSourceIds.at(-1) !== TRANSFER_SOURCE_ID) {
+    throw new Error("synthetic required source scope is invalid");
+  }
+  scope.productionSourceSet.requiredSourceIds = [...selectedSourceIds];
 }
 
 async function registerFixtureCapitalTopology({ root, now, paths, inventory, snapshots, topologyPath, topologyBytes }) {
@@ -298,6 +485,19 @@ async function regularSourceFile(root, relative) {
     throw new Error(`synthetic successor fixture source escapes root: ${relative}`);
   }
   return resolved;
+}
+
+export async function bindCurrentProductionScopePolicy(candidate, root) {
+  const productionScopePolicy = candidate.productionScopePolicy;
+  if (typeof productionScopePolicy?.path !== "string") {
+    throw new Error("synthetic candidate production scope policy is incomplete");
+  }
+  const policyBytes = await readFile(await regularSourceFile(await regularRoot(root), productionScopePolicy.path));
+  candidate.productionScopePolicy = {
+    ...productionScopePolicy,
+    sha256: sha256(policyBytes),
+  };
+  return jsonBytes(candidate);
 }
 
 async function regularDestination(root, relative) {
@@ -903,7 +1103,21 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   inventory = topologyRegistration.inventory;
   snapshots = topologyRegistration.snapshots;
   addFixtureTopologySelection(candidate, topologyRegistration.topologySnapshot);
-  addFixtureTopologyScope(scope);
+  snapshots = await materializeMissingFixtureRequiredSources({
+    root,
+    now,
+    inventory,
+    snapshots,
+    candidate,
+    pack,
+    governancePolicy: topologyRegistration.governancePolicy,
+    governanceBytes: topologyRegistration.governanceBytes,
+    freshnessPolicy: topologyRegistration.freshnessPolicy,
+  });
+  governancePolicy = topologyRegistration.governancePolicy;
+  governanceBytes = topologyRegistration.governanceBytes;
+  freshnessPolicy = topologyRegistration.freshnessPolicy;
+  bindFixtureRequiredSourceScope(scope, candidate, inventory);
   const inventoryBytes = jsonBytes(inventory);
   const scopeBytes = jsonBytes(scope);
   const selectedIds = new Set(candidate.sourceSnapshotIds);
@@ -912,7 +1126,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   ));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
-  const candidateBytes = jsonBytes(candidate);
+  const candidateBytes = await bindCurrentProductionScopePolicy(candidate, root);
   const packBytes = Buffer.from(`${JSON.stringify(pack)}\n`);
   const selectedSnapshots = snapshots.filter(({ snapshotId: selectedId }) => selectedIds.has(selectedId));
   bindSyntheticReleaseArtifacts({
@@ -1056,7 +1270,7 @@ export async function activateSyntheticCurrentStaticNetworkSuccessors(root, { no
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(selected));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
-  const candidateBytes = jsonBytes(candidate);
+  const candidateBytes = await bindCurrentProductionScopePolicy(candidate, root);
   Object.assign(request, {
     buildSpecSha256: sha256(candidateBytes),
     sourceSnapshotSetHash: candidate.sourceSnapshotSetHash,

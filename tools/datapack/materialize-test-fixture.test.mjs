@@ -145,6 +145,34 @@ test("current MOLIT observation binds all five regional mappings to the active l
     value.sourceRawSha256 === "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363"));
 });
 
+test("current MOLIT loader records supplied ledger and observation inputs while retaining admission checks", async () => {
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json")));
+  const recorded = [];
+  const readTracked = async (relativePath) => {
+    recorded.push(relativePath);
+    return readFile(path.join(root, relativePath));
+  };
+  const mappings = await loadCurrentMolitMembershipMappings({ inventory, readTracked });
+  const admission = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
+  const daejeonAdmission = inventory.sources.find(({ id }) =>
+    id === "molit-urban-rail-full-route-daejeon-membership").membershipAdmissionEvidence;
+  assert.equal(mappings.daejeon.length, daejeonAdmission.stationCount);
+  assert.equal(mappings.daejeon.sourceRawSha256, admission.rawSha256);
+  assert.deepEqual(recorded, [
+    "tools/datapack/release/source-snapshots.json",
+    `tools/datapack/sources/${admission.snapshotId}.json`,
+    inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+      .topologyAdmissionEvidence.snapshotPath,
+  ]);
+
+  const denied = structuredClone(inventory);
+  denied.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence.decision = "DENIED";
+  await assert.rejects(
+    loadCurrentMolitMembershipMappings({ inventory: denied, readTracked }),
+    /current MOLIT inventory admission is invalid/,
+  );
+});
+
 test("regional inventory projection restores only the exact historical MOLIT replay tuple", async () => {
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const input = JSON.parse(await readFile(inventoryPath));
@@ -186,15 +214,20 @@ test("current MOLIT loader rejects denied snapshots and incomplete dual evidence
   const admission = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
   const observationRelative = `tools/datapack/sources/${admission.snapshotId}.json`;
   const observationPath = path.join(repositoryRoot, observationRelative);
+  const topologyRelative = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+    .topologyAdmissionEvidence.snapshotPath;
+  const topologyPath = path.join(repositoryRoot, topologyRelative);
   await Promise.all([
     mkdir(path.dirname(inventoryPath), { recursive: true }),
     mkdir(path.dirname(snapshotsPath), { recursive: true }),
     mkdir(path.dirname(observationPath), { recursive: true }),
+    mkdir(path.dirname(topologyPath), { recursive: true }),
   ]);
   await Promise.all([
     writeFile(inventoryPath, JSON.stringify(inventory)),
     writeFile(snapshotsPath, JSON.stringify(snapshots)),
     writeFile(observationPath, await readFile(path.join(root, observationRelative))),
+    writeFile(topologyPath, await readFile(path.join(root, topologyRelative))),
   ]);
 
   const denied = structuredClone(inventory);

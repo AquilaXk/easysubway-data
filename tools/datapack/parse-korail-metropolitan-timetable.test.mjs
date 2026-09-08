@@ -1,0 +1,496 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { collectKasiHolidayCalendarFiles } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { collectKorailMetropolitanTimetableFile } from "./collect-korail-metropolitan-timetable-file.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { buildKorailTopologyRegistrationOutputs, commitKorailTopologyRegistrationOutputs } from "./register-korail-route-topology.mjs";
+import { runKorailTopologyRegistration } from "./run-korail-route-topology-registration.mjs";
+import { materializeKorailRouteTopology } from "./materialize-korail-route-topology.mjs";
+import {
+  normalizeKorailTrainClockCells,
+  parseKorailMetropolitanSheet,
+  projectKorailPassengerTopology,
+  projectKorailTopologyDurations,
+  bindKorailCanonicalStations,
+  korailServiceDayLabel,
+  buildKorailServiceCalendars,
+  buildKorailTimetableTables,
+  parseRetainedKorailWorkbook,
+  buildRetainedKorailTopologyObservation,
+  buildCollectedKorailTopologyObservation,
+  buildCollectedKorailTopologySnapshot,
+  prepareKorailTopologyPublication,
+  buildRetainedKorailTimetable,
+} from "./parse-korail-metropolitan-timetable.mjs";
+
+test("topology duration selects an observed witness without changing trip observations", () => {
+  const witness = (trainNo, durationSeconds) => ({ sheetName: "평일_상", trainNo, durationSeconds,
+    departure: { cellId: "B1", rawValue: "0.5", seconds: 43200 },
+    arrival: { cellId: "B2", rawValue: "source", seconds: 43200 + durationSeconds } });
+  const observation = { selection: { lineId: "L" }, stationBindings: [
+    { stationNumber: "A", stationId: "s-a" }, { stationNumber: "B", stationId: "s-b" }],
+    topology: { edges: [{ fromStationNumber: "A", toStationNumber: "B",
+      observations: [witness("T3", 90), witness("T2", 60), witness("T1", 60)] }] } };
+  const original = structuredClone(observation);
+  const rows = projectKorailTopologyDurations(observation);
+  assert.deepEqual(rows, [{ lineId: "L", fromStationId: "s-a", toStationId: "s-b", durationSeconds: 60,
+    derivationPolicy: "MIN_OBSERVED_SCHEDULED_DURATION_V1", witness: witness("T1", 60) }]);
+  observation.topology.edges[0].observations.reverse();
+  assert.deepEqual(projectKorailTopologyDurations(observation), rows);
+  observation.topology.edges[0].observations.reverse();
+  assert.deepEqual(observation, original);
+});
+
+test("calendar rows use supplied validity and holiday exceptions without duplicate weekend service", () => {
+  const input = { startDate: "20400101", endDate: "20400110",
+    serviceIds: { "평일": "weekday", "휴일": "holiday" },
+    publicHolidayDates: new Set(["20400108", "20400102", "20400120"]) };
+  const rows = buildKorailServiceCalendars(input);
+  assert.deepEqual(rows.serviceCalendars, [
+    { serviceId: "weekday", monday: true, tuesday: true, wednesday: true, thursday: true,
+      friday: true, saturday: false, sunday: false, startDate: input.startDate, endDate: input.endDate, timezone: "Asia/Seoul" },
+    { serviceId: "holiday", monday: false, tuesday: false, wednesday: false, thursday: false,
+      friday: false, saturday: true, sunday: true, startDate: input.startDate, endDate: input.endDate, timezone: "Asia/Seoul" },
+  ]);
+  assert.deepEqual(rows.serviceCalendarDates, [
+    { serviceId: "weekday", date: "20400102", exceptionType: 2 },
+    { serviceId: "holiday", date: "20400102", exceptionType: 1 },
+  ]);
+  assert.throws(() => buildKorailServiceCalendars({ ...input, startDate: "20400111" }));
+  assert.throws(() => buildKorailServiceCalendars({ ...input, serviceIds: { "평일": "same", "휴일": "same" } }));
+});
+
+test("owner calendar policy selects weekends and supplied public holidays without a year list", () => {
+  const publicHolidayDates = new Set(["20400102"]);
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400102", publicHolidayDates }), "휴일");
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400103", publicHolidayDates }), "평일");
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400107", publicHolidayDates }), "휴일");
+  assert.equal(korailServiceDayLabel({ serviceDate: "20400108", publicHolidayDates }), "휴일");
+  assert.throws(() => korailServiceDayLabel({ serviceDate: "20400230", publicHolidayDates }));
+  assert.throws(() => korailServiceDayLabel({ serviceDate: "20400103" }));
+});
+
+test("canonical join preserves IDs and rejects ambiguous names and inconsistent order", () => {
+  const stations = [{ id: "s-a", nameKo: "가역" }, { id: "s-b", nameKo: "나" }, { id: "s-c", nameKo: "다" }];
+  const stationLines = stations.map(({ id }, index) => ({ stationId: id, lineId: "line", lineSequence: index + 1 }));
+  const members = ["가", "나", "다"].map((stationName, index) => ({ stationName, stationNumber: `K${index}` }));
+  const orders = [{ stations: members }, { stations: [...members].reverse() }];
+  const bind = (overrides = {}) => bindKorailCanonicalStations({ stations, stationLines, lineId: "line", orders, ...overrides });
+  assert.deepEqual(bind(), members.map((row, index) => ({ ...row, stationId: stations[index].id })));
+  assert.throws(() => bind({ lineId: "other" }));
+  assert.throws(() => bind({ stations: [...stations.slice(0, 2), { id: "s-c", nameKo: "가" }] }));
+  assert.throws(() => bind({ orders: [{ stations: [members[0], members[2], members[1]] }] }));
+  assert.throws(() => bind({ orders: [{ stations: members.slice(1) }] }));
+});
+
+test("retained XLSX parsing binds exact bytes and keeps native sparse row coordinates", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "korail-workbook-test-"));
+  try {
+    await mkdir(path.join(root, "xl/_rels"), { recursive: true });
+    await mkdir(path.join(root, "xl/worksheets"));
+    await writeFile(path.join(root, "xl/workbook.xml"), '<workbook><sheets><sheet name="평일_상" r:id="rId1"/><sheet name="평일_하" r:id="rId2"/></sheets></workbook>');
+    await writeFile(path.join(root, "xl/_rels/workbook.xml.rels"), '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Target="worksheets/sheet2.xml"/></Relationships>');
+    const rows = [[10, "시발역", "가"], [12, "종착역", "나"], [14, "열차번호", "T"],
+      [20, "가", ""], [21, "", "0.5"], [22, "나", "0.51"], [23, "", ""]];
+    const xml = rows.map(([r, a, b]) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>${a}</t></is></c><c r="B${r}" t="inlineStr"><is><t>${b}</t></is></c></row>`).join("");
+    await writeFile(path.join(root, "xl/worksheets/sheet1.xml"), `<worksheet><sheetData>${xml}</sheetData></worksheet>`);
+    const reverseRows = [[10, "시발역", "나"], [12, "종착역", "가"], [14, "열차번호", "U"],
+      [20, "나", ""], [21, "", "0.5"], [22, "가", "0.51"], [23, "", ""]];
+    const reverseXml = reverseRows.map(([r, a, b]) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t>${a}</t></is></c><c r="B${r}" t="inlineStr"><is><t>${b}</t></is></c></row>`).join("");
+    await writeFile(path.join(root, "xl/worksheets/sheet2.xml"), `<worksheet><sheetData>${reverseXml}</sheetData></worksheet>`);
+    execFileSync("zip", ["-qr", "input.xlsx", "xl"], { cwd: root });
+    const inputPath = path.join(root, "input.xlsx");
+    const bytes = await readFile(inputPath);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const result = await parseRetainedKorailWorkbook({ inputPath, sha256 });
+    assert.equal(result.rawSha256, sha256);
+    assert.equal(result.rawByteLength, bytes.length);
+    assert.deepEqual(result.sheets[0].trains[0].stops[0].departure,
+      { cellId: "B21", rawValue: "0.5", seconds: 43200 });
+    const stationLineRecords = [
+      stationLineRecord("KORAIL", "대구선", "001", "가"),
+      stationLineRecord("KORAIL", "대구선", "002", "나"),
+    ];
+    const stationLineObservation = {
+      schemaVersion: 1,
+      artifactKind: "kric-current-station-line-observation",
+      sourceId: "kric-current-station-line-file",
+      observedAt: "2026-09-01T00:00:00.000Z",
+      rawFile: "station-line.xlsx",
+      rawByteLength: 12,
+      rawSha256: "a".repeat(64),
+      rowCount: stationLineRecords.length,
+      records: stationLineRecords,
+      recordsSha256: hash(Buffer.from(`${JSON.stringify(stationLineRecords)}\n`)),
+    };
+    const stationLineReceipt = {
+      schemaVersion: 1,
+      artifactKind: "kric-current-station-line-file-receipt",
+      sourceId: stationLineObservation.sourceId,
+      capturedAt: stationLineObservation.observedAt,
+      rawFile: stationLineObservation.rawFile,
+      byteLength: stationLineObservation.rawByteLength,
+      sha256: stationLineObservation.rawSha256,
+      credentialRedacted: true,
+    };
+    const canonicalCatalogPath = path.join(root, "catalog.json");
+    const catalogBytes = JSON.stringify({ packs: [{
+      stations: [{ id: "canonical-a", nameKo: "가역" }, { id: "canonical-b", nameKo: "나" }],
+      stationLines: [{ stationId: "canonical-a", lineId: "L", lineSequence: 1 },
+        { stationId: "canonical-b", lineId: "L", lineSequence: 2 }],
+    }] });
+    await writeFile(canonicalCatalogPath, catalogBytes);
+    const input = {
+      inputPath, sha256, stationLineObservation, stationLineReceipt, operatorName: "KORAIL", lineName: "대구선",
+      canonicalCatalogPath, canonicalCatalogSha256: hash(catalogBytes), lineId: "L",
+    };
+    const observation = await buildRetainedKorailTopologyObservation(input);
+    const collectionDirectory = path.join(root, "collected");
+    const receipt = await collectKorailMetropolitanTimetableFile({
+      url: "https://www.korail.com/file/cubedata/COMMON/jfile/test.xlsx", expectedSha256: sha256,
+      outputDirectory: collectionDirectory,
+      fetchImpl: async () => new Response(bytes, { headers: { "content-type": "application/octet-stream" } }),
+    });
+    const collected = await buildCollectedKorailTopologyObservation({ ...input, collectionDirectory });
+    assert.deepEqual(collected.topology, observation.topology);
+    assert.deepEqual(collected.sources.timetable.collectionReceipt, receipt);
+    assert.equal(collected.sources.timetable.collectionReceiptSha256,
+      hash(await readFile(path.join(collectionDirectory, "receipt.json"))));
+    const baseFreshness = JSON.parse(await readFile(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url)));
+    const freshnessPolicy = { ...baseFreshness, sourceClasses: [...baseFreshness.sourceClasses, { id: "fixture_topology", sourceIds: [receipt.sourceId],
+      basisField: "retrievedAt", reverificationCadence: "P2D" }] };
+    const snapshot = await buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
+      freshnessPolicy, evaluationAt: receipt.capturedAt });
+    assert.equal(snapshot.capturedAt, receipt.capturedAt);
+    assert.equal(snapshot.freshUntil, new Date(Date.parse(receipt.capturedAt) + 2 * 86400000).toISOString());
+    assert.equal(snapshot.stationCount, observation.stationBindings.length);
+    assert.equal(snapshot.edgeCount, collected.topologyDurations.length);
+    assert.deepEqual(snapshot.observation, collected);
+    assert.equal(snapshot.status, "PENDING");
+    const candidate = { id: receipt.sourceId, topologyRegistration: { sourceClassId: "fixture_topology",
+      retentionClassId: "standard-90d", ownerRole: "datapack-source-owner",
+      stewardRole: "datapack-data-steward", approvalRole: "datapack-release-approver" },
+      detailUrl: "https://www.data.go.kr/data/15052169/fileData.do",
+      evidence: { license: "unrestricted", provider: "한국철도공사",
+        collectionContract: { collector: "fixture FILE collector", maxRetries: 0 },
+        licenseEvidenceUrl: "https://www.data.go.kr/data/15052169/fileData.do" } };
+    const unregisteredPolicy = { ...baseFreshness, sourceClasses: [...baseFreshness.sourceClasses,
+      { ...freshnessPolicy.sourceClasses.at(-1), sourceIds: [] }] };
+    const governancePolicyBytes = await readFile(new URL("./source-governance-policy.json", import.meta.url));
+    const inventory = JSON.parse(await readFile(new URL("./source-inventory.json", import.meta.url)));
+    const license = { type: "unrestricted", provider: "한국철도공사", evidenceUrl: candidate.detailUrl,
+      redistributionAllowed: true };
+    const governanceEntry = { sourceId: candidate.id, ...candidate.topologyRegistration,
+      escalationHours: 1, alertRoute: "fixture-owner", licenseReview: { status: "APPROVED",
+        termsHash: hash(canonicalJson(license)), termsUrl: candidate.detailUrl,
+        reviewedProvider: license.provider, reviewedDatasetUrl: candidate.detailUrl,
+        reviewedAt: receipt.capturedAt, nextReviewAt: snapshot.freshUntil,
+        redistributionScopes: ["DERIVED_DATAPACK"], approvedByRole: candidate.topologyRegistration.approvalRole } };
+    const prepared = await prepareKorailTopologyPublication({ ...input, collectionDirectory,
+      candidate, freshnessPolicy: unregisteredPolicy, evaluationAt: receipt.capturedAt,
+      governancePolicyBytes, inventory, governanceEntry });
+    const predecessor = JSON.parse(governancePolicyBytes);
+    assert.deepEqual(prepared.projectedGovernancePolicy.sources, [...predecessor.sources, governanceEntry]);
+    assert.equal(prepared.projectedGovernancePolicy.registrationLineage.predecessorPolicySha256, hash(governancePolicyBytes));
+    assert.equal(prepared.rawRetentionExpiresAt, new Date(Date.parse(receipt.capturedAt)
+      + predecessor.retentionClasses.find(({ id }) => id === governanceEntry.retentionClassId).retentionDays * 86400000).toISOString());
+    assert.ok(!inventory.sources.some(({ id }) => id === candidate.id));
+    for (const change of [{ termsHash: hash("different license") }, { nextReviewAt: receipt.capturedAt },
+      { reviewedProvider: "different provider" }]) {
+      await assert.rejects(prepareKorailTopologyPublication({ candidate, freshnessPolicy: unregisteredPolicy,
+        governancePolicyBytes, inventory, evaluationAt: receipt.capturedAt,
+        governanceEntry: { ...governanceEntry, licenseReview: { ...governanceEntry.licenseReview, ...change } } }),
+      /governance license binding/);
+    }
+    assert.deepEqual(prepared.snapshot, snapshot);
+    assert.deepEqual(prepared.licenseEvidence, { type: "unrestricted", provider: "한국철도공사",
+      evidenceUrl: candidate.detailUrl, redistributionAllowed: true });
+    assert.match(prepared.licenseEvidenceSha256, /^[a-f0-9]{64}$/);
+    assert.deepEqual(unregisteredPolicy.sourceClasses.at(-1).sourceIds, []);
+    assert.deepEqual(prepared.publishPlan.steps.map(({ type }) => type),
+      ["put-immutable-bundle-object", "verify-immutable-bundle-object"]);
+    assert.ok(prepared.publishPlan.steps.every((step) => step.sha256 === sha256 && step.sizeBytes === bytes.length
+      && step.sourcePath === "timetable.xlsx" && step.objectKey.endsWith(`/${sha256}.xlsx`)));
+    const targets = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+      "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"];
+    const priorLedger = [{ sourceId: "unrelated-source", snapshotId: "unrelated-snapshot" }];
+    for (const [relative, value] of [
+      [targets[0], inventory], [targets[1], priorLedger], [targets[2], JSON.parse(governancePolicyBytes)],
+      [targets[3], unregisteredPolicy], ["tools/datapack/source-candidates.json", {
+        schemaVersion: 1, artifactKind: "production-source-candidates", candidates: [{
+        ...candidate, domain: "route_graph_topology", displayName: "fixture timetable",
+        coverageScope: { regionIds: ["fixture"], operatorIds: ["fixture"], lineIds: ["L"] } }] }],
+      ["membership.json", stationLineObservation], ["membership-receipt.json", stationLineReceipt],
+    ]) {
+      const file = path.join(root, relative);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+    }
+    const sourceInputPath = path.join(root, "registration-input.json"), receiptPath = path.join(root, "raw-receipt.json");
+    const observedDataUpdatedAt = new Date(Date.parse(receipt.capturedAt) - 86400000).toISOString().slice(0, 10);
+    await writeFile(sourceInputPath, JSON.stringify({ schemaVersion: 1, artifactKind: "korail-topology-registration-input",
+      collectionDirectory, stationLineObservationPath: path.join(root, "membership.json"),
+      stationLineReceiptPath: path.join(root, "membership-receipt.json"), canonicalCatalogPath,
+      canonicalCatalogSha256: hash(catalogBytes), operatorName: input.operatorName, lineName: input.lineName,
+      lineId: input.lineId, governanceEntry, observedDataUpdatedAt, sourceUpdatedAt: null }));
+    const rawReceipt = { schemaVersion: 1, artifactKind: "korail-metropolitan-timetable-raw-receipt",
+      sourceId: candidate.id, snapshotId: prepared.snapshot.snapshotId, contentSha256: prepared.snapshot.contentSha256,
+      collectionReceiptSha256: collected.sources.timetable.collectionReceiptSha256,
+      capturedAt: receipt.capturedAt, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${prepared.publishPlan.steps[0].objectKey}`,
+      rawObjectSha256: sha256, byteSize: bytes.length, storedAt: receipt.capturedAt,
+      rawRetentionExpiresAt: prepared.rawRetentionExpiresAt };
+    await writeFile(receiptPath, JSON.stringify(rawReceipt));
+    const registrationArgs = { repositoryRoot: root, sourceInputPath, receiptPath, now: new Date(receipt.capturedAt) };
+    const outputs = await buildKorailTopologyRegistrationOutputs(registrationArgs);
+    assert.deepEqual(outputs.map(({ relative }) => relative), targets);
+    const registeredSource = JSON.parse(outputs[0].bytes).sources.at(-1), registeredRow = JSON.parse(outputs[1].bytes).at(-1);
+    assert.equal(registeredSource.observedDataUpdatedAt, observedDataUpdatedAt);
+    assert.equal(registeredSource.retrievedAt, receipt.capturedAt.slice(0, 10));
+    assert.ok(!Object.hasOwn(registeredSource, "sourceUpdatedAt"));
+    assert.equal(registeredRow.sourceUpdatedAt, null);
+    assert.equal(registeredRow.governancePolicyVersion, predecessor.policyVersion);
+    assert.equal(registeredRow.governancePolicySha256, hash(outputs[2].bytes));
+    assert.deepEqual(JSON.parse(outputs[0].bytes).sources.slice(0, -1), inventory.sources);
+    assert.deepEqual(JSON.parse(outputs[1].bytes).slice(0, -1), priorLedger);
+    const inventoryProjectionPath = path.join(root, "registered-source-only.json");
+    await writeFile(inventoryProjectionPath, JSON.stringify({ ...inventory, sources: [registeredSource] }));
+    execFileSync(process.execPath, [path.join(import.meta.dirname, "validate-source-inventory.mjs"),
+      "--inventory", inventoryProjectionPath, "--candidates", path.join(root, "tools/datapack/source-candidates.json")],
+    { cwd: root, stdio: "pipe" });
+    const candidateFile = path.join(root, "tools/datapack/source-candidates.json");
+    const candidateBytes = await readFile(candidateFile);
+    await writeFile(candidateFile, Buffer.concat([candidateBytes, Buffer.from("\n")]));
+    await assert.rejects(commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs }), /input binding/);
+    await writeFile(candidateFile, candidateBytes);
+    assert.ok(outputs[0].inputs.some(({ absolute }) => absolute === path.join(root, registeredSource.topologyAdmissionEvidence.snapshotPath)));
+    await writeFile(receiptPath, JSON.stringify({ ...rawReceipt, rawObjectSha256: hash("wrong raw") }));
+    await assert.rejects(buildKorailTopologyRegistrationOutputs(registrationArgs), /RAW_RECEIPT/);
+    await writeFile(receiptPath, JSON.stringify(rawReceipt));
+    const originalSourceInput = await readFile(sourceInputPath);
+    await writeFile(sourceInputPath, JSON.stringify({ ...JSON.parse(originalSourceInput), observedDataUpdatedAt: "2040-02-30" }));
+    await assert.rejects(buildKorailTopologyRegistrationOutputs(registrationArgs), /SOURCE_INPUT/);
+    await writeFile(sourceInputPath, originalSourceInput);
+    await runKorailTopologyRegistration({ mode: "register-published", repositoryRoot: root,
+      sourceInputPath, receiptPath }, { clock: () => registrationArgs.now });
+    for (const output of outputs) assert.deepEqual(await readFile(path.join(root, output.relative)), output.bytes);
+    const originalPack = { ...JSON.parse(catalogBytes).packs[0], lines: [{ id: "L", operatorId: "fixture" }],
+      sourceInventory: [], networkEdges: [
+        { id: "old-ride", fromNodeId: "canonical-a:L", toNodeId: "canonical-b:L", edgeType: "RIDE", durationSeconds: 1 },
+        { id: "entry", fromNodeId: "gate", toNodeId: "canonical-a:L", edgeType: "ENTRY", durationSeconds: 20 },
+      ] };
+    const materialized = materializeKorailRouteTopology({ pack: originalPack, snapshot: prepared.snapshot,
+      inventory: JSON.parse(outputs[0].bytes), ledger: JSON.parse(outputs[1].bytes), now: registrationArgs.now });
+    assert.deepEqual(materialized.stations, originalPack.stations);
+    assert.deepEqual(materialized.networkEdges.find(({ id }) => id === "entry"), originalPack.networkEdges[1]);
+    const rides = materialized.networkEdges.filter(({ edgeType }) => edgeType === "RIDE");
+    assert.equal(rides.length, 2);
+    assert.deepEqual(new Set(rides.map(({ fromNodeId, toNodeId }) => `${fromNodeId}>${toNodeId}`)),
+      new Set(["canonical-a:L>canonical-b:L", "canonical-b:L>canonical-a:L"]));
+    assert.equal(rides[0].durationSeconds, 864);
+    assert.equal(rides[0].sourceSnapshotId, registeredRow.snapshotId);
+    assert.equal(rides[0].witness.departure.cellId, "B21");
+    await assert.rejects(buildCollectedKorailTopologySnapshot({ ...input, collectionDirectory,
+      freshnessPolicy: { sourceClasses: [] }, evaluationAt: receipt.capturedAt }), /freshness source/);
+    const holidayRaw = Buffer.from('<response><header><resultCode>00</resultCode></header><body><items><item><locdate>20400102</locdate><isHoliday>Y</isHoliday></item></items><totalCount>1</totalCount></body></response>');
+    const tableInput = { observation,
+      startDate: "20400101", endDate: "20400110",
+      holidayMonths: [{ raw: holidayRaw, sha256: hash(holidayRaw), year: 2040, month: 1 }],
+      serviceIds: { "평일": "weekday", "휴일": "holiday" }, routeIds: { up: "route-up", down: "route-down" },
+    };
+    const tables = buildKorailTimetableTables(tableInput);
+    assert.deepEqual(tables.transitRoutes, [{ id: "route-up", lineId: "L",
+      routeShortName: "대구선", routeLongName: "대구선 나 방면", directionName: "나 방면", timezone: "Asia/Seoul" },
+    { id: "route-down", lineId: "L", routeShortName: "대구선", routeLongName: "대구선 가 방면", directionName: "가 방면", timezone: "Asia/Seoul" }]);
+    assert.ok(tables.transitTrips.every((trip) => tables.transitRoutes.some(({ id }) => id === trip.routeId)));
+    assert.equal(tables.holidayCalendarSources[0].rawSha256, hash(holidayRaw));
+    assert.throws(() => buildKorailTimetableTables({ ...tableInput, endDate: "20400201" }), /month coverage/);
+    assert.throws(() => buildKorailTimetableTables({ ...tableInput, holidayMonths: [] }), /month coverage/);
+    assert.equal(tables.transitTrips[0].serviceId, "weekday");
+    const holidayDirectory = path.join(root, "holidays");
+    await collectKasiHolidayCalendarFiles({ outputDirectory: holidayDirectory, year: 2040, months: [1],
+      serviceKey: "test-key", fetchImpl: async () => ({ ok: true, arrayBuffer: async () => holidayRaw }) });
+    const combined = await buildRetainedKorailTimetable({ ...input, holidayDirectory,
+      startDate: tableInput.startDate, endDate: tableInput.endDate,
+      serviceIds: tableInput.serviceIds, routeIds: tableInput.routeIds });
+    assert.deepEqual(combined.observation, observation);
+    assert.deepEqual(combined.tables, tables);
+    assert.equal(combined.calendarManifestSha256, hash(await readFile(path.join(holidayDirectory, "months.json"))));
+    assert.deepEqual(tables.transitStopTimes.map(({ arrivalSeconds, departureSeconds, pickupType, dropOffType }) =>
+      ({ arrivalSeconds, departureSeconds, pickupType, dropOffType })), [
+      { arrivalSeconds: 43200, departureSeconds: 43200, pickupType: 0, dropOffType: 1 },
+      { arrivalSeconds: 44064, departureSeconds: 44064, pickupType: 1, dropOffType: 0 },
+      { arrivalSeconds: 43200, departureSeconds: 43200, pickupType: 0, dropOffType: 1 },
+      { arrivalSeconds: 44064, departureSeconds: 44064, pickupType: 1, dropOffType: 0 },
+    ]);
+    assert.equal(observation.topology.passengerTrips[0].stops[0].arrival.seconds, null);
+    assert.equal(observation.sources.catalog.rawSha256, hash(catalogBytes));
+    assert.deepEqual(observation.topology.passengerTrips[0].stops.map(({ stationId }) => stationId),
+      ["canonical-a", "canonical-b"]);
+    await assert.rejects(buildRetainedKorailTopologyObservation({ ...input, canonicalCatalogSha256: "0".repeat(64) }), /catalog/);
+    assert.deepEqual(observation.sources.timetable, {
+      sourceId: "korail-metropolitan-timetable-file", rawSha256: sha256, rawByteLength: bytes.length,
+    });
+    assert.equal(observation.sources.membership.rawSha256, stationLineObservation.rawSha256);
+    assert.deepEqual(observation.selection, { operatorName: "KORAIL", lineName: "대구선", lineId: "L" });
+    assert.deepEqual(observation.topology.edges[0].observations[0].departure,
+      { cellId: "B21", rawValue: "0.5", seconds: 43200 });
+    assert.equal(observation.topology.edges[0].fromStationNumber, "001");
+    assert.equal(observation.topology.edges[0].toStationNumber, "002");
+    assert.deepEqual(await readFile(inputPath), bytes);
+    await assert.rejects(parseRetainedKorailWorkbook({ inputPath, sha256: "0".repeat(64) }), /digest mismatch/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+function stationLineRecord(operatorName, lineName, stationNumber, stationName) {
+  const record = { operatorName, lineName, stationNumber, stationName };
+  return { ...record, sourceRowSha256: hash(JSON.stringify(record)) };
+}
+
+function hash(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+test("passenger topology excludes passing locations and preserves observed segment cells", () => {
+  const sheet = parseKorailMetropolitanSheet({ name: "평일_상", rows: [
+    { rowNumber: 1, cells: ["시발역", "가"] },
+    { rowNumber: 2, cells: ["종착역", "다"] },
+    { rowNumber: 3, cells: ["열차번호", "T1"] },
+    { rowNumber: 4, cells: ["가", ""] },
+    { rowNumber: 5, cells: ["", "0.5"] },
+    { rowNumber: 6, cells: ["통과", ""] },
+    { rowNumber: 7, cells: ["", "0.51"] },
+    { rowNumber: 8, cells: ["다", "0.52"] },
+    { rowNumber: 9, cells: ["", ""] },
+  ] });
+  const membership = [
+    { stationName: "다", stationNumber: "X1", sourceRowSha256: "a".repeat(64) },
+    { stationName: "가", stationNumber: "X9", sourceRowSha256: "b".repeat(64) },
+  ];
+  const result = projectKorailPassengerTopology({ sheets: [sheet], membership });
+  assert.deepEqual(result.orders[0].stations, [membership[1], membership[0]]);
+  assert.equal(result.edges.length, 1);
+  assert.deepEqual(result.passengerTrips, [{
+    sheetName: sheet.sheetName, dayLabel: sheet.dayLabel, directionLabel: sheet.directionLabel,
+    trainNo: "T1", originStationNumber: "X9", destinationStationNumber: "X1",
+    stops: [
+      { stationNumber: "X9", arrival: sheet.trains[0].stops[0].arrival, departure: sheet.trains[0].stops[0].departure },
+      { stationNumber: "X1", arrival: sheet.trains[0].stops[2].arrival, departure: sheet.trains[0].stops[2].departure },
+    ],
+  }]);
+  assert.deepEqual(result.edges[0], {
+    fromStationNumber: "X9", toStationNumber: "X1",
+    observations: [{ sheetName: "평일_상", trainNo: "T1", durationSeconds: 1728,
+      departure: sheet.trains[0].stops[0].departure, arrival: sheet.trains[0].stops[2].arrival }],
+  });
+  assert.throws(() => projectKorailPassengerTopology({ sheets: [sheet], membership: [
+    ...membership, { stationName: "없는역", stationNumber: "X2", sourceRowSha256: "c".repeat(64) },
+  ] }));
+  const missing = structuredClone(sheet);
+  missing.trains[0].stops[0].departure.seconds = null;
+  assert.throws(() => projectKorailPassengerTopology({ sheets: [missing], membership }));
+});
+
+test("passenger trips retain partial service endpoints without filling absent terminal times", () => {
+  const makeStop = (stationName, arrival, departure) => ({ stationName,
+    arrival: { cellId: "B1", rawValue: "", seconds: arrival },
+    departure: { cellId: "B2", rawValue: "", seconds: departure } });
+  const membership = ["가", "나", "다"].map((stationName, index) => ({
+    stationName, stationNumber: String(index), sourceRowSha256: "a".repeat(64),
+  }));
+  const sheet = { sheetName: "휴일_하", dayLabel: "휴일", directionLabel: "하", trains: [
+    { trainNo: "FULL", origin: "가", destination: "다",
+      stops: [makeStop("가", null, 10), makeStop("나", 20, 25), makeStop("다", 40, null)] },
+    { trainNo: "PART", origin: "나", destination: "다",
+      stops: [makeStop("가", null, null), makeStop("나", null, 50), makeStop("다", 70, null)] },
+  ] };
+  const { passengerTrips } = projectKorailPassengerTopology({ sheets: [sheet], membership });
+  assert.deepEqual(passengerTrips[1].stops.map(({ stationNumber }) => stationNumber), ["1", "2"]);
+  assert.equal(passengerTrips[1].stops[0].arrival.seconds, null);
+  assert.equal(passengerTrips[1].stops[1].departure.seconds, null);
+  assert.equal(passengerTrips[1].dayLabel, "휴일");
+});
+
+test("native train clocks preserve blanks, zero and midnight cell provenance", () => {
+  const cells = [
+    { cellId: "C5", rawValue: "0.99930555555555556" },
+    { cellId: "C6", rawValue: " " },
+    { cellId: "C7", rawValue: "0" },
+    { cellId: "C8", rawValue: "0.0055555555555558" },
+  ];
+  assert.deepEqual(normalizeKorailTrainClockCells(cells), cells.map((cell, index) => ({
+    ...cell, seconds: [86340, null, 86400, 86880][index],
+  })));
+  assert.deepEqual(normalizeKorailTrainClockCells([{ cellId: "D5", rawValue: "0" }]),
+    [{ cellId: "D5", rawValue: "0", seconds: 0 }]);
+});
+
+test("clock parsing rejects invalid evidence instead of rounding source precision", () => {
+  for (const rawValue of ["not-a-time", "-0.1", "1", "Infinity", "0x10", String(0.5 / 86400)]) {
+    assert.throws(() => normalizeKorailTrainClockCells([{ cellId: "C5", rawValue }]));
+  }
+  assert.throws(() => normalizeKorailTrainClockCells([
+    { cellId: "C5", rawValue: "0" }, { cellId: "C5", rawValue: "0" },
+  ]));
+});
+
+test("metropolitan sheet parser preserves shifted native row and cell provenance", () => {
+  const parsed = parseKorailMetropolitanSheet({
+    name: "평일_상",
+    rows: [
+      { rowNumber: 41, cells: ["시발역", "동대구"] },
+      { rowNumber: 48, cells: ["종착역", "대구"] },
+      { rowNumber: 56, cells: ["열차번호", "K123"] },
+      { rowNumber: 61, cells: ["동대구", "0.5"] },
+      { rowNumber: 62, cells: ["", "0.51"] },
+      { rowNumber: 66, cells: ["대구", "0.6"] },
+      { rowNumber: 67, cells: ["", "0.61"] },
+      { rowNumber: 70, cells: ["", ""] },
+    ],
+  });
+
+  assert.deepEqual(parsed, {
+    sheetName: "평일_상",
+    dayLabel: "평일",
+    directionLabel: "상",
+    trains: [{
+      trainNo: "K123",
+      origin: "동대구",
+      destination: "대구",
+      column: "B",
+      stops: [
+        { stationName: "동대구", arrival: { cellId: "B61", rawValue: "0.5", seconds: 43200 },
+          departure: { cellId: "B62", rawValue: "0.51", seconds: 44064 } },
+        { stationName: "대구", arrival: { cellId: "B66", rawValue: "0.6", seconds: 51840 },
+          departure: { cellId: "B67", rawValue: "0.61", seconds: 52704 } },
+      ],
+    }],
+  });
+});
+
+test("metropolitan sheet parser rejects malformed station pairs and endpoint mismatches", () => {
+  const headers = [
+    { rowNumber: 10, cells: ["시발역", "대구"] },
+    { rowNumber: 12, cells: ["종착역", "영천"] },
+    { rowNumber: 14, cells: ["열차번호", "K123"] },
+  ];
+  assert.throws(() => parseKorailMetropolitanSheet({
+    name: "휴일_하",
+    rows: [...headers, { rowNumber: 20, cells: ["동대구", "0.5"] }],
+  }));
+  assert.throws(() => parseKorailMetropolitanSheet({
+    name: "휴일_하",
+    rows: [...headers,
+      { rowNumber: 20, cells: ["동대구", "0.5"] },
+      { rowNumber: 21, cells: ["", "0.51"] },
+      { rowNumber: 22, cells: ["대구", "0.6"] },
+      { rowNumber: 23, cells: ["", "0.61"] },
+    ],
+  }));
+});

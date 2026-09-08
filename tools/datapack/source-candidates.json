@@ -67,13 +67,118 @@
         "tools/datapack/run-current-itx-collection.mjs",
         "tools/datapack/run-current-seoul-accessibility-registration.mjs",
         "tools/datapack/run-public-static-network-v2-operation.mjs",
+        "tools/datapack/run-retained-gwangju-timetable-refresh.mjs",
         "tools/datapack/validate-tago-schedule-sample.mjs"
       ]
     }
   ],
   "candidates": [
     {
+      "id": "kasi-public-holiday-calendar",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": { "regionIds": ["all"], "operatorIds": ["all-urban-metropolitan-rail-operators"] },
+      "displayName": "한국천문연구원 특일 정보 — 공휴일 달력",
+      "detailUrl": "https://www.data.go.kr/data/15012690/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "not_collected",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15012690/openapi.do",
+        "license": "unrestricted",
+        "formats": ["XML"],
+        "notes": "Register the existing monthly collector without claiming source admission. Retain response bytes and month coverage; operator-specific timetable categories remain separate. Existing transport retry behavior is unchanged."
+      },
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo",
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "ServiceKey",
+          "valueEncoding": "url-search-params-once", "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": ["ServiceKey", "solYear", "solMonth"],
+        "fixedParameters": { "pageNo": "1", "numOfRows": "100" },
+        "responseEnvelope": "response.header + response.body.items.item + response.body.totalCount",
+        "responseFields": ["locdate", "dateName", "isHoliday", "dateKind", "seq"],
+        "runner": {
+          "command": "node tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+          "arguments": ["--year", "[year]", "--months", "[requested-months]", "--output-directory", "[new-absolute-operation-directory]"],
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      }
+    },
+    {
+      "id": "korail-metropolitan-timetable-file",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": ["daegu"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-8f7ed01f290a"]
+      },
+      "displayName": "한국철도공사 광역전철 시각표 — 대경선",
+      "topologyRegistration": {
+        "sourceClassId": "route_graph_topology",
+        "retentionClassId": "standard-90d",
+        "ownerRole": "datapack-source-owner",
+        "stewardRole": "datapack-data-steward",
+        "approvalRole": "datapack-release-approver",
+        "derivationPolicy": "MIN_OBSERVED_SCHEDULED_DURATION_V1"
+      },
+      "detailUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+      "requestUrl": "https://www.korail.com/ticket/reserve/train-timeTable",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "retained_file_parsed",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+        "license": "unrestricted",
+        "formats": ["XLSX"],
+        "retainedReader": "tools/datapack/parse-korail-metropolitan-timetable.mjs#parseRetainedKorailWorkbook",
+        "provider": "한국철도공사",
+        "collectionContract": {
+          "collector": "tools/datapack/collect-korail-metropolitan-timetable-file.mjs#collectKorailMetropolitanTimetableFile",
+          "officialAttachmentOrigin": "https://www.korail.com",
+          "officialAttachmentPathPrefix": "/file/cubedata/COMMON/jfile/",
+          "expectedAttachmentSha256Required": true,
+          "requestTimeoutMs": 30000,
+          "maximumBytes": 134217728,
+          "maxRetries": 0,
+          "redirect": "error",
+          "receiptIsAdmission": false
+        },
+        "membershipSourceId": "kric-current-station-line-file",
+        "coverage": "DaeGyeong passenger topology and source-native scheduled segment observations",
+        "notes": "The distribution page is not a download operation. Retained attachment SHA is supplied to the reader; no provider runner, calendar applicability or production admission is claimed."
+      }
+    },
+    {
       "id": "kric-nationwide-timetable-file",
+      "retainedRoutePolicy": {
+        "routeNumber": "S2901",
+        "stationAliases": {
+          "광주송정": "광주송정역",
+          "학동증심사": "학동증심사입구",
+          "금남4가": "금남로4가",
+          "금남5가": "금남로5가",
+          "양동": "양동시장",
+          "컨벤션": "김대중컨벤션센터"
+        },
+        "excludedEndpointLabels": ["기지사업소", "옥동기지"]
+      },
+      "confirmationPolicy": {
+        "id": "official_static_timetable_confirmation",
+        "sourceIds": ["kric-nationwide-timetable-file"],
+        "basisField": "observedAt",
+        "reverificationCadence": "P7D",
+        "futureBasisAllowed": false,
+        "eventTriggers": ["official timetable revision notice"],
+        "providerValidityEndField": "serviceEffectiveUntil"
+      },
       "priority": "P0",
       "domain": "schedule_timetable",
       "coverageScope": {
@@ -104,6 +209,8 @@
       "evidence": {
         "retrievedAt": "2026-08-27",
         "detailPageId": "900",
+        "provider": "국가철도공단",
+        "providerDepartment": "철도산업정보센터",
         "licenseEvidenceUrl": "https://www.data.go.kr/data/15013206/standard.do",
         "license": "unrestricted",
         "formats": ["XLSX"],
@@ -381,11 +488,10 @@
       "detailUrl": "https://www.data.go.kr/data/15054957/fileData.do",
       "requestUrl": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
       "licenseEvidenceStatus": "confirmed_free_use",
-      "sampleEvidenceStatus": "validated_official_full_snapshot",
-      "admissionStatus": "production_route_map_positions_materialized",
-      "productionInventoryReferenceId": "busan-transportation-route-map-positions",
+      "sampleEvidenceStatus": "diagnostic_web_assets_only",
+      "admissionStatus": "preflight_only",
       "serviceKeyHandling": "not_required",
-      "mobileEmbeddingAllowed": true,
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "retrievedAt": "2026-07-20",
         "endpoint": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
@@ -415,20 +521,12 @@
         "connectorEvidenceArtifact": "tools/datapack/sources/busan-transportation-route-map-connectors-20260720.json",
         "connectorEvidenceArtifactSha256": "8f119b7c2cd8d9527abbbd8d6937f237a5ea9f03e70ff5f7ef425b8af10ce941",
         "evidenceArtifact": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
-        "coverageAssessment": {
-          "state": "SUPPORTED",
-          "requirementCount": 4,
-          "sourceDomain": "route_map_positions",
-          "artifactKind": "production",
-          "materializer": "tools/datapack/materialize-busan-route-map-positions.mjs",
-          "verificationTest": "tools/datapack/materialize-busan-route-map-positions.test.mjs"
-        },
         "coverageLimitations": [
-          "부산교통공사 1~4호선 114개 역에 한정한다",
-          "공식 HTML/CSS와 32개 PNG 연결선 snapshot을 offline materializer에서만 소비하며 runtime 네트워크 호출은 하지 않는다"
+          "공식 웹 자산은 진단용 byte evidence이며 production route-map input이 아니다",
+          "HTML/CSS·PNG 자산은 source snapshot 또는 mobile embedding으로 사용하지 않는다"
         ]
       },
-      "nextAction": "공식 사이버스테이션 변경 시 HTML/CSS·PNG hash와 114개 좌표·110개 연결선 snapshot을 함께 갱신한다"
+      "nextAction": "공식 API 또는 배포 가능한 정식 source contract를 확인하기 전까지 web assets는 진단 evidence로만 유지한다"
     },
     {
       "id": "busan-transportation-route-topology",
@@ -1346,87 +1444,6 @@
         }
       },
       "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
-    },
-    {
-      "id": "gwangju-transportation-cyberstation-timetable",
-      "priority": "P0",
-      "domain": "schedule_timetable",
-      "coverageScope": {
-        "regionIds": [
-          "gwangju"
-        ],
-        "operatorIds": [
-          "gwangju-metropolitan-rapid-transit"
-        ],
-        "lineIds": [
-          "line-e57a361e8892"
-        ]
-      },
-      "displayName": "광주교통공사 사이버스테이션 열차시각표",
-      "detailUrl": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
-      "requestUrl": "https://www.grtc.co.kr/cyber/portlet/subwayTimetable",
-      "operation": {
-        "method": "POST",
-        "endpoint": "https://www.grtc.co.kr/cyber/portlet/subwayTimetable",
-        "auth": {
-          "placement": "none"
-        },
-        "requiredParameters": [
-          "subwayid"
-        ],
-        "fixedParameters": {
-          "lineNo": "1"
-        },
-        "responseEnvelope": "official HTML fragment per station",
-        "responseFields": [
-          "dayCode",
-          "direction",
-          "hour",
-          "minute"
-        ],
-        "runner": {
-          "command": "node tools/datapack/collect-gwangju-cyberstation-timetable.mjs",
-          "arguments": [
-            "--output",
-            "/tmp/easysubway-gwangju-cyberstation-timetable.json"
-          ],
-          "requiredEnv": []
-        },
-        "secretPolicy": "credential-free-output"
-      },
-      "licenseEvidenceStatus": "covered_by_unrestricted_data_go_timetable_dataset_15111298",
-      "sampleEvidenceStatus": "validated_live_full_snapshot",
-      "admissionStatus": "production_materialized",
-      "mobileEmbeddingAllowed": false,
-      "evidence": {
-        "retrievedAt": "2026-07-20",
-        "officialTimetablePage": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
-        "officialRequestContractSource": "https://www.grtc.co.kr/cyber?timetable=19",
-        "licenseEvidenceUrl": "https://www.data.go.kr/data/15111298/openapi.do",
-        "license": "unrestricted",
-        "liveSampleRetrievedAt": "2026-07-20T12:55:50.079Z",
-        "liveSampleStationCount": 20,
-        "liveSampleRowCount": 13362,
-        "excludedPlaceholderCount": 1,
-        "normalizedBoundaryMinuteCount": 1,
-        "liveSampleContentSha256": "b050ed92cbdd555e22e987e4854a7d60b5293951992d6c14ae26c110f9b4fb5a",
-        "liveSampleRowsSha256": "2eec08dc30a97c50fd349dc607e77677829881790b5ca896856caa4b9bbd3ccd",
-        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
-        "materializedTripCount": 810,
-        "materializedStopTimeCount": 14171,
-        "admittedOfficialRowCount": 13360,
-        "generatedStopTimeCount": 811,
-        "quarantinedIncompleteTripRowCount": 2,
-        "coverageAssessment": {
-          "state": "SUPPORTED",
-          "requirementCount": 1,
-          "sourceDomain": "schedule_timetable",
-          "artifactKind": "production",
-          "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
-          "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs"
-        }
-      },
-      "nextAction": "24시간 timetable snapshot을 갱신해 immutable production pack을 재생성한다"
     },
     {
       "id": "gwangju-transportation-route-map-positions",
@@ -2589,20 +2606,20 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 14,
+        "stationCount": 15,
         "datasetId": "15041326",
         "datasetIds": [
           "15041326"
         ],
         "rawSha256": "2160020177352775418c863ebd9846ab5cc0df08c1da0f4b435dbf599b214187",
-        "positionsSha256": "cda5fa54ab66e79de7b6fa025c81c7276a3dbd21dbcf8d57db6a4097e3f2651a",
+        "positionsSha256": "29e4b1017adf05916ad38c7cce94dadb1658b40b4c203937cf7704680f1a9d72",
         "lineIds": [
           "line-828f04afc588"
         ],
         "lineStationCounts": {
-          "everline": 14
+          "everline": 15
         },
-        "evidenceArtifact": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
+        "evidenceArtifact": "tools/datapack/sources/kric-everline-route-map-positions-ac71a346f351d059fb3563b0baef920d9d294015028d15be98bb36184f040aa9.json",
         "coverageAssessment": {
           "state": "SUPPORTED",
           "requirementCount": 1,
@@ -2612,7 +2629,21 @@
           "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
         },
         "coverageLimitations": [
-          "data.go.kr FILE 15041326 용인에버라인 14역 admit(전대·에버랜드 잉여 무시)"
+          "Official route-map position data is limited to the admitted line and approved schematic geometry."
+        ],
+        "rawStationCount": 15,
+        "quarantinedCount": 0,
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineId": "line-828f04afc588"
+          }
         ]
       },
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
@@ -5396,21 +5427,21 @@
           "route_map_position",
           "route_map_label_polygon"
         ],
-        "stationCount": 12,
+        "stationCount": 13,
         "datasetId": "15041324",
         "datasetIds": [
           "15041324",
           "1294"
         ],
         "rawSha256": "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055",
-        "positionsSha256": "432088124437b63148bcacf7274472d02147f53d5e32a310c0c065f5e4cbd8ed",
+        "positionsSha256": "a3bbf767216f7074cfcdb7742807dcf43be259272b4a592f9e53b4b63a62560b",
         "lineIds": [
           "line-30886152e4f8"
         ],
         "lineStationCounts": {
-          "ui": 12
+          "ui": 13
         },
-        "evidenceArtifact": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
+        "evidenceArtifact": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-ea86b8629935d416de0e54bd1993cedeafbc61f6e825f97d69e56abbcebf4dbf.json",
         "coverageAssessment": {
           "state": "SUPPORTED",
           "requirementCount": 1,
@@ -5420,7 +5451,21 @@
           "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
         },
         "coverageLimitations": [
-          "data.go.kr FILE 15041324 우이신설 12역 admit(신설동 잉여 무시, 위경도 KRIC 1294 overlay)"
+          "Official route-map position data is limited to the admitted line and approved schematic geometry."
+        ],
+        "rawStationCount": 13,
+        "quarantinedCount": 0,
+        "schematicGeometrySha256": "fde0d2878949a9cce42261a783ddcfd5bfc112efa6c0670bb2e4f1be28d4d44a",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260904",
+        "topologyContentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260904",
+            "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
+            "lineId": "line-30886152e4f8"
+          }
         ]
       },
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"

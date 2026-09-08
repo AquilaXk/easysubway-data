@@ -10,7 +10,13 @@ import {
   buildCurrentCapitalRouteTopologyRegistrationOutputs,
   commitCurrentCapitalRouteTopologyRegistrationOutputs,
   readCurrentCapitalRouteTopologyAdmission,
+  recoverCurrentCapitalRouteTopologyRegistration,
 } from "./register-current-capital-route-topology.mjs";
+import { recoverKorailRouteTopologyRegistration } from "./register-korail-route-topology.mjs";
+import {
+  SOURCE_REGISTRATION_JOURNAL_PATH,
+  SOURCE_REGISTRATION_LOCK_PATH,
+} from "./lib/source-registration-transaction.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./test-fixtures/current-capital-topology-registration.mjs";
 import { evaluateSourceGovernance } from "./source-governance-policy.mjs";
 
@@ -93,6 +99,23 @@ async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = n
   return new Date(Math.max(Date.parse(captured) + 1_000, previousNow.valueOf() + 1));
 }
 
+test("shared freshness membership preserves Capital semantics without extending freshness", async (t) => {
+  const { root, now } = await fixture(t);
+  const policyPath = path.join(root, "release/product-gates/datapack-freshness-sla.json");
+  const policy = JSON.parse(await readFile(policyPath));
+  const sourceClass = policy.sourceClasses.find((entry) => entry.sourceIds.includes("capital-route-topology"));
+  const before = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
+  sourceClass.sourceIds.push("korail-metropolitan-timetable-file");
+  await writeJson(policyPath, policy);
+  const after = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
+  assert.equal(after.topology.freshUntil, before.topology.freshUntil);
+  assert.equal(after.freshnessClassSha256, before.freshnessClassSha256);
+  assert.deepEqual(after.freshnessPolicy, policy);
+  sourceClass.reverificationCadence = "P2D";
+  await writeJson(policyPath, policy);
+  await assert.rejects(readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now }), /policy binding/);
+});
+
 test("registered topology license identity satisfies the downstream governance evaluator", async (t) => {
   const { root, now } = await fixture(t);
   const { receiptPath } = await receiptFixture(root, now);
@@ -146,7 +169,7 @@ test("publishes exactly the protected topology bytes and builds an initial regis
     "tools/datapack/source-governance-policy.json",
     "release/product-gates/datapack-freshness-sla.json",
   ]);
-  const source = JSON.parse(outputs[0].bytes).sources.at(-1);
+  const source = JSON.parse(outputs[0].bytes).sources.find(({ id }) => id === "capital-route-topology");
   const snapshot = JSON.parse(outputs[1].bytes).at(-1);
   for (const key of ["id", "displayName", "owner", "provider", "providerDepartment", "sourceSystem", "datasetUrl", "datasetKind", "coverage"]) {
     assert.equal(typeof source[key], "string", `generated inventory ${key}`);
@@ -162,11 +185,27 @@ test("publishes exactly the protected topology bytes and builds an initial regis
 test("first registration binds the exact policy prestate without changing prior approvals", async (t) => {
   const { root, now } = await fixture(t);
   const policyPath = path.join(root, "tools/datapack/source-governance-policy.json");
-  const policy = JSON.parse(await readFile(policyPath));
-  const lineage = policy.registrationLineage;
-  const sourceIds = new Set(lineage.addedSourceIds);
-  const previousPolicyBytes = Buffer.from(lineage.predecessorPolicyText);
-  assert.equal(sha(previousPolicyBytes), lineage.predecessorPolicySha256);
+  let policy = JSON.parse(await readFile(policyPath));
+  const sourceIds = new Set();
+  let previousPolicyBytes;
+  let registrationSourceIds;
+  // 이후 source 등록 수에 의존하지 않고 대상 등록 직전의 검증된 원문까지 되감는다.
+  do {
+    const lineage = policy.registrationLineage;
+    assert.ok(lineage, "capital topology registration must exist in policy lineage");
+    registrationSourceIds = lineage.addedSourceIds;
+    assert.deepEqual(policy.sources.slice(-registrationSourceIds.length).map(({ sourceId }) => sourceId), registrationSourceIds);
+    registrationSourceIds.forEach((id) => sourceIds.add(id));
+    const predecessor = { ...policy, sources: policy.sources.slice(0, -registrationSourceIds.length) };
+    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
+    else predecessor.registrationLineage = lineage.predecessorLineage;
+    previousPolicyBytes = lineage.predecessorPolicyText === null
+      ? Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`)
+      : Buffer.from(lineage.predecessorPolicyText);
+    assert.equal(sha(previousPolicyBytes), lineage.predecessorPolicySha256);
+    assert.deepEqual(JSON.parse(previousPolicyBytes), predecessor);
+    policy = predecessor;
+  } while (!registrationSourceIds.includes("capital-route-topology"));
   await writeFile(policyPath, previousPolicyBytes);
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const inventory = JSON.parse(await readFile(inventoryPath));
@@ -185,7 +224,7 @@ test("first registration binds the exact policy prestate without changing prior 
   const output = outputs.find(({ relative }) => relative === "tools/datapack/source-governance-policy.json");
   assert.deepEqual(output.prestateBytes, previousPolicyBytes);
   assert.equal(JSON.parse(output.bytes).registrationLineage.predecessorPolicySha256, sha(previousPolicyBytes));
-  assert.deepEqual(JSON.parse(output.bytes).sources.slice(0, -sourceIds.size), JSON.parse(previousPolicyBytes).sources);
+  assert.deepEqual(JSON.parse(output.bytes).sources.slice(0, -registrationSourceIds.length), JSON.parse(previousPolicyBytes).sources);
 });
 
 test("places capital topology evidence on the source schema", async () => {
@@ -272,4 +311,50 @@ test("rolls a prepared transaction back across all registration targets", async 
   await assert.rejects(commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, outputs, failAfter: 0 }), /injected capital topology transaction failure/);
   assert.deepEqual(await Promise.all(targets.map((target) => readFile(target))), before);
   await assert.rejects(access(path.join(root, "tools/datapack/.capital-route-topology-registration-transaction.json")));
+});
+
+test("shared registration lock blocks both recovery entrypoints", async (t) => {
+  const { root } = await fixture(t);
+  await mkdir(path.join(root, SOURCE_REGISTRATION_LOCK_PATH));
+
+  await assert.rejects(
+    recoverCurrentCapitalRouteTopologyRegistration({ repositoryRoot: root }),
+    /capital topology transaction lock residue exists/,
+  );
+  await assert.rejects(
+    recoverKorailRouteTopologyRegistration({ repositoryRoot: root }),
+    /Korail route topology transaction lock residue exists/,
+  );
+});
+
+test("Korail recovery completes shared Capital journals and preserves output bytes", async (t) => {
+  const { root, now } = await fixture(t);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const journalPath = path.join(root, SOURCE_REGISTRATION_JOURNAL_PATH);
+  const targets = outputs.map(({ relative }) => path.join(root, relative));
+  const before = outputs.map(({ prestateBytes }) => prestateBytes);
+  const after = outputs.map(({ bytes }) => bytes);
+  const journal = (state) => Buffer.from(JSON.stringify({
+    schemaVersion: 1,
+    state,
+    records: outputs.map(({ relative, prestateBytes, bytes }) => ({
+      relative,
+      beforeBase64: prestateBytes.toString("base64"),
+      beforeSha256: sha(prestateBytes),
+      nextBase64: bytes.toString("base64"),
+      nextSha256: sha(bytes),
+    })),
+  }));
+
+  await Promise.all(targets.map((target, index) => writeFile(target, after[index])));
+  await writeFile(journalPath, journal("PREPARED"));
+  await recoverKorailRouteTopologyRegistration({ repositoryRoot: root });
+  assert.deepEqual(await Promise.all(targets.map((target) => readFile(target))), before);
+  await assert.rejects(access(journalPath));
+
+  await writeFile(journalPath, journal("COMMITTED"));
+  await recoverKorailRouteTopologyRegistration({ repositoryRoot: root });
+  assert.deepEqual(await Promise.all(targets.map((target) => readFile(target))), after);
+  await assert.rejects(access(journalPath));
 });

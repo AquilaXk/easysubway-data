@@ -5,8 +5,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
-const SOURCE_ID = "gwangju-transportation-cyberstation-timetable";
+const SOURCE_ID = "kric-nationwide-timetable-file";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
 const MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-gwangju-membership";
 const MEMBERSHIP_RAW_SOURCE_ID = "molit-urban-rail-full-route";
@@ -17,38 +19,18 @@ export const GWANGJU_LINES = Object.freeze([
 ]);
 const PACK_ID = "nationwide-gwangju-schedule";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
-const STATION_CODES = Object.freeze(Array.from({ length: 20 }, (_, index) => String(100 + index)));
-const EXPECTED_TRIP_COUNT = 810;
-const EXPECTED_OFFICIAL_STOP_TIME_COUNT = 13_360;
-const EXPECTED_GENERATED_STOP_TIME_COUNT = 811;
-const EXPECTED_STOP_TIME_COUNT = 14_171;
-const SERVICES = Object.freeze({
-  WEEK: "gwangju-weekday-2026",
-  SAT: "gwangju-saturday-2026",
-  HOLI: "gwangju-holiday-2026",
-  DAYOFF: "gwangju-sunday-2026",
-});
-const HOLIDAYS_2026 = Object.freeze([
-  "20260101", "20260216", "20260217", "20260218", "20260301", "20260302", "20260501",
-  "20260505", "20260524", "20260525", "20260603", "20260606", "20260717", "20260815",
-  "20260817", "20260924", "20260925", "20260926", "20261003", "20261005", "20261009", "20261225",
-]);
-const QUARANTINED_KEYS = Object.freeze([
-  "DAYOFF:st:119:0756",
-  "DAYOFF:st:118:0759",
-]);
 
 export function materializeGwangjuTimetable({
   baseFixture,
-  timetableSnapshot,
+  retainedTimetable,
   topologySnapshot,
   inventory,
   canonicalStationMappings,
   now = new Date(),
 }) {
-  validateTimetableSnapshot(timetableSnapshot);
   validateTopologySnapshot(topologySnapshot);
-  const sources = requiredSources(inventory, timetableSnapshot, topologySnapshot, canonicalStationMappings, now);
+  const retained = validateRetainedTimetable(retainedTimetable, topologySnapshot, canonicalStationMappings);
+  const sources = requiredSources(inventory, retained, topologySnapshot, canonicalStationMappings, now);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -64,65 +46,25 @@ export function materializeGwangjuTimetable({
   pack.sourceInventory.push(
     packSource(sources.membership, sources.membership.membershipAdmissionEvidence.verifiedAt),
     packSource(sources.topology, topologySnapshot.capturedAt),
-    packSource(sources.timetable, timetableSnapshot.capturedAt),
+    packSource(sources.timetable, retained.projection.source.observedAt),
   );
   pack.operators.push({ id: OPERATOR_ID, nameKo: "광주교통공사", nameEn: "" });
   pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "광주 1호선", nameEn: "", color: "#009088" });
 
-  const stations = addStationsAndTopology(pack, topologySnapshot, canonicalStationMappings, sources);
-  const durations = new Map(topologySnapshot.edges.map((edge) => [
-    `${edge.fromStationCode}:${edge.toStationCode}`, edge.durationSeconds,
-  ]));
-  const { trips, quarantinedRows, repairedStopCount } = reconstructTrips(
-    timetableSnapshot.rows,
-    stations,
-    durations,
-  );
-  if (JSON.stringify(quarantinedRows.map(rowKey)) !== JSON.stringify(QUARANTINED_KEYS)
-    || repairedStopCount !== 1) {
-    throw new Error("Gwangju timetable quarantine tuple mismatch");
-  }
-
-  const scheduleProvenance = provenanceForSchedule(sources.timetable, timetableSnapshot, topologySnapshot);
-  addCalendars(pack, scheduleProvenance);
-  addRoutes(pack, scheduleProvenance);
-  for (const trip of trips) {
-    const tripProvenance = { ...scheduleProvenance, providerRecordHash: trip.providerRecordHash };
-    pack.transitTrips.push(withProvenance({
-      id: trip.id,
-      routeId: `route-gwangju-1-${trip.direction}`,
-      serviceId: SERVICES[trip.dayCode],
-      tripHeadsign: trip.endName.replace(/역$/u, ""),
-      directionId: trip.direction === "pd" ? "increasing" : "decreasing",
-      servicePattern: "LOCAL",
-      serviceClass: "SUBWAY",
-      serviceDayStartSeconds: 0,
-    }, tripProvenance));
-    for (const [index, stop] of trip.stops.entries()) {
-      pack.transitStopTimes.push(withProvenance({
-        tripId: trip.id,
-        stopSequence: index + 1,
-        stationId: stop.stationId,
-        lineId: LINE_ID,
-        arrivalSeconds: stop.seconds,
-        departureSeconds: stop.seconds,
-        pickupType: index === trip.stops.length - 1 ? 1 : 0,
-        dropOffType: index === 0 ? 1 : 0,
-        ...(stop.repairReason ? { repairReason: stop.repairReason } : {}),
-      }, {
-        ...tripProvenance,
-        providerRecordHash: stop.providerRecordHash ?? trip.providerRecordHash,
-      }, stop.derivationKind));
-    }
-  }
-  const producedStopTimes = pack.transitStopTimes.filter(({ sourceId }) => sourceId === SOURCE_ID);
-  if (trips.length !== EXPECTED_TRIP_COUNT || producedStopTimes.length !== EXPECTED_STOP_TIME_COUNT
-    || producedStopTimes.filter(({ derivationKind }) => derivationKind === "OFFICIAL").length
-      !== EXPECTED_OFFICIAL_STOP_TIME_COUNT
-    || producedStopTimes.filter(({ derivationKind }) => derivationKind === "GENERATED").length
-      !== EXPECTED_GENERATED_STOP_TIME_COUNT) {
-    throw new Error("Gwangju timetable materialized row counts are invalid");
-  }
+  addStationsAndTopology(pack, topologySnapshot, canonicalStationMappings, sources);
+  const scheduleProvenance = provenanceForRetainedSchedule(sources.timetable, retained.projection, retained.retainedContractSha256);
+  const tables = buildRetainedGwangjuTransitTables({ projection: retained.projection, lineId: LINE_ID,
+    routeBindings: retainedTimetable.routeBindings, serviceIds: retainedTimetable.serviceIds,
+    servicePatterns: retainedTimetable.servicePatterns, serviceDayStartSeconds: retainedTimetable.serviceDayStartSeconds,
+    provenance: scheduleProvenance });
+  const calendars = buildRetainedGwangjuServiceCalendars({ ...retainedTimetable.calendar,
+    serviceIds: retainedTimetable.serviceIds,
+    publicHolidayDates: new Set(retainedTimetable.calendar.publicHolidayDates) });
+  addRetainedRoutes(pack, retainedTimetable.routeBindings, scheduleProvenance);
+  pack.transitTrips.push(...tables.transitTrips);
+  pack.transitStopTimes.push(...tables.transitStopTimes);
+  pack.serviceCalendars.push(...calendars.serviceCalendars.map((row) => withProvenance(row, scheduleProvenance)));
+  pack.serviceCalendarDates.push(...calendars.serviceCalendarDates.map((row) => withProvenance(row, scheduleProvenance, "GENERATED")));
 
   pack.minimumTableRows = {
     ...pack.minimumTableRows,
@@ -136,12 +78,12 @@ export function materializeGwangjuTimetable({
     transit_stop_times: pack.transitStopTimes.length,
     transit_feed_info: pack.transitFeedInfo.length,
   };
-  const version = compactSeoulDate(timetableSnapshot.capturedAt);
+  const version = compactSeoulDate(retained.projection.source.observedAt);
   const composition = sha256(JSON.stringify({
     previousPackId: pack.id,
-    timetableSnapshotId: sources.timetable.scheduleAdmissionEvidence.snapshotId,
+    timetableSnapshotId: sources.timetable.retainedScheduleAdmissionEvidence.snapshotId,
     topologySnapshotId: sources.topology.topologyAdmissionEvidence.snapshotId,
-    timetableRowsSha256: timetableSnapshot.rowsSha256,
+    timetableRowsSha256: retained.projection.source.recordsSha256,
     topologyContentSha256: topologySnapshot.contentSha256,
     sourceEvidence: sources,
     packContentSha256: materializedPackContentHash(pack, version),
@@ -153,6 +95,355 @@ export function materializeGwangjuTimetable({
   return fixture;
 }
 
+export function buildRetainedGwangjuServiceCalendars({
+  startDate, endDate, serviceIds, publicHolidayDates,
+}) {
+  validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates });
+  const baseByDay = ["명절", "평일", "평일", "평일", "평일", "평일", "명절"];
+  // 승인된 주말 선택 규칙이다. 서로 다른 원문 서비스 ID는 보존하되 중복 활성화하지 않는다.
+  const serviceCalendars = [
+    calendar(serviceIds["평일"], startDate, endDate, [true, true, true, true, true, false, false]),
+    calendar(serviceIds["토요일"], startDate, endDate, [false, false, false, false, false, false, false]),
+    calendar(serviceIds["휴일"], startDate, endDate, [false, false, false, false, false, false, false]),
+    calendar(serviceIds["명절"], startDate, endDate, [false, false, false, false, false, true, true]),
+  ];
+  const serviceCalendarDates = [];
+  for (const date of [...publicHolidayDates].sort(utf16Compare)) {
+    if (date < startDate || date > endDate) continue;
+    const ordinary = baseByDay[utcDay(date)];
+    const selected = "명절";
+    if (ordinary !== selected) {
+      serviceCalendarDates.push({ serviceId: serviceIds[ordinary], date, exceptionType: 2 });
+      serviceCalendarDates.push({ serviceId: serviceIds[selected], date, exceptionType: 1 });
+    }
+  }
+  return { serviceCalendars, serviceCalendarDates };
+}
+
+function validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates }) {
+  if (!validDate(startDate) || !validDate(endDate) || startDate > endDate
+    || !(publicHolidayDates instanceof Set)
+    || !serviceIds || JSON.stringify(Object.keys(serviceIds).sort(utf16Compare)) !== JSON.stringify(["평일", "토요일", "휴일", "명절"].sort(utf16Compare))
+    || Object.values(serviceIds).some((value) => typeof value !== "string" || value.trim() === "")
+    || new Set(Object.values(serviceIds)).size !== 4
+    || [...publicHolidayDates].some((date) => !validDate(date))) {
+    throw new Error("retained Gwangju service calendar input is invalid");
+  }
+}
+
+function calendar(serviceId, startDate, endDate, [monday, tuesday, wednesday, thursday, friday, saturday, sunday]) {
+  return { serviceId, monday, tuesday, wednesday, thursday, friday, saturday, sunday, startDate, endDate, timezone: "Asia/Seoul" };
+}
+function validDate(value) {
+  if (typeof value !== "string" || !/^\d{8}$/u.test(value)) return false;
+  const iso = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  const date = new Date(`${iso}T00:00:00Z`);
+  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === iso;
+}
+function utcDay(date) { return new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T00:00:00Z`).getUTCDay(); }
+function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
+
+const RETAINED_TRIP_GROUP_FIELDS = Object.freeze([
+  "trainNumber", "routeNumber", "routeName", "originStationName", "destinationStationName",
+  "serviceType", "weekdayType",
+]);
+
+/** 수집 근거와 행 투영을 결속한다. 운영 admission과 달력 승인을 대신하지 않는다. */
+export function projectRetainedGwangjuTimetable({
+  observation, receipt, routeNumber, stationBindings, directedEdges, excludedEndpointLabels,
+}) {
+  const { summary, records } = selectRetainedKricTimetable({ observation, receipt, routeNumber });
+  return { source: summary, ...projectRetainedGwangjuTrips({
+    records, stationBindings, directedEdges, excludedEndpointLabels,
+  }) };
+}
+
+export function projectRetainedGwangjuTrips({
+  records, stationBindings, directedEdges, excludedEndpointLabels,
+}) {
+  validateRetainedTripInput(records, stationBindings, directedEdges, excludedEndpointLabels);
+  const context = retainedTripContext(stationBindings, directedEdges, excludedEndpointLabels);
+  const groups = groupedRetainedRecords(records);
+  const trips = [], nonRoutableGroups = [];
+  for (const group of groups.values()) addProjectedRetainedGroup(group, context, trips, nonRoutableGroups);
+  return { trips, nonRoutableGroups };
+}
+
+function validateRetainedTripInput(records, stationBindings, directedEdges, excludedEndpointLabels) {
+  if (!Array.isArray(records) || !Array.isArray(stationBindings) || !Array.isArray(directedEdges)
+    || !Array.isArray(excludedEndpointLabels) || excludedEndpointLabels.some((label) => typeof label !== "string")) {
+    throw new Error("retained Gwangju trip input is invalid");
+  }
+}
+
+function retainedTripContext(stationBindings, directedEdges, excludedEndpointLabels) {
+  const bindings = retainedStationBindings(stationBindings);
+  const edges = retainedDirectedEdges(directedEdges);
+  const excluded = new Set(excludedEndpointLabels);
+  if ([...excluded].some((label) => bindings.has(label))) {
+    throw new Error("retained Gwangju endpoint classification is ambiguous");
+  }
+  return { bindings, edges, excluded };
+}
+
+function retainedStationBindings(stationBindings) {
+  const bindings = new Map();
+  for (const binding of stationBindings) {
+    if (!binding || typeof binding.sourceLabel !== "string" || binding.sourceLabel.trim() === ""
+      || typeof binding.stationId !== "string" || binding.stationId.trim() === ""
+      || typeof binding.stationCode !== "string" || binding.stationCode.trim() === ""
+      || bindings.has(binding.sourceLabel)) {
+      throw new Error("retained Gwangju station bindings are ambiguous");
+    }
+    bindings.set(binding.sourceLabel, binding);
+  }
+  return bindings;
+}
+
+function retainedDirectedEdges(directedEdges) {
+  const edges = new Set();
+  for (const edge of directedEdges) {
+    if (!edge || typeof edge.fromStationCode !== "string" || edge.fromStationCode.trim() === ""
+      || typeof edge.toStationCode !== "string" || edge.toStationCode.trim() === "") {
+      throw new Error("retained Gwangju directed edge is invalid");
+    }
+    edges.add(`${edge.fromStationCode}:${edge.toStationCode}`);
+  }
+  return edges;
+}
+
+function groupedRetainedRecords(records) {
+  const ordered = records.map((record) => retainedNativeRecord(record)).sort((left, right) =>
+    left.sourceRowNumber - right.sourceRowNumber);
+  for (const [index, record] of ordered.entries()) {
+    if (index > 0 && record.sourceRowNumber === ordered[index - 1].sourceRowNumber) {
+      throw new Error("retained Gwangju source row order is ambiguous");
+    }
+  }
+  const groups = new Map();
+  const seenGroups = new Set();
+  let previousGroupKey;
+  for (const record of ordered) {
+    const key = JSON.stringify(RETAINED_TRIP_GROUP_FIELDS.map((field) => record[field]));
+    if (key !== previousGroupKey) {
+      if (seenGroups.has(key)) throw new Error("retained Gwangju trip group is discontiguous");
+      seenGroups.add(key);
+      groups.set(key, { identity: retainedTripIdentity(record), records: [] });
+      previousGroupKey = key;
+    }
+    groups.get(key).records.push(record);
+  }
+  return groups;
+}
+
+function addProjectedRetainedGroup(group, context, trips, nonRoutableGroups) {
+  const nativeRows = group.records.map((record) => projectRetainedNativeRow(record));
+  validateRetainedNativeRowTimes(nativeRows);
+  const { stops, excludedEndpoints } = partitionRetainedTripRows(nativeRows, context);
+  validateRetainedStops(stops, context.edges);
+  const projection = { identity: group.identity, records: nativeRows, excludedEndpoints };
+  // 승객 정류장이 둘 미만인 원문 그룹은 누락시키지 않고 비운행 근거로 남긴다.
+  if (stops.length < 2) {
+    nonRoutableGroups.push({ ...projection, reason: "PASSENGER_STOP_COUNT_LT_2" });
+  } else {
+    trips.push({ ...projection, stops });
+  }
+}
+
+function validateRetainedNativeRowTimes(nativeRows) {
+  for (const [index, row] of nativeRows.entries()) {
+    if (row.arrival.seconds > row.departure.seconds) {
+      throw new Error("retained Gwangju trip arrival is after departure");
+    }
+    if (index > 0 && nativeRows[index - 1].departure.seconds > row.arrival.seconds) {
+      throw new Error("retained Gwangju trip time order is invalid");
+    }
+  }
+}
+
+function partitionRetainedTripRows(nativeRows, { bindings, excluded }) {
+  const passengerIndexes = nativeRows.flatMap((row, index) =>
+    bindings.has(row.record.stationName) ? [index] : []);
+  const firstPassenger = passengerIndexes[0], lastPassenger = passengerIndexes.at(-1);
+  const excludedEndpoints = [];
+  for (const [index, row] of nativeRows.entries()) {
+    if (bindings.has(row.record.stationName)) continue;
+    if (!excluded.has(row.record.stationName)) throw new Error("retained Gwangju trip station binding is missing");
+    if (firstPassenger !== undefined && index > firstPassenger && index < lastPassenger) {
+      throw new Error("retained Gwangju trip endpoint exclusion is interior");
+    }
+    excludedEndpoints.push(row);
+  }
+  const stops = nativeRows.filter((row) => bindings.has(row.record.stationName)).map((row) => ({
+      ...row,
+      stationId: bindings.get(row.record.stationName).stationId,
+      stationCode: bindings.get(row.record.stationName).stationCode,
+  }));
+  return { stops, excludedEndpoints };
+}
+
+function validateRetainedStops(stops, edges) {
+  const stationIds = new Set();
+  for (const stop of stops) {
+    if (stationIds.has(stop.stationId)) throw new Error("retained Gwangju trip station repeats");
+    stationIds.add(stop.stationId);
+  }
+  for (const [index, stop] of stops.entries()) {
+    if (index > 0 && !edges.has(`${stops[index - 1].stationCode}:${stop.stationCode}`)) {
+      throw new Error("retained Gwangju trip directed edge is missing");
+    }
+  }
+}
+
+/** native projection의 순서와 원문 행 근거를 바꾸지 않고 transit 표 행으로 옮긴다. */
+export function buildRetainedGwangjuTransitTables({
+  projection, lineId, routeBindings, serviceIds, servicePatterns, serviceDayStartSeconds, provenance,
+}) {
+  validateRetainedTransitTableInput({ projection, lineId, routeBindings, serviceIds, servicePatterns, serviceDayStartSeconds, provenance });
+  const routes = routeBindingsByEndpoint(routeBindings);
+  const transitTrips = [], transitStopTimes = [], tripIds = new Set();
+  for (const trip of projection.trips) {
+    addRetainedTransitTrip({ trip, routes, serviceIds, servicePatterns, lineId, serviceDayStartSeconds, provenance,
+      tripIds, transitTrips, transitStopTimes });
+  }
+  return { transitTrips, transitStopTimes };
+}
+
+function validateRetainedTransitTableInput({
+  projection, lineId, routeBindings, serviceIds, servicePatterns, serviceDayStartSeconds, provenance,
+}) {
+  if (!projection || !Array.isArray(projection.trips) || !Array.isArray(projection.nonRoutableGroups)
+    || typeof lineId !== "string" || lineId.trim() === "" || !Number.isSafeInteger(serviceDayStartSeconds)
+    || serviceDayStartSeconds < 0 || !Array.isArray(routeBindings) || !serviceIds || !servicePatterns
+    || !validProvenance(provenance)) throw new Error("retained Gwangju transit table input is invalid");
+}
+
+function addRetainedTransitTrip({
+  trip, routes, serviceIds, servicePatterns, lineId, serviceDayStartSeconds, provenance,
+  tripIds, transitTrips, transitStopTimes,
+}) {
+  const { identity, route, serviceId, servicePattern } = retainedTransitMapping(trip, routes, serviceIds, servicePatterns);
+  if (!Array.isArray(trip.records) || !Array.isArray(trip.stops) || trip.stops.length < 2) {
+    throw new Error("retained Gwangju projected trip is invalid");
+  }
+  const id = retainedTransitTripId(lineId, identity, tripIds);
+  const providerRecordHash = sha256(JSON.stringify(trip.records.map((row) => row.sourceRowSha256)));
+  transitTrips.push(withProvenance({ id, routeId: route.routeId, serviceId, tripHeadsign: route.tripHeadsign,
+    directionId: route.directionId, trainNo: identity.trainNumber, servicePattern, serviceClass: "SUBWAY",
+    serviceDayStartSeconds }, { ...provenance, providerRecordHash }));
+  addRetainedTransitStopTimes(trip.stops, id, lineId, provenance, transitStopTimes);
+}
+
+function retainedTransitMapping(trip, routes, serviceIds, servicePatterns) {
+  const identity = trip?.identity;
+  if (!identity || RETAINED_TRIP_GROUP_FIELDS.some((field) => typeof identity[field] !== "string" || identity[field].trim() === "")) {
+    throw new Error("retained Gwangju trip identity is invalid");
+  }
+  const candidates = routes.get(JSON.stringify([identity.originStationName, identity.destinationStationName])) ?? [];
+  const route = candidates.filter((binding) => bindingContainsTripStops(binding, trip.stops));
+  const serviceId = serviceIds[identity.weekdayType], servicePattern = servicePatterns[identity.serviceType];
+  if (route.length === 0 || typeof serviceId !== "string" || serviceId.trim() === "" || !["LOCAL", "EXPRESS"].includes(servicePattern)) {
+    throw new Error("retained Gwangju trip mapping is missing");
+  }
+  if (route.length > 1) throw new Error("retained Gwangju trip route binding is ambiguous");
+  return { identity, route: route[0], serviceId, servicePattern };
+}
+
+function retainedTransitTripId(lineId, identity, tripIds) {
+  const nativeIdentity = [lineId, ...RETAINED_TRIP_GROUP_FIELDS.map((field) => identity[field])];
+  const id = `trip-gwangju-${sha256(JSON.stringify(nativeIdentity))}`;
+  if (tripIds.has(id)) throw new Error("retained Gwangju trip identity is duplicate");
+  tripIds.add(id);
+  return id;
+}
+
+function addRetainedTransitStopTimes(stops, tripId, lineId, provenance, transitStopTimes) {
+  for (const [index, stop] of stops.entries()) {
+    if (!stop?.record || !/^[a-f0-9]{64}$/u.test(stop.record.sourceRowSha256 ?? "")) throw new Error("retained Gwangju stop evidence is invalid");
+    transitStopTimes.push(withProvenance({ tripId, stopSequence: index + 1, stationId: stop.stationId,
+      lineId, arrivalSeconds: stop.arrival.seconds, departureSeconds: stop.departure.seconds,
+      pickupType: index === stops.length - 1 ? 1 : 0, dropOffType: index === 0 ? 1 : 0 },
+    { ...provenance, providerRecordHash: stop.record.sourceRowSha256 }));
+  }
+}
+
+function routeBindingsByEndpoint(routeBindings, directedEdges) {
+  const routes = new Map(), routeIds = new Set(), bindings = new Set();
+  for (const binding of routeBindings) {
+    if (!binding || [binding.originStationName, binding.destinationStationName, binding.routeId, binding.directionId, binding.tripHeadsign]
+      .some((value) => typeof value !== "string" || value.trim() === "")
+      || !Array.isArray(binding.stationCodes) || binding.stationCodes.length < 2
+      || binding.stationCodes.some((code) => typeof code !== "string" || code.trim() === "")
+      || new Set(binding.stationCodes).size !== binding.stationCodes.length) {
+      throw new Error("retained Gwangju route binding is invalid");
+    }
+    if (routeIds.has(binding.routeId)) throw new Error("retained Gwangju route binding routeId is ambiguous");
+    const identity = JSON.stringify([binding.originStationName, binding.destinationStationName, binding.routeId,
+      binding.directionId, binding.tripHeadsign, binding.stationCodes]);
+    if (bindings.has(identity)) throw new Error("retained Gwangju route binding is ambiguous");
+    if (directedEdges && binding.stationCodes.some((code, index) => index > 0
+      && !directedEdges.has(`${binding.stationCodes[index - 1]}:${code}`))) {
+      throw new Error("retained Gwangju route binding directed edge is missing");
+    }
+    routeIds.add(binding.routeId);
+    bindings.add(identity);
+    const endpoint = JSON.stringify([binding.originStationName, binding.destinationStationName]);
+    const grouped = routes.get(endpoint) ?? [];
+    grouped.push(binding);
+    routes.set(endpoint, grouped);
+  }
+  return routes;
+}
+
+function bindingContainsTripStops(binding, stops) {
+  const stopCodes = stops.map(({ stationCode }) => stationCode);
+  return binding.stationCodes.some((code, index) => code === stopCodes[0]
+    && stopCodes.every((stopCode, offset) => binding.stationCodes[index + offset] === stopCode));
+}
+
+function validProvenance(value) {
+  return value && [value.sourceId, value.sourceSnapshotId, value.evidenceHash, value.updatedAt]
+    .every((entry) => typeof entry === "string" && entry.trim() !== "");
+}
+
+function retainedNativeRecord(record) {
+  if (!record || typeof record !== "object" || record.routeNumber !== "S2901"
+    || !Number.isSafeInteger(record.sourceRowNumber) || record.sourceRowNumber <= 0
+    || !/^[a-f0-9]{64}$/u.test(record.sourceRowSha256 ?? "")) {
+    throw new Error("retained Gwangju native record is invalid");
+  }
+  for (const field of [...RETAINED_TRIP_GROUP_FIELDS, "stationName"]) {
+    if (typeof record[field] !== "string" || record[field].trim() === "") {
+      throw new Error(`retained Gwangju native record ${field} is invalid`);
+    }
+  }
+  return record;
+}
+
+function retainedTripIdentity(record) {
+  return Object.fromEntries(RETAINED_TRIP_GROUP_FIELDS.map((field) => [field, record[field]]));
+}
+
+function projectRetainedNativeRow(record) {
+  return {
+    sourceRowNumber: record.sourceRowNumber,
+    sourceRowSha256: record.sourceRowSha256,
+    arrival: retainedServiceTime(record.arrivalTime, "arrivalTime"),
+    departure: retainedServiceTime(record.departureTime, "departureTime"),
+    record: structuredClone(record),
+  };
+}
+
+function retainedServiceTime(cell, field) {
+  if (!cell || typeof cell.value !== "string" || !/^(\d{2,}):[0-5]\d:[0-5]\d$/u.test(cell.value)) {
+    throw new Error(`retained Gwangju ${field} is invalid`);
+  }
+  const [hours, minutes, seconds] = cell.value.split(":").map(Number);
+  const total = hours * 3_600 + minutes * 60 + seconds;
+  if (!Number.isSafeInteger(total)) throw new Error(`retained Gwangju ${field} is invalid`);
+  return { value: cell.value, seconds: total };
+}
+
 export function materializedPackContentHash(pack, version) {
   const content = { ...pack };
   delete content.id;
@@ -161,63 +452,91 @@ export function materializedPackContentHash(pack, version) {
   return sha256(JSON.stringify({ version, content }));
 }
 
-function validateTimetableSnapshot(snapshot) {
-  const fragments = snapshot?.fragments?.map(({ stationId, rawSha256 }) => ({ stationId, rawSha256 }));
-  if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "gwangju-cyberstation-timetable-snapshot"
-    || snapshot.sourceId !== SOURCE_ID || snapshot.official !== true || snapshot.fixture !== false
-    || snapshot.credentialRedacted !== true || snapshot.requestCount !== 21 || snapshot.stationRequestCount !== 20
-    || snapshot.stationCount !== 20 || snapshot.rowCount !== 13_362 || snapshot.rows?.length !== 13_362
-    || snapshot.excludedPlaceholderCount !== 1 || snapshot.normalizedBoundaryMinuteCount !== 1
-    || JSON.stringify(snapshot.dayCodes) !== JSON.stringify(["DAYOFF", "HOLI", "SAT", "WEEK"])
-    || JSON.stringify(snapshot.directions) !== JSON.stringify(["nd", "pd", "st"])
-    || snapshot.rowsSha256 !== sha256(JSON.stringify(snapshot.rows))
-    || snapshot.scopeSha256 !== sha256(JSON.stringify(snapshot.scope))
-    || snapshot.contentSha256 !== sha256(JSON.stringify({ fragments, rowsSha256: snapshot.rowsSha256 }))) {
-    throw new Error("invalid Gwangju timetable snapshot");
-  }
-  const keys = new Set();
-  for (const row of snapshot.rows) {
-    const key = rowKey(row);
-    if (!SERVICES[row.dayCode] || !new Set(["nd", "pd", "st"]).has(row.direction)
-      || !STATION_CODES.includes(row.stationCode) || !STATION_CODES.includes(row.endCode)
-      || !/^\d{4}$/.test(row.time) || Number(row.time.slice(0, 2)) > 29
-      || Number(row.time.slice(2)) > 59 || keys.has(key)) {
-      throw new Error(`invalid Gwangju timetable row: ${key}`);
-    }
-    keys.add(key);
-  }
-}
-
 function validateTopologySnapshot(snapshot) {
+  const scopeCodes = snapshot?.scope?.map(({ stationCode }) => stationCode);
+  const stationCount = scopeCodes?.length;
+  const expectedEdgeCount = Number.isInteger(stationCount) ? 2 * (stationCount - 1) : Number.NaN;
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "gwangju-route-topology-snapshot"
     || snapshot.sourceId !== TOPOLOGY_SOURCE_ID || snapshot.official !== true || snapshot.fixture !== false
     || snapshot.credentialRequired !== false || snapshot.credentialRedacted !== true
-    || snapshot.requestCount !== 20 || snapshot.stationCount !== 20 || snapshot.odRowCount !== 380
-    || snapshot.edgeCount !== 38 || snapshot.scope?.length !== 20 || snapshot.edges?.length !== 38
+    || !Number.isInteger(stationCount) || stationCount < 2 || new Set(scopeCodes).size !== stationCount
+    || scopeCodes.some((code) => typeof code !== "string" || code.trim() === "")
+    || snapshot.requestCount !== stationCount || snapshot.stationCount !== stationCount
+    || snapshot.odRowCount !== stationCount * (stationCount - 1)
+    || snapshot.edgeCount !== expectedEdgeCount || snapshot.edges?.length !== expectedEdgeCount
     || snapshot.scopeSha256 !== sha256(JSON.stringify(snapshot.scope))
     || snapshot.edgesSha256 !== sha256(JSON.stringify(snapshot.edges))
     || snapshot.contentSha256 !== sha256(JSON.stringify({ scope: snapshot.scope, edges: snapshot.edges }))) {
     throw new Error("invalid Gwangju topology snapshot");
   }
+  const expectedPairs = new Set();
+  for (let index = 1; index < scopeCodes.length; index += 1) {
+    expectedPairs.add(`${scopeCodes[index - 1]}:${scopeCodes[index]}`);
+    expectedPairs.add(`${scopeCodes[index]}:${scopeCodes[index - 1]}`);
+  }
   const pairs = new Set();
   for (const edge of snapshot.edges) {
     const key = `${edge.fromStationCode}:${edge.toStationCode}`;
-    if (!STATION_CODES.includes(edge.fromStationCode) || !STATION_CODES.includes(edge.toStationCode)
-      || Math.abs(Number(edge.fromStationCode) - Number(edge.toStationCode)) !== 1
+    if (!expectedPairs.has(key)
       || !Number.isInteger(edge.distanceMeters) || edge.distanceMeters <= 0
       || !Number.isInteger(edge.durationSeconds) || edge.durationSeconds <= 0 || pairs.has(key)) {
       throw new Error(`invalid Gwangju topology edge: ${key}`);
     }
     pairs.add(key);
   }
+  if (pairs.size !== expectedPairs.size) throw new Error("invalid Gwangju topology snapshot");
 }
 
-function requiredSources(inventory, timetableSnapshot, topologySnapshot, mappings, now) {
+// Source 등록은 시간표 의미만 증명한다. 실제 pack의 freshness·membership 검증은 위 materializer가 소유한다.
+export function validateRetainedGwangjuSource({
+  retainedTimetable, topologySnapshot, canonicalStationMappings, source,
+}) {
+  validateTopologySnapshot(topologySnapshot);
+  const retained = validateRetainedTimetable(retainedTimetable, topologySnapshot, canonicalStationMappings);
+  const provenance = provenanceForRetainedSchedule(source, retained.projection, retained.retainedContractSha256);
+  const tables = buildRetainedGwangjuTransitTables({
+    projection: retained.projection, lineId: LINE_ID,
+    routeBindings: retainedTimetable.routeBindings, serviceIds: retainedTimetable.serviceIds,
+    servicePatterns: retainedTimetable.servicePatterns,
+    serviceDayStartSeconds: retainedTimetable.serviceDayStartSeconds, provenance,
+  });
+  buildRetainedGwangjuServiceCalendars({
+    ...retainedTimetable.calendar, serviceIds: retainedTimetable.serviceIds,
+    publicHolidayDates: new Set(retainedTimetable.calendar.publicHolidayDates),
+  });
+  return { ...retained, tables };
+}
+
+function validateRetainedTimetable(value, topologySnapshot, canonicalStationMappings) {
+  if (!value || typeof value !== "object" || !value.observation || !value.receipt
+    || !Array.isArray(value.stationBindings) || !Array.isArray(value.excludedEndpointLabels)
+    || !Array.isArray(value.calendar?.publicHolidayDates)) {
+    throw new Error("retained Gwangju timetable input is invalid");
+  }
+  const stationIdsByCode = new Map(canonicalStationMappings?.map((row) => [row.stationNumber, row.stationId]));
+  for (const binding of value.stationBindings) {
+    if (!stationIdsByCode.has(binding.stationCode) || stationIdsByCode.get(binding.stationCode) !== binding.stationId) {
+      throw new Error("retained Gwangju station binding does not match canonical membership");
+    }
+  }
+  routeBindingsByEndpoint(value.routeBindings, new Set(topologySnapshot.edges.map(({ fromStationCode, toStationCode }) =>
+    `${fromStationCode}:${toStationCode}`)));
+  const projection = projectRetainedGwangjuTimetable({ observation: value.observation, receipt: value.receipt,
+    routeNumber: value.routeNumber, stationBindings: value.stationBindings,
+    directedEdges: topologySnapshot.edges.map(({ fromStationCode, toStationCode }) => ({ fromStationCode, toStationCode })),
+    excludedEndpointLabels: value.excludedEndpointLabels });
+  const contract = { ...value };
+  delete contract.observation;
+  delete contract.receipt;
+  return { projection, retainedContractSha256: sha256(canonicalJson(contract)) };
+}
+
+function requiredSources(inventory, retained, topologySnapshot, mappings, now) {
   const timetable = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const topology = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID);
   const membership = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_SOURCE_ID);
   const rawMembership = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_RAW_SOURCE_ID);
-  const schedule = timetable?.scheduleAdmissionEvidence;
+  const schedule = timetable?.retainedScheduleAdmissionEvidence;
   const topologyEvidence = topology?.topologyAdmissionEvidence;
   const membershipEvidence = membership?.membershipAdmissionEvidence;
   const membershipVerifiedAt = Date.parse(membershipEvidence?.verifiedAt ?? "");
@@ -225,14 +544,13 @@ function requiredSources(inventory, timetableSnapshot, topologySnapshot, mapping
   const stationCodesSha256 = sha256(JSON.stringify(mappings?.map(({ stationNumber }) => stationNumber)));
   if (timetable?.productionUseAllowed !== true || timetable.license?.redistributionAllowed !== true
     || timetable.capabilities?.schedule?.productionUseAllowed !== true
-    || schedule?.issue !== 2383 || schedule.materializer !== "tools/datapack/materialize-gwangju-timetable.mjs"
-    || schedule.verificationTest !== "tools/datapack/materialize-gwangju-timetable.test.mjs"
-    || schedule.snapshotId !== "gwangju-transportation-cyberstation-timetable-20260720"
-    || schedule.capturedAt !== timetableSnapshot.capturedAt || schedule.freshUntil !== timetableSnapshot.freshUntil
-    || schedule.rowCount !== 13_362 || schedule.departureCount !== EXPECTED_OFFICIAL_STOP_TIME_COUNT
-    || schedule.tripCount !== EXPECTED_TRIP_COUNT || schedule.stopTimeCount !== EXPECTED_STOP_TIME_COUNT
-    || schedule.rawSha256 !== timetableSnapshot.rawSha256
-    || schedule.rowsSha256 !== timetableSnapshot.rowsSha256
+    || timetable.scheduleAdmissionEvidence !== undefined || typeof schedule?.snapshotId !== "string" || !schedule.snapshotId
+    || schedule.rawSha256 !== retained.projection.source.rawSha256
+    || schedule.recordsSha256 !== retained.projection.source.recordsSha256
+    || schedule.observedAt !== retained.projection.source.observedAt
+    || schedule.observationIdentitySha256 !== retained.projection.source.observationIdentitySha256
+    || schedule.receiptSha256 !== retained.projection.source.receiptSha256
+    || schedule.retainedContractSha256 !== retained.retainedContractSha256
     || schedule.topologySourceId !== TOPOLOGY_SOURCE_ID
     || schedule.topologySnapshotId !== topologyEvidence?.snapshotId
     || schedule.topologyContentSha256 !== topologySnapshot.contentSha256) {
@@ -242,23 +560,24 @@ function requiredSources(inventory, timetableSnapshot, topologySnapshot, mapping
     || topologyEvidence?.issue !== 2383
     || topologyEvidence.materializer !== "tools/datapack/materialize-gwangju-timetable.mjs"
     || topologyEvidence.verificationTest !== "tools/datapack/materialize-gwangju-timetable.test.mjs"
-    || topologyEvidence.snapshotId !== "gwangju-transportation-route-topology-20260720"
+    || typeof topologyEvidence.snapshotId !== "string" || !topologyEvidence.snapshotId.startsWith("gwangju-transportation-route-topology-")
+    || topologyEvidence.snapshotPath !== `tools/datapack/sources/${topologyEvidence.snapshotId}.json`
     || topologyEvidence.capturedAt !== topologySnapshot.capturedAt
     || topologyEvidence.freshUntil !== topologySnapshot.freshUntil
-    || topologyEvidence.stationCount !== 20 || topologyEvidence.excludedTransferCount !== 0
-    || topologyEvidence.edgeCount !== 38 || topologyEvidence.rawSha256 !== topologySnapshot.rawSha256
+    || topologyEvidence.stationCount !== topologySnapshot.stationCount || topologyEvidence.excludedTransferCount !== 0
+    || topologyEvidence.edgeCount !== topologySnapshot.edgeCount || topologyEvidence.rawSha256 !== topologySnapshot.rawSha256
     || topologyEvidence.contentSha256 !== topologySnapshot.contentSha256
     || JSON.stringify(topology.membershipAdmissionEvidence) !== JSON.stringify(membershipEvidence)) {
     throw new Error(`${TOPOLOGY_SOURCE_ID} inventory evidence does not match snapshot`);
   }
-  if (!Array.isArray(mappings) || mappings.length !== 20
-    || mappings.some((mapping, index) => mapping.stationNumber !== STATION_CODES[index])
+  if (!Array.isArray(mappings) || mappings.length !== topologySnapshot.scope.length
+    || mappings.some((mapping, index) => mapping.stationNumber !== topologySnapshot.scope[index].stationCode)
     || membership?.productionUseAllowed !== true || membership.license?.redistributionAllowed !== true
     || rawMembership?.admissionEvidence?.decision !== "APPROVED"
     || membershipEvidence?.issue !== 2383
     || membershipEvidence.materializer !== "tools/datapack/materialize-gwangju-timetable.mjs"
     || membershipEvidence.verificationTest !== "tools/datapack/materialize-gwangju-timetable.test.mjs"
-    || membershipEvidence.stationCount !== 20 || membershipEvidence.mappingSha256 !== mappingSha256
+    || membershipEvidence.stationCount !== mappings.length || membershipEvidence.mappingSha256 !== mappingSha256
     || membershipEvidence.stationCodesSha256 !== stationCodesSha256
     || membershipEvidence.membershipSourceId !== MEMBERSHIP_RAW_SOURCE_ID
     || membershipEvidence.membershipSourceRawSha256 !== rawMembership.admissionEvidence.rawSha256
@@ -270,11 +589,8 @@ function requiredSources(inventory, timetableSnapshot, topologySnapshot, mapping
     || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is invalid`);
   }
-  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() < membershipVerifiedAt) {
-    throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is future-dated`);
-  }
+  // 관측 시각은 provenance다. replay 가능 시각은 아래 topology 유효 구간으로 판단한다.
   for (const [label, capturedAt, freshUntil] of [
-    [SOURCE_ID, schedule.capturedAt, schedule.freshUntil],
     [TOPOLOGY_SOURCE_ID, topologyEvidence.capturedAt, topologyEvidence.freshUntil],
   ]) {
     const captured = Date.parse(capturedAt);
@@ -372,198 +688,27 @@ function addStationsAndTopology(pack, snapshot, mappings, sources) {
   return stations;
 }
 
-function reconstructTrips(rows, stations, durations) {
-  const byScope = Map.groupBy(rows, (row) => `${row.dayCode}:${row.direction}:${row.stationCode}`);
-  const completed = [];
-  const quarantinedRows = [];
-  let repairedStopCount = 0;
-  for (const dayCode of ["WEEK", "SAT", "HOLI", "DAYOFF"]) {
-    for (const direction of ["pd", "st", "nd"]) {
-      const codes = direction === "pd" ? STATION_CODES : [...STATION_CODES].reverse();
-      let active = [];
-      for (const [stationIndex, stationCode] of codes.entries()) {
-        const events = [...(byScope.get(`${dayCode}:${direction}:${stationCode}`) ?? [])]
-          .map((row) => ({ row, seconds: serviceSeconds(row.time) }))
-          .sort((left, right) => left.seconds - right.seconds);
-        if (stationIndex === 0) {
-          active = events.map((event) => newTrip(event, stations));
-          continue;
-        }
-        const used = new Set();
-        const nextActive = [];
-        for (const trip of active) {
-          const previous = trip.officialStops.at(-1);
-          if (previous.row.endCode === stationCode) {
-            const duration = requiredDuration(durations, previous.row.stationCode, stationCode);
-            trip.stops.push(generatedStop(stations.get(stationCode), previous.seconds + duration, "OFFICIAL_TOPOLOGY_TERMINAL"));
-            completed.push(trip);
-            continue;
-          }
-          if (trip.pendingGap) {
-            const firstDuration = requiredDuration(durations, previous.row.stationCode, trip.pendingGap);
-            const secondDuration = requiredDuration(durations, trip.pendingGap, stationCode);
-            const match = uniqueMatch(events, used, trip, firstDuration + secondDuration);
-            if (!match) {
-              quarantinedRows.push(...trip.officialStops.map(({ row }) => row));
-              continue;
-            }
-            const missingSeconds = previous.seconds + firstDuration;
-            trip.stops.push(generatedStop(
-              stations.get(trip.pendingGap),
-              missingSeconds,
-              "OFFICIAL_ADJACENT_TIMES_AND_TOPOLOGY",
-            ));
-            repairedStopCount += 1;
-            appendOfficialStop(trip, match, stations);
-            used.add(match.index);
-            trip.pendingGap = null;
-            nextActive.push(trip);
-            continue;
-          }
-          const duration = requiredDuration(durations, previous.row.stationCode, stationCode);
-          const match = uniqueMatch(events, used, trip, duration);
-          if (match) {
-            appendOfficialStop(trip, match, stations);
-            used.add(match.index);
-          } else {
-            trip.pendingGap = stationCode;
-          }
-          nextActive.push(trip);
-        }
-        for (const [index, event] of events.entries()) {
-          if (!used.has(index)) nextActive.push(newTrip(event, stations));
-        }
-        active = nextActive.sort((left, right) =>
-          left.officialStops.at(-1).seconds - right.officialStops.at(-1).seconds);
-      }
-      if (active.length !== 0) {
-        quarantinedRows.push(...active.flatMap((trip) => trip.officialStops.map(({ row }) => row)));
-      }
-    }
-  }
-  quarantinedRows.sort((left, right) => QUARANTINED_KEYS.indexOf(rowKey(left)) - QUARANTINED_KEYS.indexOf(rowKey(right)));
-  const accounted = completed.reduce((total, trip) => total + trip.officialStops.length, 0) + quarantinedRows.length;
-  if (accounted !== rows.length || quarantinedRows.length !== 2 || completed.length !== EXPECTED_TRIP_COUNT) {
-    throw new Error(`Gwangju timetable reconstruction incomplete: accounted=${accounted} trips=${completed.length}`);
-  }
-  completed.sort((left, right) => [left.dayCode, left.direction, left.originCode, left.originSeconds].join(":")
-    .localeCompare([right.dayCode, right.direction, right.originCode, right.originSeconds].join(":"), "en"));
-  const ids = new Set();
-  for (const trip of completed) {
-    trip.id = `trip-gwangju-${trip.dayCode.toLowerCase()}-${trip.direction}-${trip.originCode}-${serviceTime(trip.originSeconds)}`;
-    if (ids.has(trip.id)) throw new Error(`duplicate Gwangju trip id: ${trip.id}`);
-    ids.add(trip.id);
-    trip.providerRecordHash = sha256(JSON.stringify({
-      rows: trip.officialStops.map(({ row }) => row),
-      generatedStops: trip.stops.filter(({ derivationKind }) => derivationKind === "GENERATED")
-        .map(({ stationId, seconds, repairReason }) => ({ stationId, seconds, repairReason })),
-    }));
-  }
-  return { trips: completed, quarantinedRows, repairedStopCount };
-}
-
-function uniqueMatch(events, used, trip, expectedDuration) {
-  const previous = trip.officialStops.at(-1);
-  const eligible = events.map((event, index) => ({ ...event, index,
-    deviation: Math.abs(event.seconds - previous.seconds - expectedDuration) }))
-    .filter((event) => !used.has(event.index) && event.row.endCode === previous.row.endCode
-      && event.seconds >= previous.seconds && event.deviation <= 120);
-  if (eligible.length === 0) return null;
-  const bestDeviation = Math.min(...eligible.map(({ deviation }) => deviation));
-  const best = eligible.filter(({ deviation }) => deviation === bestDeviation);
-  if (best.length !== 1) {
-    throw new Error(`Gwangju timetable adjacent match is ambiguous: ${rowKey(previous.row)}`);
-  }
-  return best[0];
-}
-
-function newTrip(event, stations) {
-  const stop = officialStop(event, stations);
-  return {
-    dayCode: event.row.dayCode,
-    direction: event.row.direction,
-    endName: event.row.endName,
-    originCode: event.row.stationCode,
-    originSeconds: event.seconds,
-    officialStops: [event],
-    stops: [stop],
-    pendingGap: null,
-  };
-}
-
-function appendOfficialStop(trip, event, stations) {
-  trip.officialStops.push({ row: event.row, seconds: event.seconds });
-  trip.stops.push(officialStop(event, stations));
-}
-
-function officialStop(event, stations) {
-  return {
-    stationId: stations.get(event.row.stationCode).stationId,
-    seconds: event.seconds,
-    derivationKind: "OFFICIAL",
-    providerRecordHash: sha256(JSON.stringify(event.row)),
-  };
-}
-
-function generatedStop(station, seconds, repairReason) {
-  return { stationId: station.stationId, seconds, derivationKind: "GENERATED", repairReason };
-}
-
-function requiredDuration(durations, from, to) {
-  const duration = durations.get(`${from}:${to}`);
-  if (!Number.isInteger(duration) || duration <= 0) {
-    throw new Error(`Gwangju topology duration missing: ${from}:${to}`);
-  }
-  return duration;
-}
-
-function addCalendars(pack, provenance) {
-  pack.serviceCalendars.push(
-    withProvenance({ serviceId: SERVICES.WEEK, monday: true, tuesday: true, wednesday: true,
-      thursday: true, friday: true, saturday: false, sunday: false,
-      startDate: "20260101", endDate: "20261231" }, provenance),
-    withProvenance({ serviceId: SERVICES.SAT, monday: false, tuesday: false, wednesday: false,
-      thursday: false, friday: false, saturday: true, sunday: false,
-      startDate: "20260101", endDate: "20261231" }, provenance),
-    withProvenance({ serviceId: SERVICES.HOLI, monday: false, tuesday: false, wednesday: false,
-      thursday: false, friday: false, saturday: false, sunday: false,
-      startDate: "20260101", endDate: "20261231" }, provenance),
-    withProvenance({ serviceId: SERVICES.DAYOFF, monday: false, tuesday: false, wednesday: false,
-      thursday: false, friday: false, saturday: false, sunday: true,
-      startDate: "20260101", endDate: "20261231" }, provenance),
-  );
-  pack.serviceCalendarDates.push(...HOLIDAYS_2026.flatMap((date) => {
-    const day = new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}T00:00:00Z`).getUTCDay();
-    const base = day === 0 ? SERVICES.DAYOFF : day === 6 ? SERVICES.SAT : SERVICES.WEEK;
-    return [
-      withProvenance({ serviceId: SERVICES.HOLI, date, exceptionType: 1 }, provenance, "GENERATED"),
-      withProvenance({ serviceId: base, date, exceptionType: 2 }, provenance, "GENERATED"),
-    ];
-  }));
-}
-
-function addRoutes(pack, provenance) {
-  for (const [direction, endName] of [["pd", "평동"], ["st", "소태"], ["nd", "녹동"]]) {
+function addRetainedRoutes(pack, routeBindings, provenance) {
+  if (!Array.isArray(routeBindings)) throw new Error("retained Gwangju route bindings are invalid");
+  routeBindingsByEndpoint(routeBindings);
+  for (const binding of routeBindings) {
     pack.transitRoutes.push(withProvenance({
-      id: `route-gwangju-1-${direction}`,
+      id: binding.routeId,
       lineId: LINE_ID,
       routeShortName: "1",
-      routeLongName: `광주 1호선 ${endName} 방면`,
-      directionName: `${endName} 방면`,
+      routeLongName: `광주 1호선 ${binding.tripHeadsign} 방면`,
+      directionName: `${binding.tripHeadsign} 방면`,
     }, provenance));
   }
 }
 
-function provenanceForSchedule(source, timetableSnapshot, topologySnapshot) {
+function provenanceForRetainedSchedule(source, projection, retainedContractSha256) {
   return {
     sourceId: SOURCE_ID,
-    sourceSnapshotId: source.scheduleAdmissionEvidence.snapshotId,
-    providerRecordHash: timetableSnapshot.rowsSha256,
-    evidenceHash: sha256(JSON.stringify({
-      timetableContentSha256: timetableSnapshot.contentSha256,
-      topologyContentSha256: topologySnapshot.contentSha256,
-    })),
-    updatedAt: timetableSnapshot.capturedAt,
+    sourceSnapshotId: source.retainedScheduleAdmissionEvidence.snapshotId,
+    providerRecordHash: projection.source.recordsSha256,
+    evidenceHash: retainedContractSha256,
+    updatedAt: projection.source.observedAt,
   };
 }
 
@@ -598,11 +743,6 @@ function packSource(source, updatedAt) {
 function normalizedName(value) {
   return String(value).normalize("NFKC").replace(/\([^)]*\)/g, "").replace(/[\s/.·]/g, "").replace(/역$/u, "");
 }
-function rowKey(row) { return [row.dayCode, row.direction, row.stationCode, row.time].join(":"); }
-function serviceSeconds(time) { return Number(time.slice(0, 2)) * 3_600 + Number(time.slice(2)) * 60; }
-function serviceTime(seconds) {
-  return `${String(Math.floor(seconds / 3_600)).padStart(2, "0")}${String(Math.floor((seconds % 3_600) / 60)).padStart(2, "0")}`;
-}
 function compactSeoulDate(value) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
     timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
@@ -611,34 +751,78 @@ function compactSeoulDate(value) {
 }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
+// 등록 시 보존한 contract를 사용해야 달력 재조회로 admission identity가 바뀌지 않는다.
+export function restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots }) {
+  const sources = inventory?.sources?.filter(({ id }) => id === SOURCE_ID) ?? [];
+  const evidence = sources.length === 1 ? sources[0].retainedScheduleAdmissionEvidence : null;
+  const rows = Array.isArray(snapshots) ? snapshots.filter((row) => row.sourceId === SOURCE_ID
+    && row.snapshotId === evidence?.snapshotId) : [];
+  const row = rows.length === 1 ? rows[0] : null;
+  const inputs = row?.retainedTimetableInputs;
+  if (!evidence || !inputs?.contract || !inputs.collectionReceipt
+    || sha256(canonicalJson(inputs.contract)) !== evidence.retainedContractSha256
+    || sha256(observationBytes) !== row.rawObjectSha256) {
+    throw new Error("retained Gwangju persisted input binding is invalid");
+  }
+  const observation = JSON.parse(observationBytes);
+  const { summary } = selectRetainedKricTimetable({ observation, receipt: inputs.collectionReceipt,
+    routeNumber: inputs.contract.routeNumber });
+  if (summary.observationIdentitySha256 !== row.contentSha256
+    || summary.observationIdentitySha256 !== evidence.observationIdentitySha256
+    || summary.receiptSha256 !== evidence.receiptSha256 || summary.rawSha256 !== evidence.rawSha256
+    || summary.recordsSha256 !== evidence.recordsSha256 || summary.observedAt !== evidence.observedAt) {
+    throw new Error("retained Gwangju persisted observation binding is invalid");
+  }
+  return { ...inputs.contract, observation, receipt: inputs.collectionReceipt };
+}
+
 function parseArgs(argv) {
-  const expected = ["--base-fixture", "--timetable-snapshot", "--topology-snapshot", "--inventory", "--station-map", "--output"];
+  const expected = ["--base-fixture", "--retained-observation", "--snapshots", "--inventory", "--station-map", "--output"];
   if (argv.length !== expected.length * 2 || expected.some((flag, index) => argv[index * 2] !== flag)
     || !path.isAbsolute(argv.at(-1))) {
-    throw new Error("usage: materialize-gwangju-timetable.mjs --base-fixture <json> --timetable-snapshot <json> --topology-snapshot <json> --inventory <json> --station-map <csv> --output <absolute.json>");
+    throw new Error("usage: materialize-gwangju-timetable.mjs --base-fixture <json> --retained-observation <json> --snapshots <json> --inventory <json> --station-map <csv> --output <absolute.json>");
   }
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runGwangjuTimetableMaterializer(argv, { now = new Date() } = {}) {
+function resolveTopologySnapshotPath(inventory, repositoryRoot) {
+  const evidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)?.topologyAdmissionEvidence;
+  const snapshotPath = evidence?.snapshotPath;
+  if (typeof evidence?.snapshotId !== "string" || !evidence.snapshotId.startsWith("gwangju-transportation-route-topology-")
+    || typeof snapshotPath !== "string" || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(snapshotPath)
+    || snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) {
+    throw new Error("Gwangju topology snapshot path is invalid");
+  }
+  const root = path.resolve(repositoryRoot);
+  const sourcesRoot = path.resolve(root, "tools/datapack/sources");
+  const resolved = path.resolve(root, snapshotPath);
+  if (!resolved.startsWith(`${sourcesRoot}${path.sep}`)) throw new Error("Gwangju topology snapshot path is invalid");
+  return resolved;
+}
+
+export async function runGwangjuTimetableMaterializer(argv, {
+  now = new Date(), repositoryRoot = path.resolve(import.meta.dirname, "../.."),
+} = {}) {
   const args = parseArgs(argv);
-  const [baseFixture, timetableSnapshot, topologySnapshot, inventory, stationMap] = await Promise.all([
+  const inventory = JSON.parse(await readFile(args.inventory, "utf8"));
+  const topologyPath = resolveTopologySnapshotPath(inventory, repositoryRoot);
+  const [baseFixture, observationBytes, snapshots, topologySnapshot, stationMap] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
-    readFile(args["timetable-snapshot"], "utf8").then(JSON.parse),
-    readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
-    readFile(args.inventory, "utf8").then(JSON.parse),
+    readFile(args["retained-observation"]),
+    readFile(args.snapshots, "utf8").then(JSON.parse),
+    readFile(topologyPath, "utf8").then(JSON.parse),
     readFile(args["station-map"]),
   ]);
   const fixture = materializeGwangjuTimetable({
     baseFixture,
-    timetableSnapshot,
+    retainedTimetable: restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots }),
     topologySnapshot,
     inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(stationMap),
+    canonicalStationMappings: parseMolitGwangjuStationMappings(stationMap, topologySnapshot),
     now,
   });
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
-  console.log(`Gwangju timetable materialized: trips=${EXPECTED_TRIP_COUNT} stopTimes=${EXPECTED_STOP_TIME_COUNT}`);
+  console.log(`Gwangju timetable materialized: trips=${fixture.packs[0].transitTrips.length} stopTimes=${fixture.packs[0].transitStopTimes.length}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

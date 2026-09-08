@@ -41,7 +41,7 @@
     </g>
   </g>
   <g id="station-labels" class="labels" transform="translate(10 5)">
-    <text id="alpha" x="20" y="30" font-size="12" data-route-map-classification="station_label">알파역</text>
+    <text id="alpha" x="20" y="30" font-size="12" data-route-map-classification="station_label" data-station-key="fixture-alpha-101" data-station="알파" data-line="fixture-1" data-label-role="station">알파역</text>
     <text id="rotated" x="60" y="40" font-size="10" transform="rotate(30 60 40)">회전역</text>
     <text id="line-label" x="20" y="80" font-size="9">1호선</text>
     <text id="notice" x="100" y="100" font-size="8">Not to scale</text>

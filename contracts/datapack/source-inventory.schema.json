@@ -574,6 +574,23 @@
             "properties": {
               "schemaVersion": { "const": 1 }, "artifactKind": { "const": "capital-topology-admission-evidence" }, "status": { "const": "APPROVED" }, "issue": { "const": 456 }, "sourceId": { "const": "capital-route-topology" }, "snapshotId": { "type": "string", "pattern": "^capital-route-topology-[0-9]{8}$" }, "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/capital-route-topology-[0-9]{8}\\.json$" }, "snapshotFileSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "snapshotRawSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "contentSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "lineIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }, "orderedScopeSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "operationSetSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "rawReceiptSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "rawObjectUri": { "type": "string", "pattern": "^oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/" }, "rawObjectSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "byteSize": { "type": "integer", "minimum": 1 }, "licenseSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "governanceRecordSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "freshnessClassSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "evaluatedAt": { "type": "string", "format": "date-time" }, "predecessorSnapshotIds": { "type": "array", "maxItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^capital-route-topology-[0-9]{8}$" } } }
           },
+          "retainedScheduleAdmissionEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["snapshotId", "rawSha256", "recordsSha256", "observationIdentitySha256", "receiptSha256", "observedAt", "retainedContractSha256", "topologySourceId", "topologySnapshotId", "topologyContentSha256"],
+            "properties": {
+              "snapshotId": { "type": "string", "minLength": 1 },
+              "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "recordsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "observationIdentitySha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "receiptSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "observedAt": { "type": "string", "format": "date-time" },
+              "retainedContractSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "topologySourceId": { "type": "string", "minLength": 1 },
+              "topologySnapshotId": { "type": "string", "minLength": 1 },
+              "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          },
           "scheduleAdmissionEvidence": {
             "type": "object",
             "description": "공식 timetable snapshot의 production materialization 승인 근거다.",
@@ -745,6 +762,13 @@
           }
         },
         "allOf": [
+          {
+            "if": { "required": ["retainedScheduleAdmissionEvidence"] },
+            "then": {
+              "properties": { "id": { "const": "kric-nationwide-timetable-file" } },
+              "not": { "required": ["scheduleAdmissionEvidence"] }
+            }
+          },
           {
             "if": {
               "properties": {

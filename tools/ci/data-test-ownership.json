@@ -12,6 +12,14 @@
     "tools/routes"
   ],
   "owners": {
+    "data504": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/504",
+      "title": "Admit the retained official Gwangju timetable"
+    },
+    "data457": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/457",
+      "title": "Resolve remaining nationwide route-topology source contracts"
+    },
     "data7": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/7",
       "title": "[Release Blocker][P0][Data] server-route-bundle production eligibility·FINAL coverage producer"
@@ -187,6 +195,10 @@
     "data456": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/456",
       "title": "Admit the Seoul Metro capital topology source"
+    },
+    "data506": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506",
+      "title": "Preserve explicit SVG station-label identity metadata"
     },
     "data529": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/529",
@@ -411,7 +423,6 @@
     {"path":"tools/datapack/collect-facility-gap-source-evidence.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":192},
     {"path":"tools/datapack/collect-guri-station-facility-evidence.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":171},
     {"path":"tools/datapack/collect-gwangju-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":154},
-    {"path":"tools/datapack/collect-gwangju-cyberstation-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":244},
     {"path":"tools/datapack/collect-gwangju-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":190},
     {"path":"tools/datapack/collect-gwangju-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":438},
     {"path":"tools/datapack/collect-gwangju-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":158},
@@ -467,7 +478,6 @@
     {"path":"tools/datapack/lib/server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":146},
     {"path":"tools/datapack/materialize-accessibility-source-input.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":166},
     {"path":"tools/datapack/materialize-busan-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":16359},
-    {"path":"tools/datapack/materialize-busan-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":12196},
     {"path":"tools/datapack/materialize-busan-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":719},
     {"path":"tools/datapack/materialize-busan-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":9671},
     {"path":"tools/datapack/materialize-daegu-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":28318},
@@ -479,7 +489,13 @@
     {"path":"tools/datapack/materialize-daejeon-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":8325},
     {"path":"tools/datapack/materialize-gwangju-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":20227},
     {"path":"tools/datapack/materialize-gwangju-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":17196},
-    {"path":"tools/datapack/materialize-gwangju-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":23638},
+    {"path":"tools/datapack/materialize-gwangju-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":23638},
+    {"path":"tools/datapack/prepare-retained-kric-timetable-publication.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/datapack/prepare-retained-gwangju-contract.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/ci/decide-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/ci/retained-gwangju-refresh-delivery.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
+    {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":535},
     {"path":"tools/datapack/materialize-incheon-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":25554},
     {"path":"tools/datapack/materialize-incheon-station-info.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":22043},
     {"path":"tools/datapack/materialize-incheon-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":30040},
@@ -491,10 +507,15 @@
     {"path":"tools/datapack/materialize-seoul9-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":21482},
     {"path":"tools/datapack/materialize-station-line-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":134},
     {"path":"tools/datapack/materialize-test-fixture.test.mjs","semanticOwner":"data101","classes":["required-pr"],"durationMs":155},
-    {"path":"tools/datapack/nationwide-candidate-coverage-gate.test.mjs","semanticOwner":"data447","classes":["deterministic-release"],"durationMs":null},
     {"path":"tools/datapack/nationwide-public-api-coverage-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":281},
     {"path":"tools/datapack/normalize-kric-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":200},
+    {"path":"tools/datapack/collect-korail-metropolitan-timetable-file.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":56},
+    {"path":"tools/datapack/publish-korail-metropolitan-timetable-raw.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":108},
+    {"path":"tools/datapack/register-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":58},
+    {"path":"tools/datapack/materialize-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":67},
+    {"path":"tools/datapack/run-korail-route-topology-registration.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":2},
+    {"path":"tools/datapack/parse-korail-metropolitan-timetable.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":84},
     {"path":"tools/datapack/parse-kric-code-catalog.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},
     {"path":"tools/datapack/plan-kric-exit-path-collection.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":139},
     {"path":"tools/datapack/plan-kric-line4-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":114},
@@ -598,6 +619,7 @@
     {"path":"tools/route-map/daegu-free-crossing-gate.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":173},
     {"path":"tools/route-map/densify-corridors.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":132},
     {"path":"tools/route-map/densify-hubs.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":114},
+    {"path":"tools/route-map/extract-svg-geometry.test.mjs","semanticOwner":"data506","classes":["required-pr"],"durationMs":59},
     {"path":"tools/route-map/export-loom-geojson.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":123},
     {"path":"tools/route-map/fix-svg-station-line-membership.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":131},
     {"path":"tools/route-map/line-branches.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":167},

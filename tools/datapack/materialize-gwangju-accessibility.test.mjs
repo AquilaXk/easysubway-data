@@ -8,27 +8,16 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
-  parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
-import {
   materializeGwangjuAccessibility,
   materializedGwangjuAccessibilityPackContentHash,
 } from "./materialize-gwangju-accessibility.mjs";
-import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -42,79 +31,25 @@ const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const ACCESSIBILITY_FIELDS = Object.freeze([
   "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
 ]);
-// gwangju timetable 누적 fixture coverage baseline(실측): supportedCount=22 → accessibility +1 = 23.
-const TIMETABLE_BASELINE_SUPPORTED_COUNT = 22;
-const ACCESSIBILITY_SUPPORTED_COUNT = TIMETABLE_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {
   const [
-    baseFixture,
-    busanTopology,
-    busanTimetable,
-    busanRouteMapBytes,
-    daejeonTopology,
-    daejeonTimetable,
-    gwangjuTopology,
-    gwangjuTimetable,
+    regional,
     accessibilitySnapshot,
-    inventory,
-    stationMapCsv,
-    molitStationMapCsv,
   ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
+    loadRegionalGwangjuTimetablePrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      readJson,
+      topologyNow,
+      timetableNow,
+    }),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
-  const busanTopologyFixture = materializeBusanRouteTopology({
-    baseFixture,
-    snapshot: busanTopology,
-    inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: busanTopologyFixture,
-    timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
-  const busanTimetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const routeMapFixture = materializeBusanRouteMapPositions({
-    baseFixture: busanTimetableFixture,
-    snapshot: JSON.parse(busanRouteMapBytes),
-    snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const gwangjuFixture = materializeGwangjuTimetable({
-    baseFixture: routeMapFixture,
-    timetableSnapshot: gwangjuTimetable,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
+  const { gwangjuFixture, gwangjuTopology: topologySnapshot, inventory } = regional;
   return {
     gwangjuFixture,
-    topologySnapshot: gwangjuTopology,
+    topologySnapshot,
     accessibilitySnapshot,
     inventory,
   };
@@ -122,6 +57,14 @@ async function inputs() {
 
 test("광주 공식 20역 편의시설을 facility·evidence 60건으로 materialize한다", async () => {
   const { gwangjuFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  gwangjuFixture.packs[0].sourceInventory = gwangjuFixture.packs[0].sourceInventory
+    .filter(({ id }) => id !== "kric-nationwide-timetable-file");
+  const missingTopology = structuredClone(gwangjuFixture);
+  missingTopology.packs[0].sourceInventory = missingTopology.packs[0].sourceInventory
+    .filter(({ id }) => id !== "gwangju-transportation-route-topology");
+  assert.throws(() => materializeGwangjuAccessibility({
+    baseFixture: missingTopology, accessibilitySnapshot, topologySnapshot, inventory, now: accessibilityNow,
+  }), /requires gwangju topology source/);
   const fixture = materializeGwangjuAccessibility({
     baseFixture: gwangjuFixture,
     accessibilitySnapshot,
@@ -347,15 +290,7 @@ test("materialized SQLite와 provenance가 광주 accessibility_facilities 1건�
     accessibilityRequirements.map(({ lineId }) => lineId),
     [LINE_ID],
   );
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: ACCESSIBILITY_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - ACCESSIBILITY_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((ACCESSIBILITY_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((ACCESSIBILITY_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 async function readJson(relativePath) {

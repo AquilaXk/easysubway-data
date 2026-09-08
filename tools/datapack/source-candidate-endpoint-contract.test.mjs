@@ -78,10 +78,44 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/run-current-itx-collection.mjs": "tools/datapack/run-current-itx-collection.test.mjs",
   "tools/datapack/run-current-seoul-accessibility-registration.mjs": "tools/datapack/run-current-seoul-accessibility-registration.test.mjs",
   "tools/datapack/run-public-static-network-v2-operation.mjs": "tools/datapack/run-public-static-network-v2-operation.test.mjs",
+  "tools/datapack/run-retained-gwangju-timetable-refresh.mjs": "tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs",
   "tools/datapack/validate-tago-schedule-sample.mjs": "tools/datapack/plan-tago-schedule-collection.test.mjs",
 });
 
 const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+
+test("KASI monthly operation registers the retained collector without admission", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "kasi-public-holiday-calendar");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  const operation = validateOperation(candidate);
+  assert.equal(operation.runner.command, "node tools/datapack/fetch-kasi-public-holiday-calendar.mjs");
+  const collector = await import("./fetch-kasi-public-holiday-calendar.mjs");
+  assert.equal(typeof collector.collectKasiHolidayCalendarFiles, "function");
+  assert.equal(candidate.evidence.licenseEvidenceUrl, candidate.detailUrl);
+});
+
+test("retained Korail timetable candidate does not claim a provider runner or admission", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "korail-metropolitan-timetable-file");
+  assert.ok(candidate);
+  assert.equal(candidate.admissionStatus, "preflight_only");
+  assert.equal(candidate.mobileEmbeddingAllowed, false);
+  assert.equal(candidate.detailUrl, "https://www.data.go.kr/data/15052169/fileData.do");
+  assert.equal(candidate.requestUrl, "https://www.korail.com/ticket/reserve/train-timeTable");
+  assert.equal(candidate.operation, undefined);
+  assert.equal(validateOperation(candidate, { allowMissing: true }), null);
+  const [file, exportedName] = candidate.evidence.retainedReader.split("#");
+  const reader = await import(new URL(`../../${file}`, import.meta.url));
+  assert.equal(typeof reader[exportedName], "function");
+  const collection = candidate.evidence.collectionContract;
+  const [collectorFile, collectorName] = collection.collector.split("#");
+  const collector = await import(new URL(`../../${collectorFile}`, import.meta.url));
+  assert.equal(typeof collector[collectorName], "function");
+  assert.equal(collection.requestTimeoutMs, collector.REQUEST_TIMEOUT_MS);
+  assert.equal(collection.maximumBytes, collector.MAXIMUM_BYTES);
+  assert.equal(candidate.evidence.licenseEvidenceUrl, candidate.detailUrl);
+  assert.equal(candidate.evidence.license, "unrestricted");
+});
 
 test("Seoul 노선별 지하철역 operation은 blank placeholders와 4호선 request token을 쓴다", () => {
   const candidate = document.candidates.find(({ id }) => id === "seoulmetro-station-line-info");
@@ -575,7 +609,7 @@ test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate
     {
       runner: "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
       test: "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
-      functionName: "fetchKasiPublicHolidayCalendar",
+      functionName: "fetchKasiPublicHolidayCalendarObservation",
       before: ["new URL(ENDPOINT)", "fetchImpl("],
     },
     {

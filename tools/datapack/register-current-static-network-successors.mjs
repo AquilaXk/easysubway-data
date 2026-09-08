@@ -72,14 +72,15 @@ function outputAllowlist(outputs) {
   if (!Array.isArray(outputs) || outputs.length !== OUTPUT_COUNT) throw new Error("static network registration output count mismatch");
   const snapshots = outputs.slice(0, 2).map(({ relative }) => relative);
   const inputs = outputs[0]?.inputs;
-  const predecessorInputs = inputs?.slice(INPUTS.length + 1) ?? [];
+  const predecessorInputs = inputs?.slice(INPUTS.length + 2) ?? [];
   if (!snapshots.every((relative, index) => relative === `tools/datapack/sources/${TARGETS[index]}-current-${snapshotStamp(relative)}.json` && /^20\d{6}T\d{9}Z$/u.test(snapshotStamp(relative)))
     || JSON.stringify(outputs.slice(2).map(({ relative }) => relative)) !== JSON.stringify(FIXED_OUTPUTS)
     || outputs.slice(0, 2).some(({ prestateBytes }) => prestateBytes !== null)
     || outputs.slice(2).some(({ prestateBytes }) => !Buffer.isBuffer(prestateBytes))
     || outputs.some(({ bytes: value }) => !Buffer.isBuffer(value))
     || !Array.isArray(inputs) || JSON.stringify(inputs.slice(0, INPUTS.length).map(({ relative }) => relative)) !== JSON.stringify(INPUTS)
-    || inputs.length !== INPUTS.length + 1 + TARGETS.length
+    || inputs.length !== INPUTS.length + 2 + TARGETS.length
+    || inputs[INPUTS.length + 1]?.relative !== gwangjuTopologyAdmission(parse(inputs[0].bytes, "inventory")).snapshotPath
     || !new RegExp("^tools/datapack/sources/capital-route-topology-20\\d{6}\\.json$", "u").test(inputs[INPUTS.length]?.relative ?? "")
     || predecessorInputs.some(({ relative }, index) => !new RegExp(
       `^tools/datapack/sources/${TARGETS[index]}-current-20\\d{6}T\\d{9}Z\\.json$`, "u",
@@ -113,7 +114,31 @@ const MOLIT_MEMBERSHIP_BINDINGS = Object.freeze({
   "line-e57a361e8892": parseMolitGwangjuStationMappings,
 });
 
-function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes) {
+function gwangjuTopologyAdmission(inventory) {
+  const sources = inventory.sources?.filter(({ id }) => id === "gwangju-transportation-route-topology");
+  const admission = sources?.[0]?.topologyAdmissionEvidence;
+  if (sources?.length !== 1 || typeof admission?.snapshotId !== "string"
+    || admission.snapshotPath !== `tools/datapack/sources/${admission.snapshotId}.json`) {
+    throw new Error("static network Gwangju topology admission is invalid");
+  }
+  return admission;
+}
+
+async function readGwangjuMembershipTopology(inventory, read) {
+  const admission = gwangjuTopologyAdmission(inventory);
+  const relative = admission.snapshotPath;
+  const topologyBytes = await read(relative);
+  const snapshot = parse(topologyBytes, "Gwangju topology");
+  if (snapshot.sourceId !== "gwangju-transportation-route-topology"
+    || snapshot.rawSha256 !== admission.rawSha256
+    || snapshot.contentSha256 !== admission.contentSha256
+    || sha(JSON.stringify({ scope: snapshot.scope, edges: snapshot.edges })) !== admission.contentSha256) {
+    throw new Error("static network Gwangju topology identity mismatch");
+  }
+  return { relative, bytes: topologyBytes, snapshot };
+}
+
+function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes, gwangjuTopology) {
   if (!Array.isArray(inventory?.sources) || !Buffer.isBuffer(rawBytes)
     || sha(rawBytes) !== snapshot?.rawSha256 || rawBytes.length !== snapshot?.rawReceipt?.byteSize) {
     throw new Error("static network MOLIT membership raw binding is invalid");
@@ -125,7 +150,7 @@ function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes) {
     if (!Array.isArray(lineIds) || lineIds.length !== 1 || typeof MOLIT_MEMBERSHIP_BINDINGS[lineIds[0]] !== "function") {
       throw new Error("static network MOLIT membership scope is invalid");
     }
-    const mappings = MOLIT_MEMBERSHIP_BINDINGS[lineIds[0]](rawBytes);
+    const mappings = MOLIT_MEMBERSHIP_BINDINGS[lineIds[0]](rawBytes, gwangjuTopology);
     if (!Array.isArray(mappings) || mappings.length === 0 || mappings.sourceRawSha256 !== snapshot.rawSha256) {
       throw new Error("static network MOLIT membership mapping is invalid");
     }
@@ -384,13 +409,15 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
   const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger"); const candidate = parse(candidateBytes, "candidate build spec");
   const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
   const { topologyAdmission, topologyRelative, topologyBytes } = await readCurrentTopologyAdmissionInput({ root, inventory, now, read });
+  const gwangjuTopology = await readGwangjuMembershipTopology(inventory, read);
   revalidateV2ProducerOutput({ producerOutput, rawBytesBySource, sourceInventory: inventory, topologyAdmission, topologyBytes });
   const inputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes, productionScopeBytes][index] }));
   inputs.push({ relative: topologyRelative, bytes: topologyBytes });
+  inputs.push({ relative: gwangjuTopology.relative, bytes: gwangjuTopology.bytes });
   const heads = requireCurrentCandidateBinding({ candidate, ledger, productionScopeBytes, inventory, inventoryBytes, governance, governanceBytes, freshness, now });
   inputs.push(...await requireActivePublicV2Predecessors({ ledger, heads, inventory, now, read }));
   const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
-  rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]]);
+  rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]], gwangjuTopology.snapshot);
   validateLineage(nextLedger);
   const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();
   for (const snapshot of snapshots) {
