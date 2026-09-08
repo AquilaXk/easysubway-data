@@ -148,6 +148,16 @@ function buildIntervalCsv(lineNumber, mutateRows) {
   return Buffer.from([header, ...rows].map((row) => row.join(",")).join("\n"), "utf8");
 }
 
+test("Daegu source snapshots retain original CSV bytes", () => {
+  const bytes = buildIntervalCsv(1);
+  const snapshot = parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: CAPTURED_AT });
+  const [rawSource] = snapshot.rawSources;
+  assert.deepEqual(Buffer.from(rawSource.bytesBase64, "base64"), bytes);
+  assert.equal(rawSource.rawSha256, snapshot.rawSha256);
+  assert.equal(rawSource.rawSha256, sha256(bytes));
+  assert.equal(rawSource.datasetId, DAEGU_LINES.find(({ lineNumber }) => lineNumber === 1).intervalDatasetId);
+});
+
 test("역 구간정보 CSV의 상하행 거리(km)가 비대칭이면 fail-closed한다", () => {
   const bytes = buildIntervalCsv(1, (rows) => { rows[0][7] = "2.000"; }); // downKm(col7)만 변조
   assert.throws(() => parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: CAPTURED_AT }), /distance asymmetry/);

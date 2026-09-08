@@ -110,6 +110,15 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function retainedRawSource(datasetId, bytes) {
+  const exactBytes = Buffer.from(bytes);
+  return {
+    datasetId,
+    rawSha256: sha256(exactBytes),
+    bytesBase64: exactBytes.toString("base64"),
+  };
+}
+
 function validDate(now) {
   const date = now instanceof Date ? now : new Date(now);
   if (Number.isNaN(date.getTime())) throw new Error("capturedAt must be a valid date");
@@ -193,6 +202,7 @@ export function parseDaeguRouteTopology(intervalBytes, { lineNumber, capturedAt 
     quarantinedDepots: depots,
     scopeSha256,
     edgesSha256,
+    rawSources: [retainedRawSource(config.intervalDatasetId, intervalBytes)],
     rawSha256,
     contentSha256: sha256(JSON.stringify({ scope, edges })),
   };
@@ -316,6 +326,10 @@ export function parseDaeguTrainTimetable(upBytes, downBytes, topologySnapshot, {
     rolloverTripCount: up.rolloverTripCount + down.rolloverTripCount,
     trips,
     tripsSha256,
+    rawSources: [
+      retainedRawSource(config.upDatasetId, upBytes),
+      retainedRawSource(config.downDatasetId, downBytes),
+    ],
     rawUpSha256: up.rawSha256,
     rawDownSha256: down.rawSha256,
     rawSha256: sha256(Buffer.concat([Buffer.from(upBytes), Buffer.from(downBytes)])),
