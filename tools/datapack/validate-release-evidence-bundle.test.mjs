@@ -35,6 +35,12 @@ test("release topology cannot defer violations", () => {
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+test("release validator requires an explicit launch report", async () => {
+  await assert.rejects(execFileAsync(process.execPath, [
+    path.join(import.meta.dirname, "validate-release-evidence-bundle.mjs"),
+    "--bundle", "missing-fixture-bundle.json",
+  ], { cwd: root }), /--launch-report is required/);
+});
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
 const publicKeyPem = publicKey.export({ type: "spki", format: "pem" });
