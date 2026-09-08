@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import {
-  loadRegionalSeoul9Phase1RouteMapPrefix,
+  loadRegionalCapitalKricRouteMapPrefix,
   projectHistoricalRegionalMaterializeInventory,
 } from "./materialize-test-fixture.mjs";
 
@@ -31,26 +31,15 @@ async function readJson(relativePath) {
 }
 
 async function inputs() {
-  const [
-    regional,
-    sampleSnapshotBytes,
-  ] = await Promise.all([
-    loadRegionalSeoul9Phase1RouteMapPrefix({
+  return loadRegionalCapitalKricRouteMapPrefix(
+    {
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
       inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
       readJson, topologyNow, timetableNow, gwangjuAccessibilityNow: accessibilityNow,
       gwangjuRouteMapNow, daejeonRouteMapNow, seoul9RouteMapNow,
-    }),
-    readFile(path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`)),
-  ]);
-  const { seoul9Fixture, capitalTopology, inventory } = regional;
-  return {
-    baseFixture: seoul9Fixture,
-    sampleSnapshot: JSON.parse(sampleSnapshotBytes),
-    sampleSnapshotSha256: createHash("sha256").update(sampleSnapshotBytes).digest("hex"),
-    topologySnapshot: capitalTopology,
-    inventory,
-  };
+    },
+    path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`),
+  );
 }
 
 test("공식 김포골드라인 역사좌표 snapshot을 누적 production candidate pack에 materialize한다", async () => {

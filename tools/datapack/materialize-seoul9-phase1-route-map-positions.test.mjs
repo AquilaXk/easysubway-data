@@ -41,6 +41,7 @@ async function inputs() {
   const [
     regional,
     phase1SnapshotBytes,
+    capitalTopology,
   ] = await Promise.all([
     loadRegionalDaejeonRouteMapPrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
@@ -53,8 +54,9 @@ async function inputs() {
       daejeonRouteMapNow,
     }),
     readFile(path.join(root, "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json")),
+    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
   ]);
-  const { daejeonRouteMapFixture, capitalTopology, inventory } = regional;
+  const { daejeonRouteMapFixture, inventory } = regional;
   return {
     baseFixture: daejeonRouteMapFixture,
     phase1Snapshot: JSON.parse(phase1SnapshotBytes),

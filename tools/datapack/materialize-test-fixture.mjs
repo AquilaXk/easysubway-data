@@ -341,6 +341,21 @@ export async function loadRegionalSeoul9Phase1RouteMapPrefix(options) {
   };
 }
 
+export async function loadRegionalCapitalKricRouteMapPrefix(options, sampleSnapshotPath) {
+  const [regional, sampleSnapshotBytes] = await Promise.all([
+    loadRegionalSeoul9Phase1RouteMapPrefix(options),
+    readFile(sampleSnapshotPath),
+  ]);
+  const sampleSnapshot = JSON.parse(sampleSnapshotBytes);
+  return {
+    baseFixture: regional.seoul9Fixture,
+    topologySnapshot: regional.capitalTopology,
+    inventory: regional.inventory,
+    sampleSnapshot,
+    sampleSnapshotSha256: sha256(sampleSnapshotBytes),
+  };
+}
+
 /**
  * The regional materializers start with a canonical production-shaped pack,
  * but `build-datapack --fixture` deliberately labels its output as a fixture.
