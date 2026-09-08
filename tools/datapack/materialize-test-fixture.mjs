@@ -267,7 +267,7 @@ export async function loadRegionalGwangjuAccessibilityPrefix(options) {
   const source = inventory.sources.find(({ id }) => id === "gwangju-transportation-accessibility");
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" })
     .format(new Date(accessibilitySnapshot.capturedAt)).replaceAll("-", "");
-  const snapshotId = `${source.id}-${date}`;
+  const snapshotId = `${source.id}-${sha256(JSON.stringify(accessibilitySnapshot))}-${date}`;
   source.fieldsProvided = accessibilitySnapshot.fieldsProvided;
   source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence,
     snapshotId, snapshotPath: `tools/datapack/sources/${snapshotId}.json`,

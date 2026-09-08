@@ -18,6 +18,7 @@ import {
 import {
   materializeGwangjuAccessibility,
   materializedGwangjuAccessibilityPackContentHash,
+  validateGwangjuAccessibilitySnapshotIdentity,
 } from "./materialize-gwangju-accessibility.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -32,6 +33,23 @@ const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const ACCESSIBILITY_FIELDS = Object.freeze([
   "elevator", "escalator", "status", "verified_at",
 ]);
+
+test("접근성 snapshot identity는 전체 bytes와 원래 관측일을 함께 결속한다", () => {
+  const snapshot = { capturedAt: "2000-01-01T15:00:00.000Z", rows: [{ elevator: 1 }] };
+  const digest = createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+  const snapshotId = `${SOURCE_ID}-${digest}-20000102`;
+  assert.doesNotThrow(() => validateGwangjuAccessibilitySnapshotIdentity(snapshotId, snapshot));
+  assert.throws(() => validateGwangjuAccessibilitySnapshotIdentity(
+    `${SOURCE_ID}-${digest}-20000101`, snapshot,
+  ), /capturedAt Asia\/Seoul date/);
+  assert.throws(() => validateGwangjuAccessibilitySnapshotIdentity(snapshotId, {
+    ...snapshot, rows: [{ elevator: 2 }],
+  }), /snapshot bytes/);
+  assert.throws(() => validateGwangjuAccessibilitySnapshotIdentity(snapshotId, {
+    ...snapshot, capturedAt: "2000-01-01T16:00:00.000Z",
+  }), /snapshot bytes/);
+  assert.throws(() => validateGwangjuAccessibilitySnapshotIdentity(`${SOURCE_ID}-20000102`, snapshot), /snapshot bytes/);
+});
 
 test("schema2 미관측 시설은 materialized 부재 evidence가 되지 않는다", async () => {
   const { accessibilityFixture, accessibilitySnapshot, gwangjuFixture, gwangjuTopology, inventory } = await loadRegionalGwangjuAccessibilityPrefix({
@@ -295,7 +313,7 @@ test("materialized SQLite와 provenance는 미제공 광주 시설 필드를 MIS
       [LINE_ID],
     );
     assert.ok(fieldRecords.every((record) => (
-      record.sourceSnapshotId === "gwangju-transportation-accessibility-20260724"
+      record.sourceSnapshotId === inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence.snapshotId
         && record.evidenceHash === accessibilitySnapshot.rowsSha256
         && /^[a-f0-9]{64}$/.test(record.providerRecordHash)
         && record.derivationKind === "OFFICIAL"

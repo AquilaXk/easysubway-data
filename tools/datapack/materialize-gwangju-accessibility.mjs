@@ -227,7 +227,7 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || evidence?.issue !== 2479
     || evidence.materializer !== "tools/datapack/materialize-gwangju-accessibility.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-gwangju-accessibility.test.mjs"
-    || !/^gwangju-transportation-accessibility-\d{8}$/.test(evidence.snapshotId ?? "")
+    || !/^gwangju-transportation-accessibility-[a-f0-9]{64}-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== snapshot.stationCount || evidence.rowCount !== snapshot.rowCount
@@ -249,10 +249,7 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
   validateTopologyLineage(inventory, evidence, topologySnapshot);
-  const version = evidence.snapshotId.slice(-8);
-  if (version !== compactSeoulDate(evidence.capturedAt)) {
-    throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
-  }
+  validateGwangjuAccessibilitySnapshotIdentity(evidence.snapshotId, snapshot);
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
   const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
@@ -323,6 +320,17 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
+}
+
+// 같은 관측일에 topology가 바뀌어도 immutable 파일이 충돌하지 않도록 전체 입력을 결속한다.
+export function validateGwangjuAccessibilitySnapshotIdentity(snapshotId, snapshot) {
+  const date = compactSeoulDate(snapshot.capturedAt);
+  if (snapshotId?.slice(-8) !== date) {
+    throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
+  }
+  if (snapshotId !== `${SOURCE_ID}-${sha256(JSON.stringify(snapshot))}-${date}`) {
+    throw new Error(`${SOURCE_ID} snapshotId must match snapshot bytes`);
+  }
 }
 
 function compactSeoulDate(value) {
