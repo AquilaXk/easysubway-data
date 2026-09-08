@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { buildNationwideCandidateSpec, buildNationwideReleaseArtifacts, commitNationwideReleaseArtifacts,
   deriveNationwideProductionScope } from "./build-nationwide-candidate.mjs";
@@ -48,6 +50,51 @@ async function inputs(context, { admitted = true } = {}) {
 
 test("nationwide candidate constructor requires its actual inputs", async () => {
   await assert.rejects(buildNationwideCandidateSpec({}), /targets input bytes are required/);
+});
+
+test("nationwide preparation CLI consumes serialized inputs and writes the bound candidate", async (context) => {
+  const input = await inputs(context);
+  const targets = JSON.parse(input.inputBytes.targets);
+  const pack = JSON.parse(await readFile(path.join(input.repositoryRoot, "pack.json"))).packs[0];
+  pack.coverageLineOperatorScopes = targets.activeLineScopes;
+  pack.stations = [{ id: "station-a" }];
+  pack.stationLines = targets.activeLineScopes.map(({ lineId }) => ({ stationId: "station-a", lineId }));
+  const routeEdges = pack.stationLines.flatMap(({ stationId, lineId }) => [
+    { edgeId: `entry-${lineId}`, edgeType: "ENTRY", fromNodeId: stationId, toNodeId: `${stationId}:${lineId}` },
+    { edgeId: `exit-${lineId}`, edgeType: "EXIT", fromNodeId: `${stationId}:${lineId}`, toNodeId: stationId },
+  ]);
+  routeEdges.push({ edgeId: "transfer", edgeType: "IN_STATION_TRANSFER",
+    fromNodeId: `station-a:${pack.stationLines[0].lineId}`, toNodeId: `station-a:${pack.stationLines[1].lineId}` },
+  { edgeId: "ride", edgeType: "RIDE", serviceClass: "SUBWAY" });
+  const put = async (relative, bytes) => {
+    await mkdir(path.dirname(path.join(input.repositoryRoot, relative)), { recursive: true });
+    await writeFile(path.join(input.repositoryRoot, relative), bytes);
+  };
+  await put("pack.json", fixtureBytes({ packs: [pack] }));
+  for (const [name, relative] of Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS)) await put(relative, input.inputBytes[name]);
+  for (const relative of CANDIDATE_RELEASE_OUTPUTS) await put(relative, fixtureBytes({ original: relative }));
+  const policyScope = JSON.parse(input.inputBytes.productionScope);
+  policyScope.verifiedAccessibilityScope.requiredFacilityTypes = ["ELEVATOR"];
+  await put(CANDIDATE_RELEASE_OUTPUTS[1], fixtureBytes(policyScope));
+  const routeBytes = fixtureBytes({ candidate: { candidateId: input.releaseIdentity.candidateId,
+    sourceSetSha256: sha(JSON.stringify(JSON.parse(input.inputBytes.sourceSnapshots))) }, routeEdges });
+  await put("route-input.json", routeBytes);
+  const preparation = { schemaVersion: 1, artifactKind: "nationwide-candidate-preparation",
+    scopeId: policyScope.routingLaunchScope.id, materialization: input.materialization,
+    releaseIdentity: input.releaseIdentity, builderIdentity: input.builderIdentity,
+    authority: { candidateId: input.releaseIdentity.candidateId, scopeId: policyScope.routingLaunchScope.id,
+      approvalId: "fixture-approval", requestedBy: "fixture-requester", approvedBy: "fixture-owner" },
+    routeEdgeInput: { path: "route-input.json", sha256: sha(routeBytes) } };
+  await put("preparation.json", fixtureBytes(preparation));
+  const command = spawnSync(process.execPath, [fileURLToPath(new URL("./build-nationwide-candidate.mjs", import.meta.url)),
+    "--preparation", "preparation.json"], { cwd: input.repositoryRoot, encoding: "utf8", timeout: 15000 });
+  assert.equal(command.status, 0, command.stderr);
+  const candidateBytes = await readFile(path.join(input.repositoryRoot, CANDIDATE_RELEASE_OUTPUTS[0]));
+  assert.equal(JSON.parse(command.stdout).buildSpecSha256, sha(candidateBytes));
+  const scope = JSON.parse(await readFile(path.join(input.repositoryRoot, CANDIDATE_RELEASE_OUTPUTS[1])));
+  assert.equal(scope.verifiedAccessibilityScope.requiredRowIds.length, pack.stationLines.length);
+  assert.equal(scope.decision.currentLaunchDecision, "NO_GO");
+  assert.deepEqual(await readFile(path.join(input.repositoryRoot, "route-input.json")), routeBytes);
 });
 
 test("nationwide scope derives multi-line rows and route sets without pilot counts or approval", () => {

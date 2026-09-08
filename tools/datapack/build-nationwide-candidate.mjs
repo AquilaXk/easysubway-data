@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { exportLedgerHash } from "./export-ledger-hashes.mjs";
 import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
@@ -86,16 +87,19 @@ export function deriveNationwideProductionScope({ policyScope, scopeId, targets,
 // 준비 scope는 교체할 출력이다. 이를 불변 외부 입력으로 다시 검사하면
 // 자기 자신의 첫 write를 drift로 오인하므로 출력 prestate CAS로 보호한다.
 export async function commitNationwideReleaseArtifacts({ repositoryRoot, productionScopeBytes,
-  materialization, releaseIdentity, builderIdentity, authority, failAfter = null } = {}) {
+  materialization, releaseIdentity, builderIdentity, authority, failAfter = null,
+  preparationBindings = [], scopePrestateBytes } = {}) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !Buffer.isBuffer(productionScopeBytes)) {
     throw new Error("candidate commit requires an absolute root and prepared scope bytes");
   }
   const prestate = await Promise.all(CANDIDATE_RELEASE_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  if (scopePrestateBytes && !prestate[1].equals(scopePrestateBytes)) throw new Error("scope policy prestate drift");
   const inputs = await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS).map(async ([name, relative]) =>
     ({ name, relative, bytes: await readFile(path.join(repositoryRoot, relative)) })));
   const prepared = await buildNationwideReleaseArtifacts({ repositoryRoot, materialization,
     releaseIdentity, builderIdentity, authority,
     inputBytes: { ...Object.fromEntries(inputs.map(({ name, bytes }) => [name, bytes])), productionScope: productionScopeBytes } });
+  inputs.push(...preparationBindings);
   for (const binding of [prepared.fixtureBinding, prepared.overridesBinding]) {
     if (CANDIDATE_RELEASE_OUTPUTS.includes(binding.path)) throw new Error("materialization overlaps candidate outputs");
     const bytes = await readFile(materializedPath(repositoryRoot, binding.path));
@@ -262,4 +266,48 @@ function materializedPath(root, relative) {
   const resolved = path.resolve(root, relative);
   if (!resolved.startsWith(`${path.resolve(root)}${path.sep}`)) throw new Error("materialization path escapes repository");
   return resolved;
+}
+
+export async function main(argv = process.argv.slice(2), { repositoryRoot = process.cwd() } = {}) {
+  if (argv.length !== 2 || argv[0] !== "--preparation") throw new Error("usage: --preparation <repository-relative JSON>");
+  const bindings = [];
+  const read = async (relative) => {
+    const bytes = await readFile(materializedPath(repositoryRoot, relative));
+    bindings.push({ relative, bytes });
+    return bytes;
+  };
+  const preparation = JSON.parse(await read(argv[1]));
+  const keys = ["schemaVersion", "artifactKind", "scopeId", "materialization", "releaseIdentity", "builderIdentity", "authority", "routeEdgeInput"];
+  if (!preparation || Object.keys(preparation).length !== keys.length || keys.some((key) => !Object.hasOwn(preparation, key))
+    || preparation.schemaVersion !== 1 || preparation.artifactKind !== "nationwide-candidate-preparation") {
+    throw new Error("candidate preparation shape mismatch");
+  }
+  const inputs = Object.fromEntries(await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS)
+    .map(async ([name, relative]) => [name, JSON.parse(await read(relative))])));
+  const scopePrestateBytes = await readFile(path.join(repositoryRoot, CANDIDATE_RELEASE_OUTPUTS[1]));
+  const fixture = JSON.parse(await read(preparation.materialization.fixturePath));
+  const routeBytes = await read(preparation.routeEdgeInput.path);
+  if (sha256(routeBytes) !== preparation.routeEdgeInput.sha256) throw new Error("prepared route input digest mismatch");
+  const route = JSON.parse(routeBytes);
+  const selected = new Set(inputs.fanIn.selectedSources.map((row) => row.snapshotId));
+  const sourceSetHash = sha256(JSON.stringify(inputs.sourceSnapshots.filter((row) => selected.has(row.snapshotId))));
+  if (route.candidate?.candidateId !== preparation.releaseIdentity.candidateId
+    || route.candidate?.sourceSetSha256 !== sourceSetHash) throw new Error("prepared route candidate identity mismatch");
+  const scope = deriveNationwideProductionScope({ policyScope: JSON.parse(scopePrestateBytes),
+    scopeId: preparation.scopeId, targets: inputs.targets, fanIn: inputs.fanIn,
+    ownershipLedger: inputs.ownershipLedger, fixture, routeEdges: route.routeEdges });
+  if (bindings.some(({ relative }) => CANDIDATE_RELEASE_OUTPUTS.includes(path.posix.normalize(relative)))) {
+    throw new Error("preparation inputs overlap candidate outputs");
+  }
+  return commitNationwideReleaseArtifacts({ repositoryRoot, productionScopeBytes: jsonBytes(scope),
+    materialization: preparation.materialization, releaseIdentity: preparation.releaseIdentity,
+    builderIdentity: preparation.builderIdentity, authority: preparation.authority,
+    preparationBindings: bindings, scopePrestateBytes });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().then((result) => process.stdout.write(`${JSON.stringify(result)}\n`)).catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
 }
