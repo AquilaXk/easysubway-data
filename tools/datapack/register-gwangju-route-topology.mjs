@@ -24,7 +24,7 @@ const select = (rows, predicate) => {
 };
 
 /** 재수집 없이 보존 원문을 해석하고 기존 정책의 등록 입력을 준비한다. */
-export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snapshotPath, governanceEntry, now = new Date() }) {
+export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snapshotPath, now = new Date() }) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !path.isAbsolute(snapshotPath ?? "") || !Number.isFinite(now.valueOf())) {
     throw new Error("Gwangju topology registration requires absolute input paths and time");
   }
@@ -51,7 +51,14 @@ export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snaps
 
   const licenseHash = sha(canonicalJson(source.license));
   const retainedEntry = governance.sources.find(({ sourceId }) => sourceId === SOURCE_ID);
-  const entry = retainedEntry ?? governanceEntry;
+  const registrationInputs = [];
+  let entry = retainedEntry;
+  if (!entry) {
+    const absolute = path.join(root, "tools/datapack/source-candidates.json");
+    const bytes = await readFile(absolute);
+    entry = select(parse(bytes).candidates, ({ id }) => id === SOURCE_ID).registrationMetadata?.governance;
+    registrationInputs.push({ absolute, bytes });
+  }
   const review = entry?.licenseReview;
   if (source.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
     || entry?.sourceId !== SOURCE_ID || entry.sourceClassId !== "route_graph_topology"
@@ -79,7 +86,7 @@ export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snaps
   const snapshotSha256 = sha(snapshotBytes), snapshotId = `${SOURCE_ID}-${snapshotSha256}`;
   const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: projectedGovernance, sourceId: SOURCE_ID, retrievedAt: snapshot.capturedAt });
   const objectKey = `source-raw/${SOURCE_ID}/${snapshotSha256}.json`;
-  return { root, snapshotPath, snapshotBytes, snapshot, snapshotId, snapshotSha256, currentBytes, ledger,
+  return { root, snapshotPath, snapshotBytes, snapshot, snapshotId, snapshotSha256, currentBytes, ledger, registrationInputs,
     inventory: projectedInventory, governance: projectedGovernance, freshness: projectedFreshness,
     rawRetentionExpiresAt, objectKey,
     publishPlan: { steps: [
@@ -138,6 +145,7 @@ async function outputsFromPrepared(prepared, receiptPath, now) {
     if (error.code !== "EEXIST" || !(await readFile(snapshotFile)).equals(prepared.snapshotBytes)) throw error;
   }
   const inputs = [
+    ...prepared.registrationInputs,
     { absolute: prepared.snapshotPath, bytes: prepared.snapshotBytes },
     { absolute: receiptPath, bytes: receiptBytes },
     { absolute: path.join(root, relative), bytes: prepared.snapshotBytes },

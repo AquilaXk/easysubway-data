@@ -1547,6 +1547,29 @@
     },
     {
       "id": "gwangju-transportation-route-topology",
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "gwangju-transportation-route-topology",
+          "sourceClassId": "route_graph_topology",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "a0daff78b1cdab2497fed25c22f158320137e70ef19c6f0a66ae8d5cfffc2c0c",
+            "reviewedAt": "2026-09-08T12:06:34.000Z",
+            "nextReviewAt": "2027-09-08T12:06:34.000Z",
+            "termsUrl": "https://www.data.go.kr/data/15046044/fileData.do",
+            "reviewedProvider": "광주교통공사",
+            "reviewedDatasetUrl": "https://www.grtc.co.kr/subway/contents/apiRunInfo",
+            "redistributionScopes": ["DERIVED_DATAPACK"],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
       "priority": "P0",
       "domain": "route_graph_topology",
       "coverageScope": {
