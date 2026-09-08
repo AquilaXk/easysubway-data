@@ -16,10 +16,27 @@ const ledgerPath = "tools/datapack/reports/nationwide-coverage-tally.json";
 const requirementKey = ({ regionId, operatorId, lineId, sourceDomain }) =>
   `${regionId}:${operatorId}:${lineId}:${sourceDomain}`;
 
-const DEFERRED_CANDIDATE_ARTIFACT_REQUIREMENT_KEYS = Object.freeze([
-  "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
-  "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
-].map((lineId) => `capital:seoul-metro:${lineId}:route_map_positions`));
+function assertTrackedFollowup(requirement, ownerRules) {
+  const keys = ["regionId", "operatorId", "lineId", "sourceDomain"];
+  const candidates = ownerRules.filter((rule) => keys.every((key) =>
+    rule[key] === undefined || rule[key] === requirement[key]));
+  const specificity = (rule) => keys.filter((key) => rule[key] !== undefined).length;
+  const maximum = Math.max(...candidates.map(specificity));
+  const owners = candidates.filter((rule) => specificity(rule) === maximum);
+  assert.equal(owners.length, 1, `${requirementKey(requirement)}: missing or ambiguous owner`);
+  assert.ok(Number.isInteger(owners[0].issue) && owners[0].issue > 0, "invalid owner issue");
+}
+
+test("과거 검색 밖의 결측은 유일한 현행 담당 이슈가 있어야 한다", () => {
+  const row = { regionId: "region", operatorId: "operator", lineId: "line", sourceDomain: "map" };
+  const generic = { sourceDomain: "map", issue: 1 };
+  const specific = { regionId: "region", sourceDomain: "map", issue: 2 };
+  assert.doesNotThrow(() => assertTrackedFollowup(row, [generic, specific]));
+  assert.throws(() => assertTrackedFollowup(row, []), /missing or ambiguous owner/);
+  assert.throws(() => assertTrackedFollowup(row, [{ sourceDomain: "other", issue: 1 }]), /missing or ambiguous owner/);
+  assert.throws(() => assertTrackedFollowup(row, [specific, { ...specific, issue: 3 }]), /missing or ambiguous owner/);
+  assert.throws(() => assertTrackedFollowup(row, [{ ...specific, issue: 0 }]), /invalid owner issue/);
+});
 
 test("전국 공공데이터 재감사는 4건만 공식 미지원으로 닫고 183건은 MISSING으로 재개방한다", async () => {
   const plan = JSON.parse(await readFile(path.join(root, planPath), "utf8"));
@@ -42,11 +59,8 @@ test("전국 공공데이터 재감사는 4건만 공식 미지원으로 닫고 
   assert.doesNotMatch(resolutionsText, /"(?:serviceKey|secret|token)"\s*:/i);
   assert.doesNotMatch(resolutionsText, /Infuser\s+/i);
 
-  // 재크롤 계획은 tally ledger의 미admission requirement를 전부 덮어야 한다(포함 관계). 덮지 못한
-  // requirement는 재크롤 대상에서 사라져 우선순위 산정에서 누락되므로 fail closed다. 반대로 이미
-  // 입고된 requirement가 계획에 남는 것은 허용한다 — 정확일치를 요구하면 admission 배치마다 계획
-  // 재생성이 강제되고, 계획이 바뀌면 searchPlanSha256 때문에 resolutions까지 live probe로 재발행해야 한다.
-  // 잔존 admitted entry는 다음 정기 재생성에서 정리한다(ledger regeneration.pairedUpdateKo 참조).
+  // 과거 검색과 그 결과의 hash 결속은 보존한다. 이후 발생한 결측은 현행 담당 이슈로
+  // 추적하며, 이 배정은 admission이나 검색 완료의 증거가 아니다.
   const ledger = JSON.parse(await readFile(path.join(root, ledgerPath), "utf8"));
   const planKeys = new Set(plan.entries.map(requirementKey));
   const admittedKeys = new Set(
@@ -55,17 +69,14 @@ test("전국 공공데이터 재감사는 4건만 공식 미지원으로 닫고 
       .map(requirementKey),
   );
   assert.equal(admittedKeys.size, ledger.launchRequired.inventoryAdmittedCount);
-  // 서울 1~8호선 public coordinate source는 current inventory scope에는 있으나 public v2 candidate
-  // artifact가 아직 없어 MISSING으로 남는다. public API 재크롤 plan 누락은 이 exact deferred set만
-  // 허용하며, 그 밖의 미admission requirement 누락은 계속 fail closed한다.
-  assert.deepEqual(
-    ledger.launchRequired.requirements
-      .filter(({ status }) => status !== "INVENTORY_ADMITTED")
-      .filter((requirement) => !planKeys.has(requirementKey(requirement)))
-      .map(requirementKey)
-      .sort(),
-    [...DEFERRED_CANDIDATE_ARTIFACT_REQUIREMENT_KEYS].sort(),
-  );
+  const ownership = JSON.parse(await readFile(path.join(root,
+    "tools/datapack/release/nationwide-requirement-ownership.json"), "utf8"));
+  assert.equal(ownership.targetVersion, ledger.targetVersion);
+  for (const requirement of ledger.launchRequired.requirements) {
+    if (requirement.status === "INVENTORY_ADMITTED" || planKeys.has(requirementKey(requirement))) continue;
+    assert.equal(requirement.status, "MISSING", "official unsupported evidence must remain in the historical plan");
+    assertTrackedFollowup(requirement, ownership.ownerRules);
+  }
   // 공식 미지원 판정과 admission은 서로 반대 주장이므로 한 requirement에 겹치면 fail closed다.
   assert.deepEqual(
     resolutions.entries.map(requirementKey).filter((key) => admittedKeys.has(key)),
