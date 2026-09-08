@@ -1001,6 +1001,30 @@
       "id": "daejeon-station-distance-fare",
       "priority": "P0",
       "domain": "route_graph_topology",
+      "registrationMetadata": {
+        "admissionReference": "https://github.com/AquilaXk/easysubway/pull/2336",
+        "governance": {
+          "sourceId": "daejeon-station-distance-fare",
+          "sourceClassId": "route_graph_topology",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "8790a427f3f87892951d529c118cffa50b3ecc517f829b4fc46b382647bb034d",
+            "reviewedAt": "2026-09-08T16:06:25.000Z",
+            "nextReviewAt": "2027-09-08T16:06:25.000Z",
+            "termsUrl": "https://www.data.go.kr/data/15158794/openapi.do",
+            "reviewedProvider": "대전교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15158794/openapi.do",
+            "redistributionScopes": ["DERIVED_DATAPACK"],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
       "coverageScope": {
         "regionIds": [
           "daejeon"
