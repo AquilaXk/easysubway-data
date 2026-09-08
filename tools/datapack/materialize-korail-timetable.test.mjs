@@ -67,7 +67,7 @@ test("uses the canonical terminal station name as the trip headsign and rejects 
   const snapshot = scheduleSnapshot();
   const args = { inventory: inventory(snapshot), ledger: ledger(snapshot), now: new Date("2040-01-02T00:00:00.000Z") };
   const pack = basePack();
-  pack.stations = [{ id: "station-a", name: "가역" }, { id: "station-b", name: "나역" }];
+  pack.stations = [{ id: "station-a", nameKo: "가역" }, { id: "station-b", nameKo: "나역" }];
 
   const result = materializeKorailTimetable({ ...args, pack, snapshot });
   assert.equal(result.transitTrips[0].tripHeadsign, "나역");
@@ -116,7 +116,7 @@ function reseal(snapshot) {
 }
 
 function basePack() {
-  return { sourceInventory: [], lines: [{ id: lineId, operatorId: "korail" }], stations: [{ id: "station-a", name: "가역" }, { id: "station-b", name: "나역" }], stationLines: [{ stationId: "station-a", lineId, lineSequence: 1 }, { stationId: "station-b", lineId, lineSequence: 2 }], serviceCalendars: [], serviceCalendarDates: [], transitRoutes: [], transitTrips: [], transitStopTimes: [], minimumTableRows: {} };
+  return { sourceInventory: [], lines: [{ id: lineId, operatorId: "korail" }], stations: [{ id: "station-a", nameKo: "가역" }, { id: "station-b", nameKo: "나역" }], stationLines: [{ stationId: "station-a", lineId, lineSequence: 1 }, { stationId: "station-b", lineId, lineSequence: 2 }], serviceCalendars: [], serviceCalendarDates: [], transitRoutes: [], transitTrips: [], transitStopTimes: [], minimumTableRows: {} };
 }
 
 function inventory(snapshot) {

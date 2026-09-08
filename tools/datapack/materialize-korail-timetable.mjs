@@ -218,7 +218,7 @@ function assertCanonicalStops(pack, tables, lineId) {
 }
 
 function materializedTablesWithCanonicalHeadsigns(pack, tables) {
-  const stationNames = new Map(pack.stations.map(({ id, name }) => [id, name]));
+  const stationNames = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
   return {
     ...tables,
     transitTrips: tables.transitTrips.map((trip) => {

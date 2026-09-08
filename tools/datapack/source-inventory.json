@@ -8552,6 +8552,101 @@
       "admissionEvidence": {
         "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
       }
+    },
+    {
+      "id": "korail-metropolitan-planned-timetable",
+      "displayName": "한국철도공사 광역전철 계획 시각표 — 대경선",
+      "owner": "한국철도공사",
+      "provider": "한국철도공사",
+      "providerDepartment": "",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+      "datasetKind": "official-static-file",
+      "coverage": "DaeGyeong planned service calendar, trips, and stop times derived from the retained official timetable receipt",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "korail"
+        ],
+        "lineIds": [
+          "line-8f7ed01f290a"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "productionUseAllowed": true,
+      "updateFrequency": "P30D",
+      "observedDataUpdatedAt": "2026-09-07",
+      "retrievedAt": "2026-09-07",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "unrestricted",
+        "attribution": "한국철도공사",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15052169/fileData.do"
+      },
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "updateFrequency": "P30D",
+          "coverageStatus": "DAEGYEONG_LINE",
+          "unsupportedNotes": "Admission is limited to the selected Korail metropolitan line."
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "updateFrequency": "not applicable",
+          "coverageStatus": "NO_REALTIME_FIELDS",
+          "unsupportedNotes": "Official static timetable does not provide this capability."
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "updateFrequency": "not applicable",
+          "coverageStatus": "NO_FACILITY_FIELDS",
+          "unsupportedNotes": "Official static timetable does not provide this capability."
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 454,
+        "materializer": "tools/datapack/materialize-korail-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-korail-timetable.test.mjs",
+        "snapshotId": "korail-metropolitan-planned-timetable-0ca60bd0f21f25bb5b517ac6abc1bcb773e0ec1186cd17c09d4bc2c7c53f3793",
+        "snapshotPath": "tools/datapack/sources/korail-metropolitan-planned-timetable-0ca60bd0f21f25bb5b517ac6abc1bcb773e0ec1186cd17c09d4bc2c7c53f3793.json",
+        "capturedAt": "2026-09-07T04:10:09.965Z",
+        "freshUntil": "2026-09-30T15:00:00.000Z",
+        "rowCount": 1488,
+        "departureCount": 1488,
+        "tripCount": 194,
+        "stopTimeCount": 1488,
+        "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+        "rowsSha256": "946af8454c648137d9d0adc6fed89e3ce7a5b4aabb7d3fcba7c281333232d977",
+        "topologySourceId": "korail-metropolitan-timetable-file",
+        "topologySnapshotId": "korail-metropolitan-timetable-file-8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f",
+        "topologyContentSha256": "8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f",
+        "contentSha256": "0ca60bd0f21f25bb5b517ac6abc1bcb773e0ec1186cd17c09d4bc2c7c53f3793",
+        "tripsSha256": "71f33d17e7fe784af33d5e1cda18840b02993c03d9bded7bfef5c2dcb3d8adfe"
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04",
+        "retainedReceiptSourceId": "korail-metropolitan-timetable-file"
+      }
     }
   ]
 }

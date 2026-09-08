@@ -61,6 +61,7 @@
     {
       "id": "planned_timetable",
       "sourceIds": [
+        "korail-metropolitan-planned-timetable",
         "kric-subway-timetable"
       ],
       "examples": [

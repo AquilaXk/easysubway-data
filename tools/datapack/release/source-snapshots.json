@@ -67290,5 +67290,42 @@
     "admissionEvidence": {
       "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "korail-metropolitan-planned-timetable",
+    "snapshotId": "korail-metropolitan-planned-timetable-0ca60bd0f21f25bb5b517ac6abc1bcb773e0ec1186cd17c09d4bc2c7c53f3793",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-07T04:10:09.965Z",
+    "retrievedAt": "2026-09-07T04:10:09.965Z",
+    "sourceUpdatedAt": null,
+    "serviceEffectiveAt": "2026-08-31T15:00:00.000Z",
+    "serviceEffectiveUntil": null,
+    "provider": "한국철도공사",
+    "rowCount": 1488,
+    "coverageCount": 194,
+    "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "contentSha256": "0ca60bd0f21f25bb5b517ac6abc1bcb773e0ec1186cd17c09d4bc2c7c53f3793",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20260907/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
+    "rawObjectSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "rawReceiptSha256": "17d462a2c8c411ce1afa6887ec23b669a52e0237d9952c425b16fe534cdfa548",
+    "byteSize": 51799,
+    "freshUntil": "2026-09-30T15:00:00.000Z",
+    "freshnessExpiresAt": "2026-09-30T15:00:00.000Z",
+    "rawRetentionExpiresAt": "2026-12-06T04:10:09.965Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "37e2584d38927b9db4a449cee8841017ddcef6707e20f64589fca682e6701ef3",
+    "schemaFingerprint": "7efdcf5965f67c84e84957995f359bbcf6f390a7f407e7581ad31d8a08ecef72",
+    "redactedRequestFingerprint": "560aaa790ba386e7ef16aa013715dd62b3d663018ff876d04e637e5ca4065487",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
+    }
   }
 ]
