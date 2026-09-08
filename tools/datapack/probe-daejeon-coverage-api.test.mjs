@@ -116,7 +116,6 @@ test("Daejeon timetable registration replays frozen provider rows through the so
     productionUseAllowed: true,
     requiredForProductionPack: false,
     license,
-    admissionEvidence: { licenseEvidenceHash: licenseHash },
     scheduleAdmissionEvidence: {
       issue: 1,
       materializer: "fixture-materializer",
@@ -183,6 +182,7 @@ test("Daejeon timetable registration replays frozen provider rows through the so
   );
   const registered = registeredInventory.sources.find(({ id }) => id === sourceId);
   assert.equal(registered.requiredForProductionPack, true);
+  assert.equal(registered.admissionEvidence.licenseEvidenceHash, licenseHash);
   assert.equal(registered.scheduleAdmissionEvidence.snapshotId, prepared.snapshotId);
   assert.equal(registered.scheduleAdmissionEvidence.rawSha256, snapshot.rawSha256);
   assert.equal(registered.scheduleAdmissionEvidence.rowsSha256, snapshot.rowsSha256);

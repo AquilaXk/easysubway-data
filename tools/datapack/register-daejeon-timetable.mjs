@@ -134,7 +134,7 @@ export async function prepareDaejeonTimetableRegistration({ repositoryRoot, snap
     ...inventory,
     sources: inventory.sources.map((row) => row.id === SOURCE_ID ? {
       ...row,
-      ...(row.admissionEvidence ? { admissionEvidence: { ...row.admissionEvidence, licenseEvidenceHash: licenseHash } } : {}),
+      admissionEvidence: { ...row.admissionEvidence, licenseEvidenceHash: licenseHash },
       scheduleAdmissionEvidence: nextEvidence,
       observedDataUpdatedAt: snapshot.observedAt.slice(0, 10),
       retrievedAt: snapshot.observedAt.slice(0, 10),

@@ -1145,10 +1145,43 @@
       "nextAction": "#2325에서 공식 timetable과 이 topology의 인접 소요시간을 결합해 schedule_timetable production admission을 완료한다."
     },
     {
-      "id": "daejeon-train-timetable",
-      "priority": "P0",
-      "domain": "schedule_timetable",
-      "coverageScope": {
+    "id": "daejeon-train-timetable",
+    "priority": "P0",
+    "domain": "schedule_timetable",
+    "registrationMetadata": {
+      "admissionReference": "https://github.com/AquilaXk/easysubway/issues/2325",
+      "freshness": {
+        "id": "daejeon_timetable_observation",
+        "sourceIds": ["daejeon-train-timetable"],
+        "basisField": "observedAt",
+        "reverificationCadence": "P30D",
+        "futureBasisAllowed": false,
+        "providerValidityEndField": null,
+        "eventTriggers": ["official timetable revision"]
+      },
+      "governance": {
+        "sourceId": "daejeon-train-timetable",
+        "sourceClassId": "daejeon_timetable_observation",
+        "retentionClassId": "standard-90d",
+        "ownerRole": "datapack-source-owner",
+        "stewardRole": "datapack-data-steward",
+        "approvalRole": "datapack-release-approver",
+        "escalationHours": 4,
+        "alertRoute": "github:area-datapack",
+        "licenseReview": {
+          "status": "APPROVED",
+          "termsHash": "01b8a44e329e5a4efa9ac332c73f03e2485bfe93002479d0b9e1df1eb0d5b2aa",
+          "reviewedAt": "2026-09-08T17:54:38.982Z",
+          "nextReviewAt": "2027-09-08T17:54:38.982Z",
+          "termsUrl": "https://www.data.go.kr/data/15159278/openapi.do",
+          "reviewedProvider": "대전교통공사",
+          "reviewedDatasetUrl": "https://www.data.go.kr/data/15159278/openapi.do",
+          "redistributionScopes": ["DERIVED_DATAPACK"],
+          "approvedByRole": "datapack-release-approver"
+        }
+      }
+    },
+    "coverageScope": {
         "regionIds": [
           "daejeon"
         ],
