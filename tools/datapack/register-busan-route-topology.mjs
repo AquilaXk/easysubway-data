@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 
 import { admitBusanRouteTopology, collectBusanRouteTopology } from "./collect-busan-route-topology.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -11,7 +12,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
-import { requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
+import { preauthenticatedObjectStorageClient, publishImmutableObjectPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
 
 const SOURCE_ID = "busan-transportation-route-topology";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
@@ -73,10 +74,14 @@ export async function prepareBusanTopologyRegistration({ repositoryRoot, snapsho
 
 export async function buildBusanTopologyRegistrationOutputs({ receiptPath, env = process.env, ...options } = {}) {
   const prepared = await prepareBusanTopologyRegistration(options);
+  return outputsFromPrepared(prepared, receiptPath, env, options.now ?? new Date());
+}
+
+async function outputsFromPrepared(prepared, receiptPath, env, now) {
   const receiptFile = absolute(receiptPath, "OCI receipt path");
   const receiptBytes = await readFile(receiptFile);
   const receipt = parse(receiptBytes, "OCI receipt");
-  validateReceipt({ receipt, prepared, env, now: options.now ?? new Date() });
+  validateReceipt({ receipt, prepared, env, now });
   if (prepared.ledger.some((row) => row?.snapshotId === prepared.snapshotId)) {
     throw new Error("Busan topology snapshot already registered");
   }
@@ -153,6 +158,52 @@ export async function registerBusanTopology(options = {}) {
   return transaction.commit({ repositoryRoot: options.repositoryRoot, outputs: await buildBusanTopologyRegistrationOutputs(options) });
 }
 
+/** 원문 재수집 없이 한 번 발행하고 동일한 준비 입력을 원자 등록한다. */
+export async function publishAndRegisterBusanTopology({
+  expectedHeadSha,
+  gitRunner = async (args, settings) => (await promisify(execFile)("git", args, settings)).stdout,
+  env = process.env, client = null, ...options
+} = {}) {
+  const root = absolute(options.repositoryRoot, "repository root");
+  const receiptPath = absolute(options.receiptPath, "OCI receipt path");
+  const baseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
+  if (!/^[a-f0-9]{40}$/u.test(expectedHeadSha ?? "")
+    || String(await gitRunner(["rev-parse", "HEAD"], { cwd: root })).trim() !== expectedHeadSha) {
+    throw new Error("Busan topology execution HEAD mismatch");
+  }
+  const existing = await lstat(receiptPath).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (existing) throw new Error("Busan topology receipt already exists; resume registration without publication");
+  await transaction.recover({ repositoryRoot: root });
+  const now = options.now ?? new Date();
+  const prepared = await prepareBusanTopologyRegistration({ ...options, now });
+  const target = receiptTarget(prepared, env);
+  const storage = client ?? preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody: false });
+  const object = { objectKey: target.objectKey, sourcePath: path.basename(prepared.inputPath),
+    sha256: prepared.snapshotSha256, sizeBytes: prepared.snapshotBytes.length };
+  try {
+    await publishImmutableObjectPlan({ root: path.dirname(prepared.inputPath), plan: { steps: [
+      { type: "put-immutable-bundle-object", ...object },
+      { type: "verify-immutable-bundle-object", ...object },
+    ] }, client: {
+      putObjectIfAbsent: async (...args) => {
+        if (!await storage.putObjectIfAbsent(...args)) throw new Error("Busan topology object already exists");
+        return true;
+      },
+      readObject: (...args) => storage.readObject(...args),
+    } });
+  } catch { throw new Error("Busan topology OCI publication failed"); }
+  const receipt = { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt",
+    sourceId: SOURCE_ID, snapshotId: prepared.snapshotId, capturedAt: prepared.snapshot.capturedAt,
+    ...target, rawObjectSha256: prepared.snapshotSha256, byteSize: prepared.snapshotBytes.length,
+    storedAt: now.toISOString(), rawRetentionExpiresAt: prepared.rawRetentionExpiresAt, contentType: "application/json" };
+  await writeFile(receiptPath, json(receipt), { flag: "wx", mode: 0o600 });
+  const outputs = await outputsFromPrepared(prepared, receiptPath, env, now);
+  return transaction.commit({ repositoryRoot: root, outputs });
+}
+
 async function replayRetainedSnapshot(snapshot) {
   if (!Array.isArray(snapshot?.rawResponses) || snapshot.rawResponses.length !== snapshot.scope?.length) {
     throw new Error("Busan topology retained raw responses are required");
@@ -202,19 +253,24 @@ function resolveGovernanceEntry({ candidate, governance }) {
   return current[0] ?? candidate?.registrationMetadata?.governance ?? (() => { throw new Error("Busan topology recorded governance is required"); })();
 }
 
-function validateReceipt({ receipt, prepared, env, now }) {
+function receiptTarget(prepared, env) {
   const baseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
   const match = /^\/p\/[^/]+\/n\/([^/]+)\/b\/([^/]+)\/o\/?$/u.exec(baseUrl.pathname);
   const [, namespace, bucket] = match ?? [];
   const date = prepared.snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
   const objectKey = `source-raw/${SOURCE_ID}/${date}/${prepared.snapshotSha256}.json`;
+  return { ociNamespace: namespace, bucket, objectKey, rawObjectUri: `oci://${namespace}/${bucket}/${objectKey}` };
+}
+
+function validateReceipt({ receipt, prepared, env, now }) {
+  const { ociNamespace: namespace, bucket, objectKey, rawObjectUri } = receiptTarget(prepared, env);
   const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt", "ociNamespace", "bucket", "objectKey", "contentType"];
   if (JSON.stringify(Object.keys(receipt ?? {}).sort()) !== JSON.stringify(keys.sort())
     || receipt.schemaVersion !== 1 || receipt.artifactKind !== "static-network-source-raw-object-receipt"
     || receipt.sourceId !== SOURCE_ID || receipt.snapshotId !== prepared.snapshotId
     || receipt.capturedAt !== prepared.snapshot.capturedAt || receipt.rawObjectSha256 !== prepared.snapshotSha256
     || receipt.byteSize !== prepared.snapshotBytes.length || receipt.ociNamespace !== namespace || receipt.bucket !== bucket
-    || receipt.objectKey !== objectKey || receipt.rawObjectUri !== `oci://${namespace}/${bucket}/${objectKey}`
+    || receipt.objectKey !== objectKey || receipt.rawObjectUri !== rawObjectUri
     || receipt.contentType !== "application/json" || !instant(receipt.storedAt) || !instant(receipt.rawRetentionExpiresAt)
     || Date.parse(receipt.storedAt) < Date.parse(receipt.capturedAt) || Date.parse(receipt.storedAt) > now.valueOf()
     || receipt.rawRetentionExpiresAt !== prepared.rawRetentionExpiresAt) {
@@ -233,11 +289,21 @@ function parse(bytes, label) { try { return JSON.parse(bytes); } catch { throw n
 function instant(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value; }
 
 function parseArgs(argv) {
-  if (argv.length !== 5 || argv[0] !== "register" || argv[1] !== "--snapshot" || argv[3] !== "--receipt"
-    || !path.isAbsolute(argv[2]) || !path.isAbsolute(argv[4])) throw new Error("usage: register-busan-route-topology.mjs register --snapshot <absolute.json> --receipt <absolute.json>");
-  return { snapshotPath: argv[2], receiptPath: argv[4] };
+  const publish = argv[0] === "publish-register";
+  if ((!publish && argv[0] !== "register") || argv.length !== (publish ? 7 : 5)
+    || argv[1] !== "--snapshot" || argv[3] !== "--receipt"
+    || !path.isAbsolute(argv[2]) || !path.isAbsolute(argv[4])
+    || (publish && (argv[5] !== "--expected-head" || !/^[a-f0-9]{40}$/u.test(argv[6])))) {
+    throw new Error("usage: register-busan-route-topology.mjs register|publish-register --snapshot <absolute.json> --receipt <absolute.json> [--expected-head <sha>]");
+  }
+  return { publish, snapshotPath: argv[2], receiptPath: argv[4], ...(publish ? { expectedHeadSha: argv[6] } : {}) };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  try { await registerBusanTopology({ repositoryRoot: path.resolve(import.meta.dirname, "../.."), ...parseArgs(process.argv.slice(2)) }); }
+  try {
+    const { publish, ...inputs } = parseArgs(process.argv.slice(2));
+    const options = { repositoryRoot: path.resolve(import.meta.dirname, "../.."), ...inputs };
+    if (publish) await publishAndRegisterBusanTopology(options);
+    else await registerBusanTopology(options);
+  }
   catch (error) { console.error(error instanceof Error ? error.message : "Busan topology registration failed"); process.exitCode = 1; }
 }

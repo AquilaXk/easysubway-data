@@ -8,10 +8,10 @@ import { BUSAN_LINES, collectBusanRouteTopology } from "./collect-busan-route-to
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import * as registration from "./register-busan-route-topology.mjs";
 import {
   buildBusanTopologyRegistrationOutputs,
   prepareBusanTopologyRegistration,
-  registerBusanTopology,
 } from "./register-busan-route-topology.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -84,15 +84,26 @@ test("register retained Busan topology through source transaction", async (t) =>
   await writeFile(path.join(root, "tools/datapack/source-candidates.json"), `${JSON.stringify(candidate)}\n`);
 
   const env = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o/" };
-  const receiptPath = path.join(root, "receipt.json");
+  let receiptPath = path.join(root, "receipt.json");
   const options = { repositoryRoot: root, snapshotPath, receiptPath, now, env };
   const prepared = await prepareBusanTopologyRegistration(options);
   const receipt = receiptFor(prepared);
   await writeFile(receiptPath, `${JSON.stringify({ ...receipt, rawObjectSha256: "0".repeat(64) })}\n`);
   await assert.rejects(buildBusanTopologyRegistrationOutputs(options), /OCI receipt binding/);
 
-  await writeFile(receiptPath, `${JSON.stringify(receipt)}\n`);
-  await registerBusanTopology(options);
+  assert.equal(typeof registration.publishAndRegisterBusanTopology, "function");
+  receiptPath = path.join(root, "published-receipt.json");
+  const calls = [];
+  let storedBytes;
+  await registration.publishAndRegisterBusanTopology({ ...options, receiptPath,
+    expectedHeadSha: "a".repeat(40), gitRunner: async () => "a".repeat(40),
+    client: {
+      putObjectIfAbsent: async (_key, bytes) => { calls.push("PUT"); storedBytes = Buffer.from(bytes); return true; },
+      readObject: async () => { calls.push("GET"); return { exists: true, body: storedBytes }; },
+    },
+  });
+  assert.deepEqual(calls, ["PUT", "GET"]);
+  assert.deepEqual(storedBytes, snapshotBytes);
   const [registeredInventory, registeredLedger, registeredGovernance, registeredFreshness] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS
     .map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(registeredInventory.sources[0].topologyAdmissionEvidence.snapshotId, prepared.snapshotId);
