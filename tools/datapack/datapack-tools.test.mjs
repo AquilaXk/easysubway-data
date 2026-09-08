@@ -1858,7 +1858,7 @@ test("데이터팩 생성기는 admin review 없는 source snapshot buildSpec을
   try {
     await assert.rejects(
       runCandidateBuild({ buildSpecPath, output: outputDir, repositoryRoot }),
-      /buildSpec\.sourceSnapshots\[0\]\.adminReviewRecordHash must be a non-empty string/,
+      /buildSpec\.sourceSnapshots\[0\] must contain exactly one admission projection/,
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });

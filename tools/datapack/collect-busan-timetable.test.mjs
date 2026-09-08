@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -15,19 +16,22 @@ test("부산 timetable collector는 malformed credential로 provider를 호출�
   assert.equal(calls, 0);
 });
 
-function response({ stationName, stationCode, line, items }) {
+function response({ stationName, stationCode, line, items, captureRaw = null }) {
   const body = items.map((item) => `<item>${item}</item>`).join("");
-  return new Response(`<?xml version="1.0" encoding="UTF-8"?><response>
+  const raw = `<?xml version="1.0" encoding="UTF-8"?><response>
     <header><resultCode>00</resultCode><resultMsg>정상</resultMsg></header>
     <body><scode>${stationCode}</scode><line>${line}</line><sname>${stationName}</sname>
     <engname>Station ${stationCode}</engname>${body}</body>
-    <numOfRows>${items.length}</numOfRows><pageNo>1</pageNo><totalCount>${items.length}</totalCount></response>`, {
+    <numOfRows>${items.length}</numOfRows><pageNo>1</pageNo><totalCount>${items.length}</totalCount></response>`;
+  captureRaw?.(Buffer.from(raw));
+  return new Response(raw, {
     headers: { "content-type": "application/xml" },
   });
 }
 
 test("부산 timetable collector는 114개 역과 3개 요일을 bounded fan-out한다", async () => {
   const requested = [];
+  const originalBytes = new Map();
   const secret = "never-print-service-key";
   const snapshot = await collectBusanTimetable({
     serviceKey: secret,
@@ -50,7 +54,7 @@ test("부산 timetable collector는 114개 역과 3개 요일을 bounded fan-out
         "<hour>05</hour><time>01</time>",
         `<day>${day}</day><updown>${updown}</updown>`,
         `<endcode>${station.stationCode}</endcode>`,
-      ].join("")) });
+      ].join("")), captureRaw: (bytes) => originalBytes.set(`${station.stationCode}\0${day}`, bytes) });
     },
   });
 
@@ -66,7 +70,20 @@ test("부산 timetable collector는 114개 역과 3개 요일을 bounded fan-out
   ]);
   assert.equal(snapshot.credentialRedacted, true);
   assert.match(snapshot.rowsSha256, /^[a-f0-9]{64}$/);
-  assert.match(snapshot.rawSha256, /^[a-f0-9]{64}$/);
+  const rawResponseScope = topology.scope.flatMap(({ stationCode }) => ["1", "2", "3"].map((day) => ({ stationCode, day })));
+  assert.deepEqual(snapshot.rawResponses, rawResponseScope.map(({ stationCode, day }) => ({
+    stationCode,
+    day,
+    bytesBase64: originalBytes.get(`${stationCode}\0${day}`).toString("base64"),
+  })));
+  assert.equal(snapshot.rawSha256, createHash("sha256").update(JSON.stringify(rawResponseScope.map(({ stationCode, day }) => ({
+    stationCode,
+    day,
+    rawSha256: createHash("sha256").update(originalBytes.get(`${stationCode}\0${day}`)).digest("hex"),
+  })))).digest("hex"));
+  assert.deepEqual(snapshot.scope, topology.scope.map(({ stationCode, stationName, lineId }) => ({
+    stationCode, stationName, lineId,
+  })));
   assert.equal(snapshot.rows.find(({ scode }) => scode === "205").sname, "벡스코 공식별칭");
   assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
 });

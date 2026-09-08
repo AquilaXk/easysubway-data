@@ -85,6 +85,11 @@ export async function collectBusanTimetable({
     scope,
     scopeSha256: sha256(JSON.stringify(scope)),
     rawSha256,
+    rawResponses: responses.map((response, index) => ({
+      stationCode: requests[index].station.stationCode,
+      day: requests[index].day,
+      bytesBase64: response.rawBytes.toString("base64"),
+    })),
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
   };
@@ -124,7 +129,7 @@ async function collectResponse({ station, day, key, fetchImpl, sleepImpl, scope 
     Object.fromEntries(RESPONSE_FIELDS.map((field) => [field, common[field] ?? scalar(item, field)])),
     { station, day, byCode, index },
   ));
-  return { rows, rawSha256, responseEncoding };
+  return { rows, rawBytes: bytes, rawSha256, responseEncoding };
 }
 
 function validateRow(values, { station, day, byCode, index }) {
