@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 
 import { collectGwangjuRouteTopology } from "./collect-gwangju-route-topology.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
@@ -9,6 +11,7 @@ import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { preauthenticatedObjectStorageClient, publishImmutableObjectPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
 
 const SOURCE_ID = "gwangju-transportation-route-topology";
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -89,6 +92,10 @@ export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snaps
 /** 실제 OCI PUT/GET receipt를 받은 뒤에만 정본 등록 결과를 만든다. */
 export async function buildGwangjuTopologyRegistrationOutputs({ receiptPath, ...options }) {
   const prepared = await prepareGwangjuTopologyRegistration(options);
+  return outputsFromPrepared(prepared, receiptPath, options.now ?? new Date());
+}
+
+async function outputsFromPrepared(prepared, receiptPath, now) {
   if (!path.isAbsolute(receiptPath ?? "")) throw new Error("Gwangju topology receipt path is required");
   const receiptBytes = await readFile(receiptPath), receipt = parse(receiptBytes);
   const { snapshot, snapshotId, snapshotSha256, root, inventory, ledger, governance, freshness } = prepared;
@@ -97,7 +104,7 @@ export async function buildGwangjuTopologyRegistrationOutputs({ receiptPath, ...
     || receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${prepared.objectKey}`
     || receipt.rawRetentionExpiresAt !== prepared.rawRetentionExpiresAt
     || !Number.isFinite(Date.parse(receipt.storedAt)) || Date.parse(receipt.storedAt) < Date.parse(snapshot.capturedAt)
-    || Date.parse(receipt.storedAt) > (options.now ?? new Date()).valueOf()) {
+    || Date.parse(receipt.storedAt) > now.valueOf()) {
     throw new Error("Gwangju topology OCI receipt binding mismatch");
   }
   if (ledger.some((row) => row.snapshotId === snapshotId)) throw new Error("Gwangju topology snapshot already registered");
@@ -149,4 +156,58 @@ export async function registerGwangjuTopology(options) {
   await transaction.recover({ repositoryRoot: options.repositoryRoot });
   const outputs = await buildGwangjuTopologyRegistrationOutputs(options);
   return transaction.commit({ repositoryRoot: options.repositoryRoot, outputs });
+}
+
+/** 같은 prepared 입력을 발행과 등록에 사용한다. API 원문은 재수집하지 않는다. */
+export async function publishAndRegisterGwangjuTopology({ expectedHeadSha, gitRunner = async (args, settings) => (await promisify(execFile)("git", args, settings)).stdout, env = process.env, client = null, ...options }) {
+  const baseUrl = requireCurrentCapitalLiveChainOciParBaseUrl(env);
+  if (!path.isAbsolute(options.repositoryRoot ?? "") || !/^[a-f0-9]{40}$/.test(expectedHeadSha ?? "")
+    || String(await gitRunner(["rev-parse", "HEAD"], { cwd: options.repositoryRoot })).trim() !== expectedHeadSha) {
+    throw new Error("Gwangju topology execution HEAD mismatch");
+  }
+  if (!path.isAbsolute(options.receiptPath ?? "")) throw new Error("Gwangju topology receipt path is required");
+  const existing = await lstat(options.receiptPath).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (existing) throw new Error("Gwangju topology receipt already exists; resume registration without publication");
+  const now = options.now ?? new Date();
+  const prepared = await prepareGwangjuTopologyRegistration({ ...options, now });
+  const storage = client ?? preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody: false });
+  try {
+    await publishImmutableObjectPlan({ root: path.dirname(options.snapshotPath), plan: prepared.publishPlan,
+      client: {
+        putObjectIfAbsent: async (...args) => {
+          if (!await storage.putObjectIfAbsent(...args)) throw new Error("Gwangju topology object already exists");
+          return true;
+        },
+        readObject: (...args) => storage.readObject(...args),
+      },
+    });
+  } catch { throw new Error("Gwangju topology OCI publication failed"); }
+  const receipt = { schemaVersion: 1, artifactKind: "static-network-source-raw-object-receipt", sourceId: SOURCE_ID,
+    snapshotId: prepared.snapshotId, capturedAt: prepared.snapshot.capturedAt,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${prepared.objectKey}`,
+    rawObjectSha256: prepared.snapshotSha256, byteSize: prepared.snapshotBytes.length,
+    storedAt: now.toISOString(), rawRetentionExpiresAt: prepared.rawRetentionExpiresAt };
+  await writeFile(options.receiptPath, json(receipt), { flag: "wx", mode: 0o600 });
+  const outputs = await outputsFromPrepared(prepared, options.receiptPath, now);
+  return transaction.commit({ repositoryRoot: options.repositoryRoot, outputs });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    const [mode, flag, inputPath] = process.argv.slice(2);
+    if (process.argv.length !== 5 || !["publish-register", "register"].includes(mode)
+      || flag !== "--input" || !path.isAbsolute(inputPath ?? "")) {
+      throw new Error("usage: register-gwangju-route-topology.mjs <publish-register|register> --input <absolute.json>");
+    }
+    const options = parse(await readFile(inputPath));
+    if (mode === "publish-register") await publishAndRegisterGwangjuTopology(options);
+    else await registerGwangjuTopology(options);
+    console.log("Gwangju topology source registration completed");
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "Gwangju topology registration failed");
+    process.exitCode = 1;
+  }
 }

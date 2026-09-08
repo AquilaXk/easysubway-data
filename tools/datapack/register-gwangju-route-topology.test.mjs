@@ -7,7 +7,7 @@ import test from "node:test";
 import { collectGwangjuRouteTopology } from "./collect-gwangju-route-topology.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
-import { prepareGwangjuTopologyRegistration, registerGwangjuTopology } from "./register-gwangju-route-topology.mjs";
+import { prepareGwangjuTopologyRegistration, publishAndRegisterGwangjuTopology, registerGwangjuTopology } from "./register-gwangju-route-topology.mjs";
 
 test("register retained Gwangju response bytes through the existing source transaction", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "gwangju-register-"));
@@ -55,8 +55,20 @@ test("register retained Gwangju response bytes through the existing source trans
   await writeFile(receiptPath, JSON.stringify({ ...receipt, rawObjectSha256: "0".repeat(64) }));
   await assert.rejects(registerGwangjuTopology(options), /OCI receipt binding/);
   assert.deepEqual(JSON.parse(await readFile(path.join(root, SOURCE_REGISTRATION_OUTPUTS[1]), "utf8")), []);
-  await writeFile(receiptPath, JSON.stringify(receipt));
-  await registerGwangjuTopology(options);
+  let storedBytes;
+  const calls = [];
+  const expectedHeadSha = "a".repeat(40);
+  const verifiedReceiptPath = path.join(root, "verified-receipt.json");
+  await publishAndRegisterGwangjuTopology({ ...options, receiptPath: verifiedReceiptPath, expectedHeadSha,
+    gitRunner: async () => expectedHeadSha,
+    env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test-only/n/axvym6vk8g7i/b/easysubway-datapacks/o/" },
+    client: {
+      putObjectIfAbsent: async (_key, bytes) => { calls.push("PUT"); storedBytes = Buffer.from(bytes); return true; },
+      readObject: async () => { calls.push("GET"); return { exists: true, body: storedBytes }; },
+    },
+  });
+  assert.deepEqual(calls, ["PUT", "GET"]);
+  assert.equal(JSON.parse(await readFile(verifiedReceiptPath, "utf8")).rawObjectSha256, prepared.snapshotSha256);
   const [inventory, ledger] = await Promise.all(SOURCE_REGISTRATION_OUTPUTS.slice(0, 2).map(async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"))));
   assert.equal(inventory.sources[0].topologyAdmissionEvidence.snapshotId, prepared.snapshotId);
   assert.equal(ledger[0].rawObjectSha256, prepared.snapshotSha256);
