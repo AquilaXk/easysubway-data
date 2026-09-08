@@ -2,24 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 
 import { buildKricNationwideRouteRosterAdmissionContract } from "./build-kric-nationwide-route-roster-admission.mjs";
 import { projectKricStationLineMembership } from "./project-kric-station-line-membership.mjs";
+import { createCurrentMolitObservationFixture } from "./test-fixtures/current-molit-observation.mjs";
 
 const HEADER = ["철도운영기관명", "운영노선", "역 종류", "역 번호", "역명(한글)", "역명(영어)", "역명(로마자)", "역명(일본어)", "역명(중국어간체)", "역명(중국어번체)", "역명(부역명)", "환승역 여부", "환승노선명", "유실물 취급여부", "안전발판 유무", "스크린도어 설치유무", "승강장 연결여부", "승강장 유형", "역 위치(경도)", "역 위치(위도)", "역 주소(지번주소)", "역 주소(도로명 주소)", "역사 전화번호", "신설일자", "폐지일자", "상행거리", "하행거리", "데이터 기준일자", "참고사항"];
-const DENOMINATOR = JSON.parse(await readFile(new URL("./sources/molit-urban-rail-full-route-current-20260826T035408251Z.json", import.meta.url), "utf8"));
+const AUTHORITY = await createCurrentMolitObservationFixture();
+const DENOMINATOR = AUTHORITY.observation;
 
-function fixture() {
+async function fixture() {
   const workbookBytes = workbook();
-  const denominator = structuredClone(DENOMINATOR);
-  const projection = projectKricStationLineMembership({ workbookBytes, denominator });
-  return { workbookBytes, denominator, projection, receipt: { schemaVersion: 1, artifactKind: "kric-current-station-line-file-receipt", sourceId: "kric-current-station-line-file", capturedAt: "2026-08-27T00:00:00.000Z", rawFile: "kric-current-station-line-file-test.xlsx", byteLength: workbookBytes.length, sha256: createHash("sha256").update(workbookBytes).digest("hex"), credentialRedacted: true } };
+  const projection = await projectKricStationLineMembership({ workbookBytes, repositoryRoot: AUTHORITY.root });
+  return { workbookBytes, projection, repositoryRoot: AUTHORITY.root, receipt: { schemaVersion: 1, artifactKind: "kric-current-station-line-file-receipt", sourceId: "kric-current-station-line-file", capturedAt: "2026-08-27T00:00:00.000Z", rawFile: "kric-current-station-line-file-test.xlsx", byteLength: workbookBytes.length, sha256: createHash("sha256").update(workbookBytes).digest("hex"), credentialRedacted: true } };
 }
 
-test("#455 exact workbook/receipt/projection binding returns deterministic PENDING without an OCI or release success", () => {
-  const input = fixture();
-  const result = buildKricNationwideRouteRosterAdmissionContract(input);
+test("#455 exact workbook/receipt/projection binding returns deterministic PENDING without an OCI or release success", async () => {
+  const input = await fixture();
+  const result = await buildKricNationwideRouteRosterAdmissionContract(input);
   assert.equal(result.status, "PENDING");
   assert.equal(result.decision, "CONTRACT_GAP");
   assert.equal(result.sourceId, "kric-current-station-line-file");
@@ -28,27 +28,39 @@ test("#455 exact workbook/receipt/projection binding returns deterministic PENDI
   assert.ok(!Object.hasOwn(result, "oci"));
 });
 
-test("#455 rejects altered bytes, malformed receipts, and projections", () => {
-  const input = fixture();
-  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ ...input, receipt: { ...input.receipt, sha256: "0".repeat(64) } }), /RECEIPT_MISMATCH/);
+test("admission contract awaits the current admitted MOLIT authority for changed cardinality", async () => {
+  const normalizedProjection = [
+    { region_code: "01", region_name: "수도권", operator_name: "운영사", line_name: "1호선", station_name: "가역", station_sequence: 1 },
+    { region_code: "01", region_name: "수도권", operator_name: "운영사", line_name: "1호선", station_name: "나역", station_sequence: 2 },
+  ];
+  const authority = await createCurrentMolitObservationFixture(normalizedProjection);
+  const workbookBytes = workbook(normalizedProjection);
+  const projection = await projectKricStationLineMembership({ workbookBytes, repositoryRoot: authority.root });
+  const receipt = { schemaVersion: 1, artifactKind: "kric-current-station-line-file-receipt", sourceId: "kric-current-station-line-file", capturedAt: "2026-08-27T00:00:00.000Z", rawFile: "kric-current-station-line-file-test.xlsx", byteLength: workbookBytes.length, sha256: createHash("sha256").update(workbookBytes).digest("hex"), credentialRedacted: true };
+  const result = await buildKricNationwideRouteRosterAdmissionContract({ workbookBytes, receipt, projection, repositoryRoot: authority.root });
+  assert.equal(result.recordCount, normalizedProjection.length);
+  assert.equal(result.status, "PENDING");
+});
+
+test("#455 rejects altered bytes, malformed receipts, and projections", async () => {
+  const input = await fixture();
+  await assert.rejects(buildKricNationwideRouteRosterAdmissionContract({ ...input, receipt: { ...input.receipt, sha256: "0".repeat(64) } }), /RECEIPT_MISMATCH/);
   for (const receipt of [
     { ...input.receipt, schemaVersion: 2 },
     { ...input.receipt, capturedAt: "2026-08-27T00:00:00Z" },
     { ...input.receipt, rawFile: "foreign.xlsx" },
     { ...input.receipt, credentialRedacted: false },
-  ]) assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ ...input, receipt }), /RECEIPT_MISMATCH/);
-  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ ...input, projection: { ...input.projection, records: [] } }), /PROJECTION_MISMATCH/);
+  ]) await assert.rejects(buildKricNationwideRouteRosterAdmissionContract({ ...input, receipt }), /RECEIPT_MISMATCH/);
+  await assert.rejects(buildKricNationwideRouteRosterAdmissionContract({ ...input, projection: { ...input.projection, records: [] } }), /PROJECTION_MISMATCH/);
 });
 
-test("#455 keeps legacy API/18-scope/id32/OCI shapes as explicit rejection regressions", () => {
-  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract({ tally: { targetVersion: "2026-07-13" }, rosterArtifact: {}, sourceInventory: {}, sourceSnapshots: [], rawReceipt: {}, licenseDecision: {} }), /DENOMINATOR_IDENTITY/);
-  const input = fixture(); input.denominator.rowCount = 22;
-  assert.throws(() => buildKricNationwideRouteRosterAdmissionContract(input), /DENOMINATOR_IDENTITY/);
+test("#455 keeps legacy API/18-scope/id32/OCI shapes as explicit rejection regressions", async () => {
+  await assert.rejects(buildKricNationwideRouteRosterAdmissionContract({ tally: { targetVersion: "2026-07-13" }, rosterArtifact: {}, sourceInventory: {}, sourceSnapshots: [], rawReceipt: {}, licenseDecision: {} }), /WORKBOOK_REQUIRED/);
 });
 
-function workbook() {
+function workbook(normalizedProjection = DENOMINATOR.normalizedProjection) {
   const cells = (values, row) => values.map((value, index) => `<c r="${column(index)}${row}" t="inlineStr"><is><t>${value}</t></is></c>`).join("");
-  const rows = DENOMINATOR.normalizedProjection.map(({ operator_name, line_name, station_name }, index) => { const values = Array(29).fill(""); [values[0], values[1], values[3], values[4]] = [operator_name, line_name, `code-${index + 1}`, station_name]; return `<row r="${index + 2}">${cells(values, index + 2)}</row>`; }).join("");
+  const rows = normalizedProjection.map(({ operator_name, line_name, station_name }, index) => { const values = Array(29).fill(""); [values[0], values[1], values[3], values[4]] = [operator_name, line_name, `code-${index + 1}`, station_name]; return `<row r="${index + 2}">${cells(values, index + 2)}</row>`; }).join("");
   return zip({ "[Content_Types].xml": "<Types/>", "xl/workbook.xml": "<workbook xmlns:r=\"r\"><sheets><sheet name=\"1.역사정보\" r:id=\"rId1\"/></sheets></workbook>", "xl/_rels/workbook.xml.rels": "<Relationships><Relationship Id=\"rId1\" Target=\"worksheets/sheet1.xml\"/></Relationships>", "xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1">${cells(HEADER, 1)}</row>${rows}</sheetData></worksheet>` });
 }
 
