@@ -514,6 +514,8 @@
     {"path":"tools/datapack/publish-korail-metropolitan-timetable-raw.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":108},
     {"path":"tools/datapack/register-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":58},
     {"path":"tools/datapack/materialize-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":67},
+    {"path":"tools/datapack/register-korail-timetable.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/datapack/materialize-korail-timetable.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/run-korail-route-topology-registration.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":2},
     {"path":"tools/datapack/parse-korail-metropolitan-timetable.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":84},
     {"path":"tools/datapack/parse-kric-code-catalog.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":118},

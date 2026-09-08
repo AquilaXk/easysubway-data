@@ -157,6 +157,38 @@
       }
     },
     {
+      "id": "korail-metropolitan-planned-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "sourceFamilyId": "korail-metropolitan-timetable-file",
+      "coverageScope": {
+        "regionIds": ["daegu"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-8f7ed01f290a"]
+      },
+      "displayName": "한국철도공사 광역전철 계획 시각표 — 대경선",
+      "detailUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "retained_file_parsed",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "scheduleRegistration": {
+        "sourceClassId": "planned_timetable",
+        "retentionClassId": "standard-90d",
+        "ownerRole": "datapack-source-owner",
+        "stewardRole": "datapack-data-steward",
+        "approvalRole": "datapack-release-approver"
+      },
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15052169/fileData.do",
+        "license": "unrestricted",
+        "formats": ["XLSX"],
+        "provider": "한국철도공사",
+        "coverage": "DaeGyeong planned service calendar, trips, and stop times derived from the retained official timetable receipt",
+        "retainedReceiptSourceId": "korail-metropolitan-timetable-file"
+      }
+    },
+    {
       "id": "kric-nationwide-timetable-file",
       "retainedRoutePolicy": {
         "routeNumber": "S2901",
