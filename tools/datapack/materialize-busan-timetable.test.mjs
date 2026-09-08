@@ -208,6 +208,7 @@ async function inputs({ materialize = true } = {}) {
   ]);
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: sourceInventory, busanTopology, busanTimetable, stationMapCsv: busanMap,
+    daejeonTopology, daejeonTimetable, molitStationMapCsv: daejeonMap,
   });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture,
