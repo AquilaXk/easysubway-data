@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
-  materializeRegionalBusanTimetablePrefix,
+  loadRegionalBusanTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
@@ -38,38 +38,19 @@ const ACCESSIBILITY_FIELDS = Object.freeze([
 
 async function inputs() {
   const [
-    baseFixture,
-    topologySnapshot,
-    timetableSnapshot,
+    regional,
     accessibilitySnapshot,
-    daejeonTopologySnapshot,
-    daejeonTimetableSnapshot,
-    inventory,
-    stationMapCsv,
-    molitStationMapCsv,
   ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
+    loadRegionalBusanTimetablePrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      readJson,
+      topologyNow,
+      timetableNow: routeMapNow,
+    }),
     readJson("tools/datapack/sources/busan-transportation-accessibility-20260724.json"),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
-  const { busanTimetableFixture: timetableFixture } = materializeRegionalBusanTimetablePrefix({
-    baseFixture,
-    busanTopology: topologySnapshot,
-    busanTimetable: timetableSnapshot,
-    daejeonTopology: daejeonTopologySnapshot,
-    daejeonTimetable: daejeonTimetableSnapshot,
-    inventory,
-    stationMapCsv,
-    molitStationMapCsv,
-    topologyNow,
-    timetableNow: routeMapNow,
-  });
+  const { busanTimetableFixture: timetableFixture, busanTopology: topologySnapshot, inventory } = regional;
   return {
     timetableFixture,
     topologySnapshot,

@@ -173,6 +173,56 @@ export function materializeRegionalBusanTimetablePrefix({
   return { busanTopologyFixture, daejeonFixture, busanTimetableFixture };
 }
 
+export async function loadRegionalBusanTimetablePrefix({
+  baseFixturePromise,
+  inventoryPromise,
+  readJson,
+  topologyNow,
+  timetableNow,
+}) {
+  const [
+    baseFixture,
+    busanTopology,
+    busanTimetable,
+    daejeonTopology,
+    daejeonTimetable,
+    inventory,
+    stationMapCsv,
+    molitStationMapCsv,
+  ] = await Promise.all([
+    baseFixturePromise,
+    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
+    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
+    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
+    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
+    inventoryPromise,
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+  ]);
+  return {
+    baseFixture,
+    busanTopology,
+    busanTimetable,
+    daejeonTopology,
+    daejeonTimetable,
+    inventory,
+    stationMapCsv,
+    molitStationMapCsv,
+    ...materializeRegionalBusanTimetablePrefix({
+      baseFixture,
+      busanTopology,
+      busanTimetable,
+      daejeonTopology,
+      daejeonTimetable,
+      inventory,
+      stationMapCsv,
+      molitStationMapCsv,
+      topologyNow,
+      timetableNow,
+    }),
+  };
+}
+
 /**
  * The regional materializers start with a canonical production-shaped pack,
  * but `build-datapack --fixture` deliberately labels its output as a fixture.
