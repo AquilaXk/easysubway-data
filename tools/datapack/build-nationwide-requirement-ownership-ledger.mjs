@@ -2,6 +2,12 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  buildCurrentFiveRegionSourceFanIn,
+  canonicalCurrentFiveRegionSourceFanInJson,
+  CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH,
+  validateCurrentFiveRegionSourceFanIn,
+} from "./build-current-five-region-source-fan-in.mjs";
 
 export const LEDGER_PATH = "tools/datapack/reports/nationwide-requirement-ownership-ledger.json";
 const INPUT_PATHS = {
@@ -10,7 +16,7 @@ const INPUT_PATHS = {
   inventory: "tools/datapack/source-inventory.json",
   ownership: "tools/datapack/release/nationwide-requirement-ownership.json",
   sourceSnapshots: "tools/datapack/release/source-snapshots.json",
-  candidateBuildSpec: "tools/datapack/release/candidate-build-spec.json",
+  fanIn: CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH,
 };
 const AXES = ["licenseLineage", "freshnessLineage", "admissionLineage", "artifactLineage", "runtimeLineage"];
 const ISSUE_URL = "https://github.com/AquilaXk/easysubway-data/issues/";
@@ -47,23 +53,35 @@ function strictSourceCovers(source, row) {
     && scope.sourceDomains.includes(row.sourceDomain);
 }
 
-function currentHeads(sourceSnapshots, candidateBuildSpec) {
-  if (!Array.isArray(sourceSnapshots) || !Array.isArray(candidateBuildSpec.sourceSnapshots)
-    || !Array.isArray(candidateBuildSpec.sourceSnapshotIds)) throw new Error("current source snapshot inputs are required");
-  const snapshotById = new Map(sourceSnapshots.map((snapshot) => [snapshot.snapshotId, snapshot]));
-  if (snapshotById.size !== sourceSnapshots.length) throw new Error("current-head source identity mismatch");
+function selectedHeads(fanIn) {
   const heads = new Map();
-  for (const head of candidateBuildSpec.sourceSnapshots) {
-    const snapshot = snapshotById.get(head.snapshotId);
-    if (!candidateBuildSpec.sourceSnapshotIds.includes(head.snapshotId)
-      || snapshot?.sourceId !== head.sourceId
-      || snapshot.rawSha256 !== head.rawSha256
-      || snapshot.rawObjectUri !== head.rawObjectUri
-      || heads.has(head.sourceId)) throw new Error("current-head source identity mismatch");
+  for (const head of fanIn.selectedSources) {
+    if (typeof head?.sourceId !== "string" || head.sourceId.length === 0 || heads.has(head.sourceId)) {
+      throw new Error("fan-in selected source identity mismatch");
+    }
     heads.set(head.sourceId, head);
   }
-  if (heads.size !== candidateBuildSpec.sourceSnapshots.length) throw new Error("current-head source identity mismatch");
   return heads;
+}
+
+function currentFanIn(inputs) {
+  const { targets, tally, ownership, inventory, sourceSnapshots, fanIn, inputBytes = {} } = inputs;
+  if (Object.hasOwn(inputs, "candidateBuildSpec")) throw new Error("candidate build spec input is not supported");
+  const fanInBytes = inputBytes.fanIn;
+  if (!(Buffer.isBuffer(fanInBytes) || typeof fanInBytes === "string")) throw new Error("fan-in input bytes are required");
+  const validated = validateCurrentFiveRegionSourceFanIn(fanIn, fanInBytes);
+  const reconstructed = buildCurrentFiveRegionSourceFanIn({
+    targets,
+    tally,
+    ownership,
+    inventory,
+    sourceSnapshots,
+    inputBytes: Object.fromEntries(["targets", "tally", "ownership", "inventory", "sourceSnapshots"].map((name) => [name, inputBytes[name]])),
+    evaluatedAt: validated.evaluatedAt,
+  });
+  if (canonicalCurrentFiveRegionSourceFanInJson(reconstructed)
+    !== canonicalCurrentFiveRegionSourceFanInJson(validated)) throw new Error("fan-in reconstruction mismatch");
+  return { fanIn: validated, fanInBytes: Buffer.isBuffer(fanInBytes) ? fanInBytes : Buffer.from(fanInBytes), heads: selectedHeads(validated) };
 }
 
 function pending(reason, childOwner) { return { state: "PENDING", reason, owner: childOwner }; }
@@ -119,10 +137,10 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
 }
 
 export function buildNationwideRequirementOwnershipLedger(inputs) {
-  const { targets, tally, inventory, ownership, sourceSnapshots, candidateBuildSpec, inputBytes = {} } = inputs;
+  const { targets, tally, inventory, ownership, sourceSnapshots, inputBytes = {} } = inputs;
   if (targets.targetVersion !== tally.targetVersion || targets.targetVersion !== ownership.targetVersion) throw new Error("targetVersion drift");
   if (!Array.isArray(ownership.ownerRules) || ownership.ownerRules.length === 0) throw new Error("owner rules are required");
-  const heads = currentHeads(sourceSnapshots, candidateBuildSpec);
+  const current = currentFanIn(inputs);
   const targetPks = new Set(targets.activeLineScopes.flatMap((scope) => targets.requiredSourceDomains
     .map((domain) => `${scope.regionId}:${scope.operatorId}:${scope.lineId}:${domain.id}`)));
   const seen = new Set();
@@ -162,7 +180,7 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
       childOwner,
       officialSourceFamily: officialSources.length === admittedSources.length && admittedSources.length > 0
         ? evidenced(officialSources) : pending(pendingReason, childOwner),
-      lineage: lineageFor(admittedSources, heads, candidateBuildSpec.publishedAt, childOwner, tallyRow.status),
+      lineage: lineageFor(admittedSources, current.heads, current.fanIn.evaluatedAt, childOwner, tallyRow.status),
     };
   }).sort((left, right) => compare(left.pk, right.pk));
   if (seen.size !== targetPks.size) throw new Error("ownership PK set drift");
@@ -176,12 +194,22 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
     ? "GO" : "NO_GO";
   return {
     schemaVersion: 1, artifactKind: "nationwide-requirement-ownership-ledger", issue: 449,
-    targetVersion: targets.targetVersion,
+    targetVersion: current.fanIn.scope.targetVersion,
     provenance: {
       regeneration: { command: "node tools/datapack/build-nationwide-requirement-ownership-ledger.mjs", outputPath: LEDGER_PATH },
-      inputs: Object.fromEntries(Object.entries(INPUT_PATHS).map(([name, inputPath]) => [name, {
-        path: inputPath, sha256: hash(inputBytes[name] ?? JSON.stringify(inputs[name])),
-      }])),
+      inputs: {
+        ...Object.fromEntries(Object.entries(INPUT_PATHS).filter(([name]) => name !== "fanIn").map(([name, inputPath]) => [name, {
+          path: inputPath, sha256: hash(inputBytes[name]),
+        }])),
+        fanIn: {
+          path: INPUT_PATHS.fanIn,
+          sha256: hash(current.fanInBytes),
+          fanInSha256: current.fanIn.fanInSha256,
+          scopeSha256: current.fanIn.scopeSha256,
+          sourceSetSha256: current.fanIn.sourceSetSha256,
+          regionalMatrixSha256: current.fanIn.regionalMatrixSha256,
+        },
+      },
     },
     summary: {
       launchRequired: {

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 
+import {
+  buildCurrentFiveRegionSourceFanIn,
+  canonicalCurrentFiveRegionSourceFanInJson,
+} from "./build-current-five-region-source-fan-in.mjs";
 import { buildNationwideRequirementOwnershipLedger, resolveNationwideRequirementOwner } from "./build-nationwide-requirement-ownership-ledger.mjs";
 
 test("owner work selection preserves overrides without candidate or GO inputs", () => {
@@ -23,195 +26,165 @@ test("owner work selection preserves overrides without candidate or GO inputs", 
     { regionId: "capital", sourceDomain: "schedule_timetable" }), /unowned or ambiguous PK/);
 });
 
-const root = path.resolve(import.meta.dirname, "../..");
-const paths = {
-  targets: "tools/datapack/nationwide-coverage-targets.json",
-  tally: "tools/datapack/reports/nationwide-coverage-tally.json",
-  inventory: "tools/datapack/source-inventory.json",
-  ownership: "tools/datapack/release/nationwide-requirement-ownership.json",
-  sourceSnapshots: "tools/datapack/release/source-snapshots.json",
-  candidateBuildSpec: "tools/datapack/release/candidate-build-spec.json",
-};
+test("#6 consumes an exact canonical five-region fan-in without a candidate build spec", () => {
+  const input = fixtureLedgerInput(independentFiveRegionFixture());
+  const ledger = buildNationwideRequirementOwnershipLedger(input);
 
-async function inputs() {
-  const records = await Promise.all(Object.entries(paths).map(async ([name, relativePath]) => {
-    const bytes = await readFile(path.join(root, relativePath), "utf8");
-    return [name, JSON.parse(bytes), bytes];
+  assert.equal(ledger.summary.nationwideEligibility, "NO_GO");
+  assert.equal(ledger.rows.length, input.tally.launchRequired.requirements.length);
+  assert.ok(ledger.rows.every((row) => row.lineage.runtimeLineage.state === "PENDING"));
+  assert.equal(Object.hasOwn(ledger.provenance.inputs, "candidateBuildSpec"), false);
+  assert.equal(ledger.provenance.inputs.fanIn.sha256, hash(input.inputBytes.fanIn));
+});
+
+test("#6 rejects missing, altered, drifted, and candidate fan-in inputs", () => {
+  const missing = independentFiveRegionFixture();
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(missing), /fan-in input bytes/);
+
+  const altered = fixtureLedgerInput(independentFiveRegionFixture());
+  altered.fanIn = { ...altered.fanIn, evaluatedAt: "2040-01-02T00:00:01.000Z" };
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(altered), /self digest/);
+
+  const drifted = fixtureLedgerInput(independentFiveRegionFixture());
+  drifted.tally.launchRequired.requirements[0].status = "MISSING";
+  drifted.tally.launchRequired.requirements[0].admittedSourceIds = [];
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(drifted), /tally input bytes mismatch/);
+
+  const candidate = fixtureLedgerInput(independentFiveRegionFixture());
+  candidate.candidateBuildSpec = {};
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(candidate), /candidate build spec input/);
+});
+
+test("#6 keeps nonterminal requirements honest and retains fail-closed source boundaries", () => {
+  const missing = independentFiveRegionFixture();
+  missing.tally.launchRequired.requirements[0].status = "MISSING";
+  missing.tally.launchRequired.requirements[0].admittedSourceIds = [];
+  const missingLedger = buildNationwideRequirementOwnershipLedger(fixtureLedgerInput(missing));
+  assert.equal(missingLedger.summary.nationwideEligibility, "NO_GO");
+  assert.equal(missingLedger.rows[0].disposition.status, "MISSING");
+
+  const partial = independentFiveRegionFixture();
+  partial.tally.launchRequired.requirements[0].status = "MISSING";
+  assert.throws(() => fixtureLedgerInput(partial), /requirement disposition/);
+
+  const unsafe = independentFiveRegionFixture();
+  unsafe.inventory.sources[0].coverageScope.lineIds = [];
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(fixtureLedgerInput(unsafe)), /empty lineIds/);
+
+  const unowned = independentFiveRegionFixture();
+  unowned.ownership.ownerRules = [];
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(fixtureLedgerInput(unowned)), /owner rules/);
+
+  const missingHead = independentFiveRegionFixture();
+  missingHead.sourceSnapshots = [];
+  assert.throws(() => fixtureLedgerInput(missingHead), /terminal snapshot head/);
+
+  const stale = independentFiveRegionFixture();
+  stale.sourceSnapshots[0].freshnessExpiresAt = stale.evaluatedAt;
+  assert.throws(() => fixtureLedgerInput(stale), /snapshot freshness/);
+});
+
+test("#6 derives GO only when every launch lineage axis is evidenced", () => {
+  const input = independentFiveRegionFixture();
+  input.inventory.sources[0].runtimeLineageEvidence = { operationId: "fixture-runtime" };
+  const ledger = buildNationwideRequirementOwnershipLedger(fixtureLedgerInput(input));
+  assert.equal(ledger.summary.nationwideEligibility, "GO");
+  assert.ok(ledger.rows.every((row) => Object.values(row.lineage).every(({ state }) => state === "EVIDENCED")));
+});
+
+function independentFiveRegionFixture() {
+  const evaluatedAt = "2040-01-02T00:00:00.000Z";
+  const regions = ["busan", "capital", "daegu", "daejeon", "gwangju"];
+  const activeLineScopes = regions.map((regionId, index) => ({
+    regionId,
+    operatorId: `fixture-operator-${index + 1}`,
+    lineId: `fixture-line-${index + 1}`,
   }));
+  const targets = {
+    schemaVersion: 2,
+    artifactKind: "nationwide-datapack-coverage-targets",
+    targetVersion: "fixture-v1",
+    activeLineScopes,
+    requiredSourceDomains: [{ id: "schedule_timetable", releaseTier: "LAUNCH_REQUIRED", requiredFields: ["trip"] }],
+  };
+  const tally = {
+    schemaVersion: 1,
+    targetVersion: targets.targetVersion,
+    launchRequired: {
+      requirements: activeLineScopes.map((scope) => ({
+        ...scope,
+        sourceDomain: "schedule_timetable",
+        releaseTier: "LAUNCH_REQUIRED",
+        status: "INVENTORY_ADMITTED",
+        admittedSourceIds: ["fixture-five-region-schedule"],
+      })),
+    },
+    enhancement: { requirements: [] },
+  };
+  const ownership = { schemaVersion: 1, targetVersion: targets.targetVersion,
+    ownerRules: [{ issue: 9001, sourceDomain: "schedule_timetable" }] };
+  const sourceId = "fixture-five-region-schedule";
+  const rawSha256 = "a".repeat(64);
+  const source = {
+    id: sourceId,
+    provider: "Fixture Provider",
+    datasetUrl: `https://fixture.example/${sourceId}`,
+    sourceSystem: "fixture-source-system",
+    requiredForProductionPack: true,
+    productionUseAllowed: true,
+    coverageScope: {
+      regionIds: activeLineScopes.map(({ regionId }) => regionId),
+      operatorIds: activeLineScopes.map(({ operatorId }) => operatorId),
+      lineIds: activeLineScopes.map(({ lineId }) => lineId),
+      sourceDomains: ["schedule_timetable"],
+    },
+    fieldsProvided: ["trip"],
+    license: { commercialUseAllowed: true, derivativeWorkAllowed: true, redistributionAllowed: true },
+    admissionEvidence: { decision: "APPROVED", sourceId, snapshotId: `${sourceId}-snapshot`, rawSha256,
+      capturedAt: "2040-01-01T00:00:00.000Z", freshUntil: "2040-01-03T00:00:00.000Z" },
+  };
+  const inventory = { sources: [source] };
+  const sourceSnapshots = [{
+    schemaVersion: 1,
+    artifactKind: "official-source-snapshot",
+    sourceId: source.id,
+    snapshotId: `${source.id}-snapshot`,
+    provider: source.provider,
+    retrievedAt: "2040-01-01T00:00:00.000Z",
+    rawSha256: source.admissionEvidence.rawSha256,
+    rawObjectUri: `oci://fixture-namespace/fixture-bucket/${source.id}.json`,
+    previousSnapshotId: null,
+    freshnessExpiresAt: "2040-01-03T00:00:00.000Z",
+    snapshotStatus: "LOCKED",
+    schemaStatus: "PASS",
+    licenseStatus: "PASS",
+    fetchStatus: "SUCCESS",
+    redistributionAllowed: true,
+    credentialRedacted: true,
+  }];
+  const values = { targets, tally, ownership, inventory, sourceSnapshots };
   return {
-    ...Object.fromEntries(records.map(([name, value]) => [name, value])),
-    inputBytes: Object.fromEntries(records.map(([name, , bytes]) => [name, bytes])),
+    ...values,
+    evaluatedAt,
+    inputBytes: Object.fromEntries(Object.entries(values).map(([name, value]) => [name, fixtureBytes(value)])),
   };
 }
 
-test("#449 derives the exact current PK set with one owner and honest NO_GO", async () => {
-  const input = await inputs();
-  const ledger = buildNationwideRequirementOwnershipLedger(input);
-  const tallyRows = [...input.tally.launchRequired.requirements, ...input.tally.enhancement.requirements];
-  assert.equal(ledger.summary.launchRequired.totalCount, 270);
-  assert.equal(ledger.summary.enhancement.totalCount, 45);
-  assert.equal(ledger.rows.length, tallyRows.length);
-  assert.equal(ledger.summary.nationwideEligibility, "NO_GO");
-  assert.deepEqual(ledger.rows.map(({ pk }) => pk), [...ledger.rows].map(({ pk }) => pk).sort());
-  assert.deepEqual(new Set(ledger.rows.map(({ pk }) => pk)).size, tallyRows.length);
-  for (const row of ledger.rows) {
-    assert.match(row.childOwner.issueUrl, /^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/\d+$/);
-    for (const axis of Object.values(row.lineage)) {
-      assert.ok(axis.state === "EVIDENCED" || (axis.state === "PENDING" && axis.reason && axis.owner));
-    }
-  }
-  assert.equal(ledger.provenance.regeneration.command, "node tools/datapack/build-nationwide-requirement-ownership-ledger.mjs");
-  assert.equal(ledger.provenance.inputs.inventory.path, paths.inventory);
-  assert.match(ledger.provenance.inputs.inventory.sha256, /^[0-9a-f]{64}$/);
+function fixtureBytes(value) {
+  return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+}
 
-  const inventoryOnly = ledger.rows.find((row) => row.disposition.admittedSourceIds
-    .includes("busan-transportation-accessibility"));
-  assert.equal(inventoryOnly.officialSourceFamily.state, "EVIDENCED");
-  assert.equal(inventoryOnly.lineage.licenseLineage.state, "EVIDENCED");
-  assert.equal(inventoryOnly.lineage.freshnessLineage.state, "PENDING");
-  assert.equal(inventoryOnly.lineage.admissionLineage.state, "PENDING");
-  assert.equal(inventoryOnly.lineage.admissionLineage.reason, "PRODUCTION_ADMISSION_REQUIRED");
-  assert.equal(inventoryOnly.lineage.runtimeLineage.state, "PENDING");
-
-  const incheonAccessibility = ledger.rows.find(({ operatorId, sourceDomain }) =>
-    operatorId === "incheon-transit" && sourceDomain === "accessibility_facilities");
-  assert.equal(incheonAccessibility.childOwner.issue, 622);
-  assert.equal(inventoryOnly.childOwner.issue, 478);
-});
-
-test("#449 preserves partial admission without promoting missing requirements", async () => {
-  const input = await inputs();
-  const partial = input.tally.launchRequired.requirements.find((row) =>
-    row.status === "MISSING" && row.admittedSourceIds.length > 0);
-  assert.ok(partial);
-  assert.ok(partial.admittedFieldCount > 0 && partial.admittedFieldCount < partial.requiredFieldCount);
-  const ledger = buildNationwideRequirementOwnershipLedger(input);
-  const row = ledger.rows.find(({ pk }) => pk ===
-    [partial.regionId, partial.operatorId, partial.lineId, partial.sourceDomain].join(":"));
-  assert.equal(row.disposition.status, "MISSING");
-  assert.deepEqual(row.disposition.admittedSourceIds, [...partial.admittedSourceIds].sort());
-  assert.equal(ledger.summary.nationwideEligibility, "NO_GO");
-  const invalid = structuredClone(input);
-  invalid.inventory.sources.find(({ id }) => id === partial.admittedSourceIds[0]).coverageScope.lineIds = [];
-  assert.throws(() => buildNationwideRequirementOwnershipLedger(invalid), /empty lineIds/);
-});
-
-test("#449 rejects unsafe inventory scope, owner, and current-head drift", async () => {
-  const input = await inputs();
-  const admitted = input.tally.launchRequired.requirements.find(({ status }) => status === "INVENTORY_ADMITTED");
-  const wildcard = structuredClone(input.inventory);
-  wildcard.sources.find(({ id }) => id === admitted.admittedSourceIds[0]).coverageScope.lineIds = [];
-  assert.throws(() => buildNationwideRequirementOwnershipLedger({ ...input, inventory: wildcard }), /empty lineIds/);
-
-  const missingFields = structuredClone(input.inventory);
-  missingFields.sources.find(({ id }) => id === admitted.admittedSourceIds[0]).fieldsProvided = [];
-  assert.throws(() => buildNationwideRequirementOwnershipLedger({ ...input, inventory: missingFields }), /required fields/);
-
-  const unowned = structuredClone(input.ownership);
-  unowned.ownerRules = [];
-  assert.throws(() => buildNationwideRequirementOwnershipLedger({ ...input, ownership: unowned }), /owner rules/);
-
-  const badHead = structuredClone(input.candidateBuildSpec);
-  badHead.sourceSnapshots.push({ ...badHead.sourceSnapshots[0] });
-  assert.throws(() => buildNationwideRequirementOwnershipLedger({ ...input, candidateBuildSpec: badHead }), /current-head source identity mismatch/);
-});
-
-test("#449 candidate selection is artifact evidence, not completion of every lineage axis", async () => {
-  const input = await inputs();
-  const bound = structuredClone(input);
-  const requirement = bound.tally.launchRequired.requirements.find(({ status }) => status === "INVENTORY_ADMITTED");
-  const candidateHead = bound.candidateBuildSpec.sourceSnapshots[0];
-  const source = structuredClone(bound.inventory.sources.find(({ id }) => id === requirement.admittedSourceIds[0]));
-  source.id = candidateHead.sourceId;
-  bound.inventory.sources = bound.inventory.sources.filter(({ id }) => id !== candidateHead.sourceId);
-  bound.inventory.sources.push(source);
-  requirement.admittedSourceIds = [candidateHead.sourceId];
-  const ledger = buildNationwideRequirementOwnershipLedger(bound);
-  const row = ledger.rows.find(({ pk }) => pk === [requirement.regionId, requirement.operatorId, requirement.lineId, requirement.sourceDomain].join(":"));
-  assert.equal(row.lineage.artifactLineage.state, "EVIDENCED");
-  assert.equal(row.lineage.runtimeLineage.state, "PENDING");
-  assert.notEqual(Object.values(row.lineage).every(({ state }) => state === "EVIDENCED"), true);
-});
-
-test("#449 keeps expired and decision-less Busan accessibility lineage pending", async () => {
-  const input = await inputs();
-  const bound = structuredClone(input);
-  const busan = bound.inventory.sources.find(({ id }) => id === "busan-transportation-accessibility");
-  const templateHead = bound.candidateBuildSpec.sourceSnapshots[0];
-  const templateSnapshot = bound.sourceSnapshots.find(({ snapshotId }) => snapshotId === templateHead.snapshotId);
-  const snapshotId = "busan-transportation-accessibility-expired";
-  const expiredHead = {
-    ...templateHead,
-    snapshotId,
-    sourceId: busan.id,
-    freshnessExpiresAt: bound.candidateBuildSpec.publishedAt,
+function fixtureLedgerInput(input) {
+  const inputBytes = Object.fromEntries(["targets", "tally", "ownership", "inventory", "sourceSnapshots"]
+    .map((name) => [name, fixtureBytes(input[name])]));
+  const fanIn = buildCurrentFiveRegionSourceFanIn({ ...input, inputBytes });
+  return {
+    ...input,
+    fanIn,
+    inputBytes: { ...inputBytes, fanIn: Buffer.from(`${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`) },
   };
-  bound.sourceSnapshots.push({ ...templateSnapshot, snapshotId, sourceId: busan.id });
-  bound.candidateBuildSpec.sourceSnapshotIds.push(snapshotId);
-  bound.candidateBuildSpec.sourceSnapshots.push(expiredHead);
+}
 
-  const ledger = buildNationwideRequirementOwnershipLedger(bound);
-  const row = ledger.rows.find(({ disposition }) => disposition.admittedSourceIds.includes(busan.id));
-  assert.equal(row.lineage.freshnessLineage.state, "PENDING");
-  assert.equal(row.lineage.admissionLineage.state, "PENDING");
-  assert.equal(row.lineage.admissionLineage.reason, "PRODUCTION_ADMISSION_REQUIRED");
-});
-
-test("#449 keeps inventory-only artifact references pending without a current candidate head", async () => {
-  const input = await inputs();
-  const bound = structuredClone(input);
-  const requirement = bound.tally.launchRequired.requirements.find(({ status }) => status === "INVENTORY_ADMITTED");
-  const firstSource = bound.inventory.sources.find(({ id }) => id === requirement.admittedSourceIds[0]);
-  const secondSource = structuredClone(firstSource);
-  secondSource.id = `${firstSource.id}-second-admitted-source`;
-  firstSource.admissionEvidence = {
-    decision: "APPROVED", snapshotId: "first-artifact-a", snapshotPath: "oci://first/a", rawSha256: "a".repeat(64),
-  };
-  firstSource.reviewAdmissionEvidence = {
-    decision: "APPROVED", snapshotId: "first-artifact-b", snapshotPath: "oci://first/b", rawSha256: "b".repeat(64),
-  };
-  secondSource.admissionEvidence = { decision: "APPROVED" };
-  bound.inventory.sources.push(secondSource);
-  requirement.admittedSourceIds = [firstSource.id, secondSource.id];
-
-  const ledger = buildNationwideRequirementOwnershipLedger(bound);
-  const row = ledger.rows.find(({ pk }) => pk === [requirement.regionId, requirement.operatorId, requirement.lineId, requirement.sourceDomain].join(":"));
-  assert.equal(row.lineage.artifactLineage.state, "PENDING");
-});
-
-test("#449 derives GO only from terminal launch rows with complete admitted lineage", async () => {
-  const input = await inputs();
-  const bound = structuredClone(input);
-  const admittedIds = [...new Set(bound.tally.launchRequired.requirements
-    .filter(({ status }) => status === "INVENTORY_ADMITTED")
-    .flatMap(({ admittedSourceIds }) => admittedSourceIds))];
-  const snapshotTemplate = bound.sourceSnapshots[0];
-  const headTemplate = bound.candidateBuildSpec.sourceSnapshots[0];
-  bound.sourceSnapshots = [];
-  bound.candidateBuildSpec.sourceSnapshots = [];
-  bound.candidateBuildSpec.sourceSnapshotIds = [];
-  for (const sourceId of admittedIds) {
-    const source = bound.inventory.sources.find(({ id }) => id === sourceId);
-    source.productionUseAllowed = true;
-    source.admissionEvidence = {
-      decision: "APPROVED", freshUntil: "2099-01-01T00:00:00.000Z",
-      snapshotId: `synthetic-${sourceId}`, snapshotPath: `oci://synthetic/${sourceId}`, rawSha256: "c".repeat(64),
-    };
-    source.runtimeLineageEvidence = { operationId: `synthetic-${sourceId}` };
-    const snapshotId = `synthetic-head-${sourceId}`;
-    const rawSha256 = `${"d".repeat(63)}${admittedIds.indexOf(sourceId).toString(16)}`;
-    const rawObjectUri = `oci://synthetic/head/${sourceId}`;
-    bound.sourceSnapshots.push({ ...snapshotTemplate, snapshotId, sourceId, rawSha256, rawObjectUri });
-    bound.candidateBuildSpec.sourceSnapshotIds.push(snapshotId);
-    bound.candidateBuildSpec.sourceSnapshots.push({ ...headTemplate, snapshotId, sourceId, rawSha256, rawObjectUri, freshnessExpiresAt: "2099-01-01T00:00:00.000Z" });
-  }
-  for (const row of bound.tally.launchRequired.requirements) {
-    if (row.status !== "INVENTORY_ADMITTED") {
-      row.status = "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE";
-      row.admittedSourceIds = [];
-    }
-  }
-
-  const ledger = buildNationwideRequirementOwnershipLedger(bound);
-  assert.equal(ledger.summary.nationwideEligibility, "GO");
-});
+function hash(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
