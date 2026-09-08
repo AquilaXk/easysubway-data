@@ -193,11 +193,11 @@
           "station_line_membership"
         ]
       },
-      "requiredForProductionPack": false,
+      "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "realtime",
-      "observedDataUpdatedAt": "2026-07-20",
-      "retrievedAt": "2026-07-20",
+      "observedDataUpdatedAt": "2026-09-08",
+      "retrievedAt": "2026-09-08",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 제1유형",
@@ -244,10 +244,10 @@
         "issue": 2319,
         "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-busan-route-topology.test.mjs",
-        "snapshotId": "busan-transportation-route-topology-20260720",
-        "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
-        "capturedAt": "2026-07-19T18:13:31.841Z",
-        "freshUntil": "2026-07-20T18:13:31.841Z",
+        "snapshotId": "busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
+        "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6.json",
+        "capturedAt": "2026-09-08T15:59:00.454Z",
+        "freshUntil": "2026-09-09T15:59:00.454Z",
         "stationCount": 114,
         "edgeCount": 220,
         "excludedTransferCount": 18,
@@ -258,23 +258,26 @@
         "issue": 2363,
         "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-busan-route-topology.test.mjs",
-        "snapshotId": "busan-transportation-route-topology-20260720",
+        "snapshotId": "busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
+        "verifiedAt": "2026-09-08T15:59:00.454Z",
+        "stationCount": 114,
         "lineIds": [
           "line-ab1a041f6266",
           "line-d74614a04530",
           "line-d812a5bc1e5f",
           "line-eb7b47920390"
         ],
-        "verifiedAt": "2026-07-19T18:13:31.841Z",
-        "stationCount": 114,
         "membershipSourceId": "busan-transportation-route-topology",
         "membershipSourceRawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
         "membershipSourceSnapshotSha256": "bf0b275ec0c2c06f809a858eacbf60cfcb169025f08379be43ef8254fd0e7816",
         "mappingSha256": "494648057aa006842743d4729b5118b33325283e45380b1703e25f543ed59d26",
         "stationCodesSha256": "63545c48047eca5563c6c6f4f0e4c7eb19aa80e1ebf4766edfc82a357c2a2ebf",
         "stationCodeSourceId": "busan-transportation-route-topology",
-        "stationCodeSnapshotId": "busan-transportation-route-topology-20260720",
+        "stationCodeSnapshotId": "busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
         "stationCodeContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "c95b17313528bec500646e6e22900d998d936d5f3f9824704335cddc60875583"
       }
     },
     {

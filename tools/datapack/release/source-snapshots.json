@@ -67363,5 +67363,41 @@
       "licenseEvidenceHash": "a0daff78b1cdab2497fed25c22f158320137e70ef19c6f0a66ae8d5cfffc2c0c"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "busan-transportation-route-topology",
+    "snapshotId": "busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-08T15:59:00.454Z",
+    "retrievedAt": "2026-09-08T15:59:00.454Z",
+    "sourceUpdatedAt": null,
+    "provider": "부산교통공사",
+    "rowCount": 220,
+    "coverageCount": 114,
+    "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
+    "contentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/busan-transportation-route-topology/20260908/a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6.json",
+    "rawObjectSha256": "a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
+    "rawReceiptSha256": "410b5679055e77ca4e63f549faf1e51bc7224679fc215a06ac6dd0533a9ce39b",
+    "byteSize": 224231,
+    "freshUntil": "2026-09-09T15:59:00.454Z",
+    "freshnessExpiresAt": "2026-09-09T15:59:00.454Z",
+    "rawRetentionExpiresAt": "2026-12-07T15:59:00.454Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "7b55203930a4390f086bad17990c7fcd5caac666349f8cfdd140517c195bb16e",
+    "schemaFingerprint": "10659615d440037a9121f371b426ae664c75d67f320198c57e587b5c1c2ec49d",
+    "redactedRequestFingerprint": "6ed655a9cd081229ad5f43cc51e3fefe1911ec24fac4d991eeca4592780bcd2e",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "c95b17313528bec500646e6e22900d998d936d5f3f9824704335cddc60875583"
+    },
+    "diffSummary": null
   }
 ]
