@@ -161,6 +161,7 @@ test("부산 timetable collector는 114개 역과 3개 요일을 bounded fan-out
   const requested = [];
   const originalBytes = new Map();
   const secret = "never-print-service-key";
+  const opaqueDestinationCode = "318";
   const snapshot = await collectBusanTimetable({
     serviceKey: secret,
     stationScopes: topology.scope,
@@ -181,7 +182,8 @@ test("부산 timetable collector는 114개 역과 3개 요일을 bounded fan-out
         `<trainno>${line}${day}0${updown}</trainno>`,
         "<hour>05</hour><time>01</time>",
         `<day>${day}</day><updown>${updown}</updown>`,
-        `<endcode>${station.stationCode}</endcode>`,
+        `<endcode>${station.stationCode === topology.scope[0].stationCode
+          ? opaqueDestinationCode : station.stationCode}</endcode>`,
       ].join("")), captureRaw: (bytes) => originalBytes.set(`${station.stationCode}\0${day}`, bytes) });
     },
   });
@@ -213,6 +215,8 @@ test("부산 timetable collector는 114개 역과 3개 요일을 bounded fan-out
     stationCode, stationName, lineId,
   })));
   assert.equal(snapshot.rows.find(({ scode }) => scode === "205").sname, "벡스코 공식별칭");
+  assert.ok(snapshot.rows.some(({ scode, endcode }) =>
+    scode === topology.scope[0].stationCode && endcode === opaqueDestinationCode));
   assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
 });
 
@@ -290,7 +294,8 @@ test("부산 timetable collector는 값 대신 실패 field만 진단한다", as
     },
   }), (error) => {
     assert.match(error.message, /item\[0\] values=trainno/);
-    assert.match(error.message, new RegExp(`stationCode=${topology.scope[0].stationCode}; day=1; endcodeState=MATCHED`));
+    assert.match(error.message, new RegExp(`stationCode=${topology.scope[0].stationCode}; day=1`));
+    assert.doesNotMatch(error.message, /endcodeState=(MATCHED|UNKNOWN_STATION|OTHER_LINE)/);
     assert.doesNotMatch(error.message, /INVALID|never-print-service-key/);
     return true;
   });

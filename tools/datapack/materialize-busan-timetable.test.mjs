@@ -15,6 +15,7 @@ import {
 } from "./materialize-busan-route-topology.mjs";
 import {
   materializeBusanTimetable,
+  projectBusanObservedStops,
   runBusanTimetableMaterializer,
   validateTopologyLineage,
 } from "./materialize-busan-timetable.mjs";
@@ -42,6 +43,26 @@ test("Busan timetable binds official topology without replacing canonical edge I
     new Set(["station-a:line-a:station-b:line-a"]));
   pack.networkEdges[0].durationSeconds += 1;
   assert.throws(() => validateTopologyLineage(pack, evidence, { edges: [edge] }, stations), /lineage mismatch/);
+});
+
+test("Busan timetable headsign projects the last canonical observed passenger stop", () => {
+  const stations = new Map([
+    ["line-a:100", { stationId: "station-a", stationName: "출발역" }],
+    ["line-a:101", { stationId: "station-b", stationName: "관측 종점" }],
+  ]);
+  const stops = projectBusanObservedStops([
+    { row: { scode: "100", endcode: "318" }, seconds: 300 },
+    { row: { scode: "101", endcode: "318" }, seconds: 360 },
+  ], stations, "line-a");
+
+  assert.equal(stops.at(-1).station.stationName, "관측 종점");
+  assert.deepEqual(stops.map(({ row, seconds, station }) => [row.scode, row.endcode, seconds, station.stationId]), [
+    ["100", "318", 300, "station-a"],
+    ["101", "318", 360, "station-b"],
+  ]);
+  assert.throws(() => projectBusanObservedStops([
+    { row: { scode: "999" }, seconds: 300 },
+  ], stations, "line-a"), /canonical station missing/);
 });
 
 test("부산 공식 109140행을 3833 trip·109140 stop_time으로 materialize한다", async () => {

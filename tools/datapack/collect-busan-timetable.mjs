@@ -42,7 +42,7 @@ export async function collectBusanTimetable({
       const index = next;
       next += 1;
       try {
-        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl, scope });
+        responses[index] = await collectResponse({ ...requests[index], key, fetchImpl, sleepImpl });
       } catch (error) {
         failure = error;
       }
@@ -95,7 +95,7 @@ export async function collectBusanTimetable({
   };
 }
 
-async function collectResponse({ station, day, key, fetchImpl, sleepImpl, scope }) {
+async function collectResponse({ station, day, key, fetchImpl, sleepImpl }) {
   const url = new URL(ENDPOINT);
   url.searchParams.set("serviceKey", key);
   url.searchParams.set("act", "xml");
@@ -123,23 +123,21 @@ async function collectResponse({ station, day, key, fetchImpl, sleepImpl, scope 
     throw new Error(`Busan timetable schema mismatch: truncated items; items=${items.length}; `
       + `totalCount=${safeToken(totalCount)}; rawSha256=${rawSha256}`);
   }
-  const byCode = new Map(scope.map((entry) => [entry.stationCode, entry]));
   const common = Object.fromEntries(["sname", "engname", "scode", "line"].map((field) => [field, scalar(body, field)]));
   const rows = items.map((item, index) => validateRow(
     Object.fromEntries(RESPONSE_FIELDS.map((field) => [field, common[field] ?? scalar(item, field)])),
-    { station, day, byCode, index },
+    { station, day, index },
   ));
   return { rows, rawBytes: bytes, rawSha256, responseEncoding };
 }
 
-function validateRow(values, { station, day, byCode, index }) {
+function validateRow(values, { station, day, index }) {
   if (Object.values(values).some((value) => value == null)) {
     throw new Error(`Busan timetable schema mismatch: item[${index}] fields`);
   }
   const hour = Number(values.hour);
   const minute = Number(values.time);
   const expectedLine = LINE_CODES[station.lineId];
-  const end = byCode.get(values.endcode);
   const invalid = [];
   if (values.sname.trim() === "" || values.sname.trim().length > 100) invalid.push("sname");
   if (values.engname.trim() === "" || values.engname.trim().length > 100) invalid.push("engname");
@@ -150,12 +148,11 @@ function validateRow(values, { station, day, byCode, index }) {
   if (!new Set(["0", "1"]).has(values.updown)) invalid.push("updown");
   if (values.scode !== station.stationCode) invalid.push("scode");
   if (values.line !== expectedLine) invalid.push("line");
-  if (!end || LINE_CODES[end.lineId] !== expectedLine) invalid.push("endcode");
+  if (!/^\d{2,3}$/.test(values.endcode)) invalid.push("endcode");
   if (invalid.length > 0) {
-    const endcodeState = !end ? "UNKNOWN_STATION"
-      : LINE_CODES[end.lineId] !== expectedLine ? "OTHER_LINE" : "MATCHED";
+    const endcodeDiagnostic = invalid.includes("endcode") ? "; endcodeFormat=MALFORMED" : "";
     throw new Error(`Busan timetable schema mismatch: item[${index}] values=${invalid.join(",")}; `
-      + `stationCode=${station.stationCode}; day=${day}; endcodeState=${endcodeState}`);
+      + `stationCode=${station.stationCode}; day=${day}${endcodeDiagnostic}`);
   }
   return { ...values, hour: String(hour).padStart(2, "0"), time: String(minute).padStart(2, "0") };
 }

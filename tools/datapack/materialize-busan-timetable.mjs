@@ -55,14 +55,14 @@ export function materializeBusanTimetable({
   for (const [key, group] of [...groups].sort(([left], [right]) => left.localeCompare(right, "en"))) {
     const [line, day, trainno, updown, endcode] = key.split(":");
     const lineId = LINE_IDS[line];
-    const destination = stations.get(`${lineId}:${endcode}`);
-    if (!destination || group.length < 2) throw new Error(`Busan timetable trip scope mismatch: ${key}`);
+    if (group.length < 2) throw new Error(`Busan timetable trip scope mismatch: ${key}`);
     const ordered = group.map((row) => ({ row, seconds: Number(row.hour) * 3_600 + Number(row.time) * 60 }))
       .sort((left, right) => left.seconds - right.seconds || Number(left.row.scode) - Number(right.row.scode));
     if (new Set(ordered.map(({ row }) => row.scode)).size !== ordered.length) {
       throw new Error(`Busan timetable duplicate trip stop: ${key}`);
     }
     validateTripAdjacency(ordered, stations, lineId, topologyPairs, key);
+    const observedStops = projectBusanObservedStops(ordered, stations, lineId);
     const id = `trip-busan-${line}-${day}-${trainno}-${updown}-${endcode}`;
     if (tripIds.has(id)) throw new Error(`duplicate Busan timetable trip id: ${id}`);
     tripIds.add(id);
@@ -71,15 +71,13 @@ export function materializeBusanTimetable({
       id,
       routeId: `route-busan-${line}-${updown}`,
       serviceId: SERVICES[day],
-      tripHeadsign: destination.stationName,
+      tripHeadsign: observedStops.at(-1).station.stationName,
       directionId: updown === "0" ? "up" : "down",
       servicePattern: "LOCAL",
       serviceClass: "SUBWAY",
       serviceDayStartSeconds: 0,
     }, { ...provenance, providerRecordHash: recordHash }));
-    ordered.forEach(({ row, seconds }, index) => {
-      const station = stations.get(`${lineId}:${row.scode}`);
-      if (!station) throw new Error(`Busan timetable canonical station missing: ${lineId}:${row.scode}`);
+    observedStops.forEach(({ seconds, station }, index) => {
       pack.transitStopTimes.push(withProvenance({
         tripId: id,
         stopSequence: index + 1,
@@ -230,6 +228,15 @@ function validateTripAdjacency(ordered, stations, lineId, topologyPairs, tripKey
       throw new Error(`Busan timetable topology adjacency mismatch: ${tripKey}`);
     }
   }
+}
+
+export function projectBusanObservedStops(ordered, stations, lineId) {
+  // 공급자 종착 코드는 해석하지 않고 실제 관측 정차역만 정본 역에 연결한다.
+  return ordered.map(({ row, seconds }) => {
+    const station = stations.get(`${lineId}:${row.scode}`);
+    if (!station) throw new Error(`Busan timetable canonical station missing: ${lineId}:${row.scode}`);
+    return { row, seconds, station };
+  });
 }
 
 function canonicalStations(pack) {
