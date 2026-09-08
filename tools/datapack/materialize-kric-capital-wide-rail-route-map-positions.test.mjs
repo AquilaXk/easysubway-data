@@ -19,6 +19,10 @@ const SAMPLE_SOURCE_ID = "kric-airport-railroad-route-map-positions";
 const SAMPLE_LINE_ID = "line-e9e9a5b520a4";
 const SAMPLE_OPERATOR_ID = "operator-8134e61f8dbd";
 
+async function readJson(relativePath) {
+  return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
+}
+
 async function inputs() {
   return loadRegionalCapitalKricRouteMapPrefix(
     path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`),

@@ -19,6 +19,10 @@ const SAMPLE_SOURCE_ID = "kric-gimpo-goldline-route-map-positions";
 const SAMPLE_LINE_ID = "line-5500c1600f71";
 const SAMPLE_OPERATOR_ID = "operator-2e23276dfa94";
 
+async function readJson(relativePath) {
+  return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
+}
+
 async function inputs() {
   return loadRegionalCapitalKricRouteMapPrefix(
     path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`),
