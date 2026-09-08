@@ -19,7 +19,7 @@ import {
   parseCanonicalBusanStationMappings,
 } from "./materialize-busan-route-topology.mjs";
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
+import { deriveDaejeonTimetableCounts, materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
 import { collectGwangjuAccessibility } from "./collect-gwangju-accessibility.mjs";
 import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
@@ -347,8 +347,23 @@ export function projectRegionalFixtureSourceBindings({
     topology.membershipAdmissionEvidence = structuredClone(membershipEvidence);
     if (daejeonTimetable) {
       const timetable = source(projected, daejeonTimetable.sourceId);
+      const timetableSnapshotId = fixtureSnapshotId(timetable.id, daejeonTimetable.observedAt);
+      const freshnessMillis = Date.parse(timetable.scheduleAdmissionEvidence.freshUntil)
+        - Date.parse(timetable.scheduleAdmissionEvidence.capturedAt);
       timetable.scheduleAdmissionEvidence = {
         ...timetable.scheduleAdmissionEvidence,
+        snapshotId: timetableSnapshotId,
+        snapshotPath: fixtureSnapshotPath(timetableSnapshotId),
+        capturedAt: daejeonTimetable.observedAt,
+        freshUntil: new Date(Date.parse(daejeonTimetable.observedAt) + freshnessMillis).toISOString(),
+        rowCount: daejeonTimetable.rowCount,
+        rawSha256: daejeonTimetable.rawSha256,
+        rowsSha256: daejeonTimetable.rowsSha256,
+        ...deriveDaejeonTimetableCounts({
+          timetableSnapshot: daejeonTimetable,
+          topologySnapshot: daejeonTopology,
+          canonicalStationMappings: mappings,
+        }),
         topologySourceId: topology.id,
         topologySnapshotId: snapshotId,
         topologyContentSha256: daejeonTopology.contentSha256,
