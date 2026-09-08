@@ -629,6 +629,30 @@
       "sampleEvidenceStatus": "validated_live_full_snapshot",
       "admissionStatus": "validated_live_topology_materialized_to_production_candidate",
       "productionInventoryReferenceId": "busan-transportation-route-topology",
+      "registrationMetadata": {
+        "admissionReference": "https://github.com/AquilaXk/easysubway/pull/2320",
+        "governance": {
+          "sourceId": "busan-transportation-route-topology",
+          "sourceClassId": "route_graph_topology",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "c95b17313528bec500646e6e22900d998d936d5f3f9824704335cddc60875583",
+            "reviewedAt": "2026-09-08T15:44:42Z",
+            "nextReviewAt": "2027-09-08T15:44:42Z",
+            "termsUrl": "https://www.data.go.kr/data/15001019/openapi.do",
+            "reviewedProvider": "부산교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15001019/openapi.do",
+            "redistributionScopes": ["DERIVED_DATAPACK"],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
       "serviceKeyHandling": "offline_collector_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {

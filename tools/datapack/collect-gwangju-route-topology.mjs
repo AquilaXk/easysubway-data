@@ -14,7 +14,11 @@ export async function collectGwangjuRouteTopology({
   sleepImpl = sleep,
   now = new Date(),
   stationScope,
+  onRawResponse = undefined,
 } = {}) {
+  if (onRawResponse !== undefined && typeof onRawResponse !== "function") {
+    throw new Error("Gwangju route topology raw response callback mismatch");
+  }
   const capturedAt = validDate(now, "now");
   const scopeInput = validateStationScope(stationScope);
   const scopeById = new Map(scopeInput.map((row) => [row.providerStationId, row]));
@@ -30,7 +34,9 @@ export async function collectGwangjuRouteTopology({
     const bytes = Buffer.from(await response.arrayBuffer());
     responses.push(sha256(bytes));
     // OCI 등록 시 재호출하지 않고 수집 당시 원문과 파생 topology를 함께 결속한다.
-    rawResponses.push({ providerStationId: stationId, bytesBase64: bytes.toString("base64") });
+    const rawResponse = { providerStationId: stationId, bytesBase64: bytes.toString("base64") };
+    rawResponses.push(rawResponse);
+    if (onRawResponse) await onRawResponse(rawResponse);
     let rows;
     try {
       rows = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -202,11 +208,9 @@ export async function runGwangjuRouteTopologyCollector(args = process.argv.slice
   if (args.length !== 4 || args[0] !== "--inventory" || args[2] !== "--output" || !path.isAbsolute(args[3])) {
     throw new Error("usage: collect-gwangju-route-topology.mjs --inventory <repository-relative.json> --output <absolute.json>");
   }
-  const existingOutput = await lstat(args[3]).catch((error) => {
-    if (error.code === "ENOENT") return null;
-    throw error;
-  });
-  if (existingOutput) throw Object.assign(new Error("EEXIST: topology output already exists"), { code: "EEXIST" });
+  const failedOutputPath = `${args[3]}.failed.json`;
+  await requireAbsentOutput(args[3], "topology output");
+  await requireAbsentOutput(failedOutputPath, "topology failure output");
   const root = path.resolve(repositoryRoot);
   const inventoryPath = path.resolve(root, args[1]);
   if (!inventoryPath.startsWith(`${root}${path.sep}`)) throw new Error("Gwangju topology inventory path mismatch");
@@ -221,10 +225,43 @@ export async function runGwangjuRouteTopologyCollector(args = process.argv.slice
   const seed = JSON.parse(await readFile(snapshotPath, "utf8"));
   if (seed.sourceId !== SOURCE_ID || seed.contentSha256 !== evidence.contentSha256
     || seed.contentSha256 !== sha256(JSON.stringify({ scope: seed.scope, edges: seed.edges }))) throw new Error("Gwangju topology inventory snapshot mismatch");
-  const snapshot = await collectGwangjuRouteTopology({ stationScope: seed.scope, fetchImpl, sleepImpl, now });
+  const rawResponses = [];
+  let snapshot;
+  try {
+    snapshot = await collectGwangjuRouteTopology({
+      stationScope: seed.scope,
+      fetchImpl,
+      sleepImpl,
+      now,
+      onRawResponse: async (response) => { rawResponses.push(response); },
+    });
+  } catch (error) {
+    if (rawResponses.length > 0) {
+      const failed = {
+        schemaVersion: 1,
+        artifactKind: "gwangju-route-topology-failed-collection",
+        status: "FAILED",
+        sourceId: SOURCE_ID,
+        capturedAt: validDate(now, "now").toISOString(),
+        seedContentSha256: seed.contentSha256,
+        scope: seed.scope,
+        rawResponses,
+      };
+      await writeFile(failedOutputPath, `${JSON.stringify(failed)}\n`, { flag: "wx", mode: 0o600 });
+    }
+    throw error;
+  }
   await writeFile(args[3], `${JSON.stringify(snapshot)}\n`, { flag: "wx", mode: 0o600 });
   console.log(`sanitized Gwangju route topology snapshot ready: edges=${snapshot.edgeCount}`);
   return snapshot;
+}
+
+async function requireAbsentOutput(file, label) {
+  const existing = await lstat(file).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (existing) throw Object.assign(new Error(`EEXIST: ${label} already exists`), { code: "EEXIST" });
 }
 
 async function main(args = process.argv.slice(2)) { return runGwangjuRouteTopologyCollector(args); }

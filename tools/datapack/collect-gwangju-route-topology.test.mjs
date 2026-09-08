@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -132,8 +132,9 @@ test("dynamic station scope derives noncontiguous provider roster and adjacent e
   await assert.rejects(collectGwangjuRouteTopology({ stationScope: scope, fetchImpl: async () => Response.json([]) }), /OD row count/);
 });
 
-test("CLI resolves admitted schema-1 seed scope before collecting fresh topology", async () => {
+test("CLI resolves admitted schema-1 seed scope before collecting fresh topology", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "gwangju-topology-cli-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
   const scope = [
     { providerStationId: "101", stationCode: "A", stationName: "가역" },
     { providerStationId: "305", stationCode: "B", stationName: "나역" },
@@ -183,15 +184,30 @@ test("CLI resolves admitted schema-1 seed scope before collecting fresh topology
   assert.equal(calls, 0);
 
   await writeFile(path.join(root, snapshotPath), JSON.stringify(seed));
-  await assert.rejects(runGwangjuRouteTopologyCollector(["--inventory", "tools/datapack/source-inventory.json", "--output", path.join(root, "name.json")], {
+  const failedOutput = path.join(root, "name.json");
+  const receivedBytes = Buffer.from(JSON.stringify(scope.slice(1).map((end) => ({
+    start_station_id: scope[0].providerStationId, start_station_name: "다른역", end_station_id: end.providerStationId,
+    end_station_name: end.stationName, station_distance: 1, station_time: 1,
+  }))));
+  await assert.rejects(runGwangjuRouteTopologyCollector(["--inventory", "tools/datapack/source-inventory.json", "--output", failedOutput], {
     repositoryRoot: root, fetchImpl: async (url) => {
       const start = new URL(url).searchParams.get("station_id");
+      if (start === scope[0].providerStationId) return new Response(receivedBytes, { headers: { "content-type": "application/json" } });
       return Response.json(scope.filter(({ providerStationId }) => providerStationId !== start).map((end) => ({
         start_station_id: start, start_station_name: "다른역", end_station_id: end.providerStationId,
         end_station_name: end.stationName, station_distance: 1, station_time: 1,
       })));
     },
   }), /station name mismatch/);
+  const failed = JSON.parse(await readFile(`${failedOutput}.failed.json`, "utf8"));
+  assert.equal(failed.status, "FAILED");
+  assert.deepEqual(Buffer.from(failed.rawResponses[0].bytesBase64, "base64"), receivedBytes);
+  await assert.rejects(readFile(failedOutput), { code: "ENOENT" });
+  calls = 0;
+  await assert.rejects(runGwangjuRouteTopologyCollector(["--inventory", "tools/datapack/source-inventory.json", "--output", failedOutput], {
+    repositoryRoot: root, fetchImpl: async () => { calls += 1; throw new Error("provider must not run"); },
+  }), /EEXIST/);
+  assert.equal(calls, 0);
 });
 
 test("광주 topology production snapshot identity를 고정한다", async () => {
