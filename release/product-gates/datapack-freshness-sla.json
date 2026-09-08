@@ -162,7 +162,8 @@
       "id": "route_graph_topology",
       "sourceIds": [
         "capital-route-topology",
-        "korail-metropolitan-timetable-file"
+        "korail-metropolitan-timetable-file",
+        "gwangju-transportation-route-topology"
       ],
       "examples": [
         "official capital route graph topology"

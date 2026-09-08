@@ -67327,5 +67327,41 @@
     "admissionEvidence": {
       "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "gwangju-transportation-route-topology",
+    "snapshotId": "gwangju-transportation-route-topology-6c460d45bd887419d324d5a4f3389f21e7d2f34c9643dba5aeb4b6653692c81b",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-08T15:53:59.051Z",
+    "retrievedAt": "2026-09-08T15:53:59.051Z",
+    "sourceUpdatedAt": null,
+    "provider": "광주교통공사",
+    "rowCount": 38,
+    "coverageCount": 20,
+    "rawSha256": "6759e59ee4b980081cf3345b7164a52c02a990918a1211f0eed173c3faf97e9c",
+    "contentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/gwangju-transportation-route-topology/6c460d45bd887419d324d5a4f3389f21e7d2f34c9643dba5aeb4b6653692c81b.json",
+    "rawObjectSha256": "6c460d45bd887419d324d5a4f3389f21e7d2f34c9643dba5aeb4b6653692c81b",
+    "rawReceiptSha256": "c6564f6b3ae017311de8e510eb59c280705928607f4db201054cdb2c5ca5cc1c",
+    "byteSize": 94606,
+    "freshUntil": "2026-09-09T15:53:59.051Z",
+    "freshnessExpiresAt": "2026-09-09T15:53:59.051Z",
+    "rawRetentionExpiresAt": "2026-12-07T15:53:59.051Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "de468ebeab48f97299ffe6bca6b405396c7c39e631dbf6b6d84a2d43c2fa91f6",
+    "schemaFingerprint": "2b68a1daba7ac307a95ee5189f8c72b0baf88dd4ae72b3b0874cf607469d81eb",
+    "redactedRequestFingerprint": "fdf4c467a50e9c34aa905ebaf8c0288e5906101876a1e3750d31597eeef41a3f",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "a0daff78b1cdab2497fed25c22f158320137e70ef19c6f0a66ae8d5cfffc2c0c"
+    },
+    "diffSummary": null
   }
 ]
