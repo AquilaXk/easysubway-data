@@ -9,6 +9,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { admitBusanRouteTopology, collectBusanRouteTopology } from "./collect-busan-route-topology.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 import { canonicalStationMappingHash, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
@@ -133,7 +134,7 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
     rawRetentionExpiresAt: prepared.rawRetentionExpiresAt,
     governancePolicyVersion: prepared.governance.policyVersion,
     governancePolicySha256: sha(governanceBytes),
-    schemaFingerprint: sha(canonicalJson({ artifactKind: prepared.snapshot.artifactKind, keys: Object.keys(prepared.snapshot).sort() })),
+    schemaFingerprint: sha(canonicalJson({ artifactKind: prepared.snapshot.artifactKind, keys: Object.keys(prepared.snapshot).sort(compareStrings) })),
     redactedRequestFingerprint: sha(canonicalJson({ endpoint: prepared.snapshot.endpoint, scope: prepared.snapshot.scope })),
     snapshotStatus: "LOCKED",
     schemaStatus: "PASS",
@@ -341,7 +342,11 @@ async function writeImmutableSnapshot(file, bytes) {
     if (error?.code !== "EEXIST" || !(await readFile(file)).equals(bytes)) throw error;
   });
 }
-function select(rows, predicate, label) { const matches = Array.isArray(rows) ? rows.filter(predicate) : []; if (matches.length !== 1) throw new Error(`Busan topology ${label} is invalid`); return matches[0]; }
+function select(rows, predicate, label) {
+  const matches = Array.isArray(rows) ? rows.filter((row) => predicate(row)) : [];
+  if (matches.length !== 1) throw new Error(`Busan topology ${label} is invalid`);
+  return matches[0];
+}
 function absolute(value, label) { if (!path.isAbsolute(value ?? "")) throw new Error(`Busan topology ${label} must be absolute`); return path.resolve(value); }
 function parse(bytes, label) { try { return JSON.parse(bytes); } catch { throw new Error(`Busan topology ${label} is invalid JSON`); } }
 function instant(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value; }

@@ -11,6 +11,7 @@ import { collectDaejeonRouteTopology } from "./collect-daejeon-route-topology.mj
 import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
 import { validateSnapshot } from "./materialize-daejeon-route-topology.mjs";
 import {
@@ -208,7 +209,7 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
     rawRetentionExpiresAt: prepared.rawRetentionExpiresAt,
     governancePolicyVersion: prepared.governance.policyVersion,
     governancePolicySha256: sha(governanceBytes),
-    schemaFingerprint: sha(canonicalJson({ artifactKind: prepared.snapshot.artifactKind, keys: Object.keys(prepared.snapshot).sort() })),
+    schemaFingerprint: sha(canonicalJson({ artifactKind: prepared.snapshot.artifactKind, keys: Object.keys(prepared.snapshot).sort(compareStrings) })),
     redactedRequestFingerprint: sha(canonicalJson({
       endpoint: prepared.snapshot.endpoint,
       stationNumbers: prepared.snapshot.stationNumbers,
@@ -451,7 +452,7 @@ async function writeImmutableSnapshot(file, bytes) {
 }
 
 function select(rows, predicate, label) {
-  const matches = Array.isArray(rows) ? rows.filter(predicate) : [];
+  const matches = Array.isArray(rows) ? rows.filter((row) => predicate(row)) : [];
   if (matches.length !== 1) throw new Error(`Daejeon topology ${label} is invalid`);
   return matches[0];
 }

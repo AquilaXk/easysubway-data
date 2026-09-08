@@ -10,6 +10,7 @@ import { assertCurrentMolitGwangjuMembershipAdmission, loadCurrentMolitObservati
 import { parseCurrentMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { buildGwangjuTopologyDependents } from "./lib/gwangju-topology-dependents.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
@@ -240,7 +241,7 @@ async function outputsFromPrepared(prepared, receiptPath, now) {
     freshUntil: snapshot.freshUntil, freshnessExpiresAt: snapshot.freshUntil,
     rawRetentionExpiresAt: prepared.rawRetentionExpiresAt, governancePolicyVersion: governance.policyVersion,
     governancePolicySha256: sha(governanceBytes),
-    schemaFingerprint: sha(canonicalJson({ artifactKind: snapshot.artifactKind, keys: Object.keys(snapshot).sort() })),
+    schemaFingerprint: sha(canonicalJson({ artifactKind: snapshot.artifactKind, keys: Object.keys(snapshot).sort(compareStrings) })),
     redactedRequestFingerprint: sha(canonicalJson({ endpoint: snapshot.endpoint, scope: snapshot.scope.map(({ providerStationId }) => providerStationId) })),
     snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS",
     redistributionAllowed: true, credentialRedacted: true, admissionEvidence: source.admissionEvidence };
