@@ -148,8 +148,9 @@ function requiredStationId(value, scopeById) {
 }
 
 function normalizedStationName(value) {
+  // 동일 역 ID에서 공식 응답의 중복 접미사(역역)도 한 이름으로 정규화한다.
   const name = String(value ?? "").normalize("NFKC")
-    .replace(/\([^)]*\)/g, "").replace(/[\s/.·]/g, "").replace(/역$/u, "");
+    .replace(/\([^)]*\)/g, "").replace(/[\s/.·]/g, "").replace(/역+$/u, "");
   if (!/^[가-힣A-Za-z0-9()]{1,40}$/.test(name)) {
     throw new Error("Gwangju route topology schema mismatch: station name");
   }

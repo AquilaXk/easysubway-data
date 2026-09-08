@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { BUSAN_LINES, collectBusanRouteTopology } from "./collect-busan-route-topology.mjs";
+import { BUSAN_LINES, admitBusanRouteTopology, collectBusanRouteTopology } from "./collect-busan-route-topology.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { canonicalStationMappingHash, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
 
@@ -26,7 +26,7 @@ test("register retained Busan topology through source transaction", async (t) =>
     stationCode: `${lineNumber}0${stop}`, stationName: `역${lineNumber}${stop}`, lineId,
     neighborCodes: [`${lineNumber}0${3 - stop}`],
   })));
-  const snapshot = await collectBusanRouteTopology({ serviceKey: "test-key", stationScopes: scope, now,
+  const collectedSnapshot = await collectBusanRouteTopology({ serviceKey: "test-key", stationScopes: scope, now,
     fetchImpl: async (url) => {
       const from = scope.find(({ stationCode }) => stationCode === new URL(url).searchParams.get("scode"));
       const to = scope.find(({ stationCode }) => stationCode === from.neighborCodes[0]);
@@ -37,6 +37,10 @@ test("register retained Busan topology through source transaction", async (t) =>
         + `</item></body><numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount></response>`,
       { headers: { "content-type": "application/xml" } });
     } });
+  const snapshot = {
+    ...collectedSnapshot,
+    admission: admitBusanRouteTopology(collectedSnapshot, { now }),
+  };
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const snapshotPath = path.join(root, "retained-busan.json");
   await writeFile(snapshotPath, snapshotBytes);

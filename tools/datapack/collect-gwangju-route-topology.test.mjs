@@ -121,7 +121,7 @@ test("dynamic station scope derives noncontiguous provider roster and adjacent e
       const start = new URL(url).searchParams.get("station_id"); requests.push(start);
       return Response.json(scope.filter(({ providerStationId }) => providerStationId !== start).map((end, index) => ({
         start_station_id: start, start_station_name: scope.find(({ providerStationId }) => providerStationId === start).stationName,
-        end_station_id: end.providerStationId, end_station_name: end.stationName, station_distance: index + 1, station_time: index + 1,
+        end_station_id: end.providerStationId, end_station_name: `${end.stationName}역`, station_distance: index + 1, station_time: index + 1,
       })));
     },
   });

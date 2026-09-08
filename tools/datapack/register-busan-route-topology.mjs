@@ -246,7 +246,11 @@ async function replayRetainedSnapshot(snapshot) {
       return new Response(bytes, { headers: { "content-type": "application/xml" } });
     },
   });
-  if (cursor !== snapshot.rawResponses.length || !isDeepStrictEqual(snapshot, replay)) {
+  const expected = {
+    ...replay,
+    admission: admitBusanRouteTopology(replay, { now: new Date(snapshot.capturedAt) }),
+  };
+  if (cursor !== snapshot.rawResponses.length || !isDeepStrictEqual(snapshot, expected)) {
     throw new Error("Busan topology retained snapshot replay mismatch");
   }
 }
