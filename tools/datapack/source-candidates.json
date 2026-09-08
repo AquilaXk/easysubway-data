@@ -695,10 +695,43 @@
       "nextAction": "#2138의 나머지 provider/domain batch를 같은 production SQLite·field provenance 계약으로 합치고 최종 nationwide candidate를 rehearsal한다"
     },
     {
-      "id": "busan-transportation-timetable",
-      "priority": "P0",
-      "domain": "schedule_timetable",
-      "coverageScope": {
+    "id": "busan-transportation-timetable",
+    "priority": "P0",
+    "domain": "schedule_timetable",
+    "registrationMetadata": {
+      "admissionReference": "https://github.com/AquilaXk/easysubway/issues/2368",
+      "freshness": {
+        "id": "busan_timetable_observation",
+        "sourceIds": ["busan-transportation-timetable"],
+        "basisField": "capturedAt",
+        "reverificationCadence": "P30D",
+        "futureBasisAllowed": false,
+        "providerValidityEndField": null,
+        "eventTriggers": ["official timetable revision"]
+      },
+      "governance": {
+        "sourceId": "busan-transportation-timetable",
+        "sourceClassId": "busan_timetable_observation",
+        "retentionClassId": "standard-90d",
+        "ownerRole": "datapack-source-owner",
+        "stewardRole": "datapack-data-steward",
+        "approvalRole": "datapack-release-approver",
+        "escalationHours": 4,
+        "alertRoute": "github:area-datapack",
+        "licenseReview": {
+          "status": "APPROVED",
+          "termsHash": "da99648cbd80d9263482ae707dfcf6cd11c19c50461bf60cbad85183ff45dec1",
+          "reviewedAt": "2026-09-08T18:03:48.286Z",
+          "nextReviewAt": "2027-09-08T18:03:48.286Z",
+          "termsUrl": "https://www.data.go.kr/data/15000522/openapi.do",
+          "reviewedProvider": "부산교통공사",
+          "reviewedDatasetUrl": "https://www.data.go.kr/data/15000522/openapi.do",
+          "redistributionScopes": ["DERIVED_DATAPACK"],
+          "approvedByRole": "datapack-release-approver"
+        }
+      }
+    },
+    "coverageScope": {
         "regionIds": [
           "busan"
         ],
