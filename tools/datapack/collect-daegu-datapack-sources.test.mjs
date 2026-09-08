@@ -1,16 +1,34 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
   DAEGU_LINES, decodeOfficialCsv, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
+  writeDaeguSourceSnapshot,
 } from "./collect-daegu-datapack-sources.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const readSnapshot = async (name) => JSON.parse(await readFile(path.join(root, "tools/datapack/sources", name), "utf8"));
+
+test("Daegu snapshot output is content-addressed and create-once", async (t) => {
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-source-output-"));
+  t.after(() => rm(outputDirectory, { recursive: true, force: true }));
+  const snapshot = { sourceId: "daegu-line1-route-topology", capturedAt: "2040-01-01T00:00:00.000Z" };
+  const exactBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const firstPath = await writeDaeguSourceSnapshot(outputDirectory, snapshot);
+  assert.equal(path.basename(firstPath), `${snapshot.sourceId}-${sha256(exactBytes)}.json`);
+  assert.deepEqual(await readFile(firstPath), exactBytes);
+
+  const secondSnapshot = { ...snapshot, capturedAt: "2040-01-02T00:00:00.000Z" };
+  const secondPath = await writeDaeguSourceSnapshot(outputDirectory, secondSnapshot);
+  assert.notEqual(secondPath, firstPath);
+  assert.deepEqual(await readFile(firstPath), exactBytes);
+  await assert.rejects(() => writeDaeguSourceSnapshot(outputDirectory, snapshot), { code: "EEXIST" });
+});
 
 // 공식 원문 파일별 SHA-256(이슈 #2407 표) — 취득 원문 identity 고정
 const RAW_SHA256 = {
