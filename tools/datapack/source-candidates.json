@@ -1002,6 +1002,12 @@
       "priority": "P0",
       "domain": "route_graph_topology",
       "registrationMetadata": {
+        "dependentInputs": {
+          "mapXlsxPath": "tools/datapack/fixtures/daejeon-route-map-positions-raw/kric-metropolitan-rail-station-info-20260630.xlsx",
+          "schematicCanvasPath": "tools/datapack/fixtures/daejeon-route-map-positions-raw/owner-self-drawn-sma-schematic-canvas-20260725.json",
+          "elevatorPath": "tools/datapack/fixtures/daejeon-accessibility-raw/data-go-15041384.csv",
+          "escalatorPath": "tools/datapack/fixtures/daejeon-accessibility-raw/data-go-15041361.csv"
+        },
         "admissionReference": "https://github.com/AquilaXk/easysubway/pull/2336",
         "governance": {
           "sourceId": "daejeon-station-distance-fare",

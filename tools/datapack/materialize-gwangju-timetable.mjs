@@ -630,55 +630,70 @@ function bindCumulativeGwangjuTopology(pack, generated) {
   if (hasExistingTopology && (actualMembership.length === 0 || lineRideEdges.length === 0)) {
     throw new Error("Gwangju cumulative topology is partial");
   }
-  if (actualMembership.length > 0) {
-    const actualKeys = new Set(actualMembership.map(({ stationId, lineSequence }) =>
-      `${stationId}\0${lineSequence}`));
-    if (actualKeys.size !== actualMembership.length || actualKeys.size !== expectedMembership.size
-      || [...actualKeys].some((key) => !expectedMembership.has(key))) {
-      throw new Error("Gwangju cumulative membership mismatch");
-    }
-    for (const row of actualMembership) {
-      if (hasExistingAuthority(row)) {
-        throw new Error("Gwangju cumulative membership source mismatch");
-      }
-      const expected = expectedMembership.get(`${row.stationId}\0${row.lineSequence}`);
-      row.stationCode = expected.stationCode;
-      assignAuthorityFields(row, expected);
-    }
-  } else {
-    pack.stationLines.push(...generated.stationLines);
+  adoptGwangjuMembership(pack, generated.stationLines, actualMembership, expectedMembership);
+  adoptGwangjuStations(pack, generated.stations);
+  adoptGwangjuRideEdges(pack, generated.networkEdges, actualEdges, lineRideEdges, expectedEdges, edgeKey);
+}
+
+function adoptGwangjuMembership(pack, generated, actual, expected) {
+  if (actual.length === 0) {
+    pack.stationLines.push(...generated);
+    return;
   }
-  const expectedStations = new Map(generated.stations.map((row) => [row.id, row]));
-  const actualStations = pack.stations.filter(({ id }) => expectedStations.has(id));
-  if (actualStations.length > 0 && (actualStations.length !== expectedStations.size
-    || new Set(actualStations.map(({ id }) => id)).size !== actualStations.length)) {
+  const actualKeys = new Set(actual.map(({ stationId, lineSequence }) => `${stationId}\0${lineSequence}`));
+  if (actualKeys.size !== actual.length || actualKeys.size !== expected.size
+    || [...actualKeys].some((key) => !expected.has(key))) {
+    throw new Error("Gwangju cumulative membership mismatch");
+  }
+  for (const row of actual) {
+    if (hasExistingAuthority(row)) {
+      throw new Error("Gwangju cumulative membership source mismatch");
+    }
+    const expectedRow = expected.get(`${row.stationId}\0${row.lineSequence}`);
+    row.stationCode = expectedRow.stationCode;
+    assignAuthorityFields(row, expectedRow);
+  }
+}
+
+function adoptGwangjuStations(pack, generated) {
+  const expected = new Map(generated.map((row) => [row.id, row]));
+  const actual = pack.stations.filter(({ id }) => expected.has(id));
+  if (actual.length > 0 && (actual.length !== expected.size
+    || new Set(actual.map(({ id }) => id)).size !== actual.length)) {
     throw new Error("Gwangju cumulative station mismatch");
   }
-  if (actualStations.length === 0) pack.stations.push(...generated.stations);
-  else for (const row of actualStations) {
-    if (normalizedName(row.nameKo) !== normalizedName(expectedStations.get(row.id).nameKo)) {
+  if (actual.length === 0) {
+    pack.stations.push(...generated);
+    return;
+  }
+  for (const row of actual) {
+    const expectedRow = expected.get(row.id);
+    if (normalizedName(row.nameKo) !== normalizedName(expectedRow.nameKo)) {
       throw new Error("Gwangju cumulative station name mismatch");
     }
     if (hasExistingAuthority(row)) {
       throw new Error("Gwangju cumulative station source mismatch");
     }
-    assignAuthorityFields(row, expectedStations.get(row.id));
+    assignAuthorityFields(row, expectedRow);
   }
-  if (lineRideEdges.length > 0) {
-    const actualKeys = new Set(actualEdges.map(edgeKey));
-    if (actualEdges.length !== lineRideEdges.length || actualKeys.size !== actualEdges.length
-      || actualKeys.size !== expectedEdges.size || [...actualKeys].some((key) => !expectedEdges.has(key))) {
-      throw new Error("Gwangju cumulative RIDE topology mismatch");
+}
+
+function adoptGwangjuRideEdges(pack, generated, actual, lineEdges, expected, edgeKey) {
+  if (lineEdges.length === 0) {
+    pack.networkEdges.push(...generated);
+    return;
+  }
+  const actualKeys = new Set(actual.map((row) => edgeKey(row)));
+  if (actual.length !== lineEdges.length || actualKeys.size !== actual.length
+    || actualKeys.size !== expected.size || [...actualKeys].some((key) => !expected.has(key))) {
+    throw new Error("Gwangju cumulative RIDE topology mismatch");
+  }
+  for (const row of actual) {
+    if (hasExistingAuthority(row)) {
+      throw new Error("Gwangju cumulative RIDE source mismatch");
     }
-    for (const row of actualEdges) {
-      if (hasExistingAuthority(row)) {
-        throw new Error("Gwangju cumulative RIDE source mismatch");
-      }
-      const id = row.id;
-      Object.assign(row, structuredClone(expectedEdges.get(edgeKey(row))), { id });
-    }
-  } else {
-    pack.networkEdges.push(...generated.networkEdges);
+    const id = row.id;
+    Object.assign(row, structuredClone(expected.get(edgeKey(row))), { id });
   }
 }
 

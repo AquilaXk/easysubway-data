@@ -17,7 +17,6 @@ const ESCALATOR_DETAIL_URL = `https://www.data.go.kr/data/${ESCALATOR_DATASET_ID
 const SOURCE_ID = "daejeon-transportation-accessibility";
 const ARTIFACT_KIND = "daejeon-accessibility-snapshot";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
-const TOPOLOGY_SNAPSHOT_ID = "daejeon-station-distance-fare-topology-20260720";
 const LINE_ID = "line-7051a9c2525c";
 const EXPECTED_STATION_COUNT = 22;
 const EXPECTED_ELEVATOR_ROWS = 76;
@@ -110,10 +109,12 @@ export function collectDaejeonAccessibility({
   elevatorBytes,
   escalatorBytes,
   topologySnapshot,
+  topologySource,
   canonicalStationMappings,
   now = new Date(),
 } = {}) {
   const capturedAt = validDate(now, "now");
+  const topologyEvidence = validateTopologySourceBinding({ topologySnapshot, topologySource });
   const rows = parseDaejeonAccessibilityCsv({
     elevatorBytes,
     escalatorBytes,
@@ -122,8 +123,8 @@ export function collectDaejeonAccessibility({
   });
   const scope = rows.map(({ stationCode, stationName, lineId }) => ({ stationCode, stationName, lineId }));
   const topologyLineages = [{
-    sourceId: TOPOLOGY_SOURCE_ID,
-    snapshotId: TOPOLOGY_SNAPSHOT_ID,
+    sourceId: topologySource.id,
+    snapshotId: topologyEvidence.snapshotId,
     contentSha256: topologySnapshot.contentSha256,
     lineId: LINE_ID,
   }];
@@ -229,6 +230,25 @@ function validateTopologySnapshot(topologySnapshot) {
   }
 }
 
+function validateTopologySourceBinding({ topologySnapshot, topologySource }) {
+  const evidence = topologySource?.topologyAdmissionEvidence;
+  if (topologySnapshot?.sourceId !== TOPOLOGY_SOURCE_ID
+    || topologySource?.id !== TOPOLOGY_SOURCE_ID
+    || typeof evidence?.snapshotId !== "string" || evidence.snapshotId.length === 0
+    || !evidence.snapshotId.startsWith(`${TOPOLOGY_SOURCE_ID}-`)
+    || typeof evidence.snapshotPath !== "string"
+    || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(evidence.snapshotPath)
+    || evidence.capturedAt !== topologySnapshot.observedAt
+    || evidence.stationCount !== topologySnapshot.stationNumbers?.length
+    || evidence.edgeCount !== topologySnapshot.rowCount
+    || evidence.excludedTransferCount !== topologySnapshot.excludedTransferCount
+    || evidence.rawSha256 !== topologySnapshot.rawSha256
+    || evidence.contentSha256 !== topologySnapshot.contentSha256) {
+    throw new Error("Daejeon accessibility topology source binding is invalid");
+  }
+  return evidence;
+}
+
 function validateMappings(canonicalStationMappings) {
   if (!Array.isArray(canonicalStationMappings) || canonicalStationMappings.length !== EXPECTED_STATION_COUNT) {
     throw new Error("Daejeon accessibility MOLIT mappings must contain 22 stations");
@@ -298,35 +318,53 @@ function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
+      throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
     }
     args[argv[index].slice(2)] = argv[index + 1];
   }
   if (!args["elevator-input"] || !args["escalator-input"] || !args["topology-snapshot"]
-    || !args["molit-csv"] || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
+    || !args.inventory || !args["molit-csv"] || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
   }
   return args;
 }
 
 export async function runDaejeonAccessibilityCollector(argv) {
   const args = parseArgs(argv);
-  const [elevatorBytes, escalatorBytes, topologySnapshot, molitBytes] = await Promise.all([
+  const [elevatorBytes, escalatorBytes, topologySnapshot, inventory, molitBytes] = await Promise.all([
     readFile(args["elevator-input"]),
     readFile(args["escalator-input"]),
     readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
+    readFile(args.inventory, "utf8").then(JSON.parse),
     readFile(args["molit-csv"]),
   ]);
+  const topologySource = selectTopologySource(inventory);
+  assertTopologyInputPath(args, topologySource);
   const snapshot = collectDaejeonAccessibility({
     elevatorBytes,
     escalatorBytes,
     topologySnapshot,
+    topologySource,
     canonicalStationMappings: parseMolitDaejeonStationMappings(molitBytes),
     now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
   console.log(`Daejeon accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
   return snapshot;
+}
+
+function selectTopologySource(inventory) {
+  const matches = inventory?.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
+  if (matches.length !== 1) throw new Error("Daejeon accessibility topology source is invalid");
+  return matches[0];
+}
+
+function assertTopologyInputPath(args, topologySource) {
+  const root = path.resolve(path.dirname(args.inventory), "../..");
+  const expected = path.resolve(root, topologySource.topologyAdmissionEvidence?.snapshotPath ?? "");
+  if (path.resolve(args["topology-snapshot"]) !== expected) {
+    throw new Error("Daejeon accessibility topology input path is invalid");
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

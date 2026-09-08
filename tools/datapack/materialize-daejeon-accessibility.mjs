@@ -6,7 +6,6 @@ import { pathToFileURL } from "node:url";
 
 const SOURCE_ID = "daejeon-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
-const TOPOLOGY_SNAPSHOT_ID = "daejeon-station-distance-fare-topology-20260720";
 const TIMETABLE_SOURCE_ID = "daejeon-train-timetable";
 const PACK_ID = "nationwide-daejeon-accessibility";
 const LINE_ID = "line-7051a9c2525c";
@@ -158,7 +157,7 @@ export function materializeDaejeonAccessibility({
     facilities: pack.facilities.length,
     station_facility_evidence: pack.stationFacilityEvidence.length,
   };
-  const version = snapshotId.slice(-8);
+  const version = compactSeoulDate(accessibilitySnapshot.capturedAt);
   const composition = sha256(JSON.stringify({
     previousPackId: pack.id,
     snapshotId,
@@ -217,6 +216,8 @@ function validateSnapshot(snapshot) {
 function requiredSource(inventory, snapshot, topologySnapshot, now) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.accessibilityAdmissionEvidence;
+  const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
+    ?.topologyAdmissionEvidence;
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
     || source.license?.type !== "PUBLIC_DATA_FREE_USE"
     || source.capabilities?.facility?.productionUseAllowed !== true
@@ -224,14 +225,16 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || evidence?.issue !== 2476
     || evidence.materializer !== "tools/datapack/materialize-daejeon-accessibility.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-daejeon-accessibility.test.mjs"
-    || !/^daejeon-transportation-accessibility-\d{8}$/.test(evidence.snapshotId ?? "")
+    || typeof evidence?.snapshotId !== "string"
+    || !evidence.snapshotId.startsWith(`${SOURCE_ID}-`)
+    || evidence.snapshotId.length <= SOURCE_ID.length + 1
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
     || evidence.facilityCount !== EXPECTED_FACILITY_COUNT
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== topologyEvidence?.snapshotId
     || JSON.stringify(evidence.datasetIds) !== JSON.stringify(DATASET_IDS)
     || !Array.isArray(evidence.topologyLineages)
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
@@ -246,10 +249,6 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
   validateTopologyLineage(inventory, evidence, topologySnapshot);
-  const version = evidence.snapshotId.slice(-8);
-  if (version !== compactSeoulDate(evidence.capturedAt)) {
-    throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
-  }
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
   const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
@@ -265,16 +264,24 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
     ?.topologyAdmissionEvidence;
   const lineage = evidence?.topologyLineages?.[0];
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || typeof topologyEvidence?.snapshotId !== "string"
+    || !topologyEvidence.snapshotId.startsWith(`${TOPOLOGY_SOURCE_ID}-`)
+    || typeof topologyEvidence.snapshotPath !== "string"
+    || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(topologyEvidence.snapshotPath)
+    || evidence.topologySnapshotId !== topologyEvidence?.snapshotId
     || evidence.topologyContentSha256 !== topologyEvidence?.contentSha256
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
     || topologySnapshot.contentSha256 !== sha256(JSON.stringify(topologySnapshot.rows))
     || lineage?.sourceId !== TOPOLOGY_SOURCE_ID
-    || lineage.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || lineage.snapshotId !== topologyEvidence?.snapshotId
     || lineage.contentSha256 !== topologySnapshot.contentSha256
     || lineage.lineId !== LINE_ID
-    || topologyEvidence?.snapshotId !== TOPOLOGY_SNAPSHOT_ID) {
+    || topologyEvidence?.capturedAt !== topologySnapshot.observedAt
+    || topologyEvidence.stationCount !== topologySnapshot.stationNumbers?.length
+    || topologyEvidence.edgeCount !== topologySnapshot.rowCount
+    || topologyEvidence.excludedTransferCount !== topologySnapshot.excludedTransferCount
+    || topologyEvidence.rawSha256 !== topologySnapshot.rawSha256) {
     throw new Error("Daejeon accessibility topology lineage mismatch");
   }
 }

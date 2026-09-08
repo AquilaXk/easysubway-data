@@ -108,9 +108,14 @@ function validateMetrics(value, bytes, canonical) {
     throw new Error("NO_GO transfer topology metric composition mismatch");
   }
   const expectedDirections = new Set(physicalPairs.flatMap(({ stationId, lineIds: [a, b] }) => [metricKey(stationId, a, b), metricKey(stationId, b, a)]));
-  const actualDirections = new Set();
   const metricsByKey = new Map(value.metrics.map((metric) => [metricKey(metric.stationId, metric.fromLineId, metric.toLineId), metric]));
-  for (const metric of value.metrics) {
+  validateMetricDirections(value.metrics, expectedDirections, metricsByKey);
+  return { ...value, stationLines };
+}
+
+function validateMetricDirections(metrics, expectedDirections, metricsByKey) {
+  const actualDirections = new Set();
+  for (const metric of metrics) {
     assertExactKeys(metric, metric.metricProvenance === "DERIVED_RECIPROCAL"
       ? ["stationId", "fromLineId", "toLineId", "distanceMeters", "officialDurationSecondsReference", "durationRole", "sourceRecordSha256", "metricProvenance", "derivedFrom"]
       : ["stationId", "fromLineId", "toLineId", "distanceMeters", "officialDurationSecondsReference", "durationRole", "sourceRecordSha256", "metricProvenance"], "transfer metric");
@@ -124,7 +129,6 @@ function validateMetrics(value, bytes, canonical) {
     actualDirections.add(key);
   }
   if (actualDirections.size !== expectedDirections.size) throw new Error("NO_GO transfer direction coverage mismatch");
-  return { ...value, stationLines };
 }
 
 function validateSourceIdentity(source) {

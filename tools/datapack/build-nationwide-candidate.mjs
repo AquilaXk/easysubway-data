@@ -48,15 +48,7 @@ export function deriveNationwideProductionScope({ policyScope, scopeId, targets,
   const stationIds = unique([...pairs.values()].map((row) => row.stationId));
   const endpoints = new Map(stationIds.map((id) => [id, id]));
   for (const row of pairs.values()) endpoints.set(`${row.stationId}:${row.lineId}`, row.stationId);
-  const baseEdges = routeEdges.filter((row) => ["ENTRY", "EXIT"].includes(row.edgeType));
-  const transferEdges = routeEdges.filter((row) => ["TRANSFER", "IN_STATION_TRANSFER"].includes(row.edgeType));
-  const accessEdges = [...baseEdges, ...transferEdges];
-  if (!baseEdges.length || !transferEdges.length || accessEdges.some((row) => !row.edgeId
-    || !endpoints.has(row.fromNodeId) || !endpoints.has(row.toNodeId))) {
-    throw new Error("scope requires materialized access edges with canonical endpoints");
-  }
-  const serviceIds = unique(routeEdges.filter((row) => row.edgeType === "RIDE").map((row) => row.serviceClass));
-  if (!serviceIds.length || serviceIds.some((id) => typeof id !== "string" || !id)) throw new Error("scope route services are missing");
+  const { baseEdges, transferEdges, serviceIds } = deriveRoutingDenominator({ routeEdges, endpoints, unique });
   const requiredRowIds = unique([...pairs.values()].flatMap(({ stationId, lineId }) =>
     facilityTypes.map((type) => `${stationId}|${lineId}|${type}`)));
   const scope = structuredClone(policyScope);
@@ -86,6 +78,21 @@ export function deriveNationwideProductionScope({ policyScope, scopeId, targets,
     activeLaunchRequiredDomains: targets.requiredSourceDomains.filter((row) => row.releaseTier === "LAUNCH_REQUIRED").map((row) => row.id),
     enhancementDomains: targets.requiredSourceDomains.filter((row) => row.releaseTier === "ENHANCEMENT").map((row) => row.id) };
   return scope;
+}
+
+function deriveRoutingDenominator({ routeEdges, endpoints, unique }) {
+  const baseEdges = routeEdges.filter((row) => ["ENTRY", "EXIT"].includes(row.edgeType));
+  const transferEdges = routeEdges.filter((row) => ["TRANSFER", "IN_STATION_TRANSFER"].includes(row.edgeType));
+  const accessEdges = [...baseEdges, ...transferEdges];
+  if (!baseEdges.length || !transferEdges.length || accessEdges.some((row) => !row.edgeId
+    || !endpoints.has(row.fromNodeId) || !endpoints.has(row.toNodeId))) {
+    throw new Error("scope requires materialized access edges with canonical endpoints");
+  }
+  const serviceIds = unique(routeEdges.filter((row) => row.edgeType === "RIDE").map((row) => row.serviceClass));
+  if (!serviceIds.length || serviceIds.some((id) => typeof id !== "string" || !id)) {
+    throw new Error("scope route services are missing");
+  }
+  return { baseEdges, transferEdges, serviceIds };
 }
 
 // 준비 scope는 교체할 출력이다. 이를 불변 외부 입력으로 다시 검사하면

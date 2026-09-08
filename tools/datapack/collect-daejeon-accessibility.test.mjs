@@ -27,7 +27,25 @@ async function loadInputs() {
     elevatorBytes,
     escalatorBytes,
     topologySnapshot,
+    topologySource: topologySourceFor(topologySnapshot),
     canonicalStationMappings: parseMolitDaejeonStationMappings(molitBytes),
+  };
+}
+
+function topologySourceFor(topologySnapshot) {
+  const snapshotId = "daejeon-station-distance-fare-fixture-accessibility";
+  return {
+    id: topologySnapshot.sourceId,
+    topologyAdmissionEvidence: {
+      snapshotId,
+      snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+      capturedAt: topologySnapshot.observedAt,
+      stationCount: topologySnapshot.stationNumbers.length,
+      edgeCount: topologySnapshot.rowCount,
+      excludedTransferCount: topologySnapshot.excludedTransferCount,
+      rawSha256: topologySnapshot.rawSha256,
+      contentSha256: topologySnapshot.contentSha256,
+    },
   };
 }
 
@@ -72,7 +90,7 @@ test("대전 accessibility collector는 엘리베이터·에스컬레이터 CSV 
   assert.equal(snapshot.topologyLineages.length, 1);
   assert.deepEqual(snapshot.topologyLineages[0], {
     sourceId: "daejeon-station-distance-fare",
-    snapshotId: "daejeon-station-distance-fare-topology-20260720",
+    snapshotId: inputs.topologySource.topologyAdmissionEvidence.snapshotId,
     contentSha256: inputs.topologySnapshot.contentSha256,
     lineId: LINE_ID,
   });
@@ -135,6 +153,7 @@ test("대전 accessibility collector CLI는 absolute output 경로를 강제한�
     "--elevator-input", ELEVATOR_CSV,
     "--escalator-input", ESCALATOR_CSV,
     "--topology-snapshot", path.join(root, "tools/datapack/sources/daejeon-route-topology-20260720.json"),
+    "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
     "--molit-csv", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
     "--output", "relative.json",
   ]), /usage: collect-daejeon-accessibility/);
