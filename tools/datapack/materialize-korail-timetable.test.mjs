@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { buildKorailScheduleIds, buildKorailScheduleSnapshot } from "./register-korail-timetable.mjs";
-import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
+import { main, materializeKorailTimetable, runKorailTimetableMaterializer } from "./materialize-korail-timetable.mjs";
 
 const sourceId = "korail-metropolitan-planned-timetable";
 const familyId = "korail-metropolitan-timetable-file";
@@ -80,6 +83,41 @@ test("uses the canonical terminal station name as the trip headsign and rejects 
       inventory: inventory(unresolvedSnapshot), ledger: ledger(unresolvedSnapshot) }),
     /KORAIL_TIMETABLE_MATERIALIZER_TERMINAL/,
   );
+});
+
+test("CLI materializes an admission-selected snapshot and preserves foreign pack rows", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "korail-materializer-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const options = { repositoryRoot: root, now: new Date("2040-01-02T00:00:00.000Z") };
+  const snapshot = scheduleSnapshot();
+  const sourceInventory = inventory(snapshot);
+  sourceInventory.sources.find(({ id }) => id === sourceId).scheduleAdmissionEvidence.snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  const fixture = { manifest: { activePack: { id: "capital", version: "1" } }, packs: [basePack()] };
+  fixture.packs[0].id = "capital"; fixture.packs[0].version = "1"; fixture.packs[0].artifactKind = "production";
+  fixture.packs[0].transitRoutes.push({ id: "foreign-route", lineId: "other-line" });
+  fixture.packs[0].transitTrips.push({ id: "foreign-trip", routeId: "foreign-route", serviceId: "foreign-service" });
+  fixture.packs[0].transitStopTimes.push({ tripId: "foreign-trip", stopSequence: 1, stationId: "other-station" });
+  const basePath = path.join(root, "base.json"), output = path.join(root, "output.json");
+  await mkdir(path.join(root, "tools/datapack/release"), { recursive: true });
+  await mkdir(path.join(root, "tools/datapack/sources"), { recursive: true });
+  await writeFile(basePath, JSON.stringify(fixture));
+  await writeFile(path.join(root, "tools/datapack/source-inventory.json"), JSON.stringify(sourceInventory));
+  await writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), JSON.stringify(ledger(snapshot)));
+  await writeFile(path.join(root, `tools/datapack/sources/${snapshot.snapshotId}.json`), JSON.stringify(snapshot));
+  const result = await main(["--base-fixture", basePath, "--output", output], options);
+  assert.deepEqual(JSON.parse(await readFile(output, "utf8")), result);
+  assert.ok(result.packs[0].transitRoutes.some(({ id }) => id === "foreign-route"));
+  assert.deepEqual(result.manifest, fixture.manifest);
+  for (const table of ["transitRoutes", "transitTrips", "transitStopTimes"]) {
+    assert.deepEqual(result.packs[0][table].filter((row) => Object.values(row).some((value) => typeof value === "string" && value.startsWith("foreign-"))), fixture.packs[0][table]);
+  }
+
+  await assert.rejects(runKorailTimetableMaterializer(["--output", output], { repositoryRoot: root }), /arguments/);
+  await assert.rejects(runKorailTimetableMaterializer(["--base-fixture", basePath, "--output", output], options), /EEXIST/);
+  const mismatched = structuredClone(sourceInventory);
+  mismatched.sources.find(({ id }) => id === sourceId).scheduleAdmissionEvidence.snapshotId = "foreign";
+  await writeFile(path.join(root, "tools/datapack/source-inventory.json"), JSON.stringify(mismatched));
+  await assert.rejects(runKorailTimetableMaterializer(["--base-fixture", basePath, "--output", path.join(root, "identity.json")], { repositoryRoot: root }), /SOURCE/);
 });
 
 function scheduleSnapshot() {

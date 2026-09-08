@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildKorailScheduleIds } from "./register-korail-timetable.mjs";
@@ -7,6 +10,46 @@ const SOURCE_ID = "korail-metropolitan-planned-timetable";
 const SOURCE_FAMILY_ID = "korail-metropolitan-timetable-file";
 const TABLE_KEYS = ["serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes", "holidayCalendarSources"];
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+
+export async function runKorailTimetableMaterializer(argv = process.argv.slice(2), {
+  repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), now = new Date(),
+} = {}) {
+  if (!Array.isArray(argv) || argv.length !== 4 || argv[0] !== "--base-fixture" || argv[2] !== "--output"
+    || !path.isAbsolute(argv[1]) || !path.isAbsolute(argv[3])) throw new Error("arguments must be --base-fixture <absolute> --output <absolute newjson>");
+  const root = path.resolve(repositoryRoot);
+  const basePath = path.resolve(argv[1]);
+  const output = path.resolve(argv[3]);
+  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
+  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  const [baseBytes, inventoryBytes, ledgerBytes] = await Promise.all([readFile(basePath), readFile(inventoryPath), readFile(ledgerPath)]);
+  const baseFixture = parseJson(baseBytes, "base fixture");
+  const inventory = parseJson(inventoryBytes, "source inventory");
+  const ledger = parseJson(ledgerBytes, "source ledger");
+  const sources = inventory?.sources?.filter(({ id }) => id === SOURCE_ID) ?? [];
+  const evidence = sources[0]?.scheduleAdmissionEvidence;
+  if (sources.length !== 1 || typeof evidence?.snapshotId !== "string"
+    || !new RegExp(`^${SOURCE_ID}-[a-f0-9]{64}$`, "u").test(evidence.snapshotId)
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) fail("SOURCE");
+  const snapshotPath = path.join(root, evidence.snapshotPath);
+  const snapshotBytes = await readFile(snapshotPath);
+  const snapshot = parseJson(snapshotBytes, "Korail timetable snapshot");
+  const packs = baseFixture?.packs;
+  if (baseFixture?.manifest?.activePack?.id == null || baseFixture.manifest.activePack.version == null
+    || !Array.isArray(packs) || packs.length !== 1 || packs[0]?.artifactKind !== "production"
+    || packs[0].id !== baseFixture.manifest.activePack.id || packs[0].version !== baseFixture.manifest.activePack.version) fail("PACK");
+  const materializedPack = materializeKorailTimetable({ pack: packs[0], snapshot, inventory, ledger, now });
+  const result = { ...structuredClone(baseFixture), packs: [materializedPack] };
+  const beforeWrite = await Promise.all([readFile(basePath), readFile(inventoryPath), readFile(ledgerPath), readFile(snapshotPath)]);
+  if (![baseBytes, inventoryBytes, ledgerBytes, snapshotBytes].every((bytes, index) => bytes.equals(beforeWrite[index]))) {
+    throw new Error("KORAIL_TIMETABLE_MATERIALIZER_INPUT_DRIFT");
+  }
+  await writeFile(output, `${JSON.stringify(result)}\n`, { flag: "wx", mode: 0o600 });
+  return result;
+}
+
+export async function main(argv = process.argv.slice(2), options = {}) {
+  return runKorailTimetableMaterializer(argv, options);
+}
 
 /** 현재 admission의 한 노선 시간표만 교체하고 다른 source의 행은 보존한다. */
 export function materializeKorailTimetable({ pack, snapshot, inventory, ledger, now = new Date() } = {}) {
@@ -248,3 +291,15 @@ function validInstant(value) { return typeof value === "string" && Number.isFini
 function hash(value) { return /^[a-f0-9]{64}$/u.test(value ?? ""); }
 function text(value) { return typeof value === "string" && value.length > 0; }
 function fail(code) { throw new Error(`KORAIL_TIMETABLE_MATERIALIZER_${code}`); }
+
+function parseJson(bytes, label) {
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+  catch { throw new Error(`${label} is invalid JSON`); }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : "Korail timetable materialization failed"}\n`);
+    process.exitCode = 1;
+  });
+}
