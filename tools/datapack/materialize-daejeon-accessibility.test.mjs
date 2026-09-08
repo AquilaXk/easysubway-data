@@ -11,6 +11,7 @@ import {
   loadRegionalBusanTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
+  projectRegionalFixtureSourceBindings,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
@@ -34,7 +35,7 @@ const ACCESSIBILITY_FIELDS = Object.freeze([
 async function inputs() {
   const [
     regional,
-    accessibilitySnapshot,
+    currentInventory,
   ] = await Promise.all([
     loadRegionalBusanTimetablePrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
@@ -43,12 +44,26 @@ async function inputs() {
       topologyNow,
       timetableNow,
     }),
-    readJson("tools/datapack/sources/daejeon-transportation-accessibility-20260724.json"),
+    readJson("tools/datapack/source-inventory.json"),
   ]);
-  const { busanTimetableFixture: timetableFixture, daejeonTopology, inventory } = regional;
+  const topologySource = currentInventory.sources.find(({ id }) => id === "daejeon-station-distance-fare");
+  const accessibilitySource = currentInventory.sources.find(({ id }) => id === SOURCE_ID);
+  const [topologySnapshot, accessibilitySnapshotBytes] = await Promise.all([
+    readJson(topologySource.topologyAdmissionEvidence.snapshotPath),
+    readFile(path.join(root, accessibilitySource.accessibilityAdmissionEvidence.snapshotPath)),
+  ]);
+  const accessibilitySnapshot = JSON.parse(accessibilitySnapshotBytes);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: regional.inventory,
+    daejeonTopology: topologySnapshot,
+    molitStationMapCsv: regional.molitStationMapCsv,
+    daejeonAccessibilitySnapshot: accessibilitySnapshot,
+    daejeonAccessibilitySnapshotBytes: accessibilitySnapshotBytes,
+  });
+  const { busanTimetableFixture: timetableFixture } = regional;
   return {
     timetableFixture,
-    topologySnapshot: daejeonTopology,
+    topologySnapshot,
     accessibilitySnapshot,
     inventory,
   };
@@ -236,6 +251,8 @@ test("materialized SQLite와 provenance가 대전 accessibility_facilities 1건�
   database.close();
 
   const provenance = JSON.parse(await readFile(path.join(packOutput, "current.provenance.json"), "utf8"));
+  const sourceSnapshotId = inventory.sources.find(({ id }) => id === SOURCE_ID)
+    .accessibilityAdmissionEvidence.snapshotId;
   const facilityRecords = provenance.packs.flatMap(({ records }) => records).filter(
     ({ sourceId, entityType }) => sourceId === SOURCE_ID && entityType === "facility",
   );
@@ -247,7 +264,7 @@ test("materialized SQLite와 provenance가 대전 accessibility_facilities 1건�
       [LINE_ID],
     );
     assert.ok(fieldRecords.every((record) => (
-      record.sourceSnapshotId === "daejeon-transportation-accessibility-20260724"
+      record.sourceSnapshotId === sourceSnapshotId
         && record.evidenceHash === accessibilitySnapshot.rowsSha256
         && /^[a-f0-9]{64}$/.test(record.providerRecordHash)
         && record.derivationKind === "OFFICIAL"

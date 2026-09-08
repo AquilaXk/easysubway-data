@@ -10,6 +10,7 @@ import {
   loadCurrentMolitMembershipMappings,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
+  projectRegionalFixtureSourceBindings,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 import test from "node:test";
@@ -85,12 +86,17 @@ test("Daejeon cumulative binder preserves canonical metadata and binds official 
 });
 
 async function inputs() {
-  const [baseFixture, snapshot, inventory, stationMapCsv] = await Promise.all([
+  const [baseFixture, snapshot, sourceInventory, stationMapCsv] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
     readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: sourceInventory,
+    daejeonTopology: snapshot,
+    molitStationMapCsv: stationMapCsv,
+  });
   makeInheritedAccessibilityCoverageExplicitlyUnavailable(baseFixture);
   return [baseFixture, snapshot, inventory, parseMolitDaejeonStationMappings(stationMapCsv)];
 }
@@ -275,12 +281,14 @@ test("대전 membership admission은 source scope와 두 공식 evidence의 결�
   }));
 });
 
-test("current MOLIT membership은 immutable 7월 topology replay에 사용된다", async () => {
-  const [baseFixture, snapshot] = await inputs();
+test("current MOLIT membership은 selected topology admission에 사용된다", async () => {
+  const [baseFixture] = await inputs();
   const [inventory, currentMappings] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     loadCurrentMolitMembershipMappings({ repositoryRoot: root }),
   ]);
+  const topology = inventory.sources.find(({ id }) => id === "daejeon-station-distance-fare");
+  const snapshot = await readJson(topology.topologyAdmissionEvidence.snapshotPath);
   assert.doesNotThrow(() => materializeDaejeonRouteTopology({
     baseFixture,
     snapshot,

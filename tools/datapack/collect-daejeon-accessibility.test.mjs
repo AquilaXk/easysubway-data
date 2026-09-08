@@ -145,7 +145,7 @@ test("대전 accessibility collector는 schema·join·count 변조를 fail close
     ...inputs,
     topologySnapshot: badTopology,
     now: new Date("2026-07-24T02:00:00.000Z"),
-  }), /topology snapshot/);
+  }), /Daejeon accessibility topology source binding is invalid/);
 });
 
 test("대전 accessibility collector CLI는 absolute output 경로를 강제한다", async () => {

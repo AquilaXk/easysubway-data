@@ -32,7 +32,7 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const evidenceNow = new Date("2026-07-20T04:00:00.000Z");
 
 async function inputs() {
-  const [baseFixture, timetableSnapshot, topologySnapshot, inventory, stationMapCsv] = await Promise.all([
+  const [baseFixture, timetableSnapshot, topologySnapshot, sourceInventory, stationMapCsv] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
@@ -44,7 +44,12 @@ async function inputs() {
     baseFixture,
     timetableSnapshot,
     topologySnapshot,
-    inventory,
+    inventory: projectRegionalFixtureSourceBindings({
+      inventory: sourceInventory,
+      daejeonTopology: topologySnapshot,
+      daejeonTimetable: timetableSnapshot,
+      molitStationMapCsv: stationMapCsv,
+    }),
     canonicalStationMappings: parseMolitDaejeonStationMappings(stationMapCsv),
   };
 }

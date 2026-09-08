@@ -195,6 +195,12 @@ export function projectRegionalFixtureSourceBindings({
   molitStationMapCsv = null,
   gwangjuRouteMapSnapshot = null,
   gwangjuRouteMapSnapshotBytes = null,
+  daejeonTopology = null,
+  daejeonTimetable = null,
+  daejeonRouteMapSnapshot = null,
+  daejeonRouteMapSnapshotBytes = null,
+  daejeonAccessibilitySnapshot = null,
+  daejeonAccessibilitySnapshotBytes = null,
 }) {
   const projected = structuredClone(inventory);
   if (busanTopology) {
@@ -304,6 +310,119 @@ export function projectRegionalFixtureSourceBindings({
       })),
     };
   }
+  if (daejeonTopology) {
+    const topology = source(projected, daejeonTopology.sourceId);
+    const membership = source(projected, "molit-urban-rail-full-route-daejeon-membership");
+    const dependentLineage = (daejeonRouteMapSnapshot ?? daejeonAccessibilitySnapshot)
+      ?.topologyLineages?.find(({ sourceId }) => sourceId === topology.id);
+    const snapshotId = dependentLineage?.snapshotId
+      ?? fixtureSnapshotId(topology.id, daejeonTopology.observedAt);
+    const mappings = parseMolitDaejeonStationMappings(molitStationMapCsv);
+    const mappingSha256 = sha256(JSON.stringify(mappings));
+    const stationCodesSha256 = sha256(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
+    topology.topologyAdmissionEvidence = {
+      ...topology.topologyAdmissionEvidence,
+      snapshotId,
+      snapshotPath: fixtureSnapshotPath(snapshotId),
+      capturedAt: daejeonTopology.observedAt,
+      freshUntil: new Date(Date.parse(daejeonTopology.observedAt)
+        + Date.parse(topology.topologyAdmissionEvidence.freshUntil)
+        - Date.parse(topology.topologyAdmissionEvidence.capturedAt)).toISOString(),
+      stationCount: daejeonTopology.stationNumbers.length,
+      edgeCount: daejeonTopology.rowCount,
+      excludedTransferCount: daejeonTopology.excludedTransferCount,
+      rawSha256: daejeonTopology.rawSha256,
+      contentSha256: daejeonTopology.contentSha256,
+    };
+    const membershipEvidence = {
+      ...membership.membershipAdmissionEvidence,
+      stationCount: mappings.length,
+      mappingSha256,
+      stationCodesSha256,
+      stationCodeSourceId: topology.id,
+      stationCodeSnapshotId: snapshotId,
+      stationCodeContentSha256: daejeonTopology.contentSha256,
+    };
+    membership.membershipAdmissionEvidence = membershipEvidence;
+    topology.membershipAdmissionEvidence = structuredClone(membershipEvidence);
+    if (daejeonTimetable) {
+      const timetable = source(projected, daejeonTimetable.sourceId);
+      timetable.scheduleAdmissionEvidence = {
+        ...timetable.scheduleAdmissionEvidence,
+        topologySourceId: topology.id,
+        topologySnapshotId: snapshotId,
+        topologyContentSha256: daejeonTopology.contentSha256,
+      };
+    }
+  }
+  if (daejeonRouteMapSnapshot) {
+    if (!(daejeonRouteMapSnapshotBytes instanceof Uint8Array)) {
+      throw new Error("regional Daejeon route map fixture bytes are required");
+    }
+    const routeMap = source(projected, daejeonRouteMapSnapshot.sourceId);
+    const topology = source(projected, daejeonRouteMapSnapshot.topologySourceId);
+    const topologyEvidence = topology.topologyAdmissionEvidence;
+    const snapshotId = fixtureSnapshotId(routeMap.id, daejeonRouteMapSnapshot.capturedAt);
+    routeMap.routeMapAdmissionEvidence = {
+      ...routeMap.routeMapAdmissionEvidence,
+      snapshotId,
+      snapshotPath: fixtureSnapshotPath(snapshotId),
+      snapshotSha256: sha256(daejeonRouteMapSnapshotBytes),
+      capturedAt: daejeonRouteMapSnapshot.capturedAt,
+      stationCount: daejeonRouteMapSnapshot.stationCount,
+      rawStationCount: daejeonRouteMapSnapshot.rawStationCount,
+      quarantinedCount: daejeonRouteMapSnapshot.quarantinedCount,
+      datasetId: daejeonRouteMapSnapshot.datasetId,
+      datasetIds: structuredClone(daejeonRouteMapSnapshot.datasetIds),
+      rawSha256: daejeonRouteMapSnapshot.rawSha256,
+      positionsSha256: daejeonRouteMapSnapshot.positionsSha256,
+      lineIds: structuredClone(daejeonRouteMapSnapshot.lineIds),
+      lineStationCounts: structuredClone(daejeonRouteMapSnapshot.lineStationCounts),
+      observedDataUpdatedAt: daejeonRouteMapSnapshot.observedDataUpdatedAt,
+      topologySourceId: topology.id,
+      topologySnapshotId: topologyEvidence.snapshotId,
+      topologyContentSha256: topologyEvidence.contentSha256,
+      topologyLineages: daejeonRouteMapSnapshot.topologyLineages.map((lineage) => ({
+        ...lineage,
+        snapshotId: topologyEvidence.snapshotId,
+        contentSha256: topologyEvidence.contentSha256,
+      })),
+    };
+  }
+  if (daejeonAccessibilitySnapshot) {
+    if (!(daejeonAccessibilitySnapshotBytes instanceof Uint8Array)) {
+      throw new Error("regional Daejeon accessibility fixture bytes are required");
+    }
+    const accessibility = source(projected, daejeonAccessibilitySnapshot.sourceId);
+    const topology = source(projected, daejeonAccessibilitySnapshot.topologyLineages?.[0]?.sourceId);
+    const topologyEvidence = topology.topologyAdmissionEvidence;
+    const snapshotId = fixtureSnapshotId(accessibility.id, daejeonAccessibilitySnapshot.capturedAt);
+    accessibility.fieldsProvided = structuredClone(daejeonAccessibilitySnapshot.fieldsProvided);
+    accessibility.accessibilityAdmissionEvidence = {
+      ...accessibility.accessibilityAdmissionEvidence,
+      snapshotId,
+      snapshotPath: fixtureSnapshotPath(snapshotId),
+      capturedAt: daejeonAccessibilitySnapshot.capturedAt,
+      freshUntil: daejeonAccessibilitySnapshot.freshUntil,
+      stationCount: daejeonAccessibilitySnapshot.stationCount,
+      rowCount: daejeonAccessibilitySnapshot.rowCount,
+      facilityCount: daejeonAccessibilitySnapshot.rows.reduce((count, row) => count
+        + Number(row.elevator !== null)
+        + Number(row.escalator !== null)
+        + Number(row.wheelchair_lift !== null), 0),
+      rawSha256: daejeonAccessibilitySnapshot.rawSha256,
+      rowsSha256: daejeonAccessibilitySnapshot.rowsSha256,
+      datasetIds: structuredClone(daejeonAccessibilitySnapshot.datasetIds),
+      topologySourceId: topology.id,
+      topologySnapshotId: topologyEvidence.snapshotId,
+      topologyContentSha256: topologyEvidence.contentSha256,
+      topologyLineages: daejeonAccessibilitySnapshot.topologyLineages.map((lineage) => ({
+        ...lineage,
+        snapshotId: topologyEvidence.snapshotId,
+        contentSha256: topologyEvidence.contentSha256,
+      })),
+    };
+  }
   return projected;
 }
 
@@ -359,6 +478,9 @@ export async function loadRegionalBusanTimetablePrefix({
     busanTopology,
     busanTimetable,
     stationMapCsv,
+    daejeonTopology,
+    daejeonTimetable,
+    molitStationMapCsv,
   });
   return {
     baseFixture,
@@ -493,16 +615,24 @@ export async function loadRegionalDaejeonRouteMapPrefix(options) {
   ]);
   const daejeonSnapshot = JSON.parse(daejeonSnapshotBytes);
   const daejeonSnapshotSha256 = sha256(daejeonSnapshotBytes);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: regional.inventory,
+    daejeonTopology: regional.daejeonTopology,
+    molitStationMapCsv: regional.molitStationMapCsv,
+    daejeonRouteMapSnapshot: daejeonSnapshot,
+    daejeonRouteMapSnapshotBytes: daejeonSnapshotBytes,
+  });
   return {
     ...regional,
     daejeonSnapshot,
     daejeonSnapshotSha256,
+    inventory,
     daejeonRouteMapFixture: materializeDaejeonRouteMapPositions({
       baseFixture: regional.gwangjuRouteMapFixture,
       snapshot: daejeonSnapshot,
       snapshotSha256: daejeonSnapshotSha256,
       topologySnapshot: regional.daejeonTopology,
-      inventory: regional.inventory,
+      inventory,
       now: daejeonRouteMapNow,
     }),
   };
