@@ -104,6 +104,8 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
   const [inventory, ledger, freshnessBase, candidates] = [parse(inventoryBytes, "INVENTORY"), parse(ledgerBytes, "LEDGER"), parse(freshnessBytes, "FRESHNESS"), parse(candidateBytes, "CANDIDATES")];
   const candidate = only(candidates.candidates, (entry) => entry?.id === SOURCE_ID, "CANDIDATE");
   const topologySource = only(inventory.sources, (entry) => entry?.id === SOURCE_FAMILY_ID, "TOPOLOGY_SOURCE");
+  if (!candidate.coverageScope?.lineIds?.includes(input.lineId)
+    || !topologySource.coverageScope?.lineIds?.includes(input.lineId)) fail("LINE_COVERAGE");
   const topologyEvidence = topologySource.topologyAdmissionEvidence;
   if (!topologyEvidence || input.topologySnapshotPath !== path.join(root, `tools/datapack/sources/${topologyEvidence.snapshotId}.json`)) fail("TOPOLOGY_INPUT");
   const [topologyBytes, rawBytes, collectionReceiptBytes, publicationReceiptBytes, membershipBytes, membershipReceiptBytes, catalogBytes, calendar] = await Promise.all([
@@ -142,6 +144,7 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
     stationLineObservation: topologySnapshot.observation.sources.membership ? parse(membershipBytes, "MEMBERSHIP") : fail("MEMBERSHIP"),
     stationLineReceipt: parse(membershipReceiptBytes, "MEMBERSHIP_RECEIPT"), operatorName: input.operatorName, lineName: input.lineName,
     canonicalCatalogPath: input.canonicalCatalogPath, canonicalCatalogSha256: input.canonicalCatalogSha256, lineId: input.lineId });
+  validateTopologyReconstruction({ parent: topologySnapshot.observation, reconstructed: retained.observation });
   const stableInputs = await Promise.all([
     readFile(input.retainedWorkbookPath), readFile(input.collectionReceiptPath), readFile(input.publicationReceiptPath),
     readFile(input.topologySnapshotPath), readFile(input.stationLineObservationPath), readFile(input.stationLineReceiptPath),
@@ -232,6 +235,16 @@ function only(rows, predicate, code) {
   return matches[0];
 }
 function parse(bytes, code) { try { return JSON.parse(bytes); } catch { fail(code); } }
+function validateTopologyReconstruction({ parent, reconstructed }) {
+  const bindings = [
+    [parent?.sources?.membership, reconstructed?.sources?.membership],
+    [parent?.sources?.catalog, reconstructed?.sources?.catalog],
+    [parent?.selection, reconstructed?.selection],
+    [parent?.stationBindings, reconstructed?.stationBindings],
+  ];
+  if (bindings.some(([left, right]) => !sameCanonical(left, right))) fail("TOPOLOGY_RECONSTRUCTION");
+}
+function sameCanonical(left, right) { return left !== undefined && right !== undefined && canonicalJson(left) === canonicalJson(right); }
 function rootPath(value) {
   if (!path.isAbsolute(value ?? "")) fail("ROOT");
   return path.resolve(value);

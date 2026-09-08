@@ -7,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { buildCollectedKorailTopologySnapshot } from "./parse-korail-metropolitan-timetable.mjs";
 import {
   buildKorailScheduleIds,
   buildKorailScheduleSnapshot,
@@ -88,7 +89,41 @@ test("registers retained Korail schedule inputs atomically with receipt-bound pa
   }
 });
 
-async function writeRegistrationFixture(root) {
+test("rejects a re-sealed parent topology whose retained source bindings do not reconstruct", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "korail-schedule-parent-binding-"));
+  try {
+    const fixture = await writeRegistrationFixture(root, { parentObservationMutation: divergentParentObservation });
+    const prestate = await readOutputPrestate(root, fixture.expectedOutputs);
+    await assert.rejects(
+      buildKorailTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath: fixture.sourceInputPath, now: fixture.time.now }),
+      /KORAIL_TIMETABLE_REGISTRATION_TOPOLOGY_RECONSTRUCTION/,
+    );
+    await assertOutputPrestate(root, fixture.expectedOutputs, prestate);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects a parent-bound input outside the candidate coverage before outputs", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "korail-schedule-line-coverage-"));
+  try {
+    const fixture = await writeRegistrationFixture(root);
+    const candidatePath = path.join(root, "tools/datapack/source-candidates.json");
+    const candidates = JSON.parse(await readFile(candidatePath));
+    candidates.candidates[0].coverageScope.lineIds = [`${fixture.candidate.coverageScope.lineIds[0]}-outside`];
+    await writeJson(candidatePath, candidates);
+    const prestate = await readOutputPrestate(root, fixture.expectedOutputs);
+    await assert.rejects(
+      buildKorailTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath: fixture.sourceInputPath, now: fixture.time.now }),
+      /KORAIL_TIMETABLE_REGISTRATION_LINE_COVERAGE/,
+    );
+    await assertOutputPrestate(root, fixture.expectedOutputs, prestate);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+async function writeRegistrationFixture(root, { parentObservationMutation } = {}) {
   const repositoryRoot = path.resolve(import.meta.dirname, "../..");
   const expectedOutputs = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
     "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"];
@@ -119,12 +154,16 @@ async function writeRegistrationFixture(root) {
   };
   const collectionReceiptPath = path.join(root, "retained/collection-receipt.json");
   await writeJson(collectionReceiptPath, collectionReceipt);
+  const collectionDirectory = path.join(root, "retained/collection");
+  await mkdir(collectionDirectory, { recursive: true });
+  await writeFile(path.join(collectionDirectory, "timetable.xlsx"), workbook);
+  await writeJson(path.join(collectionDirectory, "receipt.json"), collectionReceipt);
 
   const membership = membershipObservation({ capturedAt });
   const membershipPath = path.join(root, "retained/membership.json");
   const membershipReceiptPath = path.join(root, "retained/membership-receipt.json");
   await writeJson(membershipPath, membership);
-  await writeJson(membershipReceiptPath, {
+  const membershipReceipt = {
     schemaVersion: 1,
     artifactKind: "kric-current-station-line-file-receipt",
     sourceId: membership.sourceId,
@@ -133,7 +172,8 @@ async function writeRegistrationFixture(root) {
     byteLength: membership.rawByteLength,
     sha256: membership.rawSha256,
     credentialRedacted: true,
-  });
+  };
+  await writeJson(membershipReceiptPath, membershipReceipt);
 
   const catalogPath = path.join(root, "retained/catalog.json");
   const catalogBytes = Buffer.from(JSON.stringify({ packs: [{
@@ -154,23 +194,22 @@ async function writeRegistrationFixture(root) {
     months: [{ year: time.year, month: time.month, file: `${time.year}-${String(time.month).padStart(2, "0")}.xml`, sha256: calendarSha256, retrievedAt: capturedAt }],
   });
 
-  const topologyContent = {
-    schemaVersion: 1,
-    artifactKind: "korail-metropolitan-topology-snapshot",
-    status: "PENDING",
-    releaseEligible: false,
-    sourceId: "korail-metropolitan-timetable-file",
-    capturedAt,
-    freshUntil: time.parentFreshUntil,
-    sourceClassId: "route_graph_topology",
-    freshnessPolicySha256: hash("fixture-freshness-policy"),
-    rawSha256,
-    stationCount: 2,
-    edgeCount: 2,
-    observation: { sources: { membership: { sourceId: membership.sourceId } } },
-  };
-  const snapshot = { ...topologyContent, contentSha256: hash(canonicalJson(topologyContent)) };
-  snapshot.snapshotId = `${snapshot.sourceId}-${snapshot.contentSha256}`;
+  const freshness = JSON.parse(freshnessBytes);
+  const reconstructedParent = await buildCollectedKorailTopologySnapshot({
+    collectionDirectory,
+    freshnessPolicy: freshness,
+    evaluationAt: time.now.toISOString(),
+    stationLineObservation: membership,
+    stationLineReceipt: membershipReceipt,
+    operatorName: "한국철도공사",
+    lineName: "대경선",
+    canonicalCatalogPath: catalogPath,
+    canonicalCatalogSha256: hash(catalogBytes),
+    lineId: candidate.coverageScope.lineIds[0],
+  });
+  const snapshot = parentObservationMutation
+    ? resealTopologySnapshot(reconstructedParent, parentObservationMutation(reconstructedParent.observation))
+    : reconstructedParent;
   const topologyPath = path.join(root, "tools/datapack/sources", `${snapshot.snapshotId}.json`);
   await writeJson(topologyPath, snapshot);
   const publicationReceipt = {
@@ -206,6 +245,7 @@ async function writeRegistrationFixture(root) {
     id: "korail-metropolitan-timetable-file",
     sourceSystem: "fixture-retained-korail",
     requiredForProductionPack: false,
+    coverageScope: { lineIds: [...candidate.coverageScope.lineIds] },
     admissionEvidence: { licenseEvidenceHash },
     topologyAdmissionEvidence: { snapshotId: snapshot.snapshotId, contentSha256: snapshot.contentSha256 },
   });
@@ -223,7 +263,6 @@ async function writeRegistrationFixture(root) {
     byteSize: workbook.length,
     rawRetentionExpiresAt: publicationReceipt.rawRetentionExpiresAt,
   });
-  const freshness = JSON.parse(freshnessBytes);
   const planned = freshness.sourceClasses.find(({ id }) => id === "planned_timetable");
   planned.sourceIds = planned.sourceIds.filter((id) => id !== candidate.id);
 
@@ -277,6 +316,44 @@ async function writeRegistrationFixture(root) {
     expectedOutputs,
     time,
   };
+}
+
+async function readOutputPrestate(root, outputs) {
+  return Promise.all(outputs.map((relative) => readFile(path.join(root, relative))));
+}
+
+async function assertOutputPrestate(root, outputs, prestate) {
+  for (const [index, relative] of outputs.entries()) {
+    assert.deepEqual(await readFile(path.join(root, relative)), prestate[index]);
+  }
+}
+
+function divergentParentObservation(observation) {
+  const membership = structuredClone(observation.sources.membership);
+  const catalog = structuredClone(observation.sources.catalog);
+  return {
+    ...structuredClone(observation),
+    sources: {
+      ...structuredClone(observation.sources),
+      membership: { ...membership, observationIdentitySha256: alternateHash(membership.observationIdentitySha256) },
+      catalog: { ...catalog, rawSha256: alternateHash(catalog.rawSha256) },
+    },
+    selection: { ...structuredClone(observation.selection), lineId: `${observation.selection.lineId}-parent` },
+    stationBindings: observation.stationBindings.map((binding, index) => index === 0
+      ? { ...binding, stationId: `${binding.stationId}-parent` }
+      : structuredClone(binding)),
+  };
+}
+
+function resealTopologySnapshot(snapshot, observation) {
+  const { contentSha256: _contentSha256, snapshotId: _snapshotId, ...content } = snapshot;
+  const nextContent = { ...structuredClone(content), observation: structuredClone(observation) };
+  const contentSha256 = hash(canonicalJson(nextContent));
+  return { ...nextContent, contentSha256, snapshotId: `${nextContent.sourceId}-${contentSha256}` };
+}
+
+function alternateHash(value) {
+  return value.startsWith("0") ? `1${value.slice(1)}` : `0${value.slice(1)}`;
 }
 
 async function writeSyntheticWorkbook(root) {

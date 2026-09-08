@@ -15,11 +15,12 @@ export function materializeKorailTimetable({ pack, snapshot, inventory, ledger, 
   const result = structuredClone(pack);
   validatePack(result, snapshot.originalSelection.lineId);
   validateTables(snapshot.tables, snapshot.originalSelection.lineId);
-  assertCanonicalStops(result, snapshot.tables, snapshot.originalSelection.lineId);
+  const tables = materializedTablesWithCanonicalHeadsigns(result, snapshot.tables);
+  assertCanonicalStops(result, tables, snapshot.originalSelection.lineId);
   const owned = ownedPartition(snapshot);
   assertForeignPartition(result, snapshot.originalSelection.lineId, owned);
   removeOwnedPartition(result, owned);
-  assertNoCollisions(result, snapshot.tables);
+  assertNoCollisions(result, tables);
   const provenance = { sourceId: SOURCE_ID, sourceSnapshotId: snapshot.snapshotId,
     providerRecordHash: snapshot.rowsSha256, provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "VERIFIED",
     lastVerifiedAt: snapshot.originalCapturedAt, evidenceHash: snapshot.contentSha256 };
@@ -27,11 +28,11 @@ export function materializeKorailTimetable({ pack, snapshot, inventory, ledger, 
   result.sourceInventory.push({ id: source.id, owner: source.owner, url: source.datasetUrl, license: source.license.name,
     licenseStatus: "redistributable", redistributionAllowed: true, updateFrequency: source.updateFrequency,
     updatedAt: snapshot.originalCapturedAt, fields: structuredClone(source.fieldsProvided), coverageScope: structuredClone(source.coverageScope) });
-  result.serviceCalendars.push(...snapshot.tables.serviceCalendars.map((row) => ({ ...row, ...provenance })));
-  result.serviceCalendarDates.push(...snapshot.tables.serviceCalendarDates.map((row) => ({ ...row, ...provenance })));
-  result.transitRoutes.push(...snapshot.tables.transitRoutes.map((row) => ({ ...row, ...provenance })));
-  result.transitTrips.push(...snapshot.tables.transitTrips.map((row) => ({ ...row, ...provenance })));
-  result.transitStopTimes.push(...snapshot.tables.transitStopTimes.map((row) => ({ ...row, ...provenance })));
+  result.serviceCalendars.push(...tables.serviceCalendars.map((row) => ({ ...row, ...provenance })));
+  result.serviceCalendarDates.push(...tables.serviceCalendarDates.map((row) => ({ ...row, ...provenance })));
+  result.transitRoutes.push(...tables.transitRoutes.map((row) => ({ ...row, ...provenance })));
+  result.transitTrips.push(...tables.transitTrips.map((row) => ({ ...row, ...provenance })));
+  result.transitStopTimes.push(...tables.transitStopTimes.map((row) => ({ ...row, ...provenance })));
   result.minimumTableRows = { ...result.minimumTableRows,
     service_calendars: result.serviceCalendars.length, service_calendar_dates: result.serviceCalendarDates.length,
     transit_routes: result.transitRoutes.length, transit_trips: result.transitTrips.length,
@@ -214,6 +215,19 @@ function assertCanonicalStops(pack, tables, lineId) {
   for (const row of tables.transitStopTimes) {
     if (!stationIds.has(row.stationId) || !membership.has(row.stationId)) fail("TABLES");
   }
+}
+
+function materializedTablesWithCanonicalHeadsigns(pack, tables) {
+  const stationNames = new Map(pack.stations.map(({ id, name }) => [id, name]));
+  return {
+    ...tables,
+    transitTrips: tables.transitTrips.map((trip) => {
+      // 보관 관측의 종착역 ID를 그대로 사용하고 표시용 이름만 정본에서 해석한다.
+      const terminalName = stationNames.get(trip.tripHeadsign);
+      if (!text(terminalName)) fail("TERMINAL");
+      return { ...trip, tripHeadsign: terminalName };
+    }),
+  };
 }
 
 function validTablesHash(snapshot) { return /^[a-f0-9]{64}$/u.test(snapshot.rowsSha256 ?? "") && /^[a-f0-9]{64}$/u.test(snapshot.tripsSha256 ?? "") && snapshot.rowsSha256 === sha(canonicalJson(snapshot.tables)) && snapshot.tripsSha256 === sha(canonicalJson({ transitTrips: snapshot.tables?.transitTrips, transitStopTimes: snapshot.tables?.transitStopTimes })); }
