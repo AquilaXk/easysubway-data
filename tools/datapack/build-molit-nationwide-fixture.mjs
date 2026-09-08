@@ -1078,11 +1078,16 @@ export function parseMolitGwangjuStationMappings(csvBytes, topologySnapshot) {
   return bindGwangjuTopologyMappings(rows, sha256(csvBytes), topologySnapshot);
 }
 
-export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256, topologySnapshot) {
+export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256, topologySnapshot, currentSnapshot) {
   if (typeof sourceRawSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceRawSha256)) {
     throw new Error("current MOLIT source raw hash is invalid");
   }
-  assertCurrentMolitFullRouteCompleteness(projection);
+  // 전국 완전성은 source admission이 소유한다. 소비자는 승인된 전체 원문의 동일성을 결속한다.
+  if (!Array.isArray(projection) || currentSnapshot?.sourceId !== sourceId
+    || currentSnapshot.rawSha256 !== sourceRawSha256 || currentSnapshot.rowCount !== projection.length
+    || currentSnapshot.contentSha256 !== sha256(Buffer.from(`${JSON.stringify(projection)}\n`))) {
+    throw new Error("current MOLIT ledger projection binding is invalid");
+  }
   const rows = projection.map(projectionRow)
     .filter((row) => row.regionName === "광주"
       && row.operatorName === "광주교통공사"

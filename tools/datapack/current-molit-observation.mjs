@@ -101,7 +101,7 @@ export async function loadCurrentMolitGwangjuStationMappings(options = {}) {
   const topologyBytes = options.topologyBytes ?? await read(topologyPath);
   const topologySnapshot = options.topologySnapshot ?? parse(topologyBytes, "Gwangju topology snapshot");
   const mappings = parseCurrentMolitGwangjuStationMappings(
-    currentMolit.observation.normalizedProjection, currentMolit.current.rawSha256, topologySnapshot,
+    currentMolit.observation.normalizedProjection, currentMolit.current.rawSha256, topologySnapshot, currentMolit.current,
   );
   assertCurrentMolitGwangjuMembershipAdmission({
     inventory,

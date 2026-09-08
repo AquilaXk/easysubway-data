@@ -538,7 +538,7 @@ export async function loadCurrentMolitMembershipMappings({
   const gwangjuTopology = JSON.parse(await read(topologyPath));
   const projection = observation.normalizedProjection;
   const daejeon = parseCurrentMolitDaejeonStationMappings(projection, current.rawSha256);
-  const gwangju = parseCurrentMolitGwangjuStationMappings(projection, current.rawSha256, gwangjuTopology);
+  const gwangju = parseCurrentMolitGwangjuStationMappings(projection, current.rawSha256, gwangjuTopology, current);
   const daeguLine1 = parseCurrentMolitDaeguStationMappings(projection, current.rawSha256, "1호선");
   const daeguLine2 = parseCurrentMolitDaeguStationMappings(projection, current.rawSha256, "2호선");
   const daeguLine3 = parseCurrentMolitDaeguStationMappings(projection, current.rawSha256, "3호선");

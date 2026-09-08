@@ -183,6 +183,7 @@ async function registrationFixture(context, { capped = false } = {}) {
   const molitObservation = await readJson(path.join(repositoryRoot, molitObservationPath));
   const mappings = parseCurrentMolitGwangjuStationMappings(
     molitObservation.normalizedProjection, molitAdmission.rawSha256, topologySnapshot,
+    ledger.find((row) => row.sourceId === "molit-urban-rail-full-route" && row.snapshotId === molitAdmission.snapshotId),
   );
   const retained = createRetainedGwangjuTestInput({ baseFixture, topologySnapshot,
     inventory: structuredClone(inventory), canonicalStationMappings: mappings }).retainedTimetable;

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -7,7 +8,26 @@ import {
   validateMolitProviderIdentities,
   filterRetiredSvgProviderRows,
   providerLineScopesFor,
+  parseCurrentMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
+
+test("Gwangju membership binds the complete admitted projection without a fixed national count", () => {
+  const projection = ["가", "나"].map((station_name, index) => ({
+    region_code: "04", region_name: "광주", operator_name: "광주교통공사",
+    line_name: "1호선", station_sequence: index + 1, station_name,
+  }));
+  const rawSha256 = createHash("sha256").update("retained synthetic source").digest("hex");
+  const current = { sourceId: "molit-urban-rail-full-route", rawSha256, rowCount: projection.length,
+    contentSha256: createHash("sha256").update(`${JSON.stringify(projection)}\n`).digest("hex") };
+  const topology = { scope: projection.map((row, index) => ({ stationName: row.station_name, stationCode: `s${index}` })) };
+  const mappings = parseCurrentMolitGwangjuStationMappings(projection, rawSha256, topology, current);
+  assert.deepEqual(mappings.map(({ stationNumber }) => stationNumber), topology.scope.map(({ stationCode }) => stationCode));
+  for (const rows of [projection.slice(0, 1), projection.map((row) => ({ ...row, station_name: `${row.station_name}변경` }))]) {
+    assert.throws(() => parseCurrentMolitGwangjuStationMappings(rows, rawSha256, topology, current), /ledger projection binding/);
+  }
+  assert.throws(() => parseCurrentMolitGwangjuStationMappings(projection, "0".repeat(64), topology, current), /ledger projection binding/);
+  assert.throws(() => parseCurrentMolitGwangjuStationMappings(projection, rawSha256, topology), /ledger projection binding/);
+});
 
 test("retired SVG provider row는 scope validation 전에 제외한다", () => {
   const row = { lineName: "자기부상", providerIdentity: { mreaWideCd: "01", operatorName: "인천교통공사" } };

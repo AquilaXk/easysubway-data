@@ -1548,6 +1548,12 @@
     {
       "id": "gwangju-transportation-route-topology",
       "registrationMetadata": {
+        "dependentInputs": {
+          "mapCsvPath": "tools/datapack/fixtures/gwangju-route-map-positions-raw/data-go-15109340.csv",
+          "schematicCanvasPath": "tools/datapack/fixtures/gwangju-route-map-positions-raw/owner-self-drawn-sma-schematic-canvas-20260725.json",
+          "elevatorPath": "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041385.csv",
+          "escalatorPath": "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041362.csv"
+        },
         "governance": {
           "sourceId": "gwangju-transportation-route-topology",
           "sourceClassId": "route_graph_topology",

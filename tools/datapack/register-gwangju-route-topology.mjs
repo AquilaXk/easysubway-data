@@ -6,6 +6,9 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 
 import { collectGwangjuRouteTopology } from "./collect-gwangju-route-topology.mjs";
+import { assertCurrentMolitGwangjuMembershipAdmission, loadCurrentMolitObservation } from "./current-molit-observation.mjs";
+import { parseCurrentMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { buildGwangjuTopologyDependents } from "./lib/gwangju-topology-dependents.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -14,6 +17,8 @@ import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresA
 import { preauthenticatedObjectStorageClient, publishImmutableObjectPlan, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
 
 const SOURCE_ID = "gwangju-transportation-route-topology";
+const MOLIT_MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-gwangju-membership";
+const KRIC_TIMETABLE_SOURCE_ID = "kric-nationwide-timetable-file";
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const parse = (bytes) => JSON.parse(bytes.toString("utf8"));
@@ -22,6 +27,17 @@ const select = (rows, predicate) => {
   if (matches.length !== 1) throw new Error("Gwangju topology selection mismatch");
   return matches[0];
 };
+const dependentInputKeys = Object.freeze([
+  "mapCsvPath", "schematicCanvasPath", "elevatorPath", "escalatorPath",
+]);
+
+function dependentInputPath(root, relative) {
+  if (typeof relative !== "string" || !relative || path.isAbsolute(relative)
+    || relative.split(/[\\/]/u).includes("..")) {
+    throw new Error("Gwangju topology dependent input path is invalid");
+  }
+  return path.join(root, relative);
+}
 
 /** 재수집 없이 보존 원문을 해석하고 기존 정책의 등록 입력을 준비한다. */
 export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snapshotPath, now = new Date() }) {
@@ -49,15 +65,33 @@ export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snaps
   });
   if (!isDeepStrictEqual(snapshot, replay)) throw new Error("Gwangju topology collected snapshot mismatch");
 
+  const candidatePath = path.join(root, "tools/datapack/source-candidates.json");
+  const candidateBytes = await readFile(candidatePath);
+  const candidate = select(parse(candidateBytes).candidates, ({ id }) => id === SOURCE_ID);
+  const dependentInputs = candidate.registrationMetadata?.dependentInputs;
+  if (!dependentInputKeys.every((key) => typeof dependentInputs?.[key] === "string")) {
+    throw new Error("Gwangju topology dependent inputs are required");
+  }
+  const dependentPaths = Object.fromEntries(dependentInputKeys.map((key) => [
+    key,
+    dependentInputPath(root, dependentInputs[key]),
+  ]));
+  const [mapCsvBytes, schematicCanvasBytes, elevatorBytes, escalatorBytes] = await Promise.all([
+    readFile(dependentPaths.mapCsvPath),
+    readFile(dependentPaths.schematicCanvasPath),
+    readFile(dependentPaths.elevatorPath),
+    readFile(dependentPaths.escalatorPath),
+  ]);
   const licenseHash = sha(canonicalJson(source.license));
   const retainedEntry = governance.sources.find(({ sourceId }) => sourceId === SOURCE_ID);
-  const registrationInputs = [];
+  const registrationInputs = [{ absolute: candidatePath, bytes: candidateBytes },
+    { absolute: dependentPaths.mapCsvPath, bytes: mapCsvBytes },
+    { absolute: dependentPaths.schematicCanvasPath, bytes: schematicCanvasBytes },
+    { absolute: dependentPaths.elevatorPath, bytes: elevatorBytes },
+    { absolute: dependentPaths.escalatorPath, bytes: escalatorBytes }];
   let entry = retainedEntry;
   if (!entry) {
-    const absolute = path.join(root, "tools/datapack/source-candidates.json");
-    const bytes = await readFile(absolute);
-    entry = select(parse(bytes).candidates, ({ id }) => id === SOURCE_ID).registrationMetadata?.governance;
-    registrationInputs.push({ absolute, bytes });
+    entry = candidate.registrationMetadata?.governance;
   }
   const review = entry?.licenseReview;
   if (source.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
@@ -80,14 +114,87 @@ export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snaps
   const projectedGovernance = retainedEntry ? governance : buildAppendOnlyGovernancePolicyRegistration({
     predecessorPolicyBytes: currentBytes[2], addedSources: [structuredClone(entry)],
   }).policy;
-  const nextSource = { ...source, admissionEvidence: { ...source.admissionEvidence, licenseEvidenceHash: licenseHash } };
-  const projectedInventory = { ...inventory, sources: inventory.sources.map((row) => row.id === SOURCE_ID ? nextSource : row) };
-  validateSourceGovernancePolicy({ policy: projectedGovernance, freshnessPolicy: projectedFreshness, inventory: projectedInventory });
   const snapshotSha256 = sha(snapshotBytes), snapshotId = `${SOURCE_ID}-${snapshotSha256}`;
+  const nextSource = { ...source, admissionEvidence: { ...source.admissionEvidence, licenseEvidenceHash: licenseHash },
+    topologyAdmissionEvidence: { ...source.topologyAdmissionEvidence, snapshotId,
+      snapshotPath: `tools/datapack/sources/${snapshotId}.json`, capturedAt: snapshot.capturedAt,
+      freshUntil: snapshot.freshUntil, stationCount: snapshot.stationCount, edgeCount: snapshot.edgeCount,
+      rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256 },
+    observedDataUpdatedAt: snapshot.capturedAt.slice(0, 10),
+    retrievedAt: snapshot.capturedAt.slice(0, 10) };
+  let initialInventory = { ...inventory, sources: inventory.sources.map((row) => row.id === SOURCE_ID ? nextSource : row) };
+  const currentMolit = await loadCurrentMolitObservation({
+    repositoryRoot: root,
+    inventory: initialInventory,
+    snapshots: ledger,
+  });
+  registrationInputs.push({ absolute: path.join(root, currentMolit.observationPath), bytes: currentMolit.observationBytes });
+  const mappings = parseCurrentMolitGwangjuStationMappings(
+    currentMolit.observation.normalizedProjection,
+    currentMolit.current.rawSha256,
+    snapshot,
+    currentMolit.current,
+  );
+  const mappingSha256 = sha(JSON.stringify(mappings));
+  const stationCodesSha256 = sha(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
+  const membershipEvidence = (sourceRow) => ({ ...sourceRow.membershipAdmissionEvidence,
+    stationCount: mappings.length,
+    membershipSourceRawSha256: currentMolit.current.rawSha256,
+    membershipSourceSnapshotSha256: currentMolit.current.rawSha256,
+    mappingSha256,
+    stationCodesSha256,
+    stationCodeSourceId: SOURCE_ID,
+    stationCodeSnapshotId: snapshotId,
+    stationCodeContentSha256: snapshot.contentSha256,
+  });
+  const membershipSources = [SOURCE_ID, MOLIT_MEMBERSHIP_SOURCE_ID].map((sourceId) =>
+    select(initialInventory.sources, ({ id }) => id === sourceId));
+  if (!isDeepStrictEqual(membershipSources[0].membershipAdmissionEvidence, membershipSources[1].membershipAdmissionEvidence)) {
+    throw new Error("Gwangju membership evidence pair mismatch");
+  }
+  const timetableSource = select(initialInventory.sources, ({ id }) => id === KRIC_TIMETABLE_SOURCE_ID);
+  if (!timetableSource.retainedScheduleAdmissionEvidence) {
+    throw new Error("Gwangju topology retained timetable evidence is required");
+  }
+  initialInventory = {
+    ...initialInventory,
+    sources: initialInventory.sources.map((sourceRow) => {
+      if ([SOURCE_ID, MOLIT_MEMBERSHIP_SOURCE_ID].includes(sourceRow.id)) {
+        return { ...sourceRow, membershipAdmissionEvidence: membershipEvidence(sourceRow) };
+      }
+      if (sourceRow.id === KRIC_TIMETABLE_SOURCE_ID) {
+        return { ...sourceRow, retainedScheduleAdmissionEvidence: {
+          ...sourceRow.retainedScheduleAdmissionEvidence,
+          topologySourceId: SOURCE_ID,
+          topologySnapshotId: snapshotId,
+          topologyContentSha256: snapshot.contentSha256,
+        } };
+      }
+      return sourceRow;
+    }),
+  };
+  assertCurrentMolitGwangjuMembershipAdmission({
+    inventory: initialInventory,
+    mappings,
+    current: currentMolit.current,
+    topology: select(initialInventory.sources, ({ id }) => id === SOURCE_ID),
+  });
+  const dependents = buildGwangjuTopologyDependents({
+    inventory: initialInventory,
+    topologySnapshot: snapshot,
+    topologySource: nextSource,
+    mapCsvBytes,
+    schematicCanvas: parse(schematicCanvasBytes),
+    elevatorBytes,
+    escalatorBytes,
+  });
+  const projectedInventory = dependents.inventory;
+  validateSourceGovernancePolicy({ policy: projectedGovernance, freshnessPolicy: projectedFreshness, inventory: projectedInventory });
   const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: projectedGovernance, sourceId: SOURCE_ID, retrievedAt: snapshot.capturedAt });
   const objectKey = `source-raw/${SOURCE_ID}/${snapshotSha256}.json`;
   return { root, snapshotPath, snapshotBytes, snapshot, snapshotId, snapshotSha256, currentBytes, ledger, registrationInputs,
     inventory: projectedInventory, governance: projectedGovernance, freshness: projectedFreshness,
+    dependentSnapshots: dependents.snapshots,
     rawRetentionExpiresAt, objectKey,
     publishPlan: { steps: [
       { type: "put-immutable-bundle-object", objectKey, sourcePath: path.basename(snapshotPath), sha256: snapshotSha256, sizeBytes: snapshotBytes.length },
@@ -105,7 +212,7 @@ export async function buildGwangjuTopologyRegistrationOutputs({ receiptPath, ...
 async function outputsFromPrepared(prepared, receiptPath, now) {
   if (!path.isAbsolute(receiptPath ?? "")) throw new Error("Gwangju topology receipt path is required");
   const receiptBytes = await readFile(receiptPath), receipt = parse(receiptBytes);
-  const { snapshot, snapshotId, snapshotSha256, root, inventory, ledger, governance, freshness } = prepared;
+  const { snapshot, snapshotId, snapshotSha256, root, inventory, ledger, governance, freshness, dependentSnapshots } = prepared;
   if (receipt.sourceId !== SOURCE_ID || receipt.snapshotId !== snapshotId
     || receipt.rawObjectSha256 !== snapshotSha256 || receipt.byteSize !== prepared.snapshotBytes.length
     || receipt.rawObjectUri !== `oci://axvym6vk8g7i/easysubway-datapacks/${prepared.objectKey}`
@@ -118,11 +225,6 @@ async function outputsFromPrepared(prepared, receiptPath, now) {
   const previous = ledger.filter((row) => row.sourceId === SOURCE_ID).at(-1);
   const relative = `tools/datapack/sources/${snapshotId}.json`;
   const source = select(inventory.sources, ({ id }) => id === SOURCE_ID);
-  source.topologyAdmissionEvidence = { ...source.topologyAdmissionEvidence, snapshotId, snapshotPath: relative,
-    capturedAt: snapshot.capturedAt, freshUntil: snapshot.freshUntil, stationCount: snapshot.stationCount,
-    edgeCount: snapshot.edgeCount, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256 };
-  source.observedDataUpdatedAt = snapshot.capturedAt.slice(0, 10);
-  source.retrievedAt = snapshot.capturedAt.slice(0, 10);
   const governanceBytes = json(governance);
   const row = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: SOURCE_ID, snapshotId,
     previousSnapshotId: previous?.snapshotId ?? null, capturedAt: snapshot.capturedAt, retrievedAt: snapshot.capturedAt,
@@ -144,11 +246,21 @@ async function outputsFromPrepared(prepared, receiptPath, now) {
   catch (error) {
     if (error.code !== "EEXIST" || !(await readFile(snapshotFile)).equals(prepared.snapshotBytes)) throw error;
   }
+  for (const dependent of dependentSnapshots) {
+    const snapshotPath = path.join(root, dependent.relative);
+    try { await writeFile(snapshotPath, dependent.bytes, { flag: "wx", mode: 0o600 }); }
+    catch (error) {
+      if (error.code !== "EEXIST" || !(await readFile(snapshotPath)).equals(dependent.bytes)) throw error;
+    }
+  }
   const inputs = [
     ...prepared.registrationInputs,
     { absolute: prepared.snapshotPath, bytes: prepared.snapshotBytes },
     { absolute: receiptPath, bytes: receiptBytes },
     { absolute: path.join(root, relative), bytes: prepared.snapshotBytes },
+    ...dependentSnapshots.map((dependent) => ({
+      absolute: path.join(root, dependent.relative), bytes: dependent.bytes,
+    })),
   ];
   const values = [json(inventory), json([...ledger, row]), governanceBytes, json(freshness)];
   return SOURCE_REGISTRATION_OUTPUTS.map((relative, index) => ({ relative, bytes: values[index], prestateBytes: prepared.currentBytes[index], inputs }));
