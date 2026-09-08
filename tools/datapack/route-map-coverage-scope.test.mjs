@@ -27,10 +27,6 @@ const DUAL_OPERATOR_SCOPE_KEYS = Object.freeze([
 // route_map_positions admitted 소스가 claim한 활성 (region, operator, line) scope 전량을
 // source-inventory 등재 순서 그대로 고정한다. 감사 대상이 줄어드는 회귀를 잡기 위한 장치다.
 const AUDITED_SCOPE_KEYS = Object.freeze([
-  "busan:busan-transportation:line-ab1a041f6266",
-  "busan:busan-transportation:line-d74614a04530",
-  "busan:busan-transportation:line-d812a5bc1e5f",
-  "busan:busan-transportation:line-eb7b47920390",
   "daegu:daegu-transportation:line-5b8d9b05e7e6",
   "daegu:daegu-transportation:line-e2938a4cc492",
   "daegu:daegu-transportation:line-0ffaa95b1b5d",

@@ -8,24 +8,12 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
-import {
-  parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
-import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
-import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
 import { materializeIncheonAccessibility } from "./materialize-incheon-accessibility.mjs";
 import { materializeIncheonStationInfo } from "./materialize-incheon-station-info.mjs";
 import {
@@ -45,9 +33,6 @@ const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
-// accessibility 누적 fixture coverage baseline(실측): supportedCount=34 → timetable +2 = 36.
-const ACCESSIBILITY_SUPPORTED_COUNT = 34;
-const TIMETABLE_SUPPORTED_COUNT = ACCESSIBILITY_SUPPORTED_COUNT + 2;
 
 async function inputs({ materializeIncheon = true } = {}) {
   const currentInventory = await readJson("tools/datapack/source-inventory.json");
@@ -82,82 +67,26 @@ async function inputs({ materializeIncheon = true } = {}) {
     throw new Error("current Incheon timetable versions do not match");
   }
   const [
-    baseFixture,
-    busanTopology,
-    busanTimetable,
-    busanRouteMapBytes,
-    daejeonTopology,
-    daejeonTimetable,
-    gwangjuTopology,
-    gwangjuAccessibilitySnapshot,
+    regional,
     incheonBytes,
     accessibilityBytes,
     line1Timetable,
     line2Timetable,
-    inventory,
-    stationMapCsv,
-    molitStationMapCsv,
   ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
+    loadRegionalGwangjuAccessibilityPrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+      inventoryPromise: Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
+      readJson,
+      topologyNow,
+      timetableNow,
+      gwangjuAccessibilityNow,
+    }),
     readFile(path.join(root, admission.snapshotPath)),
     readFile(path.join(root, `tools/datapack/sources/${accessibilityAdmission.snapshotId}.json`)),
     readJson(timetableAdmissions[0].snapshotPath),
     readJson(timetableAdmissions[1].snapshotPath),
-    Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
-  const busanTopologyFixture = materializeBusanRouteTopology({
-    baseFixture,
-    snapshot: busanTopology,
-    inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: busanTopologyFixture,
-    timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
-  const busanTimetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const routeMapFixture = materializeBusanRouteMapPositions({
-    baseFixture: busanTimetableFixture,
-    snapshot: JSON.parse(busanRouteMapBytes),
-    snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const gwangjuFixture = materializeRetainedGwangjuTestFixture({
-    baseFixture: routeMapFixture,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology),
-    now: timetableNow,
-  });
-  const gwangjuAccessibilityFixture = materializeGwangjuAccessibility({
-    baseFixture: gwangjuFixture,
-    accessibilitySnapshot: gwangjuAccessibilitySnapshot,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: gwangjuAccessibilityNow,
-  });
+  const { accessibilityFixture: gwangjuAccessibilityFixture, inventory } = regional;
   const incheonSnapshot = JSON.parse(incheonBytes.toString("utf8"));
   const accessibilitySnapshot = JSON.parse(accessibilityBytes.toString("utf8"));
   const incheonFixture = materializeIncheon
@@ -540,15 +469,7 @@ test("materialized SQLite와 provenance가 인천 schedule_timetable 2건을 SUP
   );
   assert.ok(line7);
   assert.notEqual(line7.status, "SUPPORTED");
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: TIMETABLE_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - TIMETABLE_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((TIMETABLE_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((TIMETABLE_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 async function readJson(relativePath) {

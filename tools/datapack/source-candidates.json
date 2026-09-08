@@ -488,11 +488,10 @@
       "detailUrl": "https://www.data.go.kr/data/15054957/fileData.do",
       "requestUrl": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
       "licenseEvidenceStatus": "confirmed_free_use",
-      "sampleEvidenceStatus": "validated_official_full_snapshot",
-      "admissionStatus": "production_route_map_positions_materialized",
-      "productionInventoryReferenceId": "busan-transportation-route-map-positions",
+      "sampleEvidenceStatus": "diagnostic_web_assets_only",
+      "admissionStatus": "preflight_only",
       "serviceKeyHandling": "not_required",
-      "mobileEmbeddingAllowed": true,
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "retrievedAt": "2026-07-20",
         "endpoint": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
@@ -522,20 +521,12 @@
         "connectorEvidenceArtifact": "tools/datapack/sources/busan-transportation-route-map-connectors-20260720.json",
         "connectorEvidenceArtifactSha256": "8f119b7c2cd8d9527abbbd8d6937f237a5ea9f03e70ff5f7ef425b8af10ce941",
         "evidenceArtifact": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
-        "coverageAssessment": {
-          "state": "SUPPORTED",
-          "requirementCount": 4,
-          "sourceDomain": "route_map_positions",
-          "artifactKind": "production",
-          "materializer": "tools/datapack/materialize-busan-route-map-positions.mjs",
-          "verificationTest": "tools/datapack/materialize-busan-route-map-positions.test.mjs"
-        },
         "coverageLimitations": [
-          "부산교통공사 1~4호선 114개 역에 한정한다",
-          "공식 HTML/CSS와 32개 PNG 연결선 snapshot을 offline materializer에서만 소비하며 runtime 네트워크 호출은 하지 않는다"
+          "공식 웹 자산은 진단용 byte evidence이며 production route-map input이 아니다",
+          "HTML/CSS·PNG 자산은 source snapshot 또는 mobile embedding으로 사용하지 않는다"
         ]
       },
-      "nextAction": "공식 사이버스테이션 변경 시 HTML/CSS·PNG hash와 114개 좌표·110개 연결선 snapshot을 함께 갱신한다"
+      "nextAction": "공식 API 또는 배포 가능한 정식 source contract를 확인하기 전까지 web assets는 진단 evidence로만 유지한다"
     },
     {
       "id": "busan-transportation-route-topology",

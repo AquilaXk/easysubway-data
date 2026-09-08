@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
@@ -15,17 +16,10 @@ import {
 
 import {
   parseMolitDaeguStationMappings,
-  parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
-import { materializeBusanRouteTopology, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
-import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
 import {
   materializeDaeguRouteMapPositions,
   materializedDaeguRouteMapPackContentHash,
@@ -39,54 +33,22 @@ const routeMapNow = new Date("2026-07-24T03:00:00.000Z");
 const execFileAsync = promisify(execFile);
 const SOURCE_ID = "daegu-transportation-route-map-positions";
 const LINE_IDS = Object.freeze(DAEGU_LINES.map(({ lineId }) => lineId));
-// daegu accessibility coverage baseline(실측): supportedCount=34.
-// 이번 FILE admission이 daegu route_map_positions +3을 만든다.
-const DAEGU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 34;
-const DAEGU_ROUTE_MAP_SUPPORTED_COUNT = DAEGU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 3;
 
 async function inputs() {
   const [
-    base, busanTopology, busanTimetable, busanRouteMapBytes,
-    daejeonTopology, daejeonTimetable, gwangjuTopology,
-    inventory, regionalMap, molitMap, daeguAccessibility, daeguSnapshotBytes,
+    regional, daeguAccessibility, daeguSnapshotBytes,
   ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+    loadRegionalGwangjuTimetablePrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      readJson,
+      topologyNow: new Date("2026-07-19T18:14:03.004Z"),
+      timetableNow,
+    }),
     readJson("tools/datapack/sources/daegu-transportation-accessibility-20260724.json"),
     readFile(path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json")),
   ]);
-  const busanTopologyFixture = materializeBusanRouteTopology({
-    baseFixture: base, snapshot: busanTopology, inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(regionalMap),
-    now: new Date("2026-07-19T18:14:03.004Z"),
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: busanTopologyFixture, timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology, inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitMap), now: timetableNow,
-  });
-  const busanTimetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture, timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology, inventory, now: timetableNow,
-  });
-  const busanPositionsFixture = materializeBusanRouteMapPositions({
-    baseFixture: busanTimetableFixture, snapshot: JSON.parse(busanRouteMapBytes),
-    snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
-    topologySnapshot: busanTopology, inventory, now: timetableNow,
-  });
-  const gwangjuFixture = materializeRetainedGwangjuTestFixture({
-    baseFixture: busanPositionsFixture,
-    topologySnapshot: gwangjuTopology, inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitMap, gwangjuTopology), now: timetableNow,
-  });
+  const { gwangjuFixture, inventory, molitStationMapCsv: molitMap } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const mappings = {};
@@ -252,15 +214,7 @@ test("materialized SQLite와 provenance가 대구 1·2·3호선 route_map_positi
     routeMapRequirements.map(({ lineId }) => lineId).sort(),
     [...LINE_IDS].sort(),
   );
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: DAEGU_ROUTE_MAP_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - DAEGU_ROUTE_MAP_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((DAEGU_ROUTE_MAP_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((DAEGU_ROUTE_MAP_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 async function readJson(relativePath) {

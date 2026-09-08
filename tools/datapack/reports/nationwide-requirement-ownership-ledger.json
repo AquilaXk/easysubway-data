@@ -15,11 +15,11 @@
       },
       "tally": {
         "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-        "sha256": "d3b9f3fe03c97ac87d900faf33a711e5d58d4fc1ed51863ff4ff3a9710e5fa22"
+        "sha256": "c6073db04867bac18078969b8fc865297b23ed010165c5ea15a9818933b6400f"
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "e0980f63fa197c4a995a22642dd17ff26b0266dbe3af736e168a442be4471dfc"
+        "sha256": "95dc6a843c0fd5bec9a5d0781220f67f91bbac24374b197fc3a09ba138a77fba"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,7 +27,7 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "01a024f5985bf5704603712ce9124ba9653e0ab67194723bf29ed2d47ceaae11"
+        "sha256": "f6874a69d3f9cf3cf9da41b634d02144bd5686567ddbb831405a4f008453df61"
       },
       "candidateBuildSpec": {
         "path": "tools/datapack/release/candidate-build-spec.json",
@@ -38,10 +38,10 @@
   "summary": {
     "launchRequired": {
       "totalCount": 270,
-      "inventoryAdmittedCount": 75,
+      "inventoryAdmittedCount": 71,
       "explicitlyUnsupportedWithEvidenceCount": 4,
-      "missingCount": 191,
-      "terminalCount": 79
+      "missingCount": 195,
+      "terminalCount": 75
     },
     "enhancement": {
       "totalCount": 45,
@@ -362,64 +362,39 @@
       "sourceDomain": "route_map_positions",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "INVENTORY_ADMITTED",
-        "missingKind": null,
+        "status": "MISSING",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ]
+        "admittedSourceIds": []
       },
       "childOwner": {
         "issue": 506,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
       },
       "officialSourceFamily": {
-        "state": "EVIDENCED",
-        "refs": [
-          {
-            "sourceId": "busan-transportation-route-map-positions",
-            "provider": "부산교통공사",
-            "datasetUrl": "https://www.data.go.kr/data/15054957/fileData.do",
-            "sourceSystem": "부산교통공사·공공데이터포털"
-          }
-        ]
+        "state": "PENDING",
+        "reason": "CONTRACT_GAP",
+        "owner": {
+          "issue": 506,
+          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+        }
       },
       "lineage": {
         "licenseLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "license": {
-                "type": "PUBLIC_DATA_FREE_USE",
-                "name": "공공데이터포털 이용허락범위 제한 없음",
-                "attribution": "부산교통공사 · 공공데이터포털 이용허락범위 제한 없음",
-                "commercialUseAllowed": true,
-                "derivativeWorkAllowed": true,
-                "redistributionAllowed": true,
-                "evidenceUrl": "https://www.data.go.kr/data/15054957/fileData.do"
-              },
-              "licenseReview": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "observedDataUpdatedAt": "2025-11-04",
-              "retrievedAt": "2026-07-20",
-              "admissionEvidence": [
-                {
-                  "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-07-20T11:13:18.000Z",
-                  "freshUntil": "2027-07-20T11:13:18.000Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -431,7 +406,7 @@
         },
         "artifactLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "CONTRACT_GAP",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
@@ -923,64 +898,39 @@
       "sourceDomain": "route_map_positions",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "INVENTORY_ADMITTED",
-        "missingKind": null,
+        "status": "MISSING",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ]
+        "admittedSourceIds": []
       },
       "childOwner": {
         "issue": 506,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
       },
       "officialSourceFamily": {
-        "state": "EVIDENCED",
-        "refs": [
-          {
-            "sourceId": "busan-transportation-route-map-positions",
-            "provider": "부산교통공사",
-            "datasetUrl": "https://www.data.go.kr/data/15054957/fileData.do",
-            "sourceSystem": "부산교통공사·공공데이터포털"
-          }
-        ]
+        "state": "PENDING",
+        "reason": "CONTRACT_GAP",
+        "owner": {
+          "issue": 506,
+          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+        }
       },
       "lineage": {
         "licenseLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "license": {
-                "type": "PUBLIC_DATA_FREE_USE",
-                "name": "공공데이터포털 이용허락범위 제한 없음",
-                "attribution": "부산교통공사 · 공공데이터포털 이용허락범위 제한 없음",
-                "commercialUseAllowed": true,
-                "derivativeWorkAllowed": true,
-                "redistributionAllowed": true,
-                "evidenceUrl": "https://www.data.go.kr/data/15054957/fileData.do"
-              },
-              "licenseReview": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "observedDataUpdatedAt": "2025-11-04",
-              "retrievedAt": "2026-07-20",
-              "admissionEvidence": [
-                {
-                  "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-07-20T11:13:18.000Z",
-                  "freshUntil": "2027-07-20T11:13:18.000Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -992,7 +942,7 @@
         },
         "artifactLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "CONTRACT_GAP",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
@@ -1484,64 +1434,39 @@
       "sourceDomain": "route_map_positions",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "INVENTORY_ADMITTED",
-        "missingKind": null,
+        "status": "MISSING",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ]
+        "admittedSourceIds": []
       },
       "childOwner": {
         "issue": 506,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
       },
       "officialSourceFamily": {
-        "state": "EVIDENCED",
-        "refs": [
-          {
-            "sourceId": "busan-transportation-route-map-positions",
-            "provider": "부산교통공사",
-            "datasetUrl": "https://www.data.go.kr/data/15054957/fileData.do",
-            "sourceSystem": "부산교통공사·공공데이터포털"
-          }
-        ]
+        "state": "PENDING",
+        "reason": "CONTRACT_GAP",
+        "owner": {
+          "issue": 506,
+          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+        }
       },
       "lineage": {
         "licenseLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "license": {
-                "type": "PUBLIC_DATA_FREE_USE",
-                "name": "공공데이터포털 이용허락범위 제한 없음",
-                "attribution": "부산교통공사 · 공공데이터포털 이용허락범위 제한 없음",
-                "commercialUseAllowed": true,
-                "derivativeWorkAllowed": true,
-                "redistributionAllowed": true,
-                "evidenceUrl": "https://www.data.go.kr/data/15054957/fileData.do"
-              },
-              "licenseReview": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "observedDataUpdatedAt": "2025-11-04",
-              "retrievedAt": "2026-07-20",
-              "admissionEvidence": [
-                {
-                  "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-07-20T11:13:18.000Z",
-                  "freshUntil": "2027-07-20T11:13:18.000Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -1553,7 +1478,7 @@
         },
         "artifactLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "CONTRACT_GAP",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
@@ -2045,64 +1970,39 @@
       "sourceDomain": "route_map_positions",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "INVENTORY_ADMITTED",
-        "missingKind": null,
+        "status": "MISSING",
+        "missingKind": "NO_ADMITTED_SOURCE",
         "resolutionReviewStatus": null,
-        "admittedSourceIds": [
-          "busan-transportation-route-map-positions"
-        ]
+        "admittedSourceIds": []
       },
       "childOwner": {
         "issue": 506,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
       },
       "officialSourceFamily": {
-        "state": "EVIDENCED",
-        "refs": [
-          {
-            "sourceId": "busan-transportation-route-map-positions",
-            "provider": "부산교통공사",
-            "datasetUrl": "https://www.data.go.kr/data/15054957/fileData.do",
-            "sourceSystem": "부산교통공사·공공데이터포털"
-          }
-        ]
+        "state": "PENDING",
+        "reason": "CONTRACT_GAP",
+        "owner": {
+          "issue": 506,
+          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+        }
       },
       "lineage": {
         "licenseLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "license": {
-                "type": "PUBLIC_DATA_FREE_USE",
-                "name": "공공데이터포털 이용허락범위 제한 없음",
-                "attribution": "부산교통공사 · 공공데이터포털 이용허락범위 제한 없음",
-                "commercialUseAllowed": true,
-                "derivativeWorkAllowed": true,
-                "redistributionAllowed": true,
-                "evidenceUrl": "https://www.data.go.kr/data/15054957/fileData.do"
-              },
-              "licenseReview": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "busan-transportation-route-map-positions",
-              "observedDataUpdatedAt": "2025-11-04",
-              "retrievedAt": "2026-07-20",
-              "admissionEvidence": [
-                {
-                  "kind": "routeMapAdmissionEvidence",
-                  "capturedAt": "2026-07-20T11:13:18.000Z",
-                  "freshUntil": "2027-07-20T11:13:18.000Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CONTRACT_GAP",
+          "owner": {
+            "issue": 506,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -2114,7 +2014,7 @@
         },
         "artifactLineage": {
           "state": "PENDING",
-          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "reason": "CONTRACT_GAP",
           "owner": {
             "issue": 506,
             "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/506"

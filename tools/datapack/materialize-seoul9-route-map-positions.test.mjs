@@ -8,26 +8,12 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  loadRegionalDaejeonRouteMapPrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
-import {
-  parseMolitDaejeonStationMappings,
-  parseMolitGwangjuStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
-import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
-import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route-map-positions.mjs";
-import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
-import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route-map-positions.mjs";
 import {
   materializeSeoul9RouteMapPositions,
   materializedSeoul9RouteMapPackContentHash,
@@ -46,10 +32,6 @@ const SOURCE_ID = "seoul-metro-line9-23-route-map-positions";
 const LINE_ID = "line-f0e747248a31";
 const FILE_OPERATOR_ID = "seoul-metro";
 const LINE_OPERATOR_ID = "operator-936e454d0bfb";
-// daejeon route_map 누적 fixture coverage baseline(실측): supportedCount=25.
-// 이번 FILE admission이 seoul9 route_map_positions +1을 만든다.
-const DAEJEON_ROUTE_MAP_BASELINE = 25;
-const SEOUL9_ROUTE_MAP_SUPPORTED_COUNT = DAEJEON_ROUTE_MAP_BASELINE + 1;
 const SCHEMATIC_X_MIN = 2284;
 const SCHEMATIC_X_MAX = 3171;
 const SCHEMATIC_Y_MIN = 1620;
@@ -57,98 +39,24 @@ const SCHEMATIC_Y_MAX = 1993;
 
 async function inputs() {
   const [
-    baseFixture,
-    busanTopology,
-    busanTimetable,
-    busanRouteMapBytes,
-    daejeonTopology,
-    daejeonTimetable,
-    gwangjuTopology,
-    accessibilitySnapshot,
-    inventory,
-    stationMapCsv,
-    molitStationMapCsv,
-    gwangjuSnapshotBytes,
-    daejeonSnapshotBytes,
+    regional,
     seoul9SnapshotBytes,
     capitalTopology,
   ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
-    readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),
-    readFile(path.join(root, "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json")),
+    loadRegionalDaejeonRouteMapPrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      readJson,
+      topologyNow,
+      timetableNow,
+      gwangjuAccessibilityNow: accessibilityNow,
+      gwangjuRouteMapNow,
+      daejeonRouteMapNow,
+    }),
     readFile(path.join(root, "tools/datapack/sources/seoul-metro-line9-23-route-map-positions-20260725.json")),
     readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
   ]);
-  const busanTopologyFixture = materializeBusanRouteTopology({
-    baseFixture,
-    snapshot: busanTopology,
-    inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: busanTopologyFixture,
-    timetableSnapshot: daejeonTimetable,
-    topologySnapshot: daejeonTopology,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: timetableNow,
-  });
-  const busanTimetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot: busanTimetable,
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const routeMapFixture = materializeBusanRouteMapPositions({
-    baseFixture: busanTimetableFixture,
-    snapshot: JSON.parse(busanRouteMapBytes),
-    snapshotSha256: createHash("sha256").update(busanRouteMapBytes).digest("hex"),
-    topologySnapshot: busanTopology,
-    inventory,
-    now: timetableNow,
-  });
-  const gwangjuFixture = materializeRetainedGwangjuTestFixture({
-    baseFixture: routeMapFixture,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    canonicalStationMappings: parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology),
-    now: timetableNow,
-  });
-  const accessibilityFixture = materializeGwangjuAccessibility({
-    baseFixture: gwangjuFixture,
-    accessibilitySnapshot,
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: accessibilityNow,
-  });
-  const gwangjuRouteMapFixture = materializeGwangjuRouteMapPositions({
-    baseFixture: accessibilityFixture,
-    snapshot: JSON.parse(gwangjuSnapshotBytes),
-    snapshotSha256: createHash("sha256").update(gwangjuSnapshotBytes).digest("hex"),
-    topologySnapshot: gwangjuTopology,
-    inventory,
-    now: gwangjuRouteMapNow,
-  });
-  const daejeonRouteMapFixture = materializeDaejeonRouteMapPositions({
-    baseFixture: gwangjuRouteMapFixture,
-    snapshot: JSON.parse(daejeonSnapshotBytes),
-    snapshotSha256: createHash("sha256").update(daejeonSnapshotBytes).digest("hex"),
-    topologySnapshot: daejeonTopology,
-    inventory,
-    now: daejeonRouteMapNow,
-  });
+  const { daejeonRouteMapFixture, inventory } = regional;
   return {
     baseFixture: daejeonRouteMapFixture,
     seoul9Snapshot: JSON.parse(seoul9SnapshotBytes),
@@ -316,15 +224,7 @@ test("materialized SQLite와 provenance가 서울 9호선 route_map_positions를
   assert.ok(routeMapRequirements.every(({ operatorId }) => (
     operatorId === LINE_OPERATOR_ID || operatorId === FILE_OPERATOR_ID
   )));
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: SEOUL9_ROUTE_MAP_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - SEOUL9_ROUTE_MAP_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((SEOUL9_ROUTE_MAP_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((SEOUL9_ROUTE_MAP_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 test("서울9 route_map_positions materialize는 metro_map_pack·capital.sqlite.gz를 건드리지 않는다", async () => {

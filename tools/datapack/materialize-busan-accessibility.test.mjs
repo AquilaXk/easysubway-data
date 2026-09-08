@@ -8,23 +8,16 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  loadRegionalBusanTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
-import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import {
   materializeBusanAccessibility,
   materializedBusanAccessibilityPackContentHash,
 } from "./materialize-busan-accessibility.mjs";
-import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
-import {
-  materializeBusanRouteTopology,
-  parseCanonicalBusanStationMappings,
-} from "./materialize-busan-route-topology.mjs";
-import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
-import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -33,9 +26,6 @@ const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const routeMapNow = new Date("2026-07-20T11:13:18.000Z");
 const accessibilityNow = new Date("2026-07-24T12:00:00.000Z");
 const SOURCE_ID = "busan-transportation-accessibility";
-// route-map 누적 fixture coverage baseline(실측): supportedCount=19 → accessibility +4 = 23.
-const ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 19;
-const ACCESSIBILITY_SUPPORTED_COUNT = ROUTE_MAP_BASELINE_SUPPORTED_COUNT + 4;
 const BUSAN_LINE_IDS = Object.freeze([
   "line-ab1a041f6266",
   "line-d74614a04530",
@@ -48,61 +38,21 @@ const ACCESSIBILITY_FIELDS = Object.freeze([
 
 async function inputs() {
   const [
-    baseFixture,
-    topologySnapshot,
-    timetableSnapshot,
-    routeMapSnapshotBytes,
+    regional,
     accessibilitySnapshot,
-    daejeonTopologySnapshot,
-    daejeonTimetableSnapshot,
-    inventory,
-    stationMapCsv,
-    molitStationMapCsv,
   ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),
+    loadRegionalBusanTimetablePrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      readJson,
+      topologyNow,
+      timetableNow: routeMapNow,
+    }),
     readJson("tools/datapack/sources/busan-transportation-accessibility-20260724.json"),
-    readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
-  const topologyFixture = materializeBusanRouteTopology({
-    baseFixture,
-    snapshot: topologySnapshot,
-    inventory,
-    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapCsv),
-    now: topologyNow,
-  });
-  const daejeonFixture = materializeDaejeonTimetable({
-    baseFixture: topologyFixture,
-    timetableSnapshot: daejeonTimetableSnapshot,
-    topologySnapshot: daejeonTopologySnapshot,
-    inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
-    now: routeMapNow,
-  });
-  const timetableFixture = materializeBusanTimetable({
-    baseFixture: daejeonFixture,
-    timetableSnapshot,
-    topologySnapshot,
-    inventory,
-    now: routeMapNow,
-  });
-  const routeMapSnapshot = JSON.parse(routeMapSnapshotBytes);
-  const routeMapFixture = materializeBusanRouteMapPositions({
-    baseFixture: timetableFixture,
-    snapshot: routeMapSnapshot,
-    snapshotSha256: createHash("sha256").update(routeMapSnapshotBytes).digest("hex"),
-    topologySnapshot,
-    inventory,
-    now: routeMapNow,
-  });
+  const { busanTimetableFixture: timetableFixture, busanTopology: topologySnapshot, inventory } = regional;
   return {
-    routeMapFixture,
+    timetableFixture,
     topologySnapshot,
     accessibilitySnapshot,
     inventory,
@@ -110,9 +60,9 @@ async function inputs() {
 }
 
 test("부산 공식 114역 편의시설을 facility·evidence 342건으로 materialize한다", async () => {
-  const { routeMapFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
@@ -180,10 +130,10 @@ test("부산 공식 114역 편의시설을 facility·evidence 342건으로 mater
 });
 
 test("부산 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
-  const { routeMapFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
 
   assert.throws(() => materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
@@ -193,7 +143,7 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
   const badHash = structuredClone(accessibilitySnapshot);
   badHash.rowsSha256 = "0".repeat(64);
   assert.throws(() => materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot: badHash,
     topologySnapshot,
     inventory,
@@ -203,7 +153,7 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
   const badSource = structuredClone(accessibilitySnapshot);
   badSource.sourceId = "wrong-source";
   assert.throws(() => materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot: badSource,
     topologySnapshot,
     inventory,
@@ -221,7 +171,7 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
     { rowCount: 113, stationCount: 113, facilityCount: 339, rowsSha256: badScope.rowsSha256 },
   );
   assert.throws(() => materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot: badScope,
     topologySnapshot,
     inventory: badScopeInventory,
@@ -232,7 +182,7 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
   mismatchedInventory.sources.find(({ id }) => id === SOURCE_ID)
     .accessibilityAdmissionEvidence.rowsSha256 = "0".repeat(64);
   assert.throws(() => materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory: mismatchedInventory,
@@ -240,7 +190,7 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
   }), /inventory evidence/);
 
   const admitted = materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
@@ -261,9 +211,9 @@ test("materialized SQLite와 provenance가 부산 accessibility_facilities 4건�
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutput = path.join(outputDir, "pack");
   const reportPath = path.join(outputDir, "coverage.json");
-  const { routeMapFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeBusanAccessibility({
-    baseFixture: routeMapFixture,
+    baseFixture: timetableFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
@@ -341,15 +291,16 @@ test("materialized SQLite와 provenance가 부산 accessibility_facilities 4건�
     accessibilityRequirements.map(({ lineId }) => lineId).sort(),
     [...BUSAN_LINE_IDS],
   );
-  assert.deepEqual(report.summary.launchRequired, {
-    totalCount: 270,
-    supportedCount: ACCESSIBILITY_SUPPORTED_COUNT,
-    explicitlyUnsupportedCount: 4,
-    missingCount: 270 - ACCESSIBILITY_SUPPORTED_COUNT - 4,
-    supportedRatio: Number((ACCESSIBILITY_SUPPORTED_COUNT / 270).toFixed(4)),
-    terminalResolutionRatio: Number(((ACCESSIBILITY_SUPPORTED_COUNT + 4) / 270).toFixed(4)),
-    completionReady: false,
-  });
+  const routeMapRequirements = report.requirements.filter(
+    ({ operatorId, sourceDomain }) => operatorId === "busan-transportation"
+      && sourceDomain === "route_map_positions",
+  );
+  assert.ok(routeMapRequirements.every(({ status }) => status === "MISSING"));
+  assert.deepEqual(
+    routeMapRequirements.map(({ lineId }) => lineId).sort(),
+    [...BUSAN_LINE_IDS],
+  );
+  assert.equal(report.summary.launchRequired.completionReady, false);
 });
 
 async function readJson(relativePath) {
