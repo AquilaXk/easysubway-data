@@ -28,6 +28,7 @@ const distanceFareEvidence = JSON.parse(await readFile(
 test("대전 coverage probe는 시간표 XML을 검증하고 credential을 제거한다", async () => {
   const secret = "never-print-this-key";
   let requestedUrl;
+  let responseBytes;
   const evidence = await probeDaejeonCoverageApi({
     sourceId: "daejeon-train-timetable",
     serviceKey: secret,
@@ -35,7 +36,8 @@ test("대전 coverage probe는 시간표 XML을 검증하고 credential을 제�
     fetchImpl: async (url, init) => {
       requestedUrl = url;
       assert.equal(init.headers.accept, "application/xml,text/xml");
-      return new Response(`<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>0</dayType><drctType>1</drctType><stNum>101</stNum><tmList>30</tmList><tmZone>5</tmZone></item></items></body></response>`, {
+      responseBytes = Buffer.from(`<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>0</dayType><drctType>1</drctType><stNum>101</stNum><tmList>30</tmList><tmZone>5</tmZone></item></items></body></response>`);
+      return new Response(responseBytes, {
         status: 200,
         headers: { "content-type": "application/xml" },
       });
@@ -46,6 +48,10 @@ test("대전 coverage probe는 시간표 XML을 검증하고 credential을 제�
   assert.equal(evidence.providerResultCode, "00");
   assert.equal(evidence.observedAt, "2026-07-14T07:00:00.000Z");
   assert.equal(evidence.rowCount, 1);
+  assert.equal(typeof evidence.rawResponseBase64, "string");
+  assert.deepEqual(Buffer.from(evidence.rawResponseBase64, "base64"), responseBytes);
+  assert.equal(evidence.rawBytes, responseBytes.length);
+  assert.equal(evidence.rawSha256, createHash("sha256").update(responseBytes).digest("hex"));
   assert.deepEqual(evidence.outputFields, ["dayType", "drctType", "stNum", "tmList", "tmZone"]);
   assert.deepEqual(evidence.rows, [{
     dayType: "0",
