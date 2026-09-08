@@ -286,8 +286,11 @@ test("route-final candidate는 authority·strict validation·signed route stage�
 });
 
 test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
-  assert.match(yml, /paths:[\s\S]*contracts\.lock\.json/);
-  assert.doesNotMatch(yml, /paths:[\s\S]*release\/product-gates/);
+  // trigger 범위만 검사한다. jobs의 정상적인 정책 입력까지 포함하지 않는다.
+  const push = yml.match(/^  push:\n(?:[ \t]*\n| {4}[^\n]*\n)*/m)?.[0];
+  assert.ok(push, "push trigger 블록을 찾지 못함");
+  assert.match(push, /paths:[\s\S]*contracts\.lock\.json/);
+  assert.doesNotMatch(push, /paths:[\s\S]*release\/product-gates/);
   const stage = yml.match(/- name: Data Pack Release \/ Stage product contracts[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(stage, "product contract stage 스텝을 찾지 못함");
   assert.match(stage, /if:\s*\$\{\{ steps\.release-mode\.outputs\.is-pointer-only != 'true' \}\}/);
