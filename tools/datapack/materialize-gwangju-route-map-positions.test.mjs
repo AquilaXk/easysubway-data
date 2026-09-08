@@ -12,6 +12,7 @@ import {
   loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
+  projectRegionalFixtureSourceBindings,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
@@ -85,10 +86,17 @@ async function inputs() {
     }),
     readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),
   ]);
-  const { accessibilityFixture, gwangjuTopology, inventory } = regional;
+  const { accessibilityFixture, gwangjuTopology } = regional;
+  const gwangjuSnapshot = JSON.parse(gwangjuSnapshotBytes);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: regional.inventory, gwangjuTopology,
+    molitStationMapCsv: regional.molitStationMapCsv,
+    gwangjuRouteMapSnapshot: gwangjuSnapshot,
+    gwangjuRouteMapSnapshotBytes: gwangjuSnapshotBytes,
+  });
   return {
     baseFixture: accessibilityFixture,
-    gwangjuSnapshot: JSON.parse(gwangjuSnapshotBytes),
+    gwangjuSnapshot,
     gwangjuSnapshotSha256: createHash("sha256").update(gwangjuSnapshotBytes).digest("hex"),
     topologySnapshot: gwangjuTopology,
     inventory,

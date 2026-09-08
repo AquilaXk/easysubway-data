@@ -149,14 +149,17 @@ async function registrationFixture(context, { capped = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "retained-kric-registration-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const repositoryRoot = path.join(directory, "repo");
-  for (const relative of [...outputs, "tools/datapack/source-candidates.json", "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"]) {
+  const selectedInventory = await readJson(path.join(root, outputs[0]));
+  const topologyPath = selectedInventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+    .topologyAdmissionEvidence.snapshotPath;
+  for (const relative of [...outputs, "tools/datapack/source-candidates.json", topologyPath]) {
     const target = path.join(repositoryRoot, relative); await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, await readFile(path.join(root, relative)));
   }
   const [currentInventory, currentGovernance, candidates, topologySnapshot] = await Promise.all([
     readJson(path.join(repositoryRoot, outputs[0])), readJson(path.join(repositoryRoot, outputs[2])),
     readJson(path.join(repositoryRoot, "tools/datapack/source-candidates.json")),
-    readJson(path.join(repositoryRoot, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json")),
+    readJson(path.join(repositoryRoot, topologyPath)),
   ]);
   const inventory = structuredClone(currentInventory);
   const molitAdmission = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;

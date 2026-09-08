@@ -141,7 +141,8 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
     sourceId === "molit-urban-rail-full-route-daejeon-membership"));
   assert.ok(stationLines.every(({ fieldProvenance }) =>
     fieldProvenance?.station_code?.sourceId === snapshot.sourceId
-    && fieldProvenance.station_code.sourceSnapshotId === "daejeon-station-distance-fare-topology-20260720"
+    && fieldProvenance.station_code.sourceSnapshotId === inventory.sources.find(({ id }) => id === snapshot.sourceId)
+      .topologyAdmissionEvidence.snapshotId
     && fieldProvenance.station_code.evidenceHash === snapshot.contentSha256
     && fieldProvenance.station_code.derivationKind === "OFFICIAL"));
   assert.ok(membershipSource.coverageScope.lineIds.includes("line-7051a9c2525c"));
@@ -158,7 +159,8 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
     .reduce((sum, edge) => sum + edge.durationSeconds, 0), 2_400);
   assert.equal(edges.filter(({ fromNodeId, toNodeId }) => fromNodeId < toNodeId)
     .reduce((sum, edge) => sum + edge.distanceMeters, 0), 20_500);
-  assert.ok(edges.every(({ sourceSnapshotId }) => sourceSnapshotId === "daejeon-station-distance-fare-topology-20260720"));
+  assert.ok(edges.every(({ sourceSnapshotId }) => sourceSnapshotId === inventory.sources
+    .find(({ id }) => id === snapshot.sourceId).topologyAdmissionEvidence.snapshotId));
   assert.ok(edges.every(({ derivationKind }) => derivationKind === "OFFICIAL"));
   assert.deepEqual(stationLines.map(({ stationId, stationCode, lineSequence }) => ({ stationId, stationCode, lineSequence })), [
     { stationId: "station-1a68b52a9b0d", stationCode: "101", lineSequence: 1 },
@@ -419,11 +421,14 @@ test("materialized production SQLite와 field provenance만 대전 1호선 membe
 test("부산과 대전 topology를 하나의 nationwide production pack으로 합성한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-busan-daejeon-topology-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
-  const [baseFixture, daejeonSnapshot, inventory, canonicalStationMappings] = await inputs();
+  const [baseFixture, daejeonSnapshot, sourceInventory, canonicalStationMappings] = await inputs();
   const [busanSnapshot, busanStationMapCsv] = await Promise.all([
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
   ]);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: sourceInventory, busanTopology: busanSnapshot, stationMapCsv: busanStationMapCsv,
+  });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture,
     snapshot: busanSnapshot,
