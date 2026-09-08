@@ -5,7 +5,6 @@ import path from "node:path";
 import test from "node:test";
 import {
   loadRegionalCapitalKricRouteMapPrefix,
-  projectHistoricalRegionalMaterializeInventory,
 } from "./materialize-test-fixture.mjs";
 
 import { listCapitalLightRailRouteMapPositionLines } from "./collect-kric-capital-light-rail-route-map-positions.mjs";
@@ -15,29 +14,13 @@ import {
 } from "./materialize-kric-capital-light-rail-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const topologyNow = new Date("2026-07-19T18:14:03.004Z");
-const timetableNow = new Date("2026-07-20T13:09:00.000Z");
-const accessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const gwangjuRouteMapNow = new Date("2026-07-25T02:00:00.000Z");
-const daejeonRouteMapNow = new Date("2026-07-25T03:00:00.000Z");
-const seoul9RouteMapNow = new Date("2026-07-25T05:00:00.000Z");
 const routeMapNow = new Date("2026-07-25T06:00:00.000Z");
 const SAMPLE_SOURCE_ID = "kric-gimpo-goldline-route-map-positions";
 const SAMPLE_LINE_ID = "line-5500c1600f71";
 const SAMPLE_OPERATOR_ID = "operator-2e23276dfa94";
 
-async function readJson(relativePath) {
-  return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
-}
-
 async function inputs() {
   return loadRegionalCapitalKricRouteMapPrefix(
-    {
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-      readJson, topologyNow, timetableNow, gwangjuAccessibilityNow: accessibilityNow,
-      gwangjuRouteMapNow, daejeonRouteMapNow, seoul9RouteMapNow,
-    },
     path.join(root, "tools/datapack/sources", `${SAMPLE_SOURCE_ID}-20260725.json`),
   );
 }

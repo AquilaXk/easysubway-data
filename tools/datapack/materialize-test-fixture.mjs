@@ -341,9 +341,22 @@ export async function loadRegionalSeoul9Phase1RouteMapPrefix(options) {
   };
 }
 
-export async function loadRegionalCapitalKricRouteMapPrefix(options, sampleSnapshotPath) {
+export async function loadRegionalCapitalKricRouteMapPrefix(sampleSnapshotPath) {
+  // 보존된 회귀 입력의 시계다. 현재 운영 날짜로 갱신하지 않고 매 호출마다 독립 입력을 만든다.
+  const readJson = async (relativePath) =>
+    JSON.parse(await readFile(path.join(REPOSITORY_ROOT, relativePath), "utf8"));
   const [regional, sampleSnapshotBytes] = await Promise.all([
-    loadRegionalSeoul9Phase1RouteMapPrefix(options),
+    loadRegionalSeoul9Phase1RouteMapPrefix({
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      readJson,
+      topologyNow: new Date("2026-07-19T18:14:03.004Z"),
+      timetableNow: new Date("2026-07-20T13:09:00.000Z"),
+      gwangjuAccessibilityNow: new Date("2026-07-24T03:00:00.000Z"),
+      gwangjuRouteMapNow: new Date("2026-07-25T02:00:00.000Z"),
+      daejeonRouteMapNow: new Date("2026-07-25T03:00:00.000Z"),
+      seoul9RouteMapNow: new Date("2026-07-25T05:00:00.000Z"),
+    }),
     readFile(sampleSnapshotPath),
   ]);
   const sampleSnapshot = JSON.parse(sampleSnapshotBytes);
