@@ -14,6 +14,7 @@ import test from "node:test";
 
 import {
   materializedBusanPackContentHash,
+  bindCumulativeBusanTopology,
   materializeBusanRouteTopology,
   parseCanonicalBusanStationMappings,
 } from "./materialize-busan-route-topology.mjs";
@@ -22,6 +23,41 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const evidenceNow = new Date("2026-07-19T18:14:03.004Z");
+
+test("Busan cumulative binding preserves canonical metadata and replaces source-free values", () => {
+  const lineId = "line-ab1a041f6266";
+  const generated = { lineIds: [lineId],
+    stations: ["a", "b"].map((id) => ({ id: `station-${id}`, nameKo: id === "a" ? "가" : "나", nameEn: "",
+      region: "부산권", latitude: null, longitude: null, dataQualityLevel: "LEVEL_2", dataSourceType: "OFFICIAL_API",
+      sourceId: "busan-transportation-route-topology", derivationKind: "OFFICIAL", lastVerifiedAt: "2040-01-01T00:00:00.000Z" })),
+    stationLines: ["a", "b"].map((id, index) => ({ stationId: `station-${id}`, lineId, stationCode: `10${index}`,
+      lineSequence: index + 1, platformInfo: "", sourceId: "busan-transportation-route-topology",
+      derivationKind: "OFFICIAL", lastVerifiedAt: "2040-01-01T00:00:00.000Z" })),
+    networkEdges: [{ id: "edge-official", fromNodeId: `station-a:${lineId}`, toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE", durationSeconds: 12, distanceMeters: 34, sourceId: "busan-transportation-route-topology",
+      sourceSnapshotId: "snapshot", providerRecordHash: "a".repeat(64), provenanceKind: "OFFICIAL_SOURCE",
+      derivationKind: "OFFICIAL", verificationStatus: "VERIFIED", lastVerifiedAt: "2040-01-01T00:00:00.000Z", evidenceHash: "b".repeat(64) }] };
+  const pack = { operators: [{ id: "busan-transportation" }], lines: [{ id: lineId, operatorId: "busan-transportation" }],
+    stations: [{ id: "station-a", nameKo: "가", nameEn: "Canonical", latitude: 1, longitude: 2, region: "보존" },
+      { id: "station-b", nameKo: "나" }],
+    stationLines: [{ stationId: "station-a", lineId, lineSequence: 1, stationCode: "ordinal-a", platformInfo: "keep" },
+      { stationId: "station-b", lineId, lineSequence: 2, stationCode: "ordinal-b" }],
+    networkEdges: [{ id: "canonical-edge", fromNodeId: `station-a:${lineId}`, toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE", durationSeconds: 1 }, { id: "foreign", edgeType: "WALK", fromNodeId: "x", toNodeId: "y" }],
+    transitRoutes: [], transitStopTimes: [], transitTrips: [] };
+  const competing = structuredClone(pack);
+  competing.stationLines[0].sourceId = "other";
+  assert.throws(() => bindCumulativeBusanTopology(competing, generated), /membership mismatch/);
+  bindCumulativeBusanTopology(pack, generated);
+  assert.equal(pack.stations[0].nameEn, "Canonical");
+  assert.equal(pack.stations[0].latitude, 1);
+  assert.equal(pack.stations[0].region, "보존");
+  assert.equal(pack.stationLines[0].stationCode, "100");
+  assert.equal(pack.stationLines[0].platformInfo, "keep");
+  assert.equal(pack.networkEdges[0].id, "canonical-edge");
+  assert.equal(pack.networkEdges[0].durationSeconds, 12);
+  assert.equal(pack.networkEdges[1].id, "foreign");
+});
 
 async function inputs() {
   const [baseFixture, snapshot, inventory, stationMapCsv] = await Promise.all([
