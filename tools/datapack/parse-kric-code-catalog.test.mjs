@@ -75,6 +75,21 @@ test("KRIC provider code catalog는 header-only Sheet1을 거부한다", () => {
   }), /contains no station rows/);
 });
 
+test("KRIC catalog selects a unique header contract instead of a worksheet name", () => {
+  const sheet = { name: "renamed station sheet", rows: [
+    ["RAIL_OPR_ISTT_CD", "RAIL_OPR_ISTT_NM", "LN_CD", "LN_NM", "STIN_CD", "STIN_NM"],
+    ["OP", "Operator", "L", "Line", "S", "Station"],
+  ] };
+  const input = { sourceId: "synthetic", sourceSha256: "a".repeat(64),
+    capturedAt: "2020-01-01T00:00:00.000Z",
+    sheets: [{ name: "Sheet1", rows: [["unrelated glossary"]] }, sheet] };
+  assert.deepEqual(buildProviderLineCatalog(input).providerLines, [
+    { railOprIsttCd: "OP", operatorName: "Operator", lnCd: "L", lineName: "Line" },
+  ]);
+  assert.throws(() => buildProviderLineCatalog({ ...input, sheets: [] }), /header is invalid/);
+  assert.throws(() => buildProviderLineCatalog({ ...input, sheets: [sheet, sheet] }), /header is invalid/);
+});
+
 test("KRIC provider-line key가 다른 운영기관·노선명으로 충돌하면 거부한다", () => {
   assert.throws(() => buildProviderLineCatalog({
     sourceId: "kric-provider-code-catalog-20260228",

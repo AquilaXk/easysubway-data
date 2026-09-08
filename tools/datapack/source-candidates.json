@@ -3045,7 +3045,7 @@
           "id",
           "type"
         ],
-        "responseEnvelope": "XLSX ZIP workbook Sheet1",
+        "responseEnvelope": "XLSX ZIP workbook with exactly one sheet matching the six responseFields",
         "responseFields": [
           "RAIL_OPR_ISTT_CD",
           "RAIL_OPR_ISTT_NM",
