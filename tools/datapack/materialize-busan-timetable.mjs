@@ -196,15 +196,16 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   return source;
 }
 
-function validateTopologyLineage(pack, evidence, snapshot, stations) {
+export function validateTopologyLineage(pack, evidence, snapshot, stations) {
+  const compareEndpoints = (left, right) =>
+    `${left.fromNodeId}\0${left.toNodeId}`.localeCompare(`${right.fromNodeId}\0${right.toNodeId}`, "en");
   const hasTopology = pack.sourceInventory.some(({ id }) => id === TOPOLOGY_SOURCE_ID);
   const actual = pack.networkEdges.filter(({ sourceId }) => sourceId === TOPOLOGY_SOURCE_ID)
-    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+    .sort(compareEndpoints);
   const expected = snapshot.edges.map((edge) => {
     const from = stations.get(`${edge.lineId}:${edge.fromStationCode}`);
     const to = stations.get(`${edge.lineId}:${edge.toStationCode}`);
     return {
-      id: `edge-${edge.edgeId.replaceAll(":", "-")}`,
       fromNodeId: `${from?.stationId}:${edge.lineId}`,
       toNodeId: `${to?.stationId}:${edge.lineId}`,
       durationSeconds: edge.durationSeconds + edge.stoppingSeconds,
@@ -213,9 +214,12 @@ function validateTopologyLineage(pack, evidence, snapshot, stations) {
       providerRecordHash: sha256(JSON.stringify(edge)),
       evidenceHash: evidence.topologyContentSha256,
     };
-  }).sort((left, right) => left.id.localeCompare(right.id, "en"));
+  }).sort(compareEndpoints);
   const comparable = actual.map((edge) => Object.fromEntries(Object.keys(expected[0]).map((key) => [key, edge[key]])));
-  if (!hasTopology || actual.length !== 220 || JSON.stringify(comparable) !== JSON.stringify(expected)) {
+  if (!hasTopology || actual.length !== expected.length
+    || actual.some(({ id }) => typeof id !== "string" || !id.trim())
+    || new Set(actual.map(({ id }) => id)).size !== actual.length
+    || JSON.stringify(comparable) !== JSON.stringify(expected)) {
     throw new Error("Busan timetable topology lineage mismatch");
   }
   return new Set(actual.map((edge) => `${edge.fromNodeId}:${edge.toNodeId}`));

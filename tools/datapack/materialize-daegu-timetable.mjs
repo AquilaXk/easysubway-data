@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 
 import { DAEGU_LINES, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
 import { parseMolitDaeguStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 
 const ISSUE = 2407;
 const MATERIALIZER = "tools/datapack/materialize-daegu-timetable.mjs";
@@ -632,11 +633,16 @@ export async function runDaeguTimetableMaterializer(argv, { now = new Date() } =
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const canonicalStationMappings = {};
+  const readTracked = (relative) => readFile(path.join(args["sources-dir"], path.basename(relative)));
   for (const config of DAEGU_LINES) {
-    topologySnapshots[config.lineNumber] = JSON.parse(await readFile(
-      path.join(args["sources-dir"], `daegu-line${config.lineNumber}-route-topology-20260721.json`), "utf8"));
-    timetableSnapshots[config.lineNumber] = JSON.parse(await readFile(
-      path.join(args["sources-dir"], `daegu-line${config.lineNumber}-train-timetable-20260721.json`), "utf8"));
+    topologySnapshots[config.lineNumber] = await readSelectedSourceSnapshot({
+      inventory, sourceId: `daegu-line${config.lineNumber}-route-topology`,
+      evidenceKind: "topologyAdmissionEvidence", readTracked,
+    });
+    timetableSnapshots[config.lineNumber] = await readSelectedSourceSnapshot({
+      inventory, sourceId: `daegu-line${config.lineNumber}-train-timetable`,
+      evidenceKind: "scheduleAdmissionEvidence", readTracked,
+    });
     canonicalStationMappings[config.lineNumber] = parseMolitDaeguStationMappings(stationMapBytes, config.lineName);
   }
   const fixture = materializeDaeguTimetable({

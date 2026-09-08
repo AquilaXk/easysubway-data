@@ -14,9 +14,51 @@ import { NATIONWIDE_CANDIDATE_INPUT_PATHS } from "./validate-candidate-source-se
 import { CANDIDATE_RELEASE_OUTPUTS, CANDIDATE_RELEASE_JOURNAL_PATH, CANDIDATE_RELEASE_LOCK_PATH,
   createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import { readSelectedSourceSnapshot } from "./materialize-current-nationwide-input.mjs";
 import { fiveRegionCandidateSourceSetInput, fixtureBytes, fixtureLedgerInput } from "./test-fixtures/five-region-source-input.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+
+test("selected source input loader reads the admission path and rejects missing or unsafe paths", async (context) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "selected-source-input-"));
+  context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const selectedPath = "tools/datapack/sources/selected-on-20400101.json";
+  await mkdir(path.join(repositoryRoot, "tools/datapack/sources"), { recursive: true });
+  await writeFile(path.join(repositoryRoot, selectedPath), JSON.stringify({ selected: true }));
+  const readTracked = (relativePath) => readFile(path.join(repositoryRoot, relativePath));
+  const inventory = {
+    sources: [{
+      id: "selected-source",
+      scheduleAdmissionEvidence: {
+        snapshotId: "selected-source-admission-id",
+        snapshotPath: selectedPath,
+      },
+    }],
+  };
+
+  assert.deepEqual(await readSelectedSourceSnapshot({
+    inventory,
+    sourceId: "selected-source",
+    evidenceKind: "scheduleAdmissionEvidence",
+    readTracked,
+  }), { selected: true });
+  const missing = structuredClone(inventory);
+  delete missing.sources[0].scheduleAdmissionEvidence.snapshotPath;
+  await assert.rejects(() => readSelectedSourceSnapshot({
+    inventory: missing,
+    sourceId: "selected-source",
+    evidenceKind: "scheduleAdmissionEvidence",
+    readTracked,
+  }), /selected source snapshot is invalid/);
+  const unsafe = structuredClone(inventory);
+  unsafe.sources[0].scheduleAdmissionEvidence.snapshotPath = "tools/datapack/sources/../outside.json";
+  await assert.rejects(() => readSelectedSourceSnapshot({
+    inventory: unsafe,
+    sourceId: "selected-source",
+    evidenceKind: "scheduleAdmissionEvidence",
+    readTracked,
+  }), /selected source snapshot is invalid/);
+});
 
 async function inputs(context, { admitted = true, native = false, malformedGeneric = false } = {}) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-test-"));

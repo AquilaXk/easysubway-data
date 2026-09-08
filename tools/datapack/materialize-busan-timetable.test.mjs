@@ -16,12 +16,33 @@ import {
 import {
   materializeBusanTimetable,
   runBusanTimetableMaterializer,
+  validateTopologyLineage,
 } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const now = new Date("2026-07-20T09:00:00.000Z");
 const execFileAsync = promisify(execFile);
+
+test("Busan timetable binds official topology without replacing canonical edge IDs", () => {
+  const edge = { edgeId: "provider-edge", lineId: "line-a", fromStationCode: "a",
+    toStationCode: "b", durationSeconds: 30, stoppingSeconds: 5, distanceMeters: 200 };
+  const evidence = { topologySnapshotId: "selected-snapshot", topologyContentSha256: "a".repeat(64) };
+  const stations = new Map([["line-a:a", { stationId: "station-a" }],
+    ["line-a:b", { stationId: "station-b" }]]);
+  const pack = {
+    sourceInventory: [{ id: "busan-transportation-route-topology" }],
+    networkEdges: [{ id: "canonical-edge", sourceId: "busan-transportation-route-topology",
+      fromNodeId: "station-a:line-a", toNodeId: "station-b:line-a",
+      durationSeconds: 35, distanceMeters: 200, sourceSnapshotId: "selected-snapshot",
+      providerRecordHash: createHash("sha256").update(JSON.stringify(edge)).digest("hex"),
+      evidenceHash: "a".repeat(64) }],
+  };
+  assert.deepEqual(validateTopologyLineage(pack, evidence, { edges: [edge] }, stations),
+    new Set(["station-a:line-a:station-b:line-a"]));
+  pack.networkEdges[0].durationSeconds += 1;
+  assert.throws(() => validateTopologyLineage(pack, evidence, { edges: [edge] }, stations), /lineage mismatch/);
+});
 
 test("부산 공식 109140행을 3833 trip·109140 stop_time으로 materialize한다", async () => {
   const { fixture } = await inputs();
