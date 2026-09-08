@@ -568,6 +568,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   ];
   const validatorCommand = [
     "tools/datapack/validate-release-evidence-bundle.mjs",
+    ...scopeArgs,
     "--bundle",
     bundlePath,
     ...reportArgs,
@@ -637,7 +638,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   bundle.releaseMode = "release-candidate";
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
   await assert.rejects(
-    execFileAsync(process.execPath, [...validatorCommand, ...scopeArgs], { cwd: root }),
+    execFileAsync(process.execPath, validatorCommand, { cwd: root }),
     /release-candidate requires candidate server route evidence/,
   );
   bundle.releaseMode = "production-publish";
@@ -705,7 +706,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   bundle.accessibilitySourceCoverageSha256 = hash;
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
   await assert.rejects(
-    execFileAsync(process.execPath, [...validatorCommand, ...scopeArgs, "--require-pass"], { cwd: root }),
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
     /accessibility source coverage sha256 mismatch/,
   );
   bundle.accessibilitySourceCoverageSha256 = sha256(accessibilityReportRaw);
@@ -717,7 +718,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   bundle.accessibilitySourceCoverageDecision = "NO_GO";
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
   await assert.rejects(
-    execFileAsync(process.execPath, [...validatorCommand, ...scopeArgs, "--require-pass"], { cwd: root }),
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
     /accessibility source coverage decision must be GO for publish/,
   );
   await writeFile(accessibilityReportPath, accessibilityReportRaw);
