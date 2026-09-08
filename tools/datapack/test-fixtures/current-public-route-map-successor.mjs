@@ -29,13 +29,17 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { buildCurrentCapitalRouteTopologyRegistrationOutputs } from "../register-current-capital-route-topology.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./current-capital-topology-registration.mjs";
+import { requiresCurrentCapitalTopologyAdmission } from "../rebind-capital-route-map-admissions.mjs";
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const CAPITAL_TOPOLOGY_SOURCE_ID = "capital-route-topology";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 // EXIT admission에서 사용할 metadata이며 초기 candidate/pack에는 편입하지 않는다.
-const FIXTURE_LIFECYCLE_METADATA_SOURCE_IDS = Object.freeze(["kric-station-movement-standard"]);
+const FIXTURE_LIFECYCLE_METADATA_SOURCE_IDS = Object.freeze([
+  "kric-station-movement-standard",
+  "gwangju-transportation-route-topology",
+]);
 // 이 fixture의 수명주기는 production roster가 아니라 이 명시적 입력 집합으로만 정한다.
 // 새 production source는 이 fixture에 자동 편입되지 않는다.
 const FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS = Object.freeze([
@@ -175,12 +179,18 @@ function projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory
   if (!Array.isArray(governedSourceIds) || new Set(governedSourceIds).size !== governedSourceIds.length) {
     throw new Error("synthetic fixture governance catalog is invalid");
   }
+  // Topology 재결속에 필요한 map metadata는 producer와 같은 계약으로 선택한다.
+  // production required 플래그를 이용해 candidate source를 자동 편입하지 않는다.
+  const topologyMetadataSourceIds = inventory.sources
+    .filter((source) => requiresCurrentCapitalTopologyAdmission(source))
+    .map(({ id }) => id);
   // 닫힌 governance epoch을 검증하려고 catalog metadata는 유지한다. 다만 이
   // fixture의 required/admitted source 선택과 evidence 복사는 아래 고정 집합만 사용한다.
   const fixtureInventory = {
     ...structuredClone(inventory),
     sources: fixtureSourceRows(inventory, [...new Set([
       ...governedSourceIds, ...FIXTURE_SOURCE_IDS, ...FIXTURE_LIFECYCLE_METADATA_SOURCE_IDS,
+      ...topologyMetadataSourceIds,
     ])], "inventory")
       .map((source) => ({
         ...source,
