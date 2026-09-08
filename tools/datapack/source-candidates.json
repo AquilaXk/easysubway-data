@@ -1585,6 +1585,8 @@
         "runner": {
           "command": "node tools/datapack/collect-gwangju-route-topology.mjs",
           "arguments": [
+            "--inventory",
+            "tools/datapack/source-inventory.json",
             "--output",
             "/tmp/easysubway-gwangju-route-topology.json"
           ],
