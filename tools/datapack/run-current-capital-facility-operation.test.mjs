@@ -11,7 +11,7 @@ import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidat
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { buildFixtureRequiredSourceRows, copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parseArgs, prepareCurrentCapitalFacilityOperation, recoverPublishedCurrentCapitalFacilityOperation, syncWrite } from "./run-current-capital-facility-operation.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
@@ -374,6 +374,20 @@ test("missing KRIC_SERVICE_KEY leaves PREPARED before any claim", async (t) => {
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec });
   await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, execFileImpl: exactMainExec }), /KRIC_SERVICE_KEY/);
   assert.equal(JSON.parse(await readFile(path.join(operationRoot, "journal.json"), "utf8")).phase, "PREPARED");
+});
+
+test("required topology fixture selects unchanged unowned scoped edges", () => {
+  const source = { id: "fixture-topology", coverageScope: { sourceDomains: ["route_graph_topology"], lineIds: ["L"] } };
+  const edge = { id: "edge-a-b", edgeType: "RIDE", fromNodeId: "a:L", toNodeId: "b:L", durationSeconds: 17, includesStairs: false };
+  const capital = { networkEdges: [edge, { ...edge, id: "foreign", fromNodeId: "a:M", toNodeId: "b:M" }] };
+  const before = structuredClone(capital);
+  const selected = buildFixtureRequiredSourceRows(source, capital, NOW.toISOString());
+  assert.deepEqual(selected, { networkEdges: [edge] });
+  assert.notEqual(selected.networkEdges[0], edge);
+  assert.deepEqual(capital, before);
+  assert.throws(() => buildFixtureRequiredSourceRows(source, { networkEdges: [] }, NOW.toISOString()), /topology fixture/);
+  assert.throws(() => buildFixtureRequiredSourceRows(source, { networkEdges: [{ ...edge, sourceId: "another-source" }] }, NOW.toISOString()), /topology fixture/);
+  assert.throws(() => buildFixtureRequiredSourceRows(source, { networkEdges: [{ ...edge, sourceSnapshotId: "another-snapshot" }] }, NOW.toISOString()), /topology fixture/);
 });
 
 test("current release preflight rejects a missing required source before a provider call", async (t) => {

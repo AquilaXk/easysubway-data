@@ -116,6 +116,36 @@ function requiredFixtureSourceHeads(inventory, snapshots) {
   });
 }
 
+export function buildFixtureRequiredSourceRows(source, capital, fixtureClock) {
+  const domains = source.coverageScope?.sourceDomains;
+  if (JSON.stringify(domains) === JSON.stringify(["schedule_timetable"])) {
+    return { calendar: {
+      serviceId: `fixture-inactive-${source.id}`,
+      monday: false, tuesday: false, wednesday: false, thursday: false,
+      friday: false, saturday: false, sunday: false,
+      startDate: fixtureClock.slice(0, 10).replaceAll("-", ""),
+      endDate: fixtureClock.slice(0, 10).replaceAll("-", ""), timezone: "Asia/Seoul",
+    } };
+  }
+  if (JSON.stringify(domains) !== JSON.stringify(["route_graph_topology"])) {
+    throw new Error("missing fixture source requires an explicit domain materializer");
+  }
+  const lineIds = source.coverageScope.lineIds;
+  if (!Array.isArray(lineIds) || lineIds.length === 0 || new Set(lineIds).size !== lineIds.length
+    || lineIds.some((id) => typeof id !== "string" || id.length === 0)) {
+    throw new Error("topology fixture line scope is invalid");
+  }
+  const networkEdges = lineIds.flatMap((lineId) => {
+    const rows = capital.networkEdges.filter((edge) => edge.edgeType === "RIDE"
+      && edge.fromNodeId.endsWith(`:${lineId}`) && edge.toNodeId.endsWith(`:${lineId}`));
+    if (rows.length === 0 || rows.some((edge) => edge.sourceId != null || edge.sourceSnapshotId != null)) {
+      throw new Error("topology fixture requires unowned scoped RIDE rows");
+    }
+    return rows;
+  });
+  return { networkEdges: structuredClone(networkEdges) };
+}
+
 async function materializeMissingFixtureRequiredSources({
   root, now, inventory, snapshots, candidate, pack, governancePolicy, governanceBytes, freshnessPolicy,
 }) {
@@ -129,20 +159,11 @@ async function materializeMissingFixtureRequiredSources({
     .filter(({ source }) => !selectedSourceIds.includes(source.id));
   for (const { source, snapshot } of missing) {
     const fixtureClock = now.toISOString();
-    if (JSON.stringify(source.coverageScope?.sourceDomains) !== JSON.stringify(["schedule_timetable"])) {
-      throw new Error("missing fixture source requires an explicit domain materializer");
-    }
-    // 운행을 추가하지 않는 독립 합성 행으로 출처를 증명한다. 기존 달력의 출처를 바꾸지 않는다.
-    const calendar = {
-      serviceId: `fixture-inactive-${source.id}`,
-      monday: false, tuesday: false, wednesday: false, thursday: false,
-      friday: false, saturday: false, sunday: false,
-      startDate: fixtureClock.slice(0, 10).replaceAll("-", ""),
-      endDate: fixtureClock.slice(0, 10).replaceAll("-", ""), timezone: "Asia/Seoul",
-    };
     const capital = pack.packs[0];
+    const fixtureRows = buildFixtureRequiredSourceRows(source, capital, fixtureClock);
+    const { calendar, networkEdges } = fixtureRows;
     if (capital.sourceInventory.some(({ id }) => id === source.id)
-      || capital.serviceCalendars.some(({ serviceId }) => serviceId === calendar.serviceId)) {
+      || (calendar && capital.serviceCalendars.some(({ serviceId }) => serviceId === calendar.serviceId))) {
       throw new Error("synthetic required source materialization already exists");
     }
     const sourceRecord = {
@@ -151,7 +172,7 @@ async function materializeMissingFixtureRequiredSources({
       testOnly: true,
       sourceId: source.id,
       fixtureClock,
-      calendar,
+      ...fixtureRows,
       terminalLedgerHead: {
         snapshotId: snapshot.snapshotId,
         rawSha256: snapshot.rawSha256,
@@ -172,6 +193,10 @@ async function materializeMissingFixtureRequiredSources({
     }
     const fixtureSnapshot = {
       ...structuredClone(snapshot),
+      ...(networkEdges ? {
+        rowCount: networkEdges.length,
+        coverageCount: new Set(networkEdges.flatMap(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId])).size,
+      } : {}),
       snapshotId,
       previousSnapshotId: null,
       observedAt: fixtureClock,
@@ -254,12 +279,23 @@ async function materializeMissingFixtureRequiredSources({
       updateFrequency: source.updateFrequency, updatedAt: fixtureClock,
       fields: [...source.fieldsProvided], coverageScope: structuredClone(source.coverageScope),
     });
-    capital.serviceCalendars.push({
-      ...calendar, sourceId: source.id, sourceSnapshotId: snapshotId,
-      providerRecordHash: sha256(canonicalJson(calendar)), evidenceHash: rawSha256,
-      updatedAt: fixtureClock,
-    });
-    capital.minimumTableRows.service_calendars = capital.serviceCalendars.length;
+    if (calendar) {
+      // 운행을 추가하지 않는 독립 합성 행이며 기존 달력의 출처는 보존한다.
+      capital.serviceCalendars.push({
+        ...calendar, sourceId: source.id, sourceSnapshotId: snapshotId,
+        providerRecordHash: sha256(canonicalJson(calendar)), evidenceHash: rawSha256,
+        updatedAt: fixtureClock,
+      });
+      capital.minimumTableRows.service_calendars = capital.serviceCalendars.length;
+    } else {
+      // 기존 fixture 그래프의 의미는 유지하고 출처 없는 행에만 합성 증거를 결속한다.
+      const records = new Map(networkEdges.map((edge) => [edge.id, edge]));
+      capital.networkEdges = capital.networkEdges.map((edge) => records.has(edge.id) ? {
+        ...edge, sourceId: source.id, sourceSnapshotId: snapshotId,
+        providerRecordHash: sha256(canonicalJson(records.get(edge.id))), evidenceHash: rawSha256,
+        updatedAt: fixtureClock,
+      } : edge);
+    }
     snapshots = snapshots.filter(({ sourceId }) => sourceId !== source.id);
     snapshots.push(fixtureSnapshot);
   }
