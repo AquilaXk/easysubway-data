@@ -249,6 +249,8 @@ function parseCsv(text) {
     }
     cell += char;
   }
+  // 행 수와 무관하게, 인용 필드가 닫히기 전에 끝난 CSV는 거부한다.
+  if (quoted) throw new Error("Gwangju CSV has unterminated quoted field");
   if (cell || row.length > 0) {
     row.push(cell);
     if (row.some((value) => value.trim() !== "")) rows.push(row);

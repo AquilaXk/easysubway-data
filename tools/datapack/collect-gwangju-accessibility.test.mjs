@@ -125,6 +125,18 @@ test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV�
   assert.doesNotMatch(JSON.stringify(snapshot), /serviceKey/i);
 });
 
+test("CSV는 EOF의 미종결 따옴표를 거부하고 정상 quoted field를 보존한다", async () => {
+  const inputs = await loadInputs();
+  const header = "철도운영기관명,선명,역명,출입구번호,상세위치,정원_인원,정원_중량\n";
+  const row = '광주교통공사,1호선,소태,1,"위치, 안내 ""문구""\n다음 줄",15,';
+  const parse = (ending) => parseGwangjuAccessibilityCsv({
+    ...inputs, elevatorBytes: Buffer.from(header + row + ending, "utf8"),
+  });
+  assert.deepEqual(parse('"1000"'), parse('"1000"\n'));
+  assert.equal(parse('"1000"').reduce((sum, item) => sum + (item.elevator ?? 0), 0), 1);
+  assert.throws(() => parse('"1000'), /unterminated quoted field/);
+});
+
 test("광주 accessibility collector는 schema·join·count 변조를 fail closed한다", async () => {
   const inputs = await loadInputs();
 
