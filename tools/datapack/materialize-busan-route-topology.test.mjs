@@ -14,6 +14,7 @@ import test from "node:test";
 
 import {
   materializedBusanPackContentHash,
+  busanTopologyPackVersion,
   bindCumulativeBusanTopology,
   materializeBusanRouteTopology,
   parseCanonicalBusanStationMappings,
@@ -25,6 +26,7 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const evidenceNow = new Date("2026-07-19T18:14:03.004Z");
 
 test("Busan cumulative binding preserves canonical metadata and replaces source-free values", () => {
+  assert.equal(busanTopologyPackVersion("2040-01-01T23:00:00.000Z"), "20400102");
   const lineId = "line-ab1a041f6266";
   const generated = { lineIds: [lineId],
     stations: ["a", "b"].map((id) => ({ id: `station-${id}`, nameKo: id === "a" ? "가" : "나", nameEn: "",

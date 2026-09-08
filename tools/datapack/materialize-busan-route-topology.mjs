@@ -30,8 +30,7 @@ export function materializeBusanRouteTopology({
   }
 
   const pack = fixture.packs[0];
-  const version = /-(\d{8})$/.exec(source.topologyAdmissionEvidence.snapshotId)?.[1];
-  if (!version) throw new Error(`${SOURCE_ID} snapshotId must end with YYYYMMDD`);
+  const version = busanTopologyPackVersion(snapshot.capturedAt);
 
   if (pack.sourceInventory.some(({ id }) => id === SOURCE_ID)) {
     throw new Error(`${SOURCE_ID} already exists in base fixture`);
@@ -201,6 +200,12 @@ function hasAuthority(row) {
   return row.sourceId !== undefined || row.sourceSnapshotId !== undefined || row.providerRecordHash !== undefined
     || row.evidenceHash !== undefined || row.fieldProvenance !== undefined || row.provenanceKind !== undefined || row.derivationKind !== undefined
     || row.verificationStatus !== undefined;
+}
+
+export function busanTopologyPackVersion(capturedAt) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(capturedAt)).replaceAll("-", "");
 }
 
 export function materializedBusanPackContentHash(pack, version) {
