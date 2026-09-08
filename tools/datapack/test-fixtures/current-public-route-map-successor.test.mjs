@@ -57,8 +57,8 @@ test("current public fixture copies evidence only for its declared source univer
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
   ]);
   assert.deepEqual(
-    fixtureInventory.sources.filter(({ requiredForProductionPack }) => requiredForProductionPack).map(({ id }) => id),
-    FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS,
+    fixtureInventory.sources.filter(({ requiredForProductionPack }) => requiredForProductionPack).map(({ id }) => id).sort(),
+    [...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS].sort(),
   );
   const snapshotPaths = sourceInventory.sources.filter(({ id }) => FIXTURE_SOURCE_IDS.has(id)).flatMap((source) => [
     typeof source.registrationEvidence?.snapshotId === "string"

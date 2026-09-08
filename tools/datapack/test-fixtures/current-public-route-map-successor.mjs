@@ -34,6 +34,8 @@ const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const CAPITAL_TOPOLOGY_SOURCE_ID = "capital-route-topology";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+// EXIT admission에서 사용할 metadata이며 초기 candidate/pack에는 편입하지 않는다.
+const FIXTURE_LIFECYCLE_METADATA_SOURCE_IDS = Object.freeze(["kric-station-movement-standard"]);
 // 이 fixture의 수명주기는 production roster가 아니라 이 명시적 입력 집합으로만 정한다.
 // 새 production source는 이 fixture에 자동 편입되지 않는다.
 const FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS = Object.freeze([
@@ -177,7 +179,9 @@ function projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory
   // fixture의 required/admitted source 선택과 evidence 복사는 아래 고정 집합만 사용한다.
   const fixtureInventory = {
     ...structuredClone(inventory),
-    sources: fixtureSourceRows(inventory, [...new Set([...governedSourceIds, ...FIXTURE_SOURCE_IDS])], "inventory")
+    sources: fixtureSourceRows(inventory, [...new Set([
+      ...governedSourceIds, ...FIXTURE_SOURCE_IDS, ...FIXTURE_LIFECYCLE_METADATA_SOURCE_IDS,
+    ])], "inventory")
       .map((source) => ({
         ...source,
         requiredForProductionPack: FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.includes(source.id),
