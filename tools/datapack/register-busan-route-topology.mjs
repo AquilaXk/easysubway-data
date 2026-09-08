@@ -86,6 +86,17 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
     throw new Error("Busan topology snapshot already registered");
   }
   const source = select(prepared.inventory.sources, ({ id }) => id === SOURCE_ID, "registered source");
+  const registeredInventory = {
+    ...prepared.inventory,
+    sources: prepared.inventory.sources.map((row) => row.id === SOURCE_ID
+      ? { ...row, requiredForProductionPack: true }
+      : row),
+  };
+  validateSourceGovernancePolicy({
+    policy: prepared.governance,
+    inventory: registeredInventory,
+    freshnessPolicy: prepared.freshness,
+  });
   const previous = prepared.ledger.filter(({ sourceId }) => sourceId === SOURCE_ID).at(-1) ?? null;
   const governanceBytes = json(prepared.governance);
   const row = {
@@ -131,7 +142,7 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
     { absolute: receiptFile, bytes: receiptBytes },
     { absolute: snapshotFile, bytes: prepared.snapshotBytes },
   ];
-  const values = [json(prepared.inventory), json([...prepared.ledger, row]), governanceBytes, json(prepared.freshness)];
+  const values = [json(registeredInventory), json([...prepared.ledger, row]), governanceBytes, json(prepared.freshness)];
   return OUTPUTS.map((relative, index) => ({
     relative,
     bytes: values[index],

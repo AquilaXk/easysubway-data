@@ -108,23 +108,48 @@ test("selected source input loader reads the admission path and rejects missing 
   }), /selected source snapshot is invalid/);
 });
 
-async function inputs(context, { admitted = true, native = false, malformedGeneric = false } = {}) {
+async function inputs(context, {
+  admitted = true,
+  native = false,
+  nativeKind = "schedule",
+  licenseOnlyMetadata = false,
+  malformedGeneric = false,
+} = {}) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-test-"));
   context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const source = fiveRegionCandidateSourceSetInput();
   if (native) {
     const inventorySource = source.inventory.sources[0];
     delete inventorySource.admissionEvidence;
-    inventorySource.capabilities = { schedule: { productionUseAllowed: true } };
-    inventorySource.scheduleAdmissionEvidence = {
-      issue: 1, materializer: "fixture-materializer", verificationTest: "fixture-test",
-      snapshotId: source.sourceSnapshots[0].snapshotId,
-      snapshotPath: `tools/datapack/sources/${source.sourceSnapshots[0].snapshotId}.json`,
-      capturedAt: source.sourceSnapshots[0].retrievedAt, freshUntil: source.sourceSnapshots[0].freshnessExpiresAt,
-      rawSha256: source.sourceSnapshots[0].rawSha256, rowsSha256: "e".repeat(64), contentSha256: "f".repeat(64),
-      topologySourceId: "fixture-topology", topologySnapshotId: "fixture-topology-snapshot",
-      topologyContentSha256: "a".repeat(64), rowCount: 1, departureCount: 1, tripCount: 1, stopTimeCount: 1,
-    };
+    if (licenseOnlyMetadata) {
+      inventorySource.admissionEvidence = { licenseEvidenceHash: sha(JSON.stringify(inventorySource.license)) };
+    }
+    if (nativeKind === "schedule") {
+      inventorySource.capabilities = { schedule: { productionUseAllowed: true } };
+      inventorySource.scheduleAdmissionEvidence = {
+        issue: 1, materializer: "fixture-materializer", verificationTest: "fixture-test",
+        snapshotId: source.sourceSnapshots[0].snapshotId,
+        snapshotPath: `tools/datapack/sources/${source.sourceSnapshots[0].snapshotId}.json`,
+        capturedAt: source.sourceSnapshots[0].retrievedAt, freshUntil: source.sourceSnapshots[0].freshnessExpiresAt,
+        rawSha256: source.sourceSnapshots[0].rawSha256, rowsSha256: "e".repeat(64), contentSha256: "f".repeat(64),
+        topologySourceId: "fixture-topology", topologySnapshotId: "fixture-topology-snapshot",
+        topologyContentSha256: "a".repeat(64), rowCount: 1, departureCount: 1, tripCount: 1, stopTimeCount: 1,
+      };
+    } else if (nativeKind === "topology") {
+      source.sourceSnapshots[0].capturedAt = source.sourceSnapshots[0].retrievedAt;
+      source.sourceSnapshots[0].contentSha256 = "f".repeat(64);
+      inventorySource.topologyAdmissionEvidence = {
+        issue: 1, materializer: "fixture-materializer", verificationTest: "fixture-test",
+        snapshotId: source.sourceSnapshots[0].snapshotId,
+        snapshotPath: `tools/datapack/sources/${source.sourceSnapshots[0].snapshotId}.json`,
+        capturedAt: source.sourceSnapshots[0].capturedAt,
+        freshUntil: source.sourceSnapshots[0].freshnessExpiresAt,
+        stationCount: source.sourceSnapshots[0].coverageCount,
+        edgeCount: source.sourceSnapshots[0].rowCount,
+        rawSha256: source.sourceSnapshots[0].rawSha256,
+        contentSha256: source.sourceSnapshots[0].contentSha256,
+      };
+    } else throw new Error("fixture native admission kind is invalid");
     if (malformedGeneric) inventorySource.admissionEvidence = { adminReviewRecordHash: "invalid" };
   } else if (admitted) source.inventory.sources[0].admissionEvidence.adminReviewRecordHash = "d".repeat(64);
   else delete source.inventory.sources[0].admissionEvidence.adminReviewRecordHash;
@@ -180,7 +205,7 @@ test("nationwide candidate preparation rejects development-only assembly", async
   }), /TEST_ONLY artifact cannot be used as datapack build input/);
 });
 
-test("nationwide candidate constructor serializes native schedule admission records", async (context) => {
+test("nationwide candidate constructor serializes native schedule and topology admission records", async (context) => {
   const input = await inputs(context, { native: true });
   const result = await buildNationwideCandidateSpec(input);
   assert.deepEqual(result.buildSpec.sourceSnapshots[0].admissionRecordSha256s,
@@ -199,6 +224,16 @@ test("nationwide candidate constructor serializes native schedule admission reco
     ...input,
     materialization: { ...input.materialization, assemblySourceIds: ["missing-contributor"] },
   }), /expected source roster mismatch/);
+
+  const topology = await inputs(context, {
+    native: true,
+    nativeKind: "topology",
+    licenseOnlyMetadata: true,
+  });
+  const topologyResult = await buildNationwideCandidateSpec(topology);
+  assert.deepEqual(topologyResult.buildSpec.sourceSnapshots[0].admissionRecordSha256s,
+    JSON.parse(topology.inputBytes.fanIn).selectedSources[0].admissionRecordSha256s);
+  assert.equal(Object.hasOwn(topologyResult.buildSpec.sourceSnapshots[0], "adminReviewRecordHash"), false);
 
   const mixed = await inputs(context, { native: true, malformedGeneric: true });
   await assert.rejects(buildNationwideCandidateSpec(mixed), /adminReviewRecordHash/);

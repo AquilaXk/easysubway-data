@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
-import { canonicalCurrentFiveRegionSourceFanInJson } from "./build-current-five-region-source-fan-in.mjs";
+import { nativeAdmissionRecordForHead } from "./build-current-five-region-source-fan-in.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
@@ -163,16 +163,12 @@ function validateAdmissionProjection({ projection, source, head }) {
     }
     return;
   }
-  const evidence = source?.scheduleAdmissionEvidence;
-  if (!evidence || source.admissionEvidence !== undefined
-    || evidence.snapshotId !== head.snapshotId || evidence.rawSha256 !== head.rawSha256
+  const nativeRecord = nativeAdmissionRecordForHead({ source, head });
+  if (!nativeRecord
     || !Array.isArray(projection.admissionRecordSha256s)
     || !isDeepStrictEqual(projection.admissionRecordSha256s, head.admissionRecordSha256s)
-    || !isDeepStrictEqual(projection.admissionRecordSha256s, [{
-      kind: "scheduleAdmissionEvidence",
-      sha256: sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(evidence))),
-    }])) {
-    throw new Error("candidate native schedule admission binding mismatch");
+    || !isDeepStrictEqual(projection.admissionRecordSha256s, [nativeRecord])) {
+    throw new Error("candidate native admission binding mismatch");
   }
 }
 

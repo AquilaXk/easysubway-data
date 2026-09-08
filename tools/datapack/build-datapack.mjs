@@ -11,6 +11,7 @@ import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
 import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 import { assertNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
+import { NATIVE_ADMISSION_KINDS } from "./build-current-five-region-source-fan-in.mjs";
 import {
   canonicalJson,
   stagedPackPath,
@@ -3063,7 +3064,7 @@ function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
     if (hasGeneric) {
       normalized.adminReviewRecordHash = sha256HexString(snapshot.adminReviewRecordHash, `${prefix}.adminReviewRecordHash`);
     } else if (!Array.isArray(snapshot.admissionRecordSha256s) || snapshot.admissionRecordSha256s.length === 0
-      || snapshot.admissionRecordSha256s.some((record) => record?.kind !== "scheduleAdmissionEvidence"
+      || snapshot.admissionRecordSha256s.some((record) => !NATIVE_ADMISSION_KINDS.includes(record?.kind)
         || !/^[a-f0-9]{64}$/.test(record.sha256 ?? ""))) {
       throw new Error(`${prefix}.admissionRecordSha256s is invalid`);
     } else {

@@ -8,6 +8,7 @@ import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet 
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { CANDIDATE_RELEASE_OUTPUTS, createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
 import { assertNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
+import { nativeAdmissionRecordForHead } from "./build-current-five-region-source-fan-in.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
@@ -241,14 +242,15 @@ export async function buildNationwideCandidateSpec({
       snapshotStatus: snapshot.snapshotStatus, credentialRedacted: snapshot.credentialRedacted,
       freshnessExpiresAt: snapshot.freshnessExpiresAt,
     };
-    if (source.admissionEvidence !== undefined) {
+    const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === snapshot.sourceId);
+    const nativeRecord = nativeAdmissionRecordForHead({ source, head });
+    if (source.admissionEvidence !== undefined && !nativeRecord) {
       const adminReviewRecordHash = source.admissionEvidence?.adminReviewRecordHash;
       if (!/^[a-f0-9]{64}$/.test(adminReviewRecordHash ?? "")) throw new Error("source admission adminReviewRecordHash is required");
       return { ...common, adminReviewRecordHash };
     }
-    const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === snapshot.sourceId);
-    if (!source.scheduleAdmissionEvidence || !Array.isArray(head?.admissionRecordSha256s)) {
-      throw new Error("native schedule admission records are required");
+    if (!nativeRecord || !Array.isArray(head?.admissionRecordSha256s)) {
+      throw new Error("native admission records are required");
     }
     return { ...common, admissionRecordSha256s: structuredClone(head.admissionRecordSha256s) };
   });

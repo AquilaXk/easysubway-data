@@ -6,6 +6,7 @@ import {
   buildCurrentFiveRegionSourceFanIn,
   canonicalCurrentFiveRegionSourceFanInJson,
   CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH,
+  nativeAdmissionRecordForHead,
   validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
 
@@ -125,10 +126,14 @@ function lineageFor(sources, heads, publishedAt, childOwner, dispositionStatus) 
   return {
     licenseLineage: sources.length > 0 && licenses.length === sources.length ? evidenced(licenses) : pending(pendingReason, childOwner),
     freshnessLineage: freshEnough ? evidenced(fresh) : pending(pendingReason, childOwner),
-    admissionLineage: sources.length > 0 && sources.every((source) => source.productionUseAllowed === true
-      && (admittedEvidence(source).some(({ decision }) => decision === "APPROVED")
-        || (source.admissionEvidence === undefined
-          && heads.get(source.id)?.admissionRecordSha256s?.some(({ kind }) => kind === "scheduleAdmissionEvidence"))))
+    admissionLineage: sources.length > 0 && sources.every((source) => {
+      const head = heads.get(source.id);
+      const nativeRecord = nativeAdmissionRecordForHead({ source, head });
+      return source.productionUseAllowed === true
+        && (admittedEvidence(source).some(({ decision }) => decision === "APPROVED")
+          || (nativeRecord !== null
+            && JSON.stringify(head?.admissionRecordSha256s) === JSON.stringify([nativeRecord])));
+    })
       ? evidenced(sources.map(({ id, productionUseAllowed }) => ({ sourceId: id, productionUseAllowed, admissions: admittedEvidence(sources.find((source) => source.id === id)) })))
       : pending("PRODUCTION_ADMISSION_REQUIRED", childOwner),
     artifactLineage: allCentral
