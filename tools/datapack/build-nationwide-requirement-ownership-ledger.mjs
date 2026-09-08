@@ -24,7 +24,7 @@ const matches = (rule, row) => ["regionId", "operatorId", "lineId", "sourceDomai
 const specificity = (rule) => ["regionId", "operatorId", "lineId", "sourceDomain"]
   .filter((key) => rule[key] !== undefined).length;
 
-function requiredOwner(rules, row) {
+export function resolveNationwideRequirementOwner(rules, row) {
   const candidates = rules.filter((rule) => matches(rule, row));
   const maximum = Math.max(...candidates.map(specificity));
   const effective = candidates.filter((rule) => specificity(rule) === maximum);
@@ -130,7 +130,7 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
     const key = pk(tallyRow);
     if (!targetPks.has(key) || seen.has(key)) throw new Error(`tally PK drift ${key}`);
     seen.add(key);
-    const childOwner = requiredOwner(ownership.ownerRules, tallyRow);
+    const childOwner = resolveNationwideRequirementOwner(ownership.ownerRules, tallyRow);
     const admittedSourceIds = [...(tallyRow.admittedSourceIds ?? [])].sort(compare);
     const admittedSources = [];
     // 일부 필드의 출처도 검증하되, 요구사항 전체의 MISSING 판정은 유지한다.
