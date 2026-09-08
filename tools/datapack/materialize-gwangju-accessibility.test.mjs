@@ -236,7 +236,7 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
   }), /already exists/);
 });
 
-test("materialized SQLite와 provenance가 광주 accessibility_facilities 1건을 SUPPORTED로 만든다", async (context) => {
+test("materialized SQLite와 provenance는 미제공 광주 시설 필드를 MISSING으로 유지한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-gwangju-accessibility-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -319,7 +319,8 @@ test("materialized SQLite와 provenance가 광주 accessibility_facilities 1건�
       && sourceDomain === "accessibility_facilities",
   );
   assert.equal(accessibilityRequirements.length, 1);
-  assert.ok(accessibilityRequirements.every(({ status }) => status === "SUPPORTED"));
+  assert.equal(accessibilityRequirements[0].status, "MISSING");
+  assert.deepEqual(accessibilityRequirements[0].missingFields, ["wheelchair_lift"]);
   assert.deepEqual(
     accessibilityRequirements.map(({ lineId }) => lineId),
     [LINE_ID],

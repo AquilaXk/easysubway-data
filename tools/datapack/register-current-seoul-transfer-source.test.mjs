@@ -8,6 +8,7 @@ import test from "node:test";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 import { buildTransferRegistrationOutputs, commitTransferRegistrationOutputs } from "./register-current-seoul-transfer-source.mjs";
+import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
@@ -51,9 +52,11 @@ async function compositionFixture(t) {
   metrics.canonicalIdentity.canonicalPackSha256 = sha(pack.body);
   metrics.sourceIdentity = { ...metrics.sourceIdentity, sourceId: observation.manifest.sourceId, endpointSha256: observation.manifest.endpointSha256, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawSnapshotSha256: sha(rawBytes), rawSha256: observation.manifest.rawSha256, contentSha256: observation.manifest.contentSha256, schemaSha256: observation.manifest.schemaSha256, rowCount: 145, capturedAt, freshnessDate: "2025-12-31" };
   metrics.artifactSha256 = sha(Buffer.from(canonicalJson(sort(metrics, "artifactSha256"))));
-  const applicability = { artifactKind: "current-capital-transfer-topology-applicability-pre-candidate", productionUseAllowed: false, candidateBinding: null, canonicalIdentity: metrics.canonicalIdentity, sourceIdentity: metrics.sourceIdentity, transferTopologyMetricsIdentity: { artifactSha256: metrics.artifactSha256 }, stateSummary: { APPLICABLE_TRANSFER_ENDPOINT: 27, NOT_APPLICABLE_IN_CANONICAL_PAIR_SET: 186 } };
+  const applicability = buildApplicability({
+    canonicalPack: pack.value, canonicalPackBytes: pack.body,
+    transferTopologyMetrics: metrics, metricsBytes: Buffer.from(`${canonicalJson(metrics)}\n`),
+  });
   const { artifactSha256: ignoredArtifact, ...applicabilityPayload } = applicability;
-  applicability.artifactSha256 = sha(Buffer.from(`${canonicalJson(applicabilityPayload)}\n`));
   assert.equal(metrics.canonicalIdentity.canonicalPackSha256, sha(pack.body));
   assert.equal(metrics.artifactSha256, sha(Buffer.from(canonicalJson(sort(metrics, "artifactSha256")))));
   assert.equal(applicability.artifactSha256, sha(Buffer.from(`${canonicalJson(applicabilityPayload)}\n`)));
