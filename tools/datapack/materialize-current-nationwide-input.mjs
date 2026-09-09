@@ -12,9 +12,13 @@ import { loadCurrentMolitGwangjuStationMappings } from "./current-molit-observat
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { materializeBusanRouteTopology, parseCanonicalBusanStationMappings } from "./materialize-busan-route-topology.mjs";
+import { materializeBusanAccessibility } from "./materialize-busan-accessibility.mjs";
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
+import { materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
+import { materializeDaejeonAccessibility } from "./materialize-daejeon-accessibility.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
+import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
 import { materializeGwangjuTimetable, restoreAdmittedGwangjuTimetable } from "./materialize-gwangju-timetable.mjs";
 import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
 
@@ -83,6 +87,7 @@ export async function materializeCurrentNationwideInput({
     return snapshot;
   };
   const [korailTimetable, busanTopology, busanTimetable, daejeonTopology, daejeonTimetable, gwangjuTopology,
+    busanAccessibility, daejeonAccessibility, gwangjuAccessibility, daeguAccessibility,
     ...daeguSnapshots] = await Promise.all([
     selected("korail-metropolitan-planned-timetable", "scheduleAdmissionEvidence"),
     selected("busan-transportation-route-topology", "topologyAdmissionEvidence"),
@@ -90,6 +95,10 @@ export async function materializeCurrentNationwideInput({
     selected("daejeon-station-distance-fare", "topologyAdmissionEvidence"),
     selected("daejeon-train-timetable", "scheduleAdmissionEvidence"),
     selected("gwangju-transportation-route-topology", "topologyAdmissionEvidence"),
+    selected("busan-transportation-accessibility", "accessibilityAdmissionEvidence"),
+    selected("daejeon-transportation-accessibility", "accessibilityAdmissionEvidence"),
+    selected("gwangju-transportation-accessibility", "accessibilityAdmissionEvidence"),
+    selected("daegu-transportation-accessibility", "accessibilityAdmissionEvidence"),
     ...DAEGU_LINES.flatMap((line) => [
       selected(`daegu-line${line.lineNumber}-route-topology`, "topologyAdmissionEvidence"),
       selected(`daegu-line${line.lineNumber}-train-timetable`, "scheduleAdmissionEvidence"),
@@ -161,6 +170,34 @@ export async function materializeCurrentNationwideInput({
     timetableSnapshots: daeguTimetableSnapshots,
     inventory,
     canonicalStationMappings: daeguMappings,
+  });
+  fixture = materializeBusanAccessibility({
+    baseFixture: fixture,
+    accessibilitySnapshot: busanAccessibility,
+    topologySnapshot: busanTopology,
+    inventory,
+    now,
+  });
+  fixture = materializeDaejeonAccessibility({
+    baseFixture: fixture,
+    accessibilitySnapshot: daejeonAccessibility,
+    topologySnapshot: daejeonTopology,
+    inventory,
+    now,
+  });
+  fixture = materializeGwangjuAccessibility({
+    baseFixture: fixture,
+    accessibilitySnapshot: gwangjuAccessibility,
+    topologySnapshot: gwangjuTopology,
+    inventory,
+    now,
+  });
+  fixture = materializeDaeguAccessibility({
+    baseFixture: fixture,
+    accessibilitySnapshot: daeguAccessibility,
+    topologySnapshots: daeguTopologySnapshots,
+    inventory,
+    now,
   });
 
   // 조립에 실제 사용한 입력만 기록한다. 운영 적격성이나 전체 fan-in 성공 주장은 아니다.

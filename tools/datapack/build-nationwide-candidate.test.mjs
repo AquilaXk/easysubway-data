@@ -15,7 +15,7 @@ import { CANDIDATE_RELEASE_OUTPUTS, CANDIDATE_RELEASE_JOURNAL_PATH, CANDIDATE_RE
   createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
 import { assertNationwideAssemblyInputs, buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
-import { readSelectedSourceSnapshot } from "./materialize-current-nationwide-input.mjs";
+import { materializeCurrentNationwideInput, readSelectedSourceSnapshot } from "./materialize-current-nationwide-input.mjs";
 import { fiveRegionCandidateSourceSetInput, fixtureBytes, fixtureLedgerInput } from "./test-fixtures/five-region-source-input.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -106,6 +106,56 @@ test("selected source input loader reads the admission path and rejects missing 
     evidenceKind: "scheduleAdmissionEvidence",
     readTracked,
   }), /selected source snapshot is invalid/);
+});
+
+test("current nationwide assembly rejects a missing accessibility source before output", async (context) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-nationwide-accessibility-"));
+  context.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const sourceDirectory = path.join(repositoryRoot, "tools/datapack/sources");
+  await Promise.all([
+    mkdir(sourceDirectory, { recursive: true }),
+    mkdir(path.join(repositoryRoot, "tools/datapack/release"), { recursive: true }),
+  ]);
+  const selectedSources = [
+    ["korail-metropolitan-planned-timetable", "scheduleAdmissionEvidence"],
+    ["busan-transportation-route-topology", "topologyAdmissionEvidence"],
+    ["busan-transportation-timetable", "scheduleAdmissionEvidence"],
+    ["daejeon-station-distance-fare", "topologyAdmissionEvidence"],
+    ["daejeon-train-timetable", "scheduleAdmissionEvidence"],
+    ["gwangju-transportation-route-topology", "topologyAdmissionEvidence"],
+    ...[1, 2, 3].flatMap((line) => [
+      [`daegu-line${line}-route-topology`, "topologyAdmissionEvidence"],
+      [`daegu-line${line}-train-timetable`, "scheduleAdmissionEvidence"],
+    ]),
+  ];
+  const sources = await Promise.all(selectedSources.map(async ([id, evidenceKind]) => {
+    const snapshotId = `${id}-snapshot`;
+    const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
+    await writeFile(path.join(repositoryRoot, snapshotPath), "{}");
+    return { id, [evidenceKind]: { snapshotId, snapshotPath, rawSha256: "a".repeat(64), freshUntil: "2040-01-02T00:00:00.000Z" } };
+  }));
+  const baseFixturePath = path.join(repositoryRoot, "base.json");
+  const retainedGwangjuObservationPath = path.join(repositoryRoot, "gwangju-observation.json");
+  const busanStationMapPath = path.join(repositoryRoot, "busan-map.csv");
+  const outputPath = path.join(repositoryRoot, "output.json");
+  await Promise.all([
+    writeFile(baseFixturePath, JSON.stringify({ packs: [{ id: "base-pack", version: "1", artifactKind: "production" }],
+      manifest: { activePack: { id: "base-pack", version: "1" } } })),
+    writeFile(retainedGwangjuObservationPath, "{}"),
+    writeFile(busanStationMapPath, ""),
+    writeFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), JSON.stringify({ sources })),
+    writeFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "[]"),
+  ]);
+
+  await assert.rejects(materializeCurrentNationwideInput({
+    repositoryRoot,
+    baseFixturePath,
+    retainedGwangjuObservationPath,
+    busanStationMapPath,
+    outputPath,
+    now: new Date("2040-01-01T00:00:00.000Z"),
+  }), /selected source snapshot is invalid: busan-transportation-accessibility/);
+  await assert.rejects(readFile(outputPath), { code: "ENOENT" });
 });
 
 async function inputs(context, {
