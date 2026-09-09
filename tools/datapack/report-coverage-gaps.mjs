@@ -126,8 +126,12 @@ function buildCoverageGapReport(
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
-  const sources = inventory.sources
-    .filter(isInventoryCoverageSource)
+  // Inventory-only 집계는 별도 OCI head가 아닌 reviewed mapping slice를 제외한다. 반면 실제
+  // packaged provenance가 주어지면 해당 slice는 그 field record의 유효한 dependency이므로,
+  // raw snapshot admission이 없는 모든 source를 provenance 평가에 남긴다.
+  const provenanceEligibleSources = inventory.sources
+    .filter((source) => source.rawSnapshotAdmission == null);
+  const sources = (provenance ? provenanceEligibleSources : provenanceEligibleSources.filter(isInventoryCoverageSource))
     .map((source) => normalizeSource(source, targetIndex));
   const provenanceIndex = provenance ? provenanceFieldIndex(provenance, candidateManifest, sources) : null;
 

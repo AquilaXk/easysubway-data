@@ -7771,12 +7771,24 @@
       "mobileEmbeddingAllowed": false,
       "evidence": {
         "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
+        "retainedReader": "tools/datapack/collect-seoul-station-line-info.mjs#collectSeoulStationLineInfo",
+        "collectionContract": {
+          "mode": "OWNER_DOWNLOADED_OFFICIAL_SHEET_CSV",
+          "runner": "node tools/datapack/collect-seoul-station-line-info.mjs",
+          "arguments": ["--input", "[absolute-csv-path]", "--output", "[new-absolute-snapshot-path]", "--captured-at", "[actual-download-instant]"],
+          "encoding": "EUC-KR",
+          "requiredFields": ["STATION_CD", "STATION_NM", "LINE_NUM", "FR_CODE"],
+          "rawBytesPreserved": true,
+          "providerCalls": 0,
+          "receiptIsAdmission": false
+        },
         "retrievedAt": "2026-06-21",
         "endpoint": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/SearchSTNBySubwayLineInfo",
         "sampleUrl": "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5/%20/%20/4호선",
         "usePermissionRange": "공공누리 1유형",
         "formats": [
-          "JSON"
+          "JSON",
+          "CSV"
         ],
         "outputFields": [
           "line",
