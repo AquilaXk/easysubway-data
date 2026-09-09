@@ -67724,5 +67724,41 @@
       "licenseEvidenceHash": "0568fd2350cf6c424a5be292a89a1160eb9df5e49e858eee57a872912d32dc24"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "daegu-transportation-accessibility",
+    "snapshotId": "daegu-transportation-accessibility-25276f4f6e48ab8c6ffca6af833af14ad33fd86777af9d3376eed4b6a77fef9e-20260909",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-09T02:55:14.886Z",
+    "retrievedAt": "2026-09-09T02:55:14.886Z",
+    "sourceUpdatedAt": null,
+    "provider": "대구교통공사",
+    "rowCount": 94,
+    "coverageCount": 94,
+    "rawSha256": "c49fdbe199b9aae0ef52a4fa977be0d5d464b892abd1339d5a890c738bf3659e",
+    "contentSha256": "9025ecf2fb191d19358b9300dbfae92a0deb6a6924673d427d511d19a553e8db",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/daegu-transportation-accessibility/20260909/c1976d50697bd9ce10fecdf68d9fcf15ae80e93757f9c22287d7ecb2b3c50966.json",
+    "rawObjectSha256": "c1976d50697bd9ce10fecdf68d9fcf15ae80e93757f9c22287d7ecb2b3c50966",
+    "rawReceiptSha256": "47130f8b8918ddbfca1f1fa4866d6aa166185a31afeb5809e7b1c2789c5bfbf8",
+    "byteSize": 27616,
+    "freshUntil": "2026-09-10T02:55:14.886Z",
+    "freshnessExpiresAt": "2026-12-08T02:55:14.886Z",
+    "rawRetentionExpiresAt": "2026-12-08T02:55:14.886Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "9d9c879fad4097ce0e6409c1613870b6a3a2e78478075d2f262339bf277885f2",
+    "schemaFingerprint": "3945efadf93310cfb97ae5b6de359604c2ab8f724520bea8fb9df56e442418dc",
+    "redactedRequestFingerprint": "219991d27cd1e56dc9c825e1f9d5c70249a2f515bfe32b476eb426d785f25cc0",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "56aea1437ed41bfa113dae3553aa6823b9eb1a0c18418fa2e4f4347ca4155595"
+    },
+    "diffSummary": null
   }
 ]

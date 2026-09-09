@@ -40,7 +40,8 @@
         "kric-station-escalator",
         "kric-wheelchair-lift-location",
         "kric-wheelchair-lift-movement",
-        "seoul-metro-accessibility"
+        "seoul-metro-accessibility",
+        "daegu-transportation-accessibility"
       ],
       "examples": [
         "KRIC elevator",
