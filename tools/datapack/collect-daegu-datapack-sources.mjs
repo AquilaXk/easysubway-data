@@ -356,13 +356,19 @@ function parseArgs(argv) {
   return args;
 }
 
-export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
-  if (!path.isAbsolute(outputDirectory ?? "")) throw new Error("Daegu source output directory must be absolute");
+export function daeguSourceSnapshotIdentity(snapshot) {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(snapshot?.sourceId ?? "")) {
     throw new Error("Daegu source snapshot ID is invalid");
   }
   const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
-  const output = path.resolve(outputDirectory, `${snapshot.sourceId}-${sha256(bytes)}.json`);
+  return `${snapshot.sourceId}-${sha256(bytes)}`;
+}
+
+export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
+  if (!path.isAbsolute(outputDirectory ?? "")) throw new Error("Daegu source output directory must be absolute");
+  const identity = daeguSourceSnapshotIdentity(snapshot);
+  const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const output = path.resolve(outputDirectory, `${identity}.json`);
   if (path.dirname(output) !== path.resolve(outputDirectory)) {
     throw new Error("Daegu source snapshot output escapes directory");
   }

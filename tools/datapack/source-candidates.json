@@ -74,6 +74,363 @@
   ],
   "candidates": [
     {
+      "id": "daegu-line1-route-topology",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6"
+        ]
+      },
+      "displayName": "대구교통공사 1호선 역 구간정보",
+      "detailUrl": "https://www.data.go.kr/data/15061836/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "pending_retained_raw_files",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do",
+        "license": "unrestricted",
+        "formats": [
+          "CSV"
+        ],
+        "retainedReader": "tools/datapack/collect-daegu-datapack-sources.mjs#parseDaeguRouteTopology",
+        "provider": "대구교통공사",
+        "notes": "Registration requires retained official CSV bytes and exact parser replay. Normalized snapshots alone are not raw-source evidence. No provider operation or runner is declared."
+      },
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daegu-line1-route-topology",
+          "sourceClassId": "route_graph_topology",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "c98bd5db00ca63f1198df00e2fafeb71c9e43e026b0edd297af5efca7650979f",
+            "reviewedAt": "2026-09-08T18:42:57.610Z",
+            "nextReviewAt": "2027-09-08T18:42:57.610Z",
+            "termsUrl": "https://www.data.go.kr/data/15061836/fileData.do",
+            "reviewedProvider": "대구교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15061836/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      }
+    },
+    {
+      "id": "daegu-line1-train-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6"
+        ]
+      },
+      "displayName": "대구교통공사 1호선 열차시각표",
+      "detailUrl": "https://www.data.go.kr/data/15065526/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "pending_retained_raw_files",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15065526/fileData.do",
+        "license": "unrestricted",
+        "formats": [
+          "CSV"
+        ],
+        "retainedReader": "tools/datapack/collect-daegu-datapack-sources.mjs#parseDaeguTrainTimetable",
+        "provider": "대구교통공사",
+        "notes": "Registration requires retained official CSV bytes and exact parser replay. Normalized snapshots alone are not raw-source evidence. No provider operation or runner is declared."
+      },
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daegu-line1-train-timetable",
+          "sourceClassId": "daegu_timetable_observation",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "862d086d47937be7798da0344dd7f5ec0beb3598e84fea60fa44efe48c79c468",
+            "reviewedAt": "2026-09-08T18:42:57.610Z",
+            "nextReviewAt": "2027-09-08T18:42:57.610Z",
+            "termsUrl": "https://www.data.go.kr/data/15065526/fileData.do",
+            "reviewedProvider": "대구교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15065526/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        },
+        "freshness": {
+          "id": "daegu_timetable_observation",
+          "sourceIds": [
+            "daegu-line1-train-timetable",
+            "daegu-line2-train-timetable",
+            "daegu-line3-train-timetable"
+          ],
+          "basisField": "capturedAt",
+          "reverificationCadence": "P30D",
+          "futureBasisAllowed": false,
+          "providerValidityEndField": null,
+          "eventTriggers": [
+            "official timetable revision"
+          ]
+        }
+      }
+    },
+    {
+      "id": "daegu-line2-route-topology",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-e2938a4cc492"
+        ]
+      },
+      "displayName": "대구교통공사 2호선 역 구간정보",
+      "detailUrl": "https://www.data.go.kr/data/15061835/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "pending_retained_raw_files",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15061835/fileData.do",
+        "license": "unrestricted",
+        "formats": [
+          "CSV"
+        ],
+        "retainedReader": "tools/datapack/collect-daegu-datapack-sources.mjs#parseDaeguRouteTopology",
+        "provider": "대구교통공사",
+        "notes": "Registration requires retained official CSV bytes and exact parser replay. Normalized snapshots alone are not raw-source evidence. No provider operation or runner is declared."
+      },
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daegu-line2-route-topology",
+          "sourceClassId": "route_graph_topology",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "e809432b02503d8b61bf1962c9b26604bf4a2299f3ebce285c51f479c7982e73",
+            "reviewedAt": "2026-09-08T18:42:57.610Z",
+            "nextReviewAt": "2027-09-08T18:42:57.610Z",
+            "termsUrl": "https://www.data.go.kr/data/15061835/fileData.do",
+            "reviewedProvider": "대구교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15061835/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      }
+    },
+    {
+      "id": "daegu-line2-train-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-e2938a4cc492"
+        ]
+      },
+      "displayName": "대구교통공사 2호선 열차시각표",
+      "detailUrl": "https://www.data.go.kr/data/3033376/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "pending_retained_raw_files",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/3033376/fileData.do",
+        "license": "unrestricted",
+        "formats": [
+          "CSV"
+        ],
+        "retainedReader": "tools/datapack/collect-daegu-datapack-sources.mjs#parseDaeguTrainTimetable",
+        "provider": "대구교통공사",
+        "notes": "Registration requires retained official CSV bytes and exact parser replay. Normalized snapshots alone are not raw-source evidence. No provider operation or runner is declared."
+      },
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daegu-line2-train-timetable",
+          "sourceClassId": "daegu_timetable_observation",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "35683fc9e94884cd0787b44e896dcbcaa781529ed30a8b1cb5416e5002a6a701",
+            "reviewedAt": "2026-09-08T18:42:57.610Z",
+            "nextReviewAt": "2027-09-08T18:42:57.610Z",
+            "termsUrl": "https://www.data.go.kr/data/3033376/fileData.do",
+            "reviewedProvider": "대구교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/3033376/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      }
+    },
+    {
+      "id": "daegu-line3-route-topology",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-0ffaa95b1b5d"
+        ]
+      },
+      "displayName": "대구교통공사 3호선 역 구간정보",
+      "detailUrl": "https://www.data.go.kr/data/15061797/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "pending_retained_raw_files",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15061797/fileData.do",
+        "license": "unrestricted",
+        "formats": [
+          "CSV"
+        ],
+        "retainedReader": "tools/datapack/collect-daegu-datapack-sources.mjs#parseDaeguRouteTopology",
+        "provider": "대구교통공사",
+        "notes": "Registration requires retained official CSV bytes and exact parser replay. Normalized snapshots alone are not raw-source evidence. No provider operation or runner is declared."
+      },
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daegu-line3-route-topology",
+          "sourceClassId": "route_graph_topology",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "293202c5ad65d7f7098ba7fb126f366103ca2162ef267695cacd63394f11f0ec",
+            "reviewedAt": "2026-09-08T18:42:57.610Z",
+            "nextReviewAt": "2027-09-08T18:42:57.610Z",
+            "termsUrl": "https://www.data.go.kr/data/15061797/fileData.do",
+            "reviewedProvider": "대구교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15061797/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      }
+    },
+    {
+      "id": "daegu-line3-train-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-0ffaa95b1b5d"
+        ]
+      },
+      "displayName": "대구교통공사 3호선 열차시각표",
+      "detailUrl": "https://www.data.go.kr/data/15065532/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "pending_retained_raw_files",
+      "admissionStatus": "preflight_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15065532/fileData.do",
+        "license": "unrestricted",
+        "formats": [
+          "CSV"
+        ],
+        "retainedReader": "tools/datapack/collect-daegu-datapack-sources.mjs#parseDaeguTrainTimetable",
+        "provider": "대구교통공사",
+        "notes": "Registration requires retained official CSV bytes and exact parser replay. Normalized snapshots alone are not raw-source evidence. No provider operation or runner is declared."
+      },
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daegu-line3-train-timetable",
+          "sourceClassId": "daegu_timetable_observation",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "0568fd2350cf6c424a5be292a89a1160eb9df5e49e858eee57a872912d32dc24",
+            "reviewedAt": "2026-09-08T18:42:57.610Z",
+            "nextReviewAt": "2027-09-08T18:42:57.610Z",
+            "termsUrl": "https://www.data.go.kr/data/15065532/fileData.do",
+            "reviewedProvider": "대구교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15065532/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      }
+    },
+    {
       "id": "kasi-public-holiday-calendar",
       "priority": "P0",
       "domain": "schedule_timetable",

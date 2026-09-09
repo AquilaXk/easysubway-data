@@ -5,9 +5,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { DAEGU_LINES, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
 import { parseMolitDaeguStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const ISSUE = 2407;
 const MATERIALIZER = "tools/datapack/materialize-daegu-timetable.mjs";
@@ -318,6 +319,15 @@ function validateTimetableSnapshot(snapshot, config, topology) {
   if (stopTotal !== config.stopTimeCount) throw new Error(`Daegu line ${config.lineNumber} stop time total mismatch`);
 }
 
+// 검토 날짜 대신 실제 MOLIT 관측과 역 매핑을 식별자에 결속한다.
+export function daeguMembershipSnapshotIdentity({
+  sourceId, molitSnapshotId, membershipSourceRawSha256, mappingSha256, stationCodesSha256,
+}) {
+  return `${sourceId}-${sha256(canonicalJson({
+    molitSnapshotId, membershipSourceRawSha256, mappingSha256, stationCodesSha256,
+  }))}`;
+}
+
 function requiredSources(inventory, config, topology, timetable, mappings) {
   const topologyId = `daegu-line${config.lineNumber}-route-topology`;
   const timetableId = `daegu-line${config.lineNumber}-train-timetable`;
@@ -332,11 +342,14 @@ function requiredSources(inventory, config, topology, timetable, mappings) {
   const membershipVerifiedAt = Date.parse(membershipEvidence?.verifiedAt ?? "");
   const mappingSha256 = sha256(JSON.stringify(mappings));
   const stationCodesSha256 = sha256(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)));
+  const topologySnapshotId = daeguSourceSnapshotIdentity(topology);
+  const timetableSnapshotId = daeguSourceSnapshotIdentity(timetable);
 
   if (topologySource?.productionUseAllowed !== true || topologySource.license?.redistributionAllowed !== true
     || topologyEvidence?.issue !== ISSUE || topologyEvidence.materializer !== MATERIALIZER
     || topologyEvidence.verificationTest !== VERIFICATION_TEST
-    || topologyEvidence.snapshotId !== `${topologyId}-20260721`
+    || topologyEvidence.snapshotId !== topologySnapshotId
+    || topologyEvidence.snapshotPath !== `tools/datapack/sources/${topologySnapshotId}.json`
     || topologyEvidence.capturedAt !== topology.capturedAt || topologyEvidence.freshUntil !== topology.freshUntil
     || topologyEvidence.stationCount !== config.stationCount || topologyEvidence.edgeCount !== config.edgeCount
     || topologyEvidence.depotExcludedCount !== topology.depotExcludedCount
@@ -348,7 +361,8 @@ function requiredSources(inventory, config, topology, timetable, mappings) {
     || timetableSource.capabilities?.schedule?.productionUseAllowed !== true
     || scheduleEvidence?.issue !== ISSUE || scheduleEvidence.materializer !== MATERIALIZER
     || scheduleEvidence.verificationTest !== VERIFICATION_TEST
-    || scheduleEvidence.snapshotId !== `${timetableId}-20260721`
+    || scheduleEvidence.snapshotId !== timetableSnapshotId
+    || scheduleEvidence.snapshotPath !== `tools/datapack/sources/${timetableSnapshotId}.json`
     || scheduleEvidence.capturedAt !== timetable.capturedAt || scheduleEvidence.freshUntil !== timetable.freshUntil
     || scheduleEvidence.tripCount !== config.tripCount || scheduleEvidence.stopTimeCount !== config.stopTimeCount
     || scheduleEvidence.dayLabelNormalizedCount !== timetable.dayLabelNormalizedCount
@@ -356,7 +370,7 @@ function requiredSources(inventory, config, topology, timetable, mappings) {
     || scheduleEvidence.rawUpSha256 !== timetable.rawUpSha256
     || scheduleEvidence.rawDownSha256 !== timetable.rawDownSha256
     || scheduleEvidence.tripsSha256 !== timetable.tripsSha256
-    || scheduleEvidence.topologySnapshotId !== topologyEvidence.snapshotId
+    || scheduleEvidence.topologySnapshotId !== topologySnapshotId
     || scheduleEvidence.contentSha256 !== timetable.contentSha256) {
     throw new Error(`${timetableId} inventory evidence does not match snapshot`);
   }
@@ -365,7 +379,13 @@ function requiredSources(inventory, config, topology, timetable, mappings) {
     || rawMembership?.admissionEvidence?.decision !== "APPROVED"
     || membershipEvidence?.issue !== ISSUE || membershipEvidence.materializer !== MATERIALIZER
     || membershipEvidence.verificationTest !== VERIFICATION_TEST
-    || membershipEvidence.snapshotId !== `${membershipId}-20260721`
+    || membershipEvidence.snapshotId !== daeguMembershipSnapshotIdentity({
+      sourceId: membershipId,
+      molitSnapshotId: rawMembership.admissionEvidence.snapshotId,
+      membershipSourceRawSha256: rawMembership.admissionEvidence.rawSha256,
+      mappingSha256,
+      stationCodesSha256,
+    })
     || JSON.stringify(membershipEvidence.lineIds) !== JSON.stringify([config.lineId])
     || membershipEvidence.stationCount !== config.stationCount
     || membershipEvidence.mappingSha256 !== mappingSha256

@@ -17,12 +17,28 @@ import {
 import {
   parseMolitDaeguStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import {
   bindCumulativeDaeguTopology,
+  daeguMembershipSnapshotIdentity,
   materializeDaeguTimetable,
   runDaeguTimetableMaterializer,
 } from "./materialize-daegu-timetable.mjs";
+
+test("Daegu membership identity binds current MOLIT and mapping inputs", () => {
+  const input = {
+    sourceId: "molit-daegu-test-membership",
+    molitSnapshotId: "molit-test-snapshot",
+    membershipSourceRawSha256: "a".repeat(64),
+    mappingSha256: "b".repeat(64),
+    stationCodesSha256: "c".repeat(64),
+  };
+  const identity = daeguMembershipSnapshotIdentity(input);
+  assert.match(identity, /^molit-daegu-test-membership-[a-f0-9]{64}$/);
+  for (const key of Object.keys(input)) {
+    assert.notEqual(daeguMembershipSnapshotIdentity({ ...input, [key]: `${input[key]}-changed` }), identity);
+  }
+});
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
@@ -157,7 +173,7 @@ test("대구 1·2·3호선 공식 topology·시각표를 94역·182 edge·2540 t
   assert.ok(edges.every(({ sourceSnapshotId, evidenceHash }, index) => {
     const line = DAEGU_LINES.find((config) => edges[index].id.startsWith(`edge-daegu-${config.lineNumber}-`));
     const snapshot = values.topologySnapshots[line.lineNumber];
-    return sourceSnapshotId === `${snapshot.sourceId}-20260721` && evidenceHash === snapshot.contentSha256;
+    return sourceSnapshotId === daeguSourceSnapshotIdentity(snapshot) && evidenceHash === snapshot.contentSha256;
   }));
   assert.ok(stationLines.every(({ fieldProvenance }) =>
     /^daegu-line[123]-route-topology$/.test(fieldProvenance.station_code.sourceId)
@@ -243,6 +259,14 @@ test("inventory에 기록된 topology admission evidence가 실제 snapshot과 �
   assert.throws(() => materializeDaeguTimetable({
     baseFixture: values.baseFixture, topologySnapshots: values.topologySnapshots, timetableSnapshots: values.timetableSnapshots,
     inventory, canonicalStationMappings: values.mappings, now,
+  }), /inventory evidence does not match snapshot/);
+
+  const wrongIdentityInventory = structuredClone(values.inventory);
+  wrongIdentityInventory.sources.find(({ id }) => id === "daegu-line1-route-topology")
+    .topologyAdmissionEvidence.snapshotId = "daegu-line1-route-topology-wrong";
+  assert.throws(() => materializeDaeguTimetable({
+    baseFixture: values.baseFixture, topologySnapshots: values.topologySnapshots, timetableSnapshots: values.timetableSnapshots,
+    inventory: wrongIdentityInventory, canonicalStationMappings: values.mappings, now,
   }), /inventory evidence does not match snapshot/);
 });
 
@@ -409,7 +433,31 @@ async function inputs({ materialize = true } = {}) {
   for (const config of DAEGU_LINES) {
     topologySnapshots[config.lineNumber] = await readJson(`tools/datapack/sources/daegu-line${config.lineNumber}-route-topology-20260721.json`);
     timetableSnapshots[config.lineNumber] = await readJson(`tools/datapack/sources/daegu-line${config.lineNumber}-train-timetable-20260721.json`);
+    const topologyIdentity = daeguSourceSnapshotIdentity(topologySnapshots[config.lineNumber]);
+    const timetableIdentity = daeguSourceSnapshotIdentity(timetableSnapshots[config.lineNumber]);
+    const topologyEvidence = inventory.sources.find(({ id }) => id === topologySnapshots[config.lineNumber].sourceId)
+      .topologyAdmissionEvidence;
+    const scheduleEvidence = inventory.sources.find(({ id }) => id === timetableSnapshots[config.lineNumber].sourceId)
+      .scheduleAdmissionEvidence;
+    topologyEvidence.snapshotId = topologyIdentity;
+    topologyEvidence.snapshotPath = `tools/datapack/sources/${topologyIdentity}.json`;
+    scheduleEvidence.snapshotId = timetableIdentity;
+    scheduleEvidence.snapshotPath = `tools/datapack/sources/${timetableIdentity}.json`;
+    scheduleEvidence.topologySnapshotId = topologyIdentity;
     mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
+    const membershipId = `molit-urban-rail-full-route-daegu-line${config.lineNumber}-membership`;
+    const membership = inventory.sources.find(({ id }) => id === membershipId).membershipAdmissionEvidence;
+    const rawMembership = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
+    membership.stationCodeSnapshotId = topologyIdentity;
+    membership.snapshotId = daeguMembershipSnapshotIdentity({
+      sourceId: membershipId,
+      molitSnapshotId: rawMembership.snapshotId,
+      membershipSourceRawSha256: rawMembership.rawSha256,
+      mappingSha256: createHash("sha256").update(JSON.stringify(mappings[config.lineNumber])).digest("hex"),
+      stationCodesSha256: createHash("sha256")
+        .update(JSON.stringify(topologySnapshots[config.lineNumber].scope.map(({ stationCode }) => stationCode)))
+        .digest("hex"),
+    });
   }
   const fixture = materialize ? materializeDaeguTimetable({
     baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings: mappings, now,

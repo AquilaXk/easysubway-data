@@ -6,9 +6,10 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  DAEGU_LINES, decodeOfficialCsv, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
+  DAEGU_LINES, daeguSourceSnapshotIdentity, decodeOfficialCsv, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
   writeDaeguSourceSnapshot,
 } from "./collect-daegu-datapack-sources.mjs";
+import { ledgerRow, prepareDaeguSourceRegistration } from "./register-daegu-datapack-sources.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -20,12 +21,16 @@ test("Daegu snapshot output is content-addressed and create-once", async (t) => 
   const snapshot = { sourceId: "daegu-line1-route-topology", capturedAt: "2040-01-01T00:00:00.000Z" };
   const exactBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const firstPath = await writeDaeguSourceSnapshot(outputDirectory, snapshot);
-  assert.equal(path.basename(firstPath), `${snapshot.sourceId}-${sha256(exactBytes)}.json`);
+  assert.equal(daeguSourceSnapshotIdentity(snapshot), `${snapshot.sourceId}-${sha256(exactBytes)}`);
+  assert.equal(path.basename(firstPath), `${daeguSourceSnapshotIdentity(snapshot)}.json`);
   assert.deepEqual(await readFile(firstPath), exactBytes);
 
   const secondSnapshot = { ...snapshot, capturedAt: "2040-01-02T00:00:00.000Z" };
   const secondPath = await writeDaeguSourceSnapshot(outputDirectory, secondSnapshot);
+  const otherSource = { ...snapshot, sourceId: "daegu-line2-route-topology" };
   assert.notEqual(secondPath, firstPath);
+  assert.notEqual(daeguSourceSnapshotIdentity(secondSnapshot), daeguSourceSnapshotIdentity(snapshot));
+  assert.notEqual(daeguSourceSnapshotIdentity(otherSource), daeguSourceSnapshotIdentity(snapshot));
   assert.deepEqual(await readFile(firstPath), exactBytes);
   await assert.rejects(() => writeDaeguSourceSnapshot(outputDirectory, snapshot), { code: "EEXIST" });
 });
@@ -124,6 +129,52 @@ test("고정된 대구 시각표 snapshot 3종이 취득 원문·trip 완전성�
     }
     assert.equal(stopTotal, config.stopTimeCount);
   }
+});
+
+test("Daegu registrar requires original CSV input files", async (t) => {
+  const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-registration-input-"));
+  t.after(() => rm(inputDirectory, { recursive: true, force: true }));
+  await assert.rejects(prepareDaeguSourceRegistration({
+    repositoryRoot: root, inputDirectory, capturedAt: new Date().toISOString(),
+  }), (error) => error.code === "ENOENT" && DAEGU_LINES.some((line) =>
+    [line.intervalDatasetId, line.upDatasetId, line.downDatasetId]
+      .some((id) => error.path === path.join(inputDirectory, `data-go-${id}.csv`))));
+});
+
+test("Daegu registrar records topology edges and timetable rows in the ledger", () => {
+  const receipt = { rawObjectUri: "oci://example/source.json" };
+  const governanceBytes = Buffer.from(JSON.stringify({ policyVersion: "2026-09-09" }));
+  const item = ({ snapshot, evidence }) => ({
+    snapshot,
+    source: { provider: "대구교통공사", admissionEvidence: { licenseEvidenceHash: "a".repeat(64) } },
+    evidence,
+    snapshotId: `${snapshot.sourceId}-identity`,
+    snapshotBytes: Buffer.from(JSON.stringify(snapshot)),
+    ledgerFreshnessExpiresAt: "2026-09-10T00:00:00.000Z",
+    rawRetentionExpiresAt: "2026-12-09T00:00:00.000Z",
+  });
+  const topology = ledgerRow({
+    item: item({
+      snapshot: {
+        artifactKind: "daegu-route-topology-snapshot", sourceId: "daegu-line1-route-topology",
+        capturedAt: "2026-09-09T00:00:00.000Z", rawSha256: "b".repeat(64), contentSha256: "c".repeat(64),
+        edgeCount: 68, rawSources: [{ datasetId: "15061836" }],
+      },
+      evidence: { stationCount: 35, freshUntil: "2026-09-10T00:00:00.000Z" },
+    }), receipt, receiptBytes: Buffer.from("receipt"), governanceBytes, previous: null,
+  });
+  const timetable = ledgerRow({
+    item: item({
+      snapshot: {
+        artifactKind: "daegu-train-timetable-snapshot", sourceId: "daegu-line1-train-timetable",
+        capturedAt: "2026-09-09T00:00:00.000Z", rawSha256: "d".repeat(64), tripsSha256: "e".repeat(64),
+        rowCount: 408, rawSources: [{ datasetId: "15065526" }, { datasetId: "15138731" }],
+      },
+      evidence: { tripCount: 824, freshUntil: "2026-09-10T00:00:00.000Z" },
+    }), receipt, receiptBytes: Buffer.from("receipt"), governanceBytes, previous: null,
+  });
+  assert.equal(topology.rowCount, 68);
+  assert.equal(timetable.rowCount, 408);
 });
 
 // 아래부터는 fail-closed 회귀: 실제 원문 CSV 대신 최소 합성 데이터로 parseDaeguRouteTopology·parseDaeguTrainTimetable의
