@@ -307,11 +307,11 @@
           "schedule_timetable"
         ]
       },
-      "requiredForProductionPack": false,
+      "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
-      "observedDataUpdatedAt": "2026-07-20",
-      "retrievedAt": "2026-07-20",
+      "observedDataUpdatedAt": "2026-09-08",
+      "retrievedAt": "2026-09-08",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 제1유형(출처표시)",
@@ -355,19 +355,22 @@
         "issue": 2368,
         "materializer": "tools/datapack/materialize-busan-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-busan-timetable.test.mjs",
-        "snapshotId": "busan-transportation-timetable-20260720",
-        "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
-        "capturedAt": "2026-07-20T08:37:16.931Z",
-        "freshUntil": "2026-07-21T08:37:16.931Z",
-        "rowCount": 109140,
-        "departureCount": 109140,
-        "tripCount": 3833,
-        "stopTimeCount": 109140,
-        "rawSha256": "8269d5ba02ea03824220da02b5d807d8bce5eeba9bbc8e520d4a4e5938e03a95",
-        "rowsSha256": "9e5474410ba38fe1cc1f36611b82c5c05af1d2a33d7c2bef7bcf740cfadc1a7a",
+        "snapshotId": "busan-transportation-timetable-20260909",
+        "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260909.json",
+        "capturedAt": "2026-09-08T23:45:39.470Z",
+        "freshUntil": "2026-09-09T23:45:39.470Z",
+        "rowCount": 106828,
+        "departureCount": 106828,
+        "tripCount": 3733,
+        "stopTimeCount": 106828,
+        "rawSha256": "a05cfa01678de1ade026230dbdb3f6280c1d77c8d8ad480ec0ef9cd5ede8e54a",
+        "rowsSha256": "bcf0961dfa122f5bd78259dbd250a9fb9537ec316437a48259c4d25281ab9f8b",
         "topologySourceId": "busan-transportation-route-topology",
-        "topologySnapshotId": "busan-transportation-route-topology-20260720",
+        "topologySnapshotId": "busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
         "topologyContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "da99648cbd80d9263482ae707dfcf6cd11c19c50461bf60cbad85183ff45dec1"
       }
     },
     {

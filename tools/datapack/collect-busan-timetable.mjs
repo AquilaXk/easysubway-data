@@ -21,6 +21,12 @@ const EXPECTED_LINE_IDS = Object.keys(LINE_CODES).sort(compareText);
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1000;
 
+export function busanTimetableCounts(rows) {
+  const trips = new Set();
+  for (const row of rows) trips.add([row.line, row.day, row.trainno, row.updown, row.endcode].join("\0"));
+  return { departureCount: rows.length, tripCount: trips.size, stopTimeCount: rows.length };
+}
+
 export async function collectBusanTimetable({
   serviceKey,
   stationScopes,

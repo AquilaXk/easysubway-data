@@ -19,6 +19,7 @@ import {
   parseCanonicalBusanStationMappings,
 } from "./materialize-busan-route-topology.mjs";
 import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
+import { busanTimetableCounts } from "./collect-busan-timetable.mjs";
 import { deriveDaejeonTimetableCounts, materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 import { materializeGwangjuAccessibility } from "./materialize-gwangju-accessibility.mjs";
 import { collectGwangjuAccessibility } from "./collect-gwangju-accessibility.mjs";
@@ -237,8 +238,17 @@ export function projectRegionalFixtureSourceBindings({
     };
     if (busanTimetable) {
       const timetable = source(projected, busanTimetable.sourceId);
+      const timetableSnapshotId = fixtureSnapshotId(timetable.id, busanTimetable.capturedAt);
       timetable.scheduleAdmissionEvidence = {
         ...timetable.scheduleAdmissionEvidence,
+        snapshotId: timetableSnapshotId,
+        snapshotPath: fixtureSnapshotPath(timetableSnapshotId),
+        capturedAt: busanTimetable.capturedAt,
+        freshUntil: busanTimetable.freshUntil,
+        rowCount: busanTimetable.rows.length,
+        ...busanTimetableCounts(busanTimetable.rows),
+        rawSha256: busanTimetable.rawSha256,
+        rowsSha256: busanTimetable.rowsSha256,
         topologySourceId: topology.id,
         topologySnapshotId: snapshotId,
         topologyContentSha256: busanTopology.contentSha256,

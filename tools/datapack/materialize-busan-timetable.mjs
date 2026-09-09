@@ -4,13 +4,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { busanTimetableCounts } from "./collect-busan-timetable.mjs";
 import { busanRouteTopologyContentHash } from "./collect-busan-route-topology.mjs";
 
 const SOURCE_ID = "busan-transportation-timetable";
 const TOPOLOGY_SOURCE_ID = "busan-transportation-route-topology";
 const PACK_ID = "nationwide-busan-schedule";
-const EXPECTED_ROW_COUNT = 109_140;
-const EXPECTED_TRIP_COUNT = 3_833;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const SUPPORTED_SERVICE_CALENDAR_YEAR = "2026";
 const LINE_IDS = Object.freeze({
@@ -37,7 +36,8 @@ export function materializeBusanTimetable({
   inventory,
 }) {
   const rows = validateSnapshot(timetableSnapshot);
-  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot);
+  const counts = busanTimetableCounts(rows);
+  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot, counts);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1) throw new Error("Busan timetable requires one cumulative pack");
@@ -46,7 +46,7 @@ export function materializeBusanTimetable({
   const topologyPairs = validateTopologyLineage(pack, source.scheduleAdmissionEvidence, topologySnapshot, stations);
   const provenance = scheduleProvenance(source, timetableSnapshot);
   const groups = Map.groupBy(rows, (row) => [row.line, row.day, row.trainno, row.updown, row.endcode].join(":"));
-  if (groups.size !== EXPECTED_TRIP_COUNT) throw new Error(`Busan timetable trip count mismatch: ${groups.size}`);
+  if (groups.size !== counts.tripCount) throw new Error(`Busan timetable trip count mismatch: ${groups.size}`);
 
   pack.sourceInventory.push(packSource(source, timetableSnapshot));
   addCalendars(pack, provenance);
@@ -90,8 +90,8 @@ export function materializeBusanTimetable({
       }, { ...provenance, providerRecordHash: recordHash }));
     });
   }
-  if (tripIds.size !== EXPECTED_TRIP_COUNT
-    || pack.transitStopTimes.filter(({ sourceId }) => sourceId === SOURCE_ID).length !== EXPECTED_ROW_COUNT) {
+  if (tripIds.size !== counts.tripCount
+    || pack.transitStopTimes.filter(({ sourceId }) => sourceId === SOURCE_ID).length !== counts.stopTimeCount) {
     throw new Error("Busan timetable materialized row counts are invalid");
   }
   pack.minimumTableRows = {
@@ -130,7 +130,7 @@ function validateSnapshot(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "busan-timetable-snapshot"
     || snapshot.sourceId !== SOURCE_ID || snapshot.official !== true || snapshot.fixture !== false
     || snapshot.credentialRedacted !== true || snapshot.requestCount !== 342 || snapshot.stationCount !== 114
-    || snapshot.rowCount !== EXPECTED_ROW_COUNT || snapshot.rows?.length !== EXPECTED_ROW_COUNT
+    || !Array.isArray(snapshot.rows) || snapshot.rowCount !== snapshot.rows.length || snapshot.rows.length === 0
     || snapshot.rowsSha256 !== sha256(JSON.stringify(snapshot.rows))
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
     || JSON.stringify(snapshot.dayTypes) !== JSON.stringify(["1", "2", "3"])
@@ -152,7 +152,7 @@ function validateSnapshot(snapshot) {
   return snapshot.rows;
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot) {
+function requiredSource(inventory, snapshot, topologySnapshot, counts) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.scheduleAdmissionEvidence;
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
@@ -163,8 +163,8 @@ function requiredSource(inventory, snapshot, topologySnapshot) {
     || evidence.verificationTest !== "tools/datapack/materialize-busan-timetable.test.mjs"
     || !/^busan-transportation-timetable-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
-    || evidence.rowCount !== EXPECTED_ROW_COUNT || evidence.departureCount !== EXPECTED_ROW_COUNT
-    || evidence.tripCount !== EXPECTED_TRIP_COUNT || evidence.stopTimeCount !== EXPECTED_ROW_COUNT
+    || evidence.rowCount !== snapshot.rows.length || evidence.departureCount !== counts.departureCount
+    || evidence.tripCount !== counts.tripCount || evidence.stopTimeCount !== counts.stopTimeCount
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
@@ -361,7 +361,8 @@ export async function runBusanTimetableMaterializer(argv) {
   const fixture = materializeBusanTimetable({ baseFixture, timetableSnapshot, topologySnapshot, inventory });
   fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
-  console.log(`Busan timetable materialized: trips=${EXPECTED_TRIP_COUNT} stopTimes=${EXPECTED_ROW_COUNT}`);
+  const counts = busanTimetableCounts(timetableSnapshot.rows);
+  console.log(`Busan timetable materialized: trips=${counts.tripCount} stopTimes=${counts.stopTimeCount}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

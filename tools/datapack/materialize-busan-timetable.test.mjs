@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { projectHistoricalRegionalMaterializeInventory, projectRegionalFixtureSourceBindings } from "./materialize-test-fixture.mjs";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { busanTimetableCounts } from "./collect-busan-timetable.mjs";
 import {
   materializeBusanRouteTopology,
   parseCanonicalBusanStationMappings,
@@ -148,6 +149,46 @@ test("부산 timetable admission은 snapshot·inventory·freshness·topology lin
     inventory: badTimetableInventory,
     now,
   }), /topology adjacency/);
+});
+
+test("Busan materializer binds admitted changed timetable counts and rejects mismatched evidence", async () => {
+  const values = await inputs({ materialize: false });
+  const timetableSnapshot = structuredClone(values.busanTimetable);
+  const [removedTrip] = timetableSnapshot.rows;
+  timetableSnapshot.rows = timetableSnapshot.rows.filter((row) =>
+    [row.line, row.day, row.trainno, row.updown, row.endcode].join("\0")
+      !== [removedTrip.line, removedTrip.day, removedTrip.trainno, removedTrip.updown, removedTrip.endcode].join("\0"));
+  timetableSnapshot.rowCount = timetableSnapshot.rows.length;
+  timetableSnapshot.rowsSha256 = createHash("sha256").update(JSON.stringify(timetableSnapshot.rows)).digest("hex");
+  const counts = busanTimetableCounts(timetableSnapshot.rows);
+  const inventory = structuredClone(values.inventory);
+  const evidence = inventory.sources.find(({ id }) => id === "busan-transportation-timetable")
+    .scheduleAdmissionEvidence;
+  Object.assign(evidence, { rowCount: timetableSnapshot.rows.length, ...counts, rowsSha256: timetableSnapshot.rowsSha256 });
+
+  const fixture = materializeBusanTimetable({
+    baseFixture: values.cumulativeFixture,
+    timetableSnapshot,
+    topologySnapshot: values.busanTopology,
+    inventory,
+    now,
+  });
+  const pack = fixture.packs[0];
+  assert.equal(pack.transitTrips.filter(({ sourceId }) => sourceId === "busan-transportation-timetable").length,
+    counts.tripCount);
+  assert.equal(pack.transitStopTimes.filter(({ sourceId }) => sourceId === "busan-transportation-timetable").length,
+    counts.stopTimeCount);
+
+  const mismatchedInventory = structuredClone(inventory);
+  mismatchedInventory.sources.find(({ id }) => id === "busan-transportation-timetable")
+    .scheduleAdmissionEvidence.tripCount += 1;
+  assert.throws(() => materializeBusanTimetable({
+    baseFixture: values.cumulativeFixture,
+    timetableSnapshot,
+    topologySnapshot: values.busanTopology,
+    inventory: mismatchedInventory,
+    now,
+  }), /inventory evidence does not match snapshot/);
 });
 
 test("부산 2026 토요일 공휴일은 휴일 운행을 추가하고 토요일 운행을 제거한다", async () => {

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { collectBusanTimetable } from "./collect-busan-timetable.mjs";
+import { busanTimetableCounts, collectBusanTimetable } from "./collect-busan-timetable.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
@@ -20,6 +20,20 @@ const topology = JSON.parse(await readFile(
 const FROZEN_TOPOLOGY_BYTES = await readFile(
   new URL("./sources/busan-transportation-route-topology-20260720.json", import.meta.url),
 );
+
+test("Busan timetable counts retain distinct opaque destination groups", () => {
+  const rows = [
+    { line: "1", day: "1", trainno: "10", updown: "0", endcode: "318", scode: "100" },
+    { line: "1", day: "1", trainno: "10", updown: "0", endcode: "318", scode: "101" },
+    { line: "1", day: "1", trainno: "10", updown: "0", endcode: "319", scode: "100" },
+  ];
+
+  assert.deepEqual(busanTimetableCounts(rows), {
+    departureCount: 3,
+    tripCount: 2,
+    stopTimeCount: 3,
+  });
+});
 
 test("부산 timetable collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;

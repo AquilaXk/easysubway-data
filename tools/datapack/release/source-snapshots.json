@@ -67472,5 +67472,41 @@
       "licenseEvidenceHash": "01b8a44e329e5a4efa9ac332c73f03e2485bfe93002479d0b9e1df1eb0d5b2aa"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "busan-transportation-timetable",
+    "snapshotId": "busan-transportation-timetable-20260909",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-08T23:45:39.470Z",
+    "retrievedAt": "2026-09-08T23:45:39.470Z",
+    "sourceUpdatedAt": null,
+    "provider": "부산교통공사",
+    "rowCount": 106828,
+    "coverageCount": 3733,
+    "rawSha256": "a05cfa01678de1ade026230dbdb3f6280c1d77c8d8ad480ec0ef9cd5ede8e54a",
+    "contentSha256": "bcf0961dfa122f5bd78259dbd250a9fb9537ec316437a48259c4d25281ab9f8b",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/busan-transportation-timetable/20260909/81b5fff49be99b7b96db3b7d5331fa40e59d3798c16f7f6154f47a4ce1041385.json",
+    "rawObjectSha256": "81b5fff49be99b7b96db3b7d5331fa40e59d3798c16f7f6154f47a4ce1041385",
+    "rawReceiptSha256": "32b1e4b8cc11dda43a544819bd4ff14e551440fdaa4360abecf4cf65b0ce2e1c",
+    "byteSize": 33794168,
+    "freshUntil": "2026-09-09T23:45:39.470Z",
+    "freshnessExpiresAt": "2026-10-08T23:45:39.470Z",
+    "rawRetentionExpiresAt": "2026-12-07T23:45:39.470Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "4397d57e7ad9a5a0fcd091592cda12cff736f4a17ef019a84f27555b21f5e880",
+    "schemaFingerprint": "10b23935c461efb4fe3ac83c20bf5767592d75cb25ac5c6afbf5c76f97b6c3a4",
+    "redactedRequestFingerprint": "c884becfcefc0b39c5e607b657f770e0085ff4e1489183cd92df896e3142eab7",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "da99648cbd80d9263482ae707dfcf6cd11c19c50461bf60cbad85183ff45dec1"
+    },
+    "diffSummary": null
   }
 ]

@@ -6,7 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
 
-import { collectBusanTimetable, normalizeBusanTimetableScope } from "./collect-busan-timetable.mjs";
+import { busanTimetableCounts, collectBusanTimetable, normalizeBusanTimetableScope } from "./collect-busan-timetable.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
@@ -72,7 +72,7 @@ export async function prepareBusanTimetableRegistration({ repositoryRoot, snapsh
   validateRecordedGovernance({ source, candidate, governanceEntry, freshnessPolicy: candidateFreshness, licenseHash, now });
   validateSnapshot(snapshot);
   const priorEvidence = requireScheduleEvidenceMetadata(source.scheduleAdmissionEvidence);
-  const counts = scheduleCounts(snapshot.rows);
+  const counts = busanTimetableCounts(snapshot.rows);
   if (Date.parse(snapshot.freshUntil) !== Date.parse(snapshot.capturedAt) + DAY_MS) {
     throw new Error("Busan timetable schedule freshness contract is invalid");
   }
@@ -371,12 +371,6 @@ function validateSnapshot(snapshot) {
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")) {
     throw new Error("Busan timetable snapshot is invalid");
   }
-}
-
-function scheduleCounts(rows) {
-  const trips = new Set();
-  for (const row of rows) trips.add([row.line, row.day, row.trainno, row.updown, row.endcode].join("\0"));
-  return { departureCount: rows.length, tripCount: trips.size, stopTimeCount: rows.length };
 }
 
 function requireScheduleEvidenceMetadata(metadata) {

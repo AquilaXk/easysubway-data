@@ -205,6 +205,19 @@
       "eventTriggers": [
         "official timetable revision"
       ]
+    },
+    {
+      "id": "busan_timetable_observation",
+      "sourceIds": [
+        "busan-transportation-timetable"
+      ],
+      "basisField": "capturedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
     }
   ],
   "monitoring": {
