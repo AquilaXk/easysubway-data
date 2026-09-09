@@ -1,10 +1,36 @@
 import { createHash } from "node:crypto";
+import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
-import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
+import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { requiredUtcInstant } from "../lib/utc-instant.mjs";
+
+// 실제 이력 결속을 유지하면서 테스트 대상 source만 아직 등록되지 않은 상태로 만든다.
+export function governanceBeforeSource(current, sourceId) {
+  const batches = [];
+  let policy = structuredClone(current);
+  while (policy.sources.some(row => row.sourceId === sourceId)) {
+    const lineage = policy.registrationLineage;
+    assert.ok(lineage, "test source must belong to append-only registration lineage");
+    const additions = policy.sources.filter(row => lineage.addedSourceIds.includes(row.sourceId));
+    batches.unshift(additions.filter(row => row.sourceId !== sourceId));
+    const predecessor = { ...policy, sources: policy.sources.filter(row => !lineage.addedSourceIds.includes(row.sourceId)) };
+    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
+    else predecessor.registrationLineage = lineage.predecessorLineage;
+    const bytes = lineage.predecessorPolicyText === null
+      ? Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`) : Buffer.from(lineage.predecessorPolicyText);
+    assert.equal(sha256(bytes), lineage.predecessorPolicySha256);
+    policy = JSON.parse(bytes);
+  }
+  for (const addedSources of batches.filter(rows => rows.length > 0)) {
+    policy = buildAppendOnlyGovernancePolicyRegistration({
+      predecessorPolicyBytes: Buffer.from(`${JSON.stringify(policy, null, 2)}\n`), addedSources,
+    }).policy;
+  }
+  return policy;
+}
 
 const REQUIRED_PROVENANCE_FIELDS = [
   "snapshotId",

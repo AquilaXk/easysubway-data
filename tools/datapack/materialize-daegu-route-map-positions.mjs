@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity, loadAdmittedDaeguTopologySnapshots } from "./collect-daegu-datapack-sources.mjs";
 import { validateDaeguRouteMapPositionsSnapshot } from "./collect-daegu-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
@@ -15,7 +15,6 @@ const REGION = "대구권";
 const EXPECTED_STATION_COUNT = 91;
 const LINE_IDS = Object.freeze(DAEGU_LINES.map(({ lineId }) => lineId));
 const COMPOSITE_TOPOLOGY_SOURCE_ID = "daegu-transportation-route-map-topology-lineage";
-const COMPOSITE_TOPOLOGY_SNAPSHOT_ID = "daegu-transportation-route-map-topology-lineage-20260721";
 
 export function materializeDaeguRouteMapPositions({
   baseFixture,
@@ -97,7 +96,7 @@ export function materializeDaeguRouteMapPositions({
     ...pack.minimumTableRows,
     route_map_positions: pack.routeMapPositions.length,
   };
-  const version = source.routeMapAdmissionEvidence.snapshotId.slice(-8);
+  const version = compactSeoulDate(snapshot.capturedAt);
   const composition = sha256(JSON.stringify({
     previousPackId: pack.id,
     snapshotId: source.routeMapAdmissionEvidence.snapshotId,
@@ -135,8 +134,8 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshots, 
     || evidence.admissionKind !== "official-file-latlon"
     || evidence.materializer !== "tools/datapack/materialize-daegu-route-map-positions.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-daegu-route-map-positions.test.mjs"
-    || evidence.snapshotId !== "daegu-transportation-route-map-positions-20260724"
-    || evidence.snapshotPath !== "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json"
+    || evidence.snapshotId !== `${SOURCE_ID}-${snapshotSha256}`
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt
     || evidence.stationCount !== snapshot.stationCount
     || evidence.rawStationCount !== snapshot.rawStationCount
@@ -149,7 +148,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshots, 
     || JSON.stringify(evidence.lineIds) !== JSON.stringify(snapshot.lineIds)
     || JSON.stringify(evidence.lineStationCounts) !== JSON.stringify(snapshot.lineStationCounts)
     || evidence.topologySourceId !== COMPOSITE_TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== COMPOSITE_TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== daeguRouteMapTopologyLineageIdentity(evidence.topologyLineages)
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || evidence.topologyContentSha256 !== sha256(JSON.stringify(evidence.topologyLineages))
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
@@ -177,7 +176,7 @@ function validateTopologyLineages(inventory, evidence, topologySnapshots) {
     const snapshot = topologySnapshots?.[config.lineNumber];
     if (lineage?.sourceId !== `daegu-line${config.lineNumber}-route-topology`
       || lineage.lineId !== config.lineId
-      || lineage.snapshotId !== `${lineage.sourceId}-20260721`
+      || lineage.snapshotId !== daeguSourceSnapshotIdentity(snapshot)
       || !topologyEvidence
       || topologyEvidence.snapshotId !== lineage.snapshotId
       || topologyEvidence.contentSha256 !== lineage.contentSha256
@@ -188,10 +187,14 @@ function validateTopologyLineages(inventory, evidence, topologySnapshots) {
     }
   }
   if (evidence.topologySourceId !== COMPOSITE_TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== COMPOSITE_TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== daeguRouteMapTopologyLineageIdentity(evidence.topologyLineages)
     || evidence.topologyContentSha256 !== sha256(JSON.stringify(evidence.topologyLineages))) {
     throw new Error("Daegu route map composite topology lineage mismatch");
   }
+}
+
+export function daeguRouteMapTopologyLineageIdentity(lineages) {
+  return `${COMPOSITE_TOPOLOGY_SOURCE_ID}-${sha256(JSON.stringify(lineages))}`;
 }
 
 function canonicalStations(pack, topologySnapshots) {
@@ -238,6 +241,13 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
 function parseArgs(argv) {
   const expected = ["--base-fixture", "--snapshot", "--inventory", "--sources-dir", "--output"];
   if (argv.length !== expected.length * 2 || expected.some((flag, index) => argv[index * 2] !== flag)
@@ -254,13 +264,7 @@ async function main(argv) {
     readFile(args.snapshot),
     readFile(args.inventory, "utf8").then(JSON.parse),
   ]);
-  const topologySnapshots = {};
-  for (const line of DAEGU_LINES) {
-    topologySnapshots[line.lineNumber] = JSON.parse(await readFile(
-      path.join(args["sources-dir"], `daegu-line${line.lineNumber}-route-topology-20260721.json`),
-      "utf8",
-    ));
-  }
+  const topologySnapshots = await loadAdmittedDaeguTopologySnapshots(args["sources-dir"], inventory);
   const snapshot = JSON.parse(snapshotBytes);
   const fixture = materializeDaeguRouteMapPositions({
     baseFixture,

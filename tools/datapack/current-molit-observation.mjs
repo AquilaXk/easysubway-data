@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { parseCurrentMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { parseCurrentMolitGwangjuStationMappings, parseCurrentMolitLineOperatorRosters } from "./build-molit-nationwide-fixture.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
@@ -84,6 +84,23 @@ export function assertCurrentMolitObservation({ observation, observationBytes, c
   }
 }
 
+// 원문에 있는 조합만 보존한다. 운영기관 목록과 노선 목록의 교차곱은 소속 근거가 아니다.
+export function deriveCurrentMolitMembershipCoverage({ observation, observationBytes, current }) {
+  assertCurrentMolitObservation({ observation, observationBytes, current });
+  const lineOperatorScopes = [...parseCurrentMolitLineOperatorRosters(observation.normalizedProjection).values()]
+    .map(({ regionId, operatorId, lineId }) => ({ regionId, operatorId, lineId }))
+    .sort((left, right) => {
+      const a = JSON.stringify(left); const b = JSON.stringify(right);
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+  return {
+    snapshotId: current.snapshotId,
+    rawSha256: current.rawSha256,
+    normalizedObservationSha256: current.normalizedObservationSha256,
+    lineOperatorScopes,
+  };
+}
+
 /**
  * Resolves only the admitted Gwangju MOLIT membership join. It deliberately
  * does not inspect other regional membership contracts.
@@ -101,7 +118,7 @@ export async function loadCurrentMolitGwangjuStationMappings(options = {}) {
   const topologyBytes = options.topologyBytes ?? await read(topologyPath);
   const topologySnapshot = options.topologySnapshot ?? parse(topologyBytes, "Gwangju topology snapshot");
   const mappings = parseCurrentMolitGwangjuStationMappings(
-    currentMolit.observation.normalizedProjection, currentMolit.current.rawSha256, topologySnapshot,
+    currentMolit.observation.normalizedProjection, currentMolit.current.rawSha256, topologySnapshot, currentMolit.current,
   );
   assertCurrentMolitGwangjuMembershipAdmission({
     inventory,

@@ -24,7 +24,6 @@ const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const routeMapNow = new Date("2026-07-20T11:13:18.000Z");
-const accessibilityNow = new Date("2026-07-24T12:00:00.000Z");
 const SOURCE_ID = "busan-transportation-accessibility";
 const BUSAN_LINE_IDS = Object.freeze([
   "line-ab1a041f6266",
@@ -51,6 +50,22 @@ async function inputs() {
     readJson("tools/datapack/sources/busan-transportation-accessibility-20260724.json"),
   ]);
   const { busanTimetableFixture: timetableFixture, busanTopology: topologySnapshot, inventory } = regional;
+  const admission = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence;
+  const snapshotId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(accessibilitySnapshot)).digest("hex")}-${compactSeoulDate(accessibilitySnapshot.capturedAt)}`;
+  Object.assign(admission, {
+    snapshotId,
+    snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+    capturedAt: accessibilitySnapshot.capturedAt,
+    freshUntil: accessibilitySnapshot.freshUntil,
+    stationCount: accessibilitySnapshot.stationCount,
+    rowCount: accessibilitySnapshot.rowCount,
+    facilityCount: accessibilitySnapshot.rowCount * 3,
+    rawSha256: accessibilitySnapshot.rawSha256,
+    rowsSha256: accessibilitySnapshot.rowsSha256,
+    topologySnapshotId: inventory.sources.find(({ id }) =>
+      id === topologySnapshot.sourceId).topologyAdmissionEvidence.snapshotId,
+    topologyContentSha256: topologySnapshot.contentSha256,
+  });
   return {
     timetableFixture,
     topologySnapshot,
@@ -59,6 +74,46 @@ async function inputs() {
   };
 }
 
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
+test("부산 접근성은 topology와 같은 역명 정규화를 사용하고 다른 역명은 거부한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const official = topologySnapshot.scope.find(({ stationName }) => stationName.includes("·"));
+  assert.ok(official);
+  const pack = timetableFixture.packs[0];
+  const membership = pack.stationLines.find(({ lineId, stationCode }) =>
+    lineId === official.lineId && stationCode === official.stationCode);
+  const station = pack.stations.find(({ id }) => id === membership.stationId);
+  station.nameKo = official.stationName.replaceAll("·", ".");
+  const options = { baseFixture: timetableFixture, topologySnapshot, accessibilitySnapshot, inventory };
+  const result = materializeBusanAccessibility(options);
+  assert.equal(result.packs[0].stations.find(({ id }) => id === station.id).nameKo, station.nameKo);
+  station.nameKo = `${official.stationName}다른역`;
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+});
+
+test("부산 접근성은 canonical edge ID를 보존하고 공식 edge 증거 변조는 거부한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const edges = timetableFixture.packs[0].networkEdges.filter(({ sourceId }) =>
+    sourceId === topologySnapshot.sourceId);
+  for (const edge of edges) edge.id = `canonical-${edge.id}`;
+  const options = { baseFixture: timetableFixture, topologySnapshot, accessibilitySnapshot, inventory };
+  const result = materializeBusanAccessibility(options);
+  assert.deepEqual(result.packs[0].networkEdges.filter(({ sourceId }) =>
+    sourceId === topologySnapshot.sourceId), edges);
+  const originalHash = edges[0].providerRecordHash;
+  edges[0].providerRecordHash = "0".repeat(64);
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+  edges[0].providerRecordHash = originalHash;
+  edges[0].id = edges[1].id;
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+});
+
 test("부산 공식 114역 편의시설을 facility·evidence 342건으로 materialize한다", async () => {
   const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeBusanAccessibility({
@@ -66,7 +121,6 @@ test("부산 공식 114역 편의시설을 facility·evidence 342건으로 mater
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   });
   const pack = fixture.packs[0];
   const facilities = pack.facilities.filter(({ sourceId }) => sourceId === SOURCE_ID);
@@ -132,12 +186,20 @@ test("부산 공식 114역 편의시설을 facility·evidence 342건으로 mater
 test("부산 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
   const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
 
+  const invalidWindow = structuredClone(accessibilitySnapshot);
+  invalidWindow.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowInventory = structuredClone(inventory);
+  invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID)
+    .accessibilityAdmissionEvidence.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(invalidWindow)).digest("hex")}-${compactSeoulDate(invalidWindow.capturedAt)}`;
+  Object.assign(invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence, {
+    snapshotId: invalidWindowId, snapshotPath: `tools/datapack/sources/${invalidWindowId}.json`,
+  });
   assert.throws(() => materializeBusanAccessibility({
     baseFixture: timetableFixture,
-    accessibilitySnapshot,
+    accessibilitySnapshot: invalidWindow,
     topologySnapshot,
-    inventory,
-    now: new Date("2026-07-25T00:19:05.836Z"),
+    inventory: invalidWindowInventory,
   }), /freshness/);
 
   const badHash = structuredClone(accessibilitySnapshot);
@@ -147,7 +209,6 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badHash,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const badSource = structuredClone(accessibilitySnapshot);
@@ -157,7 +218,6 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badSource,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const badScope = structuredClone(accessibilitySnapshot);
@@ -175,7 +235,6 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badScope,
     topologySnapshot,
     inventory: badScopeInventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const mismatchedInventory = structuredClone(inventory);
@@ -186,7 +245,6 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshot,
     inventory: mismatchedInventory,
-    now: accessibilityNow,
   }), /inventory evidence/);
 
   const admitted = materializeBusanAccessibility({
@@ -194,14 +252,12 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   });
   assert.throws(() => materializeBusanAccessibility({
     baseFixture: admitted,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   }), /already exists/);
 });
 
@@ -217,7 +273,6 @@ test("materialized SQLite와 provenance가 부산 accessibility_facilities 4건�
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   });
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await mkdir(packOutput, { recursive: true });

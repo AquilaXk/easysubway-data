@@ -9,7 +9,6 @@ import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-fres
 
 const SOURCE_ID = "daejeon-transportation-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
-const TOPOLOGY_SNAPSHOT_ID = "daejeon-station-distance-fare-topology-20260720";
 const TIMETABLE_SOURCE_ID = "daejeon-train-timetable";
 const PACK_ID = "nationwide-daejeon-route-map";
 const OPERATOR_ID = "daejeon-transportation";
@@ -99,7 +98,7 @@ export function materializeDaejeonRouteMapPositions({
     ...pack.minimumTableRows,
     route_map_positions: pack.routeMapPositions.length,
   };
-  const version = source.routeMapAdmissionEvidence.snapshotId.slice(-8);
+  const version = compactSeoulDate(snapshot.capturedAt);
   const composition = sha256(JSON.stringify({
     previousPackId: pack.id,
     snapshotId: source.routeMapAdmissionEvidence.snapshotId,
@@ -126,6 +125,8 @@ export function materializedDaejeonRouteMapPackContentHash(pack, version) {
 function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, now) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.routeMapAdmissionEvidence;
+  const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
+    ?.topologyAdmissionEvidence;
   if (!/^[a-f0-9]{64}$/.test(snapshotSha256 ?? "") || evidence?.snapshotSha256 !== snapshotSha256) {
     throw new Error("Daejeon route map snapshot byte identity mismatch");
   }
@@ -137,8 +138,10 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, n
     || evidence.admissionKind !== "official-file-latlon"
     || evidence.materializer !== "tools/datapack/materialize-daejeon-route-map-positions.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-daejeon-route-map-positions.test.mjs"
-    || evidence.snapshotId !== "daejeon-transportation-route-map-positions-20260725"
-    || evidence.snapshotPath !== "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json"
+    || typeof evidence?.snapshotId !== "string"
+    || !evidence.snapshotId.startsWith(`${SOURCE_ID}-`)
+    || evidence.snapshotId.length <= SOURCE_ID.length + 1
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt
     || evidence.stationCount !== snapshot.stationCount
     || evidence.rawStationCount !== snapshot.rawStationCount
@@ -151,7 +154,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, n
     || JSON.stringify(evidence.lineIds) !== JSON.stringify(snapshot.lineIds)
     || JSON.stringify(evidence.lineStationCounts) !== JSON.stringify(snapshot.lineStationCounts)
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== topologyEvidence?.snapshotId
     || evidence.topologyContentSha256 !== snapshot.topologyContentSha256
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
@@ -173,16 +176,24 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
     ?.topologyAdmissionEvidence;
   const lineage = evidence?.topologyLineages?.[0];
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || typeof topologyEvidence?.snapshotId !== "string"
+    || !topologyEvidence.snapshotId.startsWith(`${TOPOLOGY_SOURCE_ID}-`)
+    || typeof topologyEvidence.snapshotPath !== "string"
+    || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(topologyEvidence.snapshotPath)
+    || evidence.topologySnapshotId !== topologyEvidence?.snapshotId
     || evidence.topologyContentSha256 !== topologyEvidence?.contentSha256
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
     || topologySnapshot.contentSha256 !== sha256(JSON.stringify(topologySnapshot.rows))
     || lineage?.sourceId !== TOPOLOGY_SOURCE_ID
-    || lineage.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || lineage.snapshotId !== topologyEvidence?.snapshotId
     || lineage.contentSha256 !== topologySnapshot.contentSha256
     || lineage.lineId !== LINE_ID
-    || topologyEvidence?.snapshotId !== TOPOLOGY_SNAPSHOT_ID) {
+    || topologyEvidence?.capturedAt !== topologySnapshot.observedAt
+    || topologyEvidence.stationCount !== topologySnapshot.stationNumbers?.length
+    || topologyEvidence.edgeCount !== topologySnapshot.rowCount
+    || topologyEvidence.excludedTransferCount !== topologySnapshot.excludedTransferCount
+    || topologyEvidence.rawSha256 !== topologySnapshot.rawSha256) {
     throw new Error("Daejeon route map topology lineage mismatch");
   }
 }
@@ -224,6 +235,13 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }
 
 function sha256(value) {

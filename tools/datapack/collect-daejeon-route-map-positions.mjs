@@ -64,7 +64,6 @@ const CANONICAL_STATION_NAMES = Object.freeze({
   "122": "반석(칠성대)",
 });
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
-const TOPOLOGY_SNAPSHOT_ID = "daejeon-station-distance-fare-topology-20260720";
 const OBSERVED_DATA_UPDATED_AT = "2026-06-25";
 const OFFICIAL_DUPLICATE_LATLON = "OFFICIAL_DUPLICATE_LATLON";
 const FIELDS_PROVIDED = Object.freeze(["route_map_position", "route_map_label_polygon"]);
@@ -227,18 +226,20 @@ export function parseDaejeonRouteMapPositionsXlsx({
 export function collectDaejeonRouteMapPositions({
   xlsxBytes,
   topologySnapshot,
+  topologySource,
   schematicCanvas,
   now = new Date(),
 } = {}) {
   const capturedAt = validDate(now, "now");
+  const topologyEvidence = validateTopologySourceBinding({ topologySnapshot, topologySource });
   const { positions, quarantinedPositions } = parseDaejeonRouteMapPositionsXlsx({
     xlsxBytes,
     topologySnapshot,
     schematicCanvas,
   });
   const topologyLineages = [{
-    sourceId: topologySnapshot.sourceId,
-    snapshotId: TOPOLOGY_SNAPSHOT_ID,
+    sourceId: topologySource.id,
+    snapshotId: topologyEvidence.snapshotId,
     contentSha256: topologySnapshot.contentSha256,
     lineId: LINE_ID,
   }];
@@ -276,8 +277,8 @@ export function collectDaejeonRouteMapPositions({
       redistributionAllowed: true,
       evidenceUrl: DETAIL_URL,
     },
-    topologySourceId: TOPOLOGY_SOURCE_ID,
-    topologySnapshotId: TOPOLOGY_SNAPSHOT_ID,
+    topologySourceId: topologySource.id,
+    topologySnapshotId: topologyEvidence.snapshotId,
     topologyContentSha256: topologySnapshot.contentSha256,
     topologyLineages,
     schematicCanvasSourceId: SCHEMATIC_CANVAS_SOURCE_ID,
@@ -363,12 +364,12 @@ export function validateDaejeonRouteMapPositionsSnapshot(snapshot) {
     || JSON.stringify(snapshot.lineStationCounts) !== JSON.stringify(EXPECTED_LINE_STATION_COUNTS)
     || JSON.stringify(snapshot.fieldsProvided) !== JSON.stringify(FIELDS_PROVIDED)
     || snapshot.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || snapshot.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || typeof snapshot.topologySnapshotId !== "string" || snapshot.topologySnapshotId.length === 0
     || snapshot.schematicCanvasSourceId !== SCHEMATIC_CANVAS_SOURCE_ID
     || !/^[a-f0-9]{64}$/.test(snapshot.topologyContentSha256 ?? "")
     || !Array.isArray(snapshot.topologyLineages) || snapshot.topologyLineages.length !== 1
     || snapshot.topologyLineages[0]?.sourceId !== TOPOLOGY_SOURCE_ID
-    || snapshot.topologyLineages[0]?.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || snapshot.topologyLineages[0]?.snapshotId !== snapshot.topologySnapshotId
     || snapshot.topologyLineages[0]?.contentSha256 !== snapshot.topologyContentSha256
     || snapshot.topologyLineages[0]?.lineId !== LINE_ID
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
@@ -382,6 +383,25 @@ export function validateDaejeonRouteMapPositionsSnapshot(snapshot) {
     throw new Error("invalid Daejeon route map positions snapshot");
   }
   return snapshot;
+}
+
+function validateTopologySourceBinding({ topologySnapshot, topologySource }) {
+  const evidence = topologySource?.topologyAdmissionEvidence;
+  if (topologySnapshot?.sourceId !== TOPOLOGY_SOURCE_ID
+    || topologySource?.id !== TOPOLOGY_SOURCE_ID
+    || typeof evidence?.snapshotId !== "string" || evidence.snapshotId.length === 0
+    || !evidence.snapshotId.startsWith(`${TOPOLOGY_SOURCE_ID}-`)
+    || typeof evidence.snapshotPath !== "string"
+    || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(evidence.snapshotPath)
+    || evidence.capturedAt !== topologySnapshot.observedAt
+    || evidence.stationCount !== topologySnapshot.stationNumbers?.length
+    || evidence.edgeCount !== topologySnapshot.rowCount
+    || evidence.excludedTransferCount !== topologySnapshot.excludedTransferCount
+    || evidence.rawSha256 !== topologySnapshot.rawSha256
+    || evidence.contentSha256 !== topologySnapshot.contentSha256) {
+    throw new Error("Daejeon route map topology source binding is invalid");
+  }
+  return evidence;
 }
 
 function parseOfficialXlsxRows(xlsxBytes) {
@@ -568,32 +588,50 @@ function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-daejeon-route-map-positions.mjs --input <xlsx> --topology <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
+      throw new Error("usage: collect-daejeon-route-map-positions.mjs --input <xlsx> --topology <json> --inventory <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
     }
     args[argv[index].slice(2)] = argv[index + 1];
   }
-  if (!args.input || !args.topology || !args.schematic || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-daejeon-route-map-positions.mjs --input <xlsx> --topology <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
+  if (!args.input || !args.topology || !args.inventory || !args.schematic || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error("usage: collect-daejeon-route-map-positions.mjs --input <xlsx> --topology <json> --inventory <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
   }
   return args;
 }
 
 export async function runDaejeonRouteMapPositionsCollector(argv) {
   const args = parseArgs(argv);
-  const [xlsxBytes, topologySnapshot, schematicCanvas] = await Promise.all([
+  const [xlsxBytes, topologySnapshot, inventory, schematicCanvas] = await Promise.all([
     readFile(args.input),
     readFile(args.topology, "utf8").then(JSON.parse),
+    readFile(args.inventory, "utf8").then(JSON.parse),
     readFile(args.schematic, "utf8").then(JSON.parse),
   ]);
+  const topologySource = selectTopologySource(inventory);
+  assertTopologyInputPath(args, topologySource);
   const snapshot = collectDaejeonRouteMapPositions({
     xlsxBytes,
     topologySnapshot,
+    topologySource,
     schematicCanvas,
     now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
   console.log(`Daejeon route map positions snapshot ready: stations=${snapshot.stationCount}`);
   return snapshot;
+}
+
+function selectTopologySource(inventory) {
+  const matches = inventory?.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
+  if (matches.length !== 1) throw new Error("Daejeon route map topology source is invalid");
+  return matches[0];
+}
+
+function assertTopologyInputPath(args, topologySource) {
+  const root = path.resolve(path.dirname(args.inventory), "../..");
+  const expected = path.resolve(root, topologySource.topologyAdmissionEvidence?.snapshotPath ?? "");
+  if (path.resolve(args.topology) !== expected) {
+    throw new Error("Daejeon route map topology input path is invalid");
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

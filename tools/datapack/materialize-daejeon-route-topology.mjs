@@ -24,12 +24,11 @@ export function materializeDaejeonRouteTopology({
   snapshot,
   inventory,
   canonicalStationMappings,
-  now = new Date(),
 }) {
   validateSnapshot(snapshot);
-  const source = requiredSource(inventory, snapshot, now);
+  const source = requiredSource(inventory, snapshot);
   const mappings = requiredMappings(canonicalStationMappings);
-  const membershipSource = requiredMembershipSource(inventory, snapshot, mappings, now);
+  const membershipSource = requiredMembershipSource(inventory, snapshot, mappings);
   const compositionSha256 = sha256(JSON.stringify({ baseFixture, snapshot, source, membershipSource, mappings }));
   const fixture = structuredClone(baseFixture);
   if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1 || fixture.packs[0].artifactKind !== "production") {
@@ -37,8 +36,7 @@ export function materializeDaejeonRouteTopology({
   }
 
   const pack = fixture.packs[0];
-  const version = /-(\d{8})$/.exec(source.topologyAdmissionEvidence.snapshotId)?.[1];
-  if (!version) throw new Error(`${SOURCE_ID} snapshotId must end with YYYYMMDD`);
+  const version = snapshotVersion(snapshot.observedAt);
   pack.id = `${PACK_ID}-${compositionSha256}`;
   pack.version = version;
   pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${pack.id}-v${version}.sqlite.gz`;
@@ -52,8 +50,6 @@ export function materializeDaejeonRouteTopology({
     throw new Error(`${MEMBERSHIP_SOURCE_ID} already exists in base fixture`);
   }
   pack.sourceInventory.push(packMembershipSource(membershipSource));
-  pack.operators.push({ id: OPERATOR_ID, nameKo: "대전교통공사", nameEn: "" });
-  pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "대전 1호선", nameEn: "", color: "#007448" });
 
   const byStationNumber = new Map(mappings.map((mapping) => [mapping.stationNumber, mapping]));
   const canonicalSource = pack.sourceInventory.find(({ id }) => id === MEMBERSHIP_RAW_SOURCE_ID);
@@ -61,6 +57,7 @@ export function materializeDaejeonRouteTopology({
     throw new Error("MOLIT canonical station mapping source is missing from base fixture");
   }
   const membershipEvidence = source.membershipAdmissionEvidence;
+  const generated = { stations: [], stationLines: [], networkEdges: [] };
   for (const [index, mapping] of mappings.entries()) {
     const membershipRecordHash = sha256(JSON.stringify({
       lineId: LINE_ID,
@@ -72,7 +69,7 @@ export function materializeDaejeonRouteTopology({
       adjacentRows: snapshot.rows.filter(({ fromStationNumber, toStationNumber }) =>
         fromStationNumber === mapping.stationNumber || toStationNumber === mapping.stationNumber),
     }));
-    pack.stations.push({
+    generated.stations.push({
       id: mapping.stationId,
       nameKo: mapping.stationName,
       nameEn: "",
@@ -89,7 +86,7 @@ export function materializeDaejeonRouteTopology({
       derivationKind: "OFFICIAL",
       lastVerifiedAt: membershipEvidence.verifiedAt,
     });
-    pack.stationLines.push({
+    generated.stationLines.push({
       stationId: mapping.stationId,
       lineId: LINE_ID,
       stationCode: mapping.stationNumber,
@@ -119,7 +116,7 @@ export function materializeDaejeonRouteTopology({
     const from = byStationNumber.get(row.fromStationNumber);
     const to = byStationNumber.get(row.toStationNumber);
     if (!from || !to) throw new Error(`Daejeon edge station mapping missing: ${row.fromStationNumber}:${row.toStationNumber}`);
-    pack.networkEdges.push({
+    generated.networkEdges.push({
       id: `edge-daejeon-${row.fromStationNumber}-${row.toStationNumber}`,
       fromNodeId: `${from.stationId}:${LINE_ID}`,
       toNodeId: `${to.stationId}:${LINE_ID}`,
@@ -142,6 +139,7 @@ export function materializeDaejeonRouteTopology({
       evidenceHash: snapshot.rowsSha256,
     });
   }
+  bindCumulativeDaejeonTopology(pack, generated);
 
   pack.minimumTableRows = {
     ...pack.minimumTableRows,
@@ -152,7 +150,71 @@ export function materializeDaejeonRouteTopology({
   return fixture;
 }
 
-function validateSnapshot(snapshot) {
+export function bindCumulativeDaejeonTopology(pack, generated) {
+  const operators = pack.operators.filter(({ id }) => id === OPERATOR_ID);
+  const lines = pack.lines.filter(({ id }) => id === LINE_ID);
+  if (operators.length > 1 || lines.length > 1 || lines.some(({ operatorId }) => operatorId !== OPERATOR_ID)
+    || (operators.length === 0) !== (lines.length === 0)) throw new Error("Daejeon cumulative line identity mismatch");
+  const memberships = pack.stationLines.filter(({ lineId }) => lineId === LINE_ID);
+  const rides = pack.networkEdges.filter((row) => row.edgeType === "RIDE" && (row.fromNodeId?.endsWith(`:${LINE_ID}`) || row.toNodeId?.endsWith(`:${LINE_ID}`)));
+  const timetable = [...(pack.transitRoutes ?? []), ...(pack.transitStopTimes ?? [])].filter(({ lineId }) => lineId === LINE_ID);
+  if (timetable.length || (pack.transitTrips ?? []).some(({ routeId }) => (pack.transitRoutes ?? []).some((route) => route.id === routeId && route.lineId === LINE_ID))) throw new Error("Daejeon cumulative timetable already exists");
+  if (operators.length === 0) {
+    pack.operators.push({ id: OPERATOR_ID, nameKo: "대전교통공사", nameEn: "" });
+    pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "대전 1호선", nameEn: "", color: "#007448" });
+    pack.stations.push(...generated.stations); pack.stationLines.push(...generated.stationLines); pack.networkEdges.push(...generated.networkEdges); return;
+  }
+  const expectedMembership = new Map(generated.stationLines.map((row) => [`${row.stationId}\0${row.lineId}`, row]));
+  const expectedEdges = new Map(generated.networkEdges.map((row) => [`${row.fromNodeId}\0${row.toNodeId}`, row]));
+  const membershipKeys = new Set(memberships.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const edgeKeys = new Set(rides.map(({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`));
+  if (!memberships.length || !rides.length || membershipKeys.size !== memberships.length || membershipKeys.size !== expectedMembership.size
+    || [...membershipKeys].some((key) => !expectedMembership.has(key)) || memberships.some((row) => hasAuthority(row)
+      || row.lineSequence !== expectedMembership.get(`${row.stationId}\0${row.lineId}`).lineSequence)
+    || edgeKeys.size !== rides.length || new Set(rides.map(({ id }) => id)).size !== rides.length || edgeKeys.size !== expectedEdges.size
+    || [...edgeKeys].some((key) => !expectedEdges.has(key)) || rides.some(hasAuthority)) throw new Error("Daejeon cumulative topology mismatch");
+  const expectedStations = new Map(generated.stations.map((row) => [row.id, row]));
+  const stations = pack.stations.filter(({ id }) => expectedStations.has(id));
+  if (stations.length !== expectedStations.size || new Set(stations.map(({ id }) => id)).size !== stations.length
+    || stations.some((row) => hasAuthority(row) || normalizedName(row.nameKo) !== normalizedName(expectedStations.get(row.id).nameKo))) throw new Error("Daejeon cumulative station mismatch");
+  for (const row of memberships) {
+    const expected = expectedMembership.get(`${row.stationId}\0${row.lineId}`);
+    Object.assign(row, {
+      stationCode: expected.stationCode, lineSequence: expected.lineSequence,
+      sourceId: expected.sourceId, sourceSnapshotId: expected.sourceSnapshotId,
+      providerRecordHash: expected.providerRecordHash, evidenceHash: expected.evidenceHash,
+      fieldProvenance: expected.fieldProvenance, derivationKind: expected.derivationKind,
+      lastVerifiedAt: expected.lastVerifiedAt,
+    });
+  }
+  for (const row of stations) {
+    const expected = expectedStations.get(row.id);
+    Object.assign(row, {
+      dataQualityLevel: expected.dataQualityLevel, dataSourceType: expected.dataSourceType,
+      sourceId: expected.sourceId, sourceSnapshotId: expected.sourceSnapshotId,
+      providerRecordHash: expected.providerRecordHash, evidenceHash: expected.evidenceHash,
+      derivationKind: expected.derivationKind, lastVerifiedAt: expected.lastVerifiedAt,
+    });
+  }
+  for (const row of rides) {
+    const id = row.id;
+    Object.assign(row, expectedEdges.get(`${row.fromNodeId}\0${row.toNodeId}`), { id });
+  }
+}
+
+function hasAuthority(row) {
+  return row.sourceId !== undefined || row.sourceSnapshotId !== undefined
+    || row.providerRecordHash !== undefined || row.evidenceHash !== undefined
+    || row.fieldProvenance !== undefined || row.provenanceKind !== undefined
+    || row.derivationKind !== undefined || row.verificationStatus !== undefined;
+}
+function normalizedName(value) {
+  // 동일 canonical ID의 본역명을 비교한다. 공식 괄호 부역명은 표시명 차이다.
+  return String(value).normalize("NFKC").replace(/\([^)]*\)/gu, "")
+    .replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+}
+
+export function validateSnapshot(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "daejeon-route-topology-collection"
     || snapshot.sourceId !== SOURCE_ID || snapshot.endpoint !== DAEJEON_TOPOLOGY_ENDPOINT
     || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "EXPECTED"
@@ -184,7 +246,22 @@ function validateSnapshot(snapshot) {
   }
 }
 
-function requiredSource(inventory, snapshot, now) {
+function snapshotVersion(observedAt) {
+  if (typeof observedAt !== "string" || !Number.isFinite(Date.parse(observedAt))
+    || new Date(observedAt).toISOString() !== observedAt) {
+    throw new Error(`${SOURCE_ID} snapshot observedAt is invalid`);
+  }
+  return compactSeoulDate(observedAt);
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
+function requiredSource(inventory, snapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true) {
     throw new Error(`${SOURCE_ID} is not admitted for production use`);
@@ -202,10 +279,6 @@ function requiredSource(inventory, snapshot, now) {
   if (freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} topology evidence freshness contract is invalid`);
   }
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(observedNow)) throw new Error("materialization time is invalid");
-  if (observedNow < capturedAt) throw new Error(`${SOURCE_ID} topology evidence is future-dated`);
-  if (observedNow >= freshUntil) throw new Error(`${SOURCE_ID} topology evidence is stale`);
   return source;
 }
 
@@ -217,7 +290,7 @@ function requiredMappings(mappings) {
   return mappings;
 }
 
-function requiredMembershipSource(inventory, snapshot, mappings, now) {
+function requiredMembershipSource(inventory, snapshot, mappings) {
   const source = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_SOURCE_ID);
   const rawSource = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_RAW_SOURCE_ID);
   const stationCodeSource = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
@@ -244,9 +317,6 @@ function requiredMembershipSource(inventory, snapshot, mappings, now) {
     || evidence.membershipSourceSnapshotSha256 !== mappings.sourceRawSha256
     || !Number.isFinite(verifiedAt) || new Date(verifiedAt).toISOString() !== evidence.verifiedAt) {
     throw new Error(`${MEMBERSHIP_SOURCE_ID} Daejeon membership evidence is invalid`);
-  }
-  if (now.getTime() < verifiedAt) {
-    throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is future-dated`);
   }
   return source;
 }
@@ -308,6 +378,7 @@ async function main(argv) {
     inventory,
     canonicalStationMappings: parseMolitDaejeonStationMappings(stationMapCsv),
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Daejeon route topology materialized: stations=${snapshot.stationNumbers.length} edges=${snapshot.rowCount}`);
 }

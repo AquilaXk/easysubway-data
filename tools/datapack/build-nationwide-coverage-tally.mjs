@@ -46,6 +46,7 @@ import path from "node:path";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { parseArgs, requireArg, sortJson } from "./lib/ledger-admission-cli.mjs";
+import { inventoryCoverageFields, inventoryCoverageScope, isInventoryCoverageSource, matchesInventoryLineOperatorScope } from "./report-coverage-gaps.mjs";
 
 export const DEFAULT_RESOLUTIONS_PATH =
   "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json";
@@ -81,7 +82,7 @@ export function buildNationwideCoverageTally({
   validateInventory(inventory);
   const targetIndex = coverageTargetIndex(targets);
   const sources = inventory.sources
-    .filter((source) => source.rawSnapshotAdmission == null)
+    .filter(isInventoryCoverageSource)
     .map((source) => normalizeSource(source, targetIndex))
     .sort((left, right) => codepointCompare(left.id, right.id));
   const normalizedInventorySha256 = createHash("sha256")
@@ -92,6 +93,7 @@ export function buildNationwideCoverageTally({
       lineIds: [...source.lineIds].sort(codepointCompare),
       sourceDomains: [...source.sourceDomains].sort(codepointCompare),
       fields: [...source.fields].sort(codepointCompare),
+      ...(source.lineOperatorScopes === undefined ? {} : { lineOperatorScopes: source.lineOperatorScopes }),
     }))))
     .digest("hex");
   const scopes = [...targets.activeLineScopes]
@@ -311,6 +313,7 @@ function admittedSourceIds(sources, scope, sourceDomain, field, { ignoreOperator
       source.regionIds.includes(scope.regionId)
       && (ignoreOperator || source.operatorIds.includes(scope.operatorId))
       && source.lineIds.includes(scope.lineId)
+      && matchesInventoryLineOperatorScope(source, scope, { ignoreOperator })
       && source.sourceDomains.includes(sourceDomain)
       && source.fields.includes(field))
     .map(({ id }) => id);
@@ -502,7 +505,7 @@ function validateInventory(inventory) {
 
 function normalizeSource(source, targetIndex) {
   const id = requiredString(source?.id, "source.id");
-  const coverage = source.coverageScope;
+  const coverage = inventoryCoverageScope(source);
   if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
     throw new Error(`${id}.coverageScope must be an object`);
   }
@@ -512,7 +515,8 @@ function normalizeSource(source, targetIndex) {
     operatorIds: requiredStringArray(coverage.operatorIds, `${id}.coverageScope.operatorIds`),
     sourceDomains: requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`),
     lineIds: optionalStringArray(coverage.lineIds, `${id}.coverageScope.lineIds`),
-    fields: requiredStringArray(source.fieldsProvided ?? source.fields, `${id}.fieldsProvided`),
+    fields: requiredStringArray(inventoryCoverageFields(source), `${id}.fieldsProvided`),
+    lineOperatorScopes: coverage.lineOperatorScopes,
   };
   // 게이트 validateKnownValues 대응. 오타 id를 조용한 매칭 실패(=과소 집계)로 흘리지 않고 fail closed한다.
   validateKnownValues(normalized.regionIds, targetIndex.regionIds, `${id}.coverageScope.regionIds`, "region");
@@ -539,6 +543,7 @@ function coverageTargetIndex(targets) {
     operatorIds: new Set([
       ...targets.regions.flatMap((region) => region.operatorIds),
       ...targets.activeLineScopes.map((scope) => scope.operatorId),
+      ...(targets.inactiveLineExclusions ?? []).flatMap((scope) => scope.operatorIds ?? []),
       ...optionalStringArray(targets.knownOperatorIds, "knownOperatorIds"),
     ]),
     lineIds: new Set([
@@ -670,7 +675,11 @@ async function main(argv) {
       inventory: inventory.input,
       resolutions: resolutions.input,
     },
-    expectedLaunchRequiredTotal: expectedRaw === undefined ? null : Number(expectedRaw),
+    // CLI 재생성은 현재 target에서 분모를 파생한다. 명시된 기대값의 drift 검사는 유지한다.
+    expectedLaunchRequiredTotal: expectedRaw === undefined
+      ? targets.document.activeLineScopes.length
+        * targets.document.requiredSourceDomains.filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED").length
+      : Number(expectedRaw),
   });
 
   const outputDirectory = path.dirname(outputPath);

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_PREFIX = Object.freeze({ "평일": "WEEK", "토요일": "SAT", "휴일": "HOLI" });
@@ -110,6 +111,15 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function retainedRawSource(datasetId, bytes) {
+  const exactBytes = Buffer.from(bytes);
+  return {
+    datasetId,
+    rawSha256: sha256(exactBytes),
+    bytesBase64: exactBytes.toString("base64"),
+  };
+}
+
 function validDate(now) {
   const date = now instanceof Date ? now : new Date(now);
   if (Number.isNaN(date.getTime())) throw new Error("capturedAt must be a valid date");
@@ -193,6 +203,7 @@ export function parseDaeguRouteTopology(intervalBytes, { lineNumber, capturedAt 
     quarantinedDepots: depots,
     scopeSha256,
     edgesSha256,
+    rawSources: [retainedRawSource(config.intervalDatasetId, intervalBytes)],
     rawSha256,
     contentSha256: sha256(JSON.stringify({ scope, edges })),
   };
@@ -316,6 +327,10 @@ export function parseDaeguTrainTimetable(upBytes, downBytes, topologySnapshot, {
     rolloverTripCount: up.rolloverTripCount + down.rolloverTripCount,
     trips,
     tripsSha256,
+    rawSources: [
+      retainedRawSource(config.upDatasetId, upBytes),
+      retainedRawSource(config.downDatasetId, downBytes),
+    ],
     rawUpSha256: up.rawSha256,
     rawDownSha256: down.rawSha256,
     rawSha256: sha256(Buffer.concat([Buffer.from(upBytes), Buffer.from(downBytes)])),
@@ -326,19 +341,64 @@ export function parseDaeguTrainTimetable(upBytes, downBytes, topologySnapshot, {
 
 function parseArgs(argv) {
   const args = {};
+  const allowed = new Set(["input-dir", "output-dir", "captured-at"]);
   for (let index = 0; index < argv.length; index += 2) {
-    if (!argv[index]?.startsWith("--")) throw new Error("usage: collect-daegu-datapack-sources.mjs --input-dir <dir> --output-dir <dir> --captured-at <iso>");
-    args[argv[index].slice(2)] = argv[index + 1];
+    const name = argv[index]?.slice(2);
+    const value = argv[index + 1];
+    if (!argv[index]?.startsWith("--") || !allowed.has(name) || Object.hasOwn(args, name)
+      || typeof value !== "string" || value.length === 0) {
+      throw new Error("usage: collect-daegu-datapack-sources.mjs --input-dir <dir> --output-dir <dir> --captured-at <iso>");
+    }
+    args[name] = value;
   }
-  if (!args["input-dir"] || !args["output-dir"] || !args["captured-at"] || !path.isAbsolute(args["output-dir"])) {
+  if (argv.length !== 6 || !args["input-dir"] || !args["output-dir"] || !args["captured-at"] || !path.isAbsolute(args["output-dir"])) {
     throw new Error("usage: collect-daegu-datapack-sources.mjs --input-dir <dir> --output-dir <dir> --captured-at <iso>");
   }
   return args;
 }
 
+export function daeguSourceSnapshotIdentity(snapshot) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(snapshot?.sourceId ?? "")) {
+    throw new Error("Daegu source snapshot ID is invalid");
+  }
+  const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  return `${snapshot.sourceId}-${sha256(bytes)}`;
+}
+
+export async function loadAdmittedDaeguTopologySnapshots(sourcesDirectory, inventory) {
+  if (typeof sourcesDirectory !== "string" || !path.isAbsolute(sourcesDirectory)) {
+    throw new Error("Daegu topology sources directory must be absolute");
+  }
+  const readTracked = async (relativePath) => readFile(path.join(sourcesDirectory, path.basename(relativePath)));
+  const entries = await Promise.all(DAEGU_LINES.map(async (line) => {
+    const sourceId = `daegu-line${line.lineNumber}-route-topology`;
+    const snapshot = await readSelectedSourceSnapshot({ inventory, sourceId,
+      evidenceKind: "topologyAdmissionEvidence", readTracked });
+    const evidence = inventory.sources.find(({ id }) => id === sourceId).topologyAdmissionEvidence;
+    if (snapshot.sourceId !== sourceId || daeguSourceSnapshotIdentity(snapshot) !== evidence.snapshotId
+      || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
+      || snapshot.contentSha256 !== evidence.contentSha256) {
+      throw new Error(`Daegu selected topology binding is invalid: ${sourceId}`);
+    }
+    return [line.lineNumber, snapshot];
+  }));
+  return Object.fromEntries(entries);
+}
+
+export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
+  if (!path.isAbsolute(outputDirectory ?? "")) throw new Error("Daegu source output directory must be absolute");
+  const identity = daeguSourceSnapshotIdentity(snapshot);
+  const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const output = path.resolve(outputDirectory, `${identity}.json`);
+  if (path.dirname(output) !== path.resolve(outputDirectory)) {
+    throw new Error("Daegu source snapshot output escapes directory");
+  }
+  await writeFile(output, bytes, { flag: "wx", mode: 0o600 });
+  return output;
+}
+
 export async function runDaeguSourceCollector(argv) {
   const args = parseArgs(argv);
-  const stamp = args["date-stamp"] ?? "20260721";
   const outputs = [];
   for (const config of DAEGU_LINES) {
     const [intervalBytes, upBytes, downBytes] = await Promise.all([
@@ -348,10 +408,8 @@ export async function runDaeguSourceCollector(argv) {
     ]);
     const topology = parseDaeguRouteTopology(intervalBytes, { lineNumber: config.lineNumber, capturedAt: args["captured-at"] });
     const timetable = parseDaeguTrainTimetable(upBytes, downBytes, topology, { lineNumber: config.lineNumber, capturedAt: args["captured-at"] });
-    const topologyPath = path.join(args["output-dir"], `daegu-line${config.lineNumber}-route-topology-${stamp}.json`);
-    const timetablePath = path.join(args["output-dir"], `daegu-line${config.lineNumber}-train-timetable-${stamp}.json`);
-    await writeFile(topologyPath, `${JSON.stringify(topology)}\n`);
-    await writeFile(timetablePath, `${JSON.stringify(timetable)}\n`);
+    const topologyPath = await writeDaeguSourceSnapshot(args["output-dir"], topology);
+    const timetablePath = await writeDaeguSourceSnapshot(args["output-dir"], timetable);
     outputs.push(topologyPath, timetablePath);
     console.log(`Daegu line ${config.lineNumber}: ${topology.stationCount} stations, ${topology.edgeCount} edges, ${timetable.tripCount} trips, ${timetable.stopTimeCount} stop times`);
   }

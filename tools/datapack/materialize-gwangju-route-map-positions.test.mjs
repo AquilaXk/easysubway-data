@@ -6,11 +6,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { collectGwangjuRouteMapPositions } from "./collect-gwangju-route-map-positions.mjs";
 import { promisify } from "node:util";
 import {
   loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
+  projectRegionalFixtureSourceBindings,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
@@ -30,6 +32,45 @@ const SOURCE_ID = "gwangju-transportation-route-map-positions";
 const LINE_ID = "line-e57a361e8892";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 
+test("materialize a changed topology roster and snapshot identity without production pins", () => {
+  const topologyId = "gwangju-topology-successor";
+  const scope = [
+    { providerStationId: "3", stationCode: "105", stationName: "가" },
+    { providerStationId: "9", stationCode: "109", stationName: "나" },
+  ];
+  const topologySnapshot = { sourceId: "gwangju-transportation-route-topology", stationCount: scope.length, scope, edges: [] };
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  topologySnapshot.contentSha256 = digest(JSON.stringify({ scope, edges: [] }));
+  const csvBytes = Buffer.from("역번호,역사명,노선번호,노선명,역위도,역경도,데이터기준일자\n105,가,S2901,1호선,35.11,126.81,2022-12-02\n109,나,S2901,1호선,35.12,126.82,2022-12-02\n");
+  const schematicCanvas = scope.map((row, index) => ({ stationName: row.stationName,
+    canvasSourceId: "owner-self-drawn-sma-schematic", x: 400 + index * 100, y: 400, labelDx: 0, labelDy: 0,
+    labelPolygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }] }));
+  const now = new Date("2025-01-01T00:00:00.000Z");
+  const snapshot = collectGwangjuRouteMapPositions({ csvBytes, topologySnapshot, topologySnapshotId: topologyId, schematicCanvas, now });
+  const snapshotSha256 = digest(JSON.stringify(snapshot));
+  const evidence = { ...snapshot, issue: 2494, admissionKind: "official-file-latlon",
+    materializer: "tools/datapack/materialize-gwangju-route-map-positions.mjs",
+    verificationTest: "tools/datapack/materialize-gwangju-route-map-positions.test.mjs",
+    snapshotId: "gwangju-map-successor", snapshotPath: "tools/datapack/sources/gwangju-map-successor.json",
+    snapshotSha256, freshUntil: "2026-01-01T00:00:00.000Z" };
+  const inventory = { sources: [
+    { id: topologySnapshot.sourceId, topologyAdmissionEvidence: { snapshotId: topologyId, contentSha256: topologySnapshot.contentSha256 } },
+    { id: SOURCE_ID, productionUseAllowed: true, fieldsProvided: snapshot.fieldsProvided,
+      license: { type: "PUBLIC_DATA_FREE_USE", redistributionAllowed: true, commercialUseAllowed: true, derivativeWorkAllowed: true, name: "test license" },
+      coverageScope: { regionIds: ["gwangju"], operatorIds: [OPERATOR_ID], lineIds: [LINE_ID], sourceDomains: ["route_map_positions"] },
+      routeMapAdmissionEvidence: evidence },
+  ] };
+  const baseFixture = { manifest: {}, packs: [{ id: "base", artifactKind: "production",
+    operators: [{ id: OPERATOR_ID }], sourceInventory: [{ id: topologySnapshot.sourceId }],
+    stationLines: scope.map((row, index) => ({ stationId: `station-${index}`, stationCode: row.stationCode,
+      lineId: LINE_ID, lineSequence: index + 1, fieldProvenance: { station_code: { sourceId: topologySnapshot.sourceId } } })) }] };
+  const result = materializeGwangjuRouteMapPositions({ baseFixture, snapshot, snapshotSha256, topologySnapshot, inventory, now });
+  assert.deepEqual(result.packs[0].routeMapPositions.map(({ stationId, sourceSnapshotId }) => ({ stationId, sourceSnapshotId })),
+    scope.map((_, index) => ({ stationId: `station-${index}`, sourceSnapshotId: evidence.snapshotId })));
+  inventory.sources[0].topologyAdmissionEvidence.snapshotId = "different-topology";
+  assert.throws(() => materializeGwangjuRouteMapPositions({ baseFixture, snapshot, snapshotSha256, topologySnapshot, inventory, now }), /does not match|lineage mismatch/);
+});
+
 async function inputs() {
   const [
     regional,
@@ -45,10 +86,17 @@ async function inputs() {
     }),
     readFile(path.join(root, "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json")),
   ]);
-  const { accessibilityFixture, gwangjuTopology, inventory } = regional;
+  const { accessibilityFixture, gwangjuTopology } = regional;
+  const gwangjuSnapshot = JSON.parse(gwangjuSnapshotBytes);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: regional.inventory, gwangjuTopology,
+    molitStationMapCsv: regional.molitStationMapCsv,
+    gwangjuRouteMapSnapshot: gwangjuSnapshot,
+    gwangjuRouteMapSnapshotBytes: gwangjuSnapshotBytes,
+  });
   return {
     baseFixture: accessibilityFixture,
-    gwangjuSnapshot: JSON.parse(gwangjuSnapshotBytes),
+    gwangjuSnapshot,
     gwangjuSnapshotSha256: createHash("sha256").update(gwangjuSnapshotBytes).digest("hex"),
     topologySnapshot: gwangjuTopology,
     inventory,

@@ -40,7 +40,11 @@
         "kric-station-escalator",
         "kric-wheelchair-lift-location",
         "kric-wheelchair-lift-movement",
-        "seoul-metro-accessibility"
+        "seoul-metro-accessibility",
+        "daegu-transportation-accessibility",
+        "daejeon-transportation-accessibility",
+        "gwangju-transportation-accessibility",
+        "busan-transportation-accessibility"
       ],
       "examples": [
         "KRIC elevator",
@@ -61,6 +65,7 @@
     {
       "id": "planned_timetable",
       "sourceIds": [
+        "korail-metropolitan-planned-timetable",
         "kric-subway-timetable"
       ],
       "examples": [
@@ -161,7 +166,13 @@
       "id": "route_graph_topology",
       "sourceIds": [
         "capital-route-topology",
-        "korail-metropolitan-timetable-file"
+        "korail-metropolitan-timetable-file",
+        "gwangju-transportation-route-topology",
+        "busan-transportation-route-topology",
+        "daejeon-station-distance-fare",
+        "daegu-line1-route-topology",
+        "daegu-line2-route-topology",
+        "daegu-line3-route-topology"
       ],
       "examples": [
         "official capital route graph topology"
@@ -188,6 +199,47 @@
         "official timetable revision notice"
       ],
       "providerValidityEndField": "serviceEffectiveUntil"
+    },
+    {
+      "id": "daejeon_timetable_observation",
+      "sourceIds": [
+        "daejeon-train-timetable"
+      ],
+      "basisField": "observedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
+    },
+    {
+      "id": "busan_timetable_observation",
+      "sourceIds": [
+        "busan-transportation-timetable"
+      ],
+      "basisField": "capturedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
+    },
+    {
+      "id": "daegu_timetable_observation",
+      "sourceIds": [
+        "daegu-line1-train-timetable",
+        "daegu-line2-train-timetable",
+        "daegu-line3-train-timetable"
+      ],
+      "basisField": "capturedAt",
+      "reverificationCadence": "P30D",
+      "futureBasisAllowed": false,
+      "providerValidityEndField": null,
+      "eventTriggers": [
+        "official timetable revision"
+      ]
     }
   ],
   "monitoring": {

@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import {
   loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
+  projectHistoricalDaeguMaterializeInventory,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
@@ -17,17 +18,17 @@ import {
 import {
   parseMolitDaeguStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
 import {
   materializeDaeguAccessibility,
   materializedDaeguAccessibilityPackContentHash,
+  daeguAccessibilityTopologyLineageIdentity,
 } from "./materialize-daegu-accessibility.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const timetableNow = new Date("2026-07-20T16:00:00.000Z");
-const accessibilityNow = new Date("2026-07-24T01:00:00.000Z");
 const execFileAsync = promisify(execFile);
 const SOURCE_ID = "daegu-transportation-accessibility";
 const LINE_IDS = Object.freeze(DAEGU_LINES.map(({ lineId }) => lineId));
@@ -46,7 +47,7 @@ async function inputs() {
     }),
     readJson("tools/datapack/sources/daegu-transportation-accessibility-20260724.json"),
   ]);
-  const { gwangjuFixture, inventory, molitStationMapCsv: molitMap } = regional;
+  const { gwangjuFixture, molitStationMapCsv: molitMap } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const mappings = {};
@@ -59,6 +60,28 @@ async function inputs() {
     );
     mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
   }
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: regional.inventory, topologySnapshots, timetableSnapshots, mappings,
+  });
+  const topologyLineages = DAEGU_LINES.map((config) => ({
+    sourceId: topologySnapshots[config.lineNumber].sourceId,
+    snapshotId: daeguSourceSnapshotIdentity(topologySnapshots[config.lineNumber]),
+    contentSha256: topologySnapshots[config.lineNumber].contentSha256,
+    lineId: config.lineId,
+  }));
+  accessibilitySnapshot.topologyLineages = topologyLineages;
+  const admission = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence;
+  Object.assign(admission, {
+    snapshotId: `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(accessibilitySnapshot)).digest("hex")}-${compactSeoulDate(accessibilitySnapshot.capturedAt)}`,
+    capturedAt: accessibilitySnapshot.capturedAt,
+    freshUntil: accessibilitySnapshot.freshUntil,
+    rawSha256: accessibilitySnapshot.rawSha256,
+    rowsSha256: accessibilitySnapshot.rowsSha256,
+    topologyLineages,
+    topologySnapshotId: daeguAccessibilityTopologyLineageIdentity(topologyLineages),
+    topologyContentSha256: createHash("sha256").update(JSON.stringify(topologyLineages)).digest("hex"),
+  });
+  admission.snapshotPath = `tools/datapack/sources/${admission.snapshotId}.json`;
   const daeguFixture = materializeDaeguTimetable({
     baseFixture: gwangjuFixture, topologySnapshots, timetableSnapshots, inventory,
     canonicalStationMappings: mappings, now: timetableNow,
@@ -71,6 +94,13 @@ async function inputs() {
   };
 }
 
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
 test("대구 공식 94역 편의시설을 facility·evidence 282건으로 materialize한다", async () => {
   const { daeguFixture, topologySnapshots, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeDaeguAccessibility({
@@ -78,7 +108,6 @@ test("대구 공식 94역 편의시설을 facility·evidence 282건으로 materi
     accessibilitySnapshot,
     topologySnapshots,
     inventory,
-    now: accessibilityNow,
   });
   const pack = fixture.packs[0];
   const facilities = pack.facilities.filter(({ sourceId }) => sourceId === SOURCE_ID);
@@ -121,12 +150,20 @@ test("대구 공식 94역 편의시설을 facility·evidence 282건으로 materi
 test("대구 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
   const { daeguFixture, topologySnapshots, accessibilitySnapshot, inventory } = await inputs();
 
+  const invalidWindow = structuredClone(accessibilitySnapshot);
+  invalidWindow.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowInventory = structuredClone(inventory);
+  invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID)
+    .accessibilityAdmissionEvidence.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(invalidWindow)).digest("hex")}-${compactSeoulDate(invalidWindow.capturedAt)}`;
+  Object.assign(invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence, {
+    snapshotId: invalidWindowId, snapshotPath: `tools/datapack/sources/${invalidWindowId}.json`,
+  });
   assert.throws(() => materializeDaeguAccessibility({
     baseFixture: daeguFixture,
-    accessibilitySnapshot,
+    accessibilitySnapshot: invalidWindow,
     topologySnapshots,
-    inventory,
-    now: new Date("2026-07-25T01:00:00.000Z"),
+    inventory: invalidWindowInventory,
   }), /freshness/);
 
   const badHash = structuredClone(accessibilitySnapshot);
@@ -136,7 +173,6 @@ test("대구 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badHash,
     topologySnapshots,
     inventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const badSource = structuredClone(accessibilitySnapshot);
@@ -146,7 +182,6 @@ test("대구 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badSource,
     topologySnapshots,
     inventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const badScope = structuredClone(accessibilitySnapshot);
@@ -164,7 +199,6 @@ test("대구 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badScope,
     topologySnapshots: topologySnapshots,
     inventory: badScopeInventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const mismatchedInventory = structuredClone(inventory);
@@ -175,7 +209,6 @@ test("대구 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshots,
     inventory: mismatchedInventory,
-    now: accessibilityNow,
   }), /inventory evidence/);
 
   const badLineage = structuredClone(inventory);
@@ -186,7 +219,6 @@ test("대구 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshots,
     inventory: badLineage,
-    now: accessibilityNow,
   }), /inventory evidence|topology lineage/);
 
   const admitted = materializeDaeguAccessibility({
@@ -194,14 +226,12 @@ test("대구 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshots,
     inventory,
-    now: accessibilityNow,
   });
   assert.throws(() => materializeDaeguAccessibility({
     baseFixture: admitted,
     accessibilitySnapshot,
     topologySnapshots,
     inventory,
-    now: accessibilityNow,
   }), /already exists/);
 });
 
@@ -217,7 +247,6 @@ test("materialized SQLite와 provenance가 대구 accessibility_facilities 3건�
     accessibilitySnapshot,
     topologySnapshots,
     inventory,
-    now: accessibilityNow,
   });
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await mkdir(packOutput, { recursive: true });

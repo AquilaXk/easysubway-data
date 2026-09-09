@@ -66,12 +66,62 @@ export function buildFacilityAccessibilityAdmission(input) {
   return canonicalObject({ ...payload, admissionDigest: sha256(canonicalJson(payload)) });
 }
 
+export function buildPackFacilityAccessibilityAdmission({ candidate, observedAt, pack, sources }) {
+  const { stationLines, facilityRows } = projectProductionPackFacilityInput(pack);
+  return buildFacilityAccessibilityAdmission({ candidate, observedAt, stationLines, sources, facilityRows });
+}
+
 export function canonicalFacilityAccessibilityAdmissionJson(result) {
   assertKeys(result, OUTPUT_KEYS, "FACILITY admission output keys");
   const { admissionDigest, ...payload } = result;
   assertSha256(admissionDigest, "FACILITY admission digest");
   if (sha256(canonicalJson(payload)) !== admissionDigest) throw new Error("FACILITY admission digest mismatch");
   return canonicalJson(result);
+}
+
+function projectProductionPackFacilityInput(pack) {
+  if (!pack || typeof pack !== "object" || Array.isArray(pack) || pack.artifactKind !== "production") {
+    throw new Error("FACILITY pack must be a production artifact");
+  }
+  for (const key of ["lines", "stations", "stationLines", "stationFacilityEvidence"]) {
+    if (!Array.isArray(pack[key])) throw new Error(`FACILITY pack ${key} must be an array`);
+  }
+
+  const lines = indexCanonicalPackRows(pack.lines, "line", (line) => {
+    assertNonBlank(line?.id, "FACILITY pack line id");
+    assertNonBlank(line.operatorId, "FACILITY pack line operatorId");
+    return line.id;
+  });
+  const stations = indexCanonicalPackRows(pack.stations, "station", (station) => {
+    assertNonBlank(station?.id, "FACILITY pack station id");
+    return station.id;
+  });
+  const stationLines = pack.stationLines.map((stationLine) => {
+    assertNonBlank(stationLine?.stationId, "FACILITY pack station line stationId");
+    assertNonBlank(stationLine.lineId, "FACILITY pack station line lineId");
+    if (!stations.has(stationLine.stationId)) throw new Error("FACILITY pack station line references missing station");
+    const line = lines.get(stationLine.lineId);
+    if (!line) throw new Error("FACILITY pack station line references missing line");
+    return {
+      stationId: stationLine.stationId,
+      lineId: stationLine.lineId,
+      operatorId: line.operatorId,
+    };
+  });
+  const facilityRows = pack.stationFacilityEvidence.map((row) => Object.fromEntries(
+    FACILITY_ROW_KEYS.map((key) => [key, row?.[key]]),
+  ));
+  return { stationLines, facilityRows };
+}
+
+function indexCanonicalPackRows(rows, kind, idForRow) {
+  const index = new Map();
+  for (const row of rows) {
+    const id = idForRow(row);
+    if (index.has(id)) throw new Error(`duplicate canonical ${kind} id`);
+    index.set(id, row);
+  }
+  return index;
 }
 
 function validateCandidate(value) {

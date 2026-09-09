@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { busanRouteTopologyContentHash } from "./collect-busan-route-topology.mjs";
+import { normalizedStationName } from "./materialize-busan-route-topology.mjs";
 
 const SOURCE_ID = "busan-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "busan-transportation-route-topology";
@@ -47,10 +48,9 @@ export function materializeBusanAccessibility({
   accessibilitySnapshot,
   topologySnapshot,
   inventory,
-  now = new Date(),
 }) {
   const rows = validateSnapshot(accessibilitySnapshot);
-  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot, now);
+  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -204,7 +204,7 @@ function validateSnapshot(snapshot) {
   return snapshot.rows;
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot, now) {
+function requiredSource(inventory, snapshot, topologySnapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.accessibilityAdmissionEvidence;
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
@@ -216,7 +216,7 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || evidence?.issue !== 2374
     || evidence.materializer !== "tools/datapack/materialize-busan-accessibility.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-busan-accessibility.test.mjs"
-    || !/^busan-transportation-accessibility-\d{8}$/.test(evidence.snapshotId ?? "")
+    || !/^busan-transportation-accessibility-[a-f0-9]{64}-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
@@ -242,15 +242,17 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     )) {
     throw new Error("Busan accessibility topology lineage mismatch");
   }
+  const expectedSnapshotId = `${SOURCE_ID}-${sha256(JSON.stringify(snapshot))}-${compactSeoulDate(evidence.capturedAt)}`;
+  if (evidence.snapshotId !== expectedSnapshotId) {
+    throw new Error(`${SOURCE_ID} snapshotId must bind exact snapshot bytes`);
+  }
   const version = evidence.snapshotId.slice(-8);
   if (version !== compactSeoulDate(evidence.capturedAt)) {
     throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
   }
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
@@ -258,13 +260,15 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
 
 function validateTopologyLineage(pack, evidence, topologySnapshot, stations) {
   const hasTopology = pack.sourceInventory.some(({ id }) => id === TOPOLOGY_SOURCE_ID);
+  // 누적 topology는 canonical ID를 보존하므로 방향성 양 끝점으로 공식 edge를 결속한다.
+  const edgeKey = ({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`;
+  const compareEdges = (left, right) => edgeKey(left).localeCompare(edgeKey(right), "en");
   const actual = pack.networkEdges.filter(({ sourceId }) => sourceId === TOPOLOGY_SOURCE_ID)
-    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+    .sort(compareEdges);
   const expected = topologySnapshot.edges.map((edge) => {
     const from = stations.get(`${edge.lineId}:${edge.fromStationCode}`);
     const to = stations.get(`${edge.lineId}:${edge.toStationCode}`);
     return {
-      id: `edge-${edge.edgeId.replaceAll(":", "-")}`,
       fromNodeId: `${from}:${edge.lineId}`,
       toNodeId: `${to}:${edge.lineId}`,
       durationSeconds: edge.durationSeconds + edge.stoppingSeconds,
@@ -273,11 +277,15 @@ function validateTopologyLineage(pack, evidence, topologySnapshot, stations) {
       providerRecordHash: sha256(JSON.stringify(edge)),
       evidenceHash: evidence.topologyContentSha256,
     };
-  }).sort((left, right) => left.id.localeCompare(right.id, "en"));
+  }).sort(compareEdges);
   const comparable = actual.map((edge) => Object.fromEntries(
     Object.keys(expected[0]).map((key) => [key, edge[key]]),
   ));
-  if (!hasTopology || actual.length !== expected.length || JSON.stringify(comparable) !== JSON.stringify(expected)) {
+  if (!hasTopology || actual.length !== expected.length
+    || actual.some(({ id }) => typeof id !== "string" || id.length === 0)
+    || new Set(actual.map(({ id }) => id)).size !== actual.length
+    || new Set(actual.map(edgeKey)).size !== actual.length
+    || JSON.stringify(comparable) !== JSON.stringify(expected)) {
     throw new Error("Busan accessibility topology lineage mismatch");
   }
 }
@@ -301,7 +309,9 @@ function canonicalStations(pack, topologySnapshot) {
     if (stations.has(key)) throw new Error(`Busan accessibility duplicate canonical station: ${key}`);
     if (stationLine.sourceId !== TOPOLOGY_SOURCE_ID
       || stationLine.lineSequence !== expectedStation.lineSequence
-      || stationNames.get(stationLine.stationId)?.normalize("NFKC") !== expectedStation.stationName.normalize("NFKC")) {
+      // Topology가 인정한 동일 역의 표기 차이는 표시 이름을 바꾸지 않고 비교한다.
+      || normalizedStationName(stationNames.get(stationLine.stationId) ?? "")
+        !== normalizedStationName(expectedStation.stationName)) {
       throw new Error(`Busan accessibility topology lineage mismatch: ${key}`);
     }
     stations.set(key, stationLine.stationId);
@@ -351,7 +361,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runBusanAccessibilityMaterializer(argv, { now = new Date() } = {}) {
+export async function runBusanAccessibilityMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, accessibilitySnapshot, topologySnapshot, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -364,8 +374,8 @@ export async function runBusanAccessibilityMaterializer(argv, { now = new Date()
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Busan accessibility materialized: stations=${EXPECTED_STATION_COUNT} facilities=${EXPECTED_FACILITY_COUNT}`);
 }

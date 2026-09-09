@@ -149,6 +149,136 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
   assert.equal(canonicalCurrentFiveRegionSourceFanInJson(fanIn).includes("candidate"), false);
   assert.equal(canonicalCurrentFiveRegionSourceFanInJson(fanIn).includes("s3://"), false);
   assert.equal(fanIn.scopeSha256, sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(fanIn.scope))));
+  const snapshot = input.sourceSnapshots[0];
+  snapshot.normalizedObservationSha256 = sha256("normalized membership");
+  const coverage = {
+    snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256,
+    normalizedObservationSha256: snapshot.normalizedObservationSha256,
+  };
+  input.inventory.sources[0].membershipCoverageEvidence = coverage;
+  input.inputBytes.sourceSnapshots = bytes(input.sourceSnapshots);
+  input.inputBytes.inventory = bytes(input.inventory);
+  assert.equal(buildCurrentFiveRegionSourceFanIn(input).selectedSources.length, 1);
+  for (const key of Object.keys(coverage)) {
+    const original = coverage[key];
+    coverage[key] = key === "snapshotId" ? "foreign" : sha256(`foreign ${key}`);
+    input.inputBytes.inventory = bytes(input.inventory);
+    assert.throws(() => buildCurrentFiveRegionSourceFanIn(input), /membership coverage snapshot mismatch/);
+    coverage[key] = original;
+  }
+});
+
+test("native schedule admission binds a production materialization approval without invented approval fields", () => {
+  const input = fixture();
+  const source = input.inventory.sources[0];
+  delete source.admissionEvidence;
+  source.capabilities = { schedule: { productionUseAllowed: true } };
+  source.scheduleAdmissionEvidence = {
+    issue: 454,
+    materializer: "tools/datapack/materialize-korail-timetable.mjs",
+    verificationTest: "tools/datapack/materialize-korail-timetable.test.mjs",
+    snapshotId: input.sourceSnapshots[0].snapshotId,
+    snapshotPath: `tools/datapack/sources/${input.sourceSnapshots[0].snapshotId}.json`,
+    capturedAt: "2026-09-02T00:00:00.000Z",
+    freshUntil: "2026-09-04T00:00:00.000Z",
+    rawSha256: SHA,
+    rowsSha256: "b".repeat(64),
+    topologySourceId: "korail-metropolitan-timetable-file",
+    topologySnapshotId: "topology-1",
+    topologyContentSha256: "d".repeat(64),
+    rowCount: 2,
+    departureCount: 2,
+    tripCount: 1,
+    stopTimeCount: 2,
+  };
+  input.inputBytes.inventory = bytes(input.inventory);
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(input));
+  const copy = () => ({ ...structuredClone(input),
+    inputBytes: Object.fromEntries(Object.entries(input.inputBytes).map(([key, value]) => [key, Buffer.from(value)])) });
+
+  const missingCapability = copy();
+  delete missingCapability.inventory.sources[0].capabilities;
+  missingCapability.inputBytes.inventory = bytes(missingCapability.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(missingCapability), /admission.*approval/);
+
+  const incomplete = copy();
+  delete incomplete.inventory.sources[0].scheduleAdmissionEvidence.rowsSha256;
+  incomplete.inputBytes.inventory = bytes(incomplete.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(incomplete), /admission.*approval/);
+
+  const badDigest = copy();
+  badDigest.inventory.sources[0].scheduleAdmissionEvidence.rawSha256 = "e".repeat(64);
+  badDigest.inputBytes.inventory = bytes(badDigest.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(badDigest), /admission.*digest/);
+
+  const stale = copy();
+  stale.inventory.sources[0].scheduleAdmissionEvidence.freshUntil = EVALUATED_AT;
+  stale.inputBytes.inventory = bytes(stale.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(stale), /admission.*freshness/);
+
+  const byteDrift = copy();
+  byteDrift.inventory.sources[0].scheduleAdmissionEvidence.tripCount = 2;
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(byteDrift), /inventory input bytes/);
+});
+
+test("native accessibility admission binds ledger content without generic approval fields", () => {
+  const input = fixture();
+  const source = input.inventory.sources[0];
+  const snapshot = input.sourceSnapshots[0];
+  delete source.admissionEvidence;
+  source.capabilities = { facility: { productionUseAllowed: true } };
+  Object.assign(snapshot, {
+    capturedAt: "2026-09-02T00:00:00.000Z",
+    contentSha256: "b".repeat(64),
+    rowCount: 2,
+    coverageCount: 2,
+  });
+  source.accessibilityAdmissionEvidence = {
+    issue: 454,
+    materializer: "tools/datapack/materialize-busan-accessibility.mjs",
+    verificationTest: "tools/datapack/materialize-busan-accessibility.test.mjs",
+    snapshotId: snapshot.snapshotId,
+    snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`,
+    capturedAt: snapshot.capturedAt,
+    freshUntil: "2026-09-04T00:00:00.000Z",
+    rawSha256: snapshot.rawSha256,
+    rowsSha256: snapshot.contentSha256,
+    rowCount: snapshot.rowCount,
+    stationCount: snapshot.coverageCount,
+    topologySourceId: "busan-route-topology",
+    topologySnapshotId: "topology-1",
+    topologyContentSha256: "d".repeat(64),
+  };
+  input.inputBytes.inventory = bytes(input.inventory);
+  input.inputBytes.sourceSnapshots = bytes(input.sourceSnapshots);
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(input));
+  const copy = () => ({ ...structuredClone(input),
+    inputBytes: Object.fromEntries(Object.entries(input.inputBytes).map(([key, value]) => [key, Buffer.from(value)])) });
+
+  const rawDrift = copy();
+  rawDrift.inventory.sources[0].accessibilityAdmissionEvidence.rawSha256 = "e".repeat(64);
+  rawDrift.inputBytes.inventory = bytes(rawDrift.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(rawDrift), /admission.*approval/);
+
+  const rowsDrift = copy();
+  rowsDrift.inventory.sources[0].accessibilityAdmissionEvidence.rowsSha256 = "e".repeat(64);
+  rowsDrift.inputBytes.inventory = bytes(rowsDrift.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(rowsDrift), /admission.*approval/);
+
+  const countDrift = copy();
+  countDrift.inventory.sources[0].accessibilityAdmissionEvidence.rowCount = 3;
+  countDrift.inputBytes.inventory = bytes(countDrift.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(countDrift), /admission.*approval/);
+
+  const missingCapability = copy();
+  delete missingCapability.inventory.sources[0].capabilities;
+  missingCapability.inputBytes.inventory = bytes(missingCapability.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(missingCapability), /admission.*approval/);
+
+  const mixedFlag = copy();
+  mixedFlag.inventory.sources[0].accessibilityAdmissionEvidence.decision = "APPROVED";
+  mixedFlag.inputBytes.inventory = bytes(mixedFlag.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(mixedFlag), /admission.*approval/);
 });
 
 test("#687 keeps enhancement heads non-blocking until their tier is promoted", () => {
@@ -211,6 +341,21 @@ test("#687 keeps enhancement heads non-blocking until their tier is promoted", (
     () => buildCurrentFiveRegionSourceFanIn(input),
     /terminal snapshot head missing for official-five-region-demand/,
   );
+});
+
+test("#687 binds partial tally evidence without selecting an incomplete requirement's source", () => {
+  const input = fixture();
+  input.inventory.sources.push({ ...input.inventory.sources[0], id: "partial-source" });
+  Object.assign(input.tally.launchRequired.requirements[0], {
+    status: "MISSING", admittedSourceIds: ["partial-source"],
+    admittedFieldCount: 1, requiredFieldCount: 2,
+  });
+  input.inputBytes.inventory = bytes(input.inventory);
+  input.inputBytes.tally = bytes(input.tally);
+  const fanIn = buildCurrentFiveRegionSourceFanIn(input);
+  assert.deepEqual(fanIn.selectedSources.map(({ sourceId }) => sourceId), ["official-five-region-timetable"]);
+  assert.equal(fanIn.regionalMatrixSha256, sha256(input.inputBytes.tally));
+  assert.equal(input.tally.launchRequired.requirements[0].status, "MISSING");
 });
 
 test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", () => {

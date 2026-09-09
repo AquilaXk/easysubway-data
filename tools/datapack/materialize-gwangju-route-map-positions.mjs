@@ -9,16 +9,11 @@ import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-fres
 
 const SOURCE_ID = "gwangju-transportation-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
-const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
 const PACK_ID = "nationwide-gwangju-route-map";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const REGION = "광주권";
 const LINE_ID = "line-e57a361e8892";
 const LINE_IDS = Object.freeze([LINE_ID]);
-const EXPECTED_STATION_COUNT = 20;
-const STATION_CODES = Object.freeze(
-  Array.from({ length: EXPECTED_STATION_COUNT }, (_, index) => String(100 + index)),
-);
 
 export function materializeGwangjuRouteMapPositions({
   baseFixture,
@@ -29,7 +24,8 @@ export function materializeGwangjuRouteMapPositions({
   now = new Date(),
 } = {}) {
   validateGwangjuRouteMapPositionsSnapshot(snapshot);
-  const source = requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, now);
+  const topologySnapshotId = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)?.topologyAdmissionEvidence?.snapshotId;
+  const source = requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, topologySnapshotId, now);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -45,7 +41,7 @@ export function materializeGwangjuRouteMapPositions({
     throw new Error("Gwangju route map positions require gwangju topology source");
   }
 
-  validateTopologyLineage(inventory, source.routeMapAdmissionEvidence, topologySnapshot);
+  validateTopologyLineage(inventory, source.routeMapAdmissionEvidence, topologySnapshot, topologySnapshotId);
   const stations = canonicalStations(pack, topologySnapshot);
   const rows = [];
   for (const position of snapshot.positions) {
@@ -82,7 +78,7 @@ export function materializeGwangjuRouteMapPositions({
       updatedAt: snapshot.capturedAt,
     });
   }
-  if (rows.length !== EXPECTED_STATION_COUNT) {
+  if (rows.length !== snapshot.stationCount) {
     throw new Error(`Gwangju route map materialized row count mismatch: ${rows.length}`);
   }
   const coveredLineIds = new Set(rows.map(({ lineId }) => lineId));
@@ -98,7 +94,7 @@ export function materializeGwangjuRouteMapPositions({
     ...pack.minimumTableRows,
     route_map_positions: pack.routeMapPositions.length,
   };
-  const version = source.routeMapAdmissionEvidence.snapshotId.slice(-8);
+  const version = snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
   const composition = sha256(JSON.stringify({
     previousPackId: pack.id,
     snapshotId: source.routeMapAdmissionEvidence.snapshotId,
@@ -122,7 +118,7 @@ export function materializedGwangjuRouteMapPackContentHash(pack, version) {
   return sha256(JSON.stringify({ version, content }));
 }
 
-function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, now) {
+function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, topologySnapshotId, now) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.routeMapAdmissionEvidence;
   if (!/^[a-f0-9]{64}$/.test(snapshotSha256 ?? "") || evidence?.snapshotSha256 !== snapshotSha256) {
@@ -136,10 +132,10 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, n
     || evidence.admissionKind !== "official-file-latlon"
     || evidence.materializer !== "tools/datapack/materialize-gwangju-route-map-positions.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-gwangju-route-map-positions.test.mjs"
-    || evidence.snapshotId !== "gwangju-transportation-route-map-positions-20260725"
-    || evidence.snapshotPath !== "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json"
+    || typeof evidence?.snapshotId !== "string" || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt
     || evidence.stationCount !== snapshot.stationCount
+    || snapshot.stationCount !== topologySnapshot.scope?.length
     || evidence.rawStationCount !== snapshot.rawStationCount
     || evidence.quarantinedCount !== snapshot.quarantinedCount
     || evidence.datasetId !== snapshot.datasetId
@@ -150,7 +146,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, n
     || JSON.stringify(evidence.lineIds) !== JSON.stringify(snapshot.lineIds)
     || JSON.stringify(evidence.lineStationCounts) !== JSON.stringify(snapshot.lineStationCounts)
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== topologySnapshotId
     || evidence.topologyContentSha256 !== snapshot.topologyContentSha256
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
@@ -163,16 +159,17 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, n
     || !Number.isFinite(observedNow) || observedNow < Date.parse(snapshot.capturedAt)) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
-  validateTopologyLineage(inventory, evidence, topologySnapshot);
+  validateTopologyLineage(inventory, evidence, topologySnapshot, topologySnapshotId);
   return source;
 }
 
-function validateTopologyLineage(inventory, evidence, topologySnapshot) {
+function validateTopologyLineage(inventory, evidence, topologySnapshot, topologySnapshotId) {
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
     ?.topologyAdmissionEvidence;
   const lineage = evidence?.topologyLineages?.[0];
-  if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+  if (typeof topologySnapshotId !== "string" || topologySnapshotId.length === 0
+    || evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
+    || evidence.topologySnapshotId !== topologySnapshotId
     || evidence.topologyContentSha256 !== topologyEvidence?.contentSha256
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
@@ -181,10 +178,10 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
       edges: topologySnapshot.edges,
     }))
     || lineage?.sourceId !== TOPOLOGY_SOURCE_ID
-    || lineage.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || lineage.snapshotId !== topologySnapshotId
     || lineage.contentSha256 !== topologySnapshot.contentSha256
     || lineage.lineId !== LINE_ID
-    || topologyEvidence?.snapshotId !== TOPOLOGY_SNAPSHOT_ID) {
+    || topologyEvidence?.snapshotId !== topologySnapshotId) {
     throw new Error("Gwangju route map topology lineage mismatch");
   }
 }
@@ -193,9 +190,7 @@ function canonicalStations(pack, topologySnapshot) {
   const expectedCodes = new Set(
     (topologySnapshot.scope ?? []).map(({ stationCode }) => stationCode),
   );
-  if (JSON.stringify([...expectedCodes].sort()) !== JSON.stringify([...STATION_CODES].sort())) {
-    throw new Error("Gwangju route map topology station codes mismatch");
-  }
+  const sequenceByCode = new Map((topologySnapshot.scope ?? []).map(({ stationCode }, index) => [stationCode, index + 1]));
   const stations = new Map();
   for (const stationLine of pack.stationLines) {
     if (stationLine.lineId !== LINE_ID || !expectedCodes.has(stationLine.stationCode)) continue;
@@ -203,12 +198,12 @@ function canonicalStations(pack, topologySnapshot) {
     if (stations.has(key)) throw new Error(`Gwangju route map duplicate canonical station: ${key}`);
     const provenanceSourceId = stationLine.fieldProvenance?.station_code?.sourceId;
     if (provenanceSourceId !== TOPOLOGY_SOURCE_ID
-      || stationLine.lineSequence !== Number(stationLine.stationCode) - 99) {
+      || stationLine.lineSequence !== sequenceByCode.get(stationLine.stationCode)) {
       throw new Error(`Gwangju route map topology lineage mismatch: ${key}`);
     }
     stations.set(key, stationLine.stationId);
   }
-  if (stations.size !== EXPECTED_STATION_COUNT) {
+  if (stations.size !== expectedCodes.size) {
     throw new Error(`Gwangju route map canonical station scope mismatch: ${stations.size}`);
   }
   return stations;
@@ -235,22 +230,26 @@ function sha256(value) {
 }
 
 function parseArgs(argv) {
-  const expected = ["--base-fixture", "--snapshot", "--inventory", "--topology", "--output"];
+  const expected = ["--base-fixture", "--snapshot", "--inventory", "--output"];
   if (argv.length !== expected.length * 2 || expected.some((flag, index) => argv[index * 2] !== flag)
     || !path.isAbsolute(argv.at(-1))) {
-    throw new Error("usage: materialize-gwangju-route-map-positions.mjs --base-fixture <json> --snapshot <json> --inventory <json> --topology <json> --output <absolute.json>");
+    throw new Error("usage: materialize-gwangju-route-map-positions.mjs --base-fixture <json> --snapshot <json> --inventory <json> --output <absolute.json>");
   }
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
 async function main(argv) {
   const args = parseArgs(argv);
-  const [baseFixture, snapshotBytes, inventory, topologySnapshot] = await Promise.all([
+  const [baseFixture, snapshotBytes, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
     readFile(args.snapshot),
     readFile(args.inventory, "utf8").then(JSON.parse),
-    readFile(args.topology, "utf8").then(JSON.parse),
   ]);
+  const sources = inventory.sources.filter(({ id }) => id === TOPOLOGY_SOURCE_ID);
+  const evidence = sources[0]?.topologyAdmissionEvidence;
+  if (sources.length !== 1 || !/^[A-Za-z0-9._-]+$/.test(evidence?.snapshotId ?? "")
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) throw new Error("Gwangju route map topology inventory mismatch");
+  const topologySnapshot = JSON.parse(await readFile(path.resolve(import.meta.dirname, "../..", evidence.snapshotPath), "utf8"));
   const snapshot = JSON.parse(snapshotBytes);
   const fixture = materializeGwangjuRouteMapPositions({
     baseFixture,

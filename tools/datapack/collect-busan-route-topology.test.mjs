@@ -7,6 +7,7 @@ import {
   admitBusanRouteTopology,
   collectBusanRouteTopology,
   parseBusanRouteTopologyScope,
+  validateBusanRouteTopologySnapshot,
 } from "./collect-busan-route-topology.mjs";
 
 const XML_ITEMS = `
@@ -105,7 +106,16 @@ test("부산 topology collector는 공식 XML operation을 4개 노선 edge로 �
   ]);
   assert.equal(snapshot.license.type, "KOGL-1");
   assert.equal(snapshot.license.redistributionAllowed, true);
-  assert.match(snapshot.rawSha256, /^[a-f0-9]{64}$/);
+  const originalBytes = Buffer.from(XML);
+  assert.deepEqual(snapshot.rawResponses, [{
+    stationCode: null,
+    bytesBase64: originalBytes.toString("base64"),
+  }]);
+  assert.equal(snapshot.rawSha256, createHash("sha256").update(JSON.stringify([{
+    stationCode: null,
+    rawSha256: createHash("sha256").update(originalBytes).digest("hex"),
+  }])).digest("hex"));
+  assert.equal(snapshot.scope, null);
   assert.match(snapshot.contentSha256, /^[a-f0-9]{64}$/);
   assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
 });
@@ -361,10 +371,13 @@ test("부산 topology admission은 4개 노선 full snapshot만 허용하고 sta
     },
   });
   const admit = (candidate) => admitBusanRouteTopology(candidate, { now: new Date("2026-07-20T23:59:59.999Z") });
+  assert.equal(validateBusanRouteTopologySnapshot(snapshot), snapshot);
   assert.equal(admit(snapshot).status, "ADMITTED");
   assert.throws(() => admit({ ...snapshot, fixture: true }), /fixture/);
   assert.throws(() => admit({ ...snapshot, lineIds: snapshot.lineIds.slice(1) }), /line scope/);
-  assert.throws(() => admit({ ...snapshot, contentSha256: "0".repeat(64) }), /content hash/);
+  const changedContent = { ...snapshot, contentSha256: "0".repeat(64) };
+  assert.throws(() => validateBusanRouteTopologySnapshot(changedContent), /content hash/);
+  assert.throws(() => admit(changedContent), /content hash/);
   assert.throws(() => admit({ ...snapshot, scope: snapshot.scope.slice(1) }), /scope/);
   assert.throws(() => admit({ ...snapshot, credentialRedacted: false }), /identity/);
   assert.throws(() => admit({ ...snapshot, endpoint: "https://example.invalid" }), /identity/);
@@ -389,4 +402,5 @@ test("부산 topology admission은 4개 노선 full snapshot만 허용하고 sta
     () => admitBusanRouteTopology(snapshot, { now: new Date("2026-07-21T00:00:00.001Z") }),
     /stale/,
   );
+  assert.equal(validateBusanRouteTopologySnapshot(snapshot), snapshot);
 });

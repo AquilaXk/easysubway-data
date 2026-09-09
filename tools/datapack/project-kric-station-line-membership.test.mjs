@@ -1,58 +1,79 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
 import { projectKricStationLineMembership } from "./project-kric-station-line-membership.mjs";
+import { createCurrentMolitObservationFixture } from "./test-fixtures/current-molit-observation.mjs";
 
 const HEADER = ["철도운영기관명", "운영노선", "역 종류", "역 번호", "역명(한글)", "역명(영어)", "역명(로마자)", "역명(일본어)", "역명(중국어간체)", "역명(중국어번체)", "역명(부역명)", "환승역 여부", "환승노선명", "유실물 취급여부", "안전발판 유무", "스크린도어 설치유무", "승강장 연결여부", "승강장 유형", "역 위치(경도)", "역 위치(위도)", "역 주소(지번주소)", "역 주소(도로명 주소)", "역사 전화번호", "신설일자", "폐지일자", "상행거리", "하행거리", "데이터 기준일자", "참고사항"];
-const DENOMINATOR = JSON.parse(await readFile(new URL("./sources/molit-urban-rail-full-route-current-20260826T035408251Z.json", import.meta.url), "utf8"));
+const AUTHORITY = await createCurrentMolitObservationFixture();
+const DENOMINATOR = AUTHORITY.observation;
 const RETAINED_CURRENT_WORKBOOK = await readFile(new URL(
   "./fixtures/capital-wide-rail-route-map-positions-raw/shared/kric-nationwide-urban-rail-station-info-20260701.xlsx",
   import.meta.url,
 ));
 
-function fixture({ sourceRows = sourceRowsFor(DENOMINATOR), denominator = structuredClone(DENOMINATOR), header = HEADER, extraCell = "" } = {}) {
-  return { workbookBytes: workbook(sourceRows, { header, extraCell }), denominator };
+function fixture({ sourceRows = sourceRowsFor(DENOMINATOR), header = HEADER, extraCell = "" } = {}) {
+  return { workbookBytes: workbook(sourceRows, { header, extraCell }), repositoryRoot: AUTHORITY.root };
 }
 
 function sourceRowsFor(denominator) {
   return denominator.normalizedProjection.map(({ operator_name, line_name, station_name }, index) => ({ operator: operator_name, line: line_name, stationCode: `code-${index + 1}`, stationName: station_name }));
 }
 
-test("#455 current id=1294 workbook projects through exact NFC+trim operator/line/station identity", () => {
-  const result = projectKricStationLineMembership(fixture());
+test("#455 current id=1294 workbook projects through exact NFC+trim operator/line/station identity", async () => {
+  const result = await projectKricStationLineMembership(fixture());
   assert.equal(result.sourceId, "kric-current-station-line-file");
-  assert.equal(result.records.length, 1103);
+  assert.equal(result.records.length, DENOMINATOR.rowCount);
   const { station_sequence, ...first } = DENOMINATOR.normalizedProjection[0];
   assert.deepEqual(result.records[0], { ...first, source_station_code: "code-1" });
 });
 
-test("#455 keeps legacy API rosters, forged denominators, unmatched, duplicate, and subset inputs rejected", () => {
-  assert.throws(() => projectKricStationLineMembership({ tally: {}, rosterArtifact: {} }), /DENOMINATOR_IDENTITY/);
-  const staleObservation = fixture(); staleObservation.denominator.snapshotId = "molit-urban-rail-full-route-current-20260825T000000000Z";
-  assert.throws(() => projectKricStationLineMembership(staleObservation), /DENOMINATOR_IDENTITY/);
-  const forged = fixture(); forged.denominator.contentSha256 = "0".repeat(64);
-  assert.throws(() => projectKricStationLineMembership(forged), /DENOMINATOR_CONTENT_HASH/);
+test("current admitted MOLIT authority accepts changed cardinality and rejects foreign heads or altered bytes", async () => {
+  const projection = [
+    { region_code: "01", region_name: "수도권", operator_name: "운영사", line_name: "1호선", station_name: "가역", station_sequence: 1 },
+    { region_code: "01", region_name: "수도권", operator_name: "운영사", line_name: "1호선", station_name: "나역", station_sequence: 2 },
+  ];
+  const accepted = await createCurrentMolitObservationFixture(projection);
+  const workbookBytes = workbook(sourceRowsFor({ normalizedProjection: projection }), { header: HEADER, extraCell: "" });
+  const result = await projectKricStationLineMembership({ workbookBytes, repositoryRoot: accepted.root });
+  assert.equal(result.records.length, projection.length);
+  assert.equal(result.denominatorRawSha256, accepted.current.rawSha256);
+  assert.equal(result.denominatorContentSha256, accepted.current.contentSha256);
+
+  const foreign = await createCurrentMolitObservationFixture(projection);
+  await writeFile(path.join(foreign.root, "tools/datapack/source-inventory.json"), JSON.stringify({
+    sources: [{ id: "molit-urban-rail-full-route", admissionEvidence: {
+      sourceId: "molit-urban-rail-full-route", decision: "APPROVED", snapshotId: "foreign-head", rawSha256: foreign.current.rawSha256,
+    } }],
+  }));
+  await assert.rejects(projectKricStationLineMembership({ workbookBytes, repositoryRoot: foreign.root }), /ledger head/);
+
+  const altered = await createCurrentMolitObservationFixture(projection);
+  await writeFile(path.join(altered.root, `tools/datapack/sources/${altered.current.snapshotId}.json`), "{}");
+  await assert.rejects(projectKricStationLineMembership({ workbookBytes, repositoryRoot: altered.root }), /normalized observation binding|invalid/);
+});
+
+test("#455 keeps legacy API rosters, unmatched, duplicate, and subset inputs rejected", async () => {
+  await assert.rejects(projectKricStationLineMembership({ tally: {}, rosterArtifact: {} }), /WORKBOOK_REQUIRED/);
   const subset = sourceRowsFor(DENOMINATOR).slice(0, -1);
-  assert.throws(() => projectKricStationLineMembership(fixture({ sourceRows: subset })), /COVERAGE_INCOMPLETE/);
+  await assert.rejects(projectKricStationLineMembership(fixture({ sourceRows: subset })), /COVERAGE_INCOMPLETE/);
   const unmatched = sourceRowsFor(DENOMINATOR); unmatched[0].stationName = "없는역";
-  assert.throws(() => projectKricStationLineMembership(fixture({ sourceRows: unmatched })), /UNMATCHED/);
+  await assert.rejects(projectKricStationLineMembership(fixture({ sourceRows: unmatched })), /UNMATCHED/);
   const duplicate = sourceRowsFor(DENOMINATOR); duplicate[1] = { ...duplicate[0], stationCode: "duplicate" };
-  assert.throws(() => projectKricStationLineMembership(fixture({ sourceRows: duplicate })), /SOURCE_DUPLICATE/);
+  await assert.rejects(projectKricStationLineMembership(fixture({ sourceRows: duplicate })), /SOURCE_DUPLICATE/);
 });
 
-test("#455 pins the ordered 29-column header and rejects worksheet amplification outside A:AC", () => {
+test("#455 pins the ordered 29-column header and rejects worksheet amplification outside A:AC", async () => {
   const reordered = [...HEADER]; [reordered[0], reordered[1]] = [reordered[1], reordered[0]];
-  assert.throws(() => projectKricStationLineMembership(fixture({ header: reordered })), /HEADER/);
-  assert.throws(() => projectKricStationLineMembership(fixture({ extraCell: '<c r="AD2" t="inlineStr"><is><t>overflow</t></is></c>' })), /WORKSHEET/);
+  await assert.rejects(projectKricStationLineMembership(fixture({ header: reordered })), /HEADER/);
+  await assert.rejects(projectKricStationLineMembership(fixture({ extraCell: '<c r="AD2" t="inlineStr"><is><t>overflow</t></is></c>' })), /WORKSHEET/);
 });
 
-test("#455 retained current id=1294 bytes fail closed until an official full crosswalk is admitted", () => {
-  assert.throws(
-    () => projectKricStationLineMembership({
-      workbookBytes: RETAINED_CURRENT_WORKBOOK,
-      denominator: structuredClone(DENOMINATOR),
-    }),
+test("#455 retained current id=1294 bytes fail closed until an official full crosswalk is admitted", async () => {
+  await assert.rejects(
+    projectKricStationLineMembership({ workbookBytes: RETAINED_CURRENT_WORKBOOK }),
     /KRIC_STATION_LINE_UNMATCHED/,
   );
 });

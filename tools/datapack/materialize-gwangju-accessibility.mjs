@@ -3,22 +3,16 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { validateGwangjuAccessibilityTopology } from "./collect-gwangju-accessibility.mjs";
 
 const SOURCE_ID = "gwangju-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
-const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const PACK_ID = "nationwide-gwangju-accessibility";
-const LINE_ID = "line-e57a361e8892";
-const EXPECTED_STATION_COUNT = 20;
-const EXPECTED_FACILITY_COUNT = EXPECTED_STATION_COUNT * 3;
-const EXPECTED_ELEVATOR_ROWS = 62;
-const EXPECTED_ESCALATOR_ROWS = 99;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DATASET_IDS = Object.freeze(["15041385", "15041362"]);
-const STATION_CODES = Object.freeze(Array.from({ length: EXPECTED_STATION_COUNT }, (_, index) => String(100 + index)));
 const FIELDS_PROVIDED = Object.freeze([
-  "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
+  "elevator", "escalator", "status", "verified_at",
 ]);
 const FACILITY_TYPES = Object.freeze([
   {
@@ -49,10 +43,9 @@ export function materializeGwangjuAccessibility({
   accessibilitySnapshot,
   topologySnapshot,
   inventory,
-  now = new Date(),
 } = {}) {
   const rows = validateSnapshot(accessibilitySnapshot);
-  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot, now);
+  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -69,7 +62,7 @@ export function materializeGwangjuAccessibility({
   }
 
   validateTopologyLineage(inventory, source.accessibilityAdmissionEvidence, topologySnapshot);
-  const stations = canonicalStations(pack, topologySnapshot);
+  const stations = canonicalStations(pack, topologySnapshot, accessibilitySnapshot.lineIds[0]);
 
   const snapshotId = source.accessibilityAdmissionEvidence.snapshotId;
   const facilities = [];
@@ -82,6 +75,7 @@ export function materializeGwangjuAccessibility({
     const stationName = pack.stations.find(({ id }) => id === stationId)?.nameKo ?? row.stationName;
     for (const facilityType of FACILITY_TYPES) {
       const count = facilityType.countOf(row);
+      if (count == null) continue;
       if (!Number.isInteger(count) || count < 0) {
         throw new Error(`Gwangju accessibility count invalid: ${row.stationCode}:${facilityType.type}`);
       }
@@ -145,10 +139,11 @@ export function materializeGwangjuAccessibility({
       });
     }
   }
-  if (facilities.length !== EXPECTED_FACILITY_COUNT || evidence.length !== EXPECTED_FACILITY_COUNT
-    || new Set(facilities.map(({ id }) => id)).size !== EXPECTED_FACILITY_COUNT
+  const expectedFacilities = observedFacilityCount(rows);
+  if (facilities.length !== expectedFacilities || evidence.length !== expectedFacilities
+    || new Set(facilities.map(({ id }) => id)).size !== expectedFacilities
     || new Set(evidence.map(({ stationId, lineId, facilityType }) => `${stationId}:${lineId}:${facilityType}`)).size
-      !== EXPECTED_FACILITY_COUNT) {
+      !== expectedFacilities) {
     throw new Error("Gwangju accessibility materialized facility counts are invalid");
   }
 
@@ -184,18 +179,16 @@ export function materializedGwangjuAccessibilityPackContentHash(pack, version) {
 }
 
 function validateSnapshot(snapshot) {
-  if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "gwangju-accessibility-snapshot"
+  if (snapshot?.schemaVersion !== 2 || snapshot.artifactKind !== "gwangju-accessibility-snapshot"
     || snapshot.sourceId !== SOURCE_ID || snapshot.official !== true || snapshot.fixture !== false
     || snapshot.credentialRequired !== false || snapshot.credentialRedacted !== true
-    || snapshot.stationCount !== EXPECTED_STATION_COUNT || snapshot.rowCount !== EXPECTED_STATION_COUNT
-    || snapshot.rows?.length !== EXPECTED_STATION_COUNT
-    || snapshot.elevatorRowCount !== EXPECTED_ELEVATOR_ROWS
-    || snapshot.escalatorRowCount !== EXPECTED_ESCALATOR_ROWS
+    || !Number.isInteger(snapshot.stationCount) || snapshot.stationCount < 1
+    || snapshot.rowCount !== snapshot.stationCount || snapshot.rows?.length !== snapshot.stationCount
     || snapshot.rowsSha256 !== sha256(JSON.stringify(snapshot.rows))
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
     || !/^[a-f0-9]{64}$/.test(snapshot.scopeSha256 ?? "")
     || snapshot.scopeSha256 !== sha256(JSON.stringify(snapshot.scope))
-    || JSON.stringify(snapshot.lineIds) !== JSON.stringify([LINE_ID])
+    || !Array.isArray(snapshot.lineIds) || snapshot.lineIds.length !== 1 || typeof snapshot.lineIds[0] !== "string"
     || JSON.stringify(snapshot.datasetIds) !== JSON.stringify(DATASET_IDS)
     || JSON.stringify(snapshot.fieldsProvided) !== JSON.stringify(FIELDS_PROVIDED)
     || !Array.isArray(snapshot.topologyLineages) || snapshot.topologyLineages.length !== 1) {
@@ -203,23 +196,27 @@ function validateSnapshot(snapshot) {
   }
   const codes = new Set();
   for (const row of snapshot.rows) {
-    if (row.lineId !== LINE_ID || typeof row.stationCode !== "string" || codes.has(row.stationCode)
-      || !Number.isInteger(row.wheelchair_lift) || !Number.isInteger(row.elevator) || !Number.isInteger(row.escalator)
-      || row.wheelchair_lift !== 0 || row.elevator < 0 || row.escalator < 0) {
+    if (row.lineId !== snapshot.lineIds[0] || typeof row.stationCode !== "string" || codes.has(row.stationCode)
+      || row.wheelchair_lift !== null
+      || [row.elevator, row.escalator].some((value) => value !== null && (!Number.isInteger(value) || value < 0))) {
       throw new Error(`invalid Gwangju accessibility row: ${row?.stationCode}`);
     }
     codes.add(row.stationCode);
   }
-  if (codes.size !== EXPECTED_STATION_COUNT
-    || STATION_CODES.some((code) => !codes.has(code))
-    || snapshot.rows.reduce((sum, row) => sum + row.elevator, 0) !== EXPECTED_ELEVATOR_ROWS
-    || snapshot.rows.reduce((sum, row) => sum + row.escalator, 0) !== EXPECTED_ESCALATOR_ROWS) {
+  if (codes.size !== snapshot.stationCount
+    || JSON.stringify(snapshot.scope) !== JSON.stringify(snapshot.rows.map(({ stationCode, stationName, lineId }) => ({ stationCode, stationName, lineId })))
+    || snapshot.elevatorRowCount !== snapshot.rows.reduce((sum, row) => sum + (row.elevator ?? 0), 0)
+    || snapshot.escalatorRowCount !== snapshot.rows.reduce((sum, row) => sum + (row.escalator ?? 0), 0)) {
     throw new Error("invalid Gwangju accessibility snapshot scope");
   }
   return snapshot.rows;
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot, now) {
+function observedFacilityCount(rows) {
+  return rows.reduce((sum, row) => sum + FACILITY_TYPES.filter((type) => type.countOf(row) !== null).length, 0);
+}
+
+function requiredSource(inventory, snapshot, topologySnapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.accessibilityAdmissionEvidence;
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
@@ -229,14 +226,14 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || evidence?.issue !== 2479
     || evidence.materializer !== "tools/datapack/materialize-gwangju-accessibility.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-gwangju-accessibility.test.mjs"
-    || !/^gwangju-transportation-accessibility-\d{8}$/.test(evidence.snapshotId ?? "")
+    || !/^gwangju-transportation-accessibility-[a-f0-9]{64}-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
-    || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
-    || evidence.facilityCount !== EXPECTED_FACILITY_COUNT
+    || evidence.stationCount !== snapshot.stationCount || evidence.rowCount !== snapshot.rowCount
+    || evidence.facilityCount !== observedFacilityCount(snapshot.rows)
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== snapshot.topologyLineages[0].snapshotId
     || JSON.stringify(evidence.datasetIds) !== JSON.stringify(DATASET_IDS)
     || !Array.isArray(evidence.topologyLineages)
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
@@ -244,33 +241,29 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["gwangju"],
       operatorIds: [OPERATOR_ID],
-      lineIds: [LINE_ID],
+      lineIds: snapshot.lineIds,
       sourceDomains: ["accessibility_facilities"],
     })
     || JSON.stringify(source.fieldsProvided) !== JSON.stringify(snapshot.fieldsProvided)) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
   validateTopologyLineage(inventory, evidence, topologySnapshot);
-  const version = evidence.snapshotId.slice(-8);
-  if (version !== compactSeoulDate(evidence.capturedAt)) {
-    throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
-  }
+  validateGwangjuAccessibilitySnapshotIdentity(evidence.snapshotId, snapshot);
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
 }
 
 function validateTopologyLineage(inventory, evidence, topologySnapshot) {
-  const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
-    ?.topologyAdmissionEvidence;
+  const selected = inventory?.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
+  if (selected.length !== 1) throw new Error("Gwangju topology source selection mismatch");
+  const { evidence: topologyEvidence, lineId } = validateGwangjuAccessibilityTopology(topologySnapshot, selected[0]);
   const lineage = evidence?.topologyLineages?.[0];
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== topologyEvidence.snapshotId
     || evidence.topologyContentSha256 !== topologyEvidence?.contentSha256
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
@@ -279,34 +272,33 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
       edges: topologySnapshot.edges,
     }))
     || lineage?.sourceId !== TOPOLOGY_SOURCE_ID
-    || lineage.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || lineage.snapshotId !== topologyEvidence.snapshotId
     || lineage.contentSha256 !== topologySnapshot.contentSha256
-    || lineage.lineId !== LINE_ID
-    || topologyEvidence?.snapshotId !== TOPOLOGY_SNAPSHOT_ID) {
+    || lineage.lineId !== lineId) {
     throw new Error("Gwangju accessibility topology lineage mismatch");
   }
 }
 
-function canonicalStations(pack, topologySnapshot) {
+function canonicalStations(pack, topologySnapshot, lineId) {
   const expectedCodes = new Set(
     (topologySnapshot.scope ?? []).map(({ stationCode }) => stationCode),
   );
-  if (JSON.stringify([...expectedCodes].sort()) !== JSON.stringify([...STATION_CODES].sort())) {
+  if (expectedCodes.size !== topologySnapshot.scope.length) {
     throw new Error("Gwangju accessibility topology station codes mismatch");
   }
   const stations = new Map();
   for (const stationLine of pack.stationLines) {
-    if (stationLine.lineId !== LINE_ID || !expectedCodes.has(stationLine.stationCode)) continue;
-    const key = `${LINE_ID}:${stationLine.stationCode}`;
+    if (stationLine.lineId !== lineId || !expectedCodes.has(stationLine.stationCode)) continue;
+    const key = `${lineId}:${stationLine.stationCode}`;
     if (stations.has(key)) throw new Error(`Gwangju accessibility duplicate canonical station: ${key}`);
     const provenanceSourceId = stationLine.fieldProvenance?.station_code?.sourceId;
     if (provenanceSourceId !== TOPOLOGY_SOURCE_ID
-      || stationLine.lineSequence !== Number(stationLine.stationCode) - 99) {
+      || stationLine.lineSequence !== topologySnapshot.scope.findIndex(({ stationCode }) => stationCode === stationLine.stationCode) + 1) {
       throw new Error(`Gwangju accessibility topology lineage mismatch: ${key}`);
     }
     stations.set(key, stationLine.stationId);
   }
-  if (stations.size !== EXPECTED_STATION_COUNT) {
+  if (stations.size !== expectedCodes.size) {
     throw new Error(`Gwangju accessibility canonical station scope mismatch: ${stations.size}`);
   }
   return stations;
@@ -325,6 +317,17 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
+}
+
+// 같은 관측일에 topology가 바뀌어도 immutable 파일이 충돌하지 않도록 전체 입력을 결속한다.
+export function validateGwangjuAccessibilitySnapshotIdentity(snapshotId, snapshot) {
+  const date = compactSeoulDate(snapshot.capturedAt);
+  if (snapshotId?.slice(-8) !== date) {
+    throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
+  }
+  if (snapshotId !== `${SOURCE_ID}-${sha256(JSON.stringify(snapshot))}-${date}`) {
+    throw new Error(`${SOURCE_ID} snapshotId must match snapshot bytes`);
+  }
 }
 
 function compactSeoulDate(value) {
@@ -351,7 +354,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runGwangjuAccessibilityMaterializer(argv, { now = new Date() } = {}) {
+export async function runGwangjuAccessibilityMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, accessibilitySnapshot, topologySnapshot, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -364,10 +367,10 @@ export async function runGwangjuAccessibilityMaterializer(argv, { now = new Date
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
-  console.log(`Gwangju accessibility materialized: stations=${EXPECTED_STATION_COUNT} facilities=${EXPECTED_FACILITY_COUNT}`);
+  console.log(`Gwangju accessibility materialized: stations=${accessibilitySnapshot.stationCount} facilities=${observedFacilityCount(accessibilitySnapshot.rows)}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

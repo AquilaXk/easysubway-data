@@ -21,14 +21,8 @@ const ARTIFACT_KIND = "gwangju-route-map-positions-snapshot";
 const LINE_ID = "line-e57a361e8892";
 const LINE_NUMBER = "1";
 const LINE_IDS = Object.freeze([LINE_ID]);
-const EXPECTED_STATION_COUNT = 20;
 const EXPECTED_QUARANTINED_COUNT = 0;
-const EXPECTED_LINE_STATION_COUNTS = Object.freeze({ "1": EXPECTED_STATION_COUNT });
-const STATION_CODES = Object.freeze(
-  Array.from({ length: EXPECTED_STATION_COUNT }, (_, index) => String(100 + index)),
-);
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
-const TOPOLOGY_SNAPSHOT_ID = "gwangju-transportation-route-topology-20260720";
 const OBSERVED_DATA_UPDATED_AT = "2022-12-02";
 const OFFICIAL_DUPLICATE_LATLON = "OFFICIAL_DUPLICATE_LATLON";
 const FIELDS_PROVIDED = Object.freeze(["route_map_position", "route_map_label_polygon"]);
@@ -52,12 +46,13 @@ const SCHEMATIC_NAME_ALIASES = Object.freeze({
 export function parseGwangjuRouteMapPositionsCsv({
   csvBytes,
   topologySnapshot,
+  topologySnapshotId,
   schematicCanvas,
 } = {}) {
   if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
     throw new Error("Gwangju route map positions CSV bytes are required");
   }
-  const scope = validateTopologySnapshot(topologySnapshot);
+  const scope = validateTopologySnapshot(topologySnapshot, topologySnapshotId);
   const canvasByName = indexSchematicCanvas(schematicCanvas);
   const byCode = new Map(scope.map((station) => [station.stationCode, station]));
   const rows = parseCsv(decodeOfficialCsv(csvBytes));
@@ -139,10 +134,10 @@ export function parseGwangjuRouteMapPositionsCsv({
       labelPolygon: structuredClone(canvas.labelPolygon),
     });
   }
-  if (joined.length !== EXPECTED_STATION_COUNT) {
+  if (joined.length !== scope.length) {
     throw new Error(`Gwangju route map positions station count mismatch: ${joined.length}`);
   }
-  if (STATION_CODES.some((code) => !seen.has(code))) {
+  if (scope.some(({ stationCode }) => !seen.has(stationCode))) {
     throw new Error("Gwangju route map positions station code scope mismatch");
   }
 
@@ -179,7 +174,7 @@ export function parseGwangjuRouteMapPositionsCsv({
   }
   positions.sort(comparePositions);
   quarantinedPositions.sort(comparePositions);
-  if (positions.length !== EXPECTED_STATION_COUNT) {
+  if (positions.length !== topologySnapshot.stationCount) {
     throw new Error(`Gwangju route map positions admitted station count mismatch: ${positions.length}`);
   }
   if (quarantinedPositions.length !== EXPECTED_QUARANTINED_COUNT) {
@@ -191,18 +186,19 @@ export function parseGwangjuRouteMapPositionsCsv({
 export function collectGwangjuRouteMapPositions({
   csvBytes,
   topologySnapshot,
+  topologySnapshotId,
   schematicCanvas,
   now = new Date(),
 } = {}) {
   const capturedAt = validDate(now, "now");
   const { positions, quarantinedPositions } = parseGwangjuRouteMapPositionsCsv({
     csvBytes,
-    topologySnapshot,
+    topologySnapshot, topologySnapshotId,
     schematicCanvas,
   });
   const topologyLineages = [{
     sourceId: topologySnapshot.sourceId,
-    snapshotId: TOPOLOGY_SNAPSHOT_ID,
+    snapshotId: topologySnapshotId,
     contentSha256: topologySnapshot.contentSha256,
     lineId: LINE_ID,
   }];
@@ -227,11 +223,11 @@ export function collectGwangjuRouteMapPositions({
     fixture: false,
     credentialRequired: false,
     credentialRedacted: true,
-    rawStationCount: EXPECTED_STATION_COUNT,
+    rawStationCount: scope.length,
     stationCount: positions.length,
     quarantinedCount: quarantinedPositions.length,
     lineIds: [...LINE_IDS],
-    lineStationCounts: { ...EXPECTED_LINE_STATION_COUNTS },
+    lineStationCounts: { "1": scope.length },
     fieldsProvided: [...FIELDS_PROVIDED],
     license: {
       type: "PUBLIC_DATA_FREE_USE",
@@ -240,7 +236,7 @@ export function collectGwangjuRouteMapPositions({
       evidenceUrl: DETAIL_URL,
     },
     topologySourceId: TOPOLOGY_SOURCE_ID,
-    topologySnapshotId: TOPOLOGY_SNAPSHOT_ID,
+    topologySnapshotId,
     topologyContentSha256: topologySnapshot.contentSha256,
     topologyLineages,
     schematicCanvasSourceId: SCHEMATIC_CANVAS_SOURCE_ID,
@@ -260,7 +256,7 @@ export function validateGwangjuRouteMapPositionsSnapshot(snapshot) {
   const keys = new Set();
   const latLonOwners = new Map();
   const canvasOwners = new Map();
-  const validPositions = Array.isArray(positions) && positions.length === EXPECTED_STATION_COUNT
+  const validPositions = Array.isArray(positions) && positions.length === snapshot?.stationCount
     && positions.every((position) => {
       const key = `${position.lineId}:${position.stationCode}`;
       const owner = position.stationId;
@@ -316,20 +312,20 @@ export function validateGwangjuRouteMapPositionsSnapshot(snapshot) {
     || JSON.stringify(snapshot.datasetIds) !== JSON.stringify([DATASET_ID])
     || Number.isNaN(Date.parse(snapshot.capturedAt))
     || snapshot.observedDataUpdatedAt !== OBSERVED_DATA_UPDATED_AT
-    || snapshot.rawStationCount !== EXPECTED_STATION_COUNT
-    || snapshot.stationCount !== EXPECTED_STATION_COUNT
+    || snapshot.rawStationCount !== snapshot.stationCount
     || snapshot.quarantinedCount !== EXPECTED_QUARANTINED_COUNT
     || snapshot.rawStationCount !== snapshot.stationCount + snapshot.quarantinedCount
     || JSON.stringify(snapshot.lineIds) !== JSON.stringify(LINE_IDS)
-    || JSON.stringify(snapshot.lineStationCounts) !== JSON.stringify(EXPECTED_LINE_STATION_COUNTS)
+    || !Number.isSafeInteger(snapshot.stationCount) || snapshot.stationCount <= 0
+    || JSON.stringify(snapshot.lineStationCounts) !== JSON.stringify({ [LINE_NUMBER]: snapshot.stationCount })
     || JSON.stringify(snapshot.fieldsProvided) !== JSON.stringify(FIELDS_PROVIDED)
     || snapshot.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || snapshot.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || typeof snapshot.topologySnapshotId !== "string" || snapshot.topologySnapshotId.length === 0
     || snapshot.schematicCanvasSourceId !== SCHEMATIC_CANVAS_SOURCE_ID
     || !/^[a-f0-9]{64}$/.test(snapshot.topologyContentSha256 ?? "")
     || !Array.isArray(snapshot.topologyLineages) || snapshot.topologyLineages.length !== 1
     || snapshot.topologyLineages[0]?.sourceId !== TOPOLOGY_SOURCE_ID
-    || snapshot.topologyLineages[0]?.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || snapshot.topologyLineages[0]?.snapshotId !== snapshot.topologySnapshotId
     || snapshot.topologyLineages[0]?.contentSha256 !== snapshot.topologyContentSha256
     || snapshot.topologyLineages[0]?.lineId !== LINE_ID
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
@@ -346,8 +342,8 @@ export function validateGwangjuRouteMapPositionsSnapshot(snapshot) {
 }
 
 function indexSchematicCanvas(schematicCanvas) {
-  if (!Array.isArray(schematicCanvas) || schematicCanvas.length !== EXPECTED_STATION_COUNT) {
-    throw new Error("Gwangju route map schematic canvas fixture must contain 20 stations");
+  if (!Array.isArray(schematicCanvas) || schematicCanvas.length === 0) {
+    throw new Error("Gwangju route map schematic canvas fixture is empty");
   }
   const byName = new Map();
   for (const entry of schematicCanvas) {
@@ -390,11 +386,12 @@ function isSchematicCanvasCoordinate(x, y) {
     && y >= CANVAS_Y_MIN && y <= CANVAS_Y_MAX;
 }
 
-function validateTopologySnapshot(topologySnapshot) {
+function validateTopologySnapshot(topologySnapshot, topologySnapshotId) {
   if (topologySnapshot?.sourceId !== TOPOLOGY_SOURCE_ID
-    || topologySnapshot.stationCount !== EXPECTED_STATION_COUNT
+    || typeof topologySnapshotId !== "string" || topologySnapshotId.length === 0
+    || !Number.isInteger(topologySnapshot.stationCount) || topologySnapshot.stationCount <= 0
     || !Array.isArray(topologySnapshot.scope)
-    || topologySnapshot.scope.length !== EXPECTED_STATION_COUNT
+    || topologySnapshot.scope.length !== topologySnapshot.stationCount
     || !/^[a-f0-9]{64}$/.test(topologySnapshot.contentSha256 ?? "")
     || topologySnapshot.contentSha256 !== sha256(JSON.stringify({
       scope: topologySnapshot.scope,
@@ -411,9 +408,6 @@ function validateTopologySnapshot(topologySnapshot) {
       throw new Error(`Gwangju route map positions invalid topology station: ${station?.stationCode}`);
     }
     codes.add(station.stationCode);
-  }
-  if (STATION_CODES.some((code) => !codes.has(code))) {
-    throw new Error("Gwangju route map positions topology station code scope mismatch");
   }
   return topologySnapshot.scope;
 }
@@ -462,26 +456,32 @@ function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-gwangju-route-map-positions.mjs --input <csv> --topology <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
+      throw new Error("usage: collect-gwangju-route-map-positions.mjs --input <csv> --inventory <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
     }
     args[argv[index].slice(2)] = argv[index + 1];
   }
-  if (!args.input || !args.topology || !args.schematic || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-gwangju-route-map-positions.mjs --input <csv> --topology <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
+  if (!args.input || !args.inventory || !args.schematic || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error("usage: collect-gwangju-route-map-positions.mjs --input <csv> --inventory <json> --schematic <json> --output <absolute.json> [--captured-at <iso>]");
   }
   return args;
 }
 
-export async function runGwangjuRouteMapPositionsCollector(argv) {
+export async function runGwangjuRouteMapPositionsCollector(argv, { repositoryRoot = path.resolve(import.meta.dirname, "../..") } = {}) {
   const args = parseArgs(argv);
-  const [csvBytes, topologySnapshot, schematicCanvas] = await Promise.all([
+  const [csvBytes, inventory, schematicCanvas] = await Promise.all([
     readFile(args.input),
-    readFile(args.topology, "utf8").then(JSON.parse),
+    readFile(args.inventory, "utf8").then(JSON.parse),
     readFile(args.schematic, "utf8").then(JSON.parse),
   ]);
+  const source = inventory?.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID);
+  const evidence = source?.[0]?.topologyAdmissionEvidence;
+  if (source?.length !== 1 || typeof evidence?.snapshotId !== "string" || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) throw new Error("Gwangju route map topology inventory mismatch");
+  const topologySnapshot = JSON.parse(await readFile(path.join(repositoryRoot, evidence.snapshotPath), "utf8"));
+  if (topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID || topologySnapshot.contentSha256 !== evidence.contentSha256) throw new Error("Gwangju route map topology inventory mismatch");
   const snapshot = collectGwangjuRouteMapPositions({
     csvBytes,
     topologySnapshot,
+    topologySnapshotId: evidence.snapshotId,
     schematicCanvas,
     now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
   });

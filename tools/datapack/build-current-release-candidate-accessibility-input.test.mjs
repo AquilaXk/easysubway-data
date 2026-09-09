@@ -32,6 +32,26 @@ import { materializeStationLineAccessibility } from "./materialize-station-line-
 import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { prepareCurrentStaticNetworkProductionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 
+test("release authority selects the exact manifest pack without a Capital name pin", async () => {
+  const input = await fullInput();
+  const source = JSON.parse(input.sourceFixtureBytes);
+  for (const fixture of [source, input.projectedFixture]) {
+    fixture.manifest.activePack.id = "fixture-national-network";
+    fixture.packs[0].id = fixture.manifest.activePack.id;
+  }
+  input.sourceFixtureBytes = Buffer.from(canonical(source));
+  const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
+  assert.equal(result.candidateFixture.packs[0].id, source.manifest.activePack.id);
+  assert.equal(result.authority.buildInput.sourceFixtureSha256, sha256(input.sourceFixtureBytes));
+  const drift = structuredClone(input.projectedFixture);
+  drift.manifest.activePack.id = "different-network";
+  drift.packs[0].id = drift.manifest.activePack.id;
+  assert.throws(() => buildCurrentReleaseCandidateAccessibilityAuthority({ ...input, projectedFixture: drift }), /active pack identity mismatch/);
+  const wrongVersion = structuredClone(input.projectedFixture);
+  wrongVersion.packs[0].version = "different-version";
+  assert.throws(() => canonicalCurrentReleaseCandidateFixtureJson(wrongVersion), /active pack mismatch/);
+});
+
 test("full-capital authority는 입력-derived edge와 materialization exact sets에 결속한다", async () => {
   const input = await fullInput();
   const before = structuredClone(input.projectedFixture);

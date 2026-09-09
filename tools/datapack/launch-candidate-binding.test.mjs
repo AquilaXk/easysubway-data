@@ -82,7 +82,7 @@ test("candidate binding records missing authoritative evidence without fallback"
   assert.deepEqual(binding.mobileEvidence, { status: "MISSING", sha256: null, freshUntil: null });
 });
 
-test("authoritative launch evidence overrides forged template consumer domains", () => {
+test("authoritative launch evidence ignores unbound evaluator claims", () => {
   const artifacts = boundArtifacts();
   const binding = buildLaunchCandidateBinding({ ...artifacts, now: new Date("2026-07-15T00:00:00Z") });
   const forgedTemplate = {
@@ -94,8 +94,11 @@ test("authoritative launch evidence overrides forged template consumer domains",
     safety: { signatureValid: true, rollbackVerified: true, freshness: "FRESH", lineage: "VERIFIED" },
     forbiddenEvidence: [],
     forbiddenEvidenceStatus: "VERIFIED",
+    claims: { routingScopeId: "forged-scope" },
+    nationwide: { missingCount: 0 },
   };
-  const bound = bindAuthoritativeLaunchEvidence(forgedTemplate, {
+  const bound = bindAuthoritativeLaunchEvidence({
+    ...forgedTemplate,
     ...artifacts,
     candidateBinding: binding,
   });
@@ -107,6 +110,8 @@ test("authoritative launch evidence overrides forged template consumer domains",
   assert.deepEqual(bound.safety, {});
   assert.equal(bound.forbiddenEvidence, null);
   assert.equal(bound.forbiddenEvidenceStatus, null);
+  assert.deepEqual(bound.claims, {});
+  assert.deepEqual(bound.nationwide, {});
 });
 
 test("authoritative launch evidence uses each bound artifact's explicit payload", () => {
@@ -114,7 +119,12 @@ test("authoritative launch evidence uses each bound artifact's explicit payload"
   const source = JSON.parse(artifacts.sourceEvidenceRaw);
   const server = JSON.parse(artifacts.serverEvidenceRaw);
   const mobile = JSON.parse(artifacts.mobileEvidenceRaw);
-  source.launchDenominatorEvidence = { routing: { admittedStationIds: ["station-a"] }, source: { status: "ADMITTED" } };
+  source.launchDenominatorEvidence = {
+    routing: { admittedStationIds: ["station-a"] },
+    source: { status: "ADMITTED" },
+    claims: { routingScopeId: "bound-scope" },
+    nationwide: { missingCount: 3 },
+  };
   server.launchDenominatorEvidence = { server: { status: "ACTIVE" } };
   mobile.launchDenominatorEvidence = { mobile: { status: "READY" } };
   const payloadArtifacts = {
@@ -124,9 +134,11 @@ test("authoritative launch evidence uses each bound artifact's explicit payload"
     mobileEvidenceRaw: json(mobile),
   };
   const binding = buildLaunchCandidateBinding({ ...payloadArtifacts, now: new Date("2026-07-15T00:00:00Z") });
-  const bound = bindAuthoritativeLaunchEvidence({}, { ...payloadArtifacts, candidateBinding: binding });
+  const bound = bindAuthoritativeLaunchEvidence({ ...payloadArtifacts, candidateBinding: binding });
   assert.deepEqual(bound.routing, { admittedStationIds: ["station-a"] });
   assert.equal(bound.source.status, "ADMITTED");
   assert.equal(bound.server.status, "ACTIVE");
   assert.equal(bound.mobile.status, "READY");
+  assert.deepEqual(bound.claims, { routingScopeId: "bound-scope" });
+  assert.deepEqual(bound.nationwide, { missingCount: 3 });
 });

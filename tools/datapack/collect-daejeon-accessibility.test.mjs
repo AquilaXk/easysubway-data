@@ -27,7 +27,25 @@ async function loadInputs() {
     elevatorBytes,
     escalatorBytes,
     topologySnapshot,
+    topologySource: topologySourceFor(topologySnapshot),
     canonicalStationMappings: parseMolitDaejeonStationMappings(molitBytes),
+  };
+}
+
+function topologySourceFor(topologySnapshot) {
+  const snapshotId = "daejeon-station-distance-fare-fixture-accessibility";
+  return {
+    id: topologySnapshot.sourceId,
+    topologyAdmissionEvidence: {
+      snapshotId,
+      snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+      capturedAt: topologySnapshot.observedAt,
+      stationCount: topologySnapshot.stationNumbers.length,
+      edgeCount: topologySnapshot.rowCount,
+      excludedTransferCount: topologySnapshot.excludedTransferCount,
+      rawSha256: topologySnapshot.rawSha256,
+      contentSha256: topologySnapshot.contentSha256,
+    },
   };
 }
 
@@ -64,6 +82,22 @@ test("대전 accessibility collector는 엘리베이터·에스컬레이터 CSV 
     snapshot.escalatorRawSha256,
     createHash("sha256").update(inputs.escalatorBytes).digest("hex"),
   );
+  assert.deepEqual(snapshot.rawSources.map(({ datasetId, rawSha256, bytesBase64 }) => ({
+    datasetId,
+    rawSha256,
+    bytes: Buffer.from(bytesBase64, "base64"),
+  })), [
+    {
+      datasetId: snapshot.datasetIds[0],
+      rawSha256: createHash("sha256").update(inputs.elevatorBytes).digest("hex"),
+      bytes: inputs.elevatorBytes,
+    },
+    {
+      datasetId: snapshot.datasetIds[1],
+      rawSha256: createHash("sha256").update(inputs.escalatorBytes).digest("hex"),
+      bytes: inputs.escalatorBytes,
+    },
+  ]);
   assert.equal(snapshot.rowsSha256, createHash("sha256").update(JSON.stringify(snapshot.rows)).digest("hex"));
   assert.equal(snapshot.scopeSha256, createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex"));
   assert.deepEqual(snapshot.fieldsProvided, [
@@ -72,7 +106,7 @@ test("대전 accessibility collector는 엘리베이터·에스컬레이터 CSV 
   assert.equal(snapshot.topologyLineages.length, 1);
   assert.deepEqual(snapshot.topologyLineages[0], {
     sourceId: "daejeon-station-distance-fare",
-    snapshotId: "daejeon-station-distance-fare-topology-20260720",
+    snapshotId: inputs.topologySource.topologyAdmissionEvidence.snapshotId,
     contentSha256: inputs.topologySnapshot.contentSha256,
     lineId: LINE_ID,
   });
@@ -127,7 +161,7 @@ test("대전 accessibility collector는 schema·join·count 변조를 fail close
     ...inputs,
     topologySnapshot: badTopology,
     now: new Date("2026-07-24T02:00:00.000Z"),
-  }), /topology snapshot/);
+  }), /Daejeon accessibility topology source binding is invalid/);
 });
 
 test("대전 accessibility collector CLI는 absolute output 경로를 강제한다", async () => {
@@ -135,6 +169,7 @@ test("대전 accessibility collector CLI는 absolute output 경로를 강제한�
     "--elevator-input", ELEVATOR_CSV,
     "--escalator-input", ESCALATOR_CSV,
     "--topology-snapshot", path.join(root, "tools/datapack/sources/daejeon-route-topology-20260720.json"),
+    "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
     "--molit-csv", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
     "--output", "relative.json",
   ]), /usage: collect-daejeon-accessibility/);

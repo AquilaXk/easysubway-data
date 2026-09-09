@@ -78,8 +78,9 @@ test("governance policy transition preserves each exact epoch and its closed pre
 
 test("등록으로 추가한 policy는 이전 bytes 결속을 증명하고 신규 source의 과거 승인을 거부한다", async () => {
   const policy = JSON.parse(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8"));
-  const added = policy.sources.at(-1);
-  const predecessor = { ...policy, sources: policy.sources.slice(0, -1) };
+  const addedSources = policy.sources.slice(-policy.registrationLineage.addedSourceIds.length);
+  const added = addedSources.at(-1);
+  const predecessor = { ...policy, sources: policy.sources.slice(0, -addedSources.length) };
   delete predecessor.registrationLineage;
   const predecessorLineage = policy.registrationLineage?.predecessorLineage ?? null;
   if (predecessorLineage !== null) predecessor.registrationLineage = predecessorLineage;
@@ -92,7 +93,7 @@ test("등록으로 추가한 policy는 이전 bytes 결속을 증명하고 신�
   const predecessorSha256 = digest(predecessorBytes);
   const successor = { ...policy, registrationLineage: {
     predecessorPolicySha256: predecessorSha256,
-    addedSourceIds: [added.sourceId],
+    addedSourceIds: addedSources.map(({ sourceId }) => sourceId),
     predecessorLineage,
     predecessorPolicyText,
   } };
@@ -109,7 +110,7 @@ test("등록으로 추가한 policy는 이전 bytes 결속을 증명하고 신�
   });
   const registration = buildAppendOnlyGovernancePolicyRegistration({
     predecessorPolicyBytes: predecessorBytes,
-    addedSources: [added],
+    addedSources,
   });
   assert.deepEqual(registration.policy, successor);
   const secondAdded = { ...added, sourceId: `${added.sourceId}-second` };

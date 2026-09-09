@@ -28,6 +28,7 @@ import {
   parseMolitGwangjuStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { deriveCurrentMolitMembershipCoverage } from "./current-molit-observation.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -383,6 +384,10 @@ function materializePublicV2Observation({ observation, ledger, heads, nextInvent
   if (observation.sourceId === TARGETS[0]) {
     source.routeMapAdmissionEvidence = { ...source.routeMapAdmissionEvidence, currentTopologyAdmission: { ...source.routeMapAdmissionEvidence.currentTopologyAdmission, positionSnapshotSha256: snapshot.normalizedObservationSha256 }, currentLayoutAdmission: structuredClone(currentLayoutAdmission), capturedAt: snapshot.retrievedAt, freshUntil: snapshot.freshnessExpiresAt };
     requirePublicStaticNetworkV2Admission({ positions: snapshot, positionSource: source });
+  } else {
+    source.membershipCoverageEvidence = deriveCurrentMolitMembershipCoverage({
+      observation, observationBytes: canonicalBytes(observation), current: snapshot,
+    });
   }
   requireExactPublicStaticNetworkV2SnapshotBinding({ snapshot, source, now, requireCurrentFreshness: true });
   return snapshot;

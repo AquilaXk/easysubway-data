@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 
 export const CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH =
   "tools/datapack/release/current-five-region-source-fan-in.json";
+export const NATIVE_ADMISSION_KINDS = Object.freeze([
+  "scheduleAdmissionEvidence",
+  "topologyAdmissionEvidence",
+  "accessibilityAdmissionEvidence",
+]);
 
 const INPUT_PATHS = Object.freeze({
   targets: "tools/datapack/nationwide-coverage-targets.json",
@@ -123,20 +128,49 @@ function licenseEvidence(source, sourceId) {
   return evidence;
 }
 
+function validNativeAdmissionMetadata(source) {
+  if (source.admissionEvidence === undefined) return true;
+  const metadata = source.admissionEvidence;
+  return sameKeys(metadata, ["licenseEvidenceHash"])
+    && SHA256.test(metadata.licenseEvidenceHash ?? "")
+    && source.license !== undefined
+    && metadata.licenseEvidenceHash === sha256(Buffer.from(canonical(source.license)));
+}
+
+function hasNativeSourceAuthority(source) {
+  return source.requiredForProductionPack === true && source.productionUseAllowed === true;
+}
+
 function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
+  const membershipCoverage = source.membershipCoverageEvidence;
+  if (membershipCoverage !== undefined && (membershipCoverage.snapshotId !== snapshot.snapshotId
+    || membershipCoverage.rawSha256 !== snapshot.rawSha256
+    || membershipCoverage.normalizedObservationSha256 !== snapshot.normalizedObservationSha256)) {
+    throw new Error(`membership coverage snapshot mismatch for ${sourceId}`);
+  }
   const matching = admittedEvidence(source).filter(([, evidence]) =>
     evidence.snapshotId === snapshot.snapshotId
     && (evidence.sourceId === undefined || evidence.sourceId === sourceId));
   if (matching.length === 0) throw new Error(`admission snapshot mismatch for ${sourceId}`);
 
-  const approved = matching.filter(([, evidence]) => evidence.decision === "APPROVED"
-    || evidence.productionUseAllowed === true);
-  if (approved.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
+  const approved = matching.filter(([kind, evidence]) => kind !== "scheduleAdmissionEvidence"
+    && kind !== "accessibilityAdmissionEvidence"
+    && (evidence.decision === "APPROVED" || evidence.productionUseAllowed === true));
+  const native = matching.map(([kind, evidence]) => ({
+    kind,
+    evidence,
+    record: nativeAdmissionRecord({ source, sourceId, snapshot, kind, evidence }),
+  })).filter(({ record }) => record !== null);
+  const recognized = [
+    ...approved.map(([kind, evidence]) => ({ kind, evidence, record: null })),
+    ...native,
+  ];
+  if (recognized.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
 
-  const bound = approved.filter(([, evidence]) => evidence.rawSha256 === snapshot.rawSha256);
+  const bound = recognized.filter(({ evidence }) => evidence.rawSha256 === snapshot.rawSha256);
   if (bound.length === 0) throw new Error(`admission digest mismatch for ${sourceId}`);
 
-  const current = bound.filter(([, evidence]) => {
+  const current = bound.filter(({ evidence }) => {
     const observedAt = evidence.observedAt ?? evidence.capturedAt
       ?? evidence.verifiedAt ?? evidence.approvedAt;
     return observedAt !== undefined && evidence.freshUntil !== undefined
@@ -144,7 +178,7 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
       && instant(evidence.freshUntil, "admission freshness") > evaluatedAt;
   });
   if (current.length === 0) {
-    const hasFutureObservation = bound.some(([, evidence]) => {
+    const hasFutureObservation = bound.some(({ evidence }) => {
       const observedAt = evidence.observedAt ?? evidence.capturedAt
         ?? evidence.verifiedAt ?? evidence.approvedAt;
       return observedAt !== undefined && instant(observedAt, "admission observation") > evaluatedAt;
@@ -152,10 +186,105 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     if (hasFutureObservation) throw new Error(`admission future observation mismatch for ${sourceId}`);
     throw new Error(`admission freshness mismatch for ${sourceId}`);
   }
-  return current.map(([kind, evidence]) => ({
+  return current.map(({ kind, evidence, record }) => record ?? {
     kind,
     sha256: sha256(Buffer.from(canonical(evidence))),
-  })).sort((left, right) => compare(left.kind, right.kind));
+  }).sort((left, right) => compare(left.kind, right.kind));
+}
+
+function validNativeScheduleAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (!hasNativeSourceAuthority(source)
+    || source.capabilities?.schedule?.productionUseAllowed !== true) return false;
+  if (!Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId || !SHA256.test(evidence.rawSha256 ?? "")
+    || !SHA256.test(evidence.rowsSha256 ?? "")
+    || (Object.hasOwn(evidence, "contentSha256") && !SHA256.test(evidence.contentSha256))
+    || !SHA256.test(evidence.topologyContentSha256 ?? "") || typeof evidence.topologySourceId !== "string"
+    || evidence.topologySourceId.length === 0 || typeof evidence.topologySnapshotId !== "string"
+    || evidence.topologySnapshotId.length === 0
+    || !["rowCount", "departureCount", "tripCount", "stopTimeCount"].every((key) => Number.isInteger(evidence[key]) && evidence[key] > 0)) {
+    return false;
+  }
+  return true;
+}
+
+function validNativeTopologyAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (!hasNativeSourceAuthority(source)
+    || !Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId
+    || evidence.capturedAt !== snapshot.capturedAt
+    || evidence.freshUntil !== snapshot.freshnessExpiresAt
+    || evidence.rawSha256 !== snapshot.rawSha256
+    || evidence.contentSha256 !== snapshot.contentSha256
+    || !SHA256.test(evidence.rawSha256 ?? "") || !SHA256.test(evidence.contentSha256 ?? "")
+    || !Number.isInteger(evidence.stationCount) || evidence.stationCount <= 0
+    || !Number.isInteger(evidence.edgeCount) || evidence.edgeCount <= 0
+    || evidence.stationCount !== snapshot.coverageCount || evidence.edgeCount !== snapshot.rowCount) {
+    return false;
+  }
+  try {
+    return instant(evidence.capturedAt, "topology admission capture") < instant(evidence.freshUntil, "topology admission freshness");
+  } catch {
+    return false;
+  }
+}
+
+function validNativeAccessibilityAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (!hasNativeSourceAuthority(source)
+    || source.capabilities?.facility?.productionUseAllowed !== true) return false;
+  if (!Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId
+    || evidence.capturedAt !== snapshot.capturedAt
+    || evidence.rawSha256 !== snapshot.rawSha256
+    || evidence.rowsSha256 !== snapshot.contentSha256
+    || !SHA256.test(evidence.rawSha256 ?? "") || !SHA256.test(evidence.rowsSha256 ?? "")
+    || !SHA256.test(evidence.topologyContentSha256 ?? "")
+    || typeof evidence.topologySourceId !== "string" || evidence.topologySourceId.length === 0
+    || typeof evidence.topologySnapshotId !== "string" || evidence.topologySnapshotId.length === 0
+    || !Number.isInteger(evidence.rowCount) || evidence.rowCount <= 0
+    || !Number.isInteger(evidence.stationCount) || evidence.stationCount <= 0
+    || evidence.rowCount !== snapshot.rowCount || evidence.stationCount !== snapshot.coverageCount) {
+    return false;
+  }
+  try {
+    return instant(evidence.capturedAt, "accessibility admission capture")
+      < instant(evidence.freshUntil, "accessibility admission freshness");
+  } catch {
+    return false;
+  }
+}
+
+export function nativeAdmissionRecord({ source, sourceId, snapshot, kind, evidence }) {
+  const valid = kind === "scheduleAdmissionEvidence"
+    ? validNativeScheduleAdmission(source, evidence, snapshot, sourceId)
+    : kind === "topologyAdmissionEvidence"
+      ? validNativeTopologyAdmission(source, evidence, snapshot, sourceId)
+      : kind === "accessibilityAdmissionEvidence"
+        ? validNativeAccessibilityAdmission(source, evidence, snapshot, sourceId)
+        : false;
+  return valid ? { kind, sha256: sha256(Buffer.from(canonical(evidence))) } : null;
+}
+
+export function nativeAdmissionRecordForHead({ source, head }) {
+  if (!source || !head || typeof head.sourceId !== "string" || source.id !== head.sourceId
+    || !validNativeAdmissionMetadata(source)) return null;
+  const records = admittedEvidence(source).map(([kind, evidence]) => {
+    if (!NATIVE_ADMISSION_KINDS.includes(kind)) return null;
+    return nativeAdmissionRecord({ source, sourceId: head.sourceId, snapshot: head, kind, evidence });
+  }).filter(Boolean);
+  return records.length === 1 ? records[0] : null;
 }
 
 function isImmutableOciObjectUri(value) {
@@ -213,10 +342,11 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
     if (!TALLY_STATUSES.has(row.status)
       || !Array.isArray(ids) || ids.some((id) => typeof id !== "string" || id.length === 0)
       || (row.status === "INVENTORY_ADMITTED" && ids.length === 0)
-      || (row.status !== "INVENTORY_ADMITTED" && ids.length !== 0)) {
+      || ids.some((id) => !inventoryById.has(id))) {
       throw new Error(`requirement disposition mismatch for ${pk(row)}`);
     }
-    if (row.releaseTier === "LAUNCH_REQUIRED") {
+    // Tally의 부분 확보 source는 진단 근거이며, 완료된 requirement만 후보 source를 선택한다.
+    if (row.releaseTier === "LAUNCH_REQUIRED" && row.status === "INVENTORY_ADMITTED") {
       ids.forEach((id) => admittedIds.add(id));
     }
   }
@@ -249,8 +379,12 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       sourceId,
       provider: source.provider,
       snapshotId: snapshot.snapshotId,
+      ...(snapshot.capturedAt === undefined ? {} : { capturedAt: snapshot.capturedAt }),
       rawSha256: snapshot.rawSha256,
+      ...(snapshot.contentSha256 === undefined ? {} : { contentSha256: snapshot.contentSha256 }),
       rawObjectUri: snapshot.rawObjectUri,
+      ...(snapshot.rowCount === undefined ? {} : { rowCount: snapshot.rowCount }),
+      ...(snapshot.coverageCount === undefined ? {} : { coverageCount: snapshot.coverageCount }),
       freshnessExpiresAt: snapshot.freshnessExpiresAt,
       inventoryRecordSha256: sha256(Buffer.from(canonical(source))),
       snapshotRecordSha256: sha256(Buffer.from(canonical(snapshot))),

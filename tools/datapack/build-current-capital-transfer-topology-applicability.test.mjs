@@ -9,8 +9,10 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { buildApplicability, main } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { currentTransferLineIds } from "./build-current-transfer-topology-metrics.mjs";
 
 const execFileAsync = promisify(execFile);
+const [LINE_A, LINE_B, LINE_C] = currentTransferLineIds();
 
 test("current canonical 213-cell transfer applicability matrix is closed and non-production", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "transfer-applicability-"));
@@ -146,15 +148,15 @@ test("direct CLI invocation writes success JSON and malformed arguments leave no
 });
 
 function canonicalPack() {
-  const lines = ["line-a", "line-b", "line-c"];
+  const lines = [LINE_A, LINE_B, LINE_C];
   const stations = Array.from({ length: 199 }, (_, index) => ({ id: `station-${String(index).padStart(3, "0")}`, nameKo: `역${index}` }));
   const stationLines = [
     ...lines.map((lineId) => ({ stationId: stations[0].id, lineId })),
     ...Array.from({ length: 12 }, (_, index) => ([
-      { stationId: stations[index + 1].id, lineId: "line-a" },
-      { stationId: stations[index + 1].id, lineId: "line-b" },
+      { stationId: stations[index + 1].id, lineId: LINE_A },
+      { stationId: stations[index + 1].id, lineId: LINE_B },
     ])).flat(),
-    ...stations.slice(13).map((station) => ({ stationId: station.id, lineId: "line-c" })),
+    ...stations.slice(13).map((station) => ({ stationId: station.id, lineId: LINE_C })),
   ];
   return {
     manifest: { channel: "production", activePack: { id: "capital", version: "1" } },
@@ -164,10 +166,10 @@ function canonicalPack() {
 
 function topologyMetrics(canonical) {
   const pairs = [
-    { stationId: "station-000", lineIds: ["line-a", "line-b"] },
-    { stationId: "station-000", lineIds: ["line-a", "line-c"] },
-    { stationId: "station-000", lineIds: ["line-b", "line-c"] },
-    ...Array.from({ length: 12 }, (_, index) => ({ stationId: `station-${String(index + 1).padStart(3, "0")}`, lineIds: ["line-a", "line-b"] })),
+    { stationId: "station-000", lineIds: [LINE_A, LINE_B] },
+    { stationId: "station-000", lineIds: [LINE_A, LINE_C] },
+    { stationId: "station-000", lineIds: [LINE_B, LINE_C] },
+    ...Array.from({ length: 12 }, (_, index) => ({ stationId: `station-${String(index + 1).padStart(3, "0")}`, lineIds: [LINE_A, LINE_B] })),
   ];
   const metrics = pairs.flatMap(({ stationId, lineIds: [a, b] }, index) => [
     { stationId, fromLineId: a, toLineId: b, distanceMeters: index + 1, officialDurationSecondsReference: index + 1, durationRole: "REFERENCE_ONLY", sourceRecordSha256: "a".repeat(64), metricProvenance: index < 2 ? "DERIVED_RECIPROCAL" : "OFFICIAL_SOURCE", ...(index < 2 ? { derivedFrom: { stationId, fromLineId: b, toLineId: a, sourceRecordSha256: "a".repeat(64) } } : {}) },

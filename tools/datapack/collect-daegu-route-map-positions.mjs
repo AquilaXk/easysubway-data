@@ -7,7 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { TextDecoder } from "node:util";
 
-import { DAEGU_LINES, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity, loadAdmittedDaeguTopologySnapshots, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
 
 const SOURCE_ID = "daegu-transportation-route-map-positions";
 const ARTIFACT_KIND = "daegu-route-map-positions-snapshot";
@@ -271,7 +271,7 @@ export function collectDaeguRouteMapPositions({
     const topology = topologySnapshots[line.lineNumber];
     return {
       sourceId: topology.sourceId,
-      snapshotId: `${topology.sourceId}-20260721`,
+      snapshotId: daeguSourceSnapshotIdentity(topology),
       contentSha256: topology.contentSha256,
       lineId: line.lineId,
     };
@@ -499,12 +499,12 @@ function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-daegu-route-map-positions.mjs --fixtures-dir <dir> --sources-dir <dir> --output <absolute.json> [--captured-at <iso>]");
+      throw new Error("usage: collect-daegu-route-map-positions.mjs --fixtures-dir <dir> --sources-dir <dir> --inventory <json> --output <absolute.json> [--captured-at <iso>]");
     }
     args[argv[index].slice(2)] = argv[index + 1];
   }
-  if (!args["fixtures-dir"] || !args["sources-dir"] || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-daegu-route-map-positions.mjs --fixtures-dir <dir> --sources-dir <dir> --output <absolute.json> [--captured-at <iso>]");
+  if (!args["fixtures-dir"] || !args["sources-dir"] || !args.inventory || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error("usage: collect-daegu-route-map-positions.mjs --fixtures-dir <dir> --sources-dir <dir> --inventory <json> --output <absolute.json> [--captured-at <iso>]");
   }
   return args;
 }
@@ -512,15 +512,12 @@ function parseArgs(argv) {
 export async function runDaeguRouteMapPositionsCollector(argv) {
   const args = parseArgs(argv);
   const csvByDatasetId = {};
-  const topologySnapshots = {};
+  const inventory = JSON.parse(await readFile(args.inventory, "utf8"));
+  const topologySnapshots = await loadAdmittedDaeguTopologySnapshots(args["sources-dir"], inventory);
   for (const dataset of DATASETS) {
     csvByDatasetId[dataset.datasetId] = await readFile(
       path.join(args["fixtures-dir"], `data-go-${dataset.datasetId}.csv`),
     );
-    topologySnapshots[Number(dataset.lineNumber)] = JSON.parse(await readFile(
-      path.join(args["sources-dir"], `daegu-line${dataset.lineNumber}-route-topology-20260721.json`),
-      "utf8",
-    ));
   }
   const snapshot = collectDaeguRouteMapPositions({
     csvByDatasetId,

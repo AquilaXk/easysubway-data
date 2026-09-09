@@ -5,6 +5,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
+import { currentTransferLineIds } from "./build-current-transfer-topology-metrics.mjs";
+
 const APPLICABLE = "APPLICABLE_TRANSFER_ENDPOINT";
 const NOT_APPLICABLE = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET";
 
@@ -35,14 +37,15 @@ export function buildApplicability({ canonicalPack, canonicalPackBytes, transfer
   const canonical = deriveCanonicalTarget(canonicalPack, canonicalPackBytes);
   const metrics = validateMetrics(transferTopologyMetrics, metricsBytes, canonical);
   const applicable = new Set(metrics.metrics.flatMap(({ stationId, fromLineId }) => [cellKey(stationId, fromLineId)]));
-  if (applicable.size !== 27) throw new Error("NO_GO transfer endpoint count mismatch");
+  if (applicable.size === 0) throw new Error("NO_GO transfer endpoint count mismatch");
   const cells = metrics.stationLines.map(({ stationId, lineId }) => ({
     stationId,
     lineId,
     state: applicable.has(cellKey(stationId, lineId)) ? APPLICABLE : NOT_APPLICABLE,
   })).sort(compareCell);
   const stateSummary = countStates(cells);
-  if (cells.length !== 213 || stateSummary[APPLICABLE] !== 27 || stateSummary[NOT_APPLICABLE] !== 186) {
+  if (cells.length !== metrics.stationLines.length || stateSummary[APPLICABLE] !== applicable.size
+    || stateSummary[NOT_APPLICABLE] !== cells.length - applicable.size) {
     throw new Error("NO_GO applicability partition mismatch");
   }
   const payload = canonicalObject({
@@ -84,26 +87,35 @@ function validateMetrics(value, bytes, canonical) {
     || value.artifactSha256 !== sha256(canonicalJson(without(value, "artifactSha256")))) throw new Error("NO_GO transfer topology artifact identity mismatch");
   const identity = value.canonicalIdentity;
   assertExactKeys(identity, ["canonicalPackSha256", "stationLineCount", "stationCount", "physicalPairCount"], "canonical identity");
-  if (identity.canonicalPackSha256 !== canonical.packSha256 || identity.stationLineCount !== 213
-    || identity.stationCount !== 199 || identity.physicalPairCount !== 15) {
+  const lineIds = new Set(currentTransferLineIds());
+  const stationLines = canonical.stationLines.filter(({ stationId, lineId }) => nonBlank(stationId) && lineIds.has(lineId));
+  const stationIds = new Set(stationLines.map(({ stationId }) => stationId));
+  if (identity.canonicalPackSha256 !== canonical.packSha256 || identity.stationLineCount !== stationLines.length
+    || identity.stationCount !== stationIds.size) {
     throw new Error("NO_GO canonical identity mismatch");
   }
   validateSourceIdentity(value.sourceIdentity);
-  const lineIds = new Set(value.metrics.map(({ fromLineId, toLineId }) => [fromLineId, toLineId]).flat());
-  const stationLines = canonical.stationLines.filter(({ stationId, lineId }) => nonBlank(stationId) && lineIds.has(lineId));
-  const stationIds = new Set(stationLines.map(({ stationId }) => stationId));
-  if (stationLines.length !== 213 || stationIds.size !== 199 || new Set(stationLines.map(({ stationId, lineId }) => cellKey(stationId, lineId))).size !== 213) {
+  if (stationLines.length === 0 || new Set(stationLines.map(({ stationId, lineId }) => cellKey(stationId, lineId))).size !== stationLines.length) {
     throw new Error("NO_GO canonical target denominator mismatch");
   }
   const physicalPairs = derivePairs(stationLines);
-  if (physicalPairs.length !== 15 || canonicalJson(physicalPairs) !== canonicalJson(value.physicalPairs)) throw new Error("NO_GO canonical pair identity mismatch");
-  if (!Array.isArray(value.metrics) || value.metrics.length !== 30 || metricProvenanceSummary(value.metrics).OFFICIAL_SOURCE !== 28 || metricProvenanceSummary(value.metrics).DERIVED_RECIPROCAL !== 2) {
+  if (physicalPairs.length === 0 || identity.physicalPairCount !== physicalPairs.length
+    || canonicalJson(physicalPairs) !== canonicalJson(value.physicalPairs)) throw new Error("NO_GO canonical pair identity mismatch");
+  if (!Array.isArray(value.metrics)) throw new Error("NO_GO transfer topology metric composition mismatch");
+  const provenance = metricProvenanceSummary(value.metrics);
+  if (value.metrics.length !== physicalPairs.length * 2
+    || provenance.DERIVED_RECIPROCAL !== 2 || provenance.OFFICIAL_SOURCE !== value.metrics.length - provenance.DERIVED_RECIPROCAL) {
     throw new Error("NO_GO transfer topology metric composition mismatch");
   }
   const expectedDirections = new Set(physicalPairs.flatMap(({ stationId, lineIds: [a, b] }) => [metricKey(stationId, a, b), metricKey(stationId, b, a)]));
-  const actualDirections = new Set();
   const metricsByKey = new Map(value.metrics.map((metric) => [metricKey(metric.stationId, metric.fromLineId, metric.toLineId), metric]));
-  for (const metric of value.metrics) {
+  validateMetricDirections(value.metrics, expectedDirections, metricsByKey);
+  return { ...value, stationLines };
+}
+
+function validateMetricDirections(metrics, expectedDirections, metricsByKey) {
+  const actualDirections = new Set();
+  for (const metric of metrics) {
     assertExactKeys(metric, metric.metricProvenance === "DERIVED_RECIPROCAL"
       ? ["stationId", "fromLineId", "toLineId", "distanceMeters", "officialDurationSecondsReference", "durationRole", "sourceRecordSha256", "metricProvenance", "derivedFrom"]
       : ["stationId", "fromLineId", "toLineId", "distanceMeters", "officialDurationSecondsReference", "durationRole", "sourceRecordSha256", "metricProvenance"], "transfer metric");
@@ -117,7 +129,6 @@ function validateMetrics(value, bytes, canonical) {
     actualDirections.add(key);
   }
   if (actualDirections.size !== expectedDirections.size) throw new Error("NO_GO transfer direction coverage mismatch");
-  return { ...value, stationLines };
 }
 
 function validateSourceIdentity(source) {

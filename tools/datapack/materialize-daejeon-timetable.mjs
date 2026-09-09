@@ -5,7 +5,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
-import { materializeDaejeonRouteTopology } from "./materialize-daejeon-route-topology.mjs";
+import {
+  materializeDaejeonRouteTopology,
+  validateSnapshot as validateTopologySnapshot,
+} from "./materialize-daejeon-route-topology.mjs";
 import { DAEJEON_COVERAGE_OPERATIONS } from "./probe-daejeon-coverage-api.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
@@ -38,10 +41,9 @@ export function materializeDaejeonTimetable({
   topologySnapshot,
   inventory,
   canonicalStationMappings,
-  now = new Date(),
 }) {
   const events = validateSnapshot(timetableSnapshot);
-  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot, now);
+  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot);
   const version = /-(\d{8})$/.exec(source.scheduleAdmissionEvidence.snapshotId)?.[1];
   if (!version) throw new Error(`${SOURCE_ID} snapshotId must end with YYYYMMDD`);
   const capturedDate = compactSeoulDate(source.scheduleAdmissionEvidence.capturedAt);
@@ -56,7 +58,6 @@ export function materializeDaejeonTimetable({
     snapshot: topologySnapshot,
     inventory,
     canonicalStationMappings,
-    now,
   });
   const pack = fixture.packs[0];
   validateTopologyLineage(pack, source.scheduleAdmissionEvidence);
@@ -153,6 +154,27 @@ export function materializedPackContentHash(pack, version) {
   return sha256(JSON.stringify({ previousPackId, version, content }));
 }
 
+/**
+ * Reconstructs the native schedule totals from one validated timetable and its
+ * selected topology/MOLIT station mapping without materializing a pack.
+ */
+export function deriveDaejeonTimetableCounts({
+  timetableSnapshot,
+  topologySnapshot,
+  canonicalStationMappings,
+}) {
+  const events = validateSnapshot(timetableSnapshot);
+  validateTopologySnapshot(topologySnapshot);
+  const stationByNumber = canonicalStationMappingsByNumber(canonicalStationMappings);
+  const durationByStationPair = topologyDurationsFromSnapshot(topologySnapshot, stationByNumber);
+  const { trips, stopTimes } = reconstructTrips(events, stationByNumber, durationByStationPair);
+  return {
+    departureCount: events.length,
+    tripCount: trips.length,
+    stopTimeCount: stopTimes.length,
+  };
+}
+
 function compactSeoulDate(value) {
   const parts = Object.fromEntries(SEOUL_DATE_FORMATTER.formatToParts(new Date(value))
     .map(({ type, value: part }) => [type, part]));
@@ -206,7 +228,7 @@ function validateSnapshot(snapshot) {
   });
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot, now) {
+function requiredSource(inventory, snapshot, topologySnapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
     || source.capabilities?.schedule?.productionUseAllowed !== true) {
@@ -229,10 +251,6 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} inventory evidence freshness contract is invalid`);
   }
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(observedNow)) throw new Error("materialization time is invalid");
-  if (observedNow < capturedAt) throw new Error(`${SOURCE_ID} evidence is future-dated`);
-  if (observedNow >= freshUntil) throw new Error(`${SOURCE_ID} evidence is stale`);
   return source;
 }
 
@@ -260,12 +278,38 @@ function canonicalStations(pack) {
   }]));
 }
 
+function canonicalStationMappingsByNumber(mappings) {
+  if (!Array.isArray(mappings) || mappings.length !== STATION_NUMBERS.length
+    || mappings.some((row, index) => row?.stationNumber !== STATION_NUMBERS[index]
+      || typeof row.stationId !== "string" || !row.stationId
+      || typeof row.stationName !== "string" || !row.stationName)) {
+    throw new Error("Daejeon timetable canonical station mapping mismatch");
+  }
+  return new Map(mappings.map(({ stationNumber, stationId, stationName }) => [stationNumber, {
+    stationId,
+    stationName,
+  }]));
+}
+
 function topologyDurations(pack) {
   const durations = new Map();
   for (const edge of pack.networkEdges.filter(({ sourceId }) => sourceId === TOPOLOGY_SOURCE_ID)) {
     const from = edge.fromNodeId.split(":")[0];
     const to = edge.toNodeId.split(":")[0];
     durations.set(`${from}:${to}`, edge.durationSeconds);
+  }
+  return durations;
+}
+
+function topologyDurationsFromSnapshot(snapshot, stationByNumber) {
+  const durations = new Map();
+  for (const row of snapshot.rows) {
+    const from = stationByNumber.get(row.fromStationNumber);
+    const to = stationByNumber.get(row.toStationNumber);
+    if (!from || !to) {
+      throw new Error(`Daejeon timetable topology station mapping missing: ${row.fromStationNumber}:${row.toStationNumber}`);
+    }
+    durations.set(`${from.stationId}:${to.stationId}`, row.travelTimeSeconds);
   }
   return durations;
 }
@@ -449,6 +493,7 @@ async function main(argv) {
     inventory,
     canonicalStationMappings: parseMolitDaejeonStationMappings(stationMapCsv),
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Daejeon timetable materialized: trips=${EXPECTED_TRIP_COUNT} stopTimes=${EXPECTED_STOP_TIME_COUNT}`);
 }

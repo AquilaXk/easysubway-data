@@ -42,7 +42,8 @@ export async function probeDaejeonCoverageApi({
 
   const response = await fetchWithRetry(url, fetchImpl);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
-  const raw = await response.text();
+  const responseBytes = Buffer.from(await response.arrayBuffer());
+  const raw = responseBytes.toString("utf8");
   if (!response.ok) {
     throw new Error(`Daejeon coverage API HTTP ${response.status}; observedAt=${now.toISOString()}; `
       + `contentType=${contentType || "missing"}; rawBytes=${Buffer.byteLength(raw)}; rawSha256=${sha256(raw)}`);
@@ -76,8 +77,10 @@ export async function probeDaejeonCoverageApi({
       rowsSha256: sha256(JSON.stringify(parsed.rows)),
     } : {}),
     ...(Object.keys(requestQuery).length > 0 ? { query: requestQuery } : {}),
-    rawBytes: Buffer.byteLength(raw),
-    rawSha256: sha256(raw),
+    // 등록 단계는 같은 원문을 재수집하지 않고 보존 바이트와 해시를 소비한다.
+    rawResponseBase64: responseBytes.toString("base64"),
+    rawBytes: responseBytes.length,
+    rawSha256: sha256(responseBytes),
     credentialRedacted: true,
   };
 }
