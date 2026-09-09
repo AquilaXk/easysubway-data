@@ -12,7 +12,7 @@ import { validateSnapshot as validateDaejeonTopology } from "./materialize-daeje
 import { collectDaejeonAccessibility } from "./collect-daejeon-accessibility.mjs";
 import { collectDaeguAccessibility } from "./collect-daegu-accessibility.mjs";
 import { collectGwangjuAccessibility } from "./collect-gwangju-accessibility.mjs";
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import { parseCurrentMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
@@ -427,14 +427,11 @@ async function loadTopologies(root, inventory, ids) {
     if (snapshot.sourceId !== id || evidence.capturedAt !== capturedAt
       || evidence.rawSha256 !== snapshot.rawSha256 || evidence.contentSha256 !== snapshot.contentSha256
       || evidence.stationCount !== stationCount || evidence.edgeCount !== edgeCount
-      || (id.startsWith("daegu-line") && evidence.snapshotId !== snapshotIdFor(id, snapshot))) {
+      || (id.startsWith("daegu-line") && evidence.snapshotId !== daeguSourceSnapshotIdentity(snapshot))) {
       throw new Error("regional accessibility topology binding is invalid");
     }
     return { source, evidence, snapshot, path: absolute, bytes };
   }));
-}
-function snapshotIdFor(id, snapshot) {
-  return `${id}-${sha(JSON.stringify(snapshot))}`;
 }
 async function replay(snapshot, topology, molit) {
   const raw = (id) => Buffer.from(one(snapshot.rawSources,
