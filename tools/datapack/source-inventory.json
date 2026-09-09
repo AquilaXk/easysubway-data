@@ -1239,9 +1239,9 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-daegu-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-route-map-positions.test.mjs",
-        "snapshotId": "daegu-transportation-route-map-positions-20260724",
-        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
-        "snapshotSha256": "9e5df3f0bf398a45dd453d442abeb7138e289423aee721144dd743834a0c90ee",
+        "snapshotId": "daegu-transportation-route-map-positions-cd5a300cffe0dc0a7864e5fe2baf781eb4186e1c8abcf776bea08e9440f51e58",
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-cd5a300cffe0dc0a7864e5fe2baf781eb4186e1c8abcf776bea08e9440f51e58.json",
+        "snapshotSha256": "cd5a300cffe0dc0a7864e5fe2baf781eb4186e1c8abcf776bea08e9440f51e58",
         "capturedAt": "2026-07-24T03:00:00.000Z",
         "stationCount": 91,
         "rawStationCount": 91,
@@ -1266,28 +1266,28 @@
         },
         "observedDataUpdatedAt": "2024-10-14",
         "topologySourceId": "daegu-transportation-route-map-topology-lineage",
-        "topologySnapshotId": "daegu-transportation-route-map-topology-lineage-20260721",
+        "topologySnapshotId": "daegu-transportation-route-map-topology-lineage-e983f6a74f2b8ec7b9ef3f74b520bcf37c2fa167ce4a99a24c29ae827473b9ca",
         "topologyLineages": [
           {
             "sourceId": "daegu-line1-route-topology",
-            "snapshotId": "daegu-line1-route-topology-20260721",
+            "snapshotId": "daegu-line1-route-topology-8be48b14cb0c7ea68427f5086a880817d5d05e8de1993d4f8f977a1d9e0294f5",
             "contentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f",
             "lineId": "line-5b8d9b05e7e6"
           },
           {
             "sourceId": "daegu-line2-route-topology",
-            "snapshotId": "daegu-line2-route-topology-20260721",
+            "snapshotId": "daegu-line2-route-topology-fca00bd7214a45012da99aae67c56c2c09f0ebd2020036f837e1394d22947c21",
             "contentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00",
             "lineId": "line-e2938a4cc492"
           },
           {
             "sourceId": "daegu-line3-route-topology",
-            "snapshotId": "daegu-line3-route-topology-20260721",
+            "snapshotId": "daegu-line3-route-topology-ff9ac7985ddb01ec23e9e12d39cea06028560db55c3692a6b02c30712f994a5d",
             "contentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653",
             "lineId": "line-0ffaa95b1b5d"
           }
         ],
-        "topologyContentSha256": "4e76459d4588f97bd55e767374b81031402c768d8f4805c69484d7c3f8771d1f",
+        "topologyContentSha256": "e983f6a74f2b8ec7b9ef3f74b520bcf37c2fa167ce4a99a24c29ae827473b9ca",
         "freshUntil": "2027-07-24T03:00:00.000Z"
       }
     },

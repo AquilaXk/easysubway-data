@@ -80,10 +80,14 @@ async function inputs() {
   const routeMap = JSON.parse(daeguSnapshotBytes);
   routeMap.topologyLineages = topologyLineages;
   const routeMapBytes = Buffer.from(JSON.stringify(routeMap));
+  const routeMapSnapshotSha256 = createHash("sha256").update(routeMapBytes).digest("hex");
+  const routeMapSnapshotId = `${SOURCE_ID}-${routeMapSnapshotSha256}`;
   Object.assign(inventory.sources.find(({ id }) => id === SOURCE_ID).routeMapAdmissionEvidence, {
+    snapshotId: routeMapSnapshotId,
+    snapshotPath: `tools/datapack/sources/${routeMapSnapshotId}.json`,
     topologyLineages, topologySnapshotId: daeguRouteMapTopologyLineageIdentity(topologyLineages),
     topologyContentSha256: createHash("sha256").update(JSON.stringify(topologyLineages)).digest("hex"),
-    snapshotSha256: createHash("sha256").update(routeMapBytes).digest("hex"),
+    snapshotSha256: routeMapSnapshotSha256,
   });
   const daeguFixture = materializeDaeguTimetable({
     baseFixture: gwangjuFixture, topologySnapshots, timetableSnapshots, inventory,
@@ -99,7 +103,7 @@ async function inputs() {
   return {
     baseFixture: daeguAccessibilityFixture,
     daeguSnapshot: routeMap,
-    daeguSnapshotSha256: createHash("sha256").update(routeMapBytes).digest("hex"),
+    daeguSnapshotSha256: routeMapSnapshotSha256,
     topologySnapshots,
     inventory,
   };
@@ -129,6 +133,10 @@ test("공식 대구 출구 위경도 snapshot을 누적 production candidate pac
   assert.match(materializedDaeguRouteMapPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
   assert.equal(pack.version, "20260724");
   assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260724" });
+  assert.equal(
+    inventory.sources.find(({ id }) => id === SOURCE_ID).routeMapAdmissionEvidence.snapshotId,
+    `${SOURCE_ID}-${daeguSnapshotSha256}`,
+  );
 
   const routeMapFreshUntil = inventory.sources.find(({ id }) => id === SOURCE_ID)
     .routeMapAdmissionEvidence.freshUntil;

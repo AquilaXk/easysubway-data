@@ -1337,6 +1337,13 @@
       "sampleEvidenceStatus": "validated_official_full_snapshot",
       "admissionStatus": "production_route_map_positions_materialized",
       "productionInventoryReferenceId": "daegu-transportation-route-map-positions",
+      "registrationMetadata": {
+        "dependentInputs": {
+          "line1CsvPath": "tools/datapack/fixtures/daegu-route-map-positions-raw/data-go-15133918.csv",
+          "line2CsvPath": "tools/datapack/fixtures/daegu-route-map-positions-raw/data-go-15133920.csv",
+          "line3CsvPath": "tools/datapack/fixtures/daegu-route-map-positions-raw/data-go-15133922.csv"
+        }
+      },
       "serviceKeyHandling": "not_required",
       "mobileEmbeddingAllowed": true,
       "evidence": {

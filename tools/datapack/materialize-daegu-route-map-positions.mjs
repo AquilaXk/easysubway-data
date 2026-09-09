@@ -96,7 +96,7 @@ export function materializeDaeguRouteMapPositions({
     ...pack.minimumTableRows,
     route_map_positions: pack.routeMapPositions.length,
   };
-  const version = source.routeMapAdmissionEvidence.snapshotId.slice(-8);
+  const version = compactSeoulDate(snapshot.capturedAt);
   const composition = sha256(JSON.stringify({
     previousPackId: pack.id,
     snapshotId: source.routeMapAdmissionEvidence.snapshotId,
@@ -134,8 +134,8 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshots, 
     || evidence.admissionKind !== "official-file-latlon"
     || evidence.materializer !== "tools/datapack/materialize-daegu-route-map-positions.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-daegu-route-map-positions.test.mjs"
-    || evidence.snapshotId !== "daegu-transportation-route-map-positions-20260724"
-    || evidence.snapshotPath !== "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json"
+    || evidence.snapshotId !== `${SOURCE_ID}-${snapshotSha256}`
+    || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt
     || evidence.stationCount !== snapshot.stationCount
     || evidence.rawStationCount !== snapshot.rawStationCount
@@ -239,6 +239,13 @@ function packSource(source, snapshot) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }
 
 function parseArgs(argv) {

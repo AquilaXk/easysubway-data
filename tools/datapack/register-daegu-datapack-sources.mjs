@@ -18,6 +18,7 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
+import { buildDaeguTopologyDependents } from "./lib/daegu-topology-dependents.mjs";
 import { daeguMembershipSnapshotIdentity } from "./materialize-daegu-timetable.mjs";
 import {
   preauthenticatedObjectStorageClient,
@@ -33,6 +34,7 @@ import {
 
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
+const MAP_SOURCE_ID = "daegu-transportation-route-map-positions";
 const SOURCE_IDS = Object.freeze(DAEGU_LINES.flatMap(({ lineNumber }) => [
   `daegu-line${lineNumber}-route-topology`,
   `daegu-line${lineNumber}-train-timetable`,
@@ -146,6 +148,25 @@ export async function prepareDaeguSourceRegistration({
       return projectTimetableSource({ source, timetable, topology });
     }),
   };
+  const dependents = await prepareDaeguTopologyDependents({
+    root,
+    inventory: stagedInventory,
+    candidates,
+    topologySnapshots: Object.fromEntries(DAEGU_LINES.map(({ lineNumber }) => [
+      lineNumber,
+      snapshotById.get(`daegu-line${lineNumber}-route-topology`),
+    ])),
+    topologyInputs: DAEGU_LINES.map(({ lineNumber }) => {
+      const topology = snapshotById.get(`daegu-line${lineNumber}-route-topology`);
+      const snapshotId = daeguSourceSnapshotIdentity(topology);
+      return {
+        sourceId: topology.sourceId,
+        absolute: path.join(root, `tools/datapack/sources/${snapshotId}.json`),
+        bytes: snapshotBytes(topology),
+      };
+    }),
+  });
+  stagedInventory = dependents.inventory;
   validateSourceGovernancePolicy({
     policy: projectedGovernance,
     inventory: stagedInventory,
@@ -193,6 +214,8 @@ export async function prepareDaeguSourceRegistration({
     governance: projectedGovernance,
     freshness: projectedFreshness,
     registration,
+    dependentSnapshot: dependents.snapshot,
+    dependentInputs: dependents.inputs,
   };
 }
 
@@ -231,14 +254,20 @@ async function outputsFromPrepared(prepared, receipts) {
     rows.push(row);
     const snapshotFile = path.join(prepared.root, item.snapshotRelative);
     await writeImmutableSnapshot(snapshotFile, item.snapshotBytes);
-    inputs.push(
+    appendInput(inputs,
       { absolute: snapshotFile, bytes: item.snapshotBytes },
       { absolute: receipt.path, bytes: receipt.bytes },
     );
   }
   for (const [datasetId, bytes] of prepared.rawByDataset) {
-    inputs.push({ absolute: path.join(prepared.inputDir, `data-go-${datasetId}.csv`), bytes });
+    appendInput(inputs, { absolute: path.join(prepared.inputDir, `data-go-${datasetId}.csv`), bytes });
   }
+  const dependentFile = path.join(prepared.root, prepared.dependentSnapshot.relative);
+  await writeImmutableSnapshot(dependentFile, prepared.dependentSnapshot.bytes);
+  appendInput(inputs,
+    ...prepared.dependentInputs,
+    { absolute: dependentFile, bytes: prepared.dependentSnapshot.bytes },
+  );
   const values = [
     json(registeredInventory),
     json([...prepared.ledger, ...rows]),
@@ -270,6 +299,62 @@ export async function registerDaeguDatapackSources(options = {}) {
   const root = absolute(options.repositoryRoot, "repository root");
   await transaction.recover({ repositoryRoot: root });
   return transaction.commit({ repositoryRoot: root, outputs: await buildDaeguSourceRegistrationOutputs(options) });
+}
+
+/** 현재 admission topology에 원문 불변 map snapshot만 다시 결속한다. */
+export async function prepareDaeguDependentRebind({ repositoryRoot } = {}) {
+  const root = absolute(repositoryRoot, "repository root");
+  const candidatePath = path.join(root, "tools/datapack/source-candidates.json");
+  const [currentBytes, candidateBytes] = await Promise.all([
+    Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative)))),
+    readFile(candidatePath),
+  ]);
+  const inventory = parse(currentBytes[0], "registration inventory");
+  const candidates = parse(candidateBytes, "source candidates").candidates;
+  const topologyInputs = await admittedTopologyInputs(root, inventory);
+  const topologySnapshots = Object.fromEntries(topologyInputs.map(({ snapshot }) => [
+    Number(/^daegu-line(\d)-route-topology$/u.exec(snapshot.sourceId)?.[1]), snapshot,
+  ]));
+  const dependents = await prepareDaeguTopologyDependents({
+    root, inventory, candidates, topologySnapshots, topologyInputs,
+  });
+  return { root, currentBytes, candidatePath, candidateBytes, ...dependents };
+}
+
+export function daeguDependentRebindOutputPlan(prepared) {
+  const inputs = [];
+  appendInput(inputs,
+    { absolute: prepared.candidatePath, bytes: prepared.candidateBytes },
+    ...prepared.inputs,
+    {
+      absolute: path.join(prepared.root, prepared.snapshot.relative),
+      bytes: prepared.snapshot.bytes,
+    },
+  );
+  const values = [
+    json(prepared.inventory),
+    prepared.currentBytes[1],
+    prepared.currentBytes[2],
+    prepared.currentBytes[3],
+  ];
+  return OUTPUTS.map((relative, index) => ({
+    relative,
+    bytes: values[index],
+    prestateBytes: prepared.currentBytes[index],
+    inputs,
+  }));
+}
+
+export async function rebindDaeguDatapackDependents(options = {}) {
+  const root = absolute(options.repositoryRoot, "repository root");
+  await transaction.recover({ repositoryRoot: root });
+  const prepared = await prepareDaeguDependentRebind({ ...options, repositoryRoot: root });
+  const snapshotFile = path.join(prepared.root, prepared.snapshot.relative);
+  await writeImmutableSnapshot(snapshotFile, prepared.snapshot.bytes);
+  return transaction.commit({
+    repositoryRoot: prepared.root,
+    outputs: daeguDependentRebindOutputPlan(prepared),
+  });
 }
 
 /**
@@ -369,6 +454,59 @@ function sourceSnapshotsFromRaw(rawByDataset, capturedAt) {
     ));
   }
   return snapshots;
+}
+
+async function prepareDaeguTopologyDependents({
+  root,
+  inventory,
+  candidates,
+  topologySnapshots,
+  topologyInputs,
+}) {
+  const candidate = select(candidates, ({ id }) => id === MAP_SOURCE_ID, "Daegu route map candidate");
+  const dependentInputs = candidate.registrationMetadata?.dependentInputs;
+  const keys = ["line1CsvPath", "line2CsvPath", "line3CsvPath"];
+  if (!dependentInputs || JSON.stringify(Object.keys(dependentInputs).sort(compareStrings)) !== JSON.stringify([...keys].sort(compareStrings))) {
+    throw new Error("Daegu route map dependent inputs are required");
+  }
+  const mapSource = select(inventory.sources, ({ id }) => id === MAP_SOURCE_ID, "Daegu route map source");
+  const mapEvidence = mapSource.routeMapAdmissionEvidence;
+  const mapSnapshotAbsolute = sourceSnapshotFile(root, mapEvidence?.snapshotPath, "Daegu route map snapshot");
+  const csvInputs = await Promise.all(keys.map(async (key, index) => {
+    const absolutePath = rootedInput(root, dependentInputs[key], `Daegu route map ${key}`);
+    return {
+      datasetId: mapEvidence?.datasetIds?.[index],
+      absolute: absolutePath,
+      bytes: await readFile(absolutePath),
+    };
+  }));
+  return buildDaeguTopologyDependents({
+    inventory,
+    topologySnapshots,
+    topologyInputs,
+    mapSnapshotAbsolute,
+    mapSnapshotBytes: await readFile(mapSnapshotAbsolute),
+    csvInputs,
+  });
+}
+
+async function admittedTopologyInputs(root, inventory) {
+  return Promise.all(DAEGU_LINES.map(async ({ lineNumber }) => {
+    const sourceId = `daegu-line${lineNumber}-route-topology`;
+    const source = select(inventory.sources, ({ id }) => id === sourceId, sourceId);
+    const evidence = source.topologyAdmissionEvidence;
+    const absolutePath = sourceSnapshotFile(root, evidence?.snapshotPath, sourceId);
+    const bytes = await readFile(absolutePath);
+    let snapshot;
+    try { snapshot = JSON.parse(bytes); } catch { throw new Error(`Daegu ${sourceId} snapshot is invalid JSON`); }
+    const snapshotId = daeguSourceSnapshotIdentity(snapshot);
+    if (snapshot.sourceId !== sourceId || evidence.snapshotId !== snapshotId
+      || evidence.snapshotPath !== `tools/datapack/sources/${snapshotId}.json`
+      || evidence.contentSha256 !== snapshot.contentSha256) {
+      throw new Error(`Daegu ${sourceId} selected admission binding changed`);
+    }
+    return { sourceId, snapshot, absolute: absolutePath, bytes };
+  }));
 }
 
 async function readRawInputs(inputDir) {
@@ -625,6 +763,10 @@ async function assertPreparedInputsStable(prepared) {
     ...[...prepared.rawByDataset].map(([datasetId, bytes]) => [
       path.join(prepared.inputDir, `data-go-${datasetId}.csv`), bytes,
     ]),
+    ...prepared.dependentInputs
+      .filter(({ absolute: inputPath }) => !prepared.registration.some(({ snapshotRelative }) =>
+        inputPath === path.join(prepared.root, snapshotRelative)))
+      .map(({ absolute: inputPath, bytes }) => [inputPath, bytes]),
   ];
   for (const [file, expected] of tracked) {
     if (!(await readFile(file)).equals(expected)) {
@@ -705,6 +847,32 @@ function requiredEvidenceMetadata(metadata, label) {
 
 function snapshotBytes(snapshot) { return Buffer.from(`${JSON.stringify(snapshot)}\n`); }
 
+function appendInput(inputs, ...additions) {
+  for (const input of additions) {
+    const existing = inputs.find(({ absolute }) => absolute === input.absolute);
+    if (existing && !existing.bytes.equals(input.bytes)) {
+      throw new Error("Daegu registration input bytes conflict");
+    }
+    if (!existing) inputs.push(input);
+  }
+}
+
+function sourceSnapshotFile(root, relative, label) {
+  if (typeof relative !== "string" || !/^tools\/datapack\/sources\/[^/]+\.json$/u.test(relative)) {
+    throw new Error(`${label} path is invalid`);
+  }
+  return path.join(root, relative);
+}
+
+function rootedInput(root, relative, label) {
+  if (typeof relative !== "string" || !relative.startsWith("tools/datapack/")) {
+    throw new Error(`${label} path is invalid`);
+  }
+  const absolutePath = path.resolve(root, relative);
+  if (!absolutePath.startsWith(`${root}${path.sep}`)) throw new Error(`${label} path escapes repository`);
+  return absolutePath;
+}
+
 async function writeImmutableSnapshot(file, bytes) {
   await writeFile(file, bytes, { flag: "wx", mode: 0o600 }).catch(async (error) => {
     if (error?.code !== "EEXIST" || !(await readFile(file)).equals(bytes)) throw error;
@@ -738,13 +906,16 @@ function instant(value) {
 }
 
 function parseArgs(argv) {
+  if (argv.length === 1 && argv[0] === "rebind-dependents") {
+    return { rebindDependents: true };
+  }
   const publish = argv[0] === "publish-register";
   if ((!publish && argv[0] !== "register") || argv.length !== (publish ? 9 : 7)
     || argv[1] !== "--input-dir" || argv[3] !== "--captured-at" || argv[5] !== "--receipts"
     || !path.isAbsolute(argv[2]) || !instant(argv[4]) || !path.isAbsolute(argv[6])
     || (publish && (argv[7] !== "--expected-head" || !/^[a-f0-9]{40}$/u.test(argv[8])))) {
     throw new Error(
-      "usage: register-daegu-datapack-sources.mjs register|publish-register "
+      "usage: register-daegu-datapack-sources.mjs rebind-dependents | register|publish-register "
         + "--input-dir <absolute.dir> --captured-at <iso> --receipts <absolute.json> [--expected-head <sha>]",
     );
   }
@@ -759,15 +930,21 @@ function parseArgs(argv) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    const { publish, receiptsPath, ...inputs } = parseArgs(process.argv.slice(2));
-    const receiptPaths = parse(await readFile(receiptsPath), "Daegu OCI receipt mapping");
-    const options = {
-      repositoryRoot: path.resolve(import.meta.dirname, "../.."),
-      ...inputs,
-      receiptPaths,
-    };
-    if (publish) await publishAndRegisterDaeguDatapackSources(options);
-    else await registerDaeguDatapackSources(options);
+    const { rebindDependents, publish, receiptsPath, ...inputs } = parseArgs(process.argv.slice(2));
+    if (rebindDependents) {
+      await rebindDaeguDatapackDependents({
+        repositoryRoot: path.resolve(import.meta.dirname, "../.."),
+      });
+    } else {
+      const receiptPaths = parse(await readFile(receiptsPath), "Daegu OCI receipt mapping");
+      const options = {
+        repositoryRoot: path.resolve(import.meta.dirname, "../.."),
+        ...inputs,
+        receiptPaths,
+      };
+      if (publish) await publishAndRegisterDaeguDatapackSources(options);
+      else await registerDaeguDatapackSources(options);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Daegu six-source registration failed");
     process.exitCode = 1;
