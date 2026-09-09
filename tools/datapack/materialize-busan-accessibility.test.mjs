@@ -50,12 +50,25 @@ async function inputs() {
     readJson("tools/datapack/sources/busan-transportation-accessibility-20260724.json"),
   ]);
   const { busanTimetableFixture: timetableFixture, busanTopology: topologySnapshot, inventory } = regional;
+  const admission = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence;
+  const snapshotId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(accessibilitySnapshot)).digest("hex")}-${compactSeoulDate(accessibilitySnapshot.capturedAt)}`;
+  Object.assign(admission, {
+    snapshotId,
+    snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+  });
   return {
     timetableFixture,
     topologySnapshot,
     accessibilitySnapshot,
     inventory,
   };
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }
 
 test("부산 공식 114역 편의시설을 facility·evidence 342건으로 materialize한다", async () => {
@@ -135,6 +148,10 @@ test("부산 accessibility admission은 freshness·hash·scope·중복을 fail c
   const invalidWindowInventory = structuredClone(inventory);
   invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID)
     .accessibilityAdmissionEvidence.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(invalidWindow)).digest("hex")}-${compactSeoulDate(invalidWindow.capturedAt)}`;
+  Object.assign(invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence, {
+    snapshotId: invalidWindowId, snapshotPath: `tools/datapack/sources/${invalidWindowId}.json`,
+  });
   assert.throws(() => materializeBusanAccessibility({
     baseFixture: timetableFixture,
     accessibilitySnapshot: invalidWindow,

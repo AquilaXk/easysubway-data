@@ -215,7 +215,7 @@ function requiredSource(inventory, snapshot, topologySnapshot) {
     || evidence?.issue !== 2374
     || evidence.materializer !== "tools/datapack/materialize-busan-accessibility.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-busan-accessibility.test.mjs"
-    || !/^busan-transportation-accessibility-\d{8}$/.test(evidence.snapshotId ?? "")
+    || !/^busan-transportation-accessibility-[a-f0-9]{64}-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
@@ -240,6 +240,10 @@ function requiredSource(inventory, snapshot, topologySnapshot) {
       topologySnapshot.scope,
     )) {
     throw new Error("Busan accessibility topology lineage mismatch");
+  }
+  const expectedSnapshotId = `${SOURCE_ID}-${sha256(JSON.stringify(snapshot))}-${compactSeoulDate(evidence.capturedAt)}`;
+  if (evidence.snapshotId !== expectedSnapshotId) {
+    throw new Error(`${SOURCE_ID} snapshotId must bind exact snapshot bytes`);
   }
   const version = evidence.snapshotId.slice(-8);
   if (version !== compactSeoulDate(evidence.capturedAt)) {

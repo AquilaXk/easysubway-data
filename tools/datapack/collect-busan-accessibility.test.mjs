@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { collectBusanAccessibility } from "./collect-busan-accessibility.mjs";
+import { collectBusanAccessibility, replayBusanAccessibility } from "./collect-busan-accessibility.mjs";
 
 const topology = JSON.parse(await readFile(
   new URL("./sources/busan-transportation-route-topology-20260720.json", import.meta.url),
@@ -68,6 +68,9 @@ test("부산 accessibility collector는 topology 114개 역을 bounded fan-out�
     snapshot.rawResponses.map(({ stationCode, rawSha256 }) => ({ stationCode, rawSha256 })),
   )).digest("hex"));
   assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
+  assert.deepEqual(replayBusanAccessibility({
+    rawResponses: snapshot.rawResponses, stationScopes: topology.scope, now: new Date(snapshot.capturedAt),
+  }), snapshot);
   assert.deepEqual(snapshot.rows[0], {
     stationCode: topology.scope[0].stationCode,
     stationName: topology.scope[0].stationName,

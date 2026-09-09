@@ -218,7 +218,7 @@ function requiredSource(inventory, snapshot, topologySnapshots) {
     || evidence?.issue !== 2467
     || evidence.materializer !== "tools/datapack/materialize-daegu-accessibility.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-daegu-accessibility.test.mjs"
-    || !/^daegu-transportation-accessibility-\d{8}$/.test(evidence.snapshotId ?? "")
+    || !/^daegu-transportation-accessibility-[a-f0-9]{64}-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
@@ -239,6 +239,10 @@ function requiredSource(inventory, snapshot, topologySnapshots) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
   validateTopologyLineages(inventory, evidence, topologySnapshots);
+  const expectedSnapshotId = `${SOURCE_ID}-${sha256(JSON.stringify(snapshot))}-${compactSeoulDate(evidence.capturedAt)}`;
+  if (evidence.snapshotId !== expectedSnapshotId) {
+    throw new Error(`${SOURCE_ID} snapshotId must bind exact snapshot bytes`);
+  }
   const version = evidence.snapshotId.slice(-8);
   if (version !== compactSeoulDate(evidence.capturedAt)) {
     throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);

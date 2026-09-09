@@ -72,10 +72,12 @@ async function inputs() {
   accessibilitySnapshot.topologyLineages = topologyLineages;
   const admission = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence;
   Object.assign(admission, {
+    snapshotId: `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(accessibilitySnapshot)).digest("hex")}-${compactSeoulDate(accessibilitySnapshot.capturedAt)}`,
     topologyLineages,
     topologySnapshotId: daeguAccessibilityTopologyLineageIdentity(topologyLineages),
     topologyContentSha256: createHash("sha256").update(JSON.stringify(topologyLineages)).digest("hex"),
   });
+  admission.snapshotPath = `tools/datapack/sources/${admission.snapshotId}.json`;
   const daeguFixture = materializeDaeguTimetable({
     baseFixture: gwangjuFixture, topologySnapshots, timetableSnapshots, inventory,
     canonicalStationMappings: mappings, now: timetableNow,
@@ -86,6 +88,13 @@ async function inputs() {
     accessibilitySnapshot,
     inventory,
   };
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }
 
 test("대구 공식 94역 편의시설을 facility·evidence 282건으로 materialize한다", async () => {
@@ -142,6 +151,10 @@ test("대구 accessibility admission은 freshness·hash·scope·중복을 fail c
   const invalidWindowInventory = structuredClone(inventory);
   invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID)
     .accessibilityAdmissionEvidence.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(invalidWindow)).digest("hex")}-${compactSeoulDate(invalidWindow.capturedAt)}`;
+  Object.assign(invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence, {
+    snapshotId: invalidWindowId, snapshotPath: `tools/datapack/sources/${invalidWindowId}.json`,
+  });
   assert.throws(() => materializeDaeguAccessibility({
     baseFixture: daeguFixture,
     accessibilitySnapshot: invalidWindow,
