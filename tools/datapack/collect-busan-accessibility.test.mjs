@@ -115,6 +115,7 @@ test("부산 accessibility collector는 빈 count 필드를 0으로 정규화한
 
 test("부산 accessibility collector는 credential 없는 provider·transport 진단만 남긴다", async () => {
   const secret = "never-print-service-key";
+  const providerDetail = "SERVICE_KEY_NOT_REGISTERED";
   await assert.rejects(collectBusanAccessibility({
     serviceKey: secret,
     stationScopes: topology.scope,
@@ -130,12 +131,13 @@ test("부산 accessibility collector는 credential 없는 provider·transport �
     serviceKey: secret,
     stationScopes: topology.scope,
     fetchImpl: async () => new Response(`<?xml version="1.0"?><response>
-      <header><resultCode>30</resultCode><resultMsg>${secret}</resultMsg></header></response>`, {
+      <header><resultCode>30</resultCode><resultMsg>${providerDetail}</resultMsg></header></response>`, {
       headers: { "content-type": "application/xml" },
     }),
   }), (error) => {
     assert.match(error.message, /provider resultCode 30/);
     assert.doesNotMatch(error.message, new RegExp(secret));
+    assert.doesNotMatch(error.message, new RegExp(providerDetail));
     return true;
   });
   const transport = Object.assign(new Error(`secret ${secret}`), { code: "ENOTFOUND" });
