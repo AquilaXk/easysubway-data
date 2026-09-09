@@ -439,24 +439,66 @@ async function inputs({ materialize = true } = {}) {
       .topologyAdmissionEvidence;
     const scheduleEvidence = inventory.sources.find(({ id }) => id === timetableSnapshots[config.lineNumber].sourceId)
       .scheduleAdmissionEvidence;
-    topologyEvidence.snapshotId = topologyIdentity;
-    topologyEvidence.snapshotPath = `tools/datapack/sources/${topologyIdentity}.json`;
-    scheduleEvidence.snapshotId = timetableIdentity;
-    scheduleEvidence.snapshotPath = `tools/datapack/sources/${timetableIdentity}.json`;
-    scheduleEvidence.topologySnapshotId = topologyIdentity;
+    const topology = topologySnapshots[config.lineNumber];
+    const timetable = timetableSnapshots[config.lineNumber];
+    Object.assign(topologyEvidence, {
+      snapshotId: topologyIdentity,
+      snapshotPath: `tools/datapack/sources/${topologyIdentity}.json`,
+      capturedAt: topology.capturedAt,
+      freshUntil: topology.freshUntil,
+      stationCount: topology.stationCount,
+      edgeCount: topology.edgeCount,
+      depotExcludedCount: topology.depotExcludedCount,
+      rawSha256: topology.rawSha256,
+      contentSha256: topology.contentSha256,
+    });
+    Object.assign(scheduleEvidence, {
+      snapshotId: timetableIdentity,
+      snapshotPath: `tools/datapack/sources/${timetableIdentity}.json`,
+      capturedAt: timetable.capturedAt,
+      freshUntil: timetable.freshUntil,
+      rowCount: timetable.rowCount,
+      departureCount: timetable.stopTimeCount,
+      tripCount: timetable.tripCount,
+      stopTimeCount: timetable.stopTimeCount,
+      rawSha256: timetable.rawSha256,
+      rowsSha256: timetable.tripsSha256,
+      rawUpSha256: timetable.rawUpSha256,
+      rawDownSha256: timetable.rawDownSha256,
+      tripsSha256: timetable.tripsSha256,
+      dayLabelNormalizedCount: timetable.dayLabelNormalizedCount,
+      rolloverTripCount: timetable.rolloverTripCount,
+      topologySourceId: topology.sourceId,
+      topologySnapshotId: topologyIdentity,
+      topologyContentSha256: topology.contentSha256,
+      contentSha256: timetable.contentSha256,
+    });
     mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
     const membershipId = `molit-urban-rail-full-route-daegu-line${config.lineNumber}-membership`;
     const membership = inventory.sources.find(({ id }) => id === membershipId).membershipAdmissionEvidence;
     const rawMembership = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
-    membership.stationCodeSnapshotId = topologyIdentity;
-    membership.snapshotId = daeguMembershipSnapshotIdentity({
-      sourceId: membershipId,
-      molitSnapshotId: rawMembership.snapshotId,
+    const mappingSha256 = createHash("sha256").update(JSON.stringify(mappings[config.lineNumber])).digest("hex");
+    const stationCodesSha256 = createHash("sha256")
+      .update(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)))
+      .digest("hex");
+    Object.assign(membership, {
+      lineIds: [config.lineId],
+      stationCount: topology.stationCount,
+      membershipSourceId: "molit-urban-rail-full-route",
       membershipSourceRawSha256: rawMembership.rawSha256,
-      mappingSha256: createHash("sha256").update(JSON.stringify(mappings[config.lineNumber])).digest("hex"),
-      stationCodesSha256: createHash("sha256")
-        .update(JSON.stringify(topologySnapshots[config.lineNumber].scope.map(({ stationCode }) => stationCode)))
-        .digest("hex"),
+      membershipSourceSnapshotSha256: mappings[config.lineNumber].sourceRawSha256,
+      mappingSha256,
+      stationCodesSha256,
+      stationCodeSourceId: topology.sourceId,
+      stationCodeSnapshotId: topologyIdentity,
+      stationCodeContentSha256: topology.contentSha256,
+      snapshotId: daeguMembershipSnapshotIdentity({
+        sourceId: membershipId,
+        molitSnapshotId: rawMembership.snapshotId,
+        membershipSourceRawSha256: rawMembership.rawSha256,
+        mappingSha256,
+        stationCodesSha256,
+      }),
     });
   }
   const fixture = materialize ? materializeDaeguTimetable({
