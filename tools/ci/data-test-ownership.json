@@ -450,6 +450,7 @@
     {"path":"tools/datapack/collect-seoul-accessibility-evidence.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":274},
     {"path":"tools/datapack/collect-seoul-route-map-positions.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":187},
     {"path":"tools/datapack/collect-seoul-station-line-info.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":65},
+    {"path":"tools/datapack/project-seoul-station-line-membership.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/collect-seoul9-phase1-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":183},
     {"path":"tools/datapack/collect-seoul9-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":180},
     {"path":"tools/datapack/collect-tago-itx-cheongchun-od.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":4856},

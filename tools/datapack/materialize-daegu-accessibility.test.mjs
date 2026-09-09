@@ -73,6 +73,10 @@ async function inputs() {
   const admission = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence;
   Object.assign(admission, {
     snapshotId: `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(accessibilitySnapshot)).digest("hex")}-${compactSeoulDate(accessibilitySnapshot.capturedAt)}`,
+    capturedAt: accessibilitySnapshot.capturedAt,
+    freshUntil: accessibilitySnapshot.freshUntil,
+    rawSha256: accessibilitySnapshot.rawSha256,
+    rowsSha256: accessibilitySnapshot.rowsSha256,
     topologyLineages,
     topologySnapshotId: daeguAccessibilityTopologyLineageIdentity(topologyLineages),
     topologyContentSha256: createHash("sha256").update(JSON.stringify(topologyLineages)).digest("hex"),

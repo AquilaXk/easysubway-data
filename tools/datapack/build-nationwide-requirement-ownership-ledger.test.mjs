@@ -62,7 +62,8 @@ test("#6 keeps nonterminal requirements honest and retains fail-closed source bo
 
   const partial = independentFiveRegionFixture();
   partial.tally.launchRequired.requirements[0].status = "MISSING";
-  assert.throws(() => fixtureLedgerInput(partial), /requirement disposition/);
+  assert.throws(() => buildNationwideRequirementOwnershipLedger(fixtureLedgerInput(partial)),
+    /unexpected admitted source/);
 
   const unsafe = independentFiveRegionFixture();
   unsafe.inventory.sources[0].coverageScope.lineIds = [];
