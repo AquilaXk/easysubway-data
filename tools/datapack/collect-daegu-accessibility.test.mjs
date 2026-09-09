@@ -51,6 +51,15 @@ test("대구 accessibility collector는 공식 CSV 94역을 topology에 join한�
   assert.equal(snapshot.capturedAt, "2026-07-24T01:00:00.000Z");
   assert.equal(snapshot.freshUntil, "2026-07-25T01:00:00.000Z");
   assert.equal(snapshot.rawSha256, createHash("sha256").update(facilitiesBytes).digest("hex"));
+  assert.deepEqual(snapshot.rawSources.map(({ datasetId, rawSha256, bytesBase64 }) => ({
+    datasetId,
+    rawSha256,
+    bytes: Buffer.from(bytesBase64, "base64"),
+  })), [{
+    datasetId: snapshot.datasetId,
+    rawSha256: createHash("sha256").update(facilitiesBytes).digest("hex"),
+    bytes: facilitiesBytes,
+  }]);
   assert.equal(snapshot.rowsSha256, createHash("sha256").update(JSON.stringify(snapshot.rows)).digest("hex"));
   assert.equal(snapshot.scopeSha256, createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex"));
   assert.deepEqual(snapshot.fieldsProvided, [

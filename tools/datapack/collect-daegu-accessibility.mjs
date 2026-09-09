@@ -157,6 +157,7 @@ export function collectDaeguAccessibility({
     topologyLineages,
     scope,
     scopeSha256: sha256(JSON.stringify(scope)),
+    rawSources: [retainedRawSource(DATASET_ID, facilitiesBytes)],
     rawSha256: sha256(Buffer.from(facilitiesBytes)),
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
@@ -208,6 +209,15 @@ function validDate(value, label) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function retainedRawSource(datasetId, bytes) {
+  const exactBytes = Buffer.from(bytes);
+  return {
+    datasetId,
+    rawSha256: sha256(exactBytes),
+    bytesBase64: exactBytes.toString("base64"),
+  };
 }
 
 function parseArgs(argv) {

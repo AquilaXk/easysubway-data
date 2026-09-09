@@ -82,6 +82,22 @@ test("대전 accessibility collector는 엘리베이터·에스컬레이터 CSV 
     snapshot.escalatorRawSha256,
     createHash("sha256").update(inputs.escalatorBytes).digest("hex"),
   );
+  assert.deepEqual(snapshot.rawSources.map(({ datasetId, rawSha256, bytesBase64 }) => ({
+    datasetId,
+    rawSha256,
+    bytes: Buffer.from(bytesBase64, "base64"),
+  })), [
+    {
+      datasetId: snapshot.datasetIds[0],
+      rawSha256: createHash("sha256").update(inputs.elevatorBytes).digest("hex"),
+      bytes: inputs.elevatorBytes,
+    },
+    {
+      datasetId: snapshot.datasetIds[1],
+      rawSha256: createHash("sha256").update(inputs.escalatorBytes).digest("hex"),
+      bytes: inputs.escalatorBytes,
+    },
+  ]);
   assert.equal(snapshot.rowsSha256, createHash("sha256").update(JSON.stringify(snapshot.rows)).digest("hex"));
   assert.equal(snapshot.scopeSha256, createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex"));
   assert.deepEqual(snapshot.fieldsProvided, [

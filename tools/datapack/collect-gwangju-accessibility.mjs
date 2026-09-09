@@ -143,6 +143,10 @@ export function collectGwangjuAccessibility({
       [ELEVATOR_DATASET_ID]: elevatorSha256,
       [ESCALATOR_DATASET_ID]: escalatorSha256,
     })),
+    rawSources: [
+      retainedRawSource(ELEVATOR_DATASET_ID, elevatorBytes),
+      retainedRawSource(ESCALATOR_DATASET_ID, escalatorBytes),
+    ],
     elevatorRawSha256: elevatorSha256,
     escalatorRawSha256: escalatorSha256,
     rowsSha256: sha256(JSON.stringify(rows)),
@@ -266,6 +270,15 @@ function validDate(value, label) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function retainedRawSource(datasetId, bytes) {
+  const exactBytes = Buffer.from(bytes);
+  return {
+    datasetId,
+    rawSha256: sha256(exactBytes),
+    bytesBase64: exactBytes.toString("base64"),
+  };
 }
 
 function parseArgs(argv) {
