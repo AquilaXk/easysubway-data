@@ -15,11 +15,8 @@ import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from
 import { deriveDaejeonTimetableCounts } from "./materialize-daejeon-timetable.mjs";
 import { validateSnapshot as validateTopologySnapshot } from "./materialize-daejeon-route-topology.mjs";
 import { probeDaejeonCoverageApi } from "./probe-daejeon-coverage-api.mjs";
-import {
-  preauthenticatedObjectStorageClient,
-  publishImmutableObjectPlan,
-  requireCurrentCapitalLiveChainOciParBaseUrl,
-} from "./publish-object-storage.mjs";
+import { requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
+import { publishSourceRawObject, validateSourceRawObjectReceipt } from "./lib/source-raw-object-publication.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import {
   buildAppendOnlyGovernancePolicyRegistration,
@@ -302,31 +299,12 @@ export async function publishAndRegisterDaejeonTimetable({
   const now = options.now ?? new Date();
   const prepared = await prepareDaejeonTimetableRegistration({ ...options, now });
   const target = receiptTarget(prepared, env);
-  const storage = client ?? preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody: false });
-  const object = {
-    objectKey: target.objectKey,
-    sourcePath: path.basename(prepared.inputPath),
+  await publishSourceRawObject({
+    sourcePath: prepared.inputPath,
     sha256: prepared.snapshotSha256,
     sizeBytes: prepared.snapshotBytes.length,
-  };
-  try {
-    await publishImmutableObjectPlan({
-      root: path.dirname(prepared.inputPath),
-      plan: { steps: [
-        { type: "put-immutable-bundle-object", ...object },
-        { type: "verify-immutable-bundle-object", ...object },
-      ] },
-      client: {
-        putObjectIfAbsent: async (...args) => {
-          if (!await storage.putObjectIfAbsent(...args)) throw new Error("Daejeon timetable object already exists");
-          return true;
-        },
-        readObject: (...args) => storage.readObject(...args),
-      },
-    });
-  } catch {
-    throw new Error("Daejeon timetable OCI publication failed");
-  }
+    target, baseUrl, client, label: "Daejeon timetable",
+  });
   const receipt = {
     schemaVersion: 1,
     artifactKind: "static-network-source-raw-object-receipt",
@@ -429,23 +407,14 @@ function receiptTarget(prepared, env) {
 }
 
 function validateReceipt({ receipt, prepared, env, now }) {
-  const target = receiptTarget(prepared, env);
-  const keys = [
-    "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "rawObjectUri",
-    "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt", "ociNamespace",
-    "bucket", "objectKey", "contentType",
-  ];
-  if (JSON.stringify(Object.keys(receipt ?? {}).sort()) !== JSON.stringify(keys.sort())
-    || receipt.schemaVersion !== 1 || receipt.artifactKind !== "static-network-source-raw-object-receipt"
-    || receipt.sourceId !== SOURCE_ID || receipt.snapshotId !== prepared.snapshotId
-    || receipt.capturedAt !== prepared.snapshot.observedAt || receipt.rawObjectSha256 !== prepared.snapshotSha256
-    || receipt.byteSize !== prepared.snapshotBytes.length || receipt.ociNamespace !== target.ociNamespace
-    || receipt.bucket !== target.bucket || receipt.objectKey !== target.objectKey || receipt.rawObjectUri !== target.rawObjectUri
-    || receipt.contentType !== "application/json" || !instant(receipt.storedAt) || !instant(receipt.rawRetentionExpiresAt)
-    || Date.parse(receipt.storedAt) < Date.parse(receipt.capturedAt) || Date.parse(receipt.storedAt) > now.valueOf()
-    || receipt.rawRetentionExpiresAt !== prepared.rawRetentionExpiresAt) {
-    throw new Error("Daejeon timetable OCI receipt binding is invalid");
-  }
+  validateSourceRawObjectReceipt({
+    receipt, target: receiptTarget(prepared, env), now, label: "Daejeon timetable",
+    expected: {
+      sourceId: SOURCE_ID, snapshotId: prepared.snapshotId,
+      capturedAt: prepared.snapshot.observedAt, rawObjectSha256: prepared.snapshotSha256,
+      byteSize: prepared.snapshotBytes.length, rawRetentionExpiresAt: prepared.rawRetentionExpiresAt,
+    },
+  });
 }
 
 async function writeImmutableSnapshot(file, bytes) {
