@@ -127,7 +127,7 @@ function buildCoverageGapReport(
   const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
   const sources = inventory.sources
-    .filter((source) => source.rawSnapshotAdmission == null)
+    .filter(isInventoryCoverageSource)
     .map((source) => normalizeSource(source, targetIndex));
   const provenanceIndex = provenance ? provenanceFieldIndex(provenance, candidateManifest, sources) : null;
 
@@ -693,6 +693,7 @@ function coverageTargetIndex(targets) {
     operatorIds: new Set([
       ...targets.regions.flatMap((region) => region.operatorIds),
       ...(targets.activeLineScopes ?? []).map((scope) => scope.operatorId),
+      ...(targets.inactiveLineExclusions ?? []).flatMap((scope) => scope.operatorIds ?? []),
       ...optionalStringArray(targets.knownOperatorIds, "knownOperatorIds"),
     ]),
     lineIds: new Set([
@@ -720,6 +721,7 @@ function coveredField(
     (source) =>
       source.regionIds.includes(regionId) &&
       source.operatorIds.includes(operatorId) &&
+      matchesInventoryLineOperatorScope(source, { regionId, operatorId, lineId }) &&
       (lineId === "" || source.lineIds.includes(lineId) || (!strictLineScope && source.lineIds.length === 0)) &&
       source.sourceDomains.includes(sourceDomain),
   );
@@ -970,7 +972,7 @@ function validateInventory(inventory) {
 
 function normalizeSource(source, targetIndex) {
   const id = requiredString(source.id, "source.id");
-  const coverage = source.coverageScope;
+  const coverage = inventoryCoverageScope(source);
   if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
     throw new Error(`${id}.coverageScope must be an object`);
   }
@@ -1003,6 +1005,7 @@ function normalizeSource(source, targetIndex) {
     operatorIds,
     sourceDomains,
     lineIds,
+    lineOperatorScopes: coverage.lineOperatorScopes,
     fields,
     coverageFields: inventoryCoverageFields(source),
     productDerivedFields: optionalStringArray(source.productDerivedFields, `${id}.productDerivedFields`),
@@ -1123,8 +1126,56 @@ export function admittedSeoulRouteMapCoverageFields(source) {
   return ["route_map_position", "route_map_label_polygon"];
 }
 
+// 소속 매핑은 원본을 해석하는 근거이지 별도의 OCI 원본이 아니다.
+export function isInventoryCoverageSource(source) {
+  return source.rawSnapshotAdmission == null
+    && !(source.datasetKind === "reviewed-admission-slice"
+      && source.requiredForProductionPack === false
+      && source.membershipAdmissionEvidence?.membershipSourceId === "molit-urban-rail-full-route");
+}
+
+export function inventoryCoverageScope(source) {
+  const evidence = source.membershipCoverageEvidence;
+  if (evidence === undefined) return source.coverageScope;
+  const admission = source.admissionEvidence;
+  if (source.id !== "molit-urban-rail-full-route"
+    || admission?.sourceId !== source.id || admission.decision !== "APPROVED"
+    || evidence.snapshotId !== admission.snapshotId || evidence.rawSha256 !== admission.rawSha256
+    || !/^[a-f0-9]{64}$/u.test(evidence.rawSha256 ?? "")
+    || !/^[a-f0-9]{64}$/u.test(evidence.normalizedObservationSha256 ?? "")
+    || !Array.isArray(evidence.lineOperatorScopes) || evidence.lineOperatorScopes.length === 0) {
+    throw new Error("MOLIT membership coverage binding mismatch");
+  }
+  const keys = new Set();
+  for (const scope of evidence.lineOperatorScopes) {
+    if (!scope || Object.keys(scope).sort().join(":") !== "lineId:operatorId:regionId"
+      || [scope.regionId, scope.operatorId, scope.lineId].some((value) => typeof value !== "string" || value.length === 0)) {
+      throw new Error("MOLIT membership coverage scope mismatch");
+    }
+    const key = `${scope.regionId}:${scope.operatorId}:${scope.lineId}`;
+    if (keys.has(key)) throw new Error("MOLIT membership coverage scope duplicate");
+    keys.add(key);
+  }
+  const values = (key) => [...new Set(evidence.lineOperatorScopes.map((scope) => scope[key]))].sort();
+  return { regionIds: values("regionId"), operatorIds: values("operatorId"), lineIds: values("lineId"),
+    sourceDomains: ["station_line_membership"], lineOperatorScopes: evidence.lineOperatorScopes };
+}
+
+export function matchesInventoryLineOperatorScope(source, scope, { ignoreOperator = false } = {}) {
+  return source.lineOperatorScopes === undefined || source.lineOperatorScopes.some((pair) =>
+    pair.regionId === scope.regionId && (ignoreOperator || pair.operatorId === scope.operatorId)
+    && (scope.lineId === "" || pair.lineId === scope.lineId));
+}
+
 export function inventoryCoverageFields(source) {
   const fields = requiredStringArray(source.fieldsProvided ?? source.fields, `${source.id}.fieldsProvided`);
+  if (source.membershipCoverageEvidence !== undefined) {
+    inventoryCoverageScope(source);
+    if (!fields.includes("line_name") || !fields.includes("station_name")) {
+      throw new Error("MOLIT membership coverage fields mismatch");
+    }
+    return [...new Set([...fields, "line"])];
+  }
   const coverage = source.coverageScope;
   return [...fields, ...admittedSeoulRouteMapCoverageFields({
     id: source.id,

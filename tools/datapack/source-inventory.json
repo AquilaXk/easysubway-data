@@ -6355,6 +6355,243 @@
     },
     {
       "id": "molit-urban-rail-full-route",
+      "membershipCoverageEvidence": {
+        "snapshotId": "molit-urban-rail-full-route-current-20260826T035408251Z",
+        "rawSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+        "normalizedObservationSha256": "5e0d777c1663cb6ef3094b8b3b9851e012415d4873a3fa7dfad3e67020011d96",
+        "lineOperatorScopes": [
+          {
+            "regionId": "busan",
+            "operatorId": "busan-transportation",
+            "lineId": "line-ab1a041f6266"
+          },
+          {
+            "regionId": "busan",
+            "operatorId": "busan-transportation",
+            "lineId": "line-d74614a04530"
+          },
+          {
+            "regionId": "busan",
+            "operatorId": "busan-transportation",
+            "lineId": "line-d812a5bc1e5f"
+          },
+          {
+            "regionId": "busan",
+            "operatorId": "busan-transportation",
+            "lineId": "line-eb7b47920390"
+          },
+          {
+            "regionId": "busan",
+            "operatorId": "korail",
+            "lineId": "line-f52eb59d8497"
+          },
+          {
+            "regionId": "busan",
+            "operatorId": "operator-72566d06475a",
+            "lineId": "line-e4cce88f0d7f"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "incheon-transit",
+            "lineId": "line-15b3b8a93259"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "incheon-transit",
+            "lineId": "line-42b5805f3b5a"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "incheon-transit",
+            "lineId": "line-98718184f016"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "line-051552e50435"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "line-41a8c75ec9d8"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "line-472a81add377"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "line-54a7b980b7c3"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "line-558d0bd8312d"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "line-6e39be0cb6e2"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "line-e4939a4b4713"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "korail",
+            "lineId": "seoul-4"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-07a9e77a02b6",
+            "lineId": "line-2b2d9eaa53d0"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-10d7cf275a80",
+            "lineId": "line-aefa08ccc0a9"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-145e4415ee1f",
+            "lineId": "line-cbe75f5287a1"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-28e01fb8509d",
+            "lineId": "shinbundang"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-29e323a78a93",
+            "lineId": "line-62096860ab09"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-2e23276dfa94",
+            "lineId": "line-5500c1600f71"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-38450e138464",
+            "lineId": "line-051552e50435"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-3c623bf1a427",
+            "lineId": "line-30886152e4f8"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-5ca780d7dee1",
+            "lineId": "line-8604048b6430"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-8134e61f8dbd",
+            "lineId": "line-e9e9a5b520a4"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-936e454d0bfb",
+            "lineId": "line-f0e747248a31"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-9e999d4aa596",
+            "lineId": "line-8604048b6430"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-b2d80436b438",
+            "lineId": "line-828f04afc588"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-c361f9fc17e9",
+            "lineId": "line-2b2d9eaa53d0"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "operator-c361f9fc17e9",
+            "lineId": "seoul-4"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "line-15b3b8a93259"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "line-2b2d9eaa53d0"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "line-3f41718e0833"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "line-41a8c75ec9d8"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "line-472a81add377"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "line-80fc4d5350d4"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "seoul-2"
+          },
+          {
+            "regionId": "capital",
+            "operatorId": "seoul-metro",
+            "lineId": "seoul-4"
+          },
+          {
+            "regionId": "daegu",
+            "operatorId": "daegu-transportation",
+            "lineId": "line-0ffaa95b1b5d"
+          },
+          {
+            "regionId": "daegu",
+            "operatorId": "daegu-transportation",
+            "lineId": "line-5b8d9b05e7e6"
+          },
+          {
+            "regionId": "daegu",
+            "operatorId": "daegu-transportation",
+            "lineId": "line-e2938a4cc492"
+          },
+          {
+            "regionId": "daegu",
+            "operatorId": "korail",
+            "lineId": "line-8f7ed01f290a"
+          },
+          {
+            "regionId": "daejeon",
+            "operatorId": "daejeon-transportation",
+            "lineId": "line-7051a9c2525c"
+          },
+          {
+            "regionId": "gwangju",
+            "operatorId": "gwangju-metropolitan-rapid-transit",
+            "lineId": "line-e57a361e8892"
+          }
+        ]
+      },
       "displayName": "국토교통부_도시철도 전체노선",
       "owner": "국토교통부",
       "provider": "국토교통부",

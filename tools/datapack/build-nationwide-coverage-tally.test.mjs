@@ -96,6 +96,35 @@ function operatorAMembershipSource() {
   };
 }
 
+test("MOLIT coverage selects only observed operator-line pairs and the parent source", () => {
+  const parent = {
+    ...operatorAMembershipSource(), id: "molit-urban-rail-full-route",
+    fieldsProvided: ["line_name", "station_name"],
+    admissionEvidence: { sourceId: "molit-urban-rail-full-route", decision: "APPROVED",
+      snapshotId: "test-current", rawSha256: "a".repeat(64) },
+    membershipCoverageEvidence: { snapshotId: "test-current", rawSha256: "a".repeat(64),
+      normalizedObservationSha256: "b".repeat(64), lineOperatorScopes: [
+        { regionId: "capital", operatorId: "operator-a", lineId: "line-a" },
+        { regionId: "capital", operatorId: "operator-b", lineId: "line-b" },
+      ] },
+  };
+  const slice = { ...operatorAMembershipSource(), id: "test-dependent-membership",
+    datasetKind: "reviewed-admission-slice", requiredForProductionPack: false,
+    membershipAdmissionEvidence: { membershipSourceId: parent.id } };
+  const targets = fixtureTargets({ activeLineScopes: [
+    ...fixtureTargets().activeLineScopes,
+    { regionId: "capital", operatorId: "operator-b", lineId: "line-b" },
+  ] });
+  const build = () => buildFixtureLedger({ targets,
+    inventory: fixtureInventory([parent, slice]), resolutions: fixtureResolutions() });
+  const rows = build().launchRequired.requirements;
+  assert.deepEqual(rows.find((row) => row.operatorId === "operator-a").admittedSourceIds, [parent.id]);
+  assert.equal(rows.find((row) => row.operatorId === "operator-b" && row.lineId === "line-a").status, "MISSING");
+  assert.deepEqual(rows.find((row) => row.lineId === "line-b").admittedSourceIds, [parent.id]);
+  parent.membershipCoverageEvidence.snapshotId = "foreign";
+  assert.throws(build, /MOLIT membership coverage binding/);
+});
+
 function buildFixtureLedger({ targets, inventory, resolutions, expectedLaunchRequiredTotal = null }) {
   return buildNationwideCoverageTally({
     targets,

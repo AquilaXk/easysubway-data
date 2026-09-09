@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import * as currentMolit from "./current-molit-observation.mjs";
 
 import {
   validateKricProviderCodeCatalogIdentity,
@@ -22,6 +23,35 @@ test("current MOLIT rosters preserve source operator-line membership without KRI
   assert.equal(rosters[0].operatorName, rows[0].operator_name);
   assert.deepEqual(rosters[0].stationNames, rows.map(({ station_name }) => station_name));
   assert.throws(() => parseCurrentMolitLineOperatorRosters([]), /no line-operator rosters/);
+});
+
+test("current MOLIT membership coverage binds exact pairs to observation bytes", () => {
+  const projection = [
+    { region_code: "01", region_name: "수도권", operator_name: "공항철도주식회사", line_name: "공항", station_sequence: 1, station_name: "가" },
+    { region_code: "04", region_name: "광주", operator_name: "광주교통공사", line_name: "1호선", station_sequence: 1, station_name: "나" },
+  ];
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  const observation = {
+    sourceId: "molit-urban-rail-full-route", snapshotId: "test-molit-observation",
+    capturedAt: new Date(0).toISOString(), rawSha256: hash("official test raw"),
+    contentSha256: hash(`${JSON.stringify(projection)}\n`), schemaFingerprint: hash("test schema"),
+    rowCount: projection.length, normalizedProjection: projection,
+    providerRecordHashes: projection.map((row) => hash(JSON.stringify(row))),
+  };
+  const observationBytes = Buffer.from(`${JSON.stringify(observation)}\n`);
+  const current = { ...observation, retrievedAt: observation.capturedAt,
+    normalizedObservationSha256: hash(observationBytes) };
+  const evidence = currentMolit.deriveCurrentMolitMembershipCoverage({ observation, observationBytes, current });
+  assert.deepEqual(evidence.lineOperatorScopes, [...parseCurrentMolitLineOperatorRosters(projection).values()]
+    .map(({ regionId, operatorId, lineId }) => ({ regionId, operatorId, lineId }))
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), "en")));
+  assert.equal(evidence.lineOperatorScopes.length, projection.length);
+  assert.equal(evidence.snapshotId, current.snapshotId);
+  assert.equal(evidence.rawSha256, current.rawSha256);
+  assert.equal(evidence.normalizedObservationSha256, hash(observationBytes));
+  assert.throws(() => currentMolit.deriveCurrentMolitMembershipCoverage({
+    observation: { ...observation, normalizedProjection: projection.slice(1) }, observationBytes, current,
+  }), /normalized observation binding/);
 });
 
 test("Gwangju membership binds the complete admitted projection without a fixed national count", () => {

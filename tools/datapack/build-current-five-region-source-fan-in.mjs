@@ -142,6 +142,12 @@ function hasNativeSourceAuthority(source) {
 }
 
 function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
+  const membershipCoverage = source.membershipCoverageEvidence;
+  if (membershipCoverage !== undefined && (membershipCoverage.snapshotId !== snapshot.snapshotId
+    || membershipCoverage.rawSha256 !== snapshot.rawSha256
+    || membershipCoverage.normalizedObservationSha256 !== snapshot.normalizedObservationSha256)) {
+    throw new Error(`membership coverage snapshot mismatch for ${sourceId}`);
+  }
   const matching = admittedEvidence(source).filter(([, evidence]) =>
     evidence.snapshotId === snapshot.snapshotId
     && (evidence.sourceId === undefined || evidence.sourceId === sourceId));

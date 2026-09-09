@@ -9,7 +9,7 @@ import {
   nativeAdmissionRecordForHead,
   validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
-import { inventoryCoverageFields } from "./report-coverage-gaps.mjs";
+import { inventoryCoverageFields, inventoryCoverageScope, matchesInventoryLineOperatorScope } from "./report-coverage-gaps.mjs";
 
 export const LEDGER_PATH = "tools/datapack/reports/nationwide-requirement-ownership-ledger.json";
 const INPUT_PATHS = {
@@ -43,7 +43,7 @@ export function resolveNationwideRequirementOwner(rules, row) {
 }
 
 function strictSourceCovers(source, row) {
-  const scope = source.coverageScope;
+  const scope = inventoryCoverageScope(source);
   const fields = source.fieldsProvided;
   for (const key of ["regionIds", "operatorIds", "lineIds", "sourceDomains"]) {
     if (!Array.isArray(scope?.[key]) || scope[key].length === 0) throw new Error(`empty ${key} for source ${source.id}`);
@@ -52,6 +52,7 @@ function strictSourceCovers(source, row) {
   return scope.regionIds.includes(row.regionId)
     && scope.operatorIds.includes(row.operatorId)
     && scope.lineIds.includes(row.lineId)
+    && matchesInventoryLineOperatorScope(scope, row)
     && scope.sourceDomains.includes(row.sourceDomain);
 }
 

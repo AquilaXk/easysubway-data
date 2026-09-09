@@ -149,6 +149,23 @@ test("#687 builds a candidate-independent five-region OCI source fan-in", () => 
   assert.equal(canonicalCurrentFiveRegionSourceFanInJson(fanIn).includes("candidate"), false);
   assert.equal(canonicalCurrentFiveRegionSourceFanInJson(fanIn).includes("s3://"), false);
   assert.equal(fanIn.scopeSha256, sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(fanIn.scope))));
+  const snapshot = input.sourceSnapshots[0];
+  snapshot.normalizedObservationSha256 = sha256("normalized membership");
+  const coverage = {
+    snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256,
+    normalizedObservationSha256: snapshot.normalizedObservationSha256,
+  };
+  input.inventory.sources[0].membershipCoverageEvidence = coverage;
+  input.inputBytes.sourceSnapshots = bytes(input.sourceSnapshots);
+  input.inputBytes.inventory = bytes(input.inventory);
+  assert.equal(buildCurrentFiveRegionSourceFanIn(input).selectedSources.length, 1);
+  for (const key of Object.keys(coverage)) {
+    const original = coverage[key];
+    coverage[key] = key === "snapshotId" ? "foreign" : sha256(`foreign ${key}`);
+    input.inputBytes.inventory = bytes(input.inventory);
+    assert.throws(() => buildCurrentFiveRegionSourceFanIn(input), /membership coverage snapshot mismatch/);
+    coverage[key] = original;
+  }
 });
 
 test("native schedule admission binds a production materialization approval without invented approval fields", () => {

@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "fc1714a089597d8124ceda68fca0f5d7e42497dea8ae3b3f72c7782ea4bd1d58"
+      "sha256": "c3dd50c61a668f3aff899446aa158f374ce1d04c103d3cfd4c6b7541648eda00"
     },
     "resolutions": {
       "entryCount": 4,
@@ -1386,7 +1386,8 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "busan-transportation-route-topology"
+          "busan-transportation-route-topology",
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -1507,7 +1508,8 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "busan-transportation-route-topology"
+          "busan-transportation-route-topology",
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -1628,7 +1630,8 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "busan-transportation-route-topology"
+          "busan-transportation-route-topology",
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -1749,7 +1752,8 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "busan-transportation-route-topology"
+          "busan-transportation-route-topology",
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -1874,9 +1878,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-f52eb59d8497",
@@ -1890,8 +1896,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -2011,9 +2015,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-e4cce88f0d7f",
@@ -2027,8 +2033,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -2138,7 +2142,8 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "incheon-transit-station-info"
+          "incheon-transit-station-info",
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -2258,7 +2263,8 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "incheon-transit-station-info"
+          "incheon-transit-station-info",
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -2378,7 +2384,8 @@
         "admissionRatio": 1,
         "admittedFieldCount": 3,
         "admittedSourceIds": [
-          "incheon-transit-station-info"
+          "incheon-transit-station-info",
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -2502,9 +2509,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-051552e50435",
@@ -2518,8 +2527,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -2639,9 +2646,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-41a8c75ec9d8",
@@ -2655,8 +2664,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -2776,9 +2783,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-472a81add377",
@@ -2792,8 +2801,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -2905,9 +2912,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-54a7b980b7c3",
@@ -2921,8 +2930,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3034,9 +3041,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-558d0bd8312d",
@@ -3050,8 +3059,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3163,9 +3170,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-6e39be0cb6e2",
@@ -3179,8 +3188,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3292,9 +3299,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-e4939a4b4713",
@@ -3308,8 +3317,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3429,9 +3436,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-4",
@@ -3445,8 +3454,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3566,9 +3573,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-2b2d9eaa53d0",
@@ -3582,8 +3591,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3695,9 +3702,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-aefa08ccc0a9",
@@ -3711,8 +3720,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3824,9 +3831,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "shinbundang",
@@ -3840,8 +3849,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -3953,9 +3960,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-62096860ab09",
@@ -3969,8 +3978,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4082,9 +4089,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-5500c1600f71",
@@ -4098,8 +4107,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4211,9 +4218,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-051552e50435",
@@ -4227,8 +4236,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4340,9 +4347,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-30886152e4f8",
@@ -4356,8 +4365,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4469,9 +4476,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-8604048b6430",
@@ -4485,8 +4494,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4598,9 +4605,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-e9e9a5b520a4",
@@ -4614,8 +4623,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4728,9 +4735,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-f0e747248a31",
@@ -4744,8 +4753,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4857,9 +4864,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-8604048b6430",
@@ -4873,8 +4882,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -4986,9 +4993,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-828f04afc588",
@@ -5002,8 +5011,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -5123,9 +5130,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-2b2d9eaa53d0",
@@ -5139,8 +5148,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -5260,9 +5267,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-4",
@@ -5276,8 +5285,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -5404,9 +5411,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": {
           "coveringOperatorIds": [
@@ -5427,8 +5436,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -5541,9 +5548,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-2b2d9eaa53d0",
@@ -5557,8 +5566,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -5671,9 +5678,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-3f41718e0833",
@@ -5687,8 +5696,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -5801,9 +5808,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-41a8c75ec9d8",
@@ -5817,8 +5826,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -5931,9 +5938,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-472a81add377",
@@ -5947,8 +5956,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -6061,9 +6068,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-80fc4d5350d4",
@@ -6077,8 +6086,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -6191,9 +6198,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-2",
@@ -6207,8 +6216,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -6321,9 +6328,11 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "seoul-4",
@@ -6337,8 +6346,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -6454,7 +6461,7 @@
         "admittedFieldCount": 3,
         "admittedSourceIds": [
           "daegu-line3-route-topology",
-          "molit-urban-rail-full-route-daegu-line3-membership"
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -6582,7 +6589,7 @@
         "admittedFieldCount": 3,
         "admittedSourceIds": [
           "daegu-line1-route-topology",
-          "molit-urban-rail-full-route-daegu-line1-membership"
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -6710,7 +6717,7 @@
         "admittedFieldCount": 3,
         "admittedSourceIds": [
           "daegu-line2-route-topology",
-          "molit-urban-rail-full-route-daegu-line2-membership"
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -6832,9 +6839,11 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 0.6667,
+        "admittedFieldCount": 2,
+        "admittedSourceIds": [
+          "molit-urban-rail-full-route"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-8f7ed01f290a",
@@ -6848,8 +6857,6 @@
         "sourceDomain": "station_line_membership",
         "status": "MISSING",
         "unadmittedFields": [
-          "line",
-          "station_name",
           "station_code"
         ]
       },
@@ -6958,7 +6965,7 @@
         "admittedFieldCount": 3,
         "admittedSourceIds": [
           "daejeon-station-distance-fare",
-          "molit-urban-rail-full-route-daejeon-membership"
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
@@ -7081,7 +7088,7 @@
         "admittedFieldCount": 3,
         "admittedSourceIds": [
           "gwangju-transportation-route-topology",
-          "molit-urban-rail-full-route-gwangju-membership"
+          "molit-urban-rail-full-route"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
