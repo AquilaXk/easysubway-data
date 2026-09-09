@@ -18,7 +18,7 @@ import {
 import {
   parseMolitDaeguStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import {
   bindCumulativeDaeguTopology,
   daeguMembershipSnapshotIdentity,
@@ -273,16 +273,16 @@ test("inventory에 기록된 topology admission evidence가 실제 snapshot과 �
 
 test("MOLIT membership mapping이 topology에 없는 역명으로 위조되면(mappingSha256까지 위조해도) fail-closed된다", async () => {
   const values = await inputs({ materialize: false });
-  const sha256 = (value) => createHash("sha256").update(value).digest("hex");
   const mapping1 = values.mappings[1].map((mapping) => ({ ...mapping }));
   Object.defineProperty(mapping1, "sourceRawSha256", { value: values.mappings[1].sourceRawSha256, enumerable: true });
   mapping1[0] = { ...mapping1[0], stationName: "존재하지않는역이름" };
 
-  const inventory = structuredClone(values.inventory);
-  const membershipSource = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-daegu-line1-membership");
   // membership evidence 해시 게이트까지 위조자가 통과시켰다고 가정해도(mappingSha256 재계산),
   // topology와의 역명 정합 자체가 깨져 있으므로 fail-closed되어야 한다.
-  membershipSource.membershipAdmissionEvidence.mappingSha256 = sha256(JSON.stringify(mapping1));
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: values.inventory, topologySnapshots: values.topologySnapshots,
+    timetableSnapshots: values.timetableSnapshots, mappings: { ...values.mappings, 1: mapping1 },
+  });
 
   assert.throws(() => materializeDaeguTimetable({
     baseFixture: values.baseFixture, topologySnapshots: values.topologySnapshots, timetableSnapshots: values.timetableSnapshots,
@@ -300,13 +300,10 @@ test("membership↔topology index 정합 가드는 이름 집합은 그대로 �
   topology.scopeSha256 = sha256(JSON.stringify(topology.scope));
   topology.contentSha256 = sha256(JSON.stringify({ scope: topology.scope, edges: topology.edges }));
 
-  const inventory = structuredClone(values.inventory);
-  const topologySource = inventory.sources.find(({ id }) => id === "daegu-line1-route-topology");
-  topologySource.topologyAdmissionEvidence.contentSha256 = topology.contentSha256;
-  const membershipSource = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-daegu-line1-membership");
-  membershipSource.membershipAdmissionEvidence.stationCodeContentSha256 = topology.contentSha256;
-  membershipSource.membershipAdmissionEvidence.stationCodesSha256 =
-    sha256(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)));
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: values.inventory, topologySnapshots: { ...values.topologySnapshots, 1: topology },
+    timetableSnapshots: values.timetableSnapshots, mappings: values.mappings,
+  });
 
   assert.throws(() => materializeDaeguTimetable({
     baseFixture: values.baseFixture, topologySnapshots: { ...values.topologySnapshots, 1: topology },
@@ -328,13 +325,18 @@ test("MOLIT 대구 station mapping과 materializer CLI를 고정한다", async (
     const baseFixturePath = path.join(directory, "base.json");
     const inventoryPath = path.join(directory, "inventory.json");
     const outputPath = path.join(directory, "output.json");
+    // CLI는 fixture가 선언한 content-addressed 파일을 읽는다. 운영 sources를 섞지 않는다.
+    const snapshots = [...Object.values(values.topologySnapshots), ...Object.values(values.timetableSnapshots)];
     await Promise.all([
       writeFile(baseFixturePath, JSON.stringify(values.baseFixture)),
       writeFile(inventoryPath, JSON.stringify(values.inventory)),
+      ...snapshots.map((snapshot) => writeFile(
+        path.join(directory, `${daeguSourceSnapshotIdentity(snapshot)}.json`), JSON.stringify(snapshot),
+      )),
     ]);
     await runDaeguTimetableMaterializer([
       "--base-fixture", baseFixturePath,
-      "--sources-dir", path.join(root, "tools/datapack/sources"),
+      "--sources-dir", directory,
       "--inventory", inventoryPath,
       "--station-map", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
       "--output", outputPath,

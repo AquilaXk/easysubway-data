@@ -461,40 +461,48 @@ export function projectRegionalFixtureSourceBindings({
     };
   }
   if (daejeonAccessibilitySnapshot) {
-    if (!(daejeonAccessibilitySnapshotBytes instanceof Uint8Array)) {
-      throw new Error("regional Daejeon accessibility fixture bytes are required");
-    }
-    const accessibility = source(projected, daejeonAccessibilitySnapshot.sourceId);
-    const topology = source(projected, daejeonAccessibilitySnapshot.topologyLineages?.[0]?.sourceId);
-    const topologyEvidence = topology.topologyAdmissionEvidence;
-    const snapshotId = fixtureSnapshotId(accessibility.id, daejeonAccessibilitySnapshot.capturedAt);
-    accessibility.fieldsProvided = structuredClone(daejeonAccessibilitySnapshot.fieldsProvided);
-    accessibility.accessibilityAdmissionEvidence = {
-      ...accessibility.accessibilityAdmissionEvidence,
-      snapshotId,
-      snapshotPath: fixtureSnapshotPath(snapshotId),
-      capturedAt: daejeonAccessibilitySnapshot.capturedAt,
-      freshUntil: daejeonAccessibilitySnapshot.freshUntil,
-      stationCount: daejeonAccessibilitySnapshot.stationCount,
-      rowCount: daejeonAccessibilitySnapshot.rowCount,
-      facilityCount: daejeonAccessibilitySnapshot.rows.reduce((count, row) => count
-        + Number(row.elevator !== null)
-        + Number(row.escalator !== null)
-        + Number(row.wheelchair_lift !== null), 0),
-      rawSha256: daejeonAccessibilitySnapshot.rawSha256,
-      rowsSha256: daejeonAccessibilitySnapshot.rowsSha256,
-      datasetIds: structuredClone(daejeonAccessibilitySnapshot.datasetIds),
-      topologySourceId: topology.id,
-      topologySnapshotId: topologyEvidence.snapshotId,
-      topologyContentSha256: topologyEvidence.contentSha256,
-      topologyLineages: daejeonAccessibilitySnapshot.topologyLineages.map((lineage) => ({
-        ...lineage,
-        snapshotId: topologyEvidence.snapshotId,
-        contentSha256: topologyEvidence.contentSha256,
-      })),
-    };
+    applyDaejeonAccessibilityFixture({
+      projected,
+      snapshot: daejeonAccessibilitySnapshot,
+      snapshotBytes: daejeonAccessibilitySnapshotBytes,
+    });
   }
   return projected;
+}
+
+function applyDaejeonAccessibilityFixture({ projected, snapshot, snapshotBytes }) {
+  if (!(snapshotBytes instanceof Uint8Array)) {
+    throw new Error("regional Daejeon accessibility fixture bytes are required");
+  }
+  const accessibility = source(projected, snapshot.sourceId);
+  const topology = source(projected, snapshot.topologyLineages?.[0]?.sourceId);
+  const topologyEvidence = topology.topologyAdmissionEvidence;
+  const snapshotId = fixtureSnapshotId(accessibility.id, snapshot.capturedAt);
+  accessibility.fieldsProvided = structuredClone(snapshot.fieldsProvided);
+  accessibility.accessibilityAdmissionEvidence = {
+    ...accessibility.accessibilityAdmissionEvidence,
+    snapshotId,
+    snapshotPath: fixtureSnapshotPath(snapshotId),
+    capturedAt: snapshot.capturedAt,
+    freshUntil: snapshot.freshUntil,
+    stationCount: snapshot.stationCount,
+    rowCount: snapshot.rowCount,
+    facilityCount: snapshot.rows.reduce((count, row) => count
+      + Number(row.elevator !== null)
+      + Number(row.escalator !== null)
+      + Number(row.wheelchair_lift !== null), 0),
+    rawSha256: snapshot.rawSha256,
+    rowsSha256: snapshot.rowsSha256,
+    datasetIds: structuredClone(snapshot.datasetIds),
+    topologySourceId: topology.id,
+    topologySnapshotId: topologyEvidence.snapshotId,
+    topologyContentSha256: topologyEvidence.contentSha256,
+    topologyLineages: snapshot.topologyLineages.map((lineage) => ({
+      ...lineage,
+      snapshotId: topologyEvidence.snapshotId,
+      contentSha256: topologyEvidence.contentSha256,
+    })),
+  };
 }
 
 function source(inventory, sourceId) {

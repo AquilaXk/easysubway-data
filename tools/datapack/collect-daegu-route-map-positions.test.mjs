@@ -13,7 +13,6 @@ import {
 
 const root = path.resolve(import.meta.dirname, "../..");
 const FIXTURE_DIR = path.join(root, "tools/datapack/fixtures/daegu-route-map-positions-raw");
-const SNAPSHOT_PATH = path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json");
 const capturedAt = "2026-07-24T03:00:00.000Z";
 const DATASET_IDS = ["15133918", "15133920", "15133922"];
 
@@ -123,12 +122,12 @@ test("동일 stationId 환승 행의 좌표가 갈라지면 admission을 거부�
 });
 
 test("#2473 inventory·candidate는 snapshot byte identity와 자유 이용 근거를 고정한다", async () => {
-  const [snapshotBytes, inventory, candidates] = await Promise.all([
-    readFile(SNAPSHOT_PATH),
+  const [inventory, candidates] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
   ]);
   const source = inventory.sources.find(({ id }) => id === "daegu-transportation-route-map-positions");
+  const snapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
   const candidate = candidates.candidates.find(({ id }) => id === source.id);
   assert.equal(source.productionUseAllowed, true);
   assert.equal(source.license.redistributionAllowed, true);
