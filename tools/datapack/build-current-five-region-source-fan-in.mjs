@@ -336,10 +336,11 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
     if (!TALLY_STATUSES.has(row.status)
       || !Array.isArray(ids) || ids.some((id) => typeof id !== "string" || id.length === 0)
       || (row.status === "INVENTORY_ADMITTED" && ids.length === 0)
-      || (row.status !== "INVENTORY_ADMITTED" && ids.length !== 0)) {
+      || ids.some((id) => !inventoryById.has(id))) {
       throw new Error(`requirement disposition mismatch for ${pk(row)}`);
     }
-    if (row.releaseTier === "LAUNCH_REQUIRED") {
+    // Tally의 부분 확보 source는 진단 근거이며, 완료된 requirement만 후보 source를 선택한다.
+    if (row.releaseTier === "LAUNCH_REQUIRED" && row.status === "INVENTORY_ADMITTED") {
       ids.forEach((id) => admittedIds.add(id));
     }
   }

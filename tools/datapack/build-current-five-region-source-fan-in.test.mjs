@@ -326,6 +326,21 @@ test("#687 keeps enhancement heads non-blocking until their tier is promoted", (
   );
 });
 
+test("#687 binds partial tally evidence without selecting an incomplete requirement's source", () => {
+  const input = fixture();
+  input.inventory.sources.push({ ...input.inventory.sources[0], id: "partial-source" });
+  Object.assign(input.tally.launchRequired.requirements[0], {
+    status: "MISSING", admittedSourceIds: ["partial-source"],
+    admittedFieldCount: 1, requiredFieldCount: 2,
+  });
+  input.inputBytes.inventory = bytes(input.inventory);
+  input.inputBytes.tally = bytes(input.tally);
+  const fanIn = buildCurrentFiveRegionSourceFanIn(input);
+  assert.deepEqual(fanIn.selectedSources.map(({ sourceId }) => sourceId), ["official-five-region-timetable"]);
+  assert.equal(fanIn.regionalMatrixSha256, sha256(input.inputBytes.tally));
+  assert.equal(input.tally.launchRequired.requirements[0].status, "MISSING");
+});
+
 test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", () => {
   const reduced = fixture();
   reduced.targets.activeLineScopes = reduced.targets.activeLineScopes
