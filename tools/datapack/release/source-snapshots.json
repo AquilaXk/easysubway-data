@@ -67832,5 +67832,41 @@
       "licenseEvidenceHash": "0532458dc81590ad020987ddb34ef301ab96a86d1475325f94c8c956066f8b84"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "busan-transportation-accessibility",
+    "snapshotId": "busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-09T03:16:08.098Z",
+    "retrievedAt": "2026-09-09T03:16:08.098Z",
+    "sourceUpdatedAt": null,
+    "provider": "부산교통공사",
+    "rowCount": 114,
+    "coverageCount": 114,
+    "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
+    "contentSha256": "429c4034ab866ad78b30603e6d26b9aa092e76e3c019fc137e7f2f96bfd3dbfa",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/busan-transportation-accessibility/20260909/4204d2a7fc9e969b1cba9da939b76eedcb56cf474cd5dc48b3bd75d99f7b3541.json",
+    "rawObjectSha256": "4204d2a7fc9e969b1cba9da939b76eedcb56cf474cd5dc48b3bd75d99f7b3541",
+    "rawReceiptSha256": "8ccec57e46969e198b4b0ea2dc84d7be3bf971d721f00d61ef9ce790881545db",
+    "byteSize": 126110,
+    "freshUntil": "2026-09-10T03:16:08.098Z",
+    "freshnessExpiresAt": "2026-12-08T03:16:08.098Z",
+    "rawRetentionExpiresAt": "2026-12-08T03:16:08.098Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
+    "schemaFingerprint": "05e53229003663d98be4cc24813a376cd34bb9ddde004ffad08591086be5660f",
+    "redactedRequestFingerprint": "fd97e9a95ebe9e5338f3d4c089f0397997136812f62f45f7726c1f78193f1f6f",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "82dc0d5a7c726532e8aca86b31603c0edd3cd238a67b4067f4aab0ac59e27edf"
+    },
+    "diffSummary": null
   }
 ]

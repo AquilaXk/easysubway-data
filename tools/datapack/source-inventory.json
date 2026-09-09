@@ -31,7 +31,7 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": false,
+      "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2026-07-24",
@@ -81,18 +81,21 @@
         "issue": 2374,
         "materializer": "tools/datapack/materialize-busan-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-busan-accessibility.test.mjs",
-        "snapshotId": "busan-transportation-accessibility-20260724",
-        "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
-        "capturedAt": "2026-07-24T00:19:05.836Z",
-        "freshUntil": "2026-07-25T00:19:05.836Z",
+        "snapshotId": "busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909",
+        "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909.json",
+        "capturedAt": "2026-09-09T03:16:08.098Z",
+        "freshUntil": "2026-09-10T03:16:08.098Z",
         "stationCount": 114,
         "rowCount": 114,
         "facilityCount": 342,
         "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
         "rowsSha256": "429c4034ab866ad78b30603e6d26b9aa092e76e3c019fc137e7f2f96bfd3dbfa",
         "topologySourceId": "busan-transportation-route-topology",
-        "topologySnapshotId": "busan-transportation-route-topology-20260720",
+        "topologySnapshotId": "busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
         "topologyContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "82dc0d5a7c726532e8aca86b31603c0edd3cd238a67b4067f4aab0ac59e27edf"
       }
     },
     {

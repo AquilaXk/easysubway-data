@@ -43,7 +43,8 @@
         "seoul-metro-accessibility",
         "daegu-transportation-accessibility",
         "daejeon-transportation-accessibility",
-        "gwangju-transportation-accessibility"
+        "gwangju-transportation-accessibility",
+        "busan-transportation-accessibility"
       ],
       "examples": [
         "KRIC elevator",
