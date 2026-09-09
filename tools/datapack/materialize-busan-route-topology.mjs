@@ -309,7 +309,7 @@ function canonicalStationMappingEntries(mappings, scope) {
   }).sort(([left], [right]) => left.localeCompare(right, "en"));
 }
 
-function normalizedStationName(value) {
+export function normalizedStationName(value) {
   return value.normalize("NFKC").replace(/\([^()]*\)$/, "").replace(/[^\p{L}\p{N}]/gu, "").replace(/역$/, "").toLowerCase();
 }
 

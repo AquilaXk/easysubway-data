@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { busanRouteTopologyContentHash } from "./collect-busan-route-topology.mjs";
+import { normalizedStationName } from "./materialize-busan-route-topology.mjs";
 
 const SOURCE_ID = "busan-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "busan-transportation-route-topology";
@@ -302,7 +303,9 @@ function canonicalStations(pack, topologySnapshot) {
     if (stations.has(key)) throw new Error(`Busan accessibility duplicate canonical station: ${key}`);
     if (stationLine.sourceId !== TOPOLOGY_SOURCE_ID
       || stationLine.lineSequence !== expectedStation.lineSequence
-      || stationNames.get(stationLine.stationId)?.normalize("NFKC") !== expectedStation.stationName.normalize("NFKC")) {
+      // Topology가 인정한 동일 역의 표기 차이는 표시 이름을 바꾸지 않고 비교한다.
+      || normalizedStationName(stationNames.get(stationLine.stationId) ?? "")
+        !== normalizedStationName(expectedStation.stationName)) {
       throw new Error(`Busan accessibility topology lineage mismatch: ${key}`);
     }
     stations.set(key, stationLine.stationId);

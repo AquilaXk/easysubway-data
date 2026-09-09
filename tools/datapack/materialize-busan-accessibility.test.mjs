@@ -55,6 +55,16 @@ async function inputs() {
   Object.assign(admission, {
     snapshotId,
     snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+    capturedAt: accessibilitySnapshot.capturedAt,
+    freshUntil: accessibilitySnapshot.freshUntil,
+    stationCount: accessibilitySnapshot.stationCount,
+    rowCount: accessibilitySnapshot.rowCount,
+    facilityCount: accessibilitySnapshot.rowCount * 3,
+    rawSha256: accessibilitySnapshot.rawSha256,
+    rowsSha256: accessibilitySnapshot.rowsSha256,
+    topologySnapshotId: inventory.sources.find(({ id }) =>
+      id === topologySnapshot.sourceId).topologyAdmissionEvidence.snapshotId,
+    topologyContentSha256: topologySnapshot.contentSha256,
   });
   return {
     timetableFixture,
@@ -70,6 +80,22 @@ function compactSeoulDate(value) {
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
 }
+
+test("부산 접근성은 topology와 같은 역명 정규화를 사용하고 다른 역명은 거부한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const official = topologySnapshot.scope.find(({ stationName }) => stationName.includes("·"));
+  assert.ok(official);
+  const pack = timetableFixture.packs[0];
+  const membership = pack.stationLines.find(({ lineId, stationCode }) =>
+    lineId === official.lineId && stationCode === official.stationCode);
+  const station = pack.stations.find(({ id }) => id === membership.stationId);
+  station.nameKo = official.stationName.replaceAll("·", ".");
+  const options = { baseFixture: timetableFixture, topologySnapshot, accessibilitySnapshot, inventory };
+  const result = materializeBusanAccessibility(options);
+  assert.equal(result.packs[0].stations.find(({ id }) => id === station.id).nameKo, station.nameKo);
+  station.nameKo = `${official.stationName}다른역`;
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+});
 
 test("부산 공식 114역 편의시설을 facility·evidence 342건으로 materialize한다", async () => {
   const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
