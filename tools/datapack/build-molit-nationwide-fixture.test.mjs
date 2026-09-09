@@ -9,7 +9,20 @@ import {
   filterRetiredSvgProviderRows,
   providerLineScopesFor,
   parseCurrentMolitGwangjuStationMappings,
+  parseCurrentMolitLineOperatorRosters,
 } from "./build-molit-nationwide-fixture.mjs";
+
+test("current MOLIT rosters preserve source operator-line membership without KRIC codes", () => {
+  const rows = ["첫역", "다음역"].map((station_name, index) => ({
+    region_code: "01", region_name: "수도권", operator_name: "공항철도주식회사",
+    line_name: "공항", station_sequence: index + 1, station_name,
+  }));
+  const rosters = [...parseCurrentMolitLineOperatorRosters(rows).values()];
+  assert.equal(rosters.length, 1);
+  assert.equal(rosters[0].operatorName, rows[0].operator_name);
+  assert.deepEqual(rosters[0].stationNames, rows.map(({ station_name }) => station_name));
+  assert.throws(() => parseCurrentMolitLineOperatorRosters([]), /no line-operator rosters/);
+});
 
 test("Gwangju membership binds the complete admitted projection without a fixed national count", () => {
   const projection = ["가", "나"].map((station_name, index) => ({
