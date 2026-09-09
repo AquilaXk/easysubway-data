@@ -67760,5 +67760,41 @@
       "licenseEvidenceHash": "56aea1437ed41bfa113dae3553aa6823b9eb1a0c18418fa2e4f4347ca4155595"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "daejeon-transportation-accessibility",
+    "snapshotId": "daejeon-transportation-accessibility-31ef85c5ac5d279d7322c028e05f7be16e6c5a794aa313aef314eef076b61426-20260909",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-09T03:05:12.579Z",
+    "retrievedAt": "2026-09-09T03:05:12.579Z",
+    "sourceUpdatedAt": null,
+    "provider": "대전교통공사",
+    "rowCount": 22,
+    "coverageCount": 22,
+    "rawSha256": "af14438cb984fedf1ce93c6b38e852a828d3eb9980c88afb71bdf5fafb8fe082",
+    "contentSha256": "fdadfa1589772521e72353828712d68104b4e4fc4f390f82c7b98d9c8d40e524",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/daejeon-transportation-accessibility/20260909/8a5fbd8ce9f0a4f1771232dafcd2a16462bbae261011dbbd73b0c487ccd7d491.json",
+    "rawObjectSha256": "8a5fbd8ce9f0a4f1771232dafcd2a16462bbae261011dbbd73b0c487ccd7d491",
+    "rawReceiptSha256": "f3ea5b0ce23a9d273b838409027ba92a5da4d68601a7d23439fcea55ac0d0575",
+    "byteSize": 35296,
+    "freshUntil": "2026-09-10T03:05:12.579Z",
+    "freshnessExpiresAt": "2026-12-08T03:05:12.579Z",
+    "rawRetentionExpiresAt": "2026-12-08T03:05:12.579Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "44cdfedcaee7f56c2bfcd6807936d6b456ed9d52b35d4ae61870c44e0d7f6ce3",
+    "schemaFingerprint": "020ac9b39dafaf0102912cedf8611fba99fb20feffbb72becb771582a2a676c7",
+    "redactedRequestFingerprint": "1aea28bf7c38392c5195872961f6d62d5e44c3010aec924d0e0183d655af9af9",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "057e89316465215d7bc0add5d28d4bddc7f10d3756970ff4d2def02c51838a1f"
+    },
+    "diffSummary": null
   }
 ]
