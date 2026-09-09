@@ -1209,6 +1209,31 @@
     },
     {
       "id": "daegu-transportation-accessibility",
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daegu-transportation-accessibility",
+          "sourceClassId": "static_accessibility_facility",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "56aea1437ed41bfa113dae3553aa6823b9eb1a0c18418fa2e4f4347ca4155595",
+            "reviewedAt": "2026-09-09T02:52:25.000Z",
+            "nextReviewAt": "2027-09-09T02:52:25.000Z",
+            "termsUrl": "https://www.data.go.kr/data/15149872/fileData.do",
+            "reviewedProvider": "대구교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15149872/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
       "priority": "P0",
       "domain": "accessibility_facilities",
       "coverageScope": {
@@ -1672,6 +1697,31 @@
     },
     {
       "id": "daejeon-transportation-accessibility",
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "daejeon-transportation-accessibility",
+          "sourceClassId": "static_accessibility_facility",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "057e89316465215d7bc0add5d28d4bddc7f10d3756970ff4d2def02c51838a1f",
+            "reviewedAt": "2026-09-09T02:52:25.000Z",
+            "nextReviewAt": "2027-09-09T02:52:25.000Z",
+            "termsUrl": "https://www.data.go.kr/data/15041384/fileData.do",
+            "reviewedProvider": "대전교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15041384/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
       "priority": "P0",
       "domain": "accessibility_facilities",
       "coverageScope": {
