@@ -647,6 +647,31 @@
     },
     {
       "id": "busan-transportation-accessibility",
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "busan-transportation-accessibility",
+          "sourceClassId": "static_accessibility_facility",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "82dc0d5a7c726532e8aca86b31603c0edd3cd238a67b4067f4aab0ac59e27edf",
+            "reviewedAt": "2026-09-09T03:10:13.781Z",
+            "nextReviewAt": "2027-09-09T03:10:13.781Z",
+            "termsUrl": "https://www.data.go.kr/data/15001020/openapi.do",
+            "reviewedProvider": "부산교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15001020/openapi.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
       "priority": "P0",
       "domain": "accessibility_facilities",
       "coverageScope": {
@@ -1903,6 +1928,31 @@
     },
     {
       "id": "gwangju-transportation-accessibility",
+      "registrationMetadata": {
+        "governance": {
+          "sourceId": "gwangju-transportation-accessibility",
+          "sourceClassId": "static_accessibility_facility",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "0532458dc81590ad020987ddb34ef301ab96a86d1475325f94c8c956066f8b84",
+            "reviewedAt": "2026-09-09T03:10:13.781Z",
+            "nextReviewAt": "2027-09-09T03:10:13.781Z",
+            "termsUrl": "https://www.data.go.kr/data/15041385/fileData.do",
+            "reviewedProvider": "광주교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15041385/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
       "priority": "P0",
       "domain": "accessibility_facilities",
       "coverageScope": {
