@@ -176,28 +176,24 @@ export async function materializeCurrentNationwideInput({
     accessibilitySnapshot: busanAccessibility,
     topologySnapshot: busanTopology,
     inventory,
-    now,
   });
   fixture = materializeDaejeonAccessibility({
     baseFixture: fixture,
     accessibilitySnapshot: daejeonAccessibility,
     topologySnapshot: daejeonTopology,
     inventory,
-    now,
   });
   fixture = materializeGwangjuAccessibility({
     baseFixture: fixture,
     accessibilitySnapshot: gwangjuAccessibility,
     topologySnapshot: gwangjuTopology,
     inventory,
-    now,
   });
   fixture = materializeDaeguAccessibility({
     baseFixture: fixture,
     accessibilitySnapshot: daeguAccessibility,
     topologySnapshots: daeguTopologySnapshots,
     inventory,
-    now,
   });
 
   // 조립에 실제 사용한 입력만 기록한다. 운영 적격성이나 전체 fan-in 성공 주장은 아니다.

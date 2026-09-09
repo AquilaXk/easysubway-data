@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
-  DAEGU_LINES, daeguSourceSnapshotIdentity, decodeOfficialCsv, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
+  DAEGU_LINES, daeguSourceSnapshotIdentity, decodeOfficialCsv, loadAdmittedDaeguTopologySnapshots, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
   writeDaeguSourceSnapshot,
 } from "./collect-daegu-datapack-sources.mjs";
 import { ledgerRow, prepareDaeguSourceRegistration } from "./register-daegu-datapack-sources.mjs";
@@ -33,6 +33,26 @@ test("Daegu snapshot output is content-addressed and create-once", async (t) => 
   assert.notEqual(daeguSourceSnapshotIdentity(otherSource), daeguSourceSnapshotIdentity(snapshot));
   assert.deepEqual(await readFile(firstPath), exactBytes);
   await assert.rejects(() => writeDaeguSourceSnapshot(outputDirectory, snapshot), { code: "EEXIST" });
+});
+
+test("Daegu topology loader selects admitted content identities", async (t) => {
+  const sourcesDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-admitted-topology-"));
+  t.after(() => rm(sourcesDirectory, { recursive: true, force: true }));
+  const snapshots = Object.fromEntries(DAEGU_LINES.map((line) => [line.lineNumber, {
+    sourceId: `daegu-line${line.lineNumber}-route-topology`, contentSha256: `${line.lineNumber}`.repeat(64),
+  }]));
+  const sources = await Promise.all(DAEGU_LINES.map(async (line) => {
+    const snapshot = snapshots[line.lineNumber];
+    const snapshotId = daeguSourceSnapshotIdentity(snapshot);
+    await writeFile(path.join(sourcesDirectory, `${snapshotId}.json`), JSON.stringify(snapshot));
+    return { id: snapshot.sourceId, topologyAdmissionEvidence: {
+      snapshotId, snapshotPath: `tools/datapack/sources/${snapshotId}.json`, contentSha256: snapshot.contentSha256,
+    } };
+  }));
+  const inventory = { sources };
+  assert.deepEqual(await loadAdmittedDaeguTopologySnapshots(sourcesDirectory, inventory), snapshots);
+  inventory.sources[0].topologyAdmissionEvidence.snapshotId = `${inventory.sources[0].id}-wrong`;
+  await assert.rejects(loadAdmittedDaeguTopologySnapshots(sourcesDirectory, inventory), /selected source snapshot is invalid|selected topology binding/);
 });
 
 // 공식 원문 파일별 SHA-256(이슈 #2407 표) — 취득 원문 identity 고정

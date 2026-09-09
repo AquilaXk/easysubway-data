@@ -1250,6 +1250,8 @@
             "tools/datapack/fixtures/daegu-accessibility-raw/data-go-15149872.csv",
             "--sources-dir",
             "tools/datapack/sources",
+            "--inventory",
+            "tools/datapack/source-inventory.json",
             "--output",
             "/tmp/easysubway-daegu-accessibility.json",
             "--captured-at",

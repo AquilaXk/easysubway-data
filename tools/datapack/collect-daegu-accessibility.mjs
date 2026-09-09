@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 
 import {
   DAEGU_LINES,
+  daeguSourceSnapshotIdentity,
+  loadAdmittedDaeguTopologySnapshots,
   decodeOfficialCsv,
   normalizedStationName,
 } from "./collect-daegu-datapack-sources.mjs";
@@ -124,7 +126,7 @@ export function collectDaeguAccessibility({
     const topology = topologySnapshots[line.lineNumber];
     return {
       sourceId: topology.sourceId,
-      snapshotId: `${topology.sourceId}-20260721`,
+      snapshotId: daeguSourceSnapshotIdentity(topology),
       contentSha256: topology.contentSha256,
       lineId: line.lineId,
     };
@@ -212,29 +214,23 @@ function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-daegu-accessibility.mjs --input <csv> --sources-dir <dir> --output <absolute.json> [--captured-at <iso>]");
+      throw new Error("usage: collect-daegu-accessibility.mjs --input <csv> --sources-dir <dir> --inventory <json> --output <absolute.json> [--captured-at <iso>]");
     }
     args[argv[index].slice(2)] = argv[index + 1];
   }
-  if (!args.input || !args["sources-dir"] || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-daegu-accessibility.mjs --input <csv> --sources-dir <dir> --output <absolute.json> [--captured-at <iso>]");
+  if (!args.input || !args["sources-dir"] || !args.inventory || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error("usage: collect-daegu-accessibility.mjs --input <csv> --sources-dir <dir> --inventory <json> --output <absolute.json> [--captured-at <iso>]");
   }
   return args;
 }
 
 export async function runDaeguAccessibilityCollector(argv) {
   const args = parseArgs(argv);
-  const [facilitiesBytes, ...topologyBytes] = await Promise.all([
+  const [facilitiesBytes, inventory] = await Promise.all([
     readFile(args.input),
-    ...DAEGU_LINES.map((line) => readFile(
-      path.join(args["sources-dir"], `daegu-line${line.lineNumber}-route-topology-20260721.json`),
-      "utf8",
-    )),
+    readFile(args.inventory, "utf8").then(JSON.parse),
   ]);
-  const topologySnapshots = Object.fromEntries(DAEGU_LINES.map((line, index) => [
-    line.lineNumber,
-    JSON.parse(topologyBytes[index]),
-  ]));
+  const topologySnapshots = await loadAdmittedDaeguTopologySnapshots(args["sources-dir"], inventory);
   const snapshot = collectDaeguAccessibility({
     facilitiesBytes,
     topologySnapshots,

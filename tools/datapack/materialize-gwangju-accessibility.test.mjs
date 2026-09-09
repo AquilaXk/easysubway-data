@@ -84,7 +84,7 @@ test("schema2 미관측 시설은 materialized 부재 evidence가 되지 않는�
     assert.notEqual(altered.rawSha256, accessibilitySnapshot.rawSha256);
     assert.throws(() => materializeGwangjuAccessibility({
       baseFixture: gwangjuFixture, accessibilitySnapshot: altered,
-      topologySnapshot: gwangjuTopology, inventory, now: accessibilityNow,
+      topologySnapshot: gwangjuTopology, inventory,
     }), /inventory evidence does not match snapshot/);
   }
 });
@@ -115,14 +115,13 @@ test("광주 공식 관측 시설만 facility·evidence로 materialize한다", a
   missingTopology.packs[0].sourceInventory = missingTopology.packs[0].sourceInventory
     .filter(({ id }) => id !== "gwangju-transportation-route-topology");
   assert.throws(() => materializeGwangjuAccessibility({
-    baseFixture: missingTopology, accessibilitySnapshot, topologySnapshot, inventory, now: accessibilityNow,
+    baseFixture: missingTopology, accessibilitySnapshot, topologySnapshot, inventory,
   }), /requires gwangju topology source/);
   const fixture = materializeGwangjuAccessibility({
     baseFixture: gwangjuFixture,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   });
   const pack = fixture.packs[0];
   const facilities = pack.facilities.filter(({ sourceId }) => sourceId === SOURCE_ID);
@@ -170,12 +169,22 @@ test("광주 공식 관측 시설만 facility·evidence로 materialize한다", a
 test("광주 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
   const { gwangjuFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
 
+  const invalidWindow = structuredClone(accessibilitySnapshot);
+  invalidWindow.freshUntil = invalidWindow.capturedAt;
+  const invalidWindowInventory = structuredClone(inventory);
+  const invalidWindowEvidence = invalidWindowInventory.sources.find(({ id }) => id === SOURCE_ID)
+    .accessibilityAdmissionEvidence;
+  const snapshotId = `${SOURCE_ID}-${createHash("sha256").update(JSON.stringify(invalidWindow)).digest("hex")}-${invalidWindowEvidence.snapshotId.slice(-8)}`;
+  Object.assign(invalidWindowEvidence, {
+    snapshotId,
+    snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+    freshUntil: invalidWindow.capturedAt,
+  });
   assert.throws(() => materializeGwangjuAccessibility({
     baseFixture: gwangjuFixture,
-    accessibilitySnapshot,
+    accessibilitySnapshot: invalidWindow,
     topologySnapshot,
-    inventory,
-    now: new Date("2026-07-25T03:00:00.000Z"),
+    inventory: invalidWindowInventory,
   }), /freshness/);
 
   const badHash = structuredClone(accessibilitySnapshot);
@@ -185,7 +194,6 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badHash,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const badSource = structuredClone(accessibilitySnapshot);
@@ -195,7 +203,6 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badSource,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const badScope = structuredClone(accessibilitySnapshot);
@@ -213,7 +220,6 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot: badScope,
     topologySnapshot,
     inventory: badScopeInventory,
-    now: accessibilityNow,
   }), /snapshot/);
 
   const mismatchedInventory = structuredClone(inventory);
@@ -224,7 +230,6 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshot,
     inventory: mismatchedInventory,
-    now: accessibilityNow,
   }), /inventory evidence/);
 
   const badLineage = structuredClone(inventory);
@@ -235,7 +240,6 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshot,
     inventory: badLineage,
-    now: accessibilityNow,
   }), /inventory evidence|topology lineage/);
 
   const admitted = materializeGwangjuAccessibility({
@@ -243,14 +247,12 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   });
   assert.throws(() => materializeGwangjuAccessibility({
     baseFixture: admitted,
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   }), /already exists/);
 });
 
@@ -266,7 +268,6 @@ test("materialized SQLite와 provenance는 미제공 광주 시설 필드를 MIS
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now: accessibilityNow,
   });
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await mkdir(packOutput, { recursive: true });

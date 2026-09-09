@@ -11,18 +11,20 @@ import {
   loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
+  projectHistoricalDaeguMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaeguStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
-import { materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
+import { daeguAccessibilityTopologyLineageIdentity, materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
 import {
   materializeDaeguRouteMapPositions,
   materializedDaeguRouteMapPackContentHash,
+  daeguRouteMapTopologyLineageIdentity,
 } from "./materialize-daegu-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -48,7 +50,7 @@ async function inputs() {
     readJson("tools/datapack/sources/daegu-transportation-accessibility-20260724.json"),
     readFile(path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json")),
   ]);
-  const { gwangjuFixture, inventory, molitStationMapCsv: molitMap } = regional;
+  const { gwangjuFixture, molitStationMapCsv: molitMap } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const mappings = {};
@@ -61,6 +63,28 @@ async function inputs() {
     );
     mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
   }
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: regional.inventory, topologySnapshots, timetableSnapshots, mappings,
+  });
+  const topologyLineages = DAEGU_LINES.map((config) => ({
+    sourceId: topologySnapshots[config.lineNumber].sourceId,
+    snapshotId: daeguSourceSnapshotIdentity(topologySnapshots[config.lineNumber]),
+    contentSha256: topologySnapshots[config.lineNumber].contentSha256,
+    lineId: config.lineId,
+  }));
+  daeguAccessibility.topologyLineages = topologyLineages;
+  Object.assign(inventory.sources.find(({ id }) => id === "daegu-transportation-accessibility").accessibilityAdmissionEvidence, {
+    topologyLineages, topologySnapshotId: daeguAccessibilityTopologyLineageIdentity(topologyLineages),
+    topologyContentSha256: createHash("sha256").update(JSON.stringify(topologyLineages)).digest("hex"),
+  });
+  const routeMap = JSON.parse(daeguSnapshotBytes);
+  routeMap.topologyLineages = topologyLineages;
+  const routeMapBytes = Buffer.from(JSON.stringify(routeMap));
+  Object.assign(inventory.sources.find(({ id }) => id === SOURCE_ID).routeMapAdmissionEvidence, {
+    topologyLineages, topologySnapshotId: daeguRouteMapTopologyLineageIdentity(topologyLineages),
+    topologyContentSha256: createHash("sha256").update(JSON.stringify(topologyLineages)).digest("hex"),
+    snapshotSha256: createHash("sha256").update(routeMapBytes).digest("hex"),
+  });
   const daeguFixture = materializeDaeguTimetable({
     baseFixture: gwangjuFixture, topologySnapshots, timetableSnapshots, inventory,
     canonicalStationMappings: mappings, now: timetableNow,
@@ -74,8 +98,8 @@ async function inputs() {
   });
   return {
     baseFixture: daeguAccessibilityFixture,
-    daeguSnapshot: JSON.parse(daeguSnapshotBytes),
-    daeguSnapshotSha256: createHash("sha256").update(daeguSnapshotBytes).digest("hex"),
+    daeguSnapshot: routeMap,
+    daeguSnapshotSha256: createHash("sha256").update(routeMapBytes).digest("hex"),
     topologySnapshots,
     inventory,
   };

@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import {
   loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
+  projectHistoricalDaeguMaterializeInventory,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
@@ -17,7 +18,7 @@ import {
 import {
   parseMolitDaeguStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
-import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import {
   bindCumulativeDaeguTopology,
   daeguMembershipSnapshotIdentity,
@@ -426,81 +427,18 @@ async function inputs({ materialize = true } = {}) {
     topologyNow: new Date("2026-07-19T18:14:03.004Z"),
     timetableNow: now,
   });
-  const { gwangjuFixture: baseFixture, inventory, molitStationMapCsv: molitMap } = regional;
+  const { gwangjuFixture: baseFixture, inventory: inputInventory, molitStationMapCsv: molitMap } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const mappings = {};
   for (const config of DAEGU_LINES) {
     topologySnapshots[config.lineNumber] = await readJson(`tools/datapack/sources/daegu-line${config.lineNumber}-route-topology-20260721.json`);
     timetableSnapshots[config.lineNumber] = await readJson(`tools/datapack/sources/daegu-line${config.lineNumber}-train-timetable-20260721.json`);
-    const topologyIdentity = daeguSourceSnapshotIdentity(topologySnapshots[config.lineNumber]);
-    const timetableIdentity = daeguSourceSnapshotIdentity(timetableSnapshots[config.lineNumber]);
-    const topologyEvidence = inventory.sources.find(({ id }) => id === topologySnapshots[config.lineNumber].sourceId)
-      .topologyAdmissionEvidence;
-    const scheduleEvidence = inventory.sources.find(({ id }) => id === timetableSnapshots[config.lineNumber].sourceId)
-      .scheduleAdmissionEvidence;
-    const topology = topologySnapshots[config.lineNumber];
-    const timetable = timetableSnapshots[config.lineNumber];
-    Object.assign(topologyEvidence, {
-      snapshotId: topologyIdentity,
-      snapshotPath: `tools/datapack/sources/${topologyIdentity}.json`,
-      capturedAt: topology.capturedAt,
-      freshUntil: topology.freshUntil,
-      stationCount: topology.stationCount,
-      edgeCount: topology.edgeCount,
-      depotExcludedCount: topology.depotExcludedCount,
-      rawSha256: topology.rawSha256,
-      contentSha256: topology.contentSha256,
-    });
-    Object.assign(scheduleEvidence, {
-      snapshotId: timetableIdentity,
-      snapshotPath: `tools/datapack/sources/${timetableIdentity}.json`,
-      capturedAt: timetable.capturedAt,
-      freshUntil: timetable.freshUntil,
-      rowCount: timetable.rowCount,
-      departureCount: timetable.stopTimeCount,
-      tripCount: timetable.tripCount,
-      stopTimeCount: timetable.stopTimeCount,
-      rawSha256: timetable.rawSha256,
-      rowsSha256: timetable.tripsSha256,
-      rawUpSha256: timetable.rawUpSha256,
-      rawDownSha256: timetable.rawDownSha256,
-      tripsSha256: timetable.tripsSha256,
-      dayLabelNormalizedCount: timetable.dayLabelNormalizedCount,
-      rolloverTripCount: timetable.rolloverTripCount,
-      topologySourceId: topology.sourceId,
-      topologySnapshotId: topologyIdentity,
-      topologyContentSha256: topology.contentSha256,
-      contentSha256: timetable.contentSha256,
-    });
     mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
-    const membershipId = `molit-urban-rail-full-route-daegu-line${config.lineNumber}-membership`;
-    const membership = inventory.sources.find(({ id }) => id === membershipId).membershipAdmissionEvidence;
-    const rawMembership = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
-    const mappingSha256 = createHash("sha256").update(JSON.stringify(mappings[config.lineNumber])).digest("hex");
-    const stationCodesSha256 = createHash("sha256")
-      .update(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)))
-      .digest("hex");
-    Object.assign(membership, {
-      lineIds: [config.lineId],
-      stationCount: topology.stationCount,
-      membershipSourceId: "molit-urban-rail-full-route",
-      membershipSourceRawSha256: rawMembership.rawSha256,
-      membershipSourceSnapshotSha256: mappings[config.lineNumber].sourceRawSha256,
-      mappingSha256,
-      stationCodesSha256,
-      stationCodeSourceId: topology.sourceId,
-      stationCodeSnapshotId: topologyIdentity,
-      stationCodeContentSha256: topology.contentSha256,
-      snapshotId: daeguMembershipSnapshotIdentity({
-        sourceId: membershipId,
-        molitSnapshotId: rawMembership.snapshotId,
-        membershipSourceRawSha256: rawMembership.rawSha256,
-        mappingSha256,
-        stationCodesSha256,
-      }),
-    });
   }
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: inputInventory, topologySnapshots, timetableSnapshots, mappings,
+  });
   const fixture = materialize ? materializeDaeguTimetable({
     baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings: mappings, now,
   }) : undefined;

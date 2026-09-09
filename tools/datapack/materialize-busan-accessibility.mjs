@@ -47,10 +47,9 @@ export function materializeBusanAccessibility({
   accessibilitySnapshot,
   topologySnapshot,
   inventory,
-  now = new Date(),
 }) {
   const rows = validateSnapshot(accessibilitySnapshot);
-  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot, now);
+  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -204,7 +203,7 @@ function validateSnapshot(snapshot) {
   return snapshot.rows;
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot, now) {
+function requiredSource(inventory, snapshot, topologySnapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.accessibilityAdmissionEvidence;
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
@@ -248,9 +247,7 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   }
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
@@ -351,7 +348,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runBusanAccessibilityMaterializer(argv, { now = new Date() } = {}) {
+export async function runBusanAccessibilityMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, accessibilitySnapshot, topologySnapshot, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -364,8 +361,8 @@ export async function runBusanAccessibilityMaterializer(argv, { now = new Date()
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Busan accessibility materialized: stations=${EXPECTED_STATION_COUNT} facilities=${EXPECTED_FACILITY_COUNT}`);
 }

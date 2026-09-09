@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_PREFIX = Object.freeze({ "평일": "WEEK", "토요일": "SAT", "휴일": "HOLI" });
@@ -362,6 +363,26 @@ export function daeguSourceSnapshotIdentity(snapshot) {
   }
   const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   return `${snapshot.sourceId}-${sha256(bytes)}`;
+}
+
+export async function loadAdmittedDaeguTopologySnapshots(sourcesDirectory, inventory) {
+  if (typeof sourcesDirectory !== "string" || !path.isAbsolute(sourcesDirectory)) {
+    throw new Error("Daegu topology sources directory must be absolute");
+  }
+  const readTracked = async (relativePath) => readFile(path.join(sourcesDirectory, path.basename(relativePath)));
+  const entries = await Promise.all(DAEGU_LINES.map(async (line) => {
+    const sourceId = `daegu-line${line.lineNumber}-route-topology`;
+    const snapshot = await readSelectedSourceSnapshot({ inventory, sourceId,
+      evidenceKind: "topologyAdmissionEvidence", readTracked });
+    const evidence = inventory.sources.find(({ id }) => id === sourceId).topologyAdmissionEvidence;
+    if (snapshot.sourceId !== sourceId || daeguSourceSnapshotIdentity(snapshot) !== evidence.snapshotId
+      || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
+      || snapshot.contentSha256 !== evidence.contentSha256) {
+      throw new Error(`Daegu selected topology binding is invalid: ${sourceId}`);
+    }
+    return [line.lineNumber, snapshot];
+  }));
+  return Object.fromEntries(entries);
 }
 
 export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {

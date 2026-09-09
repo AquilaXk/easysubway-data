@@ -43,10 +43,9 @@ export function materializeGwangjuAccessibility({
   accessibilitySnapshot,
   topologySnapshot,
   inventory,
-  now = new Date(),
 } = {}) {
   const rows = validateSnapshot(accessibilitySnapshot);
-  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot, now);
+  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -217,7 +216,7 @@ function observedFacilityCount(rows) {
   return rows.reduce((sum, row) => sum + FACILITY_TYPES.filter((type) => type.countOf(row) !== null).length, 0);
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot, now) {
+function requiredSource(inventory, snapshot, topologySnapshot) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.accessibilityAdmissionEvidence;
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
@@ -252,9 +251,7 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   validateGwangjuAccessibilitySnapshotIdentity(evidence.snapshotId, snapshot);
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
@@ -357,7 +354,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runGwangjuAccessibilityMaterializer(argv, { now = new Date() } = {}) {
+export async function runGwangjuAccessibilityMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, accessibilitySnapshot, topologySnapshot, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -370,8 +367,8 @@ export async function runGwangjuAccessibilityMaterializer(argv, { now = new Date
     accessibilitySnapshot,
     topologySnapshot,
     inventory,
-    now,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Gwangju accessibility materialized: stations=${accessibilitySnapshot.stationCount} facilities=${observedFacilityCount(accessibilitySnapshot.rows)}`);
 }

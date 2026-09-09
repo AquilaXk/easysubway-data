@@ -27,6 +27,8 @@ import { materializeGwangjuRouteMapPositions } from "./materialize-gwangju-route
 import { materializeRetainedGwangjuTestFixture } from "./gwangju-retained-test-fixture.mjs";
 import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route-map-positions.mjs";
 import { materializeSeoul9Phase1RouteMapPositions } from "./materialize-seoul9-phase1-route-map-positions.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
+import { daeguMembershipSnapshotIdentity } from "./materialize-daegu-timetable.mjs";
 
 const ITX_TOKEN = /(?:^|[^A-Z0-9])ITX(?:[_-]|$)/;
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -83,6 +85,50 @@ const LEGACY_ROUTE_SERVICE_ARTIFACT_EVIDENCE = Object.freeze({
   freshUntil: "2026-07-20T00:00:00.000Z",
   sourceIssue: 2116,
 });
+
+/** Projects only Daegu source evidence onto explicitly supplied retained inputs. */
+export function projectHistoricalDaeguMaterializeInventory({ inventory, topologySnapshots, timetableSnapshots, mappings }) {
+  const projected = structuredClone(inventory);
+  const rawMembership = source(projected, MOLIT_SOURCE_ID).admissionEvidence;
+  for (const config of DAEGU_LINES) {
+    const topology = topologySnapshots[config.lineNumber];
+    const timetable = timetableSnapshots[config.lineNumber];
+    const topologyId = daeguSourceSnapshotIdentity(topology);
+    const timetableId = daeguSourceSnapshotIdentity(timetable);
+    const topologySource = source(projected, topology.sourceId);
+    const timetableSource = source(projected, timetable.sourceId);
+    Object.assign(topologySource.topologyAdmissionEvidence, {
+      snapshotId: topologyId, snapshotPath: fixtureSnapshotPath(topologyId), capturedAt: topology.capturedAt,
+      freshUntil: topology.freshUntil, stationCount: topology.stationCount, edgeCount: topology.edgeCount,
+      depotExcludedCount: topology.depotExcludedCount, rawSha256: topology.rawSha256, contentSha256: topology.contentSha256,
+    });
+    Object.assign(timetableSource.scheduleAdmissionEvidence, {
+      snapshotId: timetableId, snapshotPath: fixtureSnapshotPath(timetableId), capturedAt: timetable.capturedAt,
+      freshUntil: timetable.freshUntil, rowCount: timetable.rowCount, departureCount: timetable.stopTimeCount,
+      tripCount: timetable.tripCount, stopTimeCount: timetable.stopTimeCount, rawSha256: timetable.rawSha256,
+      rowsSha256: timetable.tripsSha256, rawUpSha256: timetable.rawUpSha256, rawDownSha256: timetable.rawDownSha256,
+      tripsSha256: timetable.tripsSha256, dayLabelNormalizedCount: timetable.dayLabelNormalizedCount,
+      rolloverTripCount: timetable.rolloverTripCount, topologySourceId: topology.sourceId,
+      topologySnapshotId: topologyId, topologyContentSha256: topology.contentSha256, contentSha256: timetable.contentSha256,
+    });
+    const membershipId = `${MOLIT_SOURCE_ID}-daegu-line${config.lineNumber}-membership`;
+    const evidence = source(projected, membershipId).membershipAdmissionEvidence;
+    const mappingSha256 = sha256(JSON.stringify(mappings[config.lineNumber]));
+    const stationCodesSha256 = sha256(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)));
+    Object.assign(evidence, {
+      lineIds: [config.lineId], stationCount: topology.stationCount,
+      membershipSourceId: MOLIT_SOURCE_ID, membershipSourceRawSha256: rawMembership.rawSha256,
+      membershipSourceSnapshotSha256: mappings[config.lineNumber].sourceRawSha256,
+      mappingSha256, stationCodesSha256, stationCodeSourceId: topology.sourceId,
+      stationCodeSnapshotId: topologyId, stationCodeContentSha256: topology.contentSha256,
+      snapshotId: daeguMembershipSnapshotIdentity({
+        sourceId: membershipId, molitSnapshotId: rawMembership.snapshotId,
+        membershipSourceRawSha256: rawMembership.rawSha256, mappingSha256, stationCodesSha256,
+      }),
+    });
+  }
+  return projected;
+}
 
 function rejectItxReference(value, path = "fixture") {
   if (typeof value === "string") {
