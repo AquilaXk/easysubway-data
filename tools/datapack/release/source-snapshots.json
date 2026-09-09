@@ -67796,5 +67796,41 @@
       "licenseEvidenceHash": "057e89316465215d7bc0add5d28d4bddc7f10d3756970ff4d2def02c51838a1f"
     },
     "diffSummary": null
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "gwangju-transportation-accessibility",
+    "snapshotId": "gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909",
+    "previousSnapshotId": null,
+    "capturedAt": "2026-09-09T03:05:13.000Z",
+    "retrievedAt": "2026-09-09T03:05:13.000Z",
+    "sourceUpdatedAt": null,
+    "provider": "광주교통공사",
+    "rowCount": 20,
+    "coverageCount": 20,
+    "rawSha256": "0e48d767d88e120a86149cf5a5793f6dde946a5838979043a2618f669fb62225",
+    "contentSha256": "282cafd4a88f30f40a1973242c46c0273252eabf3db6494a706f3da24def47ae",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/gwangju-transportation-accessibility/20260909/093f433ffc325f81b1162cb9991b280d99c7c682b8507181b7855583e5202a9d.json",
+    "rawObjectSha256": "093f433ffc325f81b1162cb9991b280d99c7c682b8507181b7855583e5202a9d",
+    "rawReceiptSha256": "f606fc2cd3feb4f8baf499896da66e9856480875818486bff2af7efa0936196c",
+    "byteSize": 27481,
+    "freshUntil": "2026-09-10T03:05:13.000Z",
+    "freshnessExpiresAt": "2026-12-08T03:05:13.000Z",
+    "rawRetentionExpiresAt": "2026-12-08T03:05:13.000Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "a33e9c718eda9beb1693d98e2d78778f2dc866ccc46b3ea6d7038173d9cc6381",
+    "schemaFingerprint": "af73e91cb6395fd46e275b45d401673b07338581361f66b7fff281b84775360f",
+    "redactedRequestFingerprint": "178fab4f3006c91562d42e287eb30b3c0a9689400a970e659f34488d35230eed",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "0532458dc81590ad020987ddb34ef301ab96a86d1475325f94c8c956066f8b84"
+    },
+    "diffSummary": null
   }
 ]

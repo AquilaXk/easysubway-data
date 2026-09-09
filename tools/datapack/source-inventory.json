@@ -1724,7 +1724,7 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": false,
+      "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2026-07-24",
@@ -1773,14 +1773,14 @@
         "issue": 2479,
         "materializer": "tools/datapack/materialize-gwangju-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-accessibility.test.mjs",
-        "snapshotId": "gwangju-transportation-accessibility-d9625fc7964a2c921330d8d1c40e7be21c04f0680fc57130a3c34fae4c1488d8-20260724",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-d9625fc7964a2c921330d8d1c40e7be21c04f0680fc57130a3c34fae4c1488d8-20260724.json",
-        "capturedAt": "2026-07-24T03:00:00.000Z",
-        "freshUntil": "2026-07-25T03:00:00.000Z",
+        "snapshotId": "gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909.json",
+        "capturedAt": "2026-09-09T03:05:13.000Z",
+        "freshUntil": "2026-09-10T03:05:13.000Z",
         "stationCount": 20,
         "rowCount": 20,
         "facilityCount": 36,
-        "rawSha256": "3b2d88b3b20be4dfc5130def9122921b82498801ce19955b624bb95dd893f482",
+        "rawSha256": "0e48d767d88e120a86149cf5a5793f6dde946a5838979043a2618f669fb62225",
         "rowsSha256": "282cafd4a88f30f40a1973242c46c0273252eabf3db6494a706f3da24def47ae",
         "datasetIds": [
           "15041385",
@@ -1797,6 +1797,9 @@
             "lineId": "line-e57a361e8892"
           }
         ]
+      },
+      "admissionEvidence": {
+        "licenseEvidenceHash": "0532458dc81590ad020987ddb34ef301ab96a86d1475325f94c8c956066f8b84"
       }
     },
     {

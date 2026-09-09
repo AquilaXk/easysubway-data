@@ -42,7 +42,8 @@
         "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility",
         "daegu-transportation-accessibility",
-        "daejeon-transportation-accessibility"
+        "daejeon-transportation-accessibility",
+        "gwangju-transportation-accessibility"
       ],
       "examples": [
         "KRIC elevator",
