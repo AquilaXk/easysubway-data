@@ -80,6 +80,11 @@ export async function collectBusanAccessibility({
       stationCode: scope[index].stationCode,
       rawSha256,
     })))),
+    rawResponses: responses.map(({ rawSha256, bytesBase64 }, index) => ({
+      stationCode: scope[index].stationCode,
+      rawSha256,
+      bytesBase64,
+    })),
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
   };
@@ -105,6 +110,8 @@ async function collectResponse({ station, key, fetchImpl, sleepImpl }) {
   if (resultCode !== "00") {
     throw new Error(`Busan accessibility provider resultCode ${safeToken(resultCode ?? "missing")}; rawSha256=${rawSha256}`);
   }
+  // 원문 보존 시 응답에 반사된 인증키까지 발행하지 않도록 차단한다.
+  if (raw.includes(key)) throw new Error("Busan accessibility credential echo in response");
   const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(raw)?.[1];
   if (body == null) throw new Error(`Busan accessibility schema mismatch: response body; rawSha256=${rawSha256}`);
   const values = Object.fromEntries(RESPONSE_FIELDS.map((field) => [field, scalar(body, field)]));
@@ -124,6 +131,7 @@ async function collectResponse({ station, key, fetchImpl, sleepImpl }) {
   if (invalid.length > 0) throw new Error(`Busan accessibility schema mismatch: values=${invalid.join(",")}`);
   return {
     rawSha256,
+    bytesBase64: bytes.toString("base64"),
     responseEncoding,
     row: {
       stationCode: station.stationCode,

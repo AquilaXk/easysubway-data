@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -30,6 +31,7 @@ function response(stationName, values = FIELDS) {
 
 test("부산 accessibility collector는 topology 114개 역을 bounded fan-out한다", async () => {
   const requested = [];
+  const originalBytes = new Map();
   const secret = "never-print-service-key";
   const snapshot = await collectBusanAccessibility({
     serviceKey: secret,
@@ -39,7 +41,9 @@ test("부산 accessibility collector는 topology 114개 역을 bounded fan-out�
       const request = new URL(url);
       requested.push(request);
       const station = topology.scope.find(({ stationCode }) => stationCode === request.searchParams.get("scode"));
-      return response(station.stationName);
+      const result = response(station.stationName);
+      originalBytes.set(station.stationCode, Buffer.from(await result.clone().arrayBuffer()));
+      return result;
     },
   });
 
@@ -54,6 +58,15 @@ test("부산 accessibility collector는 topology 114개 역을 bounded fan-out�
   assert.equal(snapshot.credentialRedacted, true);
   assert.match(snapshot.rowsSha256, /^[a-f0-9]{64}$/);
   assert.match(snapshot.rawSha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(snapshot.rawResponses.map(({ stationCode }) => stationCode), snapshot.scope.map(({ stationCode }) => stationCode));
+  for (const retained of snapshot.rawResponses) {
+    const original = originalBytes.get(retained.stationCode);
+    assert.deepEqual(Buffer.from(retained.bytesBase64, "base64"), original);
+    assert.equal(retained.rawSha256, createHash("sha256").update(original).digest("hex"));
+  }
+  assert.equal(snapshot.rawSha256, createHash("sha256").update(JSON.stringify(
+    snapshot.rawResponses.map(({ stationCode, rawSha256 }) => ({ stationCode, rawSha256 })),
+  )).digest("hex"));
   assert.doesNotMatch(JSON.stringify(snapshot), new RegExp(secret));
   assert.deepEqual(snapshot.rows[0], {
     stationCode: topology.scope[0].stationCode,
@@ -99,6 +112,17 @@ test("부산 accessibility collector는 빈 count 필드를 0으로 정규화한
 
 test("부산 accessibility collector는 credential 없는 provider·transport 진단만 남긴다", async () => {
   const secret = "never-print-service-key";
+  await assert.rejects(collectBusanAccessibility({
+    serviceKey: secret,
+    stationScopes: topology.scope,
+    fetchImpl: async () => new Response((await response("역").text()).replace("정상", secret), {
+      headers: { "content-type": "application/xml" },
+    }),
+  }), (error) => {
+    assert.match(error.message, /credential echo/);
+    assert.doesNotMatch(error.message, new RegExp(secret));
+    return true;
+  });
   await assert.rejects(collectBusanAccessibility({
     serviceKey: secret,
     stationScopes: topology.scope,
