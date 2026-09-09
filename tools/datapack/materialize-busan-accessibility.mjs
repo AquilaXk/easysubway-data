@@ -260,13 +260,15 @@ function requiredSource(inventory, snapshot, topologySnapshot) {
 
 function validateTopologyLineage(pack, evidence, topologySnapshot, stations) {
   const hasTopology = pack.sourceInventory.some(({ id }) => id === TOPOLOGY_SOURCE_ID);
+  // 누적 topology는 canonical ID를 보존하므로 방향성 양 끝점으로 공식 edge를 결속한다.
+  const edgeKey = ({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`;
+  const compareEdges = (left, right) => edgeKey(left).localeCompare(edgeKey(right), "en");
   const actual = pack.networkEdges.filter(({ sourceId }) => sourceId === TOPOLOGY_SOURCE_ID)
-    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+    .sort(compareEdges);
   const expected = topologySnapshot.edges.map((edge) => {
     const from = stations.get(`${edge.lineId}:${edge.fromStationCode}`);
     const to = stations.get(`${edge.lineId}:${edge.toStationCode}`);
     return {
-      id: `edge-${edge.edgeId.replaceAll(":", "-")}`,
       fromNodeId: `${from}:${edge.lineId}`,
       toNodeId: `${to}:${edge.lineId}`,
       durationSeconds: edge.durationSeconds + edge.stoppingSeconds,
@@ -275,11 +277,15 @@ function validateTopologyLineage(pack, evidence, topologySnapshot, stations) {
       providerRecordHash: sha256(JSON.stringify(edge)),
       evidenceHash: evidence.topologyContentSha256,
     };
-  }).sort((left, right) => left.id.localeCompare(right.id, "en"));
+  }).sort(compareEdges);
   const comparable = actual.map((edge) => Object.fromEntries(
     Object.keys(expected[0]).map((key) => [key, edge[key]]),
   ));
-  if (!hasTopology || actual.length !== expected.length || JSON.stringify(comparable) !== JSON.stringify(expected)) {
+  if (!hasTopology || actual.length !== expected.length
+    || actual.some(({ id }) => typeof id !== "string" || id.length === 0)
+    || new Set(actual.map(({ id }) => id)).size !== actual.length
+    || new Set(actual.map(edgeKey)).size !== actual.length
+    || JSON.stringify(comparable) !== JSON.stringify(expected)) {
     throw new Error("Busan accessibility topology lineage mismatch");
   }
 }

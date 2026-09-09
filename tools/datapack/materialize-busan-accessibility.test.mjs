@@ -97,6 +97,23 @@ test("부산 접근성은 topology와 같은 역명 정규화를 사용하고 �
   assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
 });
 
+test("부산 접근성은 canonical edge ID를 보존하고 공식 edge 증거 변조는 거부한다", async () => {
+  const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
+  const edges = timetableFixture.packs[0].networkEdges.filter(({ sourceId }) =>
+    sourceId === topologySnapshot.sourceId);
+  for (const edge of edges) edge.id = `canonical-${edge.id}`;
+  const options = { baseFixture: timetableFixture, topologySnapshot, accessibilitySnapshot, inventory };
+  const result = materializeBusanAccessibility(options);
+  assert.deepEqual(result.packs[0].networkEdges.filter(({ sourceId }) =>
+    sourceId === topologySnapshot.sourceId), edges);
+  const originalHash = edges[0].providerRecordHash;
+  edges[0].providerRecordHash = "0".repeat(64);
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+  edges[0].providerRecordHash = originalHash;
+  edges[0].id = edges[1].id;
+  assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
+});
+
 test("부산 공식 114역 편의시설을 facility·evidence 342건으로 materialize한다", async () => {
   const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeBusanAccessibility({
