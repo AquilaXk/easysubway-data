@@ -204,6 +204,66 @@ test("native schedule admission binds a production materialization approval with
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(byteDrift), /inventory input bytes/);
 });
 
+test("native accessibility admission binds ledger content without generic approval fields", () => {
+  const input = fixture();
+  const source = input.inventory.sources[0];
+  const snapshot = input.sourceSnapshots[0];
+  delete source.admissionEvidence;
+  source.capabilities = { facility: { productionUseAllowed: true } };
+  Object.assign(snapshot, {
+    capturedAt: "2026-09-02T00:00:00.000Z",
+    contentSha256: "b".repeat(64),
+    rowCount: 2,
+    coverageCount: 2,
+  });
+  source.accessibilityAdmissionEvidence = {
+    issue: 454,
+    materializer: "tools/datapack/materialize-busan-accessibility.mjs",
+    verificationTest: "tools/datapack/materialize-busan-accessibility.test.mjs",
+    snapshotId: snapshot.snapshotId,
+    snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`,
+    capturedAt: snapshot.capturedAt,
+    freshUntil: "2026-09-04T00:00:00.000Z",
+    rawSha256: snapshot.rawSha256,
+    rowsSha256: snapshot.contentSha256,
+    rowCount: snapshot.rowCount,
+    stationCount: snapshot.coverageCount,
+    topologySourceId: "busan-route-topology",
+    topologySnapshotId: "topology-1",
+    topologyContentSha256: "d".repeat(64),
+  };
+  input.inputBytes.inventory = bytes(input.inventory);
+  input.inputBytes.sourceSnapshots = bytes(input.sourceSnapshots);
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(input));
+  const copy = () => ({ ...structuredClone(input),
+    inputBytes: Object.fromEntries(Object.entries(input.inputBytes).map(([key, value]) => [key, Buffer.from(value)])) });
+
+  const rawDrift = copy();
+  rawDrift.inventory.sources[0].accessibilityAdmissionEvidence.rawSha256 = "e".repeat(64);
+  rawDrift.inputBytes.inventory = bytes(rawDrift.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(rawDrift), /admission.*approval/);
+
+  const rowsDrift = copy();
+  rowsDrift.inventory.sources[0].accessibilityAdmissionEvidence.rowsSha256 = "e".repeat(64);
+  rowsDrift.inputBytes.inventory = bytes(rowsDrift.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(rowsDrift), /admission.*approval/);
+
+  const countDrift = copy();
+  countDrift.inventory.sources[0].accessibilityAdmissionEvidence.rowCount = 3;
+  countDrift.inputBytes.inventory = bytes(countDrift.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(countDrift), /admission.*approval/);
+
+  const missingCapability = copy();
+  delete missingCapability.inventory.sources[0].capabilities;
+  missingCapability.inputBytes.inventory = bytes(missingCapability.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(missingCapability), /admission.*approval/);
+
+  const mixedFlag = copy();
+  mixedFlag.inventory.sources[0].accessibilityAdmissionEvidence.decision = "APPROVED";
+  mixedFlag.inputBytes.inventory = bytes(mixedFlag.inventory);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(mixedFlag), /admission.*approval/);
+});
+
 test("#687 keeps enhancement heads non-blocking until their tier is promoted", () => {
   const unknownTier = fixture();
   unknownTier.targets.requiredSourceDomains[0].releaseTier = "LUNCH_REQUIRED";

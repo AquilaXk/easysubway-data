@@ -9,6 +9,7 @@ export const CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH =
 export const NATIVE_ADMISSION_KINDS = Object.freeze([
   "scheduleAdmissionEvidence",
   "topologyAdmissionEvidence",
+  "accessibilityAdmissionEvidence",
 ]);
 
 const INPUT_PATHS = Object.freeze({
@@ -147,6 +148,7 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
   if (matching.length === 0) throw new Error(`admission snapshot mismatch for ${sourceId}`);
 
   const approved = matching.filter(([kind, evidence]) => kind !== "scheduleAdmissionEvidence"
+    && kind !== "accessibilityAdmissionEvidence"
     && (evidence.decision === "APPROVED" || evidence.productionUseAllowed === true));
   const native = matching.map(([kind, evidence]) => ({
     kind,
@@ -229,12 +231,43 @@ function validNativeTopologyAdmission(source, evidence, snapshot, sourceId) {
   }
 }
 
+function validNativeAccessibilityAdmission(source, evidence, snapshot, sourceId) {
+  if (Object.hasOwn(evidence, "decision") || Object.hasOwn(evidence, "productionUseAllowed")) return false;
+  if (!hasNativeSourceAuthority(source)
+    || source.capabilities?.facility?.productionUseAllowed !== true) return false;
+  if (!Number.isInteger(evidence.issue) || evidence.issue <= 0
+    || typeof evidence.materializer !== "string" || evidence.materializer.length === 0
+    || typeof evidence.verificationTest !== "string" || evidence.verificationTest.length === 0
+    || evidence.snapshotPath !== `tools/datapack/sources/${snapshot.snapshotId}.json`
+    || evidence.snapshotId !== snapshot.snapshotId
+    || evidence.capturedAt !== snapshot.capturedAt
+    || evidence.rawSha256 !== snapshot.rawSha256
+    || evidence.rowsSha256 !== snapshot.contentSha256
+    || !SHA256.test(evidence.rawSha256 ?? "") || !SHA256.test(evidence.rowsSha256 ?? "")
+    || !SHA256.test(evidence.topologyContentSha256 ?? "")
+    || typeof evidence.topologySourceId !== "string" || evidence.topologySourceId.length === 0
+    || typeof evidence.topologySnapshotId !== "string" || evidence.topologySnapshotId.length === 0
+    || !Number.isInteger(evidence.rowCount) || evidence.rowCount <= 0
+    || !Number.isInteger(evidence.stationCount) || evidence.stationCount <= 0
+    || evidence.rowCount !== snapshot.rowCount || evidence.stationCount !== snapshot.coverageCount) {
+    return false;
+  }
+  try {
+    return instant(evidence.capturedAt, "accessibility admission capture")
+      < instant(evidence.freshUntil, "accessibility admission freshness");
+  } catch {
+    return false;
+  }
+}
+
 export function nativeAdmissionRecord({ source, sourceId, snapshot, kind, evidence }) {
   const valid = kind === "scheduleAdmissionEvidence"
     ? validNativeScheduleAdmission(source, evidence, snapshot, sourceId)
     : kind === "topologyAdmissionEvidence"
       ? validNativeTopologyAdmission(source, evidence, snapshot, sourceId)
-      : false;
+      : kind === "accessibilityAdmissionEvidence"
+        ? validNativeAccessibilityAdmission(source, evidence, snapshot, sourceId)
+        : false;
   return valid ? { kind, sha256: sha256(Buffer.from(canonical(evidence))) } : null;
 }
 
