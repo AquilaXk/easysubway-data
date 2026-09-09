@@ -46,6 +46,7 @@ import path from "node:path";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { parseArgs, requireArg, sortJson } from "./lib/ledger-admission-cli.mjs";
+import { inventoryCoverageFields } from "./report-coverage-gaps.mjs";
 
 export const DEFAULT_RESOLUTIONS_PATH =
   "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json";
@@ -512,7 +513,7 @@ function normalizeSource(source, targetIndex) {
     operatorIds: requiredStringArray(coverage.operatorIds, `${id}.coverageScope.operatorIds`),
     sourceDomains: requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`),
     lineIds: optionalStringArray(coverage.lineIds, `${id}.coverageScope.lineIds`),
-    fields: requiredStringArray(source.fieldsProvided ?? source.fields, `${id}.fieldsProvided`),
+    fields: requiredStringArray(inventoryCoverageFields(source), `${id}.fieldsProvided`),
   };
   // 게이트 validateKnownValues 대응. 오타 id를 조용한 매칭 실패(=과소 집계)로 흘리지 않고 fail closed한다.
   validateKnownValues(normalized.regionIds, targetIndex.regionIds, `${id}.coverageScope.regionIds`, "region");

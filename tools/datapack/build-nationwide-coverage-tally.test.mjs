@@ -540,6 +540,69 @@ test("route_graph_topology는 distance 없이 edge와 time을 제공하는 scope
   }
 });
 
+test("admitted Seoul derived route-map coverage", () => {
+  const routeMapFields = ["route_map_position", "route_map_label_polygon"];
+  const seoulLineIds = [
+    "line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4",
+    "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0",
+  ];
+  const targets = fixtureTargets({
+    requiredSourceDomains: [{
+      id: "route_map_positions",
+      releaseTier: "LAUNCH_REQUIRED",
+      requiredFields: routeMapFields,
+      blockingThreshold: { minimumOfficialFieldCoverageRatio: 1 },
+    }],
+    activeLineScopes: seoulLineIds.map((lineId) => ({
+      lineId, regionId: "capital", operatorId: "seoul-metro",
+    })),
+    regions: [{ id: "capital", displayName: "수도권", operatorIds: ["seoul-metro"] }],
+  });
+  const admittedSource = {
+    id: "seoul-metro-route-map-positions",
+    coverageScope: {
+      regionIds: ["capital"],
+      operatorIds: ["seoul-metro"],
+      lineIds: seoulLineIds,
+      sourceDomains: ["route_map_positions"],
+    },
+    fieldsProvided: ["line", "station_code", "station_name", "latitude", "longitude", "basis_date"],
+    productDerivedFields: ["route_map_position", "route_map_label_polygon", "route_map_line_track"],
+    routeMapAdmissionEvidence: {
+      currentLayoutAdmission: {
+        schemaVersion: 2,
+        artifactKind: "seoul-public-route-map-layout-admission",
+        status: "ADMITTED",
+        positionSnapshotId: "admitted-layout-snapshot",
+        layoutArtifactSha256: "a".repeat(64),
+      },
+    },
+  };
+
+  const admitted = buildFixtureLedger({
+    targets,
+    inventory: fixtureInventory([admittedSource]),
+    resolutions: fixtureResolutions(),
+  });
+  assert.ok(admitted.launchRequired.requirements.every(({ status }) => status === "INVENTORY_ADMITTED"));
+
+  const missing = buildFixtureLedger({
+    targets,
+    inventory: fixtureInventory([{
+      ...admittedSource,
+      routeMapAdmissionEvidence: {
+        currentLayoutAdmission: {
+          ...admittedSource.routeMapAdmissionEvidence.currentLayoutAdmission,
+          status: "REJECTED",
+        },
+      },
+    }]),
+    resolutions: fixtureResolutions(),
+  });
+  assert.ok(missing.launchRequired.requirements.every(({ status, missingKind }) =>
+    status === "MISSING" && missingKind === "NO_ADMITTED_SOURCE"));
+});
+
 test("빈 lineIds coverageScope는 와일드카드가 아니다", () => {
   const source = operatorAMembershipSource();
   delete source.coverageScope.lineIds;

@@ -9,6 +9,7 @@ import {
   nativeAdmissionRecordForHead,
   validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
+import { inventoryCoverageFields } from "./report-coverage-gaps.mjs";
 
 export const LEDGER_PATH = "tools/datapack/reports/nationwide-requirement-ownership-ledger.json";
 const INPUT_PATHS = {
@@ -168,7 +169,7 @@ export function buildNationwideRequirementOwnershipLedger(inputs) {
         const source = inventory.sources.find((candidate) => candidate.id === sourceId);
         if (!source || !strictSourceCovers(source, tallyRow)) throw new Error(`admitted source mismatch for ${key}: ${sourceId}`);
         admittedSources.push(source);
-        source.fieldsProvided.forEach((field) => providedFields.add(field));
+        inventoryCoverageFields(source).forEach((field) => providedFields.add(field));
       }
       if (providedFields.size < tallyRow.admittedFieldCount) throw new Error(`required fields mismatch for ${key}`);
     } else if (admittedSourceIds.length !== 0) throw new Error(`unexpected admitted source for ${key}`);

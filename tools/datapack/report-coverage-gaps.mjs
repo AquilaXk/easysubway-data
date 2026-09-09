@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 
 // 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
@@ -750,7 +751,7 @@ function coveredField(
       sourceIds = [...new Set(sourceIdsByPack.flat())].sort(compareStrings);
     }
   } else if (!requireProvenance) {
-    sourceIds = candidateSources.filter((source) => source.fields.includes(field)).map((source) => source.id).sort();
+    sourceIds = candidateSources.filter((source) => source.coverageFields.includes(field)).map((source) => source.id).sort();
   }
   return {
     field,
@@ -1003,6 +1004,7 @@ function normalizeSource(source, targetIndex) {
     sourceDomains,
     lineIds,
     fields,
+    coverageFields: inventoryCoverageFields(source),
     productDerivedFields: optionalStringArray(source.productDerivedFields, `${id}.productDerivedFields`),
     routeMapAdmissionEvidence: source.routeMapAdmissionEvidence,
     evidenceCategory: source.evidenceCategory,
@@ -1098,33 +1100,56 @@ function provenanceFieldIndex(provenance, candidateManifest, sources) {
   };
 }
 
-function isAdmittedGeneratedRouteMapGeometry(record, normalizedRecord, source) {
-  if (record.derivationKind !== "GENERATED"
-    || record.entityType !== "route_map_position"
-    || !["route_map_position", "route_map_label_polygon"].includes(record.field)
-    || normalizedRecord.coverageScope == null
-    || source?.id !== SEOUL_PUBLIC_ROUTE_MAP_SOURCE_ID
+export function admittedSeoulRouteMapCoverageFields(source) {
+  if (source?.id !== SEOUL_PUBLIC_ROUTE_MAP_SOURCE_ID
     || !sameStrings(source.regionIds, ["capital"])
     || !sameStrings(source.operatorIds, SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS)
     || !sameStrings(source.lineIds, SEOUL_PUBLIC_LINE_IDS)
     || !sameStrings(source.sourceDomains, ["route_map_positions"])
     || !sameStrings(source.fields, SEOUL_PUBLIC_PROVIDER_FIELDS)
-    || !sameStrings(source.productDerivedFields, SEOUL_PUBLIC_ROUTE_MAP_FIELDS)
-    || !source.productDerivedFields.includes(record.field)) {
-    return false;
+    || !sameStrings(source.productDerivedFields, SEOUL_PUBLIC_ROUTE_MAP_FIELDS)) {
+    return [];
   }
   const evidence = source.routeMapAdmissionEvidence;
   const admission = evidence?.currentLayoutAdmission;
-  return admission?.schemaVersion === 2
-    && admission.artifactKind === "seoul-public-route-map-layout-admission"
-    && admission.status === "ADMITTED"
-    && typeof admission.positionSnapshotId === "string"
-    && admission.positionSnapshotId.length > 0
-    && /^[a-f0-9]{64}$/u.test(admission.layoutArtifactSha256 ?? "")
-    && record.sourceSnapshotId === admission.positionSnapshotId
-    && record.evidenceHash === admission.layoutArtifactSha256
+  if (admission?.schemaVersion !== 2
+    || admission.artifactKind !== "seoul-public-route-map-layout-admission"
+    || admission.status !== "ADMITTED"
+    || typeof admission.positionSnapshotId !== "string"
+    || admission.positionSnapshotId.length === 0
+    || !/^[a-f0-9]{64}$/u.test(admission.layoutArtifactSha256 ?? "")) {
+    return [];
+  }
+  return ["route_map_position", "route_map_label_polygon"];
+}
+
+export function inventoryCoverageFields(source) {
+  const fields = requiredStringArray(source.fieldsProvided ?? source.fields, `${source.id}.fieldsProvided`);
+  const coverage = source.coverageScope;
+  return [...fields, ...admittedSeoulRouteMapCoverageFields({
+    id: source.id,
+    regionIds: coverage?.regionIds,
+    operatorIds: coverage?.operatorIds,
+    lineIds: coverage?.lineIds,
+    sourceDomains: coverage?.sourceDomains,
+    fields,
+    productDerivedFields: source.productDerivedFields,
+    routeMapAdmissionEvidence: source.routeMapAdmissionEvidence,
+  })];
+}
+
+function isAdmittedGeneratedRouteMapGeometry(record, normalizedRecord, source) {
+  const admittedFields = admittedSeoulRouteMapCoverageFields(source);
+  const evidence = source?.routeMapAdmissionEvidence;
+  const admission = evidence?.currentLayoutAdmission;
+  return record.derivationKind === "GENERATED"
+    && record.entityType === "route_map_position"
+    && admittedFields.includes(record.field)
+    && normalizedRecord.coverageScope != null
+    && record.sourceSnapshotId === admission?.positionSnapshotId
+    && record.evidenceHash === admission?.layoutArtifactSha256
     && /^[a-f0-9]{64}$/u.test(record.providerRecordHash ?? "")
-    && record.verifiedAt === evidence.capturedAt;
+    && record.verifiedAt === evidence?.capturedAt;
 }
 
 function sameStrings(actual, expected) {
@@ -1282,7 +1307,9 @@ function requireArg(args, key) {
   return value;
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
