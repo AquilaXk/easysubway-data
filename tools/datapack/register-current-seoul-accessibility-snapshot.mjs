@@ -173,7 +173,7 @@ function deriveReleaseEvidence({ snapshots, inventory, canonical, governance, fr
   nextSpec.sourceSnapshotSetHash = sha(JSON.stringify(releaseSnapshots)); nextSpec.sourceInventorySha256 = sha(JSON.stringify(inventory)); nextSpec.itxTopologyEvidenceSha256 = sha(itxBytes); nextSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(inventoryBytes);
   const specBytes = jsonBytes(nextSpec); const nextRequest = structuredClone(request); nextRequest.buildSpecSha256 = sha(specBytes); nextRequest.sourceSnapshotSetHash = nextSpec.sourceSnapshotSetHash;
   const nextHashes = structuredClone(hashes); nextHashes.sourceSnapshotSetHash.value = nextSpec.sourceSnapshotSetHash; nextHashes.sourceInventorySha256.value = nextSpec.sourceInventorySha256; nextHashes.fixturePath.sha256 = sha(canonicalBytes);
-  nextHashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
+  if (nextHashes.sourceSnapshots) nextHashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
   nextHashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({ sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, adminReviewRecordHash: bySource.get(snapshot.sourceId).admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: sha(JSON.stringify([snapshot])) }));
   return { specBytes, requestBytes: jsonBytes(nextRequest), hashBytes: jsonBytes(nextHashes) };
 }
@@ -235,8 +235,12 @@ export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ reposi
   nextCandidate.sourceSnapshotSetHash = sha(JSON.stringify(finalSelected));
   nextRequest.sourceSnapshotSetHash = nextCandidate.sourceSnapshotSetHash;
   nextHashEvidence.sourceSnapshotSetHash.value = nextCandidate.sourceSnapshotSetHash;
-  nextHashEvidence.sourceSnapshotSetHash.contract = `source별 head ${finalSelected.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
-  nextHashEvidence.sourceSnapshots.order = `release snapshot 순서: ${finalSelected.map(({ sourceId }) => sourceId).join(" → ")}`;
+  if (nextHashEvidence.sourceSnapshotSetHash?.contract) {
+    nextHashEvidence.sourceSnapshotSetHash.contract = `source별 head ${finalSelected.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
+  }
+  if (nextHashEvidence.sourceSnapshots) {
+    nextHashEvidence.sourceSnapshots.order = `release snapshot 순서: ${finalSelected.map(({ sourceId }) => sourceId).join(" → ")}`;
+  }
   nextHashEvidence.perSourceEvidence = finalSelected.map((entry) => ({ sourceId: entry.sourceId, snapshotId: entry.snapshotId, rawSha256: entry.rawSha256, adminReviewRecordHash: nextInventory.sources.find(({ id }) => id === entry.sourceId).admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: sha(JSON.stringify([entry])) }));
   const nextCandidateFinalBytes = jsonBytes(nextCandidate);
   nextRequest.buildSpecSha256 = sha(nextCandidateFinalBytes);

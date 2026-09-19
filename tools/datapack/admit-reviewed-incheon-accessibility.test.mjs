@@ -48,7 +48,7 @@ function sealedProductionSource(source, snapshot, topologySnapshot) {
 }
 
 async function input() {
-  const [elevatorBytes, escalatorBytes, wheelchairBytes, topology, freshnessPolicy, inventoryBytes, candidates, policy, candidateBuildSpecBytes, releaseRequestBytes, hashEvidenceBytes] = await Promise.all([
+  let [elevatorBytes, escalatorBytes, wheelchairBytes, topology, freshnessPolicy, inventoryBytes, candidates, policy, candidateBuildSpecBytes, releaseRequestBytes, hashEvidenceBytes] = await Promise.all([
     readFile(path.join(root, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15083478.csv")),
     readFile(path.join(root, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15010199.csv")),
     readFile(path.join(root, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv")),
@@ -74,6 +74,22 @@ async function input() {
   policy.sources = policy.sources.filter(({ sourceId }) => sourceId !== source.id);
   const licenseEvidenceHash = sha(JSON.stringify(sortJson(source.license)));
   const selected = candidateBuildSpec.sourceSnapshots.map(({ sourceId }) => inventory.sources.find(({ id }) => id === sourceId)).filter((item) => item?.admissionEvidence?.decision === "APPROVED");
+  const cohortSource = selected.find((item) => item.id === source.id);
+  if (cohortSource && candidateBuildSpec.approvedAliasLedgerHash !== cohortSource.admissionEvidence?.aliasLedgerHash) {
+    candidateBuildSpec.approvedAliasLedgerHash = cohortSource.admissionEvidence.aliasLedgerHash;
+    candidateBuildSpec.facilityEvidenceLedgerHash = cohortSource.admissionEvidence.facilityEvidenceLedgerHash;
+    candidateBuildSpec.routeEvidenceLedgerHash = cohortSource.admissionEvidence.routeEvidenceLedgerHash;
+    candidateBuildSpec.approvedOverrideSetHash = cohortSource.admissionEvidence.overrideHash;
+    hashEvidence.ledgerHashes.approvedAliasLedgerHash.value = candidateBuildSpec.approvedAliasLedgerHash;
+    hashEvidence.ledgerHashes.facilityEvidenceLedgerHash.value = candidateBuildSpec.facilityEvidenceLedgerHash;
+    hashEvidence.ledgerHashes.routeEvidenceLedgerHash.value = candidateBuildSpec.routeEvidenceLedgerHash;
+    hashEvidence.ledgerHashes.approvedOverrideSetHash.value = candidateBuildSpec.approvedOverrideSetHash;
+    releaseRequest.approvedLedgerHash = candidateBuildSpec.approvedAliasLedgerHash;
+    candidateBuildSpecBytes = Buffer.from(JSON.stringify(candidateBuildSpec));
+    releaseRequest.buildSpecSha256 = sha(candidateBuildSpecBytes);
+    releaseRequestBytes = Buffer.from(JSON.stringify(releaseRequest));
+    hashEvidenceBytes = Buffer.from(JSON.stringify(hashEvidence));
+  }
   const anchors = Object.fromEntries([
     ["aliasLedgerHash", candidateBuildSpec.approvedAliasLedgerHash],
     ["facilityEvidenceLedgerHash", candidateBuildSpec.facilityEvidenceLedgerHash],

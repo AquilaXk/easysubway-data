@@ -23,15 +23,16 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
-const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
-const sha = (value) => createHash("sha256").update(value).digest("hex");
-const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
 const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
+const sha = (value) => createHash("sha256").update(value).digest("hex");
+const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
+
 
 test("capital release heads cover every scope-selected source", () => {
   const required = [
@@ -209,7 +210,7 @@ async function selectedSourceHeadAt() {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
     return matches[0];
-  });
+  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));

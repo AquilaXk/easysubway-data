@@ -241,15 +241,18 @@ export async function buildNationwideCandidateSpec({
   const sourceSnapshots = selected.map((snapshot) => {
     const source = bySource.get(snapshot.sourceId);
     if (!source) throw new Error("candidate source inventory binding is required");
+    const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === snapshot.sourceId);
     const common = {
       snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri,
       rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
       schemaFingerprint: snapshot.schemaFingerprint, licenseStatus: snapshot.licenseStatus,
       redistributionAllowed: snapshot.redistributionAllowed,
-      snapshotStatus: snapshot.snapshotStatus, credentialRedacted: snapshot.credentialRedacted,
-      freshnessExpiresAt: snapshot.freshnessExpiresAt,
+      snapshotStatus: snapshot.snapshotStatus, credentialRedacted: snapshot.credentialRedacted ?? true,
+      freshnessExpiresAt: head?.freshnessExpiresAt ?? snapshot.freshnessExpiresAt,
+      ...(snapshot.rawRetentionExpiresAt ? { rawRetentionExpiresAt: snapshot.rawRetentionExpiresAt } : {}),
+      ...(snapshot.governancePolicyVersion ? { governancePolicyVersion: snapshot.governancePolicyVersion } : {}),
+      ...(snapshot.governancePolicySha256 ? { governancePolicySha256: snapshot.governancePolicySha256 } : {}),
     };
-    const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === snapshot.sourceId);
     const nativeRecord = nativeAdmissionRecordForHead({ source, head });
     if (source.admissionEvidence !== undefined && !nativeRecord) {
       const adminReviewRecordHash = source.admissionEvidence?.adminReviewRecordHash;

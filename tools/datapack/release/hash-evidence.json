@@ -1,72 +1,55 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "issue": 1996,
-  "builderGitSha": "b6984b53c7f836f908a9ccce7edbc0136bb5c591",
+  "builderGitSha": "d7fe7773528239e27e3788679d1b46b813cce046",
   "builderVersion": "build-datapack.mjs@26",
-  "productionScopeId": "capital_pilot_android_v1",
-  "truthfulnessRule": "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.",
+  "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
-    "note": "export-ledger-hashes.mjs 산출값 == #1992 admissionEvidence 기록값(완전 일치 검증 PASS).",
     "approvedAliasLedgerHash": {
-      "value": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+      "value": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
       "exporterKind": "alias",
-      "ledgerSource": "tools/datapack/fixtures/catalog-fixture.json#packs[].stationAliases"
+      "rowCount": 18,
+      "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+      "value": "a5576faa6c4fc3cb888dbd8e12e83ce1de0bb4fc83905ff4916907da6be0aecb",
       "exporterKind": "facility-evidence",
-      "ledgerSource": "catalog-fixture.json#packs[].facilities"
+      "rowCount": 221,
+      "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "routeEvidenceLedgerHash": {
-      "value": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+      "value": "f98414c138546377f7ea4f2d3dfa1f23036077e7f7679d670ed22d1fced8c215",
       "exporterKind": "route-evidence",
-      "ledgerSource": "catalog-fixture.json#packs[].networkEdges"
+      "rowCount": 2198,
+      "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "approvedOverrideSetHash": {
       "value": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
       "exporterKind": "override",
+      "rowCount": 0,
       "ledgerSource": "tools/datapack/fixtures/admin-review-overrides.json"
-    },
-    "reproductionCommands": [
-      "node tools/datapack/export-ledger-hashes.mjs --kind alias --fixture tools/datapack/fixtures/catalog-fixture.json",
-      "node tools/datapack/export-ledger-hashes.mjs --kind facility-evidence --fixture tools/datapack/fixtures/catalog-fixture.json",
-      "node tools/datapack/export-ledger-hashes.mjs --kind route-evidence --fixture tools/datapack/fixtures/catalog-fixture.json",
-      "node tools/datapack/export-ledger-hashes.mjs --kind override --overrides tools/datapack/fixtures/admin-review-overrides.json"
-    ]
-  },
-  "sourceSnapshots": {
-    "note": "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.",
-    "order": "release snapshot ledger 순서: kric-subway-timetable → seoulmetro-station-line-info → seoul-metro-transfer-distance-duration → seoul-metro-route-map-positions → molit-urban-rail-full-route → incheon-transit-accessibility → kric-station-convenience-standard → seoul-metro-accessibility",
-    "committedVerificationCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');const e=require('./tools/datapack/release/hash-evidence.json'),v=e.perSourceEvidence;if(!Array.isArray(v)||v.length!==r.length)throw new Error('source snapshot evidence count mismatch');for(const [i,n] of r.entries()){const q=v[i],h=c.createHash('sha256').update(JSON.stringify([n])).digest('hex');if(!q||q.sourceId!==n.sourceId||q.snapshotId!==n.snapshotId)throw new Error('source snapshot evidence order or identity mismatch: '+n.sourceId);if(q.perSourceSnapshotSetHash!==h)throw new Error('source snapshot evidence hash mismatch: '+n.sourceId)}})\"",
-    "timetableEvidenceCommand": "node -e \"const s=require('./tools/datapack/release/source-snapshots.json').find(n=>n.sourceId==='kric-subway-timetable'),i=require('./tools/datapack/source-inventory.json').sources.find(n=>n.id==='kric-subway-timetable').admissionEvidence,p=require('./tools/datapack/inputs/capital-pilot-production-source-input.json').scheduleProvenance;if(!(s&&i&&p&&s.snapshotId===i.snapshotId&&s.snapshotId===p.sourceSnapshotId&&s.rawSha256===i.rawSha256&&s.schemaFingerprint===i.schemaFingerprint))throw new Error('timetable snapshot evidence mismatch')\"",
-    "specRowRawSha256Note": "build-spec projections use the selected official ledger rawSha256 (the OCI object hash); observation snapshot internal composite/canonical hashes remain separately bound in the tracked snapshot and admission evidence.",
-    "governanceOverlayNote": "retained legacy root 5종과 timetable의 원천 identity를 유지하고 신규 접근성 snapshot 2종을 추가했다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생하며 validator가 임의 연장을 차단한다."
+    }
   },
   "sourceSnapshotSetHash": {
-    "value": "a1638b3df8e92c59db8525b68d687580177345cc983a22645f60833f52322fb0",
-    "contract": "source별 head 8종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
-    "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto');const s=require('./tools/datapack/release/source-snapshots.json'),b=require('./tools/datapack/release/candidate-build-spec.json'),i=b.sourceSnapshotIds;if(!Array.isArray(i)||new Set(i).size!==i.length)throw new Error('candidate snapshot IDs are invalid');const h=validateLineage(s).headsBySource,p=i.map(id=>{const n=s.filter(x=>x.snapshotId===id);if(n.length!==1||h[n[0].sourceId]!==id)throw new Error('candidate source snapshot mismatch: '+id);return n[0]});if(new Set(p.map(x=>x.sourceId)).size!==p.length)throw new Error('candidate source snapshots are not unique');const k=new Set(i),r=s.filter(x=>k.has(x.snapshotId));if(r.length!==p.length)throw new Error('candidate ledger selection mismatch');if(!Array.isArray(b.sourceSnapshots)||b.sourceSnapshots.length!==p.length||b.sourceSnapshots.some((x,n)=>x.sourceId!==p[n].sourceId||x.snapshotId!==p[n].snapshotId))throw new Error('candidate source projection mismatch');console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
+    "value": "a7b44bed6999142d6b716814a22071f890af2b341e2f27d898ebeb2e55d5716f"
   },
   "sourceInventorySha256": {
-    "value": "dd7bcd9cf13c8e3287ff6eaaad2b90dec2d73de29b67274d13a8eeea8bad55fd",
-    "contract": "run-source-admission-pipeline.mjs의 공식 sha256(JSON.stringify(admittedInventory)) 계약. 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리와 동일 파일.",
-    "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
+    "value": "d24cc6b111b54c9d83f1edba1b4f77870c86257ddbf004ff9f1e33418e43db86"
   },
   "fixturePath": {
-    "value": "tools/datapack/release/capital-production-canonical-pack.json",
-    "sha256": "dee23f867479e996400f2248fb2e1918f78b38f9d42729dc79c671a3b3a71e36",
-    "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, 2c72677b builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
-    "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
+    "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
+    "sha256": "ddfdf6e2d29e7a2c52823830564812a57367a8deb0182c636a061338ea57254b"
+  },
+  "overrides": {
+    "path": "tools/datapack/fixtures/admin-review-overrides.json",
+    "sha256": "930fad95bb7871e915cde1e5173f9c8700df369e5908250c18d820c356433707"
   },
   "identifiers": {
     "candidateId": {
-      "value": "capital-pilot-candidate-20260830",
-      "note": "파일 기반 경로는 backend candidate 행을 우회하므로 리포에 고정 명명 계약 없음. fixture 선례(capital-pilot-candidate-fixture)+snapshot 날짜 관례로 명명. release-request.candidateId와 동일(자체 정합)."
+      "value": "nationwide-candidate-20260909"
     },
     "approvalId": {
-      "value": "release-request-capital-pilot-candidate-20260830-9cc27ada3cceca402264005d588157b8810df561bb4dfe6ca10fb0c66dad47be",
-      "note": "Recorded release authorization ID; mirrored in release-request and must match dispatch. Exact build-spec identity is bound separately by release-request.buildSpecSha256."
+      "value": "release-request-nationwide-candidate-20260909"
     }
   },
   "perSourceEvidence": [
@@ -125,6 +108,234 @@
       "rawSha256": "14d6c90b5e8762236ad3312465212680b78f100410608fbefd20a40d75c304b2",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "perSourceSnapshotSetHash": "9fab56ad7bfa7dc23b42bac187df22a548d87ac9678e88aaf778e31090bf28c0"
+    },
+    {
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20260904",
+      "rawSha256": "6734a85960a9c14c177f1df6754f764fadfd44a9e2c2627ce77d771b75208d18",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "4cb0c60aaae1c6f462a6015cc2e4b36c13492afe69553fffcb915367a4d53f5b"
+        }
+      ],
+      "perSourceSnapshotSetHash": "fa58d4f1ad208425736ed3ecfcb4a753069461a508a10d27be47339772b98c49"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "snapshotId": "kric-nationwide-timetable-file-b32951f497b40b973c7bde2c5fb6f00e3bdad278eaef28f59ea10326fb7f71b2",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "c2d132f8584f42ce94b70497c03b4a051064e174ca90c76c926138412d7c2f5f"
+        }
+      ],
+      "perSourceSnapshotSetHash": "0df4963fadfeb7288ecf9b9e761228c0fa019bc164f1982d11a963d7de022719"
+    },
+    {
+      "sourceId": "korail-metropolitan-timetable-file",
+      "snapshotId": "korail-metropolitan-timetable-file-8e367fc3866ad341d02b6bb4986da5d8dc2c2d7f5fbf406e54671aa6c6ccf42f",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "a869ae7c407647b1ed0e430ebfcd1ca111ed008e4b3abbd9242d64a05565b48a"
+        }
+      ],
+      "perSourceSnapshotSetHash": "1cc4a06b62338560e1987161332706d31b3a484138e813bf53b6cf2a7000367c"
+    },
+    {
+      "sourceId": "korail-metropolitan-planned-timetable",
+      "snapshotId": "korail-metropolitan-planned-timetable-0ca60bd0f21f25bb5b517ac6abc1bcb773e0ec1186cd17c09d4bc2c7c53f3793",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "d4361f1f0fdb6f17573c280134093f62fb9683f1d5c7154ba7eefe3ac7bdc871"
+        }
+      ],
+      "perSourceSnapshotSetHash": "e79c1729f0cee254a04edeb212c529d0de467d3f8e00349e9cdb452aecf0c9c0"
+    },
+    {
+      "sourceId": "gwangju-transportation-route-topology",
+      "snapshotId": "gwangju-transportation-route-topology-6c460d45bd887419d324d5a4f3389f21e7d2f34c9643dba5aeb4b6653692c81b",
+      "rawSha256": "6759e59ee4b980081cf3345b7164a52c02a990918a1211f0eed173c3faf97e9c",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "dfbd4a75047103b14478a8995a3a097753bf058f1984d11c70a5f699ebdea96f"
+        }
+      ],
+      "perSourceSnapshotSetHash": "76734b4daf7b55a05bc569375eefb66e4ab7937920cd8414fa0fa6e4820058f6"
+    },
+    {
+      "sourceId": "busan-transportation-route-topology",
+      "snapshotId": "busan-transportation-route-topology-a67adce9baad5d24329e57acba34aa85d21134261f70bc599b699980ccbe42c6",
+      "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "0925488bcf6ce32ca60de187d977d77d09edac4f20cd7b90e241512cf88bedab"
+        }
+      ],
+      "perSourceSnapshotSetHash": "82e8adebb6427925a673453d53d877a2aa501b0b533ddbf9381af32bfb4624f1"
+    },
+    {
+      "sourceId": "daejeon-station-distance-fare",
+      "snapshotId": "daejeon-station-distance-fare-8ad2f0ce04aff883391c84df3d13b78a59e17434246054416f26fc8a22d8bab7",
+      "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "3313f158f2d28144274d1cfb0ef1be59c262d5272e921bb7e7abe7b3a1243fbc"
+        }
+      ],
+      "perSourceSnapshotSetHash": "d9dab33d3dce4249581e69bbaa774d677286937cd5d70a0d4ccdebb9971a6fe6"
+    },
+    {
+      "sourceId": "daejeon-train-timetable",
+      "snapshotId": "daejeon-train-timetable-20260909",
+      "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "18c8a1c6995eebb9b5d1a116cf6603df6d76c2ac5bec7d4ffb0afb3ba6cc9f4e"
+        }
+      ],
+      "perSourceSnapshotSetHash": "a64f750f97542aff03adf612c6eafcc0db92ee8a8654afbad4961b5af7722941"
+    },
+    {
+      "sourceId": "busan-transportation-timetable",
+      "snapshotId": "busan-transportation-timetable-20260909",
+      "rawSha256": "a05cfa01678de1ade026230dbdb3f6280c1d77c8d8ad480ec0ef9cd5ede8e54a",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "d447d7c2044028321cad1c97e2aa34caa89468811e65d11b79ab3cb33bafc34c"
+        }
+      ],
+      "perSourceSnapshotSetHash": "645604ff19ee03e84c3eeadd1fde5f5e3756062edb16b9652c86f25ff406d39a"
+    },
+    {
+      "sourceId": "daegu-line1-route-topology",
+      "snapshotId": "daegu-line1-route-topology-8be48b14cb0c7ea68427f5086a880817d5d05e8de1993d4f8f977a1d9e0294f5",
+      "rawSha256": "29398e8792899bc614c8e6563b0f4eaf1fec5182668b89d29045409395aae5c5",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "af93a69beafac13e249678099f1a5e934bb9ad24b846b918b4cb0409dde84d52"
+        }
+      ],
+      "perSourceSnapshotSetHash": "8f5e88ff561dd10cb30349c71252c85e036b1c661062b3c759f9a6e07513f7f6"
+    },
+    {
+      "sourceId": "daegu-line1-train-timetable",
+      "snapshotId": "daegu-line1-train-timetable-f923a86097012cd0d0b76e59599790fb4ec4756269fb0afd293ac9683c31f77c",
+      "rawSha256": "98fcb58f09a9e4f57d25ec853de05f9911a0ba01e0d184e57fe9b209d2d8c671",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "695592f785acd3e49008fb27ee9d58d6fce66446ba6aed72591309fd94cbcc7b"
+        }
+      ],
+      "perSourceSnapshotSetHash": "8b57682ac7aa24c9b09a51afd05e7575a1c7ac53af19d9cc0ddec142b99c08ac"
+    },
+    {
+      "sourceId": "daegu-line2-route-topology",
+      "snapshotId": "daegu-line2-route-topology-fca00bd7214a45012da99aae67c56c2c09f0ebd2020036f837e1394d22947c21",
+      "rawSha256": "80ea59d739c3a327e1242c67ae9b400f4d393b8acd202ec4a26e9e737f1123c0",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "0053ae4d055f79a99b220b1ebe381205784b1caaa9112ca054a5d830c8d2a8f4"
+        }
+      ],
+      "perSourceSnapshotSetHash": "45abec858a9a6fe81d3dbf2af9dc49b35c574fc04eebdba9e5f6189237bc02be"
+    },
+    {
+      "sourceId": "daegu-line2-train-timetable",
+      "snapshotId": "daegu-line2-train-timetable-798b98f01d9803c2dbe148c6864a876ef991401f19105f711722740a8e5f8215",
+      "rawSha256": "1639bc648e4fbe02cfadc007a6c9c89801494bcc34eaefe28dd3aa5639080fcc",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "7b656db719b72dc9b9d613cea9dba8441f1b80ec4284b56a4c4609f6d6f4e419"
+        }
+      ],
+      "perSourceSnapshotSetHash": "ac05361705f0aa6e414cef16b255ad9232090643c237c9e8c15c7d3a37aa60b6"
+    },
+    {
+      "sourceId": "daegu-line3-route-topology",
+      "snapshotId": "daegu-line3-route-topology-ff9ac7985ddb01ec23e9e12d39cea06028560db55c3692a6b02c30712f994a5d",
+      "rawSha256": "844329649f860449b84e34e2af3841a16387fd39c9b313593bfc850f479eddf7",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "c41beb3840101ae997dbd521c78ca621c225ac9ef52783eb89e1bbb93463dd58"
+        }
+      ],
+      "perSourceSnapshotSetHash": "1d1b8a2a95c6b99802d7b6840ebc7772e8171130e934e6b49cfb413ea27acc4b"
+    },
+    {
+      "sourceId": "daegu-line3-train-timetable",
+      "snapshotId": "daegu-line3-train-timetable-9763cdb46b4b2a7ab6ae24f607bba79206763a7329a68b86d16d12f2622d3100",
+      "rawSha256": "4d80acce97c2c474a2279561b1fc9662762f81e237b2dd02fb481fb2f30b2f61",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "f7a66e67340156051ebdc67e02f0ebec27ece494b553ac5fa75c2dbcb8d2b360"
+        }
+      ],
+      "perSourceSnapshotSetHash": "0ffad4ee2716d7ff111d344dbeddf929490027e8f4c84a5c144736a60c7e78f6"
+    },
+    {
+      "sourceId": "daegu-transportation-accessibility",
+      "snapshotId": "daegu-transportation-accessibility-25276f4f6e48ab8c6ffca6af833af14ad33fd86777af9d3376eed4b6a77fef9e-20260909",
+      "rawSha256": "c49fdbe199b9aae0ef52a4fa977be0d5d464b892abd1339d5a890c738bf3659e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "7e7571af75ad0f4001a55fdc1735d8b1d67ac91309c2090de97e119328e1db7a"
+        }
+      ],
+      "perSourceSnapshotSetHash": "3c4071fafe6615aac5324aec213376d8d3c2deb0b32f451e69ef48e1222c2ad8"
+    },
+    {
+      "sourceId": "daejeon-transportation-accessibility",
+      "snapshotId": "daejeon-transportation-accessibility-31ef85c5ac5d279d7322c028e05f7be16e6c5a794aa313aef314eef076b61426-20260909",
+      "rawSha256": "af14438cb984fedf1ce93c6b38e852a828d3eb9980c88afb71bdf5fafb8fe082",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "e82156661e4e32a9ef350ae279bc6216bd5bd3c2f0af5d8f289e5fd7bddfa237"
+        }
+      ],
+      "perSourceSnapshotSetHash": "8321238ffb72b7b479bb1c407d2c3ad4256192ceff7d9a778e37d4bd78eaee32"
+    },
+    {
+      "sourceId": "gwangju-transportation-accessibility",
+      "snapshotId": "gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909",
+      "rawSha256": "0e48d767d88e120a86149cf5a5793f6dde946a5838979043a2618f669fb62225",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "51a4a5a705158bc32a492025f29c255c4c19fe23cbd9942d3fa49f00238a3288"
+        }
+      ],
+      "perSourceSnapshotSetHash": "bc22d226c26183b2008b22ecc99ccb79d271a78317bdff1b3107d497b10e3ecd"
+    },
+    {
+      "sourceId": "busan-transportation-accessibility",
+      "snapshotId": "busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909",
+      "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
+      "admissionRecordSha256s": [
+        {
+          "kind": "accessibilityAdmissionEvidence",
+          "sha256": "285f18ca0a76a75e2c1b28c76bb156b14a2a74220676668c629cdd402679bdc6"
+        }
+      ],
+      "perSourceSnapshotSetHash": "8d4996741761b55f47b2aa1690a57e7262494b637460120b44de7cec7f9f2834"
     }
   ],
   "officialOdFareEvidence": {
@@ -162,9 +373,5 @@
         "childCashFare": 750
       }
     ]
-  },
-  "buildDryRun": {
-    "result": "PASS — #244 candidate-build-spec로 capital@1을 생성했다. searchable station 947, facility 4, station evidence 8이며 gzip sha256=095937768fe9aeed9297b7f02848d3237f2cb9e00cf447a29adeefa96d1a26ac, sqlite sha256=d3d8e0fc226b2e5dcc3ffad8119138d056f544b17c790d23911df4f63ec5430f, expiresAt=2026-08-14T15:06:46.000Z다.",
-    "gateResolution": "KRIC stationCnvFacl standard snapshot은 2개 역의 elevator 4건과 ES/WCLF 명시적 부재를 증명하고, 서울교통공사 full snapshot은 2개 상태 probe를 제공한다. ENTRY/EXIT route availability는 추론하지 않으며 route-relevant edge 평가는 #2611에서 수행한다."
   }
 }

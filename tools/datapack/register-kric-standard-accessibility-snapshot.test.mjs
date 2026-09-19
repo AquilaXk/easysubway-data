@@ -21,6 +21,11 @@ const registryPaths = [
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
 ];
+const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
 const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
 const seoulSnapshotPath = await selectedSnapshotPath("seoul-metro-accessibility");
 const governancePolicyPath = "tools/datapack/source-governance-policy.json";
@@ -339,7 +344,7 @@ async function selectedSourceHeadAt() {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
     return matches[0];
-  });
+  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));

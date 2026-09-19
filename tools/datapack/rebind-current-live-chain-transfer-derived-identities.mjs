@@ -129,7 +129,7 @@ export function currentReleaseSnapshots(candidate, snapshots, { productionScopeB
       || projections[index]?.snapshotId !== ids[index])
     || new Set(requiredSourceIds).size !== candidateSourceIds.length
     || candidateSourceIds.some((sourceId) => !requiredSourceIds.includes(sourceId))
-    || candidateSourceIds.at(-1) !== SOURCE
+    || !candidateSourceIds.includes(SOURCE)
     || !Array.isArray(snapshots) || snapshots.some((snapshot) => typeof snapshot?.snapshotId !== "string" || snapshot.snapshotId === "")
     || new Set(snapshots.map(({ snapshotId }) => snapshotId)).size !== snapshots.length) throw new Error("current source sequence is not exact");
   const orderedRows = ids.map((snapshotId, index) => {
@@ -225,7 +225,7 @@ export function assertCurrentLiveChainTransferIdentity(candidate, inventory, sna
   const row = snapshots.find(({ snapshotId }) => snapshotId === projection?.snapshotId);
   const source = inventory.sources?.find(({ id }) => id === SOURCE);
   const admission = source?.transferAdmissionEvidence;
-  if (!projection || !row || !source || candidate.sourceSnapshotIds.at(-1) !== row.snapshotId
+  if (!projection || !row || !source || !candidate.sourceSnapshotIds?.includes(row.snapshotId)
     || row.sourceId !== SOURCE || source.requiredForProductionPack !== true || !admission
     || admission.snapshotId !== row.snapshotId || admission.snapshotPath !== `tools/datapack/sources/${row.snapshotId}.json`
     || admission.snapshotFileSha256 !== sha256(descriptorBytes)

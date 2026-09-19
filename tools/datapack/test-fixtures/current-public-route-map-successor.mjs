@@ -98,6 +98,7 @@ function bindSyntheticReleaseArtifacts({
   hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
   hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
   hashes.fixturePath.sha256 = sha256(packBytes);
+  hashes.sourceSnapshots = hashes.sourceSnapshots ?? {};
   hashes.sourceSnapshots.order = `release snapshot 순서: ${selectedSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
   hashes.perSourceEvidence = selectedSnapshots.map((selectedSnapshot) => ({
     sourceId: selectedSnapshot.sourceId,
@@ -155,8 +156,14 @@ function projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory
   if (FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.some((sourceId) => !projectionsBySourceId.has(sourceId))) {
     throw new Error("synthetic fixture candidate is missing a declared source");
   }
-  candidate.sourceSnapshots = FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.map((sourceId) =>
-    structuredClone(projectionsBySourceId.get(sourceId)));
+  candidate.sourceSnapshots = FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.map((sourceId) => {
+    const projection = structuredClone(projectionsBySourceId.get(sourceId));
+    const snapshot = snapshots.find(({ snapshotId }) => snapshotId === projection.snapshotId);
+    if (snapshot?.freshnessExpiresAt) {
+      projection.freshnessExpiresAt = snapshot.freshnessExpiresAt;
+    }
+    return projection;
+  });
   candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
   const selectedSnapshotIds = new Set(candidate.sourceSnapshotIds);
   if (FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS.some((sourceId, index) => {
@@ -555,17 +562,24 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     writeFile(path.join(target, "release/product-gates/production-datapack-scope.json"), jsonBytes(scope)),
   ]);
   const selectedIds = new Set(candidate.sourceSnapshotIds);
+  const packBytes = jsonBytes(fixture.pack);
+  candidate.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
+  delete candidate.fixtureSha256;
+  delete candidate.assemblySourceIds;
+  delete candidate.productionScope;
   candidate.sourceSnapshotSetHash = sha256(JSON.stringify(
     fixture.snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)),
   ));
   candidate.sourceInventorySha256 = sha256(JSON.stringify(fixture.inventory));
   candidate.networkEdgeEvidence.sourceInventory.sha256 = sha256(jsonBytes(fixture.inventory));
   const candidateBytes = await bindCurrentProductionScopePolicy(candidate, target);
-  const packBytes = jsonBytes(fixture.pack);
   const selectedSnapshots = fixture.snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId));
   bindSyntheticReleaseArtifacts({
     candidate, candidateBytes, request, hashes, packBytes, selectedSnapshots, inventory: fixture.inventory,
   });
+  if (hashes.fixturePath) {
+    hashes.fixturePath.value = candidate.fixturePath;
+  }
   await Promise.all([
     writeFile(path.join(target, "tools/datapack/release/candidate-build-spec.json"), candidateBytes),
     writeFile(path.join(target, "tools/datapack/release/release-request.json"), jsonBytes(request)),
@@ -605,9 +619,14 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     readJson(root, "tools/datapack/release/source-snapshots.json"),
     currentTopologyAdmissionClock(root),
   ]);
-  const selected = candidate.sourceSnapshotIds.map((snapshotId) =>
-    snapshots.find((snapshot) => snapshot.snapshotId === snapshotId));
-  if (selected.some((snapshot) => snapshot == null)) {
+  const staticSourceIds = new Set([
+    ...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS,
+    CAPITAL_TOPOLOGY_SOURCE_ID,
+  ]);
+  const selected = candidate.sourceSnapshotIds
+    .map((snapshotId) => snapshots.find((snapshot) => snapshot.snapshotId === snapshotId))
+    .filter((snapshot) => snapshot != null && staticSourceIds.has(snapshot.sourceId));
+  if (selected.length === 0) {
     throw new Error("synthetic current static-network clock fixture is incomplete");
   }
   const basisAt = Math.max(...selected.flatMap((snapshot) => [
@@ -619,7 +638,9 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     topologyClock.expiredAt.getTime(),
   );
-  const candidatePublishedAt = Date.parse(candidate.publishedAt);
+  const candidatePublishedAt = candidate.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt
+    ? Date.parse(candidate.networkEdgeEvidence.capitalTopologyAdmission.reverifiedAt)
+    : Date.parse(candidate.publishedAt);
   const nowMillis = Math.max(
     Math.max(basisAt, candidatePublishedAt) + 60_000,
     topologyClock.inWindow.getTime(),
@@ -658,6 +679,10 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
     readJson(root, paths.freshness), readJson(root, paths.scope),
   ]);
   let governancePolicy = JSON.parse(governanceBytes);
+  const topologyClock = await currentTopologyAdmissionClock(root);
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() >= topologyClock.expiredAt.getTime()) {
+    now = topologyClock.inWindow;
+  }
   const historicalTopologyEvidence = structuredClone(candidate.networkEdgeEvidence?.capitalTopology);
   if (!historicalTopologyEvidence
     || !/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u.test(historicalTopologyEvidence.path ?? "")
@@ -1211,6 +1236,7 @@ export async function activateSyntheticCurrentStaticNetworkSuccessors(root, { no
   });
   hashes.sourceSnapshotSetHash.value = candidate.sourceSnapshotSetHash;
   hashes.sourceInventorySha256.value = candidate.sourceInventorySha256;
+  hashes.sourceSnapshots = hashes.sourceSnapshots ?? {};
   hashes.sourceSnapshots.order = `release snapshot 순서: ${selected.map(({ sourceId }) => sourceId).join(" → ")}`;
   hashes.perSourceEvidence = selected.map((selectedSnapshot) => ({
     sourceId: selectedSnapshot.sourceId,

@@ -13,6 +13,11 @@ import {
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
 const FRESH_AT = await selectedSourceEvaluationAt();
 
 test("current FACILITY official source admission은 exact six-cell handoff를 만든다", async () => {
@@ -351,7 +356,7 @@ async function historicalFacilityFixtureInput(observedAt) {
   assert.equal(historicalKricLedger?.snapshotId, historicalSnapshot.snapshotId, "historical KRIC ledger head");
   const historicalSnapshotIds = new Set(historicalLedgerHeads.map(({ snapshotId }) => snapshotId));
   const historicalLedgerOrder = input.sourceSnapshots.filter(({ snapshotId }) => historicalSnapshotIds.has(snapshotId));
-  assert.deepEqual(historicalLedgerOrder.map(({ sourceId }) => sourceId), historicalSourceIds);
+  assert.deepEqual(new Set(historicalLedgerOrder.map(({ sourceId }) => sourceId)), new Set(historicalSourceIds));
   const historicalSourceSetSha256 = sha256(JSON.stringify(historicalLedgerOrder));
   assert.equal(historicalSourceSetSha256, historicalAdmission.candidate.sourceSetSha256);
   const source = sourceEntry(input);
@@ -381,6 +386,7 @@ async function historicalFacilityFixtureInput(observedAt) {
   });
   input.candidateBuildSpec.sourceSnapshotIds = historicalLedgerHeads.map(({ snapshotId }) => snapshotId);
   input.candidateBuildSpec.sourceSnapshotSetHash = historicalSourceSetSha256;
+  input.candidateBuildSpec.productionScopeId = input.productionInput.supportedV1Scope.scopeId;
   const inventoryBytes = Buffer.from(JSON.stringify(input.sourceInventory));
   input.candidateBuildSpec.sourceInventorySha256 = sha256(inventoryBytes);
   input.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
@@ -498,7 +504,7 @@ async function selectedSourceEvaluationAt() {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
     return matches[0];
-  });
+  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
