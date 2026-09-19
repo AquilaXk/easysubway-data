@@ -4,12 +4,13 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/8b09a017adca69fb76a68205835dfea6586ddf80/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/70e91a0e7659dfb72a06a767f6cb1fde8a1e4197/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
 ];
 const staticAccessibilitySourceIds = [
+  "incheon-transit-accessibility",
   "kric-station-convenience-standard",
   "kric-station-elevator",
   "kric-station-elevator-movement",
@@ -17,7 +18,10 @@ const staticAccessibilitySourceIds = [
   "kric-wheelchair-lift-location",
   "kric-wheelchair-lift-movement",
   "seoul-metro-accessibility",
-  "incheon-transit-accessibility",
+  "daegu-transportation-accessibility",
+  "daejeon-transportation-accessibility",
+  "gwangju-transportation-accessibility",
+  "busan-transportation-accessibility",
 ];
 const routeMapPositionSourceIds = ["seoul-metro-route-map-positions"];
 const historicalRouteMapSourceIds = ["seoulmetro-cyberstation-route-map"];
