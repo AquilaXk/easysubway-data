@@ -81,10 +81,11 @@ function worksheetCellValue(attributes, body, sharedStrings) {
 
 export function buildProviderLineCatalog({ sourceId, sourceSha256, capturedAt, sheets }) {
   const expectedHeader = ["RAIL_OPR_ISTT_CD", "RAIL_OPR_ISTT_NM", "LN_CD", "LN_NM", "STIN_CD", "STIN_NM"];
-  const sheet = sheets?.find(({ name }) => name === "Sheet1");
-  if (!sheet || JSON.stringify(sheet.rows?.[0]) !== JSON.stringify(expectedHeader)) {
+  const matches = sheets?.filter(({ rows }) => JSON.stringify(rows?.[0]) === JSON.stringify(expectedHeader));
+  if (matches?.length !== 1) {
     throw new Error("KRIC provider code catalog header is invalid");
   }
+  const [sheet] = matches;
   if (sheet.rows.length < 2) {
     throw new Error("KRIC provider code catalog contains no station rows");
   }

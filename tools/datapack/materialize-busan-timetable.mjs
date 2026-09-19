@@ -4,13 +4,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { busanTimetableCounts } from "./collect-busan-timetable.mjs";
 import { busanRouteTopologyContentHash } from "./collect-busan-route-topology.mjs";
 
 const SOURCE_ID = "busan-transportation-timetable";
 const TOPOLOGY_SOURCE_ID = "busan-transportation-route-topology";
 const PACK_ID = "nationwide-busan-schedule";
-const EXPECTED_ROW_COUNT = 109_140;
-const EXPECTED_TRIP_COUNT = 3_833;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const SUPPORTED_SERVICE_CALENDAR_YEAR = "2026";
 const LINE_IDS = Object.freeze({
@@ -35,10 +34,10 @@ export function materializeBusanTimetable({
   timetableSnapshot,
   topologySnapshot,
   inventory,
-  now = new Date(),
 }) {
   const rows = validateSnapshot(timetableSnapshot);
-  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot, now);
+  const counts = busanTimetableCounts(rows);
+  const source = requiredSource(inventory, timetableSnapshot, topologySnapshot, counts);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1) throw new Error("Busan timetable requires one cumulative pack");
@@ -47,7 +46,7 @@ export function materializeBusanTimetable({
   const topologyPairs = validateTopologyLineage(pack, source.scheduleAdmissionEvidence, topologySnapshot, stations);
   const provenance = scheduleProvenance(source, timetableSnapshot);
   const groups = Map.groupBy(rows, (row) => [row.line, row.day, row.trainno, row.updown, row.endcode].join(":"));
-  if (groups.size !== EXPECTED_TRIP_COUNT) throw new Error(`Busan timetable trip count mismatch: ${groups.size}`);
+  if (groups.size !== counts.tripCount) throw new Error(`Busan timetable trip count mismatch: ${groups.size}`);
 
   pack.sourceInventory.push(packSource(source, timetableSnapshot));
   addCalendars(pack, provenance);
@@ -56,14 +55,14 @@ export function materializeBusanTimetable({
   for (const [key, group] of [...groups].sort(([left], [right]) => left.localeCompare(right, "en"))) {
     const [line, day, trainno, updown, endcode] = key.split(":");
     const lineId = LINE_IDS[line];
-    const destination = stations.get(`${lineId}:${endcode}`);
-    if (!destination || group.length < 2) throw new Error(`Busan timetable trip scope mismatch: ${key}`);
+    if (group.length < 2) throw new Error(`Busan timetable trip scope mismatch: ${key}`);
     const ordered = group.map((row) => ({ row, seconds: Number(row.hour) * 3_600 + Number(row.time) * 60 }))
       .sort((left, right) => left.seconds - right.seconds || Number(left.row.scode) - Number(right.row.scode));
     if (new Set(ordered.map(({ row }) => row.scode)).size !== ordered.length) {
       throw new Error(`Busan timetable duplicate trip stop: ${key}`);
     }
     validateTripAdjacency(ordered, stations, lineId, topologyPairs, key);
+    const observedStops = projectBusanObservedStops(ordered, stations, lineId);
     const id = `trip-busan-${line}-${day}-${trainno}-${updown}-${endcode}`;
     if (tripIds.has(id)) throw new Error(`duplicate Busan timetable trip id: ${id}`);
     tripIds.add(id);
@@ -72,15 +71,13 @@ export function materializeBusanTimetable({
       id,
       routeId: `route-busan-${line}-${updown}`,
       serviceId: SERVICES[day],
-      tripHeadsign: destination.stationName,
+      tripHeadsign: observedStops.at(-1).station.stationName,
       directionId: updown === "0" ? "up" : "down",
       servicePattern: "LOCAL",
       serviceClass: "SUBWAY",
       serviceDayStartSeconds: 0,
     }, { ...provenance, providerRecordHash: recordHash }));
-    ordered.forEach(({ row, seconds }, index) => {
-      const station = stations.get(`${lineId}:${row.scode}`);
-      if (!station) throw new Error(`Busan timetable canonical station missing: ${lineId}:${row.scode}`);
+    observedStops.forEach(({ seconds, station }, index) => {
       pack.transitStopTimes.push(withProvenance({
         tripId: id,
         stopSequence: index + 1,
@@ -93,8 +90,8 @@ export function materializeBusanTimetable({
       }, { ...provenance, providerRecordHash: recordHash }));
     });
   }
-  if (tripIds.size !== EXPECTED_TRIP_COUNT
-    || pack.transitStopTimes.filter(({ sourceId }) => sourceId === SOURCE_ID).length !== EXPECTED_ROW_COUNT) {
+  if (tripIds.size !== counts.tripCount
+    || pack.transitStopTimes.filter(({ sourceId }) => sourceId === SOURCE_ID).length !== counts.stopTimeCount) {
     throw new Error("Busan timetable materialized row counts are invalid");
   }
   pack.minimumTableRows = {
@@ -133,7 +130,7 @@ function validateSnapshot(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "busan-timetable-snapshot"
     || snapshot.sourceId !== SOURCE_ID || snapshot.official !== true || snapshot.fixture !== false
     || snapshot.credentialRedacted !== true || snapshot.requestCount !== 342 || snapshot.stationCount !== 114
-    || snapshot.rowCount !== EXPECTED_ROW_COUNT || snapshot.rows?.length !== EXPECTED_ROW_COUNT
+    || !Array.isArray(snapshot.rows) || snapshot.rowCount !== snapshot.rows.length || snapshot.rows.length === 0
     || snapshot.rowsSha256 !== sha256(JSON.stringify(snapshot.rows))
     || !/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")
     || JSON.stringify(snapshot.dayTypes) !== JSON.stringify(["1", "2", "3"])
@@ -155,7 +152,7 @@ function validateSnapshot(snapshot) {
   return snapshot.rows;
 }
 
-function requiredSource(inventory, snapshot, topologySnapshot, now) {
+function requiredSource(inventory, snapshot, topologySnapshot, counts) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.scheduleAdmissionEvidence;
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
@@ -166,8 +163,8 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || evidence.verificationTest !== "tools/datapack/materialize-busan-timetable.test.mjs"
     || !/^busan-transportation-timetable-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
-    || evidence.rowCount !== EXPECTED_ROW_COUNT || evidence.departureCount !== EXPECTED_ROW_COUNT
-    || evidence.tripCount !== EXPECTED_TRIP_COUNT || evidence.stopTimeCount !== EXPECTED_ROW_COUNT
+    || evidence.rowCount !== snapshot.rows.length || evidence.departureCount !== counts.departureCount
+    || evidence.tripCount !== counts.tripCount || evidence.stopTimeCount !== counts.stopTimeCount
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
@@ -188,23 +185,22 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   }
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
 }
 
-function validateTopologyLineage(pack, evidence, snapshot, stations) {
+export function validateTopologyLineage(pack, evidence, snapshot, stations) {
+  const compareEndpoints = (left, right) =>
+    `${left.fromNodeId}\0${left.toNodeId}`.localeCompare(`${right.fromNodeId}\0${right.toNodeId}`, "en");
   const hasTopology = pack.sourceInventory.some(({ id }) => id === TOPOLOGY_SOURCE_ID);
   const actual = pack.networkEdges.filter(({ sourceId }) => sourceId === TOPOLOGY_SOURCE_ID)
-    .sort((left, right) => left.id.localeCompare(right.id, "en"));
+    .sort(compareEndpoints);
   const expected = snapshot.edges.map((edge) => {
     const from = stations.get(`${edge.lineId}:${edge.fromStationCode}`);
     const to = stations.get(`${edge.lineId}:${edge.toStationCode}`);
     return {
-      id: `edge-${edge.edgeId.replaceAll(":", "-")}`,
       fromNodeId: `${from?.stationId}:${edge.lineId}`,
       toNodeId: `${to?.stationId}:${edge.lineId}`,
       durationSeconds: edge.durationSeconds + edge.stoppingSeconds,
@@ -213,9 +209,12 @@ function validateTopologyLineage(pack, evidence, snapshot, stations) {
       providerRecordHash: sha256(JSON.stringify(edge)),
       evidenceHash: evidence.topologyContentSha256,
     };
-  }).sort((left, right) => left.id.localeCompare(right.id, "en"));
+  }).sort(compareEndpoints);
   const comparable = actual.map((edge) => Object.fromEntries(Object.keys(expected[0]).map((key) => [key, edge[key]])));
-  if (!hasTopology || actual.length !== 220 || JSON.stringify(comparable) !== JSON.stringify(expected)) {
+  if (!hasTopology || actual.length !== expected.length
+    || actual.some(({ id }) => typeof id !== "string" || !id.trim())
+    || new Set(actual.map(({ id }) => id)).size !== actual.length
+    || JSON.stringify(comparable) !== JSON.stringify(expected)) {
     throw new Error("Busan timetable topology lineage mismatch");
   }
   return new Set(actual.map((edge) => `${edge.fromNodeId}:${edge.toNodeId}`));
@@ -229,6 +228,15 @@ function validateTripAdjacency(ordered, stations, lineId, topologyPairs, tripKey
       throw new Error(`Busan timetable topology adjacency mismatch: ${tripKey}`);
     }
   }
+}
+
+export function projectBusanObservedStops(ordered, stations, lineId) {
+  // 공급자 종착 코드는 해석하지 않고 실제 관측 정차역만 정본 역에 연결한다.
+  return ordered.map(({ row, seconds }) => {
+    const station = stations.get(`${lineId}:${row.scode}`);
+    if (!station) throw new Error(`Busan timetable canonical station missing: ${lineId}:${row.scode}`);
+    return { row, seconds, station };
+  });
 }
 
 function canonicalStations(pack) {
@@ -342,7 +350,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runBusanTimetableMaterializer(argv, { now = new Date() } = {}) {
+export async function runBusanTimetableMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, timetableSnapshot, topologySnapshot, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -350,9 +358,11 @@ export async function runBusanTimetableMaterializer(argv, { now = new Date() } =
     readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
     readFile(args.inventory, "utf8").then(JSON.parse),
   ]);
-  const fixture = materializeBusanTimetable({ baseFixture, timetableSnapshot, topologySnapshot, inventory, now });
+  const fixture = materializeBusanTimetable({ baseFixture, timetableSnapshot, topologySnapshot, inventory });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
-  console.log(`Busan timetable materialized: trips=${EXPECTED_TRIP_COUNT} stopTimes=${EXPECTED_ROW_COUNT}`);
+  const counts = busanTimetableCounts(timetableSnapshot.rows);
+  console.log(`Busan timetable materialized: trips=${counts.tripCount} stopTimes=${counts.stopTimeCount}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

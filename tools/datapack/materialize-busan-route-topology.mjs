@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { admitBusanRouteTopology } from "./collect-busan-route-topology.mjs";
+import { validateBusanRouteTopologySnapshot } from "./collect-busan-route-topology.mjs";
 
 const SOURCE_ID = "busan-transportation-route-topology";
 const OPERATOR_ID = "busan-transportation";
@@ -21,9 +21,8 @@ export function materializeBusanRouteTopology({
   snapshot,
   inventory,
   canonicalStationMappings,
-  now = new Date(),
 }) {
-  admitBusanRouteTopology(snapshot, { now });
+  validateBusanRouteTopologySnapshot(snapshot);
   const source = requiredSource(inventory, snapshot, canonicalStationMappings);
   const fixture = structuredClone(baseFixture);
   if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1 || fixture.packs[0].artifactKind !== "production") {
@@ -31,19 +30,12 @@ export function materializeBusanRouteTopology({
   }
 
   const pack = fixture.packs[0];
-  const version = /-(\d{8})$/.exec(source.topologyAdmissionEvidence.snapshotId)?.[1];
-  if (!version) throw new Error(`${SOURCE_ID} snapshotId must end with YYYYMMDD`);
+  const version = busanTopologyPackVersion(snapshot.capturedAt);
 
   if (pack.sourceInventory.some(({ id }) => id === SOURCE_ID)) {
     throw new Error(`${SOURCE_ID} already exists in base fixture`);
   }
   pack.sourceInventory.push(packSource(source, snapshot));
-  pack.operators.push({ id: OPERATOR_ID, nameKo: "부산교통공사", nameEn: "Busan Transportation Corporation" });
-  pack.lines.push(...snapshot.lineIds.map((lineId) => {
-    const metadata = LINE_METADATA.get(lineId);
-    if (!metadata) throw new Error(`unsupported Busan line: ${lineId}`);
-    return { id: lineId, operatorId: OPERATOR_ID, nameKo: metadata.nameKo, nameEn: "", color: metadata.color };
-  }));
 
   const scopeByKey = new Map();
   const stationById = new Map();
@@ -113,9 +105,9 @@ export function materializeBusanRouteTopology({
     };
   });
 
-  pack.stations.push(...stationById.values());
-  pack.stationLines.push(...stationLines);
-  pack.networkEdges.push(...networkEdges);
+  bindCumulativeBusanTopology(pack, {
+    stations: [...stationById.values()], stationLines, networkEdges, lineIds: snapshot.lineIds,
+  });
   pack.minimumTableRows = {
     ...pack.minimumTableRows,
     stations: pack.stations.length,
@@ -127,6 +119,93 @@ export function materializeBusanRouteTopology({
   pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${pack.id}-v${version}.sqlite.gz`;
   fixture.manifest.activePack = { id: pack.id, version: pack.version };
   return fixture;
+}
+
+export function bindCumulativeBusanTopology(pack, generated) {
+  const existingOperators = pack.operators.filter(({ id }) => id === OPERATOR_ID);
+  const existingLines = pack.lines.filter(({ id }) => generated.lineIds.includes(id));
+  if (existingOperators.length > 1 || existingLines.length > generated.lineIds.length
+    || new Set(existingLines.map(({ id }) => id)).size !== existingLines.length
+    || existingLines.some(({ operatorId }) => operatorId !== OPERATOR_ID)
+    || (existingOperators.length === 0) !== (existingLines.length === 0)) {
+    throw new Error("Busan cumulative line identity mismatch");
+  }
+  const expectedMembership = new Map(generated.stationLines.map((row) => [`${row.stationId}\0${row.lineId}`, row]));
+  const actualMembership = pack.stationLines.filter(({ lineId }) => generated.lineIds.includes(lineId));
+  const expectedEdges = new Map(generated.networkEdges.map((row) => [`${row.fromNodeId}\0${row.toNodeId}`, row]));
+  const actualRideEdges = pack.networkEdges.filter((row) => row.edgeType === "RIDE"
+    && generated.lineIds.some((lineId) => row.fromNodeId?.endsWith(`:${lineId}`)
+      || row.toNodeId?.endsWith(`:${lineId}`)));
+  const hasExisting = existingOperators.length === 1;
+  const timetableRows = [
+    ...(pack.transitRoutes ?? []).filter(({ lineId }) => generated.lineIds.includes(lineId)),
+    ...(pack.transitStopTimes ?? []).filter(({ lineId }) => generated.lineIds.includes(lineId)),
+  ];
+  if (timetableRows.length > 0 || (pack.transitTrips ?? []).some(({ routeId }) =>
+    (pack.transitRoutes ?? []).some((route) => route.id === routeId && generated.lineIds.includes(route.lineId)))) {
+    throw new Error("Busan cumulative timetable already exists");
+  }
+  if (!hasExisting) {
+    pack.operators.push({ id: OPERATOR_ID, nameKo: "부산교통공사", nameEn: "Busan Transportation Corporation" });
+    pack.lines.push(...generated.lineIds.map((lineId) => {
+      const metadata = LINE_METADATA.get(lineId);
+      if (!metadata) throw new Error(`unsupported Busan line: ${lineId}`);
+      return { id: lineId, operatorId: OPERATOR_ID, nameKo: metadata.nameKo, nameEn: "", color: metadata.color };
+    }));
+    pack.stations.push(...generated.stations);
+    pack.stationLines.push(...generated.stationLines);
+    pack.networkEdges.push(...generated.networkEdges);
+    return;
+  }
+  if (existingLines.length !== generated.lineIds.length || actualMembership.length === 0 || actualRideEdges.length === 0) {
+    throw new Error("Busan cumulative topology is partial");
+  }
+  const membershipKeys = new Set(actualMembership.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  if (membershipKeys.size !== actualMembership.length || membershipKeys.size !== expectedMembership.size
+    || [...membershipKeys].some((key) => !expectedMembership.has(key))
+    || actualMembership.some((row) => row.lineSequence !== expectedMembership.get(`${row.stationId}\0${row.lineId}`).lineSequence)
+    || actualMembership.some(hasAuthority)) {
+    throw new Error("Busan cumulative membership mismatch");
+  }
+  const expectedStations = new Map(generated.stations.map((row) => [row.id, row]));
+  const actualStations = pack.stations.filter(({ id }) => expectedStations.has(id));
+  if (actualStations.length !== expectedStations.size || new Set(actualStations.map(({ id }) => id)).size !== actualStations.length
+    || actualStations.some((row) => hasAuthority(row)
+      || normalizedStationName(row.nameKo) !== normalizedStationName(expectedStations.get(row.id).nameKo))) {
+    throw new Error("Busan cumulative station mismatch");
+  }
+  const edgeKeys = new Set(actualRideEdges.map(({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`));
+  const edgeIds = new Set(actualRideEdges.map(({ id }) => id));
+  if (edgeKeys.size !== actualRideEdges.length || edgeIds.size !== actualRideEdges.length || edgeKeys.size !== expectedEdges.size
+    || [...edgeKeys].some((key) => !expectedEdges.has(key)) || actualRideEdges.some(hasAuthority)) {
+    throw new Error("Busan cumulative RIDE topology mismatch");
+  }
+  for (const row of actualMembership) {
+    const expected = expectedMembership.get(`${row.stationId}\0${row.lineId}`);
+    Object.assign(row, { stationCode: expected.stationCode, lineSequence: expected.lineSequence,
+      sourceId: expected.sourceId, derivationKind: expected.derivationKind, lastVerifiedAt: expected.lastVerifiedAt });
+  }
+  for (const row of actualStations) {
+    const expected = expectedStations.get(row.id);
+    Object.assign(row, { dataQualityLevel: expected.dataQualityLevel, dataSourceType: expected.dataSourceType,
+      sourceId: expected.sourceId, derivationKind: expected.derivationKind, lastVerifiedAt: expected.lastVerifiedAt });
+  }
+  for (const row of actualRideEdges) {
+    const id = row.id;
+    Object.assign(row, expectedEdges.get(`${row.fromNodeId}\0${row.toNodeId}`), { id });
+  }
+}
+
+function hasAuthority(row) {
+  return row.sourceId !== undefined || row.sourceSnapshotId !== undefined || row.providerRecordHash !== undefined
+    || row.evidenceHash !== undefined || row.fieldProvenance !== undefined || row.provenanceKind !== undefined || row.derivationKind !== undefined
+    || row.verificationStatus !== undefined;
+}
+
+export function busanTopologyPackVersion(capturedAt) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(capturedAt)).replaceAll("-", "");
 }
 
 export function materializedBusanPackContentHash(pack, version) {
@@ -219,7 +298,7 @@ function canonicalStationIdFor(mappings, station) {
   return stationId;
 }
 
-function canonicalStationMappingHash(mappings, scope) {
+export function canonicalStationMappingHash(mappings, scope) {
   return sha256(JSON.stringify(canonicalStationMappingEntries(mappings, scope)));
 }
 
@@ -230,7 +309,7 @@ function canonicalStationMappingEntries(mappings, scope) {
   }).sort(([left], [right]) => left.localeCompare(right, "en"));
 }
 
-function normalizedStationName(value) {
+export function normalizedStationName(value) {
   return value.normalize("NFKC").replace(/\([^()]*\)$/, "").replace(/[^\p{L}\p{N}]/gu, "").replace(/역$/, "").toLowerCase();
 }
 
@@ -261,6 +340,7 @@ async function main(argv) {
   const fixture = materializeBusanRouteTopology({
     baseFixture, snapshot, inventory, canonicalStationMappings,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Busan route topology materialized: stations=${snapshot.stationCount} edges=${snapshot.edgeCount}`);
 }

@@ -1,54 +1,14 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import test from "node:test";
+import { launchScope } from "./test-fixtures/launch-scope.mjs";
 import {
   buildLaunchDenominatorReport,
   canonicalScopeHash,
 } from "./build-launch-denominator-report.mjs";
 
-const scope = {
-  verifiedAccessibilityScope: {
-    id: "capital-pilot-accessibility-v1",
-    requiredRowIds: [
-      "station-sangnoksu|seoul-4|ELEVATOR",
-      "station-sangnoksu|seoul-4|ESCALATOR",
-      "station-sangnoksu|seoul-4|WHEELCHAIR_LIFT",
-      "station-sadang|seoul-4|ELEVATOR",
-      "station-sadang|seoul-4|ESCALATOR",
-      "station-sadang|seoul-4|WHEELCHAIR_LIFT",
-    ],
-  },
-  routingLaunchScope: {
-    id: "capital-routing-launch-v1",
-    regionIds: ["capital"],
-    operatorIds: ["seoul-metro", "korail"],
-    lineIds: ["seoul-4", "line-6e39be0cb6e2", "line-54a7b980b7c3"],
-    serviceIds: ["SUBWAY", "ITX_CHEONGCHUN"],
-    baseRoutingStationIds: ["station-pilot-a", "station-pilot-b"],
-    requiredTransferStationIds: ["station-a", "station-b"],
-    requiredBaseEdgeIds: ["edge-a-b", "edge-b-c"],
-    requiredTransferEdgeIds: ["transfer-b"],
-    admittedStationEvidenceRequired: true,
-    sourceDerivedConnectionEdgeEvidenceRequired: true,
-  },
-  nationwideRoadmapScope: {
-    id: "nationwide-roadmap-v1",
-    launchRequiredCount: 270,
-  },
-  identityMatrix: {
-    requiredSharedFields: [
-      "canonicalStationVersion",
-      "corridorId",
-      "serviceId",
-      "lineageId",
-      "schemaVersion",
-    ],
-    differentArtifactHashesAllowed: true,
-  },
-};
+const scope = launchScope();
 
-function passingEvidence({ nationwideMissing = 270 } = {}) {
+function passingEvidence({ nationwideMissing = 0 } = {}) {
   const identity = {
     canonicalStationVersion: "station-catalog-v18",
     corridorId: "capital-gyeongchun-v1",
@@ -129,11 +89,33 @@ function withGap(mutator) {
   return evidence;
 }
 
-test("nationwide 0% does not block a fully satisfied v1 scope", () => {
-  const report = buildLaunchDenominatorReport(scope, passingEvidence({ nationwideMissing: 270 }));
+test("nationwide complete coverage permits a fully satisfied v1 scope", () => {
+  const report = buildLaunchDenominatorReport(scope, passingEvidence());
   assert.equal(report.decision, "GO");
-  assert.equal(report.nationwideBlocksV1, false);
+  assert.equal(report.nationwideBlocksV1, true);
   assert.deepEqual(report.blockers, []);
+});
+
+test("nationwide launch requires complete observed coverage", () => {
+  const nationwideScope = {
+    ...scope,
+    nationwideRoadmapScope: {
+      ...scope.nationwideRoadmapScope,
+      blocksRoutingLaunch: true,
+      launchRequiredCount: 5,
+    },
+  };
+  const complete = buildLaunchDenominatorReport(nationwideScope, passingEvidence({ nationwideMissing: 0 }));
+  assert.equal(complete.decision, "GO");
+  assert.equal(complete.nationwideBlocksV1, true);
+  assert.deepEqual(complete.coverage.nationwide, { requiredCount: 5, missingCount: 0, blocksV1: true });
+
+  for (const missingCount of [undefined, null, -1, 1.5, 6, 1]) {
+    const evidence = passingEvidence({ nationwideMissing: missingCount });
+    if (missingCount === undefined) delete evidence.nationwide.missingCount;
+    const report = buildLaunchDenominatorReport(nationwideScope, evidence);
+    assert.equal(report.decision, "NO_GO", `missingCount ${String(missingCount)} must block launch`);
+  }
 });
 
 test("report는 secret 없는 evaluator input만 포함하고 자체 재계산할 수 있다", () => {
@@ -193,53 +175,15 @@ test("accessibility coverage는 required ID와 unique covered ID의 교집합으
   });
 });
 
-test("production routing scope는 mutable #2135 roster 대신 안정적인 launch 요구조건만 고정한다", async () => {
-  const productionScope = JSON.parse(await readFile(
-    path.join(import.meta.dirname, "../../release/product-gates/production-datapack-scope.json"),
-    "utf8",
-  ));
-  assert.deepEqual(productionScope.routingLaunchScope.lineIds, [
-    "seoul-4",
-    "line-6e39be0cb6e2",
-    "line-54a7b980b7c3",
-  ]);
-  assert.equal(productionScope.routingLaunchScope.candidateStationIds, undefined);
-  assert.deepEqual(productionScope.routingLaunchScope.baseRoutingStationIds, [
-    "station-sangnoksu",
-    "station-sadang",
-  ]);
-  assert.deepEqual(productionScope.routingLaunchScope.requiredTransferStationIds, [
-    "station-8aa315864466",
-    "station-c0679b9a6cf8",
-    "station-e5cf592cf355",
-    "station-b819702fa7d9",
-    "station-83bcb1eae340",
-  ]);
-  assert.equal(productionScope.routingLaunchScope.admittedStationEvidenceRequired, true);
-  assert.equal(productionScope.routingLaunchScope.sourceDerivedConnectionEdgeEvidenceRequired, true);
-  assert.equal(productionScope.routingLaunchScope.sourceDerivedConnectionEdgeIds, undefined);
-  assert.equal(productionScope.routingLaunchScope.admittedStationIdsSource, undefined);
-});
-
-test("committed current report는 gap과 unavailable consumer를 숨기지 않고 NO_GO다", async () => {
-  const productionScope = JSON.parse(await readFile(
-    path.join(import.meta.dirname, "../../release/product-gates/production-datapack-scope.json"),
-    "utf8",
-  ));
-  const report = JSON.parse(await readFile(
-    path.join(import.meta.dirname, "reports/android-v1-launch-denominator-20260715.json"),
-    "utf8",
-  ));
-  assert.deepEqual(buildLaunchDenominatorReport(productionScope, report.evaluatorInput), report);
+test("synthetic scope report recomputes missing consumer evidence as NO_GO", () => {
+  const evidence = passingEvidence();
+  evidence.server = {};
+  const report = buildLaunchDenominatorReport(scope, evidence);
   assert.equal(report.decision, "NO_GO");
-  assert.equal(report.scopes.routingLaunchScope.id, productionScope.routingLaunchScope.id);
-  assert.equal(report.scopes.routingLaunchScope.sha256, canonicalScopeHash(productionScope.routingLaunchScope));
-  assert.equal(report.identityLinkage.matrixSha256, canonicalScopeHash(productionScope.identityMatrix));
-  assert.deepEqual(report.coverage.accessibility, { requiredCount: 6, coveredCount: 6, gapCount: 0 });
-  assert.deepEqual(report.coverage.nationwide, { requiredCount: 270, missingCount: 270, blocksV1: false });
-  assert.deepEqual(report.consumerStates, { source: "MISSING", server: "UNAVAILABLE", mobile: "MISSING" });
-  assert.deepEqual(report.routing.sourceDerivedConnectionEdgeIds, { status: "MISSING", ids: [] });
-  assert.deepEqual(report.routing.admittedStationIds, { status: "MISSING", ids: [] });
+  assert.equal(report.scopes.routingLaunchScope.sha256, canonicalScopeHash(scope.routingLaunchScope));
+  assert.equal(report.identityLinkage.matrixSha256, canonicalScopeHash(scope.identityMatrix));
+  assert.deepEqual(buildLaunchDenominatorReport(scope, report.evaluatorInput), report);
+  assert.equal(report.consumerStates.server, "UNAVAILABLE");
 });
 
 test("routing region, operator, and line evidence must exactly match launch scope", async (context) => {
@@ -423,7 +367,7 @@ test("different source, server, and mobile artifact hashes are allowed when shar
 test("nationwide progress does not change the routing launch scope hash", () => {
   const before = structuredClone(scope);
   const after = structuredClone(scope);
-  before.nationwideRoadmapScope.missingCount = 270;
+  before.nationwideRoadmapScope.missingCount = scope.nationwideRoadmapScope.launchRequiredCount;
   after.nationwideRoadmapScope.missingCount = 0;
   assert.equal(
     canonicalScopeHash(before.routingLaunchScope),

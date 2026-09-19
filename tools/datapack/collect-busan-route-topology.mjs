@@ -108,6 +108,10 @@ export async function collectBusanRouteTopology({
     scope,
     scopeSha256: scope ? sha256(JSON.stringify(scope)) : null,
     rawSha256,
+    rawResponses: responses.map((response, index) => ({
+      stationCode: requestCodes[index],
+      bytesBase64: response.rawBytes.toString("base64"),
+    })),
     contentSha256: busanRouteTopologyContentHash(edges, scope),
     edges,
   };
@@ -156,7 +160,12 @@ async function collectResponse({ key, stationCode, fetchImpl, sleepImpl }) {
   if (stationCode != null && parsed.edges.some(({ fromStationCode }) => fromStationCode !== stationCode)) {
     throw new Error(`Busan route topology schema mismatch: request scope ${stationCode}; ${rawEvidence}`);
   }
-  return { ...parsed, rawSha256: sha256(rawBytes), responseEncoding: envelope.responseEncoding };
+  return {
+    ...parsed,
+    rawBytes,
+    rawSha256: sha256(rawBytes),
+    responseEncoding: envelope.responseEncoding,
+  };
 }
 
 export function parseBusanRouteTopologyScope(html) {
@@ -256,6 +265,24 @@ function validateEdgesAgainstScope(edges, scope) {
 
 export function admitBusanRouteTopology(snapshot, { now = new Date() } = {}) {
   const current = validDate(now, "now");
+  validateBusanRouteTopologySnapshot(snapshot);
+  const capturedAt = validDate(new Date(snapshot.capturedAt), "snapshot.capturedAt");
+  const freshUntil = validDate(new Date(snapshot.freshUntil), "snapshot.freshUntil");
+  if (current.getTime() < capturedAt.getTime() || current.getTime() >= freshUntil.getTime()) {
+    throw new Error("Busan route topology admission stale snapshot is rejected");
+  }
+  return {
+    status: "ADMITTED",
+    issue: 2319,
+    admittedAt: current.toISOString(),
+    sourceId: snapshot.sourceId,
+    contentSha256: snapshot.contentSha256,
+    lineIds: snapshot.lineIds,
+    edgeCount: snapshot.edgeCount,
+  };
+}
+
+export function validateBusanRouteTopologySnapshot(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "busan-route-topology-snapshot"
     || snapshot.sourceId !== "busan-transportation-route-topology" || snapshot.official !== true
     || snapshot.detailUrl !== DETAIL_URL || snapshot.endpoint !== ENDPOINT || snapshot.credentialRedacted !== true) {
@@ -303,18 +330,7 @@ export function admitBusanRouteTopology(snapshot, { now = new Date() } = {}) {
   if (freshUntil.getTime() !== capturedAt.getTime() + FRESHNESS_MILLIS) {
     throw new Error("Busan route topology admission freshness contract is invalid");
   }
-  if (current.getTime() < capturedAt.getTime() || current.getTime() >= freshUntil.getTime()) {
-    throw new Error("Busan route topology admission stale snapshot is rejected");
-  }
-  return {
-    status: "ADMITTED",
-    issue: 2319,
-    admittedAt: current.toISOString(),
-    sourceId: snapshot.sourceId,
-    contentSha256: snapshot.contentSha256,
-    lineIds: snapshot.lineIds,
-    edgeCount: snapshot.edgeCount,
-  };
+  return snapshot;
 }
 
 function parseEdges(body) {

@@ -113,6 +113,11 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
     assert.equal(source.productionUseAllowed, true);
     if (sourceId === "molit-urban-rail-full-route") {
       assert.equal(source.admissionEvidence.quotaEvidence.productionUseAllowed, false);
+      const observation = input.producerOutput.observations.find((item) => item.sourceId === sourceId);
+      assert.equal(source.membershipCoverageEvidence.snapshotId, observation.snapshotId);
+      assert.equal(source.membershipCoverageEvidence.rawSha256, observation.rawSha256);
+      assert.equal(source.membershipCoverageEvidence.normalizedObservationSha256, sha(staged[1].bytes));
+      assert.ok(source.membershipCoverageEvidence.lineOperatorScopes.length > 0);
     }
   }
   const ledger = JSON.parse(staged[3].bytes);

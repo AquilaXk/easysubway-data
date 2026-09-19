@@ -11,7 +11,7 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { rebuildAuthenticatedTransferTopologyMetrics } from "./build-current-transfer-topology-metrics.mjs";
+import { currentTransferLineIds, rebuildAuthenticatedTransferTopologyMetrics } from "./build-current-transfer-topology-metrics.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { verifyCurrentCapitalPublicRouteMapDocument } from "./materialize-seoul-route-map-positions.mjs";
 import { readProductionScopeSourceIds } from "./validate-candidate-source-set.mjs";
@@ -33,6 +33,14 @@ const KRIC_CATALOG_PATH = "tools/datapack/sources/kric-provider-code-catalog-202
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonicalBytes = (value) => Buffer.from(`${canonicalJson(value)}\n`);
 const without = (value, key) => { const copy = { ...value }; delete copy[key]; return copy; };
+function deriveCanonicalPairs(stationLines) {
+  const byStation = Map.groupBy(stationLines, ({ stationId }) => stationId);
+  return [...byStation.entries()].flatMap(([stationId, memberships]) => {
+    const lineIds = memberships.map(({ lineId }) => lineId).sort(compareBytes);
+    return lineIds.flatMap((lineId, index) => lineIds.slice(index + 1).map((other) => ({ stationId, lineIds: [lineId, other] })));
+  }).sort((left, right) => compareBytes(`${left.stationId}\0${left.lineIds.join("\0")}`, `${right.stationId}\0${right.lineIds.join("\0")}`));
+}
+function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
 
 function requiredRoot(value) { if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("repositoryRoot is required"); return path.resolve(value); }
 function target(root, relative) { if (typeof relative !== "string" || path.isAbsolute(relative)) throw new Error("transaction target is invalid"); const resolved = path.resolve(root, relative); if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error("transaction target escapes repository"); return resolved; }
@@ -172,22 +180,30 @@ function validateCurrentTransferInputs({ observation, receipt, metrics, metricsB
   }
   const capital = canonicalPack.packs[0];
   const seoulLines = new Set((capital.lines ?? []).filter(({ operatorId }) => operatorId === "seoul-metro").map(({ id }) => id));
-  const membership = (capital.stationLines ?? []).filter(({ lineId }) => seoulLines.has(lineId));
-  if (membership.length !== 213 || new Set(membership.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size !== 213
-    || new Set(membership.map(({ stationId }) => stationId)).size !== 199
+  const sourceLineIds = new Set(currentTransferLineIds());
+  const membership = (capital.stationLines ?? []).filter(({ lineId }) => seoulLines.has(lineId) && sourceLineIds.has(lineId));
+  const membershipKeys = new Set(membership.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const stationCount = new Set(membership.map(({ stationId }) => stationId)).size;
+  const physicalPairs = deriveCanonicalPairs(membership);
+  const directedMetricCount = metrics?.metrics?.length;
+  const officialMetricCount = metrics?.metrics?.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  const derivedReciprocalMetricCount = metrics?.metrics?.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
+  const applicableStationLineCount = applicability?.stateSummary?.APPLICABLE_TRANSFER_ENDPOINT;
+  const notApplicableStationLineCount = applicability?.stateSummary?.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET;
+  if (membership.length === 0 || membershipKeys.size !== membership.length || stationCount === 0
     || metrics?.artifactKind !== "current-transfer-topology-metrics"
     || metrics.artifactSha256 !== sha(canonicalJson(without(metrics, "artifactSha256")))
     || metrics.canonicalIdentity?.canonicalPackSha256 !== sha(canonicalPackBytes)
-    || metrics.canonicalIdentity.stationLineCount !== 213 || metrics.canonicalIdentity.stationCount !== 199 || metrics.canonicalIdentity.physicalPairCount !== 15
-    || metrics.physicalPairs?.length !== 15 || metrics.metrics?.length !== 30
-    || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length !== 28
-    || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length !== 2
+    || metrics.canonicalIdentity.stationLineCount !== membership.length || metrics.canonicalIdentity.stationCount !== stationCount || metrics.canonicalIdentity.physicalPairCount !== physicalPairs.length
+    || physicalPairs.length === 0 || canonicalJson(metrics.physicalPairs) !== canonicalJson(physicalPairs)
+    || directedMetricCount !== physicalPairs.length * 2 || officialMetricCount + derivedReciprocalMetricCount !== directedMetricCount
     || applicability?.artifactKind !== "current-capital-transfer-topology-applicability-pre-candidate" || applicability.productionUseAllowed !== false || applicability.candidateBinding !== null
     || applicability.artifactSha256 !== sha(canonicalBytes(without(applicability, "artifactSha256")))
     || applicability.transferTopologyMetricsIdentity?.artifactSha256 !== metrics.artifactSha256
     || JSON.stringify(applicability.canonicalIdentity) !== JSON.stringify(metrics.canonicalIdentity)
     || JSON.stringify(applicability.sourceIdentity) !== JSON.stringify(metrics.sourceIdentity)
-    || applicability.stateSummary?.APPLICABLE_TRANSFER_ENDPOINT !== 27 || applicability.stateSummary?.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET !== 186) {
+    || applicableStationLineCount <= 0 || notApplicableStationLineCount < 0
+    || applicableStationLineCount + notApplicableStationLineCount !== membership.length) {
     throw new Error("transfer applicability identity mismatch");
   }
   if (metrics.sourceIdentity?.sourceId !== SOURCE_ID || metrics.sourceIdentity.endpointSha256 !== observation.manifest.endpointSha256
@@ -287,19 +303,24 @@ export function buildTransferRegistrationOutputs({ observation, receipt, metrics
     rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint,
     metricsPath: METRICS_PATH, metricsArtifactSha256: snapshot.transferTopology.metricsArtifactSha256,
     applicabilityPath: APPLICABILITY_PATH, applicabilityArtifactSha256: snapshot.transferTopology.applicabilityArtifactSha256,
-    rowCount: 145, physicalPairCount: 15, directedMetricCount: 30, officialMetricCount: 28, derivedReciprocalMetricCount: 2,
-    stationLineCount: 213, applicableStationLineCount: 27, notApplicableStationLineCount: 186, durationRole: "REFERENCE_ONLY",
+    rowCount: 145, physicalPairCount: snapshot.transferTopology.physicalPairCount,
+    directedMetricCount: snapshot.transferTopology.directedMetricCount,
+    officialMetricCount: snapshot.transferTopology.officialMetricCount,
+    derivedReciprocalMetricCount: snapshot.transferTopology.derivedReciprocalMetricCount,
+    stationLineCount: applicability.cells.length,
+    applicableStationLineCount: applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT,
+    notApplicableStationLineCount: applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, durationRole: "REFERENCE_ONLY",
     licenseEvidenceHash: source.admissionEvidence?.licenseEvidenceHash,
   };
   if (!/^[0-9a-f]{64}$/u.test(admission.licenseEvidenceHash ?? "")) throw new Error("transfer license evidence binding mismatch");
   const nextInventory = structuredClone(inventory); const nextSource = nextInventory.sources.find(({ id }) => id === SOURCE_ID);
   nextSource.requiredForProductionPack = true;
-  nextSource.capabilities = { ...nextSource.capabilities, transfer: { status: "SUPPORTED", productionUseAllowed: true, coverageStatus: "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS", updateFrequency: "annual file snapshot", unsupportedNotes: "공식 소요시간은 reference-only이며 runtime 환승시간은 거리와 선택한 보행속도로 계산한다" } };
+  nextSource.capabilities = { ...nextSource.capabilities, transfer: { status: "SUPPORTED", productionUseAllowed: true, coverageStatus: `CAPITAL_SEOUL_METRO_${admission.physicalPairCount}_PAIRS_${admission.directedMetricCount}_DIRECTED_METRICS`, updateFrequency: "annual file snapshot", unsupportedNotes: "공식 소요시간은 reference-only이며 runtime 환승시간은 거리와 선택한 보행속도로 계산한다" } };
   nextSource.transferAdmissionEvidence = admission;
   const inventoryBytes = jsonBytes(nextInventory);
   const ledgerRow = {
     schemaVersion: 1, artifactKind: "official-source-snapshot", snapshotId: snapshot.snapshotId, sourceId: SOURCE_ID, provider: nextSource.provider,
-    retrievedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, sourceUpdatedAt: null, sourceEffectiveDate: "2025-12-31", rowCount: 145, coverageCount: 30,
+    retrievedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, sourceUpdatedAt: null, sourceEffectiveDate: "2025-12-31", rowCount: 145, coverageCount: admission.directedMetricCount,
     rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, rawObjectUri: receipt.rawObjectUri,
     redactedRequestFingerprint: snapshot.observationIdentity.sourceCandidateSha256, schemaFingerprint: snapshot.schemaFingerprint,
     snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true,

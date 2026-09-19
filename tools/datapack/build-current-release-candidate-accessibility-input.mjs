@@ -65,8 +65,11 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     input.transferMetrics,
     "transfer metrics",
   );
-  const sourcePack = capitalPack(sourceFixture, "source fixture");
-  const projectedPack = capitalPack(input.projectedFixture, "projected fixture");
+  const sourcePack = activeProductionPack(sourceFixture, "source fixture");
+  const projectedPack = activeProductionPack(input.projectedFixture, "projected fixture");
+  if (sourcePack.id !== projectedPack.id || sourcePack.version !== projectedPack.version) {
+    throw new Error("source/projected active pack identity mismatch");
+  }
   const routeStationIndex = validateCandidateIdentity(
     buildSpec,
     stationLineInput,
@@ -113,7 +116,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
 }
 
 export function canonicalCurrentReleaseCandidateFixtureJson(value) {
-  capitalPack(value, "candidate fixture");
+  activeProductionPack(value, "candidate fixture");
   return canonicalJson(value);
 }
 
@@ -140,7 +143,7 @@ export function canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(
 
 export function rebuildCurrentReleaseCandidateFixture({ projectedFixture, authority }) {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(authority);
-  const pack = capitalPack(projectedFixture, "projected fixture");
+  const pack = activeProductionPack(projectedFixture, "projected fixture");
   const rides = rideOnlyFixtureEdges(pack.networkEdges, "projected fixture");
   const routeEdges = authority.edges.map((edge) => ({
     edgeId: edge.edgeId,
@@ -181,7 +184,7 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
   const routeStationIndex = validateReplayCandidateIdentity(authority, stationLineInput, route);
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
   validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
-  const projectedPack = capitalPack(projectedFixture, "projected fixture");
+  const projectedPack = activeProductionPack(projectedFixture, "projected fixture");
   validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt });
@@ -329,15 +332,16 @@ function parseBoundJson(bytes, value, label) {
   return parsed;
 }
 
-function capitalPack(fixture, label) {
+function activeProductionPack(fixture, label) {
+  const active = fixture?.manifest?.activePack;
   if (!fixture || typeof fixture !== "object" || Array.isArray(fixture)
     || fixture.manifest?.channel !== "production"
-    || fixture.manifest?.activePack?.id !== "capital") {
+    || typeof active?.id !== "string" || !active.id || active.version == null) {
     throw new Error(`${label} identity mismatch`);
   }
-  const packs = fixture.packs?.filter(({ id }) => id === "capital") ?? [];
-  if (packs.length !== 1 || !Array.isArray(packs[0].networkEdges)) {
-    throw new Error(`${label} capital pack mismatch`);
+  const packs = fixture.packs?.filter(({ id }) => id === active.id) ?? [];
+  if (packs.length !== 1 || packs[0].version !== active.version || !Array.isArray(packs[0].networkEdges)) {
+    throw new Error(`${label} active pack mismatch`);
   }
   return packs[0];
 }
@@ -562,7 +566,7 @@ function validateMaterialization(value, stationLines) {
 
 function candidateFixtureFrom(projectedFixture, projectedRides, routeEdges) {
   const candidateFixture = structuredClone(projectedFixture);
-  const pack = capitalPack(candidateFixture, "candidate fixture");
+  const pack = activeProductionPack(candidateFixture, "candidate fixture");
   const nonRide = routeEdges
     .filter(({ edgeType }) => edgeType !== "RIDE")
     .map(canonicalUnverifiedEdge);

@@ -383,7 +383,8 @@ function response(status, body, resultCode = "00") {
 function kricOpenApiCandidates() {
   return document.candidates.filter((candidate) => {
     if (typeof candidate.requestUrl !== "string") return false;
-    return URL.parse(candidate.requestUrl)?.host === KRIC_OPENAPI_HOST;
+    const url = URL.parse(candidate.requestUrl);
+    return url?.host === KRIC_OPENAPI_HOST && url.pathname.startsWith("/openapi/");
   });
 }
 
@@ -463,7 +464,8 @@ test("evidence.endpoint는 requestUrl과 같은 provider host를 가리킨다", 
 
 test("KRIC OpenAPI candidate는 endpoint 3중 일치와 포털 정본 detail 페이지를 쓴다", () => {
   const candidates = kricOpenApiCandidates();
-  assert.equal(candidates.length, 18);
+  assert.ok(!candidates.some(({ id }) => id === "kric-provider-code-catalog"),
+    "the official FILE attachment is not an OpenAPI operation");
 
   for (const candidate of candidates) {
     const requestUrl = new URL(candidate.requestUrl);

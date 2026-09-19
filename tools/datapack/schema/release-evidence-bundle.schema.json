@@ -102,7 +102,7 @@
     "validatorStatus": { "$ref": "#/$defs/gateStatus" },
     "coverageStatus": { "$ref": "#/$defs/gateStatus" },
     "routeMapPositionCoverageStatus": { "$ref": "#/$defs/gateStatus" },
-    "routeGraphTopologyStatus": { "$ref": "#/$defs/routeGraphGateStatus" },
+    "routeGraphTopologyStatus": { "$ref": "#/$defs/gateStatus" },
     "routeGraphTopologyViolationCount": { "type": "integer", "minimum": 0 },
     "headwayReportStatus": { "$ref": "#/$defs/headwayGateStatus" },
     "strictRouteRegressionStatus": { "$ref": "#/$defs/gateStatus" },
@@ -171,9 +171,6 @@
       "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL"]
     },
     "headwayGateStatus": {
-      "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL", "DEFERRED"]
-    },
-    "routeGraphGateStatus": {
       "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL", "DEFERRED"]
     },
     "candidateServerRouteEvidence": {

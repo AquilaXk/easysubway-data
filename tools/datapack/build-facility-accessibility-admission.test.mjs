@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   buildFacilityAccessibilityAdmission,
+  buildPackFacilityAccessibilityAdmission,
   canonicalFacilityAccessibilityAdmissionJson,
 } from "./build-facility-accessibility-admission.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
@@ -99,6 +100,75 @@ test("eligible official facility와 exhaustive absence를 Data #8 evidence로 �
   const conflictingResult = buildFacilityAccessibilityAdmission(conflicting);
   assert.equal(conflictingResult.decision, "NO_GO");
   assert.equal(conflictingResult.stateSummary.ADMITTED_VERIFIED_ABSENCE, 0);
+});
+
+test("production pack facility admission은 canonical evidence를 generic admission에 그대로 바인딩한다", () => {
+  const input = validInput();
+  input.facilityRows = [
+    facilityRow({ strictRouteEligible: true, strictRouteEligibleReason: "OFFICIAL_OPERATION_AVAILABLE" }),
+    ...requiredAbsenceRows({ stationId: "station-b", providerRecordHash: "b".repeat(64) }),
+  ];
+  const pack = productionPackFromInput(input);
+
+  assert.deepEqual(
+    buildPackFacilityAccessibilityAdmission({
+      candidate: input.candidate,
+      observedAt: input.observedAt,
+      pack,
+      sources: input.sources,
+    }),
+    buildFacilityAccessibilityAdmission(input),
+  );
+
+  const missingStation = structuredClone(pack);
+  missingStation.stations.pop();
+  assert.throws(() => buildPackFacilityAccessibilityAdmission({
+    candidate: input.candidate, observedAt: input.observedAt, pack: missingStation, sources: input.sources,
+  }), /missing station/);
+
+  const missingLine = structuredClone(pack);
+  missingLine.lines.pop();
+  assert.throws(() => buildPackFacilityAccessibilityAdmission({
+    candidate: input.candidate, observedAt: input.observedAt, pack: missingLine, sources: input.sources,
+  }), /missing line/);
+
+  const duplicateLine = structuredClone(pack);
+  duplicateLine.lines.push(structuredClone(duplicateLine.lines[0]));
+  assert.throws(() => buildPackFacilityAccessibilityAdmission({
+    candidate: input.candidate, observedAt: input.observedAt, pack: duplicateLine, sources: input.sources,
+  }), /duplicate canonical line id/);
+
+  const duplicateStation = structuredClone(pack);
+  duplicateStation.stations.push(structuredClone(duplicateStation.stations[0]));
+  assert.throws(() => buildPackFacilityAccessibilityAdmission({
+    candidate: input.candidate, observedAt: input.observedAt, pack: duplicateStation, sources: input.sources,
+  }), /duplicate canonical station id/);
+
+  const unknown = validInput();
+  unknown.facilityRows = [facilityRow({
+    operationalStatus: "UNKNOWN",
+    strictRouteEligible: false,
+    strictRouteEligibleReason: "OPERATION_STATUS_UNKNOWN",
+    statusMeaning: "STATIC_LOCATION",
+  })];
+  assert.equal(buildPackFacilityAccessibilityAdmission({
+    candidate: unknown.candidate,
+    observedAt: unknown.observedAt,
+    pack: productionPackFromInput(unknown),
+    sources: unknown.sources,
+  }).decision, "NO_GO");
+
+  const stale = validInput();
+  stale.stationLines = stale.stationLines.filter(({ stationId }) => stationId === "station-a");
+  refreshCandidate(stale);
+  stale.facilityRows = [facilityRow({ operationalStatus: "UNKNOWN", strictRouteEligible: false })];
+  stale.observedAt = FRESH_UNTIL;
+  assert.equal(buildPackFacilityAccessibilityAdmission({
+    candidate: stale.candidate,
+    observedAt: stale.observedAt,
+    pack: productionPackFromInput(stale),
+    sources: stale.sources,
+  }).decision, "NO_GO");
 });
 
 test("current route-ineligible status는 UNKNOWN이고 evidence 부재는 MISSING이다", () => {
@@ -283,6 +353,22 @@ function validInput() {
   };
   refreshCandidate(value);
   return value;
+}
+
+function productionPackFromInput(input) {
+  const lines = new Map();
+  const stations = new Set();
+  for (const { stationId, lineId, operatorId } of input.stationLines) {
+    stations.add(stationId);
+    lines.set(lineId, { id: lineId, operatorId });
+  }
+  return {
+    artifactKind: "production",
+    lines: [...lines.values()],
+    stations: [...stations].map((id) => ({ id })),
+    stationLines: input.stationLines.map(({ stationId, lineId }) => ({ stationId, lineId })),
+    stationFacilityEvidence: input.facilityRows.map((row) => ({ ...row, ignoredPackField: "not admission evidence" })),
+  };
 }
 
 function refreshCandidate(input) {

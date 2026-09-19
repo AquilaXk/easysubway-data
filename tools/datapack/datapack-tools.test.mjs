@@ -510,24 +510,49 @@ function materializeCurrentAvailableEntryEvidence(database, pack, {
   return edge.id;
 }
 
-test("데이터팩 생성기는 TEST_ONLY admission fixture를 build input으로 거부한다", async (context) => {
-  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-test-only-"));
-  context.after(() => rm(outputDir, { recursive: true, force: true }));
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/build-datapack.mjs",
-        "--fixture",
-        "tools/datapack/fixtures/test-only-itx-cheongchun-admitted.json",
-        "--output",
-        outputDir,
-      ],
-      { cwd: root, env: productionEnv },
-    ),
-    /TEST_ONLY artifact cannot be used as datapack build input/,
-  );
-});
+test(
+  "데이터팩 생성기는 TEST_ONLY와 unadmitted assembly fixture를 직접 build input으로 거부한다",
+  async (context) => {
+    const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-test-only-"));
+    context.after(() => rm(outputDir, { recursive: true, force: true }));
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-datapack.mjs",
+          "--fixture",
+          "tools/datapack/fixtures/test-only-itx-cheongchun-admitted.json",
+          "--output",
+          outputDir,
+        ],
+        { cwd: root, env: productionEnv },
+      ),
+      /TEST_ONLY artifact cannot be used as datapack build input/,
+    );
+
+    const assemblyFixturePath = path.join(outputDir, "assembly-fixture.json");
+    const assemblyFixture = JSON.parse(await readFile(
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "utf8",
+    ));
+    assemblyFixture.assemblyInputs = {};
+    await writeFile(assemblyFixturePath, `${JSON.stringify(assemblyFixture)}\n`);
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-datapack.mjs",
+          "--fixture",
+          assemblyFixturePath,
+          "--output",
+          outputDir,
+        ],
+        { cwd: root, env: productionEnv },
+      ),
+      /assembly inputs require --build-spec/,
+    );
+  },
+);
 
 test("route service evidence domain split은 legacy TEST_ONLY canonical tuple을 v19 writer 전에 거부한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-v19-test-only-"));
@@ -1858,7 +1883,7 @@ test("데이터팩 생성기는 admin review 없는 source snapshot buildSpec을
   try {
     await assert.rejects(
       runCandidateBuild({ buildSpecPath, output: outputDir, repositoryRoot }),
-      /buildSpec\.sourceSnapshots\[0\]\.adminReviewRecordHash must be a non-empty string/,
+      /buildSpec\.sourceSnapshots\[0\] must contain exactly one admission projection/,
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -2320,15 +2345,30 @@ test("데이터팩 생성기는 temp buildSpec이 생성 fixture를 참조할 �
   await mkdir(buildSpecDir, { recursive: true });
 
   try {
-    await copyFile(path.join(repositoryRoot, "tools/datapack/fixtures/catalog-fixture.json"), fixturePath);
+    const fixtureBytes = await readFile(path.join(
+      repositoryRoot,
+      "tools/datapack/fixtures/catalog-fixture.json",
+    ));
+    await writeFile(fixturePath, fixtureBytes);
     const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/fixtures/candidate-build-spec.json"), "utf8"));
     buildSpec.fixturePath = fixturePath;
+    buildSpec.fixtureSha256 = sha256(fixtureBytes);
     await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
 
     await runCandidateBuild({ buildSpecPath, output: outputDir, repositoryRoot });
 
     const provenance = JSON.parse(await readFile(path.join(outputDir, "current.provenance.json"), "utf8"));
     assert.equal(provenance.candidateBuild.candidateId, "capital-pilot-candidate-fixture");
+
+    await writeFile(fixturePath, Buffer.concat([fixtureBytes, Buffer.from("\n")]));
+    await assert.rejects(
+      runCandidateBuild({
+        buildSpecPath,
+        output: path.join(workspace, "changed-output"),
+        repositoryRoot,
+      }),
+      /buildSpec\.fixtureSha256 must match source fixture bytes/,
+    );
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

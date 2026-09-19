@@ -20,7 +20,6 @@ const SCHEMATIC_PATH = path.join(
   "tools/datapack/fixtures/daejeon-route-map-positions-raw/owner-self-drawn-sma-schematic-canvas-20260725.json",
 );
 const TOPOLOGY_PATH = path.join(root, "tools/datapack/sources/daejeon-route-topology-20260720.json");
-const SNAPSHOT_PATH = path.join(root, "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json");
 const METRO_MAP_PACK_DIR = path.join(root, "apps/mobile/assets/datapacks/metro_map_pack");
 const CAPITAL_SQLITE_GZ = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
 const capturedAt = "2026-07-25T03:00:00.000Z";
@@ -37,14 +36,37 @@ async function loadInputs() {
     readFile(TOPOLOGY_PATH, "utf8").then(JSON.parse),
     readFile(SCHEMATIC_PATH, "utf8").then(JSON.parse),
   ]);
-  return { xlsxBytes, topologySnapshot, schematicCanvas };
+  return {
+    xlsxBytes,
+    topologySnapshot,
+    topologySource: topologySourceFor(topologySnapshot),
+    schematicCanvas,
+  };
+}
+
+function topologySourceFor(topologySnapshot) {
+  const snapshotId = "daejeon-station-distance-fare-fixture-alternate";
+  return {
+    id: topologySnapshot.sourceId,
+    topologyAdmissionEvidence: {
+      snapshotId,
+      snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+      capturedAt: topologySnapshot.observedAt,
+      stationCount: topologySnapshot.stationNumbers.length,
+      edgeCount: topologySnapshot.rowCount,
+      excludedTransferCount: topologySnapshot.excludedTransferCount,
+      rawSha256: topologySnapshot.rawSha256,
+      contentSha256: topologySnapshot.contentSha256,
+    },
+  };
 }
 
 test("대전 공식 KRIC FILE 위경도 + schematic canvas를 1호선 22역 snapshot으로 결속한다", async () => {
-  const { xlsxBytes, topologySnapshot, schematicCanvas } = await loadInputs();
+  const { xlsxBytes, topologySnapshot, topologySource, schematicCanvas } = await loadInputs();
   const snapshot = collectDaejeonRouteMapPositions({
     xlsxBytes,
     topologySnapshot,
+    topologySource,
     schematicCanvas,
     now: new Date(capturedAt),
   });
@@ -68,7 +90,14 @@ test("대전 공식 KRIC FILE 위경도 + schematic canvas를 1호선 22역 snap
   assert.equal(snapshot.credentialRedacted, true);
   assert.equal(snapshot.observedDataUpdatedAt, "2026-06-25");
   assert.equal(snapshot.topologySourceId, "daejeon-station-distance-fare");
-  assert.equal(snapshot.topologySnapshotId, "daejeon-station-distance-fare-topology-20260720");
+  assert.equal(
+    snapshot.topologySnapshotId,
+    topologySource.topologyAdmissionEvidence.snapshotId,
+  );
+  assert.equal(snapshot.topologyLineages[0].snapshotId, topologySource.topologyAdmissionEvidence.snapshotId);
+  assert.equal(snapshot.topologyLineages[0].contentSha256, topologySnapshot.contentSha256);
+  assert.equal(topologySource.topologyAdmissionEvidence.capturedAt, topologySnapshot.observedAt);
+  assert.equal(snapshot.capturedAt, capturedAt);
   assert.equal(snapshot.schematicCanvasSourceId, "owner-self-drawn-sma-schematic");
   assert.equal(snapshot.topologyContentSha256, topologySnapshot.contentSha256);
   assert.equal(snapshot.rawSha256, EXPECTED_RAW_SHA256);
@@ -106,6 +135,22 @@ test("대전 공식 KRIC FILE 위경도 + schematic canvas를 1호선 22역 snap
   );
   assert.equal(validateDaejeonRouteMapPositionsSnapshot(snapshot), snapshot);
   assert.doesNotMatch(JSON.stringify(snapshot), /serviceKey/i);
+
+  assert.throws(() => collectDaejeonRouteMapPositions({
+    xlsxBytes,
+    topologySnapshot,
+    schematicCanvas,
+    now: new Date(capturedAt),
+  }), /topology source binding/);
+  const mismatchedTopologySource = structuredClone(topologySource);
+  mismatchedTopologySource.topologyAdmissionEvidence.rawSha256 = "0".repeat(64);
+  assert.throws(() => collectDaejeonRouteMapPositions({
+    xlsxBytes,
+    topologySnapshot,
+    topologySource: mismatchedTopologySource,
+    schematicCanvas,
+    now: new Date(capturedAt),
+  }), /topology source binding/);
 });
 
 test("topology/schematic 미매칭은 fail closed 한다", async () => {
@@ -132,10 +177,11 @@ test("topology/schematic 미매칭은 fail closed 한다", async () => {
 });
 
 test("snapshot hash나 좌표가 바뀌면 admission을 거부한다", async () => {
-  const { xlsxBytes, topologySnapshot, schematicCanvas } = await loadInputs();
+  const { xlsxBytes, topologySnapshot, topologySource, schematicCanvas } = await loadInputs();
   const snapshot = collectDaejeonRouteMapPositions({
     xlsxBytes,
     topologySnapshot,
+    topologySource,
     schematicCanvas,
     now: new Date(capturedAt),
   });
@@ -145,12 +191,12 @@ test("snapshot hash나 좌표가 바뀌면 admission을 거부한다", async () 
 });
 
 test("#2496 inventory·candidate는 snapshot byte identity와 자유 이용 근거를 고정한다", async () => {
-  const [snapshotBytes, inventory, candidates] = await Promise.all([
-    readFile(SNAPSHOT_PATH),
+  const [inventory, candidates] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
   ]);
   const source = inventory.sources.find(({ id }) => id === "daejeon-transportation-route-map-positions");
+  const snapshotBytes = await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath));
   const candidate = candidates.candidates.find(({ id }) => id === source.id);
   assert.equal(source.productionUseAllowed, true);
   assert.equal(source.license.redistributionAllowed, true);

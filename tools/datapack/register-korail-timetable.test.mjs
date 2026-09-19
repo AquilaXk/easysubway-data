@@ -7,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { governanceBeforeSource } from "./test-fixtures/independent-source-governance.mjs";
 import { buildCollectedKorailTopologySnapshot } from "./parse-korail-metropolitan-timetable.mjs";
 import {
   buildKorailScheduleIds,
@@ -132,7 +133,8 @@ async function writeRegistrationFixture(root, { parentObservationMutation } = {}
     readFile(path.join(repositoryRoot, expectedOutputs[2])),
     readFile(path.join(repositoryRoot, expectedOutputs[3])),
   ]);
-  const governance = JSON.parse(governanceBytes);
+  // 첫 등록은 실제 governance 이력을 보존한 대상 source의 등록 전 상태에서 시작한다.
+  const governance = governanceBeforeSource(JSON.parse(governanceBytes), fixtureScheduleCandidate().id);
   const time = fixtureTime(governance);
   const candidate = fixtureScheduleCandidate();
   const candidates = { schemaVersion: 1, artifactKind: "production-source-candidates", candidates: [candidate] };

@@ -6,22 +6,65 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectHistoricalRegionalMaterializeInventory } from "./materialize-test-fixture.mjs";
+import { projectHistoricalRegionalMaterializeInventory, projectRegionalFixtureSourceBindings } from "./materialize-test-fixture.mjs";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { busanTimetableCounts } from "./collect-busan-timetable.mjs";
 import {
   materializeBusanRouteTopology,
   parseCanonicalBusanStationMappings,
 } from "./materialize-busan-route-topology.mjs";
 import {
   materializeBusanTimetable,
+  projectBusanObservedStops,
   runBusanTimetableMaterializer,
+  validateTopologyLineage,
 } from "./materialize-busan-timetable.mjs";
 import { materializeDaejeonTimetable } from "./materialize-daejeon-timetable.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const now = new Date("2026-07-20T09:00:00.000Z");
 const execFileAsync = promisify(execFile);
+
+test("Busan timetable binds official topology without replacing canonical edge IDs", () => {
+  const edge = { edgeId: "provider-edge", lineId: "line-a", fromStationCode: "a",
+    toStationCode: "b", durationSeconds: 30, stoppingSeconds: 5, distanceMeters: 200 };
+  const evidence = { topologySnapshotId: "selected-snapshot", topologyContentSha256: "a".repeat(64) };
+  const stations = new Map([["line-a:a", { stationId: "station-a" }],
+    ["line-a:b", { stationId: "station-b" }]]);
+  const pack = {
+    sourceInventory: [{ id: "busan-transportation-route-topology" }],
+    networkEdges: [{ id: "canonical-edge", sourceId: "busan-transportation-route-topology",
+      fromNodeId: "station-a:line-a", toNodeId: "station-b:line-a",
+      durationSeconds: 35, distanceMeters: 200, sourceSnapshotId: "selected-snapshot",
+      providerRecordHash: createHash("sha256").update(JSON.stringify(edge)).digest("hex"),
+      evidenceHash: "a".repeat(64) }],
+  };
+  assert.deepEqual(validateTopologyLineage(pack, evidence, { edges: [edge] }, stations),
+    new Set(["station-a:line-a:station-b:line-a"]));
+  pack.networkEdges[0].durationSeconds += 1;
+  assert.throws(() => validateTopologyLineage(pack, evidence, { edges: [edge] }, stations), /lineage mismatch/);
+});
+
+test("Busan timetable headsign projects the last canonical observed passenger stop", () => {
+  const stations = new Map([
+    ["line-a:100", { stationId: "station-a", stationName: "출발역" }],
+    ["line-a:101", { stationId: "station-b", stationName: "관측 종점" }],
+  ]);
+  const stops = projectBusanObservedStops([
+    { row: { scode: "100", endcode: "318" }, seconds: 300 },
+    { row: { scode: "101", endcode: "318" }, seconds: 360 },
+  ], stations, "line-a");
+
+  assert.equal(stops.at(-1).station.stationName, "관측 종점");
+  assert.deepEqual(stops.map(({ row, seconds, station }) => [row.scode, row.endcode, seconds, station.stationId]), [
+    ["100", "318", 300, "station-a"],
+    ["101", "318", 360, "station-b"],
+  ]);
+  assert.throws(() => projectBusanObservedStops([
+    { row: { scode: "999" }, seconds: 300 },
+  ], stations, "line-a"), /canonical station missing/);
+});
 
 test("부산 공식 109140행을 3833 trip·109140 stop_time으로 materialize한다", async () => {
   const { fixture } = await inputs();
@@ -59,13 +102,13 @@ test("부산 timetable admission은 snapshot·inventory·freshness·topology lin
     now,
   }), /snapshot/);
 
-  assert.throws(() => materializeBusanTimetable({
+  assert.doesNotThrow(() => materializeBusanTimetable({
     baseFixture: values.cumulativeFixture,
     timetableSnapshot: values.busanTimetable,
     topologySnapshot: values.busanTopology,
     inventory: values.inventory,
     now: new Date("2026-07-21T08:37:16.931Z"),
-  }), /freshness/);
+  }));
 
   const badInventory = structuredClone(values.inventory);
   badInventory.sources.find(({ id }) => id === "busan-transportation-timetable")
@@ -106,6 +149,46 @@ test("부산 timetable admission은 snapshot·inventory·freshness·topology lin
     inventory: badTimetableInventory,
     now,
   }), /topology adjacency/);
+});
+
+test("Busan materializer binds admitted changed timetable counts and rejects mismatched evidence", async () => {
+  const values = await inputs({ materialize: false });
+  const timetableSnapshot = structuredClone(values.busanTimetable);
+  const [removedTrip] = timetableSnapshot.rows;
+  timetableSnapshot.rows = timetableSnapshot.rows.filter((row) =>
+    [row.line, row.day, row.trainno, row.updown, row.endcode].join("\0")
+      !== [removedTrip.line, removedTrip.day, removedTrip.trainno, removedTrip.updown, removedTrip.endcode].join("\0"));
+  timetableSnapshot.rowCount = timetableSnapshot.rows.length;
+  timetableSnapshot.rowsSha256 = createHash("sha256").update(JSON.stringify(timetableSnapshot.rows)).digest("hex");
+  const counts = busanTimetableCounts(timetableSnapshot.rows);
+  const inventory = structuredClone(values.inventory);
+  const evidence = inventory.sources.find(({ id }) => id === "busan-transportation-timetable")
+    .scheduleAdmissionEvidence;
+  Object.assign(evidence, { rowCount: timetableSnapshot.rows.length, ...counts, rowsSha256: timetableSnapshot.rowsSha256 });
+
+  const fixture = materializeBusanTimetable({
+    baseFixture: values.cumulativeFixture,
+    timetableSnapshot,
+    topologySnapshot: values.busanTopology,
+    inventory,
+    now,
+  });
+  const pack = fixture.packs[0];
+  assert.equal(pack.transitTrips.filter(({ sourceId }) => sourceId === "busan-transportation-timetable").length,
+    counts.tripCount);
+  assert.equal(pack.transitStopTimes.filter(({ sourceId }) => sourceId === "busan-transportation-timetable").length,
+    counts.stopTimeCount);
+
+  const mismatchedInventory = structuredClone(inventory);
+  mismatchedInventory.sources.find(({ id }) => id === "busan-transportation-timetable")
+    .scheduleAdmissionEvidence.tripCount += 1;
+  assert.throws(() => materializeBusanTimetable({
+    baseFixture: values.cumulativeFixture,
+    timetableSnapshot,
+    topologySnapshot: values.busanTopology,
+    inventory: mismatchedInventory,
+    now,
+  }), /inventory evidence does not match snapshot/);
 });
 
 test("부산 2026 토요일 공휴일은 휴일 운행을 추가하고 토요일 운행을 제거한다", async () => {
@@ -175,7 +258,7 @@ test("부산 timetable materializer CLI가 cumulative fixture를 출력한다", 
 
 async function inputs({ materialize = true } = {}) {
   const [baseFixture, busanTopology, busanTimetable, daejeonTimetable, daejeonTopology,
-    inventory, busanMap, daejeonMap] = await Promise.all([
+    sourceInventory, busanMap, daejeonMap] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
@@ -185,6 +268,10 @@ async function inputs({ materialize = true } = {}) {
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: sourceInventory, busanTopology, busanTimetable, stationMapCsv: busanMap,
+    daejeonTopology, daejeonTimetable, molitStationMapCsv: daejeonMap,
+  });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture,
     snapshot: busanTopology,

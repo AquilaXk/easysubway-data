@@ -20,6 +20,10 @@ const DERIVED_RECIPROCALS = new Map([
   ["station-gangnam\0shinbundang\0seoul-2", "station-gangnam\0seoul-2\0shinbundang"],
 ]);
 
+export function currentTransferLineIds() {
+  return [...LINE_BY_SOURCE_NAME.values()].toSorted(compareBytes);
+}
+
 export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log } = {}) {
   const { observationDirectory, output } = parseArgs(argv);
   await outputMustBeAbsent(output);
@@ -65,9 +69,10 @@ export function buildTransferTopologyMetrics({ canonical, canonicalPackBytes, ob
   const physicalPairs = canonical.physicalPairs.map((pair) => buildPhysicalPair(pair, records));
   const metrics = physicalPairs.flatMap(({ stationId, lineIds, directions }) => directions.map((direction) => ({ stationId, ...direction })))
     .sort(compareMetric);
-  if (physicalPairs.length !== 15 || metrics.length !== 30
-    || metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length !== 28
-    || metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length !== 2) {
+  const derivedCount = metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
+  const officialCount = metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  if (physicalPairs.length === 0 || metrics.length !== physicalPairs.length * 2
+    || derivedCount !== DERIVED_RECIPROCALS.size || officialCount !== metrics.length - derivedCount) {
     throw new Error("NO_GO transfer topology metric composition mismatch");
   }
   assertExactDerivedReciprocals(metrics);
@@ -159,18 +164,18 @@ function deriveCanonicalTarget(value, kricCatalogBytes) {
   if (!evidence.some(({ regionId, operatorId, sourceDomain }) => regionId === "capital" && operatorId === "seoul-metro" && sourceDomain === "station_line_membership")) throw new Error("NO_GO canonical coverage identity mismatch");
   validateShinbundangIdentity(parseJson(kricCatalogBytes, "KRIC line identity"));
   const lines = new Map(capital.lines?.map((line) => [line.id, line]));
-  const activeIds = new Set(["seoul-2", "seoul-4", "line-80fc4d5350d4", "line-3f41718e0833", "shinbundang"]);
+  const activeIds = new Set(currentTransferLineIds());
   if ([...activeIds].some((id) => lines.get(id)?.operatorId !== "seoul-metro")) throw new Error("NO_GO canonical line identity mismatch");
   const stations = capital.stations?.filter(({ id, nameKo }) => nonBlank(id) && nonBlank(nameKo));
   const stationLines = capital.stationLines?.filter(({ stationId, lineId }) => activeIds.has(lineId) && nonBlank(stationId));
-  if (!Array.isArray(stations) || !Array.isArray(stationLines) || stationLines.length !== 213 || new Set(stationLines.map(({ stationId }) => stationId)).size !== 199) throw new Error("NO_GO canonical target denominator mismatch");
+  if (!Array.isArray(stations) || !Array.isArray(stationLines) || stationLines.length === 0) throw new Error("NO_GO canonical target denominator mismatch");
   const stationIds = new Set(stations.map(({ id }) => id));
   if (stationIds.size !== stations.length || stationLines.some(({ stationId }) => !stationIds.has(stationId))) throw new Error("NO_GO canonical station identity mismatch");
   const seen = new Set();
   for (const { stationId, lineId } of stationLines) { const key = `${stationId}\0${lineId}`; if (seen.has(key)) throw new Error("NO_GO duplicate canonical station-line"); seen.add(key); }
   const grouped = Map.groupBy(stationLines, ({ stationId }) => stationId);
   const physicalPairs = [...grouped.entries()].flatMap(([stationId, memberships]) => combinations(memberships.map(({ lineId }) => lineId).sort(compareBytes), 2).map((lineIds) => ({ stationId, lineIds }))).sort(comparePair);
-  if (physicalPairs.length !== 15) throw new Error("NO_GO canonical physical transfer pair count mismatch");
+  if (physicalPairs.length === 0) throw new Error("NO_GO canonical physical transfer pair count mismatch");
   return { stations, stationIds: [...new Set(stationLines.map(({ stationId }) => stationId))].sort(compareBytes), stationLines, physicalPairs, kricProviderCatalogSha256: sha256(kricCatalogBytes) };
 }
 

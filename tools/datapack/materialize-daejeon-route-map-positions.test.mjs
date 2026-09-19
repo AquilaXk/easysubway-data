@@ -11,6 +11,7 @@ import {
   loadRegionalGwangjuRouteMapPrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
+  projectRegionalFixtureSourceBindings,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
@@ -34,7 +35,7 @@ const OPERATOR_ID = "daejeon-transportation";
 async function inputs() {
   const [
     regional,
-    daejeonSnapshotBytes,
+    currentInventory,
   ] = await Promise.all([
     loadRegionalGwangjuRouteMapPrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
@@ -45,14 +46,28 @@ async function inputs() {
       gwangjuAccessibilityNow: accessibilityNow,
       gwangjuRouteMapNow,
     }),
-    readFile(path.join(root, "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json")),
+    readJson("tools/datapack/source-inventory.json"),
   ]);
-  const { daejeonTopology, gwangjuRouteMapFixture, inventory } = regional;
+  const topologySource = currentInventory.sources.find(({ id }) => id === "daejeon-station-distance-fare");
+  const routeMapSource = currentInventory.sources.find(({ id }) => id === SOURCE_ID);
+  const [topologySnapshot, daejeonSnapshotBytes] = await Promise.all([
+    readFile(path.join(root, topologySource.topologyAdmissionEvidence.snapshotPath), "utf8").then(JSON.parse),
+    readFile(path.join(root, routeMapSource.routeMapAdmissionEvidence.snapshotPath)),
+  ]);
+  const daejeonSnapshot = JSON.parse(daejeonSnapshotBytes);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: regional.inventory,
+    daejeonTopology: topologySnapshot,
+    molitStationMapCsv: regional.molitStationMapCsv,
+    daejeonRouteMapSnapshot: daejeonSnapshot,
+    daejeonRouteMapSnapshotBytes: daejeonSnapshotBytes,
+  });
+  const { gwangjuRouteMapFixture } = regional;
   return {
     baseFixture: gwangjuRouteMapFixture,
-    daejeonSnapshot: JSON.parse(daejeonSnapshotBytes),
+    daejeonSnapshot,
     daejeonSnapshotSha256: createHash("sha256").update(daejeonSnapshotBytes).digest("hex"),
-    topologySnapshot: daejeonTopology,
+    topologySnapshot,
     inventory,
   };
 }

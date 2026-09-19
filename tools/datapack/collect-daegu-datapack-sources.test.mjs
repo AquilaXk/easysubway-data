@@ -1,16 +1,63 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
-  DAEGU_LINES, decodeOfficialCsv, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
+  DAEGU_LINES, daeguSourceSnapshotIdentity, decodeOfficialCsv, loadAdmittedDaeguTopologySnapshots, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
+  writeDaeguSourceSnapshot,
 } from "./collect-daegu-datapack-sources.mjs";
+import { ledgerRow, prepareDaeguSourceRegistration } from "./register-daegu-datapack-sources.mjs";
+import {
+  daeguDependentRebindOutputPlan,
+} from "./register-daegu-datapack-sources.mjs";
+import { buildDaeguTopologyDependents } from "./lib/daegu-topology-dependents.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const readSnapshot = async (name) => JSON.parse(await readFile(path.join(root, "tools/datapack/sources", name), "utf8"));
+
+test("Daegu snapshot output is content-addressed and create-once", async (t) => {
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-source-output-"));
+  t.after(() => rm(outputDirectory, { recursive: true, force: true }));
+  const snapshot = { sourceId: "daegu-line1-route-topology", capturedAt: "2040-01-01T00:00:00.000Z" };
+  const exactBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
+  const firstPath = await writeDaeguSourceSnapshot(outputDirectory, snapshot);
+  assert.equal(daeguSourceSnapshotIdentity(snapshot), `${snapshot.sourceId}-${sha256(exactBytes)}`);
+  assert.equal(path.basename(firstPath), `${daeguSourceSnapshotIdentity(snapshot)}.json`);
+  assert.deepEqual(await readFile(firstPath), exactBytes);
+
+  const secondSnapshot = { ...snapshot, capturedAt: "2040-01-02T00:00:00.000Z" };
+  const secondPath = await writeDaeguSourceSnapshot(outputDirectory, secondSnapshot);
+  const otherSource = { ...snapshot, sourceId: "daegu-line2-route-topology" };
+  assert.notEqual(secondPath, firstPath);
+  assert.notEqual(daeguSourceSnapshotIdentity(secondSnapshot), daeguSourceSnapshotIdentity(snapshot));
+  assert.notEqual(daeguSourceSnapshotIdentity(otherSource), daeguSourceSnapshotIdentity(snapshot));
+  assert.deepEqual(await readFile(firstPath), exactBytes);
+  await assert.rejects(() => writeDaeguSourceSnapshot(outputDirectory, snapshot), { code: "EEXIST" });
+});
+
+test("Daegu topology loader selects admitted content identities", async (t) => {
+  const sourcesDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-admitted-topology-"));
+  t.after(() => rm(sourcesDirectory, { recursive: true, force: true }));
+  const snapshots = Object.fromEntries(DAEGU_LINES.map((line) => [line.lineNumber, {
+    sourceId: `daegu-line${line.lineNumber}-route-topology`, contentSha256: `${line.lineNumber}`.repeat(64),
+  }]));
+  const sources = await Promise.all(DAEGU_LINES.map(async (line) => {
+    const snapshot = snapshots[line.lineNumber];
+    const snapshotId = daeguSourceSnapshotIdentity(snapshot);
+    await writeFile(path.join(sourcesDirectory, `${snapshotId}.json`), JSON.stringify(snapshot));
+    return { id: snapshot.sourceId, topologyAdmissionEvidence: {
+      snapshotId, snapshotPath: `tools/datapack/sources/${snapshotId}.json`, contentSha256: snapshot.contentSha256,
+    } };
+  }));
+  const inventory = { sources };
+  assert.deepEqual(await loadAdmittedDaeguTopologySnapshots(sourcesDirectory, inventory), snapshots);
+  inventory.sources[0].topologyAdmissionEvidence.snapshotId = `${inventory.sources[0].id}-wrong`;
+  await assert.rejects(loadAdmittedDaeguTopologySnapshots(sourcesDirectory, inventory), /selected source snapshot is invalid|selected topology binding/);
+});
 
 // 공식 원문 파일별 SHA-256(이슈 #2407 표) — 취득 원문 identity 고정
 const RAW_SHA256 = {
@@ -108,6 +155,136 @@ test("고정된 대구 시각표 snapshot 3종이 취득 원문·trip 완전성�
   }
 });
 
+test("Daegu registrar requires original CSV input files", async (t) => {
+  const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-registration-input-"));
+  t.after(() => rm(inputDirectory, { recursive: true, force: true }));
+  await assert.rejects(prepareDaeguSourceRegistration({
+    repositoryRoot: root, inputDirectory, capturedAt: new Date().toISOString(),
+  }), (error) => error.code === "ENOENT" && DAEGU_LINES.some((line) =>
+    [line.intervalDatasetId, line.upDatasetId, line.downDatasetId]
+      .some((id) => error.path === path.join(inputDirectory, `data-go-${id}.csv`))));
+});
+
+test("Daegu registrar records topology edges and timetable rows in the ledger", () => {
+  const receipt = { rawObjectUri: "oci://example/source.json" };
+  const governanceBytes = Buffer.from(JSON.stringify({ policyVersion: "2026-09-09" }));
+  const item = ({ snapshot, evidence }) => ({
+    snapshot,
+    source: { provider: "대구교통공사", admissionEvidence: { licenseEvidenceHash: "a".repeat(64) } },
+    evidence,
+    snapshotId: `${snapshot.sourceId}-identity`,
+    snapshotBytes: Buffer.from(JSON.stringify(snapshot)),
+    ledgerFreshnessExpiresAt: "2026-09-10T00:00:00.000Z",
+    rawRetentionExpiresAt: "2026-12-09T00:00:00.000Z",
+  });
+  const topology = ledgerRow({
+    item: item({
+      snapshot: {
+        artifactKind: "daegu-route-topology-snapshot", sourceId: "daegu-line1-route-topology",
+        capturedAt: "2026-09-09T00:00:00.000Z", rawSha256: "b".repeat(64), contentSha256: "c".repeat(64),
+        edgeCount: 68, rawSources: [{ datasetId: "15061836" }],
+      },
+      evidence: { stationCount: 35, freshUntil: "2026-09-10T00:00:00.000Z" },
+    }), receipt, receiptBytes: Buffer.from("receipt"), governanceBytes, previous: null,
+  });
+  const timetable = ledgerRow({
+    item: item({
+      snapshot: {
+        artifactKind: "daegu-train-timetable-snapshot", sourceId: "daegu-line1-train-timetable",
+        capturedAt: "2026-09-09T00:00:00.000Z", rawSha256: "d".repeat(64), tripsSha256: "e".repeat(64),
+        rowCount: 408, rawSources: [{ datasetId: "15065526" }, { datasetId: "15138731" }],
+      },
+      evidence: { tripCount: 824, freshUntil: "2026-09-10T00:00:00.000Z" },
+    }), receipt, receiptBytes: Buffer.from("receipt"), governanceBytes, previous: null,
+  });
+  assert.equal(topology.rowCount, 68);
+  assert.equal(timetable.rowCount, 408);
+});
+
+test("Daegu topology dependent map rebind preserves retained raw bytes and creates one CAS plan", async (t) => {
+  const sourceDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-map-rebind-sources-"));
+  t.after(() => rm(sourceDirectory, { recursive: true, force: true }));
+  const mapSnapshotPath = path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json");
+  const mapSnapshotBytes = await readFile(mapSnapshotPath);
+  const mapSnapshot = JSON.parse(mapSnapshotBytes);
+  const topologyInputs = await Promise.all(DAEGU_LINES.map(async ({ lineNumber }) => {
+    const bytes = await readFile(path.join(
+      root,
+      `tools/datapack/sources/daegu-line${lineNumber}-route-topology-20260721.json`,
+    ));
+    const snapshot = JSON.parse(bytes);
+    const snapshotId = daeguSourceSnapshotIdentity(snapshot);
+    const absolute = path.join(sourceDirectory, `${snapshotId}.json`);
+    await writeFile(absolute, bytes);
+    return { sourceId: snapshot.sourceId, snapshot, absolute, bytes };
+  }));
+  const topologySnapshots = Object.fromEntries(topologyInputs.map(({ snapshot }) => [
+    Number(/^daegu-line(\d)-route-topology$/u.exec(snapshot.sourceId)[1]), snapshot,
+  ]));
+  const inventory = {
+    sources: [
+      ...topologyInputs.map(({ snapshot }) => {
+        const snapshotId = daeguSourceSnapshotIdentity(snapshot);
+        return {
+          id: snapshot.sourceId,
+          topologyAdmissionEvidence: {
+            snapshotId,
+            snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+            contentSha256: snapshot.contentSha256,
+          },
+        };
+      }),
+      {
+        id: "daegu-transportation-route-map-positions",
+        routeMapAdmissionEvidence: {
+          snapshotId: "daegu-transportation-route-map-positions-20260724",
+          snapshotPath: "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
+          snapshotSha256: sha256(mapSnapshotBytes),
+          capturedAt: mapSnapshot.capturedAt,
+          rawSha256: mapSnapshot.rawSha256,
+          positionsSha256: mapSnapshot.positionsSha256,
+          observedDataUpdatedAt: mapSnapshot.observedDataUpdatedAt,
+          datasetIds: mapSnapshot.datasetIds,
+        },
+      },
+    ],
+  };
+  const csvInputs = await Promise.all(mapSnapshot.datasetIds.map(async (datasetId) => {
+    const absolute = path.join(root, "tools/datapack/fixtures/daegu-route-map-positions-raw", `data-go-${datasetId}.csv`);
+    return { datasetId, absolute, bytes: await readFile(absolute) };
+  }));
+  const dependents = buildDaeguTopologyDependents({
+    inventory,
+    topologySnapshots,
+    topologyInputs,
+    mapSnapshotAbsolute: mapSnapshotPath,
+    mapSnapshotBytes,
+    csvInputs,
+  });
+  const evidence = dependents.inventory.sources.find(({ id }) => id === "daegu-transportation-route-map-positions")
+    .routeMapAdmissionEvidence;
+  assert.equal(evidence.capturedAt, mapSnapshot.capturedAt);
+  assert.equal(evidence.rawSha256, mapSnapshot.rawSha256);
+  assert.equal(evidence.positionsSha256, mapSnapshot.positionsSha256);
+  assert.equal(evidence.snapshotId, `daegu-transportation-route-map-positions-${sha256(dependents.snapshot.bytes)}`);
+  assert.equal(evidence.snapshotPath, `tools/datapack/sources/${evidence.snapshotId}.json`);
+  assert.deepEqual(evidence.topologyLineages.map(({ snapshotId }) => snapshotId), topologyInputs.map(({ snapshot }) =>
+    daeguSourceSnapshotIdentity(snapshot)));
+
+  const currentBytes = [Buffer.from(JSON.stringify(inventory)), Buffer.from("ledger"), Buffer.from("governance"), Buffer.from("freshness")];
+  const outputs = daeguDependentRebindOutputPlan({
+    root,
+    currentBytes,
+    candidatePath: path.join(root, "tools/datapack/source-candidates.json"),
+    candidateBytes: Buffer.from("{}"),
+    ...dependents,
+  });
+  assert.equal(outputs.length, 4);
+  assert.ok(outputs.slice(1).every(({ bytes, prestateBytes }) => bytes.equals(prestateBytes)));
+  assert.equal(new Set(outputs[0].inputs.map(({ absolute }) => absolute)).size, outputs[0].inputs.length);
+  assert.ok(outputs[0].inputs.some(({ absolute, bytes }) => absolute === mapSnapshotPath && bytes.equals(mapSnapshotBytes)));
+});
+
 // 아래부터는 fail-closed 회귀: 실제 원문 CSV 대신 최소 합성 데이터로 parseDaeguRouteTopology·parseDaeguTrainTimetable의
 // 개별 throw 분기를 직접 재현한다.
 const CAPTURED_AT = "2026-07-21T00:00:00.000Z";
@@ -129,6 +306,16 @@ function buildIntervalCsv(lineNumber, mutateRows) {
   mutateRows?.(rows);
   return Buffer.from([header, ...rows].map((row) => row.join(",")).join("\n"), "utf8");
 }
+
+test("Daegu source snapshots retain original CSV bytes", () => {
+  const bytes = buildIntervalCsv(1);
+  const snapshot = parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: CAPTURED_AT });
+  const [rawSource] = snapshot.rawSources;
+  assert.deepEqual(Buffer.from(rawSource.bytesBase64, "base64"), bytes);
+  assert.equal(rawSource.rawSha256, snapshot.rawSha256);
+  assert.equal(rawSource.rawSha256, sha256(bytes));
+  assert.equal(rawSource.datasetId, DAEGU_LINES.find(({ lineNumber }) => lineNumber === 1).intervalDatasetId);
+});
 
 test("역 구간정보 CSV의 상하행 거리(km)가 비대칭이면 fail-closed한다", () => {
   const bytes = buildIntervalCsv(1, (rows) => { rows[0][7] = "2.000"; }); // downKm(col7)만 변조

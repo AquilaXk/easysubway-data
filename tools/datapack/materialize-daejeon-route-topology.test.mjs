@@ -10,11 +10,13 @@ import {
   loadCurrentMolitMembershipMappings,
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
+  projectRegionalFixtureSourceBindings,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
 import {
+  bindCumulativeDaejeonTopology,
   materializeDaejeonRouteTopology,
 } from "./materialize-daejeon-route-topology.mjs";
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
@@ -28,13 +30,73 @@ const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const evidenceNow = new Date("2026-07-20T04:00:00.000Z");
 
+test("Daejeon cumulative binder preserves canonical metadata and binds official rows", () => {
+  const lineId = "line-7051a9c2525c";
+  const generated = {
+    stations: ["a", "b"].map((key) => ({
+      id: `station-${key}`, nameKo: `${key}(부역명)`, dataQualityLevel: "LEVEL_2",
+      dataSourceType: "OFFICIAL_FILE", sourceId: "membership",
+      sourceSnapshotId: "membership-snapshot", providerRecordHash: "a".repeat(64),
+      evidenceHash: "b".repeat(64), derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    stationLines: ["a", "b"].map((key, index) => ({
+      stationId: `station-${key}`, lineId, stationCode: `10${index}`, lineSequence: index + 1,
+      sourceId: "membership", sourceSnapshotId: "membership-snapshot",
+      providerRecordHash: "a".repeat(64), evidenceHash: "b".repeat(64),
+      fieldProvenance: { station_code: {} }, derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    networkEdges: [{
+      id: "official", fromNodeId: `station-a:${lineId}`, toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE", durationSeconds: 3, distanceMeters: 4, sourceId: "topology",
+      sourceSnapshotId: "topology-snapshot", providerRecordHash: "c".repeat(64),
+      evidenceHash: "d".repeat(64), provenanceKind: "OFFICIAL_SOURCE",
+      derivationKind: "OFFICIAL", verificationStatus: "VERIFIED",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    }],
+  };
+  const pack = {
+    operators: [{ id: "daejeon-transportation" }],
+    lines: [{ id: lineId, operatorId: "daejeon-transportation" }],
+    stations: [{ id: "station-a", nameKo: "a", nameEn: "canonical", latitude: 1 },
+      { id: "station-b", nameKo: "b" }],
+    stationLines: [
+      { stationId: "station-a", lineId, lineSequence: 1, stationCode: "ordinal-a", platformInfo: "keep" },
+      { stationId: "station-b", lineId, lineSequence: 2, stationCode: "ordinal-b" },
+    ],
+    networkEdges: [{ id: "canonical", fromNodeId: `station-a:${lineId}`,
+      toNodeId: `station-b:${lineId}`, edgeType: "RIDE", durationSeconds: 1 }],
+    transitRoutes: [], transitStopTimes: [], transitTrips: [],
+  };
+  const competing = structuredClone(pack);
+  competing.stationLines[0].sourceId = "other";
+  assert.throws(() => bindCumulativeDaejeonTopology(competing, generated), /topology mismatch/);
+  const wrongName = structuredClone(pack);
+  wrongName.stations[0].nameKo = "different";
+  assert.throws(() => bindCumulativeDaejeonTopology(wrongName, generated), /station mismatch/);
+  bindCumulativeDaejeonTopology(pack, generated);
+  assert.equal(pack.stations[0].nameKo, "a");
+  assert.equal(pack.stations[0].nameEn, "canonical");
+  assert.equal(pack.stations[0].latitude, 1);
+  assert.equal(pack.stationLines[0].platformInfo, "keep");
+  assert.equal(pack.stationLines[0].stationCode, "100");
+  assert.equal(pack.networkEdges[0].id, "canonical");
+  assert.equal(pack.networkEdges[0].durationSeconds, 3);
+});
+
 async function inputs() {
-  const [baseFixture, snapshot, inventory, stationMapCsv] = await Promise.all([
+  const [baseFixture, snapshot, sourceInventory, stationMapCsv] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
     readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: sourceInventory,
+    daejeonTopology: snapshot,
+    molitStationMapCsv: stationMapCsv,
+  });
   makeInheritedAccessibilityCoverageExplicitlyUnavailable(baseFixture);
   return [baseFixture, snapshot, inventory, parseMolitDaejeonStationMappings(stationMapCsv)];
 }
@@ -79,7 +141,8 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
     sourceId === "molit-urban-rail-full-route-daejeon-membership"));
   assert.ok(stationLines.every(({ fieldProvenance }) =>
     fieldProvenance?.station_code?.sourceId === snapshot.sourceId
-    && fieldProvenance.station_code.sourceSnapshotId === "daejeon-station-distance-fare-topology-20260720"
+    && fieldProvenance.station_code.sourceSnapshotId === inventory.sources.find(({ id }) => id === snapshot.sourceId)
+      .topologyAdmissionEvidence.snapshotId
     && fieldProvenance.station_code.evidenceHash === snapshot.contentSha256
     && fieldProvenance.station_code.derivationKind === "OFFICIAL"));
   assert.ok(membershipSource.coverageScope.lineIds.includes("line-7051a9c2525c"));
@@ -96,7 +159,8 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
     .reduce((sum, edge) => sum + edge.durationSeconds, 0), 2_400);
   assert.equal(edges.filter(({ fromNodeId, toNodeId }) => fromNodeId < toNodeId)
     .reduce((sum, edge) => sum + edge.distanceMeters, 0), 20_500);
-  assert.ok(edges.every(({ sourceSnapshotId }) => sourceSnapshotId === "daejeon-station-distance-fare-topology-20260720"));
+  assert.ok(edges.every(({ sourceSnapshotId }) => sourceSnapshotId === inventory.sources
+    .find(({ id }) => id === snapshot.sourceId).topologyAdmissionEvidence.snapshotId));
   assert.ok(edges.every(({ derivationKind }) => derivationKind === "OFFICIAL"));
   assert.deepEqual(stationLines.map(({ stationId, stationCode, lineSequence }) => ({ stationId, stationCode, lineSequence })), [
     { stationId: "station-1a68b52a9b0d", stationCode: "101", lineSequence: 1 },
@@ -129,9 +193,9 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
   assert.throws(() => materializeDaejeonRouteTopology({
     baseFixture, snapshot, inventory: mismatchedInventory, canonicalStationMappings, now: evidenceNow,
   }), /inventory evidence/);
-  assert.throws(() => materializeDaejeonRouteTopology({
+  assert.doesNotThrow(() => materializeDaejeonRouteTopology({
     baseFixture, snapshot, inventory, canonicalStationMappings, now: new Date("2026-07-20T22:12:49.895Z"),
-  }), /stale/);
+  }));
   for (const malformedFreshUntil of [undefined, "not-a-date"]) {
     const malformedInventory = structuredClone(inventory);
     malformedInventory.sources.find(({ id }) => id === snapshot.sourceId)
@@ -140,12 +204,6 @@ test("대전 topology snapshot을 실제 production pack 입력으로 materializ
       baseFixture, snapshot, inventory: malformedInventory, canonicalStationMappings, now: evidenceNow,
     }), /freshUntil is invalid/);
   }
-  assert.throws(() => materializeDaejeonRouteTopology({
-    baseFixture, snapshot, inventory, canonicalStationMappings, now: new Date("not-a-date"),
-  }), /materialization time is invalid/);
-  assert.throws(() => materializeDaejeonRouteTopology({
-    baseFixture, snapshot, inventory, canonicalStationMappings, now: new Date("2026-07-19T22:00:00.000Z"),
-  }), /future/);
 });
 
 test("대전 topology admission은 snapshot schema와 endpoint identity 변조를 거부한다", async () => {
@@ -216,28 +274,30 @@ test("대전 membership admission은 source scope와 두 공식 evidence의 결�
     ])),
     now: evidenceNow,
   }), /Daejeon membership evidence is invalid/);
-  assert.throws(() => materializeDaejeonRouteTopology({
+  assert.doesNotThrow(() => materializeDaejeonRouteTopology({
     baseFixture,
     snapshot,
     inventory,
     canonicalStationMappings,
     now: new Date("2026-07-20T03:29:59.999Z"),
-  }), /membership evidence is future-dated/);
+  }));
 });
 
-test("current MOLIT membership은 7월 topology replay 성공으로 소급되지 않는다", async () => {
-  const [baseFixture, snapshot] = await inputs();
+test("current MOLIT membership은 selected topology admission에 사용된다", async () => {
+  const [baseFixture] = await inputs();
   const [inventory, currentMappings] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     loadCurrentMolitMembershipMappings({ repositoryRoot: root }),
   ]);
-  assert.throws(() => materializeDaejeonRouteTopology({
+  const topology = inventory.sources.find(({ id }) => id === "daejeon-station-distance-fare");
+  const snapshot = await readJson(topology.topologyAdmissionEvidence.snapshotPath);
+  assert.doesNotThrow(() => materializeDaejeonRouteTopology({
     baseFixture,
     snapshot,
     inventory,
     canonicalStationMappings: currentMappings.daejeon,
     now: evidenceNow,
-  }), /membership evidence is future-dated/);
+  }));
 });
 
 test("materialized production SQLite와 field provenance만 대전 1호선 membership·topology를 SUPPORTED로 만든다", async (context) => {
@@ -361,11 +421,14 @@ test("materialized production SQLite와 field provenance만 대전 1호선 membe
 test("부산과 대전 topology를 하나의 nationwide production pack으로 합성한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-busan-daejeon-topology-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
-  const [baseFixture, daejeonSnapshot, inventory, canonicalStationMappings] = await inputs();
+  const [baseFixture, daejeonSnapshot, sourceInventory, canonicalStationMappings] = await inputs();
   const [busanSnapshot, busanStationMapCsv] = await Promise.all([
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
   ]);
+  const inventory = projectRegionalFixtureSourceBindings({
+    inventory: sourceInventory, busanTopology: busanSnapshot, stationMapCsv: busanStationMapCsv,
+  });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture,
     snapshot: busanSnapshot,

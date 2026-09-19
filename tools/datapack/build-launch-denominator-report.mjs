@@ -32,7 +32,7 @@ export function buildLaunchDenominatorReport(scope, evidence) {
     decision: blockers.length === 0 ? "GO" : "NO_GO",
     blockers,
     evaluatorInput,
-    nationwideBlocksV1: false,
+    nationwideBlocksV1: true,
     scopes: {
       verifiedAccessibilityScope: scopeSummary(scope?.verifiedAccessibilityScope),
       routingLaunchScope: scopeSummary(scope?.routingLaunchScope),
@@ -57,7 +57,7 @@ export function buildLaunchDenominatorReport(scope, evidence) {
       nationwide: {
         requiredCount: scope?.nationwideRoadmapScope?.launchRequiredCount ?? 0,
         missingCount: evaluatorInput.nationwide.missingCount,
-        blocksV1: false,
+        blocksV1: true,
       },
     },
     consumerStates: {
@@ -174,6 +174,9 @@ function collectV1Blockers(scope, evidence) {
     if (!validScopeSubsection(subsection, value)) {
       blockers.push(`SCOPE_CONTRACT_INVALID:${subsection}`);
     }
+  }
+  if (evidence?.nationwide?.missingCount !== 0) {
+    blockers.push("NATIONWIDE_COVERAGE_GAP");
   }
 
   const candidateBinding = evidence?.candidateBinding;
@@ -315,8 +318,9 @@ function validScopeSubsection(subsection, value) {
   }
   if (subsection === "nationwideRoadmapScope") {
     return nonEmptyString(value.id)
+      && value.blocksRoutingLaunch === true
       && Number.isSafeInteger(value.launchRequiredCount)
-      && value.launchRequiredCount >= 0;
+      && value.launchRequiredCount > 0;
   }
   return subsection === "identityMatrix"
     && nonEmptyStringSet(value.requiredSharedFields)

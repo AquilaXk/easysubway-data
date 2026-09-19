@@ -19,6 +19,27 @@ test("release workflow는 owned deterministic-release subset만 실행한다", (
   assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
 });
 
+test("nationwide candidate binding은 candidate effects 전에 release 경계에서 검증한다", () => {
+  assert.match(yml, /EASYSUBWAY_DATAPACK_SCOPE_POLICY: release\/product-gates\/production-datapack-scope\.json/);
+  const step = yml.match(
+    /- name: Data Pack Release \/ Validate nationwide candidate binding[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(step, "nationwide candidate binding 검증 스텝을 찾지 못함");
+  assert.match(step, /mode == 'release-candidate' \|\| steps\.release-mode\.outputs\.mode == 'candidate-create'/);
+  assert.match(step, /node tools\/datapack\/validate-candidate-source-set\.mjs --build-spec "\$\{EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH\}" --scope "\$\{EASYSUBWAY_DATAPACK_SCOPE_POLICY\}"/);
+  assert.ok(
+    yml.indexOf("Data Pack Release / Stage product contracts")
+      < yml.indexOf("Data Pack Release / Validate nationwide candidate binding")
+      && yml.indexOf("Data Pack Release / Validate nationwide candidate binding")
+        < yml.indexOf("Data Pack Release / Validate source snapshot freshness"),
+    "candidate binding은 contracts 뒤, freshness와 credential effects 전에 있어야 한다",
+  );
+  assert.ok(
+    yml.indexOf("Data Pack Release / Validate nationwide candidate binding")
+      < yml.indexOf("Data Pack Release / Restore candidate signing credentials"),
+  );
+});
+
 test("current release freshness gate는 deterministic-release와 같은 조건에서 evidence generation 전에 실행된다", () => {
   const step = (name) => yml.match(
     new RegExp(`- name: ${name}[\\s\\S]*?\\n\\s+- name:`),
@@ -265,8 +286,11 @@ test("route-final candidate는 authority·strict validation·signed route stage�
 });
 
 test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
-  assert.match(yml, /paths:[\s\S]*contracts\.lock\.json/);
-  assert.doesNotMatch(yml, /paths:[\s\S]*release\/product-gates/);
+  // trigger 범위만 검사한다. jobs의 정상적인 정책 입력까지 포함하지 않는다.
+  const push = yml.match(/^  push:\n(?:[ \t]*\n| {4}[^\n]*\n)*/m)?.[0];
+  assert.ok(push, "push trigger 블록을 찾지 못함");
+  assert.match(push, /paths:[\s\S]*contracts\.lock\.json/);
+  assert.doesNotMatch(push, /paths:[\s\S]*release\/product-gates/);
   const stage = yml.match(/- name: Data Pack Release \/ Stage product contracts[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(stage, "product contract stage 스텝을 찾지 못함");
   assert.match(stage, /if:\s*\$\{\{ steps\.release-mode\.outputs\.is-pointer-only != 'true' \}\}/);
@@ -773,6 +797,7 @@ test("release evidence는 canonical launch denominator report identity와 decisi
   assert.ok(evidenceStep, "release evidence bundle 스텝을 찾지 못함");
   assert.match(evidenceStep, /EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT/);
   assert.match(evidenceStep, /buildLaunchCandidateBinding/);
+  assert.doesNotMatch(evidenceStep, /launchTemplate|launchDenominatorTemplatePath|android-v1-launch-denominator-20260715/);
   assert.match(evidenceStep, /buildLaunchDenominatorReport/);
   assert.match(evidenceStep, /launchDenominatorReportRaw/);
   assert.match(evidenceStep, /verifiedAccessibilityScopeSha256:\s*launchReport\.scopes\.verifiedAccessibilityScope\.sha256/);

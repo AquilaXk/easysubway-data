@@ -10,14 +10,14 @@ const RECEIPT_KIND = "kric-current-station-line-file-receipt";
  * begin admission. This is deliberately a preflight: it never returns ADMITTED
  * and does not create, publish, or register an admission artifact.
  */
-export function buildKricNationwideRouteRosterAdmissionContract({
+export async function buildKricNationwideRouteRosterAdmissionContract({
   workbookBytes,
   receipt,
-  denominator,
   projection,
+  repositoryRoot,
 } = {}) {
   const bytes = Buffer.from(workbookBytes ?? []);
-  const expected = projectKricStationLineMembership({ workbookBytes: bytes, denominator });
+  const expected = await projectKricStationLineMembership({ workbookBytes: bytes, repositoryRoot });
   if (!hasCurrentStationLineReceipt(receipt, bytes)) {
     throw new Error("KRIC_STATION_LINE_RECEIPT_MISMATCH");
   }

@@ -24,19 +24,15 @@ export function registerSeoulTransferSourceSnapshot({ observation, receipt, metr
     || metrics.sourceIdentity.endpointSha256 !== manifest.endpointSha256 || metrics.sourceIdentity.manifestSha256 !== sha(observation.manifestBytes)
     || metrics.sourceIdentity.observationSha256 !== sha(observation.observationBytes) || metrics.sourceIdentity.rawSnapshotSha256 !== sha(observation.rawBytes)
     || metrics.sourceIdentity.rawSha256 !== manifest.rawSha256 || metrics.sourceIdentity.contentSha256 !== manifest.contentSha256
-    || metrics.sourceIdentity.schemaSha256 !== manifest.schemaSha256 || metrics.sourceIdentity.rowCount !== 145
-    || metrics.canonicalIdentity?.stationLineCount !== 213 || metrics.canonicalIdentity?.stationCount !== 199 || metrics.canonicalIdentity?.physicalPairCount !== 15
-    || metrics.physicalPairs?.length !== 15 || metrics.metrics?.length !== 30
-    || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length !== 28
-    || metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length !== 2) throw new Error("transfer metrics identity mismatch");
+    || metrics.sourceIdentity.schemaSha256 !== manifest.schemaSha256 || metrics.sourceIdentity.rowCount !== 145) throw new Error("transfer metrics identity mismatch");
+  const topology = validateTopologyMetrics(metrics);
   if (!Buffer.isBuffer(applicabilityBytes)
     || applicability?.artifactKind !== "current-capital-transfer-topology-applicability-pre-candidate" || applicability.productionUseAllowed !== false || applicability.candidateBinding !== null
     || !SHA256.test(applicability.artifactSha256 ?? "") || applicability.artifactSha256 !== sha(canonical(without(applicability, "artifactSha256")))
     || applicability.transferTopologyMetricsIdentity?.artifactSha256 !== metrics.artifactSha256
-    || applicability.canonicalIdentity?.canonicalPackSha256 !== metrics.canonicalIdentity.canonicalPackSha256
-    || JSON.stringify(applicability.sourceIdentity) !== JSON.stringify(metrics.sourceIdentity)
-    || applicability.canonicalIdentity?.stationLineCount !== 213 || applicability.canonicalIdentity?.stationCount !== 199
-    || applicability.stateSummary?.APPLICABLE_TRANSFER_ENDPOINT !== 27 || applicability.stateSummary?.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET !== 186) throw new Error("transfer applicability identity mismatch");
+    || JSON.stringify(applicability.canonicalIdentity) !== JSON.stringify(metrics.canonicalIdentity)
+    || JSON.stringify(applicability.sourceIdentity) !== JSON.stringify(metrics.sourceIdentity)) throw new Error("transfer applicability identity mismatch");
+  validateApplicability(applicability, topology, metrics);
   const capturedAt = manifest.capturedAt;
   const payload = {
     schemaVersion: 1, artifactKind: "seoul-transfer-distance-duration-source-snapshot", sourceId: SOURCE_ID,
@@ -46,8 +42,41 @@ export function registerSeoulTransferSourceSnapshot({ observation, receipt, metr
     absenceEvidenceMode: "EXHAUSTIVE_LIST", rowCount: 145, rawSha256: manifest.rawSha256, contentSha256: manifest.contentSha256,
     schemaFingerprint: manifest.schemaSha256,
     observationIdentity: { endpointSha256: manifest.endpointSha256, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawSnapshotSha256: sha(observation.rawBytes), sourceCandidateSha256: metrics.sourceIdentity.sourceCandidateSha256, kricProviderCatalogSha256: metrics.sourceIdentity.kricProviderCatalogSha256 },
-    transferTopology: { canonicalPackSha256: metrics.canonicalIdentity.canonicalPackSha256, metricsArtifactSha256: metrics.artifactSha256, applicabilityArtifactSha256: applicability.artifactSha256, stationLineCount: 213, stationCount: 199, physicalPairCount: 15, directedMetricCount: 30, officialMetricCount: 28, derivedReciprocalMetricCount: 2, applicableStationLineCount: 27, notApplicableStationLineCount: 186, durationRole: "REFERENCE_ONLY" },
+    transferTopology: { canonicalPackSha256: metrics.canonicalIdentity.canonicalPackSha256, metricsArtifactSha256: metrics.artifactSha256, applicabilityArtifactSha256: applicability.artifactSha256, stationLineCount: topology.stationLineCount, stationCount: topology.stationCount, physicalPairCount: topology.physicalPairCount, directedMetricCount: topology.directedMetricCount, officialMetricCount: topology.officialMetricCount, derivedReciprocalMetricCount: topology.derivedReciprocalMetricCount, applicableStationLineCount: applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT, notApplicableStationLineCount: applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, durationRole: "REFERENCE_ONLY" },
   };
   return { ...payload, snapshotSha256: sha(canonical(payload)) };
 }
+function validateTopologyMetrics(metrics) {
+  const { stationLineCount, stationCount, physicalPairCount } = metrics.canonicalIdentity ?? {};
+  if (!Number.isInteger(stationLineCount) || stationLineCount <= 0 || !Number.isInteger(stationCount) || stationCount <= 0
+    || !Number.isInteger(physicalPairCount) || physicalPairCount <= 0 || !Array.isArray(metrics.physicalPairs)
+    || metrics.physicalPairs.length !== physicalPairCount || !Array.isArray(metrics.metrics)
+    || metrics.metrics.length !== physicalPairCount * 2) throw new Error("transfer metrics identity mismatch");
+  const expected = new Set();
+  for (const pair of metrics.physicalPairs) {
+    if (!pair || typeof pair.stationId !== "string" || !Array.isArray(pair.lineIds) || pair.lineIds.length !== 2) throw new Error("transfer metrics identity mismatch");
+    const [first, second] = pair.lineIds;
+    expected.add(metricKey(pair.stationId, first, second)); expected.add(metricKey(pair.stationId, second, first));
+  }
+  const actual = new Set(metrics.metrics.map(({ stationId, fromLineId, toLineId }) => metricKey(stationId, fromLineId, toLineId)));
+  const derivedReciprocalMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
+  const officialMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  if (expected.size !== metrics.metrics.length || actual.size !== expected.size || [...actual].some((key) => !expected.has(key))
+    || derivedReciprocalMetricCount !== 2 || officialMetricCount !== metrics.metrics.length - derivedReciprocalMetricCount) throw new Error("transfer metrics identity mismatch");
+  return { stationLineCount, stationCount, physicalPairCount, directedMetricCount: metrics.metrics.length, officialMetricCount, derivedReciprocalMetricCount };
+}
+function validateApplicability(applicability, topology, metrics) {
+  if (!Array.isArray(applicability.cells) || applicability.cells.length !== topology.stationLineCount) throw new Error("transfer applicability identity mismatch");
+  const cellKeys = new Set(applicability.cells.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const stationIds = new Set(applicability.cells.map(({ stationId }) => stationId));
+  const applicable = applicability.cells.filter(({ state }) => state === "APPLICABLE_TRANSFER_ENDPOINT").length;
+  const notApplicable = applicability.cells.filter(({ state }) => state === "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET").length;
+  const expectedApplicable = new Set(metrics.metrics.map(({ stationId, fromLineId }) => `${stationId}\0${fromLineId}`));
+  const actualApplicable = new Set(applicability.cells.filter(({ state }) => state === "APPLICABLE_TRANSFER_ENDPOINT").map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  if (cellKeys.size !== applicability.cells.length || stationIds.size !== topology.stationCount || applicable <= 0
+    || applicable !== applicability.stateSummary?.APPLICABLE_TRANSFER_ENDPOINT || notApplicable !== applicability.stateSummary?.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET
+    || applicable + notApplicable !== applicability.cells.length || actualApplicable.size !== expectedApplicable.size
+    || [...actualApplicable].some((key) => !expectedApplicable.has(key))) throw new Error("transfer applicability identity mismatch");
+}
+function metricKey(stationId, fromLineId, toLineId) { return `${stationId}\0${fromLineId}\0${toLineId}`; }
 export const TRANSFER_REGISTRATION_PATHS = Object.freeze({ metrics: METRICS_PATH, applicability: APPLICABILITY_PATH });

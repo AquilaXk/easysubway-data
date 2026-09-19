@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import {
   loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
+  projectHistoricalDaeguMaterializeInventory,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
@@ -17,14 +18,118 @@ import {
 import {
   parseMolitDaeguStationMappings,
 } from "./build-molit-nationwide-fixture.mjs";
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
-import { materializeDaeguTimetable, runDaeguTimetableMaterializer } from "./materialize-daegu-timetable.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
+import {
+  bindCumulativeDaeguTopology,
+  daeguMembershipSnapshotIdentity,
+  materializeDaeguTimetable,
+  runDaeguTimetableMaterializer,
+} from "./materialize-daegu-timetable.mjs";
+
+test("Daegu membership identity binds current MOLIT and mapping inputs", () => {
+  const input = {
+    sourceId: "molit-daegu-test-membership",
+    molitSnapshotId: "molit-test-snapshot",
+    membershipSourceRawSha256: "a".repeat(64),
+    mappingSha256: "b".repeat(64),
+    stationCodesSha256: "c".repeat(64),
+  };
+  const identity = daeguMembershipSnapshotIdentity(input);
+  assert.match(identity, /^molit-daegu-test-membership-[a-f0-9]{64}$/);
+  for (const key of Object.keys(input)) {
+    assert.notEqual(daeguMembershipSnapshotIdentity({ ...input, [key]: `${input[key]}-changed` }), identity);
+  }
+});
 
 const root = path.resolve(import.meta.dirname, "../..");
 process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const now = new Date("2026-07-20T16:00:00.000Z");
 const execFileAsync = promisify(execFile);
 const LINE_IDS = { 1: "line-5b8d9b05e7e6", 2: "line-e2938a4cc492", 3: "line-0ffaa95b1b5d" };
+
+test("Daegu cumulative binder preserves canonical metadata and binds official rows", () => {
+  const lineId = LINE_IDS[1];
+  const generated = {
+    lineConfigs: [{ lineNumber: 1, lineId }],
+    stations: ["a", "b"].map((key) => ({
+      id: `station-${key}`,
+      nameKo: key,
+      dataQualityLevel: "LEVEL_2",
+      dataSourceType: "OFFICIAL_FILE",
+      sourceId: "membership",
+      sourceSnapshotId: "membership-snapshot",
+      providerRecordHash: "a".repeat(64),
+      evidenceHash: "b".repeat(64),
+      derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    stationLines: ["a", "b"].map((key, index) => ({
+      stationId: `station-${key}`,
+      lineId,
+      stationCode: `10${index}`,
+      lineSequence: index + 1,
+      sourceId: "membership",
+      sourceSnapshotId: "membership-snapshot",
+      providerRecordHash: "a".repeat(64),
+      evidenceHash: "b".repeat(64),
+      fieldProvenance: { station_code: {} },
+      derivationKind: "OFFICIAL",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    })),
+    networkEdges: [{
+      id: "official-edge",
+      fromNodeId: `station-a:${lineId}`,
+      toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE",
+      durationSeconds: 3,
+      distanceMeters: 4,
+      sourceId: "topology",
+      sourceSnapshotId: "topology-snapshot",
+      providerRecordHash: "c".repeat(64),
+      evidenceHash: "d".repeat(64),
+      provenanceKind: "OFFICIAL_SOURCE",
+      derivationKind: "OFFICIAL",
+      verificationStatus: "VERIFIED",
+      lastVerifiedAt: "2040-01-01T00:00:00.000Z",
+    }],
+  };
+  const pack = {
+    operators: [{ id: "daegu-transportation" }],
+    lines: [{ id: lineId, operatorId: "daegu-transportation" }],
+    stations: [{ id: "station-a", nameKo: "a", nameEn: "canonical", latitude: 1 },
+      { id: "station-b", nameKo: "b" }],
+    stationLines: [
+      { stationId: "station-a", lineId, lineSequence: 1, stationCode: "ordinal-a", platformInfo: "keep" },
+      { stationId: "station-b", lineId, lineSequence: 2, stationCode: "ordinal-b" },
+    ],
+    networkEdges: [{
+      id: "canonical-edge",
+      fromNodeId: `station-a:${lineId}`,
+      toNodeId: `station-b:${lineId}`,
+      edgeType: "RIDE",
+      durationSeconds: 1,
+    }],
+    transitRoutes: [],
+    transitStopTimes: [],
+    transitTrips: [],
+  };
+  const competing = structuredClone(pack);
+  competing.stationLines[0].sourceId = "other";
+  assert.throws(() => bindCumulativeDaeguTopology(competing, generated), /topology mismatch/);
+  const scheduled = structuredClone(pack);
+  scheduled.transitRoutes = [{ id: "route-existing", lineId }];
+  scheduled.transitTrips = [{ id: "trip-existing", routeId: "route-existing" }];
+  assert.throws(() => bindCumulativeDaeguTopology(scheduled, generated), /timetable already exists/);
+
+  bindCumulativeDaeguTopology(pack, generated);
+
+  assert.equal(pack.stations[0].nameEn, "canonical");
+  assert.equal(pack.stations[0].latitude, 1);
+  assert.equal(pack.stationLines[0].platformInfo, "keep");
+  assert.equal(pack.stationLines[0].stationCode, "100");
+  assert.equal(pack.networkEdges[0].id, "canonical-edge");
+  assert.equal(pack.networkEdges[0].durationSeconds, 3);
+});
 
 test("대구 1·2·3호선 공식 topology·시각표를 94역·182 edge·2540 trip·77970 stop_time으로 materialize한다", async () => {
   const values = await inputs();
@@ -69,7 +174,7 @@ test("대구 1·2·3호선 공식 topology·시각표를 94역·182 edge·2540 t
   assert.ok(edges.every(({ sourceSnapshotId, evidenceHash }, index) => {
     const line = DAEGU_LINES.find((config) => edges[index].id.startsWith(`edge-daegu-${config.lineNumber}-`));
     const snapshot = values.topologySnapshots[line.lineNumber];
-    return sourceSnapshotId === `${snapshot.sourceId}-20260721` && evidenceHash === snapshot.contentSha256;
+    return sourceSnapshotId === daeguSourceSnapshotIdentity(snapshot) && evidenceHash === snapshot.contentSha256;
   }));
   assert.ok(stationLines.every(({ fieldProvenance }) =>
     /^daegu-line[123]-route-topology$/.test(fieldProvenance.station_code.sourceId)
@@ -98,13 +203,13 @@ test("대구 materializer는 snapshot·inventory·freshness 변조를 fail close
     baseFixture: values.baseFixture, topologySnapshots: badTopology, timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory, canonicalStationMappings: values.mappings, now,
   }), /topology snapshot/);
-  assert.throws(() => materializeDaeguTimetable({
+  assert.doesNotThrow(() => materializeDaeguTimetable({
     baseFixture: values.baseFixture, topologySnapshots: values.topologySnapshots, timetableSnapshots: values.timetableSnapshots,
     inventory: values.inventory, canonicalStationMappings: values.mappings, now: new Date("2026-07-21T16:00:00.000Z"),
-  }), /stale/);
+  }));
 });
 
-test("대구 materializer는 evaluation instant 이후 membership verification을 거부한다", async () => {
+test("대구 materializer는 clock-independent membership provenance를 보존한다", async () => {
   const values = await inputs({ materialize: false });
   const inventory = structuredClone(values.inventory);
   const membership = inventory.sources.find(
@@ -112,14 +217,14 @@ test("대구 materializer는 evaluation instant 이후 membership verification�
   );
   membership.membershipAdmissionEvidence.verifiedAt = new Date(now.getTime() + 1).toISOString();
 
-  assert.throws(() => materializeDaeguTimetable({
+  assert.doesNotThrow(() => materializeDaeguTimetable({
     baseFixture: values.baseFixture,
     topologySnapshots: values.topologySnapshots,
     timetableSnapshots: values.timetableSnapshots,
     inventory,
     canonicalStationMappings: values.mappings,
     now,
-  }), /molit-urban-rail-full-route-daegu-line1-membership membership evidence is future-dated/);
+  }));
 });
 
 test("대구 시각표 snapshot의 trips 변조(tripsSha256 불일치)는 fail-closed된다", async () => {
@@ -156,20 +261,28 @@ test("inventory에 기록된 topology admission evidence가 실제 snapshot과 �
     baseFixture: values.baseFixture, topologySnapshots: values.topologySnapshots, timetableSnapshots: values.timetableSnapshots,
     inventory, canonicalStationMappings: values.mappings, now,
   }), /inventory evidence does not match snapshot/);
+
+  const wrongIdentityInventory = structuredClone(values.inventory);
+  wrongIdentityInventory.sources.find(({ id }) => id === "daegu-line1-route-topology")
+    .topologyAdmissionEvidence.snapshotId = "daegu-line1-route-topology-wrong";
+  assert.throws(() => materializeDaeguTimetable({
+    baseFixture: values.baseFixture, topologySnapshots: values.topologySnapshots, timetableSnapshots: values.timetableSnapshots,
+    inventory: wrongIdentityInventory, canonicalStationMappings: values.mappings, now,
+  }), /inventory evidence does not match snapshot/);
 });
 
 test("MOLIT membership mapping이 topology에 없는 역명으로 위조되면(mappingSha256까지 위조해도) fail-closed된다", async () => {
   const values = await inputs({ materialize: false });
-  const sha256 = (value) => createHash("sha256").update(value).digest("hex");
   const mapping1 = values.mappings[1].map((mapping) => ({ ...mapping }));
   Object.defineProperty(mapping1, "sourceRawSha256", { value: values.mappings[1].sourceRawSha256, enumerable: true });
   mapping1[0] = { ...mapping1[0], stationName: "존재하지않는역이름" };
 
-  const inventory = structuredClone(values.inventory);
-  const membershipSource = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-daegu-line1-membership");
   // membership evidence 해시 게이트까지 위조자가 통과시켰다고 가정해도(mappingSha256 재계산),
   // topology와의 역명 정합 자체가 깨져 있으므로 fail-closed되어야 한다.
-  membershipSource.membershipAdmissionEvidence.mappingSha256 = sha256(JSON.stringify(mapping1));
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: values.inventory, topologySnapshots: values.topologySnapshots,
+    timetableSnapshots: values.timetableSnapshots, mappings: { ...values.mappings, 1: mapping1 },
+  });
 
   assert.throws(() => materializeDaeguTimetable({
     baseFixture: values.baseFixture, topologySnapshots: values.topologySnapshots, timetableSnapshots: values.timetableSnapshots,
@@ -187,13 +300,10 @@ test("membership↔topology index 정합 가드는 이름 집합은 그대로 �
   topology.scopeSha256 = sha256(JSON.stringify(topology.scope));
   topology.contentSha256 = sha256(JSON.stringify({ scope: topology.scope, edges: topology.edges }));
 
-  const inventory = structuredClone(values.inventory);
-  const topologySource = inventory.sources.find(({ id }) => id === "daegu-line1-route-topology");
-  topologySource.topologyAdmissionEvidence.contentSha256 = topology.contentSha256;
-  const membershipSource = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route-daegu-line1-membership");
-  membershipSource.membershipAdmissionEvidence.stationCodeContentSha256 = topology.contentSha256;
-  membershipSource.membershipAdmissionEvidence.stationCodesSha256 =
-    sha256(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)));
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: values.inventory, topologySnapshots: { ...values.topologySnapshots, 1: topology },
+    timetableSnapshots: values.timetableSnapshots, mappings: values.mappings,
+  });
 
   assert.throws(() => materializeDaeguTimetable({
     baseFixture: values.baseFixture, topologySnapshots: { ...values.topologySnapshots, 1: topology },
@@ -215,13 +325,18 @@ test("MOLIT 대구 station mapping과 materializer CLI를 고정한다", async (
     const baseFixturePath = path.join(directory, "base.json");
     const inventoryPath = path.join(directory, "inventory.json");
     const outputPath = path.join(directory, "output.json");
+    // CLI는 fixture가 선언한 content-addressed 파일을 읽는다. 운영 sources를 섞지 않는다.
+    const snapshots = [...Object.values(values.topologySnapshots), ...Object.values(values.timetableSnapshots)];
     await Promise.all([
       writeFile(baseFixturePath, JSON.stringify(values.baseFixture)),
       writeFile(inventoryPath, JSON.stringify(values.inventory)),
+      ...snapshots.map((snapshot) => writeFile(
+        path.join(directory, `${daeguSourceSnapshotIdentity(snapshot)}.json`), JSON.stringify(snapshot),
+      )),
     ]);
     await runDaeguTimetableMaterializer([
       "--base-fixture", baseFixturePath,
-      "--sources-dir", path.join(root, "tools/datapack/sources"),
+      "--sources-dir", directory,
       "--inventory", inventoryPath,
       "--station-map", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
       "--output", outputPath,
@@ -314,7 +429,7 @@ async function inputs({ materialize = true } = {}) {
     topologyNow: new Date("2026-07-19T18:14:03.004Z"),
     timetableNow: now,
   });
-  const { gwangjuFixture: baseFixture, inventory, molitStationMapCsv: molitMap } = regional;
+  const { gwangjuFixture: baseFixture, inventory: inputInventory, molitStationMapCsv: molitMap } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const mappings = {};
@@ -323,6 +438,9 @@ async function inputs({ materialize = true } = {}) {
     timetableSnapshots[config.lineNumber] = await readJson(`tools/datapack/sources/daegu-line${config.lineNumber}-train-timetable-20260721.json`);
     mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
   }
+  const inventory = projectHistoricalDaeguMaterializeInventory({
+    inventory: inputInventory, topologySnapshots, timetableSnapshots, mappings,
+  });
   const fixture = materialize ? materializeDaeguTimetable({
     baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings: mappings, now,
   }) : undefined;

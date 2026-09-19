@@ -12,6 +12,10 @@
     "tools/routes"
   ],
   "owners": {
+    "data6": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/6",
+      "title": "Deliver one eligible five-region production candidate"
+    },
     "data504": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/504",
       "title": "Admit the retained official Gwangju timetable"
@@ -388,6 +392,7 @@
     {"path":"tools/datapack/build-kric-retained-file-pending-handoff.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-current-five-region-source-fan-in.test.mjs","semanticOwner":"data449","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-nationwide-coverage-tally.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":905},
+    {"path":"tools/datapack/build-nationwide-candidate.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":78},
     {"path":"tools/datapack/build-nationwide-requirement-ownership-ledger.test.mjs","semanticOwner":"data449","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/build-molit-nationwide-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":127},
     {"path":"tools/datapack/build-public-static-network-v2-observations.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":220},
@@ -444,6 +449,8 @@
     {"path":"tools/datapack/collect-nationwide-public-api-coverage.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":224},
     {"path":"tools/datapack/collect-seoul-accessibility-evidence.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":274},
     {"path":"tools/datapack/collect-seoul-route-map-positions.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":187},
+    {"path":"tools/datapack/collect-seoul-station-line-info.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":65},
+    {"path":"tools/datapack/project-seoul-station-line-membership.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/collect-seoul9-phase1-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":183},
     {"path":"tools/datapack/collect-seoul9-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":180},
     {"path":"tools/datapack/collect-tago-itx-cheongchun-od.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":4856},
@@ -476,6 +483,7 @@
     {"path":"tools/datapack/lib/route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":103},
     {"path":"tools/datapack/lib/seoulmetro-line-data-parser.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/lib/server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":146},
+    {"path":"tools/datapack/lib/source-raw-object-publication.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/materialize-accessibility-source-input.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":166},
     {"path":"tools/datapack/materialize-busan-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":16359},
     {"path":"tools/datapack/materialize-busan-route-topology.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":719},
@@ -496,6 +504,9 @@
     {"path":"tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/ci/retained-gwangju-refresh-delivery.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":535},
+    {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":166},
+    {"path":"tools/datapack/register-regional-accessibility.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":194},
+    {"path":"tools/datapack/register-busan-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":82},
     {"path":"tools/datapack/materialize-incheon-accessibility.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":25554},
     {"path":"tools/datapack/materialize-incheon-station-info.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":22043},
     {"path":"tools/datapack/materialize-incheon-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":30040},

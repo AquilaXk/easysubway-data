@@ -4,12 +4,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity, loadAdmittedDaeguTopologySnapshots } from "./collect-daegu-datapack-sources.mjs";
 
 const SOURCE_ID = "daegu-transportation-accessibility";
 const PACK_ID = "nationwide-daegu-accessibility";
 const COMPOSITE_TOPOLOGY_SOURCE_ID = "daegu-transportation-accessibility-topology-lineage";
-const COMPOSITE_TOPOLOGY_SNAPSHOT_ID = "daegu-transportation-accessibility-topology-lineage-20260721";
 const EXPECTED_STATION_COUNT = 94;
 const EXPECTED_FACILITY_COUNT = EXPECTED_STATION_COUNT * 3;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
@@ -46,10 +45,9 @@ export function materializeDaeguAccessibility({
   accessibilitySnapshot,
   topologySnapshots,
   inventory,
-  now = new Date(),
 } = {}) {
   const rows = validateSnapshot(accessibilitySnapshot);
-  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshots, now);
+  const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshots);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -210,7 +208,7 @@ function validateSnapshot(snapshot) {
   return snapshot.rows;
 }
 
-function requiredSource(inventory, snapshot, topologySnapshots, now) {
+function requiredSource(inventory, snapshot, topologySnapshots) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.accessibilityAdmissionEvidence;
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
@@ -220,14 +218,14 @@ function requiredSource(inventory, snapshot, topologySnapshots, now) {
     || evidence?.issue !== 2467
     || evidence.materializer !== "tools/datapack/materialize-daegu-accessibility.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-daegu-accessibility.test.mjs"
-    || !/^daegu-transportation-accessibility-\d{8}$/.test(evidence.snapshotId ?? "")
+    || !/^daegu-transportation-accessibility-[a-f0-9]{64}-\d{8}$/.test(evidence.snapshotId ?? "")
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
     || evidence.facilityCount !== EXPECTED_FACILITY_COUNT
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== COMPOSITE_TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== COMPOSITE_TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== daeguAccessibilityTopologyLineageIdentity(evidence.topologyLineages)
     || !Array.isArray(evidence.topologyLineages)
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || evidence.topologyContentSha256 !== sha256(JSON.stringify(evidence.topologyLineages))
@@ -241,15 +239,17 @@ function requiredSource(inventory, snapshot, topologySnapshots, now) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
   validateTopologyLineages(inventory, evidence, topologySnapshots);
+  const expectedSnapshotId = `${SOURCE_ID}-${sha256(JSON.stringify(snapshot))}-${compactSeoulDate(evidence.capturedAt)}`;
+  if (evidence.snapshotId !== expectedSnapshotId) {
+    throw new Error(`${SOURCE_ID} snapshotId must bind exact snapshot bytes`);
+  }
   const version = evidence.snapshotId.slice(-8);
   if (version !== compactSeoulDate(evidence.capturedAt)) {
     throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
   }
   const capturedAt = Date.parse(evidence.capturedAt);
   const freshUntil = Date.parse(evidence.freshUntil);
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
-  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+  if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
@@ -266,7 +266,7 @@ function validateTopologyLineages(inventory, evidence, topologySnapshots) {
     const snapshot = topologySnapshots?.[config.lineNumber];
     if (lineage?.sourceId !== `daegu-line${config.lineNumber}-route-topology`
       || lineage.lineId !== config.lineId
-      || lineage.snapshotId !== `${lineage.sourceId}-20260721`
+      || lineage.snapshotId !== daeguSourceSnapshotIdentity(snapshot)
       || !topologyEvidence
       || topologyEvidence.snapshotId !== lineage.snapshotId
       || topologyEvidence.contentSha256 !== lineage.contentSha256
@@ -277,10 +277,14 @@ function validateTopologyLineages(inventory, evidence, topologySnapshots) {
     }
   }
   if (evidence.topologySourceId !== COMPOSITE_TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== COMPOSITE_TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== daeguAccessibilityTopologyLineageIdentity(evidence.topologyLineages)
     || evidence.topologyContentSha256 !== sha256(JSON.stringify(evidence.topologyLineages))) {
     throw new Error("Daegu accessibility composite topology lineage mismatch");
   }
+}
+
+export function daeguAccessibilityTopologyLineageIdentity(lineages) {
+  return `${COMPOSITE_TOPOLOGY_SOURCE_ID}-${sha256(JSON.stringify(lineages))}`;
 }
 
 function canonicalStations(pack, topologySnapshots) {
@@ -353,28 +357,21 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runDaeguAccessibilityMaterializer(argv, { now = new Date() } = {}) {
+export async function runDaeguAccessibilityMaterializer(argv) {
   const args = parseArgs(argv);
-  const [baseFixture, accessibilitySnapshot, inventory, ...topologyBytes] = await Promise.all([
+  const [baseFixture, accessibilitySnapshot, inventory] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
     readFile(args["accessibility-snapshot"], "utf8").then(JSON.parse),
     readFile(args.inventory, "utf8").then(JSON.parse),
-    ...DAEGU_LINES.map((line) => readFile(
-      path.join(args["sources-dir"], `daegu-line${line.lineNumber}-route-topology-20260721.json`),
-      "utf8",
-    )),
   ]);
-  const topologySnapshots = Object.fromEntries(DAEGU_LINES.map((line, index) => [
-    line.lineNumber,
-    JSON.parse(topologyBytes[index]),
-  ]));
+  const topologySnapshots = await loadAdmittedDaeguTopologySnapshots(args["sources-dir"], inventory);
   const fixture = materializeDaeguAccessibility({
     baseFixture,
     accessibilitySnapshot,
     topologySnapshots,
     inventory,
-    now,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Daegu accessibility materialized: stations=${EXPECTED_STATION_COUNT} facilities=${EXPECTED_FACILITY_COUNT}`);
 }

@@ -20,6 +20,7 @@ export async function collectDaejeonRouteTopology({
 } = {}) {
   normalizeDataGoKrServiceKey(serviceKey);
   const rows = [];
+  const rawResponses = [];
   for (let index = 0; index < DAEJEON_LINE1_STATION_NUMBERS.length - 1; index += 1) {
     const left = DAEJEON_LINE1_STATION_NUMBERS[index];
     const right = DAEJEON_LINE1_STATION_NUMBERS[index + 1];
@@ -36,6 +37,7 @@ export async function collectDaejeonRouteTopology({
         throw new Error(`Daejeon adjacent OD must return exactly one row: ${fromStationNumber}:${toStationNumber}`);
       }
       const [{ distfloat, fee, min, sec }] = evidence.rows;
+      rawResponses.push({ fromStationNumber, toStationNumber, bytesBase64: evidence.rawResponseBase64 });
       rows.push({
         fromStationNumber,
         toStationNumber,
@@ -57,6 +59,7 @@ export async function collectDaejeonRouteTopology({
     schemaStatus: "EXPECTED",
     stationNumbers: [...DAEJEON_LINE1_STATION_NUMBERS],
     rowCount: rows.length,
+    rawResponses,
     rows,
     rowsSha256,
     excludedTransferCount: 0,

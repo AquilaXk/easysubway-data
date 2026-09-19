@@ -45,6 +45,31 @@ export async function collectBusanAccessibility({
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, scope.length) }, () => worker()));
   if (failure) throw failure;
+  return buildBusanAccessibilitySnapshot({ scope, responses, capturedAt });
+}
+
+/** 보관 원문은 동일한 파서와 생성기를 사용하되 네트워크와 인증키를 요구하지 않는다. */
+export function replayBusanAccessibility({ rawResponses, stationScopes, now } = {}) {
+  const scope = validateScope(stationScopes);
+  const capturedAt = validDate(now, "now");
+  if (!Array.isArray(rawResponses) || rawResponses.length !== scope.length) {
+    throw new Error("Busan accessibility retained raw responses are required");
+  }
+  const responses = rawResponses.map((response, index) => {
+    const station = scope[index];
+    if (response.stationCode !== station.stationCode) {
+      throw new Error("Busan accessibility retained response station mismatch");
+    }
+    const bytes = Buffer.from(response.bytesBase64, "base64");
+    return {
+      ...parseBusanAccessibilityResponse({ bytes, station }),
+      rawSha256: sha256(bytes), bytesBase64: bytes.toString("base64"),
+    };
+  });
+  return buildBusanAccessibilitySnapshot({ scope, responses, capturedAt });
+}
+
+function buildBusanAccessibilitySnapshot({ scope, responses, capturedAt }) {
   const rows = responses.map(({ row }) => row).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
   if (rows.length !== 114 || new Set(rows.map(({ stationCode }) => stationCode)).size !== 114) {
     throw new Error("Busan accessibility station scope incomplete");
@@ -80,6 +105,11 @@ export async function collectBusanAccessibility({
       stationCode: scope[index].stationCode,
       rawSha256,
     })))),
+    rawResponses: responses.map(({ rawSha256, bytesBase64 }, index) => ({
+      stationCode: scope[index].stationCode,
+      rawSha256,
+      bytesBase64,
+    })),
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
   };
@@ -100,13 +130,30 @@ async function collectResponse({ station, key, fetchImpl, sleepImpl }) {
   if (!XML_CONTENT_TYPES.has(contentType)) {
     throw new Error(`Busan accessibility schema mismatch: content-type ${contentType || "missing"}; rawSha256=${rawSha256}`);
   }
+  const { raw } = decodeXml(bytes);
+  // 원문 보존 시 응답에 반사된 인증키까지 발행하지 않도록 차단한다.
+  if (raw.includes(key)) throw new Error("Busan accessibility credential echo in response");
+  let parsed;
+  try { parsed = parseBusanAccessibilityResponse({ bytes, station }); }
+  catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : "Busan accessibility schema mismatch"}; rawSha256=${rawSha256}`);
+  }
+  return {
+    rawSha256,
+    bytesBase64: bytes.toString("base64"),
+    ...parsed,
+  };
+}
+
+/** Parses one already-authenticated official XML response for offline retained-raw replay. */
+export function parseBusanAccessibilityResponse({ bytes, station } = {}) {
   const { raw, responseEncoding } = decodeXml(bytes);
   const resultCode = scalar(raw, "resultCode");
   if (resultCode !== "00") {
-    throw new Error(`Busan accessibility provider resultCode ${safeToken(resultCode ?? "missing")}; rawSha256=${rawSha256}`);
+    throw new Error(`Busan accessibility provider resultCode ${safeToken(resultCode ?? "missing")}`);
   }
   const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(raw)?.[1];
-  if (body == null) throw new Error(`Busan accessibility schema mismatch: response body; rawSha256=${rawSha256}`);
+  if (body == null) throw new Error("Busan accessibility schema mismatch: response body");
   const values = Object.fromEntries(RESPONSE_FIELDS.map((field) => [field, scalar(body, field)]));
   const missing = RESPONSE_FIELDS.filter((field) => values[field] == null);
   if (missing.length > 0) throw new Error(`Busan accessibility schema mismatch: fields=${missing.join(",")}`);
@@ -123,7 +170,6 @@ async function collectResponse({ station, key, fetchImpl, sleepImpl }) {
   if (values.toilet_gubun.trim() === "" || values.toilet_gubun.length > 20) invalid.push("toilet_gubun");
   if (invalid.length > 0) throw new Error(`Busan accessibility schema mismatch: values=${invalid.join(",")}`);
   return {
-    rawSha256,
     responseEncoding,
     row: {
       stationCode: station.stationCode,

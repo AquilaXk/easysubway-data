@@ -10,6 +10,7 @@ import {
   materializeRegionalProductionCandidate,
   projectHistoricalRegionalMaterializeInventory,
   projectRegionalMaterializeFixture,
+  projectRegionalFixtureSourceBindings,
 } from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
@@ -31,7 +32,7 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const evidenceNow = new Date("2026-07-20T04:00:00.000Z");
 
 async function inputs() {
-  const [baseFixture, timetableSnapshot, topologySnapshot, inventory, stationMapCsv] = await Promise.all([
+  const [baseFixture, timetableSnapshot, topologySnapshot, sourceInventory, stationMapCsv] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
@@ -43,7 +44,12 @@ async function inputs() {
     baseFixture,
     timetableSnapshot,
     topologySnapshot,
-    inventory,
+    inventory: projectRegionalFixtureSourceBindings({
+      inventory: sourceInventory,
+      daejeonTopology: topologySnapshot,
+      daejeonTimetable: timetableSnapshot,
+      molitStationMapCsv: stationMapCsv,
+    }),
     canonicalStationMappings: parseMolitDaejeonStationMappings(stationMapCsv),
   };
 }
@@ -126,11 +132,15 @@ test("대전 시간표 admission은 snapshot·inventory·freshness·topology lin
   const cases = [
     [{ ...values, timetableSnapshot: { ...values.timetableSnapshot, endpoint: "https://example.invalid" } }, /snapshot/],
     [{ ...values, timetableSnapshot: { ...values.timetableSnapshot, rowsSha256: "0".repeat(64) } }, /snapshot/],
-    [{ ...values, now: new Date("2026-07-21T01:16:46.435Z") }, /stale/],
   ];
   for (const [input, expected] of cases) {
     assert.throws(() => materializeDaejeonTimetable({ ...input, now: input.now ?? evidenceNow }), expected);
   }
+
+  assert.doesNotThrow(() => materializeDaejeonTimetable({
+    ...values,
+    now: new Date("2026-07-21T01:16:46.435Z"),
+  }));
 
   const mismatchedInventory = structuredClone(values.inventory);
   mismatchedInventory.sources.find(({ id }) => id === "daejeon-train-timetable")
@@ -275,6 +285,10 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 88/270 
     readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
   ]);
+  values.inventory = projectRegionalFixtureSourceBindings({
+    inventory: values.inventory, busanTopology: busanSnapshot,
+    busanTimetable: busanTimetableSnapshot, stationMapCsv: busanStationMapCsv,
+  });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture: values.baseFixture,
     snapshot: busanSnapshot,

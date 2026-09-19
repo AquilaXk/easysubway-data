@@ -9,6 +9,9 @@ import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
+import { NATIONWIDE_CANDIDATE_INPUT_PATHS, validateNationwideCandidateSourceSet } from "./validate-candidate-source-set.mjs";
+import { assertNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
+import { NATIVE_ADMISSION_KINDS } from "./build-current-five-region-source-fan-in.mjs";
 import {
   canonicalJson,
   stagedPackPath,
@@ -549,6 +552,9 @@ async function loadBuildInput(
     }
     const fixture = JSON.parse(await readFile(path.resolve(repositoryRoot, fixtureArg), "utf8"));
     rejectTestOnlyBuildInput(fixture);
+    if (Object.hasOwn(fixture, "assemblyInputs")) {
+      throw new Error("assembly inputs require --build-spec");
+    }
     const hasProductionPack = fixture.packs?.some(({ artifactKind }) => artifactKind === "production");
     const fixtureChannel = fixture.manifest?.channel == null
       ? null
@@ -601,6 +607,7 @@ async function loadBuildInput(
   );
   const sourceFixtureBytes = await readFile(sourceFixturePath);
   const sourceFixture = JSON.parse(sourceFixtureBytes);
+  assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, sourceFixture);
   rejectTestOnlyBuildInput(sourceFixture);
   const hasProductionPack = sourceFixture.packs?.some(({ artifactKind }) => artifactKind === "production") === true;
   const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
@@ -1094,6 +1101,21 @@ function rejectTestOnlyBuildInput(fixture) {
   }
 }
 
+function assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, sourceFixture = undefined) {
+  const hasNativeAdmission = Array.isArray(buildSpec?.sourceSnapshots)
+    && buildSpec.sourceSnapshots.some((snapshot) =>
+      Object.hasOwn(snapshot ?? {}, "admissionRecordSha256s"));
+  const hasAssemblyInputs = Object.hasOwn(sourceFixture ?? {}, "assemblyInputs");
+  const fixtureSha256 = buildSpec?.fixtureSha256;
+  if (fixtureSha256 === undefined && !hasNativeAdmission && !hasAssemblyInputs) return;
+  if (typeof fixtureSha256 !== "string" || !/^[a-f0-9]{64}$/.test(fixtureSha256)) {
+    throw new Error("buildSpec.fixtureSha256 must be a lowercase SHA-256");
+  }
+  if (fixtureSha256 !== sha256(sourceFixtureBytes)) {
+    throw new Error("buildSpec.fixtureSha256 must match source fixture bytes");
+  }
+}
+
 async function validateCandidateBuildSpec(
   buildSpec,
   fixture,
@@ -1125,6 +1147,21 @@ async function validateCandidateBuildSpec(
     "buildSpec.sourceSnapshots",
     now,
   );
+  const hasNativeAdmissions = sourceSnapshots.some((snapshot) => snapshot.admissionRecordSha256s);
+  const hasAssemblyInputs = Object.hasOwn(fixture, "assemblyInputs");
+  if (hasNativeAdmissions || hasAssemblyInputs) {
+    const inputBytes = Object.fromEntries(await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS)
+      .map(async ([name, relative]) => [name, await readFile(path.join(repositoryRoot, relative))])));
+    inputBytes.productionScope = await readFile(path.join(repositoryRoot, buildSpec.productionScope.path));
+    validateNationwideCandidateSourceSet({ candidate: buildSpec, inputBytes });
+    if (hasAssemblyInputs) {
+      assertNationwideAssemblyInputs({
+        assemblyInputs: fixture.assemblyInputs,
+        expectedSourceIds: buildSpec.assemblySourceIds,
+        selectedSources: JSON.parse(inputBytes.fanIn).selectedSources,
+      });
+    }
+  }
   assertSourceSnapshotSet(buildSpec.sourceSnapshotIds, sourceSnapshots);
   for (const field of candidateBuildSpecHashFields) {
     sha256HexString(buildSpec[field], `buildSpec.${field}`);
@@ -3015,11 +3052,24 @@ function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
       schemaFingerprint: sha256HexString(snapshot.schemaFingerprint, `${prefix}.schemaFingerprint`),
       licenseStatus: requiredString(snapshot.licenseStatus, `${prefix}.licenseStatus`),
       redistributionAllowed: snapshot.redistributionAllowed,
-      adminReviewRecordHash: sha256HexString(snapshot.adminReviewRecordHash, `${prefix}.adminReviewRecordHash`),
       snapshotStatus: requiredString(snapshot.snapshotStatus, `${prefix}.snapshotStatus`),
       credentialRedacted: snapshot.credentialRedacted,
       freshnessExpiresAt: requiredUtcDateString(snapshot.freshnessExpiresAt, `${prefix}.freshnessExpiresAt`),
     };
+    const hasGeneric = Object.hasOwn(snapshot, "adminReviewRecordHash");
+    const hasNative = Object.hasOwn(snapshot, "admissionRecordSha256s");
+    if (hasGeneric === hasNative) {
+      throw new Error(`${prefix} must contain exactly one admission projection`);
+    }
+    if (hasGeneric) {
+      normalized.adminReviewRecordHash = sha256HexString(snapshot.adminReviewRecordHash, `${prefix}.adminReviewRecordHash`);
+    } else if (!Array.isArray(snapshot.admissionRecordSha256s) || snapshot.admissionRecordSha256s.length === 0
+      || snapshot.admissionRecordSha256s.some((record) => !NATIVE_ADMISSION_KINDS.includes(record?.kind)
+        || !/^[a-f0-9]{64}$/.test(record.sha256 ?? ""))) {
+      throw new Error(`${prefix}.admissionRecordSha256s is invalid`);
+    } else {
+      normalized.admissionRecordSha256s = structuredClone(snapshot.admissionRecordSha256s);
+    }
     if (normalized.licenseStatus !== "PASS") {
       throw new Error(`${prefix}.licenseStatus must be PASS`);
     }

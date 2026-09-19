@@ -1044,11 +1044,18 @@ export function parseMolitLineOperatorRosters(csvBytes) {
   if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
     throw new Error("MOLIT nationwide station CSV bytes are required");
   }
+  return molitLineOperatorRosters(parseCsv(new TextDecoder("euc-kr").decode(csvBytes)).map(rowFromCsv).filter(Boolean));
+}
+
+// 호출자가 승인 원문 결속을 확인한 current projection을 그대로 소비한다. KRIC 코드는 별도 계약이다.
+export function parseCurrentMolitLineOperatorRosters(projection) {
+  if (!Array.isArray(projection)) throw new Error("current MOLIT normalized projection is required");
+  return molitLineOperatorRosters(projection.map(projectionRow));
+}
+
+function molitLineOperatorRosters(rows) {
   const rosters = new Map();
-  for (const row of parseCsv(new TextDecoder("euc-kr").decode(csvBytes)).map(rowFromCsv)) {
-    if (!row) {
-      continue;
-    }
+  for (const row of rows) {
     const scope = {
       regionId: coverageRegionId(row.regionName),
       operatorId: operatorIdFor(row.operatorName),
@@ -1078,11 +1085,16 @@ export function parseMolitGwangjuStationMappings(csvBytes, topologySnapshot) {
   return bindGwangjuTopologyMappings(rows, sha256(csvBytes), topologySnapshot);
 }
 
-export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256, topologySnapshot) {
+export function parseCurrentMolitGwangjuStationMappings(projection, sourceRawSha256, topologySnapshot, currentSnapshot) {
   if (typeof sourceRawSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sourceRawSha256)) {
     throw new Error("current MOLIT source raw hash is invalid");
   }
-  assertCurrentMolitFullRouteCompleteness(projection);
+  // 전국 완전성은 source admission이 소유한다. 소비자는 승인된 전체 원문의 동일성을 결속한다.
+  if (!Array.isArray(projection) || currentSnapshot?.sourceId !== sourceId
+    || currentSnapshot.rawSha256 !== sourceRawSha256 || currentSnapshot.rowCount !== projection.length
+    || currentSnapshot.contentSha256 !== sha256(Buffer.from(`${JSON.stringify(projection)}\n`))) {
+    throw new Error("current MOLIT ledger projection binding is invalid");
+  }
   const rows = projection.map(projectionRow)
     .filter((row) => row.regionName === "광주"
       && row.operatorName === "광주교통공사"

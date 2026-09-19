@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { main } from "./build-current-transfer-topology-metrics.mjs";
+import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 
 test("current observation에서 15 physical pair / 30 directed metric을 deterministic하게 만든다", async () => {
   const fixture = await fixtureRoot();
@@ -36,6 +37,47 @@ test("current observation에서 15 physical pair / 30 directed metric을 determi
   const repeated = path.join(fixture.root, "repeat.json");
   await main(["--observation-directory", fixture.observationDirectory, "--output", repeated], { repositoryRoot: fixture.root, log: () => {} });
   assert.equal(await readFile(repeated, "utf8"), bytes);
+});
+
+test("canonical membership expansion derives transfer pipeline counts", async () => {
+  const fixture = await fixtureRoot((value) => {
+    const capital = value.canonical.packs[0];
+    capital.stations.push({ id: "station-non-transfer", nameKo: "비환승역" });
+    capital.stationLines.push({ stationId: "station-non-transfer", lineId: "seoul-2" });
+  });
+  const output = path.join(fixture.root, "output.json");
+  const metrics = await main(["--observation-directory", fixture.observationDirectory, "--output", output], {
+    repositoryRoot: fixture.root,
+    log: () => {},
+  });
+  const canonicalPackBytes = await readFile(path.join(fixture.root, "tools/datapack/release/capital-production-canonical-pack.json"));
+  const applicability = buildApplicability({
+    canonicalPack: fixture.canonical,
+    canonicalPackBytes,
+    transferTopologyMetrics: metrics,
+    metricsBytes: canonicalBytes(metrics),
+  });
+
+  const expectedStationLineCount = fixture.canonical.packs[0].stationLines.length;
+  const expectedStationCount = new Set(fixture.canonical.packs[0].stationLines.map(({ stationId }) => stationId)).size;
+  const expectedNonTransferCount = expectedStationLineCount - new Set(metrics.metrics.map(({ stationId, fromLineId }) => `${stationId}\0${fromLineId}`)).size;
+  assert.equal(metrics.canonicalIdentity.stationLineCount, expectedStationLineCount);
+  assert.equal(metrics.canonicalIdentity.stationCount, expectedStationCount);
+  assert.equal(metrics.canonicalIdentity.physicalPairCount, metrics.physicalPairs.length);
+  assert.equal(metrics.metrics.length, metrics.physicalPairs.length * 2);
+  assert.equal(applicability.cells.length, metrics.canonicalIdentity.stationLineCount);
+  assert.equal(applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, expectedNonTransferCount);
+  assert.equal(applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT + applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, applicability.cells.length);
+
+  const narrowed = structuredClone(metrics);
+  narrowed.metrics = narrowed.metrics.filter(({ fromLineId, toLineId }) => fromLineId !== "shinbundang" && toLineId !== "shinbundang");
+  narrowed.artifactSha256 = sha256(JSON.stringify(sortValue(without(narrowed, "artifactSha256"))));
+  assert.throws(() => buildApplicability({
+    canonicalPack: fixture.canonical,
+    canonicalPackBytes,
+    transferTopologyMetrics: narrowed,
+    metricsBytes: canonicalBytes(narrowed),
+  }), /canonical pair identity|metric composition|direction coverage/);
 });
 
 test("frozen F1-F4 drift는 output 없이 NO_GO다", async () => {

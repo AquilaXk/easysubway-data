@@ -7,9 +7,10 @@ import test from "node:test";
 import { decideRetainedGwangjuTimetableRefresh } from "../ci/decide-retained-gwangju-timetable-refresh.mjs";
 
 import { parseCurrentMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
-import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { governanceBeforeSource } from "./test-fixtures/independent-source-governance.mjs";
 import { materializeGwangjuTimetable, restoreAdmittedGwangjuTimetable, validateRetainedGwangjuSource } from "./materialize-gwangju-timetable.mjs";
 import { createRetainedGwangjuTestInput } from "./gwangju-retained-test-fixture.mjs";
 import {
@@ -31,9 +32,10 @@ test("receipt-bound retained registration projects exactly four CAS outputs and 
   assert.equal(new Set(registered[0].inputs.map(({ absolute }) => absolute)).size, registered[0].inputs.length);
   assert.ok(registered[0].inputs.some(({ absolute }) => absolute.endsWith(fixture.molitObservationPath)));
   assert.ok(registered[0].inputs.every(({ absolute }) => !absolute.endsWith("molit-urban-rail-full-route-20251211.csv")));
-  assert.throws(() => materializeGwangjuTimetable({
-    ...fixture.materializerInput, inventory: JSON.parse(registered[0].bytes), now: fixture.now,
-  }), /evidence is stale/);
+  // 개발 변환은 원문으로 재현한다. 운영 만료는 publication 경계에서 거부한다.
+  assert.doesNotThrow(() => materializeGwangjuTimetable({
+    ...fixture.materializerInput, inventory: JSON.parse(registered[0].bytes),
+  }));
   await assert.rejects(() => commitRetainedKricTimetableRegistrationOutputs({
     repositoryRoot: fixture.repositoryRoot, outputs: registered, failAfter: 1,
   }), /injected/);
@@ -147,14 +149,17 @@ async function registrationFixture(context, { capped = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "retained-kric-registration-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const repositoryRoot = path.join(directory, "repo");
-  for (const relative of [...outputs, "tools/datapack/source-candidates.json", "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"]) {
+  const selectedInventory = await readJson(path.join(root, outputs[0]));
+  const topologyPath = selectedInventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
+    .topologyAdmissionEvidence.snapshotPath;
+  for (const relative of [...outputs, "tools/datapack/source-candidates.json", topologyPath]) {
     const target = path.join(repositoryRoot, relative); await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, await readFile(path.join(root, relative)));
   }
   const [currentInventory, currentGovernance, candidates, topologySnapshot] = await Promise.all([
     readJson(path.join(repositoryRoot, outputs[0])), readJson(path.join(repositoryRoot, outputs[2])),
     readJson(path.join(repositoryRoot, "tools/datapack/source-candidates.json")),
-    readJson(path.join(repositoryRoot, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json")),
+    readJson(path.join(repositoryRoot, topologyPath)),
   ]);
   const inventory = structuredClone(currentInventory);
   const molitAdmission = inventory.sources.find(({ id }) => id === "molit-urban-rail-full-route").admissionEvidence;
@@ -183,6 +188,7 @@ async function registrationFixture(context, { capped = false } = {}) {
   const molitObservation = await readJson(path.join(repositoryRoot, molitObservationPath));
   const mappings = parseCurrentMolitGwangjuStationMappings(
     molitObservation.normalizedProjection, molitAdmission.rawSha256, topologySnapshot,
+    ledger.find((row) => row.sourceId === "molit-urban-rail-full-route" && row.snapshotId === molitAdmission.snapshotId),
   );
   const retained = createRetainedGwangjuTestInput({ baseFixture, topologySnapshot,
     inventory: structuredClone(inventory), canonicalStationMappings: mappings }).retainedTimetable;
@@ -253,28 +259,5 @@ async function replaceWithSuccessor(fixture) {
 }
 
 // 실제 등록 이력에서 테스트 대상만 제외해 재구성한다. 다른 source가 추가돼도 날짜나 SHA를 갱신하지 않는다.
-function governanceBeforeSource(current, sourceId) {
-  const batches = [];
-  let policy = structuredClone(current);
-  while (policy.sources.some(row => row.sourceId === sourceId)) {
-    const lineage = policy.registrationLineage;
-    assert.ok(lineage, "test source must belong to append-only registration lineage");
-    const additions = policy.sources.filter(row => lineage.addedSourceIds.includes(row.sourceId));
-    batches.unshift(additions.filter(row => row.sourceId !== sourceId));
-    const predecessor = { ...policy, sources: policy.sources.filter(row => !lineage.addedSourceIds.includes(row.sourceId)) };
-    if (lineage.predecessorLineage === null) delete predecessor.registrationLineage;
-    else predecessor.registrationLineage = lineage.predecessorLineage;
-    const bytes = lineage.predecessorPolicyText === null
-      ? Buffer.from(`${JSON.stringify(predecessor, null, 2)}\n`) : Buffer.from(lineage.predecessorPolicyText);
-    assert.equal(sha(bytes), lineage.predecessorPolicySha256);
-    policy = JSON.parse(bytes);
-  }
-  for (const addedSources of batches.filter(rows => rows.length > 0)) {
-    policy = buildAppendOnlyGovernancePolicyRegistration({
-      predecessorPolicyBytes: Buffer.from(`${JSON.stringify(policy, null, 2)}\n`), addedSources,
-    }).policy;
-  }
-  return policy;
-}
 async function readJson(file) { return JSON.parse(await readFile(file, "utf8")); }
 async function outputBytes(repositoryRoot) { return Promise.all(outputs.map((relative) => readFile(path.join(repositoryRoot, relative)))); }

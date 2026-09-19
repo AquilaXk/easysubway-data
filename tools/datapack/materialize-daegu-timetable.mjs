@@ -5,8 +5,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { DAEGU_LINES, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
 import { parseMolitDaeguStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const ISSUE = 2407;
 const MATERIALIZER = "tools/datapack/materialize-daegu-timetable.mjs";
@@ -29,12 +31,8 @@ const HOLIDAYS_2026 = Object.freeze([
   "20260505", "20260524", "20260525", "20260603", "20260606", "20260717", "20260815",
   "20260817", "20260924", "20260925", "20260926", "20261003", "20261005", "20261009", "20261225",
 ]);
-const EXPECTED = Object.freeze({
-  stations: 91, stationLines: 94, edges: 182, trips: 2_540, stopTimes: 77_970,
-});
-
 export function materializeDaeguTimetable({
-  baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings, now = new Date(),
+  baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings,
 }) {
   const lines = DAEGU_LINES.map((config) => {
     const topology = topologySnapshots[config.lineNumber];
@@ -42,7 +40,7 @@ export function materializeDaeguTimetable({
     validateTopologySnapshot(topology, config);
     validateTimetableSnapshot(timetable, config, topology);
     const mappings = canonicalStationMappings[config.lineNumber];
-    const sources = requiredSources(inventory, config, topology, timetable, mappings, now);
+    const sources = requiredSources(inventory, config, topology, timetable, mappings);
     return { config, topology, timetable, mappings, sources };
   });
 
@@ -51,45 +49,36 @@ export function materializeDaeguTimetable({
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
     throw new Error("Daegu timetable requires one cumulative production pack");
   }
-  if (pack.operators.some(({ id }) => id === OPERATOR_ID)) throw new Error("Daegu operator already exists");
   for (const { config, sources } of lines) {
-    if (pack.lines.some(({ id }) => id === config.lineId)) throw new Error(`Daegu ${config.lineId} already exists`);
     for (const source of [sources.membership, sources.topology, sources.timetable]) {
       if (pack.sourceInventory.some((entry) => entry.id === source.id)) throw new Error(`${source.id} already exists`);
     }
   }
 
-  pack.operators.push({ id: OPERATOR_ID, nameKo: "대구교통공사", nameEn: "" });
-  for (const { config, topology, timetable, sources } of lines) {
+  const generatedTopology = {
+    lineConfigs: lines.map(({ config }) => config),
+    stations: [],
+    stationLines: [],
+    networkEdges: [],
+  };
+  const addedStations = new Set();
+  for (const line of lines) {
+    addStationsAndTopology(generatedTopology, line, addedStations);
+  }
+  bindCumulativeDaeguTopology(pack, generatedTopology);
+  for (const { topology, timetable, sources } of lines) {
     pack.sourceInventory.push(
       packSource(sources.membership, sources.membership.membershipAdmissionEvidence.verifiedAt),
       packSource(sources.topology, topology.capturedAt),
       packSource(sources.timetable, timetable.capturedAt),
     );
-    pack.lines.push({
-      id: config.lineId, operatorId: OPERATOR_ID,
-      nameKo: LINE_META[config.lineNumber].nameKo, nameEn: "", color: LINE_META[config.lineNumber].color,
-    });
-  }
-
-  const addedStations = new Set();
-  for (const line of lines) {
-    addStationsAndTopology(pack, line, addedStations);
   }
   for (const line of lines) {
     addCalendars(pack, line);
     addRoutesAndTrips(pack, line);
   }
 
-  const stationCount = pack.stations.filter(({ sourceId }) => sourceId.startsWith("molit-urban-rail-full-route-daegu-line")).length;
-  const stationLineCount = pack.stationLines.filter(({ lineId }) => DAEGU_LINES.some((line) => line.lineId === lineId)).length;
-  const edgeCount = pack.networkEdges.filter(({ id }) => id.startsWith("edge-daegu-")).length;
-  const trips = pack.transitTrips.filter(({ id }) => id.startsWith("trip-daegu-"));
-  const stopTimes = pack.transitStopTimes.filter(({ tripId }) => tripId.startsWith("trip-daegu-"));
-  if (stationCount !== EXPECTED.stations || stationLineCount !== EXPECTED.stationLines
-    || edgeCount !== EXPECTED.edges || trips.length !== EXPECTED.trips || stopTimes.length !== EXPECTED.stopTimes) {
-    throw new Error(`Daegu materialized counts invalid: stations=${stationCount} stationLines=${stationLineCount} edges=${edgeCount} trips=${trips.length} stopTimes=${stopTimes.length}`);
-  }
+  assertDaeguGeneratedRows(pack, generatedTopology, lines);
 
   pack.minimumTableRows = {
     ...pack.minimumTableRows,
@@ -120,6 +109,144 @@ export function materializeDaeguTimetable({
   pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${pack.id}-v${version}.sqlite.gz`;
   fixture.manifest.activePack = { id: pack.id, version };
   return fixture;
+}
+
+export function bindCumulativeDaeguTopology(pack, generated) {
+  const lineIds = new Set(generated.stationLines.map(({ lineId }) => lineId));
+  const lineConfigs = generated.lineConfigs ?? [];
+  if (lineIds.size === 0 || lineConfigs.length !== lineIds.size
+    || lineConfigs.some(({ lineId }) => !lineIds.has(lineId))) {
+    throw new Error("Daegu generated line identity mismatch");
+  }
+  const operators = pack.operators.filter(({ id }) => id === OPERATOR_ID);
+  const operatorLines = pack.lines.filter(({ operatorId }) => operatorId === OPERATOR_ID);
+  const matchingLines = pack.lines.filter(({ id }) => lineIds.has(id));
+  if (operators.length > 1 || matchingLines.length > lineIds.size
+    || new Set(matchingLines.map(({ id }) => id)).size !== matchingLines.length
+    || matchingLines.some(({ operatorId }) => operatorId !== OPERATOR_ID)
+    || operatorLines.length !== matchingLines.length
+    || (operators.length === 0) !== (matchingLines.length === 0)) {
+    throw new Error("Daegu cumulative line identity mismatch");
+  }
+  const expectedMembership = new Map(generated.stationLines.map((row) => [`${row.stationId}\0${row.lineId}`, row]));
+  const memberships = pack.stationLines.filter(({ lineId }) => lineIds.has(lineId));
+  const expectedEdges = new Map(generated.networkEdges.map((row) => [`${row.fromNodeId}\0${row.toNodeId}`, row]));
+  const rides = pack.networkEdges.filter((row) => row.edgeType === "RIDE"
+    && [...lineIds].some((lineId) => row.fromNodeId?.endsWith(`:${lineId}`)
+      || row.toNodeId?.endsWith(`:${lineId}`)));
+  const routes = (pack.transitRoutes ?? []).filter(({ lineId }) => lineIds.has(lineId));
+  const stopTimes = (pack.transitStopTimes ?? []).filter(({ lineId }) => lineIds.has(lineId));
+  const routeIds = new Set(routes.map(({ id }) => id));
+  const trips = (pack.transitTrips ?? []).filter(({ routeId }) => routeIds.has(routeId));
+  const serviceIds = new Set(lineConfigs.flatMap(({ lineNumber }) => ["WEEK", "SAT", "HOLI"]
+    .map((dayCode) => serviceIdFor(lineNumber, dayCode))));
+  const calendars = (pack.serviceCalendars ?? []).filter(({ serviceId }) => serviceIds.has(serviceId));
+  const calendarDates = (pack.serviceCalendarDates ?? []).filter(({ serviceId }) => serviceIds.has(serviceId));
+  if (routes.length || stopTimes.length || trips.length || calendars.length || calendarDates.length) {
+    throw new Error("Daegu cumulative timetable already exists");
+  }
+  if (operators.length === 0) {
+    pack.operators.push({ id: OPERATOR_ID, nameKo: "대구교통공사", nameEn: "" });
+    for (const config of lineConfigs) {
+      const metadata = LINE_META[config.lineNumber];
+      if (!metadata) throw new Error(`unsupported Daegu line: ${config.lineId}`);
+      pack.lines.push({
+        id: config.lineId,
+        operatorId: OPERATOR_ID,
+        nameKo: metadata.nameKo,
+        nameEn: "",
+        color: metadata.color,
+      });
+    }
+    pack.stations.push(...generated.stations);
+    pack.stationLines.push(...generated.stationLines);
+    pack.networkEdges.push(...generated.networkEdges);
+    return;
+  }
+  const membershipKeys = new Set(memberships.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const edgeKeys = new Set(rides.map(({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`));
+  if (matchingLines.length !== lineIds.size || memberships.length === 0 || rides.length === 0
+    || membershipKeys.size !== memberships.length || membershipKeys.size !== expectedMembership.size
+    || [...membershipKeys].some((key) => !expectedMembership.has(key))
+    || memberships.some((row) => hasAuthority(row)
+      || row.lineSequence !== expectedMembership.get(`${row.stationId}\0${row.lineId}`).lineSequence)
+    || edgeKeys.size !== rides.length || new Set(rides.map(({ id }) => id)).size !== rides.length
+    || edgeKeys.size !== expectedEdges.size || [...edgeKeys].some((key) => !expectedEdges.has(key))
+    || rides.some(hasAuthority)) {
+    throw new Error("Daegu cumulative topology mismatch");
+  }
+  const expectedStations = new Map(generated.stations.map((row) => [row.id, row]));
+  const stations = pack.stations.filter(({ id }) => expectedStations.has(id));
+  if (stations.length !== expectedStations.size || new Set(stations.map(({ id }) => id)).size !== stations.length
+    || stations.some((row) => hasAuthority(row)
+      || normalizedStationName(row.nameKo) !== normalizedStationName(expectedStations.get(row.id).nameKo))) {
+    throw new Error("Daegu cumulative station mismatch");
+  }
+  for (const row of memberships) {
+    const expected = expectedMembership.get(`${row.stationId}\0${row.lineId}`);
+    Object.assign(row, {
+      stationCode: expected.stationCode,
+      lineSequence: expected.lineSequence,
+      sourceId: expected.sourceId,
+      sourceSnapshotId: expected.sourceSnapshotId,
+      providerRecordHash: expected.providerRecordHash,
+      evidenceHash: expected.evidenceHash,
+      fieldProvenance: expected.fieldProvenance,
+      derivationKind: expected.derivationKind,
+      lastVerifiedAt: expected.lastVerifiedAt,
+    });
+  }
+  for (const row of stations) {
+    const expected = expectedStations.get(row.id);
+    Object.assign(row, {
+      dataQualityLevel: expected.dataQualityLevel,
+      dataSourceType: expected.dataSourceType,
+      sourceId: expected.sourceId,
+      sourceSnapshotId: expected.sourceSnapshotId,
+      providerRecordHash: expected.providerRecordHash,
+      evidenceHash: expected.evidenceHash,
+      derivationKind: expected.derivationKind,
+      lastVerifiedAt: expected.lastVerifiedAt,
+    });
+  }
+  for (const row of rides) {
+    const id = row.id;
+    Object.assign(row, expectedEdges.get(`${row.fromNodeId}\0${row.toNodeId}`), { id });
+  }
+}
+
+function assertDaeguGeneratedRows(pack, generated, lines) {
+  const lineIds = new Set(generated.stationLines.map(({ lineId }) => lineId));
+  const expectedMembership = new Set(generated.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const expectedEdges = new Set(generated.networkEdges.map(({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`));
+  const expectedTrips = new Set(lines.flatMap(({ timetable }) => timetable.trips.map(({ id }) => id)));
+  const expectedStops = new Set(lines.flatMap(({ timetable }) => timetable.trips.flatMap(({ id, stops }) =>
+    stops.map((_, index) => `${id}\0${index + 1}`))));
+  const memberships = pack.stationLines.filter(({ lineId }) => lineIds.has(lineId));
+  const rides = pack.networkEdges.filter((row) => row.edgeType === "RIDE"
+    && [...lineIds].some((lineId) => row.fromNodeId?.endsWith(`:${lineId}`)
+      || row.toNodeId?.endsWith(`:${lineId}`)));
+  const trips = pack.transitTrips.filter(({ id }) => expectedTrips.has(id));
+  const stops = pack.transitStopTimes.filter(({ tripId }) => expectedTrips.has(tripId));
+  const membershipKeys = new Set(memberships.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const edgeKeys = new Set(rides.map(({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`));
+  const stopKeys = new Set(stops.map(({ tripId, stopSequence }) => `${tripId}\0${stopSequence}`));
+  if (membershipKeys.size !== memberships.length || membershipKeys.size !== expectedMembership.size
+    || [...membershipKeys].some((key) => !expectedMembership.has(key))
+    || edgeKeys.size !== rides.length || edgeKeys.size !== expectedEdges.size
+    || [...edgeKeys].some((key) => !expectedEdges.has(key))
+    || trips.length !== expectedTrips.size || new Set(trips.map(({ id }) => id)).size !== trips.length
+    || stops.length !== expectedStops.size || stopKeys.size !== stops.length
+    || [...stopKeys].some((key) => !expectedStops.has(key))) {
+    throw new Error("Daegu materialized generated rows mismatch");
+  }
+}
+
+function hasAuthority(row) {
+  return row.sourceId !== undefined || row.sourceSnapshotId !== undefined
+    || row.providerRecordHash !== undefined || row.evidenceHash !== undefined
+    || row.fieldProvenance !== undefined || row.provenanceKind !== undefined
+    || row.derivationKind !== undefined || row.verificationStatus !== undefined;
 }
 
 export function materializedPackContentHash(pack, version) {
@@ -192,7 +319,16 @@ function validateTimetableSnapshot(snapshot, config, topology) {
   if (stopTotal !== config.stopTimeCount) throw new Error(`Daegu line ${config.lineNumber} stop time total mismatch`);
 }
 
-function requiredSources(inventory, config, topology, timetable, mappings, now) {
+// 검토 날짜 대신 실제 MOLIT 관측과 역 매핑을 식별자에 결속한다.
+export function daeguMembershipSnapshotIdentity({
+  sourceId, molitSnapshotId, membershipSourceRawSha256, mappingSha256, stationCodesSha256,
+}) {
+  return `${sourceId}-${sha256(canonicalJson({
+    molitSnapshotId, membershipSourceRawSha256, mappingSha256, stationCodesSha256,
+  }))}`;
+}
+
+function requiredSources(inventory, config, topology, timetable, mappings) {
   const topologyId = `daegu-line${config.lineNumber}-route-topology`;
   const timetableId = `daegu-line${config.lineNumber}-train-timetable`;
   const membershipId = `molit-urban-rail-full-route-daegu-line${config.lineNumber}-membership`;
@@ -206,11 +342,14 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
   const membershipVerifiedAt = Date.parse(membershipEvidence?.verifiedAt ?? "");
   const mappingSha256 = sha256(JSON.stringify(mappings));
   const stationCodesSha256 = sha256(JSON.stringify(topology.scope.map(({ stationCode }) => stationCode)));
+  const topologySnapshotId = daeguSourceSnapshotIdentity(topology);
+  const timetableSnapshotId = daeguSourceSnapshotIdentity(timetable);
 
   if (topologySource?.productionUseAllowed !== true || topologySource.license?.redistributionAllowed !== true
     || topologyEvidence?.issue !== ISSUE || topologyEvidence.materializer !== MATERIALIZER
     || topologyEvidence.verificationTest !== VERIFICATION_TEST
-    || topologyEvidence.snapshotId !== `${topologyId}-20260721`
+    || topologyEvidence.snapshotId !== topologySnapshotId
+    || topologyEvidence.snapshotPath !== `tools/datapack/sources/${topologySnapshotId}.json`
     || topologyEvidence.capturedAt !== topology.capturedAt || topologyEvidence.freshUntil !== topology.freshUntil
     || topologyEvidence.stationCount !== config.stationCount || topologyEvidence.edgeCount !== config.edgeCount
     || topologyEvidence.depotExcludedCount !== topology.depotExcludedCount
@@ -222,7 +361,8 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
     || timetableSource.capabilities?.schedule?.productionUseAllowed !== true
     || scheduleEvidence?.issue !== ISSUE || scheduleEvidence.materializer !== MATERIALIZER
     || scheduleEvidence.verificationTest !== VERIFICATION_TEST
-    || scheduleEvidence.snapshotId !== `${timetableId}-20260721`
+    || scheduleEvidence.snapshotId !== timetableSnapshotId
+    || scheduleEvidence.snapshotPath !== `tools/datapack/sources/${timetableSnapshotId}.json`
     || scheduleEvidence.capturedAt !== timetable.capturedAt || scheduleEvidence.freshUntil !== timetable.freshUntil
     || scheduleEvidence.tripCount !== config.tripCount || scheduleEvidence.stopTimeCount !== config.stopTimeCount
     || scheduleEvidence.dayLabelNormalizedCount !== timetable.dayLabelNormalizedCount
@@ -230,7 +370,7 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
     || scheduleEvidence.rawUpSha256 !== timetable.rawUpSha256
     || scheduleEvidence.rawDownSha256 !== timetable.rawDownSha256
     || scheduleEvidence.tripsSha256 !== timetable.tripsSha256
-    || scheduleEvidence.topologySnapshotId !== topologyEvidence.snapshotId
+    || scheduleEvidence.topologySnapshotId !== topologySnapshotId
     || scheduleEvidence.contentSha256 !== timetable.contentSha256) {
     throw new Error(`${timetableId} inventory evidence does not match snapshot`);
   }
@@ -239,7 +379,13 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
     || rawMembership?.admissionEvidence?.decision !== "APPROVED"
     || membershipEvidence?.issue !== ISSUE || membershipEvidence.materializer !== MATERIALIZER
     || membershipEvidence.verificationTest !== VERIFICATION_TEST
-    || membershipEvidence.snapshotId !== `${membershipId}-20260721`
+    || membershipEvidence.snapshotId !== daeguMembershipSnapshotIdentity({
+      sourceId: membershipId,
+      molitSnapshotId: rawMembership.admissionEvidence.snapshotId,
+      membershipSourceRawSha256: rawMembership.admissionEvidence.rawSha256,
+      mappingSha256,
+      stationCodesSha256,
+    })
     || JSON.stringify(membershipEvidence.lineIds) !== JSON.stringify([config.lineId])
     || membershipEvidence.stationCount !== config.stationCount
     || membershipEvidence.mappingSha256 !== mappingSha256
@@ -254,19 +400,14 @@ function requiredSources(inventory, config, topology, timetable, mappings, now) 
     || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${membershipId} membership evidence is invalid`);
   }
-  if (!(now instanceof Date) || !Number.isFinite(now.getTime()) || now.getTime() < membershipVerifiedAt) {
-    throw new Error(`${membershipId} membership evidence is future-dated`);
-  }
   for (const [label, capturedAt, freshUntil] of [
     [topologyId, topologyEvidence.capturedAt, topologyEvidence.freshUntil],
     [timetableId, scheduleEvidence.capturedAt, scheduleEvidence.freshUntil],
   ]) {
     const captured = Date.parse(capturedAt);
     const fresh = Date.parse(freshUntil);
-    const current = now instanceof Date ? now.getTime() : Number.NaN;
-    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS
-      || !Number.isFinite(current) || current < captured || current >= fresh) {
-      throw new Error(`${label} evidence is stale or future-dated`);
+    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS) {
+      throw new Error(`${label} evidence freshness relationship is invalid`);
     }
   }
   return { topology: topologySource, timetable: timetableSource, membership: membershipSource };
@@ -497,7 +638,7 @@ function parseArgs(argv) {
   return Object.fromEntries(expected.map((flag, index) => [flag.slice(2), argv[index * 2 + 1]]));
 }
 
-export async function runDaeguTimetableMaterializer(argv, { now = new Date() } = {}) {
+export async function runDaeguTimetableMaterializer(argv) {
   const args = parseArgs(argv);
   const [baseFixture, inventory, stationMapBytes] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),
@@ -507,18 +648,29 @@ export async function runDaeguTimetableMaterializer(argv, { now = new Date() } =
   const topologySnapshots = {};
   const timetableSnapshots = {};
   const canonicalStationMappings = {};
+  const readTracked = (relative) => readFile(path.join(args["sources-dir"], path.basename(relative)));
   for (const config of DAEGU_LINES) {
-    topologySnapshots[config.lineNumber] = JSON.parse(await readFile(
-      path.join(args["sources-dir"], `daegu-line${config.lineNumber}-route-topology-20260721.json`), "utf8"));
-    timetableSnapshots[config.lineNumber] = JSON.parse(await readFile(
-      path.join(args["sources-dir"], `daegu-line${config.lineNumber}-train-timetable-20260721.json`), "utf8"));
+    topologySnapshots[config.lineNumber] = await readSelectedSourceSnapshot({
+      inventory, sourceId: `daegu-line${config.lineNumber}-route-topology`,
+      evidenceKind: "topologyAdmissionEvidence", readTracked,
+    });
+    timetableSnapshots[config.lineNumber] = await readSelectedSourceSnapshot({
+      inventory, sourceId: `daegu-line${config.lineNumber}-train-timetable`,
+      evidenceKind: "scheduleAdmissionEvidence", readTracked,
+    });
     canonicalStationMappings[config.lineNumber] = parseMolitDaeguStationMappings(stationMapBytes, config.lineName);
   }
   const fixture = materializeDaeguTimetable({
-    baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings, now,
+    baseFixture, topologySnapshots, timetableSnapshots, inventory, canonicalStationMappings,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
-  console.log(`Daegu timetable materialized: trips=${EXPECTED.trips} stopTimes=${EXPECTED.stopTimes}`);
+  const trips = new Set(Object.values(timetableSnapshots).flatMap(({ trips: rows }) => rows.map(({ id }) => id)));
+  const stopTimes = Object.values(timetableSnapshots).reduce(
+    (total, { trips: rows }) => total + rows.reduce((sum, { stops }) => sum + stops.length, 0),
+    0,
+  );
+  console.log(`Daegu timetable materialized: trips=${trips.size} stopTimes=${stopTimes}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

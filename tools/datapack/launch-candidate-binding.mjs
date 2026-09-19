@@ -54,13 +54,13 @@ export function buildLaunchCandidateBinding({
   };
 }
 
-export function bindAuthoritativeLaunchEvidence(templateEvaluatorInput, {
+export function bindAuthoritativeLaunchEvidence({
   sourceEvidenceRaw,
   serverEvidenceRaw,
   mobileEvidenceRaw,
   candidateBinding,
-}) {
-  const evaluatorInput = structuredClone(templateEvaluatorInput ?? {});
+} = {}) {
+  const evaluatorInput = {};
   const sourcePayload = launchPayload(sourceEvidenceRaw);
   const serverPayload = launchPayload(serverEvidenceRaw);
   const mobilePayload = launchPayload(mobileEvidenceRaw);
@@ -81,6 +81,8 @@ export function bindAuthoritativeLaunchEvidence(templateEvaluatorInput, {
   evaluatorInput.safety = sourcePayload?.safety ?? {};
   evaluatorInput.forbiddenEvidence = sourcePayload?.forbiddenEvidence ?? null;
   evaluatorInput.forbiddenEvidenceStatus = sourcePayload?.forbiddenEvidenceStatus ?? null;
+  evaluatorInput.claims = sourcePayload?.claims ?? {};
+  evaluatorInput.nationwide = sourcePayload?.nationwide ?? {};
   evaluatorInput.candidateBinding = candidateBinding;
   return evaluatorInput;
 }

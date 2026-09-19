@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { readProductionSourceSet, validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
+import * as candidateSourceSet from "./validate-candidate-source-set.mjs";
+import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-requirement-ownership-ledger.mjs";
+import { fixtureBytes, fixtureLedgerInput, independentFiveRegionFixture, fiveRegionCandidateSourceSetInput } from "./test-fixtures/five-region-source-input.mjs";
+
+const { readProductionSourceSet, validateCandidateSourceSet } = candidateSourceSet;
 
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -128,5 +132,97 @@ test("raw/semantic inventory hash, ledger hash, non-head selection을 거부한�
   ]) {
     const input = fixture(); mutate(input);
     assert.throws(() => validateCandidateSourceSet(input), expected);
+  }
+});
+
+test("#6 binds a GO five-region candidate to exact source, ledger, and scope bytes", () => {
+  const input = fiveRegionCandidateSourceSetInput();
+  assert.equal(buildNationwideRequirementOwnershipLedger(input).summary.nationwideEligibility, "GO");
+  assert.equal(typeof candidateSourceSet.validateNationwideCandidateSourceSet, "function");
+  assert.deepEqual(candidateSourceSet.validateNationwideCandidateSourceSet(input), {
+    sourceSnapshotSetHash: input.candidate.sourceSnapshotSetHash,
+    fanInSha256: input.fanIn.fanInSha256,
+    ownershipLedgerSha256: sha(input.inputBytes.ownershipLedger),
+    productionScopeSha256: sha(input.inputBytes.productionScope),
+    targetSha256: sha(input.inputBytes.targets),
+  });
+
+  const sourceSetMismatch = fiveRegionCandidateSourceSetInput();
+  sourceSetMismatch.productionScope.productionSourceSet.requiredSourceIds = [];
+  sourceSetMismatch.inputBytes.productionScope = Buffer.from(JSON.stringify(sourceSetMismatch.productionScope));
+  sourceSetMismatch.candidate.productionScope.sha256 = sha(sourceSetMismatch.inputBytes.productionScope);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(sourceSetMismatch), /required source IDs|source set/i);
+
+  const rawScopeMismatch = fiveRegionCandidateSourceSetInput();
+  rawScopeMismatch.candidate.productionScope.sha256 = "0".repeat(64);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(rawScopeMismatch), /scope.*raw|raw.*scope/i);
+
+  const targetHashMismatch = fiveRegionCandidateSourceSetInput();
+  targetHashMismatch.candidate.productionScopePolicy.sha256 = "0".repeat(64);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(targetHashMismatch), /production scope policy raw binding mismatch/);
+
+  const duplicateRegion = fiveRegionCandidateSourceSetInput();
+  duplicateRegion.productionScope.routingLaunchScope.regionIds.push(
+    duplicateRegion.productionScope.routingLaunchScope.regionIds[0],
+  );
+  duplicateRegion.inputBytes.productionScope = Buffer.from(JSON.stringify(duplicateRegion.productionScope));
+  duplicateRegion.candidate.productionScope.sha256 = sha(duplicateRegion.inputBytes.productionScope);
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(duplicateRegion), /region.*unique|region set mismatch/);
+
+  const ledgerDrift = fiveRegionCandidateSourceSetInput();
+  ledgerDrift.ownershipLedger.summary.nationwideEligibility = "NO_GO";
+  ledgerDrift.inputBytes.ownershipLedger = Buffer.from(JSON.stringify(ledgerDrift.ownershipLedger));
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(ledgerDrift), /ownership ledger binding mismatch/);
+
+  const noGo = fiveRegionCandidateSourceSetInput({ runtimeEvidence: false });
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(noGo), /GO/);
+
+  const expired = fiveRegionCandidateSourceSetInput();
+  expired.candidate.publishedAt = "2040-01-03T00:00:00.000Z";
+  assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(expired), /fresh|expire/i);
+});
+
+test("native schedule admission records bind the selected inventory and fan-in head", () => {
+  const source = independentFiveRegionFixture({ runtimeEvidence: true });
+  const inventorySource = source.inventory.sources[0];
+  delete inventorySource.admissionEvidence;
+  inventorySource.capabilities = { schedule: { productionUseAllowed: true } };
+  inventorySource.scheduleAdmissionEvidence = {
+    issue: 1, materializer: "fixture-materializer", verificationTest: "fixture-test",
+    snapshotId: source.sourceSnapshots[0].snapshotId,
+    snapshotPath: `tools/datapack/sources/${source.sourceSnapshots[0].snapshotId}.json`,
+    capturedAt: source.sourceSnapshots[0].retrievedAt, freshUntil: source.sourceSnapshots[0].freshnessExpiresAt,
+    rawSha256: source.sourceSnapshots[0].rawSha256, rowsSha256: "d".repeat(64), contentSha256: "e".repeat(64),
+    topologySourceId: "fixture-topology", topologySnapshotId: "fixture-topology-snapshot",
+    topologyContentSha256: "f".repeat(64), rowCount: 1, departureCount: 1, tripCount: 1, stopTimeCount: 1,
+  };
+  source.inputBytes.inventory = fixtureBytes(source.inventory);
+  const bound = fixtureLedgerInput(source);
+  const regions = bound.fanIn.scope.regionIds;
+  const productionScope = { productionSourceSet: { sourceInventory: INVENTORY_PATH,
+    requiredSourceIds: bound.fanIn.selectedSources.map(({ sourceId }) => sourceId) },
+  verifiedAccessibilityScope: { id: "fixture", regionIds: regions }, supportScope: { id: "fixture", regionIds: regions },
+  routingLaunchScope: { id: "fixture", regionIds: regions },
+  nationwideRoadmapScope: { blocksRoutingLaunch: true, launchRequiredCount: bound.tally.launchRequired.requirements.length } };
+  const selected = bound.sourceSnapshots;
+  const candidate = { sourceSnapshotIds: selected.map(({ snapshotId }) => snapshotId), sourceSnapshots: selected.map((row) => ({
+    sourceId: row.sourceId, snapshotId: row.snapshotId, rawSha256: row.rawSha256,
+    freshnessExpiresAt: row.freshnessExpiresAt, admissionRecordSha256s: bound.fanIn.selectedSources[0].admissionRecordSha256s,
+  })), sourceSnapshotSetHash: sha(JSON.stringify(selected)), sourceInventorySha256: sha(JSON.stringify(bound.inventory)),
+  networkEdgeEvidence: { sourceInventory: { path: INVENTORY_PATH, sha256: sha(bound.inputBytes.inventory) } },
+  publishedAt: bound.evaluatedAt, productionScope: { path: "release/product-gates/production-datapack-scope.json", sha256: sha(fixtureBytes(productionScope)) },
+  productionScopePolicy: { path: "tools/datapack/nationwide-coverage-targets.json", sha256: sha(bound.inputBytes.targets) }, productionScopeId: "fixture" };
+  const input = { candidate, inputBytes: { ...bound.inputBytes, productionScope: fixtureBytes(productionScope),
+    ownershipLedger: fixtureBytes(buildNationwideRequirementOwnershipLedger(bound)) } };
+  assert.doesNotThrow(() => candidateSourceSet.validateNationwideCandidateSourceSet(input));
+  for (const mutate of [
+    (value) => { value.candidate.sourceSnapshots[0].admissionRecordSha256s[0].sha256 = "0".repeat(64); },
+    (value) => { value.inventory.sources[0].scheduleAdmissionEvidence.rawSha256 = "0".repeat(64); value.inputBytes.inventory = fixtureBytes(value.inventory); },
+    (value) => { value.candidate.sourceSnapshots[0].adminReviewRecordHash = "0".repeat(64); },
+  ]) {
+    const value = structuredClone({ ...input, inventory: bound.inventory });
+    value.inputBytes = Object.fromEntries(Object.entries(input.inputBytes).map(([key, bytes]) => [key, Buffer.from(bytes)]));
+    mutate(value);
+    assert.throws(() => candidateSourceSet.validateNationwideCandidateSourceSet(value), /admission|binding|semantic/i);
   }
 });

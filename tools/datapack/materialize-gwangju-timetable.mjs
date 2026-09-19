@@ -26,11 +26,10 @@ export function materializeGwangjuTimetable({
   topologySnapshot,
   inventory,
   canonicalStationMappings,
-  now = new Date(),
 }) {
   validateTopologySnapshot(topologySnapshot);
   const retained = validateRetainedTimetable(retainedTimetable, topologySnapshot, canonicalStationMappings);
-  const sources = requiredSources(inventory, retained, topologySnapshot, canonicalStationMappings, now);
+  const sources = requiredSources(inventory, retained, topologySnapshot, canonicalStationMappings);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
   if (!pack || fixture.packs.length !== 1 || pack.artifactKind !== "production") {
@@ -39,19 +38,21 @@ export function materializeGwangjuTimetable({
   for (const id of [SOURCE_ID, TOPOLOGY_SOURCE_ID, MEMBERSHIP_SOURCE_ID]) {
     if (pack.sourceInventory.some((source) => source.id === id)) throw new Error(`${id} already exists`);
   }
-  if (pack.lines.some(({ id }) => id === LINE_ID) || pack.operators.some(({ id }) => id === OPERATOR_ID)) {
-    throw new Error("Gwangju line already exists in base fixture");
-  }
+  const generatedTopology = { stations: [], stationLines: [], networkEdges: [] };
+  addStationsAndTopology(generatedTopology, topologySnapshot, canonicalStationMappings, sources);
+  bindCumulativeGwangjuTopology(pack, generatedTopology);
 
   pack.sourceInventory.push(
     packSource(sources.membership, sources.membership.membershipAdmissionEvidence.verifiedAt),
     packSource(sources.topology, topologySnapshot.capturedAt),
     packSource(sources.timetable, retained.projection.source.observedAt),
   );
-  pack.operators.push({ id: OPERATOR_ID, nameKo: "광주교통공사", nameEn: "" });
-  pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "광주 1호선", nameEn: "", color: "#009088" });
-
-  addStationsAndTopology(pack, topologySnapshot, canonicalStationMappings, sources);
+  if (!pack.operators.some(({ id }) => id === OPERATOR_ID)) {
+    pack.operators.push({ id: OPERATOR_ID, nameKo: "광주교통공사", nameEn: "" });
+  }
+  if (!pack.lines.some(({ id }) => id === LINE_ID)) {
+    pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "광주 1호선", nameEn: "", color: "#009088" });
+  }
   const scheduleProvenance = provenanceForRetainedSchedule(sources.timetable, retained.projection, retained.retainedContractSha256);
   const tables = buildRetainedGwangjuTransitTables({ projection: retained.projection, lineId: LINE_ID,
     routeBindings: retainedTimetable.routeBindings, serviceIds: retainedTimetable.serviceIds,
@@ -531,7 +532,7 @@ function validateRetainedTimetable(value, topologySnapshot, canonicalStationMapp
   return { projection, retainedContractSha256: sha256(canonicalJson(contract)) };
 }
 
-function requiredSources(inventory, retained, topologySnapshot, mappings, now) {
+function requiredSources(inventory, retained, topologySnapshot, mappings) {
   const timetable = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const topology = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID);
   const membership = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_SOURCE_ID);
@@ -589,19 +590,126 @@ function requiredSources(inventory, retained, topologySnapshot, mappings, now) {
     || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is invalid`);
   }
-  // 관측 시각은 provenance다. replay 가능 시각은 아래 topology 유효 구간으로 판단한다.
   for (const [label, capturedAt, freshUntil] of [
     [TOPOLOGY_SOURCE_ID, topologyEvidence.capturedAt, topologyEvidence.freshUntil],
   ]) {
     const captured = Date.parse(capturedAt);
     const fresh = Date.parse(freshUntil);
-    const current = now instanceof Date ? now.getTime() : Number.NaN;
-    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS
-      || !Number.isFinite(current) || current < captured || current >= fresh) {
-      throw new Error(`${label} evidence is stale or future-dated`);
+    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS) {
+      throw new Error(`${label} evidence freshness relationship is invalid`);
     }
   }
   return { timetable, topology, membership };
+}
+
+function bindCumulativeGwangjuTopology(pack, generated) {
+  const existingOperator = pack.operators.filter(({ id }) => id === OPERATOR_ID);
+  const existingLine = pack.lines.filter(({ id }) => id === LINE_ID);
+  if (existingOperator.length > 1 || existingLine.length > 1
+    || existingLine.some(({ operatorId }) => operatorId !== OPERATOR_ID)) {
+    throw new Error("Gwangju cumulative line identity mismatch");
+  }
+  const hasExistingTopology = existingOperator.length === 1 || existingLine.length === 1;
+  const timetableRows = [
+    ...pack.transitRoutes.filter(({ lineId }) => lineId === LINE_ID),
+    ...pack.transitStopTimes.filter(({ lineId }) => lineId === LINE_ID),
+  ];
+  if (timetableRows.length > 0 || pack.transitTrips.some(({ routeId }) =>
+    pack.transitRoutes.some((route) => route.id === routeId && route.lineId === LINE_ID))) {
+    throw new Error("Gwangju cumulative timetable already exists");
+  }
+  const expectedMembership = new Map(generated.stationLines.map((row) => [
+    `${row.stationId}\0${row.lineSequence}`, row,
+  ]));
+  const actualMembership = pack.stationLines.filter(({ lineId }) => lineId === LINE_ID);
+  const edgeKey = ({ fromNodeId, toNodeId }) => `${fromNodeId}\0${toNodeId}`;
+  const expectedEdges = new Map(generated.networkEdges.map((row) => [edgeKey(row), row]));
+  const actualEdges = pack.networkEdges.filter((row) => row.edgeType === "RIDE" && expectedEdges.has(edgeKey(row)));
+  const lineRideEdges = pack.networkEdges.filter((row) => row.edgeType === "RIDE"
+    && (row.fromNodeId?.endsWith(`:${LINE_ID}`) || row.toNodeId?.endsWith(`:${LINE_ID}`)));
+  if (hasExistingTopology && (actualMembership.length === 0 || lineRideEdges.length === 0)) {
+    throw new Error("Gwangju cumulative topology is partial");
+  }
+  adoptGwangjuMembership(pack, generated.stationLines, actualMembership, expectedMembership);
+  adoptGwangjuStations(pack, generated.stations);
+  adoptGwangjuRideEdges(pack, generated.networkEdges, actualEdges, lineRideEdges, expectedEdges, edgeKey);
+}
+
+function adoptGwangjuMembership(pack, generated, actual, expected) {
+  if (actual.length === 0) {
+    pack.stationLines.push(...generated);
+    return;
+  }
+  const actualKeys = new Set(actual.map(({ stationId, lineSequence }) => `${stationId}\0${lineSequence}`));
+  if (actualKeys.size !== actual.length || actualKeys.size !== expected.size
+    || [...actualKeys].some((key) => !expected.has(key))) {
+    throw new Error("Gwangju cumulative membership mismatch");
+  }
+  for (const row of actual) {
+    if (hasExistingAuthority(row)) {
+      throw new Error("Gwangju cumulative membership source mismatch");
+    }
+    const expectedRow = expected.get(`${row.stationId}\0${row.lineSequence}`);
+    row.stationCode = expectedRow.stationCode;
+    assignAuthorityFields(row, expectedRow);
+  }
+}
+
+function adoptGwangjuStations(pack, generated) {
+  const expected = new Map(generated.map((row) => [row.id, row]));
+  const actual = pack.stations.filter(({ id }) => expected.has(id));
+  if (actual.length > 0 && (actual.length !== expected.size
+    || new Set(actual.map(({ id }) => id)).size !== actual.length)) {
+    throw new Error("Gwangju cumulative station mismatch");
+  }
+  if (actual.length === 0) {
+    pack.stations.push(...generated);
+    return;
+  }
+  for (const row of actual) {
+    const expectedRow = expected.get(row.id);
+    if (normalizedName(row.nameKo) !== normalizedName(expectedRow.nameKo)) {
+      throw new Error("Gwangju cumulative station name mismatch");
+    }
+    if (hasExistingAuthority(row)) {
+      throw new Error("Gwangju cumulative station source mismatch");
+    }
+    assignAuthorityFields(row, expectedRow);
+  }
+}
+
+function adoptGwangjuRideEdges(pack, generated, actual, lineEdges, expected, edgeKey) {
+  if (lineEdges.length === 0) {
+    pack.networkEdges.push(...generated);
+    return;
+  }
+  const actualKeys = new Set(actual.map((row) => edgeKey(row)));
+  if (actual.length !== lineEdges.length || actualKeys.size !== actual.length
+    || actualKeys.size !== expected.size || [...actualKeys].some((key) => !expected.has(key))) {
+    throw new Error("Gwangju cumulative RIDE topology mismatch");
+  }
+  for (const row of actual) {
+    if (hasExistingAuthority(row)) {
+      throw new Error("Gwangju cumulative RIDE source mismatch");
+    }
+    const id = row.id;
+    Object.assign(row, structuredClone(expected.get(edgeKey(row))), { id });
+  }
+}
+
+function assignAuthorityFields(target, source) {
+  for (const key of [
+    "sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "provenanceKind",
+    "derivationKind", "verificationStatus", "lastVerifiedAt", "fieldProvenance",
+  ]) {
+    if (Object.hasOwn(source, key)) target[key] = structuredClone(source[key]);
+  }
+}
+
+function hasExistingAuthority(row) {
+  return row.sourceId !== undefined || row.sourceSnapshotId !== undefined || row.providerRecordHash !== undefined
+    || row.evidenceHash !== undefined || row.fieldProvenance !== undefined || row.provenanceKind !== undefined
+    || row.derivationKind !== undefined || row.verificationStatus !== undefined;
 }
 
 function addStationsAndTopology(pack, snapshot, mappings, sources) {
@@ -801,7 +909,7 @@ function resolveTopologySnapshotPath(inventory, repositoryRoot) {
 }
 
 export async function runGwangjuTimetableMaterializer(argv, {
-  now = new Date(), repositoryRoot = path.resolve(import.meta.dirname, "../.."),
+  repositoryRoot = path.resolve(import.meta.dirname, "../.."),
 } = {}) {
   const args = parseArgs(argv);
   const inventory = JSON.parse(await readFile(args.inventory, "utf8"));
@@ -819,8 +927,8 @@ export async function runGwangjuTimetableMaterializer(argv, {
     topologySnapshot,
     inventory,
     canonicalStationMappings: parseMolitGwangjuStationMappings(stationMap, topologySnapshot),
-    now,
   });
+  fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`Gwangju timetable materialized: trips=${fixture.packs[0].transitTrips.length} stopTimes=${fixture.packs[0].transitStopTimes.length}`);
 }

@@ -1,16 +1,17 @@
 import { createHash } from "node:crypto";
 
 import { parseKricCurrentStationLineWorkbook } from "./collect-kric-nationwide-timetable-file.mjs";
+import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 
 const SOURCE_ID = "kric-current-station-line-file";
 const DENOMINATOR_SOURCE_ID = "molit-urban-rail-full-route";
-const DENOMINATOR_ARTIFACT_KIND = "public-static-network-v2-observation";
-const DENOMINATOR_SNAPSHOT_ID = "molit-urban-rail-full-route-current-20260826T035408251Z";
-const DENOMINATOR_RAW_SHA256 = "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363";
-const DENOMINATOR_CONTENT_SHA256 = "f5b689252d77d83a4856a9615182d062fab247920dcddb40451d5d7db0fd51c6";
 
-export function projectKricStationLineMembership({ workbookBytes, denominator } = {}) {
-  validateDenominator(denominator);
+export async function projectKricStationLineMembership({ workbookBytes, repositoryRoot } = {}) {
+  if (!(Buffer.isBuffer(workbookBytes) || workbookBytes instanceof Uint8Array) || workbookBytes.length === 0) {
+    throw new Error("KRIC_STATION_LINE_WORKBOOK_REQUIRED");
+  }
+  const currentMolit = await loadCurrentMolitObservation({ repositoryRoot });
+  const denominator = validateDenominator(currentMolit.observation);
   const sourceRows = parseKricCurrentStationLineWorkbook(workbookBytes);
   const denominatorByKey = new Map();
   for (const row of denominator.normalizedProjection) {
@@ -40,33 +41,26 @@ export function projectKricStationLineMembership({ workbookBytes, denominator } 
     artifactKind: "kric-station-line-membership-projection",
     projectionOnly: true,
     sourceId: SOURCE_ID,
-    denominatorRawSha256: DENOMINATOR_RAW_SHA256,
-    denominatorContentSha256: DENOMINATOR_CONTENT_SHA256,
+    denominatorRawSha256: currentMolit.current.rawSha256,
+    denominatorContentSha256: currentMolit.current.contentSha256,
     records,
     recordsSha256: createHash("sha256").update(JSON.stringify(records)).digest("hex"),
   };
 }
 
-function validateDenominator(value) {
-  if (value?.artifactKind !== DENOMINATOR_ARTIFACT_KIND || value.sourceId !== DENOMINATOR_SOURCE_ID
-    || value.snapshotId !== DENOMINATOR_SNAPSHOT_ID
-    || value.rowCount !== 1103 || value.rawSha256 !== DENOMINATOR_RAW_SHA256
-    || !Array.isArray(value.normalizedProjection)
-    || value.normalizedProjection.length !== 1103) throw new Error("KRIC_STATION_LINE_DENOMINATOR_IDENTITY");
-  if (value.contentSha256 !== DENOMINATOR_CONTENT_SHA256
-    || sha256(Buffer.from(`${JSON.stringify(value.normalizedProjection)}\n`)) !== value.contentSha256) {
-    throw new Error("KRIC_STATION_LINE_DENOMINATOR_CONTENT_HASH");
-  }
-  for (const row of value.normalizedProjection) {
+function validateDenominator(observation) {
+  // 원문·snapshot·ledger 결속은 공통 로더가 검증한다. 여기서는 membership 행 구조만 확인한다.
+  if (observation?.artifactKind !== "public-static-network-v2-observation"
+    || observation.sourceId !== DENOMINATOR_SOURCE_ID
+    || !Number.isInteger(observation.rowCount) || observation.rowCount <= 0 || !Array.isArray(observation.normalizedProjection)
+    || observation.normalizedProjection.length !== observation.rowCount) throw new Error("KRIC_STATION_LINE_DENOMINATOR_IDENTITY");
+  for (const row of observation.normalizedProjection) {
     for (const field of ["region_code", "region_name", "operator_name", "line_name", "station_name"]) {
       if (typeof row?.[field] !== "string" || row[field].normalize("NFC").trim() === "") throw new Error("KRIC_STATION_LINE_DENOMINATOR_ROW");
     }
     if (!Number.isInteger(row.station_sequence) || row.station_sequence < 1) throw new Error("KRIC_STATION_LINE_DENOMINATOR_ROW");
   }
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
+  return observation;
 }
 
 function membershipKey(operator, line, station) {
