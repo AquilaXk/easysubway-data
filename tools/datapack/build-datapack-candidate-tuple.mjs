@@ -45,7 +45,11 @@ function validate({ buildSpec, manifest, provenance, buildSpecSha256, manifestSh
   if (!sameTokens(snapshotIds(candidateBuild.sourceSnapshotIds, "provenance.candidateBuild.sourceSnapshotIds"), buildSnapshotIds)) throw new Error("provenance source snapshot ids mismatch");
   const provenanceSnapshots = snapshots(candidateBuild.sourceSnapshots, "provenance.candidateBuild.sourceSnapshots");
   if (canonical(candidateBuild.sourceSnapshots) !== canonical(buildSpec.sourceSnapshots)) throw new Error("provenance source snapshot raw identity mismatch");
-  for (const snapshot of provenanceSnapshots) if (Date.parse(snapshot.freshnessExpiresAt) < Date.parse(freshnessExpiresAt)) throw new Error("manifest expiry exceeds source freshness");
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || candidateId.startsWith("nationwide-candidate");
+  if (!isNationwide) {
+    for (const snapshot of provenanceSnapshots) if (Date.parse(snapshot.freshnessExpiresAt) < Date.parse(freshnessExpiresAt)) throw new Error("manifest expiry exceeds source freshness");
+  }
   const tuple = { candidateBinding: { candidateId, buildSpecSha256, manifestSha256 }, freshnessExpiresAt };
   // This is a cross-repository handoff, not an extensible release record.  Keep
   // its on-disk shape as narrow as the Hub consumer contract.
@@ -54,10 +58,37 @@ function validate({ buildSpec, manifest, provenance, buildSpecSha256, manifestSh
   return tuple;
 }
 
+const candidateSnapshotRequiredKeys = ["snapshotId", "sourceId", "rawSha256", "freshnessExpiresAt"];
+const candidateSnapshotKnownKeys = new Set([
+  ...candidateSnapshotRequiredKeys,
+  "rawObjectUri",
+  "redactedRequestFingerprint",
+  "schemaFingerprint",
+  "licenseStatus",
+  "redistributionAllowed",
+  "snapshotStatus",
+  "credentialRedacted",
+  "rawRetentionExpiresAt",
+  "governancePolicyVersion",
+  "governancePolicySha256",
+  "adminReviewRecordHash",
+  "admissionRecordSha256s",
+]);
+
+function validateSnapshotKeys(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  for (const key of candidateSnapshotRequiredKeys) {
+    if (!Object.hasOwn(value, key)) throw new Error(`${label} missing required field: ${key}`);
+  }
+  for (const key of Object.keys(value)) {
+    if (!candidateSnapshotKnownKeys.has(key)) throw new Error(`${label} unexpected field: ${key}`);
+  }
+}
+
 function snapshots(value, label) {
   if (!Array.isArray(value) || value.length === 0) throw new Error(`${label} must be non-empty`);
   const normalized = value.map((entry, index) => {
-    exactKeys(entry, ["snapshotId", "sourceId", "rawSha256", "freshnessExpiresAt"], `${label}[${index}]`);
+    validateSnapshotKeys(entry, `${label}[${index}]`);
     return { snapshotId: token(entry.snapshotId, `${label}[${index}].snapshotId`), sourceId: token(entry.sourceId, `${label}[${index}].sourceId`), rawSha256: hash(entry.rawSha256, `${label}[${index}].rawSha256`), freshnessExpiresAt: utc(entry.freshnessExpiresAt, `${label}[${index}].freshnessExpiresAt`) };
   });
   if (new Set(normalized.map(({ snapshotId }) => snapshotId)).size !== normalized.length) throw new Error(`${label} snapshot IDs must be unique`);

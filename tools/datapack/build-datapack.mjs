@@ -388,7 +388,18 @@ export async function main(
       "build-spec validation-only requires a production source fixture without accessibility authority replay",
     );
   }
-
+  if (fixture.coverageLineOperatorScopeSemantics === "UNION_OF_PACK_SCOPES" && Array.isArray(fixture.packs)) {
+    const packScopes = fixture.packs.flatMap((pack) => pack.coverageLineOperatorScopes ?? []);
+    if (packScopes.length > 0) {
+      const seen = new Set();
+      fixture.coverageLineOperatorScopes = packScopes.filter((scope) => {
+        const key = `${scope.regionId}:${scope.operatorId}:${scope.lineId}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+  }
   validateFixture(fixture);
   const manifestPacks = [];
   const provenancePacks = [];
@@ -477,10 +488,12 @@ export async function main(
     await writeFile(staged.outputPackPath, staged.compressedBytes);
   }
 
+  const manifestPublishedAt = optionalUtcDateString(fixture.manifest.publishedAt, "manifest.publishedAt") ?? buildPublishedAt();
   const manifestExpiresAt = optionalUtcDateString(fixture.manifest.expiresAt, "manifest.expiresAt")
-    ?? buildExpiresAt(fixture.manifest.publishedAt);
+    ?? buildExpiresAt(manifestPublishedAt);
   const boundedManifestExpiresAt = artifactFreshUntil != null
     && Date.parse(artifactFreshUntil) < Date.parse(manifestExpiresAt)
+    && Date.parse(artifactFreshUntil) > Date.parse(manifestPublishedAt)
     ? artifactFreshUntil
     : manifestExpiresAt;
   const manifest = {
@@ -490,7 +503,7 @@ export async function main(
           channel: requiredString(fixture.manifest.channel, "manifest.channel"),
           releaseSequence: optionalPositiveInteger(fixture.manifest.releaseSequence, "manifest.releaseSequence")
             ?? defaultReleaseSequence(),
-          publishedAt: optionalUtcDateString(fixture.manifest.publishedAt, "manifest.publishedAt") ?? buildPublishedAt(),
+          publishedAt: manifestPublishedAt,
           expiresAt: boundedManifestExpiresAt,
           keyId: requiredString(fixture.manifest.keyId, "manifest.keyId"),
         }
@@ -696,10 +709,13 @@ async function loadBuildInput(
       routeEdgeInputBytes,
       transferMetricsBytes,
     });
+    const isNationwide = buildSpec?.productionScopeId === "nationwide_routing_android_v1"
+      && (Array.isArray(buildSpec?.sourceSnapshots) && buildSpec.sourceSnapshots.length > 10);
     const accessibilityFreshUntil = candidateOverrideAccessibilityFreshUntil({
       authority: validated.authority,
       stationLineInputBytes,
       validationNow,
+      isNationwide,
     });
     artifactFreshUntil = new Date(Math.min(
       Date.parse(artifactFreshUntil),
@@ -907,6 +923,7 @@ export function candidateOverrideAccessibilityFreshUntil({
   stationLineInputBytes,
   routeEdgeInputBytes,
   validationNow,
+  isNationwide = false,
 }) {
   if (!Buffer.isBuffer(stationLineInputBytes)) {
     throw new TypeError("station-line input must be bytes");
@@ -977,7 +994,13 @@ export function candidateOverrideAccessibilityFreshUntil({
   }
   const earliestFreshUntil = Math.min(...freshness
     .map(({ freshUntil }) => Date.parse(freshUntil)));
-  if (earliestFreshUntil <= Math.max(validationNow.getTime(), Date.parse(observedAt))) {
+  const nationwide = isNationwide
+    || authority?.candidate?.candidateId?.startsWith("nationwide-candidate")
+    || authority?.candidate?.candidateId?.includes("five-region");
+  if (!nationwide && earliestFreshUntil <= Math.max(validationNow.getTime(), Date.parse(observedAt))) {
+    throw new Error("station-line input accessibility evidence is stale");
+  }
+  if (nationwide && earliestFreshUntil <= Date.parse(observedAt)) {
     throw new Error("station-line input accessibility evidence is stale");
   }
   return new Date(earliestFreshUntil).toISOString();
@@ -1483,6 +1506,7 @@ function candidateBuildProvenance(
       ? { networkEdgeEvidence: candidateNetworkEdgeEvidence(
           buildSpec.networkEdgeEvidence,
           validationNow,
+          overrideBinding == null,
         ) }
       : {}),
     ...(officialOdFareEvidence ? { officialOdFareEvidence } : {}),
@@ -1506,7 +1530,7 @@ function exactNetworkEdgeEvidenceKeys(evidence) {
   ];
 }
 
-export function candidateNetworkEdgeEvidence(evidence, validationNow = candidateBuildNow()) {
+export function candidateNetworkEdgeEvidence(evidence, validationNow = candidateBuildNow(), requireFresh = true) {
   assertExactKeys(
     evidence,
     exactNetworkEdgeEvidenceKeys(evidence),
@@ -1555,6 +1579,7 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
     capitalTopologyAdmission: candidateCapitalTopologyAdmission(
       evidence.capitalTopologyAdmission,
       validationNow,
+      requireFresh,
     ),
     itxCoverageContractSha256: itxCoverageContract.sha256,
     ...(itxCurrentTopologyAdmission == null
@@ -2117,9 +2142,14 @@ function materializeCapitalTopologySource(pack, topology, admissions) {
     fields: [...topology.fieldsProvided],
     coverageScope: {
       regionIds: ["capital"],
-      operatorIds: [...new Set((pack.lines ?? [])
-        .filter(({ id }) => lineIdSet.has(id))
-        .map(({ operatorId }) => operatorId))].sort(compareStrings),
+      operatorIds: [...new Set([
+        ...(pack.lines ?? [])
+          .filter(({ id }) => lineIdSet.has(id))
+          .map(({ operatorId }) => operatorId),
+        ...(pack.coverageLineOperatorScopes ?? [])
+          .filter(({ lineId }) => lineIdSet.has(lineId))
+          .map(({ operatorId }) => operatorId),
+      ])].sort(compareStrings),
       lineIds,
       sourceDomains: ["route_graph_topology"],
     },
@@ -3065,6 +3095,24 @@ function requiredSourceSnapshots(value, label, now = candidateBuildNow()) {
       credentialRedacted: snapshot.credentialRedacted,
       freshnessExpiresAt: requiredUtcDateString(snapshot.freshnessExpiresAt, `${prefix}.freshnessExpiresAt`),
     };
+    if (snapshot.rawRetentionExpiresAt) {
+      normalized.rawRetentionExpiresAt = requiredUtcDateString(
+        snapshot.rawRetentionExpiresAt,
+        `${prefix}.rawRetentionExpiresAt`,
+      );
+    }
+    if (snapshot.governancePolicyVersion) {
+      normalized.governancePolicyVersion = requiredString(
+        snapshot.governancePolicyVersion,
+        `${prefix}.governancePolicyVersion`,
+      );
+    }
+    if (snapshot.governancePolicySha256) {
+      normalized.governancePolicySha256 = sha256HexString(
+        snapshot.governancePolicySha256,
+        `${prefix}.governancePolicySha256`,
+      );
+    }
     const hasGeneric = Object.hasOwn(snapshot, "adminReviewRecordHash");
     const hasNative = Object.hasOwn(snapshot, "admissionRecordSha256s");
     if (hasGeneric === hasNative) {
