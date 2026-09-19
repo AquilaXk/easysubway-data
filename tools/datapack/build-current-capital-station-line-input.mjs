@@ -37,7 +37,7 @@ export function buildCurrentCapitalStationLineInput(input) {
   assertInputKeys(input);
   const spec = input.candidateBuildSpec;
   const isNationwide = spec?.productionScopeId === "nationwide_routing_android_v1"
-    || (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
+    && (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
   const stationLines = canonicalStationLines(input.canonicalPack, input.facilityAdmission);
   const { candidate, evidenceSourceSetSha256, facilitySourceSetSha256, candidatePublishedAt } = validateCandidate(input, stationLines);
   const facility = buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
@@ -205,7 +205,7 @@ function validateCandidate(input, stationLines) {
   const capital = exactlyOne(input.canonicalPack?.packs ?? [], ({ id }) => id === "capital", "capital canonical pack");
   const capitalSources = capital.sourceInventory ?? [];
   const isNationwide = spec?.productionScopeId === "nationwide_routing_android_v1"
-    || (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
+    && (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
   const allRequiredSources = (input.sourceInventory.sources ?? [])
     .filter(({ requiredForProductionPack }) => requiredForProductionPack === true);
   const requiredSources = allRequiredSources
@@ -368,7 +368,7 @@ function validateExit(input, stationLines, candidate, evidenceSourceSetSha256) {
     || !equalSets(new Set(normalized.queryPlan.map(({ queryId }) => queryId)), new Set(normalized.results.map(({ queryId }) => queryId)))) throw new Error("full-capital EXIT normalized identity mismatch");
   const spec = input.candidateBuildSpec;
   const isNationwide = spec?.productionScopeId === "nationwide_routing_android_v1"
-    || (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
+    && (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
   if ((!isNationwide && (input.exitAdmission.candidate?.candidateId !== candidate.candidateId || input.exitAdmission.candidate?.sourceSetSha256 !== evidenceSourceSetSha256))
     || (isNationwide && (!nonBlank(input.exitAdmission.candidate?.candidateId) || !nonBlank(input.exitAdmission.candidate?.sourceSetSha256)))
     || input.exitAdmission.candidate?.stationSetSha256 !== candidate.stationSetSha256) throw new Error("full-capital EXIT candidate mismatch");

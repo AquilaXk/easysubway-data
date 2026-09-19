@@ -169,7 +169,7 @@ export function deriveCurrentLiveChainTerminalTransferEvidenceSubset({
   });
   const ledger = sourceSnapshotLedger;
   const isNationwide = candidate?.productionScopeId === "nationwide_routing_android_v1"
-    || (Array.isArray(candidate?.sourceSnapshots) && candidate.sourceSnapshots.length > 10);
+    && Array.isArray(candidate?.sourceSnapshots) && candidate.sourceSnapshots.length > 10;
   const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === identity.source.id);
   if (!isNationwide && (transferIndex !== candidate.sourceSnapshots.length - 1
     || candidate.sourceSnapshotIds.at(-1) !== identity.row.snapshotId)) {
@@ -218,7 +218,7 @@ function validateCurrentIdentity(components, candidate, ledger) {
     throw new Error("current live-chain transfer identity mismatch");
   }
   const isNationwide = candidate?.productionScopeId === "nationwide_routing_android_v1"
-    || (Array.isArray(candidate?.sourceSnapshots) && candidate.sourceSnapshots.length > 10);
+    && Array.isArray(candidate?.sourceSnapshots) && candidate.sourceSnapshots.length > 10;
   const facility = components.facilityAdmission.value;
   if (facility?.decision !== "GO"
     || (!isNationwide && (facility.candidate?.candidateId !== candidate.candidateId

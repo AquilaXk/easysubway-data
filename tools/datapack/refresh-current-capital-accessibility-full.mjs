@@ -403,7 +403,7 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
   const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
   const activatedSourceSet = station.candidate?.sourceSetSha256;
   const isNationwide = candidate?.productionScopeId === "nationwide_routing_android_v1"
-    || (Array.isArray(candidate.sourceSnapshotIds) && candidate.sourceSnapshotIds.length > 10);
+    && (Array.isArray(candidate.sourceSnapshotIds) && candidate.sourceSnapshotIds.length > 10);
   if (phase === ACTIVATED_CURRENT_OUTPUT || phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const facility = parse(facilityFile.bytes, "FACILITY admission");
     const exit = parse(exitFile.bytes, "EXIT admission");
@@ -793,7 +793,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     || !routeBytes.equals(files[OUTPUTS[1]].bytes)
     || !fanInBytes.equals(files[FAN_IN_OUTPUT].bytes))) throw new Error("current-capital refresh current output bytes mismatch");
   const isNationwide = selectedInput.candidateBuildSpec?.productionScopeId === "nationwide_routing_android_v1"
-    || (Array.isArray(selectedInput.candidateBuildSpec?.sourceSnapshots) && selectedInput.candidateBuildSpec.sourceSnapshots.length > 10);
+    && (Array.isArray(selectedInput.candidateBuildSpec?.sourceSnapshots) && selectedInput.candidateBuildSpec.sourceSnapshots.length > 10);
   const allowCandidateIdentityTransition = Boolean(marker)
     || phase === PRE_APPROVAL_CURRENT_CANDIDATE
     || isNationwide;
