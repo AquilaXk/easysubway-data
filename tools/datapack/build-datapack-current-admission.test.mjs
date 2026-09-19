@@ -818,7 +818,11 @@ test("registered Incheon accessibility projection binds the current candidate an
     path.join(root, topologySource.topologyAdmissionEvidence.snapshotPath),
     "utf8",
   ).then(JSON.parse);
-  const registeredNow = new Date(buildSpec.publishedAt);
+  const registeredNow = new Date(Math.min(
+    Date.parse(buildSpec.publishedAt),
+    Date.parse(buildSpec.networkEdgeEvidence?.capitalTopologyAdmission?.freshUntil ?? buildSpec.publishedAt) - 1_000,
+    ...buildSpec.sourceSnapshots.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) - 1_000),
+  ));
   const registered = await admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
     sourceInventory,
     topologySnapshot,
@@ -1109,7 +1113,11 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
     expectedItxEdgeCount,
   );
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = buildSpec.publishedAt;
+  const evaluationAt = new Date(Math.min(
+    Date.parse(buildSpec.publishedAt),
+    Date.parse(contract.sourceTimetableArtifact.freshUntil) - 1_000,
+  ));
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = evaluationAt.toISOString();
   try {
     const admitted = await admittedItxNetworkEdgeEvidence(contract, topology);
     assert.equal(admitted.sourceSnapshotId, contract.sourceTimetableArtifact.artifactId);
