@@ -39,7 +39,7 @@ test("active Seoul TRANSFER source handoff는 exact current identity와 producti
     repositoryRoot: REPOSITORY_ROOT,
   }));
 
-  assert.equal(input.candidate.sourceSnapshots.at(-1).sourceId, TRANSFER_SOURCE_ID);
+  assert.equal(input.candidate.sourceSnapshots.find(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID)?.sourceId, TRANSFER_SOURCE_ID);
   assert.equal(input.source.requiredForProductionPack, true);
   assert.equal(input.candidate.sourceSnapshots.some(({ sourceId }) =>
     sourceId === "molit-railway-transfer-movement"), false);
@@ -50,7 +50,7 @@ test("active Seoul TRANSFER source handoff는 exact current identity와 producti
 test("active Seoul TRANSFER handoff는 projection 또는 OCI receipt drift를 fail closed한다", async () => {
   const input = await activeTransferInputs();
   const projectionDrift = structuredClone(input.candidate);
-  projectionDrift.sourceSnapshots.at(-1).rawSha256 = "0".repeat(64);
+  projectionDrift.sourceSnapshots.find(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID).rawSha256 = "0".repeat(64);
   assert.throws(() => assertCurrentLiveChainTransferIdentity(
     projectionDrift,
     input.inventory,
@@ -104,7 +104,7 @@ async function activeTransferInputs() {
     readFile(new URL("./release/current-transfer-topology-metrics.json", import.meta.url)),
     readJson("./release/current-capital-transfer-topology-applicability.json"),
   ]);
-  const projection = candidate.sourceSnapshots?.at(-1);
+  const projection = candidate.sourceSnapshots?.find(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID);
   const snapshot = snapshots.find(({ snapshotId }) => snapshotId === projection?.snapshotId);
   const source = inventory.sources?.find(({ id }) => id === TRANSFER_SOURCE_ID);
   assert.ok(projection && snapshot && source, "active Seoul TRANSFER handoff is required");

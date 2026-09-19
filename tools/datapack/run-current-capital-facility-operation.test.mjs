@@ -15,6 +15,11 @@ import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/cu
 import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parseArgs, prepareCurrentCapitalFacilityOperation, recoverPublishedCurrentCapitalFacilityOperation, syncWrite } from "./run-current-capital-facility-operation.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
 const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
 const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
 const OCI_ENV = Object.freeze({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" });
@@ -49,7 +54,7 @@ async function selectedSourceHeadAt() {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
     return matches[0];
-  });
+  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));

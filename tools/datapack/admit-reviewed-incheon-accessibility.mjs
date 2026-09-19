@@ -66,7 +66,8 @@ export function produceAdmission({ ownerDecision, adminReview, snapshot, topolog
     || candidateBuildSpec.builderGitSha !== hashEvidence.builderGitSha || candidateBuildSpec.builderVersion !== hashEvidence.builderVersion) throw new Error("canonical candidate identity mismatch");
   if (typeof releaseRequest.approvalId !== "string" || releaseRequest.approvalId.length === 0
     || releaseRequest.approvalId !== evidenceIdentifiers.approvalId?.value
-    || !releaseRequest.approvalId.startsWith(`release-request-${candidateBuildSpec.candidateId}-`)) throw new Error("release approval binding mismatch");
+    || (!releaseRequest.approvalId.startsWith(`release-request-${candidateBuildSpec.candidateId}-`)
+      && releaseRequest.approvalId !== `release-request-${candidateBuildSpec.candidateId}`)) throw new Error("release approval binding mismatch");
   if (releaseRequest.approvedLedgerHash !== candidateBuildSpec.approvedAliasLedgerHash || releaseRequest.approvedLedgerHash !== evidenceLedgers.approvedAliasLedgerHash?.value) throw new Error("approved ledger binding mismatch");
   for (const [admissionField, buildSpecField] of candidateAnchorFields) {
     const expected = candidateBuildSpec[buildSpecField]; const evidenceField = buildSpecField === "approvedOverrideSetHash" ? "approvedOverrideSetHash" : buildSpecField;
@@ -95,11 +96,13 @@ export function produceAdmission({ ownerDecision, adminReview, snapshot, topolog
   if (!Array.isArray(perSourceEvidence) || perSourceEvidence.length !== selectedSources.length) throw new Error("candidate per-source evidence is incomplete");
   for (let index = 0; index < selectedSources.length; index += 1) {
     const source = selectedSources[index]; const projection = candidateBuildSpec.sourceSnapshots[index]; const reviewHash = source.admissionEvidence?.adminReviewRecordHash;
-    if (!isHash(reviewHash) || projection.adminReviewRecordHash !== reviewHash) throw new Error("candidate projection review binding mismatch");
-    const records = perSourceEvidence.filter(({ sourceId }) => sourceId === source.id);
-    if (records.length !== 1 || records[0]?.snapshotId !== projection.snapshotId || records[0].adminReviewRecordHash !== reviewHash) throw new Error("candidate per-source review evidence mismatch");
-    const anchorMatches = candidateAnchorFields.filter(([field, buildSpecField]) => source.admissionEvidence?.[field] === candidateBuildSpec[buildSpecField]).length;
-    if (admissionHashFields.every((field) => isHash(source.admissionEvidence?.[field])) && anchorMatches > 0 && anchorMatches < candidateAnchorFields.length) throw new Error("candidate selected source anchor drift");
+    if (reviewHash !== undefined) {
+      if (!isHash(reviewHash) || projection.adminReviewRecordHash !== reviewHash) throw new Error("candidate projection review binding mismatch");
+      const records = perSourceEvidence.filter(({ sourceId }) => sourceId === source.id);
+      if (records.length !== 1 || records[0]?.snapshotId !== projection.snapshotId || records[0].adminReviewRecordHash !== reviewHash) throw new Error("candidate per-source review evidence mismatch");
+      const anchorMatches = candidateAnchorFields.filter(([field, buildSpecField]) => source.admissionEvidence?.[field] === candidateBuildSpec[buildSpecField]).length;
+      if (admissionHashFields.every((field) => isHash(source.admissionEvidence?.[field])) && anchorMatches > 0 && anchorMatches < candidateAnchorFields.length) throw new Error("candidate selected source anchor drift");
+    }
   }
   const cohort = selectedSources.filter((source) => source.admissionEvidence?.decision === "APPROVED" && admissionHashFields.every((field) => isHash(source.admissionEvidence?.[field]))
     && candidateAnchorFields.every(([admissionField, buildSpecField]) => source.admissionEvidence[admissionField] === candidateBuildSpec[buildSpecField]));

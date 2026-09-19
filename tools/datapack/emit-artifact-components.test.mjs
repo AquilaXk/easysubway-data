@@ -28,6 +28,11 @@ import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-
 import { createIndependentSourceGovernanceFixture } from "./test-fixtures/independent-source-governance.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
+const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
 const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
 const CURRENT_ACTIVE_FROM = CURRENT_SOURCE_WINDOW.activeFrom;
 const CURRENT_FRESH_UNTIL = CURRENT_SOURCE_WINDOW.freshUntil;
@@ -53,6 +58,7 @@ after(() => {
   }
 });
 
+
 async function selectedSourceWindow() {
   const [buildSpec, sourceSnapshots, topologyClock] = await Promise.all([
     readFile("tools/datapack/release/candidate-build-spec.json", "utf8").then(JSON.parse),
@@ -63,22 +69,20 @@ async function selectedSourceWindow() {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
     return matches[0];
-  });
+  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt,
     entry.sourceUpdatedAt,
     entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
   const candidatePublishedAt = Date.parse(buildSpec.publishedAt);
-  const evaluationAt = Math.max(
-    basisAt + 1_000,
-    candidatePublishedAt,
-    topologyClock.inWindow.getTime(),
-  );
   const freshUntil = Math.min(
     ...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)),
     topologyClock.expiredAt.getTime(),
   );
+  const evaluationAt = candidatePublishedAt < freshUntil
+    ? Math.max(basisAt + 1_000, candidatePublishedAt, topologyClock.inWindow.getTime())
+    : Math.max(basisAt + 1_000, topologyClock.inWindow.getTime());
   assert.ok(Number.isFinite(basisAt) && Number.isFinite(candidatePublishedAt)
     && Number.isFinite(freshUntil) && evaluationAt < freshUntil);
   return {

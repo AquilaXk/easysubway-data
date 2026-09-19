@@ -10280,13 +10280,23 @@ test("v1 pilot release gate는 line-scoped inventory와 provenance를 포함 노
   const inventoryPath = path.join(outputDir, "source-inventory.json");
   const provenancePath = path.join(outputDir, "current.provenance.json");
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const releaseScopePath = path.join(outputDir, "release-scope.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
+  const releaseScope = {
+    verifiedAccessibilityScope: {
+      id: "capital_pilot_android_v1",
+      regionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro"],
+      includedLineIds: ["seoul-4"],
+    },
+  };
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
+  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
 
   await execFileAsync(
     process.execPath,
@@ -10296,7 +10306,7 @@ test("v1 pilot release gate는 line-scoped inventory와 provenance를 포함 노
       "--inventory", inventoryPath,
       "--manifest", path.join(outputDir, "current.json"),
       "--provenance", provenancePath,
-      "--release-scope", "release/product-gates/production-datapack-scope.json",
+      "--release-scope", releaseScopePath,
       "--output", reportPath,
     ],
     { cwd: root },
@@ -10313,11 +10323,20 @@ test("v1 pilot release gate는 다른 노선의 line-scoped provenance를 재사
   const inventoryPath = path.join(outputDir, "source-inventory.json");
   const provenancePath = path.join(outputDir, "current.provenance.json");
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const releaseScopePath = path.join(outputDir, "release-scope.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
+  const releaseScope = {
+    verifiedAccessibilityScope: {
+      id: "capital_pilot_android_v1",
+      regionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro"],
+      includedLineIds: ["seoul-4"],
+    },
+  };
   const stationSource = inventory.sources.find(
     (source) =>
       source.coverageScope.operatorIds.includes("seoul-metro") &&
@@ -10331,6 +10350,7 @@ test("v1 pilot release gate는 다른 노선의 line-scoped provenance를 재사
   }
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await writeCoverageCandidate(outputDir, provenance);
+  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
 
   await assert.rejects(
     execFileAsync(
@@ -10341,7 +10361,7 @@ test("v1 pilot release gate는 다른 노선의 line-scoped provenance를 재사
         "--inventory", inventoryPath,
         "--manifest", path.join(outputDir, "current.json"),
         "--provenance", provenancePath,
-        "--release-scope", "release/product-gates/production-datapack-scope.json",
+        "--release-scope", releaseScopePath,
         "--output", reportPath,
       ],
       { cwd: root },
@@ -10361,11 +10381,20 @@ test("v1 pilot release gate는 line-scoped source의 노선 없는 provenance를
   const inventoryPath = path.join(outputDir, "source-inventory.json");
   const provenancePath = path.join(outputDir, "current.provenance.json");
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const releaseScopePath = path.join(outputDir, "release-scope.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
+  const releaseScope = {
+    verifiedAccessibilityScope: {
+      id: "capital_pilot_android_v1",
+      regionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro"],
+      includedLineIds: ["seoul-4"],
+    },
+  };
   const stationSource = inventory.sources.find(
     (source) =>
       source.coverageScope.operatorIds.includes("seoul-metro") &&
@@ -10379,6 +10408,7 @@ test("v1 pilot release gate는 line-scoped source의 노선 없는 provenance를
   }
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await writeCoverageCandidate(outputDir, provenance);
+  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
 
   await assert.rejects(
     execFileAsync(
@@ -10389,7 +10419,7 @@ test("v1 pilot release gate는 line-scoped source의 노선 없는 provenance를
         "--inventory", inventoryPath,
         "--manifest", path.join(outputDir, "current.json"),
         "--provenance", provenancePath,
-        "--release-scope", "release/product-gates/production-datapack-scope.json",
+        "--release-scope", releaseScopePath,
         "--output", reportPath,
       ],
       { cwd: root },
@@ -10412,6 +10442,7 @@ test("v1 release gate는 active 노선-운영기관 pair만 평가한다", async
   const releaseScope = JSON.parse(
     await readFile(path.join(root, "release/product-gates/production-datapack-scope.json"), "utf8"),
   );
+  releaseScope.verifiedAccessibilityScope.regionIds = ["capital"];
   releaseScope.verifiedAccessibilityScope.includedOperatorIds = ["seoul-metro", "operator-28e01fb8509d"];
   releaseScope.verifiedAccessibilityScope.includedLineIds = ["seoul-4", "shinbundang"];
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
@@ -10517,17 +10548,27 @@ test("release gate는 schema v2 release target의 SUPPORTED requirement를 집�
   const inventoryPath = path.join(outputDir, "source-inventory.json");
   const provenancePath = path.join(outputDir, "current.provenance.json");
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const releaseScopePath = path.join(outputDir, "release-scope.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
+  const releaseScope = {
+    verifiedAccessibilityScope: {
+      id: "capital_pilot_android_v1",
+      regionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro"],
+      includedLineIds: ["seoul-4"],
+    },
+  };
   const provenance = completeCoverageProvenance(inventory);
   provenance.packs[0].records = provenance.packs[0].records.filter(
     (record) => !record.coverageScope.sourceDomains.includes("demand_reference"),
   );
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await writeCoverageCandidate(outputDir, provenance);
+  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
 
   await execFileAsync(
     process.execPath,
@@ -10537,7 +10578,7 @@ test("release gate는 schema v2 release target의 SUPPORTED requirement를 집�
       "--inventory", inventoryPath,
       "--manifest", path.join(outputDir, "current.json"),
       "--provenance", provenancePath,
-      "--release-scope", "release/product-gates/production-datapack-scope.json",
+      "--release-scope", releaseScopePath,
       "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
       "--output", reportPath,
     ],
@@ -10561,11 +10602,20 @@ test("release gate는 schema v2 release target에서 operator-wide provenance로
   const inventoryPath = path.join(outputDir, "source-inventory.json");
   const provenancePath = path.join(outputDir, "current.provenance.json");
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const releaseScopePath = path.join(outputDir, "release-scope.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
+  const releaseScope = {
+    verifiedAccessibilityScope: {
+      id: "capital_pilot_android_v1",
+      regionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro"],
+      includedLineIds: ["seoul-4"],
+    },
+  };
   const stationSource = inventory.sources.find(
     (source) =>
       source.coverageScope.operatorIds.includes("seoul-metro") &&
@@ -10575,6 +10625,7 @@ test("release gate는 schema v2 release target에서 operator-wide provenance로
   delete stationSource.coverageScope.lineIds;
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
+  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
 
   await assert.rejects(
     execFileAsync(
@@ -10585,7 +10636,7 @@ test("release gate는 schema v2 release target에서 operator-wide provenance로
         "--inventory", inventoryPath,
         "--manifest", path.join(outputDir, "current.json"),
         "--provenance", provenancePath,
-        "--release-scope", "release/product-gates/production-datapack-scope.json",
+        "--release-scope", releaseScopePath,
         "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
         "--output", reportPath,
       ],
@@ -13376,6 +13427,17 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
   // #1999: release-scope 평가 모드는 게시 차단을 게시 범위(capital·seoul-metro × capitalPilotTargets domains) 내 gap만
   // 기준으로 판정한다. 현행 인벤토리는 전국 gap 다수 + scope 내 gap 0이므로, --allow-gaps 없이도 exit 0으로 통과하되
   // 전국 gap 수치는 은폐 없이 그대로 기록해야 한다.
+  const capitalPilotReleaseScope = {
+    verifiedAccessibilityScope: {
+      id: "capital_pilot_android_v1",
+      regionIds: ["capital"],
+      includedOperatorIds: ["seoul-metro"],
+      includedLineIds: ["seoul-4"],
+    },
+  };
+  const capitalPilotReleaseScopePath = path.join(outputDir, "capital-pilot-release-scope.json");
+  await writeFile(capitalPilotReleaseScopePath, `${JSON.stringify(capitalPilotReleaseScope, null, 2)}\n`);
+
   const releaseScopeReportPath = path.join(outputDir, "release-scope-coverage-gap-report.json");
   await execFileAsync(
     process.execPath,
@@ -13390,7 +13452,7 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
       "--provenance",
       coverageCandidateProvenancePath,
       "--release-scope",
-      "release/product-gates/production-datapack-scope.json",
+      capitalPilotReleaseScopePath,
       "--output",
       releaseScopeReportPath,
     ],
@@ -13447,7 +13509,7 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
         "--provenance",
         scopeGapProvenancePath,
         "--release-scope",
-        "release/product-gates/production-datapack-scope.json",
+        capitalPilotReleaseScopePath,
         "--output",
         scopeGapReportPath,
       ],
@@ -17956,6 +18018,11 @@ async function writeCurrentItxReleaseInputs(
   const fixturePath = path.join(workspace, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  delete buildSpec.assemblySourceIds;
+  delete buildSpec.productionScope;
+  buildSpec.sourceSnapshots = (buildSpec.sourceSnapshots ?? []).filter((s) => s.adminReviewRecordHash);
+  buildSpec.sourceSnapshotIds = buildSpec.sourceSnapshots.map((s) => s.snapshotId);
+  buildSpec.sourceSnapshotSetHash = "a1638b3df8e92c59db8525b68d687580177345cc983a22645f60833f52322fb0";
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentInventory = structuredClone(sourceInventory);
   const currentTopologySources = currentInventory.sources.filter(
@@ -18275,6 +18342,9 @@ async function writeCurrentItxReleaseInputs(
   const currentInventoryBytes = Buffer.from(`${JSON.stringify(currentInventory)}\n`);
   await writeFile(currentInventoryPath, currentInventoryBytes);
   buildSpec.fixturePath = fixturePath;
+  if (buildSpec.fixtureSha256 !== undefined) {
+    buildSpec.fixtureSha256 = sha256(await readFile(fixturePath));
+  }
   buildSpec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(currentInventory)));
   buildSpec.networkEdgeEvidence.sourceInventory = { path: currentInventoryPath, sha256: sha256(currentInventoryBytes) };
   Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyAdmission, {

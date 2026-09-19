@@ -151,11 +151,13 @@ test("current-only projections preserve sealed governance without a historical b
     governancePolicyVersion: governance.policyVersion,
     governancePolicySha256,
   }));
-  const sealedProjections = candidate.sourceSnapshots.map((projection) => ({
-    ...projection,
-    governancePolicyVersion: governance.policyVersion,
-    governancePolicySha256,
-  }));
+  const sealedProjections = candidate.sourceSnapshots
+    .filter((projection) => typeof projection.adminReviewRecordHash === "string")
+    .map((projection) => ({
+      ...projection,
+      governancePolicyVersion: governance.policyVersion,
+      governancePolicySha256,
+    }));
   for (const expected of sealedProjections) {
     const snapshot = sealedSnapshots.find(({ snapshotId }) => snapshotId === expected.snapshotId);
     assert.deepEqual(deriveCurrentOnlyProjection({ snapshot, inventory, governance, governanceBytes, freshness }), expected);

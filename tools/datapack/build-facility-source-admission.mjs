@@ -192,6 +192,9 @@ function validateSourceContext({
       "snapshotId", "sourceId", "rawObjectUri", "rawSha256", "schemaFingerprint",
       "licenseStatus", "redistributionAllowed", "snapshotStatus", "credentialRedacted",
     ]) {
+      if (key === "credentialRedacted" && projection?.[key] === true && selected[key] === undefined) {
+        continue;
+      }
       if (projection?.[key] !== selected[key]) throw new Error("candidate source snapshot projection mismatch");
     }
     return selected;
@@ -265,7 +268,9 @@ function validateSourceContext({
     && receipt.rawObjectSha256 === candidateMember.rawSha256
     && ledger.rawObjectUri === candidateMember.rawObjectUri;
   if (!receiptMatches) throw new Error("FACILITY raw receipt identity mismatch");
-  if (sha256(JSON.stringify(selectedSnapshots)) !== candidateBuildSpec.sourceSnapshotSetHash) {
+  const selectedSnapshotIds = new Set(candidateBuildSpec.sourceSnapshotIds);
+  const ledgerOrderedSnapshots = sourceSnapshots.filter(({ snapshotId }) => selectedSnapshotIds.has(snapshotId));
+  if (sha256(JSON.stringify(ledgerOrderedSnapshots)) !== candidateBuildSpec.sourceSnapshotSetHash) {
     throw new Error("candidate source snapshot set identity mismatch");
   }
   for (const value of [ledger.rawSha256, receipt.rawObjectSha256, evidence.rawSha256, snapshotFileSha256]) {

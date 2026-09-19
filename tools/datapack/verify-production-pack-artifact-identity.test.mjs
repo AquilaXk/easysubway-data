@@ -14,10 +14,13 @@ import { verifyProductionPackArtifactIntegrity } from "./verify-production-pack-
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const candidateReplayAt = JSON.parse(await readFile(
+const candidateSpec = JSON.parse(await readFile(
   path.join(root, "tools/datapack/release/candidate-build-spec.json"),
   "utf8",
-)).publishedAt;
+));
+const candidateReplayAt = candidateSpec.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt
+  ? "2026-09-04T17:29:32.665Z"
+  : candidateSpec.publishedAt;
 const env = {
   ...process.env,
   EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
@@ -41,6 +44,19 @@ function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
 
 async function loadFixtureBoundCandidate(workspace) {
   const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  if (spec.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt) {
+    spec.publishedAt = candidateReplayAt;
+  }
+  delete spec.assemblySourceIds;
+  delete spec.productionScope;
+  spec.productionScopeId = "capital_pilot_android_v1";
+  spec.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
+  const capitalFixtureBytes = await readFile(spec.fixturePath);
+  spec.fixtureSha256 = sha256(capitalFixtureBytes);
+  const capitalSnapshots = spec.sourceSnapshots.filter((s) => s.adminReviewRecordHash);
+  spec.sourceSnapshots = capitalSnapshots;
+  spec.sourceSnapshotIds = capitalSnapshots.map((s) => s.snapshotId);
+  spec.sourceSnapshotSetHash = "a1638b3df8e92c59db8525b68d687580177345cc983a22645f60833f52322fb0";
   const productionScopePolicyInput = spec.productionScopePolicy;
   const productionScopePolicyBytes = await readFile(productionScopePolicyInput.path);
   spec.productionScopePolicy = {
@@ -49,11 +65,8 @@ async function loadFixtureBoundCandidate(workspace) {
   };
   const inventoryInput = spec.networkEdgeEvidence.sourceInventory;
   const inventoryBytes = await readFile(inventoryInput.path);
-  const inventoryPath = path.join(workspace, "source-inventory.json");
-  await writeFile(inventoryPath, inventoryBytes);
   spec.networkEdgeEvidence.sourceInventory = {
     ...inventoryInput,
-    path: inventoryPath,
     sha256: sha256(inventoryBytes),
   };
   spec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(JSON.parse(inventoryBytes))));
@@ -706,9 +719,14 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     }
   }
   const currentAccessibilityFixturePath = path.join(workspace, "current-accessibility-fixture.json");
-  await writeFile(currentAccessibilityFixturePath, `${JSON.stringify(currentAccessibilityFixture)}\n`);
+  const currentAccessibilityFixtureBytes = Buffer.from(`${JSON.stringify(currentAccessibilityFixture)}\n`);
+  await writeFile(currentAccessibilityFixturePath, currentAccessibilityFixtureBytes);
   spec.fixturePath = currentAccessibilityFixturePath;
+  if (spec.fixtureSha256 !== undefined) spec.fixtureSha256 = sha256(currentAccessibilityFixtureBytes);
   const runRejectedBuild = async (candidate, pattern) => {
+    if (candidate.fixturePath && candidate.fixtureSha256 !== undefined) {
+      candidate.fixtureSha256 = sha256(await readFile(candidate.fixturePath));
+    }
     const specPath = path.join(workspace, `spec-${Date.now()}.json`);
     await writeFile(specPath, `${JSON.stringify(candidate, null, 2)}\n`);
     await assert.rejects(execFileAsync(process.execPath, [

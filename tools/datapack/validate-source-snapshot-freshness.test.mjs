@@ -33,7 +33,10 @@ test("합성 current static-network clock은 candidate publishedAt 이후다", a
     path.join(root, "tools/datapack/release/candidate-build-spec.json"),
     "utf8",
   ));
-  assert.ok(Date.parse(syntheticCurrentEvaluationAt) > Date.parse(candidate.publishedAt));
+  const candidatePublishedAt = candidate.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt
+    ? candidate.networkEdgeEvidence.capitalTopologyAdmission.reverifiedAt
+    : candidate.publishedAt;
+  assert.ok(Date.parse(syntheticCurrentEvaluationAt) > Date.parse(candidatePublishedAt));
 });
 
 async function syntheticCurrentRepository(t, prefix) {

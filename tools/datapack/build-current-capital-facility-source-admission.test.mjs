@@ -15,6 +15,11 @@ import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/cu
 
 const SOURCE_ROOT = import.meta.dirname;
 const REPOSITORY_ROOT = path.resolve(SOURCE_ROOT, "../..");
+const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
+  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
+  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
+]);
 const INITIAL_SOURCE_HEAD_AT = await selectedSourceHeadAt(SOURCE_ROOT);
 const FIXTURE_REPOSITORY_ROOT = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-facility-"));
 after(() => rm(FIXTURE_REPOSITORY_ROOT, { recursive: true, force: true }));
@@ -410,7 +415,7 @@ async function selectedSourceHeadAt(datapackRoot) {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
     return matches[0];
-  });
+  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
   ].filter(Boolean).map(Date.parse)));
