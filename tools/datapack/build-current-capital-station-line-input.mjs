@@ -208,16 +208,18 @@ function validateCandidate(input, stationLines) {
     && (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
   const allRequiredSources = (input.sourceInventory.sources ?? [])
     .filter(({ requiredForProductionPack }) => requiredForProductionPack === true);
-  const requiredSources = allRequiredSources
-    .filter(({ coverageScope }) => !isNationwide || coverageScope?.regionIds?.includes("capital"));
+  const capitalRequiredSources = allRequiredSources
+    .filter(({ coverageScope }) => !coverageScope?.regionIds || coverageScope.regionIds.includes("capital"));
   const capitalSourceIds = new Set(capitalSources.map(({ id }) => id));
-  const requiredSourceIds = new Set(requiredSources.map(({ id }) => id));
-  const expectedSpecSourceIds = isNationwide ? new Set(allRequiredSources.map(({ id }) => id)) : requiredSourceIds;
+  const capitalRequiredSourceIds = new Set(capitalRequiredSources.map(({ id }) => id));
+  const expectedSpecSourceIds = isNationwide
+    ? new Set(allRequiredSources.map(({ id }) => id))
+    : capitalRequiredSourceIds;
   if (!Array.isArray(capital.sourceInventory) || !Array.isArray(input.sourceInventory.sources)
     || capitalSources.some(({ id }) => !nonBlank(id)) || capitalSourceIds.size !== capitalSources.length
-    || requiredSources.some(({ id }) => !nonBlank(id)) || requiredSourceIds.size !== requiredSources.length
-    || requiredSourceIds.size === 0 || !equalSets(new Set(spec.sourceSnapshots.map(({ sourceId }) => sourceId)), expectedSpecSourceIds)
-    || [...requiredSourceIds].some((sourceId) => !capitalSourceIds.has(sourceId))) {
+    || capitalRequiredSources.some(({ id }) => !nonBlank(id)) || capitalRequiredSourceIds.size !== capitalRequiredSources.length
+    || capitalRequiredSourceIds.size === 0 || !equalSets(new Set(spec.sourceSnapshots.map(({ sourceId }) => sourceId)), expectedSpecSourceIds)
+    || [...capitalRequiredSourceIds].some((sourceId) => !capitalSourceIds.has(sourceId))) {
     throw new Error("full-capital candidate inventory membership mismatch");
   }
   const ledger = exactlyOne(selected, ({ sourceId }) => sourceId === TRANSFER_SOURCE_ID, "transfer source ledger");
