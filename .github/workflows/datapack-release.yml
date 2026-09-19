@@ -991,7 +991,7 @@ jobs:
           test -s "${EASYSUBWAY_HEADWAY_REPORT}"
 
       - name: Data Pack Release / Checkout pinned Mobile fixture
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
@@ -1001,7 +1001,7 @@ jobs:
           fetch-depth: 0
 
       - name: Data Pack Release / Stage pinned Mobile fixture
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         shell: bash
         run: |
           set -euo pipefail

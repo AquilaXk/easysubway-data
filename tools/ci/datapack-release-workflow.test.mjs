@@ -1155,8 +1155,8 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   ]) {
     assert.match(
       step(name),
-      /if:\s*\$\{\{ steps\.release-mode\.outputs\.is-pointer-only != 'true' && steps\.release-mode\.outputs\.mode != 'production-publish' \}\}/,
-      `${name}는 production-publish에서 실행되면 안 됨`,
+      /if:\s*\$\{\{ steps\.release-mode\.outputs\.is-pointer-only != 'true' && steps\.release-mode\.outputs\.mode != 'production-publish' && steps\.release-mode\.outputs\.mode != 'candidate-create' \}\}/,
+      `${name}는 production-publish 및 candidate-create에서 실행되면 안 됨`,
     );
   }
 });
