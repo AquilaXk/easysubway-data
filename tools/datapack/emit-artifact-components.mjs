@@ -93,7 +93,20 @@ export async function emitArtifactComponents(input) {
   const current = parseJson(currentBytes, "current manifest");
   validateInputBinding(provenance, current, sha(currentBytes), sha(sourceBytes), sha(buildSpecBytes));
   const freshness = validateSourceSnapshotFreshness({ buildSpec, snapshots, policy, evaluationAt: ids.builtAt, governancePolicy: parseJson(governanceBytes, "governance policy"), inventory: parseJson(inventoryBytes, "source inventory"), governancePolicySha256: sha(governanceBytes), governancePolicyBytes: governanceBytes });
-  const cap = Math.min(requiredUtcInstant(current.expiresAt, "current.json.expiresAt"), ...freshness.results.map((result) => requiredUtcInstant(result.freshnessExpiresAt, "source freshness")));
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
+  const activePack = current?.packs?.find((p) => (current.activePack ? (p?.id === current.activePack.id && p?.version === current.activePack.version) : (p?.id === "capital" && p?.artifactKind === "production")));
+  const packSourceIds = new Set(activePack?.sourceInventory?.map((s) => s.id) ?? []);
+  const snapshotSourceMap = new Map((buildSpec.sourceSnapshots ?? snapshots).map((s) => [s.snapshotId, s.sourceId]));
+  const relevantResults = packSourceIds.size > 0
+    ? freshness.results.filter((result) => packSourceIds.has(snapshotSourceMap.get(result.snapshotId)))
+    : freshness.results;
+  const cap = isNationwide
+    ? requiredUtcInstant(current.expiresAt, "current.json.expiresAt")
+    : Math.min(
+        requiredUtcInstant(current.expiresAt, "current.json.expiresAt"),
+        ...(relevantResults.length > 0 ? relevantResults : freshness.results).map((result) => requiredUtcInstant(result.freshnessExpiresAt, "source freshness")),
+      );
   if (Date.parse(ids.freshUntil) > cap) throw new Error("--fresh-until exceeds source freshness");
 
   const mapAssets = {
