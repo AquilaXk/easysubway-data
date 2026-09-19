@@ -12,9 +12,9 @@ const ownership = JSON.parse(
 const mobileRepository = "AquilaXk/easysubway-mobile";
 const ciMobileRevision = "23f4262087af99ff49e120707f7de317666679ef";
 const ciCapitalGzipSha256 = "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1";
-const releaseMobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
-const releaseCapitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
-const releaseIndexSha256 = "ad801ec865d385e86cf4094e3c007af9cbfbe1d4a8c42bab8f9b2682b229026e";
+const releaseMobileRevision = "23f4262087af99ff49e120707f7de317666679ef";
+const releaseCapitalGzipSha256 = "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1";
+const releaseIndexSha256 = "5f4767d73f3bb7378b48fc717bb3f9c16991251bc27951b20b431d6fbbb9136e";
 const releaseSourceInventorySha256 = "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2";
 
 function namedWorkflowStep(yml, name) {
@@ -400,6 +400,7 @@ test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture
     assert.ok(step.includes(releaseGate), `release fixture와 runner는 동일한 gate가 필요함: ${releaseGate}`);
   }
   assert.deepEqual(releaseOwnership.fixtures, ["mobile"]);
+  assert.deepEqual(releaseOwnership.fixtureProfiles, { mobile: "mobile-v19" });
   assert.deepEqual(releaseOwnership.fixtureStageContracts.mobile, [
     'source=".external/mobile/apps/mobile"',
     `expected_revision="${releaseMobileRevision}"`,
