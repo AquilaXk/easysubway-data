@@ -2439,6 +2439,7 @@ export function validateItxCurrentTopologyAdmission(currentAdmission, {
   previousArtifactSha256,
   stationSequences,
   now = candidateBuildNow(),
+  requireFresh = true,
 }) {
   const keys = [
     "schemaVersion",
@@ -2560,7 +2561,7 @@ export function validateItxCurrentTopologyAdmission(currentAdmission, {
   if (Date.parse(observedAt) > now.getTime()) {
     throw new Error("ITX current topology admission is future-dated");
   }
-  if (Date.parse(freshUntil) <= now.getTime()) {
+  if (requireFresh && Date.parse(freshUntil) <= now.getTime()) {
     throw new Error("ITX current topology admission is stale");
   }
   return {
@@ -2752,6 +2753,7 @@ export async function admittedItxNetworkEdgeEvidence(
         previousArtifactSha256: reference.sha256,
         stationSequences: source.stationSequences,
         now,
+        requireFresh,
       });
   return {
     ...currentProjection,
