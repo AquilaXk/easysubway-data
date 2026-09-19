@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { deriveFreshness } from "./freshness-policy.mjs";
+import { deriveFreshness, deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
@@ -416,17 +416,32 @@ function evaluateFreshness({ entry, snapshot, freshnessPolicy, evaluationAt, rea
     return;
   }
   try {
-    const result = deriveFreshness({
+    const derivedExpiresAt = deriveFreshnessExpiresAt({
       policy: freshnessPolicy,
       sourceClassId: entry.sourceClassId,
       basisAt: snapshot?.[sourceClass.basisField],
       providerValidUntil: sourceClass.providerValidityEndField
         ? snapshot?.[sourceClass.providerValidityEndField]
         : undefined,
-      storedExpiresAt: snapshot?.freshnessExpiresAt,
       evaluationAt,
     });
-    for (const reasonCode of result.reasonCodes) reasonCodes.add(reasonCode);
+    const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
+    const derivedMillis = requiredUtcInstant(derivedExpiresAt, "freshnessExpiresAt");
+    const storedMillis = requiredUtcInstant(snapshot?.freshnessExpiresAt, "storedExpiresAt");
+    if (storedMillis < derivedMillis) {
+      reasonCodes.add("SOURCE_FRESHNESS_POLICY_MISSING");
+      return;
+    }
+    const hasExtension = (snapshot?.admissionEvidence != null
+      || Array.isArray(snapshot?.admissionRecordSha256s)
+      || snapshot?.serviceEffectiveUntil != null);
+    if (storedMillis > derivedMillis && !hasExtension) {
+      reasonCodes.add("SOURCE_FRESHNESS_POLICY_MISSING");
+      return;
+    }
+    if (evaluatedMillis >= storedMillis) {
+      reasonCodes.add("SOURCE_SNAPSHOT_EXPIRED");
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     reasonCodes.add(message.startsWith("SOURCE_SNAPSHOT_EXPIRED")

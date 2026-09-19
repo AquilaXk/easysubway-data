@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { deriveFreshness } from "./freshness-policy.mjs";
+import { deriveFreshness, deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
@@ -97,19 +97,34 @@ export function validateSourceSnapshotFreshness({
       throw new Error(`SOURCE_FRESHNESS_POLICY_MISSING: ${sourceId}`);
     }
     const sourceClass = sourceClasses[0];
+    const derivedExpiresAt = deriveFreshnessExpiresAt({
+      policy,
+      sourceClassId: sourceClass.id,
+      basisAt: snapshot[sourceClass.basisField],
+      providerValidUntil: sourceClass.providerValidityEndField
+        ? snapshot[sourceClass.providerValidityEndField]
+        : undefined,
+      evaluationAt,
+    });
+    const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
+    const derivedMillis = requiredUtcInstant(derivedExpiresAt, "freshnessExpiresAt");
+    const storedMillis = requiredUtcInstant(snapshot.freshnessExpiresAt, "freshnessExpiresAt");
+    if (storedMillis < derivedMillis) {
+      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
+    }
+    const hasExtension = (snapshot.admissionEvidence != null
+      || Array.isArray(snapshot.admissionRecordSha256s)
+      || snapshot.serviceEffectiveUntil != null);
+    if (storedMillis > derivedMillis && !hasExtension) {
+      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
+    }
+    const stale = evaluatedMillis >= storedMillis;
     return {
       snapshotId: snapshot.snapshotId,
       sourceClassId: sourceClass.id,
-      ...deriveFreshness({
-        policy,
-        sourceClassId: sourceClass.id,
-        basisAt: snapshot[sourceClass.basisField],
-        providerValidUntil: sourceClass.providerValidityEndField
-          ? snapshot[sourceClass.providerValidityEndField]
-          : undefined,
-        storedExpiresAt: snapshot.freshnessExpiresAt,
-        evaluationAt,
-      }),
+      status: stale ? "STALE" : "FRESH",
+      freshnessExpiresAt: snapshot.freshnessExpiresAt,
+      reasonCodes: stale ? ["SOURCE_SNAPSHOT_EXPIRED"] : [],
     };
   });
   if (results.some((result) => result.status !== "FRESH")) {
@@ -133,12 +148,18 @@ export function validateSourceSnapshotFreshness({
     if (!/^[0-9a-f]{64}$/.test(governancePolicySha256 ?? "")) {
       throw new Error("SOURCE_GOVERNANCE_OWNER_MISSING: governance policy hash");
     }
-    for (const snapshot of effectiveSnapshots) approvedGovernanceBindingTransition({
-      snapshot,
-      currentPolicyVersion: governancePolicy.policyVersion,
-      currentPolicySha256: governancePolicySha256,
-      currentPolicyBytes: governancePolicyBytes,
-    });
+    for (const snapshot of effectiveSnapshots) {
+      if ((snapshot.admissionEvidence != null || Array.isArray(snapshot.admissionRecordSha256s))
+        && snapshot.governancePolicyVersion == null && snapshot.governancePolicySha256 == null) {
+        continue;
+      }
+      approvedGovernanceBindingTransition({
+        snapshot,
+        currentPolicyVersion: governancePolicy.policyVersion,
+        currentPolicySha256: governancePolicySha256,
+        currentPolicyBytes: governancePolicyBytes,
+      });
+    }
     const sources = new Map(inventory.sources.map((source) => [source.id, source]));
     governanceResults = effectiveSnapshots.map((snapshot) => {
       const rawState = purgeEvidence.get(`${snapshot.sourceId}\0${snapshot.snapshotId}`) ?? null;
@@ -441,30 +462,50 @@ function bindGovernanceProvenance(snapshots, buildSnapshots) {
   const buildById = new Map(buildSnapshots.map((snapshot) => [snapshot?.snapshotId, snapshot]));
   return snapshots.map((snapshot, index) => {
     const buildSnapshot = buildById.get(snapshot.snapshotId);
+    if (!buildSnapshot) {
+      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: missing build snapshot");
+    }
     const hasPolicyBinding = snapshot.governancePolicyVersion != null
       || snapshot.governancePolicySha256 != null;
+    const isNativeAdmission = snapshot.admissionEvidence != null
+      || Array.isArray(snapshot.admissionRecordSha256s)
+      || Array.isArray(buildSnapshot?.admissionRecordSha256s);
+
+    if (isNativeAdmission && !hasPolicyBinding) {
+      if (buildSnapshot.governancePolicyVersion != null || buildSnapshot.governancePolicySha256 != null) {
+        throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: native admission governance policy");
+      }
+      if (snapshot.rawRetentionExpiresAt != null && buildSnapshot.rawRetentionExpiresAt !== snapshot.rawRetentionExpiresAt) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: raw retention expires at");
+      }
+      const candidateExpiresAt = buildSnapshot.freshnessExpiresAt ?? snapshot.freshnessExpiresAt;
+      if (Date.parse(candidateExpiresAt) < Date.parse(snapshot.freshnessExpiresAt)) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: freshness regression");
+      }
+      return { ...snapshot, freshnessExpiresAt: candidateExpiresAt };
+    }
+
     if (hasPolicyBinding) {
-      const evidence = canonicalPolicyProvenance([snapshot], `snapshots[${index}]`, true);
-      const build = canonicalPolicyProvenance([buildSnapshot], `buildSpec.sourceSnapshots[${index}]`, true);
-      if (JSON.stringify(evidence) !== JSON.stringify(build)) {
+      if (buildSnapshot.governancePolicyVersion !== snapshot.governancePolicyVersion
+        || buildSnapshot.governancePolicySha256 !== snapshot.governancePolicySha256
+        || buildSnapshot.rawRetentionExpiresAt !== snapshot.rawRetentionExpiresAt) {
         throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance");
       }
-      return snapshot;
+      if (Date.parse(buildSnapshot.freshnessExpiresAt) < Date.parse(snapshot.freshnessExpiresAt)) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: freshness regression");
+      }
+      return { ...snapshot, freshnessExpiresAt: buildSnapshot.freshnessExpiresAt };
     }
+
     const approvedBinding = approvedLegacyGovernanceBinding(snapshot);
     if (approvedBinding == null) {
       throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
     }
-    const policyProvenance = canonicalPolicyProvenance(
-      [buildSnapshot],
-      `buildSpec.sourceSnapshots[${index}]`,
-      true,
-    )[0];
-    if (policyProvenance.governancePolicyVersion !== approvedBinding.governancePolicyVersion
-      || policyProvenance.governancePolicySha256 !== approvedBinding.governancePolicySha256) {
+    if (buildSnapshot.governancePolicyVersion !== approvedBinding.governancePolicyVersion
+      || buildSnapshot.governancePolicySha256 !== approvedBinding.governancePolicySha256) {
       throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
     }
-    return { ...snapshot, ...policyProvenance };
+    return { ...snapshot, ...approvedBinding, freshnessExpiresAt: buildSnapshot.freshnessExpiresAt };
   });
 }
 
