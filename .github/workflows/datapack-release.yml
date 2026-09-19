@@ -991,7 +991,7 @@ jobs:
           test -s "${EASYSUBWAY_HEADWAY_REPORT}"
 
       - name: Data Pack Release / Checkout pinned Mobile fixture
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
@@ -1001,7 +1001,7 @@ jobs:
           fetch-depth: 0
 
       - name: Data Pack Release / Stage pinned Mobile fixture
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1042,11 +1042,11 @@ jobs:
           cp -a "${source}" apps/mobile
 
       - name: Data Pack Release / Validate ITX-청춘 coverage contract
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         run: node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1
 
       - name: Data Pack Release / Verify current ITX-청춘 release freshness
-        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         run: node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --check
 
       - name: Data Pack Release / Configure candidate execution evidence

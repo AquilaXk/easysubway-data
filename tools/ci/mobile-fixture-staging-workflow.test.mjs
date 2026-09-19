@@ -353,7 +353,7 @@ test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture
   const { yml, block, stage } = fixtureStep(releaseWorkflow);
   const releaseOwnership = ownership.workflows["deterministic-release"];
   const runner = namedWorkflowStep(yml, "Data Pack Release / Validate ITX-청춘 coverage contract");
-  const releaseGate = "if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}";
+  const releaseGate = "if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}";
 
   assert.match(block, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
   assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
