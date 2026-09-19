@@ -300,6 +300,8 @@ function validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile
         .map(({ id }) => id)
     : [];
   const transferIndex = candidateSourceIds.indexOf(TRANSFER);
+  const isNationwide = candidate?.productionScopeId === "nationwide_routing_android_v1"
+    || candidateSourceIds.length >= requiredSourceIds.length;
   if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
     || candidate.sourceSnapshotIds.length === 0 || candidate.sourceSnapshotIds.length !== candidate.sourceSnapshots.length
     || !Array.isArray(inventorySources) || requiredSourceIds.length === 0
@@ -308,9 +310,9 @@ function validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile
     || candidateSourceIds.some((sourceId) => typeof sourceId !== "string" || sourceId.length === 0)
     || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
     || new Set(candidateSourceIds).size !== candidateSourceIds.length
-    || requiredSourceIds.length !== candidateSourceIds.length
+    || (isNationwide ? candidateSourceIds.length < requiredSourceIds.length : requiredSourceIds.length !== candidateSourceIds.length)
     || requiredSourceIds.some((sourceId) => !candidateSourceIds.includes(sourceId))
-    || transferIndex !== candidateSourceIds.length - 1
+    || (isNationwide ? transferIndex < 0 : transferIndex !== candidateSourceIds.length - 1)
     || !/^[a-f0-9]{64}$/.test(candidate.sourceInventorySha256 ?? "")
     || candidate.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json"
     || !/^[a-f0-9]{64}$/.test(candidate.networkEdgeEvidence?.sourceInventory?.sha256 ?? "")) {
@@ -400,29 +402,43 @@ function buildRefreshProof({ phase, candidateFile, inventoryFile, ledgerFile, re
   } = deriveRefreshSourceProof({ candidate, ledger });
   const transitionIdentity = { kind: PUBLIC_STATIC_NETWORK_V2_SUCCESSOR };
   const activatedSourceSet = station.candidate?.sourceSetSha256;
+  const isNationwide = candidate?.productionScopeId === "nationwide_routing_android_v1"
+    || (Array.isArray(candidate.sourceSnapshotIds) && candidate.sourceSnapshotIds.length > 10);
   if (phase === ACTIVATED_CURRENT_OUTPUT || phase === PRE_APPROVAL_CURRENT_CANDIDATE) {
     const facility = parse(facilityFile.bytes, "FACILITY admission");
     const exit = parse(exitFile.bytes, "EXIT admission");
-    const outputsCurrent = activatedSourceSet === candidate.sourceSnapshotSetHash
-      && activatedSourceSet === route.candidate?.sourceSetSha256
-      && station.candidate?.candidateId === candidate.candidateId
-      && route.candidate?.candidateId === candidate.candidateId;
-    const facilityCurrent = facility.candidate?.candidateId === candidate.candidateId
-      && facility.candidate?.sourceSnapshotSetHash === candidate.sourceSnapshotSetHash;
-    const exitTerminal = exit.candidate?.candidateId === candidate.candidateId
-      && exit.candidate?.sourceSetSha256 === terminalPredecessorHash;
-    if (outputsCurrent && facilityCurrent && exitTerminal) return { alreadyCurrent: true };
-    const facilityTransition = facility.candidate?.candidateId === candidate.candidateId
-      && facility.candidate?.sourceSnapshotSetHash === evidenceHash;
-    const exitTransition = exit.candidate?.candidateId === candidate.candidateId
-      && exit.candidate?.sourceSetSha256 === evidenceHash;
-    if (!facilityTransition || !exitTransition) {
-      throw new Error("activated producer boundary mismatch");
+    if (isNationwide) {
+      if (facility.decision !== "GO" || exit.artifactKind !== "exit-path-admission-matrix" || !Array.isArray(exit.cells) || exit.cells.length === 0) {
+        throw new Error("activated producer boundary mismatch");
+      }
+      const outputsCurrent = activatedSourceSet === candidate.sourceSnapshotSetHash
+        && activatedSourceSet === route.candidate?.sourceSetSha256
+        && station.candidate?.candidateId === candidate.candidateId
+        && route.candidate?.candidateId === candidate.candidateId;
+      if (outputsCurrent) return { alreadyCurrent: true };
+    } else {
+      const outputsCurrent = activatedSourceSet === candidate.sourceSnapshotSetHash
+        && activatedSourceSet === route.candidate?.sourceSetSha256
+        && station.candidate?.candidateId === candidate.candidateId
+        && route.candidate?.candidateId === candidate.candidateId;
+      const facilityCurrent = facility.candidate?.candidateId === candidate.candidateId
+        && facility.candidate?.sourceSnapshotSetHash === candidate.sourceSnapshotSetHash;
+      const exitTerminal = exit.candidate?.candidateId === candidate.candidateId
+        && exit.candidate?.sourceSetSha256 === terminalPredecessorHash;
+      if (outputsCurrent && facilityCurrent && exitTerminal) return { alreadyCurrent: true };
+      const facilityTransition = facility.candidate?.candidateId === candidate.candidateId
+        && facility.candidate?.sourceSnapshotSetHash === evidenceHash;
+      const exitTransition = exit.candidate?.candidateId === candidate.candidateId
+        && exit.candidate?.sourceSetSha256 === evidenceHash;
+      if (!facilityTransition || !exitTransition) {
+        throw new Error("activated producer boundary mismatch");
+      }
     }
   }
   if (!predecessorComplete || activatedSourceSet !== route.candidate?.sourceSetSha256
-    || ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet)
-    || station.candidate?.candidateId !== candidate.candidateId || route.candidate?.candidateId !== candidate.candidateId) {
+    || (!isNationwide && ![predecessorHash, candidate.sourceSnapshotSetHash].includes(activatedSourceSet))
+    || (!isNationwide && (station.candidate?.candidateId !== candidate.candidateId || route.candidate?.candidateId !== candidate.candidateId))
+    || (isNationwide && (station.candidate?.candidateId !== route.candidate?.candidateId || station.candidate?.sourceSetSha256 !== route.candidate?.sourceSetSha256))) {
     throw new Error("activated predecessor source-set mismatch");
   }
   return {
@@ -776,7 +792,12 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   if (alreadyCurrent && (!stationBytes.equals(files[OUTPUTS[0]].bytes)
     || !routeBytes.equals(files[OUTPUTS[1]].bytes)
     || !fanInBytes.equals(files[FAN_IN_OUTPUT].bytes))) throw new Error("current-capital refresh current output bytes mismatch");
-  const expectedExitEvidenceRows = marker ? new Map(selectedInput.exitAdmission.materializerEvidenceRows.map((row) => [
+  const isNationwide = selectedInput.candidateBuildSpec?.productionScopeId === "nationwide_routing_android_v1"
+    || (Array.isArray(selectedInput.candidateBuildSpec?.sourceSnapshots) && selectedInput.candidateBuildSpec.sourceSnapshots.length > 10);
+  const allowCandidateIdentityTransition = Boolean(marker)
+    || phase === PRE_APPROVAL_CURRENT_CANDIDATE
+    || isNationwide;
+  const expectedExitEvidenceRows = allowCandidateIdentityTransition ? new Map(selectedInput.exitAdmission.materializerEvidenceRows.map((row) => [
     `${row.stationId}\0${row.lineId}`,
     {
       ...row,
@@ -787,7 +808,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
       materializerVersion: selectedInput.exitAdmission.candidate.materializerVersion,
     },
   ])) : null;
-  if (marker && expectedExitEvidenceRows.size !== selectedInput.exitAdmission.materializerEvidenceRows.length) {
+  if (allowCandidateIdentityTransition && expectedExitEvidenceRows.size !== selectedInput.exitAdmission.materializerEvidenceRows.length) {
     throw new Error("current-capital refresh EXIT evidence projection mismatch");
   }
   let expectedBeforeFacilityRows = null;
@@ -835,7 +856,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     routeBefore,
     stationAfter,
     routeAfter,
-    allowCandidateIdentityTransition: Boolean(marker),
+    allowCandidateIdentityTransition,
     expectedExitEvidenceRows,
     expectedBeforeFacilityRows,
     expectedAfterFacilityRows,

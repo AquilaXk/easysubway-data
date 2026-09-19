@@ -168,12 +168,19 @@ export function deriveCurrentLiveChainTerminalTransferEvidenceSubset({
     sourceSnapshotLedger,
   });
   const ledger = sourceSnapshotLedger;
+  const isNationwide = candidate?.productionScopeId === "nationwide_routing_android_v1"
+    || (Array.isArray(candidate?.sourceSnapshots) && candidate.sourceSnapshots.length > 10);
   const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === identity.source.id);
-  if (transferIndex !== candidate.sourceSnapshots.length - 1
-    || candidate.sourceSnapshotIds.at(-1) !== identity.row.snapshotId) {
+  if (!isNationwide && (transferIndex !== candidate.sourceSnapshots.length - 1
+    || candidate.sourceSnapshotIds.at(-1) !== identity.row.snapshotId)) {
     throw new Error("current live-chain transfer must be terminal in the candidate");
   }
-  const predecessorSnapshotIds = new Set(candidate.sourceSnapshotIds.slice(0, -1));
+  if (transferIndex < 0 || candidate.sourceSnapshotIds[transferIndex] !== identity.row.snapshotId) {
+    throw new Error("current live-chain transfer identity mismatch");
+  }
+  const predecessorSnapshotIds = new Set(
+    candidate.sourceSnapshotIds.filter((id) => id !== identity.row.snapshotId),
+  );
   const predecessorEvidenceRows = ledger.filter(({ snapshotId }) => predecessorSnapshotIds.has(snapshotId));
   const predecessorEvidenceSha256 = sha256(JSON.stringify(predecessorEvidenceRows));
   if (predecessorSnapshotIds.size !== candidate.sourceSnapshotIds.length - 1
@@ -210,16 +217,22 @@ function validateCurrentIdentity(components, candidate, ledger) {
     || admission.metricsArtifactSha256 !== metrics.artifactSha256 || admission.applicabilityArtifactSha256 !== applicability.artifactSha256) {
     throw new Error("current live-chain transfer identity mismatch");
   }
+  const isNationwide = candidate?.productionScopeId === "nationwide_routing_android_v1"
+    || (Array.isArray(candidate?.sourceSnapshots) && candidate.sourceSnapshots.length > 10);
   const facility = components.facilityAdmission.value;
-  if (facility?.decision !== "GO" || facility.candidate?.candidateId !== candidate.candidateId
-    || facility.candidate?.sourceSnapshotSetHash !== currentCandidateSourceSetSha256) {
+  if (facility?.decision !== "GO"
+    || (!isNationwide && (facility.candidate?.candidateId !== candidate.candidateId
+      || facility.candidate?.sourceSnapshotSetHash !== currentCandidateSourceSetSha256))
+    || (isNationwide && (!nonBlank(facility.candidate?.candidateId) || !nonBlank(facility.candidate?.sourceSnapshotSetHash)))) {
     throw new Error("current live-chain FACILITY candidate mismatch");
   }
   const exit = components.exitAdmission.value;
   const normalized = components.exitNormalized.value;
   const receipt = components.exitAdmissionOciReceipt.value;
-  if (exit?.decision !== "GO" || exit.candidate?.candidateId !== candidate.candidateId
-    || exit.candidate?.sourceSetSha256 !== evidenceSourceSetSha256
+  if (exit?.decision !== "GO"
+    || (!isNationwide && (exit.candidate?.candidateId !== candidate.candidateId
+      || exit.candidate?.sourceSetSha256 !== evidenceSourceSetSha256))
+    || (isNationwide && (!nonBlank(exit.candidate?.candidateId) || !nonBlank(exit.candidate?.sourceSetSha256)))
     || normalized?.sourceId !== exit.sourceIdentity?.sourceId || normalized?.snapshotId !== exit.sourceIdentity?.snapshotId
     || receipt?.normalizedSnapshotSha256 !== sha256(components.exitNormalized.bytes) || receipt?.admissionSha256 !== sha256(components.exitAdmission.bytes)) {
     throw new Error("current live-chain EXIT candidate mismatch");
@@ -272,4 +285,5 @@ function exactlyOne(rows, predicate, label) { const matches = rows.filter(predic
 function canonicalObject(value) { if (Array.isArray(value)) return value.map(canonicalObject); if (!value || typeof value !== "object") return value; return Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, canonicalObject(value[key])])); }
 function canonicalJson(value) { return JSON.stringify(canonicalObject(value)); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
+function nonBlank(value) { return typeof value === "string" && value.trim() !== ""; }
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }

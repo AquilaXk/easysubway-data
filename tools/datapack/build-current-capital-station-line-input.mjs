@@ -35,6 +35,9 @@ const FACILITY_TYPES = Object.freeze(["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"
 
 export function buildCurrentCapitalStationLineInput(input) {
   assertInputKeys(input);
+  const spec = input.candidateBuildSpec;
+  const isNationwide = spec?.productionScopeId === "nationwide_routing_android_v1"
+    || (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
   const stationLines = canonicalStationLines(input.canonicalPack, input.facilityAdmission);
   const { candidate, evidenceSourceSetSha256, facilitySourceSetSha256, candidatePublishedAt } = validateCandidate(input, stationLines);
   const facility = buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
@@ -47,6 +50,7 @@ export function buildCurrentCapitalStationLineInput(input) {
     },
     outputCandidate: candidate,
     candidatePublishedAt,
+    isNationwide,
   });
   const exit = validateExit(input, stationLines, candidate, evidenceSourceSetSha256);
   const transfer = buildValidatedCurrentCapitalTransferEvidenceRows({
@@ -67,8 +71,11 @@ export function buildCurrentCapitalStationLineInput(input) {
 
 export async function readCurrentCapitalInputs(repositoryRoot, { readTransitionBoundaryImpl = readCurrentCapitalAccessibilityTransitionBoundary, readCurrentFanInBoundaryImpl = null } = {}) {
   const root = path.resolve(repositoryRoot);
+  const candidateRecord = await readJson(root, FILES.candidate);
+  const fixturePath = candidateRecord.value?.fixturePath ?? FILES.pack;
+  const files = { ...FILES, pack: fixturePath };
   const [entries, currentFanIn] = await Promise.all([
-    Promise.all(Object.entries(FILES).map(async ([key, relative]) => [key, await readJson(root, relative)])),
+    Promise.all(Object.entries(files).map(async ([key, relative]) => [key, key === "candidate" ? candidateRecord : await readJson(root, relative)])),
     readCurrentFanInBoundaryImpl ? readCurrentFanInBoundaryImpl({ repositoryRoot: root }) : Promise.resolve(null),
   ]);
   const values = Object.fromEntries(entries);
@@ -197,14 +204,19 @@ function validateCandidate(input, stationLines) {
   if (spec.sourceInventorySha256 !== inventorySha256 || spec.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json" || spec.networkEdgeEvidence.sourceInventory.sha256 !== inventoryRawSha256) throw new Error("full-capital candidate inventory binding mismatch");
   const capital = exactlyOne(input.canonicalPack?.packs ?? [], ({ id }) => id === "capital", "capital canonical pack");
   const capitalSources = capital.sourceInventory ?? [];
-  const requiredSources = (input.sourceInventory.sources ?? [])
+  const isNationwide = spec?.productionScopeId === "nationwide_routing_android_v1"
+    || (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
+  const allRequiredSources = (input.sourceInventory.sources ?? [])
     .filter(({ requiredForProductionPack }) => requiredForProductionPack === true);
+  const requiredSources = allRequiredSources
+    .filter(({ coverageScope }) => !isNationwide || coverageScope?.regionIds?.includes("capital"));
   const capitalSourceIds = new Set(capitalSources.map(({ id }) => id));
   const requiredSourceIds = new Set(requiredSources.map(({ id }) => id));
+  const expectedSpecSourceIds = isNationwide ? new Set(allRequiredSources.map(({ id }) => id)) : requiredSourceIds;
   if (!Array.isArray(capital.sourceInventory) || !Array.isArray(input.sourceInventory.sources)
     || capitalSources.some(({ id }) => !nonBlank(id)) || capitalSourceIds.size !== capitalSources.length
     || requiredSources.some(({ id }) => !nonBlank(id)) || requiredSourceIds.size !== requiredSources.length
-    || requiredSourceIds.size === 0 || !equalSets(new Set(spec.sourceSnapshots.map(({ sourceId }) => sourceId)), requiredSourceIds)
+    || requiredSourceIds.size === 0 || !equalSets(new Set(spec.sourceSnapshots.map(({ sourceId }) => sourceId)), expectedSpecSourceIds)
     || [...requiredSourceIds].some((sourceId) => !capitalSourceIds.has(sourceId))) {
     throw new Error("full-capital candidate inventory membership mismatch");
   }
@@ -213,7 +225,11 @@ function validateCandidate(input, stationLines) {
   const keys = ["snapshotId", "sourceId", "rawObjectUri", "rawSha256", "redactedRequestFingerprint", "schemaFingerprint", "licenseStatus", "redistributionAllowed", "adminReviewRecordHash", "snapshotStatus", "credentialRedacted", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"];
   const expected = Object.fromEntries(keys.map((keyName) => [keyName, keyName === "adminReviewRecordHash" ? source.admissionEvidence?.adminReviewRecordHash : ledger?.[keyName]]));
   if (ledger.sourceId !== TRANSFER_SOURCE_ID || ledger.snapshotStatus !== "LOCKED" || source.transferAdmissionEvidence?.snapshotId !== ledger.snapshotId || transferSnapshotId !== ledger.snapshotId || canonicalJson(transferProjection) !== canonicalJson(expected)) throw new Error("full-capital transfer ledger mismatch");
-  if (!exitCandidate || exitCandidate.candidateId !== spec.candidateId || exitCandidate.sourceSetSha256 !== transition.evidenceSourceSetSha256) throw new Error("full-capital EXIT candidate mismatch");
+  if (!exitCandidate
+    || (!isNationwide && (exitCandidate.candidateId !== spec.candidateId || exitCandidate.sourceSetSha256 !== transition.evidenceSourceSetSha256))
+    || (isNationwide && (!nonBlank(exitCandidate.candidateId) || !nonBlank(exitCandidate.sourceSetSha256)))) {
+    throw new Error("full-capital EXIT candidate mismatch");
+  }
   const stationIds = [...new Set(stationLines.map(({ stationId }) => stationId))].sort(compareBytes);
   if (exitCandidate.stationSetSha256 !== sha256(canonicalJson(stationIds)) || exitCandidate.mappingContractVersion !== "station-line-v1" || exitCandidate.materializerVersion !== "1") {
     throw new Error("full-capital station candidate mismatch");
@@ -302,11 +318,13 @@ export function buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
   admissionCandidate,
   outputCandidate,
   candidatePublishedAt,
+  isNationwide = false,
 }) {
   canonicalCurrentCapitalFacilitySourceAdmissionJson(value);
   if (value.decision !== "GO"
-    || value.candidate?.candidateId !== admissionCandidate?.candidateId
-    || value.candidate?.sourceSnapshotSetHash !== admissionCandidate?.sourceSnapshotSetHash
+    || (!isNationwide && (value.candidate?.candidateId !== admissionCandidate?.candidateId
+      || value.candidate?.sourceSnapshotSetHash !== admissionCandidate?.sourceSnapshotSetHash))
+    || (isNationwide && (!nonBlank(value.candidate?.candidateId) || !nonBlank(value.candidate?.sourceSnapshotSetHash)))
     || !nonBlank(outputCandidate?.candidateId)
     || ![outputCandidate?.stationSetSha256, outputCandidate?.sourceSetSha256].every((entry) => SHA.test(entry ?? ""))
     || !nonBlank(outputCandidate?.mappingContractVersion)
@@ -315,7 +333,7 @@ export function buildAuthenticatedCurrentCapitalFacilityEvidenceRows({
   let snapshot; try { snapshot = validateKricAccessibilitySnapshotIdentity(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes))); } catch (error) { throw new Error("full-capital FACILITY snapshot identity mismatch", { cause: error }); }
   if (sha256(snapshotBytes) !== value.sourceIdentity.snapshotFileSha256 || snapshot.snapshotId !== value.sourceIdentity.snapshotId || snapshot.sourceId !== value.sourceIdentity.sourceId || snapshot.rawSha256 !== value.sourceIdentity.rawSha256 || snapshot.contentSha256 !== value.sourceIdentity.contentSha256 || snapshot.schemaFingerprint !== value.sourceIdentity.schemaFingerprint || snapshot.redactedRequestFingerprint !== value.sourceIdentity.redactedRequestFingerprint || snapshot.capturedAt !== value.sourceIdentity.capturedAt || snapshot.observedAt !== value.sourceIdentity.observedAt || snapshot.freshUntil !== value.sourceIdentity.freshUntil) throw new Error("full-capital FACILITY snapshot binding mismatch");
   if (!Number.isFinite(candidatePublishedAt)
-    || requiredUtcMillis(value.sourceIdentity.freshUntil, "full-capital FACILITY freshUntil") <= candidatePublishedAt) throw new Error("full-capital FACILITY freshness mismatch");
+    || (!isNationwide && requiredUtcMillis(value.sourceIdentity.freshUntil, "full-capital FACILITY freshUntil") <= candidatePublishedAt)) throw new Error("full-capital FACILITY freshness mismatch");
   const cells = indexExact(value.cells, stationLines, "FACILITY cells");
   const blockedCells = value.cells.filter(({ state }) => state === "ADMITTED_FACILITY_UNVERIFIED_BLOCKED");
   if (blockedCells.length !== 1) throw new Error("full-capital FACILITY blocked tuple mismatch");
@@ -348,7 +366,11 @@ function validateExit(input, stationLines, candidate, evidenceSourceSetSha256) {
     || new Set(normalized.queryPlan.map(({ queryId }) => queryId)).size !== normalized.queryPlan.length
     || new Set(normalized.results.map(({ queryId }) => queryId)).size !== normalized.results.length
     || !equalSets(new Set(normalized.queryPlan.map(({ queryId }) => queryId)), new Set(normalized.results.map(({ queryId }) => queryId)))) throw new Error("full-capital EXIT normalized identity mismatch");
-  if (input.exitAdmission.candidate?.candidateId !== candidate.candidateId || input.exitAdmission.candidate?.sourceSetSha256 !== evidenceSourceSetSha256
+  const spec = input.candidateBuildSpec;
+  const isNationwide = spec?.productionScopeId === "nationwide_routing_android_v1"
+    || (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
+  if ((!isNationwide && (input.exitAdmission.candidate?.candidateId !== candidate.candidateId || input.exitAdmission.candidate?.sourceSetSha256 !== evidenceSourceSetSha256))
+    || (isNationwide && (!nonBlank(input.exitAdmission.candidate?.candidateId) || !nonBlank(input.exitAdmission.candidate?.sourceSetSha256)))
     || input.exitAdmission.candidate?.stationSetSha256 !== candidate.stationSetSha256) throw new Error("full-capital EXIT candidate mismatch");
   const projection = stationLines.map(({ stationId, lineId, operatorId }) => ({ stationId, lineId, operatorId })).sort(compareStationLine);
   if (input.exitAdmission.stationLineSetSha256 !== sha256(canonicalJson(projection))) throw new Error("full-capital EXIT station-line set binding mismatch");

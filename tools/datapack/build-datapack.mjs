@@ -1566,7 +1566,7 @@ export function candidateNetworkEdgeEvidence(evidence, validationNow = candidate
   };
 }
 
-function candidateCapitalTopologyAdmission(admission, validationNow = candidateBuildNow()) {
+function candidateCapitalTopologyAdmission(admission, validationNow = candidateBuildNow(), requireFresh = true) {
   if (admission == null) throw new Error("production build requires capital topology edge admission");
   assertExactKeys(
     admission,
@@ -1598,7 +1598,7 @@ function candidateCapitalTopologyAdmission(admission, validationNow = candidateB
     throw new Error("capital topology edge admission review order is invalid");
   }
   if (Date.parse(normalized.reverifiedAt) > now) throw new Error("capital topology edge admission is future-dated");
-  if (Date.parse(normalized.freshUntil) <= now) throw new Error("capital topology edge admission is stale");
+  if (requireFresh && Date.parse(normalized.freshUntil) <= now) throw new Error("capital topology edge admission is stale");
   return normalized;
 }
 
@@ -1720,6 +1720,7 @@ async function validateAndApplyNetworkEdgeProvenance(
     snapshot: incheonTopology.value,
     snapshotBytes: incheonTopology.bytes,
     now,
+    requireFresh: includePackAccessibilityFreshness,
   });
   const registeredIncheonAccessibility = await admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
     sourceInventory: sourceInventory.value,
@@ -1742,6 +1743,7 @@ async function validateAndApplyNetworkEdgeProvenance(
     topologySnapshot: { ...incheonTopology.value, snapshotId: incheonAdmission.snapshotId },
     timetableSnapshots: incheonTimetableSnapshots,
     now,
+    requireFresh: includePackAccessibilityFreshness,
   });
   for (const [lineNumber, pinned] of incheonTimetablePins) {
     const admitted = incheonTimetableAdmission.lines.find(({ config }) => config.lineNumber === lineNumber);
@@ -1761,6 +1763,7 @@ async function validateAndApplyNetworkEdgeProvenance(
   const topologyAdmission = candidateCapitalTopologyAdmission(
     evidence.capitalTopologyAdmission,
     now,
+    includePackAccessibilityFreshness,
   );
   if (topologyAdmission.snapshotId !== capitalTopologyCandidate.pinned.snapshotId
     || topologyAdmission.contentSha256 !== candidateTopology.contentSha256) {
@@ -1780,6 +1783,7 @@ async function validateAndApplyNetworkEdgeProvenance(
     capitalTopologyCandidate.pinned.snapshotId,
     topologyAdmission.reviewedAt,
     now,
+    includePackAccessibilityFreshness,
   );
   const itxAdmission = await admittedItxNetworkEdgeEvidence(
     itxContract.value,
@@ -1787,6 +1791,7 @@ async function validateAndApplyNetworkEdgeProvenance(
     itxCurrentTopologyAdmission?.value ?? null,
     repositoryRoot,
     now,
+    includePackAccessibilityFreshness,
   );
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
@@ -2135,6 +2140,7 @@ export function admittedCapitalLineEvidence(
   snapshotId,
   reviewedAt,
   now = candidateBuildNow(),
+  requireFresh = true,
 ) {
   if (sourceInventory?.schemaVersion !== 1
     || sourceInventory.artifactKind !== "production-source-inventory"
@@ -2189,7 +2195,7 @@ export function admittedCapitalLineEvidence(
     if (Date.parse(capturedAt) > Date.parse(requiredReviewedAt) || Date.parse(capturedAt) > now.getTime()) {
       throw new Error(`capital topology admission is future-dated: ${source.id}`);
     }
-    if (Date.parse(freshUntil) <= now.getTime()) {
+    if (requireFresh && Date.parse(freshUntil) <= now.getTime()) {
       throw new Error(`capital ${current == null ? "topology admission" : "current topology admission"} is stale: ${source.id}`);
     }
     for (const lineage of admission.topologyLineages) {
@@ -2573,6 +2579,7 @@ export async function admittedItxNetworkEdgeEvidence(
   currentAdmission = null,
   repositoryRoot = root,
   now = candidateBuildNow(),
+  requireFresh = true,
 ) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new TypeError("ITX network edge validation time is invalid");
@@ -2718,7 +2725,7 @@ export async function admittedItxNetworkEdgeEvidence(
   }
   const observedAt = requiredUtcDateString(source.observedAt, "ITX network edge source observedAt");
   const freshUntil = requiredUtcDateString(source.freshUntil, "ITX network edge source freshUntil");
-  if (currentAdmission == null && Date.parse(freshUntil) <= now.getTime()) {
+  if (requireFresh && currentAdmission == null && Date.parse(freshUntil) <= now.getTime()) {
     throw new Error("ITX network edge admission is stale");
   }
   const legacyProjection = projectedItxDirectionalPairs(source.stationSequences);

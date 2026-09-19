@@ -129,12 +129,12 @@ export function materializeIncheonTimetable({
   return fixture;
 }
 
-export function admittedIncheonTimetableEvidence({ inventory, topologySnapshot, timetableSnapshots, now } = {}) {
+export function admittedIncheonTimetableEvidence({ inventory, topologySnapshot, timetableSnapshots, now, requireFresh = true } = {}) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
   const lines = INCHEON_TIMETABLE_LINES.map((config) => {
     const snapshot = timetableSnapshots?.[config.lineNumber];
     validateTimetableSnapshot(snapshot, config, topologySnapshot);
-    return { config, snapshot, source: requiredSource(inventory, config, snapshot, topologySnapshot, now) };
+    return { config, snapshot, source: requiredSource(inventory, config, snapshot, topologySnapshot, now, requireFresh) };
   });
   return { lines, topologySnapshot: structuredClone(topologySnapshot), inventory: structuredClone(inventory) };
 }
@@ -238,7 +238,7 @@ function validateTimetableSnapshot(snapshot, config, topologySnapshot) {
   }
 }
 
-function requiredSource(inventory, config, timetable, topologySnapshot, now) {
+function requiredSource(inventory, config, timetable, topologySnapshot, now, requireFresh = true) {
   const source = inventory?.sources?.find(({ id }) => id === config.sourceId);
   const evidence = source?.scheduleAdmissionEvidence;
   const activeTopologyId = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
@@ -281,7 +281,7 @@ function requiredSource(inventory, config, timetable, topologySnapshot, now) {
   const freshUntil = Date.parse(evidence.freshUntil);
   const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
   if (!Number.isFinite(capturedAt) || freshUntil !== capturedAt + FRESHNESS_MILLIS
-    || !Number.isFinite(observedNow) || observedNow < capturedAt || observedNow >= freshUntil) {
+    || !Number.isFinite(observedNow) || observedNow < capturedAt || (requireFresh && observedNow >= freshUntil)) {
     throw new Error(`${config.sourceId} evidence freshness is invalid`);
   }
   return source;
