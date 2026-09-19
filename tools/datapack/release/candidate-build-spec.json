@@ -79,7 +79,7 @@
       "redistributionAllowed": true,
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-09-08T12:04:20.479Z",
+      "freshnessExpiresAt": "2026-12-31T00:00:00.000Z",
       "rawRetentionExpiresAt": "2026-11-07T12:04:20.479Z",
       "governancePolicyVersion": "2026-07-15",
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",

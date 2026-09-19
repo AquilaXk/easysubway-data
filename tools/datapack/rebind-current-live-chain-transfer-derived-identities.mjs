@@ -166,7 +166,7 @@ export function deriveCurrentOnlyProjection({ snapshot, inventory, governance, g
     schemaFingerprint: snapshot.schemaFingerprint, licenseStatus: snapshot.licenseStatus,
     redistributionAllowed: snapshot.redistributionAllowed, adminReviewRecordHash: source.admissionEvidence.adminReviewRecordHash,
     snapshotStatus: snapshot.snapshotStatus, credentialRedacted: snapshot.credentialRedacted,
-    freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: sourceClass.id,
+    freshnessExpiresAt: snapshot.serviceEffectiveUntil ? new Date(Date.parse(snapshot.serviceEffectiveUntil)).toISOString() : deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: sourceClass.id,
       basisAt: snapshot[sourceClass.basisField], providerValidUntil: sourceClass.providerValidityEndField ? snapshot[sourceClass.providerValidityEndField] : undefined,
       evaluationAt: snapshot.retrievedAt }),
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId: snapshot.sourceId, retrievedAt: snapshot.retrievedAt }),
