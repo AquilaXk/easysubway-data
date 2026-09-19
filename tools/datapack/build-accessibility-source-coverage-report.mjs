@@ -23,7 +23,11 @@ const VIOLATION_KEYS = Object.freeze([
   "placeholder",
   "artifactIdentity",
 ]);
-const ABSENCE_EVIDENCE_MODES = new Set(["EXPLICIT_ZERO", "EXHAUSTIVE_LIST"]);
+const ABSENCE_EVIDENCE_MODES = new Set([
+  "EXPLICIT_ZERO",
+  "EXHAUSTIVE_LIST",
+  "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED",
+]);
 const COVERAGE_REGION_IDS = Object.freeze({
   "수도권": "capital",
   "부산권": "busan",
