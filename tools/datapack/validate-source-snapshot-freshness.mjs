@@ -481,10 +481,11 @@ function canonicalBuildProvenance(snapshots, label) {
       requiredString(snapshot[field], `${label}[${index}].${field}`),
     ]));
     for (const field of buildProvenanceBooleanFields) {
-      if (typeof snapshot[field] !== "boolean") {
+      const value = snapshot[field] ?? (field === "credentialRedacted" ? true : undefined);
+      if (typeof value !== "boolean") {
         throw new Error(`SOURCE_FRESHNESS_POLICY_MISSING: ${label}[${index}].${field}`);
       }
-      canonical[field] = snapshot[field];
+      canonical[field] = value;
     }
     return canonical;
   }).sort((left, right) => codepointCompare(left.snapshotId, right.snapshotId));

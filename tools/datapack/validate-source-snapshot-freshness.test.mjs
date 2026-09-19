@@ -880,3 +880,14 @@ test("build admission schema hash가 actual snapshot evidence와 다르면 fail 
     /source snapshot provenance/,
   );
 });
+
+test("credentialRedacted가 생략된 snapshot도 canonical build provenance에서 true로 허용한다", () => {
+  const value = input();
+  delete value.snapshots[0].credentialRedacted;
+  value.buildSpec.sourceSnapshotSetHash = createHash("sha256")
+    .update(JSON.stringify(value.snapshots))
+    .digest("hex");
+  const result = validateSourceSnapshotFreshness(value);
+  assert.ok(result.snapshotSetHash);
+});
+

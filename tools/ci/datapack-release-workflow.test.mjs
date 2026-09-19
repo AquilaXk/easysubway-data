@@ -930,6 +930,8 @@ test("release build는 source snapshot freshness를 build 전에 fail closed로 
   assert.match(freshnessStep, /--policy "\$\{EASYSUBWAY_DATAPACK_FRESHNESS_POLICY\}"/);
   assert.match(freshnessStep, /--governance-policy tools\/datapack\/source-governance-policy\.json/);
   assert.match(freshnessStep, /--inventory tools\/datapack\/source-inventory\.json/);
+  assert.match(freshnessStep, /steps\.release-mode\.outputs\.is-nationwide != 'true'/);
+  assert.match(yml, /is-nationwide=\$\{is_nationwide\}/);
   assert.match(
     freshnessStep,
     /EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256: \$\{\{ secrets\.EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256 \}\}/,

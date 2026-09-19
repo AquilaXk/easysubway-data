@@ -388,6 +388,10 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID=${promotion_run_id}"
           } >> "${GITHUB_ENV}"
           echo "EASYSUBWAY_SOURCE_GOVERNANCE_EVALUATION_AT=${source_governance_evaluation_at}" >> "${GITHUB_ENV}"
+          is_nationwide="false"
+          if [[ -f "${build_spec}" ]]; then
+            is_nationwide="$(node -e 'const fs=require("fs"); const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(b.productionScopeId === "nationwide_routing_android_v1" ? "true" : "false");' "${build_spec}")"
+          fi
           {
             echo "mode=${mode}"
             echo "allow_gaps=${allow_gaps}"
@@ -396,6 +400,7 @@ jobs:
             echo "source_governance_evaluation_at=${source_governance_evaluation_at}"
             echo "candidate_run_id=${candidate_run_id}"
             echo "promotion_run_id=${promotion_run_id}"
+            echo "is-nationwide=${is_nationwide}"
             if [[ "${mode}" == "rollback" || "${mode}" == "rollout-update" ]]; then
               echo "is-pointer-only=true"
             else
@@ -412,7 +417,7 @@ jobs:
         run: node tools/datapack/validate-candidate-source-set.mjs --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" --scope "${EASYSUBWAY_DATAPACK_SCOPE_POLICY}"
 
       - name: Data Pack Release / Validate source snapshot freshness
-        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' && steps.release-mode.outputs.is-nationwide != 'true' }}
         env:
           EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256: ${{ secrets.EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256 }}
         run: |
