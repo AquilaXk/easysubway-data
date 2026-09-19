@@ -921,6 +921,20 @@ test("expired live admission remains valid while its locked snapshot policy is f
   assert.deepEqual(report.violations.freshness, []);
 });
 
+test("EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED absence evidence mode is admitted for NOT_EXISTS claims", () => {
+  const input = validInput();
+  input.artifacts[0].claims[0].evidenceKind = "NOT_EXISTS";
+  input.inventory.sources[0].accessibilityAdmissionEvidence.absenceEvidenceMode =
+    "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED";
+  input.snapshots[0].absenceEvidenceMode =
+    "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED";
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "GO");
+  assert.deepEqual(report.violations.absenceEvidence, []);
+});
+
 function validInput() {
   const rawSha256 = hash("raw-snapshot");
   const contentSha256 = hash("normalized-snapshot");
