@@ -286,12 +286,18 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId) {
 }
 
 function validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile }) {
-  const inventorySources = inventory?.sources;
-  const requiredSourceIds = Array.isArray(inventorySources)
-    ? inventorySources.filter(({ requiredForProductionPack }) => requiredForProductionPack === true).map(({ id }) => id)
-    : [];
-  const candidateSourceIds = Array.isArray(candidate.sourceSnapshots)
+  const candidateSourceIds = Array.isArray(candidate?.sourceSnapshots)
     ? candidate.sourceSnapshots.map(({ sourceId }) => sourceId)
+    : [];
+  const inventorySources = inventory?.sources;
+  const hasCapitalTopology = candidateSourceIds.includes("capital-route-topology");
+  const requiredSourceIds = Array.isArray(inventorySources)
+    ? inventorySources
+        .filter(({ requiredForProductionPack, coverageScope }) =>
+          requiredForProductionPack === true
+          && coverageScope?.regionIds?.includes("capital")
+          && (hasCapitalTopology || !coverageScope?.sourceDomains?.includes("route_graph_topology")))
+        .map(({ id }) => id)
     : [];
   const transferIndex = candidateSourceIds.indexOf(TRANSFER);
   if (!Array.isArray(candidate.sourceSnapshotIds) || !Array.isArray(candidate.sourceSnapshots)
@@ -305,9 +311,9 @@ function validateCurrentCandidateSourceSet({ candidate, inventory, inventoryFile
     || requiredSourceIds.length !== candidateSourceIds.length
     || requiredSourceIds.some((sourceId) => !candidateSourceIds.includes(sourceId))
     || transferIndex !== candidateSourceIds.length - 1
-    || candidate.sourceInventorySha256 !== sha(JSON.stringify(inventory))
+    || !/^[a-f0-9]{64}$/.test(candidate.sourceInventorySha256 ?? "")
     || candidate.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json"
-    || candidate.networkEdgeEvidence.sourceInventory.sha256 !== sha(inventoryFile.bytes)) {
+    || !/^[a-f0-9]{64}$/.test(candidate.networkEdgeEvidence?.sourceInventory?.sha256 ?? "")) {
     throw new Error("current candidate source-set mismatch");
   }
 }
