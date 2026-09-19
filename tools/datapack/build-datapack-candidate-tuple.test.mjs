@@ -105,6 +105,43 @@ test("build spec은 trusted repo root에서 읽고 stage manifest/provenance/out
   } finally { fixture.cleanup(); }
 });
 
+test("nationwide candidate는 일일 갱신 스냅샷이 있어도 pack manifest SLA 만료시각으로 tuple을 발행한다", () => {
+  const fixture = createFixture();
+  try {
+    fixture.buildSpec.productionScopeId = "nationwide_routing_android_v1";
+    fixture.buildSpec.candidateId = "nationwide-candidate-20260909";
+    fixture.buildSpec.sourceSnapshots.push({
+      snapshotId: "daily-topology-1",
+      sourceId: "gwangju-transportation-route-topology",
+      rawSha256: "b".repeat(64),
+      freshnessExpiresAt: "2026-08-24T12:00:00.000Z",
+    });
+    fixture.buildSpec.sourceSnapshotIds.push("daily-topology-1");
+    fixture.manifest.expiresAt = "2026-09-24T00:00:00.000Z";
+    fixture.manifestBytes = Buffer.from(`${JSON.stringify(fixture.manifest)}\n`);
+    fixture.buildSpecBytes = Buffer.from(`${JSON.stringify(fixture.buildSpec)}\n`);
+    fixture.provenance.manifestSha256 = sha256(fixture.manifestBytes);
+    fixture.provenance.candidateBuild = {
+      candidateId: fixture.buildSpec.candidateId,
+      builderGitSha: fixture.buildSpec.builderGitSha,
+      buildSpecSha256: sha256(fixture.buildSpecBytes),
+      sourceSnapshotIds: fixture.buildSpec.sourceSnapshotIds,
+      sourceSnapshots: fixture.buildSpec.sourceSnapshots,
+    };
+    writeFileSync(fixture.buildSpecPath, fixture.buildSpecBytes);
+    writeFileSync(fixture.manifestPath, fixture.manifestBytes);
+    writeFileSync(fixture.provenancePath, `${JSON.stringify(fixture.provenance)}\n`);
+
+    const result = run(fixture);
+    assert.equal(result.status, 0, result.stderr);
+    const tuple = JSON.parse(readFileSync(fixture.output, "utf8"));
+    assert.equal(tuple.candidateBinding.candidateId, "nationwide-candidate-20260909");
+    assert.equal(tuple.freshnessExpiresAt, "2026-09-24T00:00:00.000Z");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 function createFixture() {
   const root = mkdtempSync(path.join(os.tmpdir(), "datapack-candidate-tuple-"));
   const buildSpecPath = path.join(root, "build-spec.json");
