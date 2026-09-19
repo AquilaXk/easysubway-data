@@ -316,8 +316,9 @@ test("materialized SQLite와 provenance가 부산 accessibility_facilities 4건�
       [...new Set(fieldRecords.flatMap(({ coverageScope }) => coverageScope?.lineIds ?? []))].sort(),
       [...BUSAN_LINE_IDS],
     );
+    const expectedSnapshotId = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence.snapshotId;
     assert.ok(fieldRecords.every((record) => (
-      record.sourceSnapshotId === "busan-transportation-accessibility-20260724"
+      record.sourceSnapshotId === expectedSnapshotId
         && record.evidenceHash === accessibilitySnapshot.rowsSha256
         && /^[a-f0-9]{64}$/.test(record.providerRecordHash)
         && record.derivationKind === "OFFICIAL"
