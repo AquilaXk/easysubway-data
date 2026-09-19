@@ -612,12 +612,17 @@ function evaluateSourceFreshness({ fixed, artifact, evaluationAt }) {
   let validation = null;
   let state = "PASS";
   let reason = "FRESH";
+  const buildSpecPublishedAtMillis = typeof buildSpec.publishedAt === "string" ? Date.parse(buildSpec.publishedAt) : Number.NaN;
+  const evaluationAtMillis = Date.parse(evaluationAt);
+  const freshnessEvaluationAt = Number.isFinite(buildSpecPublishedAtMillis) && buildSpecPublishedAtMillis > evaluationAtMillis
+    ? buildSpec.publishedAt
+    : evaluationAt;
   try {
     validation = validateSourceSnapshotFreshness({
       buildSpec,
       snapshots: fixed.sourceSnapshots.value,
       policy: fixed.freshnessPolicy.value,
-      evaluationAt,
+      evaluationAt: freshnessEvaluationAt,
       governancePolicy: fixed.governancePolicy.value,
       inventory: fixed.sourceInventory.value,
       governancePolicySha256: fixed.governancePolicy.sha256,
@@ -628,7 +633,7 @@ function evaluateSourceFreshness({ fixed, artifact, evaluationAt }) {
     state = "STALE";
     reason = error.message;
   }
-  if (Date.parse(artifact.manifest.freshUntil) <= Date.parse(evaluationAt)) {
+  if (Date.parse(artifact.manifest.freshUntil) <= Date.parse(freshnessEvaluationAt)) {
     state = "STALE";
     reason = "BUNDLE_FRESH_UNTIL_EXPIRED";
   }
@@ -639,7 +644,7 @@ function evaluateSourceFreshness({ fixed, artifact, evaluationAt }) {
       artifactKind: "server-route-bundle-source-freshness",
       bundleId: artifact.manifest.bundleId,
       sourceSnapshotSetHash: buildSpec.sourceSnapshotSetHash,
-      evaluationAt,
+      evaluationAt: freshnessEvaluationAt,
       freshUntil: artifact.manifest.freshUntil,
       state,
       reason,

@@ -530,6 +530,19 @@ test("stale source와 unresolved #8/#9 denominator를 NO_GO gate로 보존한다
   assert.equal(evaluation.stateSummary.MISSING, 1);
 });
 
+test("evidence observation time이 candidate publishedAt보다 이전일 때 candidate publishedAt 기준으로 source freshness를 평가한다", async (t) => {
+  const fixture = await createFixture(t);
+  const output = path.join(fixture.temp, "published-at-freshness");
+  await build(fixture, output, FRESH_AT);
+  const final = await readJson(path.join(output, "server-route-bundle-final.json"));
+  assert.equal(final.gates.sourceFreshness.state, "PASS");
+  const freshness = await readJson(path.join(output, "source-freshness.json"));
+  assert.equal(freshness.state, "PASS");
+  if (Date.parse(fixture.buildSpec.publishedAt) > Date.parse(FRESH_AT)) {
+    assert.equal(freshness.evaluationAt, fixture.buildSpec.publishedAt);
+  }
+});
+
 test("artifact와 candidate identity mismatch는 output 전에 fail closed한다", async (t) => {
   for (const [name, mutate, pattern] of [
     ["component-digest", async (fixture) => {
