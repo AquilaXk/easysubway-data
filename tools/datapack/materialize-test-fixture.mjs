@@ -863,6 +863,10 @@ export function projectHistoricalRegionalMaterializeInventory(input) {
     }
   }
   Object.assign(rawSources[0].admissionEvidence, HISTORICAL_MOLIT_ADMISSION);
+  if (rawSources[0].membershipCoverageEvidence) {
+    rawSources[0].membershipCoverageEvidence.snapshotId = HISTORICAL_MOLIT_ADMISSION.snapshotId;
+    rawSources[0].membershipCoverageEvidence.rawSha256 = HISTORICAL_MOLIT_ADMISSION.rawSha256;
+  }
   return inventory;
 }
 

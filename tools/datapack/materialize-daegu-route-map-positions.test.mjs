@@ -73,10 +73,19 @@ async function inputs() {
     lineId: config.lineId,
   }));
   daeguAccessibility.topologyLineages = topologyLineages;
-  Object.assign(inventory.sources.find(({ id }) => id === "daegu-transportation-accessibility").accessibilityAdmissionEvidence, {
-    topologyLineages, topologySnapshotId: daeguAccessibilityTopologyLineageIdentity(topologyLineages),
+  const daeguAccessibilitySourceId = "daegu-transportation-accessibility";
+  const daeguAccessibilityAdmission = inventory.sources.find(({ id }) => id === daeguAccessibilitySourceId).accessibilityAdmissionEvidence;
+  Object.assign(daeguAccessibilityAdmission, {
+    snapshotId: `${daeguAccessibilitySourceId}-${createHash("sha256").update(JSON.stringify(daeguAccessibility)).digest("hex")}-${compactSeoulDate(daeguAccessibility.capturedAt)}`,
+    capturedAt: daeguAccessibility.capturedAt,
+    freshUntil: daeguAccessibility.freshUntil,
+    rawSha256: daeguAccessibility.rawSha256,
+    rowsSha256: daeguAccessibility.rowsSha256,
+    topologyLineages,
+    topologySnapshotId: daeguAccessibilityTopologyLineageIdentity(topologyLineages),
     topologyContentSha256: createHash("sha256").update(JSON.stringify(topologyLineages)).digest("hex"),
   });
+  daeguAccessibilityAdmission.snapshotPath = `tools/datapack/sources/${daeguAccessibilityAdmission.snapshotId}.json`;
   const routeMap = JSON.parse(daeguSnapshotBytes);
   routeMap.topologyLineages = topologyLineages;
   const routeMapBytes = Buffer.from(JSON.stringify(routeMap));
@@ -251,4 +260,11 @@ test("materialized SQLite와 provenance가 대구 1·2·3호선 route_map_positi
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }

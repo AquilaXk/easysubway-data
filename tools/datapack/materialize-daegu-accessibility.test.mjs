@@ -283,6 +283,7 @@ test("materialized SQLite와 provenance가 대구 accessibility_facilities 3건�
   const facilityRecords = provenance.packs.flatMap(({ records }) => records).filter(
     ({ sourceId, entityType }) => sourceId === SOURCE_ID && entityType === "facility",
   );
+  const expectedSnapshotId = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence.snapshotId;
   for (const field of ACCESSIBILITY_FIELDS) {
     const fieldRecords = facilityRecords.filter((record) => record.field === field);
     assert.ok(fieldRecords.length > 0, `provenance missing field: ${field}`);
@@ -291,7 +292,7 @@ test("materialized SQLite와 provenance가 대구 accessibility_facilities 3건�
       [...LINE_IDS].sort(),
     );
     assert.ok(fieldRecords.every((record) => (
-      record.sourceSnapshotId === "daegu-transportation-accessibility-20260724"
+      record.sourceSnapshotId === expectedSnapshotId
         && record.evidenceHash === accessibilitySnapshot.rowsSha256
         && /^[a-f0-9]{64}$/.test(record.providerRecordHash)
         && record.derivationKind === "OFFICIAL"
