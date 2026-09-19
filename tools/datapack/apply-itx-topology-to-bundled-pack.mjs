@@ -190,6 +190,7 @@ async function admittedSource(contractPath, {
   verificationMode: requestedVerificationMode = CURRENT_VERIFICATION_MODE,
   buildNow,
   currentAdmissionPath = null,
+  requireFresh = true,
 } = {}) {
   const mode = verificationMode(requestedVerificationMode);
   if (mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE && currentAdmissionPath != null) {
@@ -217,7 +218,7 @@ async function admittedSource(contractPath, {
     sha256(completenessBytes),
     mode === IMMUTABLE_INTEGRITY_VERIFICATION_MODE
       ? { verificationMode: mode }
-      : { verificationMode: mode, buildNow, currentAdmission },
+      : { verificationMode: mode, buildNow, currentAdmission, requireFresh },
   );
   return { contract, reference, source, sourceBytes, currentAdmission, currentProjection };
 }
@@ -322,9 +323,10 @@ export function validateAdmittedSourceDocuments(
     || completenessSha256 !== reference.completenessEvidenceSha256) {
     throw new Error("ITX topology source bytes do not match the coverage contract");
   }
+  const requireFresh = options.requireFresh ?? true;
   const freshUntilMillis = Date.parse(reference.freshUntil);
   if (!Number.isFinite(freshUntilMillis)
-    || (mode === CURRENT_VERIFICATION_MODE
+    || (mode === CURRENT_VERIFICATION_MODE && requireFresh
       && (!(buildNow instanceof Date) || Number.isNaN(buildNow.getTime())
         || (currentAdmission == null && freshUntilMillis <= buildNow.getTime())))) {
     throw new Error("ITX topology source artifact is expired");
@@ -1126,12 +1128,17 @@ async function main() {
       throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
     }
   }
+  const isCandidateRelease = process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "release-candidate"
+    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "candidate-create";
+  const requireFreshOption = option("--require-fresh", null);
+  const requireFresh = requireFreshOption != null ? requireFreshOption === "true" : !isCandidateRelease;
   const { contract, reference, source, sourceBytes, currentAdmission, currentProjection } =
     await admittedSource(contractPath, {
       verificationMode: immutableIntegrity
         ? IMMUTABLE_INTEGRITY_VERIFICATION_MODE
         : CURRENT_VERIFICATION_MODE,
       currentAdmissionPath,
+      requireFresh,
     });
   const topologySource = await admittedTopologySource(reference, source, currentAdmission);
   const topology = deriveTopology(source);

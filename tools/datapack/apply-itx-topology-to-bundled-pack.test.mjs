@@ -730,6 +730,15 @@ test("immutable integrity는 만료된 동일 identity를 검증하고 current r
     completenessSha256,
     { verificationMode: "current", buildNow: new Date(documents.reference.freshUntil) },
   ), /source artifact is expired/);
+  assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+    documents.contract,
+    documents.reference,
+    documents.source,
+    documents.completeness,
+    sourceSha256,
+    completenessSha256,
+    { verificationMode: "current", buildNow: new Date(documents.reference.freshUntil), requireFresh: false },
+  ));
 
   const tamperedSource = structuredClone(documents.source);
   tamperedSource.stationCatalogPackIdentity.payloadSha256 = "0".repeat(64);
