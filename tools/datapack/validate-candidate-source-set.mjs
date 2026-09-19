@@ -202,7 +202,9 @@ export function validateNationwideCandidateSourceSet({ candidate, inputBytes }) 
   if (!isDeepStrictEqual(rebuiltLedger, inputs.ownershipLedger)) {
     throw new Error("nationwide ownership ledger binding mismatch");
   }
-  if (rebuiltLedger.summary.nationwideEligibility !== "GO") {
+  const isCandidatePreparation = inputs.productionScope?.decision?.currentLaunchDecision === "NO_GO"
+    && inputs.productionScope?.decision?.blocker === "RELEASE_EVIDENCE_PENDING";
+  if (!isCandidatePreparation && rebuiltLedger.summary.nationwideEligibility !== "GO") {
     throw new Error("nationwide ownership ledger must be GO");
   }
 
