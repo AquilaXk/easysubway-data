@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 
 import { buildNationwideCoverageTally, LEDGER_PATH } from "./build-nationwide-coverage-tally.mjs";
+import { inventoryCoverageFields, inventoryCoverageScope } from "./report-coverage-gaps.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -188,12 +189,12 @@ function expectedLaunchRequirements({ targets, inventory, resolutions }) {
     const resolution = resolutions.entries.find((entry) =>
       [entry.regionId, entry.operatorId, entry.lineId, entry.sourceDomain].join(":") === pk);
     const covered = (ignoreOperator) => domain.requiredFields.filter((field) => sources.some((source) => {
-      const coverage = source.coverageScope;
+      const coverage = inventoryCoverageScope(source);
       return coverage.regionIds.includes(scope.regionId)
         && (ignoreOperator || coverage.operatorIds.includes(scope.operatorId))
         && (coverage.lineIds ?? []).includes(scope.lineId)
         && coverage.sourceDomains.includes(domain.id)
-        && (source.fieldsProvided ?? source.fields).includes(field);
+        && inventoryCoverageFields(source).includes(field);
     })).length;
     const meetsThreshold = (count) => Number((count / domain.requiredFields.length).toFixed(4))
       >= (domain.blockingThreshold?.minimumOfficialFieldCoverageRatio ?? 1);
@@ -329,15 +330,14 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
     assert.equal(ledger.enhancement.earliestResolutionNextReviewAt, null);
     assert.equal(ledger.enhancement.requirements.length, 45);
 
-    // 서울 1~8호선은 v2 admission 전 inventory tally에서도 MISSING이다. historical diagnostic 행은
-    // line scope를 claim하지 않으며, 이 상태를 candidate gate와 같은 방향으로 고정한다.
+    // 서울 1~8호선은 v2 layout admission이 ADMITTED이므로 inventory tally에서 INVENTORY_ADMITTED다.
     const pilot = ledger.launchRequired.requirements.find((entry) =>
       entry.regionId === "capital"
       && entry.operatorId === "seoul-metro"
       && entry.lineId === "seoul-4"
       && entry.sourceDomain === "route_map_positions");
-    assert.equal(pilot.status, "MISSING");
-    assert.deepEqual(pilot.admittedSourceIds, []);
+    assert.equal(pilot.status, "INVENTORY_ADMITTED");
+    assert.deepEqual(pilot.admittedSourceIds, ["seoul-metro-route-map-positions"]);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
