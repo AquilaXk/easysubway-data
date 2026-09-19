@@ -127,14 +127,33 @@
   "productionSourceSet": {
     "sourceInventory": "tools/datapack/source-inventory.json",
     "requiredSourceIds": [
+      "busan-transportation-accessibility",
+      "busan-transportation-route-topology",
+      "busan-transportation-timetable",
+      "capital-route-topology",
+      "daegu-line1-route-topology",
+      "daegu-line1-train-timetable",
+      "daegu-line2-route-topology",
+      "daegu-line2-train-timetable",
+      "daegu-line3-route-topology",
+      "daegu-line3-train-timetable",
+      "daegu-transportation-accessibility",
+      "daejeon-station-distance-fare",
+      "daejeon-train-timetable",
+      "daejeon-transportation-accessibility",
+      "gwangju-transportation-accessibility",
+      "gwangju-transportation-route-topology",
       "incheon-transit-accessibility",
-      "molit-urban-rail-full-route",
-      "seoulmetro-station-line-info",
-      "seoul-metro-accessibility",
-      "seoul-metro-route-map-positions",
+      "korail-metropolitan-planned-timetable",
+      "korail-metropolitan-timetable-file",
+      "kric-nationwide-timetable-file",
       "kric-station-convenience-standard",
       "kric-subway-timetable",
-      "seoul-metro-transfer-distance-duration"
+      "molit-urban-rail-full-route",
+      "seoul-metro-accessibility",
+      "seoul-metro-route-map-positions",
+      "seoul-metro-transfer-distance-duration",
+      "seoulmetro-station-line-info"
     ],
     "externalSourceRegistrations": [
       {
