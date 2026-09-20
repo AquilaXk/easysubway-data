@@ -19561,3 +19561,70 @@ test("데이터팩 생성기는 station_lines에 없는 station_car_door_hints F
     /FOREIGN KEY constraint failed/,
   );
 });
+
+test("release gate admits gap recording in candidate preparation state (NO_GO + RELEASE_EVIDENCE_PENDING)", async () => {
+  const tempWorkspace = await mkdtemp(path.join(tmpdir(), "cand-prep-gap-"));
+  try {
+    const rawTargetConfig = await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8");
+    const testInv = completeCoverageInventory(JSON.parse(rawTargetConfig));
+    const testProv = completeCoverageProvenance(testInv);
+
+    const daejeonSrc = testInv.sources.find(
+      (s) => s.coverageScope.operatorIds?.includes("daejeon-transportation") && s.coverageScope.lineIds?.includes("line-7051a9c2525c"),
+    );
+    if (daejeonSrc) delete daejeonSrc.coverageScope.lineIds;
+
+    const testFiles = {
+      inventory: path.join(tempWorkspace, "source-inv.json"),
+      provenance: path.join(tempWorkspace, "current.provenance.json"),
+      manifest: path.join(tempWorkspace, "current.json"),
+      outputReport: path.join(tempWorkspace, "gap-out.json"),
+      scopeJson: path.join(tempWorkspace, "rel-scope.json"),
+    };
+
+    await writeFile(testFiles.inventory, JSON.stringify(testInv));
+    await writeCoverageCandidate(tempWorkspace, testProv);
+
+    const runGate = async (launchDecision, blocker) => {
+      const scopeBody = {
+        decision: { currentLaunchDecision: launchDecision, ...(blocker ? { blocker } : {}) },
+        verifiedAccessibilityScope: {
+          id: "daejeon_pilot_candidate_scope",
+          regionIds: ["daejeon"],
+          includedOperatorIds: ["daejeon-transportation"],
+          includedLineIds: ["line-7051a9c2525c"],
+        },
+      };
+      await writeFile(testFiles.scopeJson, JSON.stringify(scopeBody));
+      return execFileAsync(process.execPath, [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--output", testFiles.outputReport,
+        "--release-scope", testFiles.scopeJson,
+        "--inventory", testFiles.inventory,
+        "--provenance", testFiles.provenance,
+        "--manifest", testFiles.manifest,
+        "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      ], { cwd: root });
+    };
+
+    // Candidate preparation permits gap recording without gate failure
+    await runGate("NO_GO", "RELEASE_EVIDENCE_PENDING");
+    const generatedReport = JSON.parse(await readFile(testFiles.outputReport, "utf8"));
+    assert.equal(generatedReport.summary.releaseScope.candidatePreparation, true);
+    assert.equal(generatedReport.summary.releaseScope.coverageComplete, false);
+    assert.ok(generatedReport.summary.releaseScope.missingRequirements > 0);
+
+    // GO decision must strictly fail closed
+    let launchError = null;
+    try {
+      await runGate("GO");
+    } catch (error) {
+      launchError = error;
+    }
+    assert.match(launchError?.message ?? "", /in-scope coverage gaps remain: \d+ missing requirements/);
+  } finally {
+    await rm(tempWorkspace, { recursive: true, force: true });
+  }
+});
+

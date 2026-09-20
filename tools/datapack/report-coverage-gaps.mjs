@@ -100,7 +100,8 @@ async function main() {
           `operatorIds: ${report.summary.releaseScope.operatorIds.join(",") || "-"})`,
       );
     }
-    if (!args.allowGaps && report.summary.releaseScope.missingRequirements > 0) {
+    const isCandidatePreparation = isCandidatePreparationScope(releaseScope);
+    if (!isCandidatePreparation && !args.allowGaps && report.summary.releaseScope.missingRequirements > 0) {
       throw new Error(
         `in-scope coverage gaps remain: ${report.summary.releaseScope.missingRequirements} missing requirements ` +
           `(nationwide gaps recorded: ${report.summary.missingRequirements})`,
@@ -170,54 +171,74 @@ function buildCoverageGapReport(
   };
 
   if (releaseScope) {
-    const scopeFilter = resolveReleaseScope(releaseScope);
-    // 게시 범위 gap은 pilot targets(capital-pilot-coverage-targets.json)의 domain/field 계약으로 별도 평가한다.
-    // pilot 계약은 전국 계약보다 좁다(예: accessibility_facilities에서 status 필드 제외, route_graph 등 deferred domain 제외).
-    const pilotTargets = releaseScopeTargets ?? targets;
-    validateTargets(pilotTargets);
-    const releaseScopes = releaseCoverageScopes(targets, pilotTargets, scopeFilter);
-    if (targets.schemaVersion === 2 && releaseScopes.length > 0) {
-      validateReleaseScopeParticipation(scopeFilter, releaseScopes);
-    }
-    const scopeRequirements = evaluateRequirements(pilotTargets, sources, provenanceIndex, {
-      scopes: releaseScopes,
-      includeLineId: true,
-      strictLineScope: pilotTargets.schemaVersion === 2,
+    applyReleaseScopeToReport({
+      report,
+      releaseScope,
+      releaseScopeTargets,
+      targets,
+      sources,
+      provenanceIndex,
+      placeholderSourceIds,
     });
-    assertNoPlaceholderSupport(scopeRequirements, placeholderSourceIds, "release scope");
-    for (const entry of scopeRequirements) {
-      entry.inReleaseScope = true;
-    }
-    const blockingScopeRequirements = pilotTargets.schemaVersion === 2
-      ? scopeRequirements.filter((entry) => entry.releaseTier === "LAUNCH_REQUIRED")
-      : scopeRequirements;
-    const inScopeCovered = blockingScopeRequirements.filter(
-      (entry) => entry.status === "covered" || entry.status === "SUPPORTED",
-    ).length;
-    const inScopeTotal = blockingScopeRequirements.length;
-    const inScopeMissing = inScopeTotal - inScopeCovered;
-    // 전국 gap은 은폐 금지 — nationwide/in-scope 수치를 분리 기록한다. 게시 차단은 releaseScope.missingRequirements만 본다.
-    summary.nationwide = {
-      totalRequirements: summary.totalRequirements,
-      coveredRequirements: summary.coveredRequirements,
-      missingRequirements: summary.missingRequirements,
-    };
-    summary.releaseScope = {
-      scopeId: scopeFilter.scopeId,
-      targetVersion: pilotTargets.targetVersion,
-      regionIds: [...scopeFilter.regionIds].sort(compareStrings),
-      operatorIds: [...scopeFilter.operatorIds].sort(compareStrings),
-      sourceDomains: [...new Set(blockingScopeRequirements.map((entry) => entry.sourceDomain))].sort(compareStrings),
-      totalRequirements: inScopeTotal,
-      coveredRequirements: inScopeCovered,
-      missingRequirements: inScopeMissing,
-      coverageRatio: inScopeTotal === 0 ? 0 : Number((inScopeCovered / inScopeTotal).toFixed(4)),
-      coverageComplete: inScopeMissing === 0,
-    };
-    report.releaseScopeRequirements = scopeRequirements;
   }
 
   return report;
+}
+
+function applyReleaseScopeToReport({
+  report,
+  releaseScope,
+  releaseScopeTargets,
+  targets,
+  sources,
+  provenanceIndex,
+  placeholderSourceIds,
+}) {
+  const scopeFilter = resolveReleaseScope(releaseScope);
+  const pilotTargets = releaseScopeTargets ?? targets;
+  validateTargets(pilotTargets);
+  const releaseScopes = releaseCoverageScopes(targets, pilotTargets, scopeFilter);
+  if (targets.schemaVersion === 2 && releaseScopes.length > 0) {
+    validateReleaseScopeParticipation(scopeFilter, releaseScopes);
+  }
+  const scopeRequirements = evaluateRequirements(pilotTargets, sources, provenanceIndex, {
+    scopes: releaseScopes,
+    includeLineId: true,
+    strictLineScope: pilotTargets.schemaVersion === 2,
+  });
+  assertNoPlaceholderSupport(scopeRequirements, placeholderSourceIds, "release scope");
+  for (const entry of scopeRequirements) {
+    entry.inReleaseScope = true;
+  }
+  const blockingScopeRequirements = pilotTargets.schemaVersion === 2
+    ? scopeRequirements.filter((entry) => entry.releaseTier === "LAUNCH_REQUIRED")
+    : scopeRequirements;
+  const inScopeCovered = blockingScopeRequirements.filter(
+    (entry) => entry.status === "covered" || entry.status === "SUPPORTED",
+  ).length;
+  const inScopeTotal = blockingScopeRequirements.length;
+  const inScopeMissing = inScopeTotal - inScopeCovered;
+
+  const summary = report.summary;
+  summary.nationwide = {
+    totalRequirements: summary.totalRequirements,
+    coveredRequirements: summary.coveredRequirements,
+    missingRequirements: summary.missingRequirements,
+  };
+  summary.releaseScope = {
+    scopeId: scopeFilter.scopeId,
+    targetVersion: pilotTargets.targetVersion,
+    regionIds: [...scopeFilter.regionIds].sort(compareStrings),
+    operatorIds: [...scopeFilter.operatorIds].sort(compareStrings),
+    sourceDomains: [...new Set(blockingScopeRequirements.map((entry) => entry.sourceDomain))].sort(compareStrings),
+    totalRequirements: inScopeTotal,
+    coveredRequirements: inScopeCovered,
+    missingRequirements: inScopeMissing,
+    coverageRatio: inScopeTotal === 0 ? 0 : Number((inScopeCovered / inScopeTotal).toFixed(4)),
+    coverageComplete: inScopeMissing === 0,
+    ...(isCandidatePreparationScope(releaseScope) ? { candidatePreparation: true } : {}),
+  };
+  report.releaseScopeRequirements = scopeRequirements;
 }
 
 function buildLegacySummary(requirements) {
@@ -646,6 +667,11 @@ function resolveReleaseScope(releaseScope) {
     operatorIds: new Set(operatorIds),
     lineIds: new Set(lineIds),
   };
+}
+
+export function isCandidatePreparationScope(releaseScope) {
+  return releaseScope?.decision?.currentLaunchDecision === "NO_GO"
+    && releaseScope?.decision?.blocker === "RELEASE_EVIDENCE_PENDING";
 }
 
 // domain 증거 모델 선언 검사. 값은 열거형 allowlist로 고정하고 한국어 사유를 함께 요구한다 —
