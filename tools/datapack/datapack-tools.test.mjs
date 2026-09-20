@@ -10663,7 +10663,7 @@ test("release gate는 candidate preparation 상태(NO_GO + RELEASE_EVIDENCE_PEND
   const testCandidate = completeCoverageProvenance(testInventory);
 
   const targetSrc = testInventory.sources.find(
-    (s) => s.coverageScope.operatorIds?.includes("seoul-metro") && s.coverageScope.lineIds?.includes("seoul-4"),
+    (s) => s.coverageScope.operatorIds?.includes("daejeon-transportation") && s.coverageScope.lineIds?.includes("line-7051a9c2525c"),
   );
   if (targetSrc) delete targetSrc.coverageScope.lineIds;
 
@@ -10682,22 +10682,22 @@ test("release gate는 candidate preparation 상태(NO_GO + RELEASE_EVIDENCE_PEND
     const scopePayload = {
       decision: { currentLaunchDecision: launchDecision, ...(blocker ? { blocker } : {}) },
       verifiedAccessibilityScope: {
-        id: "capital_pilot_android_v1",
-        regionIds: ["capital"],
-        includedOperatorIds: ["seoul-metro"],
-        includedLineIds: ["seoul-4"],
+        id: "daejeon_pilot_candidate_scope",
+        regionIds: ["daejeon"],
+        includedOperatorIds: ["daejeon-transportation"],
+        includedLineIds: ["line-7051a9c2525c"],
       },
     };
     await writeFile(files.scope, JSON.stringify(scopePayload));
     return execFileAsync(process.execPath, [
       "tools/datapack/report-coverage-gaps.mjs",
-      "--targets", "tools/datapack/nationwide-coverage-targets.json",
-      "--inventory", files.inv,
-      "--manifest", files.man,
-      "--provenance", files.prov,
-      "--release-scope", files.scope,
-      "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
       "--output", files.rep,
+      "--release-scope", files.scope,
+      "--inventory", files.inv,
+      "--provenance", files.prov,
+      "--manifest", files.man,
+      "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
     ], { cwd: root });
   };
 
