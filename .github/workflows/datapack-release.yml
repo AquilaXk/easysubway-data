@@ -1468,7 +1468,7 @@ jobs:
             --require-production \
             --server-route-coverage-evidence "${EASYSUBWAY_DATAPACK_STAGE}/server-route-coverage-authority.json" \
             --server-route-coverage-provenance "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json" \
-            --max-public-catalog-user-version 14
+            --max-public-catalog-user-version 19
           node tools/datapack/publish-object-storage.mjs \
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
