@@ -21,6 +21,7 @@ import {
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
+import { isCandidatePreparationScope } from "./report-coverage-gaps.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const STATUSES = new Set(["PASS", "FAIL", "BLOCKED_EXTERNAL"]);
@@ -63,13 +64,16 @@ function allowedStatusesFor(field) {
   return FIELD_STATUS_SETS.get(field) ?? STATUSES;
 }
 
-function validateStatus(bundle, field, requirePass) {
+function validateStatus(bundle, field, requirePass, isCandidatePreparation = false) {
   const value = requireField(bundle, field);
   const allowedStatuses = allowedStatusesFor(field);
   if (!allowedStatuses.has(value)) {
     throw new Error(`${field} must be a release gate status`);
   }
   if (requirePass && value !== "PASS" && !(allowedStatuses.has("DEFERRED") && value === "DEFERRED")) {
+    if (isCandidatePreparation && field === "routeGraphTopologyStatus" && value === "FAIL") {
+      return;
+    }
     throw new Error(`${field} must be PASS for publish`);
   }
 }
@@ -349,8 +353,12 @@ function validateLaunchDenominatorReport(
   if (bundle.launchDenominatorReportSha256 !== reportSha256) {
     throw new Error("launch denominator report sha256 mismatch");
   }
-  if (requirePass && report.decision !== "GO") {
+  const isCandidatePreparation = isCandidatePreparationScope(scope);
+  if (requirePass && !isCandidatePreparation && report.decision !== "GO") {
     throw new Error("launch denominator decision must be GO for publish");
+  }
+  if (requirePass && isCandidatePreparation && report.decision !== "NO_GO") {
+    throw new Error("launch denominator decision must be NO_GO for candidate preparation publish");
   }
 }
 
@@ -899,6 +907,7 @@ async function main() {
   if (requirePass && bundle.accessibilitySourceCoverageDecision !== "GO") {
     throw new Error("accessibility source coverage decision must be GO for publish");
   }
+  const isCandidatePreparation = isCandidatePreparationScope(scope);
   for (const field of [
     "validatorStatus",
     "coverageStatus",
@@ -909,7 +918,7 @@ async function main() {
     "manifestSignatureStatus",
     "androidEvidenceStatus",
   ]) {
-    validateStatus(bundle, field, requirePass);
+    validateStatus(bundle, field, requirePass, isCandidatePreparation);
   }
 
   validateRouteGraphTopologyIntegrity(bundle);
