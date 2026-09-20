@@ -1149,7 +1149,7 @@ async function createReleaseEvidence(fixture, prePublicationFinal) {
     artifactKind: "datapack-candidate-inventory",
     entries: [
       { path: "map-pack/manifest.json", sizeBytes: 1, sha256: "a".repeat(64) },
-      ...objects.filter((entry) => entry.path !== "manifest.json").map((entry) => ({
+      ...objects.map((entry) => ({
         path: `server-route-bundle/${entry.path}`,
         sizeBytes: entry.sizeBytes,
         sha256: entry.sha256,
