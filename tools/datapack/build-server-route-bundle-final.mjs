@@ -329,7 +329,10 @@ function assertPromotionCandidate(final, component, inventory, receipt) {
     || component.provenance.sourceSnapshotSetHash !== final.candidate.sourceSnapshotSetHash) {
     throw new Error("promotion candidate identity mismatch");
   }
-  const actual = inventory.entries.filter((entry) => entry.path.startsWith("server-route-bundle/"));
+  const actual = inventory.entries.filter((entry) => (
+    entry.path.startsWith("server-route-bundle/")
+    && entry.path !== "server-route-bundle/manifest.json"
+  ));
   const expected = receipt.objects
     .filter((entry) => entry.path !== "manifest.json")
     .map((entry) => ({
