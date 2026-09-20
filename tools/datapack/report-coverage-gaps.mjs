@@ -100,7 +100,8 @@ async function main() {
           `operatorIds: ${report.summary.releaseScope.operatorIds.join(",") || "-"})`,
       );
     }
-    if (!args.allowGaps && report.summary.releaseScope.missingRequirements > 0) {
+    const isCandidatePreparation = isCandidatePreparationScope(releaseScope);
+    if (!isCandidatePreparation && !args.allowGaps && report.summary.releaseScope.missingRequirements > 0) {
       throw new Error(
         `in-scope coverage gaps remain: ${report.summary.releaseScope.missingRequirements} missing requirements ` +
           `(nationwide gaps recorded: ${report.summary.missingRequirements})`,
@@ -213,6 +214,7 @@ function buildCoverageGapReport(
       missingRequirements: inScopeMissing,
       coverageRatio: inScopeTotal === 0 ? 0 : Number((inScopeCovered / inScopeTotal).toFixed(4)),
       coverageComplete: inScopeMissing === 0,
+      ...(isCandidatePreparationScope(releaseScope) ? { candidatePreparation: true } : {}),
     };
     report.releaseScopeRequirements = scopeRequirements;
   }
@@ -646,6 +648,11 @@ function resolveReleaseScope(releaseScope) {
     operatorIds: new Set(operatorIds),
     lineIds: new Set(lineIds),
   };
+}
+
+export function isCandidatePreparationScope(releaseScope) {
+  return releaseScope?.decision?.currentLaunchDecision === "NO_GO"
+    && releaseScope?.decision?.blocker === "RELEASE_EVIDENCE_PENDING";
 }
 
 // domain 증거 모델 선언 검사. 값은 열거형 allowlist로 고정하고 한국어 사유를 함께 요구한다 —
