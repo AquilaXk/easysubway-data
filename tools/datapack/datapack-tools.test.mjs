@@ -1246,6 +1246,38 @@ test("데이터팩 검증기는 공개 채널 user_version 상한을 넘는 pack
   );
 });
 
+test("데이터팩 검증기는 공개 채널 user_version 19 상한을 만족하는 pack을 승인한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-public-user-version-19-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+      "--max-public-catalog-user-version",
+      "19",
+    ],
+    { cwd: root, env: productionEnv },
+  );
+});
+
 test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 검증을 통과한다", async () => {
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
   const outputDir = path.join(tmpdir(), `easysubway-datapack-feed-info-${Date.now()}`);
