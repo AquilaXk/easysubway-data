@@ -248,12 +248,13 @@ export async function validateCurrentItxTopologyEvidencePack({
       }],
     }, repositoryRoot);
     const topologyEvidence = validation?.evidence;
-    if (pack?.id !== topologyEvidence?.pack?.id
-      || sha256(compressed) !== topologyEvidence.pack.outputSha256
-      || sha256(sqliteBytes) !== topologyEvidence.pack.outputSqliteSha256
-      || compressed.byteLength !== topologyEvidence.pack.byteSize) {
-      throw new Error("ITX topology evidence pack identity mismatch");
-    }
+    assertItxTopologyEvidencePackIdentity(
+      pack,
+      topologyEvidence,
+      compressed,
+      sqliteBytes,
+      buildSpec,
+    );
     if (itxEdges.length !== topologyEvidence.topology.edgeCount
       || itxEdges.some((edge) => String(edge.service_pattern).toUpperCase() !== "EXPRESS")) {
       throw new Error("ITX topology evidence service layer mismatch");
@@ -261,6 +262,32 @@ export async function validateCurrentItxTopologyEvidencePack({
     return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(canonicalItxEdges) };
   } finally {
     database.close();
+  }
+}
+
+function isCandidateBuildSpec(buildSpec) {
+  return buildSpec?.artifactKind === "datapack-candidate-build-spec"
+    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "release-candidate"
+    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "candidate-create";
+}
+
+function assertItxTopologyEvidencePackIdentity(
+  pack,
+  topologyEvidence,
+  compressed,
+  sqliteBytes,
+  buildSpec,
+) {
+  if (pack?.id !== topologyEvidence?.pack?.id) {
+    throw new Error("ITX topology evidence pack identity mismatch");
+  }
+  if (isCandidateBuildSpec(buildSpec)) {
+    return;
+  }
+  if (sha256(compressed) !== topologyEvidence.pack.outputSha256
+    || sha256(sqliteBytes) !== topologyEvidence.pack.outputSqliteSha256
+    || compressed.byteLength !== topologyEvidence.pack.byteSize) {
+    throw new Error("ITX topology evidence pack identity mismatch");
   }
 }
 

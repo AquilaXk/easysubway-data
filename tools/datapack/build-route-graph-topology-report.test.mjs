@@ -507,6 +507,137 @@ test("route graph topology report CLI writes artifact json", async () => {
   assert.equal(report.summary.unreachableDirectedPairCount, 0);
 });
 
+test("route graph topology report는 candidate build spec의 advancing pack bytes를 허용한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "route-graph-candidate-admitted-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
+  const mobilePackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+  const mobileSqliteBytes = gunzipSync(mobilePackBytes);
+  await writeFile(sqlitePath, mobileSqliteBytes);
+
+  const binding = await validateCurrentItxTopologyEvidencePack({
+    compressed: mobilePackBytes,
+    sqliteBytes: mobileSqliteBytes,
+    sqlitePath,
+    pack: { id: "capital", version: "1" },
+    buildSpec: candidate,
+    repositoryRoot: root,
+  });
+
+  assert.equal(typeof binding.admittedItxEdgeSetSha256, "string");
+  const report = buildRouteGraphTopologyReport(sqlitePath, {
+    id: "capital",
+    version: "1",
+    artifactKind: "production",
+  }, binding);
+  assert.equal(report.itxServiceLayerSegmentCount, 64);
+});
+
+test("route graph topology report는 candidate build spec이어도 pack id mismatch를 fail-closed한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "route-graph-candidate-pack-id-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "busan.sqlite");
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
+  const mobilePackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+  const mobileSqliteBytes = gunzipSync(mobilePackBytes);
+  await writeFile(sqlitePath, mobileSqliteBytes);
+
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed: mobilePackBytes,
+      sqliteBytes: mobileSqliteBytes,
+      sqlitePath,
+      pack: { id: "busan", version: "1" },
+      buildSpec: candidate,
+      repositoryRoot: root,
+    }),
+    /ITX topology evidence pack identity mismatch/,
+  );
+});
+
+test("route graph topology report는 non-candidate build spec의 pack byte 변조를 fail-closed한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "route-graph-non-candidate-bytes-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
+  const nonCandidateSpec = { ...candidate, artifactKind: "production" };
+  const mobilePackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+  const mobileSqliteBytes = gunzipSync(mobilePackBytes);
+  await writeFile(sqlitePath, mobileSqliteBytes);
+
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed: mobilePackBytes,
+      sqliteBytes: mobileSqliteBytes,
+      sqlitePath,
+      pack: { id: "capital", version: "1" },
+      buildSpec: nonCandidateSpec,
+      repositoryRoot: root,
+    }),
+    /ITX topology evidence pack identity mismatch/,
+  );
+});
+
+test("route graph topology report는 candidate build spec이어도 ITX service pattern 변조를 fail-closed한다", async (context) => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [["station-a", "line-k2", 1], ["station-b", "line-k2", 2]],
+    edges: [["edge-a-b-itx", "station-a:line-k2:LOCAL", "station-b:line-k2:LOCAL", "RIDE", "LOCAL", 300, 6000, "ITX_CHEONGCHUN"]],
+  });
+  context.after(() => rm(sqlitePath, { force: true }));
+  const sqliteBytes = await readFile(sqlitePath);
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
+
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed: gzipSync(sqliteBytes),
+      sqliteBytes,
+      sqlitePath,
+      pack: { id: "capital", version: "1" },
+      buildSpec: candidate,
+      repositoryRoot: root,
+    }),
+    /ITX topology evidence service layer mismatch/,
+  );
+});
+
+test("route graph topology report는 candidate build spec이어도 ITX edge count drift를 fail-closed한다", async (context) => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [["station-a", "line-k2", 1], ["station-b", "line-k2", 2]],
+    edges: [["edge-a-b-itx", "station-a:line-k2:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 300, 6000, "ITX_CHEONGCHUN"]],
+  });
+  context.after(() => rm(sqlitePath, { force: true }));
+  const sqliteBytes = await readFile(sqlitePath);
+  const candidate = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+    "utf8",
+  ));
+
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed: gzipSync(sqliteBytes),
+      sqliteBytes,
+      sqlitePath,
+      pack: { id: "capital", version: "1" },
+      buildSpec: candidate,
+      repositoryRoot: root,
+    }),
+    /ITX topology evidence service layer mismatch/,
+  );
+});
+
 function fixtureTopologyEvidence({ gzip, sqlite, edgeCount }) {
   const evidence = structuredClone(currentTopologyEvidence);
   evidence.topology.edgeCount = edgeCount;
