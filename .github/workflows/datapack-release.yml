@@ -1394,7 +1394,8 @@ jobs:
           promotion_root="${RUNNER_TEMP}/downloaded-promotion"
           execution_root="$(dirname "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}")"
           publication_receipt="${RUNNER_TEMP}/server-route-bundle-publication-receipt.json"
-          release_final="${RUNNER_TEMP}/server-route-bundle-final.json"
+          release_final_root="${RUNNER_TEMP}/server-route-bundle-final"
+          release_final="${release_final_root}/server-route-bundle-final.json"
           descriptor="${RUNNER_TEMP}/server-route-bundle-publication-descriptor.json"
           evaluation_at="$(node --input-type=module -e 'import fs from "node:fs"; import { deriveCurrentReleaseCandidateObservedAt } from "./tools/datapack/current-capital-station-line-contract.mjs"; const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (Array.isArray(s.evidenceRows) && s.evidenceRows.length > 0) { process.stdout.write(deriveCurrentReleaseCandidateObservedAt(s.evidenceRows)); } else { const b = JSON.parse(fs.readFileSync(process.argv[2], "utf8")); process.stdout.write(b.publishedAt); }' "${route_inputs}/station-line-input.json" "${route_inputs}/build-spec.json")"
           node tools/datapack/publish-server-route-bundle.mjs \
@@ -1418,7 +1419,7 @@ jobs:
             --promotion-workflow-run-id "${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}" \
             --publication-receipt "${publication_receipt}" \
             --candidate-execution-evidence-root "${execution_root}" \
-            --output "${release_final}"
+            --output "${release_final_root}"
           node tools/datapack/build-server-route-bundle-publication-descriptor.mjs \
             --artifact-root "${route_root}" \
             --final "${release_final}" \

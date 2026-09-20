@@ -151,6 +151,21 @@ test("producer-neutral v2 descriptor는 producer facts를 결속하고 consumer 
   assert.equal(cli.stdout, `DESCRIPTOR ${descriptor.descriptorSha256}\n`);
   assert.deepEqual(await readFile(cliOutput), await readFile(firstOutput));
 
+  const cliDirOutput = path.join(fixture.root, "descriptor-v2-cli-dir.json");
+  const cliDir = spawnSync(process.execPath, [
+    SCRIPT,
+    "--artifact-root", fixture.artifactRoot,
+    "--final", path.dirname(fixture.finalPath),
+    "--publication-receipt", fixture.publicationReceiptPath,
+    "--promotion-request", fixture.promotionRequestPath,
+    "--repository-git-sha", REPOSITORY_GIT_SHA,
+    "--output", cliDirOutput,
+  ], { cwd: REPOSITORY_ROOT, encoding: "utf8" });
+  assert.equal(cliDir.status, 0, cliDir.stderr);
+  assert.equal(cliDir.stderr, "");
+  assert.equal(cliDir.stdout, `DESCRIPTOR ${descriptor.descriptorSha256}\n`);
+  assert.deepEqual(await readFile(cliDirOutput), await readFile(firstOutput));
+
   const schema = JSON.parse(await readFile(
     path.join(REPOSITORY_ROOT, "contracts/datapack/server-route-bundle-publication-descriptor.schema.json"),
     "utf8",

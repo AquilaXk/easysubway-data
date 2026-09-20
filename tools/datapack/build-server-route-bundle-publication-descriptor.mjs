@@ -116,8 +116,17 @@ async function prepareServerRouteBundlePublication(input) {
     throw new Error("output must be outside the signed artifact root");
   }
 
+  const rawFinal = path.resolve(requiredRaw(input.finalPath, "finalPath"));
+  const rawFinalStat = await lstat(rawFinal).catch((error) => {
+    if (error?.code === "ENOENT") throw new Error("FINAL is missing");
+    throw error;
+  });
+  const finalPath = rawFinalStat.isDirectory() && !rawFinalStat.isSymbolicLink()
+    ? path.join(rawFinal, "server-route-bundle-final.json")
+    : rawFinal;
+
   const evidencePaths = {
-    final: path.resolve(requiredRaw(input.finalPath, "finalPath")),
+    final: finalPath,
     publicationReceipt: path.resolve(requiredRaw(input.publicationReceiptPath, "publicationReceiptPath")),
     promotionRequest: path.resolve(requiredRaw(input.promotionRequestPath, "promotionRequestPath")),
   };
