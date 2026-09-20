@@ -726,6 +726,88 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   bundle.accessibilitySourceCoverageDecision = "GO";
   await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
 
+  // Candidate preparation scope (NO_GO + RELEASE_EVIDENCE_PENDING) admits NO_GO decision and FAIL topology under --require-pass
+  const prepScope = JSON.parse(JSON.stringify(scope));
+  prepScope.decision = {
+    currentLaunchDecision: "NO_GO",
+    supportScope: prepScope.verifiedAccessibilityScope.id,
+    blocker: "RELEASE_EVIDENCE_PENDING",
+  };
+  prepScope.routingLaunchScope.baseRoutingStationIds.push("missing-station-id");
+  const prepScopeRaw = `${JSON.stringify(prepScope, null, 2)}\n`;
+  await writeFile(scopePath, prepScopeRaw);
+
+  const prepReport = buildLaunchDenominatorReport(prepScope, goReport.evaluatorInput);
+  assert.equal(prepReport.decision, "NO_GO");
+  const prepReportRaw = `${JSON.stringify(prepReport, null, 2)}\n`;
+  await writeFile(launchReportPath, prepReportRaw);
+
+  bundle.supportedDenominatorSha256 = sha256(prepScopeRaw);
+  bindLaunchReport(bundle, prepReport, prepReportRaw);
+  bundle.routeGraphTopologyStatus = "FAIL";
+  bundle.routeGraphTopologyViolationCount = 538164;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [...validatorCommand, "--require-pass"],
+    { cwd: root },
+  );
+
+  // If report.decision is unexpectedly GO during candidate preparation, fail closed
+  const prepGoScope = JSON.parse(JSON.stringify(scope));
+  prepGoScope.decision = {
+    currentLaunchDecision: "NO_GO",
+    supportScope: prepGoScope.verifiedAccessibilityScope.id,
+    blocker: "RELEASE_EVIDENCE_PENDING",
+  };
+  const prepGoScopeRaw = `${JSON.stringify(prepGoScope, null, 2)}\n`;
+  await writeFile(scopePath, prepGoScopeRaw);
+  bundle.supportedDenominatorSha256 = sha256(prepGoScopeRaw);
+  const prepGoReport = buildLaunchDenominatorReport(prepGoScope, goReport.evaluatorInput);
+  assert.equal(prepGoReport.decision, "GO");
+  const prepGoReportRaw = `${JSON.stringify(prepGoReport, null, 2)}\n`;
+  await writeFile(launchReportPath, prepGoReportRaw);
+  bindLaunchReport(bundle, prepGoReport, prepGoReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /launch denominator decision must be NO_GO for candidate preparation publish/,
+  );
+
+  // Non-candidate preparation scope must reject NO_GO decision under --require-pass
+  const nonPrepScope = JSON.parse(JSON.stringify(prepScope));
+  nonPrepScope.decision = { currentLaunchDecision: "GO", supportScope: nonPrepScope.verifiedAccessibilityScope.id, blocker: "NONE" };
+  const nonPrepScopeRaw = `${JSON.stringify(nonPrepScope, null, 2)}\n`;
+  await writeFile(scopePath, nonPrepScopeRaw);
+  bundle.supportedDenominatorSha256 = sha256(nonPrepScopeRaw);
+  const nonPrepReport = buildLaunchDenominatorReport(nonPrepScope, goReport.evaluatorInput);
+  assert.equal(nonPrepReport.decision, "NO_GO");
+  const nonPrepReportRaw = `${JSON.stringify(nonPrepReport, null, 2)}\n`;
+  await writeFile(launchReportPath, nonPrepReportRaw);
+  bindLaunchReport(bundle, nonPrepReport, nonPrepReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /launch denominator decision must be GO for publish/,
+  );
+
+  // Non-candidate preparation scope must reject FAIL topology under --require-pass
+  await writeFile(scopePath, scopeRaw);
+  bundle.supportedDenominatorSha256 = sha256(scopeRaw);
+  await writeFile(launchReportPath, goReportRaw);
+  bindLaunchReport(bundle, goReport, goReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, "--require-pass"], { cwd: root }),
+    /routeGraphTopologyStatus must be PASS for publish/,
+  );
+
+  // Restore valid GO state
+  bundle.routeGraphTopologyStatus = "PASS";
+  bundle.routeGraphTopologyViolationCount = 0;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
   bundle.rollbackRescue = {
     evidenceSha256: hash,
     releaseRequestId: bundle.releaseRequestId,
