@@ -10653,68 +10653,6 @@ test("release gate는 schema v2 release target에서 operator-wide provenance로
   assert.deepEqual(stationRequirement.sourceIds, []);
 });
 
-test("release gate는 candidate preparation 상태(NO_GO + RELEASE_EVIDENCE_PENDING)에서 gap 리포트를 산출하되 차단하지 않는다", async () => {
-  const scratch = path.join(tmpdir(), `candidate-prep-gap-${Date.now()}`);
-  await rm(scratch, { recursive: true, force: true });
-  await mkdir(scratch, { recursive: true });
-
-  const rawTargets = await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8");
-  const testInventory = completeCoverageInventory(JSON.parse(rawTargets));
-  const testCandidate = completeCoverageProvenance(testInventory);
-
-  const targetSrc = testInventory.sources.find(
-    (s) => s.coverageScope.operatorIds?.includes("daejeon-transportation") && s.coverageScope.lineIds?.includes("line-7051a9c2525c"),
-  );
-  if (targetSrc) delete targetSrc.coverageScope.lineIds;
-
-  const files = {
-    inv: path.join(scratch, "inv.json"),
-    prov: path.join(scratch, "current.provenance.json"),
-    man: path.join(scratch, "current.json"),
-    rep: path.join(scratch, "rep.json"),
-    scope: path.join(scratch, "scope.json"),
-  };
-
-  await writeFile(files.inv, JSON.stringify(testInventory));
-  await writeCoverageCandidate(scratch, testCandidate);
-
-  const executeGate = async (launchDecision, blocker) => {
-    const scopePayload = {
-      decision: { currentLaunchDecision: launchDecision, ...(blocker ? { blocker } : {}) },
-      verifiedAccessibilityScope: {
-        id: "daejeon_pilot_candidate_scope",
-        regionIds: ["daejeon"],
-        includedOperatorIds: ["daejeon-transportation"],
-        includedLineIds: ["line-7051a9c2525c"],
-      },
-    };
-    await writeFile(files.scope, JSON.stringify(scopePayload));
-    return execFileAsync(process.execPath, [
-      "tools/datapack/report-coverage-gaps.mjs",
-      "--output", files.rep,
-      "--release-scope", files.scope,
-      "--inventory", files.inv,
-      "--provenance", files.prov,
-      "--manifest", files.man,
-      "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
-      "--targets", "tools/datapack/nationwide-coverage-targets.json",
-    ], { cwd: root });
-  };
-
-  // When preparing candidate, gap recording is permitted without exit failure
-  await executeGate("NO_GO", "RELEASE_EVIDENCE_PENDING");
-  const gapReport = JSON.parse(await readFile(files.rep, "utf8"));
-  assert.equal(gapReport.summary.releaseScope.candidatePreparation, true);
-  assert.equal(gapReport.summary.releaseScope.coverageComplete, false);
-  assert.ok(gapReport.summary.releaseScope.missingRequirements > 0);
-
-  // When launch decision is GO, gate strictly fails closed
-  await assert.rejects(
-    executeGate("GO"),
-    /in-scope coverage gaps remain: \d+ missing requirements/,
-  );
-});
-
 test("전국 coverage gap report는 multi-region source의 provenance scope를 requirement별로 제한한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-provenance-scope-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");
@@ -19623,3 +19561,70 @@ test("데이터팩 생성기는 station_lines에 없는 station_car_door_hints F
     /FOREIGN KEY constraint failed/,
   );
 });
+
+test("release gate admits gap recording in candidate preparation state (NO_GO + RELEASE_EVIDENCE_PENDING)", async () => {
+  const tempWorkspace = await mkdtemp(path.join(tmpdir(), "cand-prep-gap-"));
+  try {
+    const rawTargetConfig = await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8");
+    const testInv = completeCoverageInventory(JSON.parse(rawTargetConfig));
+    const testProv = completeCoverageProvenance(testInv);
+
+    const daejeonSrc = testInv.sources.find(
+      (s) => s.coverageScope.operatorIds?.includes("daejeon-transportation") && s.coverageScope.lineIds?.includes("line-7051a9c2525c"),
+    );
+    if (daejeonSrc) delete daejeonSrc.coverageScope.lineIds;
+
+    const testFiles = {
+      inventory: path.join(tempWorkspace, "source-inv.json"),
+      provenance: path.join(tempWorkspace, "current.provenance.json"),
+      manifest: path.join(tempWorkspace, "current.json"),
+      outputReport: path.join(tempWorkspace, "gap-out.json"),
+      scopeJson: path.join(tempWorkspace, "rel-scope.json"),
+    };
+
+    await writeFile(testFiles.inventory, JSON.stringify(testInv));
+    await writeCoverageCandidate(tempWorkspace, testProv);
+
+    const runGate = async (launchDecision, blocker) => {
+      const scopeBody = {
+        decision: { currentLaunchDecision: launchDecision, ...(blocker ? { blocker } : {}) },
+        verifiedAccessibilityScope: {
+          id: "daejeon_pilot_candidate_scope",
+          regionIds: ["daejeon"],
+          includedOperatorIds: ["daejeon-transportation"],
+          includedLineIds: ["line-7051a9c2525c"],
+        },
+      };
+      await writeFile(testFiles.scopeJson, JSON.stringify(scopeBody));
+      return execFileAsync(process.execPath, [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--output", testFiles.outputReport,
+        "--release-scope", testFiles.scopeJson,
+        "--inventory", testFiles.inventory,
+        "--provenance", testFiles.provenance,
+        "--manifest", testFiles.manifest,
+        "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      ], { cwd: root });
+    };
+
+    // Candidate preparation permits gap recording without gate failure
+    await runGate("NO_GO", "RELEASE_EVIDENCE_PENDING");
+    const generatedReport = JSON.parse(await readFile(testFiles.outputReport, "utf8"));
+    assert.equal(generatedReport.summary.releaseScope.candidatePreparation, true);
+    assert.equal(generatedReport.summary.releaseScope.coverageComplete, false);
+    assert.ok(generatedReport.summary.releaseScope.missingRequirements > 0);
+
+    // GO decision must strictly fail closed
+    let launchError = null;
+    try {
+      await runGate("GO");
+    } catch (error) {
+      launchError = error;
+    }
+    assert.match(launchError?.message ?? "", /in-scope coverage gaps remain: \d+ missing requirements/);
+  } finally {
+    await rm(tempWorkspace, { recursive: true, force: true });
+  }
+});
+
