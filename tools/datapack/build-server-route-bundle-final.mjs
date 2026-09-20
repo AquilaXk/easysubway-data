@@ -25,6 +25,7 @@ import {
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
 import {
+  canonicalRideEdgeSetSha256,
   canonicalRouteEdgeEvaluationJson,
   evaluateRouteAccessibilityEdges,
 } from "./evaluate-route-accessibility-edges.mjs";
@@ -677,9 +678,16 @@ function validateRouteEdgeInput(value, artifact, candidateId, stationSetSha256) 
   if (value.candidate.stationSetSha256 !== stationSetSha256) {
     throw new Error("route-edge station-line candidate station set identity mismatch");
   }
+  const rides = value.routeEdges.filter(({ edgeType }) => edgeType === "RIDE");
+  const seedTopologySha256 = canonicalRideEdgeSetSha256(rides);
+  if (value.candidate.topologySha256 !== artifact.manifest.topologySha256
+    && value.candidate.topologySha256 !== seedTopologySha256) {
+    throw new Error("topology identity mismatch");
+  }
   const evaluationCandidate = {
     ...value.candidate,
     stationSetSha256: artifact.manifest.stationSetSha256,
+    topologySha256: artifact.manifest.topologySha256,
   };
   assertCandidateBinding(evaluationCandidate, artifact, true, candidateId);
   return { ...value, candidate: evaluationCandidate };

@@ -717,6 +717,17 @@ test("standalone CLI release mode는 exact evidence set만 받아 GO를 생성�
   await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
 });
 
+test("seed topology candidate input is accepted and bound to artifact topology", async (t) => {
+  const fixture = await createFixture(t);
+  const rides = fixture.routeEdgeInput.routeEdges.filter(({ edgeType }) => edgeType === "RIDE");
+  fixture.routeEdgeInput.candidate.topologySha256 = canonicalRideEdgeSetSha256(rides);
+  const output = path.join(fixture.temp, "seed-topology-output");
+  await build(fixture, output, FRESH_AT);
+  const finalJson = await readJson(path.join(output, "server-route-bundle-final.json"));
+  assert.equal(finalJson.candidate.bundleId, fixture.manifest.bundleId);
+  assert.equal(finalJson.candidate.componentDigests.topology, fixture.manifest.topologySha256);
+});
+
 async function createFixture(t, options = {}) {
   const temp = await mkdtemp(path.join(os.tmpdir(), "server-route-final-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
