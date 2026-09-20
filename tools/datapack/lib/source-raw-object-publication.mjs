@@ -29,11 +29,11 @@ const RECEIPT_KEYS = [
   "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "rawObjectUri",
   "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt", "ociNamespace",
   "bucket", "objectKey", "contentType",
-].sort();
+].sort((a, b) => a.localeCompare(b));
 
 /** 관측 시각 필드의 지역별 차이는 호출자가 명시하고, 영수증 계약은 한 곳에서 유지한다. */
 export function validateSourceRawObjectReceipt({ receipt, expected, target, now, label }) {
-  if (JSON.stringify(Object.keys(receipt ?? {}).sort()) !== JSON.stringify(RECEIPT_KEYS)
+  if (JSON.stringify(Object.keys(receipt ?? {}).sort((a, b) => a.localeCompare(b))) !== JSON.stringify(RECEIPT_KEYS)
     || receipt.schemaVersion !== 1 || receipt.artifactKind !== "static-network-source-raw-object-receipt"
     || receipt.sourceId !== expected.sourceId || receipt.snapshotId !== expected.snapshotId
     || receipt.capturedAt !== expected.capturedAt || receipt.rawObjectSha256 !== expected.rawObjectSha256

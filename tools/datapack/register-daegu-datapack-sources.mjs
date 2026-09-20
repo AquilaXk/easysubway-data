@@ -127,7 +127,7 @@ export async function prepareDaeguSourceRegistration({
       }),
     }];
   }));
-  const stagedInventory = {
+  let stagedInventory = {
     ...inventory,
     sources: inventory.sources.map((source) => {
       const config = DAEGU_LINES.find((line) => source.id === `daegu-line${line.lineNumber}-route-topology`
