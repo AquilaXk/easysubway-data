@@ -363,11 +363,11 @@ test("release candidate pack은 current station-catalog evidence schema와 exact
   await writeFile(sqlitePath, gunzipSync(canonicalPackBytes));
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
-    const columns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
+    const stationCatalogColumns = database.prepare("PRAGMA table_info(route_service_station_catalog_evidence)")
       .all()
       .map(({ name }) => name);
-    assert.equal(columns.some((name) => name.startsWith("canonical_pack_")), false);
-    assert.deepEqual(columns.filter((name) => name.startsWith("station_catalog_")), [
+    assert.equal(stationCatalogColumns.some((name) => name.startsWith("canonical_pack_")), false);
+    assert.deepEqual(stationCatalogColumns.filter((name) => name.startsWith("station_catalog_")), [
       "station_catalog_artifact_kind",
       "station_catalog_manifest_version",
       "station_catalog_pack_id",
@@ -378,7 +378,7 @@ test("release candidate pack은 current station-catalog evidence schema와 exact
     const evidence = database.prepare(`
       SELECT admission_status, admission_eligible,
              station_catalog_artifact_kind, station_catalog_manifest_version
-      FROM route_service_artifact_evidence
+      FROM route_service_station_catalog_evidence
       WHERE service_class = 'ITX_CHEONGCHUN'
     `).get();
     assert.deepEqual({ ...evidence }, {
@@ -386,6 +386,20 @@ test("release candidate pack은 current station-catalog evidence schema와 exact
       admission_eligible: 1,
       station_catalog_artifact_kind: "station-catalog-pack",
       station_catalog_manifest_version: 1,
+    });
+    const artifactColumns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
+      .all()
+      .map(({ name }) => name);
+    assert.equal(artifactColumns.some((name) => name.startsWith("canonical_pack_")), true);
+    const artifactEvidence = database.prepare(`
+      SELECT admission_status, admission_eligible, canonical_pack_id
+      FROM route_service_artifact_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'
+    `).get();
+    assert.deepEqual({ ...artifactEvidence }, {
+      admission_status: "ADMITTED",
+      admission_eligible: 1,
+      canonical_pack_id: "capital",
     });
   } finally {
     database.close();
