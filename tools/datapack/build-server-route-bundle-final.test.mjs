@@ -372,55 +372,54 @@ test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes 
   await assert.rejects(() => readFile(output), /ENOENT/);
 });
 
-test("FINAL closure는 bundle보다 이른 source freshness cutoff를 거부한다", async (t) => {
+test("FINAL closure는 bundle보다 이른 source freshness cutoff를 non-nationwide scope에서 거부하고 nationwide는 허용한다", async (t) => {
   installSigningEnvironment(t);
   const sourceWindow = await selectedSourceWindow();
   const sourceExpiry = Date.parse(sourceWindow.freshUntil);
   const candidateFreshUntil = kstInstant(sourceExpiry + 1);
   assert.ok(Date.parse(sourceWindow.evaluationAt) < sourceExpiry && sourceExpiry < Date.parse(candidateFreshUntil));
-  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
-    evaluationAt: sourceWindow.evaluationAt,
-    freshUntil: candidateFreshUntil,
-    configureBuildSpec: (spec) => {
-      spec.productionScopeId = "capital_routing_android_v1";
-      spec.candidateId = "capital-candidate-20260909";
-    },
-  });
-  const fixtureWindow = await selectedSourceWindow(fixture.repositoryRoot);
-  assert.ok(Date.parse(fixtureWindow.evaluationAt) < Date.parse(fixtureWindow.freshUntil)
-    && Date.parse(fixtureWindow.freshUntil) < Date.parse(candidateFreshUntil));
-  const output = path.join(fixture.temp, "release-rejected-source-cutoff");
-  await assert.rejects(
-    () => build(fixture, output, fixtureWindow.evaluationAt, releaseEvidence, {
-      clock: () => Date.parse(fixtureWindow.evaluationAt),
-    }),
-    /source freshness cutoff must cover candidate freshUntil/,
-  );
-  await assert.rejects(() => readFile(output), /ENOENT/);
-});
 
-test("FINAL closure는 nationwide candidate scope일 때 candidate freshUntil이 source freshness cutoff를 초과해도 허용한다", async (t) => {
-  installSigningEnvironment(t);
-  const sourceWindow = await selectedSourceWindow();
-  const sourceExpiry = Date.parse(sourceWindow.freshUntil);
-  const candidateFreshUntil = kstInstant(sourceExpiry + 1);
-  assert.ok(Date.parse(sourceWindow.evaluationAt) < sourceExpiry && sourceExpiry < Date.parse(candidateFreshUntil));
-  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
-    evaluationAt: sourceWindow.evaluationAt,
-    freshUntil: candidateFreshUntil,
-    configureBuildSpec: (spec) => {
-      spec.productionScopeId = "nationwide_routing_android_v1";
-      spec.candidateId = `nationwide-candidate-${spec.candidateId}`;
+  for (const scenario of [
+    {
+      scopeId: "capital_routing_android_v1",
+      candidateId: "capital-candidate-20260909",
+      expectedResult: "REJECT",
+      outputPath: "release-rejected-source-cutoff",
     },
-  });
-  const fixtureWindow = await selectedSourceWindow(fixture.repositoryRoot);
-  assert.ok(Date.parse(fixtureWindow.evaluationAt) < Date.parse(fixtureWindow.freshUntil)
-    && Date.parse(fixtureWindow.freshUntil) < Date.parse(candidateFreshUntil));
-  const output = path.join(fixture.temp, "release-admitted-nationwide-source-cutoff");
-  const final = await build(fixture, output, fixtureWindow.evaluationAt, releaseEvidence, {
-    clock: () => Date.parse(fixtureWindow.evaluationAt),
-  });
-  assert.equal(final.result, "GO");
+    {
+      scopeId: "nationwide_routing_android_v1",
+      candidateId: "nationwide-candidate-20260909",
+      expectedResult: "GO",
+      outputPath: "release-admitted-nationwide-source-cutoff",
+    },
+  ]) {
+    const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
+      evaluationAt: sourceWindow.evaluationAt,
+      freshUntil: candidateFreshUntil,
+      configureBuildSpec: (spec) => {
+        spec.productionScopeId = scenario.scopeId;
+        spec.candidateId = scenario.candidateId;
+      },
+    });
+    const fixtureWindow = await selectedSourceWindow(fixture.repositoryRoot);
+    assert.ok(Date.parse(fixtureWindow.evaluationAt) < Date.parse(fixtureWindow.freshUntil)
+      && Date.parse(fixtureWindow.freshUntil) < Date.parse(candidateFreshUntil));
+    const output = path.join(fixture.temp, scenario.outputPath);
+    if (scenario.expectedResult === "REJECT") {
+      await assert.rejects(
+        () => build(fixture, output, fixtureWindow.evaluationAt, releaseEvidence, {
+          clock: () => Date.parse(fixtureWindow.evaluationAt),
+        }),
+        /source freshness cutoff must cover candidate freshUntil/,
+      );
+      await assert.rejects(() => readFile(output), /ENOENT/);
+    } else {
+      const final = await build(fixture, output, fixtureWindow.evaluationAt, releaseEvidence, {
+        clock: () => Date.parse(fixtureWindow.evaluationAt),
+      });
+      assert.equal(final.result, scenario.expectedResult);
+    }
+  }
 });
 
 test("release evidence mismatch·stale·mutation은 FINAL output 전에 fail closed한다", async (t) => {
