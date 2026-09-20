@@ -427,7 +427,10 @@ async function publishStrictImmutableObjectPlan({ plan, root, client }) {
         throw new Error(`${step.objectKey} source checksum mismatch`);
       }
       if (!(await storage.putObjectIfAbsent(step.objectKey, bytes, step))) {
-        throw new Error(`${step.objectKey} conditional create conflict: immutable violation`);
+        const stored = await storage.readObject(step.objectKey);
+        if (!stored?.exists || !Buffer.isBuffer(stored.body) || stored.body.length !== step.sizeBytes || sha256(stored.body) !== step.sha256) {
+          throw new Error(`${step.objectKey} conditional create conflict: immutable violation`);
+        }
       }
       continue;
     }

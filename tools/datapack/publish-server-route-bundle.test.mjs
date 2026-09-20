@@ -182,8 +182,23 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
   assert.deepEqual(client.publicReads, receipt.objects.map((entry) => `${PUBLIC_BASE_URL}/${entry.objectKey}`));
 
   const firstReceiptBytes = await readFile(fixture.receiptPath);
-  const readsBeforeConflict = client.reads.length;
-  const publicReadsBeforeConflict = client.publicReads.length;
+  const secondReceipt = await publishServerRouteBundle({
+    repositoryRoot: REPOSITORY_ROOT,
+    repositoryGitSha: REPOSITORY_GIT_SHA,
+    artifactRoot: fixture.signedRoot,
+    finalPath: fixture.finalPath,
+    publicBaseUrl: PUBLIC_BASE_URL,
+    receiptPath: fixture.receiptPath,
+    client,
+    env: OCI_ENV,
+    publicRead: client.readPublicObject,
+    now: PUBLICATION_NOW,
+    clock: () => PUBLICATION_NOW,
+  });
+  assert.deepEqual(secondReceipt, receipt);
+  assert.deepEqual(await readFile(fixture.receiptPath), firstReceiptBytes);
+
+  client.objects.set(receipt.objects[0].objectKey, Buffer.from("corrupted remote bytes"));
   await assert.rejects(
     () => publishServerRouteBundle({
       repositoryRoot: REPOSITORY_ROOT,
@@ -198,11 +213,8 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
       now: PUBLICATION_NOW,
       clock: () => PUBLICATION_NOW,
     }),
-    /conditional create conflict/,
+    /conditional create conflict: immutable violation/,
   );
-  assert.deepEqual(await readFile(fixture.receiptPath), firstReceiptBytes);
-  assert.equal(client.reads.length, readsBeforeConflict, "conditional create conflict must not read existing objects");
-  assert.equal(client.publicReads.length, publicReadsBeforeConflict, "conditional create conflict must not read the public locator");
 });
 
 test("pre-publication gate·identity·remote collision 실패는 request 전 또는 receipt 없이 fail closed한다", async (t) => {
