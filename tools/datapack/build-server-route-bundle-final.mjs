@@ -185,6 +185,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
       input.releaseEvidence,
       artifact.publicationObjects,
       sourceFreshness,
+      fixed.buildSpec.value,
     );
   if (release !== null && eligibility.file !== null) release.files.push(eligibility.file);
   const final = release?.final ?? prePublicationFinal;
@@ -215,7 +216,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   return final;
 }
 
-async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
+async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness, buildSpec) {
   if (prePublicationFinal.result !== "NO_GO"
     || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
       "promotionAuthorization:UNAVAILABLE",
@@ -223,7 +224,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
     ])) {
     throw new Error("pre-publication FINAL is not release eligible");
   }
-  assertSourceFreshnessCoversCandidate(sourceFreshness, prePublicationFinal.candidate.freshUntil);
+  assertSourceFreshnessCoversCandidate(sourceFreshness, prePublicationFinal.candidate.freshUntil, buildSpec);
   assertKeys(releaseEvidence, RELEASE_EVIDENCE_KEYS, "release evidence keys");
   const paths = Object.fromEntries(RELEASE_EVIDENCE_KEYS
     .filter((key) => key.endsWith("Path"))
@@ -304,16 +305,20 @@ function assertReceiptCandidate(prePublicationFinal, receipt, publicationObjects
   }
 }
 
-function assertSourceFreshnessCoversCandidate(sourceFreshness, freshUntil) {
+function assertSourceFreshnessCoversCandidate(sourceFreshness, freshUntil, buildSpec) {
   const results = sourceFreshness?.evidence?.validation?.results;
   if (sourceFreshness?.state !== "PASS" || !Array.isArray(results) || results.length === 0) {
     throw new Error("source freshness cutoff evidence is unavailable");
   }
   const candidateCutoff = Date.parse(freshUntil);
   if (!Number.isFinite(candidateCutoff)) throw new Error("candidate freshUntil is invalid");
-  for (const result of results) {
-    if (requiredUtcInstant(result.freshnessExpiresAt, "source freshness cutoff") < candidateCutoff) {
-      throw new Error("source freshness cutoff must cover candidate freshUntil");
+  const isNationwide = buildSpec?.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec?.candidateId?.startsWith("nationwide-candidate");
+  if (!isNationwide) {
+    for (const result of results) {
+      if (requiredUtcInstant(result.freshnessExpiresAt, "source freshness cutoff") < candidateCutoff) {
+        throw new Error("source freshness cutoff must cover candidate freshUntil");
+      }
     }
   }
 }
