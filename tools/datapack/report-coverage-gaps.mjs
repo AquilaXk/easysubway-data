@@ -1178,7 +1178,7 @@ export function inventoryCoverageScope(source) {
   }
   const keys = new Set();
   for (const scope of evidence.lineOperatorScopes) {
-    if (!scope || Object.keys(scope).sort().join(":") !== "lineId:operatorId:regionId"
+    if (!scope || Object.keys(scope).sort((a, b) => a.localeCompare(b)).join(":") !== "lineId:operatorId:regionId"
       || [scope.regionId, scope.operatorId, scope.lineId].some((value) => typeof value !== "string" || value.length === 0)) {
       throw new Error("MOLIT membership coverage scope mismatch");
     }
@@ -1186,7 +1186,7 @@ export function inventoryCoverageScope(source) {
     if (keys.has(key)) throw new Error("MOLIT membership coverage scope duplicate");
     keys.add(key);
   }
-  const values = (key) => [...new Set(evidence.lineOperatorScopes.map((scope) => scope[key]))].sort();
+  const values = (key) => [...new Set(evidence.lineOperatorScopes.map((scope) => scope[key]))].sort((a, b) => a.localeCompare(b));
   return { regionIds: values("regionId"), operatorIds: values("operatorId"), lineIds: values("lineId"),
     sourceDomains: ["station_line_membership"], lineOperatorScopes: evidence.lineOperatorScopes };
 }

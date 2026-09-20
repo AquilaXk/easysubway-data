@@ -128,7 +128,7 @@ async function download(url) {
 
 function exactKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)
-      || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...expected].sort())) {
+      || JSON.stringify(Object.keys(value).sort((a, b) => a.localeCompare(b))) !== JSON.stringify([...expected].sort((a, b) => a.localeCompare(b)))) {
     throw new Error(`${label} has unexpected keys`);
   }
 }

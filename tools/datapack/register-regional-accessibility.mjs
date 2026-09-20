@@ -272,7 +272,7 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
     governancePolicySha256: sha(governanceBytes),
     schemaFingerprint: sha(canonicalJson({
       artifactKind: prepared.snapshot.artifactKind,
-      keys: Object.keys(prepared.snapshot).sort(),
+      keys: Object.keys(prepared.snapshot).sort((a, b) => a.localeCompare(b)),
     })),
     redactedRequestFingerprint: sha(canonicalJson({
       endpoint: prepared.snapshot.endpoint,
@@ -485,7 +485,7 @@ function facilityCount(snapshot) {
     .filter((field) => Number.isInteger(row[field])).length, 0);
 }
 function one(rows, predicate, label) {
-  const found = Array.isArray(rows) ? rows.filter(predicate) : [];
+  const found = Array.isArray(rows) ? rows.filter((row) => predicate(row)) : [];
   if (found.length !== 1) {
     throw new Error(`regional accessibility ${label} is invalid`);
   }

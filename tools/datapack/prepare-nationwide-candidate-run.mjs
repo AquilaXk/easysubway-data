@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,7 +106,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
 
   let gitSha;
   try {
-    gitSha = execSync("git rev-parse HEAD", { cwd: repositoryRoot }).toString().trim();
+    gitSha = execFileSync("/usr/bin/git", ["rev-parse", "HEAD"], { cwd: repositoryRoot }).toString().trim();
   } catch {
     gitSha = "d7fe7773528239e27e3788679d1b46b813cce046";
   }
