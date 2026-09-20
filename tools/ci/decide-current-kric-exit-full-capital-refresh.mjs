@@ -76,7 +76,10 @@ export async function decideCurrentKricExitFullCapitalRefresh({ inventoryPath, p
   if (recoveryProducerRunId !== undefined && selected.length !== 1) throw new Error("selected EXIT full-capital refresh claim is not available");
   const current = now instanceof Date ? now.getTime() : NaN; if (!Number.isFinite(current)) throw new Error("decision time is invalid");
   if (recoveryProducerRunId === undefined && recoverable.length === 0 && current < freshUntil - threshold) return { state: "NOT_DUE", alertBeforePackExpiry };
-  const facility = json(facilityBytes, "FACILITY pull requests").filter((entry) => exactFacility(entry, repository)); if (facility.length !== 1) throw new Error("exactly one validated same-repository FACILITY pull request is required");
+  const facilityEntries = json(facilityBytes, "FACILITY pull requests");
+  const candidates = facilityEntries.filter((entry) => FACILITY_BRANCH.test(entry?.headRefName ?? ""));
+  if (candidates.length === 0 && recoveryProducerRunId === undefined) return { state: "WAIT_FACILITY", alertBeforePackExpiry };
+  const facility = facilityEntries.filter((entry) => exactFacility(entry, repository)); if (facility.length !== 1) throw new Error("exactly one validated same-repository FACILITY pull request is required");
   const prerequisite = { facilityBranch: facility[0].headRefName, facilityHeadSha: facility[0].headRefOid };
   if (recoveryProducerRunId !== undefined) return { state: "INSPECT_SELECTED_CLAIM", alertBeforePackExpiry, branch: selected[0].branch, producerRunId: selected[0].producerRunId, ...prerequisite };
   if (recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: recoverable[0].branch, producerRunId: recoverable[0].producerRunId, ...prerequisite };

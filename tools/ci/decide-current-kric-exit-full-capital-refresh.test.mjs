@@ -208,3 +208,15 @@ test("EXIT decision CLI writes only state and immutable FACILITY identity", asyn
   assert.match(await readFile(githubOutputPath, "utf8"), /^facility_branch=automation\/629-kric-facility-refresh-123$/m);
   assert.match(await readFile(githubOutputPath, "utf8"), /^facility_head_sha=a{40}$/m);
 });
+
+test("EXIT decision returns WAIT_FACILITY when no candidate facility PR is in flight", async () => {
+  const { decideCurrentKricExitFullCapitalRefresh } = await load();
+  const input = await fixture();
+  await writeFile(input.facilityPrsPath, "[]");
+  const result = await decideCurrentKricExitFullCapitalRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") });
+  assert.deepEqual(result, {
+    state: "WAIT_FACILITY",
+    alertBeforePackExpiry: "PT6H",
+  });
+});
+
