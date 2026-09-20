@@ -1396,7 +1396,7 @@ jobs:
           publication_receipt="${RUNNER_TEMP}/server-route-bundle-publication-receipt.json"
           release_final="${RUNNER_TEMP}/server-route-bundle-final.json"
           descriptor="${RUNNER_TEMP}/server-route-bundle-publication-descriptor.json"
-          evaluation_at="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).publishedAt)' "${route_inputs}/build-spec.json")"
+          evaluation_at="$(node --input-type=module -e 'import fs from "node:fs"; import { deriveCurrentReleaseCandidateObservedAt } from "./tools/datapack/current-capital-station-line-contract.mjs"; const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (Array.isArray(s.evidenceRows) && s.evidenceRows.length > 0) { process.stdout.write(deriveCurrentReleaseCandidateObservedAt(s.evidenceRows)); } else { const b = JSON.parse(fs.readFileSync(process.argv[2], "utf8")); process.stdout.write(b.publishedAt); }' "${route_inputs}/station-line-input.json" "${route_inputs}/build-spec.json")"
           node tools/datapack/publish-server-route-bundle.mjs \
             --artifact-root "${route_root}" \
             --final "${route_evidence}/server-route-bundle-final.json" \
