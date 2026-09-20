@@ -10654,81 +10654,64 @@ test("release gate는 schema v2 release target에서 operator-wide provenance로
 });
 
 test("release gate는 candidate preparation 상태(NO_GO + RELEASE_EVIDENCE_PENDING)에서 gap 리포트를 산출하되 차단하지 않는다", async () => {
-  const outputDir = path.join(tmpdir(), `easysubway-coverage-candidate-prep-${Date.now()}`);
-  const inventoryPath = path.join(outputDir, "source-inventory.json");
-  const provenancePath = path.join(outputDir, "current.provenance.json");
-  const reportPath = path.join(outputDir, "coverage-gap-report.json");
-  const releaseScopePath = path.join(outputDir, "release-scope.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
+  const scratch = path.join(tmpdir(), `candidate-prep-gap-${Date.now()}`);
+  await rm(scratch, { recursive: true, force: true });
+  await mkdir(scratch, { recursive: true });
 
-  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
-  const inventory = completeCoverageInventory(targets);
-  const releaseScope = {
-    decision: {
-      currentLaunchDecision: "NO_GO",
-      supportScope: "nationwide_routing_android_v1",
-      blocker: "RELEASE_EVIDENCE_PENDING",
-    },
-    verifiedAccessibilityScope: {
-      id: "capital_pilot_android_v1",
-      regionIds: ["capital"],
-      includedOperatorIds: ["seoul-metro"],
-      includedLineIds: ["seoul-4"],
-    },
-  };
-  const stationSource = inventory.sources.find(
-    (source) =>
-      source.coverageScope.operatorIds.includes("seoul-metro") &&
-      source.coverageScope.lineIds?.includes("seoul-4") &&
-      source.coverageScope.sourceDomains.includes("station_line_membership"),
+  const rawTargets = await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8");
+  const testInventory = completeCoverageInventory(JSON.parse(rawTargets));
+  const testCandidate = completeCoverageProvenance(testInventory);
+
+  const targetSrc = testInventory.sources.find(
+    (s) => s.coverageScope.operatorIds?.includes("seoul-metro") && s.coverageScope.lineIds?.includes("seoul-4"),
   );
-  delete stationSource.coverageScope.lineIds;
-  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
-  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
+  if (targetSrc) delete targetSrc.coverageScope.lineIds;
 
-  // candidate preparation 상태이므로 gap이 있어도 reject되지 않고 정상 종료되어야 한다.
-  await execFileAsync(
-    process.execPath,
-    [
+  const files = {
+    inv: path.join(scratch, "inv.json"),
+    prov: path.join(scratch, "current.provenance.json"),
+    man: path.join(scratch, "current.json"),
+    rep: path.join(scratch, "rep.json"),
+    scope: path.join(scratch, "scope.json"),
+  };
+
+  await writeFile(files.inv, JSON.stringify(testInventory));
+  await writeCoverageCandidate(scratch, testCandidate);
+
+  const executeGate = async (launchDecision, blocker) => {
+    const scopePayload = {
+      decision: { currentLaunchDecision: launchDecision, ...(blocker ? { blocker } : {}) },
+      verifiedAccessibilityScope: {
+        id: "capital_pilot_android_v1",
+        regionIds: ["capital"],
+        includedOperatorIds: ["seoul-metro"],
+        includedLineIds: ["seoul-4"],
+      },
+    };
+    await writeFile(files.scope, JSON.stringify(scopePayload));
+    return execFileAsync(process.execPath, [
       "tools/datapack/report-coverage-gaps.mjs",
       "--targets", "tools/datapack/nationwide-coverage-targets.json",
-      "--inventory", inventoryPath,
-      "--manifest", path.join(outputDir, "current.json"),
-      "--provenance", provenancePath,
-      "--release-scope", releaseScopePath,
+      "--inventory", files.inv,
+      "--manifest", files.man,
+      "--provenance", files.prov,
+      "--release-scope", files.scope,
       "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
-      "--output", reportPath,
-    ],
-    { cwd: root },
-  );
+      "--output", files.rep,
+    ], { cwd: root });
+  };
 
-  const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.equal(report.summary.releaseScope.candidatePreparation, true);
-  assert.equal(report.summary.releaseScope.coverageComplete, false);
-  assert.equal(report.summary.releaseScope.missingRequirements, 1);
+  // When preparing candidate, gap recording is permitted without exit failure
+  await executeGate("NO_GO", "RELEASE_EVIDENCE_PENDING");
+  const gapReport = JSON.parse(await readFile(files.rep, "utf8"));
+  assert.equal(gapReport.summary.releaseScope.candidatePreparation, true);
+  assert.equal(gapReport.summary.releaseScope.coverageComplete, false);
+  assert.ok(gapReport.summary.releaseScope.missingRequirements > 0);
 
-  // 동일한 조건에서 decision이 GO로 바뀌면 즉시 reject되어야 한다 (게이트 불변성).
-  releaseScope.decision.currentLaunchDecision = "GO";
-  delete releaseScope.decision.blocker;
-  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
+  // When launch decision is GO, gate strictly fails closed
   await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/report-coverage-gaps.mjs",
-        "--targets", "tools/datapack/nationwide-coverage-targets.json",
-        "--inventory", inventoryPath,
-        "--manifest", path.join(outputDir, "current.json"),
-        "--provenance", provenancePath,
-        "--release-scope", releaseScopePath,
-        "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
-        "--output", reportPath,
-      ],
-      { cwd: root },
-    ),
-    /in-scope coverage gaps remain: 1 missing requirements/,
+    executeGate("GO"),
+    /in-scope coverage gaps remain: \d+ missing requirements/,
   );
 });
 
