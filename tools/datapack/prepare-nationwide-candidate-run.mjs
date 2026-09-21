@@ -130,54 +130,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const nationwidePack = nationwideFixture.packs[0];
   nationwidePack.coverageLineOperatorScopes = targets.activeLineScopes;
   nationwidePack.transferRules = transferRules;
-  nationwidePack.networkEdges = [
-    ...rides,
-    ...entryEdges.map((e) => ({
-      id: e.edgeId,
-      fromNodeId: e.fromNodeId,
-      toNodeId: e.toNodeId,
-      durationSeconds: e.durationSeconds,
-      distanceMeters: e.distanceMeters,
-      edgeType: e.edgeType,
-      servicePattern: e.servicePattern,
-      serviceClass: e.serviceClass,
-      includesStairs: false,
-      stairAccessState: "UNKNOWN",
-      accessibilityStatus: "VERIFIED",
-      reliabilityScore: 100,
-      facilityId: null,
-    })),
-    ...exitEdges.map((e) => ({
-      id: e.edgeId,
-      fromNodeId: e.fromNodeId,
-      toNodeId: e.toNodeId,
-      durationSeconds: e.durationSeconds,
-      distanceMeters: e.distanceMeters,
-      edgeType: e.edgeType,
-      servicePattern: e.servicePattern,
-      serviceClass: e.serviceClass,
-      includesStairs: false,
-      stairAccessState: "UNKNOWN",
-      accessibilityStatus: "VERIFIED",
-      reliabilityScore: 100,
-      facilityId: null,
-    })),
-    ...transferEdges.map((e) => ({
-      id: e.edgeId,
-      fromNodeId: e.fromNodeId,
-      toNodeId: e.toNodeId,
-      durationSeconds: e.durationSeconds,
-      distanceMeters: e.distanceMeters,
-      edgeType: e.edgeType,
-      servicePattern: e.servicePattern,
-      serviceClass: e.serviceClass,
-      includesStairs: false,
-      stairAccessState: "UNKNOWN",
-      accessibilityStatus: "VERIFIED",
-      reliabilityScore: 100,
-      facilityId: null,
-    })),
-  ];
+  nationwidePack.networkEdges = rides;
 
   nationwideFixture.assemblyInputs = buildNationwideAssemblyInputs({
     baseFixtureBytes: basePackBytes,
