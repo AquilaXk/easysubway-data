@@ -3,7 +3,7 @@
   "artifactKind": "datapack-release-request",
   "candidateId": "nationwide-candidate-20260909",
   "scopeId": "nationwide_routing_android_v1",
-  "buildSpecSha256": "d2fd748d560090e56c1272b050ff3f6721b8dabecb8f7049fbf8638e266ecac6",
+  "buildSpecSha256": "474db5b13c422bb97e014c784e4d6cda70bf45281e358a12387fec40005be3ff",
   "sourceSnapshotSetHash": "a7b44bed6999142d6b716814a22071f890af2b341e2f27d898ebeb2e55d5716f",
   "approvedLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
   "requestedBy": "claude-fable-orchestrator",

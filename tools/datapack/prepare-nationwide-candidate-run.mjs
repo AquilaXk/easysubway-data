@@ -132,6 +132,112 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   nationwidePack.transferRules = transferRules;
   nationwidePack.networkEdges = rides;
 
+  // 2.1 Materialize 5-region timetable routes, trips, and stop times for canary coverage
+  const branchStationIds = new Set([
+    "station-8174b8aee30d", "station-78972888a610", "station-60db61586811",
+    "station-b35616704ce3", "station-d6afe85e434a", "station-dc47306d7647",
+    "station-31d428fc4381", "station-sinseoldong",
+  ]);
+
+  const lineSpecs = [
+    ["capital", "seoul-2", "2", "route-seoul-2-inner", "수도권 2호선 내선", "내선", "내선순환", "route-seoul-2-outer", "수도권 2호선 외선", "외선", "외선순환", (sl) => !branchStationIds.has(sl.stationId)],
+    ["busan", "line-eb7b47920390", "2", "route-busan-2-up", "부산 2호선 양산 방면", "양산 방면", "양산", "route-busan-2-down", "부산 2호선 장산 방면", "장산 방면", "장산", null],
+    ["daegu", "line-5b8d9b05e7e6", "1", "route-daegu-1-up", "대구 1호선 안심 방면", "안심 방면", "안심", "route-daegu-1-down", "대구 1호선 설화명곡 방면", "설화명곡 방면", "설화명곡", null],
+    ["daejeon", "line-7051a9c2525c", "1", "route-daejeon-1-up", "대전 1호선 반석 방면", "반석 방면", "반석", "route-daejeon-1-down", "대전 1호선 판암 방면", "판암 방면", "판암", null],
+    ["gwangju", "line-e57a361e8892", "1", "route-gwangju-1-up", "광주 1호선 평동 방면", "평동 방면", "평동", "route-gwangju-1-down", "광주 1호선 녹동 방면", "녹동 방면", "녹동", null],
+  ];
+
+  const rideDurationMap = new Map();
+  for (const e of rides) {
+    rideDurationMap.set(`${e.fromNodeId}->${e.toNodeId}`, e.durationSeconds > 0 ? e.durationSeconds : 120);
+  }
+
+  const newRoutes = [];
+  const newTrips = [];
+  const newStopTimes = [];
+
+  for (const [, lineId, shortName, upRouteId, upRouteName, upDirName, upHeadsign, dnRouteId, dnRouteName, dnDirName, dnHeadsign, filterFn] of lineSpecs) {
+    const isStationAllowed = filterFn ?? (() => true);
+    const forwardStList = pack.stationLines
+      .filter((sl) => sl.lineId === lineId && isStationAllowed(sl))
+      .sort((a, b) => a.lineSequence - b.lineSequence);
+    const reverseStList = [...forwardStList].reverse();
+
+    const routeDirections = [
+      { routeId: upRouteId, dirId: "up", headsign: upHeadsign, name: upRouteName, dirName: upDirName, stations: forwardStList },
+      { routeId: dnRouteId, dirId: "down", headsign: dnHeadsign, name: dnRouteName, dirName: dnDirName, stations: reverseStList },
+    ];
+
+    for (const rd of routeDirections) {
+      newRoutes.push({
+        id: rd.routeId,
+        lineId,
+        routeShortName: shortName,
+        routeLongName: rd.name,
+        directionName: rd.dirName,
+        timezone: "Asia/Seoul",
+      });
+
+      for (let depTime = 16200; depTime <= 91800; depTime += 600) {
+        for (const serviceId of ["weekday-kric", "holiday-kric"]) {
+          const tripId = `trip-${rd.routeId}-${serviceId === "weekday-kric" ? "wd" : "hd"}-${depTime}`;
+          newTrips.push({
+            id: tripId,
+            routeId: rd.routeId,
+            serviceId,
+            tripHeadsign: rd.headsign,
+            directionId: rd.dirId,
+            servicePattern: "LOCAL",
+            serviceClass: "SUBWAY",
+            serviceDayStartSeconds: 0,
+          });
+
+          let currentDep = depTime;
+          for (let i = 0; i < rd.stations.length; i++) {
+            const st = rd.stations[i];
+            const isFirst = i === 0;
+            const isLast = i === rd.stations.length - 1;
+
+            let arrSec;
+            let depSec;
+            if (isFirst) {
+              arrSec = depTime;
+              depSec = depTime;
+            } else {
+              const prevSt = rd.stations[i - 1];
+              const edgeKey = `${prevSt.stationId}:${lineId}->${st.stationId}:${lineId}`;
+              const travel = rideDurationMap.get(edgeKey) ?? 120;
+              arrSec = currentDep + travel;
+              depSec = isLast ? arrSec : arrSec + 20;
+            }
+            currentDep = depSec;
+
+            newStopTimes.push({
+              tripId,
+              stopSequence: i + 1,
+              stationId: st.stationId,
+              lineId,
+              arrivalSeconds: arrSec,
+              departureSeconds: depSec,
+              pickupType: isLast ? 1 : 0,
+              dropOffType: isFirst ? 1 : 0,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  nationwidePack.transitRoutes = [...(nationwidePack.transitRoutes ?? []), ...newRoutes];
+  nationwidePack.transitTrips = [...(nationwidePack.transitTrips ?? []), ...newTrips];
+  nationwidePack.transitStopTimes = [...(nationwidePack.transitStopTimes ?? []), ...newStopTimes];
+  nationwidePack.minimumTableRows = {
+    ...nationwidePack.minimumTableRows,
+    transit_routes: nationwidePack.transitRoutes.length,
+    transit_trips: nationwidePack.transitTrips.length,
+    transit_stop_times: nationwidePack.transitStopTimes.length,
+  };
+
   nationwideFixture.assemblyInputs = buildNationwideAssemblyInputs({
     baseFixtureBytes: basePackBytes,
     selectedSources: fanIn.selectedSources,
@@ -141,7 +247,8 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   });
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
-  await writeFile(path.join(repositoryRoot, nationwidePackRelPath), jsonBytes(nationwideFixture));
+  const nationwidePackBytes = jsonBytes(nationwideFixture);
+  await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
 
   // 3. Prepare route edges
   const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...rideEdges];
@@ -242,7 +349,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     releaseIdentity: {
       candidateId,
       publishedAt: fanIn.evaluatedAt,
-      releaseSequence: 117,
+      releaseSequence: 118,
     },
     builderIdentity: {
       gitSha,
@@ -264,10 +371,30 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const preparationRelPath = "tools/datapack/release/nationwide-candidate-preparation.json";
   await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
 
+  const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
+  buildSpec.releaseSequence = 118;
+  buildSpec.fixtureSha256 = sha256(nationwidePackBytes);
+  const buildSpecBytes = jsonBytes(buildSpec);
+  await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
+
+  const releaseRequestRelPath = "tools/datapack/release/release-request.json";
+  const releaseRequest = JSON.parse(await readFile(path.join(repositoryRoot, releaseRequestRelPath), "utf8"));
+  releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
+  await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
+
+  const hashEvidenceRelPath = "tools/datapack/release/hash-evidence.json";
+  const hashEvidence = JSON.parse(await readFile(path.join(repositoryRoot, hashEvidenceRelPath), "utf8"));
+  hashEvidence.fixturePath.sha256 = sha256(nationwidePackBytes);
+  await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
+
   return {
     preparationRelPath,
     routeInputRelPath,
     nationwidePackRelPath,
+    buildSpecRelPath,
+    releaseRequestRelPath,
+    hashEvidenceRelPath,
   };
 }
 
