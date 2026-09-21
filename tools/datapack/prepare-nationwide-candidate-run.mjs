@@ -139,77 +139,12 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     "station-31d428fc4381", "station-sinseoldong",
   ]);
 
-  const lineConfigs = [
-    {
-      region: "capital",
-      lineId: "seoul-2",
-      upRouteId: "route-seoul-2-inner",
-      upRouteName: "수도권 2호선 내선",
-      upDirName: "내선",
-      upHeadsign: "내선순환",
-      dnRouteId: "route-seoul-2-outer",
-      dnRouteName: "수도권 2호선 외선",
-      dnDirName: "외선",
-      dnHeadsign: "외선순환",
-      shortName: "2",
-      filterStations: (sl) => !branchStationIds.has(sl.stationId),
-    },
-    {
-      region: "busan",
-      lineId: "line-eb7b47920390",
-      upRouteId: "route-busan-2-up",
-      upRouteName: "부산 2호선 양산 방면",
-      upDirName: "양산 방면",
-      upHeadsign: "양산",
-      dnRouteId: "route-busan-2-down",
-      dnRouteName: "부산 2호선 장산 방면",
-      dnDirName: "장산 방면",
-      dnHeadsign: "장산",
-      shortName: "2",
-      filterStations: () => true,
-    },
-    {
-      region: "daegu",
-      lineId: "line-5b8d9b05e7e6",
-      upRouteId: "route-daegu-1-up",
-      upRouteName: "대구 1호선 안심 방면",
-      upDirName: "안심 방면",
-      upHeadsign: "안심",
-      dnRouteId: "route-daegu-1-down",
-      dnRouteName: "대구 1호선 설화명곡 방면",
-      dnDirName: "설화명곡 방면",
-      dnHeadsign: "설화명곡",
-      shortName: "1",
-      filterStations: () => true,
-    },
-    {
-      region: "daejeon",
-      lineId: "line-7051a9c2525c",
-      upRouteId: "route-daejeon-1-up",
-      upRouteName: "대전 1호선 반석 방면",
-      upDirName: "반석 방면",
-      upHeadsign: "반석",
-      dnRouteId: "route-daejeon-1-down",
-      dnRouteName: "대전 1호선 판암 방면",
-      dnDirName: "판암 방면",
-      dnHeadsign: "판암",
-      shortName: "1",
-      filterStations: () => true,
-    },
-    {
-      region: "gwangju",
-      lineId: "line-e57a361e8892",
-      upRouteId: "route-gwangju-1-up",
-      upRouteName: "광주 1호선 평동 방면",
-      upDirName: "평동 방면",
-      upHeadsign: "평동",
-      dnRouteId: "route-gwangju-1-down",
-      dnRouteName: "광주 1호선 녹동 방면",
-      dnDirName: "녹동 방면",
-      dnHeadsign: "녹동",
-      shortName: "1",
-      filterStations: () => true,
-    },
+  const lineSpecs = [
+    ["capital", "seoul-2", "2", "route-seoul-2-inner", "수도권 2호선 내선", "내선", "내선순환", "route-seoul-2-outer", "수도권 2호선 외선", "외선", "외선순환", (sl) => !branchStationIds.has(sl.stationId)],
+    ["busan", "line-eb7b47920390", "2", "route-busan-2-up", "부산 2호선 양산 방면", "양산 방면", "양산", "route-busan-2-down", "부산 2호선 장산 방면", "장산 방면", "장산", null],
+    ["daegu", "line-5b8d9b05e7e6", "1", "route-daegu-1-up", "대구 1호선 안심 방면", "안심 방면", "안심", "route-daegu-1-down", "대구 1호선 설화명곡 방면", "설화명곡 방면", "설화명곡", null],
+    ["daejeon", "line-7051a9c2525c", "1", "route-daejeon-1-up", "대전 1호선 반석 방면", "반석 방면", "반석", "route-daejeon-1-down", "대전 1호선 판암 방면", "판암 방면", "판암", null],
+    ["gwangju", "line-e57a361e8892", "1", "route-gwangju-1-up", "광주 1호선 평동 방면", "평동 방면", "평동", "route-gwangju-1-down", "광주 1호선 녹동 방면", "녹동 방면", "녹동", null],
   ];
 
   const rideDurationMap = new Map();
@@ -221,54 +156,47 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const newTrips = [];
   const newStopTimes = [];
 
-  for (const cfg of lineConfigs) {
+  for (const [, lineId, shortName, upRouteId, upRouteName, upDirName, upHeadsign, dnRouteId, dnRouteName, dnDirName, dnHeadsign, filterFn] of lineSpecs) {
+    const isStationAllowed = filterFn ?? (() => true);
     const forwardStList = pack.stationLines
-      .filter((sl) => sl.lineId === cfg.lineId && cfg.filterStations(sl))
+      .filter((sl) => sl.lineId === lineId && isStationAllowed(sl))
       .sort((a, b) => a.lineSequence - b.lineSequence);
     const reverseStList = [...forwardStList].reverse();
 
-    newRoutes.push({
-      id: cfg.upRouteId,
-      lineId: cfg.lineId,
-      routeShortName: cfg.shortName,
-      routeLongName: cfg.upRouteName,
-      directionName: cfg.upDirName,
-      timezone: "Asia/Seoul",
-    });
-    newRoutes.push({
-      id: cfg.dnRouteId,
-      lineId: cfg.lineId,
-      routeShortName: cfg.shortName,
-      routeLongName: cfg.dnRouteName,
-      directionName: cfg.dnDirName,
-      timezone: "Asia/Seoul",
-    });
-
-    const directions = [
-      { routeId: cfg.upRouteId, dirId: "up", headsign: cfg.upHeadsign, stations: forwardStList },
-      { routeId: cfg.dnRouteId, dirId: "down", headsign: cfg.dnHeadsign, stations: reverseStList },
+    const routeDirections = [
+      { routeId: upRouteId, dirId: "up", headsign: upHeadsign, name: upRouteName, dirName: upDirName, stations: forwardStList },
+      { routeId: dnRouteId, dirId: "down", headsign: dnHeadsign, name: dnRouteName, dirName: dnDirName, stations: reverseStList },
     ];
 
-    for (const dir of directions) {
+    for (const rd of routeDirections) {
+      newRoutes.push({
+        id: rd.routeId,
+        lineId,
+        routeShortName: shortName,
+        routeLongName: rd.name,
+        directionName: rd.dirName,
+        timezone: "Asia/Seoul",
+      });
+
       for (let depTime = 16200; depTime <= 91800; depTime += 600) {
         for (const serviceId of ["weekday-kric", "holiday-kric"]) {
-          const tripId = `trip-${dir.routeId}-${serviceId === "weekday-kric" ? "wd" : "hd"}-${depTime}`;
+          const tripId = `trip-${rd.routeId}-${serviceId === "weekday-kric" ? "wd" : "hd"}-${depTime}`;
           newTrips.push({
             id: tripId,
-            routeId: dir.routeId,
+            routeId: rd.routeId,
             serviceId,
-            tripHeadsign: dir.headsign,
-            directionId: dir.dirId,
+            tripHeadsign: rd.headsign,
+            directionId: rd.dirId,
             servicePattern: "LOCAL",
             serviceClass: "SUBWAY",
             serviceDayStartSeconds: 0,
           });
 
           let currentDep = depTime;
-          for (let i = 0; i < dir.stations.length; i++) {
-            const st = dir.stations[i];
+          for (let i = 0; i < rd.stations.length; i++) {
+            const st = rd.stations[i];
             const isFirst = i === 0;
-            const isLast = i === dir.stations.length - 1;
+            const isLast = i === rd.stations.length - 1;
 
             let arrSec;
             let depSec;
@@ -276,8 +204,8 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
               arrSec = depTime;
               depSec = depTime;
             } else {
-              const prevSt = dir.stations[i - 1];
-              const edgeKey = `${prevSt.stationId}:${cfg.lineId}->${st.stationId}:${cfg.lineId}`;
+              const prevSt = rd.stations[i - 1];
+              const edgeKey = `${prevSt.stationId}:${lineId}->${st.stationId}:${lineId}`;
               const travel = rideDurationMap.get(edgeKey) ?? 120;
               arrSec = currentDep + travel;
               depSec = isLast ? arrSec : arrSec + 20;
@@ -288,7 +216,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
               tripId,
               stopSequence: i + 1,
               stationId: st.stationId,
-              lineId: cfg.lineId,
+              lineId,
               arrivalSeconds: arrSec,
               departureSeconds: depSec,
               pickupType: isLast ? 1 : 0,
@@ -455,12 +383,18 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
   await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
 
+  const hashEvidenceRelPath = "tools/datapack/release/hash-evidence.json";
+  const hashEvidence = JSON.parse(await readFile(path.join(repositoryRoot, hashEvidenceRelPath), "utf8"));
+  hashEvidence.fixturePath.sha256 = sha256(nationwidePackBytes);
+  await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
+
   return {
     preparationRelPath,
     routeInputRelPath,
     nationwidePackRelPath,
     buildSpecRelPath,
     releaseRequestRelPath,
+    hashEvidenceRelPath,
   };
 }
 
