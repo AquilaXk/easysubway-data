@@ -58,7 +58,11 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const active = selectEffectiveDataPack(manifest);
   const validPacks = isNationwide ? ["capital", "nationwide"] : ["capital"];
   if (!active || !validPacks.includes(active.id) || active.version !== "1" || active.artifactKind !== "production") {
-    throw new Error("current manifest must select production capital@1");
+    throw new Error(
+      isNationwide
+        ? "current manifest must select production capital@1 or nationwide@1"
+        : "current manifest must select production capital@1"
+    );
   }
   const publishedAt = new Date(requiredUtcInstant(buildSpec.publishedAt, "build spec publishedAt"));
   const expiresAt = new Date(requiredUtcInstant(manifest.expiresAt, "current manifest expiresAt"));

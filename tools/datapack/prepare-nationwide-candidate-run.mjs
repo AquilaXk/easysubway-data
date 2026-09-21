@@ -101,7 +101,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
             toLineId: toLine,
             transferType: "IN_STATION",
             minTransferSeconds: 120,
-            pathwayEdgeId: edgeId,
+            pathwayEdgeId: null,
             strictStepFreePathwayEdgeId: null,
             sourceId: "OFFICIAL_TRANSFERS",
             verificationStatus: "VERIFIED",
