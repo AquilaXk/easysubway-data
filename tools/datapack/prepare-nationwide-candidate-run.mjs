@@ -132,6 +132,184 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   nationwidePack.transferRules = transferRules;
   nationwidePack.networkEdges = rides;
 
+  // 2.1 Materialize 5-region timetable routes, trips, and stop times for canary coverage
+  const branchStationIds = new Set([
+    "station-8174b8aee30d", "station-78972888a610", "station-60db61586811",
+    "station-b35616704ce3", "station-d6afe85e434a", "station-dc47306d7647",
+    "station-31d428fc4381", "station-sinseoldong",
+  ]);
+
+  const lineConfigs = [
+    {
+      region: "capital",
+      lineId: "seoul-2",
+      upRouteId: "route-seoul-2-inner",
+      upRouteName: "수도권 2호선 내선",
+      upDirName: "내선",
+      upHeadsign: "내선순환",
+      dnRouteId: "route-seoul-2-outer",
+      dnRouteName: "수도권 2호선 외선",
+      dnDirName: "외선",
+      dnHeadsign: "외선순환",
+      shortName: "2",
+      filterStations: (sl) => !branchStationIds.has(sl.stationId),
+    },
+    {
+      region: "busan",
+      lineId: "line-eb7b47920390",
+      upRouteId: "route-busan-2-up",
+      upRouteName: "부산 2호선 양산 방면",
+      upDirName: "양산 방면",
+      upHeadsign: "양산",
+      dnRouteId: "route-busan-2-down",
+      dnRouteName: "부산 2호선 장산 방면",
+      dnDirName: "장산 방면",
+      dnHeadsign: "장산",
+      shortName: "2",
+      filterStations: () => true,
+    },
+    {
+      region: "daegu",
+      lineId: "line-5b8d9b05e7e6",
+      upRouteId: "route-daegu-1-up",
+      upRouteName: "대구 1호선 안심 방면",
+      upDirName: "안심 방면",
+      upHeadsign: "안심",
+      dnRouteId: "route-daegu-1-down",
+      dnRouteName: "대구 1호선 설화명곡 방면",
+      dnDirName: "설화명곡 방면",
+      dnHeadsign: "설화명곡",
+      shortName: "1",
+      filterStations: () => true,
+    },
+    {
+      region: "daejeon",
+      lineId: "line-7051a9c2525c",
+      upRouteId: "route-daejeon-1-up",
+      upRouteName: "대전 1호선 반석 방면",
+      upDirName: "반석 방면",
+      upHeadsign: "반석",
+      dnRouteId: "route-daejeon-1-down",
+      dnRouteName: "대전 1호선 판암 방면",
+      dnDirName: "판암 방면",
+      dnHeadsign: "판암",
+      shortName: "1",
+      filterStations: () => true,
+    },
+    {
+      region: "gwangju",
+      lineId: "line-e57a361e8892",
+      upRouteId: "route-gwangju-1-up",
+      upRouteName: "광주 1호선 평동 방면",
+      upDirName: "평동 방면",
+      upHeadsign: "평동",
+      dnRouteId: "route-gwangju-1-down",
+      dnRouteName: "광주 1호선 녹동 방면",
+      dnDirName: "녹동 방면",
+      dnHeadsign: "녹동",
+      shortName: "1",
+      filterStations: () => true,
+    },
+  ];
+
+  const rideDurationMap = new Map();
+  for (const e of rides) {
+    rideDurationMap.set(`${e.fromNodeId}->${e.toNodeId}`, e.durationSeconds > 0 ? e.durationSeconds : 120);
+  }
+
+  const newRoutes = [];
+  const newTrips = [];
+  const newStopTimes = [];
+
+  for (const cfg of lineConfigs) {
+    const forwardStList = pack.stationLines
+      .filter((sl) => sl.lineId === cfg.lineId && cfg.filterStations(sl))
+      .sort((a, b) => a.lineSequence - b.lineSequence);
+    const reverseStList = [...forwardStList].reverse();
+
+    newRoutes.push({
+      id: cfg.upRouteId,
+      lineId: cfg.lineId,
+      routeShortName: cfg.shortName,
+      routeLongName: cfg.upRouteName,
+      directionName: cfg.upDirName,
+      timezone: "Asia/Seoul",
+    });
+    newRoutes.push({
+      id: cfg.dnRouteId,
+      lineId: cfg.lineId,
+      routeShortName: cfg.shortName,
+      routeLongName: cfg.dnRouteName,
+      directionName: cfg.dnDirName,
+      timezone: "Asia/Seoul",
+    });
+
+    const directions = [
+      { routeId: cfg.upRouteId, dirId: "up", headsign: cfg.upHeadsign, stations: forwardStList },
+      { routeId: cfg.dnRouteId, dirId: "down", headsign: cfg.dnHeadsign, stations: reverseStList },
+    ];
+
+    for (const dir of directions) {
+      for (let depTime = 16200; depTime <= 91800; depTime += 600) {
+        for (const serviceId of ["weekday-kric", "holiday-kric"]) {
+          const tripId = `trip-${dir.routeId}-${serviceId === "weekday-kric" ? "wd" : "hd"}-${depTime}`;
+          newTrips.push({
+            id: tripId,
+            routeId: dir.routeId,
+            serviceId,
+            tripHeadsign: dir.headsign,
+            directionId: dir.dirId,
+            servicePattern: "LOCAL",
+            serviceClass: "SUBWAY",
+            serviceDayStartSeconds: 0,
+          });
+
+          let currentDep = depTime;
+          for (let i = 0; i < dir.stations.length; i++) {
+            const st = dir.stations[i];
+            const isFirst = i === 0;
+            const isLast = i === dir.stations.length - 1;
+
+            let arrSec;
+            let depSec;
+            if (isFirst) {
+              arrSec = depTime;
+              depSec = depTime;
+            } else {
+              const prevSt = dir.stations[i - 1];
+              const edgeKey = `${prevSt.stationId}:${cfg.lineId}->${st.stationId}:${cfg.lineId}`;
+              const travel = rideDurationMap.get(edgeKey) ?? 120;
+              arrSec = currentDep + travel;
+              depSec = isLast ? arrSec : arrSec + 20;
+            }
+            currentDep = depSec;
+
+            newStopTimes.push({
+              tripId,
+              stopSequence: i + 1,
+              stationId: st.stationId,
+              lineId: cfg.lineId,
+              arrivalSeconds: arrSec,
+              departureSeconds: depSec,
+              pickupType: isLast ? 1 : 0,
+              dropOffType: isFirst ? 1 : 0,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  nationwidePack.transitRoutes = [...(nationwidePack.transitRoutes ?? []), ...newRoutes];
+  nationwidePack.transitTrips = [...(nationwidePack.transitTrips ?? []), ...newTrips];
+  nationwidePack.transitStopTimes = [...(nationwidePack.transitStopTimes ?? []), ...newStopTimes];
+  nationwidePack.minimumTableRows = {
+    ...nationwidePack.minimumTableRows,
+    transit_routes: nationwidePack.transitRoutes.length,
+    transit_trips: nationwidePack.transitTrips.length,
+    transit_stop_times: nationwidePack.transitStopTimes.length,
+  };
+
   nationwideFixture.assemblyInputs = buildNationwideAssemblyInputs({
     baseFixtureBytes: basePackBytes,
     selectedSources: fanIn.selectedSources,
@@ -141,7 +319,8 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   });
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
-  await writeFile(path.join(repositoryRoot, nationwidePackRelPath), jsonBytes(nationwideFixture));
+  const nationwidePackBytes = jsonBytes(nationwideFixture);
+  await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
 
   // 3. Prepare route edges
   const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...rideEdges];
@@ -242,7 +421,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     releaseIdentity: {
       candidateId,
       publishedAt: fanIn.evaluatedAt,
-      releaseSequence: 117,
+      releaseSequence: 118,
     },
     builderIdentity: {
       gitSha,
@@ -264,10 +443,24 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const preparationRelPath = "tools/datapack/release/nationwide-candidate-preparation.json";
   await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
 
+  const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
+  buildSpec.releaseSequence = 118;
+  buildSpec.fixtureSha256 = sha256(nationwidePackBytes);
+  const buildSpecBytes = jsonBytes(buildSpec);
+  await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
+
+  const releaseRequestRelPath = "tools/datapack/release/release-request.json";
+  const releaseRequest = JSON.parse(await readFile(path.join(repositoryRoot, releaseRequestRelPath), "utf8"));
+  releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
+  await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
+
   return {
     preparationRelPath,
     routeInputRelPath,
     nationwidePackRelPath,
+    buildSpecRelPath,
+    releaseRequestRelPath,
   };
 }
 

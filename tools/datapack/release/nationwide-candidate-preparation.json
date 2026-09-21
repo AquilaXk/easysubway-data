@@ -88,10 +88,10 @@
   "releaseIdentity": {
     "candidateId": "nationwide-candidate-20260909",
     "publishedAt": "2026-09-09T03:16:08.098Z",
-    "releaseSequence": 117
+    "releaseSequence": 118
   },
   "builderIdentity": {
-    "gitSha": "03c9a3eac8a55733d0ec97e0380119b5a4500710",
+    "gitSha": "c674f3885118135681df363829bc713af1eb784e",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
