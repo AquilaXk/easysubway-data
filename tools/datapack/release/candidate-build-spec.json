@@ -3,7 +3,7 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "nationwide-candidate-20260909",
   "publishedAt": "2026-09-09T03:16:08.098Z",
-  "releaseSequence": 116,
+  "releaseSequence": 117,
   "builderGitSha": "42f4fb3f6d6cb1c9d9def0ac5d47b988038c3ac3",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",

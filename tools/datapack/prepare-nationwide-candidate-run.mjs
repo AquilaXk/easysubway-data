@@ -242,7 +242,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     releaseIdentity: {
       candidateId,
       publishedAt: fanIn.evaluatedAt,
-      releaseSequence: 116,
+      releaseSequence: 117,
     },
     builderIdentity: {
       gitSha,
