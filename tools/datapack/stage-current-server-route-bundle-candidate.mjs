@@ -110,6 +110,15 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
       canonicalInputPaths[field] = snapshotPath;
     }
     const prepare = input.stages?.prepare ?? prepareCurrentServerRouteBundleFinal;
+    let mapPackId = "capital-map-1";
+    let catalogPackId = "capital-catalog-1";
+    let bundleId = "capital-route-bundle-1";
+    if (isNationwide) {
+      const nationwideVersion = active.id === "nationwide" ? active.version : 1;
+      mapPackId = `nationwide-map-${nationwideVersion}`;
+      catalogPackId = `nationwide-catalog-${nationwideVersion}`;
+      bundleId = `nationwide-route-bundle-${nationwideVersion}`;
+    }
     await prepare({
       output: prepared,
       repositoryGitSha: requiredSha(input.repositoryGitSha, "repository git sha"),
@@ -121,9 +130,9 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         sourceProvenance: provenance,
         buildSpec: "tools/datapack/release/candidate-build-spec.json",
         buildSpecSnapshotBytes: canonicalInputBytes.buildSpecPath,
-        mapPackId: isNationwide ? (active.id === "nationwide" ? `nationwide-map-${active.version}` : "nationwide-map-1") : "capital-map-1",
-        catalogPackId: isNationwide ? (active.id === "nationwide" ? `nationwide-catalog-${active.version}` : "nationwide-catalog-1") : "capital-catalog-1",
-        bundleId: isNationwide ? (active.id === "nationwide" ? `nationwide-route-bundle-${active.version}` : "nationwide-route-bundle-1") : "capital-route-bundle-1",
+        mapPackId,
+        catalogPackId,
+        bundleId,
         releaseSequence,
         activeFrom: kstInstant(publishedAt),
         freshUntil: stagedFreshUntil,

@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
-import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -198,7 +197,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const selectedSnapshots = snapshots.filter((s) => selectedSnapshotIds.has(s.snapshotId));
   const sourceSetSha256 = sha256(JSON.stringify(selectedSnapshots));
 
-  const stationIds = [...new Set(nationwidePack.stations.map((s) => s.id))].sort();
+  const stationIds = [...new Set(nationwidePack.stations.map((s) => s.id))].sort((a, b) => a.localeCompare(b));
   const stationSetSha256 = sha256(JSON.stringify(stationIds));
   const topologySha256 = canonicalRideEdgeSetSha256(rideEdges);
 
