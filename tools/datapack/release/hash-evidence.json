@@ -18,9 +18,9 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "routeEvidenceLedgerHash": {
-      "value": "5268ab34874731d9adf3af62c7ae72725091e83b59ade83571b309ef6d6eefef",
+      "value": "f98414c138546377f7ea4f2d3dfa1f23036077e7f7679d670ed22d1fced8c215",
       "exporterKind": "route-evidence",
-      "rowCount": 4790,
+      "rowCount": 2198,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "approvedOverrideSetHash": {
@@ -38,7 +38,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "99b075345ee4466c89ab43ab7019590468b24764ecd7abc2005cca42d675ffe7"
+    "sha256": "d5d9070f3bb8e8222e4b9555c29416a6d4bf15ca42266c459db7a9560f36f5ae"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
