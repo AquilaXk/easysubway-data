@@ -53,9 +53,16 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     stationLineInputPath: stationLineBytes,
     routeEdgeInputPath: routeBytes,
   };
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
   const active = selectEffectiveDataPack(manifest);
-  if (!active || active.id !== "capital" || active.version !== "1" || active.artifactKind !== "production") {
-    throw new Error("current manifest must select production capital@1");
+  const validPacks = isNationwide ? ["capital", "nationwide"] : ["capital"];
+  if (!active || !validPacks.includes(active.id) || active.version !== "1" || active.artifactKind !== "production") {
+    throw new Error(
+      isNationwide
+        ? "current manifest must select production capital@1 or nationwide@1"
+        : "current manifest must select production capital@1"
+    );
   }
   const publishedAt = new Date(requiredUtcInstant(buildSpec.publishedAt, "build spec publishedAt"));
   const expiresAt = new Date(requiredUtcInstant(manifest.expiresAt, "current manifest expiresAt"));
@@ -103,6 +110,15 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
       canonicalInputPaths[field] = snapshotPath;
     }
     const prepare = input.stages?.prepare ?? prepareCurrentServerRouteBundleFinal;
+    let mapPackId = "capital-map-1";
+    let catalogPackId = "capital-catalog-1";
+    let bundleId = "capital-route-bundle-1";
+    if (isNationwide) {
+      const nationwideVersion = active.id === "nationwide" ? active.version : 1;
+      mapPackId = `nationwide-map-${nationwideVersion}`;
+      catalogPackId = `nationwide-catalog-${nationwideVersion}`;
+      bundleId = `nationwide-route-bundle-${nationwideVersion}`;
+    }
     await prepare({
       output: prepared,
       repositoryGitSha: requiredSha(input.repositoryGitSha, "repository git sha"),
@@ -114,9 +130,9 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         sourceProvenance: provenance,
         buildSpec: "tools/datapack/release/candidate-build-spec.json",
         buildSpecSnapshotBytes: canonicalInputBytes.buildSpecPath,
-        mapPackId: "capital-map-1",
-        catalogPackId: "capital-catalog-1",
-        bundleId: "capital-route-bundle-1",
+        mapPackId,
+        catalogPackId,
+        bundleId,
         releaseSequence,
         activeFrom: kstInstant(publishedAt),
         freshUntil: stagedFreshUntil,

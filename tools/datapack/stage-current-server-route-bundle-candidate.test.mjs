@@ -368,6 +368,65 @@ test("third publish rename failure rolls back the exact three candidate outputs"
   }
 });
 
+test("nationwide candidate selects nationwide pack and sets nationwide bundle/map/catalog ids", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-nationwide-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await fixture(root);
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+
+  const buildSpec = JSON.parse(await readFile(input.buildSpecPath, "utf8"));
+  buildSpec.candidateId = "nationwide-candidate-20260909";
+  buildSpec.productionScopeId = "nationwide_routing_android_v1";
+  const buildSpecBytes = Buffer.from(JSON.stringify(buildSpec));
+  await writeFile(input.buildSpecPath, buildSpecBytes);
+
+  const manifest = JSON.parse(await readFile(path.join(input.datapackRoot, "current.json"), "utf8"));
+  manifest.activePack = { id: "nationwide", version: "1" };
+  manifest.packs[0].id = "nationwide";
+  await writeFile(path.join(input.datapackRoot, "current.json"), JSON.stringify(manifest));
+  await (await import("node:fs/promises")).copyFile(
+    path.join(input.datapackRoot, "catalog", "capital-v1.sqlite.gz"),
+    path.join(input.datapackRoot, "catalog", "nationwide-v1.sqlite.gz")
+  );
+
+  const provenance = JSON.parse(await readFile(path.join(input.datapackRoot, "current.provenance.json"), "utf8"));
+  provenance.candidateBuild.candidateId = buildSpec.candidateId;
+  provenance.candidateBuild.buildSpecSha256 = sha256(buildSpecBytes);
+  await writeFile(path.join(input.datapackRoot, "current.provenance.json"), JSON.stringify(provenance));
+
+  const stationLine = JSON.parse(await readFile(input.stationLineInputPath, "utf8"));
+  stationLine.candidate.candidateId = buildSpec.candidateId;
+  await writeFile(input.stationLineInputPath, JSON.stringify(stationLine));
+
+  const routeEdge = JSON.parse(await readFile(input.routeEdgeInputPath, "utf8"));
+  routeEdge.candidate.candidateId = buildSpec.candidateId;
+  await writeFile(input.routeEdgeInputPath, JSON.stringify(routeEdge));
+
+  const calls = [];
+  const candidate = {
+    ...BUNDLE_CANDIDATE,
+    bundleId: "nationwide-route-bundle-1",
+  };
+  await stageCurrentServerRouteBundleCandidate({
+    ...input,
+    repositoryGitSha: "b".repeat(40),
+    keyId: "production-v1",
+    output,
+    stages: {
+      prepare: async (prepareInput) => {
+        calls.push(prepareInput);
+        await writePreparedOutputs(prepareInput.output, candidate);
+      },
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].emitterInputs.mapPackId, "nationwide-map-1");
+  assert.equal(calls[0].emitterInputs.catalogPackId, "nationwide-catalog-1");
+  assert.equal(calls[0].emitterInputs.bundleId, "nationwide-route-bundle-1");
+});
+
 async function inventory(root) {
   const entries = [];
   async function walk(directory, prefix = "") {
