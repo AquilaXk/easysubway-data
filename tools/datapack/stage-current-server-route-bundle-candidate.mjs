@@ -53,8 +53,11 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     stationLineInputPath: stationLineBytes,
     routeEdgeInputPath: routeBytes,
   };
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
   const active = selectEffectiveDataPack(manifest);
-  if (!active || active.id !== "capital" || active.version !== "1" || active.artifactKind !== "production") {
+  const validPacks = isNationwide ? ["capital", "nationwide"] : ["capital"];
+  if (!active || !validPacks.includes(active.id) || active.version !== "1" || active.artifactKind !== "production") {
     throw new Error("current manifest must select production capital@1");
   }
   const publishedAt = new Date(requiredUtcInstant(buildSpec.publishedAt, "build spec publishedAt"));
@@ -114,9 +117,9 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         sourceProvenance: provenance,
         buildSpec: "tools/datapack/release/candidate-build-spec.json",
         buildSpecSnapshotBytes: canonicalInputBytes.buildSpecPath,
-        mapPackId: "capital-map-1",
-        catalogPackId: "capital-catalog-1",
-        bundleId: "capital-route-bundle-1",
+        mapPackId: isNationwide ? (active.id === "nationwide" ? `nationwide-map-${active.version}` : "nationwide-map-1") : "capital-map-1",
+        catalogPackId: isNationwide ? (active.id === "nationwide" ? `nationwide-catalog-${active.version}` : "nationwide-catalog-1") : "capital-catalog-1",
+        bundleId: isNationwide ? (active.id === "nationwide" ? `nationwide-route-bundle-${active.version}` : "nationwide-route-bundle-1") : "capital-route-bundle-1",
         releaseSequence,
         activeFrom: kstInstant(publishedAt),
         freshUntil: stagedFreshUntil,

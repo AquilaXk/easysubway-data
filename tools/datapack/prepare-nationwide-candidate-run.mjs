@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -27,10 +29,156 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const baseFixture = JSON.parse(basePackBytes);
   const pack = baseFixture.packs[0];
 
-  // 1. Prepare nationwide canonical pack
+  // 1. Prepare edges and transfer rules
+  const selectedLines = new Set(targets.activeLineScopes.map((r) => r.lineId));
+  const pairs = new Map();
+  for (const row of pack.stationLines) {
+    if (!selectedLines.has(row.lineId)) continue;
+    pairs.set(JSON.stringify([row.stationId, row.lineId]), row);
+  }
+
+  const entryEdges = [...pairs.values()].map(({ stationId, lineId }) => {
+    const normalized = {
+      edgeId: `entry-${stationId}-${lineId}`,
+      edgeType: "ENTRY",
+      fromNodeId: stationId,
+      toNodeId: `${stationId}:${lineId}`,
+      durationSeconds: 90,
+      distanceMeters: 50,
+      servicePattern: "",
+      serviceClass: "SUBWAY",
+    };
+    return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
+  });
+
+  const exitEdges = [...pairs.values()].map(({ stationId, lineId }) => {
+    const normalized = {
+      edgeId: `exit-${stationId}-${lineId}`,
+      edgeType: "EXIT",
+      fromNodeId: `${stationId}:${lineId}`,
+      toNodeId: stationId,
+      durationSeconds: 60,
+      distanceMeters: 50,
+      servicePattern: "",
+      serviceClass: "SUBWAY",
+    };
+    return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
+  });
+
+  const stationToLines = new Map();
+  for (const { stationId, lineId } of pairs.values()) {
+    if (!stationToLines.has(stationId)) stationToLines.set(stationId, []);
+    stationToLines.get(stationId).push(lineId);
+  }
+
+  const transferEdges = [];
+  const transferRules = [];
+  for (const [stationId, lines] of stationToLines) {
+    if (lines.length > 1) {
+      for (let i = 0; i < lines.length; i++) {
+        for (let j = 0; j < lines.length; j++) {
+          if (i === j) continue;
+          const fromLine = lines[i];
+          const toLine = lines[j];
+          const edgeId = `transfer-${stationId}-${fromLine}-${toLine}`;
+          const normalized = {
+            edgeId,
+            edgeType: "IN_STATION_TRANSFER",
+            fromNodeId: `${stationId}:${fromLine}`,
+            toNodeId: `${stationId}:${toLine}`,
+            durationSeconds: 120,
+            distanceMeters: 50,
+            servicePattern: "",
+            serviceClass: "SUBWAY",
+          };
+          transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
+
+          transferRules.push({
+            id: `rule-transfer-${stationId}-${fromLine}-${toLine}`,
+            fromStationId: stationId,
+            fromLineId: fromLine,
+            toStationId: stationId,
+            toLineId: toLine,
+            transferType: "IN_STATION",
+            minTransferSeconds: 120,
+            pathwayEdgeId: edgeId,
+            strictStepFreePathwayEdgeId: null,
+            sourceId: "OFFICIAL_TRANSFERS",
+            verificationStatus: "VERIFIED",
+          });
+        }
+      }
+    }
+  }
+
+  const rides = pack.networkEdges.filter((e) => e.edgeType === "RIDE");
+  const rideEdges = rides.map((edge) => {
+    const normalized = {
+      edgeId: edge.id,
+      edgeType: edge.edgeType,
+      fromNodeId: edge.fromNodeId,
+      toNodeId: edge.toNodeId,
+      durationSeconds: edge.durationSeconds ?? 0,
+      distanceMeters: edge.distanceMeters ?? 0,
+      servicePattern: edge.servicePattern ?? "LOCAL",
+      serviceClass: edge.serviceClass ?? "SUBWAY",
+    };
+    return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
+  });
+
+  // 2. Prepare nationwide canonical pack
   const nationwideFixture = structuredClone(baseFixture);
   const nationwidePack = nationwideFixture.packs[0];
   nationwidePack.coverageLineOperatorScopes = targets.activeLineScopes;
+  nationwidePack.transferRules = transferRules;
+  nationwidePack.networkEdges = [
+    ...rides,
+    ...entryEdges.map((e) => ({
+      id: e.edgeId,
+      fromNodeId: e.fromNodeId,
+      toNodeId: e.toNodeId,
+      durationSeconds: e.durationSeconds,
+      distanceMeters: e.distanceMeters,
+      edgeType: e.edgeType,
+      servicePattern: e.servicePattern,
+      serviceClass: e.serviceClass,
+      includesStairs: false,
+      stairAccessState: "UNKNOWN",
+      accessibilityStatus: "VERIFIED",
+      reliabilityScore: 100,
+      facilityId: null,
+    })),
+    ...exitEdges.map((e) => ({
+      id: e.edgeId,
+      fromNodeId: e.fromNodeId,
+      toNodeId: e.toNodeId,
+      durationSeconds: e.durationSeconds,
+      distanceMeters: e.distanceMeters,
+      edgeType: e.edgeType,
+      servicePattern: e.servicePattern,
+      serviceClass: e.serviceClass,
+      includesStairs: false,
+      stairAccessState: "UNKNOWN",
+      accessibilityStatus: "VERIFIED",
+      reliabilityScore: 100,
+      facilityId: null,
+    })),
+    ...transferEdges.map((e) => ({
+      id: e.edgeId,
+      fromNodeId: e.fromNodeId,
+      toNodeId: e.toNodeId,
+      durationSeconds: e.durationSeconds,
+      distanceMeters: e.distanceMeters,
+      edgeType: e.edgeType,
+      servicePattern: e.servicePattern,
+      serviceClass: e.serviceClass,
+      includesStairs: false,
+      stairAccessState: "UNKNOWN",
+      accessibilityStatus: "VERIFIED",
+      reliabilityScore: 100,
+      facilityId: null,
+    })),
+  ];
 
   nationwideFixture.assemblyInputs = buildNationwideAssemblyInputs({
     baseFixtureBytes: basePackBytes,
@@ -43,51 +191,16 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
   await writeFile(path.join(repositoryRoot, nationwidePackRelPath), jsonBytes(nationwideFixture));
 
-  // 2. Prepare route edges
-  const selectedLines = new Set(targets.activeLineScopes.map((r) => r.lineId));
-  const pairs = new Map();
-  for (const row of pack.stationLines) {
-    if (!selectedLines.has(row.lineId)) continue;
-    pairs.set(JSON.stringify([row.stationId, row.lineId]), row);
-  }
-
-  const routeEdges = [...pairs.values()].flatMap(({ stationId, lineId }) => [
-    { edgeId: `entry-${stationId}-${lineId}`, edgeType: "ENTRY", fromNodeId: stationId, toNodeId: `${stationId}:${lineId}` },
-    { edgeId: `exit-${stationId}-${lineId}`, edgeType: "EXIT", fromNodeId: `${stationId}:${lineId}`, toNodeId: stationId },
-  ]);
-
-  const stationToLines = new Map();
-  for (const { stationId, lineId } of pairs.values()) {
-    if (!stationToLines.has(stationId)) stationToLines.set(stationId, []);
-    stationToLines.get(stationId).push(lineId);
-  }
-
-  for (const [stationId, lines] of stationToLines) {
-    if (lines.length > 1) {
-      for (let i = 0; i < lines.length; i++) {
-        for (let j = i + 1; j < lines.length; j++) {
-          routeEdges.push({
-            edgeId: `transfer-${stationId}-${lines[i]}-${lines[j]}`,
-            edgeType: "IN_STATION_TRANSFER",
-            fromNodeId: `${stationId}:${lines[i]}`,
-            toNodeId: `${stationId}:${lines[j]}`,
-          });
-          routeEdges.push({
-            edgeId: `transfer-${stationId}-${lines[j]}-${lines[i]}`,
-            edgeType: "IN_STATION_TRANSFER",
-            fromNodeId: `${stationId}:${lines[j]}`,
-            toNodeId: `${stationId}:${lines[i]}`,
-          });
-        }
-      }
-    }
-  }
-
-  routeEdges.push({ edgeId: "ride-subway", edgeType: "RIDE", serviceClass: "SUBWAY" });
+  // 3. Prepare route edges
+  const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...rideEdges];
 
   const selectedSnapshotIds = new Set(fanIn.selectedSources.map((s) => s.snapshotId));
   const selectedSnapshots = snapshots.filter((s) => selectedSnapshotIds.has(s.snapshotId));
   const sourceSetSha256 = sha256(JSON.stringify(selectedSnapshots));
+
+  const stationIds = [...new Set(nationwidePack.stations.map((s) => s.id))].sort();
+  const stationSetSha256 = sha256(JSON.stringify(stationIds));
+  const topologySha256 = canonicalRideEdgeSetSha256(rideEdges);
 
   const candidateId = "nationwide-candidate-20260909";
   const scopeId = "nationwide_routing_android_v1";
@@ -95,7 +208,11 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const routeInput = {
     candidate: {
       candidateId,
+      evaluatorVersion: "1",
+      policyVersion: "route-edge-evaluation-v2",
       sourceSetSha256,
+      stationSetSha256,
+      topologySha256,
     },
     routeEdges,
   };

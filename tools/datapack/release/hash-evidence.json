@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "d7fe7773528239e27e3788679d1b46b813cce046",
+  "builderGitSha": "3329946250216949d98e88f8a087c2edc60adba9",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -18,9 +18,9 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "routeEvidenceLedgerHash": {
-      "value": "f98414c138546377f7ea4f2d3dfa1f23036077e7f7679d670ed22d1fced8c215",
+      "value": "5268ab34874731d9adf3af62c7ae72725091e83b59ade83571b309ef6d6eefef",
       "exporterKind": "route-evidence",
-      "rowCount": 2198,
+      "rowCount": 4790,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "approvedOverrideSetHash": {
@@ -38,7 +38,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "ddfdf6e2d29e7a2c52823830564812a57367a8deb0182c636a061338ea57254b"
+    "sha256": "0ce4841c7007071691b182ffd2b7805fea9a29beb269e382812ae5b06671c4be"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -337,41 +337,5 @@
       ],
       "perSourceSnapshotSetHash": "8d4996741761b55f47b2aa1690a57e7262494b637460120b44de7cec7f9f2834"
     }
-  ],
-  "officialOdFareEvidence": {
-    "sourceId": "seoul-metro-official-od-fares",
-    "snapshotId": "seoul-metro-official-od-fares-20260712",
-    "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
-    "admissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
-    "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
-    "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
-    "quotes": [
-      {
-        "originStationId": "station-sangnoksu",
-        "destinationStationId": "station-sadang",
-        "sourceId": "seoul-metro-official-od-fares",
-        "snapshotId": "seoul-metro-official-od-fares-20260712",
-        "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
-        "gnrlCardFare": 1950,
-        "gnrlCashFare": 2050,
-        "yungCardFare": 1220,
-        "yungCashFare": 2050,
-        "childCardFare": 750,
-        "childCashFare": 750
-      },
-      {
-        "originStationId": "station-sadang",
-        "destinationStationId": "station-sangnoksu",
-        "sourceId": "seoul-metro-official-od-fares",
-        "snapshotId": "seoul-metro-official-od-fares-20260712",
-        "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
-        "gnrlCardFare": 1950,
-        "gnrlCashFare": 2050,
-        "yungCardFare": 1220,
-        "yungCashFare": 2050,
-        "childCardFare": 750,
-        "childCashFare": 750
-      }
-    ]
-  }
+  ]
 }
