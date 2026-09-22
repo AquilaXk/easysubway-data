@@ -175,6 +175,34 @@ test("activePack·TTL·URL·license 변경도 material change로 판정한다", 
   }
 });
 
+test("packs가 동일해도 releaseSequence가 증가하고 승인되면 material change로 PUBLISH_REQUIRED이다", () => {
+  const current = manifest({ releaseSequence: 10 });
+  const candidate = manifest({ releaseSequence: 11 });
+  const result = decide({ candidateManifest: candidate, currentManifest: current });
+
+  assert.equal(result.materialChange, true);
+  assert.equal(result.approvalValid, true);
+  assert.equal(result.outcome, "PUBLISH_REQUIRED");
+  assert.equal(result.productionWriteAllowed, true);
+  assert.deepEqual(result.reasonCodes, ["PUBLISH_REQUIRED_NOT_COMPLETED"]);
+});
+
+test("packs가 동일해도 releaseSequence가 증가했으나 승인이 다르면 CHANGE_BLOCKED이다", () => {
+  const current = manifest({ releaseSequence: 10 });
+  const candidate = manifest({ releaseSequence: 11 });
+  const result = decide({
+    candidateManifest: candidate,
+    currentManifest: current,
+    releaseRequest: approval(hash("0")),
+  });
+
+  assert.equal(result.materialChange, true);
+  assert.equal(result.approvalValid, false);
+  assert.equal(result.outcome, "CHANGE_BLOCKED");
+  assert.equal(result.productionWriteAllowed, false);
+  assert.deepEqual(result.reasonCodes, ["MATERIAL_CHANGE_UNAPPROVED"]);
+});
+
 test("current expiry와 같은 평가 시각은 변경이 없어도 PUBLISH_REQUIRED이다", () => {
   const expired = manifest({ expiresAt: evaluationAt });
   const result = decide({
