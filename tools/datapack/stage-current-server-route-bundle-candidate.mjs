@@ -48,6 +48,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const stationLine = JSON.parse(stationLineBytes.toString("utf8"));
   const route = JSON.parse(routeBytes.toString("utf8"));
   const provenanceValue = JSON.parse(provenanceBytes.toString("utf8"));
+  const candidate = candidateIdentity(buildSpec, "build spec");
   const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
     || buildSpec.candidateId?.startsWith("nationwide-candidate");
 
@@ -113,7 +114,6 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   if (publishedAt.getTime() >= expiresAt.getTime()) {
     throw new Error("current manifest expiresAt must be after build spec publishedAt");
   }
-  const candidate = candidateIdentity(buildSpec, "build spec");
   const provenanceCandidate = candidateIdentity(provenanceValue?.candidateBuild, "current provenance");
   if (provenanceCandidate.candidateId !== candidate.candidateId
     || provenanceCandidate.sourceSetSha256 !== candidate.sourceSetSha256
