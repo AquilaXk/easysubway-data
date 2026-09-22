@@ -48,13 +48,58 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const stationLine = JSON.parse(stationLineBytes.toString("utf8"));
   const route = JSON.parse(routeBytes.toString("utf8"));
   const provenanceValue = JSON.parse(provenanceBytes.toString("utf8"));
-  const canonicalInputBytes = {
-    buildSpecPath: buildSpecBytes,
-    stationLineInputPath: stationLineBytes,
-    routeEdgeInputPath: routeBytes,
-  };
+  const candidate = candidateIdentity(buildSpec, "build spec");
   const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
     || buildSpec.candidateId?.startsWith("nationwide-candidate");
+
+  let effectiveStationLineBytes = stationLineBytes;
+  let effectiveRouteBytes = routeBytes;
+  let effectiveStationLine = stationLine;
+  let effectiveRoute = route;
+
+  if (isNationwide) {
+    const candidates = [
+      [
+        path.resolve(path.dirname(input.stationLineInputPath), "nationwide-station-line-input.json"),
+        path.resolve(path.dirname(input.routeEdgeInputPath), "nationwide-route-edge-input.json"),
+      ],
+      [
+        path.resolve("tools/datapack/release/nationwide-station-line-input.json"),
+        path.resolve("tools/datapack/release/nationwide-route-edge-input.json"),
+      ],
+    ];
+    for (const [stPath, rtPath] of candidates) {
+      try {
+        const [stBytes, rtBytes] = await Promise.all([
+          regular(stPath, "nationwide station-line"),
+          regular(rtPath, "nationwide route-edge"),
+        ]);
+        const st = JSON.parse(stBytes.toString("utf8"));
+        const rt = JSON.parse(rtBytes.toString("utf8"));
+        const stObserved = candidateIdentity(st?.candidate, "nationwide station");
+        const rtObserved = candidateIdentity(rt?.candidate, "nationwide route");
+        if (stObserved.candidateId === candidate.candidateId
+          && stObserved.sourceSetSha256 === candidate.sourceSetSha256
+          && rtObserved.candidateId === candidate.candidateId
+          && rtObserved.sourceSetSha256 === candidate.sourceSetSha256
+          && (st.stationLines?.length ?? 0) >= 1000) {
+          effectiveStationLineBytes = stBytes;
+          effectiveRouteBytes = rtBytes;
+          effectiveStationLine = st;
+          effectiveRoute = rt;
+          break;
+        }
+      } catch {
+        // continue trying next candidate path
+      }
+    }
+  }
+
+  const canonicalInputBytes = {
+    buildSpecPath: buildSpecBytes,
+    stationLineInputPath: effectiveStationLineBytes,
+    routeEdgeInputPath: effectiveRouteBytes,
+  };
   const active = selectEffectiveDataPack(manifest);
   const validPacks = isNationwide ? ["capital", "nationwide"] : ["capital"];
   if (!active || !validPacks.includes(active.id) || active.version !== "1" || active.artifactKind !== "production") {
@@ -69,14 +114,13 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   if (publishedAt.getTime() >= expiresAt.getTime()) {
     throw new Error("current manifest expiresAt must be after build spec publishedAt");
   }
-  const candidate = candidateIdentity(buildSpec, "build spec");
   const provenanceCandidate = candidateIdentity(provenanceValue?.candidateBuild, "current provenance");
   if (provenanceCandidate.candidateId !== candidate.candidateId
     || provenanceCandidate.sourceSetSha256 !== candidate.sourceSetSha256
     || provenanceValue.candidateBuild.buildSpecSha256 !== sha256(buildSpecBytes)) {
     throw new Error("current provenance build identity mismatch");
   }
-  for (const [name, value] of [["station-line input", stationLine], ["route-edge input", route]]) {
+  for (const [name, value] of [["station-line input", effectiveStationLine], ["route-edge input", effectiveRoute]]) {
     const observed = candidateIdentity(value?.candidate, name);
     if (observed.candidateId !== candidate.candidateId || observed.sourceSetSha256 !== candidate.sourceSetSha256) {
       throw new Error(`${name} candidate identity mismatch`);
@@ -94,7 +138,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const provenance = path.join(datapackRoot, "current.provenance.json");
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
   const stagedFreshUntil = kstInstant(expiresAt);
-  const evaluationAt = deriveCurrentReleaseCandidateObservedAt(stationLine.evidenceRows);
+  const evaluationAt = deriveCurrentReleaseCandidateObservedAt(effectiveStationLine.evidenceRows);
   if (new Date(evaluationAt).getTime() >= expiresAt.getTime()) {
     throw new Error("current manifest expiresAt must be after evidence observation time");
   }
@@ -138,6 +182,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         freshUntil: stagedFreshUntil,
         builtAt: buildSpec.publishedAt,
         keyId: input.keyId,
+        skipSourceProjection: isNationwide,
       },
     });
     const signed = path.join(prepared, "signed-server-route-bundle");

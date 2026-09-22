@@ -834,34 +834,23 @@ export async function main(
   const sourceFixtureBytes = fixtureFile.bytes;
   const sourceFixture = parseInputJson(sourceFixtureBytes, "fixture");
   await Promise.all(outputs.map(outputMustBeAbsent));
-  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
-    || buildSpec.candidateId?.startsWith("nationwide-candidate");
-  let stationLineInputBytes;
-  let routeBytes;
-  if (isNationwide) {
-    const stationInputPath = "tools/datapack/release/nationwide-station-line-input.json";
-    const routeInputPath = "tools/datapack/release/nationwide-route-edge-input.json";
-    stationLineInputBytes = (await readAuthenticatedRegularRepoFile(root, stationInputPath, "station-line input")).bytes;
-    routeBytes = (await readAuthenticatedRegularRepoFile(root, routeInputPath, "route-edge input")).bytes;
-  } else {
-    const refreshed = await buildRefreshOutputsImpl({
-      repositoryRoot: root,
-      phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
-      candidateBuildSpec: buildSpec,
-      canonicalPack: sourceFixture,
-    });
-    if (!Array.isArray(refreshed) || refreshed.length !== 2) {
-      throw new Error("current candidate accessibility regeneration mismatch");
-    }
-    const refreshedByPath = new Map(refreshed.map(({ relative, bytes }) => [relative, bytes]));
-    if (refreshedByPath.size !== 2
-      || !Buffer.isBuffer(refreshedByPath.get(CURRENT_STATION_INPUT))
-      || !Buffer.isBuffer(refreshedByPath.get(CURRENT_ROUTE_INPUT))) {
-      throw new Error("current candidate accessibility regeneration mismatch");
-    }
-    stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
-    routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
+  const refreshed = await buildRefreshOutputsImpl({
+    repositoryRoot: root,
+    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+    candidateBuildSpec: buildSpec,
+    canonicalPack: sourceFixture,
+  });
+  if (!Array.isArray(refreshed) || refreshed.length !== 2) {
+    throw new Error("current candidate accessibility regeneration mismatch");
   }
+  const refreshedByPath = new Map(refreshed.map(({ relative, bytes }) => [relative, bytes]));
+  if (refreshedByPath.size !== 2
+    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_STATION_INPUT))
+    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_ROUTE_INPUT))) {
+    throw new Error("current candidate accessibility regeneration mismatch");
+  }
+  const stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
+  const routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
   const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
   const route = JSON.parse(routeBytes.toString("utf8"));
   const transferMetricsBytes = await readTransferMetricsImpl(root);

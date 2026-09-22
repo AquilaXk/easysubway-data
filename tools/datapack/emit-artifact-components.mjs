@@ -118,6 +118,7 @@ export async function emitArtifactComponents(input) {
     output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
     layout, buildContract, mapAssets, evaluationAt, stationLineInput: input.stationLineInput,
     routeEdgeInput: input.routeEdgeInput, routeEdgePolicy,
+    skipSourceProjection: input.skipSourceProjection ?? false,
   });
 }
 
@@ -125,6 +126,7 @@ export async function emitArtifactComponents(input) {
 export async function serializeArtifactComponents({
   output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
   layout, buildContract, mapAssets, evaluationAt, stationLineInput, routeEdgeInput, routeEdgePolicy,
+  skipSourceProjection = false,
 } = {}) {
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
   const snapshot = path.join(temp, ".source.sqlite");
@@ -143,6 +145,7 @@ export async function serializeArtifactComponents({
       stationLineInput,
       routeEdgeInput,
       routeEdgePolicy,
+      skipSourceProjection,
     });
     sourceDb.close(); sourceDb = undefined;
     await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
@@ -236,6 +239,8 @@ async function emitCatalog(out, source, ids, stationSetSha256) {
 }
 
 async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, build, evidenceInput) {
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
   const artifact = path.join(out, "server-route-bundle"); const payload = path.join(artifact, "payload"); await mkdir(payload, { recursive: true }); const hashes = {};
   const provisionalEvidence = buildGeneratedEvidence({
     ...evidenceInput,
@@ -256,7 +261,12 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
     const requiredKeys = requiredUniqueKeys(source, present, selected);
     for (const [table, columns] of Object.entries(REFERENCES)) copyTable(source, target, table, columns, present, selected, requiredKeys.get(table));
     for (const table of owned) copyTable(source, target, table, undefined, present, selected, requiredKeys.get(table));
-    if (name === "topology") projectBlockedTopologyEdges(target, provisionalBlockedEdgeIds);
+    if (name === "topology") {
+      if (evidenceInput.skipSourceProjection && evidenceInput.routeEdgeInput?.routeEdges?.length) {
+        populateNationwideTopologyEdges(target, evidenceInput.routeEdgeInput.routeEdges);
+      }
+      projectBlockedTopologyEdges(target, provisionalBlockedEdgeIds);
+    }
     if (name === "accessibility") {
       generatedEvidence = buildGeneratedEvidence({
         ...evidenceInput,
@@ -266,6 +276,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
         stationSetSha256,
         sourceSetSha256: buildSpec.sourceSnapshotSetHash,
         topologySha256: hashes.topologySha256,
+        skipSourceProjection: Boolean(evidenceInput.skipSourceProjection),
       });
       assertBlockedEdgeProjection(provisionalBlockedEdgeIds, blockedEdgeIds(generatedEvidence.evaluation));
       insertGeneratedEvidence(target, generatedEvidence);
@@ -285,6 +296,50 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   const compatibility = { schemaVersion: 1, artifactKind: "server-route-bundle-compatibility", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, serviceTimezone: "Asia/Seoul", manifestVersion: 1, tableLayoutSchemaVersion: layout.schemaVersion, sourceSchemaPath: sourceSchema.path, sourceSqliteUserVersion: sourceSchema.sqliteUserVersion, sourceSchemaSha256: sourceSchema.sha256, schemaCompatibility: build.manifestLifecycle.schemaCompatibility, compressionProfile: build.compressionProfile, encoderRuntime: { node: process.versions.node, zstd: process.versions.zstd } };
   await json(path.join(artifact, "compatibility.json"), compatibility); manifest.compatibilitySha256 = sha(await readFile(path.join(artifact, "compatibility.json")));
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
+}
+
+function populateNationwideTopologyEdges(target, routeEdges) {
+  target.exec("DELETE FROM network_edges");
+  const insert = target.prepare(`
+    INSERT INTO network_edges (
+      id, from_node_id, to_node_id, duration_seconds, distance_meters,
+      edge_type, service_pattern, service_class, includes_stairs,
+      stair_access_state, accessibility_status, reliability_score,
+      source_id, source_snapshot_id, provider_record_hash, provenance_kind,
+      verification_status, facility_id, last_verified_at, evidence_hash
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  target.exec("BEGIN");
+  try {
+    for (const edge of routeEdges) {
+      insert.run(
+        edge.edgeId,
+        edge.fromNodeId,
+        edge.toNodeId,
+        edge.durationSeconds ?? 0,
+        edge.distanceMeters ?? 0,
+        edge.edgeType,
+        edge.servicePattern ?? "",
+        edge.serviceClass ?? "SUBWAY",
+        edge.includesStairs ? 1 : 0,
+        edge.stairAccessState ?? "UNKNOWN",
+        edge.accessibilityStatus ?? "UNKNOWN",
+        edge.reliabilityScore ?? 100,
+        edge.sourceId ?? "",
+        edge.sourceSnapshotId ?? "",
+        edge.providerRecordHash ?? "",
+        edge.provenanceKind ?? "UNKNOWN",
+        edge.verificationStatus ?? "UNKNOWN",
+        edge.facilityId ?? null,
+        edge.lastVerifiedAt ?? null,
+        edge.evidenceHash ?? "",
+      );
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function blockedEdgeIds(evaluation) {
