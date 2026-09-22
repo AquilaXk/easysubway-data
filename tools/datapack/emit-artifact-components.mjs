@@ -118,6 +118,7 @@ export async function emitArtifactComponents(input) {
     output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
     layout, buildContract, mapAssets, evaluationAt, stationLineInput: input.stationLineInput,
     routeEdgeInput: input.routeEdgeInput, routeEdgePolicy,
+    skipSourceProjection: input.skipSourceProjection ?? false,
   });
 }
 
@@ -125,6 +126,7 @@ export async function emitArtifactComponents(input) {
 export async function serializeArtifactComponents({
   output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
   layout, buildContract, mapAssets, evaluationAt, stationLineInput, routeEdgeInput, routeEdgePolicy,
+  skipSourceProjection = false,
 } = {}) {
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
   const snapshot = path.join(temp, ".source.sqlite");
@@ -143,6 +145,7 @@ export async function serializeArtifactComponents({
       stationLineInput,
       routeEdgeInput,
       routeEdgePolicy,
+      skipSourceProjection,
     });
     sourceDb.close(); sourceDb = undefined;
     await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
@@ -259,7 +262,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
     for (const [table, columns] of Object.entries(REFERENCES)) copyTable(source, target, table, columns, present, selected, requiredKeys.get(table));
     for (const table of owned) copyTable(source, target, table, undefined, present, selected, requiredKeys.get(table));
     if (name === "topology") {
-      if (isNationwide && evidenceInput.routeEdgeInput?.routeEdges?.length) {
+      if (evidenceInput.skipSourceProjection && evidenceInput.routeEdgeInput?.routeEdges?.length) {
         populateNationwideTopologyEdges(target, evidenceInput.routeEdgeInput.routeEdges);
       }
       projectBlockedTopologyEdges(target, provisionalBlockedEdgeIds);
@@ -273,7 +276,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
         stationSetSha256,
         sourceSetSha256: buildSpec.sourceSnapshotSetHash,
         topologySha256: hashes.topologySha256,
-        skipSourceProjection: isNationwide ? true : false,
+        skipSourceProjection: Boolean(evidenceInput.skipSourceProjection),
       });
       assertBlockedEdgeProjection(provisionalBlockedEdgeIds, blockedEdgeIds(generatedEvidence.evaluation));
       insertGeneratedEvidence(target, generatedEvidence);

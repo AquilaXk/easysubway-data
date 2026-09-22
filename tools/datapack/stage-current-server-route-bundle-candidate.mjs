@@ -182,6 +182,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
         freshUntil: stagedFreshUntil,
         builtAt: buildSpec.publishedAt,
         keyId: input.keyId,
+        skipSourceProjection: isNationwide,
       },
     });
     const signed = path.join(prepared, "signed-server-route-bundle");
