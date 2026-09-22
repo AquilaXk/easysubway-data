@@ -27,8 +27,15 @@ export function evaluateReleaseDecision({
   const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
   const candidateIdentity = stableManifestIdentity(candidateManifest);
   const currentIdentity = currentManifest == null ? null : stableManifestIdentity(currentManifest);
+  const candidateSequenceValid = Number.isInteger(candidateManifest.releaseSequence)
+    && candidateManifest.releaseSequence >= 1;
+  const sequenceAdvanced = candidateSequenceValid
+    && currentManifest != null
+    && Number.isInteger(currentManifest.releaseSequence)
+    && candidateManifest.releaseSequence > currentManifest.releaseSequence;
   const materialChange = currentManifest == null
-    || candidateIdentity !== currentIdentity;
+    || candidateIdentity !== currentIdentity
+    || sequenceAdvanced;
   const requiredRefreshBeforeMillis = requiredNonNegativeInteger(refreshBeforeMillis, "refreshBeforeMillis");
   const currentExpiresAtMillis = currentManifest == null
     ? null
@@ -39,8 +46,6 @@ export function evaluateReleaseDecision({
     && currentExpiresAtMillis - evaluatedMillis <= requiredRefreshBeforeMillis;
   const publishRequired = materialChange || currentExpired || currentExpiring;
   const approvalValid = validApproval({ buildSpec, buildSpecSha256, releaseRequest });
-  const candidateSequenceValid = Number.isInteger(candidateManifest.releaseSequence)
-    && candidateManifest.releaseSequence >= 1;
   const sequenceValid = !publishRequired || (candidateSequenceValid
     && (currentManifest == null
       || (Number.isInteger(currentManifest.releaseSequence)
