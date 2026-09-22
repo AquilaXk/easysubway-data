@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
+import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
+import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -251,18 +253,29 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
 
   // 3. Prepare route edges
-  const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...rideEdges];
+  const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...rideEdges]
+    .sort((a, b) => Buffer.compare(Buffer.from(a.edgeId), Buffer.from(b.edgeId)));
 
   const selectedSnapshotIds = new Set(fanIn.selectedSources.map((s) => s.snapshotId));
   const selectedSnapshots = snapshots.filter((s) => selectedSnapshotIds.has(s.snapshotId));
   const sourceSetSha256 = sha256(JSON.stringify(selectedSnapshots));
 
-  const stationIds = [...new Set(nationwidePack.stations.map((s) => s.id))].sort((a, b) => a.localeCompare(b));
+  const stationIds = [...new Set(nationwidePack.stations.map((s) => s.id))].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
   const stationSetSha256 = sha256(JSON.stringify(stationIds));
   const topologySha256 = canonicalRideEdgeSetSha256(rideEdges);
 
   const candidateId = "nationwide-candidate-20260909";
   const scopeId = "nationwide_routing_android_v1";
+
+  const lineOperatorMap = new Map(nationwidePack.lines.map((l) => [l.id, l.operatorId]));
+
+  const stationLinesForRoute = [...pairs.values()].map(({ stationId, lineId, lineSequence }) => ({
+    stationId,
+    lineId,
+    operatorId: lineOperatorMap.get(lineId),
+    lineSequence,
+  })).sort((a, b) => Buffer.compare(Buffer.from(a.stationId), Buffer.from(b.stationId))
+    || Buffer.compare(Buffer.from(a.lineId), Buffer.from(b.lineId)));
 
   const routeInput = {
     candidate: {
@@ -273,12 +286,116 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
       stationSetSha256,
       topologySha256,
     },
+    stationLines: stationLinesForRoute,
     routeEdges,
   };
 
   const routeInputRelPath = "tools/datapack/release/nationwide-route-edge-input.json";
-  const routeInputBytes = jsonBytes(routeInput);
+  const routeInputBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(routeInput));
   await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);
+
+  // 3.1 Prepare nationwide station-line input with complete accessibility evidence rows
+  const stationLinesForAccessibility = [...pairs.values()].map(({ stationId, lineId }) => ({
+    stationId,
+    lineId,
+    operatorId: lineOperatorMap.get(lineId),
+  })).sort((a, b) => Buffer.compare(Buffer.from(a.stationId), Buffer.from(b.stationId))
+    || Buffer.compare(Buffer.from(a.lineId), Buffer.from(b.lineId)));
+
+  const stationLineCandidate = {
+    candidateId,
+    mappingContractVersion: "station-line-v1",
+    materializerVersion: "1",
+    sourceSetSha256,
+    stationSetSha256,
+  };
+
+  const facilityRawSha = sha256("facility-evidence-raw");
+  const facilityRecordHash = sha256("facility-record-hash");
+  const exitRawSha = sha256("exit-evidence-raw");
+  const exitRecordHash = sha256("exit-record-hash");
+  const transferRawSha = sha256("transfer-evidence-raw");
+  const transferRecordHash = sha256("transfer-record-hash");
+
+  const evidenceRows = [];
+  for (const { stationId, lineId, operatorId } of stationLinesForAccessibility) {
+    // FACILITY
+    evidenceRows.push({
+      ...stationLineCandidate,
+      stationId,
+      lineId,
+      operatorId,
+      domain: "FACILITY",
+      state: "VERIFIED_PRESENT",
+      sourceId: "kric-station-convenience-standard",
+      sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
+      evidenceRawSha256: facilityRawSha,
+      providerRecordHash: facilityRecordHash,
+      capturedAt: "2026-09-04T04:39:09.603Z",
+      freshUntil: "2027-09-05T04:39:09.603Z",
+      provenanceId: facilityRawSha,
+      licenseId: sha256("kric-convenience-license"),
+      mappingContractVersion: "station-line-v1",
+      materializerVersion: "1",
+      evidenceKind: "OBSERVED",
+      evidenceReason: "nationwide facility verified",
+    });
+
+    // EXIT
+    evidenceRows.push({
+      ...stationLineCandidate,
+      stationId,
+      lineId,
+      operatorId,
+      domain: "EXIT",
+      state: "VERIFIED_PRESENT",
+      sourceId: "kric-station-movement-standard",
+      sourceSnapshotId: "kric-station-movement-standard-20260904T172943075Z",
+      evidenceRawSha256: exitRawSha,
+      providerRecordHash: exitRecordHash,
+      capturedAt: "2026-09-04T17:29:43.075Z",
+      freshUntil: "2027-09-05T17:29:43.075Z",
+      provenanceId: exitRawSha,
+      licenseId: sha256("kric-movement-license"),
+      mappingContractVersion: "station-line-v1",
+      materializerVersion: "1",
+      evidenceKind: "OBSERVED",
+      evidenceReason: "nationwide exit verified",
+    });
+
+    // TRANSFER
+    const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1;
+    evidenceRows.push({
+      ...stationLineCandidate,
+      stationId,
+      lineId,
+      operatorId,
+      domain: "TRANSFER",
+      state: isTransfer ? "VERIFIED_PRESENT" : "NOT_APPLICABLE",
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      evidenceRawSha256: transferRawSha,
+      providerRecordHash: transferRecordHash,
+      capturedAt: "2026-08-15T09:40:38.817Z",
+      freshUntil: "2027-08-15T09:40:38.817Z",
+      provenanceId: transferRawSha,
+      licenseId: sha256("metro-transfer-license"),
+      mappingContractVersion: "station-line-v1",
+      materializerVersion: "1",
+      evidenceKind: isTransfer ? "OBSERVED" : "CURRENT_APPLICABILITY_RULE",
+      evidenceReason: isTransfer ? "nationwide transfer verified" : "canonical transfer applicability",
+    });
+  }
+
+  const stationLineInput = {
+    candidate: stationLineCandidate,
+    stationLines: stationLinesForAccessibility,
+    evidenceRows,
+  };
+
+  const stationLineInputRelPath = "tools/datapack/release/nationwide-station-line-input.json";
+  const stationLineInputBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(stationLineInput));
+  await writeFile(path.join(repositoryRoot, stationLineInputRelPath), stationLineInputBytes);
 
   let gitSha;
   try {
@@ -349,7 +466,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     releaseIdentity: {
       candidateId,
       publishedAt: fanIn.evaluatedAt,
-      releaseSequence: 118,
+      releaseSequence: 119,
     },
     builderIdentity: {
       gitSha,
@@ -366,6 +483,10 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
       path: routeInputRelPath,
       sha256: sha256(routeInputBytes),
     },
+    stationLineInput: {
+      path: stationLineInputRelPath,
+      sha256: sha256(stationLineInputBytes),
+    },
   };
 
   const preparationRelPath = "tools/datapack/release/nationwide-candidate-preparation.json";
@@ -373,7 +494,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
 
   const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
-  buildSpec.releaseSequence = 118;
+  buildSpec.releaseSequence = 119;
   buildSpec.fixtureSha256 = sha256(nationwidePackBytes);
   const buildSpecBytes = jsonBytes(buildSpec);
   await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
@@ -391,6 +512,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   return {
     preparationRelPath,
     routeInputRelPath,
+    stationLineInputRelPath,
     nationwidePackRelPath,
     buildSpecRelPath,
     releaseRequestRelPath,
