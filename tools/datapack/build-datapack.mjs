@@ -3735,11 +3735,28 @@ function routeGraphNetworkEdges(pack) {
   ];
 }
 
-function outOfStationTransferNetworkEdges(pack) {
+export function isAsymmetricTransferLink(link) {
+  const slopeLevel = Number(link.slopeLevel ?? link.slope_level ?? 1);
+  const elevationDiff = Number(link.elevationDifferenceMeters ?? link.elevation_difference_meters ?? 0);
+  const hasElevationDifference = Boolean(link.hasElevationDifference || elevationDiff !== 0);
+  return slopeLevel > 1 || hasElevationDifference;
+}
+
+export function outOfStationTransferNetworkEdges(pack) {
   const edges = [];
   for (const link of pack.outOfStationTransferLinks ?? []) {
-    edges.push(outOfStationTransferNetworkEdge(link));
-    if (link.bidirectional === true) {
+    const asymmetric = isAsymmetricTransferLink(link);
+    if (asymmetric && (link.bidirectional === true || link.bidirectional === 1)) {
+      throw new Error(
+        `asymmetric out-of-station transfer link must not be bidirectional: ${link.id} (slopeLevel: ${link.slopeLevel ?? link.slope_level ?? 1})`,
+      );
+    }
+    const bidirectional = !asymmetric && (link.bidirectional === true || link.bidirectional === 1);
+    edges.push(outOfStationTransferNetworkEdge({
+      ...link,
+      bidirectional,
+    }));
+    if (bidirectional) {
       edges.push(
         outOfStationTransferNetworkEdge({
           ...link,
@@ -3750,6 +3767,7 @@ function outOfStationTransferNetworkEdges(pack) {
           toLineId: link.fromLineId,
           fromExitId: link.toExitId,
           toExitId: link.fromExitId,
+          bidirectional: true,
         }),
       );
     }
@@ -4233,7 +4251,10 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           row.toExitId ?? null,
           row.durationSeconds ?? 0,
           row.distanceMeters ?? 0,
-          boolFlag(row.bidirectional, "outOfStationTransferLinks.bidirectional"),
+          boolFlag(
+            isAsymmetricTransferLink(row) ? false : row.bidirectional,
+            "outOfStationTransferLinks.bidirectional",
+          ),
           boolFlag(row.requiresFareExit ?? true, "outOfStationTransferLinks.requiresFareExit"),
           boolFlag(row.requiresReentry ?? true, "outOfStationTransferLinks.requiresReentry"),
           row.coveredRoute ?? "UNKNOWN",
