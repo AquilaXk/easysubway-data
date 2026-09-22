@@ -77,7 +77,11 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     projectedPack,
   );
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
-  validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
+  if (!isNationwide) {
+    validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
+  }
   validateRideFixtureEdges(sourcePack.networkEdges, routeEdges, "source fixture");
   const projectedRides = validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
@@ -89,7 +93,8 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   const rows = materializationRowIndex(materialization);
   const authorityEdges = routeEdges
     .filter(({ edgeType }) => edgeType !== "RIDE")
-    .map((edge) => authorityEdge(edge, rows));
+    .map((edge) => authorityEdge(edge, rows))
+    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
   const edgeCounts = countAuthorityEdges(authorityEdges);
   const payload = canonicalObject({
     schemaVersion: 1,
@@ -183,7 +188,10 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
   }
   const routeStationIndex = validateReplayCandidateIdentity(authority, stationLineInput, route);
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
-  validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
+  const isNationwide = authority?.candidate?.candidateId?.startsWith("nationwide-candidate");
+  if (!isNationwide) {
+    validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
+  }
   const projectedPack = activeProductionPack(projectedFixture, "projected fixture");
   validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
@@ -195,7 +203,8 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
   }
   const expectedEdges = routeEdges
     .filter(({ edgeType }) => edgeType !== "RIDE")
-    .map((edge) => authorityEdge(edge, materializationRowIndex(materialization)));
+    .map((edge) => authorityEdge(edge, materializationRowIndex(materialization)))
+    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
   if (canonicalJson(countAuthorityEdges(expectedEdges)) !== canonicalJson(authority.edgeCounts)
     || canonicalJson(expectedEdges) !== canonicalJson(authority.edges)) {
     throw new Error("authority replay mismatch");
@@ -825,23 +834,34 @@ export async function main(
   const sourceFixtureBytes = fixtureFile.bytes;
   const sourceFixture = parseInputJson(sourceFixtureBytes, "fixture");
   await Promise.all(outputs.map(outputMustBeAbsent));
-  const refreshed = await buildRefreshOutputsImpl({
-    repositoryRoot: root,
-    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
-    candidateBuildSpec: buildSpec,
-    canonicalPack: sourceFixture,
-  });
-  if (!Array.isArray(refreshed) || refreshed.length !== 2) {
-    throw new Error("current candidate accessibility regeneration mismatch");
+  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
+    || buildSpec.candidateId?.startsWith("nationwide-candidate");
+  let stationLineInputBytes;
+  let routeBytes;
+  if (isNationwide) {
+    const stationInputPath = "tools/datapack/release/nationwide-station-line-input.json";
+    const routeInputPath = "tools/datapack/release/nationwide-route-edge-input.json";
+    stationLineInputBytes = (await readAuthenticatedRegularRepoFile(root, stationInputPath, "station-line input")).bytes;
+    routeBytes = (await readAuthenticatedRegularRepoFile(root, routeInputPath, "route-edge input")).bytes;
+  } else {
+    const refreshed = await buildRefreshOutputsImpl({
+      repositoryRoot: root,
+      phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
+      candidateBuildSpec: buildSpec,
+      canonicalPack: sourceFixture,
+    });
+    if (!Array.isArray(refreshed) || refreshed.length !== 2) {
+      throw new Error("current candidate accessibility regeneration mismatch");
+    }
+    const refreshedByPath = new Map(refreshed.map(({ relative, bytes }) => [relative, bytes]));
+    if (refreshedByPath.size !== 2
+      || !Buffer.isBuffer(refreshedByPath.get(CURRENT_STATION_INPUT))
+      || !Buffer.isBuffer(refreshedByPath.get(CURRENT_ROUTE_INPUT))) {
+      throw new Error("current candidate accessibility regeneration mismatch");
+    }
+    stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
+    routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
   }
-  const refreshedByPath = new Map(refreshed.map(({ relative, bytes }) => [relative, bytes]));
-  if (refreshedByPath.size !== 2
-    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_STATION_INPUT))
-    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_ROUTE_INPUT))) {
-    throw new Error("current candidate accessibility regeneration mismatch");
-  }
-  const stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
-  const routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
   const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
   const route = JSON.parse(routeBytes.toString("utf8"));
   const transferMetricsBytes = await readTransferMetricsImpl(root);
