@@ -921,19 +921,16 @@ function edgeFor(lineId, from, to) {
   };
 }
 
-function representativeRoutes(edge) {
-  const fallback = {
-    id: "edge-sample",
-    fromNodeId: "station-sample:line-sample",
-    toNodeId: "station-sample-next:line-sample",
-  };
-  const selected = edge ?? fallback;
+export function representativeRoutes(edge) {
+  if (!edge || !edge.id || !edge.fromNodeId || !edge.toNodeId) {
+    throw new Error("No network edges available: fail-closed.");
+  }
   return ["DIRECT", "TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"].map((pattern) => ({
     id: `nationwide-${pattern.toLowerCase().replaceAll("_", "-")}`,
     pattern,
-    fromNodeId: selected.fromNodeId,
-    toNodeId: selected.toNodeId,
-    requiredEdgeIds: [selected.id],
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    requiredEdgeIds: [edge.id],
   }));
 }
 
