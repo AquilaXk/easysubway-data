@@ -4250,10 +4250,12 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           row.fromExitId ?? null,
           row.toExitId ?? null,
           row.durationSeconds ?? 0,
+          row.distanceMeters ?? 0,
           boolFlag(
             isAsymmetricTransferLink(row) ? false : row.bidirectional,
             "outOfStationTransferLinks.bidirectional",
           ),
+          boolFlag(row.requiresFareExit ?? true, "outOfStationTransferLinks.requiresFareExit"),
           boolFlag(row.requiresReentry ?? true, "outOfStationTransferLinks.requiresReentry"),
           row.coveredRoute ?? "UNKNOWN",
           row.crossingRisk ?? "UNKNOWN",
