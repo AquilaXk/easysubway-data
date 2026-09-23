@@ -11,6 +11,7 @@ import {
   providerLineScopesFor,
   parseCurrentMolitGwangjuStationMappings,
   parseCurrentMolitLineOperatorRosters,
+  representativeRoutes,
 } from "./build-molit-nationwide-fixture.mjs";
 
 test("current MOLIT rosters preserve source operator-line membership without KRIC codes", () => {
@@ -176,4 +177,27 @@ test("KRIC provider code catalog identity는 source와 canonical content hash를
       index === 0 ? { ...line, lnCd: "WRONG" } : line
     )),
   }), /canonical content hash does not match/);
+});
+
+test("representativeRoutes throws fail-closed error when edge is missing or invalid", () => {
+  assert.throws(() => representativeRoutes(null), /No network edges available: fail-closed\./);
+  assert.throws(() => representativeRoutes(undefined), /No network edges available: fail-closed\./);
+  assert.throws(() => representativeRoutes({ id: "e1" }), /No network edges available: fail-closed\./);
+  assert.throws(() => representativeRoutes({ id: "e1", fromNodeId: "n1" }), /No network edges available: fail-closed\./);
+  assert.throws(() => representativeRoutes({ fromNodeId: "n1", toNodeId: "n2" }), /No network edges available: fail-closed\./);
+});
+
+test("representativeRoutes constructs routes for valid edge without fallback", () => {
+  const edge = {
+    id: "edge-1",
+    fromNodeId: "node-a",
+    toNodeId: "node-b",
+  };
+  const routes = representativeRoutes(edge);
+  assert.equal(routes.length, 5);
+  for (const route of routes) {
+    assert.equal(route.fromNodeId, "node-a");
+    assert.equal(route.toNodeId, "node-b");
+    assert.deepEqual(route.requiredEdgeIds, ["edge-1"]);
+  }
 });

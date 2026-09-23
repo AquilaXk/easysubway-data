@@ -248,7 +248,12 @@
                   "sharedQuotaStore": { "type": "string" }
                 }
               },
-              "productionUseNoteKo": { "type": "string" }
+              "productionUseNoteKo": { "type": "string" },
+              "revalidationEvidenceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "revalidationResponseSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "revalidatedAt": { "type": "string" },
+              "rawObjectUri": { "type": "string" },
+              "retainedReceiptSourceId": { "type": "string" }
             }
           },
           "transferAdmissionEvidence": {
@@ -564,7 +569,12 @@
               "lineOrderSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "rawPositionsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "semanticInputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-              "semanticOutputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              "semanticOutputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "schematicGeometrySha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "officialRenameEvidence": {
+                "type": "array",
+                "items": { "type": "object" }
+              }
             }
           },
           "capitalTopologyAdmissionEvidence": {
@@ -699,7 +709,7 @@
               "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "schemaFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "snapshotFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-              "absenceEvidenceMode": { "enum": ["EXHAUSTIVE_LIST", "EXPLICIT_ZERO"] },
+              "absenceEvidenceMode": { "enum": ["EXHAUSTIVE_LIST", "EXPLICIT_ZERO", "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED"] },
               "rowsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "datasetIds": {
                 "type": "array",
@@ -746,6 +756,30 @@
           },
           "officialOdFareAdmissionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
           "fareStationLineMappingLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "membershipCoverageEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["snapshotId", "rawSha256", "normalizedObservationSha256", "lineOperatorScopes"],
+            "properties": {
+              "snapshotId": { "type": "string", "minLength": 1 },
+              "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "normalizedObservationSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "lineOperatorScopes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["regionId", "operatorId", "lineId"],
+                  "properties": {
+                    "regionId": { "type": "string", "minLength": 1 },
+                    "operatorId": { "type": "string", "minLength": 1 },
+                    "lineId": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          },
           "rawSnapshotAdmission": {
             "type": "object",
             "additionalProperties": false,
@@ -796,8 +830,8 @@
                       }
                     }
                   }
-                }
-                , "transferAdmissionEvidence": { "required": ["artifactKind"] }
+                },
+                "transferAdmissionEvidence": { "required": ["artifactKind"] }
               }
             },
             "else": { "properties": { "capabilities": { "not": { "required": ["transfer"] } } } }
