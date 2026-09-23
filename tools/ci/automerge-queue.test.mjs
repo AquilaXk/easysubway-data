@@ -46,10 +46,9 @@ test('코디네이터는 PAT 없이 GITHUB_TOKEN으로만 동작한다', async (
   for (const contract of [
     'GH_TOKEN: ${{ github.token }}',
     'pull_request_target:',
+    'pull_request_review:',
     'workflow_run:',
     'workflow_dispatch:',
-    'schedule:',
-    'cron: "*/10 * * * *"',
     'permissions: {}',
     'actions: write',
     'checks: read',

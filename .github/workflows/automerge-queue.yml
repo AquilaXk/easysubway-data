@@ -21,13 +21,13 @@ name: Automerge Queue
 on:
   pull_request_target:
     types: [labeled]
+  pull_request_review:
+    types: [submitted]
   workflow_run:
     workflows: [CI]
     types: [completed]
   push:
     branches: [main]
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions: {}
