@@ -9,6 +9,7 @@ import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-ac
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
 import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
+import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -98,12 +99,16 @@ function getPathsForLine(line, pack, rides) {
 export async function prepareNationwideCandidate({ repositoryRoot = root } = {}) {
   const read = async (rel) => readFile(path.join(repositoryRoot, rel));
 
-  const [targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes] = await Promise.all([
+  const [targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes, incheonTopologyBytes, incheonLine1Bytes, incheonLine2Bytes, sourceInventoryBytes] = await Promise.all([
     read("tools/datapack/nationwide-coverage-targets.json"),
     read("tools/datapack/release/current-five-region-source-fan-in.json"),
     read("tools/datapack/release/source-snapshots.json"),
     read("tools/datapack/release/capital-production-canonical-pack.json"),
     read("tools/datapack/fixtures/admin-review-overrides.json"),
+    read("tools/datapack/sources/incheon-transit-station-info-20260904.json"),
+    read("tools/datapack/sources/incheon-line1-train-timetable-20260905.json"),
+    read("tools/datapack/sources/incheon-line2-train-timetable-20260905.json"),
+    read("tools/datapack/source-inventory.json"),
   ]);
 
   const targets = JSON.parse(targetsBytes);
@@ -111,6 +116,10 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const snapshots = JSON.parse(snapshotsBytes);
   const baseFixture = JSON.parse(basePackBytes);
   const pack = baseFixture.packs[0];
+  const incheonTopology = JSON.parse(incheonTopologyBytes);
+  const incheonLine1 = JSON.parse(incheonLine1Bytes);
+  const incheonLine2 = JSON.parse(incheonLine2Bytes);
+  const sourceInventory = JSON.parse(sourceInventoryBytes);
 
   // 1. Prepare edges and transfer rules
   const selectedLines = new Set(targets.activeLineScopes.map((r) => r.lineId));
@@ -586,8 +595,19 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   nationwidePack.coverageLineOperatorScopes = targets.activeLineScopes;
   nationwidePack.stationPathwayNodes = stationPathwayNodes;
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
-  nationwidePack.transferRules = transferRules;
-  nationwidePack.outOfStationTransferLinks = outOfStationTransferLinks;
+  const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => {
+    const clean = { ...link };
+    delete clean.sourceId;
+    delete clean.sourceSnapshotId;
+    delete clean.providerRecordHash;
+    delete clean.provenanceKind;
+    delete clean.verificationStatus;
+    delete clean.lastFieldVerifiedAt;
+    delete clean.lastVerifiedAt;
+    delete clean.evidenceHash;
+    return clean;
+  });
+  nationwidePack.outOfStationTransferLinks = cleanOutOfStationTransferLinks;
   nationwidePack.networkEdges = rides;
 
   // 2.1 Extract out-of-station route edges
@@ -616,7 +636,8 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const newTrips = [];
   const newStopTimes = [];
   const stationNameMap = new Map(pack.stations.map((s) => [s.id, s.nameKo]));
-  const activeLines = pack.lines.filter((l) => selectedLines.has(l.id));
+  const incheonLineIds = new Set(["line-98718184f016", "line-42b5805f3b5a"]);
+  const activeLines = pack.lines.filter((l) => selectedLines.has(l.id) && !incheonLineIds.has(l.id));
 
   for (const line of activeLines) {
     const lineId = line.id;
@@ -751,22 +772,44 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     }
   }
 
+  const incheonSourceIds = new Set(["incheon-line1-train-timetable", "incheon-line2-train-timetable"]);
+  nationwidePack.sourceInventory = (nationwidePack.sourceInventory ?? []).filter((s) => !incheonSourceIds.has(s.id));
+  nationwidePack.serviceCalendars = (nationwidePack.serviceCalendars ?? []).filter((c) => !c.serviceId.startsWith("incheon-line"));
+  nationwidePack.serviceCalendarDates = (nationwidePack.serviceCalendarDates ?? []).filter((d) => !d.serviceId.startsWith("incheon-line"));
   nationwidePack.transitRoutes = newRoutes;
   nationwidePack.transitTrips = newTrips;
   nationwidePack.transitStopTimes = newStopTimes;
-  nationwidePack.minimumTableRows = {
-    ...nationwidePack.minimumTableRows,
+
+  const incheonNow = new Date(Math.max(Date.parse(incheonLine1.capturedAt), Date.parse(incheonLine2.capturedAt)) + 1000);
+  const materializedFixture = materializeIncheonTimetable({
+    baseFixture: nationwideFixture,
+    topologySnapshot: { ...incheonTopology, snapshotId: "incheon-transit-station-info-20260904" },
+    timetableSnapshots: { 1: incheonLine1, 2: incheonLine2 },
+    inventory: sourceInventory,
+    now: incheonNow,
+  });
+
+  const finalPack = materializedFixture.packs[0];
+  finalPack.id = "capital";
+  finalPack.version = "1";
+  finalPack.url = "https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/capital-v1.sqlite.gz";
+  materializedFixture.manifest.activePack = { id: "capital", version: "1" };
+
+  finalPack.minimumTableRows = {
+    ...finalPack.minimumTableRows,
     station_pathway_nodes: stationPathwayNodes.length,
     station_pathway_edges: stationPathwayEdges.length,
     transfer_rules: transferRules.length,
     out_of_station_transfer_links: outOfStationTransferLinks.length,
     network_edges: rides.length + outOfStationEdges.length,
-    transit_routes: newRoutes.length,
-    transit_trips: newTrips.length,
-    transit_stop_times: newStopTimes.length,
+    transit_routes: finalPack.transitRoutes.length,
+    transit_trips: finalPack.transitTrips.length,
+    transit_stop_times: finalPack.transitStopTimes.length,
+    service_calendars: finalPack.serviceCalendars.length,
+    service_calendar_dates: finalPack.serviceCalendarDates.length,
   };
 
-  nationwideFixture.assemblyInputs = buildNationwideAssemblyInputs({
+  materializedFixture.assemblyInputs = buildNationwideAssemblyInputs({
     baseFixtureBytes: basePackBytes,
     selectedSources: fanIn.selectedSources,
     auxiliaryInputs: {
@@ -775,7 +818,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   });
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
-  const nationwidePackBytes = jsonBytes(nationwideFixture);
+  const nationwidePackBytes = jsonBytes(materializedFixture);
   await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
 
   // 3. Prepare route edges
@@ -786,7 +829,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const selectedSnapshots = snapshots.filter((s) => selectedSnapshotIds.has(s.snapshotId));
   const sourceSetSha256 = sha256(JSON.stringify(selectedSnapshots));
 
-  const stationIds = [...new Set(nationwidePack.stations.map((s) => s.id))].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+  const stationIds = [...new Set(finalPack.stations.map((s) => s.id))].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
   const stationSetSha256 = sha256(JSON.stringify(stationIds));
   const topologySha256 = canonicalRideEdgeSetSha256(rideEdges);
 
@@ -794,7 +837,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const releaseSequence = 121;
   const scopeId = "nationwide_routing_android_v1";
 
-  const lineOperatorMap = new Map(nationwidePack.lines.map((l) => [l.id, l.operatorId]));
+  const lineOperatorMap = new Map(finalPack.lines.map((l) => [l.id, l.operatorId]));
 
   const stationLinesForRoute = [...pairs.values()].map(({ stationId, lineId, lineSequence }) => ({
     stationId,
