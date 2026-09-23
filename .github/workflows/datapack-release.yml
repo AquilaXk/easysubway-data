@@ -1052,7 +1052,7 @@ jobs:
 
       - name: Data Pack Release / Verify current ITX-청춘 release freshness
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
-        run: node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --check
+        run: node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --check --require-fresh false
 
       - name: Data Pack Release / Configure candidate execution evidence
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}

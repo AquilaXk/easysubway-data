@@ -466,7 +466,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     releaseIdentity: {
       candidateId,
       publishedAt: fanIn.evaluatedAt,
-      releaseSequence: 119,
+      releaseSequence: 120,
     },
     builderIdentity: {
       gitSha,
@@ -494,7 +494,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
 
   const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
-  buildSpec.releaseSequence = 119;
+  buildSpec.releaseSequence = 120;
   buildSpec.fixtureSha256 = sha256(nationwidePackBytes);
   const buildSpecBytes = jsonBytes(buildSpec);
   await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
