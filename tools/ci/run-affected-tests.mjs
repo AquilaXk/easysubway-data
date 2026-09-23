@@ -11,13 +11,14 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../..');
+const GIT_BIN = process.env.GIT_BIN || '/usr/bin/git';
 
 export function parseArgs(argv = process.argv.slice(2)) {
   const options = {
@@ -50,46 +51,46 @@ export function getChangedFiles(base = 'origin/main', repoRoot = REPO_ROOT) {
 
   // 1. Uncommitted working tree & staged changes
   try {
-    const statusOutput = execFileSync('git', ['status', '--porcelain'], {
+    const statusOutput = execFileSync(GIT_BIN, ['status', '--porcelain'], {
       cwd: repoRoot,
       encoding: 'utf8',
     });
     for (const line of statusOutput.split('\n')) {
       if (!line.trim()) continue;
       const filePath = line.slice(3).trim();
-      if (filePath) changed.add(path.posix.normalize(filePath.replace(/\\/g, '/')));
+      if (filePath) changed.add(path.posix.normalize(filePath.replaceAll('\\', '/')));
     }
-  } catch (error) {
+  } catch {
     // If not a git repo or git fails, ignore
   }
 
   // 2. Committed changes compared to base ref
   try {
-    const diffOutput = execFileSync('git', ['diff', '--name-only', `${base}...HEAD`], {
+    const diffOutput = execFileSync(GIT_BIN, ['diff', '--name-only', `${base}...HEAD`], {
       cwd: repoRoot,
       encoding: 'utf8',
     });
     for (const line of diffOutput.split('\n')) {
       if (!line.trim()) continue;
-      changed.add(path.posix.normalize(line.trim().replace(/\\/g, '/')));
+      changed.add(path.posix.normalize(line.trim().replaceAll('\\', '/')));
     }
-  } catch (error) {
+  } catch {
     // Fall back to direct diff against base
     try {
-      const diffOutput2 = execFileSync('git', ['diff', '--name-only', base], {
+      const diffOutput2 = execFileSync(GIT_BIN, ['diff', '--name-only', base], {
         cwd: repoRoot,
         encoding: 'utf8',
       });
       for (const line of diffOutput2.split('\n')) {
         if (!line.trim()) continue;
-        changed.add(path.posix.normalize(line.trim().replace(/\\/g, '/')));
+        changed.add(path.posix.normalize(line.trim().replaceAll('\\', '/')));
       }
     } catch {
       // Base ref may not exist locally; keep working tree changes only
     }
   }
 
-  return [...changed].sort();
+  return [...changed].sort((a, b) => a.localeCompare(b));
 }
 
 function collectAllTests(dir, results = [], repoRoot = REPO_ROOT) {
@@ -100,11 +101,49 @@ function collectAllTests(dir, results = [], repoRoot = REPO_ROOT) {
     if (entry.isDirectory() && entry.name !== 'node_modules' && !entry.name.startsWith('.')) {
       collectAllTests(fullPath, results, repoRoot);
     } else if (entry.isFile() && entry.name.endsWith('.test.mjs')) {
-      const relative = path.relative(repoRoot, fullPath).replace(/\\/g, '/');
+      const relative = path.relative(repoRoot, fullPath).replaceAll('\\', '/');
       results.push(relative);
     }
   }
   return results;
+}
+
+function addDirectTest(changed, repoRoot, affected) {
+  if (changed.endsWith('.test.mjs') && existsSync(path.join(repoRoot, changed))) {
+    affected.add(changed);
+    return true;
+  }
+  if (changed.endsWith('.mjs') || changed.endsWith('.js')) {
+    const directTest = changed.replace(/\.mjs$/, '.test.mjs').replace(/\.js$/, '.test.mjs');
+    if (existsSync(path.join(repoRoot, directTest))) {
+      affected.add(directTest);
+    }
+  }
+  return false;
+}
+
+function addContractTests(changed, allTests, affected) {
+  if (!changed.startsWith('contracts/')) return;
+  for (const t of allTests) {
+    if (t.includes('contract') || t.includes('schema') || t.includes('compatibility')) {
+      affected.add(t);
+    }
+  }
+}
+
+function addImportedTests(changed, allTests, repoRoot, affected) {
+  const changedBasename = path.basename(changed);
+  for (const testFile of allTests) {
+    if (affected.has(testFile)) continue;
+    try {
+      const content = readFileSync(path.join(repoRoot, testFile), 'utf8');
+      if (content.includes(changedBasename) || content.includes(changed)) {
+        affected.add(testFile);
+      }
+    } catch {
+      // Skip unreadable
+    }
+  }
 }
 
 export function findAffectedTests(changedFiles, repoRoot = REPO_ROOT) {
@@ -112,46 +151,13 @@ export function findAffectedTests(changedFiles, repoRoot = REPO_ROOT) {
   const allTests = collectAllTests(path.join(repoRoot, 'tools'), [], repoRoot);
 
   for (const changed of changedFiles) {
-    // Case 1: The modified file is itself a test
-    if (changed.endsWith('.test.mjs') && existsSync(path.join(repoRoot, changed))) {
-      affected.add(changed);
-      continue;
-    }
-
-    // Case 2: Matching by naming convention: e.g. tools/datapack/foo.mjs -> tools/datapack/foo.test.mjs
-    if (changed.endsWith('.mjs') || changed.endsWith('.js')) {
-      const directTest = changed.replace(/\.mjs$/, '.test.mjs').replace(/\.js$/, '.test.mjs');
-      if (existsSync(path.join(repoRoot, directTest))) {
-        affected.add(directTest);
-      }
-    }
-
-    // Case 3: Contract schemas or policies changed
-    if (changed.startsWith('contracts/')) {
-      // Run contract validation tests in tools/ci
-      for (const t of allTests) {
-        if (t.includes('contract') || t.includes('schema') || t.includes('compatibility')) {
-          affected.add(t);
-        }
-      }
-    }
-
-    // Case 4: Reverse dependency search in test imports
-    const changedBasename = path.basename(changed);
-    for (const testFile of allTests) {
-      if (affected.has(testFile)) continue;
-      try {
-        const content = readFileSync(path.join(repoRoot, testFile), 'utf8');
-        if (content.includes(changedBasename) || content.includes(changed)) {
-          affected.add(testFile);
-        }
-      } catch {
-        // Skip unreadable
-      }
-    }
+    const isDirect = addDirectTest(changed, repoRoot, affected);
+    if (isDirect) continue;
+    addContractTests(changed, allTests, affected);
+    addImportedTests(changed, allTests, repoRoot, affected);
   }
 
-  return [...affected].sort();
+  return [...affected].sort((a, b) => a.localeCompare(b));
 }
 
 export async function run() {
@@ -178,7 +184,7 @@ Options:
 
   if (tests.length === 0) {
     if (changedFiles.length === 0) {
-      console.log('No local changes detected against ' + options.base + '. Running CI tests.');
+      console.log(`No local changes detected against ${options.base}. Running CI tests.`);
     } else {
       console.log(`Changes detected in ${changedFiles.length} file(s), but no direct test mappings found. Running CI suite.`);
     }
@@ -194,7 +200,7 @@ Options:
 
   console.log('\nRunning affected tests...\n');
   return new Promise((resolve) => {
-    const child = spawn('node', ['--test', ...tests, ...options.testArgs], {
+    const child = spawn(process.execPath, ['--test', ...tests, ...options.testArgs], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     });
@@ -209,7 +215,5 @@ Options:
 }
 
 if (process.argv[1] === __filename) {
-  run().then((code) => {
-    process.exitCode = code;
-  });
+  process.exitCode = await run();
 }
