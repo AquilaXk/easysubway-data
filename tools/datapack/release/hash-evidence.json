@@ -38,7 +38,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "e2b6888d15ac15ee2e6340d2ab938ab67d0e810f2ed6e1d99fa7f76d5409642b"
+    "sha256": "921df21779e15d80e561d27624b6f0bffcde10dbd359e7ae677ed43205484339"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
