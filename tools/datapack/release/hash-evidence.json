@@ -38,7 +38,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "a81790d951f298ca2cc4a009dd2afcec5e6dad2c3234460056ffbe8caa26d322"
+    "sha256": "e2b6888d15ac15ee2e6340d2ab938ab67d0e810f2ed6e1d99fa7f76d5409642b"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20260909"
+      "value": "nationwide-candidate-20260923"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20260909"
+      "value": "release-request-nationwide-candidate-20260923"
     }
   },
   "perSourceEvidence": [

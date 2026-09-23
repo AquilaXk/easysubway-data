@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-release-request",
-  "candidateId": "nationwide-candidate-20260909",
+  "candidateId": "nationwide-candidate-20260923",
   "scopeId": "nationwide_routing_android_v1",
-  "buildSpecSha256": "46e5b63a25c0e21ee9bac55016097f341ba534a2a24a3168dea0b875cc4c39a7",
+  "buildSpecSha256": "924ef1df7ba23dc55db8c73c8f1ca391a53a4d94475353d14ca0b5c08e1e3cd8",
   "sourceSnapshotSetHash": "a7b44bed6999142d6b716814a22071f890af2b341e2f27d898ebeb2e55d5716f",
   "approvedLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
   "requestedBy": "claude-fable-orchestrator",
   "approvedBy": "aquilaXk10",
-  "approvalId": "release-request-nationwide-candidate-20260909",
+  "approvalId": "release-request-nationwide-candidate-20260923",
   "targetChannel": "production"
 }
