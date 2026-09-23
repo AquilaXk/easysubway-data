@@ -258,7 +258,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
             transferType: "IN_STATION",
             minTransferSeconds: 120,
             pathwayEdgeId: walkPathwayEdgeId,
-            strictStepFreePathwayEdgeId: stepFreePathwayEdgeId,
+            strictStepFreePathwayEdgeId: null,
             sourceId: "seoul-metro-transfer-distance-duration",
             verificationStatus: "VERIFIED",
           });
