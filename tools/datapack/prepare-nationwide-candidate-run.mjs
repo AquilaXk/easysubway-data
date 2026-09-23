@@ -214,7 +214,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
             includesStairs: false,
             requiresElevator: false,
             requiresEscalator: false,
-            accessibilityStatus: "AVAILABLE",
+            accessibilityStatus: "UNKNOWN",
             reliabilityScore: 100,
             sourceId: "seoul-metro-transfer-distance-duration",
             sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
@@ -237,7 +237,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
             includesStairs: false,
             requiresElevator: true,
             requiresEscalator: false,
-            accessibilityStatus: "AVAILABLE",
+            accessibilityStatus: "UNKNOWN",
             reliabilityScore: 100,
             sourceId: "seoul-metro-transfer-distance-duration",
             sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
@@ -597,7 +597,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
   nationwidePack.transferRules = transferRules;
   const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => {
-    const clean = { ...link };
+    const clean = { ...link, accessibilityStatus: "UNKNOWN" };
     delete clean.sourceId;
     delete clean.sourceSnapshotId;
     delete clean.providerRecordHash;
