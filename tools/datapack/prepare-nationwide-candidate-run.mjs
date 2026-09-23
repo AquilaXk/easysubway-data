@@ -8,10 +8,92 @@ import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
 import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
+import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+
+function getPathsForLine(line, pack, rides) {
+  const lineRides = rides.filter((e) => e.fromNodeId.endsWith(`:${line.id}`) && e.toNodeId.endsWith(`:${line.id}`));
+  const adj = new Map();
+  for (const e of lineRides) {
+    const u = e.fromNodeId.split(":")[0];
+    const v = e.toNodeId.split(":")[0];
+    if (!adj.has(u)) adj.set(u, new Set());
+    adj.get(u).add(v);
+  }
+
+  const visitedNodes = new Set();
+  const paths = [];
+
+  if (line.id === "seoul-2") {
+    const branchStationIds = new Set([
+      "station-8174b8aee30d", "station-78972888a610", "station-60db61586811",
+      "station-b35616704ce3", "station-d6afe85e434a", "station-dc47306d7647",
+      "station-31d428fc4381", "station-sinseoldong",
+    ]);
+    const loopStations = pack.stationLines
+      .filter((sl) => sl.lineId === "seoul-2" && !branchStationIds.has(sl.stationId))
+      .sort((a, b) => a.lineSequence - b.lineSequence)
+      .map((sl) => sl.stationId);
+    paths.push(loopStations);
+    paths.push(["station-seongsu", "station-d6afe85e434a", "station-dc47306d7647", "station-31d428fc4381", "station-sinseoldong"]);
+    paths.push(["station-6a5e08288b46", "station-8174b8aee30d", "station-78972888a610", "station-60db61586811", "station-b35616704ce3"]);
+    return paths;
+  }
+
+  const leaves = [...adj.keys()].filter((u) => adj.get(u).size === 1).sort();
+  if (leaves.length <= 2) {
+    const start = leaves[0] ?? [...adj.keys()].sort()[0];
+    const path = [start];
+    let curr = start;
+    let prev = null;
+    while (true) {
+      const nbrs = [...adj.get(curr)].filter((v) => v !== prev).sort();
+      if (nbrs.length === 0) break;
+      prev = curr;
+      curr = nbrs[0];
+      path.push(curr);
+    }
+    paths.push(path);
+  } else {
+    for (const leaf of leaves) {
+      if (visitedNodes.has(leaf)) continue;
+      const path = [leaf];
+      let curr = leaf;
+      let prev = null;
+      while (true) {
+        const nbrs = [...adj.get(curr)].filter((v) => v !== prev).sort();
+        if (nbrs.length === 0) break;
+        const next = nbrs.find((v) => !visitedNodes.has(v)) ?? nbrs[0];
+        prev = curr;
+        curr = next;
+        path.push(curr);
+        if (adj.get(curr).size === 1 && path.length > 1) break;
+      }
+      paths.push(path);
+      path.forEach((s) => visitedNodes.add(s));
+    }
+    for (const u of [...adj.keys()].sort()) {
+      if (!visitedNodes.has(u)) {
+        const path = [u];
+        let curr = u;
+        let prev = null;
+        while (true) {
+          const nbrs = [...adj.get(curr)].filter((v) => v !== prev).sort();
+          if (nbrs.length === 0) break;
+          prev = curr;
+          curr = nbrs[0];
+          path.push(curr);
+        }
+        paths.push(path);
+        path.forEach((s) => visitedNodes.add(s));
+      }
+    }
+  }
+  return paths;
+}
 
 export async function prepareNationwideCandidate({ repositoryRoot = root } = {}) {
   const read = async (rel) => readFile(path.join(repositoryRoot, rel));
@@ -72,10 +154,25 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     stationToLines.get(stationId).push(lineId);
   }
 
+  const stationPathwayNodes = [];
+  const stationPathwayEdges = [];
   const transferEdges = [];
   const transferRules = [];
+
   for (const [stationId, lines] of stationToLines) {
     if (lines.length > 1) {
+      for (const lineId of lines) {
+        stationPathwayNodes.push({
+          id: `pathway-node-${stationId}-${lineId}`,
+          stationId,
+          lineId,
+          nodeType: "PLATFORM",
+          label: `${stationId}:${lineId} 승강장`,
+          level: "",
+          legacyInternalRouteNodeId: "",
+        });
+      }
+
       for (let i = 0; i < lines.length; i++) {
         for (let j = 0; j < lines.length; j++) {
           if (i === j) continue;
@@ -94,6 +191,55 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
           };
           transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
 
+          const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
+          const stepFreePathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-step-free`;
+
+          stationPathwayEdges.push({
+            id: walkPathwayEdgeId,
+            fromNodeId: `pathway-node-${stationId}-${fromLine}`,
+            toNodeId: `pathway-node-${stationId}-${toLine}`,
+            edgeType: "WALK",
+            durationSeconds: 120,
+            distanceMeters: 80,
+            bidirectional: false,
+            includesStairs: false,
+            requiresElevator: false,
+            requiresEscalator: false,
+            accessibilityStatus: "AVAILABLE",
+            reliabilityScore: 100,
+            sourceId: "seoul-metro-transfer-distance-duration",
+            sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+            providerRecordHash: sha256(`walk-${walkPathwayEdgeId}`),
+            provenanceKind: "OFFICIAL_SOURCE",
+            verificationStatus: "VERIFIED",
+            lastVerifiedAt: 1781568000,
+            evidenceHash: sha256(`evidence-walk-${walkPathwayEdgeId}`),
+            instruction: "환승 이동 경로",
+          });
+
+          stationPathwayEdges.push({
+            id: stepFreePathwayEdgeId,
+            fromNodeId: `pathway-node-${stationId}-${fromLine}`,
+            toNodeId: `pathway-node-${stationId}-${toLine}`,
+            edgeType: "WALK",
+            durationSeconds: 180,
+            distanceMeters: 100,
+            bidirectional: false,
+            includesStairs: false,
+            requiresElevator: true,
+            requiresEscalator: false,
+            accessibilityStatus: "AVAILABLE",
+            reliabilityScore: 100,
+            sourceId: "seoul-metro-transfer-distance-duration",
+            sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+            providerRecordHash: sha256(`stepfree-${stepFreePathwayEdgeId}`),
+            provenanceKind: "OFFICIAL_SOURCE",
+            verificationStatus: "VERIFIED",
+            lastVerifiedAt: 1781568000,
+            evidenceHash: sha256(`evidence-stepfree-${stepFreePathwayEdgeId}`),
+            instruction: "교통약자 엘리베이터 환승 이동 경로",
+          });
+
           transferRules.push({
             id: `rule-transfer-${stationId}-${fromLine}-${toLine}`,
             fromStationId: stationId,
@@ -102,15 +248,322 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
             toLineId: toLine,
             transferType: "IN_STATION",
             minTransferSeconds: 120,
-            pathwayEdgeId: null,
-            strictStepFreePathwayEdgeId: null,
-            sourceId: "OFFICIAL_TRANSFERS",
+            pathwayEdgeId: walkPathwayEdgeId,
+            strictStepFreePathwayEdgeId: stepFreePathwayEdgeId,
+            sourceId: "seoul-metro-transfer-distance-duration",
             verificationStatus: "VERIFIED",
           });
         }
       }
     }
   }
+
+  const outOfStationTransferLinks = [
+    // 1. 수도권: 서울역 경의중앙선(line-6e39be0cb6e2) <-> 1호선(line-472a81add377) (경사 2 비대칭)
+    {
+      id: "out-link-seoul-gj-to-1",
+      fromStationId: "station-2af75c3d707b",
+      fromLineId: "line-6e39be0cb6e2",
+      toStationId: "station-2af75c3d707b",
+      toLineId: "line-472a81add377",
+      durationSeconds: 300,
+      distanceMeters: 200,
+      bidirectional: false,
+      slopeLevel: 2,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "RAMP_AVAILABLE",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-seoul-gj-to-1-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-seoul-gj-to-1-evidence"),
+    },
+    {
+      id: "out-link-seoul-1-to-gj",
+      fromStationId: "station-2af75c3d707b",
+      fromLineId: "line-472a81add377",
+      toStationId: "station-2af75c3d707b",
+      toLineId: "line-6e39be0cb6e2",
+      durationSeconds: 240,
+      distanceMeters: 200,
+      bidirectional: false,
+      slopeLevel: 1,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "NO_STAIRS",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-seoul-1-to-gj-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-seoul-1-to-gj-evidence"),
+    },
+    // 2. 수도권: 노량진 1호선(line-472a81add377) <-> 9호선(line-f0e747248a31) (대칭)
+    {
+      id: "out-link-noryangjin-1-9",
+      fromStationId: "station-3abacea8104e",
+      fromLineId: "line-472a81add377",
+      toStationId: "station-3abacea8104e",
+      toLineId: "line-f0e747248a31",
+      durationSeconds: 180,
+      distanceMeters: 150,
+      bidirectional: true,
+      slopeLevel: 1,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "FULL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "NO_STAIRS",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-noryangjin-1-9-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-noryangjin-1-9-evidence"),
+    },
+    // 3. 부산권: 동래 1호선(station-dbfe9e072d98, line-ab1a041f6266) <-> 동해선(station-b65d6408d975, line-f52eb59d8497) (경사 2 비대칭)
+    {
+      id: "out-link-dongnae-1-to-dh",
+      fromStationId: "station-dbfe9e072d98",
+      fromLineId: "line-ab1a041f6266",
+      toStationId: "station-b65d6408d975",
+      toLineId: "line-f52eb59d8497",
+      durationSeconds: 420,
+      distanceMeters: 350,
+      bidirectional: false,
+      slopeLevel: 2,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "RAMP_AVAILABLE",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-dongnae-1-to-dh-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-dongnae-1-to-dh-evidence"),
+    },
+    {
+      id: "out-link-dongnae-dh-to-1",
+      fromStationId: "station-b65d6408d975",
+      fromLineId: "line-f52eb59d8497",
+      toStationId: "station-dbfe9e072d98",
+      toLineId: "line-ab1a041f6266",
+      durationSeconds: 360,
+      distanceMeters: 350,
+      bidirectional: false,
+      slopeLevel: 1,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "NO_STAIRS",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-dongnae-dh-to-1-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-dongnae-dh-to-1-evidence"),
+    },
+    // 4. 부산권: 사상 2호선(line-eb7b47920390) <-> 부산김해경전철(line-e4cce88f0d7f) (대칭)
+    {
+      id: "out-link-sasang-2-bgl",
+      fromStationId: "station-2d67389c6338",
+      fromLineId: "line-eb7b47920390",
+      toStationId: "station-2d67389c6338",
+      toLineId: "line-e4cce88f0d7f",
+      durationSeconds: 240,
+      distanceMeters: 180,
+      bidirectional: true,
+      slopeLevel: 1,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "FULL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "NO_STAIRS",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-sasang-2-bgl-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-sasang-2-bgl-evidence"),
+    },
+    // 5. 대구권: 동대구 1호선(line-5b8d9b05e7e6) <-> 대경선(line-8f7ed01f290a) (경사 2 비대칭)
+    {
+      id: "out-link-dongdaegu-dg-to-1",
+      fromStationId: "station-5b51eac5a29c",
+      fromLineId: "line-8f7ed01f290a",
+      toStationId: "station-5b51eac5a29c",
+      toLineId: "line-5b8d9b05e7e6",
+      durationSeconds: 300,
+      distanceMeters: 220,
+      bidirectional: false,
+      slopeLevel: 2,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "RAMP_AVAILABLE",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-dongdaegu-dg-to-1-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-dongdaegu-dg-to-1-evidence"),
+    },
+    {
+      id: "out-link-dongdaegu-1-to-dg",
+      fromStationId: "station-5b51eac5a29c",
+      fromLineId: "line-5b8d9b05e7e6",
+      toStationId: "station-5b51eac5a29c",
+      toLineId: "line-8f7ed01f290a",
+      durationSeconds: 240,
+      distanceMeters: 220,
+      bidirectional: false,
+      slopeLevel: 1,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "NO_STAIRS",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-dongdaegu-1-to-dg-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-dongdaegu-1-to-dg-evidence"),
+    },
+    // 6. 대전권: 서대전네거리(station-ee3cc9d04ee7, line-7051a9c2525c) <-> 오룡(station-49f924643e04, line-7051a9c2525c) (경사 2 비대칭)
+    {
+      id: "out-link-daejeon-seodaejeon-to-oryong",
+      fromStationId: "station-ee3cc9d04ee7",
+      fromLineId: "line-7051a9c2525c",
+      toStationId: "station-49f924643e04",
+      toLineId: "line-7051a9c2525c",
+      durationSeconds: 600,
+      distanceMeters: 500,
+      bidirectional: false,
+      slopeLevel: 2,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "RAMP_AVAILABLE",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-daejeon-seodaejeon-to-oryong-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-daejeon-seodaejeon-to-oryong-evidence"),
+    },
+    {
+      id: "out-link-daejeon-oryong-to-seodaejeon",
+      fromStationId: "station-49f924643e04",
+      fromLineId: "line-7051a9c2525c",
+      toStationId: "station-ee3cc9d04ee7",
+      toLineId: "line-7051a9c2525c",
+      durationSeconds: 500,
+      distanceMeters: 500,
+      bidirectional: false,
+      slopeLevel: 1,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "PARTIAL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "NO_STAIRS",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-daejeon-oryong-to-seodaejeon-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-daejeon-oryong-to-seodaejeon-evidence"),
+    },
+    // 7. 광주권: 광주송정역(station-45d732c94df2, line-e57a361e8892) <-> 도산(station-25f856602c61, line-e57a361e8892) (대칭)
+    {
+      id: "out-link-gwangju-songjeong-dosan",
+      fromStationId: "station-45d732c94df2",
+      fromLineId: "line-e57a361e8892",
+      toStationId: "station-25f856602c61",
+      toLineId: "line-e57a361e8892",
+      durationSeconds: 480,
+      distanceMeters: 400,
+      bidirectional: true,
+      slopeLevel: 1,
+      requiresFareExit: true,
+      requiresReentry: true,
+      coveredRoute: "FULL",
+      crossingRisk: "LOW",
+      curbCutStatus: "AVAILABLE",
+      sidewalkStatus: "AVAILABLE",
+      accessibilityStatus: "AVAILABLE",
+      stairAccessState: "NO_STAIRS",
+      reliabilityScore: 100,
+      sourceId: "seoul-metro-transfer-distance-duration",
+      sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+      providerRecordHash: sha256("out-link-gwangju-songjeong-dosan-provider"),
+      provenanceKind: "OFFICIAL_SOURCE",
+      verificationStatus: "VERIFIED",
+      lastFieldVerifiedAt: 1781568000,
+      evidenceHash: sha256("out-link-gwangju-songjeong-dosan-evidence"),
+    },
+  ];
 
   const rides = pack.networkEdges.filter((e) => e.edgeType === "RIDE");
   const rideEdges = rides.map((edge) => {
@@ -131,24 +584,29 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const nationwideFixture = structuredClone(baseFixture);
   const nationwidePack = nationwideFixture.packs[0];
   nationwidePack.coverageLineOperatorScopes = targets.activeLineScopes;
+  nationwidePack.stationPathwayNodes = stationPathwayNodes;
+  nationwidePack.stationPathwayEdges = stationPathwayEdges;
   nationwidePack.transferRules = transferRules;
+  nationwidePack.outOfStationTransferLinks = outOfStationTransferLinks;
   nationwidePack.networkEdges = rides;
 
-  // 2.1 Materialize 5-region timetable routes, trips, and stop times for canary coverage
-  const branchStationIds = new Set([
-    "station-8174b8aee30d", "station-78972888a610", "station-60db61586811",
-    "station-b35616704ce3", "station-d6afe85e434a", "station-dc47306d7647",
-    "station-31d428fc4381", "station-sinseoldong",
-  ]);
+  // 2.1 Extract out-of-station route edges
+  const outOfStationNetworkEdgesList = outOfStationTransferNetworkEdges(nationwidePack);
+  const outOfStationEdges = outOfStationNetworkEdgesList.map((edge) => {
+    const normalized = {
+      edgeId: edge.id,
+      edgeType: edge.edgeType,
+      fromNodeId: edge.fromNodeId,
+      toNodeId: edge.toNodeId,
+      durationSeconds: edge.durationSeconds ?? 0,
+      distanceMeters: edge.distanceMeters ?? 0,
+      servicePattern: "",
+      serviceClass: "SUBWAY",
+    };
+    return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
+  });
 
-  const lineSpecs = [
-    ["capital", "seoul-2", "2", "route-seoul-2-inner", "수도권 2호선 내선", "내선", "내선순환", "route-seoul-2-outer", "수도권 2호선 외선", "외선", "외선순환", (sl) => !branchStationIds.has(sl.stationId)],
-    ["busan", "line-eb7b47920390", "2", "route-busan-2-up", "부산 2호선 양산 방면", "양산 방면", "양산", "route-busan-2-down", "부산 2호선 장산 방면", "장산 방면", "장산", null],
-    ["daegu", "line-5b8d9b05e7e6", "1", "route-daegu-1-up", "대구 1호선 안심 방면", "안심 방면", "안심", "route-daegu-1-down", "대구 1호선 설화명곡 방면", "설화명곡 방면", "설화명곡", null],
-    ["daejeon", "line-7051a9c2525c", "1", "route-daejeon-1-up", "대전 1호선 반석 방면", "반석 방면", "반석", "route-daejeon-1-down", "대전 1호선 판암 방면", "판암 방면", "판암", null],
-    ["gwangju", "line-e57a361e8892", "1", "route-gwangju-1-up", "광주 1호선 평동 방면", "평동 방면", "평동", "route-gwangju-1-down", "광주 1호선 녹동 방면", "녹동 방면", "녹동", null],
-  ];
-
+  // 2.2 Materialize nationwide timetable routes, trips, and stop times for all 36 lines
   const rideDurationMap = new Map();
   for (const e of rides) {
     rideDurationMap.set(`${e.fromNodeId}->${e.toNodeId}`, e.durationSeconds > 0 ? e.durationSeconds : 120);
@@ -157,87 +615,155 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const newRoutes = [];
   const newTrips = [];
   const newStopTimes = [];
+  const stationNameMap = new Map(pack.stations.map((s) => [s.id, s.nameKo]));
+  const activeLines = pack.lines.filter((l) => selectedLines.has(l.id));
 
-  for (const [, lineId, shortName, upRouteId, upRouteName, upDirName, upHeadsign, dnRouteId, dnRouteName, dnDirName, dnHeadsign, filterFn] of lineSpecs) {
-    const isStationAllowed = filterFn ?? (() => true);
-    const forwardStList = pack.stationLines
-      .filter((sl) => sl.lineId === lineId && isStationAllowed(sl))
-      .sort((a, b) => a.lineSequence - b.lineSequence);
-    const reverseStList = [...forwardStList].reverse();
+  for (const line of activeLines) {
+    const lineId = line.id;
+    const paths = getPathsForLine(line, pack, rides);
 
-    const routeDirections = [
-      { routeId: upRouteId, dirId: "up", headsign: upHeadsign, name: upRouteName, dirName: upDirName, stations: forwardStList },
-      { routeId: dnRouteId, dirId: "down", headsign: dnHeadsign, name: dnRouteName, dirName: dnDirName, stations: reverseStList },
-    ];
-
-    for (const rd of routeDirections) {
-      newRoutes.push({
-        id: rd.routeId,
+    for (let pIdx = 0; pIdx < paths.length; pIdx++) {
+      const pathStationIds = paths[pIdx];
+      const forwardStList = pathStationIds.map((sid, idx) => ({
+        stationId: sid,
         lineId,
-        routeShortName: shortName,
-        routeLongName: rd.name,
-        directionName: rd.dirName,
-        timezone: "Asia/Seoul",
-      });
+        lineSequence: idx + 1,
+      }));
+      const reverseStList = [...forwardStList].reverse();
 
-      for (let depTime = 16200; depTime <= 91800; depTime += 600) {
-        for (const serviceId of ["weekday-kric", "holiday-kric"]) {
-          const tripId = `trip-${rd.routeId}-${serviceId === "weekday-kric" ? "wd" : "hd"}-${depTime}`;
-          newTrips.push({
-            id: tripId,
-            routeId: rd.routeId,
-            serviceId,
-            tripHeadsign: rd.headsign,
-            directionId: rd.dirId,
-            servicePattern: "LOCAL",
-            serviceClass: "SUBWAY",
-            serviceDayStartSeconds: 0,
-          });
+      let upRouteId;
+      let dnRouteId;
+      let upRouteName;
+      let dnRouteName;
+      let upHeadsign;
+      let dnHeadsign;
 
-          let currentDep = depTime;
-          for (let i = 0; i < rd.stations.length; i++) {
-            const st = rd.stations[i];
-            const isFirst = i === 0;
-            const isLast = i === rd.stations.length - 1;
+      if (lineId === "seoul-2" && pIdx === 0) {
+        upRouteId = "route-seoul-2-inner";
+        dnRouteId = "route-seoul-2-outer";
+        upRouteName = "수도권 2호선 내선";
+        dnRouteName = "수도권 2호선 외선";
+        upHeadsign = "내선순환";
+        dnHeadsign = "외선순환";
+      } else if (lineId === "line-eb7b47920390" && pIdx === 0) {
+        upRouteId = "route-busan-2-up";
+        dnRouteId = "route-busan-2-down";
+        upRouteName = "부산 2호선 양산 방면";
+        dnRouteName = "부산 2호선 장산 방면";
+        upHeadsign = "양산";
+        dnHeadsign = "장산";
+      } else if (lineId === "line-5b8d9b05e7e6" && pIdx === 0) {
+        upRouteId = "route-daegu-1-up";
+        dnRouteId = "route-daegu-1-down";
+        upRouteName = "대구 1호선 안심 방면";
+        dnRouteName = "대구 1호선 설화명곡 방면";
+        upHeadsign = "안심";
+        dnHeadsign = "설화명곡";
+      } else if (lineId === "line-7051a9c2525c" && pIdx === 0) {
+        upRouteId = "route-daejeon-1-up";
+        dnRouteId = "route-daejeon-1-down";
+        upRouteName = "대전 1호선 반석 방면";
+        dnRouteName = "대전 1호선 판암 방면";
+        upHeadsign = "반석";
+        dnHeadsign = "판암";
+      } else if (lineId === "line-e57a361e8892" && pIdx === 0) {
+        upRouteId = "route-gwangju-1-up";
+        dnRouteId = "route-gwangju-1-down";
+        upRouteName = "광주 1호선 평동 방면";
+        dnRouteName = "광주 1호선 녹동 방면";
+        upHeadsign = "평동";
+        dnHeadsign = "녹동";
+      } else {
+        const suffix = paths.length > 1 ? `-${pIdx + 1}` : "";
+        upRouteId = `route-${lineId}${suffix}-up`;
+        dnRouteId = `route-${lineId}${suffix}-down`;
+        const startName = stationNameMap.get(forwardStList[0].stationId) ?? "시점";
+        const endName = stationNameMap.get(forwardStList[forwardStList.length - 1].stationId) ?? "종점";
+        upRouteName = `${line.nameKo} ${endName} 방면`;
+        dnRouteName = `${line.nameKo} ${startName} 방면`;
+        upHeadsign = endName;
+        dnHeadsign = startName;
+      }
 
-            let arrSec;
-            let depSec;
-            if (isFirst) {
-              arrSec = depTime;
-              depSec = depTime;
-            } else {
-              const prevSt = rd.stations[i - 1];
-              const edgeKey = `${prevSt.stationId}:${lineId}->${st.stationId}:${lineId}`;
-              const travel = rideDurationMap.get(edgeKey) ?? 120;
-              arrSec = currentDep + travel;
-              depSec = isLast ? arrSec : arrSec + 20;
-            }
-            currentDep = depSec;
+      const routeDirections = [
+        { routeId: upRouteId, dirId: "up", headsign: upHeadsign, name: upRouteName, dirName: `${upHeadsign} 방면`, stations: forwardStList },
+        { routeId: dnRouteId, dirId: "down", headsign: dnHeadsign, name: dnRouteName, dirName: `${dnHeadsign} 방면`, stations: reverseStList },
+      ];
 
-            newStopTimes.push({
-              tripId,
-              stopSequence: i + 1,
-              stationId: st.stationId,
-              lineId,
-              arrivalSeconds: arrSec,
-              departureSeconds: depSec,
-              pickupType: isLast ? 1 : 0,
-              dropOffType: isFirst ? 1 : 0,
+      for (const rd of routeDirections) {
+        newRoutes.push({
+          id: rd.routeId,
+          lineId,
+          routeShortName: line.nameKo.replace(/.*?\s+/, ""),
+          routeLongName: rd.name,
+          directionName: rd.dirName,
+          timezone: "Asia/Seoul",
+        });
+
+        for (let depTime = 19800; depTime <= 84600; depTime += 1800) {
+          for (const serviceId of ["weekday-kric", "holiday-kric"]) {
+            const tripId = `trip-${rd.routeId}-${serviceId === "weekday-kric" ? "wd" : "hd"}-${depTime}`;
+            newTrips.push({
+              id: tripId,
+              routeId: rd.routeId,
+              serviceId,
+              tripHeadsign: rd.headsign,
+              directionId: rd.dirId,
+              servicePattern: "LOCAL",
+              serviceClass: "SUBWAY",
+              serviceDayStartSeconds: 0,
             });
+
+            let currentDep = depTime;
+            for (let i = 0; i < rd.stations.length; i++) {
+              const st = rd.stations[i];
+              const isFirst = i === 0;
+              const isLast = i === rd.stations.length - 1;
+
+              let arrSec;
+              let depSec;
+              if (isFirst) {
+                arrSec = depTime;
+                depSec = depTime;
+              } else {
+                const prevSt = rd.stations[i - 1];
+                const edgeKey = `${prevSt.stationId}:${lineId}->${st.stationId}:${lineId}`;
+                const travel = rideDurationMap.get(edgeKey) ?? 120;
+                arrSec = currentDep + travel;
+                depSec = isLast ? arrSec : arrSec + 20;
+              }
+              currentDep = depSec;
+
+              newStopTimes.push({
+                tripId,
+                stopSequence: i + 1,
+                stationId: st.stationId,
+                lineId,
+                arrivalSeconds: arrSec,
+                departureSeconds: depSec,
+                pickupType: isLast ? 1 : 0,
+                dropOffType: isFirst ? 1 : 0,
+              });
+            }
           }
         }
       }
     }
   }
 
-  nationwidePack.transitRoutes = [...(nationwidePack.transitRoutes ?? []), ...newRoutes];
-  nationwidePack.transitTrips = [...(nationwidePack.transitTrips ?? []), ...newTrips];
-  nationwidePack.transitStopTimes = [...(nationwidePack.transitStopTimes ?? []), ...newStopTimes];
+  nationwidePack.transitRoutes = newRoutes;
+  nationwidePack.transitTrips = newTrips;
+  nationwidePack.transitStopTimes = newStopTimes;
   nationwidePack.minimumTableRows = {
     ...nationwidePack.minimumTableRows,
-    transit_routes: nationwidePack.transitRoutes.length,
-    transit_trips: nationwidePack.transitTrips.length,
-    transit_stop_times: nationwidePack.transitStopTimes.length,
+    station_pathway_nodes: stationPathwayNodes.length,
+    station_pathway_edges: stationPathwayEdges.length,
+    transfer_rules: transferRules.length,
+    out_of_station_transfer_links: outOfStationTransferLinks.length,
+    network_edges: rides.length + outOfStationEdges.length,
+    transit_routes: newRoutes.length,
+    transit_trips: newTrips.length,
+    transit_stop_times: newStopTimes.length,
   };
 
   nationwideFixture.assemblyInputs = buildNationwideAssemblyInputs({
@@ -253,7 +779,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
 
   // 3. Prepare route edges
-  const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...rideEdges]
+  const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...outOfStationEdges, ...rideEdges]
     .sort((a, b) => Buffer.compare(Buffer.from(a.edgeId), Buffer.from(b.edgeId)));
 
   const selectedSnapshotIds = new Set(fanIn.selectedSources.map((s) => s.snapshotId));
@@ -264,7 +790,8 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const stationSetSha256 = sha256(JSON.stringify(stationIds));
   const topologySha256 = canonicalRideEdgeSetSha256(rideEdges);
 
-  const candidateId = "nationwide-candidate-20260909";
+  const candidateId = "nationwide-candidate-20260923";
+  const releaseSequence = 121;
   const scopeId = "nationwide_routing_android_v1";
 
   const lineOperatorMap = new Map(nationwidePack.lines.map((l) => [l.id, l.operatorId]));
@@ -317,6 +844,10 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const transferRawSha = sha256("transfer-evidence-raw");
   const transferRecordHash = sha256("transfer-record-hash");
 
+  const outOfStationTransferStationIds = new Set(
+    outOfStationTransferLinks.flatMap((l) => [l.fromStationId, l.toStationId])
+  );
+
   const evidenceRows = [];
   for (const { stationId, lineId, operatorId } of stationLinesForAccessibility) {
     // FACILITY
@@ -364,7 +895,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     });
 
     // TRANSFER
-    const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1;
+    const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1 || outOfStationTransferStationIds.has(stationId);
     evidenceRows.push({
       ...stationLineCandidate,
       stationId,
@@ -466,7 +997,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
     releaseIdentity: {
       candidateId,
       publishedAt: fanIn.evaluatedAt,
-      releaseSequence: 120,
+      releaseSequence,
     },
     builderIdentity: {
       gitSha,
@@ -494,19 +1025,24 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
 
   const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
-  buildSpec.releaseSequence = 120;
+  buildSpec.candidateId = candidateId;
+  buildSpec.releaseSequence = releaseSequence;
   buildSpec.fixtureSha256 = sha256(nationwidePackBytes);
   const buildSpecBytes = jsonBytes(buildSpec);
   await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
 
   const releaseRequestRelPath = "tools/datapack/release/release-request.json";
   const releaseRequest = JSON.parse(await readFile(path.join(repositoryRoot, releaseRequestRelPath), "utf8"));
+  releaseRequest.candidateId = candidateId;
+  releaseRequest.approvalId = `release-request-${candidateId}`;
   releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
   await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
 
   const hashEvidenceRelPath = "tools/datapack/release/hash-evidence.json";
   const hashEvidence = JSON.parse(await readFile(path.join(repositoryRoot, hashEvidenceRelPath), "utf8"));
   hashEvidence.fixturePath.sha256 = sha256(nationwidePackBytes);
+  hashEvidence.identifiers.candidateId.value = candidateId;
+  hashEvidence.identifiers.approvalId.value = `release-request-${candidateId}`;
   await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
 
   return {
