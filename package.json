@@ -4,6 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tools/ci/*.test.mjs"
+    "test": "node --test tools/ci/*.test.mjs",
+    "test:ci": "node --test tools/ci/*.test.mjs",
+    "test:all": "node --test tools/**/*.test.mjs",
+    "test:datapack": "node --test tools/datapack/*.test.mjs",
+    "test:route-map": "node --test tools/route-map/*.test.mjs",
+    "test:affected": "node tools/ci/run-affected-tests.mjs",
+    "check:fragment": "node tools/ci/check-documentation-fragment-sync.mjs --base origin/main",
+    "refresh:fragment": "node tools/repo/refresh-documentation-fragment.mjs --worktree"
   }
 }

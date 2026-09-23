@@ -96,7 +96,11 @@ function getPathsForLine(line, pack, rides) {
   return paths;
 }
 
-export async function prepareNationwideCandidate({ repositoryRoot = root } = {}) {
+export async function prepareNationwideCandidate({
+  repositoryRoot = root,
+  releaseSequence = 122,
+  candidateId: candidateIdOverride = null,
+} = {}) {
   const read = async (rel) => readFile(path.join(repositoryRoot, rel));
 
   const [targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes, incheonTopologyBytes, incheonLine1Bytes, incheonLine2Bytes, sourceInventoryBytes] = await Promise.all([
@@ -683,8 +687,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const stationSetSha256 = sha256(JSON.stringify(stationIds));
   const topologySha256 = canonicalRideEdgeSetSha256(rideEdges);
 
-  const candidateId = "nationwide-candidate-20260923";
-  const releaseSequence = 122;
+  const candidateId = candidateIdOverride ?? `nationwide-candidate-20260923-seq${releaseSequence}`;
   const scopeId = "nationwide_routing_android_v1";
 
   const lineOperatorMap = new Map(finalPack.lines.map((l) => [l.id, l.operatorId]));
@@ -950,7 +953,11 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  prepareNationwideCandidate().then((res) => {
+  const args = process.argv.slice(2);
+  let releaseSequence = 122;
+  const seqArg = args.find((a) => a.startsWith("--sequence="));
+  if (seqArg) releaseSequence = Number(seqArg.split("=")[1]);
+  prepareNationwideCandidate({ releaseSequence }).then((res) => {
     console.log("Prepared:", res);
   }).catch((err) => {
     console.error(err);
