@@ -221,7 +221,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
             providerRecordHash: sha256(`walk-${walkPathwayEdgeId}`),
             provenanceKind: "OFFICIAL_SOURCE",
             verificationStatus: "VERIFIED",
-            lastVerifiedAt: 1781568000,
+            lastVerifiedAt: "2026-08-15T09:40:38.817Z",
             evidenceHash: sha256(`evidence-walk-${walkPathwayEdgeId}`),
             instruction: "환승 이동 경로",
           });
@@ -244,7 +244,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
             providerRecordHash: sha256(`stepfree-${stepFreePathwayEdgeId}`),
             provenanceKind: "OFFICIAL_SOURCE",
             verificationStatus: "VERIFIED",
-            lastVerifiedAt: 1781568000,
+            lastVerifiedAt: "2026-08-15T09:40:38.817Z",
             evidenceHash: sha256(`evidence-stepfree-${stepFreePathwayEdgeId}`),
             instruction: "교통약자 엘리베이터 환승 이동 경로",
           });
