@@ -102,9 +102,8 @@ test("map and catalog projections keep only their owned table and field sets", (
     station_aliases: ["station_id", "alias", "normalized_alias"],
     lines: ["id", "name_ko", "name_en"],
     station_lines: ["station_id", "line_id", "station_code", "line_sequence"],
-    station_search_index: ["station_id", "token", "normalized_token", "source_kind"],
   });
-  assert.deepEqual(contract.artifacts.stationCatalogPack.generatedTables, ["station_search_index"]);
+  assert.deepEqual(contract.artifacts.stationCatalogPack.generatedTables, []);
 });
 
 test("route service evidence tables는 server timetable component의 exact references와 ownership을 유지한다", () => {

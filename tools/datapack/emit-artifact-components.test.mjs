@@ -387,14 +387,12 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   assert.equal(catalogManifest.payloadSha256, await payloadDigest(catalogRoot));
   assert.equal((await readFile(path.join(catalogRoot, "payload/catalog.sqlite"))).readUInt32BE(96), 3053000);
   const catalog = new DatabaseSync(path.join(catalogRoot, "payload/catalog.sqlite"), { readOnly: true });
-  assert.deepEqual(catalog.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name COLLATE BINARY").all().map((row) => row.name), ["lines", "station_aliases", "station_lines", "station_search_index", "stations"]);
+  assert.deepEqual(catalog.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name COLLATE BINARY").all().map((row) => row.name), ["lines", "station_aliases", "station_lines", "stations"]);
   assert.deepEqual(catalog.prepare("PRAGMA table_info(stations)").all().map((column) => column.name), ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"]);
   assert.deepEqual(catalog.prepare("PRAGMA table_info(station_aliases)").all().map((column) => column.name), ["station_id", "alias", "normalized_alias"]);
   assert.deepEqual(catalog.prepare("PRAGMA table_info(lines)").all().map((column) => column.name), ["id", "name_ko", "name_en"]);
   assert.deepEqual(catalog.prepare("PRAGMA table_info(station_lines)").all().map((column) => column.name), ["station_id", "line_id", "station_code", "line_sequence"]);
-  assert.deepEqual(catalog.prepare("PRAGMA table_info(station_search_index)").all().map((column) => column.name), ["station_id", "token", "normalized_token", "source_kind"]);
   assert.deepEqual(catalog.prepare("SELECT id,name_ko,name_en,name_sub,normalized_name,region FROM stations ORDER BY id").all().map((row) => ({ ...row })), [{ id: "s1", name_ko: "가역", name_en: "Ga", name_sub: "", normalized_name: "가역", region: "수도권" }, { id: "s2", name_ko: "나역", name_en: "Na", name_sub: "", normalized_name: "나역", region: "수도권" }, { id: "station-b35616704ce3", name_ko: "검증역", name_en: "Terminal", name_sub: "", normalized_name: "검증역", region: "수도권" }]);
-  assert.deepEqual(catalog.prepare("SELECT station_id,token,normalized_token,source_kind FROM station_search_index ORDER BY station_id,source_kind,normalized_token,token").all().map((row) => ({ ...row })), [{ station_id: "s1", token: "가", normalized_token: "가", source_kind: "STATION_ALIAS" }, { station_id: "s1", token: "가역", normalized_token: "가역", source_kind: "STATION_NAME" }, { station_id: "s2", token: "나역", normalized_token: "나역", source_kind: "STATION_NAME" }, { station_id: "station-b35616704ce3", token: "검증역", normalized_token: "검증역", source_kind: "STATION_NAME" }]);
   assert.equal(catalog.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('network_edges','transit_routes','transfer_rules','station_exits','fare_rules','operators')").all().length, 0);
   assert.equal(catalog.prepare("SELECT count(*) AS count FROM pragma_table_info('lines') WHERE name IN ('operator_id','color')").get().count, 0);
   catalog.close();
