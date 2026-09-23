@@ -684,7 +684,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   const topologySha256 = canonicalRideEdgeSetSha256(rideEdges);
 
   const candidateId = "nationwide-candidate-20260923";
-  const releaseSequence = 121;
+  const releaseSequence = 122;
   const scopeId = "nationwide_routing_android_v1";
 
   const lineOperatorMap = new Map(finalPack.lines.map((l) => [l.id, l.operatorId]));
