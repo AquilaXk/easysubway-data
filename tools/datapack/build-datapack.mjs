@@ -4240,7 +4240,11 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           "last_field_verified_at",
           "evidence_hash",
         ],
-        pack.outOfStationTransferLinks ?? [],
+        [...(pack.outOfStationTransferLinks ?? [])].sort(
+          (a, b) =>
+            (a.durationSeconds ?? 0) - (b.durationSeconds ?? 0) ||
+            codepointCompare(String(a.id), String(b.id)),
+        ),
         (row) => [
           requiredString(row.id, "outOfStationTransferLinks.id"),
           requiredString(row.fromStationId, "outOfStationTransferLinks.fromStationId"),
@@ -4705,7 +4709,11 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           "source_id",
           "verification_status",
         ],
-        pack.transferRules ?? [],
+        [...(pack.transferRules ?? [])].sort(
+          (a, b) =>
+            (a.minTransferSeconds ?? 0) - (b.minTransferSeconds ?? 0) ||
+            codepointCompare(String(a.id), String(b.id)),
+        ),
         (row) => [
           requiredString(row.id, "transferRules.id"),
           requiredString(row.fromStationId, "transferRules.fromStationId"),

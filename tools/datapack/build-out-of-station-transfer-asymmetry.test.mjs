@@ -197,3 +197,38 @@ test("out-of-station transfer SQLite bundle: forces bidirectional=0 for slope_le
   db.close();
 });
 
+test("out-of-station transfer links and transfer rules are serialized in ascending duration order", async () => {
+  const { codepointCompare } = await import("../lib/codepoint-compare.mjs");
+  const links = [
+    { id: "link-long", durationSeconds: 600 },
+    { id: "link-short", durationSeconds: 120 },
+    { id: "link-mid", durationSeconds: 300 },
+    { id: "link-same-b", durationSeconds: 120 },
+    { id: "link-same-a", durationSeconds: 120 },
+  ];
+  const sortedLinks = [...links].sort(
+    (a, b) =>
+      (a.durationSeconds ?? 0) - (b.durationSeconds ?? 0) ||
+      codepointCompare(String(a.id), String(b.id)),
+  );
+  assert.deepEqual(
+    sortedLinks.map((l) => l.id),
+    ["link-same-a", "link-same-b", "link-short", "link-mid", "link-long"],
+  );
+
+  const rules = [
+    { id: "rule-c", minTransferSeconds: 300 },
+    { id: "rule-a", minTransferSeconds: 90 },
+    { id: "rule-b", minTransferSeconds: 180 },
+  ];
+  const sortedRules = [...rules].sort(
+    (a, b) =>
+      (a.minTransferSeconds ?? 0) - (b.minTransferSeconds ?? 0) ||
+      codepointCompare(String(a.id), String(b.id)),
+  );
+  assert.deepEqual(
+    sortedRules.map((r) => r.id),
+    ["rule-a", "rule-b", "rule-c"],
+  );
+});
+
