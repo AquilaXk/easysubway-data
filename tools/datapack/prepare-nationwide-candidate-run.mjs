@@ -595,6 +595,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   nationwidePack.coverageLineOperatorScopes = targets.activeLineScopes;
   nationwidePack.stationPathwayNodes = stationPathwayNodes;
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
+  nationwidePack.transferRules = transferRules;
   const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => {
     const clean = { ...link };
     delete clean.sourceId;
@@ -793,6 +794,7 @@ export async function prepareNationwideCandidate({ repositoryRoot = root } = {})
   finalPack.id = "capital";
   finalPack.version = "1";
   finalPack.url = "https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/capital-v1.sqlite.gz";
+  finalPack.transferRules = transferRules;
   materializedFixture.manifest.activePack = { id: "capital", version: "1" };
 
   finalPack.minimumTableRows = {
