@@ -1129,7 +1129,8 @@ async function main() {
     }
   }
   const isCandidateRelease = process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "release-candidate"
-    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "candidate-create";
+    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "candidate-create"
+    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "exploratory";
   const requireFreshOption = option("--require-fresh", null);
   const requireFresh = requireFreshOption != null ? requireFreshOption === "true" : !isCandidateRelease;
   const { contract, reference, source, sourceBytes, currentAdmission, currentProjection } =

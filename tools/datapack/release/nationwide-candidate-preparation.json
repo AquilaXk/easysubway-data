@@ -88,7 +88,7 @@
   "releaseIdentity": {
     "candidateId": "nationwide-candidate-20260909",
     "publishedAt": "2026-09-09T03:16:08.098Z",
-    "releaseSequence": 119
+    "releaseSequence": 120
   },
   "builderIdentity": {
     "gitSha": "afc730f655e76c26c40915562dfd6ae486a66277",
