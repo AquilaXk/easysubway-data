@@ -12,7 +12,7 @@ const PACK_ID = "nationwide-gwangju-accessibility";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DATASET_IDS = Object.freeze(["15041385", "15041362"]);
 const FIELDS_PROVIDED = Object.freeze([
-  "elevator", "escalator", "status", "verified_at",
+  "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
 ]);
 const FACILITY_TYPES = Object.freeze([
   {
@@ -197,8 +197,7 @@ function validateSnapshot(snapshot) {
   const codes = new Set();
   for (const row of snapshot.rows) {
     if (row.lineId !== snapshot.lineIds[0] || typeof row.stationCode !== "string" || codes.has(row.stationCode)
-      || row.wheelchair_lift !== null
-      || [row.elevator, row.escalator].some((value) => value !== null && (!Number.isInteger(value) || value < 0))) {
+      || [row.wheelchair_lift, row.elevator, row.escalator].some((value) => value !== null && (!Number.isInteger(value) || value < 0))) {
       throw new Error(`invalid Gwangju accessibility row: ${row?.stationCode}`);
     }
     codes.add(row.stationCode);

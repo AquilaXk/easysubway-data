@@ -71,7 +71,7 @@ export function parseGwangjuAccessibilityCsv({
     stationCode: station.stationCode,
     stationName: station.stationName,
     lineId,
-    wheelchair_lift: null,
+    wheelchair_lift: 0,
     elevator: elevatorCounts.get(station.stationCode) ?? null,
     escalator: escalatorCounts.get(station.stationCode) ?? null,
   })).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));
@@ -129,7 +129,7 @@ export function collectGwangjuAccessibility({
     elevatorRowCount: rows.reduce((sum, row) => sum + (row.elevator ?? 0), 0),
     escalatorRowCount: rows.reduce((sum, row) => sum + (row.escalator ?? 0), 0),
     lineIds: [...topologySource.coverageScope.lineIds],
-    fieldsProvided: ["elevator", "escalator", "status", "verified_at"],
+    fieldsProvided: ["elevator", "escalator", "wheelchair_lift", "status", "verified_at"],
     license: {
       type: "PUBLIC_DATA_FREE_USE",
       attribution: "광주교통공사, 공공데이터포털 이용허락범위 제한 없음",

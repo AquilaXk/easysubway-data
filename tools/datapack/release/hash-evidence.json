@@ -14,7 +14,7 @@
     "facilityEvidenceLedgerHash": {
       "value": "a5576faa6c4fc3cb888dbd8e12e83ce1de0bb4fc83905ff4916907da6be0aecb",
       "exporterKind": "facility-evidence",
-      "rowCount": 221,
+      "rowCount": 967,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "routeEvidenceLedgerHash": {
@@ -34,11 +34,11 @@
     "value": "a7b44bed6999142d6b716814a22071f890af2b341e2f27d898ebeb2e55d5716f"
   },
   "sourceInventorySha256": {
-    "value": "d24cc6b111b54c9d83f1edba1b4f77870c86257ddbf004ff9f1e33418e43db86"
+    "value": "73ba23562d0cb71af72253921e5611bdbb1d56eba29ece8360d15ddf9c561a5d"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "4a51f4a7564a85d076022274ff4b1d101aa67d2cfbeeda5a101fabb00355c42c"
+    "sha256": "abf4580c91013dfe34a409481568ef531f55653f6f282cab4b112f97c19e9242"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20260923"
+      "value": "nationwide-candidate-20260923-seq122"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20260923"
+      "value": "release-request-nationwide-candidate-20260923-seq122"
     }
   },
   "perSourceEvidence": [

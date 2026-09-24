@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "c3dd50c61a668f3aff899446aa158f374ce1d04c103d3cfd4c6b7541648eda00"
+      "sha256": "a26d98411ada6da2a69b86bb2e23613994fa8cd3944d5081c43e2f5f377eff37"
     },
     "resolutions": {
       "entryCount": 4,
@@ -1095,17 +1095,17 @@
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 11,
-        "inventoryAdmittedRatio": 0.2444,
+        "inventoryAdmittedCount": 12,
+        "inventoryAdmittedRatio": 0.2667,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 1,
-          "NO_ADMITTED_SOURCE": 33
+          "NO_ADMITTED_SOURCE": 32
         },
-        "missingCount": 34,
+        "missingCount": 33,
         "sourceDomain": "accessibility_facilities",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 11,
-        "terminalRatio": 0.2444,
+        "terminalCount": 12,
+        "terminalRatio": 0.2667,
         "totalCount": 45
       },
       {
@@ -1257,29 +1257,29 @@
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 4,
-        "inventoryAdmittedRatio": 0.6667,
+        "inventoryAdmittedCount": 5,
+        "inventoryAdmittedRatio": 0.8333,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 0,
-          "NO_ADMITTED_SOURCE": 2
+          "NO_ADMITTED_SOURCE": 1
         },
-        "missingCount": 2,
+        "missingCount": 1,
         "regionId": "gwangju",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 4,
-        "terminalRatio": 0.6667,
+        "terminalCount": 5,
+        "terminalRatio": 0.8333,
         "totalCount": 6
       }
     ],
     "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
     "explicitlyUnsupportedWithEvidenceCount": 4,
-    "inventoryAdmittedCount": 80,
-    "inventoryAdmittedRatio": 0.2963,
+    "inventoryAdmittedCount": 81,
+    "inventoryAdmittedRatio": 0.3,
     "missingByKind": {
       "DUAL_OPERATOR_UNMATCHED": 9,
-      "NO_ADMITTED_SOURCE": 177
+      "NO_ADMITTED_SOURCE": 176
     },
-    "missingCount": 186,
+    "missingCount": 185,
     "requirements": [
       {
         "admissionRatio": 1,
@@ -6982,15 +6982,15 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 0.8,
-        "admittedFieldCount": 4,
+        "admissionRatio": 1,
+        "admittedFieldCount": 5,
         "admittedSourceIds": [
           "gwangju-transportation-accessibility"
         ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-e57a361e8892",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "gwangju-metropolitan-rapid-transit",
         "regionId": "gwangju",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -6998,10 +6998,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "accessibility_facilities",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "wheelchair_lift"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0,
@@ -7106,8 +7104,8 @@
       }
     ],
     "supportStartedResolutionCount": 0,
-    "terminalCount": 84,
-    "terminalRatio": 0.3111,
+    "terminalCount": 85,
+    "terminalRatio": 0.3148,
     "totalCount": 270
   },
   "parentIssue": 2138,

@@ -1744,6 +1744,7 @@
       "fieldsProvided": [
         "elevator",
         "escalator",
+        "wheelchair_lift",
         "status",
         "verified_at"
       ],
