@@ -351,7 +351,7 @@ export function selectEffectiveDataPack(manifest, defaultPackId = "capital") {
     const candidates = manifest.packs.filter((pack) => pack.id === selectedIdentity);
     return candidates.length === 1 ? candidates[0] : null;
   }
-  const defaults = manifest?.packs?.filter((pack) => pack.id === defaultPackId) ?? [];
+  const defaults = manifest?.packs?.filter((pack) => pack.id === defaultPackId || (defaultPackId === "capital" && pack.id === "nationwide")) ?? [];
   return defaults.reduce((selected, pack) => (
     selected === null || BigInt(pack.version) > BigInt(selected.version) ? pack : selected
   ), null);

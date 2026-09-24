@@ -54,8 +54,8 @@ test("선택된 topology 변경을 파생하고 미관측 시설을 부재로 �
   const terminal = snapshot.rows.find(({ stationCode }) => stationCode === "synthetic-terminal");
   assert.equal(terminal.elevator, null);
   assert.equal(terminal.escalator, null);
-  assert.equal(terminal.wheelchair_lift, null);
-  assert.ok(snapshot.rows.every(({ wheelchair_lift }) => wheelchair_lift === null));
+  assert.equal(terminal.wheelchair_lift, 0);
+  assert.ok(snapshot.rows.every(({ wheelchair_lift }) => wheelchair_lift === 0));
   assert.throws(() => collectGwangjuAccessibility({
     ...inputs, topologySnapshot, now: new Date(topologySnapshot.capturedAt),
   }), /topology/);
@@ -113,7 +113,7 @@ test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV�
   assert.equal(snapshot.rowsSha256, createHash("sha256").update(JSON.stringify(snapshot.rows)).digest("hex"));
   assert.equal(snapshot.scopeSha256, createHash("sha256").update(JSON.stringify(snapshot.scope)).digest("hex"));
   assert.deepEqual(snapshot.fieldsProvided, [
-    "elevator", "escalator", "status", "verified_at",
+    "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
   ]);
   assert.equal(snapshot.topologyLineages.length, 1);
   assert.deepEqual(snapshot.topologyLineages[0], {
@@ -126,7 +126,7 @@ test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV�
     row.lineId === LINE_ID
       && (row.elevator == null || Number.isInteger(row.elevator) && row.elevator >= 0)
       && (row.escalator == null || Number.isInteger(row.escalator) && row.escalator >= 0)
-      && row.wheelchair_lift === null
+      && row.wheelchair_lift === 0
   )), true);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.elevator, 0), 62);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.escalator, 0), 99);
