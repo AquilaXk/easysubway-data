@@ -19,6 +19,12 @@ test("stage 전량과 tuple·inventory·component를 OCI immutable object-set de
     assert.equal(first.objects.length, 6);
     assert.ok(first.objects.every((entry) => entry.objectKey.startsWith("candidates/v1/runs/42/heads/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/candidates/candidate-1/objects/")));
     assert.ok(first.objects.every((entry) => entry.ociUri === `oci://namespace/candidate-private/${entry.objectKey}`));
+    assert.deepEqual(first.publicationReceipt, {
+      contractVersion: "datapack-candidate-publication-receipt-v1",
+      locator: "oci://namespace/candidate-private/candidates/v1/runs/42/heads/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/candidates/candidate-1/receipts/candidate-publication-receipt.json",
+      objectKey: "candidates/v1/runs/42/heads/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/candidates/candidate-1/receipts/candidate-publication-receipt.json",
+      ociUri: "oci://namespace/candidate-private/candidates/v1/runs/42/heads/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/candidates/candidate-1/receipts/candidate-publication-receipt.json",
+    });
     assert.equal(first.expiresAt, "2026-08-25T00:00:00.000Z");
     await rm(fixture.output);
     const second = await build(fixture);
@@ -33,6 +39,18 @@ test("descriptor object schema는 five-field closed object다", () => {
   assert.equal(object.type, "object"); assert.equal(object.additionalProperties, false);
   assert.deepEqual(Object.keys(object.properties).sort(), ["objectKey", "ociUri", "path", "sha256", "sizeBytes"]);
   assert.deepEqual([...object.required].sort(), ["objectKey", "ociUri", "path", "sha256", "sizeBytes"]);
+  const receipt = schema.properties.publicationReceipt;
+  assert.equal(receipt.type, "object"); assert.equal(receipt.additionalProperties, false);
+  assert.deepEqual([...receipt.required].sort(), ["contractVersion", "locator", "objectKey", "ociUri"]);
+});
+
+test("publication receipt schema는 required fields를 선언한 closed object다", () => {
+  const schema = JSON.parse(readFileSync("contracts/release/datapack-candidate-oci-publication-receipt.schema.json", "utf8"));
+  assert.equal(schema.type, "object"); assert.equal(schema.additionalProperties, false);
+  assert.deepEqual([...schema.required].sort(), [
+    "artifactKind", "artifactName", "candidateId", "contractVersion", "descriptor",
+    "headSha", "locator", "objects", "receiptSha256", "repository", "schemaVersion", "workflowRunId"
+  ]);
 });
 
 test("extra·symlink·traversal·identity drift·expired stage는 descriptor를 남기지 않는다", async () => {

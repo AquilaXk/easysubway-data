@@ -8,7 +8,28 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 export function canonicalCandidateOciDescriptorBytes(value) {
   const file = (entry) => ({ path: entry.path, sizeBytes: entry.sizeBytes, sha256: entry.sha256 });
-  return jsonBytes({ schemaVersion: value.schemaVersion, artifactKind: value.artifactKind, repository: value.repository, workflowRunId: value.workflowRunId, headSha: value.headSha, artifactName: value.artifactName, candidateBinding: { candidateId: value.candidateBinding.candidateId, buildSpecSha256: value.candidateBinding.buildSpecSha256, manifestSha256: value.candidateBinding.manifestSha256 }, freshnessExpiresAt: value.freshnessExpiresAt, createdAt: value.createdAt, expiresAt: value.expiresAt, inventory: file(value.inventory), component: file(value.component), tuple: file(value.tuple), objects: value.objects.map((entry) => ({ path: entry.path, objectKey: entry.objectKey, ociUri: entry.ociUri, sizeBytes: entry.sizeBytes, sha256: entry.sha256 })) });
+  return jsonBytes({
+    schemaVersion: value.schemaVersion,
+    artifactKind: value.artifactKind,
+    repository: value.repository,
+    workflowRunId: value.workflowRunId,
+    headSha: value.headSha,
+    artifactName: value.artifactName,
+    candidateBinding: { candidateId: value.candidateBinding.candidateId, buildSpecSha256: value.candidateBinding.buildSpecSha256, manifestSha256: value.candidateBinding.manifestSha256 },
+    freshnessExpiresAt: value.freshnessExpiresAt,
+    createdAt: value.createdAt,
+    expiresAt: value.expiresAt,
+    inventory: file(value.inventory),
+    component: file(value.component),
+    tuple: file(value.tuple),
+    objects: value.objects.map((entry) => ({ path: entry.path, objectKey: entry.objectKey, ociUri: entry.ociUri, sizeBytes: entry.sizeBytes, sha256: entry.sha256 })),
+    publicationReceipt: {
+      contractVersion: value.publicationReceipt.contractVersion,
+      locator: value.publicationReceipt.locator,
+      objectKey: value.publicationReceipt.objectKey,
+      ociUri: value.publicationReceipt.ociUri,
+    },
+  });
 }
 
 export async function buildCandidateOciArtifactDescriptor(input) {
@@ -41,7 +62,15 @@ export async function buildCandidateOciArtifactDescriptor(input) {
   for (const entry of actual) { const expected = declared.get(entry.path); if (!expected || expected.sizeBytes !== entry.sizeBytes || expected.sha256 !== entry.sha256) throw new Error(`stage object binding mismatch: ${entry.path}`); }
   const prefix = `candidates/v1/runs/${workflowRunId}/heads/${headSha}/candidates/${tuple.candidateBinding.candidateId}/`;
   const objects = actual.sort(byPath).map((entry) => ({ ...entry, objectKey: `${prefix}objects/${entry.sha256}/${entry.path}`, ociUri: `oci://${namespace}/${bucket}/${prefix}objects/${entry.sha256}/${entry.path}` }));
-  const descriptor = { schemaVersion: 1, artifactKind: "datapack-candidate-oci-artifact-descriptor", repository, workflowRunId, headSha, artifactName: `easysubway-datapack-candidate-${workflowRunId}`, candidateBinding: tuple.candidateBinding, freshnessExpiresAt: tuple.freshnessExpiresAt, createdAt, expiresAt, inventory: fileEntry(relative(root, files.inventory), inventoryBytes), component: fileEntry(relative(root, files.component), componentBytes), tuple: fileEntry(relative(root, files.tuple), tupleBytes), objects };
+  const receiptKey = `${prefix}receipts/candidate-publication-receipt.json`;
+  const receiptUri = `oci://${namespace}/${bucket}/${receiptKey}`;
+  const publicationReceipt = {
+    contractVersion: "datapack-candidate-publication-receipt-v1",
+    locator: receiptUri,
+    objectKey: receiptKey,
+    ociUri: receiptUri,
+  };
+  const descriptor = { schemaVersion: 1, artifactKind: "datapack-candidate-oci-artifact-descriptor", repository, workflowRunId, headSha, artifactName: `easysubway-datapack-candidate-${workflowRunId}`, candidateBinding: tuple.candidateBinding, freshnessExpiresAt: tuple.freshnessExpiresAt, createdAt, expiresAt, inventory: fileEntry(relative(root, files.inventory), inventoryBytes), component: fileEntry(relative(root, files.component), componentBytes), tuple: fileEntry(relative(root, files.tuple), tupleBytes), objects, publicationReceipt };
   await atomicCreate(path.dirname(output), output, canonicalCandidateOciDescriptorBytes(descriptor));
   return descriptor;
 }
