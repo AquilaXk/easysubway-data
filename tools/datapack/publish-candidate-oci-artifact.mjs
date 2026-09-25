@@ -189,22 +189,19 @@ export function createCandidateOciClient(env, fetchImpl = fetch) {
     identity: { namespace, bucket },
     async putObjectIfAbsent(key, bytes) {
       const r = await call(key, "PUT", bytes, { "content-length": String(bytes.length), "if-none-match": "*" });
-      if (r.status === 412) throw new Error("OCI conditional PUT collision 412");
+      if (r.status === 412) return false;
       if (r.status < 200 || r.status >= 300) throw new Error("OCI conditional PUT failed");
       const etag = r.headers?.get ? (r.headers.get("etag") ?? r.headers.get("ETag")) : r.headers?.etag;
       const versionId = r.headers?.get ? (r.headers.get("x-amz-version-id") ?? r.headers.get("version-id")) : (r.headers?.["x-amz-version-id"] ?? r.headers?.["version-id"]);
-      if (!etag || !versionId) throw new Error("OCI create response missing ETag or versionId");
-      return { etag, versionId };
+      return { created: true, etag, versionId };
     },
     async readObject(key, versionId) {
-      if (typeof versionId !== "string" || !versionId) throw new Error("versionId required for readObject");
-      const query = `versionId=${encodeURIComponent(versionId)}`;
+      const query = versionId ? `versionId=${encodeURIComponent(versionId)}` : "";
       const r = await call(key, "GET", Buffer.alloc(0), {}, query);
       if (r.status === 404) return { exists: false };
       if (r.status !== 200) throw new Error("OCI GET failed");
       const etag = r.headers?.get ? (r.headers.get("etag") ?? r.headers.get("ETag")) : r.headers?.etag;
       const getVersionId = r.headers?.get ? (r.headers.get("x-amz-version-id") ?? r.headers.get("version-id")) : (r.headers?.["x-amz-version-id"] ?? r.headers?.["version-id"]);
-      if (!etag || !getVersionId) throw new Error("OCI GET missing ETag or versionId");
       return { exists: true, body: r.body, etag, versionId: getVersionId };
     }
   };
