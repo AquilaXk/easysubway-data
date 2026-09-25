@@ -11,9 +11,7 @@ import { promisify } from "node:util";
 import {
   loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
   projectRegionalFixtureSourceBindings,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
@@ -77,8 +75,8 @@ async function inputs() {
     gwangjuSnapshotBytes,
   ] = await Promise.all([
     loadRegionalGwangjuAccessibilityPrefix({
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
       readJson,
       topologyNow,
       timetableNow,
@@ -90,7 +88,7 @@ async function inputs() {
   const gwangjuSnapshot = JSON.parse(gwangjuSnapshotBytes);
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: regional.inventory, gwangjuTopology,
-    molitStationMapCsv: regional.molitStationMapCsv,
+    molitMappings: regional.molitMappings,
     gwangjuRouteMapSnapshot: gwangjuSnapshot,
     gwangjuRouteMapSnapshotBytes: gwangjuSnapshotBytes,
   });

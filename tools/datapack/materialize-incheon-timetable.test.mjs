@@ -10,8 +10,6 @@ import { promisify } from "node:util";
 import {
   loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import { materializeIncheonAccessibility } from "./materialize-incheon-accessibility.mjs";
@@ -74,8 +72,8 @@ async function inputs({ materializeIncheon = true } = {}) {
     line2Timetable,
   ] = await Promise.all([
     loadRegionalGwangjuAccessibilityPrefix({
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-      inventoryPromise: Promise.resolve(projectHistoricalRegionalMaterializeInventory(currentInventory)),
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: Promise.resolve(currentInventory),
       readJson,
       topologyNow,
       timetableNow,

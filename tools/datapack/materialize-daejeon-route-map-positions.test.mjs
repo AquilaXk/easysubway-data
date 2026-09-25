@@ -10,9 +10,7 @@ import { promisify } from "node:util";
 import {
   loadRegionalGwangjuRouteMapPrefix,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
   projectRegionalFixtureSourceBindings,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
@@ -38,8 +36,8 @@ async function inputs() {
     currentInventory,
   ] = await Promise.all([
     loadRegionalGwangjuRouteMapPrefix({
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
       readJson,
       topologyNow,
       timetableNow,
@@ -58,7 +56,7 @@ async function inputs() {
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: regional.inventory,
     daejeonTopology: topologySnapshot,
-    molitStationMapCsv: regional.molitStationMapCsv,
+    molitMappings: regional.molitMappings,
     daejeonRouteMapSnapshot: daejeonSnapshot,
     daejeonRouteMapSnapshotBytes: daejeonSnapshotBytes,
   });

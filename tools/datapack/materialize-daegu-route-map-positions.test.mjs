@@ -10,14 +10,8 @@ import { promisify } from "node:util";
 import {
   loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
   projectHistoricalDaeguMaterializeInventory,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
-
-import {
-  parseMolitDaeguStationMappings,
-} from "./build-molit-nationwide-fixture.mjs";
 import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import { daeguAccessibilityTopologyLineageIdentity, materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
@@ -41,8 +35,8 @@ async function inputs() {
     regional, daeguAccessibility, daeguSnapshotBytes,
   ] = await Promise.all([
     loadRegionalGwangjuTimetablePrefix({
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
       readJson,
       topologyNow: new Date("2026-07-19T18:14:03.004Z"),
       timetableNow,
@@ -50,10 +44,9 @@ async function inputs() {
     readJson("tools/datapack/sources/daegu-transportation-accessibility-20260724.json"),
     readFile(path.join(root, "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json")),
   ]);
-  const { gwangjuFixture, molitStationMapCsv: molitMap } = regional;
+  const { gwangjuFixture, molitMappings } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
-  const mappings = {};
   for (const config of DAEGU_LINES) {
     topologySnapshots[config.lineNumber] = await readJson(
       `tools/datapack/sources/daegu-line${config.lineNumber}-route-topology-20260721.json`,
@@ -61,8 +54,12 @@ async function inputs() {
     timetableSnapshots[config.lineNumber] = await readJson(
       `tools/datapack/sources/daegu-line${config.lineNumber}-train-timetable-20260721.json`,
     );
-    mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
   }
+  const mappings = {
+    1: molitMappings.daeguLine1,
+    2: molitMappings.daeguLine2,
+    3: molitMappings.daeguLine3,
+  };
   const inventory = projectHistoricalDaeguMaterializeInventory({
     inventory: regional.inventory, topologySnapshots, timetableSnapshots, mappings,
   });

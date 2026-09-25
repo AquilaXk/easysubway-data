@@ -8,10 +8,9 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  loadCurrentMolitMembershipMappings,
   materializeRegionalProductionCandidate,
   projectRegionalFixtureSourceBindings,
-  projectHistoricalRegionalMaterializeInventory,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 import { createRetainedGwangjuTestInput } from "./gwangju-retained-test-fixture.mjs";
 
@@ -157,19 +156,19 @@ function retainedTimetableEvidence() {
 }
 
 async function retainedProductionInput() {
-  const [topologySnapshot, stationMap, sourceInventory] = await Promise.all([
+  const [topologySnapshot, currentMappings, sourceInventory] = await Promise.all([
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+    loadCurrentMolitMembershipMappings({ repositoryRoot: root }),
     readJson("tools/datapack/source-inventory.json"),
   ]);
-  const mappings = parseMolitGwangjuStationMappings(stationMap, topologySnapshot);
+  const mappings = currentMappings.gwangju;
   const arrays = ["sourceInventory", "operators", "lines", "stations", "stationLines", "networkEdges", "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips", "transitStopTimes", "transitFeedInfo"];
   const pack = Object.fromEntries(arrays.map((key) => [key, []]));
   Object.assign(pack, { id: "base", version: "1", artifactKind: "production", url: "", minimumTableRows: {} });
   const inventory = projectRegionalFixtureSourceBindings({
-    inventory: projectHistoricalRegionalMaterializeInventory(sourceInventory),
+    inventory: sourceInventory,
     gwangjuTopology: topologySnapshot,
-    molitStationMapCsv: stationMap,
+    molitMappings: currentMappings,
   });
   return createRetainedGwangjuTestInput({
     baseFixture: { manifest: { activePack: { id: "base", version: "1" } }, packs: [pack] },
@@ -346,6 +345,14 @@ test("retained production Gwangju CLI serializes the native result and rejects t
   const input = await retainedProductionInput();
   const directory = await mkdtemp(path.join(tmpdir(), "gwangju-retained-cli-"));
   try {
+    const stationMapPath = path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv");
+    const stationMapBytes = await readFile(stationMapPath);
+    const cliMappings = parseMolitGwangjuStationMappings(stationMapBytes, input.topologySnapshot);
+    const cliInventory = projectRegionalFixtureSourceBindings({
+      inventory: input.inventory,
+      gwangjuTopology: input.topologySnapshot,
+      molitStationMapCsv: stationMapBytes,
+    });
     const paths = Object.fromEntries(["base", "retained", "snapshots", "inventory", "invalid", "output"].map((name) => [name, path.join(directory, `${name}.json`)]));
     await writeFile(paths.base, JSON.stringify(input.baseFixture));
     const { observation, receipt, ...contract } = input.retainedTimetable;
@@ -355,20 +362,20 @@ test("retained production Gwangju CLI serializes the native result and rejects t
     await writeFile(paths.snapshots, JSON.stringify([{ sourceId: "kric-nationwide-timetable-file",
       snapshotId: evidence.snapshotId, contentSha256: evidence.observationIdentitySha256,
       rawObjectSha256: digest(observationBytes), retainedTimetableInputs: { contract, collectionReceipt: receipt } }]));
-    await writeFile(paths.inventory, JSON.stringify(input.inventory));
+    await writeFile(paths.inventory, JSON.stringify(cliInventory));
     const argv = ["--base-fixture", paths.base, "--retained-observation", paths.retained, "--snapshots", paths.snapshots,
-      "--inventory", paths.inventory, "--station-map", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
+      "--inventory", paths.inventory, "--station-map", stationMapPath,
       "--output", paths.output];
     await runGwangjuTimetableMaterializer(argv, { now, repositoryRoot: root });
     const actual = JSON.parse(await readFile(paths.output, "utf8"));
-    const expected = JSON.parse(JSON.stringify(materializeGwangjuTimetable({ ...input, canonicalStationMappings: input.mappings, now })));
+    const expected = JSON.parse(JSON.stringify(materializeGwangjuTimetable({ ...input, inventory: cliInventory, canonicalStationMappings: cliMappings, now })));
     expected.fixtureClass = "TEST_ONLY";
     assert.deepEqual(actual, expected);
     const explicitTopology = [...argv.slice(0, 4), "--topology-snapshot",
       path.join(root, "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"), ...argv.slice(4)];
     await assert.rejects(() => runGwangjuTimetableMaterializer(explicitTopology, { now, repositoryRoot: root }), /usage:/);
     for (const snapshotPath of ["../gwangju-route-topology.json", "tools/datapack/sources/mismatched.json"]) {
-      const inventory = structuredClone(input.inventory);
+      const inventory = structuredClone(cliInventory);
       inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology")
         .topologyAdmissionEvidence.snapshotPath = snapshotPath;
       await writeFile(paths.invalid, JSON.stringify(inventory));
@@ -526,8 +533,7 @@ test("retained native trip projection은 한 승객 정류장 그룹을 비운�
 // 기존 경계 검증을 제거하기 전에 FILE 입력의 실제 직렬화·출처·coverage를 증명한다.
 test("retained Gwangju SQLite preserves native stops, provenance, and coverage", async (context) => {
   const input = await retainedProductionInput();
-  const baseFixture = projectRegionalMaterializeFixture(
-    await readJson("tools/datapack/release/capital-production-reviewed-pack.json"));
+  const baseFixture = await readJson("tools/datapack/release/capital-production-reviewed-pack.json");
   const fixture = materializeGwangjuTimetable({ ...input, baseFixture,
     canonicalStationMappings: input.mappings, now });
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-gwangju-retained-sqlite-"));
