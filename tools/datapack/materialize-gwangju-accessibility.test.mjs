@@ -11,8 +11,6 @@ import { collectGwangjuAccessibility } from "./collect-gwangju-accessibility.mjs
 import {
   loadRegionalGwangjuAccessibilityPrefix,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
@@ -53,8 +51,8 @@ test("접근성 snapshot identity는 전체 bytes와 원래 관측일을 함께 
 
 test("schema2 미관측 시설은 materialized 부재 evidence가 되지 않는다", async () => {
   const { accessibilityFixture, accessibilitySnapshot, gwangjuFixture, gwangjuTopology, inventory } = await loadRegionalGwangjuAccessibilityPrefix({
-    baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+    baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+    inventoryPromise: readJson("tools/datapack/source-inventory.json"),
     readJson, topologyNow, timetableNow, gwangjuAccessibilityNow: accessibilityNow,
   });
   const pack = accessibilityFixture.packs[0];
@@ -93,8 +91,8 @@ test("schema2 미관측 시설은 materialized 부재 evidence가 되지 않는�
 
 async function inputs() {
   const regional = await loadRegionalGwangjuAccessibilityPrefix({
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
       readJson,
       topologyNow,
       timetableNow,

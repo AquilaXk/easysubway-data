@@ -10,8 +10,6 @@ import { promisify } from "node:util";
 import {
   loadRegionalBusanTimetablePrefix,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
@@ -41,8 +39,8 @@ async function inputs() {
     accessibilitySnapshot,
   ] = await Promise.all([
     loadRegionalBusanTimetablePrefix({
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
       readJson,
       topologyNow,
       timetableNow: routeMapNow,

@@ -6,9 +6,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { projectHistoricalRegionalMaterializeInventory, projectRegionalFixtureSourceBindings } from "./materialize-test-fixture.mjs";
-
-import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import {
+  loadCurrentMolitMembershipMappings,
+  projectRegionalFixtureSourceBindings,
+} from "./materialize-test-fixture.mjs";
 import { busanTimetableCounts } from "./collect-busan-timetable.mjs";
 import {
   materializeBusanRouteTopology,
@@ -258,19 +259,19 @@ test("부산 timetable materializer CLI가 cumulative fixture를 출력한다", 
 
 async function inputs({ materialize = true } = {}) {
   const [baseFixture, busanTopology, busanTimetable, daejeonTimetable, daejeonTopology,
-    sourceInventory, busanMap, daejeonMap] = await Promise.all([
+    sourceInventory, busanMap, currentMappings] = await Promise.all([
     readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+    readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+    loadCurrentMolitMembershipMappings({ repositoryRoot: root }),
   ]);
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: sourceInventory, busanTopology, busanTimetable, stationMapCsv: busanMap,
-    daejeonTopology, daejeonTimetable, molitStationMapCsv: daejeonMap,
+    daejeonTopology, daejeonTimetable, molitMappings: currentMappings,
   });
   const busanFixture = materializeBusanRouteTopology({
     baseFixture,
@@ -284,7 +285,7 @@ async function inputs({ materialize = true } = {}) {
     timetableSnapshot: daejeonTimetable,
     topologySnapshot: daejeonTopology,
     inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(daejeonMap),
+    canonicalStationMappings: currentMappings.daejeon,
     now,
   });
   const fixture = materialize ? materializeBusanTimetable({

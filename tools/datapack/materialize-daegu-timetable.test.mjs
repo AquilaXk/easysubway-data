@@ -11,8 +11,6 @@ import {
   loadRegionalGwangjuTimetablePrefix,
   materializeRegionalProductionCandidate,
   projectHistoricalDaeguMaterializeInventory,
-  projectHistoricalRegionalMaterializeInventory,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import {
@@ -327,9 +325,20 @@ test("MOLIT 대구 station mapping과 materializer CLI를 고정한다", async (
     const outputPath = path.join(directory, "output.json");
     // CLI는 fixture가 선언한 content-addressed 파일을 읽는다. 운영 sources를 섞지 않는다.
     const snapshots = [...Object.values(values.topologySnapshots), ...Object.values(values.timetableSnapshots)];
+    const stationMapPath = path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv");
+    const stationMapBytes = await readFile(stationMapPath);
+    const cliMappings = Object.fromEntries(
+      DAEGU_LINES.map((c) => [c.lineNumber, parseMolitDaeguStationMappings(stationMapBytes, c.lineName)]),
+    );
+    const cliInventory = projectHistoricalDaeguMaterializeInventory({
+      inventory: values.inventory,
+      topologySnapshots: values.topologySnapshots,
+      timetableSnapshots: values.timetableSnapshots,
+      mappings: cliMappings,
+    });
     await Promise.all([
       writeFile(baseFixturePath, JSON.stringify(values.baseFixture)),
-      writeFile(inventoryPath, JSON.stringify(values.inventory)),
+      writeFile(inventoryPath, JSON.stringify(cliInventory)),
       ...snapshots.map((snapshot) => writeFile(
         path.join(directory, `${daeguSourceSnapshotIdentity(snapshot)}.json`), JSON.stringify(snapshot),
       )),
@@ -338,7 +347,7 @@ test("MOLIT 대구 station mapping과 materializer CLI를 고정한다", async (
       "--base-fixture", baseFixturePath,
       "--sources-dir", directory,
       "--inventory", inventoryPath,
-      "--station-map", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
+      "--station-map", stationMapPath,
       "--output", outputPath,
     ], { now });
     const fixture = JSON.parse(await readFile(outputPath, "utf8"));
@@ -423,21 +432,24 @@ test("materialized SQLite·provenance가 대구 membership·topology·schedule 9
 
 async function inputs({ materialize = true } = {}) {
   const regional = await loadRegionalGwangjuTimetablePrefix({
-    baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-    inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+    baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+    inventoryPromise: readJson("tools/datapack/source-inventory.json"),
     readJson,
     topologyNow: new Date("2026-07-19T18:14:03.004Z"),
     timetableNow: now,
   });
-  const { gwangjuFixture: baseFixture, inventory: inputInventory, molitStationMapCsv: molitMap } = regional;
+  const { gwangjuFixture: baseFixture, inventory: inputInventory, molitMappings } = regional;
   const topologySnapshots = {};
   const timetableSnapshots = {};
-  const mappings = {};
   for (const config of DAEGU_LINES) {
     topologySnapshots[config.lineNumber] = await readJson(`tools/datapack/sources/daegu-line${config.lineNumber}-route-topology-20260721.json`);
     timetableSnapshots[config.lineNumber] = await readJson(`tools/datapack/sources/daegu-line${config.lineNumber}-train-timetable-20260721.json`);
-    mappings[config.lineNumber] = parseMolitDaeguStationMappings(molitMap, config.lineName);
   }
+  const mappings = {
+    1: molitMappings.daeguLine1,
+    2: molitMappings.daeguLine2,
+    3: molitMappings.daeguLine3,
+  };
   const inventory = projectHistoricalDaeguMaterializeInventory({
     inventory: inputInventory, topologySnapshots, timetableSnapshots, mappings,
   });

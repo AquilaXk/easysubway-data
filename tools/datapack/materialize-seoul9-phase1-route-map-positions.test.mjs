@@ -10,8 +10,6 @@ import { promisify } from "node:util";
 import {
   loadRegionalDaejeonRouteMapPrefix,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 
 import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route-map-positions.mjs";
@@ -44,8 +42,8 @@ async function inputs() {
     capitalTopology,
   ] = await Promise.all([
     loadRegionalDaejeonRouteMapPrefix({
-      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
       readJson,
       topologyNow,
       timetableNow,

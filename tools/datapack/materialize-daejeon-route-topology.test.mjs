@@ -9,9 +9,7 @@ import { promisify } from "node:util";
 import {
   loadCurrentMolitMembershipMappings,
   materializeRegionalProductionCandidate,
-  projectHistoricalRegionalMaterializeInventory,
   projectRegionalFixtureSourceBindings,
-  projectRegionalMaterializeFixture,
 } from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
@@ -86,19 +84,19 @@ test("Daejeon cumulative binder preserves canonical metadata and binds official 
 });
 
 async function inputs() {
-  const [baseFixture, snapshot, sourceInventory, stationMapCsv] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
+  const [baseFixture, snapshot, sourceInventory, currentMappings] = await Promise.all([
+    readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
     readJson("tools/datapack/sources/daejeon-route-topology-20260720.json"),
-    readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
-    readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+    readJson("tools/datapack/source-inventory.json"),
+    loadCurrentMolitMembershipMappings({ repositoryRoot: root }),
   ]);
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: sourceInventory,
     daejeonTopology: snapshot,
-    molitStationMapCsv: stationMapCsv,
+    molitMappings: currentMappings,
   });
   makeInheritedAccessibilityCoverageExplicitlyUnavailable(baseFixture);
-  return [baseFixture, snapshot, inventory, parseMolitDaejeonStationMappings(stationMapCsv)];
+  return [baseFixture, snapshot, inventory, currentMappings.daejeon];
 }
 
 function makeInheritedAccessibilityCoverageExplicitlyUnavailable(fixture) {

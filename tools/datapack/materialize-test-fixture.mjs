@@ -30,61 +30,10 @@ import { materializeSeoul9Phase1RouteMapPositions } from "./materialize-seoul9-p
 import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import { daeguMembershipSnapshotIdentity } from "./materialize-daegu-timetable.mjs";
 
-const ITX_TOKEN = /(?:^|[^A-Z0-9])ITX(?:[_-]|$)/;
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
-const HISTORICAL_MOLIT_ADMISSION = Object.freeze({
-  snapshotId: "molit-urban-rail-full-route-revalidated-20260814",
-  rawSha256: "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
-  schemaFingerprint: "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
-});
-const HISTORICAL_MOLIT_MAPPING_SNAPSHOT_SHA256 = "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7";
-const HISTORICAL_MEMBERSHIP_BY_LINE = Object.freeze({
-  "line-7051a9c2525c": Object.freeze({
-    sourceIds: Object.freeze(["daejeon-station-distance-fare", "molit-urban-rail-full-route-daejeon-membership"]),
-    verifiedAt: "2026-07-20T03:30:00.000Z", stationCount: 22,
-    mappingSha256: "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
-    stationCodesSha256: "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
-  }),
-  "line-e57a361e8892": Object.freeze({
-    sourceIds: Object.freeze(["gwangju-transportation-route-topology", "molit-urban-rail-full-route-gwangju-membership"]),
-    verifiedAt: "2026-07-20T13:08:47.161Z", stationCount: 20,
-    mappingSha256: "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
-    stationCodesSha256: "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
-  }),
-  "line-5b8d9b05e7e6": Object.freeze({
-    sourceIds: Object.freeze(["daegu-line1-route-topology", "molit-urban-rail-full-route-daegu-line1-membership"]),
-    verifiedAt: "2026-07-20T15:30:00.000Z", stationCount: 35,
-    mappingSha256: "50810515863d5566cb968d5d07bbd35f5b2f6434436a21d43e2506da7beb3312",
-    stationCodesSha256: "2a9169367a78c7d63b99dbd3a66f95b661f54c984330564a7fa19c2ddddcb17b",
-  }),
-  "line-e2938a4cc492": Object.freeze({
-    sourceIds: Object.freeze(["daegu-line2-route-topology", "molit-urban-rail-full-route-daegu-line2-membership"]),
-    verifiedAt: "2026-07-20T15:30:00.000Z", stationCount: 29,
-    mappingSha256: "9ce93ff604ead4a3e49ddde6d5300e17b7544fe0924994b3bf45cc791cd76129",
-    stationCodesSha256: "b89277686bb18cc3c09b22b967cf21c290fa1c34a975260f401528cd248321ca",
-  }),
-  "line-0ffaa95b1b5d": Object.freeze({
-    sourceIds: Object.freeze(["daegu-line3-route-topology", "molit-urban-rail-full-route-daegu-line3-membership"]),
-    verifiedAt: "2026-07-20T15:30:00.000Z", stationCount: 30,
-    mappingSha256: "d67b2e8d505fc8202c0b2522118a2254b8a143d4df52f859b281625ddee69c0d",
-    stationCodesSha256: "ccbdac20980dd1135646a6dfdc97b0251df0df36af56de76a2fb14f1a0051afe",
-  }),
-});
-const LEGACY_ROUTE_SERVICE_ARTIFACT_EVIDENCE = Object.freeze({
-  serviceClass: "ITX_CHEONGCHUN",
-  timetableArtifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
-  timetableArtifactSha256: "347aec507ec951dde65c10a1c4bff9f94454f762d76a5a74064a40662008336c",
-  canonicalPackId: "capital",
-  canonicalPackSha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
-  canonicalPackSqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
-  admissionStatus: "MISSING",
-  admissionEligible: false,
-  freshUntil: "2026-07-20T00:00:00.000Z",
-  sourceIssue: 2116,
-});
 
 /** Projects only Daegu source evidence onto explicitly supplied retained inputs. */
 export function projectHistoricalDaeguMaterializeInventory({ inventory, topologySnapshots, timetableSnapshots, mappings }) {
@@ -130,66 +79,6 @@ export function projectHistoricalDaeguMaterializeInventory({ inventory, topology
   return projected;
 }
 
-function rejectItxReference(value, path = "fixture") {
-  if (typeof value === "string") {
-    const token = value.toUpperCase();
-    if (ITX_TOKEN.test(token)) {
-      throw new Error(`${path} contains an unexpected ITX reference`);
-    }
-    return;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) => rejectItxReference(entry, `${path}[${index}]`));
-    return;
-  }
-  if (value && typeof value === "object") {
-    for (const [key, entry] of Object.entries(value)) {
-      rejectItxReference(entry, `${path}.${key}`);
-    }
-  }
-}
-
-/**
- * Produces the sole test-only materializer projection: current capital@1 as-is,
- * or historical capital@1 without its exact legacy route-service evidence.
- * Timetable/topology rows are never filtered.
- */
-export function projectRegionalMaterializeFixture(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw new Error("fixture root must be an object");
-  }
-  const rootKeys = Object.keys(input);
-  if (rootKeys.length !== 2 || !rootKeys.includes("manifest") || !rootKeys.includes("packs")) {
-    throw new Error("fixture root must contain exactly manifest and packs");
-  }
-  const fixture = structuredClone(input);
-  if (fixture.manifest?.activePack?.id !== "capital" || fixture.manifest?.activePack?.version !== "1") {
-    throw new Error("fixture must have active capital@1 manifest pack");
-  }
-  if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1) {
-    throw new Error("fixture must contain exactly one capital@1 pack");
-  }
-
-  const [pack] = fixture.packs;
-  if (pack.id !== "capital" || pack.version !== "1" || pack.artifactKind !== "production") {
-    throw new Error("fixture must contain exactly one capital@1 pack");
-  }
-  if (!Array.isArray(pack.routeServiceArtifactEvidence)
-    || pack.routeServiceArtifactEvidence.length > 1) {
-    throw new Error("capital@1 must contain zero current or exactly one legacy routeServiceArtifactEvidence");
-  }
-
-  if (pack.routeServiceArtifactEvidence.length === 1) {
-    const [legacyEvidence] = pack.routeServiceArtifactEvidence;
-    if (JSON.stringify(legacyEvidence) !== JSON.stringify(LEGACY_ROUTE_SERVICE_ARTIFACT_EVIDENCE)) {
-      throw new Error("capital@1 legacy routeServiceArtifactEvidence must match the exact known contract");
-    }
-    delete pack.routeServiceArtifactEvidence;
-  }
-  rejectItxReference(fixture, "fixture");
-  return fixture;
-}
-
 /** 하위 materializer 테스트가 공유하는 부산 topology·대전 timetable·부산 timetable prefix. */
 export function materializeRegionalBusanTimetablePrefix({
   baseFixture,
@@ -199,7 +88,8 @@ export function materializeRegionalBusanTimetablePrefix({
   daejeonTimetable,
   inventory,
   stationMapCsv,
-  molitStationMapCsv,
+  molitMappings = null,
+  molitStationMapCsv = null,
   topologyNow,
   timetableNow,
 }) {
@@ -215,7 +105,8 @@ export function materializeRegionalBusanTimetablePrefix({
     timetableSnapshot: daejeonTimetable,
     topologySnapshot: daejeonTopology,
     inventory,
-    canonicalStationMappings: parseMolitDaejeonStationMappings(molitStationMapCsv),
+    canonicalStationMappings: molitMappings?.daejeon
+      ?? (molitStationMapCsv ? parseMolitDaejeonStationMappings(molitStationMapCsv) : null),
     now: timetableNow,
   });
   const busanTimetableFixture = materializeBusanTimetable({
@@ -239,6 +130,7 @@ export function projectRegionalFixtureSourceBindings({
   busanTimetable = null,
   stationMapCsv = null,
   gwangjuTopology = null,
+  molitMappings = null,
   molitStationMapCsv = null,
   gwangjuRouteMapSnapshot = null,
   gwangjuRouteMapSnapshotBytes = null,
@@ -305,7 +197,9 @@ export function projectRegionalFixtureSourceBindings({
     const topology = source(projected, gwangjuTopology.sourceId);
     const membership = source(projected, "molit-urban-rail-full-route-gwangju-membership");
     const snapshotId = fixtureSnapshotId(topology.id, gwangjuTopology.capturedAt);
-    const mappings = parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology);
+    const mappings = molitMappings?.gwangju
+      ?? (molitStationMapCsv ? parseMolitGwangjuStationMappings(molitStationMapCsv, gwangjuTopology) : null);
+    if (!mappings) throw new Error("regional Gwangju station mappings are required");
     const mappingSha256 = sha256(JSON.stringify(mappings));
     const stationCodesSha256 = sha256(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
     topology.topologyAdmissionEvidence = {
@@ -373,7 +267,9 @@ export function projectRegionalFixtureSourceBindings({
       ?.topologyLineages?.find(({ sourceId }) => sourceId === topology.id);
     const snapshotId = dependentLineage?.snapshotId
       ?? fixtureSnapshotId(topology.id, daejeonTopology.observedAt);
-    const mappings = parseMolitDaejeonStationMappings(molitStationMapCsv);
+    const mappings = molitMappings?.daejeon
+      ?? (molitStationMapCsv ? parseMolitDaejeonStationMappings(molitStationMapCsv) : null);
+    if (!mappings) throw new Error("regional Daejeon station mappings are required");
     const mappingSha256 = sha256(JSON.stringify(mappings));
     const stationCodesSha256 = sha256(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
     topology.topologyAdmissionEvidence = {
@@ -541,7 +437,7 @@ export async function loadRegionalBusanTimetablePrefix({
     daejeonTimetable,
     inventory,
     stationMapCsv,
-    molitStationMapCsv,
+    molitMappings,
   ] = await Promise.all([
     baseFixturePromise,
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
@@ -550,7 +446,7 @@ export async function loadRegionalBusanTimetablePrefix({
     readJson("tools/datapack/sources/daejeon-train-timetable-20260720.json"),
     inventoryPromise,
     readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
-    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
+    loadCurrentMolitMembershipMappings({ repositoryRoot: REPOSITORY_ROOT }),
   ]);
   const projectedInventory = projectRegionalFixtureSourceBindings({
     inventory,
@@ -559,7 +455,7 @@ export async function loadRegionalBusanTimetablePrefix({
     stationMapCsv,
     daejeonTopology,
     daejeonTimetable,
-    molitStationMapCsv,
+    molitMappings,
   });
   return {
     baseFixture,
@@ -569,7 +465,7 @@ export async function loadRegionalBusanTimetablePrefix({
     daejeonTimetable,
     inventory: projectedInventory,
     stationMapCsv,
-    molitStationMapCsv,
+    molitMappings,
     ...materializeRegionalBusanTimetablePrefix({
       baseFixture,
       busanTopology,
@@ -578,7 +474,7 @@ export async function loadRegionalBusanTimetablePrefix({
       daejeonTimetable,
       inventory: projectedInventory,
       stationMapCsv,
-      molitStationMapCsv,
+      molitMappings,
       topologyNow,
       timetableNow,
     }),
@@ -594,6 +490,7 @@ export async function loadRegionalGwangjuTimetablePrefix(options) {
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: regional.inventory,
     gwangjuTopology,
+    molitMappings: regional.molitMappings,
     molitStationMapCsv: regional.molitStationMapCsv,
   });
   return {
@@ -604,9 +501,10 @@ export async function loadRegionalGwangjuTimetablePrefix(options) {
       baseFixture: regional.busanTimetableFixture,
       topologySnapshot: gwangjuTopology,
       inventory,
-      canonicalStationMappings: parseMolitGwangjuStationMappings(
-        regional.molitStationMapCsv,
-        gwangjuTopology,
+      canonicalStationMappings: regional.molitMappings?.gwangju ?? (
+        regional.molitStationMapCsv
+          ? parseMolitGwangjuStationMappings(regional.molitStationMapCsv, gwangjuTopology)
+          : null
       ),
       now: timetableNow,
     }),
@@ -666,6 +564,7 @@ export async function loadRegionalGwangjuRouteMapPrefix(options) {
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: regional.inventory,
     gwangjuTopology: regional.gwangjuTopology,
+    molitMappings: regional.molitMappings,
     molitStationMapCsv: regional.molitStationMapCsv,
     gwangjuRouteMapSnapshot: gwangjuSnapshot,
     gwangjuRouteMapSnapshotBytes: gwangjuSnapshotBytes,
@@ -697,6 +596,7 @@ export async function loadRegionalDaejeonRouteMapPrefix(options) {
   const inventory = projectRegionalFixtureSourceBindings({
     inventory: regional.inventory,
     daejeonTopology: regional.daejeonTopology,
+    molitMappings: regional.molitMappings,
     molitStationMapCsv: regional.molitStationMapCsv,
     daejeonRouteMapSnapshot: daejeonSnapshot,
     daejeonRouteMapSnapshotBytes: daejeonSnapshotBytes,
@@ -749,7 +649,7 @@ export async function loadRegionalCapitalKricRouteMapPrefix(sampleSnapshotPath) 
   const [regional, sampleSnapshotBytes] = await Promise.all([
     loadRegionalSeoul9Phase1RouteMapPrefix({
       baseFixturePromise: readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
-      inventoryPromise: readJson("tools/datapack/source-inventory.json").then(projectHistoricalRegionalMaterializeInventory),
+      inventoryPromise: readJson("tools/datapack/source-inventory.json"),
       readJson,
       topologyNow: new Date("2026-07-19T18:14:03.004Z"),
       timetableNow: new Date("2026-07-20T13:09:00.000Z"),
@@ -822,63 +722,12 @@ export async function materializeRegionalProductionCandidate({ outputDir, privat
   ]);
 }
 
-/**
- * Replays the exact July regional materialization boundary without treating
- * the historical MOLIT tuple as a current source. Current source admission is
- * validated before the clone is projected; production inventory is untouched.
- */
-export function projectHistoricalRegionalMaterializeInventory(input) {
-  if (input?.schemaVersion !== 1 || input.artifactKind !== "production-source-inventory"
-    || !Array.isArray(input.sources)) {
-    throw new Error("regional materializer inventory is invalid");
-  }
-  const inventory = structuredClone(input);
-  const rawSources = inventory.sources.filter(({ id }) => id === MOLIT_SOURCE_ID);
-  if (rawSources.length !== 1 || rawSources[0].admissionEvidence?.decision !== "APPROVED"
-    || !SHA256.test(rawSources[0].admissionEvidence?.rawSha256 ?? "")) {
-    throw new Error("current MOLIT admission is invalid");
-  }
-  const currentRawSha256 = rawSources[0].admissionEvidence.rawSha256;
-  for (const [lineId, expected] of Object.entries(HISTORICAL_MEMBERSHIP_BY_LINE)) {
-    const matches = inventory.sources.filter(({ membershipAdmissionEvidence: evidence }) =>
-      Array.isArray(evidence?.lineIds) && evidence.lineIds.length === 1 && evidence.lineIds[0] === lineId);
-    if (matches.length !== 2
-      || JSON.stringify(matches.map(({ id }) => id).sort((left, right) => left.localeCompare(right, "en")))
-        !== JSON.stringify([...expected.sourceIds].sort((left, right) => left.localeCompare(right, "en")))) {
-      throw new Error(`regional materializer ${lineId} membership inventory is incomplete`);
-    }
-    for (const source of matches) {
-      const evidence = source.membershipAdmissionEvidence;
-      if (evidence.membershipSourceId !== MOLIT_SOURCE_ID
-        || evidence.membershipSourceRawSha256 !== currentRawSha256
-        || evidence.membershipSourceSnapshotSha256 !== currentRawSha256
-        || evidence.stationCount !== expected.stationCount
-        || evidence.mappingSha256 !== expected.mappingSha256
-        || evidence.stationCodesSha256 !== expected.stationCodesSha256) {
-        throw new Error(`current MOLIT ${lineId} membership inventory is invalid`);
-      }
-      evidence.verifiedAt = expected.verifiedAt;
-      evidence.membershipSourceRawSha256 = HISTORICAL_MOLIT_ADMISSION.rawSha256;
-      evidence.membershipSourceSnapshotSha256 = HISTORICAL_MOLIT_MAPPING_SNAPSHOT_SHA256;
-    }
-  }
-  Object.assign(rawSources[0].admissionEvidence, HISTORICAL_MOLIT_ADMISSION);
-  if (rawSources[0].membershipCoverageEvidence) {
-    rawSources[0].membershipCoverageEvidence.snapshotId = HISTORICAL_MOLIT_ADMISSION.snapshotId;
-    rawSources[0].membershipCoverageEvidence.rawSha256 = HISTORICAL_MOLIT_ADMISSION.rawSha256;
-  }
-  return inventory;
-}
-
 function assertMembershipAdmission(inventory, lineId, mappings) {
-  const expected = HISTORICAL_MEMBERSHIP_BY_LINE[lineId];
   const matches = inventory.sources.filter(({ membershipAdmissionEvidence: evidence }) =>
     evidence?.membershipSourceId === MOLIT_SOURCE_ID
       && Array.isArray(evidence.lineIds) && evidence.lineIds.length === 1
       && evidence.lineIds[0] === lineId);
-  if (!expected || matches.length !== 2
-    || JSON.stringify(matches.map(({ id }) => id).sort((left, right) => left.localeCompare(right, "en")))
-      !== JSON.stringify([...expected.sourceIds].sort((left, right) => left.localeCompare(right, "en")))) {
+  if (matches.length !== 2) {
     throw new Error(`current MOLIT ${lineId} membership admission is incomplete`);
   }
   const mappingSha256 = sha256(JSON.stringify(mappings));
