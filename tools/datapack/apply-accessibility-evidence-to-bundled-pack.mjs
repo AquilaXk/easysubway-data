@@ -13,7 +13,20 @@ import { validateLineage } from "./source-snapshot-policy.mjs";
 import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const stationIds = ["station-sadang", "station-sangnoksu"];
+function getTargetStationIds(pack) {
+  const ids = new Set();
+  for (const f of pack?.facilities ?? []) if (f.stationId) ids.add(f.stationId);
+  for (const e of pack?.stationFacilityEvidence ?? []) if (e.stationId) ids.add(e.stationId);
+  for (const edge of pack?.networkEdges ?? []) {
+    if (typeof edge.fromNodeId === "string" && edge.fromNodeId.startsWith("station-")) {
+      ids.add(edge.fromNodeId.split(":")[0]);
+    }
+    if (typeof edge.toNodeId === "string" && edge.toNodeId.startsWith("station-")) {
+      ids.add(edge.toNodeId.split(":")[0]);
+    }
+  }
+  return [...ids].filter(Boolean).sort(codepointCompare);
+}
 const facilityTypes = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT", "ACCESSIBILITY_STATUS_PROBE"];
 const accessibilityRouteSourceId = "seoul-metro-accessibility";
 const directRouteEvidenceSourceIds = new Set([
@@ -52,11 +65,14 @@ function sha256(value) { return createHash("sha256").update(value).digest("hex")
 function epoch(value) { return Math.floor(Date.parse(value) / 1000); }
 
 function applyEvidence(sqlitePath, pack) {
+  const targetStationIds = getTargetStationIds(pack);
   const database = new DatabaseSync(sqlitePath);
   database.exec("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE");
   try {
-    const placeholders = stationIds.map(() => "?").join(",");
-    database.prepare(`DELETE FROM facilities WHERE station_id IN (${placeholders}) AND (type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT') OR source_id IN (${[...replacedSourceIds].map(() => "?").join(",")}))`).run(...stationIds, ...replacedSourceIds);
+    if (targetStationIds.length > 0) {
+      const placeholders = targetStationIds.map(() => "?").join(",");
+      database.prepare(`DELETE FROM facilities WHERE station_id IN (${placeholders}) AND (type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT') OR source_id IN (${[...replacedSourceIds].map(() => "?").join(",")}))`).run(...targetStationIds, ...replacedSourceIds);
+    }
     const insertFacility = database.prepare(`
       INSERT INTO facilities (
         id, station_id, exit_id, type, name, status, floor_from, floor_to, description,
@@ -77,7 +93,10 @@ function applyEvidence(sqlitePath, pack) {
         AND NOT EXISTS (SELECT 1 FROM facilities WHERE facilities.id = data_quality_records.target_id)
     `).run();
 
-    database.prepare(`DELETE FROM station_facility_evidence WHERE station_id IN (${placeholders}) AND facility_type IN (${facilityTypes.map(() => "?").join(",")})`).run(...stationIds, ...facilityTypes);
+    if (targetStationIds.length > 0) {
+      const placeholders = targetStationIds.map(() => "?").join(",");
+      database.prepare(`DELETE FROM station_facility_evidence WHERE station_id IN (${placeholders}) AND facility_type IN (${facilityTypes.map(() => "?").join(",")})`).run(...targetStationIds, ...facilityTypes);
+    }
     const insertEvidence = database.prepare(`
       INSERT INTO station_facility_evidence (
         station_id, line_id, facility_type, evidence_kind, source_id, source_snapshot_id,
@@ -110,6 +129,12 @@ function assertEvidence(sqlitePath, pack) {
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     if (database.prepare("PRAGMA integrity_check").get().integrity_check !== "ok") throw new Error("bundled datapack integrity_check failed");
+    const targetStationIds = getTargetStationIds(pack);
+    const placeholders = targetStationIds.map(() => "?").join(",");
+    const facilityWhere = targetStationIds.length > 0
+      ? `WHERE station_id IN (${placeholders}) AND type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT')`
+      : `WHERE type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT')`;
+    const facilityArgs = targetStationIds.length > 0 ? targetStationIds : [];
     const facilities = database.prepare(`
       SELECT id, station_id AS stationId, exit_id AS exitId, type, name, status,
         floor_from AS floorFrom, floor_to AS floorTo, description, source_id AS sourceId,
@@ -119,9 +144,9 @@ function assertEvidence(sqlitePath, pack) {
         status_meaning AS statusMeaning, operational_status AS operationalStatus,
         installation_status AS installationStatus, confidence
       FROM facilities
-      WHERE station_id IN (?,?) AND type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT')
+      ${facilityWhere}
       ORDER BY id
-    `).all(...stationIds).map((row) => ({ ...row }));
+    `).all(...facilityArgs).map((row) => ({ ...row }));
     const expectedFacilities = pack.facilities.map((row) => ({
       id: row.id,
       stationId: row.stationId,
@@ -148,7 +173,7 @@ function assertEvidence(sqlitePath, pack) {
     if (JSON.stringify(facilities) !== JSON.stringify(expectedFacilities)) {
       throw new StaleAccessibilityEvidenceError("bundled accessibility facilities are stale");
     }
-    const evidence = database.prepare(`
+    const evidence = targetStationIds.length > 0 ? database.prepare(`
       SELECT station_id AS stationId, line_id AS lineId, facility_type AS facilityType,
         evidence_kind AS evidenceKind, source_id AS sourceId, source_snapshot_id AS sourceSnapshotId,
         provider_record_hash AS providerRecordHash, evidence_hash AS evidenceHash,
@@ -158,9 +183,9 @@ function assertEvidence(sqlitePath, pack) {
         strict_route_eligible AS strictRouteEligible,
         strict_route_eligible_reason AS strictRouteEligibleReason
       FROM station_facility_evidence
-      WHERE station_id IN (?,?) AND facility_type IN (${facilityTypes.map(() => "?").join(",")})
+      WHERE station_id IN (${placeholders}) AND facility_type IN (${facilityTypes.map(() => "?").join(",")})
       ORDER BY station_id, line_id, facility_type
-    `).all(...stationIds, ...facilityTypes).map((row) => ({ ...row }));
+    `).all(...targetStationIds, ...facilityTypes).map((row) => ({ ...row })) : [];
     const expectedEvidence = pack.stationFacilityEvidence.map((row) => ({
       stationId: row.stationId,
       lineId: row.lineId,
@@ -187,9 +212,9 @@ function assertEvidence(sqlitePath, pack) {
       throw new StaleAccessibilityEvidenceError("bundled accessibility facility evidence is stale");
     }
     const snapshotIds = [...new Set(pack.stationFacilityEvidence.map(({ sourceSnapshotId }) => sourceSnapshotId))];
-    const stale = database.prepare(`SELECT count(*) AS count FROM station_facility_evidence WHERE station_id IN (?,?) AND source_snapshot_id NOT IN (${snapshotIds.map(() => "?").join(",")})`).get(...stationIds, ...snapshotIds).count;
+    const stale = targetStationIds.length > 0 && snapshotIds.length > 0 ? database.prepare(`SELECT count(*) AS count FROM station_facility_evidence WHERE station_id IN (${placeholders}) AND source_snapshot_id NOT IN (${snapshotIds.map(() => "?").join(",")})`).get(...targetStationIds, ...snapshotIds).count : 0;
     if (stale !== 0) throw new StaleAccessibilityEvidenceError("bundled accessibility source snapshot is stale");
-    const staleFacility = database.prepare(`SELECT count(*) AS count FROM facilities WHERE station_id IN (?,?) AND source_id IN (${[...replacedSourceIds].map(() => "?").join(",")})`).get(...stationIds, ...replacedSourceIds).count;
+    const staleFacility = targetStationIds.length > 0 ? database.prepare(`SELECT count(*) AS count FROM facilities WHERE station_id IN (${placeholders}) AND source_id IN (${[...replacedSourceIds].map(() => "?").join(",")})`).get(...targetStationIds, ...replacedSourceIds).count : 0;
     if (staleFacility !== 0) throw new StaleAccessibilityEvidenceError("bundled accessibility facility source is stale");
     const danglingQuality = database.prepare(`
       SELECT count(*) AS count
@@ -269,7 +294,8 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
   const productionCoverageEvidence = JSON.parse(reviewedPack.metadata.productionCoverageEvidence);
   const pack = canonical.packs?.find(({ id }) => id === "capital");
   if (!pack) throw new Error("canonical capital pack is missing");
-  const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) => !stationIds.includes(stationId)
+  const targetStationIds = new Set(getTargetStationIds(reviewedPack));
+  const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) => !targetStationIds.has(stationId)
       || (!facilityTypes.includes(type)
         && !replacedSourceIds.has(sourceId)
         && sourceId !== "kric-station-convenience-standard"));
@@ -278,14 +304,24 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
   pack.dataQualityRecords = (pack.dataQualityRecords ?? []).filter(({ targetType, targetId }) =>
     targetType !== "facility" || facilityIds.has(targetId));
   pack.stationFacilityEvidence = (pack.stationFacilityEvidence ?? [])
-    .filter(({ stationId, facilityType }) => !stationIds.includes(stationId) || !facilityTypes.includes(facilityType))
+    .filter(({ stationId, facilityType }) => !targetStationIds.has(stationId) || !facilityTypes.includes(facilityType))
     .concat(reviewedPack.stationFacilityEvidence);
   pack.networkEdges = (pack.networkEdges ?? [])
     .filter((edge) => !isAccessibilityRouteEdge(edge))
     .concat(accessibilityRouteEdges(reviewedPack))
     .sort((left, right) => codepointCompare(left.id, right.id));
-  pack.stationExits = (pack.stationExits ?? []).map((exit) =>
-    exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
+  pack.stationExits = (pack.stationExits ?? []).map((exit) => {
+    const hasElevatorInFacilities = (pack.facilities ?? []).some(
+      (f) => f.stationId === exit.stationId && f.type === "ELEVATOR" && f.exitId === exit.id,
+    );
+    const hashValid = (!exit.providerRecordHash || /^[0-9a-f]{64}$/.test(exit.providerRecordHash))
+      && (!exit.evidenceHash || /^[0-9a-f]{64}$/.test(exit.evidenceHash));
+    const proven = Boolean(exit.sourceId && exit.sourceSnapshotId && hashValid);
+    const hasElevatorConnection = Boolean(hasElevatorInFacilities || (exit.hasElevatorConnection && proven));
+    return exit.hasElevatorConnection !== hasElevatorConnection
+      ? { ...exit, hasElevatorConnection }
+      : exit;
+  });
   const freshSources = reviewedPack.sourceInventory;
   const freshSourceIds = new Set(freshSources.map(({ id }) => id));
   const canonicalSourceIds = currentCanonicalSourceRoster(pack);
@@ -346,8 +382,9 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
   }
   const pack = canonical.packs?.find(({ id }) => id === "capital");
   if (!pack) throw new Error("canonical capital pack is missing");
+  const targetStationIds = new Set(getTargetStationIds(reviewedPack));
   const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) =>
-    !stationIds.includes(stationId)
+    !targetStationIds.has(stationId)
       || (!facilityTypes.includes(type)
         && !replacedSourceIds.has(sourceId)
         && sourceId !== "kric-station-convenience-standard"));
@@ -357,14 +394,24 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
     targetType !== "facility" || facilityIds.has(targetId));
   pack.stationFacilityEvidence = (pack.stationFacilityEvidence ?? [])
     .filter(({ stationId, facilityType }) =>
-      !stationIds.includes(stationId) || !facilityTypes.includes(facilityType))
+      !targetStationIds.has(stationId) || !facilityTypes.includes(facilityType))
     .concat(reviewedPack.stationFacilityEvidence ?? []);
   pack.networkEdges = (pack.networkEdges ?? [])
     .filter((edge) => !isAccessibilityRouteEdge(edge))
     .concat(accessibilityRouteEdges(reviewedPack))
     .sort((left, right) => codepointCompare(left.id, right.id));
-  pack.stationExits = (pack.stationExits ?? []).map((exit) =>
-    exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
+  pack.stationExits = (pack.stationExits ?? []).map((exit) => {
+    const hasElevatorInFacilities = (pack.facilities ?? []).some(
+      (f) => f.stationId === exit.stationId && f.type === "ELEVATOR" && f.exitId === exit.id,
+    );
+    const hashValid = (!exit.providerRecordHash || /^[0-9a-f]{64}$/.test(exit.providerRecordHash))
+      && (!exit.evidenceHash || /^[0-9a-f]{64}$/.test(exit.evidenceHash));
+    const proven = Boolean(exit.sourceId && exit.sourceSnapshotId && hashValid);
+    const hasElevatorConnection = Boolean(hasElevatorInFacilities || (exit.hasElevatorConnection && proven));
+    return exit.hasElevatorConnection !== hasElevatorConnection
+      ? { ...exit, hasElevatorConnection }
+      : exit;
+  });
   const reviewedSources = new Map(reviewedPack.sourceInventory.map((source) => [source.id, source]));
   const accessibilitySourceIds = new Set([
     "seoul-metro-accessibility",

@@ -507,14 +507,19 @@ test("route graph topology report CLI writes artifact json", async () => {
   assert.equal(report.summary.unreachableDirectedPairCount, 0);
 });
 
-test("route graph topology report는 candidate build spec의 advancing pack bytes를 허용한다", async (context) => {
+test("route graph topology report는 candidate build spec의 일치하는 pack bytes와 ITX 위상을 검증한다", async (context) => {
   const { sqlitePath, mobilePackBytes, mobileSqliteBytes } = await stageMobileCapitalSqlite(context);
+  const matchingBuildSpec = {
+    ...currentBuildSpec,
+    itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
+    itxTopologyEvidenceSha256: "e8e95947210eb4a7dc264f799582353d5ed396f885465cf672c98e6090768f3c",
+  };
   const binding = await validateCurrentItxTopologyEvidencePack({
     compressed: mobilePackBytes,
     sqliteBytes: mobileSqliteBytes,
     sqlitePath,
     pack: { id: "capital", version: "1" },
-    buildSpec: currentBuildSpec,
+    buildSpec: matchingBuildSpec,
     repositoryRoot: root,
   });
 
@@ -542,7 +547,7 @@ test("route graph topology report는 candidate build spec이어도 pack id misma
   );
 });
 
-test("route graph topology report는 non-candidate build spec의 pack byte 변조를 fail-closed한다", async (context) => {
+test("route graph topology report는 candidate build spec이어도 pack byte 변조를 fail-closed한다", async (context) => {
   const { sqlitePath, mobilePackBytes, mobileSqliteBytes } = await stageMobileCapitalSqlite(context);
   await assert.rejects(
     validateCurrentItxTopologyEvidencePack({
@@ -550,7 +555,7 @@ test("route graph topology report는 non-candidate build spec의 pack byte 변�
       sqliteBytes: mobileSqliteBytes,
       sqlitePath,
       pack: { id: "capital", version: "1" },
-      buildSpec: { ...currentBuildSpec, artifactKind: "production" },
+      buildSpec: currentBuildSpec,
       repositoryRoot: root,
     }),
     /ITX topology evidence pack identity mismatch/,
@@ -558,20 +563,37 @@ test("route graph topology report는 non-candidate build spec의 pack byte 변�
 });
 
 test("route graph topology report는 candidate build spec이어도 ITX 위상 변조를 fail-closed한다", async (context) => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "route-graph-mismatch-"));
+  context.after(() => rm(tempDir, { recursive: true, force: true }));
+
   const patternSqlite = createTopologySqlite({
     stationLines: [["station-a", "line-k2", 1], ["station-b", "line-k2", 2]],
     edges: [["edge-a-b-itx", "station-a:line-k2:LOCAL", "station-b:line-k2:LOCAL", "RIDE", "LOCAL", 300, 6000, "ITX_CHEONGCHUN"]],
   });
   context.after(() => rm(patternSqlite, { force: true }));
   const patternBytes = await readFile(patternSqlite);
+  const patternGzip = gzipSync(patternBytes);
+  const patternEvidence = fixtureTopologyEvidence({
+    gzip: patternGzip,
+    sqlite: patternBytes,
+    edgeCount: 1,
+  });
+  const patternEvidenceBytes = Buffer.from(`${JSON.stringify(patternEvidence)}\n`);
+  const patternEvidencePath = path.join(tempDir, "pattern-evidence.json");
+  await writeFile(patternEvidencePath, patternEvidenceBytes);
+  const patternBuildSpec = {
+    ...currentBuildSpec,
+    itxTopologyEvidencePath: patternEvidencePath,
+    itxTopologyEvidenceSha256: sha256(patternEvidenceBytes),
+  };
 
   await assert.rejects(
     validateCurrentItxTopologyEvidencePack({
-      compressed: gzipSync(patternBytes),
+      compressed: patternGzip,
       sqliteBytes: patternBytes,
       sqlitePath: patternSqlite,
       pack: { id: "capital", version: "1" },
-      buildSpec: currentBuildSpec,
+      buildSpec: patternBuildSpec,
       repositoryRoot: root,
     }),
     /ITX topology evidence service layer mismatch/,
@@ -583,14 +605,28 @@ test("route graph topology report는 candidate build spec이어도 ITX 위상 �
   });
   context.after(() => rm(countSqlite, { force: true }));
   const countBytes = await readFile(countSqlite);
+  const countGzip = gzipSync(countBytes);
+  const countEvidence = fixtureTopologyEvidence({
+    gzip: countGzip,
+    sqlite: countBytes,
+    edgeCount: 2,
+  });
+  const countEvidenceBytes = Buffer.from(`${JSON.stringify(countEvidence)}\n`);
+  const countEvidencePath = path.join(tempDir, "count-evidence.json");
+  await writeFile(countEvidencePath, countEvidenceBytes);
+  const countBuildSpec = {
+    ...currentBuildSpec,
+    itxTopologyEvidencePath: countEvidencePath,
+    itxTopologyEvidenceSha256: sha256(countEvidenceBytes),
+  };
 
   await assert.rejects(
     validateCurrentItxTopologyEvidencePack({
-      compressed: gzipSync(countBytes),
+      compressed: countGzip,
       sqliteBytes: countBytes,
       sqlitePath: countSqlite,
       pack: { id: "capital", version: "1" },
-      buildSpec: currentBuildSpec,
+      buildSpec: countBuildSpec,
       repositoryRoot: root,
     }),
     /ITX topology evidence service layer mismatch/,

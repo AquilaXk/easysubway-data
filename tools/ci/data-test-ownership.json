@@ -540,6 +540,7 @@
     {"path":"tools/datapack/plan-kric-nationwide-timetable-collection.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/plan-tago-schedule-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":304},
     {"path":"tools/datapack/prepare-current-server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":69},
+    {"path":"tools/datapack/prepare-nationwide-candidate-run.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/probe-busan-fare-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":169},
     {"path":"tools/datapack/probe-daejeon-coverage-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":206},
     {"path":"tools/datapack/probe-korail-facility-workbook.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":173},

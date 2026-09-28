@@ -102,7 +102,26 @@ export async function prepareNationwideCandidate({
   repositoryRoot = root,
   releaseSequence = 122,
   candidateId: candidateIdOverride = null,
+  requestedBy: requestedByOption = null,
+  approvedBy: approvedByOption = null,
 } = {}) {
+  const requestedBy = requestedByOption
+    || process.env.DATAPACK_REQUESTED_BY
+    || (process.argv.find((a) => a.startsWith("--requested-by="))?.split("=")[1]);
+  const approvedBy = approvedByOption
+    || process.env.DATAPACK_APPROVED_BY
+    || (process.argv.find((a) => a.startsWith("--approved-by="))?.split("=")[1]);
+
+  if (!requestedBy || typeof requestedBy !== "string" || requestedBy.trim() === "") {
+    throw new Error("DATAPACK_REQUESTED_BY (--requested-by) is required");
+  }
+  if (!approvedBy || typeof approvedBy !== "string" || approvedBy.trim() === "") {
+    throw new Error("DATAPACK_APPROVED_BY (--approved-by) is required");
+  }
+  if (requestedBy.trim() === approvedBy.trim()) {
+    throw new Error(`Two-person rule violation: requester and approver cannot be the same person (${requestedBy.trim()})`);
+  }
+
   const read = async (rel) => readFile(path.join(repositoryRoot, rel));
 
   const [
@@ -110,6 +129,7 @@ export async function prepareNationwideCandidate({
     incheonTopologyBytes, incheonLine1Bytes, incheonLine2Bytes, sourceInventoryBytes,
     busanAccessibilityBytes, daeguAccessibilityBytes, daejeonAccessibilityBytes, gwangjuAccessibilityBytes,
     molitTransferMetaBytes, molitTransferGzipBytes,
+    transferMetricsBytes, kricConvenienceBytes,
   ] = await Promise.all([
     read("tools/datapack/nationwide-coverage-targets.json"),
     read("tools/datapack/release/current-five-region-source-fan-in.json"),
@@ -126,6 +146,8 @@ export async function prepareNationwideCandidate({
     read("tools/datapack/sources/gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909.json"),
     read("tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json"),
     read("tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz"),
+    read("tools/datapack/release/current-transfer-topology-metrics.json"),
+    read("tools/datapack/sources/kric-station-convenience-standard-20260904T043909603Z.json"),
   ]);
 
   const targets = JSON.parse(targetsBytes);
@@ -142,6 +164,8 @@ export async function prepareNationwideCandidate({
   const daejeonAccessibility = JSON.parse(daejeonAccessibilityBytes);
   const gwangjuAccessibility = JSON.parse(gwangjuAccessibilityBytes);
   const molitTransferMeta = JSON.parse(molitTransferMetaBytes);
+  const transferMetrics = JSON.parse(transferMetricsBytes);
+  const kricConvenience = JSON.parse(kricConvenienceBytes);
 
   const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
   const molitTransferText = new TextDecoder("euc-kr").decode(molitTransferUncompressed);
@@ -172,8 +196,8 @@ export async function prepareNationwideCandidate({
       edgeType: "ENTRY",
       fromNodeId: stationId,
       toNodeId: `${stationId}:${lineId}`,
-      durationSeconds: 90,
-      distanceMeters: 50,
+      durationSeconds: 0,
+      distanceMeters: 0,
       servicePattern: "",
       serviceClass: "SUBWAY",
     };
@@ -186,8 +210,8 @@ export async function prepareNationwideCandidate({
       edgeType: "EXIT",
       fromNodeId: `${stationId}:${lineId}`,
       toNodeId: stationId,
-      durationSeconds: 60,
-      distanceMeters: 50,
+      durationSeconds: 0,
+      distanceMeters: 0,
       servicePattern: "",
       serviceClass: "SUBWAY",
     };
@@ -217,6 +241,11 @@ export async function prepareNationwideCandidate({
   ]);
   const busanDaeguTransferStationIds = new Set(busanDaeguTransferInfo.keys());
 
+  const seoulTransferMetricMap = new Map();
+  for (const m of transferMetrics.metrics) {
+    seoulTransferMetricMap.set(`${m.stationId}:${m.fromLineId}->${m.toLineId}`, m);
+  }
+
   const stationPathwayNodes = [];
   const stationPathwayEdges = [];
   const transferEdges = [];
@@ -242,28 +271,53 @@ export async function prepareNationwideCandidate({
           const fromLine = lines[i];
           const toLine = lines[j];
           const edgeId = `transfer-${stationId}-${fromLine}-${toLine}`;
-          const normalized = {
-            edgeId,
-            edgeType: "IN_STATION_TRANSFER",
-            fromNodeId: `${stationId}:${fromLine}`,
-            toNodeId: `${stationId}:${toLine}`,
-            durationSeconds: 120,
-            distanceMeters: 50,
-            servicePattern: "",
-            serviceClass: "SUBWAY",
-          };
-          transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
-
           const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
           const stepFreePathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-step-free`;
           const isBusanDaeguTransfer = busanDaeguTransferStationIds.has(stationId);
-          let stepDuration = 180;
-          let stepDistance = 100;
-          let stepInstruction = "교통약자 엘리베이터 환승 이동 경로";
-          let stepRecordHash = sha256(`stepfree-${stepFreePathwayEdgeId}`);
+          const seoulMetric = seoulTransferMetricMap.get(`${stationId}:${fromLine}->${toLine}`);
+
+          let transferDuration = 0;
+          let transferDistance = 0;
+          let walkDuration = 0;
+          let walkDistance = 0;
+          let walkSourceId = "";
+          let walkSourceSnapshotId = "";
+          let walkProviderRecordHash = "";
+          let walkProvenanceKind = "UNVERIFIED";
+          let walkVerificationStatus = "UNVERIFIED";
+          let walkLastVerifiedAt = 0;
+          let walkEvidenceHash = "";
+          let walkInstruction = "";
+
+          let stepDuration = 0;
+          let stepDistance = 0;
+          let stepInstruction = "";
+          let stepRecordHash = "";
+          let stepSourceId = "";
+          let stepSourceSnapshotId = "";
+          let stepProvenanceKind = "UNVERIFIED";
+          let stepVerificationStatus = "UNVERIFIED";
+          let stepLastVerifiedAt = 0;
+          let stepEvidenceHash = "";
+          let stepAccessibilityStatus = "UNKNOWN";
+
           const molitRawSha = "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3";
 
-          if (isBusanDaeguTransfer) {
+          if (seoulMetric) {
+            transferDuration = seoulMetric.officialDurationSecondsReference;
+            transferDistance = seoulMetric.distanceMeters;
+
+            walkDuration = seoulMetric.officialDurationSecondsReference;
+            walkDistance = seoulMetric.distanceMeters;
+            walkSourceId = "seoul-metro-transfer-distance-duration";
+            walkSourceSnapshotId = "seoul-metro-transfer-distance-duration-20260815T094038817Z";
+            walkProviderRecordHash = seoulMetric.sourceRecordSha256;
+            walkProvenanceKind = "OFFICIAL_SOURCE";
+            walkVerificationStatus = "VERIFIED";
+            walkLastVerifiedAt = "2026-08-15T09:40:38.817Z";
+            walkEvidenceHash = seoulMetric.sourceRecordSha256;
+            walkInstruction = "환승 이동 경로";
+          } else if (isBusanDaeguTransfer) {
             const info = busanDaeguTransferInfo.get(stationId);
             const fromLineMolit = info.lineMapping[fromLine];
             let matchedRows = molitRows.filter((r) => r.STIN_NM === info.molitStation && r.LN_NM === fromLineMolit);
@@ -279,31 +333,63 @@ export async function prepareNationwideCandidate({
               stepInstruction = firstSeq.map((r) => r.MV_CONT_DTL).join(" -> ");
               stepDuration = Math.max(120, firstSeq.length * 30);
               stepDistance = Math.max(60, firstSeq.length * 20);
+              transferDuration = stepDuration;
+              transferDistance = stepDistance;
+              walkDuration = stepDuration;
+              walkDistance = stepDistance;
             }
             stepRecordHash = sha256(canonicalJson(matchedRows));
+            stepSourceId = "molit-railway-transfer-movement";
+            stepSourceSnapshotId = "molit-railway-transfer-movement-20250811";
+            stepProvenanceKind = "OFFICIAL_SOURCE";
+            stepVerificationStatus = "VERIFIED";
+            stepLastVerifiedAt = "2026-07-29T12:32:28.000Z";
+            stepEvidenceHash = molitRawSha;
+            stepAccessibilityStatus = "AVAILABLE";
+
+            walkSourceId = "molit-railway-transfer-movement";
+            walkSourceSnapshotId = "molit-railway-transfer-movement-20250811";
+            walkProviderRecordHash = stepRecordHash;
+            walkProvenanceKind = "OFFICIAL_SOURCE";
+            walkVerificationStatus = "VERIFIED";
+            walkLastVerifiedAt = "2026-07-29T12:32:28.000Z";
+            walkEvidenceHash = molitRawSha;
+            walkInstruction = stepInstruction || "환승 이동 경로";
           }
+
+          const normalized = {
+            edgeId,
+            edgeType: "IN_STATION_TRANSFER",
+            fromNodeId: `${stationId}:${fromLine}`,
+            toNodeId: `${stationId}:${toLine}`,
+            durationSeconds: transferDuration,
+            distanceMeters: transferDistance,
+            servicePattern: "",
+            serviceClass: "SUBWAY",
+          };
+          transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
 
           stationPathwayEdges.push({
             id: walkPathwayEdgeId,
             fromNodeId: `pathway-node-${stationId}-${fromLine}`,
             toNodeId: `pathway-node-${stationId}-${toLine}`,
             edgeType: "WALK",
-            durationSeconds: 120,
-            distanceMeters: 80,
+            durationSeconds: walkDuration,
+            distanceMeters: walkDistance,
             bidirectional: false,
             includesStairs: false,
             requiresElevator: false,
             requiresEscalator: false,
             accessibilityStatus: "UNKNOWN",
-            reliabilityScore: 100,
-            sourceId: "seoul-metro-transfer-distance-duration",
-            sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
-            providerRecordHash: sha256(`walk-${walkPathwayEdgeId}`),
-            provenanceKind: "OFFICIAL_SOURCE",
-            verificationStatus: "VERIFIED",
-            lastVerifiedAt: "2026-08-15T09:40:38.817Z",
-            evidenceHash: sha256(`evidence-walk-${walkPathwayEdgeId}`),
-            instruction: "환승 이동 경로",
+            reliabilityScore: (seoulMetric || isBusanDaeguTransfer) ? 100 : 0,
+            sourceId: walkSourceId,
+            sourceSnapshotId: walkSourceSnapshotId,
+            providerRecordHash: walkProviderRecordHash,
+            provenanceKind: walkProvenanceKind,
+            verificationStatus: walkVerificationStatus,
+            lastVerifiedAt: walkLastVerifiedAt,
+            evidenceHash: walkEvidenceHash,
+            instruction: walkInstruction,
           });
 
           stationPathwayEdges.push({
@@ -317,15 +403,15 @@ export async function prepareNationwideCandidate({
             includesStairs: false,
             requiresElevator: true,
             requiresEscalator: false,
-            accessibilityStatus: isBusanDaeguTransfer ? "AVAILABLE" : "UNKNOWN",
-            reliabilityScore: 100,
-            sourceId: isBusanDaeguTransfer ? "molit-railway-transfer-movement" : "seoul-metro-transfer-distance-duration",
-            sourceSnapshotId: isBusanDaeguTransfer ? "molit-railway-transfer-movement-20250811" : "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+            accessibilityStatus: stepAccessibilityStatus,
+            reliabilityScore: isBusanDaeguTransfer ? 100 : 0,
+            sourceId: stepSourceId,
+            sourceSnapshotId: stepSourceSnapshotId,
             providerRecordHash: stepRecordHash,
-            provenanceKind: "OFFICIAL_SOURCE",
-            verificationStatus: "VERIFIED",
-            lastVerifiedAt: isBusanDaeguTransfer ? "2026-07-29T12:32:28.000Z" : "2026-08-15T09:40:38.817Z",
-            evidenceHash: isBusanDaeguTransfer ? molitRawSha : sha256(`evidence-stepfree-${stepFreePathwayEdgeId}`),
+            provenanceKind: stepProvenanceKind,
+            verificationStatus: stepVerificationStatus,
+            lastVerifiedAt: stepLastVerifiedAt,
+            evidenceHash: stepEvidenceHash,
             instruction: stepInstruction,
           });
 
@@ -336,11 +422,11 @@ export async function prepareNationwideCandidate({
             toStationId: stationId,
             toLineId: toLine,
             transferType: "IN_STATION",
-            minTransferSeconds: 120,
+            minTransferSeconds: transferDuration,
             pathwayEdgeId: walkPathwayEdgeId,
-            strictStepFreePathwayEdgeId: isBusanDaeguTransfer ? stepFreePathwayEdgeId : null,
-            sourceId: isBusanDaeguTransfer ? "molit-railway-transfer-movement" : "seoul-metro-transfer-distance-duration",
-            verificationStatus: "VERIFIED",
+            strictStepFreePathwayEdgeId: (isBusanDaeguTransfer && stepDuration > 0) ? stepFreePathwayEdgeId : null,
+            sourceId: seoulMetric ? "seoul-metro-transfer-distance-duration" : (isBusanDaeguTransfer ? "molit-railway-transfer-movement" : ""),
+            verificationStatus: (seoulMetric || isBusanDaeguTransfer) ? "VERIFIED" : "UNVERIFIED",
           });
         }
       }
@@ -350,7 +436,7 @@ export async function prepareNationwideCandidate({
   const makeOutOfStationLink = ({
     id, fromStationId, fromLineId, toStationId, toLineId,
     durationSeconds, distanceMeters, bidirectional = false,
-    slopeLevel = 1, coveredRoute = "PARTIAL", stairAccessState = "NO_STAIRS",
+    slopeLevel = 1, coveredRoute = "UNKNOWN", stairAccessState = "UNKNOWN",
   }) => ({
     id,
     fromStationId,
@@ -364,19 +450,19 @@ export async function prepareNationwideCandidate({
     requiresFareExit: true,
     requiresReentry: true,
     coveredRoute,
-    crossingRisk: "LOW",
-    curbCutStatus: "AVAILABLE",
-    sidewalkStatus: "AVAILABLE",
-    accessibilityStatus: "AVAILABLE",
+    crossingRisk: "UNKNOWN",
+    curbCutStatus: "UNKNOWN",
+    sidewalkStatus: "UNKNOWN",
+    accessibilityStatus: "UNKNOWN",
     stairAccessState,
-    reliabilityScore: 100,
-    sourceId: "seoul-metro-transfer-distance-duration",
-    sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
-    providerRecordHash: sha256(`${id}-provider`),
-    provenanceKind: "OFFICIAL_SOURCE",
-    verificationStatus: "VERIFIED",
-    lastFieldVerifiedAt: 1781568000,
-    evidenceHash: sha256(`${id}-evidence`),
+    reliabilityScore: 0,
+    sourceId: "",
+    sourceSnapshotId: "",
+    providerRecordHash: "",
+    provenanceKind: "UNVERIFIED",
+    verificationStatus: "UNVERIFIED",
+    lastFieldVerifiedAt: null,
+    evidenceHash: "",
   });
 
   const outOfStationTransferLinks = [
@@ -390,7 +476,6 @@ export async function prepareNationwideCandidate({
       durationSeconds: 600,
       distanceMeters: 550,
       slopeLevel: 2,
-      stairAccessState: "RAMP_AVAILABLE",
     }),
     makeOutOfStationLink({
       id: "out-link-sinchon-gj-to-2",
@@ -411,7 +496,6 @@ export async function prepareNationwideCandidate({
       durationSeconds: 240,
       distanceMeters: 180,
       bidirectional: true,
-      coveredRoute: "FULL",
     }),
     // 3. 부산권: 동래 1호선 <-> 동래 동해선
     makeOutOfStationLink({
@@ -423,7 +507,6 @@ export async function prepareNationwideCandidate({
       durationSeconds: 420,
       distanceMeters: 350,
       slopeLevel: 2,
-      stairAccessState: "RAMP_AVAILABLE",
     }),
     makeOutOfStationLink({
       id: "out-link-dongnae-dh-to-1",
@@ -444,7 +527,6 @@ export async function prepareNationwideCandidate({
       durationSeconds: 300,
       distanceMeters: 260,
       bidirectional: true,
-      coveredRoute: "FULL",
     }),
     // 5. 대구권: 청라언덕 <-> 반월당
     makeOutOfStationLink({
@@ -456,7 +538,6 @@ export async function prepareNationwideCandidate({
       durationSeconds: 600,
       distanceMeters: 550,
       slopeLevel: 2,
-      stairAccessState: "RAMP_AVAILABLE",
     }),
     makeOutOfStationLink({
       id: "out-link-daegu-banwoldang-to-cheongna",
@@ -477,7 +558,6 @@ export async function prepareNationwideCandidate({
       durationSeconds: 600,
       distanceMeters: 500,
       slopeLevel: 2,
-      stairAccessState: "RAMP_AVAILABLE",
     }),
     makeOutOfStationLink({
       id: "out-link-daejeon-oryong-to-seodaejeon",
@@ -498,7 +578,6 @@ export async function prepareNationwideCandidate({
       durationSeconds: 480,
       distanceMeters: 400,
       bidirectional: true,
-      coveredRoute: "FULL",
     }),
   ];
 
@@ -525,7 +604,15 @@ export async function prepareNationwideCandidate({
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
   nationwidePack.transferRules = transferRules;
   const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => {
-    const clean = { ...link, accessibilityStatus: "UNKNOWN" };
+    const clean = {
+      ...link,
+      accessibilityStatus: "UNKNOWN",
+      stairAccessState: "UNKNOWN",
+      curbCutStatus: "UNKNOWN",
+      sidewalkStatus: "UNKNOWN",
+      crossingRisk: "UNKNOWN",
+      coveredRoute: "UNKNOWN",
+    };
     delete clean.sourceId;
     delete clean.sourceSnapshotId;
     delete clean.providerRecordHash;
@@ -1149,12 +1236,51 @@ export async function prepareNationwideCandidate({
     stationSetSha256,
   };
 
-  const facilityRawSha = sha256("facility-evidence-raw");
-  const facilityRecordHash = sha256("facility-record-hash");
-  const exitRawSha = sha256("exit-evidence-raw");
-  const exitRecordHash = sha256("exit-record-hash");
-  const transferRawSha = sha256("transfer-evidence-raw");
-  const transferRecordHash = sha256("transfer-record-hash");
+  const kricConvenienceRawSha = kricConvenience.rawSha256;
+  const kricConvenienceLicenseId = "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398";
+  const kricConvenienceCapturedAt = kricConvenience.capturedAt;
+  const kricConvenienceFreshUntil = "2026-12-03T04:39:09.603Z";
+
+  const kricMovementRawSha = "9e9e66356d1f1a7275578f299882b3d2a42637d9cc5b4ce8b874ee78f3815106";
+  const kricMovementLicenseId = "80555d4f86dfa1d51e0618df22b8392fc439a33daf80fed3a9c4f2a728fec9bb";
+  const kricMovementCapturedAt = "2026-09-04T17:29:43.075Z";
+  const kricMovementFreshUntil = "2027-09-05T17:29:43.075Z";
+
+  const seoulTransferRawSha = transferMetrics.sourceIdentity.rawSha256;
+  const seoulTransferLicenseId = "c64b8a890c1576368566e89b5a70fdbaa88292f1b87fd44462d9a0a2bd33b4b0";
+  const seoulTransferCapturedAt = transferMetrics.sourceIdentity.capturedAt;
+  const seoulTransferFreshUntil = "2027-08-15T09:40:38.817Z";
+
+  const molitTransferRawSha = molitTransferMeta.rawSha256;
+  const molitTransferLicenseId = molitTransferMeta.licenseSha256;
+  const molitTransferCapturedAt = molitTransferMeta.capturedAt;
+  const molitTransferFreshUntil = "2027-08-11T00:00:00.000Z";
+
+  const busanRawSha = busanAccessibility.rawSha256;
+  const busanLicenseId = "82dc0d5a7c726532e8aca86b31603c0edd3cd238a67b4067f4aab0ac59e27edf";
+  const busanCapturedAt = busanAccessibility.capturedAt;
+  const busanFreshUntil = "2026-12-08T03:16:08.098Z";
+
+  const daeguRawSha = daeguAccessibility.rawSha256;
+  const daeguLicenseId = "56aea1437ed41bfa113dae3553aa6823b9eb1a0c18418fa2e4f4347ca4155595";
+  const daeguCapturedAt = daeguAccessibility.capturedAt;
+  const daeguFreshUntil = "2026-12-08T03:16:08.098Z";
+
+  const daejeonRawSha = daejeonAccessibility.rawSha256;
+  const daejeonLicenseId = "057e89316465215d7bc0add5d28d4bddc7f10d3756970ff4d2def02c51838a1f";
+  const daejeonCapturedAt = daejeonAccessibility.capturedAt;
+  const daejeonFreshUntil = "2026-12-08T03:16:08.098Z";
+
+  const gwangjuRawSha = gwangjuAccessibility.rawSha256;
+  const gwangjuLicenseId = "0532458dc81590ad020987ddb34ef301ab96a86d1475325f94c8c956066f8b84";
+  const gwangjuCapturedAt = gwangjuAccessibility.capturedAt;
+  const gwangjuFreshUntil = "2026-12-08T03:16:08.098Z";
+
+  const busanMap = new Map(busanAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
+  const daeguMap = new Map(daeguAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
+  const daejeonMap = new Map(daejeonAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
+  const gwangjuMap = new Map(gwangjuAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
+  const kricMap = new Map((kricConvenience.queries ?? []).map((q) => [`${q.stationId}\0${q.lineId}`, q]));
 
   const outOfStationTransferStationIds = new Set(
     outOfStationTransferLinks.flatMap((l) => [l.fromStationId, l.toStationId])
@@ -1162,27 +1288,191 @@ export async function prepareNationwideCandidate({
 
   const evidenceRows = [];
   for (const { stationId, lineId, operatorId } of stationLinesForAccessibility) {
+    const key = `${stationId}\0${lineId}`;
+
     // FACILITY
-    evidenceRows.push({
-      ...stationLineCandidate,
-      stationId,
-      lineId,
-      operatorId,
-      domain: "FACILITY",
-      state: "VERIFIED_PRESENT",
-      sourceId: "kric-station-convenience-standard",
-      sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
-      evidenceRawSha256: facilityRawSha,
-      providerRecordHash: facilityRecordHash,
-      capturedAt: "2026-09-04T04:39:09.603Z",
-      freshUntil: "2027-09-05T04:39:09.603Z",
-      provenanceId: facilityRawSha,
-      licenseId: sha256("kric-convenience-license"),
-      mappingContractVersion: "station-line-v1",
-      materializerVersion: "1",
-      evidenceKind: "OBSERVED",
-      evidenceReason: "nationwide facility verified",
-    });
+    if (kricMap.has(key)) {
+      const q = kricMap.get(key);
+      if (q.status === "UNVERIFIED_EVIDENCE_BLOCKED") {
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "FACILITY",
+          state: "UNKNOWN",
+          sourceId: "kric-station-convenience-standard",
+          sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
+          evidenceRawSha256: kricConvenienceRawSha,
+          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
+          capturedAt: kricConvenienceCapturedAt,
+          freshUntil: kricConvenienceFreshUntil,
+          provenanceId: kricConvenienceRawSha,
+          licenseId: kricConvenienceLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: "PROVIDER_NO_DATA",
+          evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+        });
+      } else {
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "FACILITY",
+          state: "VERIFIED_PRESENT",
+          sourceId: "kric-station-convenience-standard",
+          sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
+          evidenceRawSha256: kricConvenienceRawSha,
+          providerRecordHash: q.providerRecordHash,
+          capturedAt: kricConvenienceCapturedAt,
+          freshUntil: kricConvenienceFreshUntil,
+          provenanceId: kricConvenienceRawSha,
+          licenseId: kricConvenienceLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: "OBSERVED",
+          evidenceReason: "OFFICIAL_FACILITY_OBSERVED",
+        });
+      }
+    } else if (busanMap.has(key)) {
+      const r = busanMap.get(key);
+      const hasFac = (r.el_i + r.el_o) > 0 || (r.wl_i + r.wl_o) > 0 || r.es > 0;
+      evidenceRows.push({
+        ...stationLineCandidate,
+        stationId,
+        lineId,
+        operatorId,
+        domain: "FACILITY",
+        state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+        sourceId: "busan-transportation-accessibility",
+        sourceSnapshotId: busanSnapshotId,
+        evidenceRawSha256: busanRawSha,
+        providerRecordHash: sha256(canonicalJson(r)),
+        capturedAt: busanCapturedAt,
+        freshUntil: busanFreshUntil,
+        provenanceId: busanRawSha,
+        licenseId: busanLicenseId,
+        mappingContractVersion: "station-line-v1",
+        materializerVersion: "1",
+        evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+        evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+      });
+    } else if (daeguMap.has(key)) {
+      const r = daeguMap.get(key);
+      const hasFac = (r.elevator > 0) || (r.wheelchair_lift > 0) || (r.escalator > 0);
+      evidenceRows.push({
+        ...stationLineCandidate,
+        stationId,
+        lineId,
+        operatorId,
+        domain: "FACILITY",
+        state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+        sourceId: "daegu-transportation-accessibility",
+        sourceSnapshotId: daeguSnapshotId,
+        evidenceRawSha256: daeguRawSha,
+        providerRecordHash: sha256(canonicalJson(r)),
+        capturedAt: daeguCapturedAt,
+        freshUntil: daeguFreshUntil,
+        provenanceId: daeguRawSha,
+        licenseId: daeguLicenseId,
+        mappingContractVersion: "station-line-v1",
+        materializerVersion: "1",
+        evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+        evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+      });
+    } else if (daejeonMap.has(key)) {
+      const r = daejeonMap.get(key);
+      const hasFac = (r.elevator > 0) || (r.wheelchair_lift > 0) || (r.escalator > 0);
+      evidenceRows.push({
+        ...stationLineCandidate,
+        stationId,
+        lineId,
+        operatorId,
+        domain: "FACILITY",
+        state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+        sourceId: "daejeon-transportation-accessibility",
+        sourceSnapshotId: daejeonSnapshotId,
+        evidenceRawSha256: daejeonRawSha,
+        providerRecordHash: sha256(canonicalJson(r)),
+        capturedAt: daejeonCapturedAt,
+        freshUntil: daejeonFreshUntil,
+        provenanceId: daejeonRawSha,
+        licenseId: daejeonLicenseId,
+        mappingContractVersion: "station-line-v1",
+        materializerVersion: "1",
+        evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+        evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+      });
+    } else if (gwangjuMap.has(key)) {
+      const r = gwangjuMap.get(key);
+      if (r.elevator === null && r.wheelchair_lift === null && r.escalator === null) {
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "FACILITY",
+          state: "UNKNOWN",
+          sourceId: "gwangju-transportation-accessibility",
+          sourceSnapshotId: gwangjuSnapshotId,
+          evidenceRawSha256: gwangjuRawSha,
+          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
+          capturedAt: gwangjuCapturedAt,
+          freshUntil: gwangjuFreshUntil,
+          provenanceId: gwangjuRawSha,
+          licenseId: gwangjuLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: "PROVIDER_NO_DATA",
+          evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+        });
+      } else {
+        const hasFac = ((r.elevator ?? 0) > 0) || ((r.wheelchair_lift ?? 0) > 0) || ((r.escalator ?? 0) > 0);
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "FACILITY",
+          state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+          sourceId: "gwangju-transportation-accessibility",
+          sourceSnapshotId: gwangjuSnapshotId,
+          evidenceRawSha256: gwangjuRawSha,
+          providerRecordHash: sha256(canonicalJson(r)),
+          capturedAt: gwangjuCapturedAt,
+          freshUntil: gwangjuFreshUntil,
+          provenanceId: gwangjuRawSha,
+          licenseId: gwangjuLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+          evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+        });
+      }
+    } else {
+      evidenceRows.push({
+        ...stationLineCandidate,
+        stationId,
+        lineId,
+        operatorId,
+        domain: "FACILITY",
+        state: "UNKNOWN",
+        sourceId: "kric-station-convenience-standard",
+        sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
+        evidenceRawSha256: kricConvenienceRawSha,
+        providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
+        capturedAt: kricConvenienceCapturedAt,
+        freshUntil: kricConvenienceFreshUntil,
+        provenanceId: kricConvenienceRawSha,
+        licenseId: kricConvenienceLicenseId,
+        mappingContractVersion: "station-line-v1",
+        materializerVersion: "1",
+        evidenceKind: "PROVIDER_NO_DATA",
+        evidenceReason: "FACILITY_DATA_NOT_PROVIDED",
+      });
+    }
 
     // EXIT
     evidenceRows.push({
@@ -1191,25 +1481,46 @@ export async function prepareNationwideCandidate({
       lineId,
       operatorId,
       domain: "EXIT",
-      state: "VERIFIED_PRESENT",
+      state: "UNKNOWN",
       sourceId: "kric-station-movement-standard",
       sourceSnapshotId: "kric-station-movement-standard-20260904T172943075Z",
-      evidenceRawSha256: exitRawSha,
-      providerRecordHash: exitRecordHash,
-      capturedAt: "2026-09-04T17:29:43.075Z",
-      freshUntil: "2027-09-05T17:29:43.075Z",
-      provenanceId: exitRawSha,
-      licenseId: sha256("kric-movement-license"),
+      evidenceRawSha256: kricMovementRawSha,
+      providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "EXIT", state: "UNKNOWN" })),
+      capturedAt: kricMovementCapturedAt,
+      freshUntil: kricMovementFreshUntil,
+      provenanceId: kricMovementRawSha,
+      licenseId: kricMovementLicenseId,
       mappingContractVersion: "station-line-v1",
       materializerVersion: "1",
-      evidenceKind: "OBSERVED",
-      evidenceReason: "nationwide exit verified",
+      evidenceKind: "PROVIDER_NO_DATA",
+      evidenceReason: "EXIT_DATA_NOT_PROVIDED",
     });
 
     // TRANSFER
     const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1 || outOfStationTransferStationIds.has(stationId);
     const isBusanDaeguTransfer = busanDaeguTransferStationIds.has(stationId);
-    if (isBusanDaeguTransfer) {
+    if (!isTransfer) {
+      evidenceRows.push({
+        ...stationLineCandidate,
+        stationId,
+        lineId,
+        operatorId,
+        domain: "TRANSFER",
+        state: "NOT_APPLICABLE",
+        sourceId: "seoul-metro-transfer-distance-duration",
+        sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+        evidenceRawSha256: seoulTransferRawSha,
+        providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "TRANSFER", state: "NOT_APPLICABLE" })),
+        capturedAt: seoulTransferCapturedAt,
+        freshUntil: seoulTransferFreshUntil,
+        provenanceId: seoulTransferRawSha,
+        licenseId: seoulTransferLicenseId,
+        mappingContractVersion: "station-line-v1",
+        materializerVersion: "1",
+        evidenceKind: "CURRENT_APPLICABILITY_RULE",
+        evidenceReason: "canonical transfer applicability",
+      });
+    } else if (isBusanDaeguTransfer) {
       const info = busanDaeguTransferInfo.get(stationId);
       const molitLine = info?.lineMapping[lineId];
       let lineMatched = molitRows.filter((r) => r.STIN_NM === info?.molitStation && r.LN_NM === molitLine);
@@ -1227,38 +1538,64 @@ export async function prepareNationwideCandidate({
         state: "VERIFIED_PRESENT",
         sourceId: "molit-railway-transfer-movement",
         sourceSnapshotId: "molit-railway-transfer-movement-20250811",
-        evidenceRawSha256: "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3",
+        evidenceRawSha256: molitTransferRawSha,
         providerRecordHash: transferLineRecordHash,
-        capturedAt: "2026-07-29T12:32:28.000Z",
-        freshUntil: "2027-08-11T00:00:00.000Z",
-        provenanceId: "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3",
-        licenseId: "1797b779259d272d874351861772cf1d5bdb4b7f7a95a30e6ffd012fa379132a",
+        capturedAt: molitTransferCapturedAt,
+        freshUntil: molitTransferFreshUntil,
+        provenanceId: molitTransferRawSha,
+        licenseId: molitTransferLicenseId,
         mappingContractVersion: "station-line-v1",
         materializerVersion: "1",
         evidenceKind: "OBSERVED",
         evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
       });
     } else {
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "TRANSFER",
-        state: isTransfer ? "VERIFIED_PRESENT" : "NOT_APPLICABLE",
-        sourceId: "seoul-metro-transfer-distance-duration",
-        sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
-        evidenceRawSha256: transferRawSha,
-        providerRecordHash: transferRecordHash,
-        capturedAt: "2026-08-15T09:40:38.817Z",
-        freshUntil: "2027-08-15T09:40:38.817Z",
-        provenanceId: transferRawSha,
-        licenseId: sha256("metro-transfer-license"),
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: isTransfer ? "OBSERVED" : "CURRENT_APPLICABILITY_RULE",
-        evidenceReason: isTransfer ? "nationwide transfer verified" : "canonical transfer applicability",
-      });
+      const matchedMetrics = (transferMetrics?.metrics ?? []).filter(
+        (m) => m.stationId === stationId && (m.fromLineId === lineId || m.toLineId === lineId)
+      );
+      if (matchedMetrics.length > 0) {
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "TRANSFER",
+          state: "VERIFIED_PRESENT",
+          sourceId: "seoul-metro-transfer-distance-duration",
+          sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+          evidenceRawSha256: seoulTransferRawSha,
+          providerRecordHash: sha256(canonicalJson(matchedMetrics)),
+          capturedAt: seoulTransferCapturedAt,
+          freshUntil: seoulTransferFreshUntil,
+          provenanceId: seoulTransferRawSha,
+          licenseId: seoulTransferLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: "OBSERVED",
+          evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
+        });
+      } else {
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "TRANSFER",
+          state: "UNKNOWN",
+          sourceId: "seoul-metro-transfer-distance-duration",
+          sourceSnapshotId: "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+          evidenceRawSha256: seoulTransferRawSha,
+          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "TRANSFER", state: "UNKNOWN" })),
+          capturedAt: seoulTransferCapturedAt,
+          freshUntil: seoulTransferFreshUntil,
+          provenanceId: seoulTransferRawSha,
+          licenseId: seoulTransferLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: "PROVIDER_NO_DATA",
+          evidenceReason: "TRANSFER_DATA_NOT_PROVIDED",
+        });
+      }
     }
   }
 
@@ -1351,8 +1688,8 @@ export async function prepareNationwideCandidate({
       candidateId,
       scopeId,
       approvalId: `release-request-${candidateId}`,
-      requestedBy: "claude-fable-orchestrator",
-      approvedBy: "aquilaXk10",
+      requestedBy,
+      approvedBy,
     },
     routeEdgeInput: {
       path: routeInputRelPath,
@@ -1383,6 +1720,8 @@ export async function prepareNationwideCandidate({
   const releaseRequest = JSON.parse(await readFile(path.join(repositoryRoot, releaseRequestRelPath), "utf8"));
   releaseRequest.candidateId = candidateId;
   releaseRequest.approvalId = `release-request-${candidateId}`;
+  releaseRequest.requestedBy = requestedBy;
+  releaseRequest.approvedBy = approvedBy;
   releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
   await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
 

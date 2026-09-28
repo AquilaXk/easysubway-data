@@ -333,23 +333,28 @@ test("ITX-청춘 admission evidence는 historical 관측과 current pack identit
   });
 });
 
-test("release candidate pack은 current station-catalog evidence schema와 exact bytes를 보존한다", {
-  skip: process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "release-candidate"
-    ? false
-    : "release-candidate pack identity에서만 검증한다",
-}, async (context) => {
+test("release candidate pack은 current station-catalog evidence schema와 exact bytes를 보존한다", async (context) => {
   const output = process.env.EASYSUBWAY_DATAPACK_OUTPUT;
-  assert.ok(output, "release candidate datapack output이 필요하다");
-  const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
-  const activePack = manifest.packs.find((pack) => pack.id === manifest.activePack.id
-    && pack.version === manifest.activePack.version);
-  assert.ok(activePack, "release candidate active pack을 찾지 못함");
-  const canonicalPackPath = path.join(
-    output,
-    "catalog",
-    `${activePack.id}-v${activePack.version}.sqlite.gz`,
-  );
-  const canonicalPackBytes = await readFile(canonicalPackPath);
+  let canonicalPackBytes;
+  let activePack;
+  if (output) {
+    const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
+    activePack = manifest.packs.find((pack) => pack.id === manifest.activePack.id
+      && pack.version === manifest.activePack.version);
+    assert.ok(activePack, "release candidate active pack을 찾지 못함");
+    const canonicalPackPath = path.join(
+      output,
+      "catalog",
+      `${activePack.id}-v${activePack.version}.sqlite.gz`,
+    );
+    canonicalPackBytes = await readFile(canonicalPackPath);
+  } else {
+    const index = JSON.parse(await readFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"));
+    const capitalEntry = index.packs.find((pack) => pack.id === "capital");
+    assert.ok(capitalEntry, "bundled capital pack을 찾지 못함");
+    canonicalPackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+    activePack = capitalEntry;
+  }
   const canonicalPackSha256 = createHash("sha256").update(canonicalPackBytes).digest("hex");
   const canonicalPackSqliteSha256 = createHash("sha256")
     .update(gunzipSync(canonicalPackBytes))

@@ -253,7 +253,6 @@ export async function validateCurrentItxTopologyEvidencePack({
       topologyEvidence,
       compressed,
       sqliteBytes,
-      buildSpec,
     );
     if (itxEdges.length !== topologyEvidence.topology.edgeCount
       || itxEdges.some((edge) => String(edge.service_pattern).toUpperCase() !== "EXPRESS")) {
@@ -265,24 +264,14 @@ export async function validateCurrentItxTopologyEvidencePack({
   }
 }
 
-function isCandidateBuildSpec(buildSpec) {
-  return buildSpec?.artifactKind === "datapack-candidate-build-spec"
-    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "release-candidate"
-    || process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "candidate-create";
-}
-
 function assertItxTopologyEvidencePackIdentity(
   pack,
   topologyEvidence,
   compressed,
   sqliteBytes,
-  buildSpec,
 ) {
   if (pack?.id !== topologyEvidence?.pack?.id) {
     throw new Error("ITX topology evidence pack identity mismatch");
-  }
-  if (isCandidateBuildSpec(buildSpec)) {
-    return;
   }
   if (sha256(compressed) !== topologyEvidence.pack.outputSha256
     || sha256(sqliteBytes) !== topologyEvidence.pack.outputSqliteSha256
