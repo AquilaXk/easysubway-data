@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { prepareNationwideCandidate } from "./prepare-nationwide-candidate-run.mjs";
+import { prepareNationwideCandidate, formatPlatformInfo } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -52,6 +52,27 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
       });
     },
     /Two-person rule violation/
+  );
+
+  // Case-variation bypass check (e.g. aquila vs Aquila)
+  await assert.rejects(
+    async () => {
+      await prepareNationwideCandidate({
+        requestedBy: "aquila",
+        approvedBy: "Aquila",
+      });
+    },
+    /Two-person rule violation: requester and approver cannot be the same person/
+  );
+
+  await assert.rejects(
+    async () => {
+      await prepareNationwideCandidate({
+        requestedBy: "   AQUILA   ",
+        approvedBy: "aquila",
+      });
+    },
+    /Two-person rule violation: requester and approver cannot be the same person/
   );
 });
 
@@ -189,3 +210,163 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
     assert.strictEqual(link.reliabilityScore, 0);
   }
 });
+
+test("prepareNationwideCandidate enforces fail-closed git provenance", async () => {
+  const origGit = process.env.GIT_BIN;
+  try {
+    process.env.GIT_BIN = "false";
+    await assert.rejects(
+      async () => {
+        await prepareNationwideCandidate({
+          requestedBy: "operator-alice",
+          approvedBy: "operator-bob",
+        });
+      },
+      /Failed to resolve git HEAD commit/
+    );
+
+    process.env.GIT_BIN = "echo";
+    await assert.rejects(
+      async () => {
+        await prepareNationwideCandidate({
+          requestedBy: "operator-alice",
+          approvedBy: "operator-bob",
+        });
+      },
+      /Invalid git HEAD commit sha/
+    );
+  } finally {
+    if (origGit) process.env.GIT_BIN = origGit;
+    else delete process.env.GIT_BIN;
+  }
+});
+
+test("prepareNationwideCandidate dynamically generates authentic nationwide candidate without synthetic schedules", async () => {
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+  });
+
+  assert.ok(result.preparationRelPath);
+  assert.ok(result.nationwidePackRelPath);
+  assert.ok(result.routeInputRelPath);
+  assert.ok(result.stationLineInputRelPath);
+  assert.ok(result.buildSpecRelPath);
+  assert.ok(result.releaseRequestRelPath);
+  assert.ok(result.hashEvidenceRelPath);
+
+  // 1. Verify nationwide production pack
+  const packRaw = await readFile(path.join(root, result.nationwidePackRelPath), "utf8");
+  const packData = JSON.parse(packRaw);
+  const pack = packData.packs[0];
+
+  // Authentic routes only (Seoul 4 + Incheon 1/2)
+  assert.strictEqual(pack.transitRoutes.length, 6);
+  const routeIds = new Set(pack.transitRoutes.map((r) => r.id));
+  assert.ok(routeIds.has("route-seoul-4-up"));
+  assert.ok(routeIds.has("route-seoul-4-down"));
+  assert.ok(routeIds.has("route-incheon-1-up"));
+  assert.ok(routeIds.has("route-incheon-1-dn"));
+  assert.ok(routeIds.has("route-incheon-2-up"));
+  assert.ok(routeIds.has("route-incheon-2-dn"));
+
+  // Zero synthetic trips manufactured by interval loop
+  const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
+  assert.strictEqual(syntheticTrips.length, 0, "Pack must contain 0 synthetic trips");
+  assert.strictEqual(pack.transitTrips.length, 1880, "Pack must contain exactly 1,880 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 41830, "Pack must contain exactly 41,830 authentic stop times");
+  assert.strictEqual(pack.serviceCalendars.length, 6);
+  assert.strictEqual(pack.serviceCalendarDates.length, 104);
+
+  // Station car door hints preserved from base fixture
+  assert.strictEqual(pack.stationCarDoorHints.length, 35);
+  assert.strictEqual(pack.minimumTableRows.station_car_door_hints, 35);
+
+  // 2. Verify candidate preparation provenance
+  const prepRaw = await readFile(path.join(root, result.preparationRelPath), "utf8");
+  const prep = JSON.parse(prepRaw);
+  assert.match(prep.builderIdentity.gitSha, /^[0-9a-f]{40}$/);
+  assert.notStrictEqual(prep.builderIdentity.gitSha, "d7fe7773528239e27e3788679d1b46b813cce046");
+  assert.strictEqual(prep.authority.requestedBy, "data-operator-lead");
+  assert.strictEqual(prep.authority.approvedBy, "data-release-authority");
+
+  // 3. Verify candidate build spec
+  const buildSpecRaw = await readFile(path.join(root, result.buildSpecRelPath), "utf8");
+  const buildSpec = JSON.parse(buildSpecRaw);
+  assert.strictEqual(buildSpec.fixtureSha256, sha256(Buffer.from(packRaw)));
+});
+
+test("formatPlatformInfo normalizes KRIC and regional platform metadata to canonical JSON", () => {
+  // 1. Empty/falsy
+  assert.strictEqual(formatPlatformInfo(null), "");
+  assert.strictEqual(formatPlatformInfo(undefined), "");
+  assert.strictEqual(formatPlatformInfo({}), "");
+
+  // 2. Existing string preserved
+  assert.strictEqual(formatPlatformInfo("당고개 방면 / 오이도 방면"), "당고개 방면 / 오이도 방면");
+
+  // 3. KRIC stPlf field names
+  const kricRaw = {
+    plfCplFlg: "Y",
+    plfTpNm: "상대식",
+    scrCharExt: "10",
+    sfFotExt: "200",
+  };
+  const expectedKric = JSON.stringify({
+    oppositeCrossing: "Y",
+    platformType: "상대식",
+    screenDoor: "10",
+    safetyGap: "200",
+  });
+  assert.strictEqual(formatPlatformInfo(kricRaw), expectedKric);
+
+  // 4. Regional agency field names (e.g. Daejeon)
+  const regionalRaw = {
+    opposite_side: "가능",
+    unload_door: "오른쪽",
+    platform: "상대식",
+    screen_door: "설치",
+  };
+  const expectedRegional = JSON.stringify({
+    oppositeCrossing: "Y",
+    platformType: "상대식",
+    screenDoor: "설치",
+    unloadDoor: "오른쪽",
+  });
+  assert.strictEqual(formatPlatformInfo(regionalRaw), expectedRegional);
+
+  // 5. Canonical field names
+  const canonical = {
+    oppositeCrossing: "N",
+    platformType: "섬식",
+    unloadDoor: "LEFT",
+  };
+  assert.strictEqual(formatPlatformInfo(canonical), JSON.stringify(canonical));
+});
+
+test("prepareNationwideCandidate binds platform metadata onto stationLines", async () => {
+  const sampleMap = new Map([
+    ["station-00089f8f97de:line-558d0bd8312d", { plfCplFlg: "Y", plfTpNm: "상대식", scrCharExt: "10" }],
+  ]);
+
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    platformInfoMap: sampleMap,
+  });
+
+  const packRaw = await readFile(path.join(root, result.nationwidePackRelPath), "utf8");
+  const pack = JSON.parse(packRaw).packs[0];
+
+  const targetLine = pack.stationLines.find(
+    (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
+  );
+  assert.ok(targetLine, "Target stationLine must exist");
+  assert.strictEqual(
+    targetLine.platformInfo,
+    JSON.stringify({ oppositeCrossing: "Y", platformType: "상대식", screenDoor: "10" })
+  );
+});
+
+

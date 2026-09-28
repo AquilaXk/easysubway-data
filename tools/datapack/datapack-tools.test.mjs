@@ -49,6 +49,8 @@ import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-m
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
+stageLocalMobileFixture({ repositoryRoot: root });
 const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
 const TEST_ACCESSIBILITY_SNAPSHOT_ID = "test-only-capital-accessibility-fixture-20260809";
 const TEST_ACCESSIBILITY_RETRIEVED_AT = "2026-08-09T00:00:00.000Z";
