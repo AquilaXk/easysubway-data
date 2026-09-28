@@ -269,7 +269,7 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   });
   assert.deepEqual(synced.packs[0].networkEdges, [reviewedEdge]);
   assert.deepEqual(synced.packs[0].internalRouteEdges, []);
-  assert.equal(synced.packs[0].stationExits[0].hasElevatorConnection, false);
+  assert.equal(synced.packs[0].stationExits[0].hasElevatorConnection, true);
   assert.deepEqual(synced.packs[0].officialOdFareQuotes, officialOdFareQuotes);
   assert.deepEqual(synced.packs[0].routeServiceArtifactEvidence, []);
   assert.deepEqual(synced.packs[0].sourceInventory, [
@@ -683,4 +683,67 @@ test("metadata fails closed when a consumed source lacks admission evidence", ()
     { sources: [{ id: "source", accessibilityAdmissionEvidence: { snapshotId: "snapshot", observedAt: "2026-07-28T00:00:00.000Z", freshUntil: "2026-07-29T00:00:00.000Z" } }] },
     undefined,
   ), /bundled pack freshness missing/);
+});
+
+test("canonical sync retains dynamic station facilities and preserves proven elevator connections", () => {
+  const hash = "a".repeat(64);
+  const canonical = {
+    packs: [{
+      id: "capital",
+      facilities: [
+        { id: "gangnam-elevator", stationId: "station-gangnam", type: "ELEVATOR", sourceId: "kric-station-convenience-standard" },
+        { id: "other-station-facility", stationId: "station-cityhall", type: "ELEVATOR", sourceId: "other" },
+      ],
+      stationExits: [
+        {
+          id: "exit-gangnam-1",
+          stationId: "station-gangnam",
+          hasElevatorConnection: true,
+          sourceId: "proven-exit-source",
+          sourceSnapshotId: "proven-snapshot-1",
+          providerRecordHash: hash,
+          evidenceHash: hash,
+        },
+      ],
+      sourceInventory: [
+        { id: "seoulmetro-station-line-info" },
+        { id: "kric-station-convenience-standard" },
+        { id: "seoul-metro-accessibility" },
+      ],
+      metadata: { productionCoverageEvidence: "[]" },
+      minimumTableRows: {},
+    }],
+  };
+  const reviewedPack = {
+    facilities: [
+      { id: "new-gangnam-elevator", stationId: "station-gangnam", type: "ELEVATOR", sourceId: "kric-station-convenience-standard" },
+    ],
+    stationFacilityEvidence: [],
+    sourceInventory: [
+      { id: "seoulmetro-station-line-info" },
+      { id: "kric-station-convenience-standard" },
+      { id: "seoul-metro-accessibility" },
+    ],
+    metadata: { productionCoverageEvidence: "[]" },
+  };
+
+  const synced = syncCanonicalFixture(structuredClone(canonical), reviewedPack);
+  assert.equal(synced.packs[0].stationExits[0].hasElevatorConnection, true);
+  assert.equal(synced.packs[0].facilities.some((f) => f.id === "new-gangnam-elevator"), true);
+  assert.equal(synced.packs[0].facilities.some((f) => f.id === "other-station-facility"), true);
+
+  // Standard exit without optional hash fields (matching catalog-schema.sql)
+  const canonicalWithStandardExit = structuredClone(canonical);
+  canonicalWithStandardExit.packs[0].stationExits = [
+    {
+      id: "exit-sadang-1",
+      stationId: "station-sadang",
+      exitNumber: "1",
+      hasElevatorConnection: true,
+      sourceId: "baseline-exit-source-capital",
+      sourceSnapshotId: "baseline-exit-source-capital-20260619",
+    },
+  ];
+  const syncedStandard = syncCanonicalFixture(canonicalWithStandardExit, reviewedPack);
+  assert.equal(syncedStandard.packs[0].stationExits[0].hasElevatorConnection, true);
 });
