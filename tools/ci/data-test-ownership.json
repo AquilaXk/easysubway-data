@@ -251,6 +251,10 @@
     "data697": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/697",
       "title": "Add a Data-owned profile predeployment workflow"
+    },
+    "data813": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/813",
+      "title": "[Feat][DataPack] Promote Platform Info, Integrate Regional Timetables, Expand Car-Door Hints, and Map Official Transfer Edges"
     }
   },
   "workflows": {
@@ -486,7 +490,9 @@
     {"path":"tools/datapack/lib/datapack-manifest-schema.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":131},
     {"path":"tools/datapack/lib/map-catalog-oci-publisher.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/lib/molit-svg-provider-identity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":107},
+    {"path":"tools/datapack/lib/nationwide-platform-resolver.test.mjs","semanticOwner":"data813","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/lib/provider-call-integrity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":135},
+    {"path":"tools/datapack/lib/regional-timetable-integrator.test.mjs","semanticOwner":"data813","classes":["required-pr"],"durationMs":150},
     {"path":"tools/datapack/lib/route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":103},
     {"path":"tools/datapack/lib/seoulmetro-line-data-parser.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/lib/server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":146},

@@ -34,11 +34,11 @@
     "value": "a7b44bed6999142d6b716814a22071f890af2b341e2f27d898ebeb2e55d5716f"
   },
   "sourceInventorySha256": {
-    "value": "73ba23562d0cb71af72253921e5611bdbb1d56eba29ece8360d15ddf9c561a5d"
+    "value": "9e0f8cd0558eb3f8b987ff9d5bfff1dc713eab3b4c4888b04ad549de71b1c6b5"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "05526a37ef582da6c5d7cae3385630c409476fcacc35d90a4d3f41aa79ed361f"
+    "sha256": "51b8ab7e8a952a5fd6549560c8d2e8362fbd985d7949c680c5f858351bed6219"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",

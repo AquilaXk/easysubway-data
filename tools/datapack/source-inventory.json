@@ -5068,8 +5068,8 @@
         ]
       },
       "requiredForProductionPack": false,
-      "productionUseAllowed": false,
-      "updateFrequency": "provider documented; production cadence not admitted",
+      "productionUseAllowed": true,
+      "updateFrequency": "official OpenAPI provider admission",
       "observedDataUpdatedAt": "2026-07-12",
       "retrievedAt": "2026-07-12",
       "license": {
@@ -5114,11 +5114,11 @@
           "unsupportedNotes": "source is not admitted as production realtime arrival data"
         },
         "facility": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
-          "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "KRIC_NATIONWIDE_PLATFORM_INFO",
+          "updateFrequency": "official OpenAPI provider admission",
+          "unsupportedNotes": "KRIC 공식 OpenAPI 역사별 승강장 및 내리는 문 정식 승격"
         }
       },
       "admissionEvidence": {
@@ -5145,10 +5145,10 @@
         "quotaEvidence": {
           "defaultDailyLimit": "unlimited",
           "portal": "KRIC 레일포털",
-          "productionUseAllowed": false,
-          "unlockStatus": "not_required"
+          "productionUseAllowed": true,
+          "unlockStatus": "unlocked"
         },
-        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "productionUseNoteKo": "오너 admin review 및 승격 심사 완료. nationwide station_lines.platform_info에 공식 연결.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
       }
     },
