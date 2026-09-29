@@ -439,6 +439,7 @@ export function checkNoSyntheticScheduleLoops(packInput) {
   const pack = packInput?.packs?.[0] ?? packInput ?? {};
   const violations = [];
   const trips = pack.transitTrips ?? [];
+  const stopTimes = pack.transitStopTimes ?? [];
 
   for (const trip of trips) {
     if (typeof trip.id === 'string' && /-(?:wd|hd)-(?:19800|21600|23400|25200)\b/.test(trip.id)) {
@@ -448,6 +449,40 @@ export function checkNoSyntheticScheduleLoops(packInput) {
         message: `Detected synthetic 30-minute schedule loop trip ID: "${trip.id}". Synthetic loops are strictly prohibited.`,
       });
       break;
+    }
+  }
+
+  if (stopTimes.length > 0) {
+    const tripStopTimesMap = new Map();
+    for (const st of stopTimes) {
+      if (!tripStopTimesMap.has(st.tripId)) tripStopTimesMap.set(st.tripId, []);
+      tripStopTimesMap.get(st.tripId).push(st);
+    }
+
+    for (const [tripId, stops] of tripStopTimesMap) {
+      if (stops.length >= 10) {
+        let allSameDelta = true;
+        const firstDelta = (stops[1].departureTimeSeconds ?? stops[1].departureSeconds ?? stops[1].arrivalTimeSeconds) -
+                           (stops[0].departureTimeSeconds ?? stops[0].departureSeconds ?? stops[0].arrivalTimeSeconds);
+        if (firstDelta > 0) {
+          for (let i = 2; i < stops.length; i++) {
+            const delta = (stops[i].departureTimeSeconds ?? stops[i].departureSeconds ?? stops[i].arrivalTimeSeconds) -
+                          (stops[i - 1].departureTimeSeconds ?? stops[i - 1].departureSeconds ?? stops[i - 1].arrivalTimeSeconds);
+            if (delta !== firstDelta) {
+              allSameDelta = false;
+              break;
+            }
+          }
+          if (allSameDelta) {
+            violations.push({
+              gate: 'GATE_NO_SYNTHETIC_SCHEDULE_LOOPS',
+              target: `transit_stop_times[${tripId}]`,
+              message: `Detected synthetic uniform schedule interval (${firstDelta}s) across all ${stops.length} stops in trip "${tripId}". Authentic station timetable data required.`,
+            });
+            break;
+          }
+        }
+      }
     }
   }
 

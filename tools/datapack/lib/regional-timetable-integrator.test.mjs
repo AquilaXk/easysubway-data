@@ -79,10 +79,44 @@ test("integrateRegionalTimetables integrates all 4 regional authorities with aut
   const regionalTrips = integrated.transitTrips.filter((t) => isRegional(t.id));
   const regionalStopTimes = integrated.transitStopTimes.filter((st) => isRegional(st.tripId));
 
-  assert.strictEqual(regionalTrips.length, 7639);
-  assert.strictEqual(regionalStopTimes.length, 209472);
-  assert.strictEqual(integrated.transitTrips.length, initialTripCount + 7639);
-  assert.strictEqual(integrated.transitStopTimes.length, initialStopCount + 209472);
+  const busanTrips = regionalTrips.filter((t) => t.id.startsWith("trip-busan-"));
+  const daeguTrips = regionalTrips.filter((t) => t.id.startsWith("trip-daegu-"));
+  const daejeonTrips = regionalTrips.filter((t) => t.id.startsWith("trip-daejeon-"));
+  const gwangjuTrips = regionalTrips.filter((t) => t.id.startsWith("trip-gwangju-"));
+
+  assert.strictEqual(busanTrips.length, 3733);
+  assert.strictEqual(daeguTrips.length, 2540);
+  assert.strictEqual(daejeonTrips.length, 460); // 121 weekday dn + 121 weekday up + 109 holiday dn + 109 holiday up
+  assert.strictEqual(gwangjuTrips.length, 438); // 236 weekday + 202 holiday
+
+  assert.strictEqual(regionalTrips.length, 7171);
+  assert.strictEqual(regionalStopTimes.length, 202495);
+  assert.strictEqual(integrated.transitTrips.length, initialTripCount + 7171);
+  assert.strictEqual(integrated.transitStopTimes.length, initialStopCount + 202495);
+
+  // Deep Parity Check: Gwangju weekday schedule must NOT be empty (resolves issue where 'WEEK' was wrongly checked as 'WEEKDAY')
+  const gwangjuWeekdayTrips = gwangjuTrips.filter((t) => t.serviceId === "gwangju-weekday-2026");
+  const gwangjuHolidayTrips = gwangjuTrips.filter((t) => t.serviceId === "gwangju-holiday-2026");
+  assert.strictEqual(gwangjuWeekdayTrips.length, 236);
+  assert.strictEqual(gwangjuHolidayTrips.length, 202);
+
+  // Deep Parity Check: Gwangju Songjeong Station (117) must be resolved and present in stop times
+  const songjeongStationId = initialPack.stations.find((s) => s.nameKo === "광주송정역")?.id;
+  assert.ok(songjeongStationId, "Gwangju Songjeong station must exist in candidate stations");
+  const songjeongStops = regionalStopTimes.filter((st) => st.stopId === songjeongStationId);
+  assert.ok(songjeongStops.length > 0, "Gwangju Songjeong station must have scheduled stop times (not dropped)");
+
+  // Deep Parity Check: Daegu Seongseo Industrial Complex Station (221) must be resolved and present
+  const seongseoStationId = initialPack.stations.find((s) => s.nameKo === "성서산업단지")?.id;
+  assert.ok(seongseoStationId, "Daegu Seongseo station must exist in candidate stations");
+  const seongseoStops = regionalStopTimes.filter((st) => st.stopId === seongseoStationId);
+  assert.ok(seongseoStops.length > 0, "Daegu Seongseo station must have scheduled stop times (not dropped)");
+
+  // Deep Parity Check: Daejeon both directions (0 and 1) must be present
+  const daejeonDir0 = daejeonTrips.filter((t) => t.directionId === 0);
+  const daejeonDir1 = daejeonTrips.filter((t) => t.directionId === 1);
+  assert.strictEqual(daejeonDir0.length, 230);
+  assert.strictEqual(daejeonDir1.length, 230);
 
   // 4. Anti-Cheat: No synthetic loop patterns anywhere in generated trips
   const violations = checkNoSyntheticScheduleLoops({ transitTrips: integrated.transitTrips });

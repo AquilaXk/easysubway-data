@@ -292,8 +292,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // Zero synthetic trips manufactured by interval loop
   const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
   assert.strictEqual(syntheticTrips.length, 0, "Pack must contain 0 synthetic trips");
-  assert.strictEqual(pack.transitTrips.length, 9519, "Pack must contain exactly 9,519 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 251302, "Pack must contain exactly 251,302 authentic stop times");
+  assert.strictEqual(pack.transitTrips.length, 9051, "Pack must contain exactly 9,051 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 244325, "Pack must contain exactly 244,325 authentic stop times");
   assert.strictEqual(pack.serviceCalendars.length, 22);
   assert.strictEqual(pack.serviceCalendarDates.length, 104);
 
