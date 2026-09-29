@@ -118,6 +118,23 @@ test('checkNoSyntheticScheduleLoops catches synthetic 1800s loop trip IDs', () =
   assert.ok(violations.some((v) => v.gate === 'GATE_NO_SYNTHETIC_SCHEDULE_LOOPS'));
 });
 
+test('checkNoSyntheticScheduleLoops catches synthetic uniform stop interval loops', () => {
+  const uniformStops = Array.from({ length: 15 }, (_, i) => ({
+    tripId: 'trip-fake-loop',
+    stopSequence: i + 1,
+    arrivalTimeSeconds: 1000 + i * 120,
+    departureTimeSeconds: 1020 + i * 120,
+  }));
+
+  const fakePack = {
+    transitTrips: [{ id: 'trip-fake-loop' }],
+    transitStopTimes: uniformStops,
+  };
+
+  const violations = checkNoSyntheticScheduleLoops(fakePack);
+  assert.ok(violations.some((v) => v.gate === 'GATE_NO_SYNTHETIC_SCHEDULE_LOOPS' && v.message.includes('synthetic uniform schedule interval')));
+});
+
 test('checkHollowAssertions catches tautological assertions in test sources', () => {
   const violations = checkHollowAssertions();
   // Valid codebase must have zero hollow assertions

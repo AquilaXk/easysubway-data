@@ -33,22 +33,44 @@ export function integrateRegionalTimetables({
     return String(n ?? "").replace(/\(.*?\)/g, "").replace(/\d+$/, "").replace(/[·•ㆍ]/g, ".").trim();
   }
 
+  const STATION_NAME_ALIASES = new Map([
+    ["성서산단", "성서산업단지"],
+    ["성서산업단지", "성서산단"],
+    ["광주송정", "광주송정역"],
+    ["광주송정역", "광주송정"],
+  ]);
+
   function makeStationResolver(lineId, accessibilityRows) {
     const codeToId = new Map();
     const nameToId = new Map();
     const candidates = finalPack.stationLines.filter((sl) => sl.lineId === lineId);
 
+    const registerName = (name, id) => {
+      if (!name) return;
+      nameToId.set(name, id);
+      nameToId.set(cleanName(name), id);
+      if (name.endsWith("역") && name.length > 2 && name !== "서울역") {
+        nameToId.set(name.slice(0, -1), id);
+        nameToId.set(cleanName(name.slice(0, -1)), id);
+      }
+      const alias = STATION_NAME_ALIASES.get(name) ?? STATION_NAME_ALIASES.get(cleanName(name));
+      if (alias) {
+        nameToId.set(alias, id);
+        nameToId.set(cleanName(alias), id);
+      }
+    };
+
     for (const sl of candidates) {
       const st = finalPack.stations.find((s) => s.id === sl.stationId);
       if (st) {
-        nameToId.set(cleanName(st.nameKo), st.id);
-        nameToId.set(st.nameKo, st.id);
+        registerName(st.nameKo, st.id);
       }
     }
 
     for (const row of accessibilityRows ?? []) {
       if (row.lineId === lineId || !row.lineId) {
-        const stationId = nameToId.get(cleanName(row.stationName)) ?? nameToId.get(row.stationName);
+        const rawName = row.stationName;
+        const stationId = nameToId.get(cleanName(rawName)) ?? nameToId.get(rawName) ?? (rawName?.endsWith("역") && rawName.length > 2 ? nameToId.get(rawName.slice(0, -1)) : null);
         if (stationId && row.stationCode) {
           codeToId.set(String(row.stationCode), stationId);
         }
@@ -62,6 +84,10 @@ export function integrateRegionalTimetables({
           const cleaned = cleanName(rawName);
           if (nameToId.has(cleaned)) return nameToId.get(cleaned);
           if (nameToId.has(rawName)) return nameToId.get(rawName);
+          if (rawName.endsWith("역") && rawName.length > 2) {
+            const stripped = rawName.slice(0, -1);
+            if (nameToId.has(stripped)) return nameToId.get(stripped);
+          }
         }
         return null;
       },
@@ -260,58 +286,125 @@ export function integrateRegionalTimetables({
 
   const daejeonResolver = makeStationResolver(daejeonLineId, daejeonAccessibility?.rows);
   if (daejeonTimetable?.rows) {
-    // Daejeon rows have { dayType, drctType, stNum, tmList, tmZone }
-    // Group departures at origin stations: 101 for drctType 1, 122 for drctType 2
-    const originRows = daejeonTimetable.rows.filter(
-      (r) => (r.drctType === "1" && r.stNum === "101") || (r.drctType === "2" && r.stNum === "122")
-    );
+    const daejeonDirs = [
+      {
+        drctType: "1",
+        directionId: 0,
+        tripHeadsign: "반석",
+        stnOrder: Array.from({ length: 22 }, (_, i) => String(101 + i)),
+      },
+      {
+        drctType: "0",
+        directionId: 1,
+        tripHeadsign: "판암",
+        stnOrder: Array.from({ length: 22 }, (_, i) => String(122 - i)),
+      },
+    ];
 
-    // Build ordered station list for direction 1 (101->122) and direction 2 (122->101)
-    const stationsDir1 = Array.from({ length: 22 }, (_, i) => String(101 + i));
-    const stationsDir2 = [...stationsDir1].reverse();
-
-    for (const orig of originRows) {
-      const minutes = String(orig.tmList ?? "").trim().split(/\s+/).filter(Boolean);
-      const hour = parseInt(orig.tmZone, 10);
-      const serviceId = orig.dayType === "0" ? "daejeon-weekday-2026" : "daejeon-holiday-2026";
-      const stationSeq = orig.drctType === "1" ? stationsDir1 : stationsDir2;
-
-      for (const m of minutes) {
-        const startSec = hour * 3600 + parseInt(m, 10) * 60;
-        const tripId = `trip-daejeon-d${orig.dayType}-dir${orig.drctType}-${startSec}`;
-
-        const tripStopTimes = [];
-        let curTime = startSec;
-        let seq = 1;
-
-        for (const stNum of stationSeq) {
-          const stationId = daejeonResolver.resolveByIdOrCode(stNum, null);
-          if (stationId) {
-            tripStopTimes.push({
-              tripId,
-              stopId: stationId,
-              stopSequence: seq++,
-              arrivalTimeSeconds: curTime,
-              departureTimeSeconds: curTime + 20,
-              pickupType: 0,
-              dropOffType: 0,
-              sourceId: "daejeon-train-timetable",
-            });
+    for (const dirCfg of daejeonDirs) {
+      for (const dayType of ["0", "1"]) {
+        const serviceId = dayType === "0" ? "daejeon-weekday-2026" : "daejeon-holiday-2026";
+        const map = new Map();
+        for (const s of dirCfg.stnOrder) {
+          const matchingRows = daejeonTimetable.rows.filter(
+            (r) => r.dayType === dayType && r.drctType === dirCfg.drctType && r.stNum === s
+          );
+          const times = [];
+          for (const r of matchingRows) {
+            const hr = parseInt(r.tmZone, 10);
+            const mins = String(r.tmList ?? "").trim().split(/\s+/).filter(Boolean);
+            for (const m of mins) {
+              times.push(hr * 3600 + parseInt(m, 10) * 60);
+            }
           }
-          curTime += 120; // 2 min inter-station travel time
+          map.set(s, times.sort((a, b) => a - b));
         }
 
-        if (tripStopTimes.length >= 2) {
-          trips.push({
-            id: tripId,
-            routeId: "route-daejeon-line-1",
-            serviceId,
-            tripHeadsign: orig.drctType === "1" ? "반석" : "판암",
-            directionId: orig.drctType === "1" ? 0 : 1,
-            lineId: daejeonLineId,
-            sourceId: "daejeon-train-timetable",
-          });
-          stopTimes.push(...tripStopTimes);
+        const used = new Map();
+        for (const s of dirCfg.stnOrder) used.set(s, new Set());
+
+        for (let i = 0; i < dirCfg.stnOrder.length - 1; i++) {
+          const stn = dirCfg.stnOrder[i];
+          const departures = map.get(stn) ?? [];
+          for (let dIdx = 0; dIdx < departures.length; dIdx++) {
+            if (used.get(stn).has(dIdx)) continue;
+            used.get(stn).add(dIdx);
+            const startSec = departures[dIdx];
+            const tripId = `trip-daejeon-d${dayType}-dir${dirCfg.drctType}-s${stn}-${startSec}`;
+            const tripStops = [{ stn, time: startSec }];
+            let curTime = startSec;
+
+            for (let j = i + 1; j < dirCfg.stnOrder.length - 1; j++) {
+              const nextStn = dirCfg.stnOrder[j];
+              const nextDeps = map.get(nextStn) ?? [];
+              let matchedIdx = -1;
+              for (let k = 0; k < nextDeps.length; k++) {
+                if (!used.get(nextStn).has(k) && nextDeps[k] >= curTime + 50 && nextDeps[k] <= curTime + 300) {
+                  matchedIdx = k;
+                  break;
+                }
+              }
+              if (matchedIdx !== -1) {
+                used.get(nextStn).add(matchedIdx);
+                curTime = nextDeps[matchedIdx];
+                tripStops.push({ stn: nextStn, time: curTime });
+              } else {
+                break;
+              }
+            }
+
+            // Terminal station arrival
+            const termStn = dirCfg.stnOrder[dirCfg.stnOrder.length - 1];
+            tripStops.push({ stn: termStn, time: curTime + 120 });
+
+            if (tripStops.length >= 2) {
+              const tripStopTimes = [];
+              let seq = 1;
+              for (let sIdx = 0; sIdx < tripStops.length; sIdx++) {
+                const stopEntry = tripStops[sIdx];
+                const stationId = daejeonResolver.resolveByIdOrCode(stopEntry.stn, null);
+                if (!stationId) continue;
+
+                let arrTime;
+                let depTime;
+                if (sIdx === 0) {
+                  arrTime = stopEntry.time;
+                  depTime = stopEntry.time;
+                } else if (sIdx === tripStops.length - 1) {
+                  arrTime = stopEntry.time;
+                  depTime = stopEntry.time;
+                } else {
+                  depTime = stopEntry.time;
+                  const prevDep = tripStops[sIdx - 1].time;
+                  arrTime = Math.max(prevDep + 30, depTime - 20);
+                }
+
+                tripStopTimes.push({
+                  tripId,
+                  stopId: stationId,
+                  stopSequence: seq++,
+                  arrivalTimeSeconds: arrTime,
+                  departureTimeSeconds: depTime,
+                  pickupType: 0,
+                  dropOffType: 0,
+                  sourceId: "daejeon-train-timetable",
+                });
+              }
+
+              if (tripStopTimes.length >= 2) {
+                trips.push({
+                  id: tripId,
+                  routeId: "route-daejeon-line-1",
+                  serviceId,
+                  tripHeadsign: dirCfg.tripHeadsign,
+                  directionId: dirCfg.directionId,
+                  lineId: daejeonLineId,
+                  sourceId: "daejeon-train-timetable",
+                });
+                stopTimes.push(...tripStopTimes);
+              }
+            }
+          }
         }
       }
     }
@@ -339,55 +432,129 @@ export function integrateRegionalTimetables({
 
   const gwangjuResolver = makeStationResolver(gwangjuLineId, gwangjuAccessibility?.rows);
   if (gwangjuTimetable?.rows) {
-    // Gwangju rows: { stationCode, dayCode, direction: 'st' | 'pd', endCode, time: 'HHMM' }
-    // Origin for 'st' is 119 (Pyeongdong), origin for 'pd' is 101/102 (Nokdong/Sotae)
-    const origins = gwangjuTimetable.rows.filter(
-      (r) => (r.direction === "st" && r.stationCode === "119") || (r.direction === "pd" && (r.stationCode === "101" || r.stationCode === "102"))
-    );
+    const gwangjuDayMap = {
+      WEEK: "gwangju-weekday-2026",
+      DAYOFF: "gwangju-holiday-2026",
+    };
 
-    const gwangjuStnsPd = Array.from({ length: 19 }, (_, i) => String(101 + i));
-    const gwangjuStnsSt = [...gwangjuStnsPd].reverse();
+    const gwangjuDirs = [
+      {
+        direction: "pd",
+        directionId: 1,
+        tripHeadsign: "평동",
+        stnOrder: ["100", ...Array.from({ length: 19 }, (_, i) => String(101 + i))],
+        terminalDelta: 180,
+      },
+      {
+        direction: "st",
+        directionId: 0,
+        tripHeadsign: "소태",
+        stnOrder: Array.from({ length: 19 }, (_, i) => String(119 - i)),
+        terminalDelta: 120,
+      },
+    ];
 
-    for (const orig of origins) {
-      const serviceId = orig.dayCode === "WEEKDAY" ? "gwangju-weekday-2026" : "gwangju-holiday-2026";
-      const hh = parseInt(orig.time.slice(0, 2), 10);
-      const mm = parseInt(orig.time.slice(2, 4), 10);
-      const startSec = hh * 3600 + mm * 60;
-      const tripId = `trip-gwangju-${orig.dayCode}-${orig.direction}-${startSec}`;
-
-      const stnSeq = orig.direction === "pd" ? gwangjuStnsPd : gwangjuStnsSt;
-      const tripStopTimes = [];
-      let curTime = startSec;
-      let seq = 1;
-
-      for (const stCode of stnSeq) {
-        const stationId = gwangjuResolver.resolveByIdOrCode(stCode, null);
-        if (stationId) {
-          tripStopTimes.push({
-            tripId,
-            stopId: stationId,
-            stopSequence: seq++,
-            arrivalTimeSeconds: curTime,
-            departureTimeSeconds: curTime + 20,
-            pickupType: 0,
-            dropOffType: 0,
-            sourceId: "gwangju-transportation-cyberstation-timetable",
-          });
+    for (const [dayCode, serviceId] of Object.entries(gwangjuDayMap)) {
+      for (const dirCfg of gwangjuDirs) {
+        const map = new Map();
+        for (const s of dirCfg.stnOrder) {
+          const matchingRows = gwangjuTimetable.rows.filter(
+            (r) => r.dayCode === dayCode && r.direction === dirCfg.direction && r.stationCode === s
+          );
+          const times = matchingRows.map((r) => {
+            const hh = parseInt(r.time.slice(0, 2), 10);
+            const mm = parseInt(r.time.slice(2, 4), 10);
+            return hh * 3600 + mm * 60;
+          }).sort((a, b) => a - b);
+          map.set(s, times);
         }
-        curTime += 120;
-      }
 
-      if (tripStopTimes.length >= 2) {
-        trips.push({
-          id: tripId,
-          routeId: "route-gwangju-line-1",
-          serviceId,
-          tripHeadsign: orig.direction === "pd" ? "평동" : "소태",
-          directionId: orig.direction === "pd" ? 1 : 0,
-          lineId: gwangjuLineId,
-          sourceId: "gwangju-transportation-cyberstation-timetable",
-        });
-        stopTimes.push(...tripStopTimes);
+        const used = new Map();
+        for (const s of dirCfg.stnOrder) used.set(s, new Set());
+
+        for (let i = 0; i < dirCfg.stnOrder.length - 1; i++) {
+          const stn = dirCfg.stnOrder[i];
+          const departures = map.get(stn) ?? [];
+          for (let dIdx = 0; dIdx < departures.length; dIdx++) {
+            if (used.get(stn).has(dIdx)) continue;
+            used.get(stn).add(dIdx);
+            const startSec = departures[dIdx];
+            const tripId = `trip-gwangju-${dayCode}-${dirCfg.direction}-s${stn}-${startSec}`;
+            const tripStops = [{ stn, time: startSec }];
+            let curTime = startSec;
+
+            for (let j = i + 1; j < dirCfg.stnOrder.length - 1; j++) {
+              const nextStn = dirCfg.stnOrder[j];
+              const nextDeps = map.get(nextStn) ?? [];
+              let matchedIdx = -1;
+              for (let k = 0; k < nextDeps.length; k++) {
+                if (!used.get(nextStn).has(k) && nextDeps[k] >= curTime + 50 && nextDeps[k] <= curTime + 300) {
+                  matchedIdx = k;
+                  break;
+                }
+              }
+              if (matchedIdx !== -1) {
+                used.get(nextStn).add(matchedIdx);
+                curTime = nextDeps[matchedIdx];
+                tripStops.push({ stn: nextStn, time: curTime });
+              } else {
+                break;
+              }
+            }
+
+            // Terminal station arrival
+            const termStn = dirCfg.stnOrder[dirCfg.stnOrder.length - 1];
+            tripStops.push({ stn: termStn, time: curTime + dirCfg.terminalDelta });
+
+            if (tripStops.length >= 2) {
+              const tripStopTimes = [];
+              let seq = 1;
+              for (let sIdx = 0; sIdx < tripStops.length; sIdx++) {
+                const stopEntry = tripStops[sIdx];
+                const stationId = gwangjuResolver.resolveByIdOrCode(stopEntry.stn, null);
+                if (!stationId) continue;
+
+                let arrTime;
+                let depTime;
+                if (sIdx === 0) {
+                  arrTime = stopEntry.time;
+                  depTime = stopEntry.time;
+                } else if (sIdx === tripStops.length - 1) {
+                  arrTime = stopEntry.time;
+                  depTime = stopEntry.time;
+                } else {
+                  depTime = stopEntry.time;
+                  const prevDep = tripStops[sIdx - 1].time;
+                  arrTime = Math.max(prevDep + 30, depTime - 20);
+                }
+
+                tripStopTimes.push({
+                  tripId,
+                  stopId: stationId,
+                  stopSequence: seq++,
+                  arrivalTimeSeconds: arrTime,
+                  departureTimeSeconds: depTime,
+                  pickupType: 0,
+                  dropOffType: 0,
+                  sourceId: "gwangju-transportation-cyberstation-timetable",
+                });
+              }
+
+              if (tripStopTimes.length >= 2) {
+                trips.push({
+                  id: tripId,
+                  routeId: "route-gwangju-line-1",
+                  serviceId,
+                  tripHeadsign: dirCfg.tripHeadsign,
+                  directionId: dirCfg.directionId,
+                  lineId: gwangjuLineId,
+                  sourceId: "gwangju-transportation-cyberstation-timetable",
+                });
+                stopTimes.push(...tripStopTimes);
+              }
+            }
+          }
+        }
       }
     }
   }
