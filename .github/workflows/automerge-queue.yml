@@ -115,16 +115,24 @@ jobs:
           #
           #  - API 예산 지분. GITHUB_TOKEN 한도는 저장소당 시간당 1,000회이고 이 저장소의
           #    다른 워크플로와 공유한다. 실행당 청구는 ruleset 1 + gh pr list 1 + 고정 비용
-          #    16 + 후보당 14 * window_max이고, window_max=3이면 60회로 한도의 6.0%다.
-          #    형제 저장소 backend는 같은 계산에서 7%를 허용했지만 이 저장소는 더 낮게 잡는다
-          #    — 같은 한도를 Data Pack Release가 함께 쓰고, 그 실행 하나가 artifact 조회·
-          #    업로드와 실행 목록 조회로 REST를 다량 소비한다. 큐가 지분을 키우면 그쪽이
-          #    한도에 먼저 닿는다. 후보 한 건당 호출은 5회지만 요청은 그보다 많을 수 있다.
+          #    16 + 후보당 18 * window_max이고, window_max=3이면 72회로 한도의 7.2%다.
+          #    #817 전에는 후보당 14회(실행당 60회, 6.0%)였고 claude[bot] Review 검증 조회가
+          #    후보당 4회를 더했다. 형제 저장소 backend가 같은 계산에서 허용한 7%를 조금
+          #    넘지만 창은 키우지 않는다 — 같은 한도를 Data Pack Release가 함께 쓰고, 그 실행
+          #    하나가 artifact 조회·업로드와 실행 목록 조회로 REST를 다량 소비한다. 큐가 지분을
+          #    키우면 그쪽이 한도에 먼저 닿는다. 그 몫은 아래 reserve와 후보별 잔량 재측정이
+          #    실측으로 지킨다. 후보 한 건당 호출은 6회(claude[bot] Review가 있으면 최대 10회)지만
+          #    요청은 그보다 많을 수 있다.
           #    `gh pr view --json`(GraphQL)과 reviewThreads(GraphQL)는 페이지네이션이 없고
           #    (reviewThreads는 first: 100 + hasNextPage fail closed), reviews·comments·
-          #    check-runs·statuses(REST)는 페이지 상한 3(아래 paginated-read)까지 읽는다. 그래서 후보당
-          #    청구는 14회다 — pr view 1 + reviewThreads 1 + REST 4종 * 3페이지. `--paginate`를
-          #    쓰지 않는 이유가 이것이다: 페이지 수에 상한이 없으면 이력이 유난히 긴 후보
+          #    check-runs·statuses(REST)는 페이지 상한 3(아래 paginated-read)까지 읽는다.
+          #    claude[bot] Review 검증(#817)은 개수 줄이 있는 claude[bot] Review의 서로 다른
+          #    commit을 최신순으로 claude_commit_limit=2개까지만 보고 commit당 compare 1회와
+          #    claude-code-review.yml runs 1회를 쓴다. compare는 변경 파일을 첫 페이지에 최대
+          #    300개까지만 주고 파일 페이지네이션이 없으므로 요청 1회다. 그래서 후보당 청구는
+          #    18회다 — pr view 1 + reviewThreads 1 + REST 4종 * 3페이지 + 2 * (compare 1 +
+          #    runs 1). `--paginate`를 쓰지 않는 이유가 이것이다: 페이지 수에 상한이 없으면
+          #    이력이 유난히 긴 후보
           #    하나가 예산 모델을 통째로 넘긴다. 상한을 넘는 후보는 판정을 포기하고 건너뛴다.
           #    required context별 jq는 로컬 계산이라 요청을 쓰지 않는다. 후보 평가 밖의 고정
           #    비용은 label marker 발행, 병합과 실패 처리의 보수적 여유 16회로 둔다.
@@ -135,10 +143,10 @@ jobs:
           #    않는다. 그래서 창은 가정이 아니라 남은 예산을 매 실행 실측해서 정한다.
           #    `GET /rate_limit`은 한도를 소비하지 않으므로 이 조회 자체가 공짜이고, 이 job이
           #    실제로 쓰는 토큰의 REST·GraphQL 잔량을 그대로 준다. 두 버킷의 최솟값에 후보당
-          #    9회를 청구하면 실제 지출(REST 3 + 페이지, GraphQL 2)보다 많이 떼므로 어느 쪽
-          #    버킷도 계산보다 먼저 마르지 않는다. 두 값 중 하나가 비정상이면 최솟값을 내지
-          #    않고 큐를 건너뛴다 — 후보 평가는 두 버킷을 다 쓰므로 한쪽을 모르는 것은 예산
-          #    전체를 모르는 것과 같다.
+          #    18회를 청구하면 실제 지출(REST 4종 + 페이지 + claude[bot] 검증 조회, GraphQL 2)의
+          #    상한을 떼므로 어느 쪽 버킷도 계산보다 먼저 마르지 않는다. 두 값 중 하나가
+          #    비정상이면 최솟값을 내지 않고 큐를 건너뛴다 — 후보 평가는 두 버킷을 다 쓰므로
+          #    한쪽을 모르는 것은 예산 전체를 모르는 것과 같다.
           #
           #    잔량에서 reserve를 먼저 뗀다. 큐가 공유 한도를 다 쓰면 같은 한도를 쓰는
           #    producer dispatch까지 함께 멈추는데 그것이 최악이다. reserve는 큐가 손대지
@@ -147,8 +155,8 @@ jobs:
           #    400회면 100회 실행분이고, 그 위에 Data Pack Release 자신의 소비가 얹힌다.
           #  - job timeout. 이 job은 10분(600초)이고 producer 스텝이 최대 90초(반영 확인
           #    12 * 5초 + API 6회), 러너·스텝 오버헤드가 30초쯤 든다. 남는 480초를 후보당
-          #    5회 * 1초(비관적 왕복)로 나누면 84건이고, API가 느린 날을 감안해 2배 여유를
-          #    두면 42건이다.
+          #    10회(claude[bot] Review 검증 포함) * 1초(비관적 왕복)로 나누면 48건이고, API가
+          #    느린 날을 감안해 2배 여유를 두면 24건이다.
           #  - 실측 큐 깊이. 2026-08-02 기준 이 저장소의 열린 PR은 3건이고(전부 dependabot)
           #    저장소 생성(2026-07-30) 이후 누적 PR은 17건이다. 창 3이면 평상시 큐 전량이
           #    한 실행에 들어와 회전이 걸리지 않는다. 큐가 3건을 넘는 날에는 아래 회전이
@@ -158,8 +166,8 @@ jobs:
           # min(window_max, (잔량 - reserve - 고정 비용) / 후보당 요청)으로 정한다. 잔량이
           # reserve에 닿으면 창이 0이 되어 큐만 건너뛰고 producer 스텝은 계속 돈다. 창을
           # 정한 뒤에도 후보마다 잔량을 다시 읽어 예약선에서 멈추므로, 창은 상한이지 지출
-          # 약속이 아니다. 형제 저장소 값 6이나 20을 그대로 쓰면 실행당 청구가 각각 82회·
-          # 237회로 위 지분 기준을 깬다.
+          # 약속이 아니다. 형제 저장소 값 6이나 20을 그대로 쓰면 실행당 청구가 각각 126회·
+          # 378회로 위 지분 기준을 깬다.
           #
           # 다만 창을 큐 앞쪽에 고정하면 창 밖의 후보는 매 실행 제외되어, 없애려던 head
           # 차단이 1건에서 window건 규모로 옮겨갈 뿐이다. 그래서 창 시작점을 실행마다
@@ -205,7 +213,10 @@ jobs:
           window_max=3
           reserve=400
           fixed_cost=16
-          per_candidate=14
+          per_candidate=18
+          # 후보당 claude[bot] Review 검증 조회(compare 1 + runs 1)를 하는 서로 다른 commit 수 상한.
+          # per_candidate에 2 * claude_commit_limit회로 들어간다 (#817).
+          claude_commit_limit=2
           # 두 버킷이 모두 숫자일 때만 값을 낸다. 한쪽이 없거나 비정상인데 남은 하나로
           # 진행하면, 후보 평가가 실제로 소비하는 두 버킷 중 하나의 잔량을 모른 채 쓰는
           # 것이라 "모르는 예산은 쓰지 않는다"가 성립하지 않는다. 어느 쪽이든 비정상이면
@@ -243,7 +254,7 @@ jobs:
           # 페이지를 직접 돌며 상한을 둔다. `gh api --paginate`는 페이지 수에 상한이 없어
           # 이력이 유난히 긴 후보 하나가 위 예산 모델을 통째로 넘길 수 있다. 상한에 닿으면
           # 판정을 포기한다 — 모르는 이력 위에서 병합하지 않는다(fail closed). 상한 3이
-          # 후보당 청구 11회의 근거다.
+          # 후보당 청구 18회 중 REST 목록 4종 12회의 근거다.
           page_limit=3
           read_pages() {
             local endpoint="$1" page=1 body count pages='[]'
@@ -262,6 +273,22 @@ jobs:
             return 2
           }
           # paginated-read-end
+          # claude[bot] 신원 tuple과 Review 본문 첫 줄의 개수 줄(🔴 R · 🟡 N · 🟣 P) 판정 (#817).
+          # claude-code-review.yml의 CLAUDE_REVIEW_JQ_DEFS와 글자 그대로 같아야 한다(계약 테스트).
+          # 검증 step이 이 줄과 inline 코멘트 수를 대조하므로, 개수 줄이 없는 Review(빈 본문
+          # thread 답글 wrapper 등)는 검증을 거친 discovery Review가 아니다.
+          # claude-review-defs-begin
+          claude_review_defs='
+            def is_claude:
+              .author_association == "NONE" and
+              .user.login == "claude[bot]" and
+              .user.id == 209825114 and
+              .user.type == "Bot";
+            def count_line:
+              [(.body // "") | split("\n") | (first // "") |
+                capture("^🔴 (?<red>[0-9]+) · 🟡 (?<nit>[0-9]+) · 🟣 (?<pre>[0-9]+)$")] | first;
+          '
+          # claude-review-defs-end
           # fail-closed-pr-begin
           # merge API가 실패하면 다음 트리거에 남겨 두지 않는다. comment
           # 자체가 실패해도 라벨 제거는 반드시 시도하고, 어느 쪽이 실패해도 이 job은 실패한다.
@@ -293,7 +320,7 @@ jobs:
             fi
             # budget-recheck-end
             info="$(gh pr view "${pr}" --repo "${repo}" \
-              --json baseRefName,headRefOid,isDraft,labels,mergeStateStatus,state)"
+              --json baseRefName,baseRefOid,headRefOid,isDraft,labels,mergeStateStatus,state)"
             if ! jq -e '
               .state == "OPEN" and
               .isDraft == false and
@@ -305,6 +332,7 @@ jobs:
             fi
 
             head="$(jq -r '.headRefOid' <<<"${info}")"
+            base_sha="$(jq -r '.baseRefOid' <<<"${info}")"
             merge_state="$(jq -r '.mergeStateStatus' <<<"${info}")"
 
             reviews="$(read_pages "repos/${repo}/pulls/${pr}/reviews")" || {
@@ -315,21 +343,76 @@ jobs:
               echo "PR #${pr}: comment history exceeds the page budget; skipping."
               continue
             }
+            # claude-review-verify-begin
+            # claude[bot] Review는 claude-code-review.yml 검증 step을 통과한 것만 discovery다 (#817).
+            # 게시된 Review 객체는 검증 step이 실패해도 PR에 남으므로, 신원만 보고 인정하면 검증이
+            # 막으려던 Review(🔴를 inline thread 없이 본문에만 쓴 것 등)가 게이트를 통과한다.
+            # 개수 줄(count_line)은 아래 게이트 jq가 보고, 여기서는 그 Review commit에 대해
+            #  - claude-code-review.yml run이 success로 끝났는지(검증 step 통과 = run success),
+            #  - PR base에서 그 commit까지 claude-code-review.yml이 바뀌지 않았는지를 조회한다.
+            # pull_request run은 PR 쪽 workflow 파일로 돌기 때문에 그 파일을 바꾼 commit의 run
+            # success는 증거가 아니다. 중간 commit에서 바꿨다가 되돌리는 우회를 막으려고 PR 전체
+            # diff가 아니라 Review commit 기준 compare를 본다. 조회는 최신 Review commit부터
+            # claude_commit_limit개까지만 하고 처음 검증된 commit에서 멈춘다. 한도 밖의 이전
+            # Review는 검증하지 않았으므로 인정하지 않는다. 조회 실패와 compare files 상한(300)은
+            # 판정할 수 없는 상태이므로 이 후보를 건너뛴다(fail closed). 조회는 이 job의
+            # GITHUB_TOKEN(actions·contents 권한)으로 한다.
+            verified_claude='[]'
+            claude_lookup=ok
+            while IFS= read -r claude_commit; do
+              [[ -n "${claude_commit}" ]] || continue
+              compare="$(gh api "repos/${repo}/compare/${base_sha}...${claude_commit}?per_page=1")" || {
+                claude_lookup=failed
+                break
+              }
+              touched="$(jq -r '
+                if (.files | length) >= 300 then "overflow"
+                elif any(.files[]; .filename == ".github/workflows/claude-code-review.yml" or .previous_filename == ".github/workflows/claude-code-review.yml") then "modified"
+                else "clean"
+                end
+              ' <<<"${compare}")" || {
+                claude_lookup=failed
+                break
+              }
+              if [[ "${touched}" == "modified" ]]; then
+                echo "PR #${pr}: ${claude_commit} changes claude-code-review.yml; its claude[bot] review is not trusted as discovery."
+                continue
+              fi
+              if [[ "${touched}" != "clean" ]]; then
+                claude_lookup=failed
+                break
+              fi
+              runs="$(gh api "repos/${repo}/actions/workflows/claude-code-review.yml/runs?head_sha=${claude_commit}&status=success&per_page=20")" || {
+                claude_lookup=failed
+                break
+              }
+              if jq -e 'any(.workflow_runs[]; .conclusion == "success")' <<<"${runs}" >/dev/null; then
+                verified_claude="$(jq -cn --arg commit "${claude_commit}" '[$commit]')"
+                break
+              fi
+            done < <(jq -r --argjson limit "${claude_commit_limit}" "${claude_review_defs}"'
+              [flatten[] | select(is_claude and .state == "COMMENTED" and count_line != null)] |
+              sort_by(.submitted_at, .id) | reverse |
+              reduce .[].commit_id as $commit ([]; if any(.[]; . == $commit) then . else . + [$commit] end) |
+              .[:$limit][]
+            ' <<<"${reviews}")
+            if [[ "${claude_lookup}" != ok ]]; then
+              echo "PR #${pr}: claude[bot] review verification lookup failed or hit its cap; skipping."
+              continue
+            fi
+            # claude-review-verify-end
             # review-state-filter-begin
             # 저장소 협력자 외에는 GitHub가 고정한 CodeRabbit·Claude Code(claude-code-review.yml)
-            # Bot tuple만 신뢰한다. claude[bot]은 COMMENTED Review만 discovery로 인정한다 (#817).
+            # Bot tuple만 신뢰한다. claude[bot]은 개수 줄이 있고 위에서 검증된 commit의 COMMENTED
+            # Review만 discovery로 인정한다 (#817). 검증되지 않은 claude[bot] Review도 활성 상태
+            # (CHANGES_REQUESTED)는 그대로 반영한다.
             # frozen discovery는 라벨 이벤트에서 GitHub Actions가 기록한 exact-head marker가
             # 있을 때만 승계한다. 임의 author·다른 SHA·후속 push는 게이트를 통과하지 못한다.
-            if ! jq -e --arg head "${head}" --argjson comments "${comments}" '
+            if ! jq -e --arg head "${head}" --argjson comments "${comments}" --argjson verified_claude "${verified_claude}" "${claude_review_defs}"'
               def is_coderabbit:
                 .author_association == "NONE" and
                 .user.login == "coderabbitai[bot]" and
                 .user.id == 136622811 and
-                .user.type == "Bot";
-              def is_claude:
-                .author_association == "NONE" and
-                .user.login == "claude[bot]" and
-                .user.id == 209825114 and
                 .user.type == "Bot";
               def is_exact_head_marker:
                 .user.login == "github-actions[bot]" and
@@ -360,7 +443,9 @@ jobs:
               any($trusted[];
                 (.state == "APPROVED" and (is_claude | not)) or
                 (.state == "COMMENTED" and
-                  (is_coderabbit or is_claude or
+                  (is_coderabbit or
+                    (is_claude and count_line != null and
+                      (.commit_id as $commit | any($verified_claude[]; . == $commit))) or
                     ((.body // "" | startswith("**Actionable comments posted: ")) and
                     ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
                      (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->")) or

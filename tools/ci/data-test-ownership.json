@@ -323,7 +323,7 @@
   },
   "tests": [
     {"path":"tools/ci/automerge-queue.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":4795},
-    {"path":"tools/ci/claude-code-review-workflow.test.mjs","semanticOwner":"data817","classes":["required-pr"],"durationMs":200},
+    {"path":"tools/ci/claude-code-review-workflow.test.mjs","semanticOwner":"data817","classes":["required-pr"],"durationMs":2300},
     {"path":"tools/ci/current-capital-topology-refresh-workflow.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/data-test-discovery.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":141},
     {"path":"tools/ci/decide-current-capital-topology-refresh.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":120},

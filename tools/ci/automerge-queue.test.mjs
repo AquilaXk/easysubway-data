@@ -1429,7 +1429,8 @@ test('큐 루프는 claude[bot] Review commit의 검증 run success와 workflow 
     assert.equal(result.status, 0, `${label}: ${result.stderr}`);
     assert.equal(result.mergedPr, null, `${label} → 병합하지 않는다`);
     assert.match(result.stdout, /claude\[bot\] review verification/, `${label} → 검증 조회 단계에서 건너뛴다`);
-    assert.equal(result.calls.filter((call) => call.includes('graphql')).length, 0, `${label} → 뒤 단계 요청을 쓰지 않는다`);
+    // reviewThreads 조회만 센다. rate_limit 질의도 `.resources.graphql.remaining` 문자열을 담는다.
+    assert.equal(result.calls.filter((call) => call.startsWith('gh api graphql')).length, 0, `${label} → 뒤 단계 요청을 쓰지 않는다`);
   }
 
   // claude[bot] Review가 없는 후보는 검증 조회를 하지 않는다(기존 경로 비용 불변).
