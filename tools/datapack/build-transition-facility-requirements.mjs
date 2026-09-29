@@ -87,7 +87,7 @@ export function buildTransitionFacilityRequirements({
     (row) => row && row.oprtngSitu !== "D" && typeof row.dtlPstn === "string" && row.dtlPstn.trim() !== "",
   );
 
-  // 2. 역별·상세위치별 정렬 및 sequence 부여
+  // 2. 역별·상세위치별 정렬 및 sequence 부여 (서울교통공사 수집기 #419와 완전 동일 정렬 규약)
   const sortedRecords = [...activeRecords].sort((left, right) => {
     const codeLeft = (left.stnCd ?? left.stationCode ?? "").toString().trim();
     const codeRight = (right.stnCd ?? right.stationCode ?? "").toString().trim();
@@ -95,7 +95,9 @@ export function buildTransitionFacilityRequirements({
     if (codeComp !== 0) return codeComp;
     const posComp = codepointCompare(left.dtlPstn.trim(), right.dtlPstn.trim());
     if (posComp !== 0) return posComp;
-    return codepointCompare(JSON.stringify(left), JSON.stringify(right));
+    const lineComp = codepointCompare((left.lineNm ?? "").trim(), (right.lineNm ?? "").trim());
+    if (lineComp !== 0) return lineComp;
+    return codepointCompare((left.stnNm ?? "").trim(), (right.stnNm ?? "").trim());
   });
 
   // stationCode -> Map<segment, string[]> (facilityIds)
@@ -126,6 +128,17 @@ export function buildTransitionFacilityRequirements({
   // 3. 전환별 구간 매핑 (추정 매핑 금지: 근거가 있는 구간만 행 생성)
   const requirementRows = [];
 
+  const appendSegmentFacilities = (transitionKey, segmentName, facilityIds) => {
+    if (!facilityIds || facilityIds.length === 0) return;
+    for (const facilityId of facilityIds) {
+      requirementRows.push({
+        transition_key: transitionKey,
+        segment: segmentName,
+        facility_id: facilityId,
+      });
+    }
+  };
+
   for (const transition of transitions) {
     const key = transition.transitionKey ?? transition.id;
     if (!key) continue;
@@ -140,40 +153,15 @@ export function buildTransitionFacilityRequirements({
 
     if (edgeType === "ENTRY" || edgeType === "EXIT") {
       // 출입: 출입구-대합실, 대합실-승강장 중 실제 존재하는 구간만 매핑
-      for (const segmentName of [SEGMENTS.ENTRANCE_CONCOURSE, SEGMENTS.CONCOURSE_PLATFORM]) {
-        const facilityIds = segmentsMap.get(segmentName);
-        if (facilityIds && facilityIds.length > 0) {
-          for (const facilityId of facilityIds) {
-            requirementRows.push({
-              transition_key: key,
-              segment: segmentName,
-              facility_id: facilityId,
-            });
-          }
-        }
-      }
+      appendSegmentFacilities(key, SEGMENTS.ENTRANCE_CONCOURSE, segmentsMap.get(SEGMENTS.ENTRANCE_CONCOURSE));
+      appendSegmentFacilities(key, SEGMENTS.CONCOURSE_PLATFORM, segmentsMap.get(SEGMENTS.CONCOURSE_PLATFORM));
     } else if (edgeType === "IN_STATION_TRANSFER") {
       // 환승: 환승통로가 있으면 환승통로, 또는 대합실-승강장 구간 매핑
       const transferFacilities = segmentsMap.get(SEGMENTS.TRANSFER_PASSAGE);
       if (transferFacilities && transferFacilities.length > 0) {
-        for (const facilityId of transferFacilities) {
-          requirementRows.push({
-            transition_key: key,
-            segment: SEGMENTS.TRANSFER_PASSAGE,
-            facility_id: facilityId,
-          });
-        }
+        appendSegmentFacilities(key, SEGMENTS.TRANSFER_PASSAGE, transferFacilities);
       } else {
-        const concoursePlatform = segmentsMap.get(SEGMENTS.CONCOURSE_PLATFORM);
-        if (concoursePlatform && concoursePlatform.length > 0) {
-          for (const facilityId of concoursePlatform) {
-            requirementRows.push({
-              transition_key: key,
-              segment: SEGMENTS.CONCOURSE_PLATFORM,
-              facility_id: facilityId,
-            });
-          }
-        }
+        appendSegmentFacilities(key, SEGMENTS.CONCOURSE_PLATFORM, segmentsMap.get(SEGMENTS.CONCOURSE_PLATFORM));
       }
     }
   }

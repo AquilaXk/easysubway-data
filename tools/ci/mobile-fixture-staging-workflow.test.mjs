@@ -200,7 +200,7 @@ test("CI는 current v19 contract 검증 뒤 fixture identity가 변경되지 않
 test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const runner = namedWorkflowStep(ci, "Verify and run current Mobile v19 owned required tests");
-  assert.match(runner, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 1/);
+  assert.match(runner, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 4/);
   assertWorkflowStepOrder(ci, [
     "Verify current Mobile v19 ITX topology evidence",
     "Verify and run current Mobile v19 owned required tests",
@@ -225,74 +225,50 @@ test("CI는 구형 v18 migration 또는 station-catalog bootstrap을 실행하�
   assert.doesNotMatch(ci, /emit-station-catalog-from-bundled-pack\.mjs/);
 });
 
+const shardIds = ["contracts_shard_1", "contracts_shard_2", "contracts_shard_3", "contracts_shard_4"];
+const contractJobIds = ["contracts_mobile_v19", "contracts_live_chain", ...shardIds];
+
+function assertPinnedFixtureJob(job) {
+  assert.match(job, /^    timeout-minutes: 30$/m);
+  assert.doesNotMatch(job, /\n    needs:/);
+  const repository = namedWorkflowStep(job, "Checkout repository");
+  const fixture = namedWorkflowStep(job, "Checkout pinned Mobile fixture");
+  const stage = namedWorkflowStep(job, "Stage pinned Mobile fixture");
+  const node = namedWorkflowStep(job, "Set up Node.js");
+  assert.match(repository, /uses:\s*actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(repository, /ref:\s*\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(repository, /persist-credentials:\s*false/);
+  assert.match(fixture, new RegExp(`repository:\\s*${mobileRepository}`));
+  assert.match(fixture, new RegExp(`ref:\\s*${ciMobileRevision}`));
+  assert.match(fixture, /path:\s*\.external\/mobile/);
+  assert.match(fixture, /persist-credentials:\s*false/);
+  assert.match(fixture, /fetch-depth:\s*0/);
+  assert.match(stage, new RegExp(ciMobileRevision));
+  assert.match(stage, new RegExp(ciCapitalGzipSha256));
+  assert.match(stage, /\[\[ -d "\$\{source\}" && ! -L "\$\{source\}" \]\]/);
+  assert.match(stage, /\[\[ -f "\$\{capital_gzip\}" && ! -L "\$\{capital_gzip\}" \]\]/);
+  assert.match(stage, /test ! -e apps\/mobile/);
+  assert.match(stage, /test ! -L apps\/mobile/);
+  assert.match(stage, /cp -a "\$\{source\}" apps\/mobile/);
+  assert.ok(
+    stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("cp -a "),
+    "각 job은 fixture 검증 뒤에만 stage해야 함",
+  );
+  assert.match(node, /uses:\s*actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+  assert.match(node, /node-version:\s*"24\.19\.0"/);
+}
+
 test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제공한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  const shardOne = namedJob(ci, "contracts_shard_1");
-  const shardTwo = namedJob(ci, "contracts_shard_2");
-  const shardThree = namedJob(ci, "contracts_shard_3");
-  const shardFour = namedJob(ci, "contracts_shard_4");
-  const shardFive = namedJob(ci, "contracts_shard_5");
   const contracts = namedJob(ci, "contracts");
-  const jobPairs = [
-    [shardOne, "Verify and run pristine Mobile owned required tests (shard 1/5)"],
-    [shardTwo, "Verify and run pristine Mobile owned required tests (shard 2/5)"],
-    [shardThree, "Verify and run pristine Mobile owned required tests (shard 3/5)"],
-    [shardFour, "Verify and run pristine Mobile owned required tests (shard 4/5)"],
-    [shardFive, "Verify and run pristine Mobile owned required tests (shard 5/5)"],
-  ];
-
-  assert.match(shardOne, /^    name: Data contracts \(shard 1\/5\)$/m);
-  assert.match(shardTwo, /^    name: Data contracts \(shard 2\/5\)$/m);
-  assert.match(shardThree, /^    name: Data contracts \(shard 3\/5\)$/m);
-  assert.match(shardFour, /^    name: Data contracts \(shard 4\/5\)$/m);
-  assert.match(shardFive, /^    name: Data contracts \(shard 5\/5\)$/m);
-  assert.doesNotMatch(shardOne, /\n    needs:/);
-  assert.doesNotMatch(shardTwo, /\n    needs:/);
-  assert.doesNotMatch(shardThree, /\n    needs:/);
-  assert.doesNotMatch(shardFour, /\n    needs:/);
-  assert.doesNotMatch(shardFive, /\n    needs:/);
-  assert.match(contracts, /^    name: Data contracts$/m);
-  assert.match(contracts, /needs:\s*\[contracts_shard_1, contracts_shard_2, contracts_shard_3, contracts_shard_4, contracts_shard_5\]/);
-  assert.match(contracts, /if:\s*\$\{\{ always\(\) \}\}/);
-  assert.match(contracts, /SHARD_1_RESULT:\s*\$\{\{ needs\.contracts_shard_1\.result \}\}/);
-  assert.match(contracts, /SHARD_2_RESULT:\s*\$\{\{ needs\.contracts_shard_2\.result \}\}/);
-  assert.match(contracts, /SHARD_3_RESULT:\s*\$\{\{ needs\.contracts_shard_3\.result \}\}/);
-  assert.match(contracts, /SHARD_4_RESULT:\s*\$\{\{ needs\.contracts_shard_4\.result \}\}/);
-  assert.match(contracts, /SHARD_5_RESULT:\s*\$\{\{ needs\.contracts_shard_5\.result \}\}/);
-  assert.match(contracts, /\[\[ "\$\{SHARD_1_RESULT\}" == "success" \]\]/);
-  assert.match(contracts, /\[\[ "\$\{SHARD_2_RESULT\}" == "success" \]\]/);
-  assert.match(contracts, /\[\[ "\$\{SHARD_3_RESULT\}" == "success" \]\]/);
-  assert.match(contracts, /\[\[ "\$\{SHARD_4_RESULT\}" == "success" \]\]/);
-  assert.match(contracts, /\[\[ "\$\{SHARD_5_RESULT\}" == "success" \]\]/);
-  for (const [job, runnerName] of jobPairs) {
-    assert.match(job, /^    timeout-minutes: 30$/m);
-    const repository = namedWorkflowStep(job, "Checkout repository");
-    const fixture = namedWorkflowStep(job, "Checkout pinned Mobile fixture");
-    const stage = namedWorkflowStep(job, "Stage pinned Mobile fixture");
-    const node = namedWorkflowStep(job, "Set up Node.js");
+  for (const [index, id] of shardIds.entries()) {
+    const shard = index + 1;
+    const job = namedJob(ci, id);
+    const runnerName = `Verify and run pristine Mobile owned required tests (shard ${shard}/4)`;
+    assert.match(job, new RegExp(`^    name: Data contracts \\(shard ${shard}\\/4\\)$`, "m"));
+    assertPinnedFixtureJob(job);
     const setup = namedWorkflowStep(job, "Set up Chrome for browser-dependent required tests");
     const runner = namedWorkflowStep(job, runnerName);
-    assert.match(repository, /uses:\s*actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
-    assert.match(repository, /ref:\s*\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
-    assert.match(repository, /persist-credentials:\s*false/);
-    assert.match(fixture, new RegExp(`repository:\\s*${mobileRepository}`));
-    assert.match(fixture, new RegExp(`ref:\\s*${ciMobileRevision}`));
-    assert.match(fixture, /path:\s*\.external\/mobile/);
-    assert.match(fixture, /persist-credentials:\s*false/);
-    assert.match(fixture, /fetch-depth:\s*0/);
-    assert.match(stage, new RegExp(ciMobileRevision));
-    assert.match(stage, new RegExp(ciCapitalGzipSha256));
-    assert.match(stage, /\[\[ -d "\$\{source\}" && ! -L "\$\{source\}" \]\]/);
-    assert.match(stage, /\[\[ -f "\$\{capital_gzip\}" && ! -L "\$\{capital_gzip\}" \]\]/);
-    assert.match(stage, /test ! -e apps\/mobile/);
-    assert.match(stage, /test ! -L apps\/mobile/);
-    assert.match(stage, /cp -a "\$\{source\}" apps\/mobile/);
-    assert.ok(
-      stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("cp -a "),
-      "각 shard job은 fixture 검증 뒤에만 stage해야 함",
-    );
-    assert.match(node, /uses:\s*actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
-    assert.match(node, /node-version:\s*"24\.19\.0"/);
     assert.match(setup, /id:\s*setup-chrome/);
     assert.match(
       setup,
@@ -302,22 +278,49 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
     assert.match(setup, /install-dependencies:\s*true/);
     assert.match(runner, /CHROME_PATH:\s*\$\{\{ steps\.setup-chrome\.outputs\.chrome-path \}\}/);
     assert.match(runner, /ROUTE_MAP_CHROME_NO_SANDBOX:\s*"1"/);
+    assert.match(runner, new RegExp(`--default-profile --max-workers 4 --shard-count 4 --shard-index ${shard}$`, "m"));
     assert.ok(
       job.indexOf("Set up Chrome for browser-dependent required tests") < job.indexOf(runnerName),
       "각 shard job은 자체 Chrome setup 뒤에 runner를 실행해야 함",
     );
   }
-  assert.match(shardOne, /--default-profile --max-workers 1 --shard-count 5 --shard-index 1/);
-  assert.match(shardTwo, /--default-profile --max-workers 1 --shard-count 5 --shard-index 2/);
-  assert.match(shardThree, /--default-profile --max-workers 1 --shard-count 5 --shard-index 3/);
-  assert.match(shardFour, /--default-profile --max-workers 1 --shard-count 5 --shard-index 4/);
-  assert.match(shardFive, /--default-profile --max-workers 1 --shard-count 5 --shard-index 5/);
+  // mobile-v19 profile과 live-chain OCI context도 각자 pinned fixture를 stage한 독립 job이다.
+  const mobile = namedJob(ci, "contracts_mobile_v19");
+  assert.match(mobile, /^    name: Data contracts \(mobile-v19\)$/m);
+  assertPinnedFixtureJob(mobile);
+  const liveChain = namedJob(ci, "contracts_live_chain");
+  assert.match(liveChain, /^    name: Data contracts \(capital live-chain OCI\)$/m);
+  assertPinnedFixtureJob(liveChain);
+  assert.match(
+    namedWorkflowStep(liveChain, "Verify current capital live-chain OCI contracts"),
+    /node --test tools\/datapack\/run-current-capital-live-chain\.test\.mjs/,
+  );
+  // required check는 집계 job 이름 "Data contracts" 하나이고 모든 job 성공을 요구한다.
+  assert.match(contracts, /^    name: Data contracts$/m);
+  assert.match(contracts, new RegExp(`needs:\\s*\\[${contractJobIds.join(", ")}\\]`));
+  assert.match(contracts, /if:\s*\$\{\{ always\(\) \}\}/);
+  for (const [variable, id] of [
+    ["MOBILE_V19_RESULT", "contracts_mobile_v19"],
+    ["LIVE_CHAIN_RESULT", "contracts_live_chain"],
+    ...shardIds.map((id, index) => [`SHARD_${index + 1}_RESULT`, id]),
+  ]) {
+    assert.match(contracts, new RegExp(`${variable}:\\s*\\$\\{\\{ needs\\.${id}\\.result \\}\\}`));
+    assert.ok(contracts.includes(`[[ "\${${variable}}" == "success" ]]`), `${variable} must be required`);
+  }
+});
+
+test("CI는 PR 실행만 새 head에서 취소하고 main push·dispatch는 취소하지 않는다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.match(
+    ci,
+    /^concurrency:\n  group: ci-\$\{\{ github\.event_name == 'pull_request' && format\('pr-\{0\}', github\.event\.pull_request\.number\) \|\| github\.run_id \}\}\n  cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$/m,
+  );
 });
 
 test("CI는 Data contracts 각 job에만 최소 contents read 권한을 둔다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   assert.doesNotMatch(ci, /^permissions:/m);
-  for (const id of ["contracts_shard_1", "contracts_shard_2", "contracts_shard_3", "contracts_shard_4", "contracts_shard_5", "contracts"]) {
+  for (const id of [...contractJobIds, "contracts"]) {
     assert.match(namedJob(ci, id), /^    permissions:\n      contents: read$/m);
   }
 });
