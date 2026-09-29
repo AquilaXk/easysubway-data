@@ -3,9 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import * as manifestValidation from "./lib/manifest-validation.mjs";
-
-const { selectEffectiveDataPack, selectPackWithoutEmergencyOverride } = manifestValidation;
+import { selectEffectiveDataPack, selectPackWithoutEmergencyOverride } from "./lib/manifest-validation.mjs";
 
 test("(1) activePack 없음 -> null", () => {
   const manifest = {
