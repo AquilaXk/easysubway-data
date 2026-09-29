@@ -18,6 +18,8 @@ const producerWorkflowUrl = new URL(
 );
 
 const readWorkflow = () => readFile(workflowUrl, 'utf8');
+const MARKER_SYNC_RE =
+  /# authorization-marker-sync-begin\n([\s\S]*?)\n\s+# authorization-marker-sync-end/;
 
 // `run: |` 블록의 본문은 10칸 들여쓰기다. 셸 블록을 그대로 실행하려면 벗겨야 한다.
 // 큐 루프 안쪽 블록은 셸 들여쓰기 2칸이 더 붙어 12칸이다.
@@ -138,9 +140,13 @@ test('automerge label 이벤트만 exact-head authorization marker를 발행한�
     'label authorization must have exactly one marker emission path',
   );
 
-  const runAuthorization = ({ eventName, pr, head }) => {
+  // 라벨 이벤트는 기존 canonical marker를 읽어 PATCH-or-POST로 수렴한다. 픽스처는 comment 페이지다.
+  const runAuthorization = ({ eventName, pr, head, pages = [[]] }) => {
     const dir = mkdtempSync(join(tmpdir(), 'automerge-authorization-'));
     const log = join(dir, 'gh.log');
+    pages.forEach((page, index) =>
+      writeFileSync(join(dir, `page-${index + 1}.json`), page === '__FAIL__' ? page : JSON.stringify(page)),
+    );
     const result = spawnSync(
       'bash',
       [
@@ -148,8 +154,14 @@ test('automerge label 이벤트만 exact-head authorization marker를 발행한�
         [
           'set -euo pipefail',
           `GH_LOG=${JSON.stringify(log)}`,
+          `FIX=${JSON.stringify(dir)}`,
           ': > "$GH_LOG"',
-          'gh() { printf "%s\\n" "gh $*" >> "$GH_LOG"; }',
+          'gh() {',
+          '  printf "%s\\n" "gh $*" >> "$GH_LOG"',
+          '  case "$*" in',
+          '    *"/comments?per_page=100&page="*) page="${*##*page=}"; [[ -f "$FIX/page-$page.json" ]] || { printf "[]\\n"; return 0; }; [[ "$(cat "$FIX/page-$page.json")" == __FAIL__ ]] && return 1; cat "$FIX/page-$page.json" ;;',
+          '  esac',
+          '}',
           'repo=o/r',
           `EVENT_NAME=${JSON.stringify(eventName)}`,
           `EVENT_PR=${JSON.stringify(pr)}`,
@@ -194,6 +206,52 @@ test('automerge label 이벤트만 exact-head authorization marker를 발행한�
     assert.notEqual(rejected.status, 0);
     assert.equal((rejected.calls.match(/gh api --method POST/g) ?? []).length, 0);
   }
+
+  // PATCH-or-POST 수렴: canonical marker는 PR당 1개로 유지한다(backend·mobile과 동일).
+  const bot = { login: 'github-actions[bot]', id: 41898282, type: 'Bot' };
+  const markerOf = (sha) => `<!-- Automerge frozen discovery authorization: ${sha} -->`;
+  const mutations = (calls) => calls.split('\n').filter((line) => /--method (PATCH|POST)/.test(line));
+  const relabeled = runAuthorization({
+    eventName: 'pull_request_target', pr: '42', head: 'a'.repeat(40),
+    pages: [[{ id: 7, body: markerOf('b'.repeat(40)), user: bot }]],
+  });
+  assert.equal(relabeled.status, 0);
+  assert.deepEqual(mutations(relabeled.calls), [
+    `gh api --method PATCH repos/o/r/issues/comments/7 -f body=${markerOf('a'.repeat(40))}`,
+  ], 'relabel must PATCH the single canonical marker instead of posting another');
+  // 이미 여러 개 쌓인 PR은 라벨 재부착으로 정리한다: 가장 오래된 하나를 새 head로, 나머지는
+  // canonical이 아닌 superseded 본문으로 바꾼다. 삭제하지 않는다.
+  const accumulated = runAuthorization({
+    eventName: 'pull_request_target', pr: '42', head: 'a'.repeat(40),
+    pages: [[{ id: 9, body: markerOf('c'.repeat(40)), user: bot }, { id: 7, body: markerOf('b'.repeat(40)), user: bot }]],
+  });
+  assert.equal(accumulated.status, 0);
+  assert.deepEqual(mutations(accumulated.calls), [
+    `gh api --method PATCH repos/o/r/issues/comments/7 -f body=${markerOf('a'.repeat(40))}`,
+    'gh api --method PATCH repos/o/r/issues/comments/9 -f body=<!-- Automerge frozen discovery authorization superseded -->',
+  ]);
+  assert.doesNotMatch(accumulated.calls, /--method DELETE/);
+  const spoofed = runAuthorization({
+    eventName: 'pull_request_target', pr: '42', head: 'a'.repeat(40),
+    pages: [[{ id: 7, body: markerOf('b'.repeat(40)), user: { ...bot, id: 1 } }]],
+  });
+  assert.equal(spoofed.status, 0);
+  assert.deepEqual(mutations(spoofed.calls), [
+    `gh api --method POST repos/o/r/issues/42/comments -f body=${markerOf('a'.repeat(40))}`,
+  ], 'a spoofed marker is not canonical');
+  const full = (id) => Array.from({ length: 100 }, (_, index) => ({ id: id * 1000 + index, body: 'x', user: { login: 'someone', id: 5, type: 'User' } }));
+  for (const [label, pages] of [
+    ['comment read failure', ['__FAIL__']],
+    ['malformed comment page', [{ message: 'Not Found' }]],
+    ['comment history beyond the bounded read', [full(1), full(2), full(3), [{ id: 1, body: 'x', user: bot }]]],
+  ]) {
+    const failed = runAuthorization({ eventName: 'pull_request_target', pr: '42', head: 'a'.repeat(40), pages });
+    assert.notEqual(failed.status, 0, `${label} must fail the label authorization`);
+    assert.deepEqual(mutations(failed.calls), [], `${label} must not mutate markers`);
+  }
+  const bounded = runAuthorization({ eventName: 'pull_request_target', pr: '42', head: 'a'.repeat(40), pages: [full(1), full(2), full(3), []] });
+  assert.equal(bounded.status, 0, bounded.stderr);
+  assert.equal(mutations(bounded.calls).length, 1);
 });
 
 test('큐는 best-effort FIFO 후보 배열을 훑고 미해결 thread는 fail closed다', async () => {
@@ -869,13 +927,24 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
     {
       mergeFails = false,
       commentFails = false,
+      hasPat = false,
+      updateStatus = 0,
+      recordStatus = 0,
+      baseUpdateRecords = [],
     } = {},
   ) => {
+    const markerSync = workflow.match(MARKER_SYNC_RE)?.[1];
+    assert.ok(markerSync, 'authorization marker sync must stay testable');
     const result = stubbedBash([
       'set -euo pipefail',
+      `HAS_AUTOMERGE_PAT=${hasPat}`,
+      'GH_TOKEN=github-token',
+      `base_update_records=${JSON.stringify(JSON.stringify(baseUpdateRecords))}`,
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       '  case "$*" in',
+      `    "api --method PUT "*update-branch*) printf 'UPDATE_BRANCH_TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"; return ${updateStatus} ;;`,
+      `    "api --method "*"requested: "*) printf 'RECORD_TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"; return ${recordStatus} ;;`,
       `    "pr merge"*) ${mergeFails ? 'return 17' : ':'} ;;`,
       `    "pr comment"*) ${commentFails ? 'return 1' : ':'} ;;`,
       `    "pr edit"*) : ;;`,
@@ -890,6 +959,7 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       'MERGE_GH_TOKEN=merge-token',
       'GITHUB_RUN_ID=123456',
       dedent(failClosedHelper),
+      dedent(markerSync),
       'for _ in 1; do',
       dedent(dispatchBlock, 12),
       'done',
@@ -951,6 +1021,41 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   assert.equal(behind.skipped, true);
   assert.equal(behind.warned, true);
   assert.match(behind.calls + behind.stdout, /owning SSD worktree must rebase and push/);
+  // PAT가 있으면 게이트를 통과한 BEHIND 후보의 base를 현재 head 고정으로 갱신하고, 수락된
+  // 요청만 github.token 기록으로 남긴 뒤 그 실행을 끝낸다.
+  const recordLine = 'gh api --method POST repos/o/r/issues/26/comments -f body=<!-- Automerge base update requested: old-head -->';
+  const behindWithPat = runDispatch('BEHIND', { hasPat: true });
+  assert.equal(behindWithPat.status, 0);
+  assert.equal(behindWithPat.merged, false);
+  assert.equal(behindWithPat.skipped, false, 'base update must end the run');
+  assert.equal(behindWithPat.removedLabel, false);
+  assert.deepEqual(
+    behindWithPat.calls.split('\n').filter((line) => line.includes('update-branch')),
+    ['gh api --method PUT repos/o/r/pulls/26/update-branch -f expected_head_sha=old-head'],
+  );
+  assert.match(behindWithPat.calls, /^UPDATE_BRANCH_TOKEN=merge-token$/m);
+  assert.ok(behindWithPat.calls.includes(recordLine), 'an accepted base update must be recorded');
+  assert.ok(behindWithPat.calls.indexOf('update-branch') < behindWithPat.calls.indexOf(recordLine));
+  assert.match(behindWithPat.calls, /^RECORD_TOKEN=github-token$/m);
+  const behindRecorded = runDispatch('BEHIND', { hasPat: true, baseUpdateRecords: [{ id: 7, head: 'a'.repeat(40) }] });
+  assert.ok(behindRecorded.calls.includes('gh api --method PATCH repos/o/r/issues/comments/7 -f body=<!-- Automerge base update requested: old-head -->'));
+  assert.doesNotMatch(behindRecorded.calls, /--method POST/);
+  const behindAmbiguous = runDispatch('BEHIND', { hasPat: true, baseUpdateRecords: [{ id: 7, head: 'a'.repeat(40) }, { id: 8, head: 'b'.repeat(40) }] });
+  assert.equal(behindAmbiguous.status, 0);
+  assert.equal(behindAmbiguous.skipped, false);
+  assert.doesNotMatch(behindAmbiguous.calls, /requested: /, 'ambiguous records must not be touched');
+  assert.equal(behindAmbiguous.warned, true);
+  const behindRecordFailed = runDispatch('BEHIND', { hasPat: true, recordStatus: 49 });
+  assert.equal(behindRecordFailed.status, 0, 'a record failure must not fail the run after the accepted update');
+  assert.equal(behindRecordFailed.skipped, false);
+  assert.equal(behindRecordFailed.warned, true);
+  const behindUpdateFailed = runDispatch('BEHIND', { hasPat: true, updateStatus: 42 });
+  assert.equal(behindUpdateFailed.status, 0, 'a failed base update must skip only this candidate');
+  assert.equal(behindUpdateFailed.skipped, true);
+  assert.equal(behindUpdateFailed.merged, false);
+  assert.equal(behindUpdateFailed.removedLabel, false);
+  assert.equal(behindUpdateFailed.warned, true);
+  assert.doesNotMatch(behindUpdateFailed.calls, /requested: /, 'a failed base update must not be recorded');
   // 병합할 수 없는 상태는 전부 "이 후보만 건너뛴다"로 수렴한다. 실행을 실패시키면
   // 그 실패 check가 PR을 UNSTABLE로 만들고 큐 전체가 뒤의 후보까지 굶긴다.
   for (const mergeState of ['BLOCKED', 'UNKNOWN']) {
@@ -1186,6 +1291,9 @@ const makeRunQueue =
     '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
     '    *issues/*/comments*) n="${all#*issues/}"; n="${n%%/comments*}"; cat "$FIX/comments-$n.json" ;;',
+    // marker 복구 판정용 PR commit set. 이벤트 픽스처가 없으므로 복구는 fail-closed로 끝난다.
+    `    *pulls/*/commits*) n="\${all#*pulls/}"; n="\${n%%/commits*}"; printf '[{"sha":"head%s"}]\\n' "$n" ;;`,
+    '    *issues/*/events*) return 1 ;;',
     '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
     '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
     '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
@@ -1200,6 +1308,7 @@ const makeRunQueue =
     'sleep() { :; }',
     'repo=o/r',
     'MERGE_GH_TOKEN=merge-token',
+    'HAS_AUTOMERGE_PAT=false',
     'owner=o',
     'name=r',
     `required='[{"context":"Data contracts","integration_id":null}]'`,
@@ -2356,4 +2465,415 @@ test('명시 dispatch는 producer 경로에만 남는다', async () => {
     resolveAllowGaps('push'),
     'coordinator dispatch must reproduce the value the push path used',
   );
+});
+
+// ---------------------------------------------------------------------------
+// BEHIND 자동 갱신과 marker 재발행·복구 (backend #412 이식, data #824)
+// ---------------------------------------------------------------------------
+const PAGINATED_READ_RE = /# paginated-read-begin\n([\s\S]*?)\n\s+# paginated-read-end/;
+const markerFor = (head) => `<!-- Automerge frozen discovery authorization: ${head} -->`;
+const recordFor = (head) => `<!-- Automerge base update requested: ${head} -->`;
+const actionsBotUser = { login: 'github-actions[bot]', id: 41898282, type: 'Bot' };
+const universalDiscoveryBody =
+  '**Actionable comments posted: 0**\n<!-- Review source: Aquila Universal Review; engine: aquila-review -->';
+const discoveryReview = (commitId, overrides = {}) => ({
+  id: 5,
+  state: 'COMMENTED',
+  submitted_at: '2026-09-29T00:00:00Z',
+  commit_id: commitId,
+  author_association: 'OWNER',
+  body: universalDiscoveryBody,
+  user: { login: 'reviewer' },
+  ...overrides,
+});
+const committedAt = (sha, date) => ({ sha, commit: { committer: { date } } });
+const labeledAt = (date, name = 'automerge') => ({ event: 'labeled', label: { name }, created_at: date });
+const syncGhStub = [
+  'gh() {',
+  '  printf "TOKEN=%s gh %s\\n" "$GH_TOKEN" "$*" >> "$GH_LOG"',
+  '  local all="$*" filter="" previous="" argument payload="" page',
+  '  for argument in "$@"; do [[ "$previous" == --jq ]] && filter="$argument"; previous="$argument"; done',
+  '  case "$all" in',
+  '    "api --method PATCH repos/o/r/issues/comments/"*|"api --method POST repos/o/r/issues/"*"/comments "*)',
+  '      [[ "$mutation" == fail ]] && return 1',
+  '      local id=77; [[ "$all" == *"issues/comments/"* ]] && { id="${all#*issues/comments/}"; id="${id%% *}"; }',
+  '      if [[ "$mutation" == foreign ]]; then',
+  '        jq -nc --argjson id "$id" \'{id: $id, body: "other", user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}\'',
+  '        return 0',
+  '      fi',
+  '      jq -nc --argjson id "$id" --arg body "${all#*body=}" \'{id: $id, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}\' ;;',
+  '    "api repos/o/r/commits/"*) payload="$(cat "$FIX/head-commit.json" 2>/dev/null || printf __FAIL__)" ;;',
+  '    "api repos/o/r/compare/"*) payload="$(cat "$FIX/compare.json" 2>/dev/null || printf __FAIL__)" ;;',
+  '    *"repos/o/r/pulls/85/commits?per_page=100&page="*) page="${all##*page=}"; payload="$(cat "$FIX/commits-$page.json" 2>/dev/null || printf __FAIL__)" ;;',
+  '    "api repos/o/r/issues/85/events?per_page=100&page="*) page="${all##*page=}"; payload="$(cat "$FIX/events-$page.json" 2>/dev/null || printf __FAIL__)" ;;',
+  '    *) printf "unstubbed gh call: %s\\n" "$all" >&2; return 1 ;;',
+  '  esac',
+  '  if [[ -n "$payload" ]]; then',
+  '    [[ "$payload" == __FAIL__ ]] && return 1',
+  '    if [[ -n "$filter" ]]; then jq -r "$filter" <<<"$payload"; else printf "%s\\n" "$payload"; fi',
+  '  fi',
+  '}',
+];
+
+// 워크플로의 marker 동기화 블록과 페이지 상한 조회 헬퍼를 그대로 꺼내 stub gh로 실행한다.
+// comments·reviews·commits는 read_pages가 돌려주는 모양(페이지 배열)이다.
+const runMarkerSync = (
+  workflow,
+  { head, comments = [], reviews = [], commits = [[]], headCommit = null, compare = null, events = null, mutation = 'ok' },
+) => {
+  const block = workflow.match(MARKER_SYNC_RE)?.[1];
+  assert.ok(block, 'authorization marker sync must stay testable');
+  const readPages = workflow.match(PAGINATED_READ_RE)?.[1];
+  assert.ok(readPages, 'paginated read helper must stay testable');
+  const dir = mkdtempSync(join(tmpdir(), 'automerge-marker-sync-'));
+  const log = join(dir, 'gh.log');
+  const fixture = (name, payload) =>
+    writeFileSync(join(dir, name), payload === '__FAIL__' ? payload : JSON.stringify(payload));
+  if (headCommit !== null) fixture('head-commit.json', headCommit);
+  if (compare !== null) fixture('compare.json', compare);
+  commits.forEach((page, index) => fixture(`commits-${index + 1}.json`, page));
+  (events ?? []).forEach((page, index) => fixture(`events-${index + 1}.json`, page));
+  const result = spawnSync('bash', ['-c', [
+    'set -euo pipefail',
+    `GH_LOG=${JSON.stringify(log)}`,
+    `FIX=${JSON.stringify(dir)}`,
+    'repo=o/r',
+    'pr=85',
+    `head=${JSON.stringify(head)}`,
+    'GH_TOKEN=github-token',
+    'MERGE_GH_TOKEN=merge-token',
+    `mutation=${JSON.stringify(mutation)}`,
+    `comments=${JSON.stringify(JSON.stringify([comments]))}`,
+    `reviews=${JSON.stringify(JSON.stringify([reviews]))}`,
+    ': > "$GH_LOG"',
+    ...syncGhStub,
+    dedent(readPages),
+    dedent(block),
+    'sync_authorization_marker',
+    'printf "SYNC_RETURNED\\n"',
+    'printf "%s\\n" "$comments"',
+  ].join('\n')], { encoding: 'utf8' });
+  const calls = existsSync(log) ? readFileSync(log, 'utf8') : '';
+  const lines = (result.stdout ?? '').trim().split('\n');
+  const after = lines.at(-1)?.startsWith('[') ? JSON.parse(lines.at(-1)).flat() : [];
+  const canonical = after.filter(
+    (comment) =>
+      comment.user?.login === actionsBotUser.login &&
+      comment.user?.id === actionsBotUser.id &&
+      comment.user?.type === actionsBotUser.type &&
+      /^<!-- Automerge frozen discovery authorization: [0-9a-f]{40} -->$/.test(comment.body ?? ''),
+  );
+  return {
+    status: result.status,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+    calls,
+    mutations: calls.split('\n').filter((line) => / --method (PATCH|POST) /.test(line)),
+    authorized: canonical.length === 1 && canonical[0].body === markerFor(head),
+  };
+};
+
+test('marker 재발행은 코디네이터 기록이 있는 base 갱신 병합 커밋에만 적용된다', async () => {
+  const workflow = await readWorkflow();
+  const previous = 'b'.repeat(40);
+  const head = 'c'.repeat(40);
+  const mainParent = 'd'.repeat(40);
+  const other = 'e'.repeat(40);
+  const markerComment = { id: 99, body: markerFor(previous), user: actionsBotUser };
+  const record = { id: 100, body: recordFor(previous), user: actionsBotUser };
+  const base = {
+    head,
+    comments: [markerComment, record],
+    reviews: [discoveryReview(previous)],
+    headCommit: { sha: head, parents: [{ sha: previous }, { sha: mainParent }] },
+    compare: { status: 'ahead' },
+  };
+
+  for (const status of ['ahead', 'identical']) {
+    const reissued = runMarkerSync(workflow, { ...base, compare: { status } });
+    assert.equal(reissued.status, 0, reissued.stderr);
+    assert.deepEqual(
+      reissued.mutations,
+      [`TOKEN=github-token gh api --method PATCH repos/o/r/issues/comments/99 -f body=${markerFor(head)}`],
+    );
+    assert.match(reissued.calls, new RegExp(`gh api repos/o/r/compare/${mainParent}\\.\\.\\.main `));
+    assert.equal(reissued.authorized, true, 'the patched marker must replace the old one in the gate input');
+  }
+
+  for (const [label, options] of [
+    ['first parent differs from the marker head', { headCommit: { sha: head, parents: [{ sha: other }, { sha: mainParent }] } }],
+    ['single-parent session push', { headCommit: { sha: head, parents: [{ sha: previous }] } }],
+    ['octopus merge', { headCommit: { sha: head, parents: [{ sha: previous }, { sha: mainParent }, { sha: other }] } }],
+    ['malformed parent', { headCommit: { sha: head, parents: [{ sha: previous }, { sha: 'not-a-sha' }] } }],
+    ['second parent behind main', { compare: { status: 'behind' } }],
+    ['second parent diverged from main', { compare: { status: 'diverged' } }],
+    ['commit lookup failure', { headCommit: '__FAIL__' }],
+    ['compare lookup failure', { compare: '__FAIL__' }],
+  ]) {
+    const kept = runMarkerSync(workflow, { ...base, ...options });
+    assert.equal(kept.status, 0, `${label}: ${kept.stderr}`);
+    assert.match(kept.stdout, /SYNC_RETURNED/);
+    assert.deepEqual(kept.mutations, [], `${label} must not reissue`);
+    assert.equal(kept.authorized, false);
+  }
+
+  for (const [label, comments] of [
+    ['no base-update record', [markerComment]],
+    ['record for another head', [markerComment, { ...record, body: recordFor(other) }]],
+    ['forged record author', [markerComment, { ...record, user: { ...actionsBotUser, id: 1 } }]],
+    ['duplicated records', [markerComment, record, { ...record, id: 101 }]],
+    // 라벨 재부착 전에 쌓인 marker 여러 개는 어느 것도 고치지 않는다.
+    ['accumulated canonical markers', [markerComment, { ...markerComment, id: 98, body: markerFor(other) }, record]],
+  ]) {
+    const kept = runMarkerSync(workflow, { ...base, comments });
+    assert.equal(kept.status, 0, `${label}: ${kept.stderr}`);
+    assert.equal(kept.calls, '', `${label} must not reissue or look up anything`);
+    assert.equal(kept.authorized, false);
+  }
+
+  const current = runMarkerSync(workflow, { ...base, comments: [{ ...markerComment, body: markerFor(head) }] });
+  assert.equal(current.calls, '', 'an exact-head marker needs no API call');
+  assert.equal(current.authorized, true);
+
+  for (const mutation of ['fail', 'foreign']) {
+    const failed = runMarkerSync(workflow, { ...base, mutation });
+    assert.equal(failed.status, 0, `${mutation}: ${failed.stderr}`);
+    assert.equal(failed.mutations.length, 1, `${mutation} must not retry`);
+    assert.equal(failed.authorized, false);
+    assert.match(failed.stdout, /::warning::PR #85: authorization marker/);
+    assert.doesNotMatch(failed.stdout, /now covers/);
+  }
+});
+
+test('marker 복구는 marker가 없고 게이트 정의의 discovery가 commit set에 있으며 라벨 시점 이전 head일 때만 게시한다', async () => {
+  const workflow = await readWorkflow();
+  const previous = 'b'.repeat(40);
+  const head = 'c'.repeat(40);
+  const outside = 'f'.repeat(40);
+  const base = {
+    head,
+    comments: [],
+    reviews: [discoveryReview(previous)],
+    commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), committedAt(head, '2026-09-29T01:00:00Z')]],
+    events: [[labeledAt('2026-09-29T02:00:00Z')]],
+  };
+  const codeRabbit = {
+    author_association: 'NONE',
+    body: '',
+    user: { login: 'coderabbitai[bot]', id: 136622811, type: 'Bot' },
+  };
+  const posted = [`TOKEN=github-token gh api --method POST repos/o/r/issues/85/comments -f body=${markerFor(head)}`];
+  const hundred = (event) => Array.from({ length: 100 }, () => event);
+
+  for (const [label, options] of [
+    ['Aquila discovery on an earlier PR commit', {}],
+    // data 게이트는 신뢰 APPROVED도 discovery로 인정한다. 복구도 같은 정의를 쓴다.
+    ['trusted approval', { reviews: [discoveryReview(previous, { state: 'APPROVED', body: '' })] }],
+    ['CodeRabbit discovery', { reviews: [discoveryReview(head, codeRabbit)] }],
+    ['spoofed marker is not canonical', { comments: [{ id: 7, body: markerFor(previous), user: { ...actionsBotUser, id: 1 } }] }],
+    ['head committed at the label time', { events: [[labeledAt('2026-09-29T01:00:00Z')]] }],
+    ['relabel after the head', { events: [[labeledAt('2026-09-28T00:00:00Z'), labeledAt('2026-09-29T02:00:00Z')]] }],
+    ['force push before the label', { events: [[{ event: 'head_ref_force_pushed', created_at: '2026-09-29T01:30:00Z' }, labeledAt('2026-09-29T02:00:00Z')]] }],
+    ['a full first page followed by an empty page', { events: [hundred(labeledAt('2026-09-29T02:00:00Z')), []] }],
+  ]) {
+    const recovered = runMarkerSync(workflow, { ...base, ...options });
+    assert.equal(recovered.status, 0, `${label}: ${recovered.stderr}`);
+    assert.deepEqual(recovered.mutations, posted, `${label} must recover the labeled head`);
+    assert.equal(recovered.authorized, true, `${label} must authorize the current head in this run`);
+  }
+
+  for (const [label, options] of [
+    ['no review', { reviews: [] }],
+    ['non-canonical comment review', { reviews: [discoveryReview(previous, { body: 'looks fine' })] }],
+    ['untrusted author association', { reviews: [discoveryReview(previous, { author_association: 'NONE' })] }],
+    ['CodeRabbit impersonation', { reviews: [discoveryReview(head, { ...codeRabbit, user: { ...codeRabbit.user, id: 1 } })] }],
+  ]) {
+    const kept = runMarkerSync(workflow, { ...base, ...options });
+    assert.equal(kept.status, 0, `${label}: ${kept.stderr}`);
+    assert.equal(kept.calls, '', `${label} must not read commits, events or post a marker`);
+    assert.equal(kept.authorized, false);
+  }
+
+  for (const [label, options] of [
+    ['discovery outside the PR commit set', { reviews: [discoveryReview(outside)] }],
+    ['commit read failure', { commits: ['__FAIL__'] }],
+    ['head committed after the latest automerge label', { commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), committedAt(head, '2026-09-29T03:00:00Z')]] }],
+    ['events lookup failure', { events: ['__FAIL__'] }],
+    ['no events at all', { events: [[]] }],
+    ['only other label events', { events: [[labeledAt('2026-09-29T02:00:00Z', 'ready')]] }],
+    ['force push after the label', { events: [[labeledAt('2026-09-29T02:00:00Z'), { event: 'head_ref_force_pushed', created_at: '2026-09-29T02:30:00Z' }]] }],
+    ['unparseable label time', { events: [[labeledAt('yesterday')]] }],
+    ['head without a committer date', { commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), { sha: head }]] }],
+    ['event history beyond the bounded read', { events: [hundred(labeledAt('2026-09-29T02:00:00Z')), [labeledAt('2026-09-29T02:00:00Z')]] }],
+  ]) {
+    const kept = runMarkerSync(workflow, { ...base, ...options });
+    assert.equal(kept.status, 0, `${label}: ${kept.stderr}`);
+    assert.match(kept.stdout, /SYNC_RETURNED/);
+    assert.deepEqual(kept.mutations, [], `${label} must not recover a marker`);
+    assert.equal(kept.authorized, false);
+  }
+
+  const failed = runMarkerSync(workflow, { ...base, mutation: 'fail' });
+  assert.equal(failed.mutations.length, 1);
+  assert.equal(failed.authorized, false, 'a failed recovery must not authorize the head');
+});
+
+test('marker 동기화의 discovery 판정은 리뷰 게이트와 같은 정의를 쓰고 github.token만 쓴다', async () => {
+  const workflow = await readWorkflow();
+  const sync = workflow.match(MARKER_SYNC_RE)?.[1];
+  assert.ok(sync, 'authorization marker sync must stay testable');
+  const gate = workflow.match(
+    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" --argjson comments "\$\{comments\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
+  )?.[1];
+  assert.ok(gate, 'review gate program must stay testable');
+  const normalize = (text) => text.replace(/\s+/g, ' ').trim();
+  const definition = (source, name) => source.match(new RegExp(`def ${name}:[\\s\\S]*?;\\n`))?.[0];
+  assert.equal(normalize(definition(sync, 'is_coderabbit') ?? ''), normalize(definition(gate, 'is_coderabbit')));
+  const gateClause = gate.slice(gate.lastIndexOf('any($trusted[];') + 'any($trusted[];'.length, gate.lastIndexOf(')'));
+  const syncClause = definition(sync, 'is_gate_discovery')?.replace(/^def is_gate_discovery:/, '').replace(/;\n$/, '');
+  assert.ok(syncClause, 'marker sync must define is_gate_discovery');
+  assert.equal(normalize(syncClause), normalize(gateClause), 'recovery discovery must match the gate clause');
+  assert.ok(normalize(sync).includes(normalize(`.author_association == "OWNER" or
+                .author_association == "MEMBER" or
+                .author_association == "COLLABORATOR" or
+                is_coderabbit`)), 'recovery must trust the same authors as the gate');
+  assert.doesNotMatch(sync, /MERGE_GH_TOKEN/);
+  const loop = workflow.slice(workflow.indexOf('while IFS= read -r pr; do'));
+  const syncAt = loop.indexOf('\n            sync_authorization_marker\n');
+  assert.ok(syncAt > loop.indexOf('comments="$(read_pages "repos/${repo}/issues/${pr}/comments")"'), 'sync must follow the comment read');
+  assert.ok(syncAt < loop.indexOf('# review-state-filter-begin'), 'sync must precede the review gate');
+});
+
+// 큐 루프 전체를 돌리는 하네스. PR별 head·comments·reviews·commits·events·commit·compare 픽스처를 받는다.
+const runSyncQueue = (workflow, prs, { hasPat = false } = {}) => {
+  const queueLoop = workflow.match(/# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/)?.[1];
+  assert.ok(queueLoop, 'queue loop must stay testable');
+  const dir = mkdtempSync(join(tmpdir(), 'automerge-sync-queue-'));
+  const log = join(dir, 'gh.log');
+  for (const pr of prs) {
+    const head = pr.head;
+    writeFileSync(join(dir, `pr-${pr.number}.json`), JSON.stringify({
+      state: 'OPEN', isDraft: false, baseRefName: 'main', labels: [{ name: 'automerge' }],
+      headRefOid: head, mergeStateStatus: pr.mergeStateStatus,
+    }));
+    writeFileSync(join(dir, `reviews-${pr.number}.json`), JSON.stringify(pr.reviews));
+    writeFileSync(join(dir, `commits-${pr.number}.json`), JSON.stringify(pr.commits));
+    writeFileSync(join(dir, `comments-${pr.number}.json`), JSON.stringify(pr.comments));
+    for (const [page, events] of (pr.events ?? []).entries()) {
+      writeFileSync(join(dir, `events-${pr.number}-${page + 1}.json`), JSON.stringify(events));
+    }
+    if (pr.headParents) {
+      writeFileSync(join(dir, `commit-${head}.json`), JSON.stringify({ sha: head, parents: pr.headParents.map((sha) => ({ sha })) }));
+    }
+    for (const [baseSha, status] of Object.entries(pr.compare ?? {})) {
+      writeFileSync(join(dir, `compare-${baseSha}.json`), JSON.stringify({ status }));
+    }
+    writeFileSync(join(dir, `threads-${pr.number}.json`), JSON.stringify({
+      data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } },
+    }));
+    writeFileSync(join(dir, `checks-${head}.json`), JSON.stringify({
+      check_runs: [{ id: 1, name: 'Data contracts', conclusion: 'success', started_at: '2026-08-01T00:00:00Z' }],
+    }));
+    writeFileSync(join(dir, `statuses-${head}.json`), JSON.stringify([]));
+  }
+  const script = [
+    'set -euo pipefail',
+    `GH_LOG=${JSON.stringify(log)}`,
+    `FIX=${JSON.stringify(dir)}`,
+    ': > "$GH_LOG"',
+    'gh() {',
+    `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
+    '  local all="$*"',
+    '  case "$all" in',
+    `    *rate_limit*) printf '5000\\n' ;;`,
+    `    "pr list"*) printf '%s\\n' ${JSON.stringify(JSON.stringify(prs.map((p) => p.number)))} ;;`,
+    `    "api --method PUT repos/o/r/pulls/"*"/update-branch "*) printf 'TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"; printf '%s\\n' '{"message":"Updating pull request branch."}' ;;`,
+    `    "api --method PATCH repos/o/r/issues/comments/"*|"api --method POST repos/o/r/issues/"*"/comments "*) printf 'TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"; id=77; [[ "$all" == *"issues/comments/"* ]] && { id="\${all#*issues/comments/}"; id="\${id%% *}"; }; jq -nc --argjson id "$id" --arg body "\${all#*body=}" '{id: $id, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}' ;;`,
+    '    "api repos/o/r/commits/"*) h="${all#api repos/o/r/commits/}"; [[ -f "$FIX/commit-$h.json" ]] || return 1; cat "$FIX/commit-$h.json" ;;',
+    '    "api repos/o/r/compare/"*) b="${all#api repos/o/r/compare/}"; b="${b%%...*}"; [[ -f "$FIX/compare-$b.json" ]] || return 1; jq -r .status "$FIX/compare-$b.json" ;;',
+    '    *issues/*/events*) n="${all#*issues/}"; n="${n%%/events*}"; page="${all##*page=}"; [[ -f "$FIX/events-$n-$page.json" ]] || return 1; cat "$FIX/events-$n-$page.json" ;;',
+    '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
+    '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
+    '    *pulls/*/commits*) n="${all#*pulls/}"; n="${n%%/commits*}"; cat "$FIX/commits-$n.json" ;;',
+    '    *issues/*/comments*) n="${all#*issues/}"; n="${n%%/comments*}"; cat "$FIX/comments-$n.json" ;;',
+    '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
+    '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
+    '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
+    '    "pr merge"*) ;;',
+    `    *) printf 'unstubbed gh call: %s\\n' "$all" >&2; return 1 ;;`,
+    '  esac',
+    '}',
+    'sleep() { :; }',
+    'repo=o/r',
+    'owner=o',
+    'name=r',
+    'GH_TOKEN=github-token',
+    'MERGE_GH_TOKEN=merge-token',
+    `HAS_AUTOMERGE_PAT=${hasPat}`,
+    `required='[{"context":"Data contracts","integration_id":null}]'`,
+    'candidates="$(gh pr list)"',
+    budgetConstantsOf(workflow),
+    dedent(queueLoop),
+  ].join('\n');
+  const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+  const calls = existsSync(log) ? readFileSync(log, 'utf8') : '';
+  const merged = calls.match(/gh pr merge --squash (\d+) --repo/)?.[1];
+  return { status: result.status, mergedPr: merged ? Number(merged) : null, calls, stdout: result.stdout, stderr: result.stderr };
+};
+
+test('코디네이터 base 갱신 기록 뒤 다음 실행은 marker를 재발행해 병합하고, 세션 병합 커밋·라벨 이후 head는 승인하지 않는다', async () => {
+  const workflow = await readWorkflow();
+  const previous = 'b'.repeat(40);
+  const head = 'c'.repeat(40);
+  const mainParent = 'd'.repeat(40);
+  const markerComment = { id: 99, body: markerFor(previous), user: actionsBotUser };
+
+  // 1차 실행: 게이트를 통과한 BEHIND 후보(head P)를 PAT로 갱신하고 github.token으로 기록한다.
+  const requested = runSyncQueue(workflow, [{
+    number: 1, head: previous, mergeStateStatus: 'BEHIND',
+    comments: [markerComment], reviews: [discoveryReview(previous)], commits: [{ sha: previous }],
+  }], { hasPat: true });
+  assert.equal(requested.status, 0, requested.stderr);
+  assert.equal(requested.mergedPr, null);
+  assert.match(requested.calls, new RegExp(`update-branch -f expected_head_sha=${previous}\\nTOKEN=merge-token\\n`));
+  const recordBody = requested.calls.match(
+    /gh api --method POST repos\/o\/r\/issues\/1\/comments -f body=(<!-- Automerge base update requested: [0-9a-f]{40} -->)\nTOKEN=github-token\n/,
+  )?.[1];
+  assert.equal(recordBody, recordFor(previous), 'the accepted base update must be recorded for head P');
+
+  // 2차 실행: GitHub이 만든 병합 커밋 H(첫 부모 P)가 head다. 기록으로 marker를 재발행하고 병합한다.
+  const candidate = {
+    number: 1, head, mergeStateStatus: 'CLEAN',
+    comments: [markerComment, { id: 100, body: recordBody, user: actionsBotUser }],
+    reviews: [discoveryReview(previous)],
+    commits: [{ sha: previous }, { sha: head }],
+    headParents: [previous, mainParent],
+    compare: { [mainParent]: 'ahead' },
+  };
+  const reissued = runSyncQueue(workflow, [candidate]);
+  assert.equal(reissued.status, 0, reissued.stderr);
+  assert.match(reissued.calls, new RegExp(`gh api --method PATCH repos/o/r/issues/comments/99 -f body=${markerFor(head)}\\nTOKEN=github-token\\n`));
+  assert.equal(reissued.mergedPr, 1, 'the reissued marker must satisfy the unchanged review gate in the same run');
+
+  const sessionMerge = runSyncQueue(workflow, [{ ...candidate, comments: [markerComment] }]);
+  assert.equal(sessionMerge.status, 0, sessionMerge.stderr);
+  assert.doesNotMatch(sessionMerge.calls, /--method (PATCH|POST)/);
+  assert.equal(sessionMerge.mergedPr, null, 'a session-pushed merge commit must wait for a new label authorization');
+
+  const recovery = {
+    ...candidate,
+    comments: [],
+    headParents: undefined,
+    compare: undefined,
+    commits: [committedAt(previous, '2026-09-29T00:00:00Z'), committedAt(head, '2026-09-29T01:00:00Z')],
+  };
+  const pushedAfterLabel = runSyncQueue(workflow, [{ ...recovery, events: [[labeledAt('2026-09-29T00:30:00Z')]] }]);
+  assert.equal(pushedAfterLabel.status, 0, pushedAfterLabel.stderr);
+  assert.doesNotMatch(pushedAfterLabel.calls, /--method (PATCH|POST)/, 'a head pushed after the label must not be recovered');
+  assert.equal(pushedAfterLabel.mergedPr, null);
+
+  const recovered = runSyncQueue(workflow, [{ ...recovery, events: [[labeledAt('2026-09-29T02:00:00Z')]] }]);
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.match(recovered.calls, new RegExp(`gh api --method POST repos/o/r/issues/1/comments -f body=${markerFor(head)}\\nTOKEN=github-token\\n`));
+  assert.equal(recovered.mergedPr, 1, 'a recovered marker must satisfy the unchanged review gate in the same run');
 });
