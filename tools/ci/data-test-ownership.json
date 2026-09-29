@@ -602,6 +602,7 @@
     {"path":"tools/datapack/run-public-static-network-v2-operation.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":83},
     {"path":"tools/datapack/send-release-callback.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":302},
     {"path":"tools/datapack/server-route-bundle-build-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":12},
+    {"path":"tools/datapack/server-route-bundle-decompressed-budget.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":150},
     {"path":"tools/datapack/sign-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":677},
     {"path":"tools/datapack/source-candidate-endpoint-contract.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":251},
     {"path":"tools/datapack/source-governance.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":704},
