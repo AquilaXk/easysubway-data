@@ -371,10 +371,17 @@ test("nationwide progress does not change the routing launch scope hash", () => 
   const after = structuredClone(scope);
   before.nationwideRoadmapScope.missingCount = scope.nationwideRoadmapScope.launchRequiredCount;
   after.nationwideRoadmapScope.missingCount = 0;
-  // anti-cheat-allow: circular-oracle -- 테스트 "nationwide progress does not change the routing launch scope hash" 불변 규약 검증
+  const beforeReport = buildLaunchDenominatorReport(before, passingEvidence());
+  const afterReport = buildLaunchDenominatorReport(after, passingEvidence());
+  // 전국 진행도 변경은 실제로 관측되어야 한다(아니면 아래 동일성 단언이 공허해진다).
+  assert.notEqual(
+    beforeReport.scopes.nationwideRoadmapScope.sha256,
+    afterReport.scopes.nationwideRoadmapScope.sha256,
+  );
+  // anti-cheat-allow: circular-oracle -- 전체 scope에서 roadmap 진행도만 바뀐 두 보고서의 launch 해시가 같아야 한다는 격리 불변식
   assert.equal(
-    canonicalScopeHash(before.routingLaunchScope),
-    canonicalScopeHash(after.routingLaunchScope),
+    beforeReport.scopes.routingLaunchScope.sha256,
+    afterReport.scopes.routingLaunchScope.sha256,
   );
 });
 

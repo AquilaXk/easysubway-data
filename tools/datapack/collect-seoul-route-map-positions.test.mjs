@@ -202,9 +202,9 @@ test("capture time은 semantic identity를 바꾸지 않고 branch projection �
     csvBytes, topologySnapshot, topologySnapshotId: "capital-route-topology-20260814", now: new Date("2026-07-25T02:00:00.000Z"),
   });
   assert.notEqual(first.capturedAt, recaptured.capturedAt);
-  // anti-cheat-allow: circular-oracle -- 테스트 "capture time은 semantic identity를 바꾸지 않고 branch projection 변경은 layout identity를 바꾼다" 불변 규약 검증
+  // anti-cheat-allow: circular-oracle -- capture 시각만 다른 재수집은 semantic 입력 해시를 바꾸지 않는 불변식
   assert.equal(first.semanticInputSha256, recaptured.semanticInputSha256);
-  // anti-cheat-allow: circular-oracle -- 테스트 "capture time은 semantic identity를 바꾸지 않고 branch projection 변경은 layout identity를 바꾼다" 불변 규약 검증
+  // anti-cheat-allow: circular-oracle -- capture 시각만 다른 재수집은 semantic 출력 해시를 바꾸지 않는 불변식
   assert.equal(first.semanticOutputSha256, recaptured.semanticOutputSha256);
   const changedTopology = structuredClone(topologySnapshot);
   const line2 = changedTopology.lines.find(({ lineId }) => lineId === "seoul-2");

@@ -66,7 +66,7 @@ test("public static-network v2 producer emits byte-stable official observations 
   const value = await input();
   const first = buildPublicStaticNetworkV2Observations(value);
   const second = buildPublicStaticNetworkV2Observations(structuredClone(value));
-  // anti-cheat-allow: circular-oracle -- 테스트 "public static-network v2 producer emits byte-stable official observations and a current layout admission" 불변 규약 검증
+  // anti-cheat-allow: circular-oracle -- 같은 공식 입력을 다시 관측해도 observation이 바이트 단위로 같아야 하는 결정론성
   assert.deepEqual(second, first);
   assert.deepEqual(first.observations.map(({ sourceId }) => sourceId), ids);
   assert.equal(first.observations[0].schemaVersion, 2);

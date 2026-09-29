@@ -414,9 +414,9 @@ test("접근성 evidence identity는 실제 materialization 입력에만 결합�
     buildNow,
   });
 
-  // anti-cheat-allow: circular-oracle -- 테스트 "접근성 evidence identity는 실제 materialization 입력에만 결합한다" 불변 규약 검증
+  // anti-cheat-allow: circular-oracle -- materialization 입력과 무관한 변경은 스냅샷 SQL을 바꾸지 않는 격리 불변식
   assert.equal(unrelatedChange.sql, baseline.sql);
-  // anti-cheat-allow: circular-oracle -- 테스트 "접근성 evidence identity는 실제 materialization 입력에만 결합한다" 불변 규약 검증
+  // anti-cheat-allow: circular-oracle -- materialization 입력과 무관한 변경은 접근성 evidence를 바꾸지 않는 격리 불변식
   assert.deepEqual(unrelatedChange.evidence, baseline.evidence);
   const accessibilityOffset = Math.min(
     ...[
@@ -630,7 +630,7 @@ test("canonical gzip transport는 zlib encoder가 달라도 normalized SQL ident
   });
 
   assert.equal(sha256(canonical.gzipBytes), sha256(canonicalGzipBytes));
-  // anti-cheat-allow: circular-oracle -- 테스트 "canonical gzip transport는 zlib encoder가 달라도 normalized SQL identity에 결합한다" 불변 규약 검증
+  // anti-cheat-allow: circular-oracle -- gzip 인코더가 달라도 정규화 SQL의 스냅샷 해시가 같아야 하는 불변식
   assert.equal(canonical.evidence.snapshotSha256, generated.evidence.snapshotSha256);
   assert.equal(canonical.evidence.snapshotGzipSha256, sha256(canonicalGzipBytes));
   assert.equal(canonical.evidence.snapshotGzipByteSize, canonicalGzipBytes.length);

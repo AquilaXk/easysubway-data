@@ -446,7 +446,7 @@ test("preserved Seoul change capture는 canonical membership에 결속된 admiss
     canonicalPackBytes: packBytes,
   });
 
-  // anti-cheat-allow: circular-oracle -- 테스트 "preserved Seoul change capture는 canonical membership에 결속된 admission을 만든다" 불변 규약 검증
+  // anti-cheat-allow: circular-oracle -- 같은 입력을 다시 재검증해도 결과가 같아야 하는 결정론성
   assert.deepEqual(second, first);
   assert.deepEqual(first.revalidations.map(({ evidence }) => evidence.outcome), [
     "CONTENT_CHANGE_ADMITTED",
