@@ -3,11 +3,22 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, posix, resolve } from 'node:path';
+import { lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const TEST_PATH_PATTERN = /\.test\.[^/]+$/;
+// GitHub hosted runner는 4 vCPU다. 한 job 안에서 그보다 많은 test 프로세스를 돌리지 않는다.
+export const MAX_WORKERS_LIMIT = 4;
+// 한 파일이 이 시간보다 길면(기록된 durationMs 기준) top-level test 이름으로 나눠 병렬 실행한다.
+export const PARTITION_TARGET_MS = 120_000;
+// 직렬 그룹: 실제 저장소의 추적 파일을 다시 쓰는 테스트다. 같은 job의 다른 테스트가 그 파일을
+// 읽는 도중 잘린 내용을 보지 않도록 병렬 pool 앞에서 혼자 실행한다(삭제·skip하지 않는다).
+//  - prepare-nationwide-candidate-run: tools/datapack/release/의 candidate-build-spec.json,
+//    nationwide-candidate-preparation.json 등 7개 파일을 writeFiles: true로 다시 쓴다.
+export const EXCLUSIVE_TESTS = ['tools/datapack/prepare-nationwide-candidate-run.test.mjs'];
+const TOP_LEVEL_REPORTER = fileURLToPath(new URL('./data-test-top-level-reporter.mjs', import.meta.url));
 const SUPPORTED_TEST_PATTERN = /\.test\.mjs$/;
 const GIT_EXECUTABLE = '/usr/bin/git';
 const REGEX_PREFIX_KEYWORDS = new Set([
@@ -248,6 +259,172 @@ export function selectDurationShard(entries, shardCount, shardIndex) {
     throw new Error(`shard index must be between 1 and ${shardCount}`);
   }
   return shards[shardIndex - 1];
+}
+
+
+export function parseMaxWorkers(value) {
+  const parsed = typeof value === 'string' && /^[0-9]+$/.test(value) ? Number(value) : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_WORKERS_LIMIT) {
+    throw new Error(`--max-workers must be an integer from 1 to ${MAX_WORKERS_LIMIT}`);
+  }
+  return parsed;
+}
+
+function decodeStringLiteral(source, start) {
+  const quote = source[start];
+  if (quote !== '"' && quote !== "'") return null;
+  let value = '';
+  for (let index = start + 1; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === quote) return { value, end: index + 1 };
+    if (character === '\n') return null;
+    if (character !== '\\') {
+      value += character;
+      continue;
+    }
+    const next = source[index + 1];
+    const simple = { n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', "'": "'", '0': '\0' };
+    if (Object.hasOwn(simple, next)) {
+      value += simple[next];
+      index += 1;
+    } else if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(source.slice(index + 2, index + 6))) {
+      value += String.fromCharCode(Number.parseInt(source.slice(index + 2, index + 6), 16));
+      index += 5;
+    } else {
+      return null;
+    }
+  }
+  return null;
+}
+
+// 한 파일의 top-level test 이름을 정적으로 읽는다. 이름 목록이 파일의 top-level test 전체라고
+// 확신할 수 있는 모양일 때만 이름을 돌려준다(default import `test`, 0열 `test("literal", ...)`
+// 호출뿐, top-level suite·hook·test 멤버 호출 없음). 그 밖에는 null이고 파일 전체를 한 번에
+// 실행한다. 정적 판정이 놓친 test는 실행 시 remainder 검사가 드러낸다.
+export function extractTopLevelTestNames(source) {
+  const refuse = (reason) => ({ names: null, reason });
+  const imports = source.match(/^import[^;]*from\s+["']node:test["'];?\s*$/gm) ?? [];
+  if (imports.length !== 1 || !/^import test from ["']node:test["'];?\s*$/.test(imports[0])) {
+    return refuse('node:test must be a single default import named test');
+  }
+  const executable = executableJavaScript(source);
+  if (/^(?:describe|suite|it|before|after|beforeEach|afterEach)\s*\(/m.test(executable)) {
+    return refuse('top-level hook or suite is not partitionable');
+  }
+  if (/(?:^|[^.\w$])test\s*\.\s*[A-Za-z_$]/.test(executable)) {
+    return refuse('test member calls are not partitionable');
+  }
+  const names = [];
+  for (const match of executable.matchAll(/(^|[^.\w$])test\s*\(/gm)) {
+    const callStart = match.index + match[1].length;
+    const lineStart = executable.lastIndexOf('\n', callStart - 1) + 1;
+    if (callStart !== lineStart) return refuse('every test call must start at column 0');
+    let cursor = callStart + match[0].length - match[1].length;
+    while (/\s/.test(source[cursor] ?? '')) cursor += 1;
+    const literal = decodeStringLiteral(source, cursor);
+    if (literal === null) return refuse('top-level test name must be a plain string literal');
+    let after = literal.end;
+    while (/\s/.test(source[after] ?? '')) after += 1;
+    if (source[after] !== ',' && source[after] !== ')') {
+      return refuse('top-level test name must be a plain string literal');
+    }
+    names.push(literal.value);
+  }
+  if (names.length === 0) return refuse('no top-level tests');
+  return { names, reason: null };
+}
+
+// 실행 그룹: 파일 하나가 하나의 그룹이다. 긴 파일은 정적으로 읽은 top-level test 이름을
+// 라운드로빈으로 나눈 partition 여러 개로 실행한다. CI shard 배정은 그룹(파일) 단위라서 한
+// 파일의 partition은 항상 같은 job 안에 모이고, 그 job이 이름 집합을 대조한다.
+export function buildExecutionGroups(
+  entries,
+  { maxWorkers, sources, partitionTargetMs = PARTITION_TARGET_MS, exclusivePaths = EXCLUSIVE_TESTS },
+) {
+  return entries.map(({ path, durationMs }) => {
+    const group = { path, durationMs, partitions: null };
+    const wanted = Math.min(maxWorkers, Math.ceil(durationMs / partitionTargetMs));
+    if (maxWorkers < 2 || wanted < 2 || exclusivePaths.includes(path)) return group;
+    if (typeof sources?.[path] !== 'string') throw new Error(`missing test source: ${path}`);
+    const { names } = extractTopLevelTestNames(sources[path]);
+    if (names === null || names.length < 2) return group;
+    const count = Math.min(wanted, names.length);
+    const partitions = Array.from({ length: count }, (_, index) => ({ index: index + 1, names: [] }));
+    names.forEach((name, index) => partitions[index % count].names.push(name));
+    return { ...group, partitions };
+  });
+}
+
+export function planWorkerUnits(groups) {
+  const units = [];
+  for (const group of groups) {
+    if (group.partitions === null) {
+      units.push({ path: group.path, partition: null, estimatedDurationMs: group.durationMs });
+      continue;
+    }
+    for (const partition of group.partitions) {
+      units.push({
+        path: group.path,
+        partition,
+        estimatedDurationMs: Math.max(1, Math.round(group.durationMs / group.partitions.length)),
+      });
+    }
+  }
+  return units.sort(
+    (left, right) =>
+      right.estimatedDurationMs - left.estimatedDurationMs ||
+      compareStrings(left.path, right.path) ||
+      (left.partition?.index ?? 0) - (right.partition?.index ?? 0),
+  );
+}
+
+function nameMultiset(names) {
+  const counts = new Map();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return counts;
+}
+
+export function verifyPartitionCoverage(group, executedPerPartition, remainderNames) {
+  if (remainderNames.length > 0) {
+    throw new Error(
+      `${group.path}: top-level tests ran outside the static partition names: ${remainderNames.join(', ')}`,
+    );
+  }
+  const expected = nameMultiset(group.partitions.flatMap(({ names }) => names));
+  const actual = nameMultiset(executedPerPartition.flat());
+  const same =
+    expected.size === actual.size &&
+    [...expected].every(([name, count]) => actual.get(name) === count);
+  if (!same) throw new Error(`${group.path}: partition coverage mismatch`);
+}
+
+// required class의 모든 테스트가 profile 실행 또는 기본 shard 실행 중 정확히 한 곳에서 돈다.
+export function validateExecutionCoverage({ tests, className, profiles, defaultShardCount }) {
+  const plan = [];
+  const selected = tests.filter(({ classes }) => classes?.includes(className));
+  for (const entry of selected) {
+    const profile = entry.executionProfile ?? null;
+    const runs =
+      profile === null
+        ? Number.isInteger(defaultShardCount) && defaultShardCount >= 1 ? 1 : 0
+        : profiles.filter((name) => name === profile).length;
+    if (runs === 0) throw new Error(`required test is not executed: ${entry.path}`);
+    if (runs > 1) throw new Error(`required test is executed more than once: ${entry.path}`);
+    plan.push({ path: entry.path, executionProfile: profile, runs });
+  }
+  const defaults = selected.filter(({ executionProfile }) => (executionProfile ?? null) === null);
+  if (defaults.length > 0) {
+    const shards = buildDurationShards(
+      defaults.map(({ path, durationMs }) => ({ path, durationMs: durationMs ?? 1 })),
+      defaultShardCount,
+    );
+    const counts = nameMultiset(shards.flatMap(({ tests: paths }) => paths));
+    for (const { path } of defaults) {
+      if (counts.get(path) !== 1) throw new Error(`default shard coverage mismatch: ${path}`);
+    }
+    if (counts.size !== defaults.length) throw new Error('default shards contain unknown tests');
+  }
+  return plan;
 }
 
 export function validateOwnership({
@@ -491,7 +668,9 @@ export function validateOwnership({
       !Array.isArray(rawDefaultProfileShards) &&
       Number.isInteger(rawDefaultProfileShards.count) &&
       rawDefaultProfileShards.count >= 2 &&
-      rawDefaultProfileShards.maxWorkers === 1;
+      Number.isInteger(rawDefaultProfileShards.maxWorkers) &&
+      rawDefaultProfileShards.maxWorkers >= 1 &&
+      rawDefaultProfileShards.maxWorkers <= MAX_WORKERS_LIMIT;
     if (hasDefaultProfileShards && !defaultProfileShardsValid) {
       issue(issues, 'INVALID_DEFAULT_PROFILE_SHARDS', workflow.file, className);
     }
@@ -579,6 +758,20 @@ export function validateOwnership({
       }
       if (/continue-on-error:\s*true/.test(workflowStepContaining(source, invocation))) {
         issue(issues, 'WORKFLOW_WARNING_ONLY', workflow.file, invocation);
+      }
+    }
+    if (defaultProfileShardsValid) {
+      try {
+        validateExecutionCoverage({
+          tests: [...manifestByPath.values()],
+          className,
+          profiles: profileInvocations
+            .filter((invocation) => typeof invocation === 'string')
+            .map((invocation) => /--profile (\S+)/.exec(invocation)?.[1] ?? null),
+          defaultShardCount: rawDefaultProfileShards.count,
+        });
+      } catch (error) {
+        issue(issues, 'EXECUTION_COVERAGE_MISMATCH', workflow.file, error.message);
       }
     }
     for (const fixtureName of workflow.fixtures ?? []) {
@@ -795,7 +988,7 @@ export function verifyRepository({
   executionProfile = null,
   fixtureClass = null,
 }) {
-  return validateOwnership(
+  const verification = validateOwnership(
     repositoryInputs({
       repoRoot,
       manifestPath,
@@ -806,6 +999,16 @@ export function verifyRepository({
       fixtureClass,
     }),
   );
+  // 직렬 그룹 목록이 실제 소유 테스트를 가리키지 않으면(이름 변경·삭제) 병렬 충돌 방지가 조용히
+  // 사라진다. 저장소 검증에서 닫힌 상태로 실패한다.
+  const owned = new Set(verification.tests.map(({ path }) => path));
+  const stale = EXCLUSIVE_TESTS.filter((path) => !owned.has(path));
+  if (stale.length > 0) {
+    throw new OwnershipValidationError(
+      stale.map((path) => ({ code: 'EXCLUSIVE_TEST_NOT_OWNED', path, detail: 'serial group entry is not an owned test' })),
+    );
+  }
+  return verification;
 }
 
 export function selectExecutionTests(tests, className, executionProfile, defaultProfile) {
@@ -855,6 +1058,139 @@ async function runPool(items, workerCount, worker) {
   }
   await Promise.all(Array.from({ length: Math.min(workerCount, items.length) }, consume));
   return results;
+}
+
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+}
+
+function runTopLevelUnit(repoRoot, unit) {
+  const startedAt = Date.now();
+  const reportDir = mkdtempSync(join(tmpdir(), 'data-test-unit-'));
+  const reportPath = join(reportDir, 'top-level.jsonl');
+  const selection = unit.remainder
+    ? unit.remainder.map((name) => `--test-skip-pattern=^${escapeRegExp(name)}$`)
+    : (unit.partition?.names ?? []).map((name) => `--test-name-pattern=^${escapeRegExp(name)}$`);
+  const args = [
+    '--test',
+    '--test-concurrency=1',
+    '--test-reporter=spec',
+    '--test-reporter-destination=stdout',
+    `--test-reporter=${TOP_LEVEL_REPORTER}`,
+    `--test-reporter-destination=${reportPath}`,
+    ...selection,
+    unit.path,
+  ];
+  return new Promise((resolvePromise) => {
+    const chunks = [];
+    // 이 도구가 node:test 안에서 호출되면 NODE_TEST_CONTEXT가 상속돼 자식 runner가 reporter 대신
+    // 부모 프로토콜로 출력한다. 자식은 항상 독립 runner로 띄운다.
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const child = spawn(process.execPath, args, { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', (chunk) => chunks.push(chunk));
+    child.stderr.on('data', (chunk) => chunks.push(chunk));
+    const finish = (result) => {
+      let executed = [];
+      let reportError = null;
+      try {
+        executed = readFileSync(reportPath, 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line).name);
+      } catch (error) {
+        reportError = error.message;
+      }
+      rmSync(reportDir, { recursive: true, force: true });
+      resolvePromise({
+        ...result,
+        executed,
+        reportError,
+        log: Buffer.concat(chunks).toString('utf8'),
+        durationMs: Math.max(1, Date.now() - startedAt),
+      });
+    };
+    child.once('error', (error) => finish({ ok: false, code: null, signal: null, error: error.message }));
+    child.once('close', (code, signal) => finish({ ok: code === 0 && signal === null, code, signal }));
+  });
+}
+
+function unitLabel(unit) {
+  if (unit.remainder) return `${unit.path} [remainder]`;
+  if (unit.partition) return `${unit.path} [partition ${unit.partition.index}/${unit.partitionCount}]`;
+  return unit.path;
+}
+
+// 그룹을 unit(파일 전체 또는 partition, partition 파일마다 remainder 1개)으로 펼쳐 최대
+// maxWorkers개 프로세스로 긴 unit부터 실행한다. 각 unit의 출력은 끝난 뒤 한 덩어리로 쓴다.
+// partition 파일은 실행된 top-level 이름이 정적 이름 목록과 정확히 같아야 하고 remainder는
+// 아무 test도 실행하지 않아야 한다. 하나라도 어긋나거나 프로세스가 실패하면 ok=false다.
+export async function runExecutionGroups({
+  repoRoot,
+  groups,
+  maxWorkers,
+  exclusivePaths = EXCLUSIVE_TESTS,
+  output = process.stdout,
+}) {
+  const units = planWorkerUnits(groups).map((unit) => ({
+    ...unit,
+    partitionCount: groups.find(({ path }) => path === unit.path)?.partitions?.length ?? null,
+  }));
+  const remainders = groups
+    .filter(({ partitions }) => partitions !== null)
+    .map((group) => ({
+      path: group.path,
+      partition: null,
+      remainder: group.partitions.flatMap(({ names }) => names),
+      estimatedDurationMs: 0,
+    }));
+  const execute = async (unit) => {
+    const result = await runTopLevelUnit(repoRoot, unit);
+    output.write(`\n===== ${unitLabel(unit)} (${result.durationMs}ms, exit ${result.code}) =====\n${result.log}`);
+    return { unit, ...result };
+  };
+  // 직렬 그룹은 다른 어떤 unit과도 겹치지 않게 pool 앞에서 하나씩 실행한다.
+  const exclusive = units.filter(({ path }) => exclusivePaths.includes(path));
+  const results = [];
+  for (const unit of exclusive) results.push(await execute(unit));
+  const queue = [...units.filter((unit) => !exclusive.includes(unit)), ...remainders];
+  results.push(...(await runPool(queue, maxWorkers, execute)));
+  const errors = [];
+  for (const result of results) {
+    if (!result.ok) errors.push(`${unitLabel(result.unit)} failed (code ${result.code}, signal ${result.signal})`);
+    if (result.reportError) errors.push(`${unitLabel(result.unit)} top-level report unreadable: ${result.reportError}`);
+  }
+  for (const group of groups.filter(({ partitions }) => partitions !== null)) {
+    const own = results.filter(({ unit }) => unit.path === group.path);
+    try {
+      verifyPartitionCoverage(
+        group,
+        own.filter(({ unit }) => unit.partition !== null).map(({ executed }) => executed),
+        own.filter(({ unit }) => unit.remainder).flatMap(({ executed }) => executed),
+      );
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  const executed = results
+    .filter(({ unit }) => !unit.remainder)
+    .flatMap(({ unit, executed: names }) => names.map((name) => `${unit.path}\t${name}`))
+    .sort(compareStrings);
+  return {
+    ok: errors.length === 0,
+    errors,
+    executed,
+    units: results
+      .filter(({ unit }) => !unit.remainder)
+      .map(({ unit, durationMs, ok }) => ({
+        path: unit.path,
+        partition: unit.partition?.index ?? null,
+        estimatedDurationMs: unit.estimatedDurationMs,
+        durationMs,
+        ok,
+      })),
+  };
 }
 
 async function measureClass({
@@ -936,26 +1272,15 @@ async function runOwnedClass({
     defaultProfile,
   );
   if (selected.length === 0) throw new Error(`execution class has no tests: ${className}`);
-  const localShardCount = Math.min(maxWorkers, selected.length);
-  const shards =
-    shardCount !== null
-      ? [selectDurationShard(selected, shardCount, shardIndex)]
-      : localShardCount === 1
-        ? [
-            {
-              index: 1,
-              estimatedDurationMs: null,
-              tests: selected.map(({ path }) => path).sort(compareStrings),
-            },
-          ]
-        : buildDurationShards(selected, localShardCount);
-  const results = await Promise.all(
-    shards.map(async (shard) => ({
-      ...shard,
-      ...(await runNodeTest(repoRoot, shard.tests)),
-    })),
+  // CI shard는 파일 단위로 기록된 소요 시간에 맞춰 나눈다(분할 계약은 verify가 검사한다).
+  const shardPaths =
+    shardCount !== null ? new Set(selectDurationShard(selected, shardCount, shardIndex).tests) : null;
+  const assigned = selected.filter(({ path }) => shardPaths === null || shardPaths.has(path));
+  const sources = Object.fromEntries(
+    assigned.map(({ path }) => [path, readFileSync(resolve(repoRoot, path), 'utf8')]),
   );
-  const failed = results.filter(({ ok }) => !ok);
+  const groups = buildExecutionGroups(assigned, { maxWorkers, sources });
+  const result = await runExecutionGroups({ repoRoot, groups, maxWorkers });
   process.stdout.write(
     `${JSON.stringify({
       event: 'data-test-owned-run',
@@ -963,20 +1288,16 @@ async function runOwnedClass({
       executionProfile,
       inventoryDigest: verification.inventoryDigest,
       total: selected.length,
+      assigned: assigned.length,
       shardCount,
       shardIndex,
-      shards: results.map(({ index, tests, estimatedDurationMs, durationMs, ok, code, signal }) => ({
-        index,
-        count: tests.length,
-        estimatedDurationMs,
-        durationMs,
-        ok,
-        code,
-        signal,
-      })),
+      maxWorkers,
+      topLevelTests: result.executed.length,
+      units: result.units,
+      errors: result.errors,
     })}\n`,
   );
-  if (failed.length > 0) throw new Error(`${failed.length} owned-test shard(s) failed`);
+  if (!result.ok) throw new Error(`${result.errors.length} owned-test execution error(s)`);
 }
 
 export function combineDurationEvidence({ verification, evidence, expectedHead, className }) {
@@ -1099,10 +1420,7 @@ async function main() {
   if (executionProfile !== null && defaultProfile) {
     throw new Error('--profile and --default-profile are mutually exclusive');
   }
-  const maxWorkers = Number.parseInt(optionValue(args, '--max-workers', '2'), 10);
-  if (!Number.isInteger(maxWorkers) || maxWorkers < 1 || maxWorkers > 2) {
-    throw new Error('--max-workers must be 1 or 2');
-  }
+  const maxWorkers = parseMaxWorkers(optionValue(args, '--max-workers', '2'));
   if (command === 'measure') {
     const outputPath = optionValue(args, '--output');
     if (!outputPath) throw new Error('measure requires --output');

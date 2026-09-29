@@ -9,9 +9,19 @@ on:
   push:
     branches: [main]
 
+# 같은 PR에 새 head가 올라오면 이전 head의 검증은 쓸모가 없으므로 PR 실행만 취소한다.
+# main push와 dispatch는 실행마다 고유 그룹이라 서로 취소하지 않는다(병합 후 전체 검증 보존).
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  contracts_shard_1:
-    name: Data contracts (shard 1/5)
+  # 소유 required-pr 테스트는 네 갈래로 나눠 동시에 돈다. mobile-v19 profile, capital live-chain
+  # OCI context, 기본 profile 4 shard다. 각 job 안에서도 러너 4 vCPU만큼 test 프로세스를 병렬로
+  # 돌리고, 오래 걸리는 파일은 top-level test 이름으로 나눈다(data-test-discovery가 실행된 이름
+  # 집합을 정적 목록과 대조해 누락·중복이면 실패한다). 테스트를 빼거나 건너뛰지 않는다.
+  contracts_mobile_v19:
+    name: Data contracts (mobile-v19)
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -75,7 +85,7 @@ jobs:
           git diff --exit-code -- tools/datapack/itx-cheongchun-topology-evidence.json
 
       - name: Verify and run current Mobile v19 owned required tests
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 4
 
       - name: Re-verify current Mobile fixture for owned tests
         shell: bash
@@ -110,10 +120,122 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
+  contracts_live_chain:
+    name: Data contracts (capital live-chain OCI)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: 23f4262087af99ff49e120707f7de317666679ef
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
       - name: Verify current capital live-chain OCI contracts
         run: |
           node --test tools/datapack/run-current-capital-live-chain.test.mjs
 
+  contracts_shard_1:
+    name: Data contracts (shard 1/4)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: 23f4262087af99ff49e120707f7de317666679ef
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
       - name: Set up Chrome for browser-dependent required tests
         id: setup-chrome
         uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
@@ -121,14 +243,14 @@ jobs:
           chrome-version: "152.0.7977.54"
           install-dependencies: true
 
-      - name: Verify and run pristine Mobile owned required tests (shard 1/5)
+      - name: Verify and run pristine Mobile owned required tests (shard 1/4)
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 1 --shard-count 5 --shard-index 1
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 1
 
   contracts_shard_2:
-    name: Data contracts (shard 2/5)
+    name: Data contracts (shard 2/4)
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -190,14 +312,14 @@ jobs:
           chrome-version: "152.0.7977.54"
           install-dependencies: true
 
-      - name: Verify and run pristine Mobile owned required tests (shard 2/5)
+      - name: Verify and run pristine Mobile owned required tests (shard 2/4)
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 1 --shard-count 5 --shard-index 2
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 2
 
   contracts_shard_3:
-    name: Data contracts (shard 3/5)
+    name: Data contracts (shard 3/4)
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -259,14 +381,14 @@ jobs:
           chrome-version: "152.0.7977.54"
           install-dependencies: true
 
-      - name: Verify and run pristine Mobile owned required tests (shard 3/5)
+      - name: Verify and run pristine Mobile owned required tests (shard 3/4)
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 1 --shard-count 5 --shard-index 3
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 3
 
   contracts_shard_4:
-    name: Data contracts (shard 4/5)
+    name: Data contracts (shard 4/4)
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -328,86 +450,17 @@ jobs:
           chrome-version: "152.0.7977.54"
           install-dependencies: true
 
-      - name: Verify and run pristine Mobile owned required tests (shard 4/5)
+      - name: Verify and run pristine Mobile owned required tests (shard 4/4)
         env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 1 --shard-count 5 --shard-index 4
-
-  contracts_shard_5:
-    name: Data contracts (shard 5/5)
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Checkout pinned Mobile fixture
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: AquilaXk/easysubway-mobile
-          ref: 23f4262087af99ff49e120707f7de317666679ef
-          path: .external/mobile
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Stage pinned Mobile fixture
-        shell: bash
-        run: |
-          set -euo pipefail
-          expected_revision="23f4262087af99ff49e120707f7de317666679ef"
-          source=".external/mobile/apps/mobile"
-          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
-
-          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
-          [[ "${actual_revision}" == "${expected_revision}" ]]
-          [[ -d "${source}" && ! -L "${source}" ]]
-          if find "${source}" -type l -print -quit | grep -q .; then
-            echo "pinned Mobile fixture contains a symlink" >&2
-            exit 1
-          fi
-          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
-          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
-          [[ "${actual_sha256}" == "${expected_sha256}" ]]
-          test ! -e apps/mobile
-          test ! -L apps/mobile
-
-          if [[ -e apps || -L apps ]]; then
-            [[ -d apps && ! -L apps ]]
-          else
-            mkdir apps
-          fi
-          cp -a "${source}" apps/mobile
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "24.19.0"
-
-      - name: Set up Chrome for browser-dependent required tests
-        id: setup-chrome
-        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
-        with:
-          chrome-version: "152.0.7977.54"
-          install-dependencies: true
-
-      - name: Verify and run pristine Mobile owned required tests (shard 5/5)
-        env:
-          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 1 --shard-count 5 --shard-index 5
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 4
 
   contracts:
     name: Data contracts
     permissions:
       contents: read
-    needs: [contracts_shard_1, contracts_shard_2, contracts_shard_3, contracts_shard_4, contracts_shard_5]
+    needs: [contracts_mobile_v19, contracts_live_chain, contracts_shard_1, contracts_shard_2, contracts_shard_3, contracts_shard_4]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -415,15 +468,17 @@ jobs:
       - name: Require successful pristine Mobile required-test shards
         shell: bash
         env:
+          MOBILE_V19_RESULT: ${{ needs.contracts_mobile_v19.result }}
+          LIVE_CHAIN_RESULT: ${{ needs.contracts_live_chain.result }}
           SHARD_1_RESULT: ${{ needs.contracts_shard_1.result }}
           SHARD_2_RESULT: ${{ needs.contracts_shard_2.result }}
           SHARD_3_RESULT: ${{ needs.contracts_shard_3.result }}
           SHARD_4_RESULT: ${{ needs.contracts_shard_4.result }}
-          SHARD_5_RESULT: ${{ needs.contracts_shard_5.result }}
         run: |
           set -euo pipefail
+          [[ "${MOBILE_V19_RESULT}" == "success" ]]
+          [[ "${LIVE_CHAIN_RESULT}" == "success" ]]
           [[ "${SHARD_1_RESULT}" == "success" ]]
           [[ "${SHARD_2_RESULT}" == "success" ]]
           [[ "${SHARD_3_RESULT}" == "success" ]]
           [[ "${SHARD_4_RESULT}" == "success" ]]
-          [[ "${SHARD_5_RESULT}" == "success" ]]
