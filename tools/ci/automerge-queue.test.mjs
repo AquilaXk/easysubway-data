@@ -595,6 +595,127 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorizatio
   );
 });
 
+test('리뷰 게이트는 고정 신원 claude[bot]의 COMMENTED Review를 frozen discovery로 인정한다 (#817)', async () => {
+  // claude-code-review.yml이 게시하는 Claude Code 공식 리뷰는 claude[bot] 신원의 COMMENTED Review다.
+  // CodeRabbit과 같은 NONE association 예외를 고정 tuple(login·id·type·association)로만 연다.
+  const workflow = await readWorkflow();
+  const reviewProgram = workflow.match(
+    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" --argjson comments "\$\{comments\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
+  )?.[1];
+  assert.ok(reviewProgram, 'review state jq program must stay testable');
+
+  const CLAUDE ={ login: 'claude[bot]', id: 209825114, type: 'Bot' };
+  const marker = (sha = 'head') => ({
+    body: `<!-- Automerge frozen discovery authorization: ${sha} -->`,
+    user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+  });
+  const review = (id, state, overrides = {}) => ({
+    id,
+    state,
+    submitted_at: `2026-09-29T00:00:${String(id).padStart(2, '0')}Z`,
+    commit_id: 'head',
+    author_association: 'OWNER',
+    body: '',
+    user: { login: 'reviewer' },
+    ...overrides,
+  });
+  const claudeReview = (id, overrides = {}) =>
+    review(id, 'COMMENTED', { author_association: 'NONE', user: CLAUDE, ...overrides });
+  const gate = (reviews, comments = [marker()]) => {
+    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', '--argjson', 'comments', JSON.stringify(comments), reviewProgram], {
+      input: JSON.stringify([reviews]),
+      encoding: 'utf8',
+    });
+    // 0/1만 판정이다. 컴파일·런타임 오류가 "차단 성공"으로 새지 않게 한다.
+    assert.ok(
+      result.status === 0 || result.status === 1,
+      `jq 하네스 파손 (status ${result.status}): ${result.stderr}`,
+    );
+    return result.status === 0 ? 'pass' : 'blocked';
+  };
+
+  // 인정: 본문 마커 없이 고정 봇 신원만으로 discovery가 된다.
+  assert.equal(gate([claudeReview(1)]), 'pass', '빈 본문(inline wrapper) claude[bot] Review');
+  assert.equal(
+    gate([claudeReview(1, { body: '🔴 0 · 🟡 0 · 🟣 0\n변경 범위를 검토했고 finding이 없습니다.' })]),
+    'pass',
+    '요약 본문이 있는 claude[bot] Review',
+  );
+  // finding fix push 뒤 라벨을 붙이면 prior head의 claude[bot] Review를 exact-head marker로 승계한다.
+  assert.equal(
+    gate([claudeReview(1, { commit_id: 'previous-head' })]),
+    'pass',
+    'prior head claude[bot] Review + current head marker',
+  );
+  // 후속 OWNER의 마커 없는 COMMENTED(로컬 /code-review --comment 등)는 discovery를 지우지 않는다.
+  assert.equal(
+    gate([claudeReview(1), review(2, 'COMMENTED')]),
+    'pass',
+    '후속 OWNER COMMENTED',
+  );
+  // 같은 reviewer의 이후 APPROVED는 자기 change request를 해제한다(기존 규칙 유지).
+  assert.equal(
+    gate([claudeReview(1), review(2, 'CHANGES_REQUESTED'), review(3, 'APPROVED')]),
+    'pass',
+    '해제된 change request',
+  );
+
+  // exact-head marker 요구는 claude[bot]에도 그대로다.
+  assert.equal(gate([claudeReview(1)], []), 'blocked', 'marker 없음');
+  assert.equal(gate([claudeReview(1)], [marker('different-head')]), 'blocked', '다른 head marker');
+
+  // 신원 tuple 중 하나라도 어긋나면 거부한다.
+  assert.equal(gate([claudeReview(1, { user: { ...CLAUDE, id: 999 } })]), 'blocked', 'login만 같고 id가 다름');
+  assert.equal(gate([claudeReview(1, { user: { ...CLAUDE, type: 'User' } })]), 'blocked', 'type User');
+  assert.equal(
+    gate([claudeReview(1, { user: { login: 'claude', id: 209825114, type: 'Bot' } })]),
+    'blocked',
+    'id만 같고 login이 다름',
+  );
+  assert.equal(
+    gate([claudeReview(1, { user: { login: 'claude-bot[bot]', id: 55, type: 'Bot' } })]),
+    'blocked',
+    '유사 봇 login',
+  );
+  assert.equal(
+    gate([claudeReview(1, { author_association: 'CONTRIBUTOR' })]),
+    'blocked',
+    'author_association CONTRIBUTOR',
+  );
+  assert.equal(
+    gate([claudeReview(1, { author_association: 'MEMBER' })]),
+    'blocked',
+    'author_association MEMBER(신뢰된 association이어도 마커 없는 COMMENTED는 discovery가 아님)',
+  );
+  assert.equal(
+    gate([claudeReview(1, { author_association: 'NONE', user: null })]),
+    'blocked',
+    'user null',
+  );
+
+  // COMMENTED만 discovery다. 봇 APPROVED는 인정하지 않는다.
+  assert.equal(gate([claudeReview(1, { state: 'APPROVED' })]), 'blocked', 'claude[bot] APPROVED');
+  // claude[bot]과 다른 reviewer의 활성 change request는 막는다.
+  assert.equal(
+    gate([claudeReview(1), claudeReview(2, { state: 'CHANGES_REQUESTED' })]),
+    'blocked',
+    'claude[bot] CHANGES_REQUESTED',
+  );
+  assert.equal(
+    gate([claudeReview(1), review(2, 'CHANGES_REQUESTED', { commit_id: 'previous-head', user: { login: 'reviewer-two' } })]),
+    'blocked',
+    '다른 reviewer의 prior head change request',
+  );
+  assert.equal(
+    gate([claudeReview(1), review(2, 'CHANGES_REQUESTED'), review(3, 'COMMENTED')]),
+    'blocked',
+    '후속 빈 COMMENTED가 change request를 지우지 않는다',
+  );
+
+  // 신원 판정은 이름 붙은 정의 하나로 유지해 claude-code-review.yml 검증 step과 대조할 수 있게 한다.
+  assert.match(reviewProgram, /def is_claude:/);
+});
+
 test('required context 판정은 대기와 실패를 구분하고 뒤 페이지 status까지 본다', async () => {
   const workflow = await readWorkflow();
 
