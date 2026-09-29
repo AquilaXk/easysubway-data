@@ -17,10 +17,11 @@ test("정본 build contract의 parsed object와 폐쇄 schema가 일치한다", 
   assert.deepEqual(schema.const, contract);
   assert.equal(
     sha256(Buffer.from(canonicalJson(contract), "utf8")),
-    "8b67bc83a9e7e45a04361b1e021965f790673fdb5ebc611a70764d7a38e9a106",
+    "066ec3708d79e332d670112eb4db0eabf92d2badf7cfe48969af61c7a31fa54c",
   );
   assert.deepEqual(Object.keys(contract), [
-    "schemaVersion", "artifactKind", "manifestLifecycle", "capitalMapInput", "compressionProfile", "metadata",
+    "schemaVersion", "artifactKind", "maxTotalDecompressedBytes", "maxTotalDecompressedBytesDescription",
+    "manifestLifecycle", "capitalMapInput", "compressionProfile", "metadata",
   ]);
   assert.equal(contract.schemaVersion, 1);
   assert.equal(contract.artifactKind, "server-route-bundle-build-contract");

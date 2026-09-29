@@ -82,6 +82,57 @@ const FIXED_INPUTS = {
 };
 const execFileAsync = promisify(execFile);
 
+export const E_SERVER_BUNDLE_DECOMPRESSED_BUDGET = "E_SERVER_BUNDLE_DECOMPRESSED_BUDGET";
+
+export function evaluateDecompressedBudget(payloadBytesByComponent, maxTotalBytes) {
+  if (!Number.isSafeInteger(maxTotalBytes) || maxTotalBytes <= 0) {
+    throw new Error("maxTotalBytes must be a positive integer");
+  }
+  const components = {};
+  let totalBytes = 0;
+  for (const component of COMPONENTS) {
+    const compressedBytes = payloadBytesByComponent[component];
+    if (!compressedBytes || !Buffer.isBuffer(compressedBytes)) {
+      throw new Error(`missing or invalid payload bytes for ${component}`);
+    }
+    let decompressed;
+    try {
+      decompressed = zstdDecompressSync(compressedBytes);
+    } catch (cause) {
+      throw new Error(`failed to decompress ${component} payload`, { cause });
+    }
+    const byteLength = decompressed.length;
+    components[component] = byteLength;
+    totalBytes += byteLength;
+  }
+
+  const headroomBytes = maxTotalBytes - totalBytes;
+  const headroomRatio = maxTotalBytes === 0 ? 0 : headroomBytes / maxTotalBytes;
+
+  if (totalBytes > maxTotalBytes) {
+    const error = new Error(
+      `${E_SERVER_BUNDLE_DECOMPRESSED_BUDGET}: total decompressed bytes ${totalBytes} exceeds budget ${maxTotalBytes} (headroom: ${headroomBytes} bytes)`,
+    );
+    error.code = E_SERVER_BUNDLE_DECOMPRESSED_BUDGET;
+    error.details = {
+      components,
+      totalBytes,
+      maxTotalBytes,
+      headroomBytes,
+      headroomRatio,
+    };
+    throw error;
+  }
+
+  return {
+    components,
+    totalBytes,
+    maxTotalBytes,
+    headroomBytes,
+    headroomRatio,
+  };
+}
+
 export async function buildServerRouteBundleFinalEvidence(input) {
   if (input.beforeReleaseOutput !== undefined && typeof input.beforeReleaseOutput !== "function") {
     throw new Error("beforeReleaseOutput must be a function");
@@ -99,7 +150,8 @@ export async function buildServerRouteBundleFinalEvidence(input) {
 
   const fixed = await readFixedInputs(repositoryRoot);
   const candidateId = requiredRaw(fixed.buildSpec.value.candidateId, "build spec candidate id");
-  const artifact = await inspectArtifact(artifactRoot, fixed);
+  const maxTotalDecompressedBytes = input.maxTotalDecompressedBytes ?? fixed.buildContract.value.maxTotalDecompressedBytes;
+  const artifact = await inspectArtifact(artifactRoot, fixed, maxTotalDecompressedBytes);
   const sourceFreshness = evaluateSourceFreshness({ fixed, artifact, evaluationAt });
   const stationLineInput = validateStationLineInput(input.stationLineInput, artifact, candidateId);
   const materialization = materializeStationLineAccessibility({
@@ -389,7 +441,7 @@ function assertReleaseCandidateFresh(freshUntil, now) {
   }
 }
 
-async function inspectArtifact(artifactRoot, fixed) {
+async function inspectArtifact(artifactRoot, fixed, maxTotalDecompressedBytes = fixed.buildContract.value.maxTotalDecompressedBytes) {
   const rootEntries = (await readdir(artifactRoot)).sort(bytewise);
   const signed = canonicalJson(rootEntries) === canonicalJson([...SIGNED_ARTIFACT_ROOT_FILES].sort(bytewise));
   if (!signed && canonicalJson(rootEntries) !== canonicalJson([...KEYLESS_ARTIFACT_ROOT_FILES].sort(bytewise))) {
@@ -432,6 +484,11 @@ async function inspectArtifact(artifactRoot, fixed) {
   const compatibility = parseCanonicalJson(compatibilityBytes, "compatibility");
   validateMetadata({ manifest, provenance, compatibility, fixed });
 
+  const payloadBytesByComponent = Object.fromEntries(
+    COMPONENTS.map((component, index) => [component, payloadBytes[index]]),
+  );
+  const decompressedBudget = evaluateDecompressedBudget(payloadBytesByComponent, maxTotalDecompressedBytes);
+
   const entries = COMPONENTS.map((component, index) => ({
     path: `payload/${component}.sqlite.zst`,
     sizeBytes: payloadBytes[index].length,
@@ -472,6 +529,7 @@ async function inspectArtifact(artifactRoot, fixed) {
     componentInventorySha256,
     publicationObjects,
     accessibilityPayloadBytes: payloadBytes[COMPONENTS.indexOf("accessibility")],
+    decompressedBudget,
     evidence: canonicalObject({
       schemaVersion: 1,
       artifactKind: "server-route-bundle-artifact-inventory",
@@ -483,6 +541,7 @@ async function inspectArtifact(artifactRoot, fixed) {
       provenanceSha256: sha256(provenanceBytes),
       compatibilitySha256: sha256(compatibilityBytes),
       componentInventorySha256,
+      decompressedBudget,
       entries,
     }),
   };
