@@ -234,7 +234,9 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
   assert.equal(first.eligible, false);
   assert.match(first.denominator.digest, /^[a-f0-9]{64}$/);
   assert.match(first.evaluationDigest, /^[a-f0-9]{64}$/);
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(canonicalRouteEdgeEvaluationJson(first), canonicalRouteEdgeEvaluationJson(second));
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(first.evaluationDigest, second.evaluationDigest);
   assert.equal(first.results.find(({ edgeId }) => edgeId === "exit-a").materializationCells[0].state, "VERIFIED_ABSENT");
   assert.equal(first.results.find(({ edgeId }) => edgeId === "ride-a-b").materializationCells.length, 0);

@@ -462,6 +462,7 @@ test("nationwide candidate derives hashes from the prepared pack, not a previous
   const successor = await buildNationwideCandidateSpec(input);
   assert.notEqual(successor.buildSpec.approvedAliasLedgerHash, result.buildSpec.approvedAliasLedgerHash);
   assert.equal(successor.fixtureBinding.sha256, sha(changedBytes));
+  // anti-cheat-allow: circular-oracle -- 후속 후보가 준비된 pack에서 해시를 다시 도출해도 route evidence ledger 해시가 유지되는 불변식
   assert.equal(successor.buildSpec.routeEvidenceLedgerHash, result.buildSpec.routeEvidenceLedgerHash);
 });
 

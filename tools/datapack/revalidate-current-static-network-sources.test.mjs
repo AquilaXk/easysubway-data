@@ -145,6 +145,7 @@ test("current static responses가 unchanged면 exact child snapshots와 sanitize
     responseBytesBySource: responses,
   });
 
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.deepEqual(second, first);
   assert.deepEqual(first.map(({ sourceId }) => sourceId), ["seoulmetro-station-line-info"]);
   for (const { evidence, snapshot } of first) {
@@ -445,6 +446,7 @@ test("preserved Seoul change capture는 canonical membership에 결속된 admiss
     canonicalPackBytes: packBytes,
   });
 
+  // anti-cheat-allow: circular-oracle -- 같은 입력을 다시 재검증해도 결과가 같아야 하는 결정론성
   assert.deepEqual(second, first);
   assert.deepEqual(first.revalidations.map(({ evidence }) => evidence.outcome), [
     "CONTENT_CHANGE_ADMITTED",

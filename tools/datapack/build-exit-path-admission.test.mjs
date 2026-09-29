@@ -76,6 +76,7 @@ test("canonical output은 input ordering과 input object mutation에 독립적�
   const second = buildExitPathAdmission(secondInput);
 
   assert.equal(JSON.stringify({ ...firstInput, snapshotBytes: [...firstInput.snapshotBytes] }), original);
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(canonicalExitPathAdmissionJson(first), canonicalExitPathAdmissionJson(second));
 });
 

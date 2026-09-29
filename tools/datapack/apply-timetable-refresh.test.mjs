@@ -514,6 +514,7 @@ test("멱등성: 동일 patch와 verified receipt 재실행은 명시적 NO_OP�
   });
   assert.equal(first.status, "APPLIED");
   assert.equal(second.status, "NO_OP");
+  // anti-cheat-allow: circular-oracle -- 동일 패치 및 검증 영수증 재실행 시 멱등성(idempotent NO_OP) 보존 검증
   assert.equal(second.transactionSha256, first.transactionSha256);
   assert.equal(build.calls.count, 1, "재실행에서 재산출은 호출되지 않아야 한다");
 });

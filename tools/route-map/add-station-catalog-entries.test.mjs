@@ -17,6 +17,7 @@ import {
 test("newStationId는 노선·역명에 대해 결정적이고 station- 접두 12hex를 낸다", () => {
   const a = newStationId("line-98718184f016", "아라");
   const b = newStationId("line-98718184f016", "아라");
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(a, b, "결정적");
   assert.match(a, /^station-[0-9a-f]{12}$/);
   assert.notEqual(a, newStationId("line-051552e50435", "아라"), "노선이 다르면 다른 id");

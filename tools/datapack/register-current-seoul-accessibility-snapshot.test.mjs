@@ -134,6 +134,7 @@ test("fresh Seoul observation and OCI receipt rebind exactly seven outputs", asy
   assert.deepEqual(afterInput.kricStandardAccessibilitySnapshot, beforeInput.kricStandardAccessibilitySnapshot);
   const beforeHeads = validateLineage(JSON.parse(before[1])).headsBySource;
   const afterHeads = validateLineage(ledger).headsBySource;
+  // anti-cheat-allow: circular-oracle -- 무관한 스냅샷 갱신 시 타 영역 head 식별자 보존 검증
   assert.equal(afterHeads["kric-station-convenience-standard"], beforeHeads["kric-station-convenience-standard"]);
   const selected = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
   assert.equal(selected.length, candidate.sourceSnapshotIds.length);

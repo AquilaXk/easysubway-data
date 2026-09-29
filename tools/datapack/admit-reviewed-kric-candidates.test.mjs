@@ -65,6 +65,7 @@ test("KRIC live sample 8건은 admin review 후 provenance 전용 inventory sour
   assert.match(standard.evidence.adminReview.reasonKo, /29252661883/);
   assert.equal(result.inventory.sources.some(({ id }) => id === standard.id), false);
 
+  // anti-cheat-allow: circular-oracle -- 같은 admin review를 다시 적용해도 admission 결과가 바뀌지 않는 멱등성
   assert.deepEqual(
     buildReviewedKricAdmission({ candidates: result.candidates, inventory: result.inventory }),
     result,

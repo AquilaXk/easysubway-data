@@ -48,6 +48,7 @@ test("replaces the owned timetable partition while preserving unrelated pack row
   const original = structuredClone(pack);
   const args = { snapshot, inventory: inventory(snapshot), ledger: ledger(snapshot), now: new Date("2040-01-02T00:00:00.000Z") };
   const first = materializeKorailTimetable({ ...args, pack });
+  // anti-cheat-allow: circular-oracle -- 동일 패치 및 검증 영수증 재실행 시 멱등성(idempotent NO_OP) 보존 검증
   assert.deepEqual(materializeKorailTimetable({ ...args, pack: first }), first);
   const changed = structuredClone(snapshot);
   changed.tables.transitStopTimes[1].arrivalSeconds += 60;

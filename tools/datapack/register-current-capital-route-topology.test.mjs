@@ -111,7 +111,9 @@ test("shared freshness membership preserves Capital semantics without extending 
   sourceClass.sourceIds.push(additionalSourceId);
   await writeJson(policyPath, policy);
   const after = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(after.topology.freshUntil, before.topology.freshUntil);
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(after.freshnessClassSha256, before.freshnessClassSha256);
   assert.deepEqual(after.freshnessPolicy, policy);
   sourceClass.sourceIds.push(additionalSourceId);

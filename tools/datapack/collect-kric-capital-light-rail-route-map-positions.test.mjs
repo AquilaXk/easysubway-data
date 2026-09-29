@@ -384,6 +384,7 @@ test("successor projection은 retained bytes와 current topology binding으로 �
     };
     const first = buildCapitalLightRailRouteMapSuccessor({ source, candidate, ...collectorInputs });
     const second = buildCapitalLightRailRouteMapSuccessor({ source, candidate, ...collectorInputs });
+    // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
     assert.deepEqual(first, second);
     assert.deepEqual(source, originalSource);
     assert.deepEqual(candidate, originalCandidate);

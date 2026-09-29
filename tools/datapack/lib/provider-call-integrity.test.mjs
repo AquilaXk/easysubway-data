@@ -187,6 +187,7 @@ test("provider credential shape는 값이 아니라 길이·문자 클래스·�
   assert.equal(shape.length, 16);
   assert.deepEqual(shape.characterClasses, ["digit", "lower", "symbol", "upper"]);
   assert.match(shape.fingerprint, /^[0-9a-f]{12}$/);
+  // anti-cheat-allow: circular-oracle -- 동일 자격증명 입력에 대한 fingerprint 산출 결정론성 검증
   assert.equal(shape.fingerprint, providerCredentialShape(CREDENTIAL).fingerprint);
   assert.notEqual(shape.fingerprint, providerCredentialShape(`${CREDENTIAL}x`).fingerprint);
   assert.doesNotMatch(JSON.stringify(shape), new RegExp(CREDENTIAL.replace(/\$/g, "\\$")));

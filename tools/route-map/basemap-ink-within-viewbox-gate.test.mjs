@@ -116,6 +116,7 @@ test("geometry provenance digest는 browser metadata·JSON formatting과 무관�
     routeMapPositionRows: rows,
   });
 
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(pretty.geometrySha256, compact.geometrySha256);
 });
 
@@ -192,6 +193,7 @@ test("geometry provenance verifier는 geometry content와 non-key position mutat
     geometryBytes: Buffer.from(JSON.stringify(geometry)),
     routeMapPositionRows: rows.slice().reverse(),
   });
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(reversedRows.routeMapPositionsSha256, expected.routeMapPositionsSha256);
 });
 

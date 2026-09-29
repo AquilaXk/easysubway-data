@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   checkCircularMocking,
@@ -155,3 +158,65 @@ test('runAntiCheatAudit passes cleanly on the updated repository', () => {
   const violations = runAntiCheatAudit();
   assert.deepEqual(violations, [], `Expected 0 anti-cheat violations, got:\n${JSON.stringify(violations, null, 2)}`);
 });
+
+test('checkCircularOracles detects direct and indirect circular test assertions', async (t) => {
+  const mod = await import('./guard-datapack-anti-cheat.mjs');
+  assert.equal(typeof mod.checkCircularOracles, 'function', 'checkCircularOracles must be exported as a function');
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+
+  const tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'anti-cheat-circular-')));
+  if (t && typeof t.after === 'function') {
+    t.after(() => {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    });
+  }
+
+  const toolsX = path.join(tmpRoot, 'tools', 'x');
+  fs.mkdirSync(toolsX, { recursive: true });
+
+  fs.writeFileSync(path.join(tmpRoot, 'tools', 'f.mjs'), 'export function f(x) { return x + 1; }\n');
+
+  // direct circular oracle
+  fs.writeFileSync(
+    path.join(toolsX, 'direct.test.mjs'),
+    'import { f } from "../f.mjs";\nimport assert from "node:assert/strict";\nassert.deepStrictEqual(f(1), f(1));\n'
+  );
+
+  // indirect circular oracle
+  fs.writeFileSync(
+    path.join(toolsX, 'indirect.test.mjs'),
+    'import { f } from "../f.mjs";\nimport assert from "node:assert/strict";\nconst expected = f(1);\nassert.equal(f(1), expected);\n'
+  );
+
+  // ok test (fixed expected value)
+  fs.writeFileSync(
+    path.join(toolsX, 'ok.test.mjs'),
+    'import { f } from "../f.mjs";\nimport assert from "node:assert/strict";\nassert.equal(f(1), 2);\n'
+  );
+
+  // allowed with reason (excluded from violations)
+  fs.writeFileSync(
+    path.join(toolsX, 'allowed.test.mjs'),
+    'import { f } from "../f.mjs";\nimport assert from "node:assert/strict";\n// anti-cheat-allow: circular-oracle -- idempotency test\nassert.equal(f(1), f(1));\n'
+  );
+
+  // allowed without reason (still a violation)
+  fs.writeFileSync(
+    path.join(toolsX, 'disallowed-empty-reason.test.mjs'),
+    'import { f } from "../f.mjs";\nimport assert from "node:assert/strict";\n// anti-cheat-allow: circular-oracle --\nassert.equal(f(1), f(1));\n'
+  );
+
+  const violations = mod.checkCircularOracles(tmpRoot);
+  const targets = violations.map((v) => v.target.replace(/\\/g, '/')).sort();
+
+  assert.deepEqual(targets, [
+    'tools/x/direct.test.mjs',
+    'tools/x/disallowed-empty-reason.test.mjs',
+    'tools/x/indirect.test.mjs',
+  ]);
+  assert.ok(violations.every((v) => v.gate === 'ANTI-CIRCULAR-ORACLE'));
+});
+

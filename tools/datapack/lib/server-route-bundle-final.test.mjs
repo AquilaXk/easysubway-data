@@ -173,7 +173,9 @@ test("blocker와 canonical bytes는 input object insertion order와 반복에 �
   const second = buildServerRouteBundleFinal(secondInput);
 
   assert.deepEqual(first.blockers, ["publication:UNAVAILABLE", "signature:UNAVAILABLE"]);
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(canonicalServerRouteBundleFinalJson(first), canonicalServerRouteBundleFinalJson(second));
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(first.finalSha256, createHash("sha256").update(JSON.stringify({
     artifactKind: first.artifactKind,
     blockers: first.blockers,

@@ -189,6 +189,266 @@ export function checkHollowAssertions(repoRoot = REPO_ROOT) {
 }
 
 // ============================================================================
+// Gate: Circular Oracle (Anti-Cheat Modeled after EasyConvert)
+// ============================================================================
+export function checkCircularOracles(repoRoot = REPO_ROOT) {
+  const violations = [];
+  const toolsDir = resolve(repoRoot, 'tools');
+  if (!existsSync(toolsDir)) return violations;
+
+  function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules' && entry.name !== '.git') walk(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.test.mjs')) {
+        const rel = relative(repoRoot, fullPath);
+        if (rel.includes('guard-datapack-anti-cheat')) continue;
+
+        const content = readFileSync(fullPath, 'utf8');
+        checkFileCircularOracles(content, rel, violations);
+      }
+    }
+  }
+
+  function checkFileCircularOracles(content, rel, fileViolations) {
+    const importedProdFns = new Set();
+    const importRegex = /import\s*\{([^}]+)\}\s*from\s*['"](\.{1,2}\/[^'"]+)['"]/gs;
+    let importMatch;
+    while ((importMatch = importRegex.exec(content)) !== null) {
+      const importSpecifiers = importMatch[1];
+      const importPath = importMatch[2];
+      if (importPath.includes('.test.mjs') || importPath.includes('fixtures') || importPath.includes('test-support')) {
+        continue;
+      }
+      const specs = importSpecifiers.split(',');
+      for (const spec of specs) {
+        const trimmed = spec.trim();
+        if (!trimmed) continue;
+        if (trimmed.includes(' as ')) {
+          const parts = trimmed.split(/\s+as\s+/);
+          importedProdFns.add(parts[1].trim());
+        } else {
+          importedProdFns.add(trimmed);
+        }
+      }
+    }
+    if (importedProdFns.size === 0) return;
+
+    const varToFnMap = new Map();
+    const constRegex = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]*)/g;
+    let constMatch;
+    while ((constMatch = constRegex.exec(content)) !== null) {
+      const varName = constMatch[1];
+      const rightExpr = constMatch[2];
+      for (const fnName of importedProdFns) {
+        const callRegex = new RegExp(`\\b${fnName}\\s*\\(`);
+        if (callRegex.test(rightExpr)) {
+          varToFnMap.set(varName, fnName);
+          break;
+        }
+      }
+    }
+
+    const assertRegex = /assert\s*\.\s*(?:equal|strictEqual|deepEqual|deepStrictEqual)\s*\(/g;
+    let assertMatch;
+    while ((assertMatch = assertRegex.exec(content)) !== null) {
+      const startIndex = assertMatch.index;
+      const argsStartIndex = assertMatch.index + assertMatch[0].length;
+
+      let depth = 1;
+      let i = argsStartIndex;
+      let inString = false;
+      let stringChar = '';
+      let escape = false;
+
+      while (i < content.length && depth > 0) {
+        const ch = content[i];
+        if (escape) {
+          escape = false;
+        } else if (ch === '\\') {
+          escape = true;
+        } else if (inString) {
+          if (ch === stringChar) inString = false;
+        } else if (ch === "'" || ch === '"' || ch === '`') {
+          inString = true;
+          stringChar = ch;
+        } else if (ch === '(' || ch === '[' || ch === '{') {
+          depth++;
+        } else if (ch === ')' || ch === ']' || ch === '}') {
+          depth--;
+        }
+        i++;
+      }
+
+      if (depth !== 0) continue;
+      const argsContent = content.slice(argsStartIndex, i - 1);
+
+      let splitDepth = 0;
+      let inStr = false;
+      let strCh = '';
+      let esc = false;
+      let commaIndex = -1;
+
+      for (let j = 0; j < argsContent.length; j++) {
+        const c = argsContent[j];
+        if (esc) {
+          esc = false;
+        } else if (c === '\\') {
+          esc = true;
+        } else if (inStr) {
+          if (c === strCh) inStr = false;
+        } else if (c === "'" || c === '"' || c === '`') {
+          inStr = true;
+          strCh = c;
+        } else if (c === '(' || c === '[' || c === '{') {
+          splitDepth++;
+        } else if (c === ')' || c === ']' || c === '}') {
+          splitDepth--;
+        } else if (c === ',' && splitDepth === 0) {
+          commaIndex = j;
+          break;
+        }
+      }
+
+      if (commaIndex === -1) continue;
+      const argA = argsContent.slice(0, commaIndex).trim();
+
+      const remainingArgs = argsContent.slice(commaIndex + 1);
+      let secondCommaIndex = -1;
+      let bDepth = 0;
+      let bInStr = false;
+      let bStrCh = '';
+      let bEsc = false;
+
+      for (let k = 0; k < remainingArgs.length; k++) {
+        const c = remainingArgs[k];
+        if (bEsc) {
+          bEsc = false;
+        } else if (c === '\\') {
+          bEsc = true;
+        } else if (bInStr) {
+          if (c === bStrCh) bInStr = false;
+        } else if (c === "'" || c === '"' || c === '`') {
+          bInStr = true;
+          bStrCh = c;
+        } else if (c === '(' || c === '[' || c === '{') {
+          bDepth++;
+        } else if (c === ')' || c === ']' || c === '}') {
+          bDepth--;
+        } else if (c === ',' && bDepth === 0) {
+          secondCommaIndex = k;
+          break;
+        }
+      }
+
+      const argB = (secondCommaIndex !== -1 ? remainingArgs.slice(0, secondCommaIndex) : remainingArgs).trim();
+
+      function stripStrings(code) {
+        let out = '';
+        let sInStr = false;
+        let sQuote = '';
+        let sEsc = false;
+        for (let idx = 0; idx < code.length; idx++) {
+          const ch = code[idx];
+          if (sEsc) { sEsc = false; continue; }
+          if (ch === '\\') { sEsc = true; continue; }
+          if (sInStr) {
+            if (ch === sQuote) sInStr = false;
+            continue;
+          }
+          if (ch === "'" || ch === '"' || ch === '`') {
+            sInStr = true;
+            sQuote = ch;
+            continue;
+          }
+          out += ch;
+        }
+        return out;
+      }
+
+      const cleanA = stripStrings(argA);
+      const cleanB = stripStrings(argB);
+
+      function getSources(cleanText) {
+        const sources = new Map();
+        for (const fn of importedProdFns) {
+          const r = new RegExp(`\\b${fn}\\s*\\(`);
+          if (r.test(cleanText)) {
+            if (!sources.has(fn)) sources.set(fn, new Set());
+            sources.get(fn).add('DIRECT');
+          }
+        }
+        for (const [varName, fn] of varToFnMap.entries()) {
+          const r = new RegExp(`(?<![.\\w$?])\\b${varName}\\b`);
+          if (r.test(cleanText)) {
+            if (!sources.has(fn)) sources.set(fn, new Set());
+            sources.get(fn).add(`VAR:${varName}`);
+          }
+        }
+        return sources;
+      }
+
+      const sourcesA = getSources(cleanA);
+      const sourcesB = getSources(cleanB);
+
+      const circularFns = [];
+      for (const [fn, sA] of sourcesA.entries()) {
+        if (sourcesB.has(fn)) {
+          const sB = sourcesB.get(fn);
+          let isCircular = false;
+          for (const originA of sA) {
+            for (const originB of sB) {
+              if (originA === 'DIRECT' || originB === 'DIRECT' || originA !== originB) {
+                isCircular = true;
+                break;
+              }
+            }
+            if (isCircular) break;
+          }
+          if (isCircular) {
+            circularFns.push(fn);
+          }
+        }
+      }
+
+      if (circularFns.length > 0) {
+        const upToAssert = content.slice(0, startIndex);
+        const lines = upToAssert.split('\n');
+        let prevLine = '';
+        for (let l = lines.length - 2; l >= 0; l--) {
+          const trimmed = lines[l].trim();
+          if (trimmed.length > 0) {
+            prevLine = trimmed;
+            break;
+          }
+        }
+
+        const allowMatch = prevLine.match(/^\/\/\s*anti-cheat-allow:\s*circular-oracle(?:\s*--\s*(.*))?$/);
+        if (allowMatch) {
+          const reason = (allowMatch[1] || '').trim();
+          if (reason.length > 0) {
+            continue;
+          }
+        }
+
+        const { line, snippet } = getLineAndSnippet(content, startIndex, i - startIndex);
+        fileViolations.push({
+          gate: 'ANTI-CIRCULAR-ORACLE',
+          target: rel,
+          line,
+          snippet,
+          message: `Circular oracle detected: assertion compares results produced by the same production function "${circularFns.join(', ')}". Use independent golden expected values or independent oracles.`,
+        });
+      }
+    }
+  }
+
+  walk(toolsDir);
+  return violations;
+}
+
+// ============================================================================
 // Gate 4: Production Cheats & Backdoors (EasyConvert + EasySubway)
 // ============================================================================
 export function checkProductionCheats(repoRoot = REPO_ROOT) {
@@ -504,6 +764,7 @@ export function runAntiCheatAudit(options = {}) {
   allViolations.push(...checkSilentPassBypasses(repoRoot));
   allViolations.push(...checkHollowAssertions(repoRoot));
   allViolations.push(...checkProductionCheats(repoRoot));
+  allViolations.push(...checkCircularOracles(repoRoot));
 
   // 2. Datapack Domain Integrity Gates
   let pack = null;

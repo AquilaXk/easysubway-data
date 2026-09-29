@@ -124,7 +124,9 @@ test("prepares a deterministic cross-month retained contract with both direction
     { directionId: "forward", stationCodes: ["1", "2"] },
     { directionId: "reverse", stationCodes: ["2", "1"] },
   ]);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(first.contractSha256, second.contractSha256);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.deepEqual(first.contract, second.contract);
 });
 

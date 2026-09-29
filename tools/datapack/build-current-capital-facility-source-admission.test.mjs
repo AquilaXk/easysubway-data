@@ -44,7 +44,9 @@ test("producer-neutral FACILITY admission emits a mapping-derived closed matrix"
   assert.equal(first.decision, "GO");
   assert.deepEqual(first.denominatorStateSummary, summarizeRows(first.denominatorRows, ["VERIFIED_PRESENT", "VERIFIED_ABSENT", "UNVERIFIED_EVIDENCE_BLOCKED"]));
   assert.deepEqual(first.cellStateSummary, summarizeRows(first.cells, ["ADMITTED_FACILITY_PRESENT", "ADMITTED_FACILITY_ABSENT", "ADMITTED_FACILITY_UNVERIFIED_BLOCKED"]));
+  // anti-cheat-allow: circular-oracle -- 같은 입력을 두 번 실행한 admission 객체가 같아야 하는 결정론성
   assert.deepEqual(first, second);
+  // anti-cheat-allow: circular-oracle -- 같은 입력을 두 번 실행한 canonical JSON 바이트가 같아야 하는 결정론성
   assert.equal(canonicalCurrentCapitalFacilitySourceAdmissionJson(first), canonicalCurrentCapitalFacilitySourceAdmissionJson(second));
   const renderedDrift = structuredClone(first);
   renderedDrift.cells.reverse();

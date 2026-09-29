@@ -38,6 +38,7 @@ test("canonical capital@1 정본에서 FACILITY 수집 계약을 결정적으로
   });
   assert.equal(new Set(plan.stationLineProviderMappings.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)).size, plan.stationLineProviderMappings.length);
   assert.match(plan.planSha256, /^[a-f0-9]{64}$/);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(
     canonicalCurrentCapitalFacilityCollectionPlanJson(plan),
     canonicalCurrentCapitalFacilityCollectionPlanJson(repeated),

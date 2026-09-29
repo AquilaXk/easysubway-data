@@ -66,6 +66,7 @@ test("public static-network v2 producer emits byte-stable official observations 
   const value = await input();
   const first = buildPublicStaticNetworkV2Observations(value);
   const second = buildPublicStaticNetworkV2Observations(structuredClone(value));
+  // anti-cheat-allow: circular-oracle -- 같은 공식 입력을 다시 관측해도 observation이 바이트 단위로 같아야 하는 결정론성
   assert.deepEqual(second, first);
   assert.deepEqual(first.observations.map(({ sourceId }) => sourceId), ids);
   assert.equal(first.observations[0].schemaVersion, 2);
@@ -133,6 +134,7 @@ test("public static-network v2 producer binds supplied branch order into a fresh
   value.admittedTopologyBytes = Buffer.from(JSON.stringify(topology));
   const first = buildPublicStaticNetworkV2Observations(value);
   const second = buildPublicStaticNetworkV2Observations(structuredClone(value));
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.deepEqual(second, first);
   assert.notEqual(first.observations[0].routeMapLayoutEvidence.lineOrderSha256,
     baseline.observations[0].routeMapLayoutEvidence.lineOrderSha256);

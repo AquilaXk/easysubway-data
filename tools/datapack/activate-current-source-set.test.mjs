@@ -1247,6 +1247,7 @@ test("static revalidation current head reuse는 append 없이 exact stored ident
   const reused = activateStaticSourceRevalidations({
     sourceSnapshots: activated.sourceSnapshots, sourceInventory: activated.sourceInventory, ...args,
   });
+  // anti-cheat-allow: circular-oracle -- 동일 패치 및 검증 영수증 재실행 시 멱등성(idempotent NO_OP) 보존 검증
   assert.deepEqual(reused, activated);
 
   const drifted = structuredClone(activated.sourceSnapshots);

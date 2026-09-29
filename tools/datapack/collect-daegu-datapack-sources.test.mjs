@@ -82,11 +82,16 @@ test("파일별 인코딩(EUC-KR·UTF-8 BOM·UTF-8)을 역명 손상 없이 정�
 });
 
 test("환승역 접미 숫자·괄호 부기·축약형을 정본 역명으로 정규화한다", () => {
-  assert.equal(normalizedStationName("반월당1"), normalizedStationName("반월당"));
-  assert.equal(normalizedStationName("청라언덕2"), normalizedStationName("청라언덕3"));
-  assert.equal(normalizedStationName("명덕(2.28민주운동기념회관)"), normalizedStationName("명덕3"));
-  assert.equal(normalizedStationName("성서산업단지"), normalizedStationName("성서산단"));
-  assert.equal(normalizedStationName("대곡(정부대구청사)"), normalizedStationName("대곡"));
+  assert.equal(normalizedStationName("반월당1"), "반월당");
+  assert.equal(normalizedStationName("반월당"), "반월당");
+  assert.equal(normalizedStationName("청라언덕2"), "청라언덕");
+  assert.equal(normalizedStationName("청라언덕3"), "청라언덕");
+  assert.equal(normalizedStationName("명덕(2.28민주운동기념회관)"), "명덕");
+  assert.equal(normalizedStationName("명덕3"), "명덕");
+  assert.equal(normalizedStationName("성서산업단지"), "성서산단");
+  assert.equal(normalizedStationName("성서산단"), "성서산단");
+  assert.equal(normalizedStationName("대곡(정부대구청사)"), "대곡");
+  assert.equal(normalizedStationName("대곡"), "대곡");
 });
 
 test("고정된 대구 topology snapshot 6종이 취득 원문·내부 해시·노선 완전성과 일치한다", async () => {
@@ -268,6 +273,7 @@ test("Daegu topology dependent map rebind preserves retained raw bytes and creat
   assert.equal(evidence.positionsSha256, mapSnapshot.positionsSha256);
   assert.equal(evidence.snapshotId, `daegu-transportation-route-map-positions-${sha256(dependents.snapshot.bytes)}`);
   assert.equal(evidence.snapshotPath, `tools/datapack/sources/${evidence.snapshotId}.json`);
+  // anti-cheat-allow: circular-oracle -- 입력 스냅샷의 계통(lineage) 및 출처 식별자 보존 검증
   assert.deepEqual(evidence.topologyLineages.map(({ snapshotId }) => snapshotId), topologyInputs.map(({ snapshot }) =>
     daeguSourceSnapshotIdentity(snapshot)));
 

@@ -54,6 +54,7 @@ test("input ordering과 input object mutation에 독립적인 canonical plan을 
   const secondResult = planKricExitPathCollection(second);
 
   assert.equal(JSON.stringify(first), original);
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(
     canonicalKricExitPathCollectionPlanJson(firstResult),
     canonicalKricExitPathCollectionPlanJson(secondResult),
