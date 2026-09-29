@@ -12,6 +12,8 @@ import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capit
 import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
+import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";
+import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -100,6 +102,9 @@ export async function prepareNationwideCandidate({
     busanAccessibilityBytes, daeguAccessibilityBytes, daejeonAccessibilityBytes, gwangjuAccessibilityBytes,
     molitTransferMetaBytes, molitTransferGzipBytes,
     transferMetricsBytes, kricConvenienceBytes,
+    busanTimetableBytes,
+    daeguTimetable1Bytes, daeguTimetable2Bytes, daeguTimetable3Bytes,
+    daejeonTimetableBytes, gwangjuTimetableBytes,
   ] = await Promise.all([
     read("tools/datapack/nationwide-coverage-targets.json"),
     read("tools/datapack/release/current-five-region-source-fan-in.json"),
@@ -118,6 +123,12 @@ export async function prepareNationwideCandidate({
     read("tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz"),
     read("tools/datapack/release/current-transfer-topology-metrics.json"),
     read("tools/datapack/sources/kric-station-convenience-standard-20260904T043909603Z.json"),
+    read("tools/datapack/sources/busan-transportation-timetable-20260909.json"),
+    read("tools/datapack/sources/daegu-line1-train-timetable-f923a86097012cd0d0b76e59599790fb4ec4756269fb0afd293ac9683c31f77c.json"),
+    read("tools/datapack/sources/daegu-line2-train-timetable-798b98f01d9803c2dbe148c6864a876ef991401f19105f711722740a8e5f8215.json"),
+    read("tools/datapack/sources/daegu-line3-train-timetable-9763cdb46b4b2a7ab6ae24f607bba79206763a7329a68b86d16d12f2622d3100.json"),
+    read("tools/datapack/sources/daejeon-train-timetable-20260909.json"),
+    read("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
   ]);
 
   const targets = JSON.parse(targetsBytes);
@@ -136,6 +147,12 @@ export async function prepareNationwideCandidate({
   const molitTransferMeta = JSON.parse(molitTransferMetaBytes);
   const transferMetrics = JSON.parse(transferMetricsBytes);
   const kricConvenience = JSON.parse(kricConvenienceBytes);
+  const busanTimetable = JSON.parse(busanTimetableBytes);
+  const daeguTimetable1 = JSON.parse(daeguTimetable1Bytes);
+  const daeguTimetable2 = JSON.parse(daeguTimetable2Bytes);
+  const daeguTimetable3 = JSON.parse(daeguTimetable3Bytes);
+  const daejeonTimetable = JSON.parse(daejeonTimetableBytes);
+  const gwangjuTimetable = JSON.parse(gwangjuTimetableBytes);
 
   const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
   const molitTransferText = new TextDecoder("euc-kr").decode(molitTransferUncompressed);
@@ -949,10 +966,108 @@ export async function prepareNationwideCandidate({
     };
   };
 
+  // Integrate Regional Timetables (Busan, Daegu, Daejeon, Gwangju)
+  const regionalSchedule = integrateRegionalTimetables({
+    finalPack,
+    busanTimetable,
+    busanAccessibility,
+    daeguTimetable1,
+    daeguTimetable2,
+    daeguTimetable3,
+    daeguAccessibility,
+    daejeonTimetable,
+    daejeonAccessibility,
+    gwangjuTimetable,
+    gwangjuAccessibility,
+  });
+
+  finalPack.transitRoutes = regionalSchedule.transitRoutes;
+  finalPack.transitTrips = regionalSchedule.transitTrips;
+  finalPack.transitStopTimes = regionalSchedule.transitStopTimes;
+  finalPack.serviceCalendars = regionalSchedule.serviceCalendars;
+  finalPack.serviceCalendarDates = regionalSchedule.serviceCalendarDates;
+
+  // Expand nationwide station_car_door_hints with KRIC elevator platform door positions
+  const seenCarDoorKey = new Set();
+  const mergedCarDoorHints = [];
+
+  for (const hint of (finalPack.stationCarDoorHints ?? [])) {
+    const key = `${hint.stationId}:${hint.lineId}:${hint.direction}:${hint.targetFacilityType}:${hint.carNumber}:${hint.doorNumber}`;
+    if (!seenCarDoorKey.has(key)) {
+      seenCarDoorKey.add(key);
+      mergedCarDoorHints.push(hint);
+    }
+  }
+
+  for (const q of kricConvenience.queries ?? []) {
+    for (const row of q.rows ?? []) {
+      const loc = row.dtlLoc || "";
+      if (!loc) continue;
+
+      const parts = loc.split(/[,/]/);
+      for (const part of parts) {
+        const matches = [...part.matchAll(/([0-9]{1,2})\s*[-–—~]\s*([0-9]{1,2})/g)];
+        for (const m of matches) {
+          const car = parseInt(m[1], 10);
+          const door = parseInt(m[2], 10);
+          if (car >= 1 && car <= 10 && door >= 1 && door <= 10) {
+            const prefix = part.slice(0, m.index);
+            let direction = "BOTH";
+            if (prefix.includes("상선") || prefix.includes("상행")) direction = "UP";
+            else if (prefix.includes("하선") || prefix.includes("하행")) direction = "DOWN";
+            else if (prefix.includes("내선")) direction = "INNER";
+            else if (prefix.includes("외선")) direction = "OUTER";
+
+            let targetFacilityType = "ELEVATOR";
+            if (row.gubun === "WCLF") targetFacilityType = "WHEELCHAIR_LIFT";
+
+            const key = `${q.stationId}:${q.lineId}:${direction}:${targetFacilityType}:${car}:${door}`;
+            if (!seenCarDoorKey.has(key)) {
+              seenCarDoorKey.add(key);
+              const hash = sha256(canonicalJson({
+                stationId: q.stationId,
+                lineId: q.lineId,
+                direction,
+                targetFacilityType,
+                carNumber: car,
+                doorNumber: door,
+                dtlLoc: loc,
+              }));
+              mergedCarDoorHints.push({
+                id: `cardoor-${q.stationId}-${q.lineId}-${direction}-${targetFacilityType}-${car}-${door}-${hash.slice(0, 16)}`,
+                stationId: q.stationId,
+                lineId: q.lineId,
+                direction,
+                targetFacilityType,
+                carNumber: car,
+                doorNumber: door,
+                sourceId: "kric-station-convenience-standard",
+                sourceSnapshotId: kricConvenience.snapshotId,
+                providerRecordHash: q.providerRecordHash,
+                provenanceKind: "OFFICIAL_SOURCE",
+                verificationStatus: "VERIFIED",
+                lastVerifiedAt: kricConvenience.capturedAt,
+                evidenceHash: kricConvenience.rawSha256,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  finalPack.stationCarDoorHints = mergedCarDoorHints;
+
   const regionalSourcesToAdd = [
+    { id: "kric-station-platform", updatedAt: "2026-07-12" },
     { id: "busan-transportation-accessibility", updatedAt: busanAccessibility.capturedAt },
+    { id: "busan-transportation-timetable", updatedAt: busanTimetable.observedAt ?? "2026-09-09" },
     { id: "daegu-transportation-accessibility", updatedAt: daeguAccessibility.capturedAt },
+    { id: "daegu-line1-train-timetable", updatedAt: daeguTimetable1.capturedAt ?? "2026-07-21" },
+    { id: "daegu-line2-train-timetable", updatedAt: daeguTimetable2.capturedAt ?? "2026-07-21" },
+    { id: "daegu-line3-train-timetable", updatedAt: daeguTimetable3.capturedAt ?? "2026-07-21" },
     { id: "daejeon-transportation-accessibility", updatedAt: daejeonAccessibility.capturedAt },
+    { id: "daejeon-train-timetable", updatedAt: daejeonTimetable.observedAt ?? "2026-09-08" },
     { id: "gwangju-transportation-accessibility", updatedAt: gwangjuAccessibility.capturedAt },
     { id: "molit-railway-transfer-movement", updatedAt: molitTransferMeta.capturedAt },
   ];
@@ -965,24 +1080,35 @@ export async function prepareNationwideCandidate({
     }
   }
 
-  if (platformInfoMap && (platformInfoMap instanceof Map || typeof platformInfoMap === "object")) {
-    const getLookup = (key) => (platformInfoMap instanceof Map ? platformInfoMap.get(key) : platformInfoMap[key]);
-    finalPack.stationLines = finalPack.stationLines.map((sl) => {
-      const key = `${sl.stationId}:${sl.lineId}`;
-      const entry = getLookup(key) ?? getLookup(sl.stationId);
-      if (entry) {
-        return { ...sl, platformInfo: formatPlatformInfo(entry) };
-      }
-      return sl;
+  if (!finalPack.sourceInventory.some((s) => s.id === "gwangju-transportation-cyberstation-timetable")) {
+    finalPack.sourceInventory.push({
+      id: "gwangju-transportation-cyberstation-timetable",
+      owner: "광주교통공사",
+      url: gwangjuTimetable.detailUrl ?? "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
+      license: "공공데이터포털 이용허락범위 제한 없음",
+      licenseStatus: "redistributable",
+      redistributionAllowed: true,
+      updateFrequency: "daily admission refresh",
+      updatedAt: gwangjuTimetable.capturedAt,
+      fields: [...(gwangjuTimetable.fieldsProvided ?? ["service_calendar", "trip", "stop_time"])],
+      coverageScope: {
+        regionIds: ["gwangju"],
+        operatorIds: ["gwangju-metropolitan-rapid-transit"],
+        sourceDomains: ["schedule_timetable"],
+      },
     });
   }
 
+  const defaultPlatformMap = buildNationwidePlatformInfoMap(finalPack);
   finalPack.stationLines = finalPack.stationLines.map((sl) => {
-    let platformInfo = sl.platformInfo ?? "";
-    if (typeof platformInfo === "object" && platformInfo !== null) {
-      platformInfo = formatPlatformInfo(platformInfo);
+    const key = `${sl.stationId}:${sl.lineId}`;
+    let entry = null;
+    if (platformInfoMap && (platformInfoMap instanceof Map || typeof platformInfoMap === "object")) {
+      const getLookup = (k) => (platformInfoMap instanceof Map ? platformInfoMap.get(k) : platformInfoMap[k]);
+      entry = getLookup(key) ?? getLookup(sl.stationId);
     }
-    return { ...sl, platformInfo };
+    const raw = entry || sl.platformInfo || defaultPlatformMap.get(key);
+    return { ...sl, platformInfo: formatPlatformInfo(raw) };
   });
 
   finalPack.id = "nationwide";
@@ -1023,7 +1149,7 @@ export async function prepareNationwideCandidate({
   });
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
-  const nationwidePackBytes = jsonBytes(materializedFixture);
+  const nationwidePackBytes = Buffer.from(`${JSON.stringify(materializedFixture)}\n`);
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
   }

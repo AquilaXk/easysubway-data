@@ -270,8 +270,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   const packData = JSON.parse(packRaw);
   const pack = packData.packs[0];
 
-  // Authentic routes only (Seoul 4 + Incheon 1/2)
-  assert.strictEqual(pack.transitRoutes.length, 6);
+  // Authentic routes across all nationwide operational scopes
+  assert.strictEqual(pack.transitRoutes.length, 15);
   const routeIds = new Set(pack.transitRoutes.map((r) => r.id));
   assert.ok(routeIds.has("route-seoul-4-up"));
   assert.ok(routeIds.has("route-seoul-4-down"));
@@ -279,18 +279,31 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(routeIds.has("route-incheon-1-dn"));
   assert.ok(routeIds.has("route-incheon-2-up"));
   assert.ok(routeIds.has("route-incheon-2-dn"));
+  assert.ok(routeIds.has("route-busan-line-1"));
+  assert.ok(routeIds.has("route-busan-line-2"));
+  assert.ok(routeIds.has("route-busan-line-3"));
+  assert.ok(routeIds.has("route-busan-line-4"));
+  assert.ok(routeIds.has("route-daegu-line-1"));
+  assert.ok(routeIds.has("route-daegu-line-2"));
+  assert.ok(routeIds.has("route-daegu-line-3"));
+  assert.ok(routeIds.has("route-daejeon-line-1"));
+  assert.ok(routeIds.has("route-gwangju-line-1"));
 
   // Zero synthetic trips manufactured by interval loop
   const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
   assert.strictEqual(syntheticTrips.length, 0, "Pack must contain 0 synthetic trips");
-  assert.strictEqual(pack.transitTrips.length, 1880, "Pack must contain exactly 1,880 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 41830, "Pack must contain exactly 41,830 authentic stop times");
-  assert.strictEqual(pack.serviceCalendars.length, 6);
+  assert.strictEqual(pack.transitTrips.length, 9519, "Pack must contain exactly 9,519 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 251302, "Pack must contain exactly 251,302 authentic stop times");
+  assert.strictEqual(pack.serviceCalendars.length, 22);
   assert.strictEqual(pack.serviceCalendarDates.length, 104);
 
-  // Station car door hints preserved from base fixture
-  assert.strictEqual(pack.stationCarDoorHints.length, 35);
-  assert.strictEqual(pack.minimumTableRows.station_car_door_hints, 35);
+  // Station car door hints expanded nationwide
+  assert.strictEqual(pack.stationCarDoorHints.length, 435);
+  assert.strictEqual(pack.minimumTableRows.station_car_door_hints, 435);
+
+  // Platform info fully populated on all station lines
+  const emptyPlatformLines = pack.stationLines.filter((sl) => !sl.platformInfo || sl.platformInfo.trim() === "");
+  assert.strictEqual(emptyPlatformLines.length, 0, "All stationLines must have non-empty platformInfo");
 
   // 2. Verify candidate preparation provenance
   const prepRaw = await readFile(path.join(root, result.preparationRelPath), "utf8");
@@ -369,6 +382,8 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
     ["station-00089f8f97de:line-558d0bd8312d", { plfCplFlg: "Y", plfTpNm: "상대식", scrCharExt: "10" }],
   ]);
 
+  const rawBefore = await readFile(path.join(root, "tools/datapack/release/nationwide-production-canonical-pack.json"), "utf8");
+
   const result = await prepareNationwideCandidate({
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
@@ -387,11 +402,14 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
   );
 
   // Assert that on-disk canonical pack was not mutated by test execution
-  const canonicalOnDisk = JSON.parse(await readFile(path.join(root, result.nationwidePackRelPath), "utf8")).packs[0];
+  const rawAfter = await readFile(path.join(root, result.nationwidePackRelPath), "utf8");
+  assert.strictEqual(rawAfter, rawBefore, "On-disk release pack must remain unpolluted by test run");
+
+  const canonicalOnDisk = JSON.parse(rawAfter).packs[0];
   const diskLine = canonicalOnDisk.stationLines.find(
     (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
   );
-  assert.strictEqual(diskLine.platformInfo, "", "On-disk release pack must remain unpolluted by test run");
+  assert.notStrictEqual(diskLine.platformInfo, targetLine.platformInfo, "On-disk release pack must not contain sampleMap override");
 });
 
 
