@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   buildDurationShards,
+  EXCLUSIVE_TESTS,
   buildExecutionGroups,
   combineDurationEvidence,
   extractTopLevelTestNames,
@@ -586,6 +587,41 @@ test('execution groups split only long statically complete files into disjoint n
   );
 });
 
+test('serial-group tests run alone before the parallel pool and must stay owned', async () => {
+  assert.deepEqual(EXCLUSIVE_TESTS, ['tools/datapack/prepare-nationwide-candidate-run.test.mjs']);
+  const repoRoot = mkdtempSync(join(tmpdir(), 'data-test-exclusive-'));
+  const journal = join(repoRoot, 'journal.log');
+  const body = (name, ms) =>
+    `import test from "node:test";\nimport { appendFileSync } from "node:fs";\ntest("${name}", async () => {\n  appendFileSync(${JSON.stringify(journal)}, "start ${name}\\n");\n  await new Promise((done) => setTimeout(done, ${ms}));\n  appendFileSync(${JSON.stringify(journal)}, "end ${name}\\n");\n});\n`;
+  writeFileSync(join(repoRoot, 'writer.test.mjs'), body('writer', 300));
+  for (const name of ['a', 'b', 'c']) writeFileSync(join(repoRoot, `${name}.test.mjs`), body(name, 200));
+  const groups = ['writer', 'a', 'b', 'c'].map((name) => ({ path: `${name}.test.mjs`, durationMs: 10, partitions: null }));
+  const result = await runExecutionGroups({
+    repoRoot,
+    groups,
+    maxWorkers: 3,
+    exclusivePaths: ['writer.test.mjs'],
+    output: { write: () => true },
+  });
+  assert.equal(result.ok, true, result.errors.join('\n'));
+  const lines = readFileSync(journal, 'utf8').trim().split('\n');
+  assert.deepEqual(lines.slice(0, 2), ['start writer', 'end writer'], 'the serial-group test must not overlap any other test');
+  assert.equal(lines.length, 8);
+  const longWriter = {
+    'writer.test.mjs': ['import test from "node:test";', 'test("one", () => {});', 'test("two", () => {});'].join('\n'),
+  };
+  assert.equal(
+    buildExecutionGroups([{ path: 'writer.test.mjs', durationMs: 999_999 }], {
+      maxWorkers: 4,
+      sources: longWriter,
+      partitionTargetMs: 1,
+      exclusivePaths: ['writer.test.mjs'],
+    })[0].partitions,
+    null,
+    'serial-group tests are never partitioned',
+  );
+});
+
 test('partition coverage requires the exact static name multiset and an empty remainder', () => {
   const group = {
     path: 'tools/datapack/long.test.mjs',
@@ -655,8 +691,13 @@ test('parallel partitioned execution reports the same top-level tests as the ser
   assert.equal(serial.ok, true);
   assert.equal(parallel.ok, true);
   assert.equal(parallel.units.length, 4, 'the long file runs as three partitions beside the short file');
-  assert.deepEqual(parallel.executed, serial.executed, 'parallel execution must report the serial top-level test set');
-  assert.equal(parallel.executed.length, 7);
+  // 두 실행 모두 독립적으로 적은 기대 목록과 같아야 한다(직렬 결과 = 병렬 결과).
+  const expected = [
+    ...Array.from({ length: 6 }, (_, index) => `long.test.mjs\tcase (${index}) [x]`),
+    'short.test.mjs\tshort',
+  ];
+  assert.deepEqual(serial.executed, expected, 'serial execution must report every top-level test');
+  assert.deepEqual(parallel.executed, expected, 'parallel execution must report the same top-level tests');
 
   // 정적 목록 밖에서 만들어진 top-level test는 remainder 실행이 드러내고 실패시킨다.
   const hiddenSource = readFileSync(join(repoRoot, 'hidden.test.mjs'), 'utf8');
