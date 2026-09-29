@@ -77,9 +77,14 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
 });
 
 test("nationwide candidate preparation records genuine non-literal hashes and fail-closed evidence", async () => {
-  const stationLineInputPath = path.join(root, "tools/datapack/release/nationwide-station-line-input.json");
-  const stationLineRaw = await readFile(stationLineInputPath, "utf8");
-  const stationLineData = JSON.parse(stationLineRaw);
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+    writeFiles: true,
+  });
+  const stationLineData = result.stationLineInput;
+  const stationLineRaw = JSON.stringify(stationLineData);
 
   const fakeLiteralHashes = [
     sha256("facility-record-hash"),
@@ -158,9 +163,14 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
 });
 
 test("nationwide route edge input rejects fake constants and unverified outdoor links", async () => {
-  const routeInputPath = path.join(root, "tools/datapack/release/nationwide-route-edge-input.json");
-  const routeRaw = await readFile(routeInputPath, "utf8");
-  const routeData = JSON.parse(routeRaw);
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+    writeFiles: false,
+  });
+
+  const routeData = result.routeInput;
 
   const entries = routeData.routeEdges.filter((e) => e.edgeType === "ENTRY");
   const exits = routeData.routeEdges.filter((e) => e.edgeType === "EXIT");
@@ -198,11 +208,10 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   assert.strictEqual(measuredTransfers.length, 56);
 
   // 5. Canonical pack outdoor transfers must NOT have future timestamps or fabricated NO_STAIRS/AVAILABLE
-  const canonicalPackPath = path.join(root, "tools/datapack/release/nationwide-production-canonical-pack.json");
-  const canonicalPackRaw = await readFile(canonicalPackPath, "utf8");
+  const canonicalPack = result.finalPack;
+  const canonicalPackRaw = JSON.stringify(canonicalPack);
   assert.strictEqual(canonicalPackRaw.includes("1781568000"), false, "Must not contain fake future timestamp 1781568000");
 
-  const canonicalPack = JSON.parse(canonicalPackRaw).packs[0];
   for (const link of canonicalPack.outOfStationTransferLinks) {
     assert.strictEqual(link.accessibilityStatus, "UNKNOWN");
     assert.strictEqual(link.stairAccessState, "UNKNOWN");
@@ -298,10 +307,15 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
 });
 
 test("formatPlatformInfo normalizes KRIC and regional platform metadata to canonical JSON", () => {
-  // 1. Empty/falsy
+  // 1. Empty/falsy/primitive edge cases
   assert.strictEqual(formatPlatformInfo(null), "");
   assert.strictEqual(formatPlatformInfo(undefined), "");
   assert.strictEqual(formatPlatformInfo({}), "");
+  assert.strictEqual(formatPlatformInfo([]), "");
+  assert.strictEqual(formatPlatformInfo(123), "");
+  assert.strictEqual(formatPlatformInfo(true), "");
+  assert.strictEqual(formatPlatformInfo(false), "");
+  assert.strictEqual(formatPlatformInfo({ unknownField: "ignore" }), "");
 
   // 2. Existing string preserved
   assert.strictEqual(formatPlatformInfo("당고개 방면 / 오이도 방면"), "당고개 방면 / 오이도 방면");
@@ -336,13 +350,18 @@ test("formatPlatformInfo normalizes KRIC and regional platform metadata to canon
   });
   assert.strictEqual(formatPlatformInfo(regionalRaw), expectedRegional);
 
-  // 5. Canonical field names
+  // 5. Canonical field names and boolean conversions
   const canonical = {
     oppositeCrossing: "N",
     platformType: "섬식",
     unloadDoor: "LEFT",
   };
   assert.strictEqual(formatPlatformInfo(canonical), JSON.stringify(canonical));
+
+  const booleanCrossing = {
+    oppositeCrossing: true,
+  };
+  assert.strictEqual(formatPlatformInfo(booleanCrossing), JSON.stringify({ oppositeCrossing: "Y" }));
 });
 
 test("prepareNationwideCandidate binds platform metadata onto stationLines", async () => {
@@ -354,11 +373,10 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     platformInfoMap: sampleMap,
+    writeFiles: false,
   });
 
-  const packRaw = await readFile(path.join(root, result.nationwidePackRelPath), "utf8");
-  const pack = JSON.parse(packRaw).packs[0];
-
+  const pack = result.finalPack;
   const targetLine = pack.stationLines.find(
     (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
   );
@@ -367,6 +385,13 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
     targetLine.platformInfo,
     JSON.stringify({ oppositeCrossing: "Y", platformType: "상대식", screenDoor: "10" })
   );
+
+  // Assert that on-disk canonical pack was not mutated by test execution
+  const canonicalOnDisk = JSON.parse(await readFile(path.join(root, result.nationwidePackRelPath), "utf8")).packs[0];
+  const diskLine = canonicalOnDisk.stationLines.find(
+    (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
+  );
+  assert.strictEqual(diskLine.platformInfo, "", "On-disk release pack must remain unpolluted by test run");
 });
 
 

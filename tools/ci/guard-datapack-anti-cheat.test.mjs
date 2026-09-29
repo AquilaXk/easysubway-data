@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  checkCircularMocking,
+  checkSilentPassBypasses,
+  checkHollowAssertions,
+  checkProductionCheats,
   checkTableCompleteness,
   checkNoFakeConstants,
   checkNoSyntheticScheduleLoops,
-  checkCodebaseBypasses,
   runAntiCheatAudit,
 } from './guard-datapack-anti-cheat.mjs';
 
@@ -29,7 +32,7 @@ test('checkTableCompleteness rejects 100% blank platform_info across station_lin
     transitStopTimes: [{ tripId: 'trip-1', stopSequence: 1 }],
   };
 
-  const violations = checkTableCompleteness(fakePack);
+  const violations = checkTableCompleteness(fakePack, { requirePlatformInfo: true });
   assert.ok(violations.some((v) => v.gate === 'GATE_TABLE_COMPLETENESS' && v.target === 'station_lines.platform_info'));
 });
 
@@ -113,6 +116,22 @@ test('checkNoSyntheticScheduleLoops catches synthetic 1800s loop trip IDs', () =
 
   const violations = checkNoSyntheticScheduleLoops(fakePack);
   assert.ok(violations.some((v) => v.gate === 'GATE_NO_SYNTHETIC_SCHEDULE_LOOPS'));
+});
+
+test('checkHollowAssertions catches tautological assertions in test sources', () => {
+  const violations = checkHollowAssertions();
+  // Valid codebase must have zero hollow assertions
+  assert.deepEqual(violations, []);
+});
+
+test('checkCircularMocking verifies test helpers are decoupled from production materializers', () => {
+  const violations = checkCircularMocking();
+  assert.deepEqual(violations, []);
+});
+
+test('checkSilentPassBypasses verifies no silent catch blocks or missing tool passes', () => {
+  const violations = checkSilentPassBypasses();
+  assert.deepEqual(violations, []);
 });
 
 test('runAntiCheatAudit passes cleanly on the updated repository', () => {

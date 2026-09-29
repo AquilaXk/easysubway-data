@@ -19,15 +19,19 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 export function formatPlatformInfo(info) {
   if (!info) return "";
   if (typeof info === "string") return info;
-  if (typeof info !== "object") return String(info);
+  if (typeof info !== "object" || Array.isArray(info)) return "";
 
   const canonical = {};
   if (info.oppositeCrossing !== undefined && info.oppositeCrossing !== null && info.oppositeCrossing !== "") {
-    canonical.oppositeCrossing = String(info.oppositeCrossing);
+    if (typeof info.oppositeCrossing === "boolean") {
+      canonical.oppositeCrossing = info.oppositeCrossing ? "Y" : "N";
+    } else {
+      canonical.oppositeCrossing = String(info.oppositeCrossing);
+    }
   } else if (info.plfCplFlg !== undefined && info.plfCplFlg !== null && info.plfCplFlg !== "") {
     canonical.oppositeCrossing = String(info.plfCplFlg);
   } else if (info.opposite_side !== undefined && info.opposite_side !== null && info.opposite_side !== "") {
-    canonical.oppositeCrossing = (info.opposite_side === "가능" || info.opposite_side === "Y") ? "Y" : "N";
+    canonical.oppositeCrossing = (info.opposite_side === "가능" || info.opposite_side === "Y" || info.opposite_side === true) ? "Y" : "N";
   }
 
   if (info.platformType !== undefined && info.platformType !== null && info.platformType !== "") {
@@ -69,6 +73,7 @@ export async function prepareNationwideCandidate({
   requestedBy: requestedByOption = null,
   approvedBy: approvedByOption = null,
   platformInfoMap = null,
+  writeFiles = true,
 } = {}) {
   const requestedBy = requestedByOption
     || process.env.DATAPACK_REQUESTED_BY
@@ -1019,7 +1024,9 @@ export async function prepareNationwideCandidate({
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
   const nationwidePackBytes = jsonBytes(materializedFixture);
-  await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
+  }
 
   // 3. Prepare route edges
   const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...outOfStationEdges, ...rideEdges]
@@ -1061,7 +1068,9 @@ export async function prepareNationwideCandidate({
 
   const routeInputRelPath = "tools/datapack/release/nationwide-route-edge-input.json";
   const routeInputBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(routeInput));
-  await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);
+  }
 
   // 3.1 Prepare nationwide station-line input with complete accessibility evidence rows
   const stationLinesForAccessibility = [...pairs.values()].map(({ stationId, lineId }) => ({
@@ -1450,7 +1459,9 @@ export async function prepareNationwideCandidate({
 
   const stationLineInputRelPath = "tools/datapack/release/nationwide-station-line-input.json";
   const stationLineInputBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(stationLineInput));
-  await writeFile(path.join(repositoryRoot, stationLineInputRelPath), stationLineInputBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, stationLineInputRelPath), stationLineInputBytes);
+  }
 
   const gitBin = process.env.GIT_BIN || "git";
   let gitSha;
@@ -1549,7 +1560,9 @@ export async function prepareNationwideCandidate({
   };
 
   const preparationRelPath = "tools/datapack/release/nationwide-candidate-preparation.json";
-  await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
+  }
 
   const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
@@ -1561,7 +1574,9 @@ export async function prepareNationwideCandidate({
     buildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
   }
   const buildSpecBytes = jsonBytes(buildSpec);
-  await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
+  }
 
   const releaseRequestRelPath = "tools/datapack/release/release-request.json";
   const releaseRequest = JSON.parse(await readFile(path.join(repositoryRoot, releaseRequestRelPath), "utf8"));
@@ -1570,7 +1585,9 @@ export async function prepareNationwideCandidate({
   releaseRequest.requestedBy = requestedBy;
   releaseRequest.approvedBy = approvedBy;
   releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
-  await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
+  }
 
   const hashEvidenceRelPath = "tools/datapack/release/hash-evidence.json";
   const hashEvidence = JSON.parse(await readFile(path.join(repositoryRoot, hashEvidenceRelPath), "utf8"));
@@ -1581,9 +1598,21 @@ export async function prepareNationwideCandidate({
   if (hashEvidence.ledgerHashes?.facilityEvidenceLedgerHash) {
     hashEvidence.ledgerHashes.facilityEvidenceLedgerHash.rowCount = finalPack.stationFacilityEvidence.length;
   }
-  await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
+  }
 
   return {
+    candidateId,
+    releaseSequence,
+    materializedFixture,
+    finalPack,
+    routeInput,
+    stationLineInput,
+    preparation,
+    buildSpec,
+    releaseRequest,
+    hashEvidence,
     preparationRelPath,
     routeInputRelPath,
     stationLineInputRelPath,
