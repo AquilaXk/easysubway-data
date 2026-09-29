@@ -1,11 +1,21 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
   buildDurationShards,
+  EXCLUSIVE_TESTS,
+  buildExecutionGroups,
   combineDurationEvidence,
+  extractTopLevelTestNames,
+  parseMaxWorkers,
+  planWorkerUnits,
+  runExecutionGroups,
+  validateExecutionCoverage,
+  verifyPartitionCoverage,
   parseRunShardOptions,
   parseGitIndex,
   selectDurationShard,
@@ -475,12 +485,233 @@ test('workflow default-profile shards require every configured serial invocation
   );
   assert.ok(errorCodes(() => validateOwnership(conditional)).includes('WORKFLOW_CONDITIONAL_SKIP'));
 
+  // 러너 코어(4 vCPU)까지 병렬을 허용하고 그 이상은 거절한다.
   const invalid = structuredClone(value);
-  invalid.manifest.workflows['required-pr'].defaultProfileShards = { count: 2, maxWorkers: 2 };
+  invalid.manifest.workflows['required-pr'].defaultProfileShards = { count: 2, maxWorkers: 5 };
   assert.ok(
     errorCodes(() => validateOwnership(invalid)).includes('INVALID_DEFAULT_PROFILE_SHARDS'),
   );
+  const parallel = structuredClone(value);
+  parallel.manifest.workflows['required-pr'].defaultProfileShards = { count: 2, maxWorkers: 4 };
+  parallel.workflowSources['.github/workflows/ci.yml'] = parallel.workflowSources['.github/workflows/ci.yml']
+    .replace(first, first.replace('--max-workers 1', '--max-workers 4'))
+    .replace(second, second.replace('--max-workers 1', '--max-workers 4'));
+  assert.doesNotThrow(() => validateOwnership(parallel));
+  const staleSerial = structuredClone(parallel);
+  staleSerial.workflowSources['.github/workflows/ci.yml'] = value.workflowSources['.github/workflows/ci.yml'];
+  assert.ok(
+    errorCodes(() => validateOwnership(staleSerial)).includes('DEFAULT_PROFILE_SHARD_INVOCATION_MISMATCH'),
+  );
 });
+
+test('max workers accept the runner core range only', () => {
+  for (const value of ['1', '2', '3', '4']) assert.equal(parseMaxWorkers(value), Number(value));
+  for (const value of ['0', '5', '-1', '2.5', 'four', '', undefined]) {
+    assert.throws(() => parseMaxWorkers(value), /--max-workers must be an integer from 1 to 4/);
+  }
+});
+
+test('top-level test names are extracted only from statically complete default-import files', () => {
+  const plain = [
+    'import test from "node:test";',
+    'test("alpha (1)", () => {});',
+    "test('beta [2]', async (t) => { await t.test('nested', () => {}); });",
+    'test(',
+    '  "gamma \\"quoted\\"",',
+    '  () => {},',
+    ');',
+    '// test("commented", () => {});',
+    'const text = "test(\\"in string\\")";',
+  ].join('\n');
+  assert.deepEqual(extractTopLevelTestNames(plain), {
+    names: ['alpha (1)', 'beta [2]', 'gamma "quoted"'],
+    reason: null,
+  });
+
+  for (const [label, source, reason] of [
+    ['named import', 'import { test } from "node:test";\ntest("a", () => {});', /default import/],
+    ['describe', 'import test, { describe } from "node:test";\ndescribe("s", () => {});', /default import/],
+    ['hook', 'import test from "node:test";\nbefore(() => {});\ntest("a", () => {});', /top-level hook or suite/],
+    ['template name', 'import test from "node:test";\ntest(`a ${1}`, () => {});', /string literal/],
+    ['loop-generated', 'import test from "node:test";\nfor (const n of [1]) {\n  test("a" + n, () => {});\n}', /column 0/],
+    ['test member', 'import test from "node:test";\ntest.todo("a");', /test member/],
+    ['no tests', 'import test from "node:test";\n', /no top-level tests/],
+  ]) {
+    const result = extractTopLevelTestNames(source);
+    assert.equal(result.names, null, label);
+    assert.match(result.reason, reason, label);
+  }
+});
+
+test('execution groups split only long statically complete files into disjoint name partitions', () => {
+  const sources = {
+    'tools/datapack/long.test.mjs': [
+      'import test from "node:test";',
+      ...Array.from({ length: 10 }, (_, index) => `test("case ${index}", () => {});`),
+    ].join('\n'),
+    'tools/datapack/loop.test.mjs': 'import test from "node:test";\nfor (const n of [1]) {\n  test("a" + n, () => {});\n}',
+    'tools/ci/short.test.mjs': 'import test from "node:test";\ntest("short", () => {});',
+  };
+  const entries = [
+    { path: 'tools/datapack/long.test.mjs', durationMs: 400_000 },
+    { path: 'tools/datapack/loop.test.mjs', durationMs: 400_000 },
+    { path: 'tools/ci/short.test.mjs', durationMs: 1_000 },
+  ];
+  const groups = buildExecutionGroups(entries, { maxWorkers: 4, sources, partitionTargetMs: 120_000 });
+  const long = groups.find(({ path }) => path === 'tools/datapack/long.test.mjs');
+  assert.equal(long.partitions.length, 4, 'partition count is capped by the worker count');
+  assert.deepEqual(
+    long.partitions.flatMap(({ names }) => names).sort(),
+    Array.from({ length: 10 }, (_, index) => `case ${index}`).sort(),
+    'partitions must cover every top-level name exactly once',
+  );
+  assert.equal(new Set(long.partitions.flatMap(({ names }) => names)).size, 10);
+  assert.equal(groups.find(({ path }) => path === 'tools/datapack/loop.test.mjs').partitions, null, 'unsplittable files run whole');
+  assert.equal(groups.find(({ path }) => path === 'tools/ci/short.test.mjs').partitions, null, 'short files run whole');
+  // 직렬 실행은 파일을 쪼개지 않는다.
+  assert.ok(buildExecutionGroups(entries, { maxWorkers: 1, sources, partitionTargetMs: 120_000 }).every(({ partitions }) => partitions === null));
+  assert.throws(
+    () => buildExecutionGroups([{ path: 'tools/ci/short.test.mjs', durationMs: 10 }], { maxWorkers: 2, sources: {}, partitionTargetMs: 1 }),
+    /missing test source/,
+  );
+
+  // CI shard는 파일 단위로 나누므로 한 파일의 partition은 한 shard 안에 모인다.
+  const shards = buildDurationShards(groups, 2);
+  assert.deepEqual(shards.flatMap(({ tests }) => tests).sort(), entries.map(({ path }) => path).sort());
+  const units = planWorkerUnits(groups);
+  assert.equal(units.filter(({ path }) => path === 'tools/datapack/long.test.mjs').length, 4);
+  assert.deepEqual(
+    units.map(({ estimatedDurationMs }) => estimatedDurationMs),
+    [...units.map(({ estimatedDurationMs }) => estimatedDurationMs)].sort((left, right) => right - left),
+    'units start longest first',
+  );
+});
+
+test('serial-group tests run alone before the parallel pool and must stay owned', async () => {
+  assert.deepEqual(EXCLUSIVE_TESTS, ['tools/datapack/prepare-nationwide-candidate-run.test.mjs']);
+  const repoRoot = mkdtempSync(join(tmpdir(), 'data-test-exclusive-'));
+  const journal = join(repoRoot, 'journal.log');
+  const body = (name, ms) =>
+    `import test from "node:test";\nimport { appendFileSync } from "node:fs";\ntest("${name}", async () => {\n  appendFileSync(${JSON.stringify(journal)}, "start ${name}\\n");\n  await new Promise((done) => setTimeout(done, ${ms}));\n  appendFileSync(${JSON.stringify(journal)}, "end ${name}\\n");\n});\n`;
+  writeFileSync(join(repoRoot, 'writer.test.mjs'), body('writer', 300));
+  for (const name of ['a', 'b', 'c']) writeFileSync(join(repoRoot, `${name}.test.mjs`), body(name, 200));
+  const groups = ['writer', 'a', 'b', 'c'].map((name) => ({ path: `${name}.test.mjs`, durationMs: 10, partitions: null }));
+  const result = await runExecutionGroups({
+    repoRoot,
+    groups,
+    maxWorkers: 3,
+    exclusivePaths: ['writer.test.mjs'],
+    output: { write: () => true },
+  });
+  assert.equal(result.ok, true, result.errors.join('\n'));
+  const lines = readFileSync(journal, 'utf8').trim().split('\n');
+  assert.deepEqual(lines.slice(0, 2), ['start writer', 'end writer'], 'the serial-group test must not overlap any other test');
+  assert.equal(lines.length, 8);
+  const longWriter = {
+    'writer.test.mjs': ['import test from "node:test";', 'test("one", () => {});', 'test("two", () => {});'].join('\n'),
+  };
+  assert.equal(
+    buildExecutionGroups([{ path: 'writer.test.mjs', durationMs: 999_999 }], {
+      maxWorkers: 4,
+      sources: longWriter,
+      partitionTargetMs: 1,
+      exclusivePaths: ['writer.test.mjs'],
+    })[0].partitions,
+    null,
+    'serial-group tests are never partitioned',
+  );
+});
+
+test('partition coverage requires the exact static name multiset and an empty remainder', () => {
+  const group = {
+    path: 'tools/datapack/long.test.mjs',
+    partitions: [{ index: 1, names: ['a', 'b'] }, { index: 2, names: ['c'] }],
+  };
+  assert.doesNotThrow(() => verifyPartitionCoverage(group, [['a', 'b'], ['c']], []));
+  assert.throws(() => verifyPartitionCoverage(group, [['a'], ['c']], []), /partition coverage mismatch/);
+  assert.throws(() => verifyPartitionCoverage(group, [['a', 'b'], ['c', 'a']], []), /partition coverage mismatch/);
+  assert.throws(() => verifyPartitionCoverage(group, [['a', 'b'], ['c']], ['hidden']), /outside the static partition names/);
+});
+
+test('required execution coverage runs every required test exactly once across profiles and shards', () => {
+  const tests = [
+    { path: 'a.test.mjs', classes: ['required-pr'], executionProfile: null, durationMs: 5 },
+    { path: 'b.test.mjs', classes: ['required-pr'], executionProfile: null, durationMs: 4 },
+    { path: 'c.test.mjs', classes: ['required-pr'], executionProfile: 'mobile-v19', durationMs: 3 },
+    { path: 'r.test.mjs', classes: ['deterministic-release'], executionProfile: null, durationMs: 3 },
+  ];
+  const plan = validateExecutionCoverage({
+    tests,
+    className: 'required-pr',
+    profiles: ['mobile-v19'],
+    defaultShardCount: 2,
+  });
+  assert.deepEqual(plan.map(({ path }) => path).sort(), ['a.test.mjs', 'b.test.mjs', 'c.test.mjs']);
+  assert.ok(plan.every(({ runs }) => runs === 1));
+  assert.throws(
+    () => validateExecutionCoverage({ tests, className: 'required-pr', profiles: [], defaultShardCount: 2 }),
+    /required test is not executed: c\.test\.mjs/,
+  );
+  assert.throws(
+    () => validateExecutionCoverage({ tests, className: 'required-pr', profiles: ['mobile-v19', 'mobile-v19'], defaultShardCount: 2 }),
+    /required test is executed more than once: c\.test\.mjs/,
+  );
+});
+
+test('parallel partitioned execution reports the same top-level tests as the serial run and fails on hidden tests', async () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'data-test-parallel-'));
+  const write = (path, source) => writeFileSync(join(repoRoot, path), source);
+  write('long.test.mjs', [
+    'import test from "node:test";',
+    ...Array.from({ length: 6 }, (_, index) => `test("case (${index}) [x]", async (t) => { await t.test("inner", () => {}); });`),
+  ].join('\n'));
+  write('short.test.mjs', 'import test from "node:test";\ntest("short", () => {});');
+  write('hidden.test.mjs', 'import test from "node:test";\ntest("seen", () => {});\nfor (const n of [1]) test("hidden " + n, () => {});');
+  const sources = {
+    'long.test.mjs': readFileSync(join(repoRoot, 'long.test.mjs'), 'utf8'),
+    'short.test.mjs': readFileSync(join(repoRoot, 'short.test.mjs'), 'utf8'),
+  };
+  const entries = [
+    { path: 'long.test.mjs', durationMs: 1_000 },
+    { path: 'short.test.mjs', durationMs: 10 },
+  ];
+  const silent = { write: () => true };
+  const serial = await runExecutionGroups({
+    repoRoot,
+    groups: buildExecutionGroups(entries, { maxWorkers: 1, sources, partitionTargetMs: 100 }),
+    maxWorkers: 1,
+    output: silent,
+  });
+  const parallel = await runExecutionGroups({
+    repoRoot,
+    groups: buildExecutionGroups(entries, { maxWorkers: 3, sources, partitionTargetMs: 100 }),
+    maxWorkers: 3,
+    output: silent,
+  });
+  assert.equal(serial.ok, true);
+  assert.equal(parallel.ok, true);
+  assert.equal(parallel.units.length, 4, 'the long file runs as three partitions beside the short file');
+  // 두 실행 모두 독립적으로 적은 기대 목록과 같아야 한다(직렬 결과 = 병렬 결과).
+  const expected = [
+    ...Array.from({ length: 6 }, (_, index) => `long.test.mjs\tcase (${index}) [x]`),
+    'short.test.mjs\tshort',
+  ];
+  assert.deepEqual(serial.executed, expected, 'serial execution must report every top-level test');
+  assert.deepEqual(parallel.executed, expected, 'parallel execution must report the same top-level tests');
+
+  // 정적 목록 밖에서 만들어진 top-level test는 remainder 실행이 드러내고 실패시킨다.
+  const hiddenSource = readFileSync(join(repoRoot, 'hidden.test.mjs'), 'utf8');
+  const forced = [{
+    path: 'hidden.test.mjs',
+    durationMs: 1_000,
+    partitions: [{ index: 1, names: ['seen'] }],
+  }];
+  assert.equal(extractTopLevelTestNames(hiddenSource).names, null, 'the static extractor refuses loop-generated tests');
+  const hidden = await runExecutionGroups({ repoRoot, groups: forced, maxWorkers: 2, output: silent });
+  assert.equal(hidden.ok, false);
+  assert.match(hidden.errors.join('\n'), /outside the static partition names: hidden 1/);
+});
+
 
 test('profile duration evidence combines only an exact successful disjoint union', () => {
   const value = fixture();
