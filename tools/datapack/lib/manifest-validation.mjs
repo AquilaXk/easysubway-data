@@ -339,30 +339,28 @@ export function validatePackIdentity(value, label) {
   }
 }
 
-export function selectEffectiveDataPack(manifest, defaultPackId = "capital") {
+export function selectEffectiveDataPack(manifest) {
   const selectedIdentity = manifest?.emergencyOverride ?? manifest?.activePack;
   if (selectedIdentity && typeof selectedIdentity === "object") {
-    const candidates = manifest.packs.filter((pack) => (
+    const candidates = manifest?.packs?.filter((pack) => (
       pack.id === selectedIdentity.id && String(pack.version) === String(selectedIdentity.version)
-    ));
+    )) ?? [];
     return candidates.length === 1 ? candidates[0] : null;
   }
   if (typeof selectedIdentity === "string") {
-    const candidates = manifest.packs.filter((pack) => pack.id === selectedIdentity);
+    const candidates = manifest?.packs?.filter((pack) => pack.id === selectedIdentity) ?? [];
     return candidates.length === 1 ? candidates[0] : null;
   }
-  const defaults = manifest?.packs?.filter((pack) => pack.id === defaultPackId || (defaultPackId === "capital" && pack.id === "nationwide")) ?? [];
-  return defaults.reduce((selected, pack) => (
-    selected === null || BigInt(pack.version) > BigInt(selected.version) ? pack : selected
-  ), null);
+  return null;
 }
 
-export function selectFallbackDataPack(manifest, defaultPackId = "capital") {
-  if (!manifest?.emergencyOverride) return selectEffectiveDataPack(manifest, defaultPackId);
+export function selectPackWithoutEmergencyOverride(manifest) {
+  if (!manifest?.emergencyOverride) return selectEffectiveDataPack(manifest);
   const withoutEmergencyOverride = { ...manifest };
   delete withoutEmergencyOverride.emergencyOverride;
-  return selectEffectiveDataPack(withoutEmergencyOverride, defaultPackId);
+  return selectEffectiveDataPack(withoutEmergencyOverride);
 }
+
 
 export function validatePackUrl(packUrl, label) {
   if (/%[0-9a-f]{2}/i.test(packUrl)) {

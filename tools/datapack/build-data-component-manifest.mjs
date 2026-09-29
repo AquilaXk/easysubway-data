@@ -34,7 +34,7 @@ export async function buildDataComponentManifest(input) {
   validateManifest(manifest);
   if (manifest.manifestVersion !== 2) throw new Error("--manifest must be manifestVersion 2");
   const activePack = selectEffectiveDataPack(manifest);
-  if (!activePack) throw new Error("--manifest must select one active pack");
+  if (!activePack) throw new Error("--manifest must select one active pack (activePack required)");
   const provenance = parseJson(provenanceBytes, "--provenance");
   const sourceSnapshotSetHash = provenance?.candidateBuild?.sourceSnapshotSetHash;
   if (typeof sourceSnapshotSetHash !== "string" || !/^[a-f0-9]{64}$/.test(sourceSnapshotSetHash)) {
