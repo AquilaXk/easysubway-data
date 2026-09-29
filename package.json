@@ -11,6 +11,7 @@
     "test:route-map": "node --test tools/route-map/*.test.mjs",
     "test:affected": "node tools/ci/run-affected-tests.mjs",
     "check:fragment": "node tools/ci/check-documentation-fragment-sync.mjs --base origin/main",
-    "refresh:fragment": "node tools/repo/refresh-documentation-fragment.mjs --worktree"
+    "refresh:fragment": "node tools/repo/refresh-documentation-fragment.mjs --worktree",
+    "guard:anti-cheat": "node tools/ci/guard-datapack-anti-cheat.mjs"
   }
 }

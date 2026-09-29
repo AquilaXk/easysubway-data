@@ -8,6 +8,8 @@ import test from "node:test";
 import { gunzipSync } from "node:zlib";
 
 const root = path.resolve(import.meta.dirname, "../..");
+import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
+stageLocalMobileFixture({ repositoryRoot: root });
 const contract = JSON.parse(await readFile(new URL("./itx-cheongchun-coverage-contract.json", import.meta.url), "utf8"));
 const targets = JSON.parse(await readFile(new URL("./nationwide-coverage-targets.json", import.meta.url), "utf8"));
 const sourceCandidates = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));

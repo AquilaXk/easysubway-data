@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../..');
-const GIT_BIN = process.env.GIT_BIN || '/usr/bin/git';
+const GIT_BIN = process.env.GIT_BIN || 'git';
 
 export function parseArgs(argv = process.argv.slice(2)) {
   const options = {

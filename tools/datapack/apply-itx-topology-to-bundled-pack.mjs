@@ -1128,15 +1128,16 @@ async function main() {
       throw new Error("ITX topology migration evidence is forbidden by the current-only datapack contract");
     }
   }
-  const requireFreshOption = option("--require-fresh", null);
-  const requireFresh = requireFreshOption != null ? requireFreshOption === "true" : true;
+  if (process.argv.some((arg) => arg === "--require-fresh=false" || arg.startsWith("--require-fresh="))) {
+    throw new Error("--require-fresh=false is forbidden by the current-only datapack contract");
+  }
   const { contract, reference, source, sourceBytes, currentAdmission, currentProjection } =
     await admittedSource(contractPath, {
       verificationMode: immutableIntegrity
         ? IMMUTABLE_INTEGRITY_VERIFICATION_MODE
         : CURRENT_VERIFICATION_MODE,
       currentAdmissionPath,
-      requireFresh,
+      requireFresh: true,
     });
   const topologySource = await admittedTopologySource(reference, source, currentAdmission);
   const topology = deriveTopology(source);

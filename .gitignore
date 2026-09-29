@@ -66,6 +66,10 @@ backend/.gradle/
 backend/**/build/
 gradle-app.setting
 
+# External fixtures
+.external/
+apps/
+
 # Flutter / Dart
 .dart_tool/
 .flutter-plugins

@@ -2,11 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findAffectedTests, parseArgs } from './run-affected-tests.mjs';
+import { getChangedFiles, findAffectedTests, parseArgs } from './run-affected-tests.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../..');
+
+test('getChangedFiles returns an array of tracked changes without throwing', () => {
+  const changed = getChangedFiles('HEAD');
+  assert.ok(Array.isArray(changed));
+});
 
 test('parseArgs parses valid flags correctly', () => {
   const options = parseArgs(['--base', 'feature-branch', '--dry-run', '--verbose']);

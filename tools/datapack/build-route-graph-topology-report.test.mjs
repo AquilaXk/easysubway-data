@@ -15,6 +15,8 @@ import {
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
+stageLocalMobileFixture({ repositoryRoot: root });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const topologyEvidencePath = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
 const currentTopologyEvidence = JSON.parse(await readFile(topologyEvidencePath, "utf8"));

@@ -132,9 +132,11 @@ function assertEvidence(sqlitePath, pack) {
     const targetStationIds = getTargetStationIds(pack);
     const placeholders = targetStationIds.map(() => "?").join(",");
     const facilityWhere = targetStationIds.length > 0
-      ? `WHERE station_id IN (${placeholders}) AND type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT')`
-      : `WHERE type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT')`;
-    const facilityArgs = targetStationIds.length > 0 ? targetStationIds : [];
+      ? `WHERE station_id IN (${placeholders}) AND (type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT') OR source_id IN (${[...replacedSourceIds].map(() => "?").join(",")}))`
+      : `WHERE type IN ('ELEVATOR','ESCALATOR','WHEELCHAIR_LIFT') OR source_id IN (${[...replacedSourceIds].map(() => "?").join(",")})`;
+    const facilityArgs = targetStationIds.length > 0
+      ? [...targetStationIds, ...replacedSourceIds]
+      : [...replacedSourceIds];
     const facilities = database.prepare(`
       SELECT id, station_id AS stationId, exit_id AS exitId, type, name, status,
         floor_from AS floorFrom, floor_to AS floorTo, description, source_id AS sourceId,

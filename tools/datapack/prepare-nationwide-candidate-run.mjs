@@ -16,86 +16,54 @@ import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+export function formatPlatformInfo(info) {
+  if (!info) return "";
+  if (typeof info === "string") return info;
+  if (typeof info !== "object" || Array.isArray(info)) return "";
 
-function getPathsForLine(line, pack, rides) {
-  const lineRides = rides.filter((e) => e.fromNodeId.endsWith(`:${line.id}`) && e.toNodeId.endsWith(`:${line.id}`));
-  const adj = new Map();
-  for (const e of lineRides) {
-    const u = e.fromNodeId.split(":")[0];
-    const v = e.toNodeId.split(":")[0];
-    if (!adj.has(u)) adj.set(u, new Set());
-    adj.get(u).add(v);
+  const canonical = {};
+  if (info.oppositeCrossing !== undefined && info.oppositeCrossing !== null && info.oppositeCrossing !== "") {
+    if (typeof info.oppositeCrossing === "boolean") {
+      canonical.oppositeCrossing = info.oppositeCrossing ? "Y" : "N";
+    } else {
+      canonical.oppositeCrossing = String(info.oppositeCrossing);
+    }
+  } else if (info.plfCplFlg !== undefined && info.plfCplFlg !== null && info.plfCplFlg !== "") {
+    canonical.oppositeCrossing = String(info.plfCplFlg);
+  } else if (info.opposite_side !== undefined && info.opposite_side !== null && info.opposite_side !== "") {
+    canonical.oppositeCrossing = (info.opposite_side === "가능" || info.opposite_side === "Y" || info.opposite_side === true) ? "Y" : "N";
   }
 
-  const visitedNodes = new Set();
-  const paths = [];
-
-  if (line.id === "seoul-2") {
-    const branchStationIds = new Set([
-      "station-8174b8aee30d", "station-78972888a610", "station-60db61586811",
-      "station-b35616704ce3", "station-d6afe85e434a", "station-dc47306d7647",
-      "station-31d428fc4381", "station-sinseoldong",
-    ]);
-    const loopStations = pack.stationLines
-      .filter((sl) => sl.lineId === "seoul-2" && !branchStationIds.has(sl.stationId))
-      .sort((a, b) => a.lineSequence - b.lineSequence)
-      .map((sl) => sl.stationId);
-    paths.push(loopStations);
-    paths.push(["station-seongsu", "station-d6afe85e434a", "station-dc47306d7647", "station-31d428fc4381", "station-sinseoldong"]);
-    paths.push(["station-6a5e08288b46", "station-8174b8aee30d", "station-78972888a610", "station-60db61586811", "station-b35616704ce3"]);
-    return paths;
+  if (info.platformType !== undefined && info.platformType !== null && info.platformType !== "") {
+    canonical.platformType = String(info.platformType);
+  } else if (info.plfTpNm !== undefined && info.plfTpNm !== null && info.plfTpNm !== "") {
+    canonical.platformType = String(info.plfTpNm);
+  } else if (info.platform !== undefined && info.platform !== null && info.platform !== "") {
+    canonical.platformType = String(info.platform);
   }
 
-  const leaves = [...adj.keys()].filter((u) => adj.get(u).size === 1).sort();
-  if (leaves.length <= 2) {
-    const start = leaves[0] ?? [...adj.keys()].sort()[0];
-    const path = [start];
-    let curr = start;
-    let prev = null;
-    while (true) {
-      const nbrs = [...adj.get(curr)].filter((v) => v !== prev).sort();
-      if (nbrs.length === 0) break;
-      prev = curr;
-      curr = nbrs[0];
-      path.push(curr);
-    }
-    paths.push(path);
-  } else {
-    for (const leaf of leaves) {
-      if (visitedNodes.has(leaf)) continue;
-      const path = [leaf];
-      let curr = leaf;
-      let prev = null;
-      while (true) {
-        const nbrs = [...adj.get(curr)].filter((v) => v !== prev).sort();
-        if (nbrs.length === 0) break;
-        const next = nbrs.find((v) => !visitedNodes.has(v)) ?? nbrs[0];
-        prev = curr;
-        curr = next;
-        path.push(curr);
-        if (adj.get(curr).size === 1 && path.length > 1) break;
-      }
-      paths.push(path);
-      path.forEach((s) => visitedNodes.add(s));
-    }
-    for (const u of [...adj.keys()].sort()) {
-      if (!visitedNodes.has(u)) {
-        const path = [u];
-        let curr = u;
-        let prev = null;
-        while (true) {
-          const nbrs = [...adj.get(curr)].filter((v) => v !== prev).sort();
-          if (nbrs.length === 0) break;
-          prev = curr;
-          curr = nbrs[0];
-          path.push(curr);
-        }
-        paths.push(path);
-        path.forEach((s) => visitedNodes.add(s));
-      }
-    }
+  if (info.screenDoor !== undefined && info.screenDoor !== null && info.screenDoor !== "") {
+    canonical.screenDoor = String(info.screenDoor);
+  } else if (info.scrCharExt !== undefined && info.scrCharExt !== null && info.scrCharExt !== "") {
+    canonical.screenDoor = String(info.scrCharExt);
+  } else if (info.screen_door !== undefined && info.screen_door !== null && info.screen_door !== "") {
+    canonical.screenDoor = String(info.screen_door);
   }
-  return paths;
+
+  if (info.safetyGap !== undefined && info.safetyGap !== null && info.safetyGap !== "") {
+    canonical.safetyGap = String(info.safetyGap);
+  } else if (info.sfFotExt !== undefined && info.sfFotExt !== null && info.sfFotExt !== "") {
+    canonical.safetyGap = String(info.sfFotExt);
+  }
+
+  if (info.unloadDoor !== undefined && info.unloadDoor !== null && info.unloadDoor !== "") {
+    canonical.unloadDoor = String(info.unloadDoor);
+  } else if (info.unload_door !== undefined && info.unload_door !== null && info.unload_door !== "") {
+    canonical.unloadDoor = String(info.unload_door);
+  }
+
+  if (Object.keys(canonical).length === 0) return "";
+  return JSON.stringify(canonical);
 }
 
 export async function prepareNationwideCandidate({
@@ -104,6 +72,8 @@ export async function prepareNationwideCandidate({
   candidateId: candidateIdOverride = null,
   requestedBy: requestedByOption = null,
   approvedBy: approvedByOption = null,
+  platformInfoMap = null,
+  writeFiles = true,
 } = {}) {
   const requestedBy = requestedByOption
     || process.env.DATAPACK_REQUESTED_BY
@@ -118,7 +88,7 @@ export async function prepareNationwideCandidate({
   if (!approvedBy || typeof approvedBy !== "string" || approvedBy.trim() === "") {
     throw new Error("DATAPACK_APPROVED_BY (--approved-by) is required");
   }
-  if (requestedBy.trim() === approvedBy.trim()) {
+  if (requestedBy.trim().toLowerCase() === approvedBy.trim().toLowerCase()) {
     throw new Error(`Two-person rule violation: requester and approver cannot be the same person (${requestedBy.trim()})`);
   }
 
@@ -642,159 +612,16 @@ export async function prepareNationwideCandidate({
     return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
   });
 
-  // 2.2 Materialize nationwide timetable routes, trips, and stop times for all 36 lines
-  const rideDurationMap = new Map();
-  for (const e of rides) {
-    rideDurationMap.set(`${e.fromNodeId}->${e.toNodeId}`, e.durationSeconds > 0 ? e.durationSeconds : 120);
-  }
-
-  const newRoutes = [];
-  const newTrips = [];
-  const newStopTimes = [];
-  const stationNameMap = new Map(pack.stations.map((s) => [s.id, s.nameKo]));
-  const incheonLineIds = new Set(["line-98718184f016", "line-42b5805f3b5a"]);
-  const activeLines = pack.lines.filter((l) => selectedLines.has(l.id) && !incheonLineIds.has(l.id));
-
-  for (const line of activeLines) {
-    const lineId = line.id;
-    const paths = getPathsForLine(line, pack, rides);
-
-    for (let pIdx = 0; pIdx < paths.length; pIdx++) {
-      const pathStationIds = paths[pIdx];
-      const forwardStList = pathStationIds.map((sid, idx) => ({
-        stationId: sid,
-        lineId,
-        lineSequence: idx + 1,
-      }));
-      const reverseStList = [...forwardStList].reverse();
-
-      let upRouteId;
-      let dnRouteId;
-      let upRouteName;
-      let dnRouteName;
-      let upHeadsign;
-      let dnHeadsign;
-
-      if (lineId === "seoul-2" && pIdx === 0) {
-        upRouteId = "route-seoul-2-inner";
-        dnRouteId = "route-seoul-2-outer";
-        upRouteName = "수도권 2호선 내선";
-        dnRouteName = "수도권 2호선 외선";
-        upHeadsign = "내선순환";
-        dnHeadsign = "외선순환";
-      } else if (lineId === "line-eb7b47920390" && pIdx === 0) {
-        upRouteId = "route-busan-2-up";
-        dnRouteId = "route-busan-2-down";
-        upRouteName = "부산 2호선 양산 방면";
-        dnRouteName = "부산 2호선 장산 방면";
-        upHeadsign = "양산";
-        dnHeadsign = "장산";
-      } else if (lineId === "line-5b8d9b05e7e6" && pIdx === 0) {
-        upRouteId = "route-daegu-1-up";
-        dnRouteId = "route-daegu-1-down";
-        upRouteName = "대구 1호선 안심 방면";
-        dnRouteName = "대구 1호선 설화명곡 방면";
-        upHeadsign = "안심";
-        dnHeadsign = "설화명곡";
-      } else if (lineId === "line-7051a9c2525c" && pIdx === 0) {
-        upRouteId = "route-daejeon-1-up";
-        dnRouteId = "route-daejeon-1-down";
-        upRouteName = "대전 1호선 반석 방면";
-        dnRouteName = "대전 1호선 판암 방면";
-        upHeadsign = "반석";
-        dnHeadsign = "판암";
-      } else if (lineId === "line-e57a361e8892" && pIdx === 0) {
-        upRouteId = "route-gwangju-1-up";
-        dnRouteId = "route-gwangju-1-down";
-        upRouteName = "광주 1호선 평동 방면";
-        dnRouteName = "광주 1호선 녹동 방면";
-        upHeadsign = "평동";
-        dnHeadsign = "녹동";
-      } else {
-        const suffix = paths.length > 1 ? `-${pIdx + 1}` : "";
-        upRouteId = `route-${lineId}${suffix}-up`;
-        dnRouteId = `route-${lineId}${suffix}-down`;
-        const startName = stationNameMap.get(forwardStList[0].stationId) ?? "시점";
-        const endName = stationNameMap.get(forwardStList[forwardStList.length - 1].stationId) ?? "종점";
-        upRouteName = `${line.nameKo} ${endName} 방면`;
-        dnRouteName = `${line.nameKo} ${startName} 방면`;
-        upHeadsign = endName;
-        dnHeadsign = startName;
-      }
-
-      const routeDirections = [
-        { routeId: upRouteId, dirId: "up", headsign: upHeadsign, name: upRouteName, dirName: `${upHeadsign} 방면`, stations: forwardStList },
-        { routeId: dnRouteId, dirId: "down", headsign: dnHeadsign, name: dnRouteName, dirName: `${dnHeadsign} 방면`, stations: reverseStList },
-      ];
-
-      for (const rd of routeDirections) {
-        newRoutes.push({
-          id: rd.routeId,
-          lineId,
-          routeShortName: line.nameKo.replace(/.*?\s+/, ""),
-          routeLongName: rd.name,
-          directionName: rd.dirName,
-          timezone: "Asia/Seoul",
-        });
-
-        for (let depTime = 19800; depTime <= 84600; depTime += 1800) {
-          for (const serviceId of ["weekday-kric", "holiday-kric"]) {
-            const tripId = `trip-${rd.routeId}-${serviceId === "weekday-kric" ? "wd" : "hd"}-${depTime}`;
-            newTrips.push({
-              id: tripId,
-              routeId: rd.routeId,
-              serviceId,
-              tripHeadsign: rd.headsign,
-              directionId: rd.dirId,
-              servicePattern: "LOCAL",
-              serviceClass: "SUBWAY",
-              serviceDayStartSeconds: 0,
-            });
-
-            let currentDep = depTime;
-            for (let i = 0; i < rd.stations.length; i++) {
-              const st = rd.stations[i];
-              const isFirst = i === 0;
-              const isLast = i === rd.stations.length - 1;
-
-              let arrSec;
-              let depSec;
-              if (isFirst) {
-                arrSec = depTime;
-                depSec = depTime;
-              } else {
-                const prevSt = rd.stations[i - 1];
-                const edgeKey = `${prevSt.stationId}:${lineId}->${st.stationId}:${lineId}`;
-                const travel = rideDurationMap.get(edgeKey) ?? 120;
-                arrSec = currentDep + travel;
-                depSec = isLast ? arrSec : arrSec + 20;
-              }
-              currentDep = depSec;
-
-              newStopTimes.push({
-                tripId,
-                stopSequence: i + 1,
-                stationId: st.stationId,
-                lineId,
-                arrivalSeconds: arrSec,
-                departureSeconds: depSec,
-                pickupType: isLast ? 1 : 0,
-                dropOffType: isFirst ? 1 : 0,
-              });
-            }
-          }
-        }
-      }
-    }
-  }
-
+  // 2.2 Preserve authentic base timetable routes, trips, stop times, and calendars,
+  // excluding Incheon items which will be cleanly materialized by materializeIncheonTimetable below.
   const incheonSourceIds = new Set(["incheon-line1-train-timetable", "incheon-line2-train-timetable"]);
-  nationwidePack.sourceInventory = (nationwidePack.sourceInventory ?? []).filter((s) => !incheonSourceIds.has(s.id));
-  nationwidePack.serviceCalendars = (nationwidePack.serviceCalendars ?? []).filter((c) => !c.serviceId.startsWith("incheon-line"));
-  nationwidePack.serviceCalendarDates = (nationwidePack.serviceCalendarDates ?? []).filter((d) => !d.serviceId.startsWith("incheon-line"));
-  nationwidePack.transitRoutes = newRoutes;
-  nationwidePack.transitTrips = newTrips;
-  nationwidePack.transitStopTimes = newStopTimes;
+  nationwidePack.sourceInventory = (baseFixture.packs[0].sourceInventory ?? []).filter((s) => !incheonSourceIds.has(s.id));
+  nationwidePack.serviceCalendars = (baseFixture.packs[0].serviceCalendars ?? []).filter((c) => !c.serviceId.startsWith("incheon-line"));
+  nationwidePack.serviceCalendarDates = (baseFixture.packs[0].serviceCalendarDates ?? []).filter((d) => !d.serviceId.startsWith("incheon-line"));
+  nationwidePack.transitRoutes = (baseFixture.packs[0].transitRoutes ?? []).filter((r) => !r.id.startsWith("route-incheon-"));
+  nationwidePack.transitTrips = (baseFixture.packs[0].transitTrips ?? []).filter((t) => !t.id.startsWith("trip-incheon-"));
+  nationwidePack.transitStopTimes = (baseFixture.packs[0].transitStopTimes ?? []).filter((st) => !st.tripId.startsWith("trip-incheon-"));
+  nationwidePack.stationCarDoorHints = baseFixture.packs[0].stationCarDoorHints ?? [];
 
   const incheonNow = new Date(Math.max(Date.parse(incheonLine1.capturedAt), Date.parse(incheonLine2.capturedAt)) + 1000);
   const materializedFixture = materializeIncheonTimetable({
@@ -1138,6 +965,26 @@ export async function prepareNationwideCandidate({
     }
   }
 
+  if (platformInfoMap && (platformInfoMap instanceof Map || typeof platformInfoMap === "object")) {
+    const getLookup = (key) => (platformInfoMap instanceof Map ? platformInfoMap.get(key) : platformInfoMap[key]);
+    finalPack.stationLines = finalPack.stationLines.map((sl) => {
+      const key = `${sl.stationId}:${sl.lineId}`;
+      const entry = getLookup(key) ?? getLookup(sl.stationId);
+      if (entry) {
+        return { ...sl, platformInfo: formatPlatformInfo(entry) };
+      }
+      return sl;
+    });
+  }
+
+  finalPack.stationLines = finalPack.stationLines.map((sl) => {
+    let platformInfo = sl.platformInfo ?? "";
+    if (typeof platformInfo === "object" && platformInfo !== null) {
+      platformInfo = formatPlatformInfo(platformInfo);
+    }
+    return { ...sl, platformInfo };
+  });
+
   finalPack.id = "nationwide";
   finalPack.version = "1";
   finalPack.url = "https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/nationwide-v1.sqlite.gz";
@@ -1164,6 +1011,7 @@ export async function prepareNationwideCandidate({
     transit_stop_times: finalPack.transitStopTimes.length,
     service_calendars: finalPack.serviceCalendars.length,
     service_calendar_dates: finalPack.serviceCalendarDates.length,
+    station_car_door_hints: finalPack.stationCarDoorHints?.length ?? 0,
   };
 
   materializedFixture.assemblyInputs = buildNationwideAssemblyInputs({
@@ -1176,7 +1024,9 @@ export async function prepareNationwideCandidate({
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
   const nationwidePackBytes = jsonBytes(materializedFixture);
-  await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
+  }
 
   // 3. Prepare route edges
   const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...outOfStationEdges, ...rideEdges]
@@ -1218,7 +1068,9 @@ export async function prepareNationwideCandidate({
 
   const routeInputRelPath = "tools/datapack/release/nationwide-route-edge-input.json";
   const routeInputBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson(routeInput));
-  await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, routeInputRelPath), routeInputBytes);
+  }
 
   // 3.1 Prepare nationwide station-line input with complete accessibility evidence rows
   const stationLinesForAccessibility = [...pairs.values()].map(({ stationId, lineId }) => ({
@@ -1607,13 +1459,19 @@ export async function prepareNationwideCandidate({
 
   const stationLineInputRelPath = "tools/datapack/release/nationwide-station-line-input.json";
   const stationLineInputBytes = Buffer.from(canonicalCurrentCapitalStationLineInputJson(stationLineInput));
-  await writeFile(path.join(repositoryRoot, stationLineInputRelPath), stationLineInputBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, stationLineInputRelPath), stationLineInputBytes);
+  }
 
+  const gitBin = process.env.GIT_BIN || "git";
   let gitSha;
   try {
-    gitSha = execFileSync("/usr/bin/git", ["rev-parse", "HEAD"], { cwd: repositoryRoot }).toString().trim();
-  } catch {
-    gitSha = "d7fe7773528239e27e3788679d1b46b813cce046";
+    gitSha = execFileSync(gitBin, ["rev-parse", "HEAD"], { cwd: repositoryRoot }).toString().trim();
+  } catch (err) {
+    throw new Error(`Failed to resolve git HEAD commit in ${repositoryRoot}: ${err.message}`);
+  }
+  if (!/^[0-9a-f]{40}$/.test(gitSha)) {
+    throw new Error(`Invalid git HEAD commit sha: "${gitSha}"`);
   }
 
   const preparation = {
@@ -1702,7 +1560,9 @@ export async function prepareNationwideCandidate({
   };
 
   const preparationRelPath = "tools/datapack/release/nationwide-candidate-preparation.json";
-  await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
+  }
 
   const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
   const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
@@ -1714,7 +1574,9 @@ export async function prepareNationwideCandidate({
     buildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
   }
   const buildSpecBytes = jsonBytes(buildSpec);
-  await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
+  }
 
   const releaseRequestRelPath = "tools/datapack/release/release-request.json";
   const releaseRequest = JSON.parse(await readFile(path.join(repositoryRoot, releaseRequestRelPath), "utf8"));
@@ -1723,7 +1585,9 @@ export async function prepareNationwideCandidate({
   releaseRequest.requestedBy = requestedBy;
   releaseRequest.approvedBy = approvedBy;
   releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
-  await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
+  }
 
   const hashEvidenceRelPath = "tools/datapack/release/hash-evidence.json";
   const hashEvidence = JSON.parse(await readFile(path.join(repositoryRoot, hashEvidenceRelPath), "utf8"));
@@ -1734,9 +1598,21 @@ export async function prepareNationwideCandidate({
   if (hashEvidence.ledgerHashes?.facilityEvidenceLedgerHash) {
     hashEvidence.ledgerHashes.facilityEvidenceLedgerHash.rowCount = finalPack.stationFacilityEvidence.length;
   }
-  await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
+  }
 
   return {
+    candidateId,
+    releaseSequence,
+    materializedFixture,
+    finalPack,
+    routeInput,
+    stationLineInput,
+    preparation,
+    buildSpec,
+    releaseRequest,
+    hashEvidence,
     preparationRelPath,
     routeInputRelPath,
     stationLineInputRelPath,
