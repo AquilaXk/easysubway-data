@@ -159,7 +159,7 @@ test('automerge label 이벤트만 exact-head authorization marker를 발행한�
           'gh() {',
           '  printf "%s\\n" "gh $*" >> "$GH_LOG"',
           '  case "$*" in',
-          '    *"/comments?per_page=100&page="*) page="${*##*page=}"; [[ -f "$FIX/page-$page.json" ]] || { printf "[]\\n"; return 0; }; [[ "$(cat "$FIX/page-$page.json")" == __FAIL__ ]] && return 1; cat "$FIX/page-$page.json" ;;',
+          '    *"/comments?per_page=100&page="*) all="$*"; page="${all##*page=}"; [[ -f "$FIX/page-$page.json" ]] || { printf "[]\\n"; return 0; }; [[ "$(cat "$FIX/page-$page.json")" == __FAIL__ ]] && return 1; cat "$FIX/page-$page.json" ;;',
           '  esac',
           '}',
           'repo=o/r',
