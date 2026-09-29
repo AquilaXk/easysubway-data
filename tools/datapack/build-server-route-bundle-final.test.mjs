@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import {
+  E_SERVER_BUNDLE_DECOMPRESSED_BUDGET,
   buildServerRouteBundleFinalEvidence,
 } from "./build-server-route-bundle-final.mjs";
 import {
@@ -755,6 +756,64 @@ test("seed topology candidate input is accepted and bound to artifact topology",
   assert.equal(finalJson.candidate.componentDigests.topology, fixture.manifest.topologySha256);
 });
 
+test("server route bundle decompressed budget enforces limit and fails closed without output", async (t) => {
+  const fixture = await createFixture(t);
+  const output = path.join(fixture.temp, "budget-fail-output");
+  await assert.rejects(
+    () => buildServerRouteBundleFinalEvidence({
+      repositoryRoot: fixture.repositoryRoot,
+      repositoryGitSha: fixture.repositoryGitSha,
+      artifactRoot: fixture.artifactRoot,
+      stationLineInput: fixture.stationLineInput,
+      routeEdgeInput: fixture.routeEdgeInput,
+      evaluationAt: FRESH_AT,
+      output,
+      maxTotalDecompressedBytes: 100,
+    }),
+    (err) => {
+      assert.equal(err.code, E_SERVER_BUNDLE_DECOMPRESSED_BUDGET);
+      return true;
+    },
+  );
+  await assert.rejects(() => readFile(output), /ENOENT/);
+});
+
+test("server route bundle decompressed budget records accurate component bytes and passes at exact limit", async (t) => {
+  const fixture = await createFixture(t);
+  const output = path.join(fixture.temp, "budget-exact-output");
+
+  const accessibilityBytes = zstdDecompressSync(await readFile(path.join(fixture.artifactRoot, "payload/accessibility.sqlite.zst"))).length;
+  const fareBytes = 12; // "fare payload"
+  const timetableBytes = 17; // "timetable payload"
+  const topologyBytes = 16; // "topology payload"
+  const exactTotal = accessibilityBytes + fareBytes + timetableBytes + topologyBytes;
+
+  await buildServerRouteBundleFinalEvidence({
+    repositoryRoot: fixture.repositoryRoot,
+    repositoryGitSha: fixture.repositoryGitSha,
+    artifactRoot: fixture.artifactRoot,
+    stationLineInput: fixture.stationLineInput,
+    routeEdgeInput: fixture.routeEdgeInput,
+    evaluationAt: FRESH_AT,
+    output,
+    maxTotalDecompressedBytes: exactTotal,
+  });
+
+  const inventory = await readJson(path.join(output, "artifact-inventory.json"));
+  assert.deepEqual(inventory.decompressedBudget, {
+    components: {
+      accessibility: accessibilityBytes,
+      fare: 12,
+      timetable: 17,
+      topology: 16,
+    },
+    totalBytes: exactTotal,
+    maxTotalBytes: exactTotal,
+    headroomBytes: 0,
+    headroomRatio: 0,
+  });
+});
+
 async function createFixture(t, options = {}) {
   const temp = await mkdtemp(path.join(os.tmpdir(), "server-route-final-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
@@ -769,10 +828,17 @@ async function createFixture(t, options = {}) {
     await writeFile(specPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
   }
   const artifactRoot = path.join(temp, "server-route-bundle");
+  const buildContract = await readJson(path.join(repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
+  const topologyBytes = zstdCompressSync(Buffer.from("topology payload"), {
+    params: {
+      [constants.ZSTD_c_compressionLevel]: buildContract.compressionProfile.compressionLevel,
+      [constants.ZSTD_c_checksumFlag]: buildContract.compressionProfile.checksumFlag,
+    },
+  });
   const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash, buildSpec.candidateId);
   const routeEdgeInput = completeRouteEdgeInput(
     buildSpec.sourceSnapshotSetHash,
-    sha256(Buffer.from("topology payload")),
+    sha256(topologyBytes),
     buildSpec.candidateId,
   );
   options.configureInputs?.({ stationLineInput, routeEdgeInput });
@@ -889,16 +955,17 @@ async function createArtifact(
   accessibilityDatabase.exec("PRAGMA user_version=19; VACUUM");
   accessibilityDatabase.close();
   const buildContract = await readJson(path.join(repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
+  const compress = (buf) => zstdCompressSync(buf, {
+    params: {
+      [constants.ZSTD_c_compressionLevel]: buildContract.compressionProfile.compressionLevel,
+      [constants.ZSTD_c_checksumFlag]: buildContract.compressionProfile.checksumFlag,
+    },
+  });
   const payloads = {
-    accessibility: zstdCompressSync(await readFile(accessibilitySqlite), {
-      params: {
-        [constants.ZSTD_c_compressionLevel]: buildContract.compressionProfile.compressionLevel,
-        [constants.ZSTD_c_checksumFlag]: buildContract.compressionProfile.checksumFlag,
-      },
-    }),
-    fare: Buffer.from("fare payload"),
-    timetable: Buffer.from("timetable payload"),
-    topology: Buffer.from("topology payload"),
+    accessibility: compress(await readFile(accessibilitySqlite)),
+    fare: compress(Buffer.from("fare payload")),
+    timetable: compress(Buffer.from("timetable payload")),
+    topology: compress(Buffer.from("topology payload")),
   };
   await mkdir(path.join(artifactRoot, "payload"), { recursive: true });
   for (const [name, bytes] of Object.entries(payloads)) {

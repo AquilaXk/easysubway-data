@@ -4,6 +4,8 @@
   "const": {
     "schemaVersion": 1,
     "artifactKind": "server-route-bundle-build-contract",
+    "maxTotalDecompressedBytes": 58720256,
+    "maxTotalDecompressedBytesDescription": "서버 경로 번들 4개 SQLite 구성요소(topology, timetable, accessibility, fare)의 압축해제 바이트 합계 상한. backend RouteBundleSqliteRuntimeCompiler.MAX_TOTAL_DECOMPRESSED_BYTES (backend/src/main/java/com/easysubway/journey/bundle/RouteBundleSqliteRuntimeCompiler.java)와 동일해야 하며 두 값은 함께 변경한다.",
     "manifestLifecycle": {
       "instantSchema": {
         "path": "contracts/datapack/artifact-component-manifest.schema.json",
