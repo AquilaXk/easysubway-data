@@ -255,6 +255,10 @@
     "data813": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/813",
       "title": "[Feat][DataPack] Promote Platform Info, Integrate Regional Timetables, Expand Car-Door Hints, and Map Official Transfer Edges"
+    },
+    "data817": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/817",
+      "title": "[CI] Claude Code 공식 코드리뷰 workflow 이식 및 automerge 리뷰 게이트 claude[bot] 인정"
     }
   },
   "workflows": {
@@ -319,6 +323,7 @@
   },
   "tests": [
     {"path":"tools/ci/automerge-queue.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":4795},
+    {"path":"tools/ci/claude-code-review-workflow.test.mjs","semanticOwner":"data817","classes":["required-pr"],"durationMs":200},
     {"path":"tools/ci/current-capital-topology-refresh-workflow.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/data-test-discovery.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":141},
     {"path":"tools/ci/decide-current-capital-topology-refresh.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":120},
