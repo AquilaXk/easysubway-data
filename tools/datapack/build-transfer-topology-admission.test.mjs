@@ -292,7 +292,9 @@ test("canonical output과 admission digest는 station-line/source-row 입력 순
   const first = buildTransferTopologyAdmission(firstInput);
   const second = buildTransferTopologyAdmission(secondInput);
 
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(canonicalTransferTopologyAdmissionJson(first), canonicalTransferTopologyAdmissionJson(second));
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(first.admissionDigest, second.admissionDigest);
 });
 

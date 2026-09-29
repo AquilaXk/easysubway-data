@@ -202,6 +202,7 @@ test("결정성: 같은 입력 → 같은 출력", () => {
     });
   const r1 = respaceGraph(build(), { unit: 100 });
   const r2 = respaceGraph(build(), { unit: 100 });
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.deepEqual(r1.positions, r2.positions);
 });
 

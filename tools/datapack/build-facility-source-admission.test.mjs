@@ -274,6 +274,7 @@ test("consumer input order가 달라도 admission bytes와 caller input은 동�
   const first = canonicalFacilitySourceAdmissionJson(buildFacilitySourceAdmission(firstInput));
   const second = canonicalFacilitySourceAdmissionJson(buildFacilitySourceAdmission(secondInput));
 
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(second, first);
   assert.deepEqual(secondInput, secondBefore);
 });

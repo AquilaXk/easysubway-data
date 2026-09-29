@@ -233,6 +233,7 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   const serviceDateStart = selectedServiceDates.at(0);
   const serviceDateEnd = selectedServiceDates.at(-1);
 
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.deepEqual(second, first);
   assert.equal(gunzipSync(first.gzipBytes).toString("utf8"), first.sql);
   assert.equal(first.evidence.snapshotSha256, sha256(Buffer.from(first.sql)));
@@ -413,7 +414,9 @@ test("접근성 evidence identity는 실제 materialization 입력에만 결합�
     buildNow,
   });
 
+  // anti-cheat-allow: circular-oracle -- 테스트 "접근성 evidence identity는 실제 materialization 입력에만 결합한다" 불변 규약 검증
   assert.equal(unrelatedChange.sql, baseline.sql);
+  // anti-cheat-allow: circular-oracle -- 테스트 "접근성 evidence identity는 실제 materialization 입력에만 결합한다" 불변 규약 검증
   assert.deepEqual(unrelatedChange.evidence, baseline.evidence);
   const accessibilityOffset = Math.min(
     ...[
@@ -627,6 +630,7 @@ test("canonical gzip transport는 zlib encoder가 달라도 normalized SQL ident
   });
 
   assert.equal(sha256(canonical.gzipBytes), sha256(canonicalGzipBytes));
+  // anti-cheat-allow: circular-oracle -- 테스트 "canonical gzip transport는 zlib encoder가 달라도 normalized SQL identity에 결합한다" 불변 규약 검증
   assert.equal(canonical.evidence.snapshotSha256, generated.evidence.snapshotSha256);
   assert.equal(canonical.evidence.snapshotGzipSha256, sha256(canonicalGzipBytes));
   assert.equal(canonical.evidence.snapshotGzipByteSize, canonicalGzipBytes.length);
@@ -891,8 +895,11 @@ test("동일 current station-catalog와 topology evidence 입력은 byte-identic
     ...value, contractBytes, sourceBytes, topologyEvidenceBytes, buildNow,
   });
 
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(first.sql, second.sql);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(first.evidence.snapshotSha256, second.evidence.snapshotSha256);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.deepEqual(first.evidence.stationCatalogPackIdentity, second.evidence.stationCatalogPackIdentity);
   assert.ok(first.evidence.canonicalPackLineage.topologyEvidenceSha256);
 });

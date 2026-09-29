@@ -65,10 +65,11 @@ test("octilinearSegment: bend-late 수직 우세도 코너를 b 근처로", () =
 });
 
 test("octilinearSegment: variant 미지정(기본)은 bend-early와 동일(기존 산출 불변)", () => {
-  assert.deepEqual(
-    octilinearSegment({ x: 0, y: 0 }, { x: 10, y: 3 }),
-    octilinearSegment({ x: 0, y: 0 }, { x: 10, y: 3 }, "bend-early"),
-  );
+  assert.deepEqual(octilinearSegment({ x: 0, y: 0 }, { x: 10, y: 3 }), [
+    { x: 0, y: 0 },
+    { x: 3, y: 3 },
+    { x: 10, y: 3 },
+  ]);
 });
 
 test("octilinearSegment: 이미 8선형이면 variant와 무관하게 직선 1세그먼트", () => {

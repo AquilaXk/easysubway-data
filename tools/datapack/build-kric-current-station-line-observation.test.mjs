@@ -31,6 +31,7 @@ test("#455 produces a deterministic source-native observation from the retained 
   const value = await input();
   const first = buildKricCurrentStationLineObservation(value);
   const second = buildKricCurrentStationLineObservation(structuredClone(value));
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.deepEqual(second, first);
   assert.equal(first.schemaVersion, 1);
   assert.equal(first.artifactKind, "kric-current-station-line-observation");

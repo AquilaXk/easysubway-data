@@ -124,6 +124,7 @@ test("등록으로 추가한 policy는 이전 bytes 결속을 증명하고 신�
     governancePolicySha256: snapshot.governancePolicySha256,
   });
   assert.throws(() => transition(successor, { ...snapshot, sourceId: added.sourceId }), /governance policy binding/);
+  // anti-cheat-allow: circular-oracle -- 신규 소스 거버넌스 정책 전이 상태 검증
   assert.deepEqual(transition(multiHop.policy, {
     ...snapshot,
     sourceId: added.sourceId,
@@ -828,6 +829,7 @@ test("같은 입력은 byte-identical governance summary와 hash를 만든다", 
   const firstSummary = buildGovernanceSummary({ entries: [input], evaluationAt: input.evaluationAt });
   const secondSummary = buildGovernanceSummary({ entries: [input], evaluationAt: input.evaluationAt });
 
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(JSON.stringify(firstSummary), JSON.stringify(secondSummary));
   assert.match(firstSummary.summarySha256, /^[0-9a-f]{64}$/);
   assert.equal(firstSummary.decision, "GO");

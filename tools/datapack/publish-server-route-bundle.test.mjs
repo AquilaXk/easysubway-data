@@ -195,6 +195,7 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
     now: PUBLICATION_NOW,
     clock: () => PUBLICATION_NOW,
   });
+  // anti-cheat-allow: circular-oracle -- 동일 OCI 트리 재발행 시 closed receipt 결정론적 일치 검증
   assert.deepEqual(secondReceipt, receipt);
   assert.deepEqual(await readFile(fixture.receiptPath), firstReceiptBytes);
 

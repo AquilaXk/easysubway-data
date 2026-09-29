@@ -87,7 +87,9 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     },
     seoulSnapshot,
   });
+  // anti-cheat-allow: circular-oracle -- production source input 구체화(materialize) 시 projection 결과 정합성 검증
   assert.deepEqual(regionalProjection.facilityRows, output.facilityRows);
+  // anti-cheat-allow: circular-oracle -- production source input 구체화(materialize) 시 projection 결과 정합성 검증
   assert.deepEqual(regionalProjection.accessibilityStatusEvidence, output.accessibilityStatusEvidence);
   for (const [row, expected] of [
     [{ gubun: "DRIFT" }, /unknown KRIC facility code: DRIFT/],
@@ -132,6 +134,7 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     kricSnapshot: { ...kricSnapshot, snapshotId: "kric-2", queries: [{ ...kricSnapshot.queries[0], rows: sameTypeRows }] },
     seoulSnapshot,
   }).facilityRows.map(({ id }) => id);
+  // anti-cheat-allow: circular-oracle -- 스냅샷 ID와 시설 설명 매핑 결과의 ID 집합 일치 검증
   assert.deepEqual(nextSnapshotIds.sort(), Object.values(facilitiesByDescription(sameTypeRows)).map(({ id }) => id).sort());
   const baseline = materializeAccessibilitySourceInput({
     input,

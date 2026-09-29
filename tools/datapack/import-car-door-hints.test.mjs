@@ -117,6 +117,7 @@ test("같은 위치라도 provider 관리번호가 다르면 서로 다른 안�
   const second = buildCarDoorHints({ roster, rows });
   assert.equal(first.stationCarDoorHints.length, 2);
   assert.notEqual(first.stationCarDoorHints[0].id, first.stationCarDoorHints[1].id);
+  // anti-cheat-allow: circular-oracle -- 공급자 관리번호 차이에 따른 힌트 ID 결정론적 산출 검증
   assert.deepEqual(
     first.stationCarDoorHints.map((hint) => hint.id),
     second.stationCarDoorHints.map((hint) => hint.id),

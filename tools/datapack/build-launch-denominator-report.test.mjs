@@ -124,6 +124,7 @@ test("report는 secret 없는 evaluator input만 포함하고 자체 재계산�
   evidence.source.credential = "must-not-leak";
   const report = buildLaunchDenominatorReport(scope, evidence);
   assert.doesNotMatch(JSON.stringify(report), /must-not-leak/);
+  // anti-cheat-allow: circular-oracle -- 산출물 메타데이터(evaluator input)로부터 자체 재계산(self-recomputation) 정합성 검증
   assert.deepEqual(buildLaunchDenominatorReport(scope, report.evaluatorInput), report);
 });
 
@@ -182,6 +183,7 @@ test("synthetic scope report recomputes missing consumer evidence as NO_GO", () 
   assert.equal(report.decision, "NO_GO");
   assert.equal(report.scopes.routingLaunchScope.sha256, canonicalScopeHash(scope.routingLaunchScope));
   assert.equal(report.identityLinkage.matrixSha256, canonicalScopeHash(scope.identityMatrix));
+  // anti-cheat-allow: circular-oracle -- 산출물 메타데이터(evaluator input)로부터 자체 재계산(self-recomputation) 정합성 검증
   assert.deepEqual(buildLaunchDenominatorReport(scope, report.evaluatorInput), report);
   assert.equal(report.consumerStates.server, "UNAVAILABLE");
 });
@@ -369,6 +371,7 @@ test("nationwide progress does not change the routing launch scope hash", () => 
   const after = structuredClone(scope);
   before.nationwideRoadmapScope.missingCount = scope.nationwideRoadmapScope.launchRequiredCount;
   after.nationwideRoadmapScope.missingCount = 0;
+  // anti-cheat-allow: circular-oracle -- 테스트 "nationwide progress does not change the routing launch scope hash" 불변 규약 검증
   assert.equal(
     canonicalScopeHash(before.routingLaunchScope),
     canonicalScopeHash(after.routingLaunchScope),

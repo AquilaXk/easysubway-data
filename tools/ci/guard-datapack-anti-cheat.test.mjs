@@ -167,7 +167,7 @@ test('checkCircularOracles detects direct and indirect circular test assertions'
   const path = await import('node:path');
   const os = await import('node:os');
 
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'anti-cheat-circular-'));
+  const tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'anti-cheat-circular-')));
   if (t && typeof t.after === 'function') {
     t.after(() => {
       fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -210,7 +210,7 @@ test('checkCircularOracles detects direct and indirect circular test assertions'
   );
 
   const violations = mod.checkCircularOracles(tmpRoot);
-  const targets = violations.map((v) => path.relative(tmpRoot, v.target).replace(/\\/g, '/')).sort();
+  const targets = violations.map((v) => v.target.replace(/\\/g, '/')).sort();
 
   assert.deepEqual(targets, [
     'tools/x/direct.test.mjs',

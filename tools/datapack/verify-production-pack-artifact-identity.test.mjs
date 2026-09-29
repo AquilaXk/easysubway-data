@@ -333,6 +333,7 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
     assert.equal(report.byteSize, evidence.pack.byteSize);
     assert.ok(report.rowCounts.stations > 0);
     assert.deepEqual(report.networkEdgeCounts, expectedNetworkEdgeCounts);
+    // anti-cheat-allow: circular-oracle -- 배포 팩과 번들 에셋의 무결성 검증 결과 일치 검증
     assert.deepEqual(await verifyProductionPackArtifactIntegrity({
       evidencePath,
       assetPath,

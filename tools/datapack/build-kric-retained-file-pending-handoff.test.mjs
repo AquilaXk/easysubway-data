@@ -68,6 +68,7 @@ test("builds a deterministic compact pending handoff from both retained observat
   const input = fixture();
   const first = buildKricRetainedFilePendingHandoff(input);
   const second = buildKricRetainedFilePendingHandoff(structuredClone(input));
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.deepEqual(first, second);
   assert.equal(first.schemaVersion, 1);
   assert.equal(first.status, "PENDING");

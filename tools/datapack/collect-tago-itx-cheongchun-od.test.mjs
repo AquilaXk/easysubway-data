@@ -812,7 +812,9 @@ test("TAGO roster artifact는 같은 provider body와 observedAt에서 byte-iden
   });
   const first = await collectTagoItxCheongchunRoster(input());
   const second = await collectTagoItxCheongchunRoster(input());
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(JSON.stringify(first), JSON.stringify(second));
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(first.evidenceHash, second.evidenceHash);
 });
 

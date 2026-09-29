@@ -75,6 +75,7 @@ test("current production 정본에서 exact EXIT collection plan을 결정적으
   assert.equal(plan.queryPlan.length, plan.routeEdges.length);
   assert.deepEqual(actualIncheonEdgeIds, expectedIncheonEdgeIds);
   assert.ok(plan.stationLineQueries.every(({ queryIds }) => queryIds.length > 0));
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(
     canonicalKricExitPathCollectionPlanJson(plan),
     canonicalKricExitPathCollectionPlanJson(repeated),

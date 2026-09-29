@@ -72,6 +72,7 @@ test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change e
     assert.equal(officialProviderCalls, 0);
     assert.equal(officialEvidence.operation.operationId, "15130556-fileData-20250811");
     assert.equal(officialEvidence.providerObservation.totalCount, 8054);
+    // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
     assert.equal(officialEvidence.providerObservation.rawSha256, evidence.lockedSnapshot.rawSha256);
     assert.doesNotMatch(JSON.stringify(officialEvidence), /official\.csv|api\.odcloud\.kr/u);
     assert.deepEqual(JSON.parse(await readFile(officialOutput, "utf8")), officialEvidence);

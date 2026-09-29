@@ -57,6 +57,7 @@ test("registered timetable remains consumable after operation inputs are removed
   const restored = restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots });
   assert.deepEqual(restored, fixture.materializerInput.retainedTimetable);
   const source = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  // anti-cheat-allow: circular-oracle -- 운영 입력 제거 후에도 보존된 시각표 소비 가능성 검증
   assert.deepEqual(validateRetainedGwangjuSource({ ...fixture.materializerInput, source,
     retainedTimetable: restored }), validateRetainedGwangjuSource({ ...fixture.materializerInput, source }));
   assert.throws(() => restoreAdmittedGwangjuTimetable({

@@ -275,7 +275,9 @@ test("동일 epoch의 fractional-second 표기는 canonical payload와 digest를
     evidence({ capturedAt: "2026-08-08T00:00:00Z", freshUntil: "2026-08-10T00:00:00Z" }),
   ]));
 
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(canonicalStationLineAccessibilityJson(fractional), canonicalStationLineAccessibilityJson(wholeSecond));
+  // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(fractional.materializationDigest, wholeSecond.materializationDigest);
   assert.equal(wholeSecond.rows.find((row) => row.domain === "FACILITY").capturedAt, "2026-08-08T00:00:00.000Z");
   assert.equal(wholeSecond.rows.find((row) => row.domain === "FACILITY").freshUntil, "2026-08-10T00:00:00.000Z");
@@ -293,7 +295,9 @@ test("canonical ordering과 digest는 입력 순서와 반복에 무관하게 by
   const firstBytes = canonicalStationLineAccessibilityJson(first);
   const secondBytes = canonicalStationLineAccessibilityJson(second);
 
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(firstPayloadBytes, secondPayloadBytes);
+  // anti-cheat-allow: circular-oracle -- 동일 입력 반복 호출 또는 다중 인코딩 환경에서 결정론적(deterministic) 동일 결과 검증
   assert.equal(firstBytes, secondBytes);
   assert.equal(first.materializationDigest, createHash("sha256").update(firstPayloadBytes).digest("hex"));
   assert.equal(firstBytes, JSON.stringify(first));

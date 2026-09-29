@@ -294,6 +294,7 @@ test("output은 input order와 input object mutation에 독립적이다", () => 
   const secondResult = buildFacilityAccessibilityAdmission(second);
 
   assert.deepEqual(first, before);
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(
     canonicalFacilityAccessibilityAdmissionJson(firstResult),
     canonicalFacilityAccessibilityAdmissionJson(secondResult),
@@ -319,6 +320,7 @@ test("output은 input order와 input object mutation에 독립적이다", () => 
   ];
   const tiedSecond = structuredClone(tiedFirst);
   tiedSecond.facilityRows.reverse();
+  // anti-cheat-allow: circular-oracle -- 입력 순서(input ordering) 및 객체 변이와 무관한 canonical 산출 일치 검증
   assert.equal(
     canonicalFacilityAccessibilityAdmissionJson(buildFacilityAccessibilityAdmission(tiedFirst)),
     canonicalFacilityAccessibilityAdmissionJson(buildFacilityAccessibilityAdmission(tiedSecond)),

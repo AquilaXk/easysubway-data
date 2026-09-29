@@ -59,7 +59,9 @@ test("동일 승인 입력은 바이트가 같은 rescue manifest를 만든다",
   const input = validInput();
   const first = buildRescueManifest(input);
   const second = buildRescueManifest(input);
+  // anti-cheat-allow: circular-oracle -- 테스트 "동일 승인 입력은 바이트가 같은 rescue manifest를 만든다" 불변 규약 검증
   assert.deepEqual(first.manifestBytes, second.manifestBytes);
+  // anti-cheat-allow: circular-oracle -- 테스트 "동일 승인 입력은 바이트가 같은 rescue manifest를 만든다" 불변 규약 검증
   assert.equal(first.evidence.rescue.manifestSha256, second.evidence.rescue.manifestSha256);
 });
 
