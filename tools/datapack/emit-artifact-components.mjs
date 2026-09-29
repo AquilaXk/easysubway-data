@@ -49,6 +49,7 @@ const GENERATED_EVIDENCE_LAYOUT = {
 export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
   station_line_accessibility_evidence: "CREATE TABLE station_line_accessibility_evidence (materialization_digest TEXT NOT NULL PRIMARY KEY CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL)",
   route_accessibility_edge_evidence: "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY CHECK(length(evaluation_digest)=64 AND evaluation_digest NOT GLOB '*[^0-9a-f]*'), materialization_digest TEXT NOT NULL CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))",
+  transition_facility_requirement: "CREATE TABLE transition_facility_requirement (transition_key TEXT NOT NULL, segment TEXT NOT NULL, facility_id TEXT NOT NULL, PRIMARY KEY (transition_key, segment, facility_id))",
 });
 const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
   "candidateId", "stationSetSha256", "sourceSetSha256", "policyVersion", "evaluatorVersion",
@@ -482,6 +483,12 @@ function insertGeneratedEvidence(target, evidence) {
     evidence.materialization.materializationDigest,
     evidence.evaluationJson,
   );
+  if (Array.isArray(evidence.transitionFacilityRequirements)) {
+    const insertReq = target.prepare("INSERT INTO transition_facility_requirement VALUES(?,?,?)");
+    for (const row of evidence.transitionFacilityRequirements) {
+      insertReq.run(row.transition_key, row.segment, row.facility_id);
+    }
+  }
 }
 
 function copyTable(source, target, table, projection = undefined, presentTables = undefined, selected = undefined, uniqueKeys = []) {

@@ -108,6 +108,10 @@
             "materializationBinding": { "field": "materializationDigest", "column": "materialization_digest", "equals": "station_line_accessibility_evidence.materialization_digest" }
           }
         },
+        "transitionFacilityRequirement": {
+          "table": "transition_facility_requirement",
+          "columns": ["transition_key", "segment", "facility_id"]
+        },
         "ownedTableColumns": "exact-source-schema",
         "foreignKeys": "within-component-only",
         "componentReferences": "declared-non-null-references-must-resolve-within-component"

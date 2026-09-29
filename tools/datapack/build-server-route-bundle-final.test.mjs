@@ -256,7 +256,7 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["route-schema-without-constraints", "ALTER TABLE route_accessibility_edge_evidence RENAME TO route_accessibility_edge_evidence_old; CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL); INSERT INTO route_accessibility_edge_evidence SELECT * FROM route_accessibility_edge_evidence_old; DROP TABLE route_accessibility_edge_evidence_old", /embedded route_accessibility_edge_evidence schema mismatch/],
     ["missing-route-table", "DROP TABLE route_accessibility_edge_evidence", /embedded route_accessibility_edge_evidence schema mismatch/],
     ["missing-transition-facility-requirement-table", "DROP TABLE transition_facility_requirement", /embedded transition_facility_requirement schema mismatch/],
-    ["orphan-transition-key", "INSERT INTO transition_facility_requirement VALUES('orphan-edge', '대합실-승강장', 'f1')", /transition_facility_requirement contains orphan transition_key/],
+    ["orphan-transition-key", "INSERT INTO transition_facility_requirement VALUES('orphan-edge', '대합실-승강장', 'facility-a')", /transition_facility_requirement contains orphan transition_key/],
     ["orphan-facility-id", "INSERT INTO transition_facility_requirement VALUES('entry-a', '대합실-승강장', 'orphan-facility')", /transition_facility_requirement contains orphan facility_id/],
   ]) {
     await t.test(name, async () => {
@@ -880,6 +880,7 @@ async function createArtifact(
   const accessibilitySqlite = path.join(artifactRoot, ".accessibility.sqlite");
   const accessibilityDatabase = new DatabaseSync(accessibilitySqlite);
   accessibilityDatabase.exec(Object.values(GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL).join("; "));
+  accessibilityDatabase.exec("CREATE TABLE IF NOT EXISTS facilities (id TEXT PRIMARY KEY); INSERT INTO facilities VALUES ('facility-a');");
   accessibilityDatabase.prepare("INSERT INTO station_line_accessibility_evidence VALUES(?,?)").run(
     materialization.materializationDigest,
     canonicalStationLineAccessibilityJson(materialization),

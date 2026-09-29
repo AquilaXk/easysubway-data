@@ -415,6 +415,7 @@
     {"path":"tools/datapack/build-server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":5482},
     {"path":"tools/datapack/build-server-timetable-snapshot.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":5932},
     {"path":"tools/datapack/build-transfer-topology-admission.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":174},
+    {"path":"tools/datapack/build-transition-facility-requirements.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":68},
     {"path":"tools/datapack/bundle-component-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":119},
     {"path":"tools/datapack/canonical-number-contract.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":146},
     {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":114},

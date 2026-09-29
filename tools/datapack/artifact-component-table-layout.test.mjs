@@ -181,6 +181,10 @@ test("route service evidence tables는 server timetable component의 exact refer
       },
     },
   });
+  assert.deepEqual(components.accessibility.transitionFacilityRequirement, {
+    table: "transition_facility_requirement",
+    columns: ["transition_key", "segment", "facility_id"],
+  });
   assert.deepEqual(components.fare.ownedTables, [
     "fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes",
   ]);

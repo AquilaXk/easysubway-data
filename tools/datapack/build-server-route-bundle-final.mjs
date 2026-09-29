@@ -519,6 +519,27 @@ async function assertEmbeddedEvidence(input) {
       { name: "materialization_digest", type: "TEXT", notnull: 1, pk: 0 },
       { name: "canonical_json", type: "TEXT", notnull: 1, pk: 0 },
     ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.route_accessibility_edge_evidence);
+    assertEmbeddedTable(database, "transition_facility_requirement", [
+      { name: "transition_key", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "segment", type: "TEXT", notnull: 1, pk: 2 },
+      { name: "facility_id", type: "TEXT", notnull: 1, pk: 3 },
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transition_facility_requirement);
+    const hasFacilitiesTable = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get());
+    if (hasFacilitiesTable) {
+      const orphanFacilities = database.prepare(
+        "SELECT DISTINCT facility_id FROM transition_facility_requirement WHERE facility_id NOT IN (SELECT id FROM facilities)",
+      ).all();
+      if (orphanFacilities.length > 0) {
+        throw new Error(`transition_facility_requirement contains orphan facility_id: ${orphanFacilities.map((r) => r.facility_id).join(", ")}`);
+      }
+    }
+    const validTransitionKeys = new Set((input.evaluation?.results ?? []).map((r) => r.edgeId));
+    const reqTransitions = database.prepare("SELECT DISTINCT transition_key FROM transition_facility_requirement").all();
+    for (const row of reqTransitions) {
+      if (!validTransitionKeys.has(row.transition_key)) {
+        throw new Error(`transition_facility_requirement contains orphan transition_key: ${row.transition_key}`);
+      }
+    }
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest
