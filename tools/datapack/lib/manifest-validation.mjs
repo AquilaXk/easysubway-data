@@ -361,8 +361,6 @@ export function selectPackWithoutEmergencyOverride(manifest) {
   return selectEffectiveDataPack(withoutEmergencyOverride);
 }
 
-export const selectFallbackDataPack = selectPackWithoutEmergencyOverride;
-
 
 export function validatePackUrl(packUrl, label) {
   if (/%[0-9a-f]{2}/i.test(packUrl)) {
