@@ -8317,8 +8317,8 @@
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
-      "sampleEvidenceStatus": "operation_contract_recorded",
-      "admissionStatus": "preflight_only",
+      "sampleEvidenceStatus": "collector_sample_verified",
+      "admissionStatus": "admitted_to_production_inventory",
       "serviceKeyHandling": "offline_search_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
@@ -8336,6 +8336,15 @@
         "observedUddi": "uddi:ec6e85c3-f01a-415d-8705-e20650f1be84",
         "observedTotalCount": 1671,
         "observedStationCount": 282,
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "attribution": "서울교통공사 (공공데이터포털)",
+        "snapshotFile": "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.json",
+        "rawArchiveFile": "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.raw.json",
+        "rawSha256": "b6eaf75023a74f02b828638d39f3ec60729730e55478851590b9672ddb0aed34",
+        "contentSha256": "3afc688b7f2d61351dee5cea211e83fb7b0f1d72f92716a5a3418f6e36f0fab1",
+        "snapshotSha256": "bc01657e571b3f7dd2cf6c9f46907a50ca5cc23fe12297ed73f557139361a4e5",
+        "definition": "혼잡도는 열차 정원 대비 실제 승차 인원의 비율(단위: %)로 정의되며, 정원 기준으로 좌석만 모두 찼을 경우 혼잡도를 34%로 산정합니다.",
+        "admissionReason": "서울교통공사 공식 지하철혼잡도정보 원천으로, 이용허락범위 제한 없음 확인, 최신 OAS 기반 uddi 수집, 원문 응답 보관본과 rawSha256 대조, 승인된 역번호 membership 바인딩이 완료되어 운영 채택으로 승격",
         "outputFields": [
           "구분",
           "상하구분",
@@ -8389,17 +8398,15 @@
           "시간대": "30분 간격 39개 열, 값은 소수 문자열(예: \"39.50\")",
           "emptyValueRows": 0
         },
-        "liveSampleNote": "2026-09-30 DATA_GO_KR_SERVICE_KEY로 최신 uddi를 page=1, perPage=1, returnType=JSON 조회해 totalCount=1671과 위 필드 목록을 확인했다. 수집기 증거(원문 해시·sanitized sample artifact)는 아직 없어 operation 계약만 기록한다.",
+        "liveSampleNote": "2026-09-30 DATA_GO_KR_SERVICE_KEY로 최신 uddi를 perPage=2000 한 번에 전량 수집해 totalCount=1671, 44개 필드(메타데이터 5 + 시간대 39)를 실측했고, 원문 응답 본문(rawSha256 b6eaf750…0aed34)을 스냅샷 옆에 그대로 보관해 해시를 대조했다. 재수집 결과 rawSha256·contentSha256이 첫 수집과 동일했다.",
         "missingEvidence": [
-          "credentialFreeRawArchive",
-          "collectorSampleEvidence",
           "licenseTermsPageCapture",
           "primarySourceDecisionEvidence",
           "providerTermsOrQuotaApproval",
           "rawObjectUri"
         ]
       },
-      "nextAction": "후속 혼잡도 수집 이슈에서 OAS 문서로 최신 uddi를 해석하고 전량 페이지네이션 수집기와 sanitized sample·원문 해시 증거를 만든 뒤 admission을 재심사한다",
+      "nextAction": "운영 빌드에서 tools/datapack/sources/seoul-metro-congestion-<timestamp>.json 스냅샷(원문 보관본 .raw.json으로 해시 대조)을 승인된 역번호 membership으로 팩 station_id에 결속해 station_congestion_stats 및 station_congestion_sources 테이블로 적재한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -8423,7 +8430,15 @@
           "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate provides station congestion statistics, not facility location data"
+        },
+        "congestion": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "OFFICIAL_STATISTICS_ADMITTED",
+          "updateFrequency": "quarterly",
+          "notes": "official Seoul Metro 30-minute interval statistical congestion"
         }
+
       }
     },
     {
