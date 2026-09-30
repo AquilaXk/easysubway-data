@@ -102,6 +102,8 @@ test("map and catalog projections keep only their owned table and field sets", (
     station_aliases: ["station_id", "alias", "normalized_alias"],
     lines: ["id", "name_ko", "name_en"],
     station_lines: ["station_id", "line_id", "station_code", "line_sequence"],
+    station_congestion_stats: ["station_id", "line_id", "direction", "day_type", "slot_start_minute", "congestion_permille", "source_snapshot_id"],
+    station_congestion_sources: ["source_snapshot_id", "dataset_label", "captured_at", "attribution"],
   });
   assert.deepEqual(contract.artifacts.stationCatalogPack.generatedTables, []);
 });
@@ -111,7 +113,7 @@ test("route service evidence tables는 server timetable component의 exact refer
   assert.deepEqual(contract.serverRouteBundle.sourceSchema, {
     path: "tools/datapack/schema/catalog-schema.sql",
     sqliteUserVersion: 19,
-    sha256: "11ab2b5cf41bd5410f632bad2d25d354f79cb66164e3b32e269714188f03857b",
+    sha256: "8705a72babacf405ddff979d12aea9b258b61c417a5f85a81709e6176c81f8db",
   });
   const sourceSchemaBytes = readFileSync(contract.serverRouteBundle.sourceSchema.path);
   assert.equal(createHash("sha256").update(sourceSchemaBytes).digest("hex"), contract.serverRouteBundle.sourceSchema.sha256);

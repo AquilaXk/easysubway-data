@@ -56,6 +56,7 @@
         "tools/datapack/collect-nationwide-public-api-coverage.mjs",
         "tools/datapack/collect-public-static-network-v2.mjs",
         "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+        "tools/datapack/collect-seoul-metro-congestion.mjs",
         "tools/datapack/collect-tago-itx-cheongchun-od.mjs",
         "tools/datapack/current-capital-accessibility-source-handoff.mjs",
         "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
@@ -8316,8 +8317,8 @@
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
-      "sampleEvidenceStatus": "operation_contract_recorded",
-      "admissionStatus": "preflight_only",
+      "sampleEvidenceStatus": "collector_sample_verified",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "serviceKeyHandling": "offline_search_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
@@ -8335,6 +8336,61 @@
         "observedUddi": "uddi:ec6e85c3-f01a-415d-8705-e20650f1be84",
         "observedTotalCount": 1671,
         "observedStationCount": 282,
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "attribution": "서울교통공사 (공공데이터포털)",
+        "snapshotFile": "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.json",
+        "rawArchiveFile": "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.raw.json",
+        "rawSha256": "b6eaf75023a74f02b828638d39f3ec60729730e55478851590b9672ddb0aed34",
+        "contentSha256": "3afc688b7f2d61351dee5cea211e83fb7b0f1d72f92716a5a3418f6e36f0fab1",
+        "snapshotSha256": "bc01657e571b3f7dd2cf6c9f46907a50ca5cc23fe12297ed73f557139361a4e5",
+        "definition": "혼잡도는 열차 정원 대비 실제 승차 인원의 비율(단위: %)로 정의되며, 정원 기준으로 좌석만 모두 찼을 경우 혼잡도를 34%로 산정합니다.",
+        "admissionReason": "서울교통공사 공식 지하철혼잡도정보 원천으로, 이용허락범위 제한 없음 확인, 최신 OAS 기반 uddi 수집, 원문 응답 보관본과 rawSha256 대조, 승인된 역번호 membership 결속까지 검증했다.",
+        "membershipVerification": {
+          "verifiedAt": "2026-09-30",
+          "artifact": "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json",
+          "liveEndpoint": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/SearchSTNBySubwayLineInfo",
+          "csvRowCount": 799,
+          "liveRowCount": 799,
+          "result": "서울 열린데이터광장 OA-15442 시트 CSV로 만든 membership 원천 행 799건을 같은 날 공식 Open API SearchSTNBySubwayLineInfo 응답 799건과 대조했고, 역명 1건(CSV '4?19민주묘지' 인코딩 손실, 공식 '4·19민주묘지')을 제외하고 모두 일치했다. 역명은 조인에 쓰지 않는다.",
+          "nameMismatch": {
+            "csv": "4?19민주묘지",
+            "official": "4·19민주묘지",
+            "usedForJoin": false
+          },
+          "unmappedCodes": "혼잡도 원천 역번호 중 승인된 membership에 없는 코드 5개(지선 분기 코드)와 2호선 까치산(혼잡도 260, 공식 STATION_CD 0200)은 미매핑으로 격리하고 적재하지 않는다."
+        },
+        "productionUseAdmission": {
+          "artifactKind": "source-production-use-admission",
+          "issue": 840,
+          "decisionRef": "https://github.com/AquilaXk/easysubway-data/pull/842",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-09-30",
+          "scope": "SERVER_ROUTE_BUNDLE_STATION_CONGESTION",
+          "productionUseAllowed": true,
+          "consumer": "tools/datapack/build-datapack.mjs#loadSeoulMetroCongestionForBuild",
+          "snapshotFile": "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.json",
+          "rawArchiveFile": "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.raw.json",
+          "rawSha256": "b6eaf75023a74f02b828638d39f3ec60729730e55478851590b9672ddb0aed34",
+          "contentSha256": "3afc688b7f2d61351dee5cea211e83fb7b0f1d72f92716a5a3418f6e36f0fab1",
+          "rationale": "QA 승인(2026-09-30): 서울교통공사 지하철혼잡도정보(data.go.kr 15071311, 이용허락범위 제한 없음)를 서버 번들 station_congestion_stats·station_congestion_sources 적재 용도로 운영 사용 승격한다. 위 스냅샷과 원문 보관본의 해시가 이 기록과 다르면 빌드는 실패한다.",
+          "relationToExistingSources": "역 결속은 seoulmetro-station-line-info로 만든 승인된 역번호 membership만 사용하고 이름 조인은 하지 않는다. 팩에 없는 역과 membership에 없는 코드는 적재하지 않고 미매핑으로 남긴다.",
+          "fieldMapping": {
+            "역번호": "승인된 membership으로 canonical station_id·line_id 결속",
+            "구분": "day_type (평일 WEEKDAY·토요일 SATURDAY·일요일 SUNDAY)",
+            "상하구분": "direction (상선·내선 UP, 하선·외선 DOWN)",
+            "시간대 39개 열": "slot_start_minute·congestion_permille (퍼센트 값을 천분율로 변환)"
+          },
+          "license": {
+            "usePermissionRange": "이용허락범위 제한 없음",
+            "attribution": "서울교통공사 (공공데이터포털)",
+            "attributionLocation": "서버 번들 station_congestion_sources.attribution과 이 admission 기록. 사용자 화면의 출처 표기 위치는 이 기록에서 정하지 않는다."
+          },
+          "quota": {
+            "selfImposedCallLimit": "NONE",
+            "collectionCadence": "분기마다 새 uddi 경로가 추가될 때 1회(전량 한 번 호출)"
+          }
+        },
         "outputFields": [
           "구분",
           "상하구분",
@@ -8388,17 +8444,14 @@
           "시간대": "30분 간격 39개 열, 값은 소수 문자열(예: \"39.50\")",
           "emptyValueRows": 0
         },
-        "liveSampleNote": "2026-09-30 DATA_GO_KR_SERVICE_KEY로 최신 uddi를 page=1, perPage=1, returnType=JSON 조회해 totalCount=1671과 위 필드 목록을 확인했다. 수집기 증거(원문 해시·sanitized sample artifact)는 아직 없어 operation 계약만 기록한다.",
+        "liveSampleNote": "2026-09-30 DATA_GO_KR_SERVICE_KEY로 최신 uddi를 perPage=2000 한 번에 전량 수집해 totalCount=1671, 44개 필드(메타데이터 5 + 시간대 39)를 실측했고, 원문 응답 본문(rawSha256 b6eaf750…0aed34)을 스냅샷 옆에 그대로 보관해 해시를 대조했다. 재수집 결과 rawSha256·contentSha256이 첫 수집과 동일했다.",
         "missingEvidence": [
-          "credentialFreeRawArchive",
-          "collectorSampleEvidence",
           "licenseTermsPageCapture",
-          "primarySourceDecisionEvidence",
-          "providerTermsOrQuotaApproval",
+          "adminAdmissionEvidence",
           "rawObjectUri"
         ]
       },
-      "nextAction": "후속 혼잡도 수집 이슈에서 OAS 문서로 최신 uddi를 해석하고 전량 페이지네이션 수집기와 sanitized sample·원문 해시 증거를 만든 뒤 admission을 재심사한다",
+      "nextAction": "서버 번들 station_congestion 적재 용도로 운영 사용 승격(QA 승인 2026-09-30). production inventory(source-inventory.json) 승격은 raw object 보관·ledger 해시 기록이 필요한 별도 결정 대상이다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -8422,7 +8475,15 @@
           "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate provides station congestion statistics, not facility location data"
+        },
+        "congestion": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SERVER_ROUTE_BUNDLE_STATION_CONGESTION",
+          "updateFrequency": "quarterly",
+          "notes": "official Seoul Metro 30-minute interval statistical congestion; production use is limited to the server route bundle station congestion tables built from the committed raw-archived snapshot"
         }
+
       }
     },
     {

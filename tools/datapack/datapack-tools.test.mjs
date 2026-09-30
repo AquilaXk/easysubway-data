@@ -18503,6 +18503,10 @@ async function writeTransitionFreeCandidateRoot(workspace) {
     incheonTopologyPath,
     "tools/datapack/fixtures/candidate-build-spec.json",
     "tools/datapack/fixtures/catalog-fixture.json",
+    "tools/datapack/source-candidates.json",
+    "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.json",
+    "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.raw.json",
+    "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json",
   ];
   for (const relativePath of requiredFiles) {
     const target = path.join(repositoryRoot, relativePath);

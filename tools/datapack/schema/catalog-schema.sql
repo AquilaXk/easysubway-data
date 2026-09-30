@@ -626,3 +626,21 @@ CREATE INDEX idx_station_pathway_nodes_station ON station_pathway_nodes(station_
 CREATE INDEX idx_station_pathway_edges_from ON station_pathway_edges(from_node_id);
 CREATE INDEX idx_transfer_rules_from_line ON transfer_rules(from_station_id, from_line_id);
 CREATE INDEX idx_station_car_door_hints_station ON station_car_door_hints(station_id, line_id);
+
+CREATE TABLE station_congestion_stats (
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('UP','DOWN','INNER','OUTER')),
+  day_type TEXT NOT NULL CHECK (day_type IN ('WEEKDAY','SATURDAY','SUNDAY')),
+  slot_start_minute INTEGER NOT NULL CHECK (slot_start_minute BETWEEN 0 AND 1500),
+  congestion_permille INTEGER NOT NULL CHECK (congestion_permille >= 0),
+  source_snapshot_id TEXT NOT NULL,
+  PRIMARY KEY (station_id, line_id, direction, day_type, slot_start_minute)
+);
+
+CREATE TABLE station_congestion_sources (
+  source_snapshot_id TEXT PRIMARY KEY,
+  dataset_label TEXT NOT NULL,
+  captured_at TEXT NOT NULL,
+  attribution TEXT NOT NULL
+);
