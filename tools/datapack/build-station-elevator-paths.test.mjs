@@ -508,7 +508,7 @@ test("F6: 번들 빌드 입력 loader는 커밋된 원천에서 시청 2호선 �
 
   const tampered = await copyRoot("tampered-raw");
   const rawPath = path.join(tampered, manifest.facilityLocation.rawCollectionPath);
-  await writeFile(rawPath, (await readFile(rawPath, "utf8")).replace("\n", " \n"));
+  await writeFile(rawPath, `${await readFile(rawPath, "utf8")} `);
   await assert.rejects(loadStationElevatorPathInputs({ repositoryRoot: tampered }), /raw collection sha256 mismatch/);
 
   const notAdmitted = await copyRoot("not-admitted");

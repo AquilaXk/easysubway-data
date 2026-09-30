@@ -116,7 +116,7 @@ test("#834 --observation-root는 같은 회차의 snapshot·키 없는 raw 보�
     assert.equal(observation.rowCount, 2);
     assert.equal(observation.queryCount, 2);
     assert.deepEqual(validateKricExitPathObservation({ observation, snapshotBytes, rawCollectionBytes }), snapshot);
-    for (const bytes of [snapshotBytes, rawCollectionBytes]) assert.doesNotMatch(bytes.toString("utf8"), new RegExp(SERVICE_KEY.replaceAll(/[!]/g, "\\!")));
+    for (const bytes of [snapshotBytes, rawCollectionBytes]) assert.equal(bytes.toString("utf8").includes(SERVICE_KEY), false);
 
     await assert.rejects(() => main([
       ...cliArgs(planPath, path.join(directory, "second.json")),
