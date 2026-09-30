@@ -297,9 +297,16 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.strictEqual(pack.serviceCalendars.length, 22);
   assert.strictEqual(pack.serviceCalendarDates.length, 104);
 
-  // Station car door hints expanded nationwide
-  assert.strictEqual(pack.stationCarDoorHints.length, 435);
-  assert.strictEqual(pack.minimumTableRows.station_car_door_hints, 435);
+  // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
+  // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
+  const carDoorQuarantine = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/release/nationwide-car-door-hint-quarantine.json"),
+    "utf8",
+  ));
+  assert.strictEqual(carDoorQuarantine.summary.quarantinedCount, 386);
+  assert.strictEqual(pack.stationCarDoorHints.length, 49);
+  assert.strictEqual(pack.stationCarDoorHints.length + carDoorQuarantine.summary.quarantinedCount, 435);
+  assert.strictEqual(pack.minimumTableRows.station_car_door_hints, 49);
 
   // Platform info fully populated on all station lines
   const emptyPlatformLines = pack.stationLines.filter((sl) => !sl.platformInfo || sl.platformInfo.trim() === "");
