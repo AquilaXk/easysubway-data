@@ -509,7 +509,12 @@ export async function main(
           expiresAt: boundedManifestExpiresAt,
           keyId: requiredString(fixture.manifest.keyId, "manifest.keyId"),
         }
-      : {}),
+      : fixture.manifest.releaseSequence === undefined
+        ? {}
+        : {
+            // fixture(v1) manifest도 fixture build spec이 선언한 releaseSequence를 명시적으로 싣는다.
+            releaseSequence: requiredPositiveInteger(fixture.manifest.releaseSequence, "manifest.releaseSequence"),
+          }),
     ttlSeconds: fixture.manifest.ttlSeconds,
     packs: manifestPacks,
   };

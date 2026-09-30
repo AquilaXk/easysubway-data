@@ -581,6 +581,62 @@ test("route service evidence domain split은 legacy TEST_ONLY canonical tuple을
   assert.deepEqual(await readFile(admissionPath), beforeAdmissionBytes);
 });
 
+test("exploratory fixture 빌드 manifest는 fixture build spec이 선언한 releaseSequence를 fixture 산출물로 싣는다", async (context) => {
+  const workDir = await mkdtemp(path.join(tmpdir(), "easysubway-exploratory-release-sequence-"));
+  context.after(() => rm(workDir, { recursive: true, force: true }));
+  const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+  assert.equal(buildSpec.fixturePath, "tools/datapack/fixtures/catalog-fixture.json");
+  assert.equal(buildSpec.releaseSequence, 1);
+
+  // datapack-release.yml exploratory 경로와 같은 순서: admin review override 적용 후 --fixture 빌드
+  const reviewedFixturePath = path.join(workDir, "reviewed-catalog-fixture.json");
+  const outputDir = path.join(workDir, "output");
+  await execFileAsync(process.execPath, [
+    "tools/datapack/apply-admin-review-overrides.mjs",
+    "--fixture",
+    buildSpec.fixturePath,
+    "--overrides",
+    "tools/datapack/fixtures/admin-review-overrides.json",
+    "--output",
+    reviewedFixturePath,
+  ], { cwd: root });
+  await execFileAsync(process.execPath, [
+    "tools/datapack/build-datapack.mjs",
+    "--fixture",
+    reviewedFixturePath,
+    "--output",
+    outputDir,
+  ], { cwd: root });
+
+  const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
+  assert.equal(manifest.releaseSequence, 1);
+  assert.equal(manifest.manifestVersion, undefined);
+  assert.equal(manifest.signature, undefined);
+  assert.deepEqual(manifest.packs.map(({ artifactKind }) => artifactKind), ["fixture"]);
+  await execFileAsync(process.execPath, [
+    "tools/datapack/validate-datapack.mjs",
+    "--manifest",
+    path.join(outputDir, "current.json"),
+    "--root",
+    outputDir,
+  ], { cwd: root });
+
+  const invalidFixturePath = path.join(workDir, "invalid-release-sequence-fixture.json");
+  const invalidFixture = JSON.parse(await readFile(reviewedFixturePath, "utf8"));
+  invalidFixture.manifest.releaseSequence = 0;
+  await writeFile(invalidFixturePath, `${JSON.stringify(invalidFixture)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      invalidFixturePath,
+      "--output",
+      path.join(workDir, "invalid-output"),
+    ], { cwd: root }),
+    /manifest\.releaseSequence/,
+  );
+});
+
 test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack을 만든다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-${Date.now()}`);
   await rm(outputDir, { recursive: true, force: true });
@@ -2980,11 +3036,15 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
   );
 
   const plan = JSON.parse(await readFile(publishPlanPath, "utf8"));
-  assert.equal(plan.schemaVersion, 1);
+  // catalog fixture manifest는 fixture build spec의 releaseSequence 1을 싣으므로 immutable release manifest 단계가 포함된다.
+  assert.equal(manifest.releaseSequence, 1);
+  assert.equal(plan.schemaVersion, 2);
   assert.equal(plan.manifestObjectKey, "catalog/current.json");
   assert.deepEqual(plan.steps.map((step) => step.type), [
     "put-pack-object",
     "verify-pack-object",
+    "put-release-manifest-object",
+    "verify-release-manifest-object",
     "put-manifest-object",
     "verify-manifest-object",
   ]);
@@ -3005,14 +3065,17 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
     sha256: pack.sha256,
     sizeBytes: pack.sizeBytes,
   });
-  assert.equal(plan.steps[2].type, "put-manifest-object");
-  assert.equal(plan.steps[2].sourcePath, "catalog/current.json");
-  assert.equal(plan.steps[2].objectKey, "catalog/current.json");
-  assert.equal(plan.steps[2].packCount, 1);
+  assert.equal(plan.steps[2].objectKey, "catalog/releases/1.json");
   assert.equal(plan.steps[2].sha256, sha256(await readFile(stagedManifestPath)));
-  assert.equal(plan.steps[3].type, "verify-manifest-object");
-  assert.equal(plan.steps[3].objectKey, "catalog/current.json");
-  assert.equal(plan.steps[3].sha256, sha256(await readFile(stagedManifestPath)));
+  assert.equal(plan.steps[3].objectKey, "catalog/releases/1.json");
+  assert.equal(plan.steps[4].type, "put-manifest-object");
+  assert.equal(plan.steps[4].sourcePath, "catalog/current.json");
+  assert.equal(plan.steps[4].objectKey, "catalog/current.json");
+  assert.equal(plan.steps[4].packCount, 1);
+  assert.equal(plan.steps[4].sha256, sha256(await readFile(stagedManifestPath)));
+  assert.equal(plan.steps[5].type, "verify-manifest-object");
+  assert.equal(plan.steps[5].objectKey, "catalog/current.json");
+  assert.equal(plan.steps[5].sha256, sha256(await readFile(stagedManifestPath)));
 
   const customPackBytes = Buffer.from("custom relative pack bytes");
   const customPackPath = path.join(stageDir, "packs", "custom-capital.sqlite.gz");
@@ -3050,6 +3113,13 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
     { cwd: root },
   );
   const customPlan = JSON.parse(await readFile(publishPlanPath, "utf8"));
+  assert.equal(customPlan.schemaVersion, 1);
+  assert.deepEqual(customPlan.steps.map((step) => step.type), [
+    "put-pack-object",
+    "verify-pack-object",
+    "put-manifest-object",
+    "verify-manifest-object",
+  ]);
   assert.equal(customPlan.steps[0].sourcePath, "packs/custom-capital.sqlite.gz");
   assert.equal(customPlan.steps[0].objectKey, "packs/custom-capital.sqlite.gz");
 

@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 
+import { resolveItxStationCatalogEvidenceTarget } from "./lib/itx-release-evidence-target.mjs";
+
 const root = path.resolve(import.meta.dirname, "../..");
+const execFileAsync = promisify(execFile);
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
 stageLocalMobileFixture({ repositoryRoot: root });
 const contract = JSON.parse(await readFile(new URL("./itx-cheongchun-coverage-contract.json", import.meta.url), "utf8"));
@@ -335,34 +340,14 @@ test("ITX-청춘 admission evidence는 historical 관측과 current pack identit
   });
 });
 
-test("release candidate pack은 current station-catalog evidence schema와 exact bytes를 보존한다", async (context) => {
-  const output = process.env.EASYSUBWAY_DATAPACK_OUTPUT;
-  let canonicalPackBytes;
-  let activePack;
-  if (output) {
-    const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
-    activePack = manifest.packs.find((pack) => pack.id === manifest.activePack.id
-      && pack.version === manifest.activePack.version);
-    assert.ok(activePack, "release candidate active pack을 찾지 못함");
-    const canonicalPackPath = path.join(
-      output,
-      "catalog",
-      `${activePack.id}-v${activePack.version}.sqlite.gz`,
-    );
-    canonicalPackBytes = await readFile(canonicalPackPath);
-  } else {
-    const index = JSON.parse(await readFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"));
-    const capitalEntry = index.packs.find((pack) => pack.id === "capital");
-    assert.ok(capitalEntry, "bundled capital pack을 찾지 못함");
-    canonicalPackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
-    activePack = capitalEntry;
-  }
+async function assertCurrentItxStationCatalogEvidence(target, context) {
+  const { label, activePack, packBytes: canonicalPackBytes } = target;
   const canonicalPackSha256 = createHash("sha256").update(canonicalPackBytes).digest("hex");
   const canonicalPackSqliteSha256 = createHash("sha256")
     .update(gunzipSync(canonicalPackBytes))
     .digest("hex");
-  assert.equal(activePack.sha256, canonicalPackSha256);
-  assert.equal(activePack.sqliteSha256, canonicalPackSqliteSha256);
+  assert.equal(activePack.sha256, canonicalPackSha256, `${label}: manifest sha256과 팩 gzip bytes가 달라졌다`);
+  assert.equal(activePack.sqliteSha256, canonicalPackSqliteSha256, `${label}: manifest sqliteSha256과 팩 bytes가 달라졌다`);
 
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-release-schema-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
@@ -381,7 +366,7 @@ test("release candidate pack은 current station-catalog evidence schema와 exact
       "station_catalog_station_set_sha256",
       "station_catalog_payload_sha256",
       "station_catalog_manifest_sha256",
-    ]);
+    ], `${label}: route_service_station_catalog_evidence schema`);
     const evidence = database.prepare(`
       SELECT admission_status, admission_eligible,
              station_catalog_artifact_kind, station_catalog_manifest_version
@@ -393,7 +378,7 @@ test("release candidate pack은 current station-catalog evidence schema와 exact
       admission_eligible: 1,
       station_catalog_artifact_kind: "station-catalog-pack",
       station_catalog_manifest_version: 1,
-    });
+    }, `${label}: ITX_CHEONGCHUN station catalog evidence 행`);
     const artifactColumns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
       .all()
       .map(({ name }) => name);
@@ -407,10 +392,90 @@ test("release candidate pack은 current station-catalog evidence schema와 exact
       admission_status: "ADMITTED",
       admission_eligible: 1,
       canonical_pack_id: "capital",
-    });
+    }, `${label}: ITX_CHEONGCHUN artifact evidence 행`);
   } finally {
     database.close();
   }
+}
+
+async function buildExploratoryFixtureCandidate(context) {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-exploratory-candidate-"));
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  await execFileAsync(process.execPath, [
+    "tools/datapack/build-datapack.mjs",
+    "--fixture",
+    "tools/datapack/fixtures/catalog-fixture.json",
+    "--output",
+    outputDir,
+  ], { cwd: root });
+  return outputDir;
+}
+
+test("ITX-청춘 station-catalog evidence: release-candidate 모드는 새로 빌드한 후보 팩을, PR CI·exploratory 모드는 bundled capital 팩을 current schema와 exact bytes로 검사한다", async (context) => {
+  const target = await resolveItxStationCatalogEvidenceTarget({ env: process.env, repositoryRoot: root });
+  await assertCurrentItxStationCatalogEvidence(target, context);
+});
+
+test("exploratory 픽스처 후보는 release-candidate 검사 대상이 아니다: PR CI·exploratory는 bundled 팩을 검사하고 release-candidate 모드는 픽스처 후보를 거부한다", async (context) => {
+  const fixtureOutput = await buildExploratoryFixtureCandidate(context);
+  const fixtureManifest = JSON.parse(await readFile(path.join(fixtureOutput, "current.json"), "utf8"));
+  assert.deepEqual(fixtureManifest.packs.map(({ artifactKind }) => artifactKind), ["fixture"]);
+  const fixturePackBytes = await readFile(path.join(fixtureOutput, "catalog", "capital-v1.sqlite.gz"));
+  const bundledPackBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+
+  for (const env of [
+    { EASYSUBWAY_DATAPACK_RELEASE_MODE: "exploratory", EASYSUBWAY_DATAPACK_OUTPUT: fixtureOutput },
+    {},
+  ]) {
+    const target = await resolveItxStationCatalogEvidenceTarget({ env, repositoryRoot: root });
+    assert.equal(target.kind, "bundled-pack");
+    assert.equal(target.activePack.id, "capital");
+    assert.deepEqual(target.packBytes, bundledPackBytes);
+    assert.notDeepEqual(target.packBytes, fixturePackBytes);
+  }
+
+  await assert.rejects(
+    resolveItxStationCatalogEvidenceTarget({
+      env: { EASYSUBWAY_DATAPACK_RELEASE_MODE: "release-candidate", EASYSUBWAY_DATAPACK_OUTPUT: fixtureOutput },
+      repositoryRoot: root,
+    }),
+    /release-candidate ITX 검사 대상은 production 후보 팩이어야 한다: fixture/,
+  );
+  await assert.rejects(
+    resolveItxStationCatalogEvidenceTarget({
+      env: { EASYSUBWAY_DATAPACK_RELEASE_MODE: "release-candidate" },
+      repositoryRoot: root,
+    }),
+    /release-candidate 모드는 EASYSUBWAY_DATAPACK_OUTPUT 후보 팩이 필요하다/,
+  );
+  await assert.rejects(
+    resolveItxStationCatalogEvidenceTarget({
+      env: { EASYSUBWAY_DATAPACK_RELEASE_MODE: "production-publish", EASYSUBWAY_DATAPACK_OUTPUT: fixtureOutput },
+      repositoryRoot: root,
+    }),
+    /ITX 검사 대상을 정할 수 없는 release mode: production-publish/,
+  );
+});
+
+test("release-candidate 모드 후보 팩에 ITX_CHEONGCHUN station catalog evidence 행이 없으면 실패한다", async (context) => {
+  const candidateOutput = await buildExploratoryFixtureCandidate(context);
+  // 행 누락 판정만 격리하려고 임시 사본의 artifactKind만 production으로 표시한다. 팩 bytes와 sha는 빌드 산출물 그대로다.
+  const manifestPath = path.join(candidateOutput, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.packs = manifest.packs.map((pack) => ({ ...pack, artifactKind: "production" }));
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const target = await resolveItxStationCatalogEvidenceTarget({
+    env: { EASYSUBWAY_DATAPACK_RELEASE_MODE: "release-candidate", EASYSUBWAY_DATAPACK_OUTPUT: candidateOutput },
+    repositoryRoot: root,
+  });
+  assert.equal(target.kind, "release-candidate-pack");
+  assert.deepEqual(target.packBytes, await readFile(path.join(candidateOutput, "catalog", "capital-v1.sqlite.gz")));
+  await assert.rejects(
+    assertCurrentItxStationCatalogEvidence(target, context),
+    (error) => error instanceof assert.AssertionError
+      && /ITX_CHEONGCHUN station catalog evidence 행/.test(error.message),
+  );
 });
 
 test("ITX-청춘 evidence는 공식 URL·schema/hash·재검토 시점을 갖고 credential을 포함하지 않는다", () => {
