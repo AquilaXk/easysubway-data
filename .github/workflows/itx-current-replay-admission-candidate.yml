@@ -2,6 +2,15 @@ name: ITX Current Replay Admission Candidate
 
 on:
   workflow_dispatch:
+    inputs:
+      continuation_run_id:
+        description: "Continuation run ID"
+        required: true
+        type: string
+      replay_run_id:
+        description: "Offline replay run ID"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -29,12 +38,24 @@ jobs:
         with:
           node-version: "24.19.0"
 
+      - name: ITX replay admission / Validate inputs
+        run: |
+          set -euo pipefail
+          if [[ ! "${{ inputs.continuation_run_id }}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid continuation_run_id: ${{ inputs.continuation_run_id }}" >&2
+            exit 1
+          fi
+          if [[ ! "${{ inputs.replay_run_id }}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid replay_run_id: ${{ inputs.replay_run_id }}" >&2
+            exit 1
+          fi
+
       - name: ITX replay admission / Download retained extended capture
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           repository: AquilaXk/easysubway-data
-          run-id: 31620004435
-          name: itx-current-collection-continuation-31620004435
+          run-id: ${{ inputs.continuation_run_id }}
+          name: itx-current-collection-continuation-${{ inputs.continuation_run_id }}
           path: ${{ runner.temp }}/itx-replay-admission-capture
           github-token: ${{ github.token }}
 
@@ -42,8 +63,8 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           repository: AquilaXk/easysubway-data
-          run-id: 31679427374
-          name: itx-current-collection-offline-replay-31679427374
+          run-id: ${{ inputs.replay_run_id }}
+          name: itx-current-collection-offline-replay-${{ inputs.replay_run_id }}
           path: ${{ runner.temp }}/itx-replay-admission-evidence
           github-token: ${{ github.token }}
 
