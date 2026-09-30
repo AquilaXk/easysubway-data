@@ -123,9 +123,9 @@ export function integrateRegionalTimetables({
   }
 
   calendars.push(
-    { serviceId: "busan-weekday-2026", monday: 1, tuesday: 1, wednesday: 1, thursday: 1, friday: 1, saturday: 0, sunday: 0, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "busan-saturday-2026", monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 1, sunday: 0, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "busan-holiday-2026", monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0, sunday: 1, startDate: "20260101", endDate: "20261231" }
+    { serviceId: "busan-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
+    { serviceId: "busan-saturday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false, startDate: "20260101", endDate: "20261231" },
+    { serviceId: "busan-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, startDate: "20260101", endDate: "20261231" }
   );
 
   const busanResolvers = {};
@@ -216,9 +216,9 @@ export function integrateRegionalTimetables({
     });
 
     calendars.push(
-      { serviceId: `daegu-line${cfg.num}-weekday-2026`, monday: 1, tuesday: 1, wednesday: 1, thursday: 1, friday: 1, saturday: 0, sunday: 0, startDate: "20260101", endDate: "20261231" },
-      { serviceId: `daegu-line${cfg.num}-saturday-2026`, monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 1, sunday: 0, startDate: "20260101", endDate: "20261231" },
-      { serviceId: `daegu-line${cfg.num}-holiday-2026`, monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0, sunday: 1, startDate: "20260101", endDate: "20261231" }
+      { serviceId: `daegu-line${cfg.num}-weekday-2026`, monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
+      { serviceId: `daegu-line${cfg.num}-saturday-2026`, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false, startDate: "20260101", endDate: "20261231" },
+      { serviceId: `daegu-line${cfg.num}-holiday-2026`, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, startDate: "20260101", endDate: "20261231" }
     );
 
     const resolver = makeStationResolver(cfg.lineId, daeguAccessibility?.rows);
@@ -280,8 +280,8 @@ export function integrateRegionalTimetables({
   });
 
   calendars.push(
-    { serviceId: "daejeon-weekday-2026", monday: 1, tuesday: 1, wednesday: 1, thursday: 1, friday: 1, saturday: 0, sunday: 0, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "daejeon-holiday-2026", monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 1, sunday: 1, startDate: "20260101", endDate: "20261231" }
+    { serviceId: "daejeon-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
+    { serviceId: "daejeon-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231" }
   );
 
   const daejeonResolver = makeStationResolver(daejeonLineId, daejeonAccessibility?.rows);
@@ -426,8 +426,8 @@ export function integrateRegionalTimetables({
   });
 
   calendars.push(
-    { serviceId: "gwangju-weekday-2026", monday: 1, tuesday: 1, wednesday: 1, thursday: 1, friday: 1, saturday: 0, sunday: 0, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "gwangju-holiday-2026", monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 1, sunday: 1, startDate: "20260101", endDate: "20261231" }
+    { serviceId: "gwangju-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
+    { serviceId: "gwangju-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231" }
   );
 
   const gwangjuResolver = makeStationResolver(gwangjuLineId, gwangjuAccessibility?.rows);
