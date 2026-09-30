@@ -8229,6 +8229,322 @@
         "currentOperationVerifiedAt": "2026-08-14"
       },
       "rawSnapshotAdmission": { "snapshotId": "molit-railway-transfer-movement-20250811", "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json", "metadataFileSha256": "f75e3ec2a2270cdd8d3b2303f12db0167cf0b5f5525115f6c980680468faa284", "rawSha256": "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3", "gzipSha256": "94e712d32860a7a6e4b4c1f1d9651dc25823305f537e50370142009c1ca66d28", "rowCount": 8054, "status": "LOCKED" }
+    },
+    {
+      "id": "seoul-metro-congestion-statistics",
+      "priority": "P1",
+      "domain": "station_congestion_statistics",
+      "displayName": "서울교통공사 지하철혼잡도정보",
+      "detailUrl": "https://www.data.go.kr/data/15071311/fileData.do",
+      "requestUrl": "https://api.odcloud.kr/api/15071311/v1/uddi:ec6e85c3-f01a-415d-8705-e20650f1be84",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://api.odcloud.kr/api/15071311/v1/uddi:ec6e85c3-f01a-415d-8705-e20650f1be84",
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY",
+          "placement": "header",
+          "parameter": "Authorization"
+        },
+        "requiredParameters": [
+          "Authorization",
+          "page",
+          "perPage",
+          "returnType"
+        ],
+        "responseEnvelope": "data[].{구분,상하구분,역번호,역명,호선,시간대}",
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "operation_contract_recorded",
+      "admissionStatus": "preflight_only",
+      "serviceKeyHandling": "offline_search_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-09-30",
+        "endpoint": "https://api.odcloud.kr/api/15071311/v1/uddi:ec6e85c3-f01a-415d-8705-e20650f1be84",
+        "provider": "서울교통공사",
+        "datasetId": "15071311",
+        "datasetPageUrl": "https://www.data.go.kr/data/15071311/fileData.do",
+        "versionListUrl": "https://infuser.odcloud.kr/oas/docs?namespace=15071311/v1",
+        "formats": [
+          "JSON"
+        ],
+        "versionResolution": "분기마다 새 uddi 경로가 추가된다. 수집 시 versionListUrl의 OAS 문서에서 '서울교통공사_지하철혼잡도정보_YYYYMMDD' 제목 중 날짜가 가장 큰 항목의 /15071311/v1/uddi:<id> 경로를 고른다. 2026-09-30 확인한 최신은 서울교통공사_지하철혼잡도정보_20260630 = uddi:ec6e85c3-f01a-415d-8705-e20650f1be84.",
+        "observedDatasetVersion": "20260630",
+        "observedUddi": "uddi:ec6e85c3-f01a-415d-8705-e20650f1be84",
+        "observedTotalCount": 1671,
+        "observedStationCount": 282,
+        "outputFields": [
+          "구분",
+          "상하구분",
+          "역번호",
+          "역명",
+          "호선",
+          "5시30분",
+          "6시00분",
+          "6시30분",
+          "7시00분",
+          "7시30분",
+          "8시00분",
+          "8시30분",
+          "9시00분",
+          "9시30분",
+          "10시00분",
+          "10시30분",
+          "11시00분",
+          "11시30분",
+          "12시00분",
+          "12시30분",
+          "13시00분",
+          "13시30분",
+          "14시00분",
+          "14시30분",
+          "15시00분",
+          "15시30분",
+          "16시00분",
+          "16시30분",
+          "17시00분",
+          "17시30분",
+          "18시00분",
+          "18시30분",
+          "19시00분",
+          "19시30분",
+          "20시00분",
+          "20시30분",
+          "21시00분",
+          "21시30분",
+          "22시00분",
+          "22시30분",
+          "23시00분",
+          "23시30분",
+          "00시00분",
+          "00시30분"
+        ],
+        "fieldValueNotes": {
+          "구분": "평일·토요일·일요일 각 557행",
+          "상하구분": "상선 663·하선 684·내선 162·외선 162",
+          "호선": "1호선~8호선",
+          "시간대": "30분 간격 39개 열, 값은 소수 문자열(예: \"39.50\")",
+          "emptyValueRows": 0
+        },
+        "liveSampleNote": "2026-09-30 DATA_GO_KR_SERVICE_KEY로 최신 uddi를 page=1, perPage=1, returnType=JSON 조회해 totalCount=1671과 위 필드 목록을 확인했다. 수집기 증거(원문 해시·sanitized sample artifact)는 아직 없어 operation 계약만 기록한다.",
+        "missingEvidence": [
+          "credentialFreeRawArchive",
+          "collectorSampleEvidence",
+          "licenseTermsPageCapture",
+          "primarySourceDecisionEvidence",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
+        ]
+      },
+      "nextAction": "후속 혼잡도 수집 이슈에서 OAS 문서로 최신 uddi를 해석하고 전량 페이지네이션 수집기와 sanitized sample·원문 해시 증거를 만든 뒤 admission을 재심사한다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate provides station congestion statistics, not facility location data"
+        }
+      }
+    },
+    {
+      "id": "kric-station-toilet",
+      "priority": "P1",
+      "domain": "accessibility_facilities",
+      "displayName": "KRIC 역사별 화장실 현황",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=186&service=convenientInfo&operation=stationToilet&page=3",
+      "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationToilet",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationToilet",
+        "auth": {
+          "env": "KRIC_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey",
+          "valueEncoding": "url-search-params-once",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "format",
+          "railOprIsttCd",
+          "lnCd",
+          "stinCd"
+        ],
+        "responseEnvelope": "JSON array | XML root.body.items.item",
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "preflight_only",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=186&service=convenientInfo&operation=stationToilet&page=3",
+        "retrievedAt": "2026-09-30",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationToilet",
+        "usePermissionRange": "저작권표시",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationToilet?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=322",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "outputFields": [
+          "diapExchNum",
+          "dtlLoc",
+          "exitNo",
+          "gateInotDvNm",
+          "grndDvNm",
+          "lnCd",
+          "mlFmlDvNm",
+          "railOprIsttCd",
+          "stinCd",
+          "stinFlor",
+          "toltNum"
+        ],
+        "liveSampleNote": "2026-09-30T01:23Z KRIC_SERVICE_KEY로 railOprIsttCd=S1, lnCd=2, stinCd=222, format=json을 호출해 HTTP 응답 header.resultCode=41(승인 대기중 입니다.)을 확인했다. QA 활용신청은 완료됐고 KRIC 승인 전이라 응답 행과 필드 실측은 없다. 출력 필드는 상세 페이지 문서 기준이다.",
+        "missingEvidence": [
+          "approvedKeyLiveSample",
+          "sampleResponse",
+          "licenseCommercialRedistributionEvidence",
+          "providerTermsOrQuotaApproval"
+        ],
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=3"
+      },
+      "nextAction": "KRIC 승인(resultCode 41 해소) 뒤 승인 키로 대표 역 실호출 sample을 수집해 행 수·필드를 검증하고 후속 수집 이슈에서 게이트 안팎·남녀·기저귀교환대 필드의 수집기를 구현한다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires approved-key live sample evidence and inventory admission before production use"
+        }
+      }
+    },
+    {
+      "id": "kric-station-disabled-toilet",
+      "priority": "P1",
+      "domain": "accessibility_facilities",
+      "displayName": "KRIC 역사별 장애인 화장실 위치",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=432&service=vulnerableUserInfo&operation=stationDisabledToilet&page=6",
+      "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationDisabledToilet",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationDisabledToilet",
+        "auth": {
+          "env": "KRIC_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey",
+          "valueEncoding": "url-search-params-once",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "format",
+          "railOprIsttCd",
+          "lnCd",
+          "stinCd"
+        ],
+        "responseEnvelope": "JSON array | XML root.body.items.item",
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "preflight_only",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=432&service=vulnerableUserInfo&operation=stationDisabledToilet&page=6",
+        "retrievedAt": "2026-09-30",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationDisabledToilet",
+        "usePermissionRange": "저작권표시",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationDisabledToilet?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=322",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "outputFields": [
+          "diapExchNum",
+          "dtlLoc",
+          "exitNo",
+          "gateInotDvNm",
+          "grndDvNm",
+          "lnCd",
+          "mlFmlDvNm",
+          "railOprIsttCd",
+          "stinCd",
+          "stinFlor",
+          "toltNum"
+        ],
+        "liveSampleNote": "2026-09-30T01:23Z KRIC_SERVICE_KEY로 railOprIsttCd=S1, lnCd=2, stinCd=222, format=json을 호출해 HTTP 응답 header.resultCode=41(승인 대기중 입니다.)을 확인했다. QA 활용신청은 완료됐고 KRIC 승인 전이라 응답 행과 필드 실측은 없다. 출력 필드는 상세 페이지 문서 기준이다.",
+        "missingEvidence": [
+          "approvedKeyLiveSample",
+          "sampleResponse",
+          "licenseCommercialRedistributionEvidence",
+          "providerTermsOrQuotaApproval"
+        ],
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=6"
+      },
+      "nextAction": "KRIC 승인(resultCode 41 해소) 뒤 승인 키로 대표 역 실호출 sample을 수집해 행 수·필드를 검증하고 후속 수집 이슈에서 장애인 화장실 위치 수집기를 구현한다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires approved-key live sample evidence and inventory admission before production use"
+        }
+      }
     }
   ]
 }
