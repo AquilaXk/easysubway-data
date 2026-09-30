@@ -2,6 +2,11 @@ name: ITX Current Collection Offline Replay
 
 on:
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Continuation run ID to replay"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -29,12 +34,22 @@ jobs:
         with:
           node-version: "24.19.0"
 
+      - name: ITX offline replay / Validate inputs
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${SOURCE_RUN_ID}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid source_run_id: ${SOURCE_RUN_ID}" >&2
+            exit 1
+          fi
+
       - name: ITX offline replay / Download retained extended capture
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           repository: AquilaXk/easysubway-data
-          run-id: 31620004435
-          name: itx-current-collection-continuation-31620004435
+          run-id: ${{ inputs.source_run_id }}
+          name: itx-current-collection-continuation-${{ inputs.source_run_id }}
           path: ${{ runner.temp }}/itx-offline-replay-input
           github-token: ${{ github.token }}
 
