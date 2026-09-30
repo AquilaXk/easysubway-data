@@ -441,7 +441,8 @@ test("서울 1~8호선 위치는 공식 public API operation과 secret-redacted 
     valueEncoding: "url-search-params-once",
     loadPolicy: "process-env-no-shell-parsing",
   });
-  assert.deepEqual(candidate.operation.requiredParameters, ["serviceKey", "page", "perPage", "returnType"]);
+  // returnType은 fixedParameters가 고정한다. 검증기는 required·fixed·optional 이름이 겹치지 않아야 한다(#850).
+  assert.deepEqual(candidate.operation.requiredParameters, ["serviceKey", "page", "perPage"]);
   assert.deepEqual(candidate.operation.fixedParameters, { returnType: "JSON" });
   assert.equal(candidate.operation.responseEnvelope, "data + currentCount + matchCount + page + perPage + totalCount");
   assert.equal(candidate.operation.runner.command, "node tools/datapack/run-public-static-network-v2-operation.mjs");

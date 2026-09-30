@@ -7499,7 +7499,7 @@
           "valueEncoding": "url-search-params-once",
           "loadPolicy": "process-env-no-shell-parsing"
         },
-        "requiredParameters": ["serviceKey", "page", "perPage", "returnType"],
+        "requiredParameters": ["serviceKey", "page", "perPage"],
         "fixedParameters": { "returnType": "JSON" },
         "responseEnvelope": "data + currentCount + matchCount + page + perPage + totalCount",
         "responseFields": ["연번", "호선", "고유역번호(외부역코드)", "역명", "위도", "경도", "작성기준일", "작성일자"],
@@ -8446,6 +8446,13 @@
           "returnType"
         ],
         "responseEnvelope": "data[].{구분,상하구분,역번호,역명,호선,시간대}",
+        "runner": {
+          "command": "node tools/datapack/collect-seoul-metro-congestion.mjs",
+          "arguments": [],
+          "requiredEnv": [
+            "DATA_GO_KR_SERVICE_KEY"
+          ]
+        },
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
