@@ -789,3 +789,24 @@ test("KRIC 이동동선 상세 operation provider result 30은 모든 production
     assert.ok(!capitalPilotInput.movementPathCandidates.some((entry) => entry.sourceId === id));
   }
 });
+
+test("일반 operation의 maxRetries는 0만 허용한다(#850)", () => {
+  const source = (maxRetries) => candidate("a", {
+    requestUrl: "https://provider.example/a",
+    operation: validOperation({ maxRetries }),
+  });
+
+  assert.doesNotThrow(() => validateOperation(source(0)));
+  assert.throws(() => validateOperation(source(1)), /a\.operation retry max must be zero/);
+});
+
+test("정본 source-candidates.json의 모든 operation은 자기 검증기를 통과한다(#850)", async () => {
+  const document = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+  const invalid = document.candidates
+    .filter((entry) => entry.requestUrl != null || entry.operation?.kind === "AGGREGATE_SOURCE_SET")
+    .map((entry) => operationSummary(entry))
+    .filter((summary) => summary.operationValidationError != null)
+    .map((summary) => `${summary.id}: ${summary.operationValidationError}`);
+
+  assert.deepEqual(invalid, []);
+});
