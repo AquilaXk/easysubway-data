@@ -256,6 +256,10 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["route-digest-mismatch", `UPDATE route_accessibility_edge_evidence SET evaluation_digest='${"e".repeat(64)}'`, /embedded route-edge evaluation evidence mismatch/],
     ["route-schema-without-constraints", "ALTER TABLE route_accessibility_edge_evidence RENAME TO route_accessibility_edge_evidence_old; CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL); INSERT INTO route_accessibility_edge_evidence SELECT * FROM route_accessibility_edge_evidence_old; DROP TABLE route_accessibility_edge_evidence_old", /embedded route_accessibility_edge_evidence schema mismatch/],
     ["missing-route-table", "DROP TABLE route_accessibility_edge_evidence", /embedded route_accessibility_edge_evidence schema mismatch/],
+    ["missing-station-elevator-path-table", "DROP TABLE station_elevator_path", /embedded station_elevator_path schema mismatch/],
+    ["missing-station-elevator-path-facility-table", "DROP TABLE station_elevator_path_facility", /embedded station_elevator_path_facility schema mismatch/],
+    ["orphan-path-id", "INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan path_id: kric-mv:S1:2:201:202:1/],
+    ["orphan-facility-id", "INSERT INTO station_elevator_path VALUES('kric-mv:S1:2:201:202:1','s1','l1','s2','9','나역',1,'1) 이동'); INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan facility_id: smrt-elev:0201:2:9번 출입구/],
   ]) {
     await t.test(name, async () => {
       const fixture = await createFixture(t);

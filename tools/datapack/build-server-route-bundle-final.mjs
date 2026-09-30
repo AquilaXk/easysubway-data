@@ -578,6 +578,34 @@ async function assertEmbeddedEvidence(input) {
       { name: "materialization_digest", type: "TEXT", notnull: 1, pk: 0 },
       { name: "canonical_json", type: "TEXT", notnull: 1, pk: 0 },
     ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.route_accessibility_edge_evidence);
+    assertEmbeddedTable(database, "station_elevator_path", [
+      { name: "path_id", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "station_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "line_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "next_station_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "exit_no", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "platform_direction", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "step", type: "INTEGER", notnull: 1, pk: 2 },
+      { name: "detail", type: "TEXT", notnull: 1, pk: 0 },
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_elevator_path);
+    assertEmbeddedTable(database, "station_elevator_path_facility", [
+      { name: "path_id", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "group_kind", type: "TEXT", notnull: 1, pk: 2 },
+      { name: "facility_id", type: "TEXT", notnull: 1, pk: 3 },
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_elevator_path_facility);
+    const orphanPaths = database.prepare(
+      "SELECT DISTINCT path_id FROM station_elevator_path_facility WHERE path_id NOT IN (SELECT path_id FROM station_elevator_path) ORDER BY path_id",
+    ).all();
+    if (orphanPaths.length > 0) {
+      throw new Error(`station_elevator_path_facility contains orphan path_id: ${orphanPaths.map((row) => row.path_id).join(", ")}`);
+    }
+    const hasFacilitiesTable = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get());
+    const orphanFacilities = database.prepare(hasFacilitiesTable
+      ? "SELECT DISTINCT facility_id FROM station_elevator_path_facility WHERE facility_id NOT IN (SELECT id FROM facilities) ORDER BY facility_id"
+      : "SELECT DISTINCT facility_id FROM station_elevator_path_facility ORDER BY facility_id").all();
+    if (orphanFacilities.length > 0) {
+      throw new Error(`station_elevator_path_facility contains orphan facility_id: ${orphanFacilities.map((row) => row.facility_id).join(", ")}`);
+    }
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest

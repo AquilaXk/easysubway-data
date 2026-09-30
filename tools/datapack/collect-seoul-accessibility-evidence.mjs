@@ -305,18 +305,20 @@ export async function collectSeoulAccessibility({
 }
 
 export async function collectSeoulAccessibilityObservation({
-  endpoint = SOURCES.accessibility.endpoint,
+  source = "accessibility",
+  endpoint = SOURCES[source]?.endpoint,
   serviceKey,
   fetchImpl = fetch,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
-  requestAttempts = 2,
+  requestAttempts = source === "facility-location" ? 1 : 2,
   retrievedAt = new Date().toISOString(),
   previousSnapshot = null,
 } = {}) {
+  if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
   const collected = await collectSeoulAccessibility({
     endpoint,
     serviceKey,
-    source: "accessibility",
+    source,
     fetchImpl,
     requestTimeoutMs,
     requestAttempts,
@@ -325,8 +327,8 @@ export async function collectSeoulAccessibilityObservation({
   const snapshot = validateSeoulAccessibilitySnapshotIdentity(buildAccessibilitySnapshot(
     collected.rows,
     retrievedAt,
-    { source: "accessibility", ...collected, previousSnapshot },
-  ));
+    { source, ...collected, previousSnapshot },
+  ), { source });
   const responses = collected.rawResponses;
   const rawArtifact = validateSeoulAccessibilityRawCollection({
     schemaVersion: 1,
@@ -339,11 +341,16 @@ export async function collectSeoulAccessibilityObservation({
     requestCount: responses.length,
     inventorySha256: hash(responses.map(({ bodyBase64: _, ...response }) => response)),
     responses,
-  }, snapshot);
+  }, snapshot, { source });
   return { snapshot, rawArtifact };
 }
 
-export function validateSeoulAccessibilitySnapshotIdentity(snapshot) {
+export function validateSeoulAccessibilitySnapshotIdentity(snapshot, { source = "accessibility" } = {}) {
+  if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
+  const sourceConfig = SOURCES[source];
+  const stationKeys = source === "facility-location"
+    ? ["stationName", "lineName", "providerStationCode", "facilities"]
+    : ["stationName", "lineName", "facilities"];
   const expectedKeys = [
     "schemaVersion", "artifactKind", "sourceId", "snapshotId", "previousSnapshotId",
     "retrievedAt", "capturedAt", "observedAt", "freshUntil", "credentialRedacted",
@@ -351,12 +358,12 @@ export function validateSeoulAccessibilitySnapshotIdentity(snapshot) {
     "schemaFingerprint", "stations",
   ];
   const capturedAt = Date.parse(snapshot?.capturedAt);
-  const expectedId = `${SOURCES.accessibility.sourceId}-${typeof snapshot?.capturedAt === "string"
+  const expectedId = `${sourceConfig.sourceId}-${typeof snapshot?.capturedAt === "string"
     ? snapshot.capturedAt.replaceAll(/[-:.]/g, "") : ""}`;
   if (!exactKeys(snapshot, expectedKeys)
     || snapshot.schemaVersion !== 1
-    || snapshot.artifactKind !== SOURCES.accessibility.artifactKind
-    || snapshot.sourceId !== SOURCES.accessibility.sourceId
+    || snapshot.artifactKind !== sourceConfig.artifactKind
+    || snapshot.sourceId !== sourceConfig.sourceId
     || snapshot.snapshotId !== expectedId
     || !(snapshot.previousSnapshotId === null
       || (typeof snapshot.previousSnapshotId === "string"
@@ -373,14 +380,16 @@ export function validateSeoulAccessibilitySnapshotIdentity(snapshot) {
     || snapshot.normalizedRowCount > snapshot.rowCount
     || !/^[0-9a-f]{64}$/.test(snapshot.rawSha256 ?? "")
     || !/^[0-9a-f]{64}$/.test(snapshot.contentSha256 ?? "")
-    || snapshot.schemaFingerprint !== hash(SOURCES.accessibility.schemaFields)
+    || snapshot.schemaFingerprint !== hash(sourceConfig.schemaFields)
     || !Array.isArray(snapshot.stations) || snapshot.stations.length < 1
     || snapshot.contentSha256 !== hash(snapshot.stations)) {
     throw new Error("Seoul accessibility snapshot identity is invalid");
   }
   let facilityCount = 0;
   for (const station of snapshot.stations) {
-    if (!exactKeys(station, ["stationName", "lineName", "facilities"])
+    if (!exactKeys(station, stationKeys)
+      || (source === "facility-location"
+        && (typeof station.providerStationCode !== "string" || station.providerStationCode === ""))
       || typeof station.stationName !== "string" || station.stationName === ""
       || typeof station.lineName !== "string" || station.lineName === ""
       || !Array.isArray(station.facilities) || station.facilities.length < 1) {
@@ -403,8 +412,8 @@ export function validateSeoulAccessibilitySnapshotIdentity(snapshot) {
   return snapshot;
 }
 
-export function validateSeoulAccessibilityRawCollection(rawArtifact, snapshotValue) {
-  const snapshot = validateSeoulAccessibilitySnapshotIdentity(snapshotValue);
+export function validateSeoulAccessibilityRawCollection(rawArtifact, snapshotValue, { source = "accessibility" } = {}) {
+  const snapshot = validateSeoulAccessibilitySnapshotIdentity(snapshotValue, { source });
   const expectedKeys = [
     "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "snapshotRawSha256",
     "credentialRedacted", "requestCount", "inventorySha256", "responses",
@@ -459,9 +468,9 @@ export function validateSeoulAccessibilityRawCollection(rawArtifact, snapshotVal
     rawPages.push({ pageNo: response.pageNo, totalCount: pageTotal, rawSha256: response.rawResponseSha256 });
   }
   const projected = buildAccessibilitySnapshot(
-    normalizeAccessibilityRows(providerRows),
+    normalizeAccessibilityRows(providerRows, { source }),
     snapshot.capturedAt,
-    { source: "accessibility", rawRowCount: totalCount, rawSha256: snapshot.rawSha256 },
+    { source, rawRowCount: totalCount, rawSha256: snapshot.rawSha256 },
   );
   if (received !== totalCount || received !== snapshot.rowCount
     || snapshot.rawSha256 !== hash(rawPages)
@@ -474,7 +483,7 @@ export function validateSeoulAccessibilityRawCollection(rawArtifact, snapshotVal
   return rawArtifact;
 }
 
-export async function writeSeoulAccessibilityObservation({ outputRoot, observation } = {}) {
+export async function writeSeoulAccessibilityObservation({ outputRoot, observation, source = "accessibility" } = {}) {
   if (typeof outputRoot !== "string" || !isAbsolute(outputRoot)) {
     throw new Error("Seoul observation output root must be absolute");
   }
@@ -485,26 +494,11 @@ export async function writeSeoulAccessibilityObservation({ outputRoot, observati
     if (error?.code !== "ENOENT") throw error;
   }
   const { snapshot, rawArtifact } = observation ?? {};
-  validateSeoulAccessibilityRawCollection(rawArtifact, snapshot);
-  const snapshotFile = `${snapshot.snapshotId}.json`;
-  const rawArtifactFile = `${snapshot.snapshotId}.raw.json`;
+  validateSeoulAccessibilityRawCollection(rawArtifact, snapshot, { source });
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   const rawArtifactBytes = Buffer.from(`${JSON.stringify(rawArtifact, null, 2)}\n`);
-  const manifest = {
-    schemaVersion: 1,
-    artifactKind: "seoul-accessibility-observation",
-    sourceId: snapshot.sourceId,
-    capturedAt: snapshot.capturedAt,
-    snapshotId: snapshot.snapshotId,
-    snapshotRawSha256: snapshot.rawSha256,
-    snapshotFile,
-    snapshotFileSha256: hashBytes(snapshotBytes),
-    rawArtifactFile,
-    rawObjectSha256: hashBytes(rawArtifactBytes),
-    rawObjectChecksumSha256: createHash("sha256").update(rawArtifactBytes).digest("base64"),
-    rawObjectByteSize: rawArtifactBytes.length,
-    credentialRedacted: true,
-  };
+  const manifest = seoulObservationManifest(snapshot, snapshotBytes, rawArtifactBytes);
+  const { snapshotFile, rawArtifactFile } = manifest;
   await mkdir(dirname(outputRoot), { recursive: true });
   const temporary = join(dirname(outputRoot), `.${basename(outputRoot)}.${randomUUID()}.tmp`);
   await mkdir(temporary, { mode: 0o700 });
@@ -520,6 +514,39 @@ export async function writeSeoulAccessibilityObservation({ outputRoot, observati
     throw error;
   }
   return manifest;
+}
+
+function seoulObservationManifest(snapshot, snapshotBytes, rawArtifactBytes) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "seoul-accessibility-observation",
+    sourceId: snapshot.sourceId,
+    capturedAt: snapshot.capturedAt,
+    snapshotId: snapshot.snapshotId,
+    snapshotRawSha256: snapshot.rawSha256,
+    snapshotFile: `${snapshot.snapshotId}.json`,
+    snapshotFileSha256: hashBytes(snapshotBytes),
+    rawArtifactFile: `${snapshot.snapshotId}.raw.json`,
+    rawObjectSha256: hashBytes(rawArtifactBytes),
+    rawObjectChecksumSha256: createHash("sha256").update(rawArtifactBytes).digest("base64"),
+    rawObjectByteSize: rawArtifactBytes.length,
+    credentialRedacted: true,
+  };
+}
+
+// #834: 커밋된 observation manifest·snapshot·raw 보관본 bytes가 서로 결속되고 원문으로 snapshot이 재현되는지 검증한다.
+export function validateSeoulAccessibilityObservation({ observation, snapshotBytes, rawArtifactBytes, source = "accessibility" } = {}) {
+  if (!Buffer.isBuffer(snapshotBytes) || !Buffer.isBuffer(rawArtifactBytes)) {
+    throw new Error("Seoul observation bytes are required");
+  }
+  const snapshot = JSON.parse(snapshotBytes.toString("utf8"));
+  const expected = seoulObservationManifest(snapshot, snapshotBytes, rawArtifactBytes);
+  if (JSON.stringify(observation) !== JSON.stringify(expected)
+    || !snapshotBytes.equals(Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`))) {
+    throw new Error("Seoul observation manifest mismatch");
+  }
+  validateSeoulAccessibilityRawCollection(JSON.parse(rawArtifactBytes.toString("utf8")), snapshot, { source });
+  return snapshot;
 }
 
 export async function writeSeoulAccessibilityEvidence({
@@ -701,19 +728,25 @@ export async function seoulObservationOutputRoot(directoryName) {
 }
 
 async function runObservationCli() {
-    const previousSnapshotArgument = process.argv[4] === "--previous-snapshot";
-    if (![4, previousSnapshotArgument ? 6 : -1].includes(process.argv.length)
+    const sourceArgument = process.argv[4] === "--source";
+    const previousSnapshotIndex = sourceArgument ? 6 : 4;
+    const previousSnapshotArgument = process.argv[previousSnapshotIndex] === "--previous-snapshot";
+    if (process.argv.length !== previousSnapshotIndex + (previousSnapshotArgument ? 2 : 0)
       || process.argv[2] !== "--observation-name") {
       throw new Error(
-        "usage: collect-seoul-accessibility-evidence.mjs --observation-name <safe-name> [--previous-snapshot <repository-relative-path>]",
+        "usage: collect-seoul-accessibility-evidence.mjs --observation-name <safe-name> [--source <accessibility|facility-location>] [--previous-snapshot <repository-relative-path>]",
       );
     }
+    const source = sourceArgument ? process.argv[5] : "accessibility";
+    if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
     const serviceKey = process.env.DATA_GO_KR_SERVICE_KEY;
     if (!serviceKey) throw new Error("DATA_GO_KR_SERVICE_KEY env is required");
-    const previousSnapshot = previousSnapshotArgument ? await readPreviousSnapshot(process.argv[5]) : null;
-    const observation = await collectSeoulAccessibilityObservation({ serviceKey, previousSnapshot });
+    const previousSnapshot = previousSnapshotArgument
+      ? await readPreviousSnapshot(process.argv[previousSnapshotIndex + 1])
+      : null;
+    const observation = await collectSeoulAccessibilityObservation({ source, serviceKey, previousSnapshot });
     const outputRoot = await seoulObservationOutputRoot(process.argv[3]);
-    await writeSeoulAccessibilityObservation({ outputRoot, observation });
+    await writeSeoulAccessibilityObservation({ outputRoot, observation, source });
 }
 
 async function runLegacyCli() {

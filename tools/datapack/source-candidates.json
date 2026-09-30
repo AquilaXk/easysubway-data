@@ -4884,9 +4884,40 @@
           "productionUseAllowed": false,
           "sampleEvidenceHash": "cfa233eee0dbeaf4a8db7eb5798d081c1ce7e7e5a1dfae3d7bf8222902e1f365",
           "adminReviewRecordHash": "91d0e5fca8bd8529ebb1c9c4a296b8e6550f0a2182c9a67ce5730f413ede76fe"
+        },
+        "productionUseAdmission": {
+          "artifactKind": "source-production-use-admission",
+          "issue": 834,
+          "decisionRef": "https://github.com/AquilaXk/easysubway-data/issues/834",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-09-30",
+          "scope": "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
+          "productionUseAllowed": true,
+          "consumer": "tools/datapack/build-station-elevator-paths.mjs",
+          "evidenceManifest": "tools/datapack/release/station-elevator-path-inputs.json",
+          "rationale": "QA 결정(2026-09-30): stationMovement는 요청 파라미터 nextStinCd로 승강장 방향을 공식 지정하고, 출발 위치(stMovePath)와 도착 방향(edMovePath)을 전용 필드로 준다. 출입구→승강장 공식 이동경로를 추정 없이 (역, 노선, 다음 역, mvPathMgNo) 단위로 적재하기 위해 운영 사용으로 승격한다.",
+          "relationToExistingSources": "kric-station-elevator·kric-station-elevator-movement를 대체한다. 두 원천은 구조화된 엘리베이터 참조와 방향 필드가 없고 mvPathMgNo가 경로 종류마다 따로 매겨져 계속 materializer 차단 목록에 둔다. 역·노선 매핑은 kric-station-convenience-standard의 canonicalMappings만 쓰고, 엘리베이터 시설은 seoul-metro-facility-location(getFcElvtr)에서 만든다.",
+          "fieldMapping": {
+            "nextStinCd(request)": "station_elevator_path.next_station_id",
+            "mvPathMgNo": "station_elevator_path.path_id",
+            "exitMvTpOrdr": "station_elevator_path.step",
+            "mvContDtl": "station_elevator_path.detail",
+            "stMovePath": "station_elevator_path.exit_no (^(\\d+)번 출입구로 시작할 때만, 아니면 형식 불일치 제외)",
+            "edMovePath": "station_elevator_path.platform_direction (<X> 방면 형식일 때만, 아니면 형식 불일치 제외)"
+          },
+          "license": {
+            "usePermissionRange": "저작권표시",
+            "attribution": "출처: 국가철도공단 철도산업정보센터(KRIC) 교통약자 역사 이동경로(stationMovement)",
+            "attributionLocation": "서버 번들 accessibility 구성요소 station_elevator_path 행의 path_id(kric-mv 접두, 원천 코드 보존)와 이 admission 기록. 사용자 화면의 출처 표기 위치는 이 기록에서 정하지 않는다."
+          },
+          "quota": {
+            "selfImposedCallLimit": "NONE",
+            "collectionCadence": "번들 입력 스냅샷 수집 시 1회(역·노선·다음 역 조합마다 1회 호출)"
+          }
         }
       },
-      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1701에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
+      "nextAction": "#834에서 서버 번들 station_elevator_path 적재 용도로 운영 사용 승격(QA 결정 2026-09-30). production inventory(source-inventory.json) 승격은 별도 결정 대상이다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -4905,11 +4936,11 @@
           "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
         },
         "facility": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "coverageStatus": "ADMISSION_EVIDENCE_REQUIRED",
-          "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
+          "updateFrequency": "번들 입력 스냅샷 수집 시 1회",
+          "unsupportedNotes": "production use is limited to the server route bundle station elevator path tables built from committed raw-archived snapshots"
         }
       },
       "productionInventoryReferenceId": "kric-station-movement-standard",
@@ -6886,9 +6917,39 @@
           "sampleResponse",
           "credentialFreeSnapshotHash",
           "adminAdmissionEvidence"
-        ]
+        ],
+        "productionUseAdmission": {
+          "artifactKind": "source-production-use-admission",
+          "issue": 834,
+          "decisionRef": "https://github.com/AquilaXk/easysubway-data/issues/834",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-09-30",
+          "scope": "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
+          "productionUseAllowed": true,
+          "consumer": "tools/datapack/build-station-elevator-paths.mjs",
+          "evidenceManifest": "tools/datapack/release/station-elevator-path-inputs.json",
+          "rationale": "QA 결정(2026-09-30): getFcElvtr는 엘리베이터 한 대마다 역코드(stnCd)·노선(lineNm)·위치 표현(dtlPstn)을 주고, 같은 원천이 가동 상태(#419)의 키가 된다. smrt-elev:<stnCd>:<노선코드>:<위치 정규화> 시설 id로 엘리베이터 한 대 단위 시설 행을 만들기 위해 운영 사용으로 승격한다. 가동 상태는 번들에 굽지 않고 UNKNOWN으로 둔다.",
+          "relationToExistingSources": "seoul-metro-accessibility(getWksnElvtr)는 역 단위 상태 증거로만 쓰이고 역코드가 없다. getFcElvtr의 stnCd는 kric-station-convenience-standard canonicalMappings의 S1 stinCd를 4자리 0 채움한 값과 정확히 일치할 때만 canonical 역·노선에 붙이고, 이름 조인은 하지 않는다. 위치 표현이 'N번 출입구'·'X 방면N-M' 문법 밖이거나 같은 id가 2개 이상이면 식별 불가로 제외한다.",
+          "fieldMapping": {
+            "stnCd": "facilities.id (smrt-elev 두 번째 구간) 및 canonical 역 매핑 키",
+            "lineNm": "facilities.id (N호선 → 노선코드 N) 및 canonical 노선 매핑 키",
+            "dtlPstn": "facilities.id (위치 정규화)·facilities.description, 출입구 번호 집합 또는 방면·칸 위치로 파싱",
+            "stnNm": "facilities.name 표시 문구",
+            "oprtngSitu": "번들에 굽지 않음(가동 상태는 #419 운영 상태 테이블)"
+          },
+          "license": {
+            "usePermissionRange": "이용허락범위 제한 없음",
+            "attribution": "출처: 서울교통공사 편의시설위치정보(getFcElvtr)",
+            "attributionLocation": "서버 번들 accessibility 구성요소 facilities 행의 source_id·source_snapshot_id와 이 admission 기록. 사용자 화면의 출처 표기 위치는 이 기록에서 정하지 않는다."
+          },
+          "quota": {
+            "selfImposedCallLimit": "NONE",
+            "collectionCadence": "번들 입력 스냅샷 수집 시 1회(전체 목록 페이지 호출)"
+          }
+        }
       },
-      "nextAction": "collect credential-free facility location evidence and require admin admission evidence before production inventory admission",
+      "nextAction": "#834에서 서버 번들 smrt-elev 엘리베이터 시설 행 적재 용도로 운영 사용 승격(QA 결정 2026-09-30). production inventory(source-inventory.json) 승격은 별도 결정 대상이다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -6907,11 +6968,11 @@
           "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
         },
         "facility": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
-          "updateFrequency": "provider realtime; production cadence not admitted",
-          "unsupportedNotes": "candidate requires credential-free snapshot hashes and admin admission evidence before production use"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
+          "updateFrequency": "번들 입력 스냅샷 수집 시 1회",
+          "unsupportedNotes": "production use is limited to the server route bundle station elevator path tables built from committed raw-archived snapshots"
         }
       }
     },

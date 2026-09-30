@@ -18,6 +18,18 @@ const SNAPSHOT_KEYS = [
   "credentialRedacted", "collectionPlanDigest", "queryPlanSha256", "coverage", "queryPlan",
   "results", "snapshotDigest",
 ];
+const RAW_COLLECTION_KEYS = [
+  "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "snapshotDigest",
+  "credentialRedacted", "requestCount", "inventorySha256", "responses",
+];
+const RAW_RESPONSE_KEYS = ["queryId", "rawResponseSha256", "byteSize", "bodyBase64"];
+const OBSERVATION_KEYS = [
+  "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "freshUntil",
+  "snapshotDigest", "collectionPlanDigest", "queryPlanSha256", "queryCount", "rowCount",
+  "resultStateCounts", "contentSha256", "rawSha256", "snapshotFile", "snapshotFileSha256",
+  "rawArtifactFile", "rawObjectSha256", "rawObjectByteSize", "credentialRedacted",
+];
+const RESULT_STATES = ["EXPLICIT_ZERO", "PROVIDER_NO_DATA", "PROVIDER_RESULT_UNVERIFIED", "ROWS_OBSERVED"];
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_REQUEST_TIMEOUT_MS = 60_000;
 const MAX_REQUEST_INTERVAL_MS = 60_000;
@@ -43,6 +55,7 @@ export async function collectKricExitPathProviderSnapshot({
   requestTimeoutMs = 30_000,
   requestIntervalMs = 0,
   delayImpl = delay,
+  onRawResponse,
 } = {}) {
   const source = KRIC_EXIT_PATH_SOURCES[sourceId];
   if (!source) throw new Error(`unsupported KRIC EXIT source: ${sourceId ?? "[missing]"}`);
@@ -55,7 +68,8 @@ export async function collectKricExitPathProviderSnapshot({
   if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > MAX_REQUEST_INTERVAL_MS) {
     throw new Error("KRIC EXIT request interval is invalid");
   }
-  if (typeof fetchImpl !== "function" || typeof delayImpl !== "function") {
+  if (typeof fetchImpl !== "function" || typeof delayImpl !== "function"
+    || (onRawResponse !== undefined && typeof onRawResponse !== "function")) {
     throw new TypeError("KRIC EXIT collector dependencies are invalid");
   }
 
@@ -64,6 +78,7 @@ export async function collectKricExitPathProviderSnapshot({
     if (index > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);
     results.push(await collectQuery({
       fetchImpl,
+      onRawResponse,
       query: queryPlan[index],
       requestTimeoutMs,
       serviceKey,
@@ -132,6 +147,165 @@ export function canonicalKricExitPathProviderSnapshotJson(snapshot) {
   return canonicalJson(snapshot);
 }
 
+// #834: 수집기가 받은 원문 응답을 키 없이 보관하고, 보관본만으로 snapshot 결과를 다시 만들 수 있게 한다.
+export function buildKricExitPathRawCollection({ snapshot, rawResponses } = {}) {
+  canonicalKricExitPathProviderSnapshotJson(snapshot);
+  if (!Array.isArray(rawResponses)) throw new Error("KRIC EXIT raw responses must be an array");
+  const bytesByQuery = new Map();
+  for (const entry of rawResponses) {
+    if (!entry || typeof entry.queryId !== "string" || !Buffer.isBuffer(entry.bytes)) {
+      throw new Error("KRIC EXIT raw response entry is invalid");
+    }
+    if (bytesByQuery.has(entry.queryId)) throw new Error(`duplicate KRIC EXIT raw response: ${entry.queryId}`);
+    bytesByQuery.set(entry.queryId, entry.bytes);
+  }
+  if (bytesByQuery.size !== snapshot.results.length) throw new Error("KRIC EXIT raw response count mismatch");
+  const responses = snapshot.results.map(({ queryId }) => {
+    const bytes = bytesByQuery.get(queryId);
+    if (!bytes) throw new Error(`KRIC EXIT raw response missing: ${queryId}`);
+    return canonicalObject({
+      queryId,
+      rawResponseSha256: sha256(bytes),
+      byteSize: bytes.length,
+      bodyBase64: bytes.toString("base64"),
+    });
+  });
+  const rawCollection = canonicalObject({
+    schemaVersion: 1,
+    artifactKind: "kric-exit-path-raw-collection",
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    capturedAt: snapshot.capturedAt,
+    snapshotDigest: snapshot.snapshotDigest,
+    credentialRedacted: true,
+    requestCount: responses.length,
+    inventorySha256: rawInventorySha256(responses),
+    responses,
+  });
+  return validateKricExitPathRawCollection(rawCollection, snapshot);
+}
+
+export function validateKricExitPathRawCollection(rawCollection, snapshot) {
+  canonicalKricExitPathProviderSnapshotJson(snapshot);
+  assertKeys(rawCollection, RAW_COLLECTION_KEYS, "KRIC EXIT raw collection keys");
+  if (rawCollection.schemaVersion !== 1
+    || rawCollection.artifactKind !== "kric-exit-path-raw-collection"
+    || rawCollection.sourceId !== snapshot.sourceId
+    || rawCollection.snapshotId !== snapshot.snapshotId
+    || rawCollection.capturedAt !== snapshot.capturedAt
+    || rawCollection.snapshotDigest !== snapshot.snapshotDigest
+    || rawCollection.credentialRedacted !== true
+    || !Array.isArray(rawCollection.responses)
+    || rawCollection.requestCount !== rawCollection.responses.length
+    || rawCollection.responses.length !== snapshot.results.length) {
+    throw new Error("KRIC EXIT raw collection identity mismatch");
+  }
+  for (const [index, response] of rawCollection.responses.entries()) {
+    assertKeys(response, RAW_RESPONSE_KEYS, "KRIC EXIT raw response keys");
+    const result = snapshot.results[index];
+    if (response.queryId !== result.queryId || typeof response.bodyBase64 !== "string" || response.bodyBase64 === "") {
+      throw new Error(`KRIC EXIT raw response identity mismatch: ${result.queryId}`);
+    }
+    const bytes = Buffer.from(response.bodyBase64, "base64");
+    if (bytes.toString("base64") !== response.bodyBase64
+      || bytes.length !== response.byteSize
+      || bytes.length !== result.rawResponseByteSize
+      || sha256(bytes) !== response.rawResponseSha256
+      || response.rawResponseSha256 !== result.rawResponseSha256) {
+      throw new Error(`KRIC EXIT raw response bytes mismatch: ${result.queryId}`);
+    }
+    const derived = deriveQueryResultFromRawBytes(bytes, result.queryId);
+    const recorded = {
+      providerRecordHash: result.providerRecordHash,
+      providerResultCode: result.providerResultCode,
+      rows: result.rows,
+      state: result.state,
+    };
+    if (canonicalJson(derived) !== canonicalJson(recorded)) {
+      throw new Error(`KRIC EXIT raw response does not reproduce snapshot result: ${result.queryId}`);
+    }
+  }
+  if (rawCollection.inventorySha256 !== rawInventorySha256(rawCollection.responses)) {
+    throw new Error("KRIC EXIT raw collection inventory mismatch");
+  }
+  return rawCollection;
+}
+
+export function buildKricExitPathObservation({ snapshot, snapshotBytes, rawCollectionBytes } = {}) {
+  const rawCollection = validateKricExitPathRawCollection(JSON.parse(decodeUtf8(rawCollectionBytes)), snapshot);
+  if (!Buffer.from(rawCollectionBytes).equals(Buffer.from(canonicalJson(rawCollection)))) {
+    throw new Error("KRIC EXIT raw collection must be canonical JSON");
+  }
+  if (!Buffer.from(snapshotBytes).equals(Buffer.from(canonicalKricExitPathProviderSnapshotJson(snapshot)))) {
+    throw new Error("KRIC EXIT observation snapshot bytes mismatch");
+  }
+  const resultStateCounts = Object.fromEntries(RESULT_STATES.map((state) => [state, 0]));
+  for (const { state } of snapshot.results) {
+    if (!Object.hasOwn(resultStateCounts, state)) throw new Error("KRIC EXIT result state mismatch");
+    resultStateCounts[state] += 1;
+  }
+  return canonicalObject({
+    schemaVersion: 1,
+    artifactKind: "kric-exit-path-observation",
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    capturedAt: snapshot.capturedAt,
+    freshUntil: snapshot.freshUntil,
+    snapshotDigest: snapshot.snapshotDigest,
+    collectionPlanDigest: snapshot.collectionPlanDigest,
+    queryPlanSha256: snapshot.queryPlanSha256,
+    queryCount: snapshot.queryPlan.length,
+    rowCount: snapshot.results.reduce((total, { rows }) => total + rows.length, 0),
+    resultStateCounts,
+    contentSha256: sha256(canonicalJson(snapshot.results.map(({ queryId, rows }) => ({ queryId, rows })))),
+    rawSha256: rawCollection.inventorySha256,
+    snapshotFile: `${snapshot.snapshotId}.json`,
+    snapshotFileSha256: sha256(snapshotBytes),
+    rawArtifactFile: `${snapshot.snapshotId}.raw.json`,
+    rawObjectSha256: sha256(rawCollectionBytes),
+    rawObjectByteSize: rawCollectionBytes.length,
+    credentialRedacted: true,
+  });
+}
+
+// observation manifest·snapshot·raw 보관본 bytes가 서로 정확히 결속되는지 검증하고 snapshot을 돌려준다.
+export function validateKricExitPathObservation({ observation, snapshotBytes, rawCollectionBytes } = {}) {
+  assertKeys(observation, OBSERVATION_KEYS, "KRIC EXIT observation keys");
+  const snapshot = JSON.parse(decodeUtf8(snapshotBytes));
+  const expected = buildKricExitPathObservation({ snapshot, snapshotBytes, rawCollectionBytes });
+  if (canonicalJson(observation) !== canonicalJson(expected)) {
+    throw new Error("KRIC EXIT observation manifest mismatch");
+  }
+  return snapshot;
+}
+
+function deriveQueryResultFromRawBytes(bytes, queryId) {
+  let payload;
+  try {
+    payload = parseStrictJson(decodeUtf8(bytes));
+  } catch (error) {
+    if (error instanceof Error && error.message === "duplicate JSON key") throw error;
+    throw new Error(`KRIC EXIT response must be strict UTF-8 JSON: ${queryId}`);
+  }
+  const { providerResultCode, providerRows, resultState } = classifyProviderPayload(payload, queryId);
+  const rows = normalizeProviderRows(providerRows, queryId);
+  return {
+    providerRecordHash: sha256(canonicalJson(rows)),
+    providerResultCode,
+    rows,
+    state: resultState,
+  };
+}
+
+function decodeUtf8(bytes) {
+  if (!(bytes instanceof Uint8Array)) throw new TypeError("KRIC EXIT bytes are required");
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+function rawInventorySha256(responses) {
+  return sha256(canonicalJson(responses.map(({ bodyBase64: _body, ...response }) => response)));
+}
+
 function validateCollectionPlan(plan) {
   canonicalKricExitPathCollectionPlanJson(plan);
   if (!Array.isArray(plan.queryPlan) || plan.queryPlan.length === 0) {
@@ -173,7 +347,7 @@ function validateCollectionPlan(plan) {
   return queries;
 }
 
-async function collectQuery({ fetchImpl, query, requestTimeoutMs, serviceKey, source }) {
+async function collectQuery({ fetchImpl, onRawResponse, query, requestTimeoutMs, serviceKey, source }) {
   const url = buildProviderUrl(source.endpoint, query, serviceKey);
   const bytes = await requestProviderBytes({ fetchImpl, queryId: query.queryId, requestTimeoutMs, url });
   const { providerResultCode, providerRows, resultState } = parseProviderResult({
@@ -182,6 +356,8 @@ async function collectQuery({ fetchImpl, query, requestTimeoutMs, serviceKey, so
     serviceKey,
   });
   const rows = normalizeProviderRows(providerRows, query.queryId);
+  // #834: 자격증명 검사를 통과한 원문 bytes만 raw 보관본으로 넘긴다.
+  onRawResponse?.({ queryId: query.queryId, bytes: Buffer.from(bytes) });
   return canonicalObject({
     queryId: query.queryId,
     state: resultState,

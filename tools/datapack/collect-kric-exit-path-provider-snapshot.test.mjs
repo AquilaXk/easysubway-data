@@ -3,8 +3,12 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
+  buildKricExitPathObservation,
+  buildKricExitPathRawCollection,
   canonicalKricExitPathProviderSnapshotJson,
   collectKricExitPathProviderSnapshot,
+  validateKricExitPathObservation,
+  validateKricExitPathRawCollection,
 } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 
@@ -89,6 +93,88 @@ test("exact query plan을 one-attempt KRIC provider snapshot으로 정규화한�
   const { snapshotDigest, ...payload } = snapshot;
   assert.equal(snapshotDigest, sha256(canonicalJson(payload)));
   assert.doesNotMatch(canonicalKricExitPathProviderSnapshotJson(snapshot), new RegExp(SERVICE_KEY));
+});
+
+test("#834 raw 보관본은 수집 원문 bytes를 키 없이 보존하고 snapshot 결과를 그대로 재현한다", async () => {
+  const collectionPlan = validPlan();
+  const rawBodies = [
+    providerSuccess([providerRow("1", "1"), providerRow("1", "2")]),
+    providerNoDataHeaderOnly(),
+  ];
+  const served = [...rawBodies];
+  const sunk = [];
+  const snapshot = await collectKricExitPathProviderSnapshot({
+    collectionPlan,
+    sourceId: "kric-station-movement-standard",
+    serviceKey: SERVICE_KEY,
+    fetchImpl: async () => jsonResponse(served.shift()),
+    now: new Date(CAPTURED_AT),
+    onRawResponse: (entry) => sunk.push(entry),
+  });
+  assert.deepEqual(sunk.map(({ bytes }) => bytes.toString("utf8")), rawBodies);
+
+  const rawCollection = buildKricExitPathRawCollection({ snapshot, rawResponses: sunk });
+  assert.equal(rawCollection.artifactKind, "kric-exit-path-raw-collection");
+  assert.equal(rawCollection.capturedAt, "2026-08-11T00:00:00.000Z");
+  assert.equal(rawCollection.requestCount, 2);
+  assert.deepEqual(
+    rawCollection.responses.map(({ bodyBase64 }) => Buffer.from(bodyBase64, "base64").toString("utf8")),
+    rawBodies,
+  );
+  assert.doesNotMatch(JSON.stringify(rawCollection), new RegExp(SERVICE_KEY));
+  assert.equal(validateKricExitPathRawCollection(rawCollection, snapshot), rawCollection);
+
+  const tamperedBody = structuredClone(rawCollection);
+  tamperedBody.responses[0].bodyBase64 = Buffer.from(
+    providerSuccess([providerRow("1", "1"), providerRow("1", "3")]),
+  ).toString("base64");
+  assert.throws(() => validateKricExitPathRawCollection(tamperedBody, snapshot), /raw response bytes mismatch/);
+
+  const tamperedSnapshot = structuredClone(snapshot);
+  tamperedSnapshot.results[0].rows[1].mvContDtl = "다른 단계";
+  const { snapshotDigest: _digest, ...payload } = tamperedSnapshot;
+  tamperedSnapshot.snapshotDigest = sha256(canonicalJson(payload));
+  const rebound = { ...structuredClone(rawCollection), snapshotDigest: tamperedSnapshot.snapshotDigest };
+  assert.throws(
+    () => validateKricExitPathRawCollection(rebound, tamperedSnapshot),
+    /does not reproduce snapshot result/,
+  );
+  assert.throws(
+    () => buildKricExitPathRawCollection({ snapshot, rawResponses: sunk.slice(0, 1) }),
+    /raw response count mismatch/,
+  );
+
+  const snapshotBytes = Buffer.from(canonicalKricExitPathProviderSnapshotJson(snapshot));
+  const rawCollectionBytes = Buffer.from(canonicalJson(rawCollection));
+  const observation = buildKricExitPathObservation({ snapshot, snapshotBytes, rawCollectionBytes });
+  assert.deepEqual({
+    capturedAt: observation.capturedAt,
+    queryCount: observation.queryCount,
+    rowCount: observation.rowCount,
+    resultStateCounts: observation.resultStateCounts,
+    snapshotFile: observation.snapshotFile,
+    rawArtifactFile: observation.rawArtifactFile,
+    rawObjectByteSize: observation.rawObjectByteSize,
+  }, {
+    capturedAt: "2026-08-11T00:00:00.000Z",
+    queryCount: 2,
+    rowCount: 2,
+    resultStateCounts: { EXPLICIT_ZERO: 0, PROVIDER_NO_DATA: 1, PROVIDER_RESULT_UNVERIFIED: 0, ROWS_OBSERVED: 1 },
+    snapshotFile: "kric-station-movement-standard-20260811T000000000Z.json",
+    rawArtifactFile: "kric-station-movement-standard-20260811T000000000Z.raw.json",
+    rawObjectByteSize: rawCollectionBytes.length,
+  });
+  assert.equal(observation.rawObjectSha256, sha256(rawCollectionBytes));
+  assert.equal(observation.snapshotFileSha256, sha256(snapshotBytes));
+  assert.deepEqual(validateKricExitPathObservation({ observation, snapshotBytes, rawCollectionBytes }), snapshot);
+  assert.throws(
+    () => validateKricExitPathObservation({ observation: { ...observation, rowCount: 3 }, snapshotBytes, rawCollectionBytes }),
+    /observation manifest mismatch/,
+  );
+  assert.throws(
+    () => validateKricExitPathObservation({ observation, snapshotBytes, rawCollectionBytes: Buffer.from(JSON.stringify(rawCollection, null, 2)) }),
+    /raw collection must be canonical JSON/,
+  );
 });
 
 test("explicit zero와 provider no-data를 path admission 없이 구분한다", async () => {
