@@ -287,6 +287,11 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     stationElevatorPaths: { ...stationElevatorPaths, facilities: stationElevatorPaths.facilities.map((facility) => ({ ...facility, stationId: "ghost" })) },
   }), /station elevator facility station-line is missing from bundle: ghost\/l1/);
   assert.equal(await exists(path.join(temp, "elevator-station-line-outside-bundle")), false);
+  // #827: 연결 완전 경로가 없어 요구 행이 0개면 건너뛰지 않고 빌드를 실패시킨다.
+  await assert.rejects(() => run("no-step-free-requirement", {
+    stationElevatorPaths: { ...stationElevatorPaths, pathFacilities: stationElevatorPaths.pathFacilities.filter(({ group_kind: groupKind }) => groupKind === "EXIT") },
+  }), /transition_facility_requirement is empty/);
+  assert.equal(await exists(path.join(temp, "no-step-free-requirement")), false);
   const elevatorInputsPath = path.join(fixtureRoot, "tools/datapack/release/station-elevator-path-inputs.json");
   const elevatorInputs = await readFile(elevatorInputsPath);
   await rm(elevatorInputsPath);
@@ -497,8 +502,15 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
         { path_id: "kric-mv:S1:2:201:202:1", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
         { path_id: "kric-mv:S1:2:201:202:1", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:1번 출입구" },
       ]);
+      // #827: 운영 빌드 경로가 번들에 적재된 경로·시설 묶음에서 기존 역 ENTRY·EXIT edge(entry-s1/exit-s1)의 요구 행을 만든다.
+      assert.deepEqual(componentDb.prepare("SELECT * FROM transition_facility_requirement ORDER BY transition_key, path_id, group_kind, facility_id").all().map((row) => ({ ...row })), [
+        { transition_key: "entry-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
+        { transition_key: "entry-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
+        { transition_key: "exit-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
+        { transition_key: "exit-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
+      ]);
     } else {
-      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence','station_elevator_path','station_elevator_path_facility')").get().count, 0);
+      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence','station_elevator_path','station_elevator_path_facility','transition_facility_requirement')").get().count, 0);
     }
     componentDb.close();
     assert.equal((await readFile(sqlite)).readUInt32BE(96), 3053000);

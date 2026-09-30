@@ -40,6 +40,9 @@ const CURRENT_SOURCE_WINDOW = await selectedSourceWindow();
 const FRESH_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
 const STALE_AT = CURRENT_SOURCE_WINDOW.staleAt;
 const BUNDLE_ID = "capital-route-bundle-1";
+const FIXTURE_PATH_ID = "kric-mv:S1:1:100:101:1";
+const FIXTURE_EXIT_ELEVATOR = "smrt-elev:0100:1:1번 출입구";
+const FIXTURE_DIRECTION_ELEVATOR = "smrt-elev:0100:1:나역 방면1-1";
 const STATION_SET_SHA256 = "1".repeat(64);
 const SCOPED_STATION_SET_SHA256 = sha256(Buffer.from(canonicalJson(["station-a", "station-b"])));
 const SCRIPT = path.resolve("tools/datapack/build-server-route-bundle-final.mjs");
@@ -260,6 +263,14 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["missing-station-elevator-path-facility-table", "DROP TABLE station_elevator_path_facility", /embedded station_elevator_path_facility schema mismatch/],
     ["orphan-path-id", "INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan path_id: kric-mv:S1:2:201:202:1/],
     ["orphan-facility-id", "INSERT INTO station_elevator_path VALUES('kric-mv:S1:2:201:202:1','s1','l1','s2','9','나역',1,'1) 이동'); INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan facility_id: smrt-elev:0201:2:9번 출입구/],
+    ["missing-facilities-table", "DROP TABLE facilities", /facilities table is missing/],
+    ["missing-transition-facility-requirement-table", "DROP TABLE transition_facility_requirement", /embedded transition_facility_requirement schema mismatch/],
+    ["empty-transition-facility-requirement", "DELETE FROM transition_facility_requirement", /transition_facility_requirement is empty/],
+    ["orphan-transition-key", `INSERT INTO transition_facility_requirement VALUES('entry-ghost','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan transition_key: entry-ghost/],
+    ["other-station-transition-key", `INSERT INTO transition_facility_requirement VALUES('entry-b','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan transition_key: entry-b/],
+    ["orphan-requirement-facility-id", `INSERT INTO transition_facility_requirement VALUES('entry-a','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','smrt-elev:ghost')`, /transition_facility_requirement contains orphan facility_id: smrt-elev:ghost/],
+    ["orphan-requirement-path-id", `INSERT INTO transition_facility_requirement VALUES('entry-a','kric-mv:ghost','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan path_id: kric-mv:ghost/],
+    ["requirement-derivation-mismatch", "DELETE FROM transition_facility_requirement WHERE transition_key='exit-a' AND group_kind='EXIT_ELEVATORS'", /transition_facility_requirement does not match station elevator path derivation/],
   ]) {
     await t.test(name, async () => {
       const fixture = await createFixture(t);
@@ -956,6 +967,18 @@ async function createArtifact(
     materialization.materializationDigest,
     canonicalRouteEdgeEvaluationJson(evaluation),
   );
+  // #827 fixture: station-a/line-1의 연결 완전 경로 1개와 기존 역 ENTRY·EXIT edge(entry-a/exit-a) 요구 행.
+  accessibilityDatabase.exec(`
+    CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY);
+    INSERT INTO facilities VALUES('${FIXTURE_EXIT_ELEVATOR}'), ('${FIXTURE_DIRECTION_ELEVATOR}');
+    INSERT INTO station_elevator_path VALUES('${FIXTURE_PATH_ID}','station-a','line-1','station-b','1','나역',1,'1) 1번 출입구 엘리베이터로 이동');
+    INSERT INTO station_elevator_path_facility VALUES('${FIXTURE_PATH_ID}','EXIT','${FIXTURE_EXIT_ELEVATOR}'), ('${FIXTURE_PATH_ID}','DIRECTION','${FIXTURE_DIRECTION_ELEVATOR}');
+    INSERT INTO transition_facility_requirement VALUES
+      ('entry-a','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}'),
+      ('entry-a','${FIXTURE_PATH_ID}','station-b','PLATFORM_DIRECTION_ELEVATORS','${FIXTURE_DIRECTION_ELEVATOR}'),
+      ('exit-a','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}'),
+      ('exit-a','${FIXTURE_PATH_ID}','station-b','PLATFORM_DIRECTION_ELEVATORS','${FIXTURE_DIRECTION_ELEVATOR}');
+  `);
   accessibilityDatabase.exec("PRAGMA user_version=19; VACUUM");
   accessibilityDatabase.close();
   const buildContract = await readJson(path.join(repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
