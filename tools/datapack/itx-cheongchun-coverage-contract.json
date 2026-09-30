@@ -325,8 +325,8 @@
         "manifestVersion": 1,
         "catalogPackId": "itx-current-station-catalog-v1",
         "stationSetSha256": "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
-        "payloadSha256": "d916d16b77af9fae81ce26d4cabb299a6a4e15ea7be9cd2d9c1130f95803e788",
-        "manifestSha256": "d7c569ed24ff7e35a0edd57e7aab5234fdf4b170c48ece4d7c06aa5824d5828d"
+        "payloadSha256": "37e8fb4bd6c0946cb52b8ffdac43457b5e8b51436b49617d28ea2c8fcd4204a1",
+        "manifestSha256": "5328c25ffaf78085707a3e296993228f3cc3453706420a163ef4b539cb0973b9"
       }
     }
   },
@@ -348,7 +348,7 @@
   },
   "freshness": {
     "status": "MISSING",
-    "nextReviewAt": "2026-09-07T00:00:00+09:00",
+    "nextReviewAt": "2026-10-11T00:00:00+09:00",
     "eventTrigger": "Korail station row 시각 값 제공 또는 다른 공식 station-level timetable 발견"
   },
   "claimGate": {
@@ -365,20 +365,20 @@
   "sourceTimetableArtifact": {
     "status": "ADMITTED",
     "admissionEligible": true,
-    "artifactId": "itx-cheongchun-source-timetable-20260830151508786",
-    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260830151508786.json",
-    "sha256": "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
-    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260830151508786-completeness-evidence.json",
-    "completenessEvidenceSha256": "8de0421d34e50a57c91d1ed0304bfb78608a357d9184675c1a56e413ed98b12a",
+    "artifactId": "itx-cheongchun-source-timetable-20260930163854026",
+    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260930163854026.json",
+    "sha256": "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
+    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260930163854026-completeness-evidence.json",
+    "completenessEvidenceSha256": "cfc97aa5c6dbd4ee0ae6bdbe22a9c2295cbc20b7caf27a23b6768d1038a44f69",
     "schemaVersion": 1,
-    "freshUntil": "2026-09-07T00:00:00+09:00",
+    "freshUntil": "2026-10-11T00:00:00+09:00",
     "policyVersion": "itx-snapshot-anomaly-v1",
     "promotion": {
       "mode": "CURRENT_CANDIDATE_OWNER_APPROVED",
-      "previousArtifactSha256": "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
-      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260824170958799.json",
-      "approvalUrl": "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5469639706",
-      "approvedArtifactSha256": "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e"
+      "previousArtifactSha256": "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
+      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260830151508786.json",
+      "approvalUrl": "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5921050992",
+      "approvedArtifactSha256": "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658"
     }
   }
 }
