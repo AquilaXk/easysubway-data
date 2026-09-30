@@ -26,6 +26,7 @@ const KRIC_OPENAPI_PATH = /^\/openapi\/([A-Za-z][A-Za-z0-9]*)\/([A-Za-z][A-Za-z0
 // 2026-08-02 포털 실측으로 확인한 정본 detail 페이지 id. 잘못된 data.go.kr LINK 페이지가 다시 들어오지 못하게 고정한다.
 const KRIC_PORTAL_DETAIL_IDS = Object.freeze({
   "kric-station-convenience-standard": "430",
+  "kric-station-disabled-toilet": "432",
   "kric-station-elevator": "189",
   "kric-station-elevator-movement": "208",
   "kric-station-escalator": "190",
@@ -34,6 +35,7 @@ const KRIC_PORTAL_DETAIL_IDS = Object.freeze({
   "kric-station-movement-standard": "429",
   "kric-station-platform": "433",
   "kric-station-timetable": "182",
+  "kric-station-toilet": "186",
   "kric-station-transfer-info": "181",
   "kric-subway-route-info": "431",
   "kric-subway-timetable": "162",
