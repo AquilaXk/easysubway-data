@@ -1,6 +1,12 @@
+#!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { validateKricExitPathObservation } from "./collect-kric-exit-path-provider-snapshot.mjs";
+import { validateSeoulAccessibilityObservation } from "./collect-seoul-accessibility-evidence.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 // #834 QA 결정(2026-09-30): 이동경로는 KRIC stationMovement(표준), 엘리베이터 시설은 서울교통공사 getFcElvtr,
@@ -8,6 +14,14 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 export const MOVEMENT_SOURCE_ID = "kric-station-movement-standard";
 export const FACILITY_SOURCE_ID = "seoul-metro-facility-location";
 export const MAPPING_SOURCE_ID = "kric-station-convenience-standard";
+export const STATION_ELEVATOR_PATH_INPUTS_PATH = "tools/datapack/release/station-elevator-path-inputs.json";
+export const PRODUCTION_USE_SCOPE = "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH";
+const INPUT_KEYS = ["schemaVersion", "artifactKind", "issue", "movement", "facilityLocation", "canonicalMapping"];
+const OBSERVED_INPUT_KEYS = [
+  "sourceId", "observationPath", "observationSha256", "snapshotPath", "snapshotSha256",
+  "rawCollectionPath", "rawCollectionSha256",
+];
+const MAPPING_INPUT_KEYS = ["sourceId", "snapshotPath", "snapshotSha256"];
 // getFcElvtr는 서울교통공사 원천이므로 KRIC 운영기관 코드 S1 매핑에만 붙인다.
 const SEOUL_METRO_OPERATOR_CODE = "S1";
 const SEOUL_METRO_LINE_NAME = /^([1-9])호선$/u;
@@ -405,6 +419,95 @@ export function buildStationElevatorCoverageReport(result) {
   };
 }
 
+// 번들 빌드 입력: 커밋된 input manifest가 가리키는 snapshot·raw 보관본·observation을 hash와 원문 재현으로 검증하고,
+// 운영 사용 승격 기록이 있는 원천만 적재한다. 입력이 없거나 어긋나면 번들 빌드를 실패시킨다.
+export async function loadStationElevatorPathInputs({ repositoryRoot } = {}) {
+  if (typeof repositoryRoot !== "string" || repositoryRoot === "") throw new Error("repository root is required");
+  const root = path.resolve(repositoryRoot);
+  const manifest = JSON.parse((await readRequired(root, STATION_ELEVATOR_PATH_INPUTS_PATH, "station elevator path inputs")).toString("utf8"));
+  assertExactKeys(manifest, INPUT_KEYS, "station elevator path inputs");
+  if (manifest.schemaVersion !== 1 || manifest.artifactKind !== "station-elevator-path-inputs" || manifest.issue !== 834) {
+    throw new Error("station elevator path inputs identity mismatch");
+  }
+  const candidates = JSON.parse((await readRequired(root, "tools/datapack/source-candidates.json", "source candidates")).toString("utf8"));
+  for (const sourceId of [MOVEMENT_SOURCE_ID, FACILITY_SOURCE_ID]) assertProductionUseAdmission(candidates, sourceId);
+
+  const movement = await readObservedInput(root, manifest.movement, MOVEMENT_SOURCE_ID);
+  const movementSnapshot = validateKricExitPathObservation({
+    observation: movement.observation,
+    snapshotBytes: movement.snapshotBytes,
+    rawCollectionBytes: movement.rawCollectionBytes,
+  });
+  const facility = await readObservedInput(root, manifest.facilityLocation, FACILITY_SOURCE_ID);
+  const facilitySnapshot = validateSeoulAccessibilityObservation({
+    observation: facility.observation,
+    snapshotBytes: facility.snapshotBytes,
+    rawArtifactBytes: facility.rawCollectionBytes,
+    source: "facility-location",
+  });
+  assertExactKeys(manifest.canonicalMapping, MAPPING_INPUT_KEYS, "canonical mapping input");
+  if (manifest.canonicalMapping.sourceId !== MAPPING_SOURCE_ID) throw new Error("canonical mapping source mismatch");
+  const mappingBytes = await readPinned(
+    root, manifest.canonicalMapping.snapshotPath, manifest.canonicalMapping.snapshotSha256, "canonical mapping snapshot",
+  );
+  const canonicalMappings = canonicalMappingsFromConvenienceSnapshot(JSON.parse(mappingBytes.toString("utf8")));
+  return buildStationElevatorPaths({ movementSnapshot, facilitySnapshot, canonicalMappings });
+}
+
+function assertProductionUseAdmission(candidatesDocument, sourceId) {
+  const matches = (candidatesDocument?.candidates ?? []).filter(({ id }) => id === sourceId);
+  const admission = matches[0]?.evidence?.productionUseAdmission;
+  if (matches.length !== 1
+    || matches[0].capabilities?.facility?.productionUseAllowed !== true
+    || admission?.decision !== "APPROVED"
+    || admission.productionUseAllowed !== true
+    || admission.scope !== PRODUCTION_USE_SCOPE) {
+    throw new Error(`source is not admitted for station elevator paths: ${sourceId}`);
+  }
+}
+
+async function readObservedInput(root, entry, sourceId) {
+  assertExactKeys(entry, OBSERVED_INPUT_KEYS, `${sourceId} input`);
+  if (entry.sourceId !== sourceId) throw new Error(`${sourceId} input source mismatch`);
+  const observationBytes = await readPinned(root, entry.observationPath, entry.observationSha256, `${sourceId} observation`);
+  const snapshotBytes = await readPinned(root, entry.snapshotPath, entry.snapshotSha256, `${sourceId} snapshot`);
+  const rawCollectionBytes = await readPinned(root, entry.rawCollectionPath, entry.rawCollectionSha256, `${sourceId} raw collection`);
+  const observation = JSON.parse(observationBytes.toString("utf8"));
+  if (observation.sourceId !== sourceId
+    || path.posix.basename(entry.snapshotPath) !== observation.snapshotFile
+    || path.posix.basename(entry.rawCollectionPath) !== observation.rawArtifactFile) {
+    throw new Error(`${sourceId} observation file identity mismatch`);
+  }
+  return { observation, snapshotBytes, rawCollectionBytes };
+}
+
+async function readPinned(root, relativePath, expectedSha256, label) {
+  if (!/^[0-9a-f]{64}$/u.test(expectedSha256 ?? "")) throw new Error(`${label} sha256 is invalid`);
+  const bytes = await readRequired(root, relativePath, label);
+  if (sha256(bytes) !== expectedSha256) throw new Error(`${label} sha256 mismatch`);
+  return bytes;
+}
+
+async function readRequired(root, relativePath, label) {
+  if (typeof relativePath !== "string" || relativePath === "" || path.posix.isAbsolute(relativePath)
+    || relativePath.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(`${label} path is invalid`);
+  }
+  try {
+    return await readFile(path.join(root, relativePath));
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new Error(`${label} is missing: ${relativePath}`);
+    throw error;
+  }
+}
+
+function assertExactKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const actual = Object.keys(value).sort(codepointCompare);
+  const expected = [...keys].sort(codepointCompare);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`${label} keys mismatch`);
+}
+
 function increment(target, key) {
   target[key] = (target[key] ?? 0) + 1;
 }
@@ -439,4 +542,19 @@ function compareNumericStrings(left, right) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+async function main(argv) {
+  if (argv.length !== 2 || argv[0] !== "--repository-root") {
+    throw new Error("usage: build-station-elevator-paths.mjs --repository-root <path>");
+  }
+  const result = await loadStationElevatorPathInputs({ repositoryRoot: argv[1] });
+  process.stdout.write(`${JSON.stringify(buildStationElevatorCoverageReport(result), null, 2)}\n`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`build-station-elevator-paths: ${error.message}\n`);
+    process.exitCode = 1;
+  });
 }

@@ -6,6 +6,7 @@ import {
   buildStationElevatorCoverageReport,
   buildStationElevatorPaths,
   canonicalMappingsFromConvenienceSnapshot,
+  loadStationElevatorPathInputs,
   parseElevatorLocation,
   parseMovementDirection,
   parseMovementStartExit,
@@ -446,4 +447,74 @@ test("#834 커밋된 stationMovement·getFcElvtr snapshot은 수집기 raw 보�
   ]) {
     await assert.rejects(access(new URL(retired, repository)), { code: "ENOENT" }, retired);
   }
+});
+
+test("F6: 번들 빌드 입력 loader는 커밋된 원천에서 시청 2호선 시설·경로를 만들고 입력이 없거나 어긋나면 실패한다", async (t) => {
+  const { cp, mkdtemp, mkdir, readFile, rm, writeFile } = await import("node:fs/promises");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const result = await loadStationElevatorPathInputs({ repositoryRoot });
+  const cityHall = { stationId: "station-a2d54a5d63d2", lineId: "seoul-2" };
+  assert.deepEqual(
+    result.facilities.filter(({ stationId, lineId }) => stationId === cityHall.stationId && lineId === cityHall.lineId)
+      .map(({ id, location }) => ({ id, location })),
+    [
+      { id: "smrt-elev:0201:2:9번 출입구", location: { kind: "EXIT", exitNumbers: ["9"] } },
+      {
+        id: "smrt-elev:0201:2:충정로 방면6-2, 을지로입구 방면5-3",
+        location: { kind: "DIRECTION", directions: [{ label: "충정로", carPosition: "6-2" }, { label: "을지로입구", carPosition: "5-3" }] },
+      },
+    ],
+  );
+  assert.deepEqual(
+    result.pathSummaries.filter(({ stationId, lineId }) => stationId === cityHall.stationId && lineId === cityHall.lineId)
+      .map(({ pathId, exitNo, platformDirection, stepCount, linkageComplete }) => ({ pathId, exitNo, platformDirection, stepCount, linkageComplete })),
+    [
+      { pathId: "kric-mv:S1:2:201:202:1", exitNo: "9", platformDirection: "을지로입구", stepCount: 5, linkageComplete: true },
+      { pathId: "kric-mv:S1:2:201:243:2", exitNo: "9", platformDirection: "충정로", stepCount: 5, linkageComplete: true },
+    ],
+  );
+  assert.deepEqual(result.pathFacilities.filter(({ path_id: pathId }) => pathId === "kric-mv:S1:2:201:202:1"), [
+    { path_id: "kric-mv:S1:2:201:202:1", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:9번 출입구" },
+    { path_id: "kric-mv:S1:2:201:202:1", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:충정로 방면6-2, 을지로입구 방면5-3" },
+  ]);
+
+  const temp = await mkdtemp(path.join(os.tmpdir(), "station-elevator-inputs-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const manifestPath = "tools/datapack/release/station-elevator-path-inputs.json";
+  const manifest = JSON.parse(await readFile(path.join(repositoryRoot, manifestPath), "utf8"));
+  const copyRoot = async (name) => {
+    const root = path.join(temp, name);
+    for (const relative of [
+      manifestPath,
+      "tools/datapack/source-candidates.json",
+      ...[manifest.movement, manifest.facilityLocation].flatMap((entry) => [entry.observationPath, entry.snapshotPath, entry.rawCollectionPath]),
+      manifest.canonicalMapping.snapshotPath,
+    ]) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+      await cp(path.join(repositoryRoot, relative), path.join(root, relative));
+    }
+    return root;
+  };
+  const missing = await copyRoot("missing-manifest");
+  await rm(path.join(missing, manifestPath));
+  await assert.rejects(loadStationElevatorPathInputs({ repositoryRoot: missing }), /station elevator path inputs is missing/);
+
+  const missingRaw = await copyRoot("missing-raw");
+  await rm(path.join(missingRaw, manifest.movement.rawCollectionPath));
+  await assert.rejects(loadStationElevatorPathInputs({ repositoryRoot: missingRaw }), /raw collection is missing/);
+
+  const tampered = await copyRoot("tampered-raw");
+  const rawPath = path.join(tampered, manifest.facilityLocation.rawCollectionPath);
+  await writeFile(rawPath, (await readFile(rawPath, "utf8")).replace("\n", " \n"));
+  await assert.rejects(loadStationElevatorPathInputs({ repositoryRoot: tampered }), /raw collection sha256 mismatch/);
+
+  const notAdmitted = await copyRoot("not-admitted");
+  const candidatesPath = path.join(notAdmitted, "tools/datapack/source-candidates.json");
+  const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
+  candidates.candidates.find(({ id }) => id === "seoul-metro-facility-location").capabilities.facility.productionUseAllowed = false;
+  await writeFile(candidatesPath, JSON.stringify(candidates));
+  await assert.rejects(loadStationElevatorPathInputs({ repositoryRoot: notAdmitted }), /not admitted for station elevator paths: seoul-metro-facility-location/);
 });

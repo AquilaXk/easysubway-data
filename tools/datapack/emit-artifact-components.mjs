@@ -18,6 +18,7 @@ import {
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
+import { FACILITY_SOURCE_ID, loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
 
 const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id", "evaluation-at", "station-line-input", "route-edge-input"]);
 const COMPONENTS = {
@@ -49,7 +50,8 @@ const GENERATED_EVIDENCE_LAYOUT = {
 export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
   station_line_accessibility_evidence: "CREATE TABLE station_line_accessibility_evidence (materialization_digest TEXT NOT NULL PRIMARY KEY CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL)",
   route_accessibility_edge_evidence: "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY CHECK(length(evaluation_digest)=64 AND evaluation_digest NOT GLOB '*[^0-9a-f]*'), materialization_digest TEXT NOT NULL CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))",
-  station_elevator_path: "CREATE TABLE station_elevator_path (path_id TEXT NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, path_kind TEXT NOT NULL, exit_no TEXT, platform_direction TEXT, step INTEGER NOT NULL, detail TEXT NOT NULL, facility_id TEXT, PRIMARY KEY (path_id, step))",
+  station_elevator_path: "CREATE TABLE station_elevator_path (path_id TEXT NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, next_station_id TEXT NOT NULL, exit_no TEXT NOT NULL, platform_direction TEXT NOT NULL, step INTEGER NOT NULL CHECK(step > 0), detail TEXT NOT NULL, PRIMARY KEY (path_id, step))",
+  station_elevator_path_facility: "CREATE TABLE station_elevator_path_facility (path_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT','DIRECTION')), facility_id TEXT NOT NULL, PRIMARY KEY (path_id, group_kind, facility_id))",
 });
 const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
   "candidateId", "stationSetSha256", "sourceSetSha256", "policyVersion", "evaluatorVersion",
@@ -114,11 +116,13 @@ export async function emitArtifactComponents(input) {
     basemapManifestBytes: await readFile(path.join(root, buildContract.capitalMapInput.basemapManifestPath)),
     sourceSvgBytes: await readFile(path.join(root, buildContract.capitalMapInput.sourcePath)),
   };
+  // #834: 운영 빌드 경로에서 커밋된 원천 스냅샷으로 엘리베이터 시설·이동경로 행을 만든다. 입력이 없으면 실패한다.
+  const stationElevatorPaths = await loadStationElevatorPathInputs({ repositoryRoot: root });
 
   return serializeArtifactComponents({
     output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
     layout, buildContract, mapAssets, evaluationAt, stationLineInput: input.stationLineInput,
-    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy,
+    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy, stationElevatorPaths,
     skipSourceProjection: input.skipSourceProjection ?? false,
   });
 }
@@ -127,8 +131,9 @@ export async function emitArtifactComponents(input) {
 export async function serializeArtifactComponents({
   output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
   layout, buildContract, mapAssets, evaluationAt, stationLineInput, routeEdgeInput, routeEdgePolicy,
-  skipSourceProjection = false,
+  stationElevatorPaths, skipSourceProjection = false,
 } = {}) {
+  requireStationElevatorPaths(stationElevatorPaths);
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
   const snapshot = path.join(temp, ".source.sqlite");
   let sourceDb;
@@ -147,6 +152,7 @@ export async function serializeArtifactComponents({
       routeEdgeInput,
       routeEdgePolicy,
       skipSourceProjection,
+      stationElevatorPaths,
     });
     sourceDb.close(); sourceDb = undefined;
     await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
@@ -279,6 +285,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
       });
       assertBlockedEdgeProjection(provisionalBlockedEdgeIds, blockedEdgeIds(generatedEvidence.evaluation));
       insertGeneratedEvidence(target, generatedEvidence);
+      insertStationElevatorRows(target, evidenceInput.stationElevatorPaths);
     }
     target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
     validateComponent(target, name, layout.serverRouteBundle);
@@ -412,7 +419,7 @@ function buildGeneratedEvidence(input) {
   }, input.routeEdgePolicy);
   const materializationJson = canonicalStationLineAccessibilityJson(materialization);
   const evaluationJson = canonicalRouteEdgeEvaluationJson(evaluation);
-  return { materialization, materializationJson, evaluation, evaluationJson, stationElevatorPaths: input.stationElevatorPaths ?? [] };
+  return { materialization, materializationJson, evaluation, evaluationJson };
 }
 
 function sourceStationLines(source, includeSequence) {
@@ -483,22 +490,81 @@ function insertGeneratedEvidence(target, evidence) {
     evidence.materialization.materializationDigest,
     evidence.evaluationJson,
   );
-  if (Array.isArray(evidence.stationElevatorPaths)) {
-    const insertPath = target.prepare("INSERT INTO station_elevator_path VALUES(?,?,?,?,?,?,?,?,?)");
-    for (const row of evidence.stationElevatorPaths) {
-      insertPath.run(
-        row.path_id,
-        row.station_id,
-        row.line_id,
-        row.path_kind,
-        row.exit_no,
-        row.platform_direction,
-        row.step,
-        row.detail,
-        row.facility_id,
+}
+
+function requireStationElevatorPaths(value) {
+  if (!value || typeof value !== "object"
+    || !Array.isArray(value.facilities) || !Array.isArray(value.paths) || !Array.isArray(value.pathFacilities)) {
+    throw new Error("station elevator path input is required");
+  }
+  if (value.facilities.length === 0 || value.paths.length === 0) throw new Error("station elevator path input is empty");
+}
+
+// #834: getFcElvtr 엘리베이터 한 대 단위 시설 행을 서버 번들 facilities에만 넣고(모바일 pack 불변),
+// stationMovement 경로 단계와 경로 요구 묶음을 전용 테이블에 넣는다. 번들에 없는 역·노선은 실패로 드러낸다.
+function insertStationElevatorRows(target, data) {
+  requireStationElevatorPaths(data);
+  const stationLines = new Set(target.prepare("SELECT station_id, line_id FROM station_lines").all()
+    .map((row) => `${row.station_id}\u0000${row.line_id}`));
+  const requireStationLine = (stationId, lineId, label) => {
+    if (!stationLines.has(`${stationId}\u0000${lineId}`)) throw new Error(`${label} station-line is missing from bundle: ${stationId}/${lineId}`);
+  };
+  const exitIds = target.prepare("SELECT id FROM station_exits WHERE station_id = ? AND exit_number = ? ORDER BY id COLLATE BINARY");
+  const insertFacility = target.prepare("INSERT INTO facilities(id,station_id,exit_id,type,name,status,floor_from,floor_to,description,source_id,source_snapshot_id,provider_facility_ref,provider_record_hash,provenance_kind,verified_at,retrieved_at,evidence_hash,status_meaning,operational_status,installation_status,confidence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const insertPath = target.prepare("INSERT INTO station_elevator_path(path_id,station_id,line_id,next_station_id,exit_no,platform_direction,step,detail) VALUES(?,?,?,?,?,?,?,?)");
+  const insertPathFacility = target.prepare("INSERT INTO station_elevator_path_facility(path_id,group_kind,facility_id) VALUES(?,?,?)");
+  target.exec("BEGIN");
+  try {
+    for (const facility of [...data.facilities].sort((left, right) => bytes(left.id, right.id))) {
+      requireStationLine(facility.stationId, facility.lineId, "station elevator facility");
+      // 출입구 번호가 하나이고 번들 station_exits에 같은 역·번호 행이 정확히 1개일 때만 exit_id를 채운다.
+      const exits = facility.location.kind === "EXIT" && facility.location.exitNumbers.length === 1
+        ? exitIds.all(facility.stationId, facility.location.exitNumbers[0])
+        : [];
+      insertFacility.run(
+        facility.id,
+        facility.stationId,
+        exits.length === 1 ? exits[0].id : null,
+        "ELEVATOR",
+        `${facility.stationName} 엘리베이터 ${facility.pathDescription}`,
+        "UNKNOWN",
+        "",
+        "",
+        facility.pathDescription,
+        FACILITY_SOURCE_ID,
+        facility.sourceSnapshotId,
+        facility.id.slice("smrt-elev:".length),
+        facility.providerRecordHash,
+        "OFFICIAL_SOURCE",
+        epochSeconds(facility.observedAt),
+        epochSeconds(facility.capturedAt),
+        sha(Buffer.from(canonicalJson({ facilityId: facility.id, providerRecordHash: facility.providerRecordHash, sourceSnapshotId: facility.sourceSnapshotId }))),
+        "STATIC_LOCATION",
+        "UNKNOWN",
+        "INSTALLED",
+        100,
       );
     }
+    for (const row of data.paths) {
+      requireStationLine(row.station_id, row.line_id, "station elevator path");
+      requireStationLine(row.next_station_id, row.line_id, "station elevator path next");
+      insertPath.run(row.path_id, row.station_id, row.line_id, row.next_station_id, row.exit_no, row.platform_direction, row.step, row.detail);
+    }
+    for (const row of data.pathFacilities) insertPathFacility.run(row.path_id, row.group_kind, row.facility_id);
+    const orphanPaths = target.prepare("SELECT DISTINCT path_id FROM station_elevator_path_facility WHERE path_id NOT IN (SELECT path_id FROM station_elevator_path)").all();
+    const orphanFacilities = target.prepare("SELECT DISTINCT facility_id FROM station_elevator_path_facility WHERE facility_id NOT IN (SELECT id FROM facilities)").all();
+    if (orphanPaths.length || orphanFacilities.length) throw new Error("station elevator path facility reference mismatch");
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
   }
+}
+
+function epochSeconds(value) {
+  const millis = Date.parse(value);
+  if (!Number.isFinite(millis)) throw new Error("station elevator facility timestamp is invalid");
+  return Math.floor(millis / 1000);
 }
 
 function copyTable(source, target, table, projection = undefined, presentTables = undefined, selected = undefined, uniqueKeys = []) {

@@ -9,6 +9,18 @@ import { DatabaseSync } from "node:sqlite";
 import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
+import {
+  buildKricExitPathObservation,
+  buildKricExitPathRawCollection,
+  canonicalKricExitPathProviderSnapshotJson,
+  collectKricExitPathProviderSnapshot,
+} from "./collect-kric-exit-path-provider-snapshot.mjs";
+import {
+  collectSeoulAccessibilityObservation,
+  writeSeoulAccessibilityObservation,
+} from "./collect-seoul-accessibility-evidence.mjs";
+import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
 import { emitArtifactComponents, serializeArtifactComponents } from "./emit-artifact-components.mjs";
 import {
@@ -200,8 +212,11 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
   db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('entry-s1','s1','s1:l1',0,0,'ENTRY','','SUBWAY'),('exit-s1','s1:l1','s1',0,0,'EXIT','','SUBWAY'),('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#abcdef','source','source','https://example.test','license','PASS');");
   db.exec("UPDATE network_edges SET accessibility_status='UNAVAILABLE' WHERE id='ride-s1-s2'");
+  db.exec("INSERT INTO station_exits(id,station_id,exit_number) VALUES('s1-exit-1','s1','1')");
   db.exec("INSERT INTO operators VALUES('seoul-metro','서울교통공사','Seoul Metro'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('seoul-2','seoul-metro','2호선','Line 2','#00aa00'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('station-b35616704ce3','검증역','Terminal','검증역','수도권'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('station-b35616704ce3','seoul-2',1); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class,accessibility_status) VALUES('entry-terminal','station-b35616704ce3','station-b35616704ce3:seoul-2',0,0,'ENTRY','','SUBWAY','AVAILABLE'),('exit-terminal','station-b35616704ce3:seoul-2','station-b35616704ce3',0,0,'EXIT','','SUBWAY','AVAILABLE');");
   db.close();
+  await cp("tools/datapack/source-candidates.json", path.join(fixtureRoot, "tools/datapack/source-candidates.json"));
+  const stationElevatorPaths = await writeStationElevatorFixtureInputs(fixtureRoot, temp);
   const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: CURRENT_SOURCE_EXPIRES_AT };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
   const spec = await readFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"));
@@ -241,7 +256,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       releaseSequence: 1, activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL,
       builtAt: CURRENT_EVALUATION_AT, keyId: "test-key" },
     evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput,
-    routeEdgePolicy: routePolicy, ...values,
+    routeEdgePolicy: routePolicy, stationElevatorPaths, ...values,
   });
   const selectedSources = new Set(buildSpec.sourceSnapshots.map(({ sourceId }) => sourceId));
   const governance = JSON.parse(await readFile(path.join(fixtureRoot, "tools/datapack/source-governance-policy.json")));
@@ -266,6 +281,18 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     /--fresh-until exceeds source freshness/,
   );
   assert.equal(await exists(path.join(temp, "exceeds-manifest-expiry")), false);
+  await assert.rejects(() => run("missing-elevator-input", { stationElevatorPaths: undefined }), /station elevator path input is required/);
+  assert.equal(await exists(path.join(temp, "missing-elevator-input")), false);
+  await assert.rejects(() => run("elevator-station-line-outside-bundle", {
+    stationElevatorPaths: { ...stationElevatorPaths, facilities: stationElevatorPaths.facilities.map((facility) => ({ ...facility, stationId: "ghost" })) },
+  }), /station elevator facility station-line is missing from bundle: ghost\/l1/);
+  assert.equal(await exists(path.join(temp, "elevator-station-line-outside-bundle")), false);
+  const elevatorInputsPath = path.join(fixtureRoot, "tools/datapack/release/station-elevator-path-inputs.json");
+  const elevatorInputs = await readFile(elevatorInputsPath);
+  await rm(elevatorInputsPath);
+  await assert.rejects(() => releaseRun("missing-elevator-manifest"), /station elevator path inputs is missing/);
+  assert.equal(await exists(path.join(temp, "missing-elevator-manifest")), false);
+  await writeFile(elevatorInputsPath, elevatorInputs);
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
   assert.deepEqual(paths, ["map-pack/manifest.json", "map-pack/payload/interchange-layout.json", "map-pack/payload/line-styles.json", "map-pack/payload/metropolitan.svg", "map-pack/payload/stations-layout.json", "server-route-bundle/compatibility.json", "server-route-bundle/manifest.signing-input.json", "server-route-bundle/payload/accessibility.sqlite.zst", "server-route-bundle/payload/fare.sqlite.zst", "server-route-bundle/payload/timetable.sqlite.zst", "server-route-bundle/payload/topology.sqlite.zst", "server-route-bundle/provenance.json", "station-catalog-pack/manifest.json", "station-catalog-pack/payload/catalog.sqlite"]);
@@ -450,8 +477,28 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
         materialization_digest: materialization.materializationDigest,
         canonical_json: canonicalRouteEdgeEvaluationJson(evaluation),
       });
+      // #834: 운영 빌드 경로가 fixture 역(가역 s1)의 엘리베이터 시설·이동경로·요구 묶음을 실제로 적재한다.
+      assert.deepEqual(componentDb.prepare("SELECT id, station_id, exit_id, type, name, status, floor_from, floor_to, description, source_id, source_snapshot_id, provider_facility_ref, provenance_kind, status_meaning, operational_status, installation_status, confidence FROM facilities WHERE id LIKE 'smrt-elev:%' ORDER BY id COLLATE BINARY").all().map((row) => ({ ...row })), [{
+        id: "smrt-elev:0201:2:1번 출입구", station_id: "s1", exit_id: "s1-exit-1", type: "ELEVATOR", name: "가역 엘리베이터 1번 출입구",
+        status: "UNKNOWN", floor_from: "", floor_to: "", description: "1번 출입구", source_id: "seoul-metro-facility-location",
+        source_snapshot_id: "seoul-metro-facility-location-20260930T000001000Z", provider_facility_ref: "0201:2:1번 출입구",
+        provenance_kind: "OFFICIAL_SOURCE", status_meaning: "STATIC_LOCATION", operational_status: "UNKNOWN", installation_status: "INSTALLED", confidence: 100,
+      }, {
+        id: "smrt-elev:0201:2:나역 방면2-3", station_id: "s1", exit_id: null, type: "ELEVATOR", name: "가역 엘리베이터 나역 방면2-3",
+        status: "UNKNOWN", floor_from: "", floor_to: "", description: "나역 방면2-3", source_id: "seoul-metro-facility-location",
+        source_snapshot_id: "seoul-metro-facility-location-20260930T000001000Z", provider_facility_ref: "0201:2:나역 방면2-3",
+        provenance_kind: "OFFICIAL_SOURCE", status_meaning: "STATIC_LOCATION", operational_status: "UNKNOWN", installation_status: "INSTALLED", confidence: 100,
+      }]);
+      assert.deepEqual(componentDb.prepare("SELECT * FROM station_elevator_path ORDER BY path_id, step").all().map((row) => ({ ...row })), [
+        { path_id: "kric-mv:S1:2:201:202:1", station_id: "s1", line_id: "l1", next_station_id: "s2", exit_no: "1", platform_direction: "나역", step: 1, detail: "1) 1번 출입구 옆 엘리베이터로 이동" },
+        { path_id: "kric-mv:S1:2:201:202:1", station_id: "s1", line_id: "l1", next_station_id: "s2", exit_no: "1", platform_direction: "나역", step: 2, detail: "2) 나역 방면 승강장 도착" },
+      ]);
+      assert.deepEqual(componentDb.prepare("SELECT * FROM station_elevator_path_facility ORDER BY group_kind, facility_id").all().map((row) => ({ ...row })), [
+        { path_id: "kric-mv:S1:2:201:202:1", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
+        { path_id: "kric-mv:S1:2:201:202:1", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:1번 출입구" },
+      ]);
     } else {
-      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence')").get().count, 0);
+      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence','station_elevator_path','station_elevator_path_facility')").get().count, 0);
     }
     componentDb.close();
     assert.equal((await readFile(sqlite)).readUInt32BE(96), 3053000);
@@ -683,3 +730,108 @@ function groupedForeignKeys(db, table) { const groups = new Map(); for (const ro
 async function taskTemps(temp) { return (await readdir(temp)).filter((entry) => entry.startsWith(".artifact-components-")).sort(); }
 async function exists(target) { try { await readFile(target); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } }
 async function emittedPaths(root, current = root, paths = []) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await emittedPaths(root, target, paths); else paths.push(path.relative(root, target).split(path.sep).join("/")); } return paths.sort(); }
+
+// #834 fixture: 원천 응답 형식을 손으로 옮긴 가역(S1 2호선 201)·나역(202) stationMovement와 getFcElvtr 응답을
+// 실제 수집기에 흘려 snapshot·raw 보관본·manifest를 만들고, 번들 입력 manifest를 fixture repository에 고정한다.
+async function writeStationElevatorFixtureInputs(fixtureRoot, temp) {
+  const sources = path.join(fixtureRoot, "tools/datapack/sources");
+  await mkdir(sources, { recursive: true });
+  const stationLines = [["s1", "가역", "201"], ["s2", "나역", "202"]].map(([stationId, stationName]) => ({
+    stationId, stationName, stationAliases: [], regionId: "capital", lineId: "l1", lineName: "1호선", operatorId: "o1", operatorName: "운영사",
+  }));
+  const providerMappings = [["s1", "201"], ["s2", "202"]].map(([stationId, providerStationId]) => ({
+    stationId, lineId: "l1", providerOperatorId: "S1", providerLineId: "2", providerStationId,
+  }));
+  const routeEdges = [["ride-s1-s2", "s1", "s2"], ["ride-s2-s1", "s2", "s1"]].map(([routeEdgeId, fromStationId, toStationId]) => ({
+    routeEdgeId, fromStationId, toStationId, lineId: "l1", edgeType: "RIDE", servicePattern: "LOCAL", serviceClass: "SUBWAY",
+  }));
+  const digest = (value) => hash(Buffer.from(canonicalJson(value)));
+  const plan = planKricExitPathCollection({
+    candidate: {
+      candidateId: "fixture-elevator-candidate",
+      stationSetSha256: digest(["s1", "s2"]),
+      stationLineSetSha256: digest(stationLines.map(({ stationId, lineId, operatorId }) => ({ stationId, lineId, operatorId }))),
+      stationLineMappingSha256: digest(stationLines),
+      providerMappingSha256: digest(providerMappings),
+      topologySha256: digest([...routeEdges].sort((left, right) => left.routeEdgeId.localeCompare(right.routeEdgeId))),
+    },
+    stationLines,
+    providerMappings,
+    routeEdges,
+  });
+  const row = (exitMvTpOrdr, mvContDtl) => ({
+    edMovePath: "나역 방면", elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr, imgPath: "", mvContDtl, mvPathMgNo: 1, stMovePath: "1번 출입구 옆 엘리베이터",
+  });
+  const bodies = new Map([
+    ["201", JSON.stringify({ header: { resultCnt: 2, resultCode: "00", resultMsg: "정상 처리되었습니다." }, body: [row(1, "1) 1번 출입구 옆 엘리베이터로 이동"), row(2, "2) 나역 방면 승강장 도착")] })],
+    ["202", JSON.stringify({ header: { resultCode: "03", resultMsg: "데이터가 없습니다." } })],
+  ]);
+  const rawResponses = [];
+  const movementSnapshot = await collectKricExitPathProviderSnapshot({
+    collectionPlan: plan,
+    sourceId: "kric-station-movement-standard",
+    serviceKey: "fixture-kric-key-never-output",
+    fetchImpl: async (url) => new Response(bodies.get(new URL(url).searchParams.get("stinCd")), { status: 200 }),
+    now: new Date("2026-09-30T00:00:00.000Z"),
+    onRawResponse: (entry) => rawResponses.push(entry),
+  });
+  const movementSnapshotBytes = Buffer.from(canonicalKricExitPathProviderSnapshotJson(movementSnapshot));
+  const movementRawBytes = Buffer.from(JSON.stringify(buildKricExitPathRawCollection({ snapshot: movementSnapshot, rawResponses })));
+  const movementObservation = buildKricExitPathObservation({
+    snapshot: movementSnapshot, snapshotBytes: movementSnapshotBytes, rawCollectionBytes: movementRawBytes,
+  });
+  const facilityBody = JSON.stringify({ response: { header: { resultCode: "00" }, body: { totalCount: 2, items: { item: [
+    { lineNm: "2호선", stnNm: "가역", stnCd: "0201", oprtngSitu: "M", dtlPstn: "1번 출입구" },
+    { lineNm: "2호선", stnNm: "가역", stnCd: "0201", oprtngSitu: "M", dtlPstn: "나역 방면2-3" },
+  ] } } } });
+  const facilityObservationRoot = path.join(temp, "facility-location-observation");
+  const facilityObservation = await writeSeoulAccessibilityObservation({
+    outputRoot: facilityObservationRoot,
+    source: "facility-location",
+    observation: await collectSeoulAccessibilityObservation({
+      source: "facility-location",
+      serviceKey: "secret-must-not-appear",
+      retrievedAt: "2026-09-30T00:00:01.000Z",
+      fetchImpl: async () => ({ ok: true, status: 200, text: async () => facilityBody }),
+    }),
+  });
+  const files = {
+    [`${movementSnapshot.snapshotId}.json`]: movementSnapshotBytes,
+    [`${movementSnapshot.snapshotId}.raw.json`]: movementRawBytes,
+    [`${movementSnapshot.snapshotId}.observation.json`]: Buffer.from(`${JSON.stringify(movementObservation, null, 2)}\n`),
+    [facilityObservation.snapshotFile]: await readFile(path.join(facilityObservationRoot, facilityObservation.snapshotFile)),
+    [facilityObservation.rawArtifactFile]: await readFile(path.join(facilityObservationRoot, facilityObservation.rawArtifactFile)),
+    [`${facilityObservation.snapshotId}.observation.json`]: await readFile(path.join(facilityObservationRoot, "observation.json")),
+    "kric-station-convenience-standard-fixture.json": Buffer.from(JSON.stringify({
+      sourceId: "kric-station-convenience-standard",
+      artifactKind: "kric-accessibility-snapshot",
+      queries: providerMappings.map(({ stationId, lineId, providerOperatorId, providerLineId, providerStationId }) => ({
+        stationId, lineId, railOprIsttCd: providerOperatorId, lnCd: providerLineId, stinCd: providerStationId,
+        canonicalMappings: [{ artifactId: "bundled-capital", stationId, lineId }],
+      })),
+    })),
+  };
+  for (const [name, bytes] of Object.entries(files)) await writeFile(path.join(sources, name), bytes);
+  const entry = (sourceId, snapshotId) => ({
+    sourceId,
+    observationPath: `tools/datapack/sources/${snapshotId}.observation.json`,
+    observationSha256: hash(files[`${snapshotId}.observation.json`]),
+    snapshotPath: `tools/datapack/sources/${snapshotId}.json`,
+    snapshotSha256: hash(files[`${snapshotId}.json`]),
+    rawCollectionPath: `tools/datapack/sources/${snapshotId}.raw.json`,
+    rawCollectionSha256: hash(files[`${snapshotId}.raw.json`]),
+  });
+  await writeFile(path.join(fixtureRoot, "tools/datapack/release/station-elevator-path-inputs.json"), `${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "station-elevator-path-inputs",
+    issue: 834,
+    movement: entry("kric-station-movement-standard", movementSnapshot.snapshotId),
+    facilityLocation: entry("seoul-metro-facility-location", facilityObservation.snapshotId),
+    canonicalMapping: {
+      sourceId: "kric-station-convenience-standard",
+      snapshotPath: "tools/datapack/sources/kric-station-convenience-standard-fixture.json",
+      snapshotSha256: hash(files["kric-station-convenience-standard-fixture.json"]),
+    },
+  }, null, 2)}\n`);
+  return loadStationElevatorPathInputs({ repositoryRoot: fixtureRoot });
+}

@@ -110,7 +110,11 @@
         },
         "stationElevatorPath": {
           "table": "station_elevator_path",
-          "columns": ["path_id", "station_id", "line_id", "path_kind", "exit_no", "platform_direction", "step", "detail", "facility_id"]
+          "columns": ["path_id", "station_id", "line_id", "next_station_id", "exit_no", "platform_direction", "step", "detail"]
+        },
+        "stationElevatorPathFacility": {
+          "table": "station_elevator_path_facility",
+          "columns": ["path_id", "group_kind", "facility_id"]
         },
         "ownedTableColumns": "exact-source-schema",
         "foreignKeys": "within-component-only",
