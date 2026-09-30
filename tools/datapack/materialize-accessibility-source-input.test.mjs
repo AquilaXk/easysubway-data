@@ -58,6 +58,7 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     "FACILITY_NOT_INSTALLED", "FACILITY_NOT_INSTALLED", "STATUS_PROBE_NOT_ROUTE_EVIDENCE",
   ]);
   assert.equal(output.routeEdges[0].accessibilityStatus, "UNKNOWN");
+  assert.equal(output.routeEdges[0].verificationStatus, "NOT_VERIFIED");
   assert.deepEqual(output.sourceIds, [
     "kric-station-elevator-movement",
     "kric-station-convenience-standard",
