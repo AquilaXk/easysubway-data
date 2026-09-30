@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "station-contact-inputs",
+  "issue": 838,
+  "stationContact": {
+    "sourceId": "seoul-metro-station-contact",
+    "snapshotPath": "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.json",
+    "snapshotSha256": "ba5bab5220f87324ea207e887a40dde6a8db22f4b23d69e0a19e4431a873eca4",
+    "rawCollectionPath": "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.raw.json",
+    "rawCollectionSha256": "442fe16d2c7e93c458d1cf31df173d42e24b910b9a9a710ffe4ab0d65b13d5d2"
+  },
+  "stationCodeMembership": {
+    "sourceId": "seoulmetro-station-line-info",
+    "snapshotPath": "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json",
+    "snapshotSha256": "58323d8ef12f09bf2ac7a1a686b77f08442926dd107ee6fa71919b4bd174c0be"
+  }
+}

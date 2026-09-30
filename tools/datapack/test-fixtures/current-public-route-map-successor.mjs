@@ -482,6 +482,9 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/release/current-capital-transfer-topology-applicability.json",
   "release/product-gates/route-edge-evaluation-policy.json",
   "tools/datapack/schema/catalog-schema.sql",
+  "tools/datapack/release/station-contact-inputs.json",
+  "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.json",
+  "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.raw.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
   "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
 ]);

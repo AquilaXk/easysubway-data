@@ -114,7 +114,7 @@ test("capital basemap과 source schema는 raw path와 sha256으로 결속된다"
     "contracts/datapack/artifact-component-table-layout.json");
   assert.equal(sourceSchema.path, "tools/datapack/schema/catalog-schema.sql");
   assert.equal(sourceSchema.sqliteUserVersion, 19);
-  assert.equal(sourceSchema.sha256, "8705a72babacf405ddff979d12aea9b258b61c417a5f85a81709e6176c81f8db");
+  assert.equal(sourceSchema.sha256, "f8014298c2110bc5f583db0c7c1952212ef6043abef36ddef80799b36241d507");
   assert.equal(sha256(readFileSync(sourceSchema.path)), sourceSchema.sha256);
   assert.match(readFileSync(sourceSchema.path, "utf8"),
     new RegExp(`^PRAGMA user_version = ${sourceSchema.sqliteUserVersion};$`, "m"));
