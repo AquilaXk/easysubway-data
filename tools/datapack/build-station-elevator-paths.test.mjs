@@ -308,3 +308,51 @@ test("커버리지 리포트가 역별 및 전체 합계를 정확히 집계한�
   assert.equal(report.summary.totalUnidentifiableFacilities, 1);
   assert.equal(report.byStationLine.length, 2);
 });
+
+test("#834 원천 교체: stationMovement 표준·getFcElvtr만 운영 사용 승격 기록을 가진다", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const document = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+  const byId = new Map(document.candidates.map((candidate) => [candidate.id, candidate]));
+  const expectedFacility = {
+    status: "SUPPORTED",
+    productionUseAllowed: true,
+    coverageStatus: "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
+    updateFrequency: "번들 입력 스냅샷 수집 시 1회",
+    unsupportedNotes: "production use is limited to the server route bundle station elevator path tables built from committed raw-archived snapshots",
+  };
+  for (const [id, usePermissionRange] of [
+    ["kric-station-movement-standard", "저작권표시"],
+    ["seoul-metro-facility-location", "이용허락범위 제한 없음"],
+  ]) {
+    const candidate = byId.get(id);
+    assert.deepEqual(candidate.capabilities.facility, expectedFacility, id);
+    const admission = candidate.evidence.productionUseAdmission;
+    assert.deepEqual({
+      issue: admission.issue,
+      decision: admission.decision,
+      approvedBy: admission.approvedBy,
+      approvedAt: admission.approvedAt,
+      scope: admission.scope,
+      productionUseAllowed: admission.productionUseAllowed,
+      usePermissionRange: admission.license.usePermissionRange,
+      selfImposedCallLimit: admission.quota.selfImposedCallLimit,
+    }, {
+      issue: 834,
+      decision: "APPROVED",
+      approvedBy: "AquilaXk",
+      approvedAt: "2026-09-30",
+      scope: "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
+      productionUseAllowed: true,
+      usePermissionRange,
+      selfImposedCallLimit: "NONE",
+    }, id);
+    assert.equal(typeof admission.rationale, "string", id);
+    assert.equal(typeof admission.license.attributionLocation, "string", id);
+    assert.equal(typeof admission.relationToExistingSources, "string", id);
+    assert.ok(Object.keys(admission.fieldMapping).length > 0, id);
+  }
+  for (const id of ["kric-station-elevator", "kric-station-elevator-movement", "kric-station-movement-detailed"]) {
+    assert.equal(byId.get(id).capabilities.facility.productionUseAllowed, false, id);
+    assert.equal(byId.get(id).evidence.productionUseAdmission, undefined, id);
+  }
+});

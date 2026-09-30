@@ -59,13 +59,8 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
   ]);
   assert.equal(output.routeEdges[0].accessibilityStatus, "UNKNOWN");
   assert.equal(output.routeEdges[0].verificationStatus, "NOT_VERIFIED");
-  assert.deepEqual(output.sourceIds, [
-    "kric-station-elevator-movement",
-    "kric-station-convenience-standard",
-    "seoul-metro-accessibility",
-  ]);
+  assert.deepEqual(output.sourceIds, ["kric-station-convenience-standard", "seoul-metro-accessibility"]);
   assert.deepEqual(output.movementPathCandidates, [
-    { sourceId: "kric-station-elevator-movement" },
     { sourceId: "seoul-metro-accessibility", id: "seoul-status-candidate" },
   ]);
   assert.deepEqual(output.coverageEvidence[0].sourceIds, [
