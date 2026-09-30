@@ -3804,6 +3804,29 @@ function outOfStationTransferNetworkEdge(link) {
   };
 }
 
+const CONGESTION_CANDIDATE_ID = "seoul-metro-congestion-statistics";
+const CONGESTION_PRODUCTION_USE_SCOPE = "SERVER_ROUTE_BUNDLE_STATION_CONGESTION";
+
+function assertCongestionProductionUseAdmission(repositoryRoot, snapshot, snapshotFile) {
+  const candidatesPath = path.join(repositoryRoot, "tools/datapack/source-candidates.json");
+  const notAdmitted = (reason) =>
+    new Error(`source is not admitted for station congestion: ${CONGESTION_CANDIDATE_ID} (${reason})`);
+  if (!existsSync(candidatesPath)) throw notAdmitted("source-candidates.json is missing");
+  const matches = (JSON.parse(readFileSync(candidatesPath, "utf8")).candidates ?? [])
+    .filter(({ id }) => id === CONGESTION_CANDIDATE_ID);
+  const admission = matches[0]?.evidence?.productionUseAdmission;
+  if (matches.length !== 1
+    || matches[0].capabilities?.congestion?.productionUseAllowed !== true
+    || admission?.decision !== "APPROVED"
+    || admission.productionUseAllowed !== true
+    || admission.scope !== CONGESTION_PRODUCTION_USE_SCOPE) {
+    throw notAdmitted("production use is not approved");
+  }
+  if (admission.rawSha256 !== snapshot.rawSha256 || admission.contentSha256 !== snapshot.contentSha256) {
+    throw notAdmitted(`approval does not cover snapshot ${snapshotFile}`);
+  }
+}
+
 function loadSeoulMetroCongestionForBuild(repositoryRoot, pack) {
   const sourcesDir = path.join(repositoryRoot, "tools/datapack/sources");
   if (!existsSync(sourcesDir)) {
@@ -3817,6 +3840,7 @@ function loadSeoulMetroCongestionForBuild(repositoryRoot, pack) {
   }
   const latestFile = files[files.length - 1];
   const snapshot = JSON.parse(readFileSync(path.join(sourcesDir, latestFile), "utf8"));
+  assertCongestionProductionUseAdmission(repositoryRoot, snapshot, latestFile);
   if (!Array.isArray(snapshot.rows)) {
     throw new Error(`${latestFile}: rows must be an array`);
   }

@@ -25,6 +25,8 @@ const MEMBERSHIP_PATH = path.resolve(
   import.meta.dirname,
   "sources/seoul-station-code-membership-20260909T041501Z.json",
 );
+const CANDIDATES_PATH = path.resolve(import.meta.dirname, "source-candidates.json");
+const CONGESTION_CANDIDATE_ID = "seoul-metro-congestion-statistics";
 const CONGESTION_SNAPSHOT_PATH = path.resolve(
   import.meta.dirname,
   "sources/seoul-metro-congestion-20260930T020244Z.json",
@@ -489,10 +491,17 @@ test("F4 응답 본문에 서비스 키가 들어 있으면 보관하지 않고 
   }
 });
 
-async function buildFixtureRoot({ mutateSnapshot, mutateRaw, dropRaw } = {}) {
+async function writeCandidates(root, mutateCandidate) {
+  const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+  if (mutateCandidate) mutateCandidate(document.candidates.find(({ id }) => id === CONGESTION_CANDIDATE_ID));
+  await writeFile(path.join(root, "tools/datapack/source-candidates.json"), `${JSON.stringify(document)}\n`);
+}
+
+async function buildFixtureRoot({ mutateSnapshot, mutateRaw, dropRaw, mutateCandidate } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "congestion-root-"));
   const sourcesDir = path.join(root, "tools/datapack/sources");
   await mkdir(sourcesDir, { recursive: true });
+  await writeCandidates(root, mutateCandidate);
   await writeFile(path.join(sourcesDir, path.basename(MEMBERSHIP_PATH)), await readFile(MEMBERSHIP_PATH));
   const snapshot = JSON.parse(await readFile(CONGESTION_SNAPSHOT_PATH, "utf8"));
   const rawName = `${snapshot.snapshotId}.raw.json`;
@@ -578,4 +587,47 @@ test("F5 비운영 팩이 싣는 혼잡도 행도 팩 테이블에 없는 id면 
   const root3 = await buildFixtureRoot();
   pack.stationCongestionStats = [stat("station-e034b2889e71", "line-472a81add377")];
   await assert.rejects(async () => buildWith(root3, pack), /station_lines station-e034b2889e71\|line-472a81add377/);
+});
+
+test("G1 후보가 preflight 상태(운영 사용 미승인)이면 운영 빌드는 혼잡도를 싣지 않고 실패한다", async () => {
+  const root = await buildFixtureRoot({
+    mutateCandidate: (candidate) => {
+      candidate.capabilities.congestion.productionUseAllowed = false;
+      delete candidate.evidence.productionUseAdmission;
+    },
+  });
+  await assert.rejects(async () => buildWith(root), /not admitted for station congestion/);
+});
+
+test("G2 승인 기록이 APPROVED가 아니거나 범위·원문 해시가 다르면 실패한다", async () => {
+  for (const mutate of [
+    (admission) => { admission.decision = "PENDING"; },
+    (admission) => { admission.productionUseAllowed = false; },
+    (admission) => { admission.scope = "OTHER_SCOPE"; },
+    (admission) => { admission.rawSha256 = "0".repeat(64); },
+  ]) {
+    const root = await buildFixtureRoot({ mutateCandidate: (candidate) => mutate(candidate.evidence.productionUseAdmission) });
+    await assert.rejects(async () => buildWith(root), /not admitted for station congestion/);
+  }
+});
+
+test("G3 후보가 없으면 운영 빌드는 조용히 건너뛰지 않고 실패한다", async () => {
+  const root = await buildFixtureRoot();
+  const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+  document.candidates = document.candidates.filter(({ id }) => id !== CONGESTION_CANDIDATE_ID);
+  await writeFile(path.join(root, "tools/datapack/source-candidates.json"), JSON.stringify(document));
+  await assert.rejects(async () => buildWith(root), /not admitted for station congestion/);
+});
+
+test("G4 실제 후보 기록은 운영 사용 승인(QA 2026-09-30)과 수집 스냅샷 원문 해시를 결속한다", async () => {
+  const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+  const candidate = document.candidates.find(({ id }) => id === CONGESTION_CANDIDATE_ID);
+  const admission = candidate.evidence.productionUseAdmission;
+  const snapshot = JSON.parse(await readFile(CONGESTION_SNAPSHOT_PATH, "utf8"));
+  assert.equal(candidate.capabilities.congestion.productionUseAllowed, true);
+  assert.equal(admission.decision, "APPROVED");
+  assert.equal(admission.approvedBy, "AquilaXk");
+  assert.equal(admission.scope, "SERVER_ROUTE_BUNDLE_STATION_CONGESTION");
+  assert.equal(admission.rawSha256, snapshot.rawSha256);
+  assert.equal(admission.contentSha256, snapshot.contentSha256);
 });

@@ -609,6 +609,7 @@
     {"path":"tools/datapack/run-public-static-network-v2-operation.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":83},
     {"path":"tools/datapack/send-release-callback.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":302},
     {"path":"tools/datapack/seoul-metro-congestion.test.mjs","semanticOwner":"data840","classes":["required-pr"],"durationMs":529},
+    {"path":"tools/datapack/materialize-seoul-station-code-membership.test.mjs","semanticOwner":"data840","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/server-route-bundle-build-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":12},
     {"path":"tools/datapack/server-route-bundle-decompressed-budget.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":150},
     {"path":"tools/datapack/sign-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":677},
