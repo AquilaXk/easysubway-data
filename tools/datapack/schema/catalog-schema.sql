@@ -54,6 +54,17 @@ CREATE TABLE station_lines (
   FOREIGN KEY (line_id) REFERENCES lines(id)
 );
 
+CREATE TABLE station_contacts (
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  phone_raw TEXT NOT NULL,
+  source_snapshot_id TEXT NOT NULL,
+  PRIMARY KEY (station_id, line_id),
+  FOREIGN KEY (station_id) REFERENCES stations(id),
+  FOREIGN KEY (line_id) REFERENCES lines(id)
+);
+
 CREATE TABLE service_calendars (
   service_id TEXT NOT NULL PRIMARY KEY,
   monday INTEGER NOT NULL CHECK (monday IN (0, 1)),
