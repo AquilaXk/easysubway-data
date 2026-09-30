@@ -34,10 +34,12 @@ jobs:
           node-version: "24.19.0"
 
       - name: ITX continuation / Validate inputs
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
           set -euo pipefail
-          if [[ ! "${{ inputs.source_run_id }}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "Invalid source_run_id: ${{ inputs.source_run_id }}" >&2
+          if [[ ! "${SOURCE_RUN_ID}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid source_run_id: ${SOURCE_RUN_ID}" >&2
             exit 1
           fi
 

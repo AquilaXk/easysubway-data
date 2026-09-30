@@ -29,7 +29,7 @@ test("candidate workflow는 continuation_run_id와 replay_run_id 입력을 검�
   assert.match(yml, /runs-on: macos-15/);
   assert.match(yml, /node-version:\s*["']24\.19\.0["']/);
   assert.match(yml, /persist-credentials:\s*false/);
-  assert.doesNotMatch(yml, /(?:^\s*env:|environment:|secrets\.|DATA_GO_KR_SERVICE_KEY)/m);
+  assert.doesNotMatch(yml, /(?:^env:|environment:|secrets\.|DATA_GO_KR_SERVICE_KEY)/m);
 
   const actionRefs = [...yml.matchAll(/^\s+uses:\s*([^\s]+)\s*$/gm)].map((match) => match[1]);
   assert.ok(actionRefs.length > 0);

@@ -39,14 +39,17 @@ jobs:
           node-version: "24.19.0"
 
       - name: ITX replay admission / Validate inputs
+        env:
+          CONTINUATION_RUN_ID: ${{ inputs.continuation_run_id }}
+          REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
         run: |
           set -euo pipefail
-          if [[ ! "${{ inputs.continuation_run_id }}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "Invalid continuation_run_id: ${{ inputs.continuation_run_id }}" >&2
+          if [[ ! "${CONTINUATION_RUN_ID}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid continuation_run_id: ${CONTINUATION_RUN_ID}" >&2
             exit 1
           fi
-          if [[ ! "${{ inputs.replay_run_id }}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "Invalid replay_run_id: ${{ inputs.replay_run_id }}" >&2
+          if [[ ! "${REPLAY_RUN_ID}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid replay_run_id: ${REPLAY_RUN_ID}" >&2
             exit 1
           fi
 

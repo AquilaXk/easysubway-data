@@ -31,7 +31,7 @@ test("offline replay는 source_run_id 입력을 검증하고 해당 continuation
   assert.match(yml, /cancel-in-progress:\s*false/);
   assert.match(yml, /persist-credentials:\s*false/);
   assert.match(yml, /node-version:\s*["']24\.19\.0["']/);
-  assert.doesNotMatch(yml, /(?:^\s*env:|environment:|secrets\.|DATA_GO_KR_SERVICE_KEY)/m);
+  assert.doesNotMatch(yml, /(?:^env:|environment:|secrets\.|DATA_GO_KR_SERVICE_KEY)/m);
 
   const checkout = step(yml, "ITX offline replay / Checkout repository");
   assert.match(checkout, /ref:\s*main/);
