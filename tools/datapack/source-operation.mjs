@@ -340,8 +340,11 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
   const requestUrl = validateCandidateRequestUrl(candidate);
   requireAllowedKeys(operation, new Set([
     "method", "endpoint", "sampleUrl", "auth", "requiredParameters", "fixedParameters", "optionalParameters",
-    "responseEnvelope", "responseFields", "runner", "secretPolicy",
+    "responseEnvelope", "responseFields", "runner", "secretPolicy", "maxRetries",
   ]), `${candidate.id}.operation`);
+  if (operation.maxRetries != null && operation.maxRetries !== 0) {
+    throw new Error(`${candidate.id}.operation retry max must be zero`);
+  }
   if (!new Set(["GET", "POST"]).has(operation.method)) {
     throw new Error(`${candidate.id}.operation.method must be GET or POST`);
   }
@@ -419,6 +422,11 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
     stringList(operation.responseFields, `${candidate.id}.operation.responseFields`);
   }
   const runner = operation.runner;
+  // 수집기가 아직 없는 preflight 후보만 runner를 생략할 수 있다. 채택된 원천은 재현 가능한 수집 명령이 필수다.
+  if (runner == null && candidate.admissionStatus === "preflight_only") {
+    validateGeneralSecretPolicy(candidate, operation, credentialFree);
+    return operation;
+  }
   if (!runner || typeof runner !== "object" || Array.isArray(runner)) {
     throw new Error(`${candidate.id}.operation.runner must be an object`);
   }
@@ -449,11 +457,15 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
   if (authEnv != null && !requiredEnv.includes(authEnv)) {
     throw new Error(`${candidate.id}.operation.runner.requiredEnv must include auth.env`);
   }
+  validateGeneralSecretPolicy(candidate, operation, credentialFree);
+  return operation;
+}
+
+function validateGeneralSecretPolicy(candidate, operation, credentialFree) {
   const expectedSecretPolicy = credentialFree ? "credential-free-output" : "env-only-redacted-output";
   if (operation.secretPolicy !== expectedSecretPolicy) {
     throw new Error(`${candidate.id}.operation.secretPolicy is invalid`);
   }
-  return operation;
 }
 
 export function operationSummary(candidate) {
