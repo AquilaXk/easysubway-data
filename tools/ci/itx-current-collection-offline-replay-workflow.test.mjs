@@ -20,11 +20,10 @@ function step(source, name) {
   return match[0];
 }
 
-test("offline replay는 exact retained artifact를 쓰는 no-input no-secret workflow다", () => {
+test("offline replay는 source_run_id 입력을 검증하고 해당 continuation artifact를 다운로드한다", () => {
   const yml = workflow();
-  assert.match(yml, /^on:\n\s+workflow_dispatch:\s*$/m);
+  assert.match(yml, /^on:\n\s+workflow_dispatch:\n\s+inputs:\n\s+source_run_id:\n\s+description:[^\n]+\n\s+required:\s*true\n\s+type:\s*string/m);
   assert.doesNotMatch(yml, /^\s+(?:push|pull_request|schedule):/m);
-  assert.doesNotMatch(yml, /workflow_dispatch:[\s\S]*?inputs:/);
   assert.match(yml, /^permissions:\n\s+actions: read\n\s+contents: read\s*$/m);
   assert.match(yml, /runs-on: macos-15/);
   assert.match(yml, /replay:\n\s+if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
@@ -41,12 +40,17 @@ test("offline replay는 exact retained artifact를 쓰는 no-input no-secret wor
   assert.ok(actionRefs.length > 0);
   for (const actionRef of actionRefs) assert.match(actionRef, /@[0-9a-f]{40}$/);
 
+  const validate = step(yml, "ITX offline replay / Validate inputs");
+  assert.match(validate, /inputs\.source_run_id/);
+  assert.match(validate, /\^\[1-9\]\[0-9\]\*\$/);
+
   const download = step(yml, "ITX offline replay / Download retained extended capture");
   assert.match(download, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
   assert.match(download, /repository:\s*AquilaXk\/easysubway-data/);
-  assert.match(download, /run-id:\s*31620004435/);
-  assert.match(download, /name:\s*itx-current-collection-continuation-31620004435/);
+  assert.match(download, /run-id:\s*\$\{\{\s*inputs\.source_run_id\s*\}\}/);
+  assert.match(download, /name:\s*itx-current-collection-continuation-\$\{\{\s*inputs\.source_run_id\s*\}\}/);
   assert.match(download, /github-token:\s*\$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(download, /31620004435/);
 });
 
 test("current-main station catalog과 extended capture로 replay CLI를 한 번만 실행한다", () => {

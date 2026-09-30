@@ -20,11 +20,10 @@ function step(source, name) {
   return match[0];
 }
 
-test("candidate workflow는 exact capture/replay를 쓰는 main-only no-input no-secret workflow다", () => {
+test("candidate workflow는 continuation_run_id와 replay_run_id 입력을 검증하고 해당 capture/replay artifact를 다운로드한다", () => {
   const yml = workflow();
-  assert.match(yml, /^on:\n\s+workflow_dispatch:\s*$/m);
+  assert.match(yml, /^on:\n\s+workflow_dispatch:\n\s+inputs:\n\s+continuation_run_id:\n\s+description:[^\n]+\n\s+required:\s*true\n\s+type:\s*string\n\s+replay_run_id:\n\s+description:[^\n]+\n\s+required:\s*true\n\s+type:\s*string/m);
   assert.doesNotMatch(yml, /^\s+(?:push|pull_request|schedule):/m);
-  assert.doesNotMatch(yml, /workflow_dispatch:[\s\S]*?inputs:/);
   assert.match(yml, /^permissions:\n\s+actions: read\n\s+contents: read\s*$/m);
   assert.match(yml, /candidate:\n\s+if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
   assert.match(yml, /runs-on: macos-15/);
@@ -36,12 +35,26 @@ test("candidate workflow는 exact capture/replay를 쓰는 main-only no-input no
   assert.ok(actionRefs.length > 0);
   for (const actionRef of actionRefs) assert.match(actionRef, /@[0-9a-f]{40}$/);
 
+  const validate = step(yml, "ITX replay admission / Validate inputs");
+  assert.match(validate, /inputs\.continuation_run_id/);
+  assert.match(validate, /inputs\.replay_run_id/);
+  assert.match(validate, /\^\[1-9\]\[0-9\]\*\$/);
+
   const capture = step(yml, "ITX replay admission / Download retained extended capture");
-  assert.match(capture, /run-id:\s*31620004435/);
-  assert.match(capture, /name:\s*itx-current-collection-continuation-31620004435/);
+  assert.match(capture, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
+  assert.match(capture, /repository:\s*AquilaXk\/easysubway-data/);
+  assert.match(capture, /run-id:\s*\$\{\{\s*inputs\.continuation_run_id\s*\}\}/);
+  assert.match(capture, /name:\s*itx-current-collection-continuation-\$\{\{\s*inputs\.continuation_run_id\s*\}\}/);
+  assert.match(capture, /github-token:\s*\$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(capture, /31620004435/);
+
   const replay = step(yml, "ITX replay admission / Download successful replay evidence");
-  assert.match(replay, /run-id:\s*31679427374/);
-  assert.match(replay, /name:\s*itx-current-collection-offline-replay-31679427374/);
+  assert.match(replay, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
+  assert.match(replay, /repository:\s*AquilaXk\/easysubway-data/);
+  assert.match(replay, /run-id:\s*\$\{\{\s*inputs\.replay_run_id\s*\}\}/);
+  assert.match(replay, /name:\s*itx-current-collection-offline-replay-\$\{\{\s*inputs\.replay_run_id\s*\}\}/);
+  assert.match(replay, /github-token:\s*\$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(replay, /31679427374/);
 });
 
 test("candidate CLI는 exact input과 two-output만 사용하고 provider/promotion을 호출하지 않는다", () => {
