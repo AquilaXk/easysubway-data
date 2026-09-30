@@ -1,265 +1,181 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { canonicalMappingsFromConvenienceSnapshot } from "./build-station-elevator-paths.mjs";
+import { buildStationBindings, numeric } from "./normalize-seoul-metro-congestion.mjs";
 
 export const PLATFORM_GAP_SOURCE_ID = "seoul-metro-platform-gap";
-export const MAPPING_SOURCE_ID = "kric-station-convenience-standard";
 export const STATION_PLATFORM_GAP_INPUTS_PATH = "tools/datapack/release/station-platform-gap-inputs.json";
 export const PRODUCTION_USE_SCOPE = "SERVER_ROUTE_BUNDLE_PLATFORM_GAP";
 
-const SEOUL_METRO_OPERATOR_CODE = "S1";
-const SEOUL_METRO_LINE_NAME = /^([1-9])호선$/u;
 const CAR_DOOR_PATTERN = /(?:^|\s)(\d+)-(\d+)$/u;
+const DIRECTIONS = new Map([["상선", "UP"], ["하선", "DOWN"]]);
+const GAP_GRADES = new Map([["좁음", "NARROW"], ["보통", "NORMAL"], ["넓음", "WIDE"]]);
+const HEIGHT_DIFF_GRADES = new Map([["낮음", "LOW"], ["보통", "NORMAL"], ["높음", "HIGH"]]);
+const CURVED_FLAGS = new Map([["직선", 0], ["곡선", 1]]);
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function parseIntegerMm(value) {
-  if (value === null || value === undefined) return null;
-  const str = String(value).trim();
-  if (str === "") return null;
-
-  // Handle explicit units: cm or mm
-  const cmMatch = /^(\d+(?:\.\d+)?)\s*cm$/iu.exec(str);
-  if (cmMatch) {
-    const num = Number(cmMatch[1]);
-    if (!Number.isFinite(num) || num < 0) return null;
-    return Math.round(num * 10);
-  }
-  const mmMatch = /^(\d+(?:\.\d+)?)\s*mm$/iu.exec(str);
-  if (mmMatch) {
-    const num = Number(mmMatch[1]);
-    if (!Number.isFinite(num) || num < 0) return null;
-    return Math.round(num);
-  }
-
-  // Handle plain numeric string (must be non-negative)
-  if (!/^\d+(?:\.\d+)?$/u.test(str)) return null;
-  const num = Number(str);
-  if (!Number.isFinite(num) || num < 0) return null;
-  return Math.round(num);
-}
-
+// 승강장 위치는 원문 그대로 보존한다. 끝이 정확히 "N-M"(칸-문)일 때만 칸·문 번호를 채운다.
 export function parsePlatformPosition(value) {
   if (typeof value !== "string") return { position: "", carNumber: null, doorNumber: null };
-  const position = value.normalize("NFKC").trim().replace(/\s+/gu, " ");
-  const match = CAR_DOOR_PATTERN.exec(position);
-  if (!match) {
-    return { position, carNumber: null, doorNumber: null };
-  }
-  return {
-    position,
-    carNumber: parseInt(match[1], 10),
-    doorNumber: parseInt(match[2], 10),
-  };
+  const match = CAR_DOOR_PATTERN.exec(value);
+  if (!match) return { position: value, carNumber: null, doorNumber: null };
+  return { position: value, carNumber: parseInt(match[1], 10), doorNumber: parseInt(match[2], 10) };
 }
 
-export function buildStationPlatformGaps({ snapshot, canonicalMappings } = {}) {
+function count(map, key) {
+  map[key] = (map[key] ?? 0) + 1;
+}
+
+// stationBindings: "<호선 번호>:<역코드 숫자>" → { stationId, lineId } (역코드 membership 결속, 이름 조인 없음)
+export function buildStationPlatformGaps({ snapshot, stationBindings } = {}) {
   if (!snapshot || snapshot.sourceId !== PLATFORM_GAP_SOURCE_ID || !Array.isArray(snapshot.rows)) {
     throw new Error("platform gap snapshot identity mismatch");
   }
-  if (!Array.isArray(canonicalMappings) || canonicalMappings.length === 0) {
-    throw new Error("canonical mappings are required");
-  }
+  if (!(stationBindings instanceof Map)) throw new Error("stationBindings map is required");
 
-  // Canonical mappings index for Seoul Metro (S1)
-  const seoulMappingByCode = new Map();
-  for (const query of canonicalMappings) {
-    if (query.railOprIsttCd === SEOUL_METRO_OPERATOR_CODE && query.lnCd && query.stinCd) {
-      const code = String(query.stinCd).padStart(4, "0");
-      seoulMappingByCode.set(`${query.lnCd}\0${code}`, query);
-    }
-  }
-
+  const snapshotId = snapshot.snapshotId ?? "unknown";
   const rows = [];
   const exclusions = [];
-  const snapshotId = snapshot.snapshotId ?? "unknown";
+  const seen = new Map();
+  const unmapped = new Map();
 
-  for (const rawRow of snapshot.rows) {
-    const lineName = rawRow.LINE ?? "";
-    const lineMatch = SEOUL_METRO_LINE_NAME.exec(lineName);
-    const lineCode = lineMatch ? lineMatch[1] : null;
+  for (const raw of snapshot.rows) {
+    const exclude = (reason) => exclusions.push({ reason, row: raw });
+    const direction = DIRECTIONS.get(raw.UPLN_DNLN);
+    if (!direction) { exclude("UNKNOWN_DIRECTION"); continue; }
+    const gapGrade = GAP_GRADES.get(raw.TRN_PLF_INTVL);
+    if (!gapGrade) { exclude("UNKNOWN_GAP_GRADE"); continue; }
+    const heightDiffGrade = HEIGHT_DIFF_GRADES.get(raw.HGT_DIFF);
+    if (!heightDiffGrade) { exclude("UNKNOWN_HEIGHT_DIFF_GRADE"); continue; }
+    const curved = CURVED_FLAGS.get(raw.PLF_LNR);
+    if (curved === undefined) { exclude("UNKNOWN_PLATFORM_LINEARITY"); continue; }
+    if (typeof raw.PLF_PSTN !== "string" || raw.PLF_PSTN === "") { exclude("MISSING_PLATFORM_POSITION"); continue; }
 
-    const rawStnCd = rawRow.SBWY_STNS_CD ?? rawRow.SBWY_STNS_OTSD_CD;
-    const stnCd = rawStnCd ? String(rawStnCd).padStart(4, "0") : null;
-
-    if (!lineCode || !stnCd) {
-      exclusions.push({ reason: "INVALID_LINE_OR_STATION_CODE", row: rawRow });
+    const line = numeric(raw.LINE);
+    const stationCode = numeric(raw.SBWY_STNS_CD);
+    const binding = stationBindings.get(`${line}:${stationCode}`);
+    if (!binding) {
+      exclude("UNMAPPED_STATION");
+      const key = `${line}:${stationCode}`;
+      const entry = unmapped.get(key) ?? { line, stationCode: String(raw.SBWY_STNS_CD ?? ""), stationName: String(raw.SBWY_STNS_NM ?? ""), rowCount: 0 };
+      entry.rowCount += 1;
+      unmapped.set(key, entry);
       continue;
     }
 
-    const mapping = seoulMappingByCode.get(`${lineCode}\0${stnCd}`);
-    if (!mapping) {
-      exclusions.push({ reason: "MAPPING_NOT_FOUND", row: rawRow });
-      continue;
-    }
-
-    let direction;
-    if (rawRow.UPLN_DNLN === "상선") {
-      direction = "UP";
-    } else if (rawRow.UPLN_DNLN === "하선") {
-      direction = "DOWN";
-    } else {
-      exclusions.push({ reason: "INVALID_DIRECTION", row: rawRow });
-      continue;
-    }
-
-    const gapMm = parseIntegerMm(rawRow.TRN_PLF_INTVL);
-    const heightDiffMm = parseIntegerMm(rawRow.HGT_DIFF);
-    if (gapMm === null || heightDiffMm === null) {
-      exclusions.push({ reason: "NON_NUMERIC_MEASUREMENT", row: rawRow });
-      continue;
-    }
-
-    const { position, carNumber, doorNumber } = parsePlatformPosition(rawRow.PLF_PSTN);
-    const id = `gap:${mapping.stationId}:${mapping.lineId}:${direction}:${position}`;
-
-    rows.push({
-      id,
-      station_id: mapping.stationId,
-      line_id: mapping.lineId,
+    const { position, carNumber, doorNumber } = parsePlatformPosition(raw.PLF_PSTN);
+    const built = {
+      id: `gap:${binding.stationId}:${binding.lineId}:${direction}:${position}`,
+      station_id: binding.stationId,
+      line_id: binding.lineId,
       direction,
       platform_position: position,
       car_number: carNumber,
       door_number: doorNumber,
-      gap_mm: gapMm,
-      height_diff_mm: heightDiffMm,
+      gap_grade: gapGrade,
+      height_diff_grade: heightDiffGrade,
+      curved,
       source_snapshot_id: snapshotId,
-    });
-  }
-
-  // Deduplicate by ID if needed (preserving deterministic order)
-  const uniqueRows = [];
-  const seenIds = new Set();
-  for (const r of rows) {
-    if (!seenIds.has(r.id)) {
-      seenIds.add(r.id);
-      uniqueRows.push(r);
+    };
+    const previous = seen.get(built.id);
+    if (previous) {
+      if (JSON.stringify(previous) !== JSON.stringify(built)) {
+        throw new Error(`duplicate platform gap key with conflicting values: ${built.id}`);
+      }
+      exclude("DUPLICATE_IDENTICAL_ROW");
+      continue;
     }
+    seen.set(built.id, built);
+    rows.push(built);
   }
-
-  const report = generateCoverageReport({ rows: uniqueRows, exclusions, snapshot });
 
   return {
-    rows: uniqueRows,
+    rows,
     exclusions,
-    report,
+    report: generateCoverageReport({ rows, exclusions, snapshot, unmapped: [...unmapped.values()] }),
   };
 }
 
-export function generateCoverageReport({ rows, exclusions, snapshot } = {}) {
-  const totalRaw = snapshot?.rowCount ?? (rows.length + exclusions.length);
-  const validCount = rows.length;
-
+export function generateCoverageReport({ rows, exclusions, snapshot, unmapped = [] }) {
   const exclusionsByReason = {};
-  for (const exc of exclusions) {
-    exclusionsByReason[exc.reason] = (exclusionsByReason[exc.reason] ?? 0) + 1;
+  for (const exclusion of exclusions) count(exclusionsByReason, exclusion.reason);
+  const gapGradeCounts = { NARROW: 0, NORMAL: 0, WIDE: 0 };
+  const heightDiffGradeCounts = { LOW: 0, NORMAL: 0, HIGH: 0 };
+  const curvedCounts = { 0: 0, 1: 0 };
+  const rowsByLine = {};
+  const stationLines = new Set();
+  const stations = new Set();
+  for (const row of rows) {
+    gapGradeCounts[row.gap_grade] += 1;
+    heightDiffGradeCounts[row.height_diff_grade] += 1;
+    curvedCounts[row.curved] += 1;
+    count(rowsByLine, row.line_id);
+    stationLines.add(`${row.station_id}|${row.line_id}`);
+    stations.add(row.station_id);
   }
-
-  const stationLineCounts = {};
-  let maxGap = 0;
-  const gapDistribution = {
-    under50mm: 0,
-    between50and100mm: 0,
-    over100mm: 0,
-  };
-
-  for (const r of rows) {
-    const key = `${r.line_id}:${r.station_id}`;
-    stationLineCounts[key] = (stationLineCounts[key] ?? 0) + 1;
-    if (r.gap_mm > maxGap) maxGap = r.gap_mm;
-    if (r.gap_mm < 50) gapDistribution.under50mm += 1;
-    else if (r.gap_mm <= 100) gapDistribution.between50and100mm += 1;
-    else gapDistribution.over100mm += 1;
-  }
-
+  const sortedRowsByLine = Object.fromEntries(Object.entries(rowsByLine).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
   return {
     snapshotId: snapshot?.snapshotId ?? "unknown",
-    totalRawRows: totalRaw,
-    validRowsLoaded: validCount,
+    totalRawRows: snapshot?.rows?.length ?? rows.length + exclusions.length,
+    validRowsLoaded: rows.length,
     excludedRowsTotal: exclusions.length,
     exclusionsByReason,
-    stationLineCount: Object.keys(stationLineCounts).length,
-    maxGapMm: maxGap,
-    gapDistribution,
+    gapGradeCounts,
+    heightDiffGradeCounts,
+    curvedCounts,
+    stationCount: stations.size,
+    stationLineCount: stationLines.size,
+    rowsByLine: sortedRowsByLine,
+    unmappedStationCount: unmapped.length,
+    unmappedStations: unmapped,
   };
+}
+
+// 운영 팩(stations·stationLines)의 역·노선에 역코드 membership으로 결속해 행을 만든다.
+export function bindStationPlatformGaps({ snapshot, membership, pack } = {}) {
+  return buildStationPlatformGaps({ snapshot, stationBindings: buildStationBindings({ membership, pack }) });
+}
+
+async function readRequired(root, relative, missingMessage) {
+  try {
+    return await readFile(path.join(root, relative));
+  } catch (error) {
+    throw new Error(`${missingMessage}: ${relative}`, { cause: error });
+  }
 }
 
 export async function loadStationPlatformGapInputs({ repositoryRoot } = {}) {
-  if (typeof repositoryRoot !== "string" || repositoryRoot === "") {
-    throw new Error("repository root is required");
-  }
+  if (typeof repositoryRoot !== "string" || repositoryRoot === "") throw new Error("repository root is required");
   const root = path.resolve(repositoryRoot);
 
-  const manifestPath = path.join(root, STATION_PLATFORM_GAP_INPUTS_PATH);
-  let manifestBytes;
-  try {
-    manifestBytes = await readFile(manifestPath);
-  } catch (error) {
-    throw new Error(`platform gap inputs is missing: ${STATION_PLATFORM_GAP_INPUTS_PATH}`, { cause: error });
-  }
-
-  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  const manifest = JSON.parse((await readRequired(root, STATION_PLATFORM_GAP_INPUTS_PATH, "platform gap inputs is missing")).toString("utf8"));
   if (manifest.schemaVersion !== 1 || manifest.artifactKind !== "station-platform-gap-inputs" || manifest.issue !== 837) {
     throw new Error("station platform gap inputs identity mismatch");
   }
 
-  // Candidates admission check
-  const candidatesPath = path.join(root, "tools/datapack/source-candidates.json");
-  const candidatesBytes = await readFile(candidatesPath);
-  const candidates = JSON.parse(candidatesBytes.toString("utf8"));
-  assertProductionUseAdmission(candidates, PLATFORM_GAP_SOURCE_ID);
-
-  // Platform gap raw collection verification
-  const rawPath = path.join(root, manifest.platformGap.rawCollectionPath);
-  let rawBytes;
-  try {
-    rawBytes = await readFile(rawPath);
-  } catch (error) {
-    throw new Error(`raw collection is missing: ${manifest.platformGap.rawCollectionPath}`, { cause: error });
-  }
-  const rawSha256 = sha256(rawBytes);
-  if (rawSha256 !== manifest.platformGap.rawCollectionSha256) {
-    throw new Error("platform gap raw collection sha256 mismatch");
-  }
-
-  // Platform gap snapshot
-  const snapshotPath = path.join(root, manifest.platformGap.snapshotPath);
-  let snapshotBytes;
-  try {
-    snapshotBytes = await readFile(snapshotPath);
-  } catch (error) {
-    throw new Error(`snapshot is missing: ${manifest.platformGap.snapshotPath}`, { cause: error });
-  }
-
-  const snapshotSha256 = sha256(snapshotBytes);
-  if (snapshotSha256 !== manifest.platformGap.snapshotSha256) {
-    throw new Error("platform gap snapshot sha256 mismatch");
-  }
+  const rawBytes = await readRequired(root, manifest.platformGap.rawCollectionPath, "raw collection is missing");
+  if (sha256(rawBytes) !== manifest.platformGap.rawCollectionSha256) throw new Error("platform gap raw collection sha256 mismatch");
+  const snapshotBytes = await readRequired(root, manifest.platformGap.snapshotPath, "snapshot is missing");
+  if (sha256(snapshotBytes) !== manifest.platformGap.snapshotSha256) throw new Error("platform gap snapshot sha256 mismatch");
   const snapshot = JSON.parse(snapshotBytes.toString("utf8"));
-  if (snapshot.rawSha256 !== manifest.platformGap.rawCollectionSha256) {
-    throw new Error("platform gap snapshot rawSha256 mismatch");
-  }
+  if (snapshot.rawSha256 !== manifest.platformGap.rawCollectionSha256) throw new Error("platform gap snapshot rawSha256 mismatch");
 
-  // Canonical mapping snapshot
-  const mappingPath = path.join(root, manifest.canonicalMapping.snapshotPath);
-  const mappingBytes = await readFile(mappingPath);
-  const mappingSha256 = sha256(mappingBytes);
-  if (mappingSha256 !== manifest.canonicalMapping.snapshotSha256) {
-    throw new Error("canonical mapping snapshot sha256 mismatch");
-  }
-  const convenienceSnapshot = JSON.parse(mappingBytes.toString("utf8"));
-  const canonicalMappings = canonicalMappingsFromConvenienceSnapshot(convenienceSnapshot);
+  const candidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+  assertProductionUseAdmission(candidates, PLATFORM_GAP_SOURCE_ID, snapshot);
 
-  return buildStationPlatformGaps({ snapshot, canonicalMappings });
+  const membershipBytes = await readRequired(root, manifest.stationCodeMembership.snapshotPath, "station code membership is missing");
+  if (sha256(membershipBytes) !== manifest.stationCodeMembership.snapshotSha256) throw new Error("station code membership sha256 mismatch");
+  const membership = JSON.parse(membershipBytes.toString("utf8"));
+
+  return { snapshot, membership };
 }
 
-function assertProductionUseAdmission(candidatesDocument, sourceId) {
+function assertProductionUseAdmission(candidatesDocument, sourceId, snapshot) {
+  const notAdmitted = (reason) => new Error(`source is not admitted for platform gaps: ${sourceId}${reason ? ` (${reason})` : ""}`);
   const matches = (candidatesDocument?.candidates ?? []).filter(({ id }) => id === sourceId);
   const admission = matches[0]?.evidence?.productionUseAdmission;
   if (
@@ -269,6 +185,9 @@ function assertProductionUseAdmission(candidatesDocument, sourceId) {
     || admission.productionUseAllowed !== true
     || admission.scope !== PRODUCTION_USE_SCOPE
   ) {
-    throw new Error(`source is not admitted for platform gaps: ${sourceId}`);
+    throw notAdmitted();
+  }
+  if (admission.rawSha256 !== snapshot.rawSha256 || admission.contentSha256 !== snapshot.contentSha256) {
+    throw notAdmitted(`approval does not cover snapshot ${snapshot.snapshotId}`);
   }
 }

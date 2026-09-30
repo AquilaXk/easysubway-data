@@ -9,9 +9,9 @@
     "rawCollectionPath": "tools/datapack/sources/seoul-metro-platform-gap-20260930T051459Z.raw.json",
     "rawCollectionSha256": "ff0a2ce2bafdf5749b982602c15d4bcfcb7aa3fcae276f6e6b5ded0d5fc84a0b"
   },
-  "canonicalMapping": {
-    "sourceId": "kric-station-convenience-standard",
-    "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20260904T043909603Z.json",
-    "snapshotSha256": "50a897027042d47764ffe79666d712b5b9d2a7f9deb83c28dea0c16252fc0fde"
+  "stationCodeMembership": {
+    "sourceId": "seoulmetro-station-line-info",
+    "snapshotPath": "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json",
+    "snapshotSha256": "58323d8ef12f09bf2ac7a1a686b77f08442926dd107ee6fa71919b4bd174c0be"
   }
 }

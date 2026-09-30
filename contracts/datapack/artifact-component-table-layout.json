@@ -122,6 +122,10 @@
           "table": "transition_facility_requirement",
           "columns": ["transition_key", "path_id", "direction_next_station_id", "group_kind", "facility_id"]
         },
+        "stationPlatformGap": {
+          "table": "station_platform_gaps",
+          "columns": ["id", "station_id", "line_id", "direction", "platform_position", "car_number", "door_number", "gap_grade", "height_diff_grade", "curved", "source_snapshot_id"]
+        },
         "ownedTableColumns": "exact-source-schema",
         "foreignKeys": "within-component-only",
         "componentReferences": "declared-non-null-references-must-resolve-within-component"

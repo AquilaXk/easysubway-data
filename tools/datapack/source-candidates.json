@@ -7378,8 +7378,8 @@
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "admitted_to_production_inventory",
+      "sampleEvidenceStatus": "collector_sample_verified",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "serviceKeyHandling": "offline_collection_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
@@ -7413,15 +7413,18 @@
           "productionUseAllowed": true,
           "consumer": "tools/datapack/build-station-platform-gaps.mjs",
           "evidenceManifest": "tools/datapack/release/station-platform-gap-inputs.json",
-          "rationale": "QA 결정(2026-09-30): TbSubwayLineInfo(OA-22124)는 서울교통공사 관할역 승강장 위치별 연단 간격·높이차를 제공하는 공식 원천이다. 서버 번들 accessibility station_platform_gaps 테이블 적재를 위해 운영 사용으로 승격한다.",
-          "relationToExistingSources": "연단 간격·높이차 정보를 담은 최초의 접근성 원천이다. 역코드 매핑은 kric-station-convenience-standard canonicalMappings의 S1 stinCd를 쓰고 이름 조인은 하지 않는다. 비었거나 숫자가 아닌 정성 측정값은 제외한다.",
+          "rawSha256": "ff0a2ce2bafdf5749b982602c15d4bcfcb7aa3fcae276f6e6b5ded0d5fc84a0b",
+          "contentSha256": "0224f38bc1eb6140993f81320ee5e3feb9fdb4f5fa84e72467cacb3f00f2d28a",
+          "rationale": "QA 결정(2026-09-30, 이슈 #837 \"연단 간격은 공식 등급으로 싣는다\"): TbSubwayLineInfo(OA-22124)는 서울교통공사 관할역 승강장 위치별 연단 간격·높이차를 공식 등급(좁음·보통·넓음 / 낮음·보통·높음)으로 제공하는 공식 원천이다. 등급을 영문 코드로 그대로 옮겨 서버 번들 accessibility station_platform_gaps 테이블에 적재하기 위해 운영 사용으로 승격한다. 수치(mm)는 원천에 없으므로 만들지 않는다.",
+          "relationToExistingSources": "연단 간격·높이차 등급을 담은 최초의 접근성 원천이다. 역 결속은 #842가 승격한 서울 역코드 membership(seoul-station-code-membership)의 (호선 번호, 역코드)만 쓰고 이름 조인은 하지 않는다. 등급·방향·곡선 값이 정의된 값이 아니면 행을 제외하고 사유별 개수를 보고한다.",
           "fieldMapping": {
-            "SBWY_STNS_CD": "station_platform_gaps.station_id 및 line_id 매핑 키",
-            "LINE": "station_platform_gaps.line_id 매핑 키 (N호선 → 노선코드 N)",
-            "UPLN_DNLN": "station_platform_gaps.direction (상선=UP, 하선=DOWN)",
-            "PLF_PSTN": "station_platform_gaps.platform_position 및 car_number, door_number",
-            "TRN_PLF_INTVL": "station_platform_gaps.gap_mm (정수 mm)",
-            "HGT_DIFF": "station_platform_gaps.height_diff_mm (정수 mm)"
+            "LINE": "역 결속 키의 호선 번호 (N호선 → N)",
+            "SBWY_STNS_CD": "역 결속 키의 역코드 (seoul-station-code-membership STATION_CD와 일치, station_id·line_id 결정)",
+            "UPLN_DNLN": "station_platform_gaps.direction (상선=UP, 하선=DOWN, 그 밖은 제외)",
+            "PLF_PSTN": "station_platform_gaps.platform_position (원문 보존) 및 끝이 N-M일 때 car_number, door_number",
+            "TRN_PLF_INTVL": "station_platform_gaps.gap_grade (좁음=NARROW, 보통=NORMAL, 넓음=WIDE, 그 밖은 제외)",
+            "HGT_DIFF": "station_platform_gaps.height_diff_grade (낮음=LOW, 보통=NORMAL, 높음=HIGH, 그 밖은 제외)",
+            "PLF_LNR": "station_platform_gaps.curved (곡선=1, 직선=0, 그 밖은 제외)"
           },
           "license": {
             "usePermissionRange": "공공누리 1유형",

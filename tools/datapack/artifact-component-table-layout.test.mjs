@@ -195,6 +195,10 @@ test("route service evidence tables는 server timetable component의 exact refer
     table: "transition_facility_requirement",
     columns: ["transition_key", "path_id", "direction_next_station_id", "group_kind", "facility_id"],
   });
+  assert.deepEqual(components.accessibility.stationPlatformGap, {
+    table: "station_platform_gaps",
+    columns: ["id", "station_id", "line_id", "direction", "platform_position", "car_number", "door_number", "gap_grade", "height_diff_grade", "curved", "source_snapshot_id"],
+  });
   assert.deepEqual(components.fare.ownedTables, [
     "fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes",
   ]);
