@@ -5,7 +5,6 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import {
   buildCurrentFiveRegionSourceFanIn,
-  canonicalCurrentFiveRegionSourceFanInJson,
 } from "./build-current-five-region-source-fan-in.mjs";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
@@ -58,9 +57,9 @@ test("(b) 현재 입력으로 buildCurrentFiveRegionSourceFanIn을 돌린 결과
   };
 
   const reconstructed = buildCurrentFiveRegionSourceFanIn(input);
-  assert.equal(
-    canonicalCurrentFiveRegionSourceFanInJson(reconstructed),
-    canonicalCurrentFiveRegionSourceFanInJson(committedFanIn),
+  assert.deepEqual(
+    reconstructed,
+    committedFanIn,
     "재생성된 fan-in과 커밋된 fan-in이 정확히 일치해야 한다",
   );
 });

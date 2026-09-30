@@ -15,11 +15,11 @@
       },
       "tally": {
         "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-        "sha256": "09d798854dfea1d19c088c05fe4a53e7712234bb6fbaa138871e01d37edcb265"
+        "sha256": "3d3cda2b6dbb6091b654a0e48fcda5c5ef87fca109f91c958274a91bfa969d69"
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "f920a33e9ec25a4704ec5ae67e036139b84840ae2a1df90b73e59a5fd1c0bb4c"
+        "sha256": "888120f3ae2f7115135275ed5514ef94f6859dd1221923cee893e9b7315d60ec"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -31,21 +31,21 @@
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "465afc97f9847b0ca510c2da1925200763ec2792c9d0b9a2b6f0667f6a03dc04",
-        "fanInSha256": "30789844bab79b3759233901403e9a29dd60fc964ead680c9230298b3a84c770",
+        "sha256": "574cffc1642765aa179c5ed4b41dc3f91c4fe85feec924f1d4341d515a5cb0fb",
+        "fanInSha256": "d9c5dbab32df1a297ada97af11006a70ada7b3839aaa44162a087e3b36d576eb",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
         "sourceSetSha256": "0c0676841e14ad86fd7a38f682c07bb8c1a7aba47a0e5c8bc1eb3aa593e7cf14",
-        "regionalMatrixSha256": "09d798854dfea1d19c088c05fe4a53e7712234bb6fbaa138871e01d37edcb265"
+        "regionalMatrixSha256": "3d3cda2b6dbb6091b654a0e48fcda5c5ef87fca109f91c958274a91bfa969d69"
       }
     }
   },
   "summary": {
     "launchRequired": {
       "totalCount": 270,
-      "inventoryAdmittedCount": 80,
+      "inventoryAdmittedCount": 81,
       "explicitlyUnsupportedWithEvidenceCount": 4,
-      "missingCount": 186,
-      "terminalCount": 84
+      "missingCount": 185,
+      "terminalCount": 85
     },
     "enhancement": {
       "totalCount": 45,
@@ -29681,8 +29681,8 @@
       "sourceDomain": "accessibility_facilities",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
         "admittedSourceIds": [
           "gwangju-transportation-accessibility"
