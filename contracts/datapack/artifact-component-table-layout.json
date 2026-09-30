@@ -116,6 +116,10 @@
           "table": "station_elevator_path_facility",
           "columns": ["path_id", "group_kind", "facility_id"]
         },
+        "transitionFacilityRequirement": {
+          "table": "transition_facility_requirement",
+          "columns": ["transition_key", "facility_id"]
+        },
         "ownedTableColumns": "exact-source-schema",
         "foreignKeys": "within-component-only",
         "componentReferences": "declared-non-null-references-must-resolve-within-component"

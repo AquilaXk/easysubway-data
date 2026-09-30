@@ -606,6 +606,29 @@ async function assertEmbeddedEvidence(input) {
     if (orphanFacilities.length > 0) {
       throw new Error(`station_elevator_path_facility contains orphan facility_id: ${orphanFacilities.map((row) => row.facility_id).join(", ")}`);
     }
+    assertEmbeddedTable(database, "transition_facility_requirement", [
+      { name: "transition_key", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "facility_id", type: "TEXT", notnull: 1, pk: 2 },
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transition_facility_requirement);
+    if (!hasFacilitiesTable) {
+      throw new Error("facilities table is missing or empty");
+    }
+    const orphanReqFacilities = database.prepare(
+      "SELECT DISTINCT facility_id FROM transition_facility_requirement WHERE facility_id NOT IN (SELECT id FROM facilities)",
+    ).all();
+    if (orphanReqFacilities.length > 0) {
+      throw new Error(`transition_facility_requirement contains orphan facility_id: ${orphanReqFacilities.map((r) => r.facility_id).join(", ")}`);
+    }
+    const validTransitionKeys = new Set([
+      ...(input.evaluation?.results ?? []).map((r) => r.edgeId),
+      ...(input.routeEdgeInput?.routeEdges ?? []).map((r) => r.edgeId ?? r.id),
+    ]);
+    const reqTransitions = database.prepare("SELECT DISTINCT transition_key FROM transition_facility_requirement").all();
+    for (const row of reqTransitions) {
+      if (!validTransitionKeys.has(row.transition_key)) {
+        throw new Error(`transition_facility_requirement contains orphan transition_key: ${row.transition_key}`);
+      }
+    }
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest
