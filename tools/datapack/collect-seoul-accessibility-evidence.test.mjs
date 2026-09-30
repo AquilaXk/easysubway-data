@@ -13,6 +13,7 @@ import {
   collectSeoulAccessibilityObservation,
   normalizeAccessibilityRows,
   seoulObservationOutputRoot,
+  validateSeoulAccessibilityObservation,
   writeSeoulAccessibilityEvidence,
   writeSeoulAccessibilityObservation,
 } from "./collect-seoul-accessibility-evidence.mjs";
@@ -657,6 +658,75 @@ test("fresh Seoul observation은 snapshot·raw pages·manifest를 한 create-onl
     writeSeoulAccessibilityObservation({ outputRoot, observation }),
     /output root already exists/,
   );
+});
+
+test("#834 facility-location observation은 stnCd를 보존한 snapshot·키 없는 raw·manifest를 결속하고 원문으로 재현한다", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "easysubway-seoul-facility-observation-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const outputRoot = join(root, "observation");
+  const providerBody = JSON.stringify({
+    response: {
+      header: { resultCode: "00" },
+      body: {
+        totalCount: 2,
+        items: { item: [
+          { lineNm: "2호선", stnNm: "시청", stnCd: "0201", oprtngSitu: "M", dtlPstn: "9번 출입구" },
+          { lineNm: "2호선", stnNm: "시청", stnCd: "0201", oprtngSitu: "S", dtlPstn: "을지로입구 방면2-3" },
+        ] },
+      },
+    },
+  });
+  const fetched = [];
+  const observation = await collectSeoulAccessibilityObservation({
+    source: "facility-location",
+    serviceKey: "secret-must-not-appear",
+    retrievedAt: "2026-09-30T01:02:03.004Z",
+    fetchImpl: async (url) => {
+      fetched.push(new URL(url).pathname);
+      return { ok: true, status: 200, text: async () => providerBody };
+    },
+  });
+  assert.deepEqual(fetched, ["/B553766/facility/getFcElvtr"]);
+  const manifest = await writeSeoulAccessibilityObservation({ outputRoot, observation, source: "facility-location" });
+  assert.deepEqual((await readdir(outputRoot)).sort(), [
+    "observation.json",
+    "seoul-metro-facility-location-20260930T010203004Z.json",
+    "seoul-metro-facility-location-20260930T010203004Z.raw.json",
+  ]);
+  const snapshotBytes = await readFile(join(outputRoot, manifest.snapshotFile));
+  const rawArtifactBytes = await readFile(join(outputRoot, manifest.rawArtifactFile));
+  assert.equal(rawArtifactBytes.includes(Buffer.from("secret-must-not-appear")), false);
+  assert.equal(JSON.parse(rawArtifactBytes).responses[0].bodyBase64, Buffer.from(providerBody).toString("base64"));
+  const snapshot = validateSeoulAccessibilityObservation({
+    observation: manifest, snapshotBytes, rawArtifactBytes, source: "facility-location",
+  });
+  assert.equal(snapshot.sourceId, "seoul-metro-facility-location");
+  assert.equal(snapshot.capturedAt, "2026-09-30T01:02:03.004Z");
+  assert.equal(snapshot.rowCount, 2);
+  assert.deepEqual(snapshot.stations, [{
+    stationName: "시청",
+    lineName: "2호선",
+    providerStationCode: "0201",
+    facilities: [
+      { operational: false, situationCode: "S", situation: "보수중", pathDescription: "을지로입구 방면2-3" },
+      { operational: true, situationCode: "M", situation: "사용가능", pathDescription: "9번 출입구" },
+    ],
+  }]);
+  const tampered = JSON.parse(rawArtifactBytes);
+  tampered.responses[0].bodyBase64 = Buffer.from(providerBody.replace("9번 출입구", "8번 출입구")).toString("base64");
+  const tamperedBytes = Buffer.from(`${JSON.stringify(tampered, null, 2)}\n`);
+  assert.throws(() => validateSeoulAccessibilityObservation({
+    observation: {
+      ...manifest,
+      rawObjectSha256: createHash("sha256").update(tamperedBytes).digest("hex"),
+      rawObjectChecksumSha256: createHash("sha256").update(tamperedBytes).digest("base64"),
+      rawObjectByteSize: tamperedBytes.length,
+    },
+    snapshotBytes, rawArtifactBytes: tamperedBytes, source: "facility-location",
+  }), /raw collection is invalid/);
+  assert.throws(() => validateSeoulAccessibilityObservation({
+    observation: manifest, snapshotBytes, rawArtifactBytes: tamperedBytes, source: "facility-location",
+  }), /observation manifest mismatch/);
 });
 
 test("raw observation은 URL·JSON escape로 반사된 service key도 보존 전에 거부한다", async () => {

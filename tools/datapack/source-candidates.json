@@ -4895,6 +4895,7 @@
           "scope": "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
           "productionUseAllowed": true,
           "consumer": "tools/datapack/build-station-elevator-paths.mjs",
+          "evidenceManifest": "tools/datapack/release/station-elevator-path-inputs.json",
           "rationale": "QA 결정(2026-09-30): stationMovement는 요청 파라미터 nextStinCd로 승강장 방향을 공식 지정하고, 출발 위치(stMovePath)와 도착 방향(edMovePath)을 전용 필드로 준다. 출입구→승강장 공식 이동경로를 추정 없이 (역, 노선, 다음 역, mvPathMgNo) 단위로 적재하기 위해 운영 사용으로 승격한다.",
           "relationToExistingSources": "kric-station-elevator·kric-station-elevator-movement를 대체한다. 두 원천은 구조화된 엘리베이터 참조와 방향 필드가 없고 mvPathMgNo가 경로 종류마다 따로 매겨져 계속 materializer 차단 목록에 둔다. 역·노선 매핑은 kric-station-convenience-standard의 canonicalMappings만 쓰고, 엘리베이터 시설은 seoul-metro-facility-location(getFcElvtr)에서 만든다.",
           "fieldMapping": {
@@ -6927,6 +6928,7 @@
           "scope": "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH",
           "productionUseAllowed": true,
           "consumer": "tools/datapack/build-station-elevator-paths.mjs",
+          "evidenceManifest": "tools/datapack/release/station-elevator-path-inputs.json",
           "rationale": "QA 결정(2026-09-30): getFcElvtr는 엘리베이터 한 대마다 역코드(stnCd)·노선(lineNm)·위치 표현(dtlPstn)을 주고, 같은 원천이 가동 상태(#419)의 키가 된다. smrt-elev:<stnCd>:<노선코드>:<위치 정규화> 시설 id로 엘리베이터 한 대 단위 시설 행을 만들기 위해 운영 사용으로 승격한다. 가동 상태는 번들에 굽지 않고 UNKNOWN으로 둔다.",
           "relationToExistingSources": "seoul-metro-accessibility(getWksnElvtr)는 역 단위 상태 증거로만 쓰이고 역코드가 없다. getFcElvtr의 stnCd는 kric-station-convenience-standard canonicalMappings의 S1 stinCd를 4자리 0 채움한 값과 정확히 일치할 때만 canonical 역·노선에 붙이고, 이름 조인은 하지 않는다. 위치 표현이 'N번 출입구'·'X 방면N-M' 문법 밖이거나 같은 id가 2개 이상이면 식별 불가로 제외한다.",
           "fieldMapping": {

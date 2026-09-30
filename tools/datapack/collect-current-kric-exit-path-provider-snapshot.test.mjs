@@ -8,7 +8,10 @@ import test from "node:test";
 import {
   main,
 } from "./collect-current-kric-exit-path-provider-snapshot.mjs";
-import { canonicalKricExitPathProviderSnapshotJson } from "./collect-kric-exit-path-provider-snapshot.mjs";
+import {
+  canonicalKricExitPathProviderSnapshotJson,
+  validateKricExitPathObservation,
+} from "./collect-kric-exit-path-provider-snapshot.mjs";
 import {
   canonicalKricExitPathCollectionPlanJson,
   planKricExitPathCollection,
@@ -67,6 +70,63 @@ test("tracked CLI는 catalog-bound plan을 serial raw snapshot으로 RUNNER_TEMP
     })}`]);
     assert.doesNotMatch(logs[0], new RegExp(SERVICE_KEY));
     assert.doesNotMatch(await readFile(output, "utf8"), new RegExp(SERVICE_KEY));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("#834 --observation-root는 같은 회차의 snapshot·키 없는 raw 보관본·manifest를 함께 기록한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-exit-live-observation-"));
+  try {
+    const planPath = path.join(directory, "plan.json");
+    const output = path.join(directory, "snapshot.json");
+    const observationRoot = path.join(directory, "observation");
+    await writeFile(planPath, canonicalKricExitPathCollectionPlanJson(validPlan()));
+    const rawBody = providerSuccess([{
+      edMovePath: "나역 방면", elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr: 1,
+      imgPath: "", mvContDtl: "1) 엘리베이터 이용", mvPathMgNo: 1, stMovePath: "1번 출입구 엘리베이터",
+    }]);
+    const snapshot = await main([
+      ...cliArgs(planPath, output),
+      "--observation-root", observationRoot,
+    ], {
+      candidatesDocument: candidatesDocument(),
+      env: { KRIC_SERVICE_KEY: SERVICE_KEY, RUNNER_TEMP: directory },
+      fetchImpl: async () => jsonResponse(rawBody),
+      log: () => {},
+      now: CAPTURED_AT,
+      delayImpl: async () => {},
+    });
+
+    assert.deepEqual((await readdir(observationRoot)).sort(), [
+      "kric-station-movement-standard-20260814T000000000Z.json",
+      "kric-station-movement-standard-20260814T000000000Z.raw.json",
+      "observation.json",
+    ]);
+    const snapshotBytes = await readFile(path.join(observationRoot, "kric-station-movement-standard-20260814T000000000Z.json"));
+    assert.deepEqual(snapshotBytes, await readFile(output));
+    const rawCollectionBytes = await readFile(path.join(observationRoot, "kric-station-movement-standard-20260814T000000000Z.raw.json"));
+    const rawCollection = JSON.parse(rawCollectionBytes);
+    assert.deepEqual(
+      rawCollection.responses.map(({ bodyBase64 }) => Buffer.from(bodyBase64, "base64").toString("utf8")),
+      [rawBody, rawBody],
+    );
+    const observation = JSON.parse(await readFile(path.join(observationRoot, "observation.json"), "utf8"));
+    assert.equal(observation.capturedAt, "2026-08-14T00:00:00.000Z");
+    assert.equal(observation.rowCount, 2);
+    assert.equal(observation.queryCount, 2);
+    assert.deepEqual(validateKricExitPathObservation({ observation, snapshotBytes, rawCollectionBytes }), snapshot);
+    for (const bytes of [snapshotBytes, rawCollectionBytes]) assert.doesNotMatch(bytes.toString("utf8"), new RegExp(SERVICE_KEY.replaceAll(/[!]/g, "\\!")));
+
+    await assert.rejects(() => main([
+      ...cliArgs(planPath, path.join(directory, "second.json")),
+      "--observation-root", path.join(tmpdir(), "outside-observation"),
+    ], {
+      candidatesDocument: candidatesDocument(),
+      env: { KRIC_SERVICE_KEY: SERVICE_KEY, RUNNER_TEMP: directory },
+      fetchImpl: async () => jsonResponse(rawBody),
+      now: CAPTURED_AT,
+    }), /observation root must be a direct RUNNER_TEMP child/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

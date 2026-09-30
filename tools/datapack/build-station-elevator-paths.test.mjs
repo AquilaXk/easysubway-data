@@ -356,3 +356,70 @@ test("#834 원천 교체: stationMovement 표준·getFcElvtr만 운영 사용 �
     assert.equal(byId.get(id).evidence.productionUseAdmission, undefined, id);
   }
 });
+
+test("#834 커밋된 stationMovement·getFcElvtr snapshot은 수집기 raw 보관본·manifest로 재검증된다", async () => {
+  const { readFile, access } = await import("node:fs/promises");
+  const { createHash } = await import("node:crypto");
+  const { validateKricExitPathObservation } = await import("./collect-kric-exit-path-provider-snapshot.mjs");
+  const { validateSeoulAccessibilityObservation } = await import("./collect-seoul-accessibility-evidence.mjs");
+  const repository = new URL("../../", import.meta.url);
+  const read = (relative) => readFile(new URL(relative, repository));
+  const manifest = JSON.parse(await read("tools/datapack/release/station-elevator-path-inputs.json"));
+  const pinned = async (relative, sha256) => {
+    const bytes = await read(relative);
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), sha256, relative);
+    return bytes;
+  };
+  const load = async (entry) => ({
+    observation: JSON.parse(await pinned(entry.observationPath, entry.observationSha256)),
+    snapshotBytes: await pinned(entry.snapshotPath, entry.snapshotSha256),
+    rawBytes: await pinned(entry.rawCollectionPath, entry.rawCollectionSha256),
+  });
+
+  const movement = await load(manifest.movement);
+  const movementSnapshot = validateKricExitPathObservation({
+    observation: movement.observation,
+    snapshotBytes: movement.snapshotBytes,
+    rawCollectionBytes: movement.rawBytes,
+  });
+  assert.deepEqual({
+    sourceId: movementSnapshot.sourceId,
+    capturedAt: movement.observation.capturedAt,
+    queryCount: movement.observation.queryCount,
+    rowCount: movement.observation.rowCount,
+    resultStateCounts: movement.observation.resultStateCounts,
+  }, {
+    sourceId: "kric-station-movement-standard",
+    capturedAt: "2026-09-30T01:43:34.118Z",
+    queryCount: 420,
+    rowCount: 3785,
+    resultStateCounts: { EXPLICIT_ZERO: 0, PROVIDER_NO_DATA: 40, PROVIDER_RESULT_UNVERIFIED: 0, ROWS_OBSERVED: 380 },
+  });
+
+  const facility = await load(manifest.facilityLocation);
+  const facilitySnapshot = validateSeoulAccessibilityObservation({
+    observation: facility.observation,
+    snapshotBytes: facility.snapshotBytes,
+    rawArtifactBytes: facility.rawBytes,
+    source: "facility-location",
+  });
+  assert.deepEqual({
+    sourceId: facilitySnapshot.sourceId,
+    capturedAt: facilitySnapshot.capturedAt,
+    rowCount: facilitySnapshot.rowCount,
+    previousSnapshotId: facilitySnapshot.previousSnapshotId,
+  }, {
+    sourceId: "seoul-metro-facility-location",
+    capturedAt: "2026-09-30T01:43:41.846Z",
+    rowCount: 865,
+    previousSnapshotId: "seoul-metro-facility-location-20260730T214010816Z",
+  });
+  await pinned(manifest.canonicalMapping.snapshotPath, manifest.canonicalMapping.snapshotSha256);
+
+  for (const retired of [
+    "tools/datapack/sources/kric-station-elevator-20260930T000000000Z.json",
+    "tools/datapack/sources/kric-station-elevator-movement-20260930T000000000Z.json",
+  ]) {
+    await assert.rejects(access(new URL(retired, repository)), { code: "ENOENT" }, retired);
+  }
+});

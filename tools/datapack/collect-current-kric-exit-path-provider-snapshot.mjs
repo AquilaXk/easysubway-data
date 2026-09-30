@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { link, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
 import {
+  buildKricExitPathObservation,
+  buildKricExitPathRawCollection,
   canonicalKricExitPathProviderSnapshotJson,
   collectKricExitPathProviderSnapshot,
   KRIC_EXIT_PATH_SOURCES,
@@ -59,12 +61,19 @@ export async function main(argv, {
     throw new Error("RUNNER_TEMP must be a regular directory");
   }
   await outputMustBeAbsent(args.output);
+  if (args.observationRoot !== undefined) {
+    if (path.dirname(args.observationRoot) !== runnerTemp) {
+      throw new Error("observation root must be a direct RUNNER_TEMP child");
+    }
+    await outputMustBeAbsent(args.observationRoot);
+  }
 
   const planSnapshot = await readRegularSnapshot(args.collectionPlan, "collection-plan");
   const collectionPlan = parseCanonicalPlan(planSnapshot.bytes);
   const document = candidatesDocument ?? JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
   validateProviderBoundary({ document, serviceKey, sourceId: args.sourceId });
 
+  const rawResponses = [];
   const snapshot = await collectKricExitPathProviderSnapshot({
     collectionPlan,
     sourceId: args.sourceId,
@@ -74,6 +83,7 @@ export async function main(argv, {
     requestTimeoutMs: args.requestTimeoutMs,
     requestIntervalMs: args.requestIntervalMs,
     ...(delayImpl === undefined ? {} : { delayImpl }),
+    ...(args.observationRoot === undefined ? {} : { onRawResponse: (entry) => rawResponses.push(entry) }),
   });
   const bytes = Buffer.from(canonicalKricExitPathProviderSnapshotJson(snapshot));
 
@@ -92,8 +102,45 @@ export async function main(argv, {
     runnerTemp,
     writeFileImpl,
   });
+  if (args.observationRoot !== undefined) {
+    await writeObservation({ observationRoot: args.observationRoot, rawResponses, serviceKey, snapshot, snapshotBytes: bytes });
+  }
   log(`current KRIC EXIT raw snapshot ready: ${sanitizedReceiptJson(snapshot)}`);
   return snapshot;
+}
+
+// #834: snapshot과 같은 수집 회차의 키 없는 raw 보관본·observation manifest를 한 디렉터리로 원자 공개한다.
+async function writeObservation({ observationRoot, rawResponses, serviceKey, snapshot, snapshotBytes }) {
+  const rawCollection = buildKricExitPathRawCollection({ snapshot, rawResponses });
+  const rawCollectionBytes = Buffer.from(JSON.stringify(canonicalValue(rawCollection)));
+  const observation = buildKricExitPathObservation({ snapshot, snapshotBytes, rawCollectionBytes });
+  const observationBytes = Buffer.from(`${JSON.stringify(observation, null, 2)}\n`);
+  for (const value of [rawCollectionBytes, observationBytes]) {
+    if (value.includes(serviceKey) || value.includes(encodeURIComponent(serviceKey))) {
+      throw new Error("KRIC EXIT credential appeared in observation output");
+    }
+  }
+  const temporary = `${observationRoot}.tmp-${process.pid}`;
+  await mkdir(temporary, { mode: 0o700 });
+  try {
+    await writeFile(path.join(temporary, observation.snapshotFile), snapshotBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(path.join(temporary, observation.rawArtifactFile), rawCollectionBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(path.join(temporary, "observation.json"), observationBytes, { flag: "wx", mode: 0o600 });
+    await outputMustBeAbsent(observationRoot);
+    await rename(temporary, observationRoot);
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))
+      .map((key) => [key, canonicalValue(value[key])]));
+  }
+  return value;
 }
 
 async function publishAtomicSnapshot({
@@ -137,7 +184,7 @@ function sanitizedReceiptJson(snapshot) {
 }
 
 function parseArgs(argv) {
-  const pathFlags = new Set(["collection-plan", "output"]);
+  const pathFlags = new Set(["collection-plan", "output", "observation-root"]);
   const allowed = new Set([
     ...pathFlags, "source-id", "request-timeout-ms", "request-interval-ms",
   ]);
@@ -161,6 +208,7 @@ function parseArgs(argv) {
     collectionPlan: values["collection-plan"],
     sourceId: values["source-id"],
     output: values.output,
+    observationRoot: values["observation-root"],
     requestTimeoutMs: boundedInteger(
       values["request-timeout-ms"] ?? String(DEFAULT_REQUEST_TIMEOUT_MS),
       1,
