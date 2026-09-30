@@ -18,6 +18,31 @@ import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+
+// station_car_door_hints 계약: catalog-schema.sql CHECK(대상 시설·칸 1~10·문 1~4)와
+// 빠른하차 importer(import-car-door-hints.mjs)의 방향 어휘(UP/DOWN/INNER/OUTER, 미상은 '').
+// 계약 밖 KRIC 행은 팩에 싣지 않고 사유와 함께 격리 증거 파일에 남긴다(#854, QA 결정 2026-10-01).
+export const CAR_DOOR_HINT_QUARANTINE_PATH = "tools/datapack/release/nationwide-car-door-hint-quarantine.json";
+const CAR_DOOR_HINT_FACILITY_TYPES = ["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"];
+const CAR_DOOR_HINT_DIRECTIONS = ["", "UP", "DOWN", "INNER", "OUTER"];
+
+export function carDoorHintContractViolations(hint) {
+  const reasons = [];
+  if (!CAR_DOOR_HINT_FACILITY_TYPES.includes(hint.targetFacilityType)) {
+    reasons.push("TARGET_FACILITY_TYPE_OUTSIDE_CONTRACT");
+  }
+  if (!Number.isInteger(hint.carNumber) || hint.carNumber < 1 || hint.carNumber > 10) {
+    reasons.push("CAR_NUMBER_OUTSIDE_CONTRACT");
+  }
+  if (!Number.isInteger(hint.doorNumber) || hint.doorNumber < 1 || hint.doorNumber > 4) {
+    reasons.push("DOOR_NUMBER_OUTSIDE_CONTRACT");
+  }
+  if (!CAR_DOOR_HINT_DIRECTIONS.includes(hint.direction ?? "")) {
+    reasons.push("DIRECTION_OUTSIDE_CONTRACT");
+  }
+  return reasons;
+}
+
 export function formatPlatformInfo(info) {
   if (!info) return "";
   if (typeof info === "string") return info;
@@ -990,6 +1015,8 @@ export async function prepareNationwideCandidate({
   // Expand nationwide station_car_door_hints with KRIC elevator platform door positions
   const seenCarDoorKey = new Set();
   const mergedCarDoorHints = [];
+  const quarantinedCarDoorHints = [];
+  let kricCarDoorHintCount = 0;
 
   for (const hint of (finalPack.stationCarDoorHints ?? [])) {
     const key = `${hint.stationId}:${hint.lineId}:${hint.direction}:${hint.targetFacilityType}:${hint.carNumber}:${hint.doorNumber}`;
@@ -1033,7 +1060,7 @@ export async function prepareNationwideCandidate({
                 doorNumber: door,
                 dtlLoc: loc,
               }));
-              mergedCarDoorHints.push({
+              const hint = {
                 id: `cardoor-${q.stationId}-${q.lineId}-${direction}-${targetFacilityType}-${car}-${door}-${hash.slice(0, 16)}`,
                 stationId: q.stationId,
                 lineId: q.lineId,
@@ -1048,7 +1075,26 @@ export async function prepareNationwideCandidate({
                 verificationStatus: "VERIFIED",
                 lastVerifiedAt: kricConvenience.capturedAt,
                 evidenceHash: kricConvenience.rawSha256,
-              });
+              };
+              kricCarDoorHintCount += 1;
+              const reasons = carDoorHintContractViolations(hint);
+              if (reasons.length > 0) {
+                quarantinedCarDoorHints.push({
+                  id: hint.id,
+                  stationId: hint.stationId,
+                  lineId: hint.lineId,
+                  direction: hint.direction,
+                  targetFacilityType: hint.targetFacilityType,
+                  carNumber: hint.carNumber,
+                  doorNumber: hint.doorNumber,
+                  gubun: row.gubun ?? "",
+                  dtlLoc: loc,
+                  providerRecordHash: hint.providerRecordHash,
+                  reasons,
+                });
+              } else {
+                mergedCarDoorHints.push(hint);
+              }
             }
           }
         }
@@ -1057,6 +1103,39 @@ export async function prepareNationwideCandidate({
   }
 
   finalPack.stationCarDoorHints = mergedCarDoorHints;
+
+  const quarantineByReason = {};
+  for (const { reasons } of quarantinedCarDoorHints) {
+    for (const reason of reasons) quarantineByReason[reason] = (quarantineByReason[reason] ?? 0) + 1;
+  }
+  const carDoorHintQuarantine = {
+    schemaVersion: 1,
+    artifactKind: "datapack-car-door-hint-quarantine",
+    issue: "https://github.com/AquilaXk/easysubway-data/issues/854",
+    sourceId: "kric-station-convenience-standard",
+    sourceSnapshotId: kricConvenience.snapshotId,
+    rawSha256: kricConvenience.rawSha256,
+    contract: {
+      targetFacilityTypes: CAR_DOOR_HINT_FACILITY_TYPES,
+      carNumber: { min: 1, max: 10 },
+      doorNumber: { min: 1, max: 4 },
+      directions: CAR_DOOR_HINT_DIRECTIONS,
+      references: [
+        "tools/datapack/schema/catalog-schema.sql station_car_door_hints CHECK",
+        "tools/datapack/import-car-door-hints.mjs DIRECTION_MAP",
+      ],
+    },
+    summary: {
+      generatedCount: kricCarDoorHintCount,
+      admittedCount: kricCarDoorHintCount - quarantinedCarDoorHints.length,
+      quarantinedCount: quarantinedCarDoorHints.length,
+      byReason: quarantineByReason,
+    },
+    rows: quarantinedCarDoorHints,
+  };
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, CAR_DOOR_HINT_QUARANTINE_PATH), jsonBytes(carDoorHintQuarantine));
+  }
 
   const regionalSourcesToAdd = [
     { id: "kric-station-platform", updatedAt: "2026-07-12" },

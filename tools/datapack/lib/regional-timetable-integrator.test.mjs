@@ -103,13 +103,13 @@ test("integrateRegionalTimetables integrates all 4 regional authorities with aut
   // Deep Parity Check: Gwangju Songjeong Station (117) must be resolved and present in stop times
   const songjeongStationId = initialPack.stations.find((s) => s.nameKo === "광주송정역")?.id;
   assert.ok(songjeongStationId, "Gwangju Songjeong station must exist in candidate stations");
-  const songjeongStops = regionalStopTimes.filter((st) => st.stopId === songjeongStationId);
+  const songjeongStops = regionalStopTimes.filter((st) => st.stationId === songjeongStationId);
   assert.ok(songjeongStops.length > 0, "Gwangju Songjeong station must have scheduled stop times (not dropped)");
 
   // Deep Parity Check: Daegu Seongseo Industrial Complex Station (221) must be resolved and present
   const seongseoStationId = initialPack.stations.find((s) => s.nameKo === "성서산업단지")?.id;
   assert.ok(seongseoStationId, "Daegu Seongseo station must exist in candidate stations");
-  const seongseoStops = regionalStopTimes.filter((st) => st.stopId === seongseoStationId);
+  const seongseoStops = regionalStopTimes.filter((st) => st.stationId === seongseoStationId);
   assert.ok(seongseoStops.length > 0, "Daegu Seongseo station must have scheduled stop times (not dropped)");
 
   // Deep Parity Check: Daejeon both directions (0 and 1) must be present
@@ -134,8 +134,8 @@ test("integrateRegionalTimetables integrates all 4 regional authorities with aut
     for (let i = 0; i < stops.length; i++) {
       assert.strictEqual(stops[i].stopSequence, i + 1, `Stop sequence for ${tripId} at index ${i} must be ${i + 1}`);
       if (i > 0) {
-        const curArr = stops[i].arrivalTimeSeconds ?? stops[i].arrivalSeconds;
-        const prevDep = stops[i - 1].departureTimeSeconds ?? stops[i - 1].departureSeconds;
+        const curArr = stops[i].arrivalSeconds;
+        const prevDep = stops[i - 1].departureSeconds;
         assert.ok(
           curArr >= prevDep,
           `Monotonic time violation in ${tripId} between stop ${i - 1} (${prevDep}) and ${i} (${curArr})`

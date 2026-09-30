@@ -168,10 +168,11 @@ export function integrateRegionalTimetables({
 
         tripStopTimes.push({
           tripId,
-          stopId: stationId,
+          stationId,
+          lineId,
           stopSequence: seq++,
-          arrivalTimeSeconds: r.seconds,
-          departureTimeSeconds: r.seconds,
+          arrivalSeconds: r.seconds,
+          departureSeconds: r.seconds,
           pickupType: 0,
           dropOffType: 0,
           stopHeadsign: r.endcode,
@@ -239,10 +240,11 @@ export function integrateRegionalTimetables({
 
         tripStopTimes.push({
           tripId: trip.id,
-          stopId: stationId,
+          stationId,
+          lineId: cfg.lineId,
           stopSequence: seq++,
-          arrivalTimeSeconds: stop.a,
-          departureTimeSeconds: stop.d,
+          arrivalSeconds: stop.a,
+          departureSeconds: stop.d,
           pickupType: 0,
           dropOffType: 0,
           sourceId: cfg.timetable.sourceId ?? "daegu-train-timetable",
@@ -381,10 +383,11 @@ export function integrateRegionalTimetables({
 
                 tripStopTimes.push({
                   tripId,
-                  stopId: stationId,
+                  stationId,
+                  lineId: daejeonLineId,
                   stopSequence: seq++,
-                  arrivalTimeSeconds: arrTime,
-                  departureTimeSeconds: depTime,
+                  arrivalSeconds: arrTime,
+                  departureSeconds: depTime,
                   pickupType: 0,
                   dropOffType: 0,
                   sourceId: "daejeon-train-timetable",
@@ -530,10 +533,11 @@ export function integrateRegionalTimetables({
 
                 tripStopTimes.push({
                   tripId,
-                  stopId: stationId,
+                  stationId,
+                  lineId: gwangjuLineId,
                   stopSequence: seq++,
-                  arrivalTimeSeconds: arrTime,
-                  departureTimeSeconds: depTime,
+                  arrivalSeconds: arrTime,
+                  departureSeconds: depTime,
                   pickupType: 0,
                   dropOffType: 0,
                   sourceId: "gwangju-transportation-cyberstation-timetable",
