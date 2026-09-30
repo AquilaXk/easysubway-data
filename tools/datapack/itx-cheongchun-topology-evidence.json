@@ -8,34 +8,34 @@
     "manifestVersion": 1,
     "catalogPackId": "itx-current-station-catalog-v1",
     "stationSetSha256": "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
-    "payloadSha256": "d916d16b77af9fae81ce26d4cabb299a6a4e15ea7be9cd2d9c1130f95803e788",
-    "manifestSha256": "d7c569ed24ff7e35a0edd57e7aab5234fdf4b170c48ece4d7c06aa5824d5828d"
+    "payloadSha256": "37e8fb4bd6c0946cb52b8ffdac43457b5e8b51436b49617d28ea2c8fcd4204a1",
+    "manifestSha256": "5328c25ffaf78085707a3e296993228f3cc3453706420a163ef4b539cb0973b9"
   },
   "sourceArtifact": {
-    "id": "itx-cheongchun-source-timetable-20260830151508786",
-    "sha256": "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
-    "completenessEvidenceSha256": "8de0421d34e50a57c91d1ed0304bfb78608a357d9184675c1a56e413ed98b12a",
-    "freshUntil": "2026-09-07T00:00:00+09:00",
+    "id": "itx-cheongchun-source-timetable-20260930163854026",
+    "sha256": "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
+    "completenessEvidenceSha256": "cfc97aa5c6dbd4ee0ae6bdbe22a9c2295cbc20b7caf27a23b6768d1038a44f69",
+    "freshUntil": "2026-10-11T00:00:00+09:00",
     "stationCatalogPackIdentity": {
       "artifactKind": "station-catalog-pack",
       "manifestVersion": 1,
       "catalogPackId": "itx-current-station-catalog-v1",
       "stationSetSha256": "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
-      "payloadSha256": "d916d16b77af9fae81ce26d4cabb299a6a4e15ea7be9cd2d9c1130f95803e788",
-      "manifestSha256": "d7c569ed24ff7e35a0edd57e7aab5234fdf4b170c48ece4d7c06aa5824d5828d"
+      "payloadSha256": "37e8fb4bd6c0946cb52b8ffdac43457b5e8b51436b49617d28ea2c8fcd4204a1",
+      "manifestSha256": "5328c25ffaf78085707a3e296993228f3cc3453706420a163ef4b539cb0973b9"
     }
   },
   "topology": {
     "stationMembershipCount": 18,
     "servedStationCount": 14,
-    "edgeCount": 64,
+    "edgeCount": 48,
     "directions": [
       "up",
       "down"
     ],
     "connectedComponentCount": 1,
     "isolatedServedStationCount": 0,
-    "sha256": "3c7f03504ed3c0acc2fafd43ba69f6f7503f33e70190e769bb9a1357f3d575e0",
+    "sha256": "d9afca0a844a5967ca19768b8b13fe2ccf83947a7d18c9cb8406ccb7aa4babff",
     "durationSecondsEmbedded": false,
     "fareEmbedded": false
   },
@@ -44,9 +44,9 @@
     "inputSha256": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
     "inputSqliteSha256": "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
     "inputByteSize": 388623,
-    "outputSha256": "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1",
-    "outputSqliteSha256": "91e269c057f95f8e635a535bd63ca0d3a11a28dc71dbfdff841ae8bd81eb59e8",
-    "byteSize": 397513,
-    "byteSizeDelta": 8890
+    "outputSha256": "1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e",
+    "outputSqliteSha256": "6e8f1a03ca15a2e1ce04a7134510973ede1e63f86e1d407001010edd7ad3709f",
+    "byteSize": 390484,
+    "byteSizeDelta": 1861
   }
 }
