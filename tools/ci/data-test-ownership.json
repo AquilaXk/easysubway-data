@@ -598,7 +598,7 @@
     {"path":"tools/datapack/register-current-static-network-successors.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":29213},
     {"path":"tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":9451},
     {"path":"tools/datapack/register-seoul-transfer-source-snapshot.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":4},
-    {"path":"tools/datapack/release-candidate-accessibility-input.test.mjs","semanticOwner":"data846","classes":["required-pr"],"durationMs":6300},
+    {"path":"tools/datapack/release-candidate-accessibility-input.test.mjs","semanticOwner":"data846","classes":["required-pr"],"durationMs":12000},
     {"path":"tools/datapack/release-pin-drift.test.mjs","semanticOwner":"data846","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/replay-current-itx-collection.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":45},
     {"path":"tools/datapack/revalidate-current-molit-transfer-source.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":3725},

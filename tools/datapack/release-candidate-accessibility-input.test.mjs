@@ -23,10 +23,24 @@ function readRepoJson(relative) {
   return JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 }
 
+function withoutIdentity(row) {
+  const stripped = { ...row };
+  for (const key of CANDIDATE_IDENTITY_KEYS) delete stripped[key];
+  return stripped;
+}
+
+// candidate 헤더와 evidenceRows의 후보 식별 필드만 제외한다. 나머지는 모두 같아야 한다.
 function withoutCandidateIdentity(document) {
-  const candidate = { ...document.candidate };
-  for (const key of CANDIDATE_IDENTITY_KEYS) delete candidate[key];
-  return { ...document, candidate };
+  return {
+    ...document,
+    candidate: withoutIdentity(document.candidate),
+    ...(document.evidenceRows ? { evidenceRows: document.evidenceRows.map(withoutIdentity) } : {}),
+  };
+}
+
+function candidateIdentities(document) {
+  return new Set([document.candidate, ...(document.evidenceRows ?? [])]
+    .map((row) => CANDIDATE_IDENTITY_KEYS.map((key) => row[key]).join("\0")));
 }
 
 test("committed build spec으로 release-candidate accessibility input을 만들면 커밋된 capital accessibility 입력과 같다", async () => {
@@ -62,8 +76,10 @@ test("committed build spec으로 release-candidate accessibility input을 만들
     assert.equal(written.stationLine.candidate.stationSetSha256, trackedStation.candidate.stationSetSha256);
     assert.equal(written.routeEdge.candidate.stationSetSha256, trackedRoute.candidate.stationSetSha256);
 
-    assert.equal(written.stationLine.candidate.candidateId, buildSpec.candidateId);
-    assert.equal(written.routeEdge.candidate.candidateId, buildSpec.candidateId);
+    // 제외한 후보 식별 필드는 committed build spec의 후보 식별자로 채워져야 한다.
+    const expectedIdentity = new Set([`${buildSpec.candidateId}\0${buildSpec.sourceSnapshotSetHash}`]);
+    assert.deepEqual(candidateIdentities(written.stationLine), expectedIdentity);
+    assert.deepEqual(candidateIdentities(written.routeEdge), expectedIdentity);
     assert.equal(written.fixture.manifest.activePack.id, "nationwide");
     assert.deepEqual(written.fixture.packs.map(({ id }) => id), ["nationwide"]);
     assert.equal(typeof written.authority, "object");
