@@ -213,7 +213,7 @@ export function buildStepFreeTransitionCoverageReport({ stationElevatorPaths, ro
     };
   });
 
-  const count = (predicate) => byStationLine.filter(predicate).length;
+  const count = (predicate) => byStationLine.filter((stationLine) => predicate(stationLine)).length;
   const allDirections = byStationLine.flatMap(({ directions }) => directions);
   const directionsByStatus = {};
   for (const { status } of allDirections) directionsByStatus[status] = (directionsByStatus[status] ?? 0) + 1;
