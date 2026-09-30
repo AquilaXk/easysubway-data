@@ -69,7 +69,7 @@ import {
   admittedIncheonTimetableEvidence,
   validateProductionIncheonTimetableFixture,
 } from "./materialize-incheon-timetable.mjs";
-import { loadStationContactInputs } from "./build-station-contacts.mjs";
+import { bindStationContacts, loadStationContactInputs } from "./build-station-contacts.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -410,8 +410,8 @@ export async function main(
   for (const pack of fixture.packs) {
     const artifactKind = outputArtifactKind ?? pack.artifactKind ?? "fixture";
     if (artifactKind === "production" && pack.stationContacts == null) {
-      const contactsResult = await loadStationContactInputs({ repositoryRoot: root });
-      pack.stationContacts = contactsResult.rows;
+      const contactsInputs = await loadStationContactInputs({ repositoryRoot: root });
+      pack.stationContacts = bindStationContacts({ ...contactsInputs, pack }).rows;
     }
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
     // requiredString은 non-empty 문자열을 강제하고, 검증·경로 파생·매니페스트는 모두 raw packUrl을

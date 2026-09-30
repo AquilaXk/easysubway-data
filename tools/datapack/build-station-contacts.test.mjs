@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  bindStationContacts,
   buildStationContacts,
   loadStationContactInputs,
   normalizePhoneNumber,
@@ -17,50 +18,12 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-const FIXTURE_MAPPINGS = [
-  {
-    stationId: "station-a2d54a5d63d2",
-    lineId: "seoul-2",
-    railOprIsttCd: "S1",
-    lnCd: "2",
-    stinCd: "201",
-    canonicalMappings: [
-      {
-        artifactId: "bundled-capital",
-        stationId: "station-a2d54a5d63d2",
-        lineId: "seoul-2",
-      },
-    ],
-  },
-  {
-    stationId: "station-a2d54a5d63d2",
-    lineId: "seoul-1",
-    railOprIsttCd: "S1",
-    lnCd: "1",
-    stinCd: "151",
-    canonicalMappings: [
-      {
-        artifactId: "bundled-capital",
-        stationId: "station-a2d54a5d63d2",
-        lineId: "seoul-1",
-      },
-    ],
-  },
-  {
-    stationId: "station-ae0e5bd1256d",
-    lineId: "seoul-4",
-    railOprIsttCd: "S1",
-    lnCd: "4",
-    stinCd: "425",
-    canonicalMappings: [
-      {
-        artifactId: "bundled-capital",
-        stationId: "station-ae0e5bd1256d",
-        lineId: "seoul-4",
-      },
-    ],
-  },
-];
+// 서울교통공사 역코드 membership 결속 결과("<호선>:<역번호>" → 팩 역·노선)를 손으로 적은 fixture
+const FIXTURE_BINDINGS = new Map([
+  ["2:201", { stationId: "station-a2d54a5d63d2", lineId: "seoul-2" }],
+  ["1:151", { stationId: "station-a2d54a5d63d2", lineId: "seoul-1" }],
+  ["4:425", { stationId: "station-ae0e5bd1256d", lineId: "seoul-4" }],
+]);
 
 test("(1) 정상 행 → station_contacts 행", () => {
   const snapshot = {
@@ -94,7 +57,7 @@ test("(1) 정상 행 → station_contacts 행", () => {
 
   const { rows, exclusions } = buildStationContacts({
     snapshot,
-    canonicalMappings: FIXTURE_MAPPINGS,
+    stationBindings: FIXTURE_BINDINGS,
   });
 
   assert.equal(exclusions.length, 0);
@@ -149,7 +112,7 @@ test("(2) 환승역 노선별 저장 (같은 station_id에 여러 노선)", () =
 
   const { rows, exclusions } = buildStationContacts({
     snapshot,
-    canonicalMappings: FIXTURE_MAPPINGS,
+    stationBindings: FIXTURE_BINDINGS,
   });
 
   assert.equal(exclusions.length, 0);
@@ -188,7 +151,7 @@ test("(3) 매핑 실패 제외", () => {
 
   const { rows, exclusions } = buildStationContacts({
     snapshot,
-    canonicalMappings: FIXTURE_MAPPINGS,
+    stationBindings: FIXTURE_BINDINGS,
   });
 
   assert.equal(rows.length, 0);
@@ -237,7 +200,7 @@ test("(4) 전화번호 형식 실패 제외", () => {
 
   const { rows, exclusions } = buildStationContacts({
     snapshot,
-    canonicalMappings: FIXTURE_MAPPINGS,
+    stationBindings: FIXTURE_BINDINGS,
   });
 
   assert.equal(rows.length, 0);
@@ -274,7 +237,7 @@ test("(5) 운영 빌드 적재 (SQLite table DDL 및 삽입 검증)", () => {
 
   const { rows } = buildStationContacts({
     snapshot,
-    canonicalMappings: FIXTURE_MAPPINGS,
+    stationBindings: FIXTURE_BINDINGS,
   });
 
   const insert = db.prepare(
@@ -307,15 +270,50 @@ test("(6) 스냅샷 없음 → 빌드 실패", async () => {
   }
 });
 
-test("실제 커밋된 원천 스냅샷으로 station_contacts 적재 검증", async () => {
-  const result = await loadStationContactInputs({ repositoryRoot: process.cwd() });
+test("같은 역·노선의 같은 번호 중복은 한 행으로 세고, 다른 번호면 빌드가 실패한다(#845 리뷰 F2)", () => {
+  const snapshot = (phones) => ({
+    sourceId: "seoul-metro-station-contact",
+    snapshotId: "seoul-metro-station-contact-fixture-dup",
+    rows: phones.map((phone, index) => ({ seq: String(index + 1), stnNo: "201", line: "2", name: "시청", phone })),
+  });
+
+  const identical = buildStationContacts({ snapshot: snapshot(["02-6110-2011", "02-6110-2011"]), stationBindings: FIXTURE_BINDINGS });
+  assert.equal(identical.rows.length, 1);
+  assert.equal(identical.report.duplicateIdenticalCount, 1);
+
+  assert.throws(
+    () => buildStationContacts({ snapshot: snapshot(["02-6110-2011", "02-6110-2019"]), stationBindings: FIXTURE_BINDINGS }),
+    /conflicting station contact numbers for station-a2d54a5d63d2 seoul-2/,
+  );
+});
+
+test("snapshotId가 없으면 합성 값으로 채우지 않고 실패한다(#845 리뷰 F2)", () => {
+  assert.throws(
+    () => buildStationContacts({
+      snapshot: { sourceId: "seoul-metro-station-contact", rows: [] },
+      stationBindings: FIXTURE_BINDINGS,
+    }),
+    /station contact snapshotId is required/,
+  );
+});
+
+test("실제 커밋된 원천을 운영 정본 팩에 역코드 membership으로 결속하면 1~8호선이 적재된다(#845 리뷰 F1)", async () => {
+  const inputs = await loadStationContactInputs({ repositoryRoot: process.cwd() });
+  const pack = JSON.parse(await readFile(path.join(process.cwd(), "tools/datapack/release/nationwide-production-canonical-pack.json"), "utf8"))
+    .packs.find(({ id }) => id === "nationwide");
+  const result = bindStationContacts({ ...inputs, pack });
   assert.equal(result.report.totalRawRows, 289);
-  assert.equal(result.report.validRowsLoaded, 171);
-  assert.equal(result.report.excludedRowsTotal, 118);
-  assert.equal(result.report.exclusionsByReason.MAPPING_NOT_FOUND, 118);
-  assert.equal(result.rows.length, 171);
-  assert.equal(result.report.uniqueStationCount, 159);
-  assert.equal(result.report.uniqueLineCount, 4);
+  assert.equal(result.report.validRowsLoaded, 276);
+  assert.equal(result.report.excludedRowsTotal, 13);
+  assert.equal(result.report.exclusionsByReason.MAPPING_NOT_FOUND, 13);
+  assert.equal(result.rows.length, 276);
+  assert.equal(result.report.uniqueStationCount, 240);
+  assert.equal(result.report.uniqueLineCount, 8);
+  // 미매핑은 역코드 membership에 없는 9호선 2·3단계(역번호 4126~4138)뿐이다.
+  assert.deepEqual(
+    result.exclusions.map(({ row }) => `${row.line}:${row.stnNo}`),
+    Array.from({ length: 13 }, (_, index) => `9:${4126 + index}`),
+  );
 
   // Phone format is guaranteed across all rows
   for (const row of result.rows) {
