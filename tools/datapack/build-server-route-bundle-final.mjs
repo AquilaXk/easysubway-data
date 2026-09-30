@@ -633,6 +633,28 @@ async function assertEmbeddedEvidence(input) {
     if (canonicalJson(buildTransitionFacilityRequirements({ ...stepFreeInputs, routeEdges: input.routeEdges })) !== canonicalJson(requirements)) {
       throw new Error("transition_facility_requirement does not match station elevator path derivation");
     }
+    // #837: 승강장 연단 간격 등급 행은 번들 station_lines에 속한 역·노선에만 있어야 한다.
+    assertEmbeddedTable(database, "station_platform_gaps", [
+      { name: "id", type: "TEXT", notnull: 0, pk: 1 },
+      { name: "station_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "line_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "direction", type: "TEXT", notnull: 0, pk: 0 },
+      { name: "platform_position", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "car_number", type: "INTEGER", notnull: 0, pk: 0 },
+      { name: "door_number", type: "INTEGER", notnull: 0, pk: 0 },
+      { name: "gap_grade", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "height_diff_grade", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "curved", type: "INTEGER", notnull: 1, pk: 0 },
+      { name: "source_snapshot_id", type: "TEXT", notnull: 1, pk: 0 },
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_platform_gaps);
+    if (database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='station_lines'").get()) {
+      const orphanPlatformGaps = database.prepare(
+        "SELECT DISTINCT station_id, line_id FROM station_platform_gaps WHERE (station_id, line_id) NOT IN (SELECT station_id, line_id FROM station_lines) ORDER BY station_id, line_id",
+      ).all();
+      if (orphanPlatformGaps.length > 0) {
+        throw new Error(`station_platform_gaps contains orphan station-line: ${orphanPlatformGaps.map((row) => `${row.station_id}/${row.line_id}`).join(", ")}`);
+      }
+    }
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest

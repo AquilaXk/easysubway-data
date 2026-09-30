@@ -20,6 +20,7 @@ import {
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 import { FACILITY_SOURCE_ID, loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
 import { buildTransitionFacilityRequirements, readBundledStepFreeInputs } from "./build-step-free-path-transitions.mjs";
+import { bindStationPlatformGaps, loadStationPlatformGapInputs } from "./build-station-platform-gaps.mjs";
 
 const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id", "evaluation-at", "station-line-input", "route-edge-input"]);
 const COMPONENTS = {
@@ -53,6 +54,7 @@ export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
   route_accessibility_edge_evidence: "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY CHECK(length(evaluation_digest)=64 AND evaluation_digest NOT GLOB '*[^0-9a-f]*'), materialization_digest TEXT NOT NULL CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))",
   station_elevator_path: "CREATE TABLE station_elevator_path (path_id TEXT NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, next_station_id TEXT NOT NULL, exit_no TEXT NOT NULL, platform_direction TEXT NOT NULL, step INTEGER NOT NULL CHECK(step > 0), detail TEXT NOT NULL, PRIMARY KEY (path_id, step))",
   station_elevator_path_facility: "CREATE TABLE station_elevator_path_facility (path_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT','DIRECTION')), facility_id TEXT NOT NULL, PRIMARY KEY (path_id, group_kind, facility_id))",
+  station_platform_gaps: "CREATE TABLE station_platform_gaps (id TEXT PRIMARY KEY, station_id TEXT NOT NULL, line_id TEXT NOT NULL, direction TEXT CHECK(direction IN ('UP','DOWN')), platform_position TEXT NOT NULL, car_number INTEGER, door_number INTEGER, gap_grade TEXT NOT NULL CHECK(gap_grade IN ('NARROW','NORMAL','WIDE')), height_diff_grade TEXT NOT NULL CHECK(height_diff_grade IN ('LOW','NORMAL','HIGH')), curved INTEGER NOT NULL CHECK(curved IN (0,1)), source_snapshot_id TEXT NOT NULL)",
   transition_facility_requirement: "CREATE TABLE transition_facility_requirement (transition_key TEXT NOT NULL, path_id TEXT NOT NULL, direction_next_station_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT_ELEVATORS','PLATFORM_DIRECTION_ELEVATORS')), facility_id TEXT NOT NULL, PRIMARY KEY (transition_key, path_id, group_kind, facility_id))",
 });
 const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
@@ -120,11 +122,13 @@ export async function emitArtifactComponents(input) {
   };
   // #834: 운영 빌드 경로에서 커밋된 원천 스냅샷으로 엘리베이터 시설·이동경로 행을 만든다. 입력이 없으면 실패한다.
   const stationElevatorPaths = await loadStationElevatorPathInputs({ repositoryRoot: root });
+  // #837: 운영 빌드 경로에서 커밋된 원천 스냅샷과 역코드 membership으로 승강장 연단 간격 등급 행을 만든다. 입력이 없으면 실패한다.
+  const stationPlatformGaps = await loadStationPlatformGapInputs({ repositoryRoot: root });
 
   return serializeArtifactComponents({
     output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
     layout, buildContract, mapAssets, evaluationAt, stationLineInput: input.stationLineInput,
-    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy, stationElevatorPaths,
+    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy, stationElevatorPaths, stationPlatformGaps,
     skipSourceProjection: input.skipSourceProjection ?? false,
   });
 }
@@ -133,9 +137,10 @@ export async function emitArtifactComponents(input) {
 export async function serializeArtifactComponents({
   output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
   layout, buildContract, mapAssets, evaluationAt, stationLineInput, routeEdgeInput, routeEdgePolicy,
-  stationElevatorPaths, skipSourceProjection = false,
+  stationElevatorPaths, stationPlatformGaps, skipSourceProjection = false,
 } = {}) {
   requireStationElevatorPaths(stationElevatorPaths);
+  requireStationPlatformGaps(stationPlatformGaps);
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
   const snapshot = path.join(temp, ".source.sqlite");
   let sourceDb;
@@ -155,6 +160,7 @@ export async function serializeArtifactComponents({
       routeEdgePolicy,
       skipSourceProjection,
       stationElevatorPaths,
+      stationPlatformGaps,
     });
     sourceDb.close(); sourceDb = undefined;
     await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
@@ -288,6 +294,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
       assertBlockedEdgeProjection(provisionalBlockedEdgeIds, blockedEdgeIds(generatedEvidence.evaluation));
       insertGeneratedEvidence(target, generatedEvidence);
       insertStationElevatorRows(target, evidenceInput.stationElevatorPaths);
+      insertStationPlatformGapRows(target, source, evidenceInput.stationPlatformGaps);
       insertTransitionFacilityRequirements(target, evidenceInput.routeEdgeInput.routeEdges);
     }
     target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
@@ -501,6 +508,42 @@ function requireStationElevatorPaths(value) {
     throw new Error("station elevator path input is required");
   }
   if (value.facilities.length === 0 || value.paths.length === 0) throw new Error("station elevator path input is empty");
+}
+
+function requireStationPlatformGaps(value) {
+  if (!value || typeof value !== "object" || !value.snapshot || !value.membership) {
+    throw new Error("station platform gap input is required");
+  }
+}
+
+// #837: 서울교통공사 연단 간격 등급 원천을 번들의 역·노선에 역코드 membership으로 결속해 station_platform_gaps에 적재한다.
+// 결속되지 않은 행과 정의되지 않은 값은 제외 목록으로 드러나며, 결속된 행이 하나도 없으면 빌드를 실패시킨다.
+function insertStationPlatformGapRows(target, source, data) {
+  requireStationPlatformGaps(data);
+  const pack = {
+    stations: source.prepare("SELECT id, name_ko, name_sub FROM stations").all()
+      .map((row) => ({ id: row.id, nameKo: row.name_ko, nameSub: row.name_sub })),
+    stationLines: source.prepare("SELECT station_id, line_id FROM station_lines").all()
+      .map((row) => ({ stationId: row.station_id, lineId: row.line_id })),
+  };
+  const { rows } = bindStationPlatformGaps({ snapshot: data.snapshot, membership: data.membership, pack });
+  if (rows.length === 0) throw new Error("station_platform_gaps is empty");
+  const insertGap = target.prepare(
+    "INSERT INTO station_platform_gaps(id,station_id,line_id,direction,platform_position,car_number,door_number,gap_grade,height_diff_grade,curved,source_snapshot_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+  );
+  target.exec("BEGIN");
+  try {
+    for (const row of [...rows].sort((left, right) => bytes(left.id, right.id))) {
+      insertGap.run(
+        row.id, row.station_id, row.line_id, row.direction, row.platform_position, row.car_number,
+        row.door_number, row.gap_grade, row.height_diff_grade, row.curved, row.source_snapshot_id,
+      );
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 // #834: getFcElvtr 엘리베이터 한 대 단위 시설 행을 서버 번들 facilities에만 넣고(모바일 pack 불변),

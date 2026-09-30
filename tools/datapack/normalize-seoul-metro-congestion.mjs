@@ -6,7 +6,7 @@ import { collectSeoulStationLineInfo } from "./collect-seoul-station-line-info.m
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
-function numeric(value) {
+export function numeric(value) {
   if (value == null) return "";
   const str = String(value).trim();
   const digits = str.replace(/[^\d]/g, "");

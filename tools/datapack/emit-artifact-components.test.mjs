@@ -10,6 +10,8 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
+import { loadStationPlatformGapInputs } from "./build-station-platform-gaps.mjs";
+import { collectSeoulStationLineInfo } from "./collect-seoul-station-line-info.mjs";
 import {
   buildKricExitPathObservation,
   buildKricExitPathRawCollection,
@@ -217,6 +219,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   db.close();
   await cp("tools/datapack/source-candidates.json", path.join(fixtureRoot, "tools/datapack/source-candidates.json"));
   const stationElevatorPaths = await writeStationElevatorFixtureInputs(fixtureRoot, temp);
+  const stationPlatformGaps = await writeStationPlatformGapFixtureInputs(fixtureRoot);
   const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: CURRENT_SOURCE_EXPIRES_AT };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
   const spec = await readFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"));
@@ -256,7 +259,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       releaseSequence: 1, activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL,
       builtAt: CURRENT_EVALUATION_AT, keyId: "test-key" },
     evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput,
-    routeEdgePolicy: routePolicy, stationElevatorPaths, ...values,
+    routeEdgePolicy: routePolicy, stationElevatorPaths, stationPlatformGaps, ...values,
   });
   const selectedSources = new Set(buildSpec.sourceSnapshots.map(({ sourceId }) => sourceId));
   const governance = JSON.parse(await readFile(path.join(fixtureRoot, "tools/datapack/source-governance-policy.json")));
@@ -298,6 +301,22 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await assert.rejects(() => releaseRun("missing-elevator-manifest"), /station elevator path inputs is missing/);
   assert.equal(await exists(path.join(temp, "missing-elevator-manifest")), false);
   await writeFile(elevatorInputsPath, elevatorInputs);
+  // #837: 승강장 연단 간격 입력이 없거나 결속되는 행이 하나도 없으면 건너뛰지 않고 빌드를 실패시킨다.
+  await assert.rejects(() => run("missing-platform-gap-input", { stationPlatformGaps: undefined }), /station platform gap input is required/);
+  assert.equal(await exists(path.join(temp, "missing-platform-gap-input")), false);
+  await assert.rejects(() => run("platform-gap-nothing-bound", {
+    stationPlatformGaps: {
+      ...stationPlatformGaps,
+      snapshot: { ...stationPlatformGaps.snapshot, rows: stationPlatformGaps.snapshot.rows.map((row) => ({ ...row, SBWY_STNS_CD: "0999" })) },
+    },
+  }), /station_platform_gaps is empty/);
+  assert.equal(await exists(path.join(temp, "platform-gap-nothing-bound")), false);
+  const platformGapInputsPath = path.join(fixtureRoot, "tools/datapack/release/station-platform-gap-inputs.json");
+  const platformGapInputs = await readFile(platformGapInputsPath);
+  await rm(platformGapInputsPath);
+  await assert.rejects(() => releaseRun("missing-platform-gap-manifest"), /platform gap inputs is missing/);
+  assert.equal(await exists(path.join(temp, "missing-platform-gap-manifest")), false);
+  await writeFile(platformGapInputsPath, platformGapInputs);
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
   assert.deepEqual(paths, ["map-pack/manifest.json", "map-pack/payload/interchange-layout.json", "map-pack/payload/line-styles.json", "map-pack/payload/metropolitan.svg", "map-pack/payload/stations-layout.json", "server-route-bundle/compatibility.json", "server-route-bundle/manifest.signing-input.json", "server-route-bundle/payload/accessibility.sqlite.zst", "server-route-bundle/payload/fare.sqlite.zst", "server-route-bundle/payload/timetable.sqlite.zst", "server-route-bundle/payload/topology.sqlite.zst", "server-route-bundle/provenance.json", "station-catalog-pack/manifest.json", "station-catalog-pack/payload/catalog.sqlite"]);
@@ -509,8 +528,21 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
         { transition_key: "exit-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
         { transition_key: "exit-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
       ]);
+      // #837: 운영 빌드 경로가 역코드 membership으로 결속한 승강장 연단 간격 등급 행을 적재한다(결속 실패 행은 제외).
+      assert.deepEqual(componentDb.prepare("SELECT * FROM station_platform_gaps ORDER BY id").all().map((row) => ({ ...row })), [
+        {
+          id: "gap:s1:l1:DOWN:본선 1-2", station_id: "s1", line_id: "l1", direction: "DOWN", platform_position: "본선 1-2",
+          car_number: 1, door_number: 2, gap_grade: "WIDE", height_diff_grade: "HIGH", curved: 1,
+          source_snapshot_id: "seoul-metro-platform-gap-fixture",
+        },
+        {
+          id: "gap:s1:l1:UP:본선 1-1", station_id: "s1", line_id: "l1", direction: "UP", platform_position: "본선 1-1",
+          car_number: 1, door_number: 1, gap_grade: "NARROW", height_diff_grade: "LOW", curved: 0,
+          source_snapshot_id: "seoul-metro-platform-gap-fixture",
+        },
+      ]);
     } else {
-      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence','station_elevator_path','station_elevator_path_facility','transition_facility_requirement')").get().count, 0);
+      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence','station_elevator_path','station_elevator_path_facility','station_platform_gaps','transition_facility_requirement')").get().count, 0);
     }
     componentDb.close();
     assert.equal((await readFile(sqlite)).readUInt32BE(96), 3053000);
@@ -846,4 +878,64 @@ async function writeStationElevatorFixtureInputs(fixtureRoot, temp) {
     },
   }, null, 2)}\n`);
   return loadStationElevatorPathInputs({ repositoryRoot: fixtureRoot });
+}
+
+// #837 fixture: 가역(0201, 2호선 → 번들 l1) 연단 간격 등급 스냅샷과 그 역코드 membership을 fixture repository에 고정한다.
+async function writeStationPlatformGapFixtureInputs(fixtureRoot) {
+  const sources = path.join(fixtureRoot, "tools/datapack/sources");
+  await mkdir(sources, { recursive: true });
+  const realMembership = JSON.parse(await readFile("tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json", "utf8"));
+  const realCsv = Buffer.from(realMembership.snapshot.rawBytesBase64, "base64");
+  const header = realCsv.subarray(0, realCsv.indexOf(0x0a) + 1);
+  const csvBytes = Buffer.concat([header, Buffer.from("0201,GA,GA,2,201,,\n")]);
+  const membershipSnapshot = collectSeoulStationLineInfo({ csvBytes, capturedAt: "2026-09-30T00:00:00.000Z" });
+  const records = [{
+    regionId: "capital", operatorId: "seoul-metro", lineId: "l1", canonicalStationName: "가역",
+    sourceStationCode: "0201", externalStationCode: "201", sourceRowSha256: hash(Buffer.from(JSON.stringify(membershipSnapshot.rows[0]))),
+  }];
+  const membership = {
+    schemaVersion: 1, artifactKind: "seoul-station-code-membership-binding", sourceId: "seoulmetro-station-line-info",
+    capturedAt: membershipSnapshot.capturedAt, snapshot: membershipSnapshot, records,
+    recordsSha256: hash(Buffer.from(JSON.stringify(records))),
+  };
+  const membershipBytes = Buffer.from(`${JSON.stringify(membership, null, 2)}\n`);
+  const gapRow = (overrides) => ({
+    LINE: "2호선", SBWY_STNS_OTSD_CD: "201", SBWY_STNS_CD: "0201", SBWY_STNS_NM: "가역", UPLN_DNLN: "상선",
+    PLF_PSTN: "본선 1-1", TRN_PLF_INTVL: "좁음", HGT_DIFF: "낮음", PLF_LNR: "직선", ...overrides,
+  });
+  const rows = [
+    gapRow({}),
+    gapRow({ UPLN_DNLN: "하선", PLF_PSTN: "본선 1-2", TRN_PLF_INTVL: "넓음", HGT_DIFF: "높음", PLF_LNR: "곡선" }),
+    gapRow({ SBWY_STNS_CD: "0999", SBWY_STNS_OTSD_CD: "999", SBWY_STNS_NM: "미결속역" }),
+  ];
+  const rawBytes = Buffer.from(JSON.stringify({ pages: [{ start: 1, end: rows.length, sanitizedJson: { TbSubwayLineInfo: { row: rows } } }] }));
+  const snapshot = {
+    schemaVersion: 1, artifactKind: "seoul-platform-gap-snapshot", sourceId: "seoul-metro-platform-gap",
+    snapshotId: "seoul-metro-platform-gap-fixture", capturedAt: "2026-09-30T00:00:00.000Z", rowCount: rows.length,
+    rawSha256: hash(rawBytes), contentSha256: hash(Buffer.from(JSON.stringify(rows))), rows,
+  };
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  await writeFile(path.join(sources, "seoul-metro-platform-gap-fixture.json"), snapshotBytes);
+  await writeFile(path.join(sources, "seoul-metro-platform-gap-fixture.raw.json"), rawBytes);
+  await writeFile(path.join(sources, "seoul-station-code-membership-fixture.json"), membershipBytes);
+  await writeFile(path.join(fixtureRoot, "tools/datapack/release/station-platform-gap-inputs.json"), `${JSON.stringify({
+    schemaVersion: 1, artifactKind: "station-platform-gap-inputs", issue: 837,
+    platformGap: {
+      sourceId: "seoul-metro-platform-gap",
+      snapshotPath: "tools/datapack/sources/seoul-metro-platform-gap-fixture.json", snapshotSha256: hash(snapshotBytes),
+      rawCollectionPath: "tools/datapack/sources/seoul-metro-platform-gap-fixture.raw.json", rawCollectionSha256: hash(rawBytes),
+    },
+    stationCodeMembership: {
+      sourceId: "seoulmetro-station-line-info",
+      snapshotPath: "tools/datapack/sources/seoul-station-code-membership-fixture.json", snapshotSha256: hash(membershipBytes),
+    },
+  }, null, 2)}\n`);
+  // fixture 스냅샷도 운영과 같은 승격 게이트를 통과해야 하므로 승인 기록의 해시를 fixture 스냅샷에 맞춘다.
+  const candidatesPath = path.join(fixtureRoot, "tools/datapack/source-candidates.json");
+  const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
+  const admission = candidates.candidates.find(({ id }) => id === "seoul-metro-platform-gap").evidence.productionUseAdmission;
+  admission.rawSha256 = snapshot.rawSha256;
+  admission.contentSha256 = snapshot.contentSha256;
+  await writeFile(candidatesPath, JSON.stringify(candidates, null, 2));
+  return loadStationPlatformGapInputs({ repositoryRoot: fixtureRoot });
 }

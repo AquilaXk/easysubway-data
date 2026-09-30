@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "station-platform-gap-inputs",
+  "issue": 837,
+  "platformGap": {
+    "sourceId": "seoul-metro-platform-gap",
+    "snapshotPath": "tools/datapack/sources/seoul-metro-platform-gap-20260930T051459Z.json",
+    "snapshotSha256": "5cf8c269b2001e4cc1c30ea13d61e3be80a64db3f386d67e2c8d65982b25e5fe",
+    "rawCollectionPath": "tools/datapack/sources/seoul-metro-platform-gap-20260930T051459Z.raw.json",
+    "rawCollectionSha256": "ff0a2ce2bafdf5749b982602c15d4bcfcb7aa3fcae276f6e6b5ded0d5fc84a0b"
+  },
+  "stationCodeMembership": {
+    "sourceId": "seoulmetro-station-line-info",
+    "snapshotPath": "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json",
+    "snapshotSha256": "58323d8ef12f09bf2ac7a1a686b77f08442926dd107ee6fa71919b4bd174c0be"
+  }
+}
