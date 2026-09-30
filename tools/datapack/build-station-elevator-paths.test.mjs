@@ -2,311 +2,280 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildElevatorFacilityId,
+  buildSmrtElevatorFacilityId,
   buildStationElevatorPaths,
-  buildStationElevatorCoverageReport,
+  canonicalMappingsFromConvenienceSnapshot,
+  parseElevatorLocation,
+  parseMovementDirection,
+  parseMovementStartExit,
   validateStationElevatorPathsIntegrity,
-  KRIC_MOVEMENT_PATH_DIRECTION_CODES,
 } from "./build-station-elevator-paths.mjs";
 
-test("KRIC 이동경로 구분 코드표는 고정된 방향 매핑을 가진다", () => {
-  assert.equal(KRIC_MOVEMENT_PATH_DIRECTION_CODES["1"], "ENTRY");
-  assert.equal(KRIC_MOVEMENT_PATH_DIRECTION_CODES["2"], "EXIT");
-  assert.equal(KRIC_MOVEMENT_PATH_DIRECTION_CODES["3"], "TRANSFER");
-});
+// fixture는 원천 응답 형식(stationMovement 행, getFcElvtr snapshot, 편의시설 표준 canonicalMappings)을 손으로 옮긴 것이다.
+const CANONICAL_MAPPINGS = [
+  { stationId: "station-a", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "201" },
+  { stationId: "station-b", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "202" },
+  { stationId: "station-z", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "200" },
+  { stationId: "station-a", lineId: "seoul-4", railOprIsttCd: "S1", lnCd: "4", stinCd: "201" },
+  { stationId: "station-k", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "448" },
+];
 
-test("(1) 시설 행 id가 결정론적으로 생성되고, 입력 순서를 바꿔도 같다", () => {
-  const rowA = {
-    railOprIsttCd: "KR",
-    lnCd: "4",
-    stinCd: "448",
-    exitNo: "2",
-    runStinFlorFr: 1,
-    runStinFlorTo: 2,
-    dtlLoc: "(1층)표내는곳내반월방향계단옆",
+function facilityRow(pathDescription) {
+  return { operational: true, situationCode: "M", situation: "사용가능", pathDescription };
+}
+
+function facilitySnapshot(stations) {
+  return {
+    sourceId: "seoul-metro-facility-location",
+    snapshotId: "seoul-metro-facility-location-20260930T010203004Z",
+    capturedAt: "2026-09-30T01:02:03.004Z",
+    observedAt: "2026-09-30T01:02:03.004Z",
+    stations,
   };
-  const rowB = {
-    railOprIsttCd: "KR",
-    lnCd: "4",
-    stinCd: "448",
-    exitNo: "2",
-    runStinFlorFr: 1,
-    runStinFlorTo: 2,
-    dtlLoc: " (1층)표내는곳내반월방향계단옆 ", // whitespace normalized
+}
+
+const FACILITY_STATIONS = [{
+  stationName: "가역",
+  lineName: "2호선",
+  providerStationCode: "0201",
+  facilities: [
+    facilityRow("9번 출입구"),
+    facilityRow("9,10번 출입구 사이"),
+    facilityRow("나역 방면2-3"),
+    facilityRow("나역 방면 5-1, 다역 방면2-2"),
+    facilityRow("대합실"),
+    facilityRow("환승통로(나역 방면2-3)"),
+    facilityRow("3번 출입구"),
+    facilityRow(" 3번  출입구"),
+  ],
+}, {
+  stationName: "가역",
+  lineName: "4호선",
+  providerStationCode: "0201",
+  facilities: [facilityRow("9번 출입구"), facilityRow("나역 방면1-1")],
+}, {
+  stationName: "칠호선역",
+  lineName: "7호선",
+  providerStationCode: "0701",
+  facilities: [facilityRow("1번 출입구")],
+}, {
+  stationName: "공항역",
+  lineName: "공항철도",
+  providerStationCode: "4201",
+  facilities: [facilityRow("1번 출입구")],
+}];
+
+function movementRow(mvPathMgNo, exitMvTpOrdr, stMovePath, edMovePath, mvContDtl = `${exitMvTpOrdr}) 이동`) {
+  return { edMovePath, elvtSttCd: null, elvtTpCd: null, exitMvTpOrdr, imgPath: "", mvContDtl, mvPathMgNo, stMovePath };
+}
+
+function query(queryId, providerStationId, providerNextStationId) {
+  return {
+    queryId,
+    routeEdgeId: `edge-${providerStationId}-${providerNextStationId}`,
+    providerOperatorId: "S1",
+    providerLineId: "2",
+    providerStationId,
+    providerNextStationId,
+    operatorName: "서울교통공사",
+    lineName: "수도권 2호선",
+    stationName: "가역",
+    regionId: "capital",
   };
+}
 
-  const idA = buildElevatorFacilityId(rowA);
-  const idB = buildElevatorFacilityId(rowB);
+function movementSnapshot() {
+  return {
+    sourceId: "kric-station-movement-standard",
+    snapshotId: "kric-station-movement-standard-20260930T010000000Z",
+    queryPlan: [
+      query("q-a-b", "201", "202"),
+      query("q-a-z", "201", "200"),
+      query("q-a-x", "201", "299"),
+      query("q-b-a", "202", "201"),
+    ],
+    results: [{
+      queryId: "q-a-b",
+      state: "ROWS_OBSERVED",
+      rows: [
+        movementRow(1, 1, "9번 출입구 옆 엘리베이터", "나역 방면", "1) 9번 출입구 옆 엘리베이터로 이동"),
+        movementRow(1, 2, "9번 출입구 옆 엘리베이터", "나역 방면", "2) 12번 출입구 엘리베이터 지나 개집표기 통과"),
+        movementRow(1, 3, "9번 출입구 옆 엘리베이터", "나역 방면", "3) 엘리베이터 이용 승강장"),
+        movementRow(2, 1, "11번 출입구 엘리베이터", "나역 방면"),
+        movementRow(2, 2, "11번 출입구 엘리베이터", "나역 방면"),
+        movementRow(3, 1, "9번/10번 출입구 사이 엘리베이터", "나역 방면"),
+        movementRow(4, 1, "9번 출입구 옆 엘리베이터", "나역 방면 승강장"),
+        movementRow(5, 1, "9번 출입구 옆 엘리베이터", "나역 방면"),
+        movementRow(5, 1, "9번 출입구 옆 엘리베이터", "나역 방면", "중복 순서"),
+      ],
+    }, {
+      queryId: "q-a-z",
+      state: "ROWS_OBSERVED",
+      rows: [
+        movementRow(1, 1, "3번 출입구 옆 엘리베이터", "자역 방면"),
+        movementRow(1, 2, "3번 출입구 옆 엘리베이터", "자역 방면"),
+      ],
+    }, {
+      queryId: "q-a-x",
+      state: "ROWS_OBSERVED",
+      rows: [movementRow(1, 1, "9번 출입구 옆 엘리베이터", "엑스 방면")],
+    }, {
+      queryId: "q-b-a",
+      state: "PROVIDER_NO_DATA",
+      rows: [],
+    }],
+  };
+}
 
-  assert.equal(idA, "kric-elev:KR:4:448:2:1-2:0b219253cb54");
-  assert.equal(idB, "kric-elev:KR:4:448:2:1-2:0b219253cb54");
-  assert.match(idA, /^kric-elev:KR:4:448:2:1-2:[0-9a-f]{12}$/);
-
-  // 입력 순서 무관성 검증
-  const inputOrder1 = [
-    { ...rowA, dtlLoc: "위치A" },
-    { ...rowA, dtlLoc: "위치B", exitNo: "1" },
-  ];
-  const inputOrder2 = [
-    { ...rowA, dtlLoc: "위치B", exitNo: "1" },
-    { ...rowA, dtlLoc: "위치A" },
-  ];
-
-  const canonicalMappings = [
-    { railOprIsttCd: "KR", lnCd: "4", stinCd: "448", stationId: "station-sangnoksu", lineId: "seoul-4" },
-  ];
-
-  const res1 = buildStationElevatorPaths({
-    elevatorRows: inputOrder1,
-    movementRows: [],
-    canonicalMappings,
+function build(overrides = {}) {
+  return buildStationElevatorPaths({
+    movementSnapshot: movementSnapshot(),
+    facilitySnapshot: facilitySnapshot(FACILITY_STATIONS),
+    canonicalMappings: CANONICAL_MAPPINGS,
+    ...overrides,
   });
-  const res2 = buildStationElevatorPaths({
-    elevatorRows: inputOrder2,
-    movementRows: [],
-    canonicalMappings,
-  });
+}
 
-  const ids1 = res1.facilities.map((f) => f.id).sort();
-  const ids2 = res2.facilities.map((f) => f.id).sort();
-  const expectedSortedIds = [
-    "kric-elev:KR:4:448:1:1-2:1b26d29c105d",
-    "kric-elev:KR:4:448:2:1-2:e36473dd25d9",
-  ];
-  assert.deepEqual(ids1, expectedSortedIds);
-  assert.deepEqual(ids2, expectedSortedIds);
-});
-
-test("(2) 같은 조합 중복이 '식별 불가'로 빠진다", () => {
-  const duplicateRows = [
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      exitNo: "2",
-      runStinFlorFr: 1,
-      runStinFlorTo: 2,
-      dtlLoc: "동일위치엘리베이터",
-    },
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      exitNo: "2",
-      runStinFlorFr: 1,
-      runStinFlorTo: 2,
-      dtlLoc: "동일위치엘리베이터",
-    },
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      exitNo: "1",
-      runStinFlorFr: 1,
-      runStinFlorTo: 2,
-      dtlLoc: "정상엘리베이터",
-    },
-  ];
-
-  const canonicalMappings = [
-    { railOprIsttCd: "KR", lnCd: "4", stinCd: "448", stationId: "station-sangnoksu", lineId: "seoul-4" },
-  ];
-
-  const result = buildStationElevatorPaths({
-    elevatorRows: duplicateRows,
-    movementRows: [],
-    canonicalMappings,
-  });
-
-  // 중복 조합 2개 행 모두 식별 불가로 제외
-  assert.equal(result.facilities.length, 1);
-  assert.equal(result.facilities[0].exitNo, "1");
-  assert.equal(result.unidentifiableFacilities.length, 2);
-  assert.equal(result.unidentifiableFacilities[0].reason, "DUPLICATE_COMBINATION");
-});
-
-test("(3) 경로 단계와 시설이 정확 일치로만 연결된다", () => {
-  const elevatorRows = [
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      exitNo: "2",
-      grndDvNmFr: "지상",
-      runStinFlorFr: 1,
-      grndDvNmTo: "지상",
-      runStinFlorTo: 2,
-      dtlLoc: "(1층)표내는곳내반월방향계단옆",
-    },
-  ];
-
-  const movementRows = [
-    // 완전 일치 경로: 2번 출입구 및 1층-2층 엘리베이터
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      mvPathMgNo: 1,
-      mvPathDvCd: "1",
-      mvPathDvNm: "출입구-승강장",
-      mvTpOrdr: 1,
-      mvDst: null,
-      mvContDtl: "1) 2번 출입구",
-    },
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      mvPathMgNo: 1,
-      mvPathDvCd: "1",
-      mvPathDvNm: "출입구-승강장",
-      mvTpOrdr: 2,
-      mvDst: null,
-      mvContDtl: "2) 반월방면 지상1층 엘리베이터 탑승 후 지상2층 하차",
-    },
-    // 불완전 연결 경로: 3번 출입구 (매칭되는 3번 출입구 엘리베이터 없음)
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      mvPathMgNo: 2,
-      mvPathDvCd: "1",
-      mvPathDvNm: "출입구-승강장",
-      mvTpOrdr: 1,
-      mvDst: null,
-      mvContDtl: "1) 3번 출입구",
-    },
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "448",
-      mvPathMgNo: 2,
-      mvPathDvCd: "1",
-      mvPathDvNm: "출입구-승강장",
-      mvTpOrdr: 2,
-      mvDst: null,
-      mvContDtl: "2) 3번 엘리베이터 탑승",
-    },
-  ];
-
-  const canonicalMappings = [
-    { railOprIsttCd: "KR", lnCd: "4", stinCd: "448", stationId: "station-sangnoksu", lineId: "seoul-4" },
-  ];
-
-  const result = buildStationElevatorPaths({
-    elevatorRows,
-    movementRows,
-    canonicalMappings,
-  });
-
-  // 경로 1 단계 2는 elevatorRows[0]과 정확 매칭되어 facilityId 연결
-  const path1Steps = result.paths.filter((p) => p.path_id === "path-station-sangnoksu-seoul-4-1");
-  const goldenFacilityId = "kric-elev:KR:4:448:2:1-2:0b219253cb54";
-  assert.equal(result.facilities[0].id, goldenFacilityId);
-  assert.equal(path1Steps[0].facility_id, null); // 출입구 단계
-  assert.equal(path1Steps[1].facility_id, goldenFacilityId); // 엘리베이터 단계 매칭 성공
-
-  // 경로 2 단계 2는 일치하는 엘리베이터가 없으므로 facilityId = null
-  const path2Steps = result.paths.filter((p) => p.path_id === "path-station-sangnoksu-seoul-4-2");
-  assert.equal(path2Steps[1].facility_id, null);
-
-  // 경로 완성도 상태 검증
-  const path1Info = result.pathSummaries.find((s) => s.pathId === "path-station-sangnoksu-seoul-4-1");
-  const path2Info = result.pathSummaries.find((s) => s.pathId === "path-station-sangnoksu-seoul-4-2");
-  assert.equal(path1Info.isComplete, true);
-  assert.equal(path2Info.isComplete, false);
-});
-
-test("(4) 매핑 없는 역이 제외 목록에 오른다", () => {
-  const elevatorRows = [
-    {
-      railOprIsttCd: "KR",
-      lnCd: "4",
-      stinCd: "999", // 없는 역
-      exitNo: "1",
-      runStinFlorFr: 1,
-      runStinFlorTo: 2,
-      dtlLoc: "알수없는역",
-    },
-  ];
-
-  const canonicalMappings = [
-    { railOprIsttCd: "KR", lnCd: "4", stinCd: "448", stationId: "station-sangnoksu", lineId: "seoul-4" },
-  ];
-
-  const result = buildStationElevatorPaths({
-    elevatorRows,
-    movementRows: [],
-    canonicalMappings,
-  });
-
-  assert.equal(result.facilities.length, 0);
-  assert.equal(result.excludedStations.length, 1);
-  assert.equal(result.excludedStations[0].tuple, "KR/4/999");
-  assert.equal(result.excludedStations[0].reason, "MAPPING_NOT_FOUND");
-});
-
-test("(5) 고아 facilityId에서 빌드가 실패한다", () => {
-  const facilities = [
-    { id: "kric-elev:KR:4:448:1:1-2:abcdef123456" },
-  ];
-  const pathsWithOrphan = [
-    {
-      path_id: "path-1",
-      step: 1,
-      facility_id: "kric-elev:KR:4:448:999:orphan-id",
-    },
-  ];
-
-  assert.throws(
-    () => validateStationElevatorPathsIntegrity({ facilities, paths: pathsWithOrphan }),
-    /station_elevator_path contains orphan facility_id: kric-elev:KR:4:448:999:orphan-id/,
+test("(1) smrt-elev 시설 id는 원천 속성의 결정론적 조합이고 입력 순서를 바꿔도 같다", () => {
+  assert.equal(
+    buildSmrtElevatorFacilityId({ providerStationCode: "0201", lineCode: "2", pathDescription: "  9번   출입구 " }),
+    "smrt-elev:0201:2:9번 출입구",
   );
-
-  const pathsWithoutOrphan = [
-    {
-      path_id: "path-1",
-      step: 1,
-      facility_id: "kric-elev:KR:4:448:1:1-2:abcdef123456",
-    },
-    {
-      path_id: "path-1",
-      step: 2,
-      facility_id: null,
-    },
-  ];
-
-  assert.doesNotThrow(
-    () => validateStationElevatorPathsIntegrity({ facilities, paths: pathsWithoutOrphan }),
-  );
+  const forward = build();
+  const reversed = build({
+    facilitySnapshot: facilitySnapshot([...FACILITY_STATIONS].reverse().map((station) => ({
+      ...station,
+      facilities: [...station.facilities].reverse(),
+    }))),
+  });
+  assert.deepEqual(forward.facilities, reversed.facilities);
+  assert.deepEqual(forward.facilities.map(({ id, stationId, lineId }) => ({ id, stationId, lineId })), [
+    { id: "smrt-elev:0201:2:9,10번 출입구 사이", stationId: "station-a", lineId: "seoul-2" },
+    { id: "smrt-elev:0201:2:9번 출입구", stationId: "station-a", lineId: "seoul-2" },
+    { id: "smrt-elev:0201:2:나역 방면 5-1, 다역 방면2-2", stationId: "station-a", lineId: "seoul-2" },
+    { id: "smrt-elev:0201:2:나역 방면2-3", stationId: "station-a", lineId: "seoul-2" },
+    { id: "smrt-elev:0201:4:9번 출입구", stationId: "station-a", lineId: "seoul-4" },
+    { id: "smrt-elev:0201:4:나역 방면1-1", stationId: "station-a", lineId: "seoul-4" },
+  ]);
 });
 
-test("커버리지 리포트가 역별 및 전체 합계를 정확히 집계한다", () => {
-  const report = buildStationElevatorCoverageReport({
-    facilities: [
-      { stationId: "station-a", lineId: "seoul-4", id: "fac-1" },
-      { stationId: "station-a", lineId: "seoul-4", id: "fac-2" },
-      { stationId: "station-b", lineId: "seoul-2", id: "fac-3" },
-    ],
-    pathSummaries: [
-      { stationId: "station-a", lineId: "seoul-4", pathId: "p-1", isComplete: true },
-      { stationId: "station-a", lineId: "seoul-4", pathId: "p-2", isComplete: false },
-      { stationId: "station-b", lineId: "seoul-2", pathId: "p-3", isComplete: true },
-    ],
-    excludedStations: [
-      { tuple: "KR/4/999", reason: "MAPPING_NOT_FOUND" },
-    ],
-    unidentifiableFacilities: [
-      { tuple: "S1/2/201", reason: "DUPLICATE_COMBINATION" },
-    ],
-  });
+test("(2) 같은 id 중복·문법 밖 위치·매핑 없음·노선 형식 불일치는 사유별로 제외한다", () => {
+  const { exclusions } = build();
+  assert.deepEqual(exclusions.facilities.map(({ reason, facilityId, provider }) => ({
+    reason, facilityId: facilityId ?? null, pathDescription: provider.pathDescription, lineName: provider.lineName,
+  })).sort((left, right) => `${left.reason}${left.pathDescription}${left.lineName}`.localeCompare(`${right.reason}${right.pathDescription}${right.lineName}`)), [
+    { reason: "LINE_OR_CODE_FORMAT_MISMATCH", facilityId: null, pathDescription: "1번 출입구", lineName: "공항철도" },
+    { reason: "MAPPING_NOT_FOUND", facilityId: "smrt-elev:0701:7:1번 출입구", pathDescription: "1번 출입구", lineName: "7호선" },
+    { reason: "UNIDENTIFIABLE_DUPLICATE", facilityId: "smrt-elev:0201:2:3번 출입구", pathDescription: " 3번  출입구", lineName: "2호선" },
+    { reason: "UNIDENTIFIABLE_DUPLICATE", facilityId: "smrt-elev:0201:2:3번 출입구", pathDescription: "3번 출입구", lineName: "2호선" },
+    { reason: "UNIDENTIFIABLE_FORMAT", facilityId: null, pathDescription: "대합실", lineName: "2호선" },
+    { reason: "UNIDENTIFIABLE_FORMAT", facilityId: null, pathDescription: "환승통로(나역 방면2-3)", lineName: "2호선" },
+  ]);
+});
 
-  assert.equal(report.summary.totalFacilities, 3);
-  assert.equal(report.summary.totalPaths, 3);
-  assert.equal(report.summary.totalCompletePaths, 2);
-  assert.equal(report.summary.totalExcludedStations, 1);
-  assert.equal(report.summary.totalUnidentifiableFacilities, 1);
-  assert.equal(report.byStationLine.length, 2);
+test("위치 문법은 출입구 번호 집합과 방면·칸 위치만 받아들인다", () => {
+  assert.deepEqual(parseElevatorLocation("9번 출입구"), { kind: "EXIT", exitNumbers: ["9"] });
+  assert.deepEqual(parseElevatorLocation("10,9번 출입구 사이"), { kind: "EXIT", exitNumbers: ["9", "10"] });
+  assert.deepEqual(parseElevatorLocation("나역 방면 5-1, 다역 방면2-2"), {
+    kind: "DIRECTION",
+    directions: [{ label: "나역", carPosition: "5-1" }, { label: "다역", carPosition: "2-2" }],
+  });
+  assert.deepEqual(parseElevatorLocation("동대문(1) 방면2-3"), {
+    kind: "DIRECTION", directions: [{ label: "동대문(1)", carPosition: "2-3" }],
+  });
+  for (const value of ["대합실", "9번 출입구(대합실 내)", "신내, 봉화산 방면4-1", "명일 방면1-1, 2-2 사이", "환승통로(나역 방면2-3)", "9-1번 출입구"]) {
+    assert.equal(parseElevatorLocation(value), null, value);
+  }
+});
+
+test("F2: 경로 단위는 (역, 노선, 다음 역, mvPathMgNo)라 같은 관리번호도 방향별로 충돌하지 않는다", () => {
+  const { paths, pathSummaries } = build();
+  const stepKeys = paths.map(({ path_id: pathId, step }) => `${pathId}#${step}`);
+  assert.equal(new Set(stepKeys).size, stepKeys.length);
+  assert.deepEqual(pathSummaries.map(({ pathId, stationId, nextStationId, stepCount }) => ({ pathId, stationId, nextStationId, stepCount })), [
+    { pathId: "kric-mv:S1:2:201:202:1", stationId: "station-a", nextStationId: "station-b", stepCount: 3 },
+    { pathId: "kric-mv:S1:2:201:202:2", stationId: "station-a", nextStationId: "station-b", stepCount: 2 },
+    { pathId: "kric-mv:S1:2:201:200:1", stationId: "station-a", nextStationId: "station-z", stepCount: 2 },
+  ]);
+  assert.deepEqual(paths.filter(({ path_id: pathId }) => pathId === "kric-mv:S1:2:201:202:1").map(({ step, detail }) => ({ step, detail })), [
+    { step: 1, detail: "1) 9번 출입구 옆 엘리베이터로 이동" },
+    { step: 2, detail: "2) 12번 출입구 엘리베이터 지나 개집표기 통과" },
+    { step: 3, detail: "3) 엘리베이터 이용 승강장" },
+  ]);
+});
+
+test("F3: 방향은 요청한 nextStinCd와 edMovePath에서만 오고 형식이 다르면 제외한다", () => {
+  assert.equal(parseMovementDirection("을지로입구 방면"), "을지로입구");
+  assert.equal(parseMovementDirection(" 을지로입구방면"), "을지로입구");
+  assert.equal(parseMovementDirection("을지로입구 방면 승강장"), null);
+  assert.equal(parseMovementDirection("1번 출입구"), null);
+  assert.equal(parseMovementStartExit("9번 출입구 옆 엘리베이터"), "9");
+  assert.equal(parseMovementStartExit(" 9번 출입구 근처 엘리베이터 "), "9");
+  for (const value of ["9번/10번 출입구 사이 엘리베이터", "9-1번 출입구 옆 엘리베이터", "9번출입구 옆 엘리베이터", "지상1층 엘리베이터"]) {
+    assert.equal(parseMovementStartExit(value), null, value);
+  }
+  const { paths, exclusions } = build();
+  assert.deepEqual([...new Set(paths.map(({ path_id: pathId, next_station_id: next, exit_no: exitNo, platform_direction: direction }) => `${pathId}|${next}|${exitNo}|${direction}`))], [
+    "kric-mv:S1:2:201:202:1|station-b|9|나역",
+    "kric-mv:S1:2:201:202:2|station-b|11|나역",
+    "kric-mv:S1:2:201:200:1|station-z|3|자역",
+  ]);
+  assert.deepEqual(exclusions.paths.map(({ reason, pathId, queryId }) => ({ reason, id: pathId ?? queryId })), [
+    { reason: "START_FORMAT_MISMATCH", id: "kric-mv:S1:2:201:202:3" },
+    { reason: "DIRECTION_FORMAT_MISMATCH", id: "kric-mv:S1:2:201:202:4" },
+    { reason: "STEP_ORDER_INVALID", id: "kric-mv:S1:2:201:202:5" },
+    { reason: "MAPPING_NOT_FOUND", id: "q-a-x" },
+  ]);
+});
+
+test("F4: 경로 요구 묶음은 같은 역·노선 시설의 출입구·방면 원천 값 정확 일치로만 잇는다", () => {
+  const { pathFacilities, pathSummaries } = build();
+  assert.deepEqual(pathFacilities, [
+    { path_id: "kric-mv:S1:2:201:202:1", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:9,10번 출입구 사이" },
+    { path_id: "kric-mv:S1:2:201:202:1", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:9번 출입구" },
+    { path_id: "kric-mv:S1:2:201:202:1", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:나역 방면 5-1, 다역 방면2-2" },
+    { path_id: "kric-mv:S1:2:201:202:1", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
+    { path_id: "kric-mv:S1:2:201:202:2", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:나역 방면 5-1, 다역 방면2-2" },
+    { path_id: "kric-mv:S1:2:201:202:2", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
+  ]);
+  assert.deepEqual(pathSummaries.map(({ pathId, linkageComplete }) => ({ pathId, linkageComplete })), [
+    { pathId: "kric-mv:S1:2:201:202:1", linkageComplete: true },
+    { pathId: "kric-mv:S1:2:201:202:2", linkageComplete: false },
+    { pathId: "kric-mv:S1:2:201:200:1", linkageComplete: false },
+  ]);
+});
+
+test("(5) 고아 facility_id·path_id는 무결성 검사에서 실패한다", () => {
+  const facilities = [{ id: "smrt-elev:0201:2:9번 출입구" }];
+  const paths = [{ path_id: "kric-mv:S1:2:201:202:1", step: 1 }];
+  assert.throws(() => validateStationElevatorPathsIntegrity({
+    facilities, paths, pathFacilities: [{ path_id: "kric-mv:S1:2:201:202:1", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:8번 출입구" }],
+  }), /orphan facility_id: smrt-elev:0201:2:8번 출입구/);
+  assert.throws(() => validateStationElevatorPathsIntegrity({
+    facilities, paths, pathFacilities: [{ path_id: "kric-mv:S1:2:201:202:9", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:9번 출입구" }],
+  }), /orphan path_id: kric-mv:S1:2:201:202:9/);
+});
+
+test("(4) 역 매핑은 편의시설 표준 canonicalMappings만 쓰고 모호하면 거부한다", () => {
+  const snapshot = {
+    sourceId: "kric-station-convenience-standard",
+    artifactKind: "kric-accessibility-snapshot",
+    queries: [{
+      stationId: "station-a", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "201",
+      canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-a", lineId: "seoul-2" }],
+      rows: [],
+    }],
+  };
+  assert.deepEqual(canonicalMappingsFromConvenienceSnapshot(snapshot), [
+    { stationId: "station-a", lineId: "seoul-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "201" },
+  ]);
+  const ambiguous = structuredClone(snapshot);
+  ambiguous.queries.push({ ...structuredClone(snapshot.queries[0]), stationId: "station-b",
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b", lineId: "seoul-2" }] });
+  assert.throws(() => canonicalMappingsFromConvenienceSnapshot(ambiguous), /canonical mapping is ambiguous/);
+  const mismatched = structuredClone(snapshot);
+  mismatched.queries[0].canonicalMappings[0].stationId = "station-z";
+  assert.throws(() => canonicalMappingsFromConvenienceSnapshot(mismatched), /canonical mapping is invalid/);
 });
 
 test("#834 원천 교체: stationMovement 표준·getFcElvtr만 운영 사용 승격 기록을 가진다", async () => {
