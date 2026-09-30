@@ -1,5 +1,6 @@
 {
   "manifest": {
+    "releaseSequence": 1,
     "ttlSeconds": 3600,
     "activePack": {
       "id": "capital",
