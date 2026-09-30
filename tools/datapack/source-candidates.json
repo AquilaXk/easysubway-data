@@ -7332,6 +7332,135 @@
       }
     },
     {
+      "id": "seoul-metro-platform-gap",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "coverageScope": {
+        "operatorIds": [
+          "seoul-metro"
+        ]
+      },
+      "displayName": "서울교통공사_연단정보와 곡선구간 정보",
+      "detailUrl": "https://data.seoul.go.kr/dataList/OA-22124/S/1/datasetView.do",
+      "requestUrl": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/TbSubwayLineInfo",
+      "operation": {
+        "method": "GET",
+        "endpoint": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/TbSubwayLineInfo",
+        "auth": {
+          "env": "SEOUL_OPENAPI_KEY",
+          "placement": "path",
+          "parameter": "serviceKey",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "startIndex",
+          "endIndex"
+        ],
+        "responseEnvelope": "TbSubwayLineInfo.{RESULT,row[]}",
+        "responseFields": [
+          "LINE",
+          "SBWY_STNS_OTSD_CD",
+          "SBWY_STNS_CD",
+          "SBWY_STNS_NM",
+          "UPLN_DNLN",
+          "PLF_PSTN",
+          "TRN_PLF_INTVL",
+          "HGT_DIFF",
+          "PLF_LNR"
+        ],
+        "runner": {
+          "command": "node tools/datapack/collect-seoul-metro-platform-gap.mjs",
+          "requiredEnv": [
+            "SEOUL_OPENAPI_KEY"
+          ]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_collection_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-22124/S/1/datasetView.do",
+        "retrievedAt": "2026-09-30",
+        "endpoint": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/TbSubwayLineInfo",
+        "sampleUrl": "http://openapi.seoul.go.kr:8088/[서비스키값]/json/TbSubwayLineInfo/1/5",
+        "usePermissionRange": "공공누리 1유형",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "LINE",
+          "SBWY_STNS_OTSD_CD",
+          "SBWY_STNS_CD",
+          "SBWY_STNS_NM",
+          "UPLN_DNLN",
+          "PLF_PSTN",
+          "TRN_PLF_INTVL",
+          "HGT_DIFF",
+          "PLF_LNR"
+        ],
+        "productionUseAdmission": {
+          "artifactKind": "source-production-use-admission",
+          "issue": 837,
+          "decisionRef": "https://github.com/AquilaXk/easysubway-data/issues/837",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-09-30",
+          "scope": "SERVER_ROUTE_BUNDLE_PLATFORM_GAP",
+          "productionUseAllowed": true,
+          "consumer": "tools/datapack/build-station-platform-gaps.mjs",
+          "evidenceManifest": "tools/datapack/release/station-platform-gap-inputs.json",
+          "rationale": "QA 결정(2026-09-30): TbSubwayLineInfo(OA-22124)는 서울교통공사 관할역 승강장 위치별 연단 간격·높이차를 제공하는 공식 원천이다. 서버 번들 accessibility station_platform_gaps 테이블 적재를 위해 운영 사용으로 승격한다.",
+          "relationToExistingSources": "연단 간격·높이차 정보를 담은 최초의 접근성 원천이다. 역코드 매핑은 kric-station-convenience-standard canonicalMappings의 S1 stinCd를 쓰고 이름 조인은 하지 않는다. 비었거나 숫자가 아닌 정성 측정값은 제외한다.",
+          "fieldMapping": {
+            "SBWY_STNS_CD": "station_platform_gaps.station_id 및 line_id 매핑 키",
+            "LINE": "station_platform_gaps.line_id 매핑 키 (N호선 → 노선코드 N)",
+            "UPLN_DNLN": "station_platform_gaps.direction (상선=UP, 하선=DOWN)",
+            "PLF_PSTN": "station_platform_gaps.platform_position 및 car_number, door_number",
+            "TRN_PLF_INTVL": "station_platform_gaps.gap_mm (정수 mm)",
+            "HGT_DIFF": "station_platform_gaps.height_diff_mm (정수 mm)"
+          },
+          "license": {
+            "usePermissionRange": "공공누리 1유형",
+            "attribution": "출처: 서울 열린데이터광장 서울교통공사 연단정보와 곡선구간 정보(TbSubwayLineInfo)",
+            "attributionLocation": "서버 번들 accessibility 구성요소 station_platform_gaps 행의 source_snapshot_id와 이 admission 기록."
+          },
+          "quota": {
+            "selfImposedCallLimit": "NONE",
+            "collectionCadence": "번들 입력 스냅샷 수집 시 1회(전체 목록 페이지 호출)"
+          }
+        }
+      },
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SERVER_ROUTE_BUNDLE_PLATFORM_GAP",
+          "updateFrequency": "번들 입력 스냅샷 수집 시 1회",
+          "unsupportedNotes": "production use is limited to the server route bundle station platform gap table built from committed raw-archived snapshots"
+        }
+      }
+    },
+    {
       "id": "seoul-metro-route-map-positions",
       "apiCatalog": false,
       "priority": "P1",

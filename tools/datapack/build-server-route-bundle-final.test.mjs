@@ -261,6 +261,7 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["missing-route-table", "DROP TABLE route_accessibility_edge_evidence", /embedded route_accessibility_edge_evidence schema mismatch/],
     ["missing-station-elevator-path-table", "DROP TABLE station_elevator_path", /embedded station_elevator_path schema mismatch/],
     ["missing-station-elevator-path-facility-table", "DROP TABLE station_elevator_path_facility", /embedded station_elevator_path_facility schema mismatch/],
+    ["missing-station-platform-gaps-table", "DROP TABLE station_platform_gaps", /embedded station_platform_gaps schema mismatch/],
     ["orphan-path-id", "INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan path_id: kric-mv:S1:2:201:202:1/],
     ["orphan-facility-id", "INSERT INTO station_elevator_path VALUES('kric-mv:S1:2:201:202:1','s1','l1','s2','9','나역',1,'1) 이동'); INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan facility_id: smrt-elev:0201:2:9번 출입구/],
     ["missing-facilities-table", "DROP TABLE facilities", /facilities table is missing/],
