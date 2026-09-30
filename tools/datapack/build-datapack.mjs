@@ -2329,7 +2329,7 @@ export function projectCapitalTopologyIntoCanonicalFixture(
   topologySnapshotId,
   admissions,
 ) {
-  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  const packs = fixture?.packs?.filter(({ id }) => (id === "capital" || id === "nationwide")) ?? [];
   if (fixture?.manifest?.channel !== "production"
     || packs.length !== 1
     || packs[0].artifactKind !== "production"
