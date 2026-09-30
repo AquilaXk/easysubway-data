@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildSmrtElevatorFacilityId,
+  buildStationElevatorCoverageReport,
   buildStationElevatorPaths,
   canonicalMappingsFromConvenienceSnapshot,
   parseElevatorLocation,
@@ -224,7 +225,7 @@ test("F3: 방향은 요청한 nextStinCd와 edMovePath에서만 오고 형식이
     { reason: "START_FORMAT_MISMATCH", id: "kric-mv:S1:2:201:202:3" },
     { reason: "DIRECTION_FORMAT_MISMATCH", id: "kric-mv:S1:2:201:202:4" },
     { reason: "STEP_ORDER_INVALID", id: "kric-mv:S1:2:201:202:5" },
-    { reason: "MAPPING_NOT_FOUND", id: "q-a-x" },
+    { reason: "NEXT_STATION_MAPPING_NOT_FOUND", id: "q-a-x" },
   ]);
 });
 
@@ -243,6 +244,60 @@ test("F4: 경로 요구 묶음은 같은 역·노선 시설의 출입구·방면
     { pathId: "kric-mv:S1:2:201:202:2", linkageComplete: false },
     { pathId: "kric-mv:S1:2:201:200:1", linkageComplete: false },
   ]);
+});
+
+test("F5: 커버리지는 canonical 역·노선 단위로 세고 제외는 사유별 개수·역·노선 수로 드러낸다", () => {
+  const report = buildStationElevatorCoverageReport(build({
+    movementSnapshot: (() => {
+      const snapshot = movementSnapshot();
+      snapshot.queryPlan.push({ ...query("q-q-a", "999", "201") });
+      snapshot.results.push({ queryId: "q-q-a", state: "ROWS_OBSERVED", rows: [movementRow(1, 1, "1번 출입구 엘리베이터", "가역 방면")] });
+      return snapshot;
+    })(),
+  }));
+  const empty = { elevatorCount: 0, pathCount: 0, linkageCompletePathCount: 0, linkageIncompletePathCount: 0, providerNoPathQueryCount: 0, excludedFacilities: {}, excludedPaths: {} };
+  assert.deepEqual(report.byStationLine, [
+    {
+      stationId: "station-a",
+      lineId: "seoul-2",
+      elevatorCount: 4,
+      pathCount: 3,
+      linkageCompletePathCount: 1,
+      linkageIncompletePathCount: 2,
+      providerNoPathQueryCount: 0,
+      excludedFacilities: { UNIDENTIFIABLE_DUPLICATE: 2, UNIDENTIFIABLE_FORMAT: 2 },
+      excludedPaths: { START_FORMAT_MISMATCH: 1, DIRECTION_FORMAT_MISMATCH: 1, STEP_ORDER_INVALID: 1, NEXT_STATION_MAPPING_NOT_FOUND: 1 },
+    },
+    { stationId: "station-a", lineId: "seoul-4", ...empty, elevatorCount: 2 },
+    { stationId: "station-b", lineId: "seoul-2", ...empty, providerNoPathQueryCount: 1 },
+    { stationId: "station-k", lineId: "seoul-4", ...empty },
+    { stationId: "station-z", lineId: "seoul-2", ...empty },
+  ]);
+  assert.deepEqual(report.summary, {
+    canonicalStationLineCount: 5,
+    stationLinesWithElevators: 2,
+    stationLinesWithPaths: 1,
+    stationLinesWithLinkageCompletePath: 1,
+    stationLinesWithFacilityExclusions: 1,
+    stationLinesWithPathExclusions: 1,
+    elevatorCount: 6,
+    pathCount: 3,
+    pathStepCount: 7,
+    linkageCompletePathCount: 1,
+    linkageIncompletePathCount: 2,
+    providerNoPathQueryCount: 1,
+    excludedFacilitiesByReason: { UNIDENTIFIABLE_DUPLICATE: 2, UNIDENTIFIABLE_FORMAT: 2 },
+    excludedPathsByReason: { START_FORMAT_MISMATCH: 1, DIRECTION_FORMAT_MISMATCH: 1, STEP_ORDER_INVALID: 1, NEXT_STATION_MAPPING_NOT_FOUND: 1 },
+    unmappedFacilityStationLineCount: 2,
+    unmappedFacilityRowCount: 2,
+    unmappedMovementStationLineCount: 1,
+    unmappedMovementQueryCount: 1,
+  });
+  assert.deepEqual(report.unmappedFacilityStationLines, [
+    { providerStationCode: "0701", lineName: "7호선", reasons: { MAPPING_NOT_FOUND: 1 } },
+    { providerStationCode: "4201", lineName: "공항철도", reasons: { LINE_OR_CODE_FORMAT_MISMATCH: 1 } },
+  ]);
+  assert.deepEqual(report.unmappedMovementStationLines, [{ railOprIsttCd: "S1", lnCd: "2", stinCd: "999", queryCount: 1 }]);
 });
 
 test("(5) 고아 facility_id·path_id는 무결성 검사에서 실패한다", () => {

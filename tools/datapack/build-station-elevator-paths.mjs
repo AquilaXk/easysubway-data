@@ -128,8 +128,14 @@ export function buildStationElevatorPaths({ movementSnapshot, facilitySnapshot, 
     // 방향은 요청한 nextStinCd를 같은 매핑으로 canonical 역에 붙인 값이다. 매핑이 없으면 추정하지 않고 제외한다.
     const from = mappingByProvider.get(providerTupleKey(provider.railOprIsttCd, provider.lnCd, provider.stinCd));
     const next = mappingByProvider.get(providerTupleKey(provider.railOprIsttCd, provider.lnCd, provider.nextStinCd));
-    if (!from || !next || from.lineId !== next.lineId) {
+    if (!from) {
       pathExclusions.push({ reason: "MAPPING_NOT_FOUND", provider, queryId: result.queryId });
+      continue;
+    }
+    if (!next || next.lineId !== from.lineId) {
+      pathExclusions.push({
+        reason: "NEXT_STATION_MAPPING_NOT_FOUND", provider, queryId: result.queryId, stationId: from.stationId, lineId: from.lineId,
+      });
       continue;
     }
     queryOutcomes.push({ stationId: from.stationId, lineId: from.lineId, nextStationId: next.stationId, state: result.state });
@@ -299,6 +305,108 @@ export function validateStationElevatorPathsIntegrity({ facilities, paths, pathF
   if (orphanPaths.length > 0) {
     throw new Error(`station_elevator_path_facility contains orphan path_id: ${orphanPaths.join(", ")}`);
   }
+}
+
+// 커버리지는 canonical 역·노선 단위로 센다. 제외는 원천 행 수가 아니라 역·노선별 사유 개수로 드러내고,
+// 연결 완전성은 적재된 경로(출입구 묶음·방면 묶음을 모두 요구)에 대해서만 센다.
+export function buildStationElevatorCoverageReport(result) {
+  const byKey = new Map(result.canonicalStationLines.map(({ stationId, lineId }) => [stationLine(stationId, lineId), {
+    stationId,
+    lineId,
+    elevatorCount: 0,
+    pathCount: 0,
+    linkageCompletePathCount: 0,
+    linkageIncompletePathCount: 0,
+    providerNoPathQueryCount: 0,
+    excludedFacilities: {},
+    excludedPaths: {},
+  }]));
+  const entry = (stationId, lineId) => {
+    const value = byKey.get(stationLine(stationId, lineId));
+    if (!value) throw new Error(`coverage station-line is not canonical: ${stationId}/${lineId}`);
+    return value;
+  };
+  for (const facility of result.facilities) entry(facility.stationId, facility.lineId).elevatorCount += 1;
+  for (const summary of result.pathSummaries) {
+    const value = entry(summary.stationId, summary.lineId);
+    value.pathCount += 1;
+    if (summary.linkageComplete) value.linkageCompletePathCount += 1;
+    else value.linkageIncompletePathCount += 1;
+  }
+  for (const outcome of result.queryOutcomes) {
+    if (outcome.state !== "ROWS_OBSERVED") entry(outcome.stationId, outcome.lineId).providerNoPathQueryCount += 1;
+  }
+  const unmappedFacilities = new Map();
+  for (const exclusion of result.exclusions.facilities) {
+    if (exclusion.stationId) {
+      increment(entry(exclusion.stationId, exclusion.lineId).excludedFacilities, exclusion.reason);
+      continue;
+    }
+    const { providerStationCode, lineName } = exclusion.provider;
+    const key = `${providerStationCode}\0${lineName}`;
+    const value = unmappedFacilities.get(key) ?? { providerStationCode, lineName, reasons: {} };
+    increment(value.reasons, exclusion.reason);
+    unmappedFacilities.set(key, value);
+  }
+  const unmappedMovement = new Map();
+  for (const exclusion of result.exclusions.paths) {
+    if (exclusion.stationId) {
+      increment(entry(exclusion.stationId, exclusion.lineId).excludedPaths, exclusion.reason);
+      continue;
+    }
+    const { railOprIsttCd, lnCd, stinCd } = exclusion.provider;
+    const key = providerTupleKey(railOprIsttCd, lnCd, stinCd);
+    const value = unmappedMovement.get(key) ?? { railOprIsttCd, lnCd, stinCd, queryCount: 0 };
+    value.queryCount += 1;
+    unmappedMovement.set(key, value);
+  }
+  const byStationLine = [...byKey.values()].sort((left, right) => codepointCompare(
+    stationLine(left.stationId, left.lineId), stationLine(right.stationId, right.lineId),
+  ));
+  const sumReasons = (field) => byStationLine.reduce((totals, value) => {
+    for (const [reason, count] of Object.entries(value[field])) totals[reason] = (totals[reason] ?? 0) + count;
+    return totals;
+  }, {});
+  const countWhere = (predicate) => byStationLine.filter(predicate).length;
+  const unmappedFacilityStationLines = [...unmappedFacilities.values()]
+    .sort((left, right) => codepointCompare(`${left.providerStationCode}\0${left.lineName}`, `${right.providerStationCode}\0${right.lineName}`));
+  const unmappedMovementStationLines = [...unmappedMovement.values()]
+    .sort((left, right) => codepointCompare(
+      providerTupleKey(left.railOprIsttCd, left.lnCd, left.stinCd),
+      providerTupleKey(right.railOprIsttCd, right.lnCd, right.stinCd),
+    ));
+  return {
+    movementSnapshotId: result.movementSnapshotId,
+    facilitySnapshotId: result.facilitySnapshotId,
+    summary: {
+      canonicalStationLineCount: byStationLine.length,
+      stationLinesWithElevators: countWhere(({ elevatorCount }) => elevatorCount > 0),
+      stationLinesWithPaths: countWhere(({ pathCount }) => pathCount > 0),
+      stationLinesWithLinkageCompletePath: countWhere(({ linkageCompletePathCount }) => linkageCompletePathCount > 0),
+      stationLinesWithFacilityExclusions: countWhere(({ excludedFacilities }) => Object.keys(excludedFacilities).length > 0),
+      stationLinesWithPathExclusions: countWhere(({ excludedPaths }) => Object.keys(excludedPaths).length > 0),
+      elevatorCount: result.facilities.length,
+      pathCount: result.pathSummaries.length,
+      pathStepCount: result.paths.length,
+      linkageCompletePathCount: result.pathSummaries.filter(({ linkageComplete }) => linkageComplete).length,
+      linkageIncompletePathCount: result.pathSummaries.filter(({ linkageComplete }) => !linkageComplete).length,
+      providerNoPathQueryCount: byStationLine.reduce((total, { providerNoPathQueryCount }) => total + providerNoPathQueryCount, 0),
+      excludedFacilitiesByReason: sumReasons("excludedFacilities"),
+      excludedPathsByReason: sumReasons("excludedPaths"),
+      unmappedFacilityStationLineCount: unmappedFacilityStationLines.length,
+      unmappedFacilityRowCount: unmappedFacilityStationLines
+        .reduce((total, { reasons }) => total + Object.values(reasons).reduce((sum, count) => sum + count, 0), 0),
+      unmappedMovementStationLineCount: unmappedMovementStationLines.length,
+      unmappedMovementQueryCount: unmappedMovementStationLines.reduce((total, { queryCount }) => total + queryCount, 0),
+    },
+    byStationLine,
+    unmappedFacilityStationLines,
+    unmappedMovementStationLines,
+  };
+}
+
+function increment(target, key) {
+  target[key] = (target[key] ?? 0) + 1;
 }
 
 function stepNumber(value) {
