@@ -92,3 +92,24 @@ test("Data contracts가 offline replay workflow와 functional replay contract를
     assert.ok(entries[0].classes.includes("required-pr"));
   }
 });
+
+test("run 블록은 workflow_dispatch 입력을 셸에 직접 펼치지 않고 env로만 받는다(#853 리뷰 F1)", () => {
+  const lines = workflow().split("\n");
+  const runBodies = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = /^(\s*)(?:- )?run: [|>]/u.exec(lines[index]);
+    if (!header) continue;
+    const indent = header[1].length;
+    const body = [];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const line = lines[next];
+      if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
+      body.push(line);
+    }
+    runBodies.push(body.join("\n"));
+  }
+  assert.ok(runBodies.length > 0, "검사할 run 블록이 있어야 한다");
+  for (const body of runBodies) {
+    assert.doesNotMatch(body, /\$\{\{\s*(?:inputs|github\.event\.inputs)\./u);
+  }
+});
