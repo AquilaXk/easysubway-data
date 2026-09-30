@@ -265,7 +265,7 @@ export function overlayReviewedSourcesOnCanonicalRoster(canonical, reviewedPack)
   if (!Array.isArray(reviewedPack?.sourceInventory)) {
     throw new Error("reviewedPack.sourceInventory must be an array");
   }
-  const pack = canonical.packs?.find(({ id }) => (id === "capital" || id === "nationwide"));
+  const pack = canonical.packs?.find(({ id }) => id === "capital");
   if (!pack) throw new Error("canonical capital pack is missing");
   const canonicalSourceIds = currentCanonicalSourceRoster(pack);
   if (!canonicalSourceIds) throw new Error("canonical current source roster is invalid");
@@ -382,7 +382,7 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
   if (!Array.isArray(reviewedPack?.sourceInventory)) {
     throw new Error("reviewedPack.sourceInventory must be an array");
   }
-  const pack = canonical.packs?.find(({ id }) => (id === "capital" || id === "nationwide"));
+  const pack = canonical.packs?.find(({ id }) => id === "capital");
   if (!pack) throw new Error("canonical capital pack is missing");
   const targetStationIds = new Set(getTargetStationIds(reviewedPack));
   const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) =>
@@ -430,7 +430,7 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
 }
 
 export function retainPreAuthorityRideEdges(fixture, label) {
-  const packs = fixture?.packs?.filter(({ id }) => (id === "capital" || id === "nationwide")) ?? [];
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
   const edges = packs[0]?.networkEdges;
   if (packs.length !== 1 || !Array.isArray(edges)
     || edges.some(({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType))) {

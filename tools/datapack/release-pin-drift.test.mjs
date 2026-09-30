@@ -1,14 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import {
   buildCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
-import { main as buildCandidateAccessibilityInput } from "./build-current-release-candidate-accessibility-input.mjs";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 
@@ -101,20 +98,4 @@ test("(d) candidate-build-spec.json의 sourceInventorySha256이 sha256(JSON.stri
     expectedHash,
     "candidate-build-spec.json의 sourceInventorySha256이 source-inventory.json의 JSON.stringify sha256과 같아야 한다",
   );
-});
-
-test("(e) candidate-build-spec으로 release-candidate accessibility input 빌드가 성공한다", async () => {
-  const tmpDir = await mkdtemp(resolve(tmpdir(), "rc-drift-test-"));
-  try {
-    await buildCandidateAccessibilityInput([
-      "--fixture", "tools/datapack/release/nationwide-production-canonical-pack.json",
-      "--build-spec", "tools/datapack/release/candidate-build-spec.json",
-      "--station-line-output", resolve(tmpDir, "station-line.json"),
-      "--route-edge-output", resolve(tmpDir, "route-edge.json"),
-      "--fixture-output", resolve(tmpDir, "fixture.json"),
-      "--authority-output", resolve(tmpDir, "authority.json"),
-    ], { repositoryRoot: root });
-  } finally {
-    await rm(tmpDir, { recursive: true, force: true });
-  }
 });

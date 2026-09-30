@@ -202,7 +202,7 @@ function validateCandidate(input, stationLines) {
   const inventorySha256 = sha256(JSON.stringify(input.sourceInventory));
   const inventoryRawSha256 = sha256(input.sourceInventoryBytes);
   if (spec.sourceInventorySha256 !== inventorySha256 || spec.networkEdgeEvidence?.sourceInventory?.path !== "tools/datapack/source-inventory.json" || spec.networkEdgeEvidence.sourceInventory.sha256 !== inventoryRawSha256) throw new Error("full-capital candidate inventory binding mismatch");
-  const capital = exactlyOne(input.canonicalPack?.packs ?? [], ({ id }) => (id === "capital" || id === "nationwide"), "capital canonical pack");
+  const capital = exactlyOne(input.canonicalPack?.packs ?? [], ({ id }) => id === "capital", "capital canonical pack");
   const capitalSources = capital.sourceInventory ?? [];
   const isNationwide = spec?.productionScopeId === "nationwide_routing_android_v1"
     && (Array.isArray(spec?.sourceSnapshots) && spec.sourceSnapshots.length > 10);
@@ -283,8 +283,8 @@ function requireCurrentPublicV2Head(selected, ledger, sourceId, transitionPrevio
 }
 
 function canonicalStationLines(pack, facilityAdmission) {
-  const capital = pack?.packs?.filter(({ id }) => (id === "capital" || id === "nationwide"));
-  if (pack?.manifest?.channel !== "production" || (!["capital", "nationwide"].includes(pack?.manifest?.activePack?.id)) || capital?.length !== 1) throw new Error("full-capital canonical pack mismatch");
+  const capital = pack?.packs?.filter(({ id }) => id === "capital");
+  if (pack?.manifest?.channel !== "production" || pack?.manifest?.activePack?.id !== "capital" || capital?.length !== 1) throw new Error("full-capital canonical pack mismatch");
   if (!Array.isArray(facilityAdmission?.cells) || facilityAdmission.cells.length === 0) throw new Error("full-capital station selector denominator mismatch");
   const selected = new Map();
   for (const { stationId, lineId } of facilityAdmission.cells) {
