@@ -12,7 +12,7 @@ const OUTPUT_DIRECTORY = "tools/datapack/release/current-capital-accessibility-f
 export function buildCurrentCapitalRouteEdgeInput(input) {
   const rides = validatedRideEdges(input.canonicalPack, "projected");
   const station = buildCurrentCapitalStationLineInput(input);
-  const pack = input.canonicalPack.packs.find(({ id }) => id === "capital");
+  const pack = input.canonicalPack.packs.find(({ id }) => id === input.canonicalPack.manifest?.activePack?.id);
   const stationLines = routeStationLines(pack, station.stationLines);
   const entries = station.stationLines.map((line) => edge({ edgeId: `edge-entry-${line.stationId}-${line.lineId}`, edgeType: "ENTRY", fromNodeId: line.stationId, toNodeId: `${line.stationId}:${line.lineId}`, durationSeconds: 90, distanceMeters: 0 }));
   const exits = station.stationLines.map((line) => edge({ edgeId: `edge-exit-${line.stationId}-${line.lineId}`, edgeType: "EXIT", fromNodeId: `${line.stationId}:${line.lineId}`, toNodeId: line.stationId, durationSeconds: 60, distanceMeters: 0 }));
@@ -76,9 +76,9 @@ async function defaultProjectFixture({ buildSpec, sourceFixture, repositoryRoot 
 }
 
 function validatedRideEdges(fixture, label) {
-  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  const packs = fixture?.packs?.filter(({ id }) => id === fixture?.manifest?.activePack?.id) ?? [];
   if (fixture?.manifest?.channel !== "production"
-    || fixture.manifest?.activePack?.id !== "capital"
+    || typeof fixture.manifest?.activePack?.id !== "string"
     || packs.length !== 1
     || !Array.isArray(packs[0].networkEdges)) {
     throw new Error(`full-capital ${label} fixture mismatch`);

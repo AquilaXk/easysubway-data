@@ -382,8 +382,11 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
   if (!Array.isArray(reviewedPack?.sourceInventory)) {
     throw new Error("reviewedPack.sourceInventory must be an array");
   }
-  const pack = canonical.packs?.find(({ id }) => id === "capital");
-  if (!pack) throw new Error("canonical capital pack is missing");
+  const activePacks = canonical.packs?.filter(({ id }) => id === canonical.manifest?.activePack?.id) ?? [];
+  if (typeof canonical.manifest?.activePack?.id !== "string" || activePacks.length !== 1) {
+    throw new Error("canonical capital pack is missing");
+  }
+  const [pack] = activePacks;
   const targetStationIds = new Set(getTargetStationIds(reviewedPack));
   const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) =>
     !targetStationIds.has(stationId)
@@ -430,9 +433,9 @@ export function syncCanonicalAccessibilityEvidence(canonical, reviewedPack) {
 }
 
 export function retainPreAuthorityRideEdges(fixture, label) {
-  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  const packs = fixture?.packs?.filter(({ id }) => id === fixture?.manifest?.activePack?.id) ?? [];
   const edges = packs[0]?.networkEdges;
-  if (packs.length !== 1 || !Array.isArray(edges)
+  if (typeof fixture?.manifest?.activePack?.id !== "string" || packs.length !== 1 || !Array.isArray(edges)
     || edges.some(({ edgeType }) => !["RIDE", "ENTRY", "EXIT"].includes(edgeType))) {
     throw new Error(`current ${label} pre-authority edge contract is invalid`);
   }
