@@ -19,6 +19,7 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 import { FACILITY_SOURCE_ID, loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
+import { buildTransitionFacilityRequirements, readBundledStepFreeInputs } from "./build-step-free-path-transitions.mjs";
 
 const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id", "evaluation-at", "station-line-input", "route-edge-input"]);
 const COMPONENTS = {
@@ -52,6 +53,7 @@ export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
   route_accessibility_edge_evidence: "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY CHECK(length(evaluation_digest)=64 AND evaluation_digest NOT GLOB '*[^0-9a-f]*'), materialization_digest TEXT NOT NULL CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))",
   station_elevator_path: "CREATE TABLE station_elevator_path (path_id TEXT NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, next_station_id TEXT NOT NULL, exit_no TEXT NOT NULL, platform_direction TEXT NOT NULL, step INTEGER NOT NULL CHECK(step > 0), detail TEXT NOT NULL, PRIMARY KEY (path_id, step))",
   station_elevator_path_facility: "CREATE TABLE station_elevator_path_facility (path_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT','DIRECTION')), facility_id TEXT NOT NULL, PRIMARY KEY (path_id, group_kind, facility_id))",
+  transition_facility_requirement: "CREATE TABLE transition_facility_requirement (transition_key TEXT NOT NULL, path_id TEXT NOT NULL, direction_next_station_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT_ELEVATORS','PLATFORM_DIRECTION_ELEVATORS')), facility_id TEXT NOT NULL, PRIMARY KEY (transition_key, path_id, group_kind, facility_id))",
 });
 const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
   "candidateId", "stationSetSha256", "sourceSetSha256", "policyVersion", "evaluatorVersion",
@@ -286,6 +288,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
       assertBlockedEdgeProjection(provisionalBlockedEdgeIds, blockedEdgeIds(generatedEvidence.evaluation));
       insertGeneratedEvidence(target, generatedEvidence);
       insertStationElevatorRows(target, evidenceInput.stationElevatorPaths);
+      insertTransitionFacilityRequirements(target, evidenceInput.routeEdgeInput.routeEdges);
     }
     target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
     validateComponent(target, name, layout.serverRouteBundle);
@@ -554,6 +557,22 @@ function insertStationElevatorRows(target, data) {
     const orphanPaths = target.prepare("SELECT DISTINCT path_id FROM station_elevator_path_facility WHERE path_id NOT IN (SELECT path_id FROM station_elevator_path)").all();
     const orphanFacilities = target.prepare("SELECT DISTINCT facility_id FROM station_elevator_path_facility WHERE facility_id NOT IN (SELECT id FROM facilities)").all();
     if (orphanPaths.length || orphanFacilities.length) throw new Error("station elevator path facility reference mismatch");
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+// #827: 방금 적재한 번들 경로·시설 묶음 테이블과 번들 topology와 같은 route edge의 역 ENTRY/EXIT edge로 무단차 요구 행을 만든다.
+// 요구 행이 0개면 모든 전환이 "요구 없음"으로 보이므로 건너뛰지 않고 빌드를 실패시킨다.
+function insertTransitionFacilityRequirements(target, routeEdges) {
+  const requirements = buildTransitionFacilityRequirements({ ...readBundledStepFreeInputs(target), routeEdges });
+  if (requirements.length === 0) throw new Error("transition_facility_requirement is empty");
+  const insert = target.prepare("INSERT INTO transition_facility_requirement(transition_key,path_id,direction_next_station_id,group_kind,facility_id) VALUES(?,?,?,?,?)");
+  target.exec("BEGIN");
+  try {
+    for (const row of requirements) insert.run(row.transition_key, row.path_id, row.direction_next_station_id, row.group_kind, row.facility_id);
     target.exec("COMMIT");
   } catch (error) {
     target.exec("ROLLBACK");

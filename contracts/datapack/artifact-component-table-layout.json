@@ -118,7 +118,7 @@
         },
         "transitionFacilityRequirement": {
           "table": "transition_facility_requirement",
-          "columns": ["transition_key", "facility_id"]
+          "columns": ["transition_key", "path_id", "direction_next_station_id", "group_kind", "facility_id"]
         },
         "ownedTableColumns": "exact-source-schema",
         "foreignKeys": "within-component-only",

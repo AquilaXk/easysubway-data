@@ -213,7 +213,8 @@ test("(5) facilities 테이블이 없거나 비어 있으면 실패한다", () =
 
 test("(6) 입력 순서를 바꿔도 요구 행은 바이트 동일하다", () => {
   const input = twoDirectionInput();
-  const expected = JSON.stringify(buildTransitionFacilityRequirements(input));
+  const expected = JSON.stringify([...TWO_DIRECTION_ROWS_FOR(ENTRY_A), ...TWO_DIRECTION_ROWS_FOR(EXIT_A)]);
+  assert.equal(JSON.stringify(buildTransitionFacilityRequirements(input)), expected);
   const permuted = {
     paths: [...input.paths].reverse(),
     pathFacilities: [input.pathFacilities[3], input.pathFacilities[0], input.pathFacilities[4], input.pathFacilities[2], input.pathFacilities[1]],

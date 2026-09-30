@@ -30,6 +30,12 @@ import {
   evaluateRouteAccessibilityEdges,
 } from "./evaluate-route-accessibility-edges.mjs";
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
+import {
+  buildTransitionFacilityRequirements,
+  readBundledStepFreeInputs,
+  sortTransitionFacilityRequirements,
+  validateTransitionFacilityRequirements,
+} from "./build-step-free-path-transitions.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validatePublicationReceipt } from "./publish-server-route-bundle.mjs";
@@ -176,6 +182,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   const evaluationBytes = Buffer.from(canonicalRouteEdgeEvaluationJson(evaluation));
   await assertEmbeddedEvidence({
     accessibilityPayloadBytes: artifact.accessibilityPayloadBytes,
+    routeEdges: routeEdgeInput.routeEdges,
     evaluation,
     evaluationBytes,
     materialization,
@@ -593,6 +600,9 @@ async function assertEmbeddedEvidence(input) {
       { name: "group_kind", type: "TEXT", notnull: 1, pk: 2 },
       { name: "facility_id", type: "TEXT", notnull: 1, pk: 3 },
     ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_elevator_path_facility);
+    if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get()) {
+      throw new Error("facilities table is missing");
+    }
     const orphanPaths = database.prepare(
       "SELECT DISTINCT path_id FROM station_elevator_path_facility WHERE path_id NOT IN (SELECT path_id FROM station_elevator_path) ORDER BY path_id",
     ).all();
@@ -606,28 +616,22 @@ async function assertEmbeddedEvidence(input) {
     if (orphanFacilities.length > 0) {
       throw new Error(`station_elevator_path_facility contains orphan facility_id: ${orphanFacilities.map((row) => row.facility_id).join(", ")}`);
     }
+    // #827: 무단차 요구 행은 번들 경로·시설 묶음과 route edge의 역 ENTRY/EXIT edge로 다시 만든 결과와 정확히 같아야 한다.
     assertEmbeddedTable(database, "transition_facility_requirement", [
       { name: "transition_key", type: "TEXT", notnull: 1, pk: 1 },
-      { name: "facility_id", type: "TEXT", notnull: 1, pk: 2 },
+      { name: "path_id", type: "TEXT", notnull: 1, pk: 2 },
+      { name: "direction_next_station_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "group_kind", type: "TEXT", notnull: 1, pk: 3 },
+      { name: "facility_id", type: "TEXT", notnull: 1, pk: 4 },
     ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transition_facility_requirement);
-    if (!hasFacilitiesTable) {
-      throw new Error("facilities table is missing or empty");
-    }
-    const orphanReqFacilities = database.prepare(
-      "SELECT DISTINCT facility_id FROM transition_facility_requirement WHERE facility_id NOT IN (SELECT id FROM facilities)",
-    ).all();
-    if (orphanReqFacilities.length > 0) {
-      throw new Error(`transition_facility_requirement contains orphan facility_id: ${orphanReqFacilities.map((r) => r.facility_id).join(", ")}`);
-    }
-    const validTransitionKeys = new Set([
-      ...(input.evaluation?.results ?? []).map((r) => r.edgeId),
-      ...(input.routeEdgeInput?.routeEdges ?? []).map((r) => r.edgeId ?? r.id),
-    ]);
-    const reqTransitions = database.prepare("SELECT DISTINCT transition_key FROM transition_facility_requirement").all();
-    for (const row of reqTransitions) {
-      if (!validTransitionKeys.has(row.transition_key)) {
-        throw new Error(`transition_facility_requirement contains orphan transition_key: ${row.transition_key}`);
-      }
+    const requirements = sortTransitionFacilityRequirements(database.prepare(
+      "SELECT transition_key, path_id, direction_next_station_id, group_kind, facility_id FROM transition_facility_requirement",
+    ).all());
+    if (requirements.length === 0) throw new Error("transition_facility_requirement is empty");
+    const stepFreeInputs = readBundledStepFreeInputs(database);
+    validateTransitionFacilityRequirements({ ...stepFreeInputs, requirements, routeEdges: input.routeEdges });
+    if (canonicalJson(buildTransitionFacilityRequirements({ ...stepFreeInputs, routeEdges: input.routeEdges })) !== canonicalJson(requirements)) {
+      throw new Error("transition_facility_requirement does not match station elevator path derivation");
     }
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1

@@ -1,267 +1,333 @@
+#!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
 
-function parseCostValue(val) {
-  if (val == null || val === "") return null;
-  if (typeof val === "number" && Number.isFinite(val)) return val;
-  const match = String(val).replace(/,/g, "").match(/([0-9]+(?:\.[0-9]+)?)/);
-  if (match) {
-    const num = parseFloat(match[1]);
-    return Number.isFinite(num) ? num : null;
-  }
-  return null;
-}
+// #827 QA 결정(2026-09-30): 새 edge를 만들지 않는다. 무단차 요구는 기존 역 단위 ENTRY/EXIT edge에 붙이고,
+// 행은 (transition_key, path_id, direction_next_station_id, group_kind, facility_id)이다.
+// - group 안의 시설은 한 대 이상 가동이면 그 group이 통과한다.
+// - 경로는 모든 group이 통과할 때 통과한다.
+// - 전환은 요구 행이 있는 모든 방향(다음 역)에서 통과하는 경로가 하나 이상 있을 때만 무단차 통과다.
+// 요구 행은 #834가 번들에 적재한 station_elevator_path_facility 구조 연결에서만 만든다(문구 추정 없음).
+// 출입구 묶음과 승강장 방향 묶음이 모두 비어 있지 않은 경로(연결 완전)만 요구 행을 만든다.
+export const TRANSITION_REQUIREMENT_GROUP_KINDS = Object.freeze({
+  EXIT: "EXIT_ELEVATORS",
+  DIRECTION: "PLATFORM_DIRECTION_ELEVATORS",
+});
+export const CURRENT_ROUTE_EDGE_INPUT_PATH = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
+const REQUIREMENT_GROUP_KINDS = new Set(Object.values(TRANSITION_REQUIREMENT_GROUP_KINDS));
+const REQUIREMENT_FIELDS = ["transition_key", "path_id", "direction_next_station_id", "group_kind", "facility_id"];
+const STATION_EDGE_TYPES = ["ENTRY", "EXIT"];
 
-export function buildStepFreePathTransitions({
-  paths = [],
-  facilities = [],
-  pathSummaries = [],
-} = {}) {
-  const facilityIds = new Set(
-    facilities.map((f) => (typeof f === "string" ? f : f.id)),
-  );
-
-  const summaryByPathId = new Map();
-  for (const s of pathSummaries) {
-    summaryByPathId.set(s.pathId, s);
-  }
-
-  // 1. Group paths if provided as steps
-  const groupedPaths = new Map();
-  for (const item of paths) {
-    if (Array.isArray(item.steps)) {
-      groupedPaths.set(item.path_id, item);
-    } else {
-      const pid = item.path_id;
-      const existing = groupedPaths.get(pid) ?? {
-        path_id: pid,
-        station_id: item.station_id,
-        line_id: item.line_id,
-        path_kind: item.path_kind,
-        exit_no: item.exit_no,
-        platform_direction: item.platform_direction,
-        mvDst: item.mvDst ?? item.distance_meters,
-        mvPathMgNo: item.mvPathMgNo,
-        steps: [],
-      };
-      existing.steps.push(item);
-      groupedPaths.set(pid, existing);
-    }
-  }
-
-  const generatedTransitions = [];
-  const generatedRequirements = [];
-  const excludedPaths = [];
-
-  const sortedPathIds = [...groupedPaths.keys()].sort(codepointCompare);
-
-  for (const pathId of sortedPathIds) {
-    const p = groupedPaths.get(pathId);
-    const stationId = p.station_id;
-    const lineId = p.line_id;
-    const summary = summaryByPathId.get(pathId);
-
-    // 1. Completeness check
-    let isComplete = summary ? summary.isComplete : p.isComplete;
-    const pathElevatorFacilityIds = new Set();
-
-    let hasElevatorStep = false;
-    let allElevatorStepsConnected = true;
-
-    for (const step of p.steps) {
-      const isElevator = step.facility_id != null || /엘리베이터|승강기/.test(step.detail ?? "");
-      if (isElevator) {
-        hasElevatorStep = true;
-        if (step.facility_id != null) {
-          pathElevatorFacilityIds.add(step.facility_id);
-        } else {
-          allElevatorStepsConnected = false;
-        }
-      }
-    }
-
-    if (isComplete === undefined) {
-      isComplete = hasElevatorStep && allElevatorStepsConnected;
-    }
-
-    if (!isComplete || pathElevatorFacilityIds.size === 0) {
-      excludedPaths.push({
-        pathId,
-        stationId,
-        lineId,
-        reason: "INCOMPLETE_FACILITY_CONNECTION",
-      });
-      continue;
-    }
-
-    // 2. Cost check (mvDst / distanceMeters / durationSeconds)
-    let totalDistance = parseCostValue(p.mvDst ?? p.distanceMeters);
-    let totalDuration = parseCostValue(p.durationSeconds);
-
-    if (totalDistance == null && totalDuration == null) {
-      // Check individual steps
-      for (const step of p.steps) {
-        const d = parseCostValue(step.mvDst ?? step.distanceMeters);
-        if (d != null) {
-          totalDistance = (totalDistance ?? 0) + d;
-        }
-        const s = parseCostValue(step.durationSeconds);
-        if (s != null) {
-          totalDuration = (totalDuration ?? 0) + s;
-        }
-      }
-    }
-
-    if ((totalDistance == null || totalDistance <= 0) && (totalDuration == null || totalDuration <= 0)) {
-      excludedPaths.push({
-        pathId,
-        stationId,
-        lineId,
-        reason: "MISSING_COST",
-      });
-      continue;
-    }
-
-    // 3. Direction check
-    const direction = p.platform_direction;
-    let edgeType;
-    let prefix;
-    let fromNodeId;
-    let toNodeId;
-
-    if (direction === "ENTRY") {
-      edgeType = "ENTRY";
-      prefix = "edge-entry";
-      fromNodeId = stationId;
-      toNodeId = `${stationId}:${lineId}`;
-    } else if (direction === "EXIT") {
-      edgeType = "EXIT";
-      prefix = "edge-exit";
-      fromNodeId = `${stationId}:${lineId}`;
-      toNodeId = stationId;
-    } else {
-      excludedPaths.push({
-        pathId,
-        stationId,
-        lineId,
-        reason: "UNSUPPORTED_DIRECTION",
-      });
-      continue;
-    }
-
-    const pathTag = p.mvPathMgNo != null
-      ? String(p.mvPathMgNo)
-      : (p.path_id.match(/path-(?:.*-)?([^-\s]+)$/)?.[1] || p.path_id);
-    const edgeId = `${prefix}-${stationId}-${lineId}-path-${pathTag}`;
-
-    const transitionEdge = {
-      edgeId,
-      edgeType,
-      fromNodeId,
-      toNodeId,
-      durationSeconds: Math.round(totalDuration ?? 0),
-      distanceMeters: Math.round(totalDistance ?? 0),
-      pathId: p.path_id,
-      exitNo: p.exit_no != null && String(p.exit_no).trim() !== "" ? String(p.exit_no).trim() : null,
-      stationId,
-      lineId,
-    };
-
-    generatedTransitions.push(transitionEdge);
-
-    const sortedFacIds = [...pathElevatorFacilityIds].sort(codepointCompare);
-    for (const fid of sortedFacIds) {
-      generatedRequirements.push({
-        transition_key: edgeId,
-        facility_id: fid,
-      });
-    }
-  }
-
-  generatedTransitions.sort((a, b) => codepointCompare(a.edgeId, b.edgeId));
-  generatedRequirements.sort((a, b) => (
-    codepointCompare(a.transition_key, b.transition_key)
-    || codepointCompare(a.facility_id, b.facility_id)
-  ));
-
+// 번들 accessibility component에 적재된 #834 테이블에서 요구 생성 입력을 읽는다. facilities가 없으면 undefined로 두어
+// 생성·검증 단계가 실패로 드러내게 한다.
+export function readBundledStepFreeInputs(database) {
+  const hasFacilities = Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='facilities'").get());
   return {
-    transitions: generatedTransitions,
-    requirements: generatedRequirements,
-    excludedPaths,
+    paths: database.prepare("SELECT path_id, station_id, line_id, next_station_id FROM station_elevator_path").all().map((row) => ({ ...row })),
+    pathFacilities: database.prepare("SELECT path_id, group_kind, facility_id FROM station_elevator_path_facility").all().map((row) => ({ ...row })),
+    facilityIds: hasFacilities ? database.prepare("SELECT id FROM facilities").all().map(({ id }) => id) : undefined,
   };
 }
 
-export function validateTransitionRequirementsIntegrity(
-  requirements = [],
-  { validTransitions, validFacilities } = {},
-) {
-  if (
-    !validFacilities
-    || (validFacilities instanceof Set && validFacilities.size === 0)
-    || (Array.isArray(validFacilities) && validFacilities.length === 0)
-  ) {
-    throw new Error("facilities table is missing or empty");
+export function buildTransitionFacilityRequirements({ paths, pathFacilities, facilityIds, routeEdges } = {}) {
+  const facilities = facilityIdSet(facilityIds);
+  const pathsById = indexPaths(requireRows(paths, "station_elevator_path"));
+  requireRows(pathFacilities, "station_elevator_path_facility");
+  const stationEdges = indexStationEdges(routeEdges);
+  const groupsByPath = new Map();
+  for (const row of pathFacilities) {
+    const groupKind = TRANSITION_REQUIREMENT_GROUP_KINDS[row.group_kind];
+    if (!groupKind) throw new Error(`station_elevator_path_facility group_kind is invalid: ${row.group_kind}`);
+    if (!pathsById.has(row.path_id)) throw new Error(`station_elevator_path_facility contains orphan path_id: ${row.path_id}`);
+    if (!facilities.has(row.facility_id)) throw new Error(`station_elevator_path_facility contains orphan facility_id: ${row.facility_id}`);
+    const groups = groupsByPath.get(row.path_id) ?? new Map(Object.values(TRANSITION_REQUIREMENT_GROUP_KINDS).map((kind) => [kind, []]));
+    groups.get(groupKind).push(row.facility_id);
+    groupsByPath.set(row.path_id, groups);
   }
-
-  const facilitySet = validFacilities instanceof Set
-    ? validFacilities
-    : new Set(validFacilities.map((f) => (typeof f === "string" ? f : f.id)));
-
-  const transitionSet = validTransitions instanceof Set
-    ? validTransitions
-    : new Set(validTransitions?.map((t) => (typeof t === "string" ? t : t.edgeId ?? t.id)) ?? []);
-
-  for (const req of requirements) {
-    if (!transitionSet.has(req.transition_key)) {
-      throw new Error(`transition_facility_requirement contains orphan transition_key: ${req.transition_key}`);
+  const requirements = [];
+  for (const [pathId, groups] of groupsByPath) {
+    if ([...groups.values()].some((facilityIdsInGroup) => facilityIdsInGroup.length === 0)) continue;
+    const meta = pathsById.get(pathId);
+    // 출입구↔승강장 이동경로는 들어갈 때(ENTRY)와 나갈 때(EXIT) 같은 엘리베이터를 쓰므로 두 edge에 같은 요구를 붙인다.
+    for (const edgeType of STATION_EDGE_TYPES) {
+      const transitionKey = requireStationEdge(stationEdges.byStationLine, edgeType, meta.stationId, meta.lineId);
+      for (const [groupKind, facilityIdsInGroup] of groups) {
+        for (const facilityId of facilityIdsInGroup) {
+          requirements.push({
+            transition_key: transitionKey,
+            path_id: pathId,
+            direction_next_station_id: meta.nextStationId,
+            group_kind: groupKind,
+            facility_id: facilityId,
+          });
+        }
+      }
     }
-    if (!facilitySet.has(req.facility_id)) {
-      throw new Error(`transition_facility_requirement contains orphan facility_id: ${req.facility_id}`);
+  }
+  return sortTransitionFacilityRequirements(requirements);
+}
+
+// 적재된 요구 행의 참조 무결성: transition_key는 그 경로 역·노선의 ENTRY/EXIT edge, path_id·facility_id는 번들 행이어야 한다.
+export function validateTransitionFacilityRequirements({ requirements, paths, facilityIds, routeEdges } = {}) {
+  const facilities = facilityIdSet(facilityIds);
+  const pathsById = indexPaths(requireRows(paths, "station_elevator_path"));
+  const stationEdges = indexStationEdges(routeEdges);
+  for (const row of requireRows(requirements, "transition_facility_requirement")) {
+    if (!REQUIREMENT_GROUP_KINDS.has(row.group_kind)) throw new Error(`transition_facility_requirement group_kind is invalid: ${row.group_kind}`);
+    const meta = pathsById.get(row.path_id);
+    if (!meta) throw new Error(`transition_facility_requirement contains orphan path_id: ${row.path_id}`);
+    const edge = stationEdges.byId.get(row.transition_key);
+    if (!edge || edge.stationId !== meta.stationId || edge.lineId !== meta.lineId) {
+      throw new Error(`transition_facility_requirement contains orphan transition_key: ${row.transition_key}`);
+    }
+    if (!facilities.has(row.facility_id)) throw new Error(`transition_facility_requirement contains orphan facility_id: ${row.facility_id}`);
+    if (row.direction_next_station_id !== meta.nextStationId) {
+      throw new Error(`transition_facility_requirement direction_next_station_id mismatch: ${row.path_id}`);
     }
   }
 }
 
-export function buildStepFreeTransitionCoverageReport({
-  transitions = [],
-  requirements = [],
-  excludedPaths = [],
-} = {}) {
-  const stationLineKeys = new Set([
-    ...transitions.map((t) => `${t.stationId}\0${t.lineId}`),
-    ...excludedPaths.map((p) => `${p.stationId}\0${p.lineId}`),
-  ]);
-
-  const excludedByReason = {};
-  for (const p of excludedPaths) {
-    excludedByReason[p.reason] = (excludedByReason[p.reason] ?? 0) + 1;
-  }
-
-  const byStationLine = [];
-  for (const key of [...stationLineKeys].sort(codepointCompare)) {
-    const [stationId, lineId] = key.split("\0");
-    const stTransitions = transitions.filter((t) => t.stationId === stationId && t.lineId === lineId);
-    const stTransKeys = new Set(stTransitions.map((t) => t.edgeId));
-    const stRequirements = requirements.filter((r) => stTransKeys.has(r.transition_key));
-    const stExcluded = excludedPaths.filter((p) => p.stationId === stationId && p.lineId === lineId);
-
-    byStationLine.push({
-      stationId,
-      lineId,
-      transitionCount: stTransitions.length,
-      requirementCount: stRequirements.length,
-      excludedPathCount: stExcluded.length,
+export function sortTransitionFacilityRequirements(rows) {
+  return rows
+    .map((row) => Object.fromEntries(REQUIREMENT_FIELDS.map((field) => [field, row[field]])))
+    .sort((left, right) => {
+      for (const field of REQUIREMENT_FIELDS) {
+        const result = codepointCompare(left[field], right[field]);
+        if (result) return result;
+      }
+      return 0;
     });
+}
+
+// 한 전환(transition_key)의 요구 행과 시설 가동 판정으로 통과 여부를 계산한다. 가동 판정은 호출자가 정한다
+// (#403: 실시간 상태가 UNKNOWN이면 가동으로 본다). 요구 행이 없는 전환은 무단차 요구가 없다.
+export function evaluateStepFreeTransition(rows, isOperating) {
+  if (!Array.isArray(rows)) throw new Error("transition requirement rows are required");
+  if (typeof isOperating !== "function") throw new Error("isOperating must be a function");
+  if (new Set(rows.map(({ transition_key: key }) => key)).size > 1) {
+    throw new Error("evaluateStepFreeTransition requires rows of a single transition_key");
+  }
+  const directions = new Map();
+  for (const row of rows) {
+    const pathsInDirection = directions.get(row.direction_next_station_id) ?? new Map();
+    const groups = pathsInDirection.get(row.path_id) ?? new Map();
+    groups.set(row.group_kind, [...(groups.get(row.group_kind) ?? []), row.facility_id]);
+    pathsInDirection.set(row.path_id, groups);
+    directions.set(row.direction_next_station_id, pathsInDirection);
+  }
+  const results = [...directions.keys()].sort(codepointCompare).map((nextStationId) => ({
+    nextStationId,
+    passable: [...directions.get(nextStationId).values()]
+      .some((groups) => [...groups.values()].every((facilityIdsInGroup) => facilityIdsInGroup.some((id) => isOperating(id)))),
+  }));
+  return { passable: results.every(({ passable }) => passable), directions: results };
+}
+
+// 커버리지는 #834 입력(연결 완전 여부·질의 결과·제외 사유)과 실제 요구 행으로 역·노선 단위로 센다.
+// 과차단 노출: 시설 한 대 고장으로 전환 전체가 막히는데 다른 방향 경로는 여전히 통과하는 경우(반대 방향 이용자 과차단).
+export function buildStepFreeTransitionCoverageReport({ stationElevatorPaths, routeEdges } = {}) {
+  const input = stationElevatorPaths;
+  if (!input || !Array.isArray(input.facilities) || !Array.isArray(input.pathSummaries)
+    || !Array.isArray(input.queryOutcomes) || !Array.isArray(input.exclusions?.paths)) {
+    throw new Error("station elevator path input is required");
+  }
+  const requirements = buildTransitionFacilityRequirements({
+    paths: input.paths,
+    pathFacilities: input.pathFacilities,
+    facilityIds: input.facilities.map(({ id }) => id),
+    routeEdges,
+  });
+  const byKey = new Map();
+  const entry = (stationId, lineId) => {
+    const key = stationLineKey(stationId, lineId);
+    const value = byKey.get(key) ?? { stationId, lineId, directions: new Map(), unmappedDirectionQueryCount: 0 };
+    byKey.set(key, value);
+    return value;
+  };
+  const direction = (stationId, lineId, nextStationId) => {
+    const { directions } = entry(stationId, lineId);
+    const value = directions.get(nextStationId) ?? {
+      nextStationId, completePathCount: 0, incompletePathCount: 0, excludedPathCount: 0, providerNoPathQueryCount: 0,
+    };
+    directions.set(nextStationId, value);
+    return value;
+  };
+  for (const outcome of input.queryOutcomes) {
+    const value = direction(outcome.stationId, outcome.lineId, outcome.nextStationId);
+    if (outcome.state !== "ROWS_OBSERVED") value.providerNoPathQueryCount += 1;
+  }
+  for (const summary of input.pathSummaries) {
+    const value = direction(summary.stationId, summary.lineId, summary.nextStationId);
+    if (summary.linkageComplete) value.completePathCount += 1;
+    else value.incompletePathCount += 1;
+  }
+  for (const exclusion of input.exclusions.paths) {
+    if (!exclusion.stationId) continue;
+    if (exclusion.nextStationId) direction(exclusion.stationId, exclusion.lineId, exclusion.nextStationId).excludedPathCount += 1;
+    else entry(exclusion.stationId, exclusion.lineId).unmappedDirectionQueryCount += 1;
   }
 
-  const summary = {
-    totalTransitions: transitions.length,
-    totalRequirements: requirements.length,
-    totalExcludedPaths: excludedPaths.length,
-    excludedByReason,
-  };
+  const rowsByStationLine = new Map();
+  const pathStationLine = new Map(input.paths.map((row) => [row.path_id, stationLineKey(row.station_id, row.line_id)]));
+  for (const row of requirements) {
+    const key = pathStationLine.get(row.path_id);
+    rowsByStationLine.set(key, [...(rowsByStationLine.get(key) ?? []), row]);
+  }
+  const byStationLine = [...byKey.keys()].sort(codepointCompare).map((key) => {
+    const value = byKey.get(key);
+    const rows = rowsByStationLine.get(key) ?? [];
+    const transitionKeys = [...new Set(rows.map(({ transition_key: transitionKey }) => transitionKey))].sort(codepointCompare);
+    const directions = [...value.directions.values()]
+      .sort((left, right) => codepointCompare(left.nextStationId, right.nextStationId))
+      .map((counts) => ({ nextStationId: counts.nextStationId, status: directionStatus(counts, key), ...withoutNextStation(counts) }));
+    const requiredDirections = new Set(rows.map(({ direction_next_station_id: nextStationId }) => nextStationId));
+    const reportedRequired = directions.filter(({ status }) => status === "REQUIRED").map(({ nextStationId }) => nextStationId);
+    if (reportedRequired.length !== requiredDirections.size || reportedRequired.some((id) => !requiredDirections.has(id))) {
+      throw new Error(`coverage linkage mismatch: ${value.stationId}/${value.lineId}`);
+    }
+    const facilityIds = [...new Set(rows.map(({ facility_id: facilityId }) => facilityId))].sort(codepointCompare);
+    const transitionRows = rows.filter(({ transition_key: transitionKey }) => transitionKey === transitionKeys[0]);
+    const singleOutageBlockingFacilityIds = [];
+    const overBlockingFacilityIds = [];
+    for (const facilityId of facilityIds) {
+      const outcome = evaluateStepFreeTransition(transitionRows, (id) => id !== facilityId);
+      if (outcome.passable) continue;
+      singleOutageBlockingFacilityIds.push(facilityId);
+      if (outcome.directions.some(({ passable }) => passable)) overBlockingFacilityIds.push(facilityId);
+    }
+    return {
+      stationId: value.stationId,
+      lineId: value.lineId,
+      transitionKeys,
+      requirementRowCount: rows.length,
+      requiredFacilityCount: facilityIds.length,
+      directions,
+      unmappedDirectionQueryCount: value.unmappedDirectionQueryCount,
+      singleOutageBlockingFacilityIds,
+      overBlockingFacilityIds,
+    };
+  });
 
+  const count = (predicate) => byStationLine.filter(predicate).length;
+  const allDirections = byStationLine.flatMap(({ directions }) => directions);
+  const directionsByStatus = {};
+  for (const { status } of allDirections) directionsByStatus[status] = (directionsByStatus[status] ?? 0) + 1;
+  const withRequirement = ({ transitionKeys }) => transitionKeys.length > 0;
+  const requiredCount = ({ directions }) => directions.filter(({ status }) => status === "REQUIRED").length;
   return {
-    summary,
+    movementSnapshotId: input.movementSnapshotId,
+    facilitySnapshotId: input.facilitySnapshotId,
+    summary: {
+      stationLineCount: byStationLine.length,
+      stationLinesWithRequirement: count(withRequirement),
+      transitionCount: new Set(requirements.map(({ transition_key: transitionKey }) => transitionKey)).size,
+      requirementRowCount: requirements.length,
+      requiredFacilityCount: new Set(requirements.map(({ facility_id: facilityId }) => facilityId)).size,
+      directionCount: allDirections.length,
+      directionsByStatus,
+      stationLinesAllDirectionsRequired: count((value) => withRequirement(value) && requiredCount(value) === value.directions.length),
+      stationLinesPartialDirectionsRequired: count((value) => withRequirement(value) && requiredCount(value) < value.directions.length),
+      stationLinesWithoutRequirement: count((value) => !withRequirement(value)),
+      stationLinesWithUnmappedDirectionQuery: count(({ unmappedDirectionQueryCount }) => unmappedDirectionQueryCount > 0),
+      stationLinesMultiDirectionRequired: count((value) => requiredCount(value) >= 2),
+      stationLinesWithSingleOutageBlocking: count(({ singleOutageBlockingFacilityIds }) => singleOutageBlockingFacilityIds.length > 0),
+      singleOutageBlockingFacilityCount: byStationLine.reduce((total, { singleOutageBlockingFacilityIds }) => total + singleOutageBlockingFacilityIds.length, 0),
+      stationLinesWithOverBlockingOutage: count(({ overBlockingFacilityIds }) => overBlockingFacilityIds.length > 0),
+      overBlockingFacilityCount: byStationLine.reduce((total, { overBlockingFacilityIds }) => total + overBlockingFacilityIds.length, 0),
+    },
     byStationLine,
-    excludedPaths,
   };
+}
+
+function directionStatus(counts, key) {
+  if (counts.completePathCount > 0) return "REQUIRED";
+  if (counts.incompletePathCount > 0) return "LINKAGE_INCOMPLETE";
+  if (counts.excludedPathCount > 0) return "PATHS_EXCLUDED";
+  if (counts.providerNoPathQueryCount > 0) return "PROVIDER_NO_PATH";
+  throw new Error(`coverage direction has no evidence outcome: ${key.replace("\0", "/")}/${counts.nextStationId}`);
+}
+
+function withoutNextStation({ nextStationId: _nextStationId, ...counts }) {
+  return counts;
+}
+
+function facilityIdSet(facilityIds) {
+  if (facilityIds === undefined || facilityIds === null) throw new Error("facilities table is missing");
+  if (!Array.isArray(facilityIds)) throw new Error("facilities table is missing");
+  if (facilityIds.length === 0) throw new Error("facilities table is empty");
+  return new Set(facilityIds);
+}
+
+function requireRows(value, label) {
+  if (!Array.isArray(value)) throw new Error(`${label} rows are required`);
+  return value;
+}
+
+function indexPaths(paths) {
+  const byId = new Map();
+  for (const row of paths) {
+    const meta = { stationId: row.station_id, lineId: row.line_id, nextStationId: row.next_station_id };
+    const known = byId.get(row.path_id);
+    if (known && (known.stationId !== meta.stationId || known.lineId !== meta.lineId || known.nextStationId !== meta.nextStationId)) {
+      throw new Error(`station_elevator_path is inconsistent: ${row.path_id}`);
+    }
+    byId.set(row.path_id, meta);
+  }
+  return byId;
+}
+
+// 역 단위 ENTRY는 역 노드 → 역:노선 노드, EXIT는 역:노선 노드 → 역 노드다. id 문자열이 아니라 끝점 구조로 찾는다.
+function indexStationEdges(routeEdges) {
+  if (!Array.isArray(routeEdges)) throw new Error("route edges are required");
+  const byId = new Map();
+  const byStationLine = new Map();
+  for (const edge of routeEdges) {
+    if (!STATION_EDGE_TYPES.includes(edge.edgeType)) continue;
+    const [stationNode, stationLineNode] = edge.edgeType === "ENTRY" ? [edge.fromNodeId, edge.toNodeId] : [edge.toNodeId, edge.fromNodeId];
+    const parts = typeof stationLineNode === "string" ? stationLineNode.split(":") : [];
+    if (parts.length !== 2 || parts[0] !== stationNode || !parts[1]) continue;
+    const [stationId, lineId] = parts;
+    byId.set(edge.edgeId, { edgeType: edge.edgeType, stationId, lineId });
+    const key = `${edge.edgeType}\0${stationLineKey(stationId, lineId)}`;
+    byStationLine.set(key, [...(byStationLine.get(key) ?? []), edge.edgeId]);
+  }
+  return { byId, byStationLine };
+}
+
+function requireStationEdge(byStationLine, edgeType, stationId, lineId) {
+  const edgeIds = byStationLine.get(`${edgeType}\0${stationLineKey(stationId, lineId)}`) ?? [];
+  if (edgeIds.length === 0) throw new Error(`station ${edgeType} edge is missing: ${stationId}/${lineId}`);
+  if (edgeIds.length > 1) throw new Error(`station ${edgeType} edge is ambiguous: ${stationId}/${lineId}`);
+  return edgeIds[0];
+}
+
+function stationLineKey(stationId, lineId) {
+  return `${stationId}\0${lineId}`;
+}
+
+async function main(argv) {
+  if (argv.length !== 2 || argv[0] !== "--repository-root") {
+    throw new Error("usage: build-step-free-path-transitions.mjs --repository-root <path>");
+  }
+  const root = path.resolve(argv[1]);
+  const stationElevatorPaths = await loadStationElevatorPathInputs({ repositoryRoot: root });
+  const routeEdgeBytes = await readFile(path.join(root, CURRENT_ROUTE_EDGE_INPUT_PATH));
+  const routeEdgeInput = JSON.parse(routeEdgeBytes.toString("utf8"));
+  const report = buildStepFreeTransitionCoverageReport({ stationElevatorPaths, routeEdges: routeEdgeInput.routeEdges });
+  process.stdout.write(`${JSON.stringify({
+    routeEdgeInput: { path: CURRENT_ROUTE_EDGE_INPUT_PATH, sha256: createHash("sha256").update(routeEdgeBytes).digest("hex") },
+    ...report,
+  }, null, 2)}\n`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`build-step-free-path-transitions: ${error.message}\n`);
+    process.exitCode = 1;
+  });
 }
