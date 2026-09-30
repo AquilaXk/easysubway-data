@@ -418,6 +418,7 @@
     {"path":"tools/datapack/build-server-route-bundle-publication-descriptor.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":563},
     {"path":"tools/datapack/build-server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":79870},
     {"path":"tools/datapack/build-server-timetable-snapshot.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":5209},
+    {"path":"tools/datapack/build-station-contacts.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/build-station-elevator-paths.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/build-station-platform-gaps.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/build-step-free-path-transitions.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":60},
