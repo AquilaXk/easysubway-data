@@ -1,10 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
-const DEFAULT_POSITIONS_PATH = path.resolve(
-  import.meta.dirname,
-  "sources/seoul-metro-route-map-positions-20260724.json",
-);
+import { collectSeoulStationLineInfo } from "./collect-seoul-station-line-info.mjs";
+
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function numeric(value) {
   if (value == null) return "";
@@ -65,47 +65,85 @@ export function normalizeDayType(dayStr) {
   }
 }
 
-export function buildStationMapping(positions) {
-  const mapping = new Map();
-  for (const pos of positions ?? []) {
-    const lineNum = numeric(pos.line ?? pos.lineId);
-    const stationCode = numeric(pos.stationCode);
-    if (!lineNum || !stationCode) continue;
-    const key = `${lineNum}:${stationCode}`;
-    mapping.set(key, {
-      stationId: pos.stationId,
-      lineId: pos.lineId,
-      stationName: pos.stationName ?? "",
-      line: lineNum,
-      stationCode,
-    });
+// Binds (LINE_NUM ordinal, STATION_CD) from the frozen admitted Seoul station-line membership
+// projection to the pack's station ids. Congestion rows are joined by code only, never by name.
+export function buildStationBindings({ membership, pack } = {}) {
+  if (!membership || membership.artifactKind !== "seoul-station-code-membership-binding"
+    || !Array.isArray(membership.records) || !membership.snapshot) {
+    throw new Error("Seoul station code membership artifact is required");
   }
-  return mapping;
+  const replay = collectSeoulStationLineInfo({
+    csvBytes: Buffer.from(membership.snapshot.rawBytesBase64 ?? "", "base64"),
+    capturedAt: membership.snapshot.capturedAt,
+  });
+  if (!isDeepStrictEqual(replay, membership.snapshot)) {
+    throw new Error("Seoul station code membership snapshot does not replay from its stored CSV bytes");
+  }
+  if (sha256(JSON.stringify(membership.records)) !== membership.recordsSha256) {
+    throw new Error("Seoul station code membership recordsSha256 mismatch");
+  }
+  const rowsByHash = new Map(membership.snapshot.rows.map((row) => [sha256(JSON.stringify(row)), row]));
+
+  const stationsById = new Map((pack?.stations ?? []).map((station) => [station.id, station]));
+  // The pack splits the MOLIT canonical "name(sub)" roster name into nameKo + nameSub, and may
+  // carry a sub label the roster lacks (e.g. roster 종로3가 vs pack 종로3가(탑골공원)).
+  const exactIds = new Map();
+  const baseNameIds = new Map();
+  const add = (map, key, id) => {
+    const ids = map.get(key) ?? new Set();
+    ids.add(id);
+    map.set(key, ids);
+  };
+  for (const stationLine of pack?.stationLines ?? []) {
+    const station = stationsById.get(stationLine.stationId);
+    if (!station) continue;
+    const canonicalName = station.nameSub ? `${station.nameKo}(${station.nameSub})` : station.nameKo;
+    add(exactIds, `${stationLine.lineId}\u0000${canonicalName}`, station.id);
+    add(baseNameIds, `${stationLine.lineId}\u0000${station.nameKo}`, station.id);
+  }
+
+  const bindings = new Map();
+  for (const record of membership.records) {
+    const row = rowsByHash.get(record.sourceRowSha256);
+    if (!row) throw new Error(`membership record has no source row: ${record.sourceStationCode}`);
+    const lookupKey = `${record.lineId}\u0000${record.canonicalStationName}`;
+    const ids = exactIds.get(lookupKey) ?? baseNameIds.get(lookupKey);
+    if (!ids || ids.size !== 1) {
+      throw new Error(
+        `membership station ${record.lineId} ${record.canonicalStationName} (${record.sourceStationCode}) does not resolve to exactly one pack station`,
+      );
+    }
+    const key = `${numeric(row.LINE_NUM)}:${numeric(row.STATION_CD)}`;
+    if (bindings.has(key)) throw new Error(`duplicate station code binding: ${key}`);
+    bindings.set(key, { stationId: [...ids][0], lineId: record.lineId });
+  }
+  return bindings;
 }
 
 export function normalizeSeoulMetroCongestion({
   snapshot,
-  positions,
-  positionsPath = DEFAULT_POSITIONS_PATH,
+  stationBindings,
 } = {}) {
   if (!snapshot || !Array.isArray(snapshot.rows)) {
     throw new Error("snapshot with rows array is required");
   }
 
-  let stationMapping;
-  if (positions) {
-    stationMapping = buildStationMapping(positions);
-  } else {
-    // Synchronously require or expect positions to be provided
-    throw new Error("positions array is required for normalization");
+  if (!(stationBindings instanceof Map)) {
+    throw new Error("stationBindings map is required for normalization");
+  }
+
+  for (const field of ["capturedAt", "datasetLabel"]) {
+    if (typeof snapshot[field] !== "string" || snapshot[field].trim() === "") {
+      throw new Error(`snapshot ${field} is required`);
+    }
   }
 
   const snapshotId = snapshot.snapshotId ?? path.basename(snapshot.datasetLabel ?? "seoul-metro-congestion");
   const sources = [
     {
       source_snapshot_id: snapshotId,
-      dataset_label: snapshot.datasetLabel ?? "",
-      captured_at: snapshot.capturedAt ?? new Date().toISOString(),
+      dataset_label: snapshot.datasetLabel,
+      captured_at: snapshot.capturedAt,
       attribution: "서울교통공사 (공공데이터포털)",
     },
   ];
@@ -134,7 +172,7 @@ export function normalizeSeoulMetroCongestion({
     const lineNum = numeric(row["호선"]);
     const stationCode = numeric(row["역번호"]);
     const mappingKey = `${lineNum}:${stationCode}`;
-    const stationInfo = stationMapping.get(mappingKey);
+    const stationInfo = stationBindings.get(mappingKey);
     if (!stationInfo) {
       unmappedStations.push({
         line: lineNum,

@@ -451,6 +451,9 @@ async function regularDestination(root, relative) {
 
 const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/source-candidates.json",
+  "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.json",
+  "tools/datapack/sources/seoul-metro-congestion-20260930T020244Z.raw.json",
+  "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json",
   "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv",
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",

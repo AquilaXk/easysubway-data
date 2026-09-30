@@ -5,7 +5,7 @@ import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:f
 import { constants as zlibConstants, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
-import { normalizeSeoulMetroCongestion } from "./normalize-seoul-metro-congestion.mjs";
+import { buildStationBindings, normalizeSeoulMetroCongestion } from "./normalize-seoul-metro-congestion.mjs";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -3804,31 +3804,71 @@ function outOfStationTransferNetworkEdge(link) {
   };
 }
 
-function loadSeoulMetroCongestionForBuild(repositoryRoot) {
+function loadSeoulMetroCongestionForBuild(repositoryRoot, pack) {
   const sourcesDir = path.join(repositoryRoot, "tools/datapack/sources");
   if (!existsSync(sourcesDir)) {
     throw new Error("missing Seoul Metro congestion snapshot in production build: sources directory does not exist");
   }
   const files = readdirSync(sourcesDir)
-    .filter((f) => f.startsWith("seoul-metro-congestion-") && f.endsWith(".json"))
+    .filter((f) => /^seoul-metro-congestion-\d{8}T\d{6}Z\.json$/u.test(f))
     .sort();
   if (files.length === 0) {
     throw new Error("missing Seoul Metro congestion snapshot in production build");
   }
   const latestFile = files[files.length - 1];
-  const snapshotContent = readFileSync(path.join(sourcesDir, latestFile), "utf8");
-  const snapshot = JSON.parse(snapshotContent);
-
-  const positionsFile = path.join(sourcesDir, "seoul-metro-route-map-positions-20260724.json");
-  if (!existsSync(positionsFile)) {
-    throw new Error("missing Seoul Metro route map positions snapshot for congestion normalization");
+  const snapshot = JSON.parse(readFileSync(path.join(sourcesDir, latestFile), "utf8"));
+  if (!Array.isArray(snapshot.rows)) {
+    throw new Error(`${latestFile}: rows must be an array`);
   }
-  const positionsDoc = JSON.parse(readFileSync(positionsFile, "utf8"));
+  const sha256Hex = (value) => createHash("sha256").update(value).digest("hex");
+  if (snapshot.rowCount !== snapshot.rows.length) {
+    throw new Error(`${latestFile}: rowCount ${snapshot.rowCount} does not match rows.length ${snapshot.rows.length}`);
+  }
+  if (sha256Hex(JSON.stringify(snapshot.rows)) !== snapshot.contentSha256) {
+    throw new Error(`${latestFile}: contentSha256 does not match the stored rows`);
+  }
+  const rawFile = latestFile.replace(/\.json$/u, ".raw.json");
+  const rawPath = path.join(sourcesDir, rawFile);
+  if (!existsSync(rawPath)) {
+    throw new Error(`${latestFile}: raw response archive ${rawFile} is missing`);
+  }
+  const rawBytes = readFileSync(rawPath);
+  if (sha256Hex(rawBytes) !== snapshot.rawSha256) {
+    throw new Error(`${latestFile}: rawSha256 does not match raw response archive ${rawFile}`);
+  }
+  if (sha256Hex(JSON.stringify(JSON.parse(rawBytes.toString("utf8")).data)) !== snapshot.contentSha256) {
+    throw new Error(`${latestFile}: raw response archive data does not match contentSha256`);
+  }
+
+  const membershipFiles = readdirSync(sourcesDir)
+    .filter((f) => /^seoul-station-code-membership-\d{8}T\d{6}Z\.json$/u.test(f))
+    .sort();
+  if (membershipFiles.length === 0) {
+    throw new Error("missing Seoul station code membership artifact for congestion normalization");
+  }
+  const membership = JSON.parse(readFileSync(path.join(sourcesDir, membershipFiles[membershipFiles.length - 1]), "utf8"));
 
   return normalizeSeoulMetroCongestion({
     snapshot,
-    positions: positionsDoc.positions,
+    stationBindings: buildStationBindings({ membership, pack }),
   });
+}
+
+function assertCongestionRowsExistInPack(pack, stats) {
+  const stationIds = new Set((pack.stations ?? []).map(({ id }) => id));
+  const lineIds = new Set((pack.lines ?? []).map(({ id }) => id));
+  const memberships = new Set((pack.stationLines ?? []).map(({ stationId, lineId }) => `${stationId}|${lineId}`));
+  const missing = new Set();
+  for (const row of stats) {
+    const stationId = row.station_id ?? row.stationId;
+    const lineId = row.line_id ?? row.lineId;
+    if (!stationIds.has(stationId)) missing.add(`station ${stationId}`);
+    else if (!lineIds.has(lineId)) missing.add(`line ${lineId}`);
+    else if (!memberships.has(`${stationId}|${lineId}`)) missing.add(`station_lines ${stationId}|${lineId}`);
+  }
+  if (missing.size > 0) {
+    throw new Error(`station_congestion_stats references ids missing from the pack: ${[...missing].sort().join(", ")}`);
+  }
 }
 
 export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions, { repositoryRoot = root } = {}) {
@@ -4823,10 +4863,12 @@ export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissio
       let congestionSources = pack.stationCongestionSources ?? [];
 
       if (isProductionPack) {
-        const { stats, sources } = loadSeoulMetroCongestionForBuild(repositoryRoot);
+        const { stats, sources } = loadSeoulMetroCongestionForBuild(repositoryRoot, pack);
         congestionStats = stats;
         congestionSources = sources;
       }
+
+      assertCongestionRowsExistInPack(pack, congestionStats);
 
       insertRows(
         database,
