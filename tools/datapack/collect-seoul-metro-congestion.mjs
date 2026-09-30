@@ -100,15 +100,23 @@ export async function collectSeoulMetroCongestion({
   const rawText = await response.text();
   const parsed = JSON.parse(rawText);
 
-  const totalCount = parsed.totalCount ?? parsed.matchCount;
+  const totalCount = parsed.totalCount;
   const rows = parsed.data;
 
   if (!Array.isArray(rows)) {
     throw new Error("response data is not an array");
   }
 
-  if (typeof totalCount === "number" && rows.length !== totalCount) {
+  if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
+    throw new Error("response totalCount is missing or not a non-negative integer");
+  }
+
+  if (rows.length !== totalCount) {
     throw new Error(`received row count (${rows.length}) does not match totalCount (${totalCount})`);
+  }
+
+  if (rawText.includes(normalizedKey)) {
+    throw new Error("response body contains the service credential; refusing to archive it");
   }
 
   const rawSha = sha256(rawText);
@@ -131,6 +139,7 @@ export async function collectSeoulMetroCongestion({
   if (outputDir) {
     await mkdir(outputDir, { recursive: true });
     const targetFile = path.join(outputDir, `${snapshotId}.json`);
+    await writeFile(path.join(outputDir, `${snapshotId}.raw.json`), rawText, "utf8");
     await writeFile(targetFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
     snapshot.savedPath = targetFile;
   }
