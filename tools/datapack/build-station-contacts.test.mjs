@@ -286,7 +286,7 @@ test("(5) 운영 빌드 적재 (SQLite table DDL 및 삽입 검증)", () => {
 
   const loaded = db.prepare("SELECT * FROM station_contacts").all();
   assert.equal(loaded.length, 1);
-  assert.deepEqual(loaded[0], {
+  assert.deepEqual({ ...loaded[0] }, {
     station_id: "station-a2d54a5d63d2",
     line_id: "seoul-2",
     phone: "02-6110-2011",
@@ -306,3 +306,22 @@ test("(6) 스냅샷 없음 → 빌드 실패", async () => {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("실제 커밋된 원천 스냅샷으로 station_contacts 적재 검증", async () => {
+  const result = await loadStationContactInputs({ repositoryRoot: process.cwd() });
+  assert.equal(result.report.totalRawRows, 289);
+  assert.equal(result.report.validRowsLoaded, 171);
+  assert.equal(result.report.excludedRowsTotal, 118);
+  assert.equal(result.report.exclusionsByReason.MAPPING_NOT_FOUND, 118);
+  assert.equal(result.rows.length, 171);
+  assert.equal(result.report.uniqueStationCount, 159);
+  assert.equal(result.report.uniqueLineCount, 4);
+
+  // Phone format is guaranteed across all rows
+  for (const row of result.rows) {
+    assert.match(row.phone, /^0\d{1,2}-\d{3,4}-\d{4}$/);
+    assert.ok(row.station_id.startsWith("station-"));
+    assert.ok(row.line_id.length > 0);
+  }
+});
+

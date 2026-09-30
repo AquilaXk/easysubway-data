@@ -69,6 +69,7 @@ import {
   admittedIncheonTimetableEvidence,
   validateProductionIncheonTimetableFixture,
 } from "./materialize-incheon-timetable.mjs";
+import { loadStationContactInputs } from "./build-station-contacts.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -408,6 +409,10 @@ export async function main(
   const stagedPackFiles = [];
   for (const pack of fixture.packs) {
     const artifactKind = outputArtifactKind ?? pack.artifactKind ?? "fixture";
+    if (artifactKind === "production" && pack.stationContacts == null) {
+      const contactsResult = await loadStationContactInputs({ repositoryRoot: root });
+      pack.stationContacts = contactsResult.rows;
+    }
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
     // requiredString은 non-empty 문자열을 강제하고, 검증·경로 파생·매니페스트는 모두 raw packUrl을
     // 대상으로 한다(추출 전 로컬 validatePackUrl과 동일 — 검증 대상과 실사용 문자열 일치).
@@ -3968,6 +3973,19 @@ export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissio
           row.stationCode ?? "",
           requiredInteger(row.lineSequence, "stationLines.lineSequence"),
           row.platformInfo ?? "",
+        ],
+      );
+      insertRows(
+        database,
+        "station_contacts",
+        ["station_id", "line_id", "phone", "phone_raw", "source_snapshot_id"],
+        pack.stationContacts ?? [],
+        (row) => [
+          requiredString(row.stationId ?? row.station_id, "stationContacts.stationId"),
+          requiredString(row.lineId ?? row.line_id, "stationContacts.lineId"),
+          requiredString(row.phone, "stationContacts.phone"),
+          requiredString(row.phoneRaw ?? row.phone_raw, "stationContacts.phoneRaw"),
+          requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "stationContacts.sourceSnapshotId"),
         ],
       );
       insertRows(

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "station-contact-inputs",
+  "issue": 838,
+  "stationContact": {
+    "sourceId": "seoul-metro-station-contact",
+    "snapshotPath": "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.json",
+    "snapshotSha256": "ba5bab5220f87324ea207e887a40dde6a8db22f4b23d69e0a19e4431a873eca4",
+    "rawCollectionPath": "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.raw.json",
+    "rawCollectionSha256": "442fe16d2c7e93c458d1cf31df173d42e24b910b9a9a710ffe4ab0d65b13d5d2"
+  },
+  "canonicalMapping": {
+    "sourceId": "kric-station-convenience-standard",
+    "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20260904T043909603Z.json",
+    "snapshotSha256": "50a897027042d47764ffe79666d712b5b9d2a7f9deb83c28dea0c16252fc0fde"
+  }
+}
