@@ -7583,7 +7583,7 @@
       },
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "admitted_to_production_inventory",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "serviceKeyHandling": "offline_collection_secret_only",
       "mobileEmbeddingAllowed": true,
       "evidence": {
@@ -7634,6 +7634,7 @@
           }
         }
       },
+      "nextAction": "#838에서 모바일 역 카탈로그 station_contacts 적재 용도로 운영 사용 승격(QA 결정 2026-09-30). production inventory(source-inventory.json) 승격은 별도 결정 대상이다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
