@@ -8318,7 +8318,7 @@
       },
       "licenseEvidenceStatus": "confirmed_free_use",
       "sampleEvidenceStatus": "collector_sample_verified",
-      "admissionStatus": "admitted_to_production_inventory",
+      "admissionStatus": "preflight_only",
       "serviceKeyHandling": "offline_search_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
@@ -8344,7 +8344,7 @@
         "contentSha256": "3afc688b7f2d61351dee5cea211e83fb7b0f1d72f92716a5a3418f6e36f0fab1",
         "snapshotSha256": "bc01657e571b3f7dd2cf6c9f46907a50ca5cc23fe12297ed73f557139361a4e5",
         "definition": "혼잡도는 열차 정원 대비 실제 승차 인원의 비율(단위: %)로 정의되며, 정원 기준으로 좌석만 모두 찼을 경우 혼잡도를 34%로 산정합니다.",
-        "admissionReason": "서울교통공사 공식 지하철혼잡도정보 원천으로, 이용허락범위 제한 없음 확인, 최신 OAS 기반 uddi 수집, 원문 응답 보관본과 rawSha256 대조, 승인된 역번호 membership 바인딩이 완료되어 운영 채택으로 승격",
+        "admissionReason": "서울교통공사 공식 지하철혼잡도정보 원천으로, 이용허락범위 제한 없음 확인, 최신 OAS 기반 uddi 수집, 원문 응답 보관본과 rawSha256 대조, 승인된 역번호 membership 결속까지 검증했다. 운영 inventory 채택은 source admission pipeline의 관리자 검수 기록이 필요하다.",
         "outputFields": [
           "구분",
           "상하구분",
@@ -8406,7 +8406,7 @@
           "rawObjectUri"
         ]
       },
-      "nextAction": "운영 빌드에서 tools/datapack/sources/seoul-metro-congestion-<timestamp>.json 스냅샷(원문 보관본 .raw.json으로 해시 대조)을 승인된 역번호 membership으로 팩 station_id에 결속해 station_congestion_stats 및 station_congestion_sources 테이블로 적재한다",
+      "nextAction": "관리자 검수 기록으로 run-source-admission-pipeline을 실행해 source-inventory 채택과 ledger 스냅샷을 만든 뒤 admission을 admitted_to_production_inventory로 승격한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -8433,8 +8433,8 @@
         },
         "congestion": {
           "status": "SUPPORTED",
-          "productionUseAllowed": true,
-          "coverageStatus": "OFFICIAL_STATISTICS_ADMITTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "ADMISSION_REVIEW_REQUIRED",
           "updateFrequency": "quarterly",
           "notes": "official Seoul Metro 30-minute interval statistical congestion"
         }

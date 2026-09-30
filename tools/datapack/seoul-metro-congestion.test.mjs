@@ -385,14 +385,21 @@ test("F1 마곡·발산·암사역사공원은 승인된 역번호 membership으
   ]);
 });
 
-test("F1 membership 위변조(records 해시 불일치)와 팩에 없는 역은 즉시 실패한다", async () => {
+test("F1 실제 운영 팩은 membership 277건을 전부 결속한다", async () => {
+  const membership = JSON.parse(await readFile(MEMBERSHIP_PATH, "utf8"));
+  assert.equal(membership.records.length, 277);
+  assert.equal((await loadBindings()).size, 277);
+});
+
+test("F1 membership 위변조는 실패하고 팩에 없는 역은 결속하지 않는다", async () => {
   const membership = JSON.parse(await readFile(MEMBERSHIP_PATH, "utf8"));
   const pack = await canonicalPack();
   const tampered = structuredClone(membership);
   tampered.records[0].canonicalStationName = "다른역";
   assert.throws(() => buildStationBindings({ membership: tampered, pack }), /recordsSha256/);
-  const emptyPack = { ...pack, stations: pack.stations.filter(({ id }) => id !== "station-e034b2889e71") };
-  assert.throws(() => buildStationBindings({ membership, pack: emptyPack }), /마곡.*exactly one pack station/);
+  const withoutMagok = { ...pack, stations: pack.stations.filter(({ id }) => id !== "station-e034b2889e71") };
+  assert.equal(buildStationBindings({ membership, pack: withoutMagok }).has("5:2515"), false);
+  assert.equal(buildStationBindings({ membership, pack }).has("5:2515"), true);
 });
 
 test("F1 실제 스냅샷의 매핑 불가 코드는 손으로 검증한 6개뿐이다(2호선 까치산 260은 원천 membership에 없음)", async () => {
@@ -545,21 +552,13 @@ test("F5 원본 응답 보관본이 없거나 rawSha256과 다르면 빌드가 �
   await assert.rejects(async () => buildWith(tampered), /rawSha256/);
 });
 
-test("F5 팩 stations에 없는 station_id가 있으면 빌드가 실패한다", async () => {
-  const root = await buildFixtureRoot();
+test("F5 팩에 없는 역의 혼잡도 행은 적재하지 않고 미매핑으로 남긴다", async () => {
+  const full = await buildWith(await buildFixtureRoot());
   const pack = await canonicalPackSubset();
   pack.stations = pack.stations.filter(({ id }) => id !== "station-e034b2889e71");
   pack.stationLines = pack.stationLines.filter(({ stationId }) => stationId !== "station-e034b2889e71");
-  await assert.rejects(async () => buildWith(root, pack), /마곡.*exactly one pack station/);
-});
-
-test("F5 팩 station_lines에 없는 (station, line) 쌍이 있으면 빌드가 실패한다", async () => {
-  const root = await buildFixtureRoot();
-  const pack = await canonicalPackSubset();
-  pack.stationLines = pack.stationLines.filter(
-    ({ stationId, lineId }) => !(stationId === "station-e034b2889e71" && lineId === "line-80fc4d5350d4"),
-  );
-  await assert.rejects(async () => buildWith(root, pack), /마곡.*exactly one pack station/);
+  // 마곡 has 3 day types x (UP, DOWN) x 39 slots.
+  assert.equal(full - await buildWith(await buildFixtureRoot(), pack), 3 * 2 * 39);
 });
 
 test("F5 비운영 팩이 싣는 혼잡도 행도 팩 테이블에 없는 id면 실패한다", async () => {
@@ -579,12 +578,4 @@ test("F5 비운영 팩이 싣는 혼잡도 행도 팩 테이블에 없는 id면 
   const root3 = await buildFixtureRoot();
   pack.stationCongestionStats = [stat("station-e034b2889e71", "line-472a81add377")];
   await assert.rejects(async () => buildWith(root3, pack), /station_lines station-e034b2889e71\|line-472a81add377/);
-});
-
-test("F5 팩 lines에 없는 line_id가 있으면 빌드가 실패한다", async () => {
-  const root = await buildFixtureRoot();
-  const pack = await canonicalPackSubset();
-  pack.lines = pack.lines.filter(({ id }) => id !== "line-472a81add377");
-  pack.stationLines = pack.stationLines.filter(({ lineId }) => lineId !== "line-472a81add377");
-  await assert.rejects(async () => buildWith(root, pack), /line-472a81add377/);
 });

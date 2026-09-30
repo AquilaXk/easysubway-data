@@ -108,9 +108,12 @@ export function buildStationBindings({ membership, pack } = {}) {
     if (!row) throw new Error(`membership record has no source row: ${record.sourceStationCode}`);
     const lookupKey = `${record.lineId}\u0000${record.canonicalStationName}`;
     const ids = exactIds.get(lookupKey) ?? baseNameIds.get(lookupKey);
-    if (!ids || ids.size !== 1) {
+    // A membership station the pack does not carry stays unbound: its congestion rows are
+    // reported as unmapped, never attached to a guessed station.
+    if (!ids) continue;
+    if (ids.size !== 1) {
       throw new Error(
-        `membership station ${record.lineId} ${record.canonicalStationName} (${record.sourceStationCode}) does not resolve to exactly one pack station`,
+        `membership station ${record.lineId} ${record.canonicalStationName} (${record.sourceStationCode}) resolves to ${ids.size} pack stations`,
       );
     }
     const key = `${numeric(row.LINE_NUM)}:${numeric(row.STATION_CD)}`;
