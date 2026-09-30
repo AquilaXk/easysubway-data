@@ -181,6 +181,10 @@ test("route service evidence tables는 server timetable component의 exact refer
       },
     },
   });
+  assert.deepEqual(components.accessibility.stationElevatorPath, {
+    table: "station_elevator_path",
+    columns: ["path_id", "station_id", "line_id", "path_kind", "exit_no", "platform_direction", "step", "detail", "facility_id"],
+  });
   assert.deepEqual(components.fare.ownedTables, [
     "fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes",
   ]);

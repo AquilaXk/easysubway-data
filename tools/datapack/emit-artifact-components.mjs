@@ -49,6 +49,7 @@ const GENERATED_EVIDENCE_LAYOUT = {
 export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
   station_line_accessibility_evidence: "CREATE TABLE station_line_accessibility_evidence (materialization_digest TEXT NOT NULL PRIMARY KEY CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL)",
   route_accessibility_edge_evidence: "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY CHECK(length(evaluation_digest)=64 AND evaluation_digest NOT GLOB '*[^0-9a-f]*'), materialization_digest TEXT NOT NULL CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))",
+  station_elevator_path: "CREATE TABLE station_elevator_path (path_id TEXT NOT NULL, station_id TEXT NOT NULL, line_id TEXT NOT NULL, path_kind TEXT NOT NULL, exit_no TEXT, platform_direction TEXT, step INTEGER NOT NULL, detail TEXT NOT NULL, facility_id TEXT, PRIMARY KEY (path_id, step))",
 });
 const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
   "candidateId", "stationSetSha256", "sourceSetSha256", "policyVersion", "evaluatorVersion",
@@ -411,7 +412,7 @@ function buildGeneratedEvidence(input) {
   }, input.routeEdgePolicy);
   const materializationJson = canonicalStationLineAccessibilityJson(materialization);
   const evaluationJson = canonicalRouteEdgeEvaluationJson(evaluation);
-  return { materialization, materializationJson, evaluation, evaluationJson };
+  return { materialization, materializationJson, evaluation, evaluationJson, stationElevatorPaths: input.stationElevatorPaths ?? [] };
 }
 
 function sourceStationLines(source, includeSequence) {
@@ -482,6 +483,22 @@ function insertGeneratedEvidence(target, evidence) {
     evidence.materialization.materializationDigest,
     evidence.evaluationJson,
   );
+  if (Array.isArray(evidence.stationElevatorPaths)) {
+    const insertPath = target.prepare("INSERT INTO station_elevator_path VALUES(?,?,?,?,?,?,?,?,?)");
+    for (const row of evidence.stationElevatorPaths) {
+      insertPath.run(
+        row.path_id,
+        row.station_id,
+        row.line_id,
+        row.path_kind,
+        row.exit_no,
+        row.platform_direction,
+        row.step,
+        row.detail,
+        row.facility_id,
+      );
+    }
+  }
 }
 
 function copyTable(source, target, table, projection = undefined, presentTables = undefined, selected = undefined, uniqueKeys = []) {

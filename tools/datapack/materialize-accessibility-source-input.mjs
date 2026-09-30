@@ -210,10 +210,9 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   });
 
   const replacedSourceIds = new Set([
-    "kric-station-elevator",
+    // #834: kric-station-elevator and kric-station-elevator-movement are re-admitted for deterministic per-unit elevator facilities and movement paths
     "kric-station-escalator",
     "kric-wheelchair-lift-location",
-    "kric-station-elevator-movement",
     "kric-wheelchair-lift-movement",
   ]);
   const sourceIds = [...new Set([
@@ -223,7 +222,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
     ? entry
     : { ...entry, sourceIds: [KRIC_SOURCE_ID, SEOUL_SOURCE_ID] });
   const blockedMovementSourceIds = new Set([
-    "kric-station-elevator-movement",
+    // #834: kric-station-elevator-movement is re-admitted
     "kric-wheelchair-lift-movement",
   ]);
   const statusByStation = new Map(seoulRows.map((row) => [row.stationId, row]));

@@ -108,6 +108,10 @@
             "materializationBinding": { "field": "materializationDigest", "column": "materialization_digest", "equals": "station_line_accessibility_evidence.materialization_digest" }
           }
         },
+        "stationElevatorPath": {
+          "table": "station_elevator_path",
+          "columns": ["path_id", "station_id", "line_id", "path_kind", "exit_no", "platform_direction", "step", "detail", "facility_id"]
+        },
         "ownedTableColumns": "exact-source-schema",
         "foreignKeys": "within-component-only",
         "componentReferences": "declared-non-null-references-must-resolve-within-component"

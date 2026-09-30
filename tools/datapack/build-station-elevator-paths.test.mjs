@@ -38,7 +38,8 @@ test("(1) 시설 행 id가 결정론적으로 생성되고, 입력 순서를 바
   const idA = buildElevatorFacilityId(rowA);
   const idB = buildElevatorFacilityId(rowB);
 
-  assert.equal(idA, idB);
+  assert.equal(idA, "kric-elev:KR:4:448:2:1-2:0b219253cb54");
+  assert.equal(idB, "kric-elev:KR:4:448:2:1-2:0b219253cb54");
   assert.match(idA, /^kric-elev:KR:4:448:2:1-2:[0-9a-f]{12}$/);
 
   // 입력 순서 무관성 검증
@@ -68,7 +69,12 @@ test("(1) 시설 행 id가 결정론적으로 생성되고, 입력 순서를 바
 
   const ids1 = res1.facilities.map((f) => f.id).sort();
   const ids2 = res2.facilities.map((f) => f.id).sort();
-  assert.deepEqual(ids1, ids2);
+  const expectedSortedIds = [
+    "kric-elev:KR:4:448:1:1-2:1b26d29c105d",
+    "kric-elev:KR:4:448:2:1-2:e36473dd25d9",
+  ];
+  assert.deepEqual(ids1, expectedSortedIds);
+  assert.deepEqual(ids2, expectedSortedIds);
 });
 
 test("(2) 같은 조합 중복이 '식별 불가'로 빠진다", () => {
@@ -195,8 +201,10 @@ test("(3) 경로 단계와 시설이 정확 일치로만 연결된다", () => {
 
   // 경로 1 단계 2는 elevatorRows[0]과 정확 매칭되어 facilityId 연결
   const path1Steps = result.paths.filter((p) => p.path_id === "path-station-sangnoksu-seoul-4-1");
+  const goldenFacilityId = "kric-elev:KR:4:448:2:1-2:0b219253cb54";
+  assert.equal(result.facilities[0].id, goldenFacilityId);
   assert.equal(path1Steps[0].facility_id, null); // 출입구 단계
-  assert.equal(path1Steps[1].facility_id, result.facilities[0].id); // 엘리베이터 단계 매칭 성공
+  assert.equal(path1Steps[1].facility_id, goldenFacilityId); // 엘리베이터 단계 매칭 성공
 
   // 경로 2 단계 2는 일치하는 엘리베이터가 없으므로 facilityId = null
   const path2Steps = result.paths.filter((p) => p.path_id === "path-station-sangnoksu-seoul-4-2");

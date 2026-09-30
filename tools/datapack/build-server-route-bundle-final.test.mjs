@@ -256,6 +256,8 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["route-digest-mismatch", `UPDATE route_accessibility_edge_evidence SET evaluation_digest='${"e".repeat(64)}'`, /embedded route-edge evaluation evidence mismatch/],
     ["route-schema-without-constraints", "ALTER TABLE route_accessibility_edge_evidence RENAME TO route_accessibility_edge_evidence_old; CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL); INSERT INTO route_accessibility_edge_evidence SELECT * FROM route_accessibility_edge_evidence_old; DROP TABLE route_accessibility_edge_evidence_old", /embedded route_accessibility_edge_evidence schema mismatch/],
     ["missing-route-table", "DROP TABLE route_accessibility_edge_evidence", /embedded route_accessibility_edge_evidence schema mismatch/],
+    ["missing-station-elevator-path-table", "DROP TABLE station_elevator_path", /embedded station_elevator_path schema mismatch/],
+    ["orphan-facility-id", "INSERT INTO station_elevator_path VALUES('p1','st1','ln1','k1',null,null,1,'dtl','orphan-fac')", /station_elevator_path contains orphan facility_id/],
   ]) {
     await t.test(name, async () => {
       const fixture = await createFixture(t);
