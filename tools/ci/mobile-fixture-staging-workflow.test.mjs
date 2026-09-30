@@ -10,11 +10,11 @@ const ownership = JSON.parse(
   readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
-const ciMobileRevision = "23f4262087af99ff49e120707f7de317666679ef";
-const ciCapitalGzipSha256 = "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1";
-const releaseMobileRevision = "23f4262087af99ff49e120707f7de317666679ef";
-const releaseCapitalGzipSha256 = "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1";
-const releaseIndexSha256 = "5f4767d73f3bb7378b48fc717bb3f9c16991251bc27951b20b431d6fbbb9136e";
+const ciMobileRevision = "f21e653dacb418fad743962b50ddd0ac9c812062";
+const ciCapitalGzipSha256 = "1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e";
+const releaseMobileRevision = "f21e653dacb418fad743962b50ddd0ac9c812062";
+const releaseCapitalGzipSha256 = "1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e";
+const releaseIndexSha256 = "5831820196304c9b09e464da3752b3967b73c482258545a412f096fa2ba2f702";
 const releaseSourceInventorySha256 = "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2";
 
 function namedWorkflowStep(yml, name) {

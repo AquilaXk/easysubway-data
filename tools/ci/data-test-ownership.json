@@ -297,8 +297,8 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"23f4262087af99ff49e120707f7de317666679ef\"",
-          "expected_sha256=\"6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1\"",
+          "expected_revision=\"f21e653dacb418fad743962b50ddd0ac9c812062\"",
+          "expected_sha256=\"1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
         ]
@@ -327,9 +327,9 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"23f4262087af99ff49e120707f7de317666679ef\"",
-          "expected_capital_gzip_sha256=\"6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1\"",
-          "expected_index_sha256=\"5f4767d73f3bb7378b48fc717bb3f9c16991251bc27951b20b431d6fbbb9136e\"",
+          "expected_revision=\"f21e653dacb418fad743962b50ddd0ac9c812062\"",
+          "expected_capital_gzip_sha256=\"1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e\"",
+          "expected_index_sha256=\"5831820196304c9b09e464da3752b3967b73c482258545a412f096fa2ba2f702\"",
           "expected_source_inventory_sha256=\"69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
@@ -714,7 +714,7 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "23f4262087af99ff49e120707f7de317666679ef"
+        "mobile-v19": "f21e653dacb418fad743962b50ddd0ac9c812062"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -724,7 +724,7 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "6339daf6de99f9eb69b3940d3eab41302d55cf4c47270625a771d1bc99568cd1"
+            "mobile-v19": "1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e"
           }
         },
         {
