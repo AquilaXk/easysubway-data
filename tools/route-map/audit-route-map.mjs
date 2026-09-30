@@ -145,11 +145,18 @@ function approvedRouteLabelRenameFor({ pack, position, station, renames }) {
   }
   const source = sourceMatches[0];
   const sourceScope = source?.coverageScope;
+  // 승인 개명의 권역은 팩 id가 아니라 팩이 선언한 region:operator:line 조합으로 결속한다.
+  // 전국 팩(id "nationwide")은 여러 권역을 담으므로 팩 id가 권역 id가 아니다.
+  const declaredScopeKeys = new Set(
+    (pack.coverageLineOperatorScopes ?? []).map(
+      ({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`,
+    ),
+  );
   const matches = renames.filter((alias) => {
     const scope = scopeParts(alias?.scopeKey);
     return alias?.reasonCode === "OFFICIAL_RENAME"
       && scope != null
-      && scope.regionId === pack.id
+      && declaredScopeKeys.has(`${scope.regionId}:${scope.operatorId}:${scope.lineId}`)
       && scope.lineId === position.lineId
       && normalizedText(alias.snapshotStationName) === sourceLabel
       && normalizedText(alias.rosterStationName) === rosterName

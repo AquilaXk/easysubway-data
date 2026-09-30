@@ -2180,6 +2180,7 @@ test("route map position audit accepts only an exact official rename", async () 
             lineIds: ["seoul-4"],
           },
         }],
+        coverageLineOperatorScopes: [{ regionId: "capital", operatorId: "seoul-metro", lineId: "seoul-4" }],
         stations: [{ id: "station-bulam", nameKo: "불암산", nameSub: "당고개" }],
         stationLines: [{ stationId: "station-bulam", lineId: "seoul-4" }],
         routeMapPositions: [{
