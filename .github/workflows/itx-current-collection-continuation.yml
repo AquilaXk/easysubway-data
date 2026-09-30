@@ -2,6 +2,11 @@ name: ITX Current Collection Continuation
 
 on:
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Source collection run ID"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -28,12 +33,22 @@ jobs:
         with:
           node-version: "24.19.0"
 
+      - name: ITX continuation / Validate inputs
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${SOURCE_RUN_ID}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid source_run_id: ${SOURCE_RUN_ID}" >&2
+            exit 1
+          fi
+
       - name: ITX continuation / Download retained provider capture
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           repository: AquilaXk/easysubway-data
-          run-id: 31609927895
-          name: itx-current-collection-31609927895
+          run-id: ${{ inputs.source_run_id }}
+          name: itx-current-collection-${{ inputs.source_run_id }}
           path: ${{ runner.temp }}/itx-continuation-base
           github-token: ${{ github.token }}
 
