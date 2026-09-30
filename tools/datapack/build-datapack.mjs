@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { constants as zlibConstants, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
+import { normalizeSeoulMetroCongestion } from "./normalize-seoul-metro-congestion.mjs";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -418,7 +420,7 @@ export async function main(
     const stagedSqlitePath = path.join(stagingDir, "pack.sqlite");
     let sqliteBytes;
     try {
-      buildSqlitePack(stagedSqlitePath, schema, pack, officialOdFareAdmissions);
+      buildSqlitePack(stagedSqlitePath, schema, pack, officialOdFareAdmissions, { repositoryRoot: root });
       sqliteBytes = await readFile(stagedSqlitePath);
       // ponytail: offset 96 is informational and otherwise records the platform SQLite patch version.
       sqliteBytes.writeUInt32BE(canonicalSqliteHeaderVersion, 96);
@@ -3802,7 +3804,34 @@ function outOfStationTransferNetworkEdge(link) {
   };
 }
 
-function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
+function loadSeoulMetroCongestionForBuild(repositoryRoot) {
+  const sourcesDir = path.join(repositoryRoot, "tools/datapack/sources");
+  if (!existsSync(sourcesDir)) {
+    throw new Error("missing Seoul Metro congestion snapshot in production build: sources directory does not exist");
+  }
+  const files = readdirSync(sourcesDir)
+    .filter((f) => f.startsWith("seoul-metro-congestion-") && f.endsWith(".json"))
+    .sort();
+  if (files.length === 0) {
+    throw new Error("missing Seoul Metro congestion snapshot in production build");
+  }
+  const latestFile = files[files.length - 1];
+  const snapshotContent = readFileSync(path.join(sourcesDir, latestFile), "utf8");
+  const snapshot = JSON.parse(snapshotContent);
+
+  const positionsFile = path.join(sourcesDir, "seoul-metro-route-map-positions-20260724.json");
+  if (!existsSync(positionsFile)) {
+    throw new Error("missing Seoul Metro route map positions snapshot for congestion normalization");
+  }
+  const positionsDoc = JSON.parse(readFileSync(positionsFile, "utf8"));
+
+  return normalizeSeoulMetroCongestion({
+    snapshot,
+    positions: positionsDoc.positions,
+  });
+}
+
+export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions, { repositoryRoot = root } = {}) {
   const database = new DatabaseSync(sqlitePath);
   const isProductionPack = pack.artifactKind === "production";
   const networkEdges = routeGraphNetworkEdges(pack);
@@ -4789,6 +4818,53 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           timestamp(row.checkedAt),
         ],
       );
+
+      let congestionStats = pack.stationCongestionStats ?? [];
+      let congestionSources = pack.stationCongestionSources ?? [];
+
+      if (isProductionPack) {
+        const { stats, sources } = loadSeoulMetroCongestionForBuild(repositoryRoot);
+        congestionStats = stats;
+        congestionSources = sources;
+      }
+
+      insertRows(
+        database,
+        "station_congestion_sources",
+        ["source_snapshot_id", "dataset_label", "captured_at", "attribution"],
+        congestionSources,
+        (row) => [
+          requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_sources.source_snapshot_id"),
+          requiredString(row.dataset_label ?? row.datasetLabel, "station_congestion_sources.dataset_label"),
+          requiredString(row.captured_at ?? row.capturedAt, "station_congestion_sources.captured_at"),
+          requiredString(row.attribution, "station_congestion_sources.attribution"),
+        ],
+      );
+
+      insertRows(
+        database,
+        "station_congestion_stats",
+        [
+          "station_id",
+          "line_id",
+          "direction",
+          "day_type",
+          "slot_start_minute",
+          "congestion_permille",
+          "source_snapshot_id",
+        ],
+        congestionStats,
+        (row) => [
+          requiredString(row.station_id ?? row.stationId, "station_congestion_stats.station_id"),
+          requiredString(row.line_id ?? row.lineId, "station_congestion_stats.line_id"),
+          requiredString(row.direction, "station_congestion_stats.direction"),
+          requiredString(row.day_type ?? row.dayType, "station_congestion_stats.day_type"),
+          requiredInteger(row.slot_start_minute ?? row.slotStartMinute, "station_congestion_stats.slot_start_minute"),
+          requiredNonNegativeInteger(row.congestion_permille ?? row.congestionPermille, "station_congestion_stats.congestion_permille"),
+          requiredString(row.source_snapshot_id ?? row.sourceSnapshotId, "station_congestion_stats.source_snapshot_id"),
+        ],
+      );
+
       database.exec("COMMIT");
       // ponytail: ANALYZE/optimize statistics differ across SQLite builds; the release artifact must not embed them.
       database.exec("VACUUM");

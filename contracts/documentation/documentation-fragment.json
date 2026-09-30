@@ -2,9 +2,15 @@
   "$schema": "https://raw.githubusercontent.com/AquilaXk/easysubway/32ce139789b97ce1f0c9bb059966cfc19f497480/contracts/documentation/documentation-fragment.schema.json",
   "schemaVersion": 1,
   "repository": "AquilaXk/easysubway-data",
+<<<<<<< HEAD
   "sourceSha": "6189ae2b0b0accda4ce885a80cc77a698216f5c0",
   "status": "ACTIVE",
   "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
+=======
+  "sourceSha": "ddff24e5cc7169e485889349a22aad8ba194bd0b",
+  "status": "ACTIVE",
+  "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
   "verificationEvidence": [
     "https://github.com/AquilaXk/easysubway-data/issues/237",
     "https://github.com/AquilaXk/easysubway-data/issues/281",
@@ -38,7 +44,11 @@
       "documentationFamily": "QUALITY_TEST",
       "kindCandidate": "DATA_REQUIRED_CI_WORKFLOW",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:.github/workflows/ci.yml:0bcf68375d5e62a462b13ca2dac941e55c145903",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:.github/workflows/ci.yml:0bcf68375d5e62a462b13ca2dac941e55c145903",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/25",
@@ -62,8 +72,13 @@
       "reviewTrigger": [
         "event:workflow-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:.github/workflows/ci.yml:0bcf68375d5e62a462b13ca2dac941e55c145903",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:.github/workflows/ci.yml:0bcf68375d5e62a462b13ca2dac941e55c145903",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/25"
@@ -88,7 +103,11 @@
       "documentationFamily": "RELEASE_CHANGE",
       "kindCandidate": "DATAPACK_IMMUTABLE_RELEASE_WORKFLOW",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:.github/workflows/datapack-release.yml:faa6e501028ab7f3130fb99a4c706e069860e2df",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:.github/workflows/datapack-release.yml:faa6e501028ab7f3130fb99a4c706e069860e2df",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/54",
@@ -113,8 +132,13 @@
       "reviewTrigger": [
         "event:release-workflow-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:.github/workflows/datapack-release.yml:faa6e501028ab7f3130fb99a4c706e069860e2df",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:.github/workflows/datapack-release.yml:faa6e501028ab7f3130fb99a4c706e069860e2df",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/54"
@@ -139,7 +163,11 @@
       "documentationFamily": "PRODUCT",
       "kindCandidate": "DATA_PRODUCT_README",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/38",
@@ -166,8 +194,13 @@
       "reviewTrigger": [
         "event:source-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "owner-review",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/38"
@@ -192,7 +225,11 @@
       "documentationFamily": "ARCHITECTURE",
       "kindCandidate": "THREE_ARTIFACT_COMPONENT_BOUNDARY",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/41",
@@ -217,8 +254,13 @@
       "reviewTrigger": [
         "event:artifact-boundary-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/41"
@@ -243,7 +285,11 @@
       "documentationFamily": "GOVERNANCE_EVIDENCE",
       "kindCandidate": "DATAPACK_MOBILE_COMPATIBILITY_MATRIX",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/54",
@@ -267,8 +313,13 @@
       "reviewTrigger": [
         "event:compatibility-contract-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/54"
@@ -293,7 +344,11 @@
       "documentationFamily": "API_CONTRACT",
       "kindCandidate": "SIGNED_DATAPACK_MANIFEST_SCHEMA",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/38",
@@ -318,8 +373,13 @@
       "reviewTrigger": [
         "event:manifest-schema-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/38"
@@ -344,7 +404,11 @@
       "documentationFamily": "ENGINEERING",
       "kindCandidate": "DETERMINISTIC_DATAPACK_BUILDER",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/build-datapack.mjs:61f6ac85542184f4587905065829d74210687251",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/build-datapack.mjs:81c15e3c8bb10cfe7600613129375c97e7fafd68",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/51",
@@ -368,8 +432,13 @@
       "reviewTrigger": [
         "event:builder-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/build-datapack.mjs:61f6ac85542184f4587905065829d74210687251",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/build-datapack.mjs:81c15e3c8bb10cfe7600613129375c97e7fafd68",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/51"
@@ -394,7 +463,11 @@
       "documentationFamily": "OPERATIONS_RELIABILITY",
       "kindCandidate": "SOURCE_ADMISSION_OPERATION_CONTRACT",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/28",
@@ -418,8 +491,13 @@
       "reviewTrigger": [
         "event:source-admission-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/28"
@@ -444,7 +522,11 @@
       "documentationFamily": "SECURITY_PRIVACY",
       "kindCandidate": "SOURCE_GOVERNANCE_LICENSE_RETENTION_POLICY",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/source-governance-policy.json:4805a2d889cb4595bcdfce1f68ee67e902ef2974",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/source-governance-policy.json:4805a2d889cb4595bcdfce1f68ee67e902ef2974",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/29",
@@ -468,8 +550,13 @@
       "reviewTrigger": [
         "event:source-governance-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/source-governance-policy.json:4805a2d889cb4595bcdfce1f68ee67e902ef2974",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/source-governance-policy.json:4805a2d889cb4595bcdfce1f68ee67e902ef2974",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/29"
@@ -494,7 +581,11 @@
       "documentationFamily": "DATA_KNOWLEDGE",
       "kindCandidate": "PRODUCTION_SOURCE_INVENTORY",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/source-inventory.json:fe1cfac834380a1357b2e9b9513aaae95ca2d3c4",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/source-inventory.json:fe1cfac834380a1357b2e9b9513aaae95ca2d3c4",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/28",
@@ -519,8 +610,13 @@
       "reviewTrigger": [
         "event:source-freshness-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/datapack/source-inventory.json:fe1cfac834380a1357b2e9b9513aaae95ca2d3c4",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/datapack/source-inventory.json:fe1cfac834380a1357b2e9b9513aaae95ca2d3c4",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "release-audit",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/28"
@@ -545,7 +641,11 @@
       "documentationFamily": "USER_SUPPORT_LEGAL_PUBLIC",
       "kindCandidate": "ROUTE_MAP_LICENSE_DECISION",
       "sourceSurface": "TRACKED",
+<<<<<<< HEAD
       "canonicalIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
+=======
+      "canonicalIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/21",
@@ -569,8 +669,13 @@
       "reviewTrigger": [
         "event:license-decision-change"
       ],
+<<<<<<< HEAD
       "lastVerifiedAt": "2026-09-30T00:42:00.693Z",
       "lastVerifiedIdentity": "git:6189ae2b0b0accda4ce885a80cc77a698216f5c0:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
+=======
+      "lastVerifiedAt": "2026-09-30T01:53:06.970Z",
+      "lastVerifiedIdentity": "git:ddff24e5cc7169e485889349a22aad8ba194bd0b:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
+>>>>>>> 08d67dae (feat(datapack): 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재 (#840))
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/21"

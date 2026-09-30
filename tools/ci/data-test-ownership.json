@@ -255,6 +255,10 @@
     "data813": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/813",
       "title": "[Feat][DataPack] Promote Platform Info, Integrate Regional Timetables, Expand Car-Door Hints, and Map Official Transfer Edges"
+    },
+    "data840": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/840",
+      "title": "[Feat] 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재"
     }
   },
   "workflows": {
@@ -604,6 +608,7 @@
     {"path":"tools/datapack/read-kric-retained-file-observations.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":23},
     {"path":"tools/datapack/run-public-static-network-v2-operation.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":83},
     {"path":"tools/datapack/send-release-callback.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":302},
+    {"path":"tools/datapack/seoul-metro-congestion.test.mjs","semanticOwner":"data840","classes":["required-pr"],"durationMs":529},
     {"path":"tools/datapack/server-route-bundle-build-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":12},
     {"path":"tools/datapack/server-route-bundle-decompressed-budget.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":150},
     {"path":"tools/datapack/sign-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":677},
