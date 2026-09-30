@@ -259,6 +259,10 @@
     "data840": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/840",
       "title": "[Feat] 서울교통공사 지하철 혼잡도 통계 수집과 역 카탈로그 적재"
+    },
+    "data846": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/846",
+      "title": "[Fix] 원천 인벤토리 변경 뒤 fan-in·소유권 원장 고정값 재생성과 드리프트 검사"
     }
   },
   "workflows": {
@@ -593,6 +597,7 @@
     {"path":"tools/datapack/register-current-static-network-successors.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":29213},
     {"path":"tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":9451},
     {"path":"tools/datapack/register-seoul-transfer-source-snapshot.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":4},
+    {"path":"tools/datapack/release-pin-drift.test.mjs","semanticOwner":"data846","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/replay-current-itx-collection.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":45},
     {"path":"tools/datapack/revalidate-current-molit-transfer-source.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":3725},
     {"path":"tools/datapack/revalidate-current-static-network-sources.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":125},
