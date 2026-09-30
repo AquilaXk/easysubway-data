@@ -7552,6 +7552,115 @@
       "nextAction": "공식 API 관측과 결정론적 layout 입력·출력 hash를 함께 갱신한다"
     },
     {
+      "id": "seoul-metro-station-contact",
+      "priority": "P0",
+      "domain": "station_info",
+      "coverageScope": {
+        "operatorIds": [
+          "seoul-metro"
+        ]
+      },
+      "displayName": "서울교통공사_역주소 및 전화번호",
+      "detailUrl": "https://data.seoul.go.kr/dataList/OA-12035/S/1/datasetView.do",
+      "requestUrl": "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false",
+      "operation": {
+        "method": "POST",
+        "endpoint": "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false",
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [
+          "infId",
+          "seq",
+          "infSeq"
+        ],
+        "responseEnvelope": "CSV(EUC-KR)",
+        "runner": {
+          "command": "node tools/datapack/collect-seoul-metro-station-contact.mjs",
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "serviceKeyHandling": "offline_collection_secret_only",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-12035/S/1/datasetView.do",
+        "retrievedAt": "2026-09-30",
+        "endpoint": "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false",
+        "sampleUrl": "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false",
+        "usePermissionRange": "공공누리 1유형",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "연번",
+          "역번호",
+          "호선",
+          "역명",
+          "역전화번호",
+          "도로명주소",
+          "지번주소"
+        ],
+        "productionUseAdmission": {
+          "artifactKind": "source-production-use-admission",
+          "issue": 838,
+          "decisionRef": "https://github.com/AquilaXk/easysubway-data/issues/838",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-09-30",
+          "scope": "MOBILE_STATION_CATALOG_CONTACT",
+          "productionUseAllowed": true,
+          "consumer": "tools/datapack/build-station-contacts.mjs",
+          "evidenceManifest": "tools/datapack/release/station-contact-inputs.json",
+          "rationale": "QA 결정(2026-09-30): OA-12035 서울교통공사_역주소 및 전화번호는 서울교통공사 관할역 대표 전화번호를 제공하는 공식 원천이다. 모바일 역 카탈로그 station_contacts 적재를 위해 운영 사용으로 승격한다.",
+          "relationToExistingSources": "역 대표 전화번호를 담은 최초의 역 연락처 원천이다. 역코드 매핑은 kric-station-convenience-standard canonicalMappings의 S1 stinCd를 쓰고 이름 조인은 하지 않는다.",
+          "fieldMapping": {
+            "stnNo": "station_contacts.station_id 및 line_id 매핑 키 (4자리 0 채움 역번호)",
+            "line": "station_contacts.line_id 매핑 키 (호선 번호)",
+            "phone": "station_contacts.phone (정규화된 전화번호, 숫자와 -만 유지)",
+            "phoneRaw": "station_contacts.phone_raw (원문 전화번호)"
+          },
+          "license": {
+            "usePermissionRange": "공공누리 1유형",
+            "attribution": "출처: 서울 열린데이터광장 서울교통공사 역주소 및 전화번호(OA-12035)",
+            "attributionLocation": "모바일 역 카탈로그 station_contacts 행의 source_snapshot_id와 이 admission 기록."
+          },
+          "quota": {
+            "selfImposedCallLimit": "NONE",
+            "collectionCadence": "카탈로그 팩 입력 스냅샷 수집 시 1회"
+          }
+        }
+      },
+      "nextAction": "#838에서 모바일 역 카탈로그 station_contacts 적재 용도로 운영 사용 승격(QA 결정 2026-09-30). production inventory(source-inventory.json) 승격은 별도 결정 대상이다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider file; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider file; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data"
+        },
+        "stationInfo": {
+          "status": "OFFICIAL_PROVENANCE_SOURCE",
+          "productionUseAllowed": true,
+          "coverageStatus": "FULL_COVERAGE_FOR_OPERATOR",
+          "updateFrequency": "annual or ad-hoc file revision"
+        }
+      }
+    },
+    {
       "id": "seoul-metro-transfer-distance-duration",
       "priority": "P0",
       "domain": "transfer_walk_duration",
