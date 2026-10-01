@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { applyMeasuredTransferTimePrecedence, prepareNationwideCandidate, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -1144,4 +1144,35 @@ test("#876 전국 후보는 겹치는 방향에 실측 시간·서울 거리를 
   assert.ok(packSource, "실측 원천은 팩 sourceInventory에 있어야 한다(production pathway 계약)");
   assert.equal(packSource.updatedAt, head.capturedAt);
   assert.ok(packSource.fields.includes("station_pathway_edges") && packSource.fields.includes("transfer_rules"));
+});
+
+// #879 리뷰 F1: 후보 시계(evaluatedAt = publishedAt)는 후보가 인용하는 원문 OCI 객체의 저장 시각(receipt storedAt)보다 앞설 수 없다.
+test("#879 F1 후보 시계가 인용 원문의 OCI 저장 시각보다 앞서면 후보 생성이 실패한다", () => {
+  const stored = [{ sourceId: "a", storedAt: "2026-10-01T22:47:24.547Z" }, { sourceId: "b", storedAt: "2026-10-01T05:09:04.373Z" }];
+  assert.doesNotThrow(() => assertCandidateClockAfterRawStorage({ evaluatedAt: "2026-10-01T22:47:24.547Z", stored }));
+  assert.throws(() => assertCandidateClockAfterRawStorage({ evaluatedAt: "2026-10-01T22:47:00.000Z", stored }),
+    /nationwide candidate clock precedes the raw object storage of a cited source: a/);
+  assert.throws(() => assertCandidateClockAfterRawStorage({ evaluatedAt: "2026-10-01T22:47:30.000Z", stored: [{ sourceId: "c", storedAt: "not-a-time" }] }),
+    /nationwide candidate cited raw object storedAt is invalid: c/);
+});
+
+test("#879 F1 실측 환승 원천은 원장 영수증 hash에 결속된 OCI 영수증의 storedAt 이후 시계에서만 쓴다", async () => {
+  const read = (relative) => readFile(path.join(root, relative));
+  const readJson = async (relative) => JSON.parse(await read(relative));
+  const [sourceInventory, sourceSnapshots, freshnessPolicy] = await Promise.all([
+    readJson("tools/datapack/source-inventory.json"), readJson("tools/datapack/release/source-snapshots.json"), readJson("release/product-gates/datapack-freshness-sla.json"),
+  ]);
+  const row = sourceSnapshots.filter(({ sourceId }) => sourceId === MEASURED_SOURCE_ID).at(-1);
+  const receipt = JSON.parse(await read(`tools/datapack/sources/${row.snapshotId}.receipt.json`));
+  assert.equal(sha256(await read(`tools/datapack/sources/${row.snapshotId}.receipt.json`)), row.rawReceiptSha256);
+  const resolved = await resolveSeoulMeasuredTransferMetrics({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt: receipt.storedAt, read });
+  assert.equal(resolved.receipt.storedAt, receipt.storedAt);
+  await assert.rejects(resolveSeoulMeasuredTransferMetrics({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt: "2026-10-01T22:47:00.000Z", read }),
+    /nationwide candidate clock precedes the raw object storage of a cited source: seoul-metro-transfer-car-door-duration/);
+  const tampered = async (relative) => (relative.endsWith(".receipt.json") ? Buffer.from((await read(relative)).toString("utf8").replace(receipt.storedAt, "2026-10-01T16:40:00.000Z")) : read(relative));
+  await assert.rejects(resolveSeoulMeasuredTransferMetrics({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt: receipt.storedAt, read: tampered }),
+    /nationwide candidate Seoul measured transfer receipt does not match the ledger/);
+  // 커밋된 후보는 인용 원문 저장 이후의 시계를 쓴다.
+  const spec = await readJson("tools/datapack/release/candidate-build-spec.json");
+  assert.ok(Date.parse(spec.publishedAt) >= Date.parse(receipt.storedAt), `${spec.publishedAt} < ${receipt.storedAt}`);
 });

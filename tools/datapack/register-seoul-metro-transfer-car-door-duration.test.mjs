@@ -54,6 +54,10 @@ test("원문 snapshot을 한 번 발행하고 inventory admission·원장 행·g
   assert.deepEqual([...client.objects.keys()], [objectKey]);
   assert.ok(client.objects.get(objectKey).equals(snapshotBytes));
   assert.ok((await readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`))).equals(snapshotBytes));
+  // #879 F1: OCI 영수증은 원장 영수증 hash와 같은 바이트로 저장소에 보존된다(후보 시계 ≥ 저장 시각 검사용).
+  const keptReceipt = await readFile(path.join(root, `tools/datapack/sources/${snapshotId}.receipt.json`));
+  assert.ok(keptReceipt.equals(await readFile(receiptPath)));
+  assert.equal(JSON.parse(keptReceipt).storedAt, NOW.toISOString());
 
   const read = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
   const inventory = await read("tools/datapack/source-inventory.json");
@@ -73,6 +77,7 @@ test("원문 snapshot을 한 번 발행하고 inventory admission·원장 행·g
   assert.equal(row.snapshotId, snapshotId);
   assert.equal(row.freshnessExpiresAt, "2027-10-02T02:00:00.000Z", "annual_official_file(P1Y, observedAt 기준)");
   assert.equal(row.rawObjectSha256, sha(snapshotBytes));
+  assert.equal(row.rawReceiptSha256, sha(keptReceipt));
   assert.equal(validateLineage(ledger).headsBySource[SOURCE_ID], snapshotId);
 
   const governance = await read("tools/datapack/source-governance-policy.json");

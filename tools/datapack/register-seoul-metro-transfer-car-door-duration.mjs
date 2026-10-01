@@ -139,11 +139,15 @@ async function outputsFromPrepared(prepared, receiptPath, env, now) {
   validateLineage([...prepared.ledger, row]);
   const snapshotFile = path.join(prepared.root, prepared.snapshotRelative);
   await writeImmutableSnapshot(snapshotFile, prepared.snapshotBytes);
+  // #879 F1: 후보 생성기가 후보 시계와 원문 저장 시각을 대조할 수 있게 OCI 영수증을 원장 영수증 hash와 같은 바이트로 보존한다.
+  const receiptCopy = path.join(prepared.root, `tools/datapack/sources/${prepared.snapshotId}.receipt.json`);
+  await writeImmutableSnapshot(receiptCopy, receiptBytes);
   const inputs = [
     { absolute: prepared.inputPath, bytes: prepared.snapshotBytes },
     { absolute: path.join(prepared.root, "tools/datapack/source-candidates.json"), bytes: prepared.candidateBytes },
     { absolute: receiptFile, bytes: receiptBytes },
     { absolute: snapshotFile, bytes: prepared.snapshotBytes },
+    { absolute: receiptCopy, bytes: receiptBytes },
   ];
   const values = [json(registeredInventory), json([...prepared.ledger, row]), governanceBytes, json(prepared.freshness)];
   return OUTPUTS.map((relative, index) => ({ relative, bytes: values[index], prestateBytes: prepared.currentBytes[index], inputs }));

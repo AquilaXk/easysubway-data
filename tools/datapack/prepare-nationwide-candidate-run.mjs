@@ -335,6 +335,20 @@ export async function resolveBusanTransferMetrics({ fanIn, sourceInventory, read
 // 그 snapshot으로 다시 만든 지표가 커밋된 산출물과 바이트까지 같고, 정책으로 유도한 신선도가 원장과 같고 후보 시계 이후일 때만 쓴다.
 const MEASURED_TRANSFER_SOURCE_ID = "seoul-metro-transfer-car-door-duration";
 const DISTANCE_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+// #879 리뷰 F1: 후보 시계(evaluatedAt = publishedAt)는 후보가 인용하는 원문 OCI 객체의 저장 시각보다 앞설 수 없다.
+export function assertCandidateClockAfterRawStorage({ evaluatedAt, stored }) {
+  const evaluatedMillis = Date.parse(requiredInstant(evaluatedAt, "candidate clock"));
+  for (const { sourceId, storedAt } of stored) {
+    const storedMillis = Date.parse(storedAt);
+    if (typeof storedAt !== "string" || !Number.isFinite(storedMillis) || new Date(storedMillis).toISOString() !== storedAt) {
+      throw new Error(`nationwide candidate cited raw object storedAt is invalid: ${sourceId}`);
+    }
+    if (storedMillis > evaluatedMillis) {
+      throw new Error(`nationwide candidate clock precedes the raw object storage of a cited source: ${sourceId}`);
+    }
+  }
+}
+
 export async function resolveSeoulMeasuredTransferMetrics({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt, read }) {
   const admission = exactInventorySource(sourceInventory, MEASURED_TRANSFER_SOURCE_ID).admissionEvidence;
   const head = validateLineage(sourceSnapshots).headsBySource[MEASURED_TRANSFER_SOURCE_ID];
@@ -366,7 +380,15 @@ export async function resolveSeoulMeasuredTransferMetrics({ sourceInventory, sou
     throw new Error("nationwide candidate Seoul measured transfer freshness does not match the freshness policy");
   }
   if (Date.parse(freshUntil) <= evaluatedMillis) throw new Error("nationwide candidate Seoul measured transfer snapshot is expired");
-  return { artifact, metrics: artifact.metrics, row };
+  // #879 F1: 등록기가 보존한 OCI 영수증은 원장 영수증 hash와 같아야 하고, 그 저장 시각 이후의 후보 시계에서만 쓴다.
+  const receiptBytes = await read(`tools/datapack/sources/${head}.receipt.json`);
+  const receipt = JSON.parse(receiptBytes);
+  if (sha256(receiptBytes) !== row.rawReceiptSha256 || receipt.sourceId !== MEASURED_TRANSFER_SOURCE_ID || receipt.snapshotId !== head
+    || receipt.rawObjectUri !== row.rawObjectUri || receipt.rawObjectSha256 !== row.rawObjectSha256) {
+    throw new Error("nationwide candidate Seoul measured transfer receipt does not match the ledger");
+  }
+  assertCandidateClockAfterRawStorage({ evaluatedAt, stored: [{ sourceId: MEASURED_TRANSFER_SOURCE_ID, storedAt: receipt.storedAt }] });
+  return { artifact, metrics: artifact.metrics, row, receipt };
 }
 
 // #876 메인 결정 B(2026-10-02): 실측 환승시간과 서울교통공사 거리 원천의 우선순위.
@@ -494,6 +516,14 @@ export async function prepareNationwideCandidate({
     admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil,
   } = await resolveMolitTransferSnapshot({
     sourceInventory, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
+  });
+
+  // #879 F1: fan-in이 고른 원장 행 중 영수증 저장 시각을 담은 행도 후보 시계 이전에 저장됐어야 한다.
+  const selectedSnapshotIdsForClock = new Set(fanIn.selectedSources.map(({ snapshotId }) => snapshotId));
+  assertCandidateClockAfterRawStorage({
+    evaluatedAt: fanIn.evaluatedAt,
+    stored: snapshots.filter(({ snapshotId, rawReceipt }) => selectedSnapshotIdsForClock.has(snapshotId) && rawReceipt?.storedAt !== undefined)
+      .map(({ sourceId, rawReceipt }) => ({ sourceId, storedAt: rawReceipt.storedAt })),
   });
 
   // 서울 환승 거리·시간은 fan-in head(원장)와 환승 지표 원천 식별이 같아야 한다.
