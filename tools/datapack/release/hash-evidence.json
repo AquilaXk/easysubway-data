@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "7f94e1dc3ea3f648b0644849015ab59c2d5985a7",
+  "builderGitSha": "c7f1ab4e7ee372daef4b67574f587ed169afd40f",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -38,7 +38,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "21d8849d3ea5ab4b69ab953846fa27da5cae8cb47f7df80137941a78be3fbf17"
+    "sha256": "2f2862e8f1e47fa8a2b6b0333766f98d8ee9f56c58b20bc29637d3d8f7431e35"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
