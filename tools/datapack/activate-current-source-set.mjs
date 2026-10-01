@@ -3591,35 +3591,6 @@ export function parseCurrentSourceActivationArgs(argv) {
   return args;
 }
 
-export function parseCurrentTopologyRefreshArgs(argv) {
-  const args = { check: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
-    if (flag === "--check") {
-      args.check = true;
-      continue;
-    }
-    if (!["--capital-topology", "--incheon-topology", "--incheon-accessibility",
-      "--incheon-line1-timetable", "--incheon-line2-timetable", "--itx-topology-evidence",
-      "--itx-current-admission",
-      "--builder-git-sha", "--build-now"].includes(flag)) {
-      throw new Error(`unknown topology refresh argument: ${flag ?? ""}`);
-    }
-    const value = argv[index + 1];
-    if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value`);
-    const key = flag.slice(2).replaceAll("-", "_");
-    if (args[key] != null) throw new Error(`duplicate topology refresh argument: ${flag}`);
-    args[key] = value;
-    index += 1;
-  }
-  for (const key of ["capital_topology", "incheon_topology", "incheon_accessibility",
-    "incheon_line1_timetable", "incheon_line2_timetable", "itx_topology_evidence",
-    "builder_git_sha", "build_now"]) {
-    if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
-  }
-  return args;
-}
-
 export function parseCurrentTopologySourceAdmissionArgs(argv) {
   const args = { check: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -3692,16 +3663,10 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }
-  const topologyOnly = argv.includes("--topology-only");
   const approvedItxBootstrap = argv.includes("--approved-itx-bootstrap");
-  if (topologyOnly && approvedItxBootstrap) {
-    throw new Error("topology-only and approved ITX bootstrap modes are mutually exclusive");
-  }
   const args = approvedItxBootstrap
     ? parseApprovedItxBootstrapArgs(argv.filter((value) => value !== "--approved-itx-bootstrap"))
-    : topologyOnly
-      ? parseCurrentTopologyRefreshArgs(argv.filter((value) => value !== "--topology-only"))
-      : parseCurrentSourceActivationArgs(argv);
+    : parseCurrentSourceActivationArgs(argv);
   const currentTopologyOptions = {
     capitalTopologyPath: args.capital_topology,
     incheonTopologyPath: args.incheon_topology,
@@ -3709,15 +3674,12 @@ async function main() {
     incheonLine1TimetablePath: args.incheon_line1_timetable,
     incheonLine2TimetablePath: args.incheon_line2_timetable,
     itxTopologyEvidencePath: args.itx_topology_evidence,
-    itxCurrentAdmissionPath: args.itx_current_admission,
     builderGitSha: args.builder_git_sha,
     buildNow: args.build_now,
     check: args.check,
   };
   const result = approvedItxBootstrap
     ? await generateApprovedItxCurrentSourceBootstrap(currentTopologyOptions)
-    : topologyOnly
-      ? await generateCurrentCapitalTopologyRefresh(currentTopologyOptions)
     : await generateCurrentSourceActivation({
         capitalTopologyPath: args.capital_topology,
         incheonTopologyPath: args.incheon_topology,
