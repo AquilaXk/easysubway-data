@@ -288,6 +288,20 @@ export async function resolveMolitTransferSnapshot({ sourceInventory, freshnessP
   return { admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil };
 }
 
+// #872 S3: 공식 환승 지표 원천(서울교통공사·부산교통공사)을 방향별로 모은다. 방향마다 원천 id·snapshot·검증 시각과
+// 원천 시간을 함께 들고, 두 원천(또는 한 원천의 중복 행)이 같은 방향을 주장하면 어느 값도 고르지 않고 실패한다.
+export function officialTransferMetricsByDirection(sources) {
+  const byDirection = new Map();
+  for (const { sourceId, sourceSnapshotId, lastVerifiedAt, metrics, durationOf } of sources) {
+    for (const metric of metrics) {
+      const key = `${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`;
+      if (byDirection.has(key)) throw new Error(`nationwide candidate transfer metric is claimed by two sources: ${key}`);
+      byDirection.set(key, { metric, sourceId, sourceSnapshotId, lastVerifiedAt, durationSeconds: durationOf(metric) });
+    }
+  }
+  return byDirection;
+}
+
 // #872 S3: 부산교통공사 공식 환승 지표는 fan-in이 고른 부산 원천 head snapshot에서 다시 만든 결과와 커밋된 산출물이
 // 바이트까지 같고, 원천 식별(snapshot·raw·content·수집 시각)이 그 head와 같을 때만 쓴다.
 export async function resolveBusanTransferMetrics({ fanIn, sourceInventory, read }) {
@@ -485,24 +499,17 @@ export async function prepareNationwideCandidate({
 
   // #872 S3: 공식 환승 지표는 서울교통공사 지표와 부산교통공사 지표다. 방향마다 원천 id·snapshot·검증 시각과
   // 값(거리, 원천 시간)을 함께 들고, 두 원천이 같은 방향을 주장하면 실패한다.
-  const officialTransferMetricMap = new Map();
-  const addOfficialTransferMetric = (metric, entry) => {
-    const key = `${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`;
-    if (officialTransferMetricMap.has(key)) throw new Error(`nationwide candidate transfer metric is claimed by two sources: ${key}`);
-    officialTransferMetricMap.set(key, { metric, ...entry });
-  };
-  for (const m of transferMetrics.metrics) {
-    addOfficialTransferMetric(m, {
+  const officialTransferMetricMap = officialTransferMetricsByDirection([
+    {
       sourceId: "seoul-metro-transfer-distance-duration", sourceSnapshotId: seoulTransferHead.snapshotId,
-      lastVerifiedAt: seoulTransferCapturedAt, durationSeconds: m.officialDurationSecondsReference,
-    });
-  }
-  for (const m of busanTransfer.metrics) {
-    addOfficialTransferMetric(m, {
+      lastVerifiedAt: seoulTransferCapturedAt, metrics: transferMetrics.metrics, durationOf: (m) => m.officialDurationSecondsReference,
+    },
+    {
       sourceId: "busan-transportation-route-topology", sourceSnapshotId: busanTransfer.head.snapshotId,
-      lastVerifiedAt: requiredInstant(busanTransfer.head.capturedAt, "Busan transfer capturedAt"), durationSeconds: m.officialDurationSeconds,
-    });
-  }
+      lastVerifiedAt: requiredInstant(busanTransfer.head.capturedAt, "Busan transfer capturedAt"),
+      metrics: busanTransfer.metrics, durationOf: (m) => m.officialDurationSeconds,
+    },
+  ]);
 
   const stationPathwayNodes = [];
   const stationPathwayEdges = [];

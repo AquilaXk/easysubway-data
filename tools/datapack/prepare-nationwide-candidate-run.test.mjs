@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { prepareNationwideCandidate, formatPlatformInfo, gwangjuFacilityState, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { prepareNationwideCandidate, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -1004,4 +1004,23 @@ test("#872 S3 생성기는 커밋된 부산 환승 지표가 fan-in head·재계
   otherHead.selectedSources.find(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID).rawSha256 = "0".repeat(64);
   await assert.rejects(resolveBusanTransferMetrics({ fanIn: otherHead, sourceInventory, read }),
     /nationwide candidate Busan transfer metrics do not match the fan-in head/);
+});
+
+// #872 S3 리뷰 F1: 한 환승 방향을 서울교통공사·부산교통공사 두 원천이 함께 주장하면 어느 값도 고르지 않고 실패한다.
+test("#872 S3 한 환승 방향을 두 공식 원천이 함께 주장하면 후보 생성이 실패한다", () => {
+  const metric = { stationId: "station-1fc7a7c971c8", fromLineId: "line-ab1a041f6266", toLineId: "line-eb7b47920390" };
+  const seoul = { sourceId: SEOUL_TRANSFER_SOURCE_ID, sourceSnapshotId: "seoul-snapshot", lastVerifiedAt: "2026-08-15T09:40:38.817Z",
+    metrics: [{ ...metric, officialDurationSecondsReference: 90 }], durationOf: (m) => m.officialDurationSecondsReference };
+  const busan = { sourceId: BUSAN_TRANSFER_SOURCE_ID, sourceSnapshotId: "busan-snapshot", lastVerifiedAt: "2026-10-01T04:15:27.569Z",
+    metrics: [{ ...metric, officialDurationSeconds: 120 }], durationOf: (m) => m.officialDurationSeconds };
+
+  const separate = officialTransferMetricsByDirection([seoul, { ...busan, metrics: [{ ...metric, fromLineId: metric.toLineId, toLineId: metric.fromLineId, officialDurationSeconds: 120 }] }]);
+  assert.equal(separate.size, 2);
+  assert.deepEqual(separate.get(`${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`).sourceId, SEOUL_TRANSFER_SOURCE_ID);
+  assert.equal(separate.get(`${metric.stationId}:${metric.toLineId}->${metric.fromLineId}`).durationSeconds, 120);
+
+  assert.throws(() => officialTransferMetricsByDirection([seoul, busan]),
+    /nationwide candidate transfer metric is claimed by two sources: station-1fc7a7c971c8:line-ab1a041f6266->line-eb7b47920390/);
+  assert.throws(() => officialTransferMetricsByDirection([{ ...busan, metrics: [...busan.metrics, ...busan.metrics] }]),
+    /claimed by two sources/);
 });
