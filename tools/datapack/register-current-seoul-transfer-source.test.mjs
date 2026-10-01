@@ -62,7 +62,7 @@ async function compositionFixture(t) {
   assert.equal(applicability.artifactSha256, sha(Buffer.from(`${canonicalJson(applicabilityPayload)}\n`)));
   assert.equal(applicability.productionUseAllowed, false); assert.equal(applicability.candidateBinding, null);
   assert.deepEqual(applicability.canonicalIdentity, metrics.canonicalIdentity); assert.deepEqual(applicability.sourceIdentity, metrics.sourceIdentity);
-  assert.equal(applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT, 27); assert.equal(applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, 186);
+  assert.equal(applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT, 160); assert.equal(applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, 538); // #872 S2
   const selectedRows = candidate.value.sourceSnapshotIds.map((snapshotId) => {
     const matches = ledger.value.filter((row) => row.snapshotId === snapshotId);
     assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);

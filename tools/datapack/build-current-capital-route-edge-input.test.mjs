@@ -44,19 +44,20 @@ test("full-capital route fan-in은 input-derived edge sets를 만든다", async 
 // #872 S2(#866에서 전국 경로로 대체 후 삭제): 수도권 route-edge input은 수도권 station-line 분모 안에 두 끝점이 모두 있는
 // 쌍의 지표만 IN_STATION_TRANSFER로 쓴다. 분모 밖·한쪽만 분모 안인 쌍은 전국 경로에서만 쓴다.
 test("수도권 route-edge input은 분모 안에 온전히 들어가는 환승 쌍만 쓴다", async () => {
-  const baseline = await buildCurrentCapitalStationLineInputFixture();
-  const widened = widenFixtureTransferMetricsBeyondCapitalDomain(await buildCurrentCapitalStationLineInputFixture());
-  for (const input of [baseline, widened]) {
-    const routeOnly = addFullRouteStationLines(input);
-    input.canonicalPack.packs[0].networkEdges = [rideEdgeBetween(routeOnly[0], routeOnly[1])];
-  }
-  const before = buildCurrentCapitalRouteEdgeInput(baseline);
-  const after = buildCurrentCapitalRouteEdgeInput(widened);
-  const transfers = (result) => result.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
-  assert.ok(transfers(before).length > 0);
-  assert.deepEqual(transfers(after), transfers(before));
-  assert.deepEqual(after.routeEdges, before.routeEdges);
-  assert.equal(widened.transferMetrics.metrics.length, baseline.transferMetrics.metrics.length + 4);
+  const input = widenFixtureTransferMetricsBeyondCapitalDomain(await buildCurrentCapitalStationLineInputFixture());
+  const routeOnly = addFullRouteStationLines(input);
+  input.canonicalPack.packs[0].networkEdges = [rideEdgeBetween(routeOnly[0], routeOnly[1])];
+  const result = buildCurrentCapitalRouteEdgeInput(input);
+  const station = buildCurrentCapitalStationLineInput(input);
+  // 독립 기대값: 분모(station-line input stationLines) 안에 두 끝점이 모두 있는 지표만 고른다.
+  const domain = new Set(station.stationLines.map(({ stationId, lineId }) => `${stationId}|${lineId}`));
+  const inside = input.transferMetrics.metrics.filter(({ stationId, fromLineId, toLineId }) => domain.has(`${stationId}|${fromLineId}`) && domain.has(`${stationId}|${toLineId}`));
+  assert.equal(inside.length, 2);
+  assert.equal(input.transferMetrics.metrics.length, 6);
+  const rides = routeFixtureRides(input.canonicalPack.packs[0].networkEdges);
+  assertExactRouteFanIn(result.routeEdges, { rides, stationLines: station.stationLines, metrics: inside });
+  const transferIds = result.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map(({ edgeId }) => edgeId).sort();
+  assert.deepEqual(transferIds, ["edge-transfer-station-z-fixture-transfer-fixture-a-fixture-b", "edge-transfer-station-z-fixture-transfer-fixture-b-fixture-a"]);
 });
 
 // #872 S2: S2 전후로 수도권 route-edge input의 routeEdges·stationLines 바이트는 같다(origin/main 8a1d0c36 기준 hash).

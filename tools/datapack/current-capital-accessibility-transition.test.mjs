@@ -598,7 +598,8 @@ async function createFixture(t, { extraSourceIds = [] } = {}) {
       : { accessibility: { status: "SUPPORTED" } },
     admissionEvidence: { adminReviewRecordHash: String.fromCharCode(100 + index).repeat(64) },
     ...(id === TRANSFER_SOURCE_ID
-      ? { transferAdmissionEvidence: { decision: "APPROVED", productionUseAllowed: true, snapshotId: transfer.snapshotId } }
+      // #872 S2: coverageStatus는 admission 개수에서 유도한다.
+      ? { transferAdmissionEvidence: { decision: "APPROVED", productionUseAllowed: true, snapshotId: transfer.snapshotId, physicalPairCount: 15, directedMetricCount: 30 } }
       : {}),
   }));
   const sourceInventory = {

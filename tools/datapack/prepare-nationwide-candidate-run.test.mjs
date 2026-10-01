@@ -161,12 +161,13 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
   const transferUnknown = transferRows.filter(
     (r) => r.state === "UNKNOWN" && r.evidenceKind === "PROVIDER_NO_DATA" && r.evidenceReason === "TRANSFER_DATA_NOT_PROVIDED"
   );
-  assert.strictEqual(transferUnknown.length, 251, "Unmeasured transfer stations must be UNKNOWN/PROVIDER_NO_DATA");
+  // #872 S2: 서울교통공사 환승 지표 끝점이 27에서 160으로 늘어 미측정 환승 역-노선이 251에서 118로 줄었다.
+  assert.strictEqual(transferUnknown.length, 118, "Unmeasured transfer stations must be UNKNOWN/PROVIDER_NO_DATA");
 
   const transferPresent = transferRows.filter(
     (r) => r.state === "VERIFIED_PRESENT" && r.evidenceKind === "OBSERVED"
   );
-  assert.strictEqual(transferPresent.length, 53, "Measured transfer stations must be VERIFIED_PRESENT");
+  assert.strictEqual(transferPresent.length, 186, "Measured transfer stations must be VERIFIED_PRESENT");
 });
 
 test("nationwide route edge input rejects fake constants and unverified outdoor links", async () => {
