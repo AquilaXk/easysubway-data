@@ -1752,7 +1752,7 @@ export async function prepareNationwideCandidate({
         },
         itxCoverageContract: {
           path: "tools/datapack/itx-cheongchun-coverage-contract.json",
-          sha256: "a5d64bbabd8d4ef5f88a3f06c6eb1a3ebc2c682e62e42b899d8b8e689bb26d8c",
+          sha256: "ef043278207d42ca1ab68689b5afc3b391fe24673659aa65475c56a17f76726f",
         },
         incheonTimetables: {
           line1: {
@@ -1772,8 +1772,8 @@ export async function prepareNationwideCandidate({
         snapshotId: "seoul-metro-official-od-fares-current-20260826T035408251Z",
         rawSha256: "9b15822f3e82d8c360be1c9006ae691ec87c7117e3f8ec47d25eec93132fcb4a",
       },
-      itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
-      itxTopologyEvidenceSha256: "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d",
+      itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260930163854026.json",
+      itxTopologyEvidenceSha256: "91436f7722d2faf8e8b17e91936fa044f5020c51c6dc1a79d8ff2930c33946ab",
     },
     releaseIdentity: {
       candidateId,
