@@ -41,24 +41,24 @@
         "snapshotId": "capital-route-topology-20260724"
       },
       "capitalTopologyCandidate": {
-        "path": "tools/datapack/sources/capital-route-topology-20261001.json",
-        "sha256": "f3e0115636b999d442385e81f669b29c197c298bb2320032d7529bb62bc99fdd",
-        "snapshotId": "capital-route-topology-20261001"
+        "path": "tools/datapack/sources/capital-route-topology-20261001T073136043Z.json",
+        "sha256": "3f335a1748cee9258703542a3d5c5e5d73c57c4ced265d508604d509cc59a83e",
+        "snapshotId": "capital-route-topology-20261001T073136043Z"
       },
       "capitalTopologyReverification": {
-        "path": "tools/datapack/release/capital-topology-reverification-20261001.json",
-        "sha256": "ad2431f8a8adb5347042e7eb63557a79c33e9c5974c91e99e10d745160db4eda"
+        "path": "tools/datapack/release/capital-topology-reverification-20261001T073136043Z.json",
+        "sha256": "e4e94487b79823e2c5572a83e6710fb531519dd815be47598779cb20f0b37fc1"
       },
       "capitalTopologyAdmission": {
         "schemaVersion": 1,
         "artifactKind": "capital-network-edge-admission",
         "issue": 2649,
         "status": "ADMITTED",
-        "snapshotId": "capital-route-topology-20261001",
+        "snapshotId": "capital-route-topology-20261001T073136043Z",
         "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-        "reviewedAt": "2026-10-01T04:09:54.809Z",
-        "reverifiedAt": "2026-10-01T04:09:54.809Z",
-        "freshUntil": "2026-10-02T04:09:54.809Z"
+        "reviewedAt": "2026-10-01T07:31:36.043Z",
+        "reverifiedAt": "2026-10-01T07:31:36.043Z",
+        "freshUntil": "2026-10-02T07:31:36.043Z"
       },
       "itxCoverageContract": {
         "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -118,11 +118,11 @@
   },
   "releaseIdentity": {
     "candidateId": "nationwide-candidate-20261001-seq123",
-    "publishedAt": "2026-10-01T05:29:50.737Z",
+    "publishedAt": "2026-10-01T07:38:54.034Z",
     "releaseSequence": 123
   },
   "builderIdentity": {
-    "gitSha": "eda7dd1ade621bfb940cabda222ab83f3f789506",
+    "gitSha": "3cb1c2b9d609be8e92facd02f9b7794decd299a7",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
@@ -134,10 +134,10 @@
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "9983dd63467228d367423aa299339c176c4c163aa31f58571feff3a2a861f047"
+    "sha256": "08c0b9367f878e9ad21ced748d41aaf74ca6988553e19bd6d8f9af556d42f4a8"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "5f7ad757f943643dc54b5530ef0b59b2c9fb567c6b9866e6751a042fc1601478"
+    "sha256": "1d639201174e45b1e0e6fa435b50c76f329aeda212df2fe36411c6531bc4e245"
   }
 }

@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "nationwide-candidate-20261001-seq123",
-  "publishedAt": "2026-10-01T05:29:50.737Z",
+  "publishedAt": "2026-10-01T07:38:54.034Z",
   "releaseSequence": 123,
-  "builderGitSha": "eda7dd1ade621bfb940cabda222ab83f3f789506",
+  "builderGitSha": "3cb1c2b9d609be8e92facd02f9b7794decd299a7",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "7befe9029f79237814dae7e4f0a9cd4cba2fcb29da9d22171e8eb4480ae08e5b",
+  "fixtureSha256": "8f082051875ae1fec1b435430338379a294d655cd23199410c081501e1f6c45a",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -42,7 +42,6 @@
     "seoul-metro-transfer-distance-duration-20260815T094038817Z",
     "incheon-transit-accessibility-20260828T043356000Z",
     "kric-subway-timetable-line4-pilot-20261001",
-    "capital-route-topology-20261001",
     "gwangju-transportation-route-topology-3af85bfa84a860bbddac20107ab45b389de6747ce1667f66b9b078d5124149f3",
     "busan-transportation-route-topology-31fc36651cdb7859ac3c0171c2ee26af8808809b8443899905908960d295d275",
     "daejeon-station-distance-fare-87ad138b36903609a6cabd4cbb18fdeac16aea37efd4c41c4a40197f871fbe5a",
@@ -65,7 +64,8 @@
     "seoul-metro-accessibility-20261001T042552955Z",
     "korail-metropolitan-timetable-file-7a34f3e534ef449dce947fbcd5e2022888b2c69922972c32e47ec8e729caad75",
     "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
-    "kric-station-convenience-standard-20261001T050747096Z"
+    "kric-station-convenience-standard-20261001T050747096Z",
+    "capital-route-topology-20261001T073136043Z"
   ],
   "sourceSnapshots": [
     {
@@ -118,26 +118,6 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
       "adminReviewRecordHash": "f244a607eb65939218fbd602ebc9d3cfe74d3e98a941369b3fe6f9007ccd9228"
-    },
-    {
-      "snapshotId": "capital-route-topology-20261001",
-      "sourceId": "capital-route-topology",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261001/f3e0115636b999d442385e81f669b29c197c298bb2320032d7529bb62bc99fdd.json",
-      "rawSha256": "f3e0115636b999d442385e81f669b29c197c298bb2320032d7529bb62bc99fdd",
-      "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
-      "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-02T04:09:54.809Z",
-      "rawRetentionExpiresAt": "2026-12-30T04:09:54.809Z",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "f9a3269c82e5fa46d12c7b2751db3037f569ad6684eeabd1926e03229b9d47b4"
-        }
-      ]
     },
     {
       "snapshotId": "gwangju-transportation-route-topology-3af85bfa84a860bbddac20107ab45b389de6747ce1667f66b9b078d5124149f3",
@@ -619,10 +599,32 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
+    },
+    {
+      "snapshotId": "capital-route-topology-20261001T073136043Z",
+      "sourceId": "capital-route-topology",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/capital-route-topology/20261001/3f335a1748cee9258703542a3d5c5e5d73c57c4ced265d508604d509cc59a83e.json",
+      "rawSha256": "3f335a1748cee9258703542a3d5c5e5d73c57c4ced265d508604d509cc59a83e",
+      "redactedRequestFingerprint": "48e28ec7e925e886e550e4683f8b9f8179ca65e26ae41d1034f453752a362ed0",
+      "schemaFingerprint": "98056484711402083b1c473887f48a6b01ac4edaa95884b9bde3b420fff684f9",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-10-02T07:31:36.043Z",
+      "rawRetentionExpiresAt": "2026-12-30T07:31:36.043Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "b74b9e63beb0dcf34428a3eb99529b18bcdac1a4fd95675c10f9e42c0861833b"
+        }
+      ]
     }
   ],
-  "sourceSnapshotSetHash": "3b96f1a5b5dd4c74a349e36b105b5677f30dded3bcd6a8da409a790113fe3e14",
-  "sourceInventorySha256": "300bfece9bb7d1d710670324e6eeda2c3f13e8e66b8be255a033a4a4a1317114",
+  "sourceSnapshotSetHash": "a355ce223ca35ad1f8d286e61fc328d4fffee7bd6454c583abf006753f768b8e",
+  "sourceInventorySha256": "6c9fceb80346463cf4d4e8a0bb8a7e487dbe59cf29f7512ff651d928f1250cb6",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "eb16c5de81c2aefa6fcc4651dc3b87424a28346564dd09a5915ca454f545dda4"
@@ -639,24 +641,24 @@
       "snapshotId": "capital-route-topology-20260724"
     },
     "capitalTopologyCandidate": {
-      "path": "tools/datapack/sources/capital-route-topology-20261001.json",
-      "sha256": "f3e0115636b999d442385e81f669b29c197c298bb2320032d7529bb62bc99fdd",
-      "snapshotId": "capital-route-topology-20261001"
+      "path": "tools/datapack/sources/capital-route-topology-20261001T073136043Z.json",
+      "sha256": "3f335a1748cee9258703542a3d5c5e5d73c57c4ced265d508604d509cc59a83e",
+      "snapshotId": "capital-route-topology-20261001T073136043Z"
     },
     "capitalTopologyReverification": {
-      "path": "tools/datapack/release/capital-topology-reverification-20261001.json",
-      "sha256": "ad2431f8a8adb5347042e7eb63557a79c33e9c5974c91e99e10d745160db4eda"
+      "path": "tools/datapack/release/capital-topology-reverification-20261001T073136043Z.json",
+      "sha256": "e4e94487b79823e2c5572a83e6710fb531519dd815be47598779cb20f0b37fc1"
     },
     "capitalTopologyAdmission": {
       "schemaVersion": 1,
       "artifactKind": "capital-network-edge-admission",
       "issue": 2649,
       "status": "ADMITTED",
-      "snapshotId": "capital-route-topology-20261001",
+      "snapshotId": "capital-route-topology-20261001T073136043Z",
       "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-      "reviewedAt": "2026-10-01T04:09:54.809Z",
-      "reverifiedAt": "2026-10-01T04:09:54.809Z",
-      "freshUntil": "2026-10-02T04:09:54.809Z"
+      "reviewedAt": "2026-10-01T07:31:36.043Z",
+      "reverifiedAt": "2026-10-01T07:31:36.043Z",
+      "freshUntil": "2026-10-02T07:31:36.043Z"
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -676,7 +678,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "621a347c25839435dc7cca279afd772bb4a129e7ab89bd81dfeac2f8418b3bb0"
+      "sha256": "85bbd0c09c58a285fcb5c1a0c9751a587fba4fa5a2debd42146819822542ddf0"
     }
   },
   "officialOdFareEvidence": {
