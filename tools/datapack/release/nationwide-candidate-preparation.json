@@ -122,7 +122,7 @@
     "releaseSequence": 123
   },
   "builderIdentity": {
-    "gitSha": "4126374deeaea4dae235a93532c040a1c60ff93b",
+    "gitSha": "c7f1ab4e7ee372daef4b67574f587ed169afd40f",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
@@ -134,7 +134,7 @@
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "64147d9c9c944c6f106ac3afcd3f8a007e795935ed4483fa47f1734ac1ad0085"
+    "sha256": "6ab26ab8ab7ccbbc0a774ce8b3df84fd57b95f7f9b00cf4c56c50b2a308907a2"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",

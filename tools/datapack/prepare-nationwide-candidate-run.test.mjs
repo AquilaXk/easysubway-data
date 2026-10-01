@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { prepareNationwideCandidate, formatPlatformInfo, gwangjuFacilityState, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { prepareNationwideCandidate, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -190,7 +190,8 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   assert.strictEqual(exits.length, 1102);
   // #872 S1(D1): 공식 지표가 없는 역내 환승은 0s/0m 행으로 두지 않고 뺀다.
   // #872 S2: 서울교통공사 지표가 1~8호선과 상대 노선 전체(102쌍, OFFICIAL 140·DERIVED_RECIPROCAL 64)로 넓어졌다.
-  assert.strictEqual(inStationTransfers.length, 204);
+  // #872 S3: 부산교통공사 원천의 1~4호선 내부 환승 6역 12방향(OFFICIAL)이 더해졌다.
+  assert.strictEqual(inStationTransfers.length, 216);
   assert.strictEqual(outOfStationTransfers.length, 14);
 
   // 2. ENTRY edges: no fake 90s/50m constant, all 0s/0m
@@ -215,7 +216,7 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   const zeroTransfers = inStationTransfers.filter((e) => e.durationSeconds === 0 && e.distanceMeters === 0);
   const measuredTransfers = inStationTransfers.filter((e) => e.durationSeconds > 0 && e.distanceMeters > 0);
   assert.strictEqual(zeroTransfers.length, 0);
-  assert.strictEqual(measuredTransfers.length, 204);
+  assert.strictEqual(measuredTransfers.length, 216);
 
   // 5. Canonical pack outdoor transfers must NOT have future timestamps or fabricated NO_STAIRS/AVAILABLE
   const canonicalPack = result.finalPack;
@@ -763,6 +764,8 @@ test("광주 FACILITY 판정은 null을 미관측으로, 0만 있을 때만 부�
 const TRANSFER_METRICS_PATH = "tools/datapack/release/current-transfer-topology-metrics.json";
 const SEOUL_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const MOLIT_TRANSFER_SOURCE_ID = "molit-railway-transfer-movement";
+const BUSAN_TRANSFER_METRICS_PATH = "tools/datapack/release/current-busan-transfer-metrics.json";
+const BUSAN_TRANSFER_SOURCE_ID = "busan-transportation-route-topology";
 // 이슈 #872 재현 근거의 부산·대구 MOLIT 환승역: 동래(역 밖 횡단 경로를 무단차로 단정), 거제·벡스코(다른 방향 경로 대체).
 const MOLIT_ESTIMATE_STATION_IDS = ["station-dbfe9e072d98", "station-623ba7995f56", "station-fbcc387e1db9"];
 
@@ -773,7 +776,12 @@ async function preparedTransferEvidence() {
     releaseSequence: 122,
     writeFiles: false,
   });
-  const metrics = JSON.parse(await readFile(path.join(root, TRANSFER_METRICS_PATH), "utf8")).metrics;
+  // #872 S3: 공식 환승 지표는 서울교통공사 지표와 부산교통공사 지표 두 원천이다. 방향마다 원천 id와 시간을 함께 들고 다닌다.
+  const seoulMetrics = JSON.parse(await readFile(path.join(root, TRANSFER_METRICS_PATH), "utf8")).metrics
+    .map((metric) => ({ ...metric, sourceId: SEOUL_TRANSFER_SOURCE_ID }));
+  const busanMetrics = JSON.parse(await readFile(path.join(root, BUSAN_TRANSFER_METRICS_PATH), "utf8")).metrics
+    .map((metric) => ({ ...metric, sourceId: BUSAN_TRANSFER_SOURCE_ID, officialDurationSecondsReference: metric.officialDurationSeconds }));
+  const metrics = [...seoulMetrics, ...busanMetrics];
   const metricByDirection = new Map(metrics.map((metric) => [
     `${metric.stationId}\0${metric.fromLineId}\0${metric.toLineId}`, metric,
   ]));
@@ -816,13 +824,25 @@ test("#872 S1 공식 지표가 없는 환승 쌍은 경로 행을 만들지 않�
 });
 
 test("#872 S1 MOLIT 환승 이동 원천은 거리·시간·무단차 간선에 쓰지 않는다(추정 공식·다른 방향 대체·AVAILABLE 단정 금지)", async () => {
-  const { result } = await preparedTransferEvidence();
+  const { result, metricByDirection } = await preparedTransferEvidence();
   const pack = result.finalPack;
   const molitStations = new Set(MOLIT_ESTIMATE_STATION_IDS);
 
   assert.deepEqual(pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === MOLIT_TRANSFER_SOURCE_ID).map(({ id }) => id), []);
-  assert.deepEqual(pack.stationPathwayEdges.filter(({ id }) => [...molitStations].some((stationId) => id.includes(stationId))).map(({ id }) => id), []);
+  // #872 S3: 동래(1↔4호선)는 부산교통공사 공식 환승 행이 생겼다. 이 역들의 경로 행은 그 공식 원천에서만 나온다.
+  // 거제·벡스코(동해선 외부 코드)는 공식 행을 역 코드로 매핑할 수 없어 여전히 경로 행이 없다.
+  assert.deepEqual(pack.stationPathwayEdges.filter(({ id, sourceId }) => [...molitStations].some((stationId) => id.includes(stationId))
+    && sourceId !== BUSAN_TRANSFER_SOURCE_ID).map(({ id }) => id), []);
+  assert.deepEqual(pack.stationPathwayEdges.filter(({ id }) => ["station-623ba7995f56", "station-fbcc387e1db9"].some((stationId) => id.includes(stationId)))
+    .map(({ id }) => id), []);
   for (const rule of pack.transferRules.filter(({ fromStationId }) => molitStations.has(fromStationId))) {
+    const official = metricByDirection.get(`${rule.fromStationId}\0${rule.fromLineId}\0${rule.toLineId}`);
+    if (official) {
+      assert.equal(official.sourceId, BUSAN_TRANSFER_SOURCE_ID, `rule ${rule.id} may only be backed by the Busan official source`);
+      assert.equal(rule.sourceId, BUSAN_TRANSFER_SOURCE_ID);
+      assert.equal(rule.minTransferSeconds, official.officialDurationSeconds, `rule ${rule.id} must carry the official source value only`);
+      continue;
+    }
     assert.equal(rule.sourceId, "", `MOLIT rule ${rule.id} must not claim a source`);
     assert.equal(rule.verificationStatus, "UNVERIFIED", `MOLIT rule ${rule.id} must stay UNVERIFIED`);
     assert.equal(rule.minTransferSeconds, 0, `MOLIT rule ${rule.id} must not carry max(120, n*30) estimate`);
@@ -834,7 +854,10 @@ test("#872 S1 MOLIT 환승 이동 원천은 거리·시간·무단차 간선에 
 
   const molitRouteTransfers = result.routeInput.routeEdges.filter(({ edgeType, fromNodeId }) =>
     edgeType === "IN_STATION_TRANSFER" && molitStations.has(fromNodeId.split(":")[0]));
-  assert.deepEqual(molitRouteTransfers.map(({ edgeId }) => edgeId), []);
+  assert.deepEqual(molitRouteTransfers.filter(({ fromNodeId, toNodeId }) => {
+    const [stationId, fromLineId] = fromNodeId.split(":");
+    return metricByDirection.get(`${stationId}\0${fromLineId}\0${toNodeId.split(":")[1]}`)?.sourceId !== BUSAN_TRANSFER_SOURCE_ID;
+  }).map(({ edgeId }) => edgeId), []);
 });
 
 test("#872 S1 서울 환승 경로 행은 같은 방향 공식 지표의 sourceRecordSha256·거리·시간과 같고, 역방향(DERIVED_RECIPROCAL) 쌍은 경로 행 없이 route edge만 유지한다", async () => {
@@ -851,7 +874,8 @@ test("#872 S1 서울 환승 경로 행은 같은 방향 공식 지표의 sourceR
   for (const edge of pack.stationPathwayEdges) {
     const metric = metricByDirection.get(edgeDirection(edge));
     assert.equal(metric.metricProvenance, "OFFICIAL_SOURCE", `edge ${edge.id} must not use a derived reciprocal value`);
-    assert.equal(edge.sourceId, SEOUL_TRANSFER_SOURCE_ID);
+    // #872 S3: 경로 행의 원천 id는 그 방향 공식 지표의 원천(서울교통공사 또는 부산교통공사)과 같아야 한다.
+    assert.equal(edge.sourceId, metric.sourceId);
     assert.equal(edge.provenanceKind, "OFFICIAL_SOURCE");
     assert.equal(edge.verificationStatus, "VERIFIED");
     assert.ok(sourceRecordHashes.has(edge.providerRecordHash), `edge ${edge.id} hash must exist in metrics`);
@@ -863,7 +887,7 @@ test("#872 S1 서울 환승 경로 행은 같은 방향 공식 지표의 sourceR
   for (const rule of pack.transferRules.filter(({ pathwayEdgeId }) => pathwayEdgeId !== null)) {
     const metric = metricByDirection.get(`${rule.fromStationId}\0${rule.fromLineId}\0${rule.toLineId}`);
     assert.equal(metric?.metricProvenance, "OFFICIAL_SOURCE", `rule ${rule.id} must reference only an official pathway edge`);
-    assert.equal(rule.sourceId, SEOUL_TRANSFER_SOURCE_ID);
+    assert.equal(rule.sourceId, metric.sourceId);
     assert.equal(rule.verificationStatus, "VERIFIED");
     assert.equal(rule.minTransferSeconds, metric.officialDurationSecondsReference);
   }
@@ -903,4 +927,112 @@ test("#872 S1 route-edge input은 공식 지표가 없는 역내 환승을 0s/0m
   }
   assert.deepEqual(transfers.filter(({ durationSeconds, distanceMeters }) => durationSeconds === 0 || distanceMeters === 0)
     .map(({ edgeId }) => edgeId), []);
+});
+
+// #872 S3(QA 결정 2026-10-02): 부산교통공사 원천의 환승 행(1~4호선 내부)을 공식 환승 거리·시간으로 쓴다.
+// 경로 행·규칙·route edge는 fan-in이 고른 부산 원천 head에 결속되고, 값은 원천 그대로(100m·분 단위)다.
+test("#872 S3 부산교통공사 공식 환승 행은 fan-in head에 결속된 OFFICIAL_SOURCE 경로 행·규칙·route edge가 된다", async () => {
+  const { result, metrics, edgeDirection } = await preparedTransferEvidence();
+  const pack = result.finalPack;
+  const fanIn = JSON.parse(await readFile(path.join(root, "tools/datapack/release/current-five-region-source-fan-in.json"), "utf8"));
+  const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID);
+  const busanMetrics = metrics.filter(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID);
+  const seoulOfficial = metrics.filter(({ sourceId, metricProvenance }) => sourceId === SEOUL_TRANSFER_SOURCE_ID && metricProvenance === "OFFICIAL_SOURCE");
+  assert.equal(busanMetrics.length, 12);
+  assert.equal(new Set(busanMetrics.map(({ stationId }) => stationId)).size, 6);
+
+  const busanEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID);
+  assert.equal(busanEdges.length, busanMetrics.length);
+  assert.equal(pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === SEOUL_TRANSFER_SOURCE_ID).length, seoulOfficial.length,
+    "서울 경로 행은 그대로다");
+  const busanByDirection = new Map(busanMetrics.map((metric) => [`${metric.stationId}\0${metric.fromLineId}\0${metric.toLineId}`, metric]));
+  for (const edge of busanEdges) {
+    const metric = busanByDirection.get(edgeDirection(edge));
+    assert.ok(metric, `Busan edge ${edge.id} has no Busan official metric`);
+    assert.equal(edge.sourceSnapshotId, head.snapshotId);
+    assert.equal(edge.lastVerifiedAt, head.capturedAt);
+    assert.equal(edge.provenanceKind, "OFFICIAL_SOURCE");
+    assert.equal(edge.verificationStatus, "VERIFIED");
+    assert.equal(edge.providerRecordHash, metric.sourceRecordSha256);
+    assert.equal(edge.evidenceHash, metric.sourceRecordSha256);
+    assert.equal(edge.distanceMeters, metric.distanceMeters);
+    assert.equal(edge.durationSeconds, metric.officialDurationSeconds);
+    assert.equal(edge.distanceMeters % 100, 0, "원천 거리는 100m 단위다");
+    assert.equal(edge.durationSeconds % 60, 0, "원천 시간은 분 단위다");
+    assert.equal(edge.requiresElevator, false);
+    assert.equal(edge.accessibilityStatus, "UNKNOWN", "원천은 무단차 여부를 주지 않는다");
+  }
+  for (const metric of busanMetrics) {
+    const key = `${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`;
+    const rule = pack.transferRules.find(({ id }) => id === `rule-transfer-${key}`);
+    assert.equal(rule.sourceId, BUSAN_TRANSFER_SOURCE_ID);
+    assert.equal(rule.verificationStatus, "VERIFIED");
+    assert.equal(rule.pathwayEdgeId, `pathway-edge-${key}-walk`);
+    assert.equal(rule.strictStepFreePathwayEdgeId, null);
+    assert.equal(rule.minTransferSeconds, metric.officialDurationSeconds);
+    const routeEdge = result.routeInput.routeEdges.find(({ edgeId }) => edgeId === `transfer-${key}`);
+    assert.equal(routeEdge.edgeType, "IN_STATION_TRANSFER");
+    assert.equal(routeEdge.durationSeconds, metric.officialDurationSeconds);
+    assert.equal(routeEdge.distanceMeters, metric.distanceMeters);
+  }
+
+  // 경로 행이 가리키는 원천은 팩 sourceInventory에 있어야 한다(production pathway 계약).
+  const packSource = pack.sourceInventory.find(({ id }) => id === BUSAN_TRANSFER_SOURCE_ID);
+  assert.ok(packSource, "Busan transfer source must be in the pack sourceInventory");
+  assert.equal(packSource.updatedAt, head.capturedAt);
+  assert.equal(packSource.redistributionAllowed, true);
+  // 리뷰 F3: 팩 원천 설명은 이 원천이 실제로 채우는 환승 표와 공식 환승 도메인을 담는다. 값은 inventory에서 유도한다:
+  // 필드 = inventory fieldsProvided + 이 원천을 인용하는 팩 표, 도메인 = inventory 도메인 + 공식 환승 거리·시간 원천의 도메인.
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const busanInventory = inventory.sources.find(({ id }) => id === BUSAN_TRANSFER_SOURCE_ID);
+  const seoulInventory = inventory.sources.find(({ id }) => id === SEOUL_TRANSFER_SOURCE_ID);
+  assert.deepEqual(packSource.fields, [...busanInventory.fieldsProvided, "station_pathway_edges", "transfer_rules"]);
+  assert.deepEqual(packSource.coverageScope, {
+    ...busanInventory.coverageScope,
+    sourceDomains: [...busanInventory.coverageScope.sourceDomains, ...seoulInventory.coverageScope.sourceDomains],
+  });
+  assert.ok(pack.stationPathwayEdges.some(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID));
+  assert.ok(pack.transferRules.some(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID));
+});
+
+test("#872 S3 생성기는 커밋된 부산 환승 지표가 fan-in head·재계산과 다르면 명시적으로 실패한다", async () => {
+  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const fanIn = await readJson("tools/datapack/release/current-five-region-source-fan-in.json");
+  const sourceInventory = await readJson("tools/datapack/source-inventory.json");
+  const read = (relative) => readFile(path.join(root, relative));
+  const resolved = await resolveBusanTransferMetrics({ fanIn, sourceInventory, read });
+  assert.equal(resolved.metrics.length, 12);
+  assert.equal(resolved.head.snapshotId, fanIn.selectedSources.find(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID).snapshotId);
+
+  const tamperedRead = async (relative) => {
+    const bytes = await read(relative);
+    if (relative !== BUSAN_TRANSFER_METRICS_PATH) return bytes;
+    return Buffer.from(bytes.toString("utf8").replace("\"officialDurationSeconds\":120", "\"officialDurationSeconds\":60"));
+  };
+  await assert.rejects(resolveBusanTransferMetrics({ fanIn, sourceInventory, read: tamperedRead }),
+    /nationwide candidate Busan transfer metrics differ from the rebuild/);
+
+  const otherHead = structuredClone(fanIn);
+  otherHead.selectedSources.find(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID).rawSha256 = "0".repeat(64);
+  await assert.rejects(resolveBusanTransferMetrics({ fanIn: otherHead, sourceInventory, read }),
+    /nationwide candidate Busan transfer metrics do not match the fan-in head/);
+});
+
+// #872 S3 리뷰 F1: 한 환승 방향을 서울교통공사·부산교통공사 두 원천이 함께 주장하면 어느 값도 고르지 않고 실패한다.
+test("#872 S3 한 환승 방향을 두 공식 원천이 함께 주장하면 후보 생성이 실패한다", () => {
+  const metric = { stationId: "station-1fc7a7c971c8", fromLineId: "line-ab1a041f6266", toLineId: "line-eb7b47920390" };
+  const seoul = { sourceId: SEOUL_TRANSFER_SOURCE_ID, sourceSnapshotId: "seoul-snapshot", lastVerifiedAt: "2026-08-15T09:40:38.817Z",
+    metrics: [{ ...metric, officialDurationSecondsReference: 90 }], durationOf: (m) => m.officialDurationSecondsReference };
+  const busan = { sourceId: BUSAN_TRANSFER_SOURCE_ID, sourceSnapshotId: "busan-snapshot", lastVerifiedAt: "2026-10-01T04:15:27.569Z",
+    metrics: [{ ...metric, officialDurationSeconds: 120 }], durationOf: (m) => m.officialDurationSeconds };
+
+  const separate = officialTransferMetricsByDirection([seoul, { ...busan, metrics: [{ ...metric, fromLineId: metric.toLineId, toLineId: metric.fromLineId, officialDurationSeconds: 120 }] }]);
+  assert.equal(separate.size, 2);
+  assert.deepEqual(separate.get(`${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`).sourceId, SEOUL_TRANSFER_SOURCE_ID);
+  assert.equal(separate.get(`${metric.stationId}:${metric.toLineId}->${metric.fromLineId}`).durationSeconds, 120);
+
+  assert.throws(() => officialTransferMetricsByDirection([seoul, busan]),
+    /nationwide candidate transfer metric is claimed by two sources: station-1fc7a7c971c8:line-ab1a041f6266->line-eb7b47920390/);
+  assert.throws(() => officialTransferMetricsByDirection([{ ...busan, metrics: [...busan.metrics, ...busan.metrics] }]),
+    /claimed by two sources/);
 });

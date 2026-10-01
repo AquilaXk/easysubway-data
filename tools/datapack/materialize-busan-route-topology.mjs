@@ -288,7 +288,7 @@ export function parseCanonicalBusanStationMappings(csv) {
   return mappings;
 }
 
-function canonicalStationIdFor(mappings, station) {
+export function canonicalStationIdFor(mappings, station) {
   if (!(mappings instanceof Map)) throw new Error("canonical Busan station mappings are required");
   const key = `${station.lineId}:${normalizedStationName(station.stationName)}`;
   const stationId = mappings.get(key);
