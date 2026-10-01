@@ -813,7 +813,10 @@ export function classifyKricRowsForReconstruction(rows) {
           classifiedRows.push(row);
           return;
         }
-        if (row.servicePattern !== "EXPRESS" || !Number.isInteger(row.departureSeconds)) {
+        // #862 QA 결정(2026-10-01): 급행 표시(exptCd)가 없어도 중간역의 dptTm-only 행은 통과(비정차)다.
+        // exptCd 기반 분류와 reason을 구분한다. 끝 역의 도착 누락은 비정차로 보지 않는다.
+        const expressPassage = row.servicePattern === "EXPRESS";
+        if (!Number.isInteger(row.departureSeconds) || (!expressPassage && index === ordered.length - 1)) {
           throw new Error(`KRIC ${row.servicePattern ?? "UNKNOWN"} intermediate row has missing arrival: ${key}`);
         }
         excludedNonStopRows.push({
@@ -823,7 +826,7 @@ export function classifyKricRowsForReconstruction(rows) {
           dayCd: row.dayCd,
           passageSeconds: row.departureSeconds,
           servicePattern: row.servicePattern,
-          reason: "EXPRESS_NO_ARRIVAL",
+          reason: expressPassage ? "EXPRESS_NO_ARRIVAL" : "NO_ARRIVAL_DEPARTURE_ONLY",
         });
         return;
       }
