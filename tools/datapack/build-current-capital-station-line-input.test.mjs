@@ -230,6 +230,28 @@ test("TRANSFER 지표가 분모 밖 쌍을 담아도 분모 안 행만 만들고
   }
 });
 
+// #875 F2: 지표 applicability 분모 검사는 절 하나만 깨져도 거부한다. count를 맞춰 다른 절이 통과하도록 단독 위반을 만든다.
+test("분모 밖 중복 applicability cell과 수도권 cell 누락은 count를 맞춰도 각각 거부한다", async () => {
+  const [capitalCell] = buildCurrentCapitalStationLineInput(await buildCurrentCapitalStationLineInputFixture()).stationLines;
+  for (const [label, mutate] of [
+    ["수도권 분모 밖 중복 cell", (drift) => {
+      const outside = drift.transferApplicability.cells.find(({ stationId, lineId }) => stationId === "station-outside" && lineId === "fixture-d");
+      drift.transferApplicability.cells.push({ ...outside });
+      drift.transferMetrics.canonicalIdentity.stationLineCount += 1;
+    }],
+    ["수도권 분모 cell 누락(count 일치)", (drift) => {
+      drift.transferApplicability.cells = drift.transferApplicability.cells.filter(({ stationId, lineId }) => !(stationId === capitalCell.stationId && lineId === capitalCell.lineId));
+      drift.transferMetrics.canonicalIdentity.stationLineCount -= 1;
+    }],
+  ]) {
+    const drift = await buildCurrentCapitalStationLineInputFixture();
+    widenFixtureTransferMetricsBeyondCapitalDomain(drift);
+    mutate(drift);
+    rebindTransferArtifacts(drift);
+    assert.throws(() => buildCurrentCapitalStationLineInput(drift), /full-capital TRANSFER applicability mismatch/, label);
+  }
+});
+
 test("count를 유지한 blocked carrier·directed pair·applicability swap drift도 fail-closed다", async () => {
   for (const mutate of [
     (value) => {
