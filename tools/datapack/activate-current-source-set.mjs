@@ -2881,6 +2881,9 @@ export async function readBuilderBaselineBytes(
 }
 
 // 현재 토폴로지 갱신이 쓸 candidate spec을 정하고, 선택한 ITX 증거가 그 spec과 맞는지 검사한다.
+// 승인 ITX 교체 모드는 먼저 승인 원천으로 spec을 교체(bindApprovedItxCurrentSourceSpec: 승인 URL·sha·
+// freshUntil 검증)한 뒤, 교체한 spec과 새 증거로 같은 검사를 한다. 옛 spec으로 새 증거를 검사하면
+// 교체 모드는 항상 실패한다(#848).
 export async function resolveCurrentTopologyRefreshSpec({
   baseSpec,
   approvedItxBootstrap,
@@ -2890,14 +2893,15 @@ export async function resolveCurrentTopologyRefreshSpec({
   buildNow,
   bindApprovedSpec,
 }) {
+  const spec = approvedItxBootstrap ? await bindApprovedSpec(baseSpec) : baseSpec;
   validateCurrentTopologyRefreshItxEvidence({
-    spec: baseSpec,
+    spec,
     itxCurrentAdmissionPath,
     selectedItxTopologyEvidencePath,
     currentItxTopologyEvidenceBytes,
     buildNow,
   });
-  return approvedItxBootstrap ? bindApprovedSpec(baseSpec) : baseSpec;
+  return spec;
 }
 
 export async function generateCurrentCapitalTopologyRefresh({
