@@ -199,10 +199,10 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(reference.promotion, {
     mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
-    previousArtifactSha256: "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260824170958799.json",
-    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5469639706",
-    approvedArtifactSha256: "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
+    previousArtifactSha256: "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260830151508786.json",
+    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5921050992",
+    approvedArtifactSha256: "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
   });
 
   const previousBytes = await readFile(new URL(`../../${reference.promotion.previousArtifactPath}`, import.meta.url));
@@ -234,9 +234,11 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.deepEqual(artifact.normalizedSnapshotSets.map(({ dayCd }) => dayCd).sort(), expectedDayCds);
   assert.deepEqual([...diffByDay.keys()].sort(), expectedDayCds);
   const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
+  // QA 승인 체크포인트(#848): 평일(8)만 정차 순서·시각 튜플이 바뀌어 차단됐고, 토·일은 변화가 없다.
+  const expectedBlockedByDay = { "7": false, "8": true, "9": false };
   for (const { dayCd, sets } of artifact.normalizedSnapshotSets) {
     const diff = diffByDay.get(dayCd);
-    assert.equal(diff.blocked, true);
+    assert.equal(diff.blocked, expectedBlockedByDay[dayCd]);
     for (const name of setNames) {
       const values = sets[name].map((value) => JSON.stringify(value)).sort().map(JSON.parse);
       assert.equal(diff.sets[name].count, values.length);
@@ -247,7 +249,7 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260831", "7": "20260905", "9": "20260906" });
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20261001", "7": "20261010", "9": "20261004" });
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
@@ -317,8 +319,8 @@ test("ITX-청춘 admission evidence는 historical 관측과 current pack identit
       manifestVersion: 1,
       catalogPackId: "itx-current-station-catalog-v1",
       stationSetSha256: "bcbbb7f738a7ca2f581ac571574d88499a988d038cdc71ba79ef1936d60e9b6c",
-      payloadSha256: "d916d16b77af9fae81ce26d4cabb299a6a4e15ea7be9cd2d9c1130f95803e788",
-      manifestSha256: "d7c569ed24ff7e35a0edd57e7aab5234fdf4b170c48ece4d7c06aa5824d5828d",
+      payloadSha256: "37e8fb4bd6c0946cb52b8ffdac43457b5e8b51436b49617d28ea2c8fcd4204a1",
+      manifestSha256: "5328c25ffaf78085707a3e296993228f3cc3453706420a163ef4b539cb0973b9",
     },
   });
   const korailCandidate = sourceCandidates.candidates.find(({ id }) => id === "korail-traveler-train-run-info");
