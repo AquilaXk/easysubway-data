@@ -506,12 +506,9 @@ export async function prepareNationwideCandidate({
             });
             continue;
           }
-          // D4: 서울교통공사 역방향 값은 DERIVED_RECIPROCAL로 표기할 때만 쓴다.
           if (!["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(seoulMetric.metricProvenance)) {
             throw new Error(`nationwide candidate Seoul transfer metric provenance is not allowed: ${stationId} ${fromLine}->${toLine}`);
           }
-
-          const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
           const normalized = {
             edgeId: `transfer-${stationId}-${fromLine}-${toLine}`,
             edgeType: "IN_STATION_TRANSFER",
@@ -523,6 +520,27 @@ export async function prepareNationwideCandidate({
             serviceClass: "SUBWAY",
           };
           transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
+
+          // D4(보완): 역방향 값(DERIVED_RECIPROCAL)은 #350 승인대로 길찾기 route edge에만 쓴다. production pathway 계약은
+          // DERIVED_RECIPROCAL을 받지 않으므로 경로 행을 만들지 않고, 규칙은 FK 없이 UNVERIFIED로 둔다.
+          if (seoulMetric.metricProvenance === "DERIVED_RECIPROCAL") {
+            transferRules.push({
+              id: ruleId,
+              fromStationId: stationId,
+              fromLineId: fromLine,
+              toStationId: stationId,
+              toLineId: toLine,
+              transferType: "IN_STATION",
+              minTransferSeconds: seoulMetric.officialDurationSecondsReference,
+              pathwayEdgeId: null,
+              strictStepFreePathwayEdgeId: null,
+              sourceId: "seoul-metro-transfer-distance-duration",
+              verificationStatus: "UNVERIFIED",
+            });
+            continue;
+          }
+
+          const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
 
           stationPathwayEdges.push({
             id: walkPathwayEdgeId,
@@ -540,7 +558,7 @@ export async function prepareNationwideCandidate({
             sourceId: "seoul-metro-transfer-distance-duration",
             sourceSnapshotId: seoulTransferHead.snapshotId,
             providerRecordHash: seoulMetric.sourceRecordSha256,
-            provenanceKind: seoulMetric.metricProvenance,
+            provenanceKind: "OFFICIAL_SOURCE",
             verificationStatus: "VERIFIED",
             lastVerifiedAt: seoulTransferCapturedAt,
             evidenceHash: seoulMetric.sourceRecordSha256,
