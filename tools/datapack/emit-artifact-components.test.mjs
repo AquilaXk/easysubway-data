@@ -52,11 +52,18 @@ const CURRENT_ACTIVE_FROM = CURRENT_SOURCE_WINDOW.activeFrom;
 const CURRENT_FRESH_UNTIL = CURRENT_SOURCE_WINDOW.freshUntil;
 const CURRENT_EVALUATION_AT = CURRENT_SOURCE_WINDOW.evaluationAt;
 const CURRENT_SOURCE_EXPIRES_AT = CURRENT_SOURCE_WINDOW.sourceExpiresAt;
+// #862: RIDE route edge는 후보 fixture의 RIDE network edge를 하나씩 투영한다. 승인 ITX 원천이 바뀌면
+// (11ba30b4…, ITX edge 64→48) 개수도 바뀌므로 고정 상수 대신 tracked 후보 fixture에서 유도한다.
+const CURRENT_CANDIDATE_FIXTURE = JSON.parse(await readFile(
+  JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8")).fixturePath, "utf8",
+));
 const CURRENT_ROUTE_EDGE_COUNTS = Object.freeze({
   ENTRY: 213,
   EXIT: 213,
   IN_STATION_TRANSFER: 30,
-  RIDE: 2198,
+  RIDE: CURRENT_CANDIDATE_FIXTURE.packs
+    .find(({ id }) => id === CURRENT_CANDIDATE_FIXTURE.manifest.activePack.id)
+    .networkEdges.filter(({ edgeType }) => edgeType === "RIDE").length,
 });
 const CURRENT_ROUTE_EDGE_COUNT = Object.values(CURRENT_ROUTE_EDGE_COUNTS)
   .reduce((sum, count) => sum + count, 0);
