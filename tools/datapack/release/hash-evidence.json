@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "2881ba518049a03589c3fce445e1253f4db6e810",
+  "builderGitSha": "652c70385084b1cbe86c2c8fa5d840e8232c62a2",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
