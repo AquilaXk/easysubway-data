@@ -4313,8 +4313,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily",
-      "observedDataUpdatedAt": "2026-09-04",
-      "retrievedAt": "2026-09-04",
+      "observedDataUpdatedAt": "2026-10-01",
+      "retrievedAt": "2026-10-01",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -4385,7 +4385,7 @@
           "productionUseAllowed": true,
           "unlockStatus": "not_required"
         },
-        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20260904T043909603Z registration verified.",
+        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20261001T050747096Z registration verified.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
       },
       "accessibilityAdmissionEvidence": {
@@ -4393,15 +4393,15 @@
         "decision": "APPROVED",
         "productionUseAllowed": true,
         "licenseEvidenceHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
-        "snapshotId": "kric-station-convenience-standard-20260904T043909603Z",
-        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20260904T043909603Z.json",
-        "capturedAt": "2026-09-04T04:39:09.603Z",
-        "observedAt": "2026-09-04T04:39:09.603Z",
-        "freshUntil": "2026-09-05T04:39:09.603Z",
-        "rawSha256": "9325f6ce549a699dc4988700a8f04e25ffc830ec84cdec6abcc4c18b3a5d967b",
-        "contentSha256": "4a12baebe8d9c311c7a8a3a2617807c31dbc8a8afa886c26b34ebd1df4be1b81",
+        "snapshotId": "kric-station-convenience-standard-20261001T050747096Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20261001T050747096Z.json",
+        "capturedAt": "2026-10-01T05:07:47.096Z",
+        "observedAt": "2026-10-01T05:07:47.096Z",
+        "freshUntil": "2026-10-02T05:07:47.096Z",
+        "rawSha256": "51d72d972269e48554975669b24b0b8ce67c063f45ca5804969af5dd36f2df25",
+        "contentSha256": "712c23d11287e26b01952879c0161f6d20ab5637392885e18c7f1ac465edaf26",
         "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-        "snapshotFileSha256": "50a897027042d47764ffe79666d712b5b9d2a7f9deb83c28dea0c16252fc0fde",
+        "snapshotFileSha256": "92c2c7135deaedd8ed14c7ac44c4d44ff99454d891ad0208af9e39dd2df701fe",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED"
       }
     },
