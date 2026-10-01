@@ -292,8 +292,9 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // Zero synthetic trips manufactured by interval loop
   const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
   assert.strictEqual(syntheticTrips.length, 0, "Pack must contain 0 synthetic trips");
-  assert.strictEqual(pack.transitTrips.length, 9051, "Pack must contain exactly 9,051 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 244325, "Pack must contain exactly 244,325 authentic stop times");
+  // #855: 대전·광주 추정 종착역 정차 898개와 원천 정차 하나뿐인 녹동 출발 38개(격리 증거)가 빠진다.
+  assert.strictEqual(pack.transitTrips.length, 9013, "Pack must contain exactly 9,013 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 243389, "Pack must contain exactly 243,389 authentic stop times");
   assert.strictEqual(pack.serviceCalendars.length, 22);
   assert.strictEqual(pack.serviceCalendarDates.length, 104);
 

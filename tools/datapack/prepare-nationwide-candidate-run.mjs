@@ -23,6 +23,7 @@ const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 // 빠른하차 importer(import-car-door-hints.mjs)의 방향 어휘(UP/DOWN/INNER/OUTER, 미상은 '').
 // 계약 밖 KRIC 행은 팩에 싣지 않고 사유와 함께 격리 증거 파일에 남긴다(#854, QA 결정 2026-10-01).
 export const CAR_DOOR_HINT_QUARANTINE_PATH = "tools/datapack/release/nationwide-car-door-hint-quarantine.json";
+export const REGIONAL_TIMETABLE_QUARANTINE_PATH = "tools/datapack/release/nationwide-regional-timetable-quarantine.json";
 const CAR_DOOR_HINT_FACILITY_TYPES = ["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"];
 const CAR_DOOR_HINT_DIRECTIONS = ["", "UP", "DOWN", "INNER", "OUTER"];
 
@@ -1011,6 +1012,42 @@ export async function prepareNationwideCandidate({
   finalPack.transitStopTimes = regionalSchedule.transitStopTimes;
   finalPack.serviceCalendars = regionalSchedule.serviceCalendars;
   finalPack.serviceCalendarDates = regionalSchedule.serviceCalendarDates;
+
+  // #855: 대전·광주 원천은 역별 시각 하나만 준다. 원천 정차 2개 이상으로 열차를 만들 수 없는
+  // 원천 시각은 팩에 싣지 않고 사유·식별자·개수를 격리 증거로 남긴다.
+  const timetableQuarantine = regionalSchedule.regionalTimetableQuarantine;
+  const timetableQuarantineByReason = {};
+  for (const { reason } of timetableQuarantine) {
+    timetableQuarantineByReason[reason] = (timetableQuarantineByReason[reason] ?? 0) + 1;
+  }
+  const regionalTimetableQuarantine = {
+    schemaVersion: 1,
+    artifactKind: "datapack-regional-timetable-quarantine",
+    issue: "https://github.com/AquilaXk/easysubway-data/issues/855",
+    contract: {
+      stopTime: "원천 시각 하나인 정차는 arrivalSeconds = departureSeconds = 원천 값. 원천 시각이 없는 정차(종착역 도착)는 만들지 않는다.",
+      references: [
+        "tools/datapack/schema/catalog-schema.sql transit_stop_times arrival_seconds NOT NULL, arrival_seconds <= departure_seconds",
+        "tools/datapack/reconstruct-transit-trips.mjs arrivalSeconds ?? departureSeconds",
+      ],
+    },
+    sources: [
+      { sourceId: "daejeon-train-timetable", rawSha256: daejeonTimetable.rawSha256 },
+      { sourceId: "gwangju-transportation-cyberstation-timetable", rawSha256: gwangjuTimetable.rawSha256 },
+    ].map((source) => ({
+      ...source,
+      admittedStopTimeCount: finalPack.transitStopTimes.filter(({ sourceId }) => sourceId === source.sourceId).length,
+      quarantinedCount: timetableQuarantine.filter(({ sourceId }) => sourceId === source.sourceId).length,
+    })),
+    summary: {
+      quarantinedCount: timetableQuarantine.length,
+      byReason: timetableQuarantineByReason,
+    },
+    rows: timetableQuarantine,
+  };
+  if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, REGIONAL_TIMETABLE_QUARANTINE_PATH), jsonBytes(regionalTimetableQuarantine));
+  }
 
   // Expand nationwide station_car_door_hints with KRIC elevator platform door positions
   const seenCarDoorKey = new Set();

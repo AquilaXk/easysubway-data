@@ -310,9 +310,8 @@ test("커밋된 전국 정본 팩의 대전·광주 정차 시각은 원천 값�
     const source = evidence.sources.find(({ sourceId }) => sourceId === region.sourceId);
     assert.ok(source, `${region.sourceId} 원천 기록이 있어야 한다`);
     assert.equal(source.rawSha256, readJson(region.timetablePath).rawSha256);
-    assert.equal(source.sourceDepartureCount, totalSourceDepartures(sourceTimes));
     assert.equal(source.admittedStopTimeCount, regionStops.length);
-    assert.equal(source.admittedStopTimeCount + source.quarantinedCount, source.sourceDepartureCount);
+    assert.equal(source.admittedStopTimeCount + source.quarantinedCount, totalSourceDepartures(sourceTimes));
     assertUnusedSourceQuarantined({ ...context, quarantine: evidence.rows });
   }
 });
