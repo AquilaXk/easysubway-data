@@ -11962,7 +11962,7 @@ test("KRIC 4호선 pilot 시간표 transformer는 상록수-사당 stop_times를
   const outputPath = path.join(outputDir, "production-input.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
-  const fixtureTrips = Array.from({ length: 466 }, (_, index) => {
+  const fixtureTrips = Array.from({ length: 458 }, (_, index) => {
     const isUp = index % 2 === 0;
     return {
       id: `route-seoul-4-${isUp ? "up" : "down"}-fixture-${index}`,
@@ -11995,7 +11995,7 @@ test("KRIC 4호선 pilot 시간표 transformer는 상록수-사당 stop_times를
       },
     ];
   });
-  const fillerStopTimes = Array.from({ length: 22004 - fixtureStopTimes.length }, (_, index) => ({
+  const fillerStopTimes = Array.from({ length: 21645 - fixtureStopTimes.length }, (_, index) => ({
     tripId: fixtureTrips[index % fixtureTrips.length].id,
     stopSequence: index + 1,
     stationId: `station-seoul-4-filler-${index}`,
@@ -12024,14 +12024,14 @@ test("KRIC 4호선 pilot 시간표 transformer는 상록수-사당 stop_times를
       requestCount: 153,
       failedRequestCount: 0,
       expectedNoDataRequestCount: 51,
-      intermediateRowCount: 33062,
-      excludedOutsidePilotGroupCount: 429,
-      excludedOutsidePilotGroups: Array.from({ length: 429 }, (_, index) => ({ reason: "OUTSIDE_PILOT_CORRIDOR", index })),
+      intermediateRowCount: 32677,
+      excludedOutsidePilotGroupCount: 415,
+      excludedOutsidePilotGroups: Array.from({ length: 415 }, (_, index) => ({ reason: "OUTSIDE_PILOT_CORRIDOR", index })),
       excludedNonStopRowCount: 42,
       excludedNonStopRows: Array.from({ length: 42 }, (_, index) => ({ reason: "EXPRESS_NO_ARRIVAL", index })),
-      reconstructionRowCount: 22004,
-      transitTripCount: 466,
-      transitStopTimeCount: 22004,
+      reconstructionRowCount: 21645,
+      transitTripCount: 458,
+      transitStopTimeCount: 21645,
       rawResponseInventory: {
         responseCount: rawResponses.length,
         inventorySha256: createHash("sha256").update(JSON.stringify(rawResponses)).digest("hex"),
@@ -12058,8 +12058,8 @@ test("KRIC 4호선 pilot 시간표 transformer는 상록수-사당 stop_times를
 
   const transformed = JSON.parse(await readFile(outputPath, "utf8"));
   assert.ok(transformed.sourceIds.includes("kric-subway-timetable"));
-  assert.equal(transformed.transitTrips.length, 466);
-  assert.equal(transformed.transitStopTimes.length, 932);
+  assert.equal(transformed.transitTrips.length, 458);
+  assert.equal(transformed.transitStopTimes.length, 916);
   assert.deepEqual(
     transformed.transitStopTimes
       .filter((row) => row.tripId === "route-seoul-4-up-fixture-0")
@@ -12117,12 +12117,12 @@ test("KRIC 4호선 pilot 시간표 transformer는 summary counter만 복사된 �
       requestCount: 153,
       failedRequestCount: 0,
       expectedNoDataRequestCount: 51,
-      intermediateRowCount: 33062,
-      excludedOutsidePilotGroupCount: 429,
+      intermediateRowCount: 32677,
+      excludedOutsidePilotGroupCount: 415,
       excludedNonStopRowCount: 42,
-      reconstructionRowCount: 22004,
-      transitTripCount: 466,
-      transitStopTimeCount: 22004,
+      reconstructionRowCount: 21645,
+      transitTripCount: 458,
+      transitStopTimeCount: 21645,
       transitTrips: [],
       transitStopTimes: [],
     }, null, 2)}\n`,
@@ -12142,7 +12142,7 @@ test("KRIC 4호선 pilot 시간표 transformer는 summary counter만 복사된 �
       ],
       { cwd: root, env: productionEnv },
     ),
-    /KRIC pilot artifact transitTrips\.length mismatch: 0 !== 466/,
+    /KRIC pilot artifact transitTrips\.length mismatch: 0 !== 458/,
   );
 });
 
@@ -13449,8 +13449,10 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
     );
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM service_calendars").get().count, 2);
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM service_calendar_dates").get().count, 28);
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_trips").get().count, 466);
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_stop_times").get().count, 932);
+    // #862: 4호선 pilot 운행·정차 수는 QA 승인(2026-10-01) 시각표를 반영한 production 입력에서 유도한다.
+    const pilotProductionInput = JSON.parse(await readFile(path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"), "utf8"));
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_trips").get().count, pilotProductionInput.transitTrips.length);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_stop_times").get().count, pilotProductionInput.transitStopTimes.length);
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_feed_info").get().count, 1);
   } finally {
     database.close();
