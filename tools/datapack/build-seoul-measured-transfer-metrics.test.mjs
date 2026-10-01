@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import { parseSeoulMetroTransferCsv } from "./collect-seoul-metro-transfer-car-door-duration.mjs";
 import {
   PINNED_EXCLUDED_SOURCE_ROWS,
+  SEOUL_MEASURED_TRANSFER_METRICS_PATH,
+  buildSeoulMeasuredTransferMetrics,
+  canonicalSeoulMeasuredTransferMetricsJson,
+  readSeoulMeasuredTransferMetricsInputs,
   STATION_CODE_CATALOG_PATH,
   deriveSeoulMeasuredTransferMetrics,
   readStationCodeCatalogRows,
@@ -126,4 +130,26 @@ test("역 코드 카탈로그와 원천 이름·방면·노선 표기가 어긋�
 test("한 방향이 두 번 결정되거나 행 번호가 중복되면 NO_GO다", async () => {
   const rows = sampleRows();
   await assert.rejects(derive([...rows, rows[0]]), /NO_GO duplicate Seoul measured transfer source row: 1/u);
+});
+
+test("커밋된 실측 환승 지표는 inventory admission snapshot으로 다시 만든 결과와 바이트가 같다", async () => {
+  const inputsFromRepo = await readSeoulMeasuredTransferMetricsInputs({ repositoryRoot: root });
+  const committed = await readFile(path.join(root, SEOUL_MEASURED_TRANSFER_METRICS_PATH));
+  assert.equal(Buffer.from(canonicalSeoulMeasuredTransferMetricsJson(buildSeoulMeasuredTransferMetrics(inputsFromRepo))).equals(committed), true);
+  const artifact = JSON.parse(committed);
+  // 2026-09-02 원천(1,024행): 매핑 1,017행 → 263방향·105역, 고정 제외 7행, 빈 시간 4행(모두 다른 행이 있는 방향), 사용 불가 방향 0.
+  assert.equal(artifact.sourceIdentity.rowCount, 1024);
+  assert.equal(artifact.metrics.length, 263);
+  assert.equal(new Set(artifact.metrics.map(({ stationId }) => stationId)).size, 105);
+  assert.equal(artifact.unavailableDirections.length, 0);
+  assert.deepEqual(artifact.excludedSourceRows.map(({ sourceRowNumber }) => sourceRowNumber), [...PINNED_EXCLUDED_SOURCE_ROWS.keys()]);
+  assert.deepEqual(artifact.unavailableSourceRows.map(({ sourceRowNumber }) => sourceRowNumber), ["712", "715", "769", "771"]);
+  assert.ok(artifact.metrics.every(({ distanceMeters, measurement, metricProvenance, fastTransferHints }) => distanceMeters === null
+    && measurement === "MEASURED" && metricProvenance === "OFFICIAL_SOURCE" && fastTransferHints.length > 0));
+  // 0초 실측 방향은 중랑 경의중앙→경춘 하나다(행 714·716, 같은 승강장 환승). 빈 값(712·715)과 구분된다.
+  assert.deepEqual(artifact.metrics.filter(({ measuredDurationSeconds }) => measuredDurationSeconds === 0)
+    .map(({ stationId, fromLineId, toLineId, fastTransferHints }) => [stationId, fromLineId, toLineId, fastTransferHints.map(({ sourceRowNumber }) => sourceRowNumber)]),
+  [[JUNGNANG, GYEONGUI, GYEONGCHUN, ["714", "716"]]]);
+  // 서울역 1호선→공항철도: 서울교통공사 거리÷1.2 원천과 달리 실측 15:56(행 5·6)이다.
+  assert.equal(metricFor(artifact, SEOUL_STATION, LINE_1, "line-e9e9a5b520a4").measuredDurationSeconds, 956);
 });
