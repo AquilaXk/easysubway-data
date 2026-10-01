@@ -126,8 +126,11 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
     (r) => r.state === "UNKNOWN" && r.evidenceKind === "PROVIDER_NO_DATA" && r.evidenceReason === "FACILITY_DATA_NOT_PROVIDED"
   );
   assert.strictEqual(unmappedFacility.length, 639, "Exactly 639 unmapped stations must have FACILITY_DATA_NOT_PROVIDED");
+  // freshUntil은 fan-in이 고른 KRIC 편의시설 원장 head의 신선도 만료다(#862: 고정 날짜 대신 커밋된 fan-in에서 읽는다).
+  const committedFanIn = JSON.parse(await readFile(path.join(root, "tools/datapack/release/current-five-region-source-fan-in.json"), "utf8"));
+  const kricConvenienceHead = committedFanIn.selectedSources.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
   for (const r of unmappedFacility) {
-    assert.strictEqual(r.freshUntil, "2026-12-03T04:39:09.603Z", "Unmapped facility must have genuine KRIC convenience freshUntil");
+    assert.strictEqual(r.freshUntil, kricConvenienceHead.freshnessExpiresAt, "Unmapped facility must have genuine KRIC convenience freshUntil");
   }
   assert.strictEqual(
     stationLineRaw.includes("2027-07-13T00:00:00.000Z"),
@@ -138,6 +141,10 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
   // Total FACILITY UNKNOWN = 641 (639 unmapped + 1 blocked capital station + 1 Gwangju Nokdong)
   const totalUnknownFacility = facilityRows.filter((r) => r.state === "UNKNOWN");
   assert.strictEqual(totalUnknownFacility.length, 641);
+  // #862: 광주 녹동은 공식 엘리베이터·에스컬레이터 행이 없다(null). 휠체어리프트 0만으로 부재를 단정하지 않는다.
+  const nokdong = facilityRows.find((r) => r.stationId === "station-73a324a117ea" && r.lineId === "line-e57a361e8892");
+  assert.equal(nokdong.state, "UNKNOWN");
+  assert.equal(nokdong.evidenceReason, "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED");
 
   // 4. All 1,102 EXIT domain rows must be fail-closed UNKNOWN
   const exitUnknown = exitRows.filter(
@@ -438,28 +445,27 @@ async function committedSelectionInputs() {
   };
 }
 
-// 커밋된 인천 입력(2026-09-04 수집)은 커밋된 후보 시계(2026-09-09)에서 이미 만료다(#862 릴리스 차단 항목).
-// 선택 규칙만 보는 테스트는 인천 station-info(route_graph_topology, P1D) 창 안의 시계를 쓴다.
+// 커밋된 후보(2026-10-01 재생성)의 시계는 인천 station-info(route_graph_topology, P1D) 창 안이다.
+// 선택 규칙만 보는 테스트는 커밋된 시계를 그대로 쓴다.
 async function committedSelectionInputsWithinIncheonWindow() {
-  const inputs = await committedSelectionInputs();
-  inputs.fanIn.evaluatedAt = "2026-09-05T00:00:00.000Z";
-  return inputs;
+  return committedSelectionInputs();
 }
 
+// 2026-10-01 공식 도구로 등록한 원장 head(커밋된 후보 seq123이 고른 입력)다.
 const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
-  incheonTopology: "incheon-transit-station-info-20260904",
-  incheonLine1: "incheon-line1-train-timetable-20260905",
-  incheonLine2: "incheon-line2-train-timetable-20260905",
-  busanAccessibility: "busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909",
-  daeguAccessibility: "daegu-transportation-accessibility-25276f4f6e48ab8c6ffca6af833af14ad33fd86777af9d3376eed4b6a77fef9e-20260909",
-  daejeonAccessibility: "daejeon-transportation-accessibility-31ef85c5ac5d279d7322c028e05f7be16e6c5a794aa313aef314eef076b61426-20260909",
-  gwangjuAccessibility: "gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909",
-  kricConvenience: "kric-station-convenience-standard-20260904T043909603Z",
-  busanTimetable: "busan-transportation-timetable-20260909",
-  daeguTimetable1: "daegu-line1-train-timetable-f923a86097012cd0d0b76e59599790fb4ec4756269fb0afd293ac9683c31f77c",
-  daeguTimetable2: "daegu-line2-train-timetable-798b98f01d9803c2dbe148c6864a876ef991401f19105f711722740a8e5f8215",
-  daeguTimetable3: "daegu-line3-train-timetable-9763cdb46b4b2a7ab6ae24f607bba79206763a7329a68b86d16d12f2622d3100",
-  daejeonTimetable: "daejeon-train-timetable-20260909",
+  incheonTopology: "incheon-transit-station-info-20261001",
+  incheonLine1: "incheon-line1-train-timetable-20261001",
+  incheonLine2: "incheon-line2-train-timetable-20261001",
+  busanAccessibility: "busan-transportation-accessibility-e375fb59a4dca444fbca4bf3c5b1f8d22798a2246eb1c079d89d94cf26539718-20261001",
+  daeguAccessibility: "daegu-transportation-accessibility-c4ad26c98f70af70ea6b934bf139cc5f8da2d9f79e431634c29e15363abd897f-20261001",
+  daejeonAccessibility: "daejeon-transportation-accessibility-15481d28be46f5f4ac48f56f869667c8848180a2f487879c8ed17a97f51a7c19-20261001",
+  gwangjuAccessibility: "gwangju-transportation-accessibility-31f78d5d42932d519fa8848f234bdce91348de567363e34f73ff9ef625d95ebd-20261001",
+  kricConvenience: "kric-station-convenience-standard-20261001T050747096Z",
+  busanTimetable: "busan-transportation-timetable-20261001",
+  daeguTimetable1: "daegu-line1-train-timetable-596c7bd51ae34e5f482df154316e08d166c89bcbb27ab180f6170f6c8ce9d264",
+  daeguTimetable2: "daegu-line2-train-timetable-bbc7d89913727bbc29c7ae2804994d6a901013df345a73ae8344d81b4800e17b",
+  daeguTimetable3: "daegu-line3-train-timetable-54570947f7cb59ad8b1ea510bdcbf696e15b4e21efef4f89997638fd441d3b55",
+  daejeonTimetable: "daejeon-train-timetable-20261001",
 });
 
 test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 13개를 고른다", async () => {
@@ -470,13 +476,14 @@ test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 �
     assert.equal(selected[key].path, `tools/datapack/sources/${snapshotId}.json`, key);
     assert.ok(Buffer.isBuffer(selected[key].bytes), key);
   }
-  assert.equal(selected.kricConvenience.freshnessExpiresAt, "2026-12-03T04:39:09.603Z");
+  assert.equal(selected.kricConvenience.freshnessExpiresAt, "2026-12-30T05:07:47.096Z");
 });
 
 test("원장 head가 새 snapshot으로 이어지면 코드 수정 없이 새 입력을 고른다", async () => {
   const inputs = await committedSelectionInputsWithinIncheonWindow();
   const sourceId = "busan-transportation-accessibility";
-  const previous = inputs.sourceSnapshots.find((row) => row.sourceId === sourceId);
+  const headId = inputs.fanIn.selectedSources.find((row) => row.sourceId === sourceId).snapshotId;
+  const previous = inputs.sourceSnapshots.find((row) => row.snapshotId === headId);
   const successorId = `${sourceId}-successor-20260930`;
   const successorPath = `tools/datapack/sources/${successorId}.json`;
   const successorBytes = Buffer.from(JSON.stringify({ sourceId, rawSha256: "f".repeat(64), rows: [] }));
@@ -520,8 +527,11 @@ test("후보 입력 head가 없거나 모호하거나 만료됐거나 fan-in과 
 });
 
 test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 이전이면 만료로 실패한다(#862 3c)", async () => {
-  // 커밋 상태: station-info(route_graph_topology, P1D)는 2026-09-05에 만료됐고 후보 시계는 2026-09-09다.
-  await assert.rejects(resolveNationwideCandidateInputSnapshots(await committedSelectionInputs()),
+  // station-info(route_graph_topology, P1D)는 수집 1일 뒤 만료다.
+  const topology = await committedSelectionInputs();
+  const topologyCapturedAt = topology.sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence.capturedAt;
+  topology.fanIn.evaluatedAt = new Date(Date.parse(topologyCapturedAt) + 24 * 60 * 60 * 1_000).toISOString();
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(topology),
     /nationwide candidate input is expired for incheon-transit-station-info/);
 
   // 시간표(incheon_timetable_observation, capturedAt·P30D)는 수집 30일 뒤 만료다.
@@ -534,7 +544,10 @@ test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 
 
   // 후보 시계보다 늦은 수집은 미래 관측으로 실패한다.
   const future = await committedSelectionInputsWithinIncheonWindow();
-  future.fanIn.evaluatedAt = "2026-09-04T17:29:30.000Z";
+  const line1CapturedAt = future.sourceInventory.sources.find(({ id }) => id === "incheon-line1-train-timetable").scheduleAdmissionEvidence.capturedAt;
+  future.fanIn.evaluatedAt = new Date(Date.parse(line1CapturedAt) - 1).toISOString();
+  future.sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence.capturedAt
+    = new Date(Date.parse(future.fanIn.evaluatedAt) - 60_000).toISOString();
   await assert.rejects(resolveNationwideCandidateInputSnapshots(future), /nationwide candidate input is observed after the candidate clock for incheon-line1-train-timetable/);
 });
 
@@ -565,7 +578,7 @@ test("인천 입력은 inventory admission evidence가 없거나 원본 바이�
   const readCommitted = tampered.readSourceBytes;
   tampered.readSourceBytes = async (relative) => {
     const bytes = await readCommitted(relative);
-    if (relative !== "tools/datapack/sources/incheon-line2-train-timetable-20260905.json") return bytes;
+    if (relative !== `tools/datapack/sources/${COMMITTED_INPUT_SNAPSHOT_IDS.incheonLine2}.json`) return bytes;
     return Buffer.from(JSON.stringify({ ...JSON.parse(bytes), rawSha256: "0".repeat(64) }));
   };
   await assert.rejects(resolveNationwideCandidateInputSnapshots(tampered), /raw binding mismatch for incheon-line2-train-timetable/);

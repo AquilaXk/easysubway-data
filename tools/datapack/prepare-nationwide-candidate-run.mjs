@@ -1692,7 +1692,10 @@ export async function prepareNationwideCandidate({
       });
     } else if (gwangjuMap.has(key)) {
       const r = gwangjuMap.get(key);
-      if (r.elevator === null && r.wheelchair_lift === null && r.escalator === null) {
+      // 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고 미관측 유형이 남아 있으면
+      // 부재로 단정하지 않고 UNKNOWN으로 막는다(#862: 수집기의 휠체어리프트 0만으로 VERIFIED_ABSENT가 되던 문제).
+      const facilityCounts = [r.elevator, r.wheelchair_lift, r.escalator];
+      if (!facilityCounts.some((count) => count > 0) && facilityCounts.some((count) => count === null)) {
         evidenceRows.push({
           ...stationLineCandidate,
           stationId,
