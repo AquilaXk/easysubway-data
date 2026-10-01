@@ -903,7 +903,10 @@ async function copyRepositoryInputs(repositoryRoot) {
 }
 
 async function selectedSourceWindow(repositoryRoot = process.cwd()) {
-  const fixture = await createIndependentSourceGovernanceFixture({ repositoryRoot });
+  const fixture = await createIndependentSourceGovernanceFixture({
+    repositoryRoot,
+    buildSpec: await readJson(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")),
+  });
   const buildSpec = fixture.buildSpec, sourceSnapshots = fixture.snapshots;
   const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
     const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);

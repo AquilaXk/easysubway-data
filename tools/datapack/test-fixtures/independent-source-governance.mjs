@@ -72,7 +72,7 @@ export async function createIndependentSourceGovernanceFixture({
   const sources = inventory.sources?.filter((source) => source.requiredForProductionPack === true) ?? [];
   if (sources.length === 0) throw new Error("independent source governance fixture requires production sources");
   const governanceBySource = new Map((governancePolicy.sources ?? []).map((entry) => [entry.sourceId, entry]));
-  const evaluationAt = reviewWindowEvaluationAt(sources, governanceBySource);
+  const evaluationAt = reviewWindowEvaluationAt(sources, governanceBySource, buildSpec.publishedAt);
   const governancePolicySha256 = sha256(governancePolicyBytes);
   const records = [];
   const snapshots = sources.map((source) => {
@@ -181,10 +181,14 @@ export async function createIndependentSourceGovernanceFixture({
   });
 }
 
-function reviewWindowEvaluationAt(sources, governanceBySource) {
+// #862: 후보 spec이 주어지면 test-only snapshot의 관측 시각을 후보 시계(publishedAt) 이후로 둔다.
+// FINAL은 max(publishedAt, evaluationAt)에서 신선도를 평가하므로, 후보를 재생성해도 같은 경계를 검사한다.
+function reviewWindowEvaluationAt(sources, governanceBySource, candidatePublishedAt) {
   const entries = sources.map((source) => requiredOne(governanceBySource.get(source.id), `${source.id} governance entry`));
   const reviewedAt = Math.max(...entries.map((entry) => utcMillis(entry.licenseReview?.reviewedAt, `${entry.sourceId} reviewedAt`)));
-  const evaluationMillis = reviewedAt + 1;
+  const candidateMillis = candidatePublishedAt === undefined ? Number.NEGATIVE_INFINITY
+    : utcMillis(candidatePublishedAt, "candidate publishedAt");
+  const evaluationMillis = Math.max(reviewedAt + 1, candidateMillis);
   const earliestNextReviewAt = Math.min(...entries.map((entry) => utcMillis(entry.licenseReview?.nextReviewAt, `${entry.sourceId} nextReviewAt`)));
   if (evaluationMillis >= earliestNextReviewAt) {
     throw new Error("independent source governance fixture has no selected license-review overlap");
