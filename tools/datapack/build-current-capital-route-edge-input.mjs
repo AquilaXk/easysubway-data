@@ -17,7 +17,7 @@ export function buildCurrentCapitalRouteEdgeInput(input) {
   const entries = station.stationLines.map((line) => edge({ edgeId: `edge-entry-${line.stationId}-${line.lineId}`, edgeType: "ENTRY", fromNodeId: line.stationId, toNodeId: `${line.stationId}:${line.lineId}`, durationSeconds: 90, distanceMeters: 0 }));
   const exits = station.stationLines.map((line) => edge({ edgeId: `edge-exit-${line.stationId}-${line.lineId}`, edgeType: "EXIT", fromNodeId: `${line.stationId}:${line.lineId}`, toNodeId: line.stationId, durationSeconds: 60, distanceMeters: 0 }));
   // TRANSFER runtime cost is request-owned walking pace; the source duration remains metrics-only reference evidence.
-  const transfers = currentCapitalTransferEdgesFromMetrics(input.transferMetrics.metrics);
+  const transfers = currentCapitalTransferEdgesFromMetrics(input.transferMetrics.metrics, station.stationLines);
   const routeEdges = [...rides, ...entries, ...exits, ...transfers].sort((left, right) => compareBytes(left.edgeId, right.edgeId));
   assertExactRouteFanIn({ routeEdges, rides, entries, exits, transfers });
   validateRouteEdgeEndpoints(routeEdges, stationLines);
@@ -25,11 +25,18 @@ export function buildCurrentCapitalRouteEdgeInput(input) {
   return canonicalObject({ candidate, stationLines, routeEdges });
 }
 
-export function currentCapitalTransferEdgesFromMetrics(metrics) {
+// #872 S2(#866에서 전국 경로로 대체 후 삭제): 환승 지표는 서울교통공사 1~8호선과 상대 노선 전체로 넓어졌다.
+// 수도권 live-chain(route-edge input·release-candidate transfer 대조)은 수도권 station-line 분모 안에 두 끝점이 모두 있는
+// 쌍만 쓴다. 전국 경로는 prepare-nationwide-candidate-run이 지표 전체를 쓴다.
+export function currentCapitalTransferEdgesFromMetrics(metrics, stationLines) {
   if (!Array.isArray(metrics) || metrics.length === 0) {
     throw new Error("full-capital TRANSFER metrics are required");
   }
-  return metrics.map((metric) => edge({
+  if (!Array.isArray(stationLines) || stationLines.length === 0) throw new Error("full-capital TRANSFER station-line domain is required");
+  const domain = new Set(stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const domainMetrics = metrics.filter(({ stationId, fromLineId, toLineId }) => domain.has(`${stationId}\0${fromLineId}`) && domain.has(`${stationId}\0${toLineId}`));
+  if (domainMetrics.length === 0) throw new Error("full-capital TRANSFER metrics are required");
+  return domainMetrics.map((metric) => edge({
     edgeId: `edge-transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`,
     edgeType: "IN_STATION_TRANSFER",
     fromNodeId: `${metric.stationId}:${metric.fromLineId}`,

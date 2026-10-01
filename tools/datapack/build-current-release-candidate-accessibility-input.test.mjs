@@ -26,6 +26,7 @@ import {
 import {
   buildCurrentCapitalStationLineInputFixture as fullCapitalFixture,
   FIXTURE_CAPTURED_AT,
+  widenFixtureTransferMetricsBeyondCapitalDomain,
 } from "./test-fixtures/current-capital-station-line-input.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
@@ -245,6 +246,18 @@ test("authority는 authenticated metric의 complete transfer-edge set을 요구�
     () => buildCurrentReleaseCandidateAccessibilityAuthority(input),
     /transfer edge set mismatch/,
   );
+});
+
+// #872 S2(#866에서 전국 경로로 대체 후 삭제): 수도권 후보의 transfer 대조는 route-edge input과 같은 공용 함수로
+// 분모 안에 온전히 들어가는 쌍만 대조한다. 그 쌍의 edge가 빠지면 계속 거부한다.
+test("authority는 분모 밖 쌍이 있는 지표에서도 분모 안 쌍의 complete transfer-edge set을 요구한다", async () => {
+  const input = await fullInput({ widen: true });
+  assert.doesNotThrow(() => buildCurrentReleaseCandidateAccessibilityAuthority(input));
+  const transferIndex = input.route.routeEdges.findIndex(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
+  assert.notEqual(transferIndex, -1);
+  input.route.routeEdges.splice(transferIndex, 1);
+  input.routeBytes = Buffer.from(canonical(input.route));
+  assert.throws(() => buildCurrentReleaseCandidateAccessibilityAuthority(input), /transfer edge set mismatch/);
 });
 
 test("authority validator는 actual edge type denominator를 재집계한다", async () => {
@@ -592,8 +605,9 @@ async function assertFileAbsent(file) {
   await assert.rejects(stat(file), (error) => error?.code === "ENOENT");
 }
 
-async function fullInput() {
+async function fullInput({ widen = false } = {}) {
   const source = await fullCapitalFixture();
+  if (widen) widenFixtureTransferMetricsBeyondCapitalDomain(source);
   const routeOnly = source.canonicalPack.packs[0].stationLines;
   source.canonicalPack.packs[0].networkEdges = [
     ...routeOnly.slice(0, 2).map(({ stationId, lineId }, index) => ({

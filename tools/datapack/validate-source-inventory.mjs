@@ -181,7 +181,7 @@ export function validateTransferAdmissionEvidence(source) {
   const exact = ["artifactKind", "approvalIssue", "decision", "approvedBy", "approvedAt", "productionUseAllowed", "snapshotId", "snapshotPath", "snapshotFileSha256", "capturedAt", "observedAt", "freshUntil", "sourceEffectiveDate", "rawSha256", "contentSha256", "schemaFingerprint", "metricsPath", "metricsArtifactSha256", "applicabilityPath", "applicabilityArtifactSha256", "rowCount", "physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount", "durationRole", "licenseEvidenceHash"];
   if (!evidence || Object.keys(evidence).length !== exact.length || exact.some((key) => !(key in evidence))
     || evidence.artifactKind !== "transfer-source-admission-evidence" || evidence.approvalIssue !== 350 || evidence.decision !== "APPROVED" || evidence.approvedBy !== "AquilaXk" || evidence.productionUseAllowed !== true
-    || evidence.sourceEffectiveDate !== "2025-12-31" || evidence.observedAt !== evidence.capturedAt || evidence.rowCount !== 145 || evidence.physicalPairCount !== 15 || evidence.directedMetricCount !== 30 || evidence.officialMetricCount !== 28 || evidence.derivedReciprocalMetricCount !== 2 || evidence.stationLineCount !== 213 || evidence.applicableStationLineCount !== 27 || evidence.notApplicableStationLineCount !== 186 || evidence.durationRole !== "REFERENCE_ONLY"
+    || evidence.sourceEffectiveDate !== "2025-12-31" || evidence.observedAt !== evidence.capturedAt || evidence.rowCount !== 145 || !transferAdmissionCountsAreConsistent(evidence) || evidence.durationRole !== "REFERENCE_ONLY"
     || evidence.metricsPath !== "tools/datapack/release/current-transfer-topology-metrics.json" || evidence.applicabilityPath !== "tools/datapack/release/current-capital-transfer-topology-applicability.json" || evidence.licenseEvidenceHash !== source.admissionEvidence?.licenseEvidenceHash) {
     throw new Error("transfer admission evidence contract mismatch");
   }
@@ -192,6 +192,20 @@ export function validateTransferAdmissionEvidence(source) {
   const approvedAt = canonicalUtcInstant(evidence.approvedAt, "transfer.approvedAt");
   const freshUntil = canonicalUtcInstant(evidence.freshUntil, "transfer.freshUntil");
   if (capturedAt !== observedAt || observedAt > approvedAt || approvedAt >= freshUntil) throw new Error("transfer admission evidence time ordering mismatch");
+}
+
+// #872 S2: 범위 확대 근거는 #872 D2(QA 승인 2026-10-01)·D4다. 개수는 고정 상수가 아니라 서로의 관계로 검사하고,
+// validateProductionTransferArtifacts가 지표·applicability 산출물에서 유도한 값과 정확히 대조한다.
+function transferAdmissionCountsAreConsistent(evidence) {
+  const counts = ["physicalPairCount", "directedMetricCount", "officialMetricCount", "derivedReciprocalMetricCount", "stationLineCount", "applicableStationLineCount", "notApplicableStationLineCount"];
+  if (counts.some((key) => !Number.isSafeInteger(evidence[key]) || evidence[key] < 0)) return false;
+  return evidence.physicalPairCount > 0 && evidence.directedMetricCount === evidence.physicalPairCount * 2
+    && evidence.officialMetricCount >= evidence.physicalPairCount && evidence.officialMetricCount + evidence.derivedReciprocalMetricCount === evidence.directedMetricCount
+    && evidence.applicableStationLineCount > 0 && evidence.applicableStationLineCount + evidence.notApplicableStationLineCount === evidence.stationLineCount;
+}
+
+export function transferCoverageStatus(evidence) {
+  return `CAPITAL_SEOUL_METRO_${evidence?.physicalPairCount}_PAIRS_${evidence?.directedMetricCount}_DIRECTED_METRICS`;
 }
 
 function canonicalUtcInstant(value, label) {
@@ -225,6 +239,25 @@ export async function validateProductionTransferArtifacts(inventory, { repositor
     || JSON.stringify(applicability.value.canonicalIdentity) !== JSON.stringify(metrics.value.canonicalIdentity)
     || JSON.stringify(applicability.value.sourceIdentity) !== JSON.stringify(metrics.value.sourceIdentity)
     || applicability.value.transferTopologyMetricsIdentity?.artifactSha256 !== evidence.metricsArtifactSha256) throw new Error("transfer applicability artifact identity mismatch");
+  const metricRows = Array.isArray(metrics.value.metrics) ? metrics.value.metrics : [];
+  const cells = Array.isArray(applicability.value.cells) ? applicability.value.cells : [];
+  const provenanceCount = (provenance) => metricRows.filter(({ metricProvenance }) => metricProvenance === provenance).length;
+  const stateCount = (state) => cells.filter((cell) => cell?.state === state).length;
+  const derived = {
+    physicalPairCount: Array.isArray(metrics.value.physicalPairs) ? metrics.value.physicalPairs.length : -1,
+    directedMetricCount: metricRows.length,
+    officialMetricCount: provenanceCount("OFFICIAL_SOURCE"),
+    derivedReciprocalMetricCount: provenanceCount("DERIVED_RECIPROCAL"),
+    stationLineCount: cells.length,
+    applicableStationLineCount: stateCount("APPLICABLE_TRANSFER_ENDPOINT"),
+    notApplicableStationLineCount: stateCount("NOT_APPLICABLE_IN_CANONICAL_PAIR_SET"),
+  };
+  if (Object.entries(derived).some(([key, value]) => evidence[key] !== value)
+    || metrics.value.canonicalIdentity?.physicalPairCount !== derived.physicalPairCount || metrics.value.canonicalIdentity?.stationLineCount !== derived.stationLineCount
+    || applicability.value.stateSummary?.APPLICABLE_TRANSFER_ENDPOINT !== derived.applicableStationLineCount
+    || applicability.value.stateSummary?.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET !== derived.notApplicableStationLineCount) {
+    throw new Error("transfer admission evidence count mismatch");
+  }
 }
 
 function validateOfficialOdFareReferences(source, sourceId) {
@@ -290,7 +323,7 @@ function validateCapability(capability, source, sourceId, name) {
   if (name !== "realtime") {
     if (name === "transfer" && (capability.status !== "SUPPORTED"
       || capability.productionUseAllowed !== true
-      || capability.coverageStatus !== "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS"
+      || capability.coverageStatus !== transferCoverageStatus(source.transferAdmissionEvidence)
       || capability.updateFrequency !== "annual file snapshot"
       || capability.unsupportedNotes !== "공식 소요시간은 reference-only이며 runtime 환승시간은 거리와 선택한 보행속도로 계산한다")) {
       throw new Error(`${sourceId}.capabilities.transfer contract mismatch`);

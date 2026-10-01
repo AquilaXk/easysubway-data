@@ -65,3 +65,47 @@ export function resealFixtureFacilityAdmission(value) { const { admissionDigest:
 export function fixtureCanonicalJson(value) { if (Array.isArray(value)) return `[${value.map(fixtureCanonicalJson).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value).sort(codepointCompare).map((key) => `${JSON.stringify(key)}:${fixtureCanonicalJson(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 export function fixtureSha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function summarize(rows, states) { return Object.fromEntries(states.map((state) => [state, rows.filter((row) => row.state === state).length])); }
+
+// #872 S2(#866에서 전국 경로로 대체 후 삭제): 환승 지표가 수도권 station-line 분모 밖으로 넓어진 상태를 만든다.
+// 분모 밖 쌍(station-outside fixture-c·fixture-d)과 한쪽만 분모 안인 쌍(station-z-fixture-transfer fixture-a·fixture-c)을
+// OFFICIAL_SOURCE + DERIVED_RECIPROCAL로 더하고, applicability·admission·inventory 결속을 다시 맞춘다.
+export function widenFixtureTransferMetricsBeyondCapitalDomain(value) {
+  const metrics = value.transferMetrics;
+  const template = { distanceMeters: 1, officialDurationSecondsReference: 1, durationRole: "REFERENCE_ONLY", sourceRecordSha256: "e".repeat(64) };
+  const pair = (stationId, from, to) => [
+    { ...template, stationId, fromLineId: from, toLineId: to, metricProvenance: "OFFICIAL_SOURCE" },
+    { ...template, stationId, fromLineId: to, toLineId: from, metricProvenance: "DERIVED_RECIPROCAL", derivedFrom: { stationId, fromLineId: from, toLineId: to, sourceRecordSha256: template.sourceRecordSha256 } },
+  ];
+  metrics.physicalPairs.push({ stationId: "station-outside", lineIds: ["fixture-c", "fixture-d"] }, { stationId: "station-z-fixture-transfer", lineIds: ["fixture-a", "fixture-c"] });
+  metrics.metrics.push(...pair("station-outside", "fixture-c", "fixture-d"), ...pair("station-z-fixture-transfer", "fixture-a", "fixture-c"));
+  metrics.canonicalIdentity.physicalPairCount = metrics.physicalPairs.length;
+  metrics.canonicalIdentity.stationLineCount += 3;
+  metrics.canonicalIdentity.stationCount += 1;
+  value.transferApplicability.canonicalIdentity = metrics.canonicalIdentity;
+  value.transferApplicability.cells.push(
+    { stationId: "station-outside", lineId: "fixture-c", state: "APPLICABLE_TRANSFER_ENDPOINT" },
+    { stationId: "station-outside", lineId: "fixture-d", state: "APPLICABLE_TRANSFER_ENDPOINT" },
+    { stationId: "station-z-fixture-transfer", lineId: "fixture-c", state: "APPLICABLE_TRANSFER_ENDPOINT" },
+  );
+  const admission = value.sourceInventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence;
+  admission.physicalPairCount = metrics.physicalPairs.length;
+  admission.directedMetricCount = metrics.metrics.length;
+  admission.officialMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  admission.derivedReciprocalMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
+  resealFixtureTransferArtifacts(value);
+  return value;
+}
+
+export function resealFixtureTransferArtifacts(value) {
+  const { artifactSha256: _metrics, ...metricsPayload } = value.transferMetrics;
+  value.transferMetrics.artifactSha256 = fixtureSha256(fixtureCanonicalJson(metricsPayload));
+  value.transferApplicability.transferTopologyMetricsIdentity.artifactSha256 = value.transferMetrics.artifactSha256;
+  const { artifactSha256: _applicability, ...applicabilityPayload } = value.transferApplicability;
+  value.transferApplicability.artifactSha256 = fixtureSha256(`${fixtureCanonicalJson(applicabilityPayload)}\n`);
+  const admission = value.sourceInventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence;
+  admission.metricsArtifactSha256 = value.transferMetrics.artifactSha256;
+  admission.applicabilityArtifactSha256 = value.transferApplicability.artifactSha256;
+  value.sourceInventoryBytes = Buffer.from(fixtureCanonicalJson(value.sourceInventory));
+  value.candidateBuildSpec.sourceInventorySha256 = fixtureSha256(JSON.stringify(value.sourceInventory));
+  value.candidateBuildSpec.networkEdgeEvidence.sourceInventory.sha256 = fixtureSha256(value.sourceInventoryBytes);
+}

@@ -756,7 +756,7 @@ function validateTransferEdgeSet(metrics, stationLineInput, routeEdges) {
       || sourceId !== metrics.sourceIdentity?.sourceId)) {
     throw new Error("transfer metrics evidence mismatch");
   }
-  const expected = currentCapitalTransferEdgesFromMetrics(metrics.metrics)
+  const expected = currentCapitalTransferEdgesFromMetrics(metrics.metrics, stationLineInput.stationLines)
     .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
   const actual = routeEdges
     .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER")
