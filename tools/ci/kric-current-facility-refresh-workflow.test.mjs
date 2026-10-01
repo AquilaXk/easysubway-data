@@ -85,16 +85,28 @@ test("KRIC refresh workflow only uploads sanitized decision and operation eviden
   assert.match(yml, /raw-receipt\.json/);
   assert.doesNotMatch(yml, /provider-response|observation|sources\/kric-station-convenience-standard.*\.json/);
   assert.match(yml, /git diff --cached --name-only --diff-filter=ACMR/);
-  assert.match(yml, /candidate-build-spec\.json/);
-  assert.match(yml, /current-capital-facility-source-admission\.json/);
   assert.match(yml, /source-snapshots\.json/);
   assert.match(yml, /source-inventory\.json/);
 });
 
-test("KRIC refresh workflow retains both canonical release identity outputs", () => {
+test("KRIC refresh workflow ends at ledger registration and never commits candidate-side outputs (#862 결정 C)", () => {
   const yml = readFileSync(workflowPath, "utf8");
-  assert.match(yml, /tools\/datapack\/release\/release-request\.json/);
-  assert.match(yml, /tools\/datapack\/release\/hash-evidence\.json/);
+  for (const candidateSide of [
+    "candidate-build-spec.json",
+    "release-request.json",
+    "hash-evidence.json",
+    "current-capital-facility-source-admission.json",
+  ]) {
+    assert.equal(yml.includes(candidateSide), false, `${candidateSide} belongs to the nationwide candidate refresh`);
+  }
+  assert.equal(
+    (yml.match(/'tools\/datapack\/\(release\/source-snapshots\\\.json\|source-inventory\\\.json\|sources\/\[\^\/\]\+\\\.json\)'/g) ?? []).length,
+    2,
+  );
+});
+
+test("KRIC refresh workflow recovers a published claim through the same registration-only output set", () => {
+  const yml = readFileSync(workflowPath, "utf8");
   assert.match(yml, /gh run download "\$\{source_run_id\}"/);
   assert.match(yml, /--phase recover-published/);
   assert.match(yml, /--phase finalize/);
