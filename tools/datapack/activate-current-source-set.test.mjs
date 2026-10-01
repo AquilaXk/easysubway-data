@@ -34,6 +34,7 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   validateFreshCandidateSelectedItxEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
+import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
 import {
   normalizeStationName,
   projectCapitalTopologyOwnership,
@@ -97,6 +98,21 @@ function currentCapitalTopologyAdmission(sourceInventory) {
 
 async function currentCapitalTopology(sourceInventory) {
   const admission = currentCapitalTopologyAdmission(sourceInventory);
+  const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
+  const bytes = await readFile(path.join(root, relativePath));
+  const topology = JSON.parse(bytes);
+  assert.equal(topology.contentSha256, admission.topologyContentSha256);
+  return { admission, relativePath, bytes, topology };
+}
+
+// 고정 이력 handoff의 [collectedAt, freshnessExpiresAt) 창 안에서 관측된 원장 capital topology 행을 고른다.
+async function handoffWindowCapitalTopology(handoff) {
+  const ledger = await readJson("tools/datapack/release/source-snapshots.json");
+  const rows = ledger.filter(({ sourceId, capturedAt }) => sourceId === "capital-route-topology"
+    && Date.parse(capturedAt) >= Date.parse(handoff.collectedAt)
+    && Date.parse(capturedAt) < Date.parse(handoff.freshnessExpiresAt));
+  assert.equal(rows.length, 1);
+  const admission = { topologySnapshotId: rows[0].snapshotId, topologyContentSha256: rows[0].contentSha256 };
   const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
   const bytes = await readFile(path.join(root, relativePath));
   const topology = JSON.parse(bytes);
@@ -2426,14 +2442,24 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", governancePolicyVersion: "2026-07-15",
     governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",
   };
+  // #862: 이 활성화는 고정 이력 handoff(KRIC 4호선 20260809, 30일 창)에 묶여 있다. 현재 원장 head가 그 창을
+  // 지나면(2026-10-01 재등록) 시나리오가 성립하지 않으므로, 창 안에서 관측된 원장 이력 topology로 같은 검사를 한다.
   const [{ topology: baselineTopology, bytes: baselineTopologyBytes },
     { admission: currentCapitalAdmission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology }] = await Promise.all([
     historicalCandidateCapitalTopology(baseSpec),
-    currentCapitalTopology(currentInventory),
+    handoffWindowCapitalTopology(handoff),
   ]);
-  const currentIncheonSource = currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
-  assert.ok(currentIncheonSource?.topologyAdmissionEvidence?.snapshotPath);
-  const currentIncheonTopologyPath = currentIncheonSource.topologyAdmissionEvidence.snapshotPath;
+  const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${currentCapitalAdmission.topologySnapshotId.slice(-8)}.json`;
+  // 창 안의 topology로 수도권 topology admission을 공식 재결속 함수로 맞춘다(main 당시 inventory 상태와 같은 결속).
+  const windowInventory = withCurrentCapitalTopologyAdmissions({
+    inventory,
+    topology: currentTopology,
+    topologySnapshotId: currentCapitalAdmission.topologySnapshotId,
+    reviewedAt: currentTopology.capturedAt,
+    snapshotBytesByPath: await collectPositionSnapshotBytes(currentInventory),
+    topologySnapshotBytes: currentTopologyBytes,
+    layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(currentInventory),
+  });
   const currentIncheonTopologyBytes = await readFile(path.join(root, currentIncheonTopologyPath));
   const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
   const currentIncheonAccessibilitySource = currentInventory.sources
@@ -2481,7 +2507,7 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     rawArtifact: { collectedAt: handoff.collectedAt },
     rawArtifactBytes,
     sourceSnapshots,
-    sourceInventory: inventory,
+    sourceInventory: windowInventory,
     productionInput: {
       sourceIds: sourceIds.slice(0, 6),
       stationMappings: [
