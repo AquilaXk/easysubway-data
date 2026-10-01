@@ -188,6 +188,15 @@ test("Daejeon topology registration replays retained sources and refreshes curre
     membershipAdmissionEvidence: structuredClone(source.membershipAdmissionEvidence),
   };
   const dependentFixtures = await retainedDependentFixtures(authority.root);
+  // #862: 접근성 admission은 저장소 fixture와 다른 원본 CSV로 갱신될 수 있다(#739). 재결속은 admission
+  // snapshot이 보존한 원본(rawSources)을 써야 한다. fixture CSV는 일부러 옛 바이트로 바꿔 둔다.
+  const [elevatorRaw, escalatorRaw] = await Promise.all([readFile(DAEJEON_ELEVATOR_PATH), readFile(DAEJEON_ESCALATOR_PATH)]);
+  const admittedAccessibility = JSON.parse(await readFile(DAEJEON_ACCESSIBILITY_SNAPSHOT_PATH, "utf8"));
+  admittedAccessibility.rawSources = [["15041384", elevatorRaw], ["15041361", escalatorRaw]]
+    .map(([datasetId, bytes]) => ({ datasetId, rawSha256: sha(bytes), bytesBase64: bytes.toString("base64") }));
+  await mkdir(path.join(authority.root, path.dirname(dependentFixtures.accessibilitySnapshot.snapshotPath)), { recursive: true });
+  await writeFile(path.join(authority.root, dependentFixtures.accessibilitySnapshot.snapshotPath), `${JSON.stringify(admittedAccessibility)}\n`);
+  await writeFile(path.join(authority.root, dependentFixtures.paths.elevatorPath), Buffer.concat([elevatorRaw, Buffer.from("\n")]));
   const mapSource = {
     id: "daejeon-transportation-route-map-positions",
     routeMapAdmissionEvidence: structuredClone(dependentFixtures.mapSnapshot),

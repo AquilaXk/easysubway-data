@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, rmdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
 import {
@@ -33,6 +35,8 @@ import {
   currentLiveChainTransferOutputPaths,
 } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { admittedTopologySource, deriveTopology, projectItxTopologyIntoCanonicalFixture } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OUTPUTS = Object.freeze([
@@ -52,18 +56,50 @@ const ACTIVATED_CURRENT_OUTPUT = "ACTIVATED_CURRENT_OUTPUT";
 const PRE_APPROVAL_CURRENT_CANDIDATE = "PRE_APPROVAL_CURRENT_CANDIDATE";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
+const execFileAsync = promisify(execFile);
+// #862 결정 1(A2): 결정 C 환승 재결속 baseline 이후 바뀌어도 되는 경로. refresh-nationwide-candidate의 출력
+// (NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS, 전국 정본 팩 제외)과 문서 파편뿐이다. 순환 import를 피하려고
+// 문자열로 두고, 테스트가 원래 목록과 같은지 고정한다.
+export const TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS = Object.freeze([
+  "tools/datapack/release/current-five-region-source-fan-in.json",
+  "tools/datapack/reports/nationwide-requirement-ownership-ledger.json",
+  "tools/datapack/release/nationwide-route-edge-input.json",
+  "tools/datapack/release/nationwide-station-line-input.json",
+  "tools/datapack/release/nationwide-candidate-preparation.json",
+  "tools/datapack/release/nationwide-car-door-hint-quarantine.json",
+  "tools/datapack/release/nationwide-regional-timetable-quarantine.json",
+  "tools/datapack/release/candidate-build-spec.json",
+  "release/product-gates/production-datapack-scope.json",
+  "tools/datapack/release/release-request.json",
+  "tools/datapack/release/hash-evidence.json",
+  "contracts/documentation/documentation-fragment.json",
+]);
 const MOLIT = "molit-urban-rail-full-route";
 const PUBLIC_STATIC_NETWORK_V2_SUCCESSOR = "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const CAPITAL_CANONICAL_PACK = "tools/datapack/release/capital-production-canonical-pack.json";
+const ITX_COVERAGE_CONTRACT = "tools/datapack/itx-cheongchun-coverage-contract.json";
+const ITX_SERVICE_CLASS = "ITX_CHEONGCHUN";
+const ITX_TOPOLOGY_DELTA_PROOF_KIND = "current-capital-itx-topology-delta-proof";
+const ITX_TOPOLOGY_DELTA_PROOF_DIRECTORY = "tools/datapack/release/";
+// #862: 승인 ITX topology delta 전용 proof 모드의 승인 목록이다.
+// 승격된 ITX 원천(11ba30b4…, ADMITTED_TOPOLOGY_INPUTS 결속)의 evidence와 그 직전 승격본 evidence를 묶는다.
+// #866에서 live-chain terminal proof를 전국 후보 형식으로 이식하면 그 proof로 대체한다.
+export const APPROVED_ITX_TOPOLOGY_DELTAS = Object.freeze([Object.freeze({
+  evidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260930163854026.json",
+  evidenceSha256: "91436f7722d2faf8e8b17e91936fa044f5020c51c6dc1a79d8ff2930c33946ab",
+  previousEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
+  previousEvidenceSha256: "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d",
+})]);
 
 const TERMINAL_MARKERS = Object.freeze([TRANSITION, SUCCESSOR]);
 const TERMINAL_TOPOLOGY_INPUT_PATTERNS = Object.freeze([
-  /^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u,
+  CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN,
   /^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u,
   /^tools\/datapack\/sources\/incheon-line1-train-timetable-[0-9]{8}\.json$/u,
   /^tools\/datapack\/sources\/incheon-line2-train-timetable-[0-9]{8}\.json$/u,
 ]);
-const TERMINAL_TOPOLOGY_REVERIFICATION = /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u;
+const TERMINAL_TOPOLOGY_REVERIFICATION = CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN;
 const TERMINAL_TRANSFER_DESCRIPTOR = /^tools\/datapack\/sources\/seoul-metro-transfer-distance-duration-[0-9]{8}T[0-9]{9}Z\.json$/u;
 
 function target(root, relative) {
@@ -546,11 +582,136 @@ export function assertPendingMarkerProducerBoundary({
   }
 }
 
+// #862: 승인 ITX topology delta proof를 tracked 입력에서 다시 계산한다.
+// - 현재 ITX 원천은 contract의 승격본이고 ADMITTED_TOPOLOGY_INPUTS에 결속돼 있어야 한다.
+// - evidence 두 개(승격본·직전 승격본)는 승인 목록의 sha와 같고, 각 원천에서 유도한 topology와 같아야 한다.
+// - 정본 팩에서 ITX edge를 직전 topology로 되돌린 팩(적용 전)에 승인 topology를 다시 적용하면
+//   tracked 정본 팩 바이트와 정확히 같아야 한다(적용 후).
+export async function deriveApprovedItxTopologyDeltaProof({ repositoryRoot = ROOT } = {}) {
+  const root = path.resolve(repositoryRoot);
+  const readTracked = async (relative) => (await readStableRegularFile(target(root, relative), relative)).bytes;
+  const contract = parse(await readTracked(ITX_COVERAGE_CONTRACT), "ITX coverage contract");
+  const reference = contract?.sourceTimetableArtifact;
+  const digits = /^itx-cheongchun-source-timetable-([0-9]{17})$/u.exec(reference?.artifactId ?? "")?.[1];
+  const evidencePath = digits == null ? null : `tools/datapack/itx-cheongchun-topology-evidence-${digits}.json`;
+  const approval = APPROVED_ITX_TOPOLOGY_DELTAS.find((entry) => entry.evidencePath === evidencePath);
+  if (!approval) throw new Error("ITX topology delta evidence is not approved");
+  const [evidenceBytes, previousEvidenceBytes, sourceBytes, previousSourceBytes, packBytes] = await Promise.all([
+    readTracked(approval.evidencePath), readTracked(approval.previousEvidencePath),
+    readTracked(reference.artifactPath), readTracked(reference.promotion?.previousArtifactPath ?? ""),
+    readTracked(CAPITAL_CANONICAL_PACK),
+  ]);
+  if (sha(evidenceBytes) !== approval.evidenceSha256 || sha(previousEvidenceBytes) !== approval.previousEvidenceSha256) {
+    throw new Error("ITX topology delta evidence is not approved");
+  }
+  const evidence = parse(evidenceBytes, "ITX topology evidence");
+  const previousEvidence = parse(previousEvidenceBytes, "previous ITX topology evidence");
+  if (sha(sourceBytes) !== reference.sha256 || evidence.sourceArtifact?.sha256 !== reference.sha256
+    || sha(previousSourceBytes) !== reference.promotion.previousArtifactSha256
+    || previousEvidence.sourceArtifact?.sha256 !== reference.promotion.previousArtifactSha256) {
+    throw new Error("ITX topology delta source identity mismatch");
+  }
+  const source = parse(sourceBytes, "ITX source");
+  await admittedTopologySource(reference, source);
+  const topology = deriveTopology(source);
+  const previousTopology = deriveTopology(parse(previousSourceBytes, "previous ITX source"));
+  for (const [derived, recorded] of [[topology, evidence.topology], [previousTopology, previousEvidence.topology]]) {
+    if (derived.sha256 !== recorded?.sha256 || derived.edges.length !== recorded?.edgeCount) {
+      throw new Error("ITX topology delta evidence topology mismatch");
+    }
+  }
+  const before = parse(packBytes, "capital canonical pack");
+  projectItxTopologyIntoCanonicalFixture(before, previousTopology);
+  const beforeBytes = Buffer.from(`${JSON.stringify(before)}\n`);
+  const after = structuredClone(before);
+  projectItxTopologyIntoCanonicalFixture(after, topology);
+  // 활성화 도구가 network edge 순서를 다시 정렬하므로 edge id 순서만 맞춰 의미를 비교한다.
+  const edgeOrdered = (fixture) => {
+    const value = structuredClone(fixture);
+    for (const pack of value.packs) pack.networkEdges?.sort((left, right) => codepointCompare(left.id, right.id));
+    return value;
+  };
+  if (!equalJson(edgeOrdered(after), edgeOrdered(parse(packBytes, "capital canonical pack")))) {
+    throw new Error("ITX topology delta canonical pack mismatch");
+  }
+  const ids = (value) => value.edges.map(({ id }) => id);
+  const previousIds = new Set(ids(previousTopology)); const currentIds = new Set(ids(topology));
+  const itxEdges = (fixture) => fixture.packs.find(({ id }) => id === fixture.manifest.activePack.id).networkEdges
+    .filter(({ serviceClass }) => serviceClass === ITX_SERVICE_CLASS);
+  const proof = {
+    schemaVersion: 1,
+    artifactKind: ITX_TOPOLOGY_DELTA_PROOF_KIND,
+    evidencePath: approval.evidencePath,
+    evidenceSha256: approval.evidenceSha256,
+    previousEvidencePath: approval.previousEvidencePath,
+    previousEvidenceSha256: approval.previousEvidenceSha256,
+    sourceSha256: reference.sha256,
+    previousSourceSha256: reference.promotion.previousArtifactSha256,
+    beforeCanonicalPackSha256: sha(beforeBytes),
+    afterCanonicalPackSha256: sha(packBytes),
+    beforeItxEdgeCount: previousIds.size,
+    afterItxEdgeCount: currentIds.size,
+    removedEdgeIds: [...previousIds].filter((id) => !currentIds.has(id)).sort(codepointCompare),
+    addedEdgeIds: [...currentIds].filter((id) => !previousIds.has(id)).sort(codepointCompare),
+  };
+  return { proof, beforeItxEdges: itxEdges(before), afterItxEdges: itxEdges(after) };
+}
+
+// 순수 검증: proof·재계산 proof·committed route·counterfactual route가 모두 맞을 때만 delta를 돌려준다.
+export function verifyApprovedItxTopologyRouteDelta({
+  proof, expectedProof, routeBefore, routeAfter, counterfactualBefore, counterfactualAfter,
+} = {}) {
+  if (proof == null || typeof proof !== "object" || Array.isArray(proof)) throw new Error("ITX topology delta proof is required");
+  if (!APPROVED_ITX_TOPOLOGY_DELTAS.some(({ evidenceSha256 }) => evidenceSha256 === proof.evidenceSha256)) {
+    throw new Error("ITX topology delta evidence is not approved");
+  }
+  if (!equalJson(proof, expectedProof)) throw new Error("ITX topology delta proof mismatch");
+  if (!equalJson(counterfactualAfter?.routeEdges, routeAfter?.routeEdges)) throw new Error("ITX topology counterfactual method mismatch");
+  if (!equalJson(routeBefore?.routeEdges, counterfactualBefore?.routeEdges)) throw new Error("committed route is not the approved ITX predecessor");
+  if (!equalJson(routeBefore.stationLines, routeAfter.stationLines)) throw new Error("current-capital refresh topology delta mismatch");
+  const before = new Map(routeBefore.routeEdges.map((edge) => [edge.edgeId, edge]));
+  const after = new Map(routeAfter.routeEdges.map((edge) => [edge.edgeId, edge]));
+  if (before.size !== routeBefore.routeEdges.length || after.size !== routeAfter.routeEdges.length) throw new Error("ITX topology delta route identity mismatch");
+  const removedEdgeIds = [...before.keys()].filter((id) => !after.has(id)).sort(codepointCompare);
+  const addedEdgeIds = [...after.keys()].filter((id) => !before.has(id)).sort(codepointCompare);
+  if ([...removedEdgeIds.map((id) => before.get(id)), ...addedEdgeIds.map((id) => after.get(id))]
+    .some(({ serviceClass }) => serviceClass !== ITX_SERVICE_CLASS)) throw new Error("non-ITX topology delta");
+  for (const [id, edge] of before) {
+    if (!after.has(id) || equalJson(edge, after.get(id))) continue;
+    throw new Error(edge.serviceClass === ITX_SERVICE_CLASS ? "ITX edge changed in place" : "non-ITX topology delta");
+  }
+  if (!equalJson(removedEdgeIds, proof.removedEdgeIds) || !equalJson(addedEdgeIds, proof.addedEdgeIds)) {
+    throw new Error("ITX topology delta route mismatch");
+  }
+  return { removedEdgeIds, addedEdgeIds };
+}
+
+// 투영된 후보 fixture의 ITX edge만 주어진 edge로 바꾼다(counterfactual route 계산용).
+function replaceProjectedItxEdges(projected, itxEdges) {
+  const fixture = structuredClone(projected);
+  const packs = fixture?.packs?.filter(({ id }) => id === fixture?.manifest?.activePack?.id) ?? [];
+  if (packs.length !== 1 || !Array.isArray(packs[0].networkEdges)) throw new Error("ITX topology counterfactual fixture is invalid");
+  packs[0].networkEdges = [...packs[0].networkEdges.filter(({ serviceClass }) => serviceClass !== ITX_SERVICE_CLASS), ...structuredClone(itxEdges)]
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  return fixture;
+}
+
+export function assertCurrentCapitalRefreshNarrowDelta(input) { assertNarrowDelta(input); }
+
+// itxTopologyDelta는 verifyApprovedItxTopologyRouteDelta가 검증한 결과만 받는다.
+// route edge는 그 delta를 적용한 결과와 정확히 같아야 하고, 나머지 topology는 그대로여야 한다.
+function routeEdgesAfterItxDelta(routeEdges, itxTopologyDelta) {
+  const removed = new Set(itxTopologyDelta.removedEdgeIds);
+  return routeEdges.filter(({ edgeId }) => !removed.has(edgeId)).map(({ edgeId }) => edgeId)
+    .concat(itxTopologyDelta.addedEdgeIds).sort(codepointCompare);
+}
+
 function assertNarrowDelta({
   stationBefore,
   routeBefore,
   stationAfter,
   routeAfter,
+  itxTopologyDelta = null,
   allowCandidateIdentityTransition = false,
   expectedExitEvidenceRows = null,
   expectedBeforeFacilityRows = null,
@@ -558,9 +719,13 @@ function assertNarrowDelta({
   expectedBeforeTransferRows = null,
   expectedAfterTransferRows = null,
 }) {
+  const routeEdgeDeltaAllowed = itxTopologyDelta != null
+    && equalJson(routeEdgesAfterItxDelta(routeBefore.routeEdges, itxTopologyDelta), routeAfter.routeEdges.map(({ edgeId }) => edgeId).sort(codepointCompare))
+    && routeBefore.routeEdges.every((edge) => itxTopologyDelta.removedEdgeIds.includes(edge.edgeId)
+      || equalJson(edge, routeAfter.routeEdges.find(({ edgeId }) => edgeId === edge.edgeId)));
   if (!equalJson(stationBefore.stationLines, stationAfter.stationLines)
     || !equalJson(routeBefore.stationLines, routeAfter.stationLines)
-    || !equalJson(routeBefore.routeEdges, routeAfter.routeEdges)) throw new Error("current-capital refresh topology delta mismatch");
+    || (!equalJson(routeBefore.routeEdges, routeAfter.routeEdges) && !routeEdgeDeltaAllowed)) throw new Error("current-capital refresh topology delta mismatch");
   const stripStation = (value) => ({
     ...value,
     candidate: { ...value.candidate, sourceSetSha256: "", ...(allowCandidateIdentityTransition ? { candidateId: "" } : {}) },
@@ -568,7 +733,9 @@ function assertNarrowDelta({
   });
   const stripRoute = (value) => ({
     ...value,
-    candidate: { ...value.candidate, sourceSetSha256: "", ...(allowCandidateIdentityTransition ? { candidateId: "" } : {}) },
+    candidate: { ...value.candidate, sourceSetSha256: "", ...(allowCandidateIdentityTransition ? { candidateId: "" } : {}),
+      ...(itxTopologyDelta != null ? { topologySha256: "" } : {}) },
+    ...(itxTopologyDelta != null ? { routeEdges: [] } : {}),
   });
   if (!equalJson(stripStation(stationBefore), stripStation(stationAfter)) || !equalJson(stripRoute(routeBefore), stripRoute(routeAfter))) {
     throw new Error("current-capital refresh evidence delta mismatch");
@@ -716,6 +883,52 @@ function assertEvidenceDelta(before, after, allowCandidateIdentityTransition, ex
   }
 }
 
+async function gitBytes(root, args) {
+  const { stdout } = await execFileAsync("git", args, { cwd: root, encoding: "buffer", maxBuffer: 1024 * 1024 * 1024 });
+  return stdout;
+}
+
+// #862 결정 1(A2): 결정 C의 환승 source-admission-only 재결속(5출력)은 후보·request·hash를 쓰지 않는다.
+// 재결속 직전 커밋(baseline)의 8개 경로 바이트를 prestate로, 현재 작업 트리 바이트를 bytes로 삼아
+// 기존 검증 함수(buildAuthenticatedCurrentCapitalTransferEvidenceTransition)에 그대로 넘긴다.
+export async function deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot = ROOT, baselineGitSha } = {}) {
+  const root = path.resolve(repositoryRoot);
+  if (typeof baselineGitSha !== "string" || !/^[0-9a-f]{40}$/u.test(baselineGitSha)) {
+    throw new Error("TRANSFER source admission baseline must be a full git SHA");
+  }
+  try {
+    await gitBytes(root, ["merge-base", "--is-ancestor", baselineGitSha, "HEAD"]);
+  } catch {
+    throw new Error("TRANSFER source admission baseline is not an ancestor of HEAD");
+  }
+  if ((await gitBytes(root, ["status", "--porcelain"])).length !== 0) {
+    throw new Error("TRANSFER source admission requires a clean tree");
+  }
+  const inventory = parse((await readStableRegularFile(target(root, "tools/datapack/source-inventory.json"), "source inventory")).bytes, "source inventory");
+  const descriptorPath = inventory.sources?.find(({ id }) => id === TRANSFER)?.transferAdmissionEvidence?.snapshotPath;
+  const outputPaths = currentLiveChainTransferOutputPaths(descriptorPath);
+  const transferPaths = currentLiveChainTransferOutputPaths(descriptorPath, { sourceAdmissionOnly: true });
+  const allowed = new Set([...transferPaths, ...TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS]);
+  const changed = (await gitBytes(root, ["diff", "--name-only", "-z", baselineGitSha, "HEAD"])).toString("utf8").split("\0").filter(Boolean);
+  // 코드(*.mjs)와 테스트 등록 manifest는 데이터 입력이 아니다. 전이 행은 양쪽 모두 현재 코드로 다시 유도된다.
+  const isCode = (relative) => relative.endsWith(".mjs") || relative === "tools/ci/data-test-ownership.json";
+  const unexpected = changed.filter((relative) => !allowed.has(relative) && !isCode(relative)).sort(codepointCompare);
+  if (unexpected.length !== 0) {
+    throw new Error(`TRANSFER source admission baseline changed non-TRANSFER inputs: ${unexpected.join(", ")}`);
+  }
+  const rebindCommit = (await gitBytes(root, ["rev-list", "-1", `${baselineGitSha}..HEAD`, "--", ...transferPaths])).toString("utf8").trim();
+  if (!/^[0-9a-f]{40}$/u.test(rebindCommit)) throw new Error("TRANSFER source admission baseline has no later rebind commit");
+  const outputs = [];
+  for (const relative of outputPaths) {
+    const prestate = await gitBytes(root, ["show", `${baselineGitSha}:${relative}`]);
+    if (transferPaths.includes(relative) && !prestate.equals(await gitBytes(root, ["show", `${rebindCommit}^:${relative}`]))) {
+      throw new Error(`TRANSFER source admission baseline bytes differ from the rebind commit prestate: ${relative}`);
+    }
+    outputs.push({ relative, bytes: (await readStableRegularFile(target(root, relative), `current ${relative}`)).bytes, prestate });
+  }
+  return outputs;
+}
+
 export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   repositoryRoot = ROOT,
   phase = ACTIVATED_CURRENT_OUTPUT,
@@ -723,6 +936,8 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   canonicalPack = undefined,
   transferRebindOutputs = undefined,
   markerState = "PRESENT",
+  approvedItxTopologyDeltaProof = undefined,
+  transferSourceAdmissionOutputs = undefined,
 } = {}) {
   requireTerminalMarkerState(markerState);
   requirePhase(phase);
@@ -851,11 +1066,42 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   } else if (transferRebindOutputs !== undefined) {
     throw new Error("current-capital refresh TRANSFER evidence transition requires pending markers");
   }
+  if (transferSourceAdmissionOutputs !== undefined) {
+    // #862 결정 1(A2): 결정 C 환승 재결속은 터미널 전이 밖에서만, 기존 검증 함수를 그대로 거쳐 받는다.
+    if (marker) throw new Error("current-capital refresh TRANSFER source admission cannot run inside a terminal transition");
+    if (approvedItxTopologyDeltaProof !== undefined) throw new Error("current-capital refresh TRANSFER source admission cannot combine with an ITX topology delta");
+    const transferTransition = await buildAuthenticatedCurrentCapitalTransferEvidenceTransition({
+      repositoryRoot: root,
+      outputs: transferSourceAdmissionOutputs,
+      beforeStation: stationBefore,
+      afterStation: stationAfter,
+    });
+    expectedBeforeTransferRows = transferTransition.beforeRows;
+    expectedAfterTransferRows = transferTransition.afterRows;
+    transferRebindInputs = transferTransition.inputs;
+  }
+  let itxTopologyDelta = null;
+  if (approvedItxTopologyDeltaProof !== undefined) {
+    // #862: 승인 ITX topology delta 전용 proof 모드(#866 이식 시 terminal proof로 대체 예정).
+    const derived = await deriveApprovedItxTopologyDeltaProof({ repositoryRoot: root });
+    const counterfactual = (itxEdges) => buildCurrentCapitalRouteEdgeInput({
+      ...refreshed, canonicalPack: replaceProjectedItxEdges(projected, itxEdges),
+    });
+    itxTopologyDelta = verifyApprovedItxTopologyRouteDelta({
+      proof: approvedItxTopologyDeltaProof,
+      expectedProof: derived.proof,
+      routeBefore,
+      routeAfter,
+      counterfactualBefore: counterfactual(derived.beforeItxEdges),
+      counterfactualAfter: counterfactual(derived.afterItxEdges),
+    });
+  }
   assertNarrowDelta({
     stationBefore,
     routeBefore,
     stationAfter,
     routeAfter,
+    itxTopologyDelta,
     allowCandidateIdentityTransition,
     expectedExitEvidenceRows,
     expectedBeforeFacilityRows,
@@ -1245,17 +1491,62 @@ export async function commitCurrentCapitalTerminalManifest({
     throw error;
   } finally { await release(); }
 }
+// ITX delta proof 모드의 커밋: 잠금 안에서 prestate를 다시 확인하고 출력 3개를 바꾼다.
+// 중간에 실패하면 이미 바꾼 출력을 원래 바이트로 되돌린다.
+async function commitApprovedItxTopologyDelta({ root, outputs, beforeCommit }) {
+  await beforeCommit();
+  await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
+  const current = [];
+  for (const output of outputs) {
+    const file = await readStableRegularFile(target(root, output.relative), "current-capital ITX delta target");
+    if (!output.prestate?.bytes || !file.bytes.equals(output.prestate.bytes)) throw new Error("current-capital refresh preserves foreign replacement");
+    current.push(file);
+  }
+  const replaced = [];
+  try {
+    for (const [index, output] of outputs.entries()) {
+      if (output.bytes.equals(current[index].bytes)) continue;
+      await atomicReplace(target(root, output.relative), output.bytes, { original: current[index] });
+      replaced.push(index);
+    }
+  } catch (error) {
+    for (const index of replaced.reverse()) {
+      const written = await readStableRegularFile(target(root, outputs[index].relative), "current-capital ITX delta rollback");
+      await atomicReplace(target(root, outputs[index].relative), current[index].bytes, { original: written });
+    }
+    throw error;
+  }
+}
+
 export async function refreshCurrentCapitalAccessibilityFull({
   repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined, markerState = "PRESENT",
+  approvedItxTopologyDeltaProof = undefined, transferSourceAdmissionBaselineGitSha = undefined,
 } = {}) {
   requireTerminalMarkerState(markerState);
-  const root = path.resolve(repositoryRoot); const release = await acquireLock(root);
+  const root = path.resolve(repositoryRoot);
+  // #862 A2: 잠금 디렉터리는 untracked라서 baseline·clean tree 검사는 잠금 전에 한다. 잠금 뒤에는
+  // 기존 검증 함수와 assertInputsStable이 출력 바이트가 그 사이 바뀌지 않았는지 다시 확인한다.
+  const transferSourceAdmissionOutputs = transferSourceAdmissionBaselineGitSha === undefined ? undefined
+    : await deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: transferSourceAdmissionBaselineGitSha });
+  const release = await acquireLock(root);
   try {
     await recover(root);
-    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot: root, transferRebindOutputs, markerState });
+    const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
+      repositoryRoot: root, transferRebindOutputs, markerState, approvedItxTopologyDeltaProof, transferSourceAdmissionOutputs,
+    });
     await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
     const marker = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, TRANSITION));
     const transactionOutputs = [...outputs, outputs[0].fanIn];
+    if (transferSourceAdmissionOutputs !== undefined) {
+      if (marker) throw new Error("current-capital refresh TRANSFER source admission cannot run inside a terminal transition");
+      await commitApprovedItxTopologyDelta({ root, outputs: transactionOutputs, beforeCommit });
+      return { outputs: TRANSACTION_OUTPUTS, transferSourceAdmissionBaselineGitSha };
+    }
+    if (approvedItxTopologyDeltaProof !== undefined) {
+      if (marker) throw new Error("ITX topology delta proof mode cannot run inside a terminal transition");
+      await commitApprovedItxTopologyDelta({ root, outputs: transactionOutputs, beforeCommit });
+      return { outputs: TRANSACTION_OUTPUTS };
+    }
     if (!transactionOutputs.every(({ bytes, prestate }) => bytes.equals(prestate.bytes)) || marker) {
       if (!marker) throw new Error("current-capital refresh transition marker is required");
       const successor = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, SUCCESSOR));
@@ -1266,5 +1557,38 @@ export async function refreshCurrentCapitalAccessibilityFull({
   } finally { await release(); }
 }
 
-async function main(argv) { if (argv.length !== 0) throw new Error("current-capital refresh arguments mismatch"); const result = await refreshCurrentCapitalAccessibilityFull(); process.stdout.write(`${JSON.stringify(result)}\n`); }
+async function main(argv) {
+  if (argv.length === 0) {
+    const result = await refreshCurrentCapitalAccessibilityFull();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
+  }
+  // #862: 승인 ITX topology delta 전용 proof 모드(#866 이식 시 terminal proof로 대체 예정).
+  if (argv.length === 3 && argv[0] === "--derive-approved-itx-topology-delta-proof" && argv[1] === "--output") {
+    if (!path.isAbsolute(argv[2] ?? "")) throw new Error("ITX topology delta proof output must be absolute");
+    const { proof } = await deriveApprovedItxTopologyDeltaProof();
+    await writeFile(argv[2], `${JSON.stringify(proof, null, 2)}\n`, { flag: "wx", mode: 0o644 });
+    process.stdout.write(`${JSON.stringify({ output: argv[2], evidenceSha256: proof.evidenceSha256 })}\n`);
+    return;
+  }
+  if (argv.length === 2 && argv[0] === "--approved-itx-topology-delta-proof") {
+    const relative = argv[1];
+    if (typeof relative !== "string" || path.isAbsolute(relative) || !relative.startsWith(ITX_TOPOLOGY_DELTA_PROOF_DIRECTORY)
+      || relative.split("/").some((part) => part === "" || part === "." || part === "..")) {
+      throw new Error("ITX topology delta proof must be a tracked release path");
+    }
+    const proof = parse((await readStableRegularFile(target(ROOT, relative), relative)).bytes, "ITX topology delta proof");
+    if (proof?.artifactKind !== ITX_TOPOLOGY_DELTA_PROOF_KIND) throw new Error("ITX topology delta proof is required");
+    const result = await refreshCurrentCapitalAccessibilityFull({ approvedItxTopologyDeltaProof: proof });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
+  }
+  // #862 결정 1(A2): 결정 C 환승 재결속 뒤 재생성. baseline은 재결속 직전 커밋의 전체 SHA다.
+  if (argv.length === 2 && argv[0] === "--transfer-source-admission-baseline") {
+    const result = await refreshCurrentCapitalAccessibilityFull({ transferSourceAdmissionBaselineGitSha: argv[1] });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
+  }
+  throw new Error("current-capital refresh arguments mismatch");
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

@@ -12,6 +12,7 @@ import {
   validateSeoulRouteMapPositionsSnapshot,
 } from "./collect-seoul-route-map-positions.mjs";
 import { requirePublicStaticNetworkV2Admission } from "./public-static-network-v2-admission.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -219,7 +220,7 @@ function currentCapitalTopologyBinding(source, evidence, topologySourceId) {
     && currentAdmission.artifactKind === "capital-route-map-current-topology-admission"
     && currentAdmission.issue === 2776
     && currentAdmission.status === "ADMITTED"
-    && /^capital-route-topology-[0-9]{8}$/u.test(currentAdmission.topologySnapshotId ?? "")
+    && isCapitalRouteTopologySnapshotId(currentAdmission.topologySnapshotId)
     && SHA256.test(currentAdmission.topologyContentSha256 ?? "")
     && currentAdmission.positionSnapshotSha256
       === (evidence.currentLayoutAdmission?.snapshotSha256 ?? evidence.snapshotSha256)
@@ -280,7 +281,7 @@ export function withCurrentCapitalTopologyAdmissions({
   if (reviewedAt !== topology.capturedAt || Date.parse(topology.freshUntil) <= Date.parse(reviewedAt)) {
     throw new Error("current topology review/freshness identity is invalid");
   }
-  if (typeof topologySnapshotId !== "string" || !/^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId)) {
+  if (!isCapitalRouteTopologySnapshotId(topologySnapshotId)) {
     throw new Error("capital topology snapshotId is invalid");
   }
   if (!(snapshotBytesByPath instanceof Map)) throw new Error("snapshot bytes map is required");
@@ -446,7 +447,7 @@ async function main() {
   for (const source of inventory.sources ?? []) {
     const admission = source.routeMapAdmissionEvidence?.currentLayoutAdmission;
     if (admission == null) continue;
-    if (!/^capital-route-topology-[0-9]{8}$/u.test(admission.topologySnapshotId ?? "")) {
+    if (!isCapitalRouteTopologySnapshotId(admission.topologySnapshotId)) {
       throw new Error("Seoul current layout topology snapshot id is invalid");
     }
     const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;

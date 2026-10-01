@@ -104,7 +104,10 @@ test("candidate ITX topology evidence path is confined to the versioned root-rel
   try {
     const candidatePath = path.join(stage, "tools/datapack/release/candidate-build-spec.json");
     const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
-    assert.equal(candidate.itxTopologyEvidencePath, "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json");
+    // #862: 후보 ITX 증거는 contract가 가리키는 승격본의 버전 증거다(고정 날짜 대신 contract에서 유도).
+    const contract = JSON.parse(await readFile(path.join(stage, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+    const digits = /^itx-cheongchun-source-timetable-([0-9]{17})$/u.exec(contract.sourceTimetableArtifact.artifactId)?.[1];
+    assert.equal(candidate.itxTopologyEvidencePath, `tools/datapack/itx-cheongchun-topology-evidence-${digits}.json`);
     await assert.doesNotReject(buildCurrentActivePublicRouteMapMaterializationOutputs({ repositoryRoot: stage }));
     candidate.itxTopologyEvidencePath = "../outside.json";
     await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`);

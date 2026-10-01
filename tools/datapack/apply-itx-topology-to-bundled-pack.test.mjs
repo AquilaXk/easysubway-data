@@ -27,12 +27,12 @@ const root = path.resolve(import.meta.dirname, "../..");
 const buildNow = "2026-07-16T00:00:00.000Z";
 
 const OWNER_APPROVED_CURRENT_TOPOLOGY = Object.freeze({
-  artifactSha256: "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
-  topologySha256: "3c7f03504ed3c0acc2fafd43ba69f6f7503f33e70190e769bb9a1357f3d575e0",
+  artifactSha256: "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
+  topologySha256: "d9afca0a844a5967ca19768b8b13fe2ccf83947a7d18c9cb8406ccb7aa4babff",
   stationMembershipCount: 18,
   servedStationCount: 14,
-  edgeCount: 64,
-  unpairedEdgeCount: 8,
+  edgeCount: 48,
+  unpairedEdgeCount: 0,
 });
 
 function sha256(value) {
@@ -74,6 +74,12 @@ const admittedTopologyInputs = new Map([
     byteSize: 1463745,
   }],
   ["7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e", {
+    id: "capital",
+    sha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+    sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
+    byteSize: 388623,
+  }],
+  ["11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658", {
     id: "capital",
     sha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
     sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",

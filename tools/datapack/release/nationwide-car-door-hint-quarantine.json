@@ -3,8 +3,8 @@
   "artifactKind": "datapack-car-door-hint-quarantine",
   "issue": "https://github.com/AquilaXk/easysubway-data/issues/854",
   "sourceId": "kric-station-convenience-standard",
-  "sourceSnapshotId": "kric-station-convenience-standard-20260904T043909603Z",
-  "rawSha256": "9325f6ce549a699dc4988700a8f04e25ffc830ec84cdec6abcc4c18b3a5d967b",
+  "sourceSnapshotId": "kric-station-convenience-standard-20261001T050747096Z",
+  "rawSha256": "51d72d972269e48554975669b24b0b8ce67c063f45ca5804969af5dd36f2df25",
   "contract": {
     "targetFacilityTypes": [
       "STAIR",
@@ -44,6 +44,21 @@
   },
   "rows": [
     {
+      "id": "cardoor-station-9707f89c740a-shinbundang-BOTH-ELEVATOR-6-4-b324274c0f5b1554",
+      "stationId": "station-9707f89c740a",
+      "lineId": "shinbundang",
+      "direction": "BOTH",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 6,
+      "doorNumber": 4,
+      "gubun": "EV",
+      "dtlLoc": "(1F)동빙고방향대합실고객안내센터우측(B2)(오금환승)광교행승강장방면에스컬레이터옆(B4)광교방면승강장6-4",
+      "providerRecordHash": "2bd071b59213534cc6dd2a9e3085829368a494f77a020474e124ab61c801dffb",
+      "reasons": [
+        "DIRECTION_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
       "id": "cardoor-station-gangnam-shinbundang-BOTH-ELEVATOR-4-4-e97780f8de4a01a7",
       "stationId": "station-gangnam",
       "lineId": "shinbundang",
@@ -53,7 +68,7 @@
       "doorNumber": 4,
       "gubun": "EV",
       "dtlLoc": "(B2)2호선교대방향승강장4-4출입문근처,(B3)환승통로교대방면근처",
-      "providerRecordHash": "7f2f799a89ae26df1889b21c25bce74b4dd067b8790ea9566bddfe1947af10f6",
+      "providerRecordHash": "87d4c45e79ec4a1b61d1ca6a44b01059c9aff7f146e90131d3cc852ac71a63ff",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -68,22 +83,7 @@
       "doorNumber": 1,
       "gubun": "EV",
       "dtlLoc": "(B2)2호선역삼방향승강장7-1출입문근처,(B3)환승통로잠실방면근처",
-      "providerRecordHash": "7f2f799a89ae26df1889b21c25bce74b4dd067b8790ea9566bddfe1947af10f6",
-      "reasons": [
-        "DIRECTION_OUTSIDE_CONTRACT"
-      ]
-    },
-    {
-      "id": "cardoor-station-gangnam-shinbundang-BOTH-ELEVATOR-5-2-add9d404ba03e24e",
-      "stationId": "station-gangnam",
-      "lineId": "shinbundang",
-      "direction": "BOTH",
-      "targetFacilityType": "ELEVATOR",
-      "carNumber": 5,
-      "doorNumber": 2,
-      "gubun": "EV",
-      "dtlLoc": "(B3)대합실중앙표내는곳근처,(B4)양재방향승강장5-2출입문앞",
-      "providerRecordHash": "7f2f799a89ae26df1889b21c25bce74b4dd067b8790ea9566bddfe1947af10f6",
+      "providerRecordHash": "87d4c45e79ec4a1b61d1ca6a44b01059c9aff7f146e90131d3cc852ac71a63ff",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -98,7 +98,22 @@
       "doorNumber": 1,
       "gubun": "EV",
       "dtlLoc": "(B3)대합실중앙표내는곳근처,(B4)신논현방향승강장2-1출입문앞",
-      "providerRecordHash": "7f2f799a89ae26df1889b21c25bce74b4dd067b8790ea9566bddfe1947af10f6",
+      "providerRecordHash": "87d4c45e79ec4a1b61d1ca6a44b01059c9aff7f146e90131d3cc852ac71a63ff",
+      "reasons": [
+        "DIRECTION_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
+      "id": "cardoor-station-gangnam-shinbundang-BOTH-ELEVATOR-5-2-add9d404ba03e24e",
+      "stationId": "station-gangnam",
+      "lineId": "shinbundang",
+      "direction": "BOTH",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 5,
+      "doorNumber": 2,
+      "gubun": "EV",
+      "dtlLoc": "(B3)대합실중앙표내는곳근처,(B4)양재방향승강장5-2출입문앞",
+      "providerRecordHash": "87d4c45e79ec4a1b61d1ca6a44b01059c9aff7f146e90131d3cc852ac71a63ff",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -113,7 +128,7 @@
       "doorNumber": 4,
       "gubun": "EV",
       "dtlLoc": "(B2)3호선매봉방향승강장5-4출입문앞(B3)3호선매봉방향",
-      "providerRecordHash": "ce3a153b894c20fd13c7885a0fba63b2f7dc529bd6da2b277b79ba1e786aedef",
+      "providerRecordHash": "5aba0f57d4eab357a2c5a4e17fec31141d16e74062048f333fda2ca954989204",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -128,7 +143,7 @@
       "doorNumber": 3,
       "gubun": "EV",
       "dtlLoc": "(B2)3호선남부터미널방향승강장6-3출입문앞(B3)3호선남부터미널방향연결통로",
-      "providerRecordHash": "ce3a153b894c20fd13c7885a0fba63b2f7dc529bd6da2b277b79ba1e786aedef",
+      "providerRecordHash": "5aba0f57d4eab357a2c5a4e17fec31141d16e74062048f333fda2ca954989204",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -143,7 +158,7 @@
       "doorNumber": 1,
       "gubun": "EV",
       "dtlLoc": "(B3)P/A화장실맞은편(B4)강남방향2-1출입문앞",
-      "providerRecordHash": "ce3a153b894c20fd13c7885a0fba63b2f7dc529bd6da2b277b79ba1e786aedef",
+      "providerRecordHash": "5aba0f57d4eab357a2c5a4e17fec31141d16e74062048f333fda2ca954989204",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -158,7 +173,7 @@
       "doorNumber": 4,
       "gubun": "EV",
       "dtlLoc": "(B3)양재역방향승강장2-4출입문앞",
-      "providerRecordHash": "b10ce2d40ef52449f78f025688587552ed07f10aac3d700b67b8cba065649a3f",
+      "providerRecordHash": "590f301ae2cc695b0afce07bcbe2f23377675917bdb7bc705b281a30959ea4fe",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -173,22 +188,7 @@
       "doorNumber": 1,
       "gubun": "EV",
       "dtlLoc": "(B3)청계산입구역방향승강장5-1출입문앞",
-      "providerRecordHash": "b10ce2d40ef52449f78f025688587552ed07f10aac3d700b67b8cba065649a3f",
-      "reasons": [
-        "DIRECTION_OUTSIDE_CONTRACT"
-      ]
-    },
-    {
-      "id": "cardoor-station-c569e665bbac-shinbundang-BOTH-ELEVATOR-4-4-a9e0a4dec137119b",
-      "stationId": "station-c569e665bbac",
-      "lineId": "shinbundang",
-      "direction": "BOTH",
-      "targetFacilityType": "ELEVATOR",
-      "carNumber": 4,
-      "doorNumber": 4,
-      "gubun": "EV",
-      "dtlLoc": "(B1)표내는곳안쪽양재시민의숲역방향에스컬레이터(B3)양재시민의숲역방향승강장4-4출입문앞",
-      "providerRecordHash": "1266813bac1480712e54f443786d2f180101ced3495f995d4cd10ca61d83dc22",
+      "providerRecordHash": "590f301ae2cc695b0afce07bcbe2f23377675917bdb7bc705b281a30959ea4fe",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -203,7 +203,22 @@
       "doorNumber": 1,
       "gubun": "EV",
       "dtlLoc": "(B1)표내는곳안쪽화장실옆(B3)판교역방향승강장3-1출입문앞",
-      "providerRecordHash": "1266813bac1480712e54f443786d2f180101ced3495f995d4cd10ca61d83dc22",
+      "providerRecordHash": "5ff2f190027e49a23a68c015e89845eaf6420f5de95138377aec162282cc2569",
+      "reasons": [
+        "DIRECTION_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
+      "id": "cardoor-station-c569e665bbac-shinbundang-BOTH-ELEVATOR-4-4-a9e0a4dec137119b",
+      "stationId": "station-c569e665bbac",
+      "lineId": "shinbundang",
+      "direction": "BOTH",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 4,
+      "doorNumber": 4,
+      "gubun": "EV",
+      "dtlLoc": "(B1)표내는곳안쪽양재시민의숲역방향에스컬레이터(B3)양재시민의숲역방향승강장4-4출입문앞",
+      "providerRecordHash": "5ff2f190027e49a23a68c015e89845eaf6420f5de95138377aec162282cc2569",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -218,7 +233,7 @@
       "doorNumber": 4,
       "gubun": "EV",
       "dtlLoc": "(B1)미금역방향승강장6-4출입문앞(B2)환승표내는곳방향통로",
-      "providerRecordHash": "d6446b348854d8b55d088a460625a314a2c1badab7c8a09edc0307d7d2c17555",
+      "providerRecordHash": "785004fe65984d4b1662ca680ba042b8ebb925305c9b47c3ec7e5a69239d0989",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -233,7 +248,7 @@
       "doorNumber": 1,
       "gubun": "EV",
       "dtlLoc": "(B1)수내역방향승강장1-1출입문앞(B2)환승표내는곳방향통로",
-      "providerRecordHash": "d6446b348854d8b55d088a460625a314a2c1badab7c8a09edc0307d7d2c17555",
+      "providerRecordHash": "785004fe65984d4b1662ca680ba042b8ebb925305c9b47c3ec7e5a69239d0989",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -248,7 +263,7 @@
       "doorNumber": 1,
       "gubun": "EV",
       "dtlLoc": "(B2)운임구역대합실표내는곳방향(B3)미금역방향승강장4-1출입문앞",
-      "providerRecordHash": "d6446b348854d8b55d088a460625a314a2c1badab7c8a09edc0307d7d2c17555",
+      "providerRecordHash": "785004fe65984d4b1662ca680ba042b8ebb925305c9b47c3ec7e5a69239d0989",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -263,7 +278,67 @@
       "doorNumber": 4,
       "gubun": "EV",
       "dtlLoc": "(B2)운임구역대합실표내는곳방향(B3)판교역방향승강장3-4출입문앞",
-      "providerRecordHash": "d6446b348854d8b55d088a460625a314a2c1badab7c8a09edc0307d7d2c17555",
+      "providerRecordHash": "785004fe65984d4b1662ca680ba042b8ebb925305c9b47c3ec7e5a69239d0989",
+      "reasons": [
+        "DIRECTION_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
+      "id": "cardoor-station-810f79bc1737-shinbundang-BOTH-ELEVATOR-4-4-4b09e200d11a7526",
+      "stationId": "station-810f79bc1737",
+      "lineId": "shinbundang",
+      "direction": "BOTH",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 4,
+      "doorNumber": 4,
+      "gubun": "EV",
+      "dtlLoc": "(B3)E/V#2호기앞(B5)동천역방향승강장4-4출입문앞",
+      "providerRecordHash": "a472db80fe5b0ea2aa70e9943bdfd3566126d5e97df9518a992c2d0da1258714",
+      "reasons": [
+        "DIRECTION_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
+      "id": "cardoor-station-810f79bc1737-shinbundang-BOTH-ELEVATOR-3-2-da40db0157dbddb7",
+      "stationId": "station-810f79bc1737",
+      "lineId": "shinbundang",
+      "direction": "BOTH",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 3,
+      "doorNumber": 2,
+      "gubun": "EV",
+      "dtlLoc": "(B3)E/V#3호기앞(B5)정자역방향승강장3-2출입문앞",
+      "providerRecordHash": "a472db80fe5b0ea2aa70e9943bdfd3566126d5e97df9518a992c2d0da1258714",
+      "reasons": [
+        "DIRECTION_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
+      "id": "cardoor-station-583d6088d20b-shinbundang-BOTH-ELEVATOR-3-4-43cc9d428abed3f3",
+      "stationId": "station-583d6088d20b",
+      "lineId": "shinbundang",
+      "direction": "BOTH",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 3,
+      "doorNumber": 4,
+      "gubun": "EV",
+      "dtlLoc": "(B1)대합실(B3)미금역방향승강장3-4출입문앞",
+      "providerRecordHash": "a9d102a31fd325421886eae46e81d1c5ef7113b769b5dc5a5e26c18a16c0a0d1",
+      "reasons": [
+        "DIRECTION_OUTSIDE_CONTRACT"
+      ]
+    },
+    {
+      "id": "cardoor-station-eb09c73c19f1-shinbundang-BOTH-ELEVATOR-3-4-88e3f5cacb1572de",
+      "stationId": "station-eb09c73c19f1",
+      "lineId": "shinbundang",
+      "direction": "BOTH",
+      "targetFacilityType": "ELEVATOR",
+      "carNumber": 3,
+      "doorNumber": 4,
+      "gubun": "EV",
+      "dtlLoc": "(B1)대합실표내는곳안쪽통로성복역방향(B2)성복역방향승강장3-4출입문앞",
+      "providerRecordHash": "ee8698be9e290ada69087448990bbeae903faa282a17603da2a5403e43ec9a66",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -329,7 +404,7 @@
       ]
     },
     {
-      "id": "cardoor-station-865564447c8f-shinbundang-BOTH-ELEVATOR-4-1-253bd899e9a09427",
+      "id": "cardoor-station-865564447c8f-shinbundang-BOTH-ELEVATOR-4-1-08cefed0033ea1d1",
       "stationId": "station-865564447c8f",
       "lineId": "shinbundang",
       "direction": "BOTH",
@@ -337,23 +412,8 @@
       "carNumber": 4,
       "doorNumber": 1,
       "gubun": "EV",
-      "dtlLoc": "(B2)표내는곳내계단옆,1번/2번출입구방향(B3)광교역방향승강장4-1출입문앞",
-      "providerRecordHash": "c37757ad8c7f8ecdcb89c92d0212e9f38b1c1fddad4c66f08e6556a14164064a",
-      "reasons": [
-        "DIRECTION_OUTSIDE_CONTRACT"
-      ]
-    },
-    {
-      "id": "cardoor-station-436777779124-shinbundang-BOTH-ELEVATOR-1-1-e20478520ec7094c",
-      "stationId": "station-436777779124",
-      "lineId": "shinbundang",
-      "direction": "BOTH",
-      "targetFacilityType": "ELEVATOR",
-      "carNumber": 1,
-      "doorNumber": 1,
-      "gubun": "EV",
-      "dtlLoc": "(2F)표내는곳내계단옆(1F)산사역방향승강장1-1출입문앞",
-      "providerRecordHash": "49619264d1778b8cbd1db3fc5f0200bb8984986889d75dbf328d96d84109c829",
+      "dtlLoc": "(B2)표내는곳내계단옆,3번/4번출입구방향(B3)상현역방향승강장4-1출입문앞",
+      "providerRecordHash": "244acd71354329ee8af447aabb521c873854bc7cd05590ec5455e0e99d0082fc",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
@@ -368,82 +428,22 @@
       "doorNumber": 4,
       "gubun": "EV",
       "dtlLoc": "(2F)표내는곳내계단옆(1F)종착지승강장6-4출입문앞",
-      "providerRecordHash": "49619264d1778b8cbd1db3fc5f0200bb8984986889d75dbf328d96d84109c829",
+      "providerRecordHash": "4515709d829e5c812f97245bbadb0be4f32011ad92f5a057fb363b61dd55ecce",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]
     },
     {
-      "id": "cardoor-station-9707f89c740a-shinbundang-BOTH-ELEVATOR-6-4-6167ed6e45dfcfa9",
-      "stationId": "station-9707f89c740a",
+      "id": "cardoor-station-436777779124-shinbundang-BOTH-ELEVATOR-1-1-e20478520ec7094c",
+      "stationId": "station-436777779124",
       "lineId": "shinbundang",
       "direction": "BOTH",
       "targetFacilityType": "ELEVATOR",
-      "carNumber": 6,
-      "doorNumber": 4,
+      "carNumber": 1,
+      "doorNumber": 1,
       "gubun": "EV",
-      "dtlLoc": "(1F)논현방향대합실진입후좌측(B2)(대화환승)광교행승강장방면에스컬레이터옆(B4)광교방면승강장6-4",
-      "providerRecordHash": "7b2ac98692a38e738a7710f218c5921e83e39895faa8dffd5a0ed3d9af4f4cf1",
-      "reasons": [
-        "DIRECTION_OUTSIDE_CONTRACT"
-      ]
-    },
-    {
-      "id": "cardoor-station-810f79bc1737-shinbundang-BOTH-ELEVATOR-3-2-da40db0157dbddb7",
-      "stationId": "station-810f79bc1737",
-      "lineId": "shinbundang",
-      "direction": "BOTH",
-      "targetFacilityType": "ELEVATOR",
-      "carNumber": 3,
-      "doorNumber": 2,
-      "gubun": "EV",
-      "dtlLoc": "(B3)E/V#3호기앞(B5)정자역방향승강장3-2출입문앞",
-      "providerRecordHash": "3fb983278f40396d629c31d0338cedde161d135582d42e1882de6a7bb6883cf8",
-      "reasons": [
-        "DIRECTION_OUTSIDE_CONTRACT"
-      ]
-    },
-    {
-      "id": "cardoor-station-810f79bc1737-shinbundang-BOTH-ELEVATOR-4-4-4b09e200d11a7526",
-      "stationId": "station-810f79bc1737",
-      "lineId": "shinbundang",
-      "direction": "BOTH",
-      "targetFacilityType": "ELEVATOR",
-      "carNumber": 4,
-      "doorNumber": 4,
-      "gubun": "EV",
-      "dtlLoc": "(B3)E/V#2호기앞(B5)동천역방향승강장4-4출입문앞",
-      "providerRecordHash": "3fb983278f40396d629c31d0338cedde161d135582d42e1882de6a7bb6883cf8",
-      "reasons": [
-        "DIRECTION_OUTSIDE_CONTRACT"
-      ]
-    },
-    {
-      "id": "cardoor-station-583d6088d20b-shinbundang-BOTH-ELEVATOR-3-4-43cc9d428abed3f3",
-      "stationId": "station-583d6088d20b",
-      "lineId": "shinbundang",
-      "direction": "BOTH",
-      "targetFacilityType": "ELEVATOR",
-      "carNumber": 3,
-      "doorNumber": 4,
-      "gubun": "EV",
-      "dtlLoc": "(B1)대합실(B3)미금역방향승강장3-4출입문앞",
-      "providerRecordHash": "a9d102a31fd325421886eae46e81d1c5ef7113b769b5dc5a5e26c18a16c0a0d1",
-      "reasons": [
-        "DIRECTION_OUTSIDE_CONTRACT"
-      ]
-    },
-    {
-      "id": "cardoor-station-eb09c73c19f1-shinbundang-BOTH-ELEVATOR-3-4-59375771a1649588",
-      "stationId": "station-eb09c73c19f1",
-      "lineId": "shinbundang",
-      "direction": "BOTH",
-      "targetFacilityType": "ELEVATOR",
-      "carNumber": 3,
-      "doorNumber": 4,
-      "gubun": "EV",
-      "dtlLoc": "(B1)대합실표내는곳안쪽통로동천역방향(B2)동천역방향승강장3-4출입문앞",
-      "providerRecordHash": "4c50c3fcb9604e61c90f5a286f4bcfb653fe9954861c2441e5d20194a4b526c4",
+      "dtlLoc": "(2F)표내는곳내계단옆(1F)산사역방향승강장1-1출입문앞",
+      "providerRecordHash": "4515709d829e5c812f97245bbadb0be4f32011ad92f5a057fb363b61dd55ecce",
       "reasons": [
         "DIRECTION_OUTSIDE_CONTRACT"
       ]

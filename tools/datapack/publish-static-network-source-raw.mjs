@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { assertExactMainPreflight } from "./publish-seoul-transfer-raw.mjs";
+import { assertSelectedHeadPreflight } from "./publish-seoul-transfer-raw.mjs";
 import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
@@ -15,15 +15,15 @@ const SOURCE_TYPES = Object.freeze({
 });
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
-export async function publishStaticNetworkSourceRaw({ repositoryRoot, expectedMainSha, gitRunner, operationRoot, sourceId, snapshotId, capturedAt, rawRelativePath, env = process.env, client = null, now = new Date() }) {
+export async function publishStaticNetworkSourceRaw({ repositoryRoot, expectedMainSha, expectedHeadSha, gitRunner, operationRoot, sourceId, snapshotId, capturedAt, rawRelativePath, env = process.env, client = null, now = new Date() }) {
   const type = SOURCE_TYPES[sourceId];
   if (!type || !path.isAbsolute(repositoryRoot ?? "") || !path.isAbsolute(operationRoot ?? "")
-    || !/^[0-9a-f]{40}$/u.test(expectedMainSha ?? "") || typeof snapshotId !== "string" || snapshotId === ""
+    || !/^[0-9a-f]{40}$/u.test(expectedMainSha ?? "") || !/^[0-9a-f]{40}$/u.test(expectedHeadSha ?? "") || typeof snapshotId !== "string" || snapshotId === ""
     || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(capturedAt ?? "")
     || typeof rawRelativePath !== "string" || path.isAbsolute(rawRelativePath) || rawRelativePath !== type.rawRelativePath
     || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("static OCI publication arguments are invalid");
   if (!OCI_PAR.test(env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim() ?? "")) throw new Error("static OCI publication requires an OCI PAR URL");
-  await assertExactMainPreflight({ repositoryRoot, expectedMainSha, gitRunner });
+  await assertSelectedHeadPreflight({ repositoryRoot, expectedMainSha, expectedHeadSha, gitRunner });
   const rawBytes = await readFile(path.join(operationRoot, rawRelativePath)); const rawSha256 = sha(rawBytes); const date = capturedAt.slice(0, 10).replaceAll("-", "");
   const policy = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json"), "utf8"));
   const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy, sourceId, retrievedAt: capturedAt });

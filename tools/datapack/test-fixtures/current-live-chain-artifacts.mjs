@@ -22,6 +22,10 @@ import { canonicalRouteEdgeEvaluationJson, evaluateRouteAccessibilityEdges } fro
 import { materializeStationLineAccessibility } from "../materialize-station-line-accessibility.mjs";
 import { buildFixtureCurrentExitV2Receipt, canonicalFixtureCurrentExitV2ReceiptJson, rebindFixtureCurrentExitV2Admission } from "./current-exit-v2-receipt.mjs";
 import { resolveStagedIncheonTopologyPath } from "../run-current-capital-live-chain.mjs";
+import { selectCurrentKricRouteRostersPath } from "../build-current-capital-facility-collection-plan.mjs";
+// #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 경로 금지).
+const CURRENT_ROUTE_ROSTERS_PATH = await selectCurrentKricRouteRostersPath({ repositoryRoot: path.resolve(import.meta.dirname, "../../..") });
+
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => JSON.stringify(sort(value));
@@ -44,7 +48,7 @@ export function deriveCurrentIncheonTopologyFixturePath(sourceInventory) {
 
 export async function buildCanonicalCurrentKricExitCollectionBundle({ repositorySha = "a".repeat(40), operationId = "current-capital-560", capturedAt = null } = {}) {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-  const paths = { canonicalPackBytes: "release/capital-production-canonical-pack.json", coverageTargetsBytes: "nationwide-coverage-targets.json", providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", sourceInventoryBytes: "source-inventory.json" };
+  const paths = { canonicalPackBytes: "release/capital-production-canonical-pack.json", coverageTargetsBytes: "nationwide-coverage-targets.json", providerCodeCatalogBytes: "sources/kric-provider-code-catalog-20260228.json", routeRostersBytes: CURRENT_ROUTE_ROSTERS_PATH.slice("tools/datapack/".length), sourceInventoryBytes: "source-inventory.json" };
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, file]) => [key, await readFile(path.join(root, file))])));
   const incheonFixture = currentIncheonTopologyFixture(JSON.parse(input.sourceInventoryBytes));
   input.incheonTopologyBytes = await readFile(path.join(root, incheonFixture.path));
@@ -72,7 +76,7 @@ export async function buildCanonicalCurrentLiveChainArtifacts({ authorityBytes, 
     readAuthority("tools/datapack/release/capital-production-canonical-pack.json"),
     readAuthority("tools/datapack/nationwide-coverage-targets.json"),
     readAuthority("tools/datapack/sources/kric-provider-code-catalog-20260228.json"),
-    readAuthority("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
+    readAuthority(CURRENT_ROUTE_ROSTERS_PATH),
     readAuthority("tools/datapack/source-governance-policy.json"),
     readAuthority("release/product-gates/datapack-freshness-sla.json"),
     readAuthority("release/product-gates/production-datapack-scope.json"),

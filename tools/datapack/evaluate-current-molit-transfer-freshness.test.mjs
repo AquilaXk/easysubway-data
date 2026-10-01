@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { gunzipSync } from "node:zlib";
 
 import {
   evaluateCurrentMolitTransferFreshness,
@@ -15,25 +16,28 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 const observedAt = "2026-08-14T04:53:59.000Z";
 const evaluationAt = "2026-08-14T05:00:00.000Z";
 const now = Date.parse(evaluationAt);
-const metadataPath = "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json";
-const gzipPath = "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz";
+// #862: 판은 커밋된 source inventory binding에서 유도한다.
+const BOUND = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8")).sources
+  .find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission;
+const metadataPath = BOUND.metadataPath;
+const gzipPath = metadataPath.replace(/\.json$/u, "");
 const policyPath = "release/product-gates/datapack-freshness-sla.json";
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function evidenceFixture(metadata, metadataBytes, overrides = {}) {
+function evidenceFixture(metadata, metadataBytes, rawByteSize, overrides = {}) {
   const payload = {
     schemaVersion: 1,
     artifactKind: "current-molit-transfer-source-revalidation-evidence",
     contractVersion: "1.0.0",
     sourceId: "molit-railway-transfer-movement",
-    snapshotId: "molit-railway-transfer-movement-20250811",
+    snapshotId: metadata.snapshotId,
     observedAt,
     operation: {
       method: "FILE_DOWNLOAD",
-      operationId: "15130556-fileData-20250811",
+      operationId: `15130556-fileData-${metadata.snapshotId.slice("molit-railway-transfer-movement-".length)}`,
       detailPageUrl: metadata.detailUrl,
     },
     lockedSnapshot: {
@@ -46,7 +50,7 @@ function evidenceFixture(metadata, metadataBytes, overrides = {}) {
     },
     providerObservation: {
       rawSha256: metadata.rawSha256,
-      byteSize: 598_455,
+      byteSize: rawByteSize,
       canonicalRowsSha256: metadata.sortedContentSha256,
       totalCount: metadata.rowCount,
     },
@@ -66,7 +70,7 @@ async function trackedFixture() {
   const metadata = JSON.parse(metadataBytes);
   const policy = JSON.parse(policyBytes);
   return {
-    evidence: evidenceFixture(metadata, metadataBytes),
+    evidence: evidenceFixture(metadata, metadataBytes, gunzipSync(gzipBytes).length),
     gzipBytes,
     metadata,
     metadataBytes,
@@ -88,7 +92,7 @@ test("exact official-file observation은 shared #57 POSITIVE extension result가
   assert.equal(result.snapshotSha256, fixture.metadata.gzipSha256);
   assert.equal(result.rawEvidenceSha256, fixture.metadata.rawSha256);
   assert.equal(result.observationEvidenceSha256, fixture.evidence.evidenceHash);
-  assert.equal(result.currentFreshUntil, "2026-08-11T00:00:00.000Z");
+  assert.equal(result.currentFreshUntil, fixture.metadata.freshUntil);
   assert.equal(result.extendedFreshUntil, "2027-08-14T04:53:59.000Z");
   const selectedPolicy = {
     ...fixture.policy,
@@ -109,7 +113,7 @@ test("exact official-file observation은 shared #57 POSITIVE extension result가
     sourceClassId: "annual_official_file",
     policySha256: freshnessPolicySha256(selectedPolicy),
     observationEvidenceSha256: fixture.evidence.evidenceHash,
-    currentFreshUntil: "2026-08-11T00:00:00.000Z",
+    currentFreshUntil: fixture.metadata.freshUntil,
     extendedFreshUntil: "2027-08-14T04:53:59.000Z",
     evaluatedAt: evaluationAt,
     observedAt,

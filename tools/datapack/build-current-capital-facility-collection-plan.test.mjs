@@ -8,6 +8,7 @@ import {
   buildCurrentCapitalFacilityCollectionPlan,
   canonicalCurrentCapitalFacilityCollectionPlanJson,
   main,
+  selectCurrentKricRouteRostersPath,
 } from "./build-current-capital-facility-collection-plan.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 
@@ -168,8 +169,11 @@ test("candidate root의 다섯 정본 입력을 canonical FACILITY plan으로 �
 
   await main(["--repository-root", path.resolve(datapackRoot, "../.."), "--output", output], { log: () => {} });
 
+  // main은 선택 함수가 고른 현재 roster를 쓴다(#862).
+  const repositoryRoot = path.resolve(datapackRoot, "../..");
+  const currentRosters = await readFile(path.join(repositoryRoot, await selectCurrentKricRouteRostersPath({ repositoryRoot })));
   const expected = canonicalCurrentCapitalFacilityCollectionPlanJson(
-    buildCurrentCapitalFacilityCollectionPlan(await readInput()),
+    buildCurrentCapitalFacilityCollectionPlan({ ...await readInput(), routeRostersBytes: currentRosters }),
   );
   assert.equal(await readFile(output, "utf8"), expected);
   await assert.rejects(
@@ -212,3 +216,36 @@ function rehash(plan) {
   const { planSha256: _, ...payload } = plan;
   plan.planSha256 = sha256(Buffer.from(canonicalJson(payload)));
 }
+
+// #862: KRIC가 역 코드를 바꾸면(2026-10 신분당선) 새 roster를 받아야 한다. FACILITY 도구는 roster 경로를
+// 상수로 고정하지 않고, 한 선택 함수가 sources/의 roster 중 capturedAt이 가장 늦은 것을 고른다.
+test("FACILITY operation·계획·probe·rebind·live-chain은 roster 경로를 고정하지 않고 선택 함수로 현재 roster를 고른다(#862)", async () => {
+  for (const tool of [
+    "build-current-capital-facility-collection-plan.mjs",
+    "run-current-capital-facility-operation.mjs",
+    "probe-kric-facility-provider-tuples.mjs",
+    // #862: #866 중 roster 선택 부분만 흡수한다.
+    "rebind-current-active-facility-derived-identity.mjs",
+    "run-current-capital-live-chain.mjs",
+  ]) {
+    const source = await readFile(path.join(datapackRoot, tool), "utf8");
+    assert.doesNotMatch(source, /kric-nationwide-route-rosters-\d{8}T/u, `${tool} pins a roster file`);
+  }
+  const root = await mkdtemp(path.join(os.tmpdir(), "facility-roster-select-"));
+  try {
+    const sources = path.join(root, "tools/datapack/sources");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(sources, { recursive: true }));
+    const roster = (capturedAt) => `${JSON.stringify({ artifactKind: "kric-nationwide-route-rosters", capturedAt })}\n`;
+    await assert.rejects(selectCurrentKricRouteRostersPath({ repositoryRoot: root }), /KRIC route roster is missing/);
+    await writeFile(path.join(sources, "kric-nationwide-route-rosters-20260730T203926676Z.json"), roster("2026-07-30T20:39:26.676Z"));
+    await writeFile(path.join(sources, "kric-nationwide-route-rosters-20261001T050420765Z.json"), roster("2026-10-01T05:04:20.765Z"));
+    await writeFile(path.join(sources, "kric-nationwide-route-rosters-notes.txt"), "ignored");
+    assert.equal(await selectCurrentKricRouteRostersPath({ repositoryRoot: root }),
+      "tools/datapack/sources/kric-nationwide-route-rosters-20261001T050420765Z.json");
+    // 파일명 시각과 capturedAt이 다르면 고르지 않고 실패한다.
+    await writeFile(path.join(sources, "kric-nationwide-route-rosters-20261002T000000000Z.json"), roster("2026-10-01T05:04:20.765Z"));
+    await assert.rejects(selectCurrentKricRouteRostersPath({ repositoryRoot: root }), /KRIC route roster capturedAt does not match its file name/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

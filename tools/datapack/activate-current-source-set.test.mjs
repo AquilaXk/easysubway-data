@@ -28,11 +28,13 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
   readOptionalCurrentItxAdmissionBytes,
+  resolveCurrentTopologyRefreshSpec,
   stageValidationItxTopologyEvidence,
   validateCurrentTopologyRefreshItxEvidence,
   validateFreshCandidateSelectedItxEvidence,
   validatePreparedCandidate, verifyCurrentStaticNetworkSuccessorHeads,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
+import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
 import {
   normalizeStationName,
   projectCapitalTopologyOwnership,
@@ -40,6 +42,7 @@ import {
 } from "./collect-capital-route-topology.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
+import { capitalRouteTopologySnapshotIdMatchesCapturedAt, capitalRouteTopologySnapshotVersion, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -83,7 +86,7 @@ async function readJson(relativePath) { return JSON.parse(await readFile(path.jo
 function currentCapitalTopologyAdmission(sourceInventory) {
   const admissions = sourceInventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+    .filter(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
   const admission = admissions[0];
   assert.equal(admissions.length, 16);
   assert.ok(admission);
@@ -96,6 +99,21 @@ function currentCapitalTopologyAdmission(sourceInventory) {
 
 async function currentCapitalTopology(sourceInventory) {
   const admission = currentCapitalTopologyAdmission(sourceInventory);
+  const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
+  const bytes = await readFile(path.join(root, relativePath));
+  const topology = JSON.parse(bytes);
+  assert.equal(topology.contentSha256, admission.topologyContentSha256);
+  return { admission, relativePath, bytes, topology };
+}
+
+// 고정 이력 handoff의 [collectedAt, freshnessExpiresAt) 창 안에서 관측된 원장 capital topology 행을 고른다.
+async function handoffWindowCapitalTopology(handoff) {
+  const ledger = await readJson("tools/datapack/release/source-snapshots.json");
+  const rows = ledger.filter(({ sourceId, capturedAt }) => sourceId === "capital-route-topology"
+    && Date.parse(capturedAt) >= Date.parse(handoff.collectedAt)
+    && Date.parse(capturedAt) < Date.parse(handoff.freshnessExpiresAt));
+  assert.equal(rows.length, 1);
+  const admission = { topologySnapshotId: rows[0].snapshotId, topologyContentSha256: rows[0].contentSha256 };
   const relativePath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
   const bytes = await readFile(path.join(root, relativePath));
   const topology = JSON.parse(bytes);
@@ -832,11 +850,11 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     readFile(path.join(root, reference.completenessEvidencePath)),
     readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
   ]);
-  const buildNow = "2026-08-30T15:15:08.787Z";
+  const buildNow = "2026-09-30T16:38:54.027Z";
   const topologyEvidencePath = deriveApprovedItxTopologyEvidencePath(reference);
   assert.equal(
     topologyEvidencePath,
-    "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
+    "tools/datapack/itx-cheongchun-topology-evidence-20260930163854026.json",
   );
   assert.throws(() => deriveApprovedItxTopologyEvidencePath({
     artifactId: "itx-cheongchun-source-timetable-invalid",
@@ -1538,9 +1556,9 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const currentIncheonTimetableBytes = { 1: line1TimetableBytes, 2: line2TimetableBytes };
   assert.equal(currentIncheonTopology.topologyLineIds.length, 2);
   assert.equal(currentIncheonTopology.edgeCount, 116);
-  const capitalSnapshotDate = currentTopology.capturedAt.slice(0, 10).replaceAll("-", "");
   const incheonSnapshotDate = currentIncheonTopology.capturedAt.slice(0, 10).replaceAll("-", "");
-  assert.equal(topologySnapshotId.slice(-8), capitalSnapshotDate);
+  // #862: 현재 topology id는 날짜형이거나 수집 시각형이다. 어느 쪽이든 capturedAt에 결속돼야 한다.
+  assert.equal(capitalRouteTopologySnapshotIdMatchesCapturedAt(topologySnapshotId, currentTopology.capturedAt), true);
   assert.equal(path.basename(currentIncheonTopologyPath, ".json").slice(-8), incheonSnapshotDate);
   const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
   const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
@@ -1586,7 +1604,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     .filter(({ topologySnapshotId: admittedSnapshotId } = {}) => admittedSnapshotId === topologySnapshotId);
   assert.ok(admissions.length > 0);
   assert.ok(admissions.every((admission) => admission.topologySnapshotId === topologySnapshotId));
-  assert.equal(result.spec.candidateId, `capital-pilot-candidate-${topologySnapshotId.slice(-8)}`);
+  assert.equal(result.spec.candidateId, `capital-pilot-candidate-${capitalRouteTopologySnapshotVersion(topologySnapshotId)}`);
   assert.equal(result.spec.publishedAt, buildNow);
   assert.equal(result.spec.networkEdgeEvidence.sourceInventory.sha256, sha256(result.sourceInventoryBytes));
   assert.deepEqual(result.spec.networkEdgeEvidence.capitalTopology,
@@ -2425,14 +2443,24 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", governancePolicyVersion: "2026-07-15",
     governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",
   };
+  // #862: 이 활성화는 고정 이력 handoff(KRIC 4호선 20260809, 30일 창)에 묶여 있다. 현재 원장 head가 그 창을
+  // 지나면(2026-10-01 재등록) 시나리오가 성립하지 않으므로, 창 안에서 관측된 원장 이력 topology로 같은 검사를 한다.
   const [{ topology: baselineTopology, bytes: baselineTopologyBytes },
     { admission: currentCapitalAdmission, relativePath: currentTopologyPath, bytes: currentTopologyBytes, topology: currentTopology }] = await Promise.all([
     historicalCandidateCapitalTopology(baseSpec),
-    currentCapitalTopology(currentInventory),
+    handoffWindowCapitalTopology(handoff),
   ]);
-  const currentIncheonSource = currentInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
-  assert.ok(currentIncheonSource?.topologyAdmissionEvidence?.snapshotPath);
-  const currentIncheonTopologyPath = currentIncheonSource.topologyAdmissionEvidence.snapshotPath;
+  const currentIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${currentCapitalAdmission.topologySnapshotId.slice(-8)}.json`;
+  // 창 안의 topology로 수도권 topology admission을 공식 재결속 함수로 맞춘다(main 당시 inventory 상태와 같은 결속).
+  const windowInventory = withCurrentCapitalTopologyAdmissions({
+    inventory,
+    topology: currentTopology,
+    topologySnapshotId: currentCapitalAdmission.topologySnapshotId,
+    reviewedAt: currentTopology.capturedAt,
+    snapshotBytesByPath: await collectPositionSnapshotBytes(currentInventory),
+    topologySnapshotBytes: currentTopologyBytes,
+    layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(currentInventory),
+  });
   const currentIncheonTopologyBytes = await readFile(path.join(root, currentIncheonTopologyPath));
   const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
   const currentIncheonAccessibilitySource = currentInventory.sources
@@ -2480,7 +2508,7 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     rawArtifact: { collectedAt: handoff.collectedAt },
     rawArtifactBytes,
     sourceSnapshots,
-    sourceInventory: inventory,
+    sourceInventory: windowInventory,
     productionInput: {
       sourceIds: sourceIds.slice(0, 6),
       stationMappings: [
@@ -2860,4 +2888,55 @@ test("check mode는 builder code가 같은 output-only descendant만 수용한�
     }),
     /builder source|builder identity/,
   );
+});
+
+test("approved ITX bootstrap은 교체한 spec과 새 증거로 같은 ITX 증거 검사를 실행한다(#848)", async () => {
+  const spec = await readJson("tools/datapack/release/candidate-build-spec.json");
+  const evidencePath = spec.itxTopologyEvidencePath;
+  const evidenceBytes = await readFile(path.join(root, evidencePath));
+  const inputs = {
+    itxCurrentAdmissionPath: null,
+    selectedItxTopologyEvidencePath: evidencePath,
+    currentItxTopologyEvidenceBytes: evidenceBytes,
+    buildNow: "2026-08-30T16:00:00.000Z",
+  };
+  // 교체 전 spec은 다른(옛) 증거를 가리킨다. 새 증거로 교체하는 것은 bind 단계다.
+  const priorSpec = {
+    ...spec,
+    itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260101000000000.json",
+  };
+  const outsideBootstrap = async () => assert.fail("bind must not run outside bootstrap");
+
+  // 교체 모드는 옛 spec으로 새 증거를 먼저 검사하지 않고, 교체한 spec으로 검사한다.
+  assert.equal(await resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: priorSpec,
+    approvedItxBootstrap: true,
+    bindApprovedSpec: async (baseSpec) => {
+      assert.equal(baseSpec, priorSpec);
+      return spec;
+    },
+  }), spec);
+
+  // 교체 결과가 새 증거와 맞지 않으면 같은 검사가 실패한다(검사를 건너뛰지 않는다).
+  await assert.rejects(resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: priorSpec,
+    approvedItxBootstrap: true,
+    bindApprovedSpec: async (baseSpec) => baseSpec,
+  }), /identity is invalid/);
+
+  // 일반 모드는 교체 없이 기존 spec으로 검사한다.
+  await assert.rejects(resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: priorSpec,
+    approvedItxBootstrap: false,
+    bindApprovedSpec: outsideBootstrap,
+  }), /identity is invalid/);
+  assert.equal(await resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: spec,
+    approvedItxBootstrap: false,
+    bindApprovedSpec: outsideBootstrap,
+  }), spec);
 });

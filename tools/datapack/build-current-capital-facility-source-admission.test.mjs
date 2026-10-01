@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { after } from "node:test";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
-import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson, selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -12,14 +12,10 @@ import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { CURRENT_CAPITAL_BASE_SOURCE_IDS, selectedSourceHeadAt } from "./test-fixtures/selected-source-head-clock.mjs";
 
 const SOURCE_ROOT = import.meta.dirname;
 const REPOSITORY_ROOT = path.resolve(SOURCE_ROOT, "../..");
-const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
-  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
-]);
 const INITIAL_SOURCE_HEAD_AT = await selectedSourceHeadAt(SOURCE_ROOT);
 const FIXTURE_REPOSITORY_ROOT = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-facility-"));
 after(() => rm(FIXTURE_REPOSITORY_ROOT, { recursive: true, force: true }));
@@ -28,9 +24,11 @@ await copySyntheticCurrentPublicRouteMapRepository(REPOSITORY_ROOT, FIXTURE_REPO
 });
 const root = path.join(FIXTURE_REPOSITORY_ROOT, "tools/datapack");
 const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt(root);
+// #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 roster 경로 금지).
+const CURRENT_ROUTE_ROSTERS = (await selectCurrentKricRouteRostersPath({ repositoryRoot: REPOSITORY_ROOT })).replace("tools/datapack/", "");
 const STATIC_SOURCE_PATHS = new Set([
   "sources/kric-provider-code-catalog-20260228.json",
-  "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+  CURRENT_ROUTE_ROSTERS,
 ]);
 test("producer-neutral FACILITY admission emits a mapping-derived closed matrix", async () => {
   const values = await fixture();
@@ -85,7 +83,7 @@ test("scope-selected candidate evaluates projections at its published clock, not
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    `tools/datapack/${CURRENT_ROUTE_ROSTERS}`,
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/candidate-build-spec.json",
     "tools/datapack/release/source-snapshots.json",
@@ -103,7 +101,7 @@ test("scope-selected candidate evaluates projections at its published clock, not
     canonicalPackBytes: files["tools/datapack/release/capital-production-canonical-pack.json"],
     coverageTargetsBytes: files["tools/datapack/nationwide-coverage-targets.json"],
     providerCodeCatalogBytes: files["tools/datapack/sources/kric-provider-code-catalog-20260228.json"],
-    routeRostersBytes: files["tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"],
+    routeRostersBytes: files[`tools/datapack/${CURRENT_ROUTE_ROSTERS}`],
     sourceInventoryBytes: files["tools/datapack/source-inventory.json"],
   });
   const values = {
@@ -300,11 +298,11 @@ test("producer-neutral FACILITY admission normalizes byte inputs before binding 
 });
 
 async function fixture({ mixed = false } = {}) {
-  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "../../release/product-gates/production-datapack-scope.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [
+  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", CURRENT_ROUTE_ROSTERS, "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "../../release/product-gates/production-datapack-scope.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [
     name,
     await readFile(path.join(STATIC_SOURCE_PATHS.has(name) ? SOURCE_ROOT : root, name)),
   ])));
-  const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files["sources/kric-nationwide-route-rosters-20260730T203926676Z.json"], sourceInventoryBytes: files["source-inventory.json"] });
+  const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files[CURRENT_ROUTE_ROSTERS], sourceInventoryBytes: files["source-inventory.json"] });
   const planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
   const roster = plan.stationLineProviderMappings.map((m) => ({ stationId: m.stationId, lineId: m.lineId, railOprIsttCd: m.providerOperatorId, lnCd: m.providerLineId, stinCd: m.providerStationId, canonicalMappings: [{ artifactId: "bundled-capital", stationId: m.stationId, lineId: m.lineId }] }));
   const specialCodes = new Map([
@@ -408,23 +406,6 @@ async function fixture({ mixed = false } = {}) {
   return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, productionScopeBytes: files["../../release/product-gates/production-datapack-scope.json"], sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt, candidateEvaluationAt: observedAt };
 }
 
-async function selectedSourceHeadAt(datapackRoot) {
-  const [buildSpec, sourceSnapshots] = await Promise.all([
-    readFile(path.join(datapackRoot, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(datapackRoot, "release/source-snapshots.json"), "utf8").then(JSON.parse),
-  ]);
-  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
-    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
-    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
-    return matches[0];
-  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
-  const basisAt = Math.max(...selected.flatMap((entry) => [
-    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
-  ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
-  return basisAt;
-}
 
 function mutateInventory(value, mutate) {
   const inventory = JSON.parse(Buffer.from(value.sourceInventoryBytes));

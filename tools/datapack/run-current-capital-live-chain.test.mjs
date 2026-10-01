@@ -28,7 +28,7 @@ import {
   verifyCurrentCapitalTerminalLineage,
   writeTerminalRoutePolicyEvaluation,
 } from "./run-current-capital-live-chain.mjs";
-import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson, selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
 import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
@@ -52,6 +52,7 @@ import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-f
 import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
@@ -277,7 +278,8 @@ async function buildRetainedFacilityFixture(root) {
     canonicalPackBytes: await read("tools/datapack/release/capital-production-canonical-pack.json"),
     coverageTargetsBytes: await read("tools/datapack/nationwide-coverage-targets.json"),
     providerCodeCatalogBytes: await read("tools/datapack/sources/kric-provider-code-catalog-20260228.json"),
-    routeRostersBytes: await read("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
+    // #862: FACILITY 계획은 도구와 같은 선택 함수로 현재 roster를 쓴다(EXIT 계획 입력은 #866 범위로 그대로).
+    routeRostersBytes: await read(await selectCurrentKricRouteRostersPath({ repositoryRoot: root })),
     sourceInventoryBytes: await read("tools/datapack/source-inventory.json"),
   };
   const plan = buildCurrentCapitalFacilityCollectionPlan(input);
@@ -384,7 +386,7 @@ async function currentTopologyFixture(root) {
   const source = (sourceId) => inventory.sources.find(({ id }) => id === sourceId);
   const capitalAdmission = inventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .find(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+    .find(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
   const topologyBuild = {
     capitalTopologyPath: `tools/datapack/sources/${capitalAdmission.topologySnapshotId}.json`,
     incheonTopologyPath: source("incheon-transit-station-info").topologyAdmissionEvidence.snapshotPath,
@@ -1201,7 +1203,7 @@ async function terminalProviderHandoff({ repositoryRoot = ROOT, mutatePlan = (pl
     canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
     coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
     providerCodeCatalogBytes: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    routeRostersBytes: await selectCurrentKricRouteRostersPath({ repositoryRoot: ROOT }),
     sourceInventoryBytes: "tools/datapack/source-inventory.json",
   };
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) =>
@@ -1636,10 +1638,12 @@ test("Incheon topology path is derived from the current staged inventory head", 
 test("current KRIC EXIT plan inputs are exact staged bindings and reject identity drift", async (t) => {
   const stagedRoot = await mkdtemp(path.join(os.tmpdir(), "current-kric-exit-plan-inputs-"));
   t.after(() => rm(stagedRoot, { recursive: true, force: true }));
+  // #862: EXIT 계획 입력도 FACILITY와 같은 현재 roster에 결속한다(신분당선 역 코드 변경).
+  const currentRouteRosters = await selectCurrentKricRouteRostersPath({ repositoryRoot: ROOT });
   const paths = [
     "tools/datapack/release/current-kric-exit-plan-inputs.json",
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    currentRouteRosters,
     "tools/datapack/source-candidates.json",
     "tools/datapack/nationwide-coverage-targets.json",
   ];
@@ -1651,7 +1655,7 @@ test("current KRIC EXIT plan inputs are exact staged bindings and reject identit
   const resolved = await resolveCurrentKricExitPlanInputs(stagedRoot);
   assert.deepEqual(resolved, {
     providerCodeCatalogRelativePath: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    routeRostersRelativePath: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    routeRostersRelativePath: currentRouteRosters,
   });
   const plan = buildCurrentCapitalExitExecutionPlan({ ...planInput, stagedRoot, ...resolved });
   const exitPlanArgs = plan.steps.find(({ id }) => id === "build-exit-plan").args;
@@ -1686,6 +1690,12 @@ test("current FACILITY admission is canonical and fresh at the actual operation 
   const stagedRoot = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-facility-admission-"));
   t.after(() => rm(stagedRoot, { recursive: true, force: true }));
   const relative = "tools/datapack/release/current-capital-facility-source-admission.json";
+  // #862: 커밋된 수도권 FACILITY admission은 이력 산출물이라 현재 접근성 head와 함께 신선한 시점이 없을 수 있다.
+  // admission과 활성 FACILITY를 정합한 fixture repository에서 같은 네 입력을 가져와 같은 경계를 검사한다.
+  const alignedRoot = await preparePendingCurrentAccessibilityTransitionRepository(ROOT, {
+    transitionKind: "TRANSFER_DERIVED_BINDING",
+  });
+  t.after(() => rm(alignedRoot, { recursive: true, force: true }));
   for (const input of [
     relative,
     "tools/datapack/release/candidate-build-spec.json",
@@ -1694,7 +1704,7 @@ test("current FACILITY admission is canonical and fresh at the actual operation 
   ]) {
     const target = path.join(stagedRoot, input);
     await mkdir(path.dirname(target), { recursive: true });
-    await cp(path.join(ROOT, input), target);
+    await cp(path.join(alignedRoot, input), target);
   }
   const target = path.join(stagedRoot, relative);
   const admission = JSON.parse(await readFile(target, "utf8"));
@@ -1730,7 +1740,7 @@ test("retained topology admission fails closed at its derived freshness boundary
   const clock = await currentTopologyAdmissionClock(ROOT);
   await assert.rejects(assertCurrentStaticNetworkTopologyAdmission({
     repositoryRoot: ROOT,
-    now: clock.expiredAt,
+    now: clock.capitalTopologyExpiredAt,
   }), /topology|fresh|stale|current/i);
 });
 
@@ -1739,7 +1749,7 @@ async function retainedExitBundleFixture() {
     canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
     coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
     providerCodeCatalogBytes: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    routeRostersBytes: await selectCurrentKricRouteRostersPath({ repositoryRoot: ROOT }),
     sourceInventoryBytes: "tools/datapack/source-inventory.json",
   };
   const input = Object.fromEntries(await Promise.all(Object.entries(paths).map(async ([key, relative]) => [key, await readFile(path.join(ROOT, relative))])));

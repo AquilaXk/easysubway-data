@@ -10,6 +10,7 @@ import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, capitalRouteTopologySnapshotIdMatchesCapturedAt, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const SOURCE_ID = "capital-route-topology";
 const OWNER_SOURCE_ID = "seoul-metro-route-map-positions";
@@ -17,7 +18,6 @@ const NAMESPACE = "axvym6vk8g7i";
 const BUCKET = "easysubway-datapacks";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
 const SHA256 = /^[a-f0-9]{64}$/u;
-const SNAPSHOT_ID = new RegExp("^" + SOURCE_ID + "-[0-9]{8}$", "u");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const ADMISSION_INPUT_KEYS = Object.freeze(["inventoryBytes", "candidateBytes", "governanceBytes", "freshnessBytes"]);
@@ -124,12 +124,12 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
   const { topologyAdmission, topologyRelative, topologyBytes, topology } = protectedTopology;
   const snapshotId = topologyAdmission.topologySnapshotId;
   const protectedLineIds = topologyAdmission.topologyLineages.map((lineage) => lineage?.lineId);
-  if (!SNAPSHOT_ID.test(snapshotId) || protectedLineIds.length !== lineIds.length
+  if (!isCapitalRouteTopologySnapshotId(snapshotId) || protectedLineIds.length !== lineIds.length
     || protectedLineIds.some((lineId) => !lineIds.includes(lineId))) throw new Error("capital topology canonical owner scope is invalid");
   const capturedAt = instant(topology.capturedAt, "capital topology capturedAt");
   const freshUntil = instant(topology.freshUntil, "capital topology freshUntil");
   const capturedDate = topology.capturedAt.slice(0, 10).replaceAll("-", "");
-  if (snapshotId.slice(-capturedDate.length) !== capturedDate || freshUntil <= capturedAt || now.valueOf() < capturedAt || now.valueOf() >= freshUntil) throw new Error("capital topology protected admission is not current");
+  if (!capitalRouteTopologySnapshotIdMatchesCapturedAt(snapshotId, topology.capturedAt) || freshUntil <= capturedAt || now.valueOf() < capturedAt || now.valueOf() >= freshUntil) throw new Error("capital topology protected admission is not current");
   const baseGovernancePolicy = parse(governanceBytes, "capital topology governance policy");
   const baseFreshnessPolicy = parse(freshnessBytes, "capital topology freshness policy");
   const governance = { sourceId: SOURCE_ID, sourceClassId: candidate.domain, ...registration.governance };
@@ -266,7 +266,7 @@ export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repo
     capabilities: admission.metadata.capabilities,
     capitalTopologyAdmissionEvidence: evidence,
   };
-  const snapshot = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: admission.sourceId, snapshotId: admission.snapshotId, previousSnapshotId: predecessor?.snapshotId ?? null, capturedAt: admission.topology.capturedAt, retrievedAt: admission.topology.capturedAt, sourceUpdatedAt: admission.topology.capturedAt, provider: admission.candidate.evidence?.provider, rowCount: admission.lineIds.length, coverageCount: admission.lineIds.length, rawSha256: receipt.rawObjectSha256, contentSha256: admission.topology.contentSha256, rawObjectUri: receipt.rawObjectUri, rawObjectSha256: receipt.rawObjectSha256, rawReceiptSha256, byteSize: receipt.byteSize, freshUntil: admission.topology.freshUntil, freshnessExpiresAt: admission.topology.freshUntil, rawRetentionExpiresAt: receipt.rawRetentionExpiresAt, schemaFingerprint: sha(Buffer.from(canonicalJson({ artifactKind: admission.topology.artifactKind, keys: Object.keys(admission.topology).sort((left, right) => left.localeCompare(right)) }))), redactedRequestFingerprint: recordDigest(admission.candidate.operation), snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true, credentialRedacted: true, admissionEvidence: evidence };
+  const snapshot = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: admission.sourceId, snapshotId: admission.snapshotId, previousSnapshotId: predecessor?.snapshotId ?? null, capturedAt: admission.topology.capturedAt, retrievedAt: admission.topology.capturedAt, sourceUpdatedAt: admission.topology.capturedAt, provider: admission.candidate.evidence?.provider, rowCount: admission.lineIds.length, coverageCount: admission.lineIds.length, rawSha256: receipt.rawObjectSha256, contentSha256: admission.topology.contentSha256, rawObjectUri: receipt.rawObjectUri, rawObjectSha256: receipt.rawObjectSha256, rawReceiptSha256, byteSize: receipt.byteSize, freshUntil: admission.topology.freshUntil, freshnessExpiresAt: admission.topology.freshUntil, rawRetentionExpiresAt: receipt.rawRetentionExpiresAt, governancePolicyVersion: admission.governancePolicy.policyVersion, governancePolicySha256: sha(jsonBytes(admission.governancePolicy)), schemaFingerprint: sha(Buffer.from(canonicalJson({ artifactKind: admission.topology.artifactKind, keys: Object.keys(admission.topology).sort((left, right) => left.localeCompare(right)) }))), redactedRequestFingerprint: recordDigest(admission.candidate.operation), snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true, credentialRedacted: true, admissionEvidence: evidence };
   if (predecessor != null) snapshot.diffSummary = buildSnapshotDiff(predecessor, snapshot);
   const nextInventory = sourceMatches.length === 0 ? { ...inventory, sources: [...inventory.sources, source] } : { ...inventory, sources: inventory.sources.map((entry) => entry.id === SOURCE_ID ? source : entry) };
   const nextLedger = [...ledger, snapshot];
@@ -298,7 +298,7 @@ function exactOutputs(outputs) {
     || outputs.some(({ bytes, prestateBytes }) => !Buffer.isBuffer(bytes) || !Buffer.isBuffer(prestateBytes) || inputs !== outputs[0].inputs)
     || !Array.isArray(inputs) || inputs.length !== 3
     || inputs[0]?.relative !== "tools/datapack/source-candidates.json"
-    || !/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u.test(inputs[1]?.relative ?? "")
+    || !CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(inputs[1]?.relative ?? "")
     || !path.isAbsolute(inputs[2]?.absolute ?? "") || inputs.some(({ bytes }) => !Buffer.isBuffer(bytes))) throw new Error("capital topology transaction outputs are invalid");
 }
 const transaction = createSourceRegistrationTransaction({

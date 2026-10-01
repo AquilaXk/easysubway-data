@@ -123,11 +123,15 @@ test("register retained Gwangju response bytes through the existing source trans
     escalatorPath: "tools/datapack/fixtures/escalator.csv",
   };
   await mkdir(path.join(root, "tools/datapack/fixtures"), { recursive: true });
+  // #862: 접근성 admission은 나중에 다른 CSV로 갱신될 수 있다(#739). 재결속은 저장소 fixture가 아니라
+  // admission snapshot이 보존한 원본 바이트(rawSources)를 써야 한다. fixture는 일부러 다른 옛 바이트로 둔다.
+  const staleElevatorBytes = Buffer.concat([elevatorBytes, Buffer.from("\n광주교통공사,1호선,나,2,,,")]);
   await Promise.all([
     writeFile(path.join(root, dependentFiles.mapCsvPath), mapCsvBytes),
     writeFile(path.join(root, dependentFiles.schematicCanvasPath), JSON.stringify(schematicCanvas)),
-    writeFile(path.join(root, dependentFiles.elevatorPath), elevatorBytes),
+    writeFile(path.join(root, dependentFiles.elevatorPath), staleElevatorBytes),
     writeFile(path.join(root, dependentFiles.escalatorPath), escalatorBytes),
+    writeFile(path.join(root, "tools/datapack/sources/prior-accessibility.json"), `${JSON.stringify(accessibilitySnapshot)}\n`),
   ]);
   await writeFile(path.join(root, "tools/datapack/source-candidates.json"), JSON.stringify({ candidates: [{
     id: sourceId, registrationMetadata: { governance: entry, dependentInputs: dependentFiles },

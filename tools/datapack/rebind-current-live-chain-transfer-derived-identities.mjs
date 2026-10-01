@@ -30,14 +30,16 @@ export const CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS = Object.freeze([
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
 ]);
-export function currentLiveChainTransferOutputPaths(descriptorRelativePath) {
+// #862 결정 1(A): sourceAdmissionOnly는 결정 C(전국 후보)용이다. 환승 원천 admission 5개만 출력하고
+// 후보·request·hash는 refresh-nationwide-candidate가 다시 만든다. 기본(8출력) 모드는 그대로다.
+export function currentLiveChainTransferOutputPaths(descriptorRelativePath, { sourceAdmissionOnly = false } = {}) {
   if (typeof descriptorRelativePath !== "string" || !/^tools\/datapack\/sources\/seoul-metro-transfer-distance-duration-[0-9]{8}T[0-9]{9}Z\.json$/u.test(descriptorRelativePath)) {
     throw new Error("TRANSFER descriptor output path mismatch");
   }
   return Object.freeze([
     ...CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.slice(0, 2),
     descriptorRelativePath,
-    ...CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.slice(2),
+    ...CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.slice(2, sourceAdmissionOnly ? 4 : undefined),
   ]);
 }
 const STAGE_INPUTS = Object.freeze([
@@ -265,7 +267,7 @@ export function assertRebuiltCurrentLiveChainTransferCandidateIdentity(previousC
   return true;
 }
 
-export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, observationDirectory, receiptPath } = {}) {
+export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, observationDirectory, receiptPath, sourceAdmissionOnly = false } = {}) {
   const root = repositoryRoot(inputRoot);
   const [candidateBytes, inventoryBytes, snapshotsBytes, packBytes, sourceCandidatesBytes, kricBytes, receiptBytes] = await Promise.all([
     stable(rooted(root, "tools/datapack/release/candidate-build-spec.json"), "candidate"),
@@ -278,7 +280,7 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
   ]);
   const candidate = JSON.parse(candidateBytes); const inventory = JSON.parse(inventoryBytes); const snapshots = JSON.parse(snapshotsBytes);
   const descriptorIdentity = deriveCurrentLiveChainTransferDescriptorIdentity({ candidate, sourceInventory: inventory, sourceSnapshotLedger: snapshots });
-  const outputPaths = currentLiveChainTransferOutputPaths(descriptorIdentity.relativePath);
+  const outputPaths = currentLiveChainTransferOutputPaths(descriptorIdentity.relativePath, { sourceAdmissionOnly });
   const descriptorBytes = await stable(rooted(root, descriptorIdentity.relativePath), "TRANSFER descriptor");
   const receipt = validateSeoulTransferRawReceipt(JSON.parse(receiptBytes));
   const active = assertCurrentLiveChainTransferIdentity(candidate, inventory, snapshots, JSON.parse(descriptorBytes), descriptorBytes, receipt);
@@ -307,6 +309,18 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
   const nextSnapshot = nextSnapshots.find(({ snapshotId }) => snapshotId === active.row.snapshotId);
   nextSnapshot.transferTopology = descriptor.transferTopology;
   nextSnapshot.rawReceipt = receipt;
+  if (sourceAdmissionOnly) {
+    const nextBytes = new Map([
+      ["tools/datapack/release/current-transfer-topology-metrics.json", metricsBytes],
+      ["tools/datapack/release/current-capital-transfer-topology-applicability.json", applicabilityBytes],
+      [descriptorPath, nextDescriptorBytes],
+      ["tools/datapack/source-inventory.json", json(nextInventory)],
+      ["tools/datapack/release/source-snapshots.json", json(nextSnapshots)],
+    ]);
+    return Promise.all(outputPaths.map(async (relative) => ({
+      relative, bytes: nextBytes.get(relative), prestate: await stable(outputPath(root, relative, outputPaths), `current ${relative}`),
+    })));
+  }
   const staging = await stage(root, currentLiveChainTransferStageInputs(candidate, root));
   try {
     await Promise.all([
@@ -328,13 +342,14 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
 }
 
 async function acquire(root) { const lock = rooted(root, LOCK); await assertParent(lock); await mkdir(lock, { mode: 0o700 }); return () => rmdir(lock); }
-export async function commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, outputs, failAfter = null, failRollbackAt = null } = {}) {
+export async function commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, outputs, failAfter = null, failRollbackAt = null, sourceAdmissionOnly = false } = {}) {
   const root = repositoryRoot(inputRoot);
-  if (!Array.isArray(outputs)) throw new Error("TRANSFER commit requires exact eight outputs");
+  const exactMessage = sourceAdmissionOnly ? "TRANSFER commit requires exact five source admission outputs" : "TRANSFER commit requires exact eight outputs";
+  if (!Array.isArray(outputs)) throw new Error(exactMessage);
   const descriptorOutputs = outputs.filter(({ relative }) => !CURRENT_LIVE_CHAIN_TRANSFER_FIXED_OUTPUTS.includes(relative));
-  if (descriptorOutputs.length !== 1) throw new Error("TRANSFER commit requires exact eight outputs");
-  const outputPaths = currentLiveChainTransferOutputPaths(descriptorOutputs[0].relative);
-  if (JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(outputPaths)) throw new Error("TRANSFER commit requires exact eight outputs");
+  if (descriptorOutputs.length !== 1) throw new Error(exactMessage);
+  const outputPaths = currentLiveChainTransferOutputPaths(descriptorOutputs[0].relative, { sourceAdmissionOnly });
+  if (JSON.stringify(outputs.map(({ relative }) => relative)) !== JSON.stringify(outputPaths)) throw new Error(exactMessage);
   const release = await acquire(root); const journal = rooted(root, JOURNAL);
   try {
     const records = outputs.map(({ relative, bytes, prestate }) => {
@@ -373,7 +388,9 @@ export async function rebindCurrentLiveChainTransferDerivedIdentities(options = 
     if (stale.length) throw new Error(`current live-chain TRANSFER output drift: ${stale.join(", ")}`);
     return { targets: outputPaths, changed: false };
   }
-  const committed = await commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: options.repositoryRoot, outputs, failAfter: options.failAfter });
+  const committed = await commitCurrentLiveChainTransferDerivedIdentityOutputs({
+    repositoryRoot: options.repositoryRoot, outputs, failAfter: options.failAfter, sourceAdmissionOnly: options.sourceAdmissionOnly === true,
+  });
   return {
     ...committed,
     outputs: Object.freeze(outputs.map(({ relative, bytes, prestate }) => Object.freeze({
@@ -383,5 +400,5 @@ export async function rebindCurrentLiveChainTransferDerivedIdentities(options = 
     }))),
   };
 }
-function args(argv) { const value = (name) => argv[argv.indexOf(name) + 1]; if (!argv.includes("--repository-root") || !argv.includes("--observation-directory") || !argv.includes("--receipt")) throw new Error("arguments require --repository-root, --observation-directory, and --receipt"); return { repositoryRoot: value("--repository-root"), observationDirectory: value("--observation-directory"), receiptPath: value("--receipt"), check: argv.includes("--check") }; }
+function args(argv) { const value = (name) => argv[argv.indexOf(name) + 1]; if (!argv.includes("--repository-root") || !argv.includes("--observation-directory") || !argv.includes("--receipt")) throw new Error("arguments require --repository-root, --observation-directory, and --receipt"); return { repositoryRoot: value("--repository-root"), observationDirectory: value("--observation-directory"), receiptPath: value("--receipt"), check: argv.includes("--check"), sourceAdmissionOnly: argv.includes("--source-admission-only") }; }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) rebindCurrentLiveChainTransferDerivedIdentities(args(process.argv.slice(2))).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

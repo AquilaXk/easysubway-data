@@ -46,6 +46,26 @@ export async function assertExactMainPreflight({ repositoryRoot, expectedMainSha
   return { head, originMain };
 }
 
+// #862: 전국 후보 복구 묶음은 origin/main의 clean 후손 HEAD(PR 브랜치)에서 원천을 갱신한다.
+// FACILITY 사전 검사와 같은 기준: 명시한 main·HEAD SHA가 실제와 같고, main이 HEAD의 조상이며, 작업 트리가 깨끗해야 한다.
+export async function assertSelectedHeadPreflight({ repositoryRoot, expectedMainSha, expectedHeadSha, gitRunner = defaultGitRunner } = {}) {
+  if (typeof repositoryRoot !== "string" || !path.isAbsolute(repositoryRoot)
+    || !GIT_OBJECT_ID.test(expectedMainSha ?? "") || !GIT_OBJECT_ID.test(expectedHeadSha ?? "")) {
+    throw new Error("selected-head preflight arguments are invalid");
+  }
+  const root = path.resolve(repositoryRoot);
+  const run = async (args) => String(await gitRunner(args, { cwd: root })).trim();
+  const [head, originMain, dirty] = await Promise.all([
+    run(["rev-parse", "HEAD"]), run(["rev-parse", "origin/main"]), run(["status", "--porcelain=v1", "--untracked-files=all"]),
+  ]);
+  if (head !== expectedHeadSha || originMain !== expectedMainSha || dirty !== "") {
+    throw new Error("selected-head preflight failed");
+  }
+  try { await run(["merge-base", "--is-ancestor", expectedMainSha, expectedHeadSha]); }
+  catch { throw new Error("selected-head preflight failed: origin/main is not an ancestor of HEAD"); }
+  return { head, originMain };
+}
+
 export async function publishSeoulTransferRawArtifact({ observationDirectory, receiptPath, repositoryRoot = ROOT, expectedMainSha, gitRunner, env = process.env, client = null, now = new Date(), sourceCandidatesBytes } = {}) {
   requireAbsolute(observationDirectory, "observationDirectory");
   requireAbsolute(receiptPath, "receiptPath");

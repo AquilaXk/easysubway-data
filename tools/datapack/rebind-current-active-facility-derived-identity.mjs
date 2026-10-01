@@ -6,7 +6,7 @@ import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink, writeFile } 
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson, selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import {
@@ -89,7 +89,7 @@ export function validateFacilityProtectedSemanticIdentity(previous, next) {
 export async function buildCurrentActiveFacilityDerivedIdentityOutput({ repositoryRoot = ROOT } = {}) {
   const root = rootOf(repositoryRoot);
   const files = await Promise.all([
-    "tools/datapack/release/capital-production-canonical-pack.json", "tools/datapack/nationwide-coverage-targets.json", "tools/datapack/sources/kric-provider-code-catalog-20260228.json", "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "tools/datapack/source-inventory.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json", OUTPUT,
+    "tools/datapack/release/capital-production-canonical-pack.json", "tools/datapack/nationwide-coverage-targets.json", "tools/datapack/sources/kric-provider-code-catalog-20260228.json", await selectCurrentKricRouteRostersPath({ repositoryRoot: root }), "tools/datapack/source-inventory.json", "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json", OUTPUT,
   ].map((relative) => json(root, relative)));
   const [pack, coverage, catalog, rosters, inventory, candidate, snapshots, governance, freshness, productionScope, previous] = files;
   validateCurrentPublicRouteMapReplacementProof(candidate.value, inventory.value, snapshots.value, pack.value);

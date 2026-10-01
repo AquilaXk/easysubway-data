@@ -70,18 +70,21 @@ async function registrationInputBytes(root) {
   };
 }
 
-async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = null) {
+async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = null, { sameDay = false } = {}) {
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const inventory = JSON.parse(await readFile(inventoryPath));
   const holder = inventory.sources.find((source) => source.id === "seoul-metro-route-map-positions");
   const previous = holder.routeMapAdmissionEvidence.currentTopologyAdmission;
   const previousTopology = JSON.parse(await readFile(path.join(root, "tools/datapack/sources/" + previous.topologySnapshotId + ".json")));
   const capturedMillis = Math.max(
-    Date.parse(previousTopology.capturedAt) + 86_400_000,
+    Date.parse(previousTopology.capturedAt) + (sameDay ? 1_000 : 86_400_000),
     minimumCapturedAt?.valueOf() ?? Number.NEGATIVE_INFINITY,
   );
   const captured = new Date(capturedMillis).toISOString();
-  const snapshotId = "capital-route-topology-" + captured.slice(0, 10).replaceAll("-", "");
+  // #862: 같은 날 재수집은 수집 시각(ms)까지 넣은 id를 쓴다. 날짜형 id는 기존 행으로만 남는다.
+  const snapshotId = "capital-route-topology-" + (sameDay
+    ? captured.replace(/[-:.]/gu, "")
+    : captured.slice(0, 10).replaceAll("-", ""));
   const topology = { ...previousTopology, capturedAt: captured, freshUntil: new Date(Date.parse(captured) + 86_400_000).toISOString() };
   const admission = {
     ...previous,
@@ -225,8 +228,11 @@ test("first registration binds the exact policy prestate without changing prior 
     .filter(({ sourceId }) => !sourceIds.has(sourceId)));
   const freshnessPath = path.join(root, "release/product-gates/datapack-freshness-sla.json");
   const freshness = JSON.parse(await readFile(freshnessPath));
+  // 거버넌스에 없는 원천(#862 인천 후보 입력의 클래스 매핑)도 등록 이후에 붙은 구성원이므로 함께 되감는다.
+  const governedSourceIds = new Set(JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-governance-policy.json")))
+    .sources.map(({ sourceId }) => sourceId));
   freshness.sourceClasses = freshness.sourceClasses.filter((entry) =>
-    !entry.sourceIds.every((id) => sourceIds.has(id)));
+    !entry.sourceIds.every((id) => sourceIds.has(id) || !governedSourceIds.has(id)));
   await writeJson(freshnessPath, freshness);
   const { receiptPath } = await receiptFixture(root, now);
   const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
@@ -279,6 +285,34 @@ test("commits two registrations while preserving existing ledger history and one
   assert.deepEqual(snapshots.at(-1).admissionEvidence.predecessorSnapshotIds, [initialSnapshot]);
 });
 
+// #862: 날짜형 id(capital-route-topology-YYYYMMDD)는 같은 날 재수집을 막았다. 수집 시각 id로 같은 날 두 번째 등록이
+// 성공하고, 같은 시각 중복 등록은 거부되며, 기존 날짜형 행은 그대로 남아 읽힌다.
+test("capital topology는 수집 시각 id로 같은 날 두 번째 등록을 받고 같은 시각 중복은 거부한다(#862)", async (t) => {
+  const { root, now } = await fixture(t);
+  let receipt = await receiptFixture(root, now);
+  let outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath: receipt.receiptPath, now });
+  await commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
+  const dayRow = JSON.parse(outputs[1].bytes).at(-1);
+  assert.match(dayRow.snapshotId, /^capital-route-topology-[0-9]{8}$/u);
+
+  const sameDayNow = await advanceProtectedTopology(root, now, null, { sameDay: true });
+  receipt = await receiptFixture(root, sameDayNow);
+  outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath: receipt.receiptPath, now: sameDayNow });
+  await commitCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
+  const snapshots = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json")))
+    .filter((snapshot) => snapshot.sourceId === "capital-route-topology");
+  const timedRow = snapshots.at(-1);
+  assert.match(timedRow.snapshotId, /^capital-route-topology-[0-9]{8}T[0-9]{9}Z$/u);
+  assert.equal(timedRow.snapshotId.slice("capital-route-topology-".length, "capital-route-topology-".length + 8), dayRow.snapshotId.slice(-8));
+  assert.equal(timedRow.previousSnapshotId, dayRow.snapshotId);
+  assert.deepEqual(snapshots.at(-2), dayRow);
+
+  await assert.rejects(
+    buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath: receipt.receiptPath, now: sameDayNow }),
+    /capital topology snapshot ID already exists/,
+  );
+});
+
 test("capital topology 원장 행은 다른 등록기처럼 credentialRedacted: true를 기록한다(#862 결정 #14)", async (t) => {
   const { root, now } = await fixture(t);
   const { receiptPath } = await receiptFixture(root, now);
@@ -287,6 +321,19 @@ test("capital topology 원장 행은 다른 등록기처럼 credentialRedacted: 
   assert.equal(snapshot.sourceId, "capital-route-topology");
   // FACILITY 사전 검사(run-current-capital-facility-operation validateReleasePreflight)는 `=== true`만 통과시킨다.
   assert.equal(snapshot.credentialRedacted, true);
+});
+
+// #862: 환승 rebind(currentReleaseSnapshots)는 선택된 원장 행마다 거버넌스 결속을 요구한다.
+// 다른 등록기처럼 등록 시점의 거버넌스 정책 버전·sha를 원장 행에 남긴다(기존 행은 소급하지 않음).
+test("capital topology 원장 행은 다른 등록기처럼 거버넌스 정책 버전·sha256을 결속한다(#862)", async (t) => {
+  const { root, now } = await fixture(t);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const snapshot = JSON.parse(outputs[1].bytes).at(-1);
+  const governance = JSON.parse(outputs[2].bytes);
+  assert.equal(snapshot.sourceId, "capital-route-topology");
+  assert.equal(snapshot.governancePolicyVersion, governance.policyVersion);
+  assert.equal(snapshot.governancePolicySha256, createHash("sha256").update(outputs[2].bytes).digest("hex"));
 });
 
 test("rejects receipt, freshness, and protected-scope mismatches without output mutation", async (t) => {

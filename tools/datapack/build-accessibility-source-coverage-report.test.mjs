@@ -370,6 +370,10 @@ test("MOLIT transfer tuple partition snapshot binding은 inventory와 build spec
     repositoryRoot,
     inventory.sources.find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission.metadataPath,
   );
+  // #862: 시계는 커밋된 판의 metadata(capturedAt·freshUntil)에서 유도한다.
+  const boundMetadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  const freshEvaluatedAt = new Date(Date.parse(boundMetadata.capturedAt) + 60_000).toISOString();
+  const futureEvaluatedAt = new Date(Date.parse(boundMetadata.capturedAt) - 1).toISOString();
 
   const snapshot = await loadMolitTransferSnapshot({
     metadataPath,
@@ -377,11 +381,11 @@ test("MOLIT transfer tuple partition snapshot binding은 inventory와 build spec
     inventoryBytes,
     candidateBuildSpec,
     repositoryRoot,
-    evaluatedAt: "2026-07-30T00:00:00.000Z",
+    evaluatedAt: freshEvaluatedAt,
   });
 
-  assert.equal(snapshot.rowCount, 8054);
-  assert.equal(snapshot.rows.length, 8054);
+  assert.equal(snapshot.rowCount, boundMetadata.rowCount);
+  assert.equal(snapshot.rows.length, boundMetadata.rowCount);
   assert.equal(snapshot.sourceInventorySha256, candidateBuildSpec.sourceInventorySha256);
   await assert.rejects(loadMolitTransferSnapshot({
     metadataPath,
@@ -389,7 +393,7 @@ test("MOLIT transfer tuple partition snapshot binding은 inventory와 build spec
     inventoryBytes,
     candidateBuildSpec,
     repositoryRoot,
-    evaluatedAt: EVALUATED_AT,
+    evaluatedAt: futureEvaluatedAt,
   }), /snapshot is future-dated/);
   await assert.rejects(loadMolitTransferSnapshot({
     metadataPath,
@@ -402,7 +406,7 @@ test("MOLIT transfer tuple partition snapshot binding은 inventory와 build spec
     inventoryBytes,
     candidateBuildSpec,
     repositoryRoot,
-    evaluatedAt: "2026-07-30T00:00:00.000Z",
+    evaluatedAt: freshEvaluatedAt,
   }), /snapshot binding mismatch/);
   await assert.rejects(loadMolitTransferSnapshot({
     metadataPath,
@@ -410,7 +414,7 @@ test("MOLIT transfer tuple partition snapshot binding은 inventory와 build spec
     inventoryBytes,
     candidateBuildSpec,
     repositoryRoot,
-    evaluatedAt: "2026-08-11T00:00:00.000Z",
+    evaluatedAt: boundMetadata.freshUntil,
   }), /snapshot is stale/);
 });
 

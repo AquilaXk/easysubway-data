@@ -9,14 +9,16 @@ import { gunzipSync } from "node:zlib";
 import {
   buildMolitRailwayTransferMovementSnapshot,
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
-  MOLIT_RAILWAY_TRANSFER_MOVEMENT_SNAPSHOT_ID,
+  molitRailwayTransferMovementEditionFromSnapshotId,
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
-const ENDPOINT = "https://api.odcloud.kr/api/15130556/v1/uddi:93021737-5337-442c-9006-b9748f87d0a4";
-const SNAPSHOT_PATH = "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz";
-const METADATA_PATH = `${SNAPSHOT_PATH}.json`;
+// #862: ODCloud uddi는 판마다 바뀐다. 상수가 아니라 source-candidates requestUrl을 엄격한 형식으로 검증해 쓴다.
+const ENDPOINT_PATTERN = /^https:\/\/api\.odcloud\.kr\/api\/15130556\/v1\/uddi:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u;
+// #862: 판(snapshotId·경로)은 상수가 아니라 source-candidates binding에서 유도한다.
+const metadataPathOf = (snapshotId) => `tools/datapack/sources/${snapshotId}.csv.gz.json`;
+const POLICY_PATH = "release/product-gates/datapack-freshness-sla.json";
 const CANDIDATES_PATH = "tools/datapack/source-candidates.json";
 const PER_PAGE = 1000;
 const REQUEST_TIMEOUT_MILLIS = 15_000;
@@ -122,19 +124,28 @@ async function assertAbsentOutput(output) {
 
 async function loadLockedSnapshot(repositoryRoot, readFileImpl) {
   try {
-    const [metadataBytes, gzipBytes, candidatesBytes] = await Promise.all([
-      readFileImpl(path.join(repositoryRoot, METADATA_PATH)),
-      readFileImpl(path.join(repositoryRoot, SNAPSHOT_PATH)),
-      readFileImpl(path.join(repositoryRoot, CANDIDATES_PATH)),
-    ]);
-    const metadata = JSON.parse(metadataBytes);
-    const candidates = JSON.parse(candidatesBytes);
+    const candidates = JSON.parse(await readFileImpl(path.join(repositoryRoot, CANDIDATES_PATH)));
     const candidate = candidates.candidates?.filter(({ id }) => id === MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID);
     if (candidate?.length !== 1) fail("SNAPSHOT");
+    const snapshotId = candidate[0].rawSnapshotAdmission?.snapshotId;
+    const editionDate = molitRailwayTransferMovementEditionFromSnapshotId(snapshotId);
+    const metadataPath = metadataPathOf(snapshotId);
+    const snapshotPath = metadataPath.replace(/\.json$/u, "");
+    const [metadataBytes, gzipBytes, policyBytes] = await Promise.all([
+      readFileImpl(path.join(repositoryRoot, metadataPath)),
+      readFileImpl(path.join(repositoryRoot, snapshotPath)),
+      readFileImpl(path.join(repositoryRoot, POLICY_PATH)),
+    ]);
+    const metadata = JSON.parse(metadataBytes);
     validateCandidate(candidate[0], metadata, metadataBytes, gzipBytes);
+    const freshnessPolicy = JSON.parse(policyBytes);
     const rebuilt = buildMolitRailwayTransferMovementSnapshot({
       bytes: gunzipSync(gzipBytes),
       capturedAt: metadata.capturedAt,
+      editionDate,
+      freshnessPolicy,
+      expectedRowCount: candidate[0].rawSnapshotAdmission.rowCount,
+      expectedRawSha256: candidate[0].rawSnapshotAdmission.rawSha256,
     });
     const {
       gzipBytes: ignoredGzipBytes,
@@ -143,9 +154,14 @@ async function loadLockedSnapshot(repositoryRoot, readFileImpl) {
       ...rebuiltMetadata
     } = rebuilt;
     const { gzipSha256: ignoredMetadataGzipSha256, ...logicalMetadata } = metadata;
-    if (JSON.stringify({ ...rebuiltMetadata, gzipPath: path.basename(SNAPSHOT_PATH) })
+    if (JSON.stringify({ ...rebuiltMetadata, gzipPath: path.basename(snapshotPath) })
       !== JSON.stringify(logicalMetadata)) fail("SNAPSHOT");
     return {
+      endpoint: candidate[0].requestUrl,
+      snapshotId,
+      editionDate,
+      metadataPath,
+      freshnessPolicy,
       metadata,
       metadataFileSha256: sha256(metadataBytes),
       rows,
@@ -159,15 +175,15 @@ async function loadLockedSnapshot(repositoryRoot, readFileImpl) {
 function validateCandidate(candidate, metadata, metadataBytes, gzipBytes) {
   const operation = candidate.operation;
   const admission = candidate.rawSnapshotAdmission;
-  if (candidate.requestUrl !== ENDPOINT
+  if (!ENDPOINT_PATTERN.test(candidate.requestUrl ?? "")
     || operation?.method !== "GET"
-    || operation.endpoint !== ENDPOINT
+    || operation.endpoint !== candidate.requestUrl
     || operation.auth?.env !== "DATA_GO_KR_SERVICE_KEY"
     || operation.auth?.placement !== "query"
     || operation.auth?.parameter !== "serviceKey"
     || JSON.stringify(operation.requiredParameters) !== JSON.stringify(["serviceKey", "page", "perPage", "returnType"])
-    || admission?.snapshotId !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_SNAPSHOT_ID
-    || admission.metadataPath !== METADATA_PATH
+    || admission?.snapshotId !== metadata.snapshotId
+    || admission.metadataPath !== metadataPathOf(admission.snapshotId)
     || admission.metadataFileSha256 !== sha256(metadataBytes)
     || admission.rawSha256 !== metadata.rawSha256
     || admission.gzipSha256 !== metadata.gzipSha256
@@ -176,8 +192,8 @@ function validateCandidate(candidate, metadata, metadataBytes, gzipBytes) {
     || admission.status !== "LOCKED") fail("SNAPSHOT");
 }
 
-function requestUrl(serviceKey, page) {
-  const url = new URL(ENDPOINT);
+function requestUrl(endpoint, serviceKey, page) {
+  const url = new URL(endpoint);
   url.searchParams.set("serviceKey", serviceKey);
   url.searchParams.set("page", String(page));
   url.searchParams.set("perPage", String(PER_PAGE));
@@ -185,10 +201,10 @@ function requestUrl(serviceKey, page) {
   return url;
 }
 
-async function fetchPage({ fetchImpl, serviceKey, page, expectedTotalCount }) {
+async function fetchPage({ fetchImpl, endpoint, serviceKey, page, expectedTotalCount }) {
   let response;
   try {
-    response = await fetchImpl(requestUrl(serviceKey, page), {
+    response = await fetchImpl(requestUrl(endpoint, serviceKey, page), {
       redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MILLIS),
     });
@@ -316,6 +332,7 @@ async function collectProviderObservation({ fetchImpl, serviceKey, locked }) {
   const pageResponseSha256 = [];
   for (let page = 1; page <= pageCount; page += 1) {
     const result = await fetchPage({
+      endpoint: locked.endpoint,
       fetchImpl,
       serviceKey,
       page,
@@ -377,6 +394,8 @@ async function collectOfficialFileObservation({ filePath, locked, fixture }) {
     rebuilt = buildMolitRailwayTransferMovementSnapshot({
       bytes,
       capturedAt: locked.metadata.capturedAt,
+      editionDate: locked.editionDate,
+      freshnessPolicy: locked.freshnessPolicy,
     });
   } catch {
     fail("CONTENT");
@@ -402,11 +421,11 @@ function buildEvidence({ observedAt, locked, observation, operation }) {
     artifactKind: "current-molit-transfer-source-revalidation-evidence",
     contractVersion: "1.0.0",
     sourceId: MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
-    snapshotId: MOLIT_RAILWAY_TRANSFER_MOVEMENT_SNAPSHOT_ID,
+    snapshotId: locked.snapshotId,
     observedAt,
     operation,
     lockedSnapshot: {
-      metadataPath: METADATA_PATH,
+      metadataPath: locked.metadataPath,
       metadataFileSha256: locked.metadataFileSha256,
       rawSha256: locked.metadata.rawSha256,
       gzipSha256: locked.metadata.gzipSha256,
@@ -498,7 +517,7 @@ export async function runCurrentMolitTransferSourceRevalidation({
       });
       operation = {
         method: "FILE_DOWNLOAD",
-        operationId: "15130556-fileData-20250811",
+        operationId: `15130556-fileData-${locked.editionDate}`,
         detailPageUrl: locked.metadata.detailUrl,
       };
     } else {
@@ -511,7 +530,7 @@ export async function runCurrentMolitTransferSourceRevalidation({
       observation = await collectProviderObservation({ fetchImpl, serviceKey, locked });
       operation = {
         method: "GET",
-        operationId: "15130556-v1-uddi-93021737-5337-442c-9006-b9748f87d0a4",
+        operationId: `15130556-v1-uddi-${ENDPOINT_PATTERN.exec(locked.endpoint)[1]}`,
         perPage: PER_PAGE,
         returnType: "JSON",
       };

@@ -284,12 +284,14 @@ test("FACILITY provider probe는 empty 또는 partial operation을 evidence로 �
 });
 
 test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 20 tuple만 허용한다", async () => {
+  // 2026-07-31 검토 증거는 이 roster로 평가됐다(#862 이후 현재 roster 선택과 별개인 고정 fixture).
+  const ROSTER_FILE = "kric-nationwide-route-rosters-20260730T203926676Z.json";
   const [resolution, routeRosters] = await Promise.all([
     readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url), "utf8").then(JSON.parse),
-    readFile(new URL("./sources/kric-nationwide-route-rosters-20260730T203926676Z.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL(`./sources/${ROSTER_FILE}`, import.meta.url), "utf8").then(JSON.parse),
   ]);
 
-  const input = resolveKricFacilityProviderProbe({ resolution, routeRosters, candidatesDocument: document });
+  const input = resolveKricFacilityProviderProbe({ resolution, routeRosters, routeRostersFile: ROSTER_FILE, candidatesDocument: document });
   assert.equal(input.tuples.length, 20);
   assert.equal(input.tuples.filter(({ railOprIsttCd }) => railOprIsttCd === "GX").length, 5);
   assert.equal(input.tuples.filter(({ railOprIsttCd }) => railOprIsttCd === "KR").length, 15);
@@ -303,6 +305,7 @@ test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 
   assert.throws(() => resolveKricFacilityProviderProbe({
     resolution,
     routeRosters: { ...routeRosters, rosters: [] },
+    routeRostersFile: ROSTER_FILE,
     candidatesDocument: document,
   }), /KRIC FACILITY provider probe inputs are invalid/);
   assert.throws(() => resolveKricFacilityProviderProbe({
@@ -311,6 +314,7 @@ test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 
       ...routeRosters,
       rosters: [{ ...routeRosters.rosters[0], resultCode: "03" }, ...routeRosters.rosters.slice(1)],
     },
+    routeRostersFile: ROSTER_FILE,
     candidatesDocument: document,
   }), /KRIC FACILITY provider probe inputs are invalid/);
   assert.throws(() => resolveKricFacilityProviderProbe({
@@ -321,6 +325,7 @@ test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 
         : group),
     },
     routeRosters,
+    routeRostersFile: ROSTER_FILE,
     candidatesDocument: document,
   }), /KRIC FACILITY blocked group is invalid/);
   assert.throws(() => resolveKricFacilityProviderProbe({
@@ -329,7 +334,11 @@ test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 
       ...routeRosters,
       rosters: [{ ...routeRosters.rosters[0], stationCount: undefined, stations: undefined }, ...routeRosters.rosters.slice(1)],
     },
+    routeRostersFile: ROSTER_FILE,
     candidatesDocument: document,
+  }), /KRIC FACILITY provider probe inputs are invalid/);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution, routeRosters, routeRostersFile: "kric-nationwide-route-rosters-20261001T050420765Z.json", candidatesDocument: document,
   }), /KRIC FACILITY provider probe inputs are invalid/);
 });
 

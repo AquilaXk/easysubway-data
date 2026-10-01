@@ -4,6 +4,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { collectKricAccessibilityProviderTupleEvidence } from "./collect-kric-accessibility-snapshots.mjs";
+import { selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { assertKricControlOperation } from "./collect-kric-source-candidate-evidence.mjs";
 import {
   assertProviderCredentialIntegrity,
@@ -19,17 +20,18 @@ const FACILITY_OPERATION_IDS = Object.freeze([
   "kric-wheelchair-lift-movement",
 ]);
 const RESOLUTION_PATH = new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url);
-const ROUTE_ROSTERS_PATH = new URL("./sources/kric-nationwide-route-rosters-20260730T203926676Z.json", import.meta.url);
 const CANDIDATES_PATH = new URL("./source-candidates.json", import.meta.url);
-const ROUTE_ROSTERS_FILE = "kric-nationwide-route-rosters-20260730T203926676Z.json";
+const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
 
-export function resolveKricFacilityProviderProbe({ resolution, routeRosters, candidatesDocument } = {}) {
+// #862: roster는 선택 함수가 고른 현재 파일이다. 검토 증거가 그 roster로 평가되지 않았으면 실패한다.
+export function resolveKricFacilityProviderProbe({ resolution, routeRosters, routeRostersFile, candidatesDocument } = {}) {
   if (resolution?.schemaVersion !== 1
     || resolution?.artifactKind !== "facility-gap-resolution-evidence"
     || resolution?.admissionState !== "BLOCKED"
     || resolution?.productionAdmissionAllowed !== false
     || !Array.isArray(resolution?.blockedGroups)
-    || !resolution?.evaluatedSourceSnapshots?.includes(ROUTE_ROSTERS_FILE)
+    || typeof routeRostersFile !== "string"
+    || !resolution?.evaluatedSourceSnapshots?.includes(routeRostersFile)
     || routeRosters?.schemaVersion !== 1
     || routeRosters?.artifactKind !== "kric-nationwide-route-rosters"
     || routeRosters?.sourceId !== "kric-subway-route-info"
@@ -144,12 +146,15 @@ function parseArgs(argv) {
 async function main(argv) {
   const { output, requestIntervalMs } = parseArgs(argv);
   await rm(output, { force: true });
+  const routeRostersRelativePath = await selectCurrentKricRouteRostersPath({ repositoryRoot: REPOSITORY_ROOT });
   const [resolution, routeRosters, candidatesDocument] = await Promise.all([
     readFile(RESOLUTION_PATH, "utf8").then(JSON.parse),
-    readFile(ROUTE_ROSTERS_PATH, "utf8").then(JSON.parse),
+    readFile(path.join(REPOSITORY_ROOT, routeRostersRelativePath), "utf8").then(JSON.parse),
     readFile(CANDIDATES_PATH, "utf8").then(JSON.parse),
   ]);
-  const input = resolveKricFacilityProviderProbe({ resolution, routeRosters, candidatesDocument });
+  const input = resolveKricFacilityProviderProbe({
+    resolution, routeRosters, routeRostersFile: path.basename(routeRostersRelativePath), candidatesDocument,
+  });
   const serviceKey = process.env.KRIC_SERVICE_KEY;
   await preflightKricFacilityProviderProbe({ candidatesDocument, serviceKey, requestIntervalMs });
   const evidence = await collectKricAccessibilityProviderTupleEvidence({

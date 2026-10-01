@@ -4,15 +4,25 @@ import { constants } from "node:fs";
 import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { gunzipSync } from "node:zlib";
+
+import { molitRailwayTransferMovementEditionFromSnapshotId } from "./collect-molit-railway-transfer-movement.mjs";
 
 import { evaluateFreshnessExtension, freshnessPolicySha256 } from "./freshness-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const SOURCE_ID = "molit-railway-transfer-movement";
-const SNAPSHOT_ID = "molit-railway-transfer-movement-20250811";
 const SOURCE_CLASS_ID = "annual_official_file";
-const METADATA_PATH = "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json";
-const GZIP_PATH = "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz";
+const INVENTORY_PATH = "tools/datapack/source-inventory.json";
+// #862: 판(snapshotId·경로·operationId)은 상수가 아니라 metadata의 snapshotId에서 유도한다.
+const metadataPathOf = (snapshotId) => `tools/datapack/sources/${snapshotId}.csv.gz.json`;
+const editionOf = (snapshotId) => {
+  try {
+    return molitRailwayTransferMovementEditionFromSnapshotId(snapshotId);
+  } catch {
+    return fail("SOURCE_IDENTITY");
+  }
+};
 const POLICY_PATH = "release/product-gates/datapack-freshness-sla.json";
 const DETAIL_PAGE_URL = "https://www.data.go.kr/data/15130556/fileData.do";
 const MAX_EVIDENCE_BYTES = 64 * 1024;
@@ -83,20 +93,21 @@ function validateMetadata(metadata, metadataBytes, gzipBytes) {
     || metadata?.schemaVersion !== 1
     || metadata.artifactKind !== "molit-railway-transfer-movement-snapshot-metadata"
     || metadata.sourceId !== SOURCE_ID
-    || metadata.snapshotId !== SNAPSHOT_ID
+    || typeof metadata.snapshotId !== "string"
+    || editionOf(metadata.snapshotId) === ""
     || metadata.detailUrl !== DETAIL_PAGE_URL
     || !SHA256_PATTERN.test(metadata.rawSha256 ?? "")
     || !SHA256_PATTERN.test(metadata.gzipSha256 ?? "")
     || !SHA256_PATTERN.test(metadata.sortedContentSha256 ?? "")
     || metadata.gzipSha256 !== sha256(gzipBytes)
     || !Number.isSafeInteger(metadata.rowCount)
-    || metadata.rowCount !== 8_054) {
+    || metadata.rowCount < 1) {
     fail("SOURCE_IDENTITY");
   }
   parseEvaluationAt(metadata.freshUntil);
 }
 
-function validateEvidence(evidence, metadata, metadataBytes) {
+function validateEvidence(evidence, metadata, metadataBytes, rawByteSize) {
   if (!exactKeys(evidence, EVIDENCE_KEYS)) fail("EVIDENCE");
   const { evidenceHash, ...payload } = evidence;
   if (!SHA256_PATTERN.test(evidenceHash ?? "") || evidenceHash !== sha256(JSON.stringify(payload))) {
@@ -106,15 +117,15 @@ function validateEvidence(evidence, metadata, metadataBytes) {
     || evidence.artifactKind !== "current-molit-transfer-source-revalidation-evidence"
     || evidence.contractVersion !== "1.0.0"
     || evidence.sourceId !== SOURCE_ID
-    || evidence.snapshotId !== SNAPSHOT_ID
+    || evidence.snapshotId !== metadata.snapshotId
     || evidence.outcome !== "NO_CHANGE_REVALIDATED"
     || evidence.credentialRedacted !== true
     || !exactKeys(evidence.operation, OPERATION_KEYS)
     || evidence.operation.method !== "FILE_DOWNLOAD"
-    || evidence.operation.operationId !== "15130556-fileData-20250811"
+    || evidence.operation.operationId !== `15130556-fileData-${editionOf(metadata.snapshotId)}`
     || evidence.operation.detailPageUrl !== DETAIL_PAGE_URL
     || !exactKeys(evidence.lockedSnapshot, LOCKED_SNAPSHOT_KEYS)
-    || evidence.lockedSnapshot.metadataPath !== METADATA_PATH
+    || evidence.lockedSnapshot.metadataPath !== metadataPathOf(metadata.snapshotId)
     || evidence.lockedSnapshot.metadataFileSha256 !== sha256(metadataBytes)
     || evidence.lockedSnapshot.rawSha256 !== metadata.rawSha256
     || evidence.lockedSnapshot.gzipSha256 !== metadata.gzipSha256
@@ -122,7 +133,7 @@ function validateEvidence(evidence, metadata, metadataBytes) {
     || evidence.lockedSnapshot.rowCount !== metadata.rowCount
     || !exactKeys(evidence.providerObservation, PROVIDER_OBSERVATION_KEYS)
     || evidence.providerObservation.rawSha256 !== metadata.rawSha256
-    || evidence.providerObservation.byteSize !== 598_455
+    || evidence.providerObservation.byteSize !== rawByteSize
     || evidence.providerObservation.canonicalRowsSha256 !== metadata.sortedContentSha256
     || evidence.providerObservation.totalCount !== metadata.rowCount) {
     fail("EVIDENCE");
@@ -142,12 +153,12 @@ export function evaluateCurrentMolitTransferFreshness({
   validatePolicy(policy);
   const compatibilityPolicy = molitCompatibilityPolicy(policy);
   validateMetadata(metadata, metadataBytes, gzipBytes);
-  validateEvidence(evidence, metadata, metadataBytes);
+  validateEvidence(evidence, metadata, metadataBytes, gunzipSync(gzipBytes).length);
   parseEvaluationAt(evaluationAt);
 
   const sourceIdentity = {
     sourceId: SOURCE_ID,
-    snapshotId: SNAPSHOT_ID,
+    snapshotId: metadata.snapshotId,
     snapshotSha256: metadata.gzipSha256,
     rawEvidenceSha256: metadata.rawSha256,
     currentFreshUntil: metadata.freshUntil,
@@ -304,10 +315,18 @@ export async function runCurrentMolitTransferFreshnessEvaluation({
 } = {}) {
   const args = parseArgs(argv);
   await assertAbsentOutput(args.output);
+  let admission;
+  try {
+    admission = JSON.parse(await readFile(path.join(repositoryRoot, INVENTORY_PATH), "utf8")).sources
+      .filter(({ id }) => id === SOURCE_ID).map(({ rawSnapshotAdmission }) => rawSnapshotAdmission);
+  } catch {
+    fail("SOURCE_IDENTITY");
+  }
+  if (admission.length !== 1 || admission[0]?.metadataPath !== metadataPathOf(admission[0]?.snapshotId)) fail("SOURCE_IDENTITY");
   const [evidenceBytes, metadataBytes, gzipBytes, policyBytes] = await Promise.all([
     readBoundedRegularFile(args.evidencePath),
-    readFile(path.join(repositoryRoot, METADATA_PATH)),
-    readFile(path.join(repositoryRoot, GZIP_PATH)),
+    readFile(path.join(repositoryRoot, admission[0].metadataPath)),
+    readFile(path.join(repositoryRoot, admission[0].metadataPath.replace(/\.json$/u, ""))),
     readFile(path.join(repositoryRoot, POLICY_PATH)),
   ]);
   let evidence;
@@ -320,6 +339,7 @@ export async function runCurrentMolitTransferFreshnessEvaluation({
   } catch {
     fail("EVIDENCE");
   }
+  if (metadata?.snapshotId !== admission[0].snapshotId || sha256(metadataBytes) !== admission[0].metadataFileSha256) fail("SOURCE_IDENTITY");
   const result = evaluateCurrentMolitTransferFreshness({
     evidence,
     evaluationAt: args.evaluationAt,

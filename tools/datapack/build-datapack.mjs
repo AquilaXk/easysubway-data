@@ -70,6 +70,7 @@ import {
   validateProductionIncheonTimetableFixture,
 } from "./materialize-incheon-timetable.mjs";
 import { bindStationContacts, loadStationContactInputs } from "./build-station-contacts.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -2343,7 +2344,7 @@ export function projectCapitalTopologyIntoCanonicalFixture(
     || !Array.isArray(packs[0].stationLines)
     || !Array.isArray(topology?.lines)
     || topology.sourceId !== "capital-route-topology"
-    || !/^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId ?? "")
+    || !isCapitalRouteTopologySnapshotId(topologySnapshotId)
     || !(admissions instanceof Map)) {
     throw new Error("capital topology canonical fixture is invalid");
   }

@@ -77,3 +77,34 @@ test("workflow fails closed on claim reads and retains only recovery metadata", 
   assert.match(workflow, /capital-route-topology\.raw-receipt\.json/u);
   assert.doesNotMatch(workflow, /capital-route-topology\.raw\.json/u);
 });
+
+// #862 코디네이터 결정 A: PR 브랜치(origin/main의 clean 후손)에서 등록할 때는 명시 HEAD SHA를 함께 넘긴다.
+// 생략하면 HEAD == main(기존 exact-main)과 같다.
+test("passes the explicit selected HEAD to every guard and defaults it to main", async (t) => {
+  const f = await fixture(); t.after(() => rm(f.base, { recursive: true, force: true }));
+  const bytes = Buffer.from("{}\n"); const HEAD = "b".repeat(40);
+  const guards = []; const publishes = [];
+  const run = (overrides) => runCurrentCapitalRouteTopologyRegistration({ repositoryRoot: f.repositoryRoot, expectedMainSha: SHA, now: new Date("2026-09-04T00:00:00.000Z"),
+    readAdmission: async () => ({ sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", topologyBytes: bytes }),
+    publish: async ({ receiptPath, expectedMainSha, expectedHeadSha }) => { publishes.push([expectedMainSha, expectedHeadSha]); await writeFile(receiptPath, JSON.stringify({ sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", rawObjectSha256: digest(bytes) })); },
+    register: async () => ({ targets: TARGETS }), exactMain: async ({ expectedMainSha, expectedHeadSha }) => { guards.push([expectedMainSha, expectedHeadSha]); return {}; },
+    ...overrides });
+  await run({ operationRoot: f.operationRoot, expectedHeadSha: HEAD });
+  assert.deepEqual(publishes, [[SHA, HEAD]]); assert.deepEqual(guards, [[SHA, HEAD]]);
+  await run({ operationRoot: path.join(f.base, "default-head") });
+  assert.deepEqual(publishes.at(-1), [SHA, SHA]); assert.deepEqual(guards.at(-1), [SHA, SHA]);
+  assert.deepEqual(parseArgs(["--repository-root", "/repo", "--operation-root", "/tmp/op", "--expected-main-sha", SHA, "--expected-head-sha", HEAD]),
+    { phase: "run", repositoryRoot: "/repo", operationRoot: "/tmp/op", expectedMainSha: SHA, expectedHeadSha: HEAD });
+  assert.equal(parseArgs(["recover-published", "--repository-root", "/repo", "--source-operation-root", "/tmp/source", "--target-operation-root", "/tmp/target", "--expected-main-sha", SHA, "--expected-publication-operation-id", "123", "--expected-head-sha", HEAD]).expectedHeadSha, HEAD);
+});
+
+test("topology OCI publisher accepts a clean descendant HEAD and rejects a non-descendant before admission reads", async () => {
+  const { publishCapitalRouteTopologyRaw } = await import("./publish-capital-route-topology-raw.mjs");
+  const HEAD = "b".repeat(40);
+  const base = { repositoryRoot: "/nonexistent-repository", operationRoot: "/nonexistent-operation", receiptPath: "/nonexistent-operation/receipt.json", expectedMainSha: SHA, expectedHeadSha: HEAD,
+    env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/token/n/axvym6vk8g7i/b/easysubway-datapacks/o" }, now: new Date("2026-10-01T00:00:00.000Z") };
+  const runner = (ancestor) => async (args) => { if (args[0] === "status") return ""; if (args[0] === "merge-base") { if (!ancestor) throw new Error("not ancestor"); return ""; } return args[1] === "HEAD" ? HEAD : SHA; };
+  await assert.rejects(publishCapitalRouteTopologyRaw({ ...base, gitRunner: runner(false) }), /selected-head preflight failed/);
+  // 후손 HEAD는 가드를 통과하고 다음 단계(보호 admission 읽기)에서 멈춘다.
+  await assert.rejects(publishCapitalRouteTopologyRaw({ ...base, gitRunner: runner(true) }), (error) => !/preflight failed/.test(error.message));
+});

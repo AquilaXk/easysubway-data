@@ -7,8 +7,6 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
-import { validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
@@ -29,12 +27,14 @@ import {
 } from "./build-molit-nationwide-fixture.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 import { deriveCurrentMolitMembershipCoverage } from "./current-molit-observation.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
-const FIXED_OUTPUTS = Object.freeze(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
-const APPROVAL_INPUTS = Object.freeze(["tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json"]);
-const INPUTS = Object.freeze([...FIXED_OUTPUTS, ...APPROVAL_INPUTS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/production-datapack-scope.json"]);
+// #862 결정 C: 원천 등록은 원천 snapshot·inventory·원장까지만 쓴다. 후보 spec·release request·hash evidence는
+// "전국 후보 갱신"(refresh-nationwide-candidate.mjs)만 다시 만든다.
+const FIXED_OUTPUTS = Object.freeze(["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"]);
+const INPUTS = Object.freeze([...FIXED_OUTPUTS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]);
 const OUTPUT_COUNT = TARGETS.length + FIXED_OUTPUTS.length;
 const RECEIPT_TYPES = Object.freeze({
   "seoul-metro-route-map-positions": { extension: "json", contentType: "application/json" },
@@ -82,7 +82,7 @@ function outputAllowlist(outputs) {
     || !Array.isArray(inputs) || JSON.stringify(inputs.slice(0, INPUTS.length).map(({ relative }) => relative)) !== JSON.stringify(INPUTS)
     || inputs.length !== INPUTS.length + 2 + TARGETS.length
     || inputs[INPUTS.length + 1]?.relative !== gwangjuTopologyAdmission(parse(inputs[0].bytes, "inventory")).snapshotPath
-    || !new RegExp("^tools/datapack/sources/capital-route-topology-20\\d{6}\\.json$", "u").test(inputs[INPUTS.length]?.relative ?? "")
+    || !CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(inputs[INPUTS.length]?.relative ?? "")
     || predecessorInputs.some(({ relative }, index) => !new RegExp(
       `^tools/datapack/sources/${TARGETS[index]}-current-20\\d{6}T\\d{9}Z\\.json$`, "u",
     ).test(relative ?? ""))
@@ -175,33 +175,8 @@ function rebindMolitMembershipEvidence(inventory, snapshot, rawBytes, gwangjuTop
   }
 }
 
-function selectedInLedgerOrder(ledger, ids) {
-  if (!Array.isArray(ids) || ids.length === 0 || new Set(ids).size !== ids.length) throw new Error("static network selected snapshot set is invalid");
-  const selected = ledger.filter(({ snapshotId }) => ids.includes(snapshotId));
-  if (selected.length !== ids.length || ids.some((snapshotId) => ledger.filter((snapshot) => snapshot.snapshotId === snapshotId).length !== 1)) throw new Error("static network selected snapshot set is invalid");
-  return selected;
-}
-
-function requireCurrentCandidateBinding({ candidate, ledger, productionScopeBytes, inventory, inventoryBytes, governance, governanceBytes, freshness, now }) {
-  try {
-    const { selected, headsBySource } = validateCandidateSourceSet({
-      productionScopeBytes, sourceInventoryBytes: inventoryBytes, candidate, ledger,
-    });
-    for (const [index, snapshot] of selected.entries()) {
-      const projection = candidate.sourceSnapshots[index];
-      if (!isDeepStrictEqual(projection, deriveReleaseProjection({
-          snapshot,
-          sourceInventory: inventory,
-          governancePolicy: governance,
-          governancePolicyBytes: governanceBytes,
-          freshnessPolicy: freshness,
-          nowMillis: now.getTime(),
-        }))) throw new Error("projection");
-    }
-    return headsBySource;
-  } catch {
-    throw new Error("public v2 current candidate binding is invalid");
-  }
+function activeLedgerHeads(ledger) {
+  try { return validateLineage(ledger).headsBySource; } catch { throw new Error("public v2 active ledger heads are invalid"); }
 }
 
 async function readCurrentTopologyAdmissionInput({ root, inventory, now, read }) {
@@ -213,7 +188,7 @@ async function readCurrentTopologyAdmissionInput({ root, inventory, now, read })
   assertCurrentTopologyAdmissionFreshness(topologyAdmission, topology, now);
   const requiredLineIds = ["line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4", "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0"].sort(compareStrings);
   const lineages = topologyAdmission.topologyLineages?.map(({ sourceId, snapshotId, contentSha256, lineId }) => ({ sourceId, snapshotId, contentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b)));
-  if (topology?.sourceId !== "capital-route-topology" || topology.artifactKind !== "capital-route-topology-snapshot" || topology.official !== true || topology.fixture !== false || topology.contentSha256 !== topologyAdmission.topologyContentSha256 || topologyAdmission.topologySnapshotId !== `capital-route-topology-${topologyAdmission.topologySnapshotId.slice(-8)}` || !Array.isArray(lineages) || JSON.stringify(lineages) !== JSON.stringify(requiredLineIds.map((lineId) => ({ sourceId: "capital-route-topology", snapshotId: topologyAdmission.topologySnapshotId, contentSha256: topologyAdmission.topologyContentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b))))) throw new Error("static network topology identity is invalid");
+  if (topology?.sourceId !== "capital-route-topology" || topology.artifactKind !== "capital-route-topology-snapshot" || topology.official !== true || topology.fixture !== false || topology.contentSha256 !== topologyAdmission.topologyContentSha256 || !isCapitalRouteTopologySnapshotId(topologyAdmission.topologySnapshotId) || !Array.isArray(lineages) || JSON.stringify(lineages) !== JSON.stringify(requiredLineIds.map((lineId) => ({ sourceId: "capital-route-topology", snapshotId: topologyAdmission.topologySnapshotId, contentSha256: topologyAdmission.topologyContentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b))))) throw new Error("static network topology identity is invalid");
   return { topologyAdmission, topologyRelative, topologyBytes, topology };
 }
 
@@ -343,9 +318,9 @@ async function requireActivePublicV2Predecessors({ ledger, heads, inventory, now
     const source = inventory.sources?.find(({ id }) => id === sourceId);
     if (previous.length !== 1 || !source) throw new Error("public v2 active predecessor is required");
     try {
-      requireExactPublicStaticNetworkV2SnapshotBinding({
-        snapshot: previous[0], source, now, requireCurrentFreshness: true,
-      });
+      // 교체 대상 head는 만료됐을 수 있다(#862). identity·bytes·보존기간만 확인하고 신선도는 후속 snapshot이 진다.
+      requireExactPublicStaticNetworkV2SnapshotBinding({ snapshot: previous[0], source, now });
+      if (Date.parse(previous[0].rawRetentionExpiresAt) <= now.getTime()) throw new Error("retention");
       const relative = `tools/datapack/sources/${previous[0].snapshotId}.json`;
       const observationBytes = await read(relative);
       if (sha(observationBytes) !== previous[0].normalizedObservationSha256
@@ -406,36 +381,26 @@ export async function buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoo
   const root = path.resolve(repositoryRoot); await regularDirectory(root, "repository root");
   assertV2ProducerOutput(producerOutput, rawBytesBySource);
   const read = async (relative) => bytes(target(root, relative), relative);
-  const [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all([
-    read(FIXED_OUTPUTS[0]), read(FIXED_OUTPUTS[1]), read(FIXED_OUTPUTS[2]), read(APPROVAL_INPUTS[0]), read(APPROVAL_INPUTS[1]),
+  const [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes] = await Promise.all([
+    read(FIXED_OUTPUTS[0]), read(FIXED_OUTPUTS[1]),
     read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"),
-    read("release/product-gates/production-datapack-scope.json"),
   ]);
-  const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger"); const candidate = parse(candidateBytes, "candidate build spec");
+  const inventory = parse(inventoryBytes, "source inventory"); const ledger = parse(ledgerBytes, "source ledger");
   const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
   const { topologyAdmission, topologyRelative, topologyBytes } = await readCurrentTopologyAdmissionInput({ root, inventory, now, read });
   const gwangjuTopology = await readGwangjuMembershipTopology(inventory, read);
   revalidateV2ProducerOutput({ producerOutput, rawBytesBySource, sourceInventory: inventory, topologyAdmission, topologyBytes });
-  const inputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, candidateBytes, requestBytes, hashBytes, governanceBytes, freshnessBytes, productionScopeBytes][index] }));
+  const inputs = INPUTS.map((relative, index) => ({ relative, bytes: [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes][index] }));
   inputs.push({ relative: topologyRelative, bytes: topologyBytes });
   inputs.push({ relative: gwangjuTopology.relative, bytes: gwangjuTopology.bytes });
-  const heads = requireCurrentCandidateBinding({ candidate, ledger, productionScopeBytes, inventory, inventoryBytes, governance, governanceBytes, freshness, now });
+  const heads = activeLedgerHeads(ledger);
   inputs.push(...await requireActivePublicV2Predecessors({ ledger, heads, inventory, now, read }));
   const nextInventory = structuredClone(inventory); const snapshots = materializePublicV2Snapshots({ producerOutput, ledger, heads, nextInventory, governance, governanceBytes, freshness, now }); const nextLedger = [...ledger, ...snapshots];
   rebindMolitMembershipEvidence(nextInventory, snapshots.find(({ sourceId }) => sourceId === TARGETS[1]), rawBytesBySource[TARGETS[1]], gwangjuTopology.snapshot);
   validateLineage(nextLedger);
-  const nextCandidate = structuredClone(candidate); const nowMillis = now.getTime();
-  for (const snapshot of snapshots) {
-    const index = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === snapshot.sourceId);
-    if (index < 0 || nextCandidate.sourceSnapshotIds[index] !== snapshot.previousSnapshotId) throw new Error("public v2 candidate head drift");
-    nextCandidate.sourceSnapshotIds[index] = snapshot.snapshotId;
-    nextCandidate.sourceSnapshots[index] = deriveReleaseProjection({ snapshot, sourceInventory: nextInventory, governancePolicy: governance, governancePolicyBytes: governanceBytes, freshnessPolicy: freshness, nowMillis });
-  }
-  for (const projection of candidate.sourceSnapshots) if (!TARGETS.includes(projection.sourceId) && JSON.stringify(nextCandidate.sourceSnapshots.find(({ sourceId }) => sourceId === projection.sourceId)) !== JSON.stringify(projection)) throw new Error("public v2 non-target candidate projection changed");
-  const selected = selectedInLedgerOrder(nextLedger, nextCandidate.sourceSnapshotIds); nextCandidate.sourceSnapshotSetHash = sha(JSON.stringify(selected));
-  const nextInventoryBytes = json(nextInventory); nextCandidate.sourceInventorySha256 = sha(JSON.stringify(nextInventory)); nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = sha(nextInventoryBytes);
+  const nextInventoryBytes = json(nextInventory);
   const staged = snapshots.map((snapshot) => ({ relative: `tools/datapack/sources/${snapshot.snapshotId}.json`, bytes: canonicalBytes(snapshot.publicStaticNetworkV2Observation), prestateBytes: null }));
-  return [...staged, { relative: FIXED_OUTPUTS[0], bytes: nextInventoryBytes, prestateBytes: inventoryBytes }, { relative: FIXED_OUTPUTS[1], bytes: json(nextLedger), prestateBytes: ledgerBytes }, { relative: FIXED_OUTPUTS[2], bytes: json(nextCandidate), prestateBytes: candidateBytes }].map((output) => ({ ...output, inputs }));
+  return [...staged, { relative: FIXED_OUTPUTS[0], bytes: nextInventoryBytes, prestateBytes: inventoryBytes }, { relative: FIXED_OUTPUTS[1], bytes: json(nextLedger), prestateBytes: ledgerBytes }].map((output) => ({ ...output, inputs }));
 }
 
 async function expected(file, value) { const current = await bytes(file, "static network target", { absent: true }); if ((current == null) !== (value == null) || current?.equals(value) === false) throw new Error("static network registration preserves foreign replacement"); }

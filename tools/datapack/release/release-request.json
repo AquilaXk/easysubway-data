@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-release-request",
-  "candidateId": "nationwide-candidate-20260923-seq122",
+  "candidateId": "nationwide-candidate-20261001-seq123",
   "scopeId": "nationwide_routing_android_v1",
-  "buildSpecSha256": "22fee817f07c4db639120ea41f1995822581ef415ffa350abb467ad17b67ca00",
-  "sourceSnapshotSetHash": "a7b44bed6999142d6b716814a22071f890af2b341e2f27d898ebeb2e55d5716f",
+  "buildSpecSha256": "150a28d81bd1776f152d03cb19c27756365444e63329b79681d2350bb4d725b7",
+  "sourceSnapshotSetHash": "7b9c94f2f34cb39037e907df9a9f4b9232ec8bef11cfa97189fb8359abf29c07",
   "approvedLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
   "requestedBy": "data-operator-lead",
   "approvedBy": "data-release-authority",
-  "approvalId": "release-request-nationwide-candidate-20260923-seq122",
+  "approvalId": "release-request-nationwide-candidate-20261001-seq123",
   "targetChannel": "production"
 }

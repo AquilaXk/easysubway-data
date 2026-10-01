@@ -202,15 +202,7 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     const observedAt = typeof rawObservedAt === "string" && !isNaN(Date.parse(rawObservedAt))
       ? new Date(Date.parse(rawObservedAt)).toISOString()
       : rawObservedAt;
-    const rawFreshUntil = (snapshot.sourceId === "kric-station-convenience-standard"
-      || snapshot.sourceId === "seoul-metro-accessibility"
-      || snapshot.sourceId === "capital-route-topology"
-      || snapshot.sourceId === "korail-metropolitan-timetable-file")
-      ? (snapshot.serviceEffectiveUntil
-        ?? (snapshot.sourceId === "capital-route-topology" ? "2026-09-15T17:29:18.428Z" : null)
-        ?? (snapshot.sourceId === "korail-metropolitan-timetable-file" ? "2026-09-30T15:00:00.000Z" : null)
-        ?? snapshot.freshnessExpiresAt)
-      : (evidence.freshUntil ?? snapshot.serviceEffectiveUntil ?? snapshot.freshnessExpiresAt);
+    const rawFreshUntil = evidence.freshUntil ?? snapshot.freshnessExpiresAt;
     const freshUntil = typeof rawFreshUntil === "string" && !isNaN(Date.parse(rawFreshUntil))
       ? new Date(Date.parse(rawFreshUntil)).toISOString()
       : rawFreshUntil;
@@ -385,10 +377,8 @@ export function terminalHead(sourceId, sourceSnapshots) {
   return heads[0];
 }
 
-function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
-  if (!Array.isArray(inventory.sources) || !Array.isArray(sourceSnapshots)) {
-    throw new Error("source inventory or snapshot ledger mismatch");
-  }
+function selectedSourceIds(rows, inventory) {
+  if (!Array.isArray(inventory.sources)) throw new Error("source inventory or snapshot ledger mismatch");
   const inventoryById = new Map();
   for (const source of inventory.sources) {
     if (typeof source?.id !== "string" || source.id.length === 0 || inventoryById.has(source.id)) {
@@ -433,7 +423,20 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
   if (admittedIds.size === 0) {
     throw new Error("production source admission mismatch: no admitted sources");
   }
-  return [...admittedIds].sort(compare).map((sourceId) => {
+  return [...admittedIds].sort(compare);
+}
+
+// fan-in이 고르는 원천 ID 집합. 원천 갱신 사전 검사(예: FACILITY)가 후보 spec 대신 이 집합의 원장 head를 판정한다(#862 결정 C).
+export function selectCurrentFiveRegionSourceIds({ targets, tally, inventory }) {
+  return selectedSourceIds(requiredRows(targets, tally), inventory);
+}
+
+function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
+  if (!Array.isArray(inventory.sources) || !Array.isArray(sourceSnapshots)) {
+    throw new Error("source inventory or snapshot ledger mismatch");
+  }
+  const inventoryById = new Map(inventory.sources.map((source) => [source?.id, source]));
+  return selectedSourceIds(rows, inventory).map((sourceId) => {
     const source = inventoryById.get(sourceId);
     if (!source) throw new Error(`inventory source missing for ${sourceId}`);
     if (source.requiredForProductionPack !== true || !isProductionUseAllowed(source)) {
@@ -457,10 +460,7 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
     if (instant(snapshot.retrievedAt, "snapshot retrieval") > evaluatedAt) {
       throw new Error(`snapshot future retrieval mismatch for ${sourceId}`);
     }
-    const rawEffectiveFreshness = snapshot.serviceEffectiveUntil
-      ?? (snapshot.sourceId === "capital-route-topology" ? "2026-09-15T17:29:18.428Z" : null)
-      ?? (snapshot.sourceId === "korail-metropolitan-timetable-file" ? "2026-09-30T15:00:00.000Z" : null)
-      ?? snapshot.freshnessExpiresAt;
+    const rawEffectiveFreshness = snapshot.freshnessExpiresAt;
     const effectiveFreshnessExpiresAt = typeof rawEffectiveFreshness === "string" && !isNaN(Date.parse(rawEffectiveFreshness))
       ? new Date(Date.parse(rawEffectiveFreshness)).toISOString()
       : rawEffectiveFreshness;

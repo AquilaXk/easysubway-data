@@ -474,3 +474,84 @@ test("#687 CLI creates one canonical output and never overwrites it", async () =
   assert.notEqual(second.status, 0);
   assert.deepEqual(await readFile(output), Buffer.from(`${canonicalCurrentFiveRegionSourceFanInJson(expected)}\n`));
 });
+
+function registeredHeadFixture(sourceId, { evaluatedAt, freshnessExpiresAt, serviceEffectiveUntil, admissionFreshUntil }) {
+  const input = fixture();
+  const previous = input.sourceSnapshots[0];
+  const previousId = `${sourceId}-v1`;
+  const headId = `${sourceId}-v2`;
+  const headSha = "b".repeat(64);
+  for (const row of input.tally.launchRequired.requirements) row.admittedSourceIds = [sourceId];
+  input.inventory.sources[0].id = sourceId;
+  input.inventory.sources[0].admissionEvidence = {
+    decision: "APPROVED",
+    sourceId,
+    snapshotId: headId,
+    rawSha256: headSha,
+    capturedAt: "2026-09-30T00:00:00.000Z",
+    ...(admissionFreshUntil === undefined ? {} : { freshUntil: admissionFreshUntil }),
+  };
+  input.sourceSnapshots = [
+    { ...previous, sourceId, snapshotId: previousId },
+    {
+      ...previous,
+      sourceId,
+      snapshotId: headId,
+      previousSnapshotId: previousId,
+      retrievedAt: "2026-09-30T00:00:00.000Z",
+      rawSha256: headSha,
+      rawObjectUri: `oci://namespace/bucket/source/${headSha}.json`,
+      freshnessExpiresAt,
+      ...(serviceEffectiveUntil === undefined ? {} : { serviceEffectiveUntil }),
+    },
+  ];
+  input.evaluatedAt = evaluatedAt;
+  for (const key of ["tally", "inventory", "sourceSnapshots"]) input.inputBytes[key] = bytes(input[key]);
+  return input;
+}
+
+test("#862 a newly registered head is judged by its ledger freshness, not a per-source constant", () => {
+  for (const sourceId of ["capital-route-topology", "korail-metropolitan-timetable-file"]) {
+    const fresh = registeredHeadFixture(sourceId, {
+      evaluatedAt: "2026-10-01T00:00:00.000Z",
+      freshnessExpiresAt: "2026-10-01T00:00:00.001Z",
+      admissionFreshUntil: "2026-10-01T00:00:00.001Z",
+    });
+    const fanIn = buildCurrentFiveRegionSourceFanIn(fresh);
+    assert.equal(fanIn.selectedSources[0].snapshotId, `${sourceId}-v2`);
+    assert.equal(fanIn.selectedSources[0].freshnessExpiresAt, "2026-10-01T00:00:00.001Z");
+
+    const expired = registeredHeadFixture(sourceId, {
+      evaluatedAt: "2026-09-10T00:00:00.000Z",
+      freshnessExpiresAt: "2026-09-10T00:00:00.000Z",
+      admissionFreshUntil: "2026-09-12T00:00:00.000Z",
+    });
+    expired.sourceSnapshots[1].retrievedAt = "2026-09-09T00:00:00.000Z";
+    expired.inventory.sources[0].admissionEvidence.capturedAt = "2026-09-09T00:00:00.000Z";
+    for (const key of ["inventory", "sourceSnapshots"]) expired.inputBytes[key] = bytes(expired[key]);
+    assert.throws(() => buildCurrentFiveRegionSourceFanIn(expired), new RegExp(`snapshot freshness mismatch for ${sourceId}`));
+  }
+});
+
+test("#862 provider validity cannot extend a head beyond its ledger freshness", () => {
+  const input = registeredHeadFixture("kric-subway-timetable", {
+    evaluatedAt: "2026-10-01T00:00:00.000Z",
+    freshnessExpiresAt: "2026-09-30T12:00:00.000Z",
+    serviceEffectiveUntil: "2026-12-31T00:00:00.000Z",
+  });
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(input), /snapshot freshness mismatch for kric-subway-timetable/);
+});
+
+test("#862 an expired admission window fails for every source, without per-source exemptions", () => {
+  for (const sourceId of [
+    "capital-route-topology", "korail-metropolitan-timetable-file",
+    "kric-station-convenience-standard", "seoul-metro-accessibility",
+  ]) {
+    const input = registeredHeadFixture(sourceId, {
+      evaluatedAt: "2026-10-01T00:00:00.000Z",
+      freshnessExpiresAt: "2026-12-01T00:00:00.000Z",
+      admissionFreshUntil: "2026-10-01T00:00:00.000Z",
+    });
+    assert.throws(() => buildCurrentFiveRegionSourceFanIn(input), new RegExp(`admission freshness mismatch for ${sourceId}`));
+  }
+});

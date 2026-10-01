@@ -22,6 +22,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ARTIFACT_KIND = "capital-light-rail-route-map-positions-snapshot";
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
@@ -1108,7 +1109,7 @@ function validDate(value, label) {
 }
 
 function requiredTopologySnapshotId(value) {
-  if (typeof value !== "string" || !/^capital-route-topology-[0-9]{8}$/.test(value)) {
+  if (typeof value !== "string" || !isCapitalRouteTopologySnapshotId(value)) {
     throw new Error("capital light-rail topology snapshotId is required");
   }
   return value;

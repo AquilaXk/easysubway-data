@@ -174,6 +174,8 @@ export async function buildNationwideReleaseArtifacts({ authority, ...input } = 
         ? { adminReviewRecordHash: admission.get(row.snapshotId).adminReviewRecordHash }
         : { admissionRecordSha256s: admission.get(row.snapshotId).admissionRecordSha256s }),
       perSourceSnapshotSetHash: sha256(JSON.stringify([row])) })),
+    // #862: 경로 통합 전(prepare가 hash evidence를 고치던 때)과 같이 승인된 공식 OD 운임 증거를 함께 남긴다.
+    ...(candidate.officialOdFareEvidence ? { officialOdFareEvidence: candidate.officialOdFareEvidence } : {}),
   };
   return { ...prepared, candidateBytes, productionScopeBytes: Buffer.from(input.inputBytes.productionScope),
     requestBytes: jsonBytes(request), hashEvidenceBytes: jsonBytes(evidence) };
@@ -315,7 +317,7 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = proc
     return bytes;
   };
   const preparation = JSON.parse(await read(argv[1]));
-  const keys = ["schemaVersion", "artifactKind", "scopeId", "materialization", "releaseIdentity", "builderIdentity", "authority", "routeEdgeInput"];
+  const keys = ["schemaVersion", "artifactKind", "scopeId", "materialization", "releaseIdentity", "builderIdentity", "authority", "routeEdgeInput", "stationLineInput"];
   if (!preparation || Object.keys(preparation).length !== keys.length || keys.some((key) => !Object.hasOwn(preparation, key))
     || preparation.schemaVersion !== 1 || preparation.artifactKind !== "nationwide-candidate-preparation") {
     throw new Error("candidate preparation shape mismatch");
@@ -326,6 +328,11 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = proc
   const fixture = JSON.parse(await read(preparation.materialization.fixturePath));
   const routeBytes = await read(preparation.routeEdgeInput.path);
   if (sha256(routeBytes) !== preparation.routeEdgeInput.sha256) throw new Error("prepared route input digest mismatch");
+  const stationLineBytes = await read(preparation.stationLineInput.path);
+  if (sha256(stationLineBytes) !== preparation.stationLineInput.sha256) throw new Error("prepared station-line input digest mismatch");
+  if (JSON.parse(stationLineBytes).candidate?.candidateId !== preparation.releaseIdentity.candidateId) {
+    throw new Error("prepared station-line candidate identity mismatch");
+  }
   const route = JSON.parse(routeBytes);
   const selected = new Set(inputs.fanIn.selectedSources.map((row) => row.snapshotId));
   const sourceSetHash = sha256(JSON.stringify(inputs.sourceSnapshots.filter((row) => selected.has(row.snapshotId))));

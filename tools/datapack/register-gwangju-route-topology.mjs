@@ -28,9 +28,30 @@ const select = (rows, predicate) => {
   if (matches.length !== 1) throw new Error("Gwangju topology selection mismatch");
   return matches[0];
 };
-const dependentInputKeys = Object.freeze([
-  "mapCsvPath", "schematicCanvasPath", "elevatorPath", "escalatorPath",
-]);
+const dependentInputKeys = Object.freeze(["mapCsvPath", "schematicCanvasPath"]);
+const ACCESSIBILITY_SOURCE_ID = "gwangju-transportation-accessibility";
+const ACCESSIBILITY_DATASETS = Object.freeze({ elevator: "15041385", escalator: "15041362" });
+
+// #862: 접근성 admission은 저장소 fixture와 다른 원본 CSV로 갱신될 수 있다(#739).
+// 재결속에는 admission snapshot이 보존한 원본 바이트(rawSources)를 쓰고, 그 해시가 admission과 같은지 확인한다.
+async function admittedAccessibilityRawBytes(root, inventory) {
+  const evidence = select(inventory.sources, ({ id }) => id === ACCESSIBILITY_SOURCE_ID).accessibilityAdmissionEvidence;
+  const absolute = dependentInputPath(root, evidence?.snapshotPath);
+  const bytes = await readFile(absolute);
+  const snapshot = parse(bytes);
+  const raw = Object.fromEntries(Object.entries(ACCESSIBILITY_DATASETS).map(([kind, datasetId]) => {
+    const retained = (Array.isArray(snapshot.rawSources) ? snapshot.rawSources : []).filter((row) => row?.datasetId === datasetId);
+    const rawBytes = retained.length === 1 ? Buffer.from(retained[0].bytesBase64 ?? "", "base64") : Buffer.alloc(0);
+    if (retained.length !== 1 || rawBytes.length === 0 || rawBytes.toString("base64") !== retained[0].bytesBase64
+      || sha(rawBytes) !== retained[0].rawSha256) throw new Error("Gwangju accessibility retained raw bytes are invalid");
+    return [kind, rawBytes];
+  }));
+  if (snapshot.sourceId !== ACCESSIBILITY_SOURCE_ID || snapshot.rawSha256 !== evidence.rawSha256
+    || snapshot.rawSha256 !== sha(JSON.stringify({ [ACCESSIBILITY_DATASETS.elevator]: sha(raw.elevator), [ACCESSIBILITY_DATASETS.escalator]: sha(raw.escalator) }))) {
+    throw new Error("Gwangju accessibility retained raw bytes are invalid");
+  }
+  return { absolute, bytes, elevatorBytes: raw.elevator, escalatorBytes: raw.escalator };
+}
 
 function dependentInputPath(root, relative) {
   if (typeof relative !== "string" || !relative || path.isAbsolute(relative)
@@ -77,19 +98,18 @@ export async function prepareGwangjuTopologyRegistration({ repositoryRoot, snaps
     key,
     dependentInputPath(root, dependentInputs[key]),
   ]));
-  const [mapCsvBytes, schematicCanvasBytes, elevatorBytes, escalatorBytes] = await Promise.all([
+  const [mapCsvBytes, schematicCanvasBytes] = await Promise.all([
     readFile(dependentPaths.mapCsvPath),
     readFile(dependentPaths.schematicCanvasPath),
-    readFile(dependentPaths.elevatorPath),
-    readFile(dependentPaths.escalatorPath),
   ]);
+  const accessibilityRaw = await admittedAccessibilityRawBytes(root, inventory);
+  const { elevatorBytes, escalatorBytes } = accessibilityRaw;
   const licenseHash = sha(canonicalJson(source.license));
   const retainedEntry = governance.sources.find(({ sourceId }) => sourceId === SOURCE_ID);
   const registrationInputs = [{ absolute: candidatePath, bytes: candidateBytes },
     { absolute: dependentPaths.mapCsvPath, bytes: mapCsvBytes },
     { absolute: dependentPaths.schematicCanvasPath, bytes: schematicCanvasBytes },
-    { absolute: dependentPaths.elevatorPath, bytes: elevatorBytes },
-    { absolute: dependentPaths.escalatorPath, bytes: escalatorBytes }];
+    { absolute: accessibilityRaw.absolute, bytes: accessibilityRaw.bytes }];
   let entry = retainedEntry;
   if (!entry) {
     entry = candidate.registrationMetadata?.governance;

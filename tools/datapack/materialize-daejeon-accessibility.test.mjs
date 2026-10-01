@@ -110,8 +110,13 @@ test("대전 공식 22역 편의시설을 facility·evidence 66건으로 materia
   assert.equal(pack.minimumTableRows.station_facility_evidence, pack.stationFacilityEvidence.length);
   assert.match(pack.id, /^nationwide-daejeon-accessibility-[a-f0-9]{64}$/);
   assert.match(materializedDaejeonAccessibilityPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
-  assert.equal(pack.version, "20260909");
-  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260909" });
+  // #862: 판 날짜는 고정 상수가 아니라 inventory admission snapshot id의 수집 날짜(-YYYYMMDD)다.
+  const admittedSnapshotId = (await readJson("tools/datapack/source-inventory.json")).sources
+    .find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence.snapshotId;
+  const expectedVersion = /-([0-9]{8})$/u.exec(admittedSnapshotId)?.[1];
+  assert.match(expectedVersion ?? "", /^[0-9]{8}$/u);
+  assert.equal(pack.version, expectedVersion);
+  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: expectedVersion });
 });
 
 test("대전 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {

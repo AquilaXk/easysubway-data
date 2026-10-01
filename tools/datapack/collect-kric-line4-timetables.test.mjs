@@ -399,13 +399,36 @@ test("EXPRESS 중간 null-arrival은 시각 추정 없이 non-stop으로 분리�
     servicePattern: "EXPRESS",
     reason: "EXPRESS_NO_ARRIVAL",
   }]);
+});
+
+// #862 QA 결정(2026-10-01): KRIC가 급행 표시(exptCd)를 빼고 보내도, 중간역에서 arvTm 없이 dptTm만 있으면
+// 통과(비정차)로 분리한다. exptCd 기반 분류와 구분되는 reason을 남긴다. 끝 역 도착 누락은 그대로 실패한다.
+test("급행 표시 없는 중간역 dptTm-only 행은 NO_ARRIVAL_DEPARTURE_ONLY 비정차로 분리하고 끝 역 누락은 실패한다", () => {
+  const origin = { stationId: "station-409", lineId: "seoul-4", trnNo: "K4401", dayCd: "8", arrivalSeconds: null, departureSeconds: 65_130, stopRole: "ORIGIN", servicePattern: "LOCAL" };
+  const through = { stationId: "station-444", lineId: "seoul-4", trnNo: "K4401", dayCd: "8", arrivalSeconds: 70_140, departureSeconds: 70_170, stopRole: "THROUGH", servicePattern: "LOCAL" };
+  const passed = { stationId: "station-445", lineId: "seoul-4", trnNo: "K4401", dayCd: "8", arrivalSeconds: null, departureSeconds: 70_230, stopRole: "ORIGIN", servicePattern: "LOCAL" };
+  const terminal = { stationId: "station-456", lineId: "seoul-4", trnNo: "K4401", dayCd: "8", arrivalSeconds: 71_760, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" };
+
+  const classified = classifyKricRowsForReconstruction([terminal, passed, through, origin]);
+  assert.deepEqual(classified.rows, [origin, through, terminal]);
+  assert.deepEqual(classified.excludedNonStopRows, [{
+    stationId: "station-445",
+    lineId: "seoul-4",
+    trnNo: "K4401",
+    dayCd: "8",
+    passageSeconds: 70_230,
+    servicePattern: "LOCAL",
+    reason: "NO_ARRIVAL_DEPARTURE_ONLY",
+  }]);
+  // 끝 역에 도착 시각이 없으면 비정차로 볼 수 없다.
   assert.throws(
-    () => classifyKricRowsForReconstruction([
-      { ...origin, trnNo: "K4500", servicePattern: "LOCAL" },
-      { ...nonStop, trnNo: "K4500", servicePattern: "LOCAL" },
-      { ...terminal, trnNo: "K4500", servicePattern: "LOCAL" },
-    ]),
-    /LOCAL intermediate row has missing arrival/,
+    () => classifyKricRowsForReconstruction([origin, through, { ...terminal, arrivalSeconds: null, departureSeconds: 71_760 }]),
+    /intermediate row has missing arrival|terminal row has missing arrival/,
+  );
+  // 시각이 둘 다 없는 행은 정렬 전에 실패한다.
+  assert.throws(
+    () => classifyKricRowsForReconstruction([origin, { ...passed, departureSeconds: null }, terminal]),
+    /time is invalid/,
   );
 });
 

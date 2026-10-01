@@ -21,14 +21,10 @@ import { approvedGovernanceBindingTransition } from "./source-governance-policy.
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { CURRENT_CAPITAL_BASE_SOURCE_IDS, selectedSourceHeadAt } from "./test-fixtures/selected-source-head-clock.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
-  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
-]);
-const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt();
+const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt(path.join(ROOT, "tools/datapack"));
 const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const jsonSha = (value) => sha(Buffer.from(JSON.stringify(value)));
@@ -201,23 +197,6 @@ async function fixture() {
   return { root, next };
 }
 
-async function selectedSourceHeadAt() {
-  const [buildSpec, sourceSnapshots] = await Promise.all([
-    readFile(path.join(ROOT, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(ROOT, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
-  ]);
-  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
-    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
-    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
-    return matches[0];
-  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
-  const basisAt = Math.max(...selected.flatMap((entry) => [
-    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
-  ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
-  return basisAt;
-}
 
 async function readInput(root) {
   const load = async (relative) => {

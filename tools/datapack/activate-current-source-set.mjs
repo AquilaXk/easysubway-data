@@ -77,6 +77,7 @@ import {
   withCurrentCapitalTopologyAdmissions,
 } from "./rebind-capital-route-map-admissions.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN, capitalRouteTopologySnapshotIdMatchesCapturedAt, capitalRouteTopologySnapshotVersion, capitalTopologyReverificationPathForSnapshotId, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MOLIT_V2_FIELDS = Object.freeze([
@@ -160,8 +161,7 @@ const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
 
 function isAllowedActivationOutput(relativePath) {
   return allowedOutputPaths.has(relativePath)
-    || /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u
-      .test(relativePath ?? "");
+    || CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN.test(relativePath ?? "");
 }
 
 function sha256(bytes) {
@@ -1946,10 +1946,9 @@ function exactCurrentTopologySnapshotIdentity({
     || !snapshotBytes.equals(Buffer.from(`${JSON.stringify(snapshot)}\n`))) {
     throw new Error(`current ${prefix} snapshot byte identity mismatch`);
   }
-  const match = new RegExp(`^tools/datapack/sources/(${prefix}-([0-9]{8}))\\.json$`, "u")
-    .exec(snapshotPath ?? "");
-  const capturedDate = snapshot.capturedAt?.slice(0, 10).replaceAll("-", "");
-  if (match == null || match[2] !== capturedDate) {
+  const match = CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.exec(snapshotPath ?? "");
+  if (prefix !== "capital-route-topology" || match == null
+    || !capitalRouteTopologySnapshotIdMatchesCapturedAt(match[1], snapshot.capturedAt)) {
     throw new Error(`current ${prefix} snapshot path identity mismatch`);
   }
   return match[1];
@@ -2001,7 +2000,7 @@ function historicalCapitalTopologyOwnershipBaseline({ baseSpec, baselineTopology
   const expectedPath = typeof evidence?.path === "string" ? evidence.path : "";
   const expectedSnapshotId = expectedPath.startsWith("tools/datapack/sources/")
     ? path.basename(expectedPath, ".json") : "";
-  if (!/^tools\/datapack\/sources\/capital-route-topology-\d{8}\.json$/u.test(expectedPath)
+  if (!CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(expectedPath)
     || evidence.snapshotId !== expectedSnapshotId
     || !Buffer.isBuffer(baselineTopologyBytes)
     || sha256(baselineTopologyBytes) !== evidence.sha256
@@ -2066,8 +2065,7 @@ export function buildCurrentCandidateSpec({
     || candidateTopology !== fullTopology) {
     throw new Error("current capital topology candidate must use the exact current snapshot");
   }
-  const snapshotDate = topologySnapshotId.slice(-8);
-  const topologyReverificationPath = `tools/datapack/release/capital-topology-reverification-${snapshotDate}.json`;
+  const topologyReverificationPath = capitalTopologyReverificationPathForSnapshotId(topologySnapshotId);
   if (typeof incheonAccessibilityPath !== "string"
     || !/^incheon-transit-accessibility-\d{8}T\d{9}Z$/u.test(incheonAccessibilitySnapshotId ?? "")
     || incheonAccessibilityPath !== `tools/datapack/sources/${incheonAccessibilitySnapshotId}.json`) {
@@ -2098,7 +2096,7 @@ export function buildCurrentCandidateSpec({
       throw new Error("current candidate base spec contains superseded Incheon accessibility evidence");
     }
   }
-  spec.candidateId = terminalCandidateId ?? `capital-pilot-candidate-${snapshotDate}`;
+  spec.candidateId = terminalCandidateId ?? `capital-pilot-candidate-${capitalRouteTopologySnapshotVersion(topologySnapshotId)}`;
   spec.builderGitSha = builderGitSha;
   spec.builderVersion = "build-datapack.mjs@26";
   spec.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
@@ -2559,7 +2557,7 @@ export async function collectLayoutTopologySnapshotBytes(sourceInventory, reposi
     const admission = source.routeMapAdmissionEvidence?.currentLayoutAdmission;
     if (admission == null) continue;
     const snapshotId = admission.topologySnapshotId;
-    if (!/^capital-route-topology-[0-9]{8}$/u.test(snapshotId ?? "")) {
+    if (!isCapitalRouteTopologySnapshotId(snapshotId)) {
       throw new Error("current layout topology snapshot id is invalid");
     }
     if (!bytesBySnapshotId.has(snapshotId)) {
@@ -2880,6 +2878,30 @@ export async function readBuilderBaselineBytes(
   return Buffer.from(stdout);
 }
 
+// 현재 토폴로지 갱신이 쓸 candidate spec을 정하고, 선택한 ITX 증거가 그 spec과 맞는지 검사한다.
+// 승인 ITX 교체 모드는 먼저 승인 원천으로 spec을 교체(bindApprovedItxCurrentSourceSpec: 승인 URL·sha·
+// freshUntil 검증)한 뒤, 교체한 spec과 새 증거로 같은 검사를 한다. 옛 spec으로 새 증거를 검사하면
+// 교체 모드는 항상 실패한다(#848).
+export async function resolveCurrentTopologyRefreshSpec({
+  baseSpec,
+  approvedItxBootstrap,
+  itxCurrentAdmissionPath,
+  selectedItxTopologyEvidencePath,
+  currentItxTopologyEvidenceBytes,
+  buildNow,
+  bindApprovedSpec,
+}) {
+  const spec = approvedItxBootstrap ? await bindApprovedSpec(baseSpec) : baseSpec;
+  validateCurrentTopologyRefreshItxEvidence({
+    spec,
+    itxCurrentAdmissionPath,
+    selectedItxTopologyEvidencePath,
+    currentItxTopologyEvidenceBytes,
+    buildNow,
+  });
+  return spec;
+}
+
 export async function generateCurrentCapitalTopologyRefresh({
   repositoryRoot = root,
   capitalTopologyPath,
@@ -2902,7 +2924,7 @@ export async function generateCurrentCapitalTopologyRefresh({
     && (!prepareOnly || typeof terminalCandidateId !== "string" || terminalCandidateId.trim() === "")) {
     throw new Error("terminal candidate identity is invalid");
   }
-  const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
+  const capitalPathMatch = CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN
     .exec(capitalTopologyPath ?? "");
   if (capitalPathMatch == null) {
     throw new Error("current topology input must be a tracked source snapshot path");
@@ -2948,7 +2970,7 @@ export async function generateCurrentCapitalTopologyRefresh({
       deriveApprovedItxTopologyEvidencePath(approvedItxCoverageReference);
   }
   const topologyReverificationPath =
-    `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
+    capitalTopologyReverificationPathForSnapshotId(capitalPathMatch[1]);
   const allowedDescendantPaths = [
     ...CURRENT_TOPOLOGY_REFRESH_OUTPUTS,
     topologyReverificationPath,
@@ -2983,35 +3005,35 @@ export async function generateCurrentCapitalTopologyRefresh({
       ]);
     await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
-    let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
-    validateCurrentTopologyRefreshItxEvidence({
-      spec: baseSpec,
+    let approvedItxTopology = null;
+    const baseSpec = await resolveCurrentTopologyRefreshSpec({
+      baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
+      approvedItxBootstrap,
       itxCurrentAdmissionPath,
       selectedItxTopologyEvidencePath,
       currentItxTopologyEvidenceBytes,
       buildNow,
+      bindApprovedSpec: async (priorSpec) => {
+        const [sourceBytes, completenessBytes] = await Promise.all([
+          readRegularBytes(repositoryPath, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
+          readRegularBytes(
+            repositoryPath,
+            approvedItxCoverageReference?.completenessEvidencePath,
+            "approved ITX completeness evidence",
+          ),
+        ]);
+        approvedItxTopology = deriveTopology(parseJson(sourceBytes, "approved ITX source"));
+        return bindApprovedItxCurrentSourceSpec({
+          baseSpec: priorSpec,
+          coverageContractBytes: approvedItxCoverageContractBytes,
+          sourceBytes,
+          completenessBytes,
+          topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
+          topologyEvidencePath: selectedItxTopologyEvidencePath,
+          buildNow,
+        });
+      },
     });
-    let approvedItxTopology = null;
-    if (approvedItxBootstrap) {
-      const [sourceBytes, completenessBytes] = await Promise.all([
-        readRegularBytes(repositoryPath, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
-        readRegularBytes(
-          repositoryPath,
-          approvedItxCoverageReference?.completenessEvidencePath,
-          "approved ITX completeness evidence",
-        ),
-      ]);
-      baseSpec = await bindApprovedItxCurrentSourceSpec({
-        baseSpec,
-        coverageContractBytes: approvedItxCoverageContractBytes,
-        sourceBytes,
-        completenessBytes,
-        topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
-        topologyEvidencePath: selectedItxTopologyEvidencePath,
-        buildNow,
-      });
-      approvedItxTopology = deriveTopology(parseJson(sourceBytes, "approved ITX source"));
-    }
     const primary = buildCurrentTopologyRefreshPrimaryOutputs({
       baseSpec,
       builderGitSha,
@@ -3180,7 +3202,7 @@ export async function generateCurrentCapitalTopologySourceAdmission({
   check = false,
 }) {
   const repositoryPath = path.resolve(repositoryRoot);
-  const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
+  const capitalPathMatch = CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN
     .exec(capitalTopologyPath ?? "");
   if (capitalPathMatch == null) {
     throw new Error("current topology input must be a tracked source snapshot path");
@@ -3197,7 +3219,7 @@ export async function generateCurrentCapitalTopologySourceAdmission({
     throw new Error("current Incheon dependent inputs must be tracked source snapshot paths");
   }
   const topologyReverificationPath =
-    `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
+    capitalTopologyReverificationPathForSnapshotId(capitalPathMatch[1]);
   const allowedDescendantPaths = [...CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS, topologyReverificationPath];
   await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
   const readMutableInput = (relativePath) => check
@@ -3281,7 +3303,7 @@ export async function generateCurrentSourceActivation({
   check = false,
   handoff = CURRENT_SOURCE_HANDOFF,
 }) {
-  const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
+  const capitalPathMatch = CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN
     .exec(capitalTopologyPath ?? "");
   if (capitalPathMatch == null
     || !/^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u
@@ -3307,7 +3329,7 @@ export async function generateCurrentSourceActivation({
     throw new Error("current static revalidation observation directory is invalid");
   }
   const topologyReverificationPath =
-    `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
+    capitalTopologyReverificationPathForSnapshotId(capitalPathMatch[1]);
   await requireCleanBuilder(builderGitSha, {
     check,
     allowedDescendantPaths: [

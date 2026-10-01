@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { isCapitalRouteTopologySnapshotId } from "../lib/capital-route-topology-snapshot-id.mjs";
 
 export async function currentTopologyAdmissionClock(repositoryRoot) {
   const [inventory, candidate, snapshots] = await Promise.all([
@@ -9,7 +10,7 @@ export async function currentTopologyAdmissionClock(repositoryRoot) {
   ]);
   const admissions = inventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+    .filter(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
   const admission = admissions[0];
   const incheonAdmissions = inventory.sources
     .filter(({ id }) => id === "incheon-transit-station-info")
@@ -44,5 +45,7 @@ export async function currentTopologyAdmissionClock(repositoryRoot) {
   return {
     inWindow: new Date(inWindowAt),
     expiredAt: new Date(freshUntil),
+    // #862: capital topology는 Incheon 입력과 따로 재수집될 수 있으므로 자기 신선 경계를 따로 준다.
+    capitalTopologyExpiredAt: new Date(Date.parse(admission.freshUntil)),
   };
 }

@@ -21,6 +21,7 @@ import {
   copySyntheticCurrentPublicRouteMapRepository,
   nextSyntheticCurrentStaticNetworkNow,
 } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 
 const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
@@ -891,3 +892,63 @@ test("credentialRedacted가 생략된 snapshot도 canonical build provenance에�
   assert.ok(result.snapshotSetHash);
 });
 
+
+// #867 리뷰 F2: 정책에 unchangedReverificationBasisField가 있는 클래스(계획 시간표)는 범용 연장 분기로 통과하지 않는다.
+// 게이트가 재확인 규칙(이전 head와 같은 원본 sha, 유효 종료일 미경과, 재확인 시각 + 상한)을 직접 다시 계산한다.
+const KORAIL_PLANNED = "korail-metropolitan-planned-timetable";
+async function currentGateInput(mutate = () => {}) {
+  const read = (relative) => readFile(path.join(root, relative));
+  const [buildSpecBytes, ledgerBytes, policyBytes, governanceBytes, inventoryBytes] = await Promise.all([
+    read("tools/datapack/release/candidate-build-spec.json"),
+    read("tools/datapack/release/source-snapshots.json"),
+    read("release/product-gates/datapack-freshness-sla.json"),
+    read("tools/datapack/source-governance-policy.json"),
+    read("tools/datapack/source-inventory.json"),
+  ]);
+  const buildSpec = JSON.parse(buildSpecBytes);
+  const snapshots = JSON.parse(ledgerBytes);
+  const selectedId = buildSpec.sourceSnapshots.find(({ sourceId }) => sourceId === KORAIL_PLANNED).snapshotId;
+  const selected = snapshots.find(({ snapshotId }) => snapshotId === selectedId);
+  const previous = snapshots.find(({ snapshotId }) => snapshotId === selected.previousSnapshotId);
+  mutate({ selected, previous });
+  const selectedIds = new Set(buildSpec.sourceSnapshotIds);
+  buildSpec.sourceSnapshotSetHash = createHash("sha256")
+    .update(JSON.stringify(snapshots.filter(({ snapshotId }) => selectedIds.has(snapshotId)))).digest("hex");
+  return {
+    buildSpec,
+    snapshots,
+    policy: JSON.parse(policyBytes),
+    evaluationAt: buildSpec.publishedAt,
+    governancePolicy: JSON.parse(governanceBytes),
+    governancePolicyBytes: governanceBytes,
+    governancePolicySha256: createHash("sha256").update(governanceBytes).digest("hex"),
+    inventory: JSON.parse(inventoryBytes),
+  };
+}
+
+test("현재 Korail 계획 시간표 재확인 행은 재확인 규칙으로 다시 계산해 통과한다(#867 F2)", async () => {
+  const input = await currentGateInput();
+  const result = validateSourceSnapshotFreshness(input);
+  const korail = result.results.find(({ snapshotId }) => snapshotId.startsWith(`${KORAIL_PLANNED}-`));
+  assert.equal(korail.status, "FRESH");
+  assert.equal(korail.freshnessExpiresAt, "2026-10-31T04:42:23.685Z");
+});
+
+test("계획 시간표 재확인 행은 이전 head와 원본 sha가 다르면 거부한다(#867 F2)", async () => {
+  // 원장 lineage는 유효하게 맞춘다(현재 행 diffSummary를 공식 buildSnapshotDiff로 다시 계산). 재확인 규칙만 시험한다.
+  const input = await currentGateInput(({ selected, previous }) => {
+    previous.rawSha256 = "0".repeat(64);
+    selected.diffSummary = buildSnapshotDiff(previous, selected);
+  });
+  assert.throws(() => validateSourceSnapshotFreshness(input), /SOURCE_FRESHNESS_DERIVATION_MISMATCH: unchanged reverification raw hash/);
+});
+
+test("계획 시간표 재확인 행은 유효 종료일이 지났으면 거부한다(#867 F2)", async () => {
+  const input = await currentGateInput(({ selected }) => { selected.serviceEffectiveUntil = "2026-10-01T00:00:00.000Z"; });
+  assert.throws(() => validateSourceSnapshotFreshness(input), /SOURCE_SNAPSHOT_EXPIRED: provider validity ended/);
+});
+
+test("계획 시간표 행은 재확인 시각 없이 연장된 신선도 값을 거부한다(#867 F2)", async () => {
+  const input = await currentGateInput(({ selected }) => { delete selected.reverifiedUnchangedAt; });
+  assert.throws(() => validateSourceSnapshotFreshness(input), /SOURCE_FRESHNESS_DERIVATION_MISMATCH: unchanged reverification freshness/);
+});
