@@ -33,9 +33,30 @@ const LINE_ID = "line-7051a9c2525c";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
-const DEPENDENT_INPUT_KEYS = Object.freeze([
-  "mapXlsxPath", "schematicCanvasPath", "elevatorPath", "escalatorPath",
-]);
+const DEPENDENT_INPUT_KEYS = Object.freeze(["mapXlsxPath", "schematicCanvasPath"]);
+const ACCESSIBILITY_SOURCE_ID = "daejeon-transportation-accessibility";
+const ACCESSIBILITY_DATASETS = Object.freeze({ elevator: "15041384", escalator: "15041361" });
+
+// #862: 접근성 admission은 저장소 fixture와 다른 원본 CSV로 갱신될 수 있다(#739).
+// 재결속에는 admission snapshot이 보존한 원본 바이트(rawSources)를 쓰고, 그 해시가 admission과 같은지 확인한다.
+async function admittedAccessibilityRawBytes(root, inventory) {
+  const evidence = select(inventory.sources, ({ id }) => id === ACCESSIBILITY_SOURCE_ID, "accessibility source").accessibilityAdmissionEvidence;
+  const absolutePath = admittedSnapshotPath(root, evidence?.snapshotPath);
+  const bytes = await readFile(absolutePath);
+  const snapshot = parse(bytes, "Daejeon accessibility snapshot");
+  const raw = Object.fromEntries(Object.entries(ACCESSIBILITY_DATASETS).map(([kind, datasetId]) => {
+    const retained = (Array.isArray(snapshot.rawSources) ? snapshot.rawSources : []).filter((row) => row?.datasetId === datasetId);
+    const rawBytes = retained.length === 1 ? Buffer.from(retained[0].bytesBase64 ?? "", "base64") : Buffer.alloc(0);
+    if (retained.length !== 1 || rawBytes.length === 0 || rawBytes.toString("base64") !== retained[0].bytesBase64
+      || sha(rawBytes) !== retained[0].rawSha256) throw new Error("Daejeon accessibility retained raw bytes are invalid");
+    return [kind, rawBytes];
+  }));
+  if (snapshot.sourceId !== ACCESSIBILITY_SOURCE_ID || snapshot.rawSha256 !== evidence.rawSha256
+    || snapshot.rawSha256 !== sha(JSON.stringify({ [ACCESSIBILITY_DATASETS.elevator]: sha(raw.elevator), [ACCESSIBILITY_DATASETS.escalator]: sha(raw.escalator) }))) {
+    throw new Error("Daejeon accessibility retained raw bytes are invalid");
+  }
+  return { absolute: absolutePath, bytes, elevatorBytes: raw.elevator, escalatorBytes: raw.escalator };
+}
 
 /** 재수집 없이 보존한 topology 원문과 현재 MOLIT membership을 하나의 등록 입력으로 묶는다. */
 export async function prepareDaejeonTopologyRegistration({ repositoryRoot, snapshotPath, now = new Date() } = {}) {
@@ -68,19 +89,18 @@ export async function prepareDaejeonTopologyRegistration({ repositoryRoot, snaps
   ]));
   const timetableSource = select(inventory.sources, ({ id }) => id === "daejeon-train-timetable", "timetable source");
   const timetablePath = admittedSnapshotPath(root, timetableSource.scheduleAdmissionEvidence?.snapshotPath);
-  const [mapXlsxBytes, schematicCanvasBytes, elevatorBytes, escalatorBytes, timetableSnapshotBytes] = await Promise.all([
+  const [mapXlsxBytes, schematicCanvasBytes, timetableSnapshotBytes] = await Promise.all([
     readFile(dependentPaths.mapXlsxPath),
     readFile(dependentPaths.schematicCanvasPath),
-    readFile(dependentPaths.elevatorPath),
-    readFile(dependentPaths.escalatorPath),
     readFile(timetablePath),
   ]);
+  const accessibilityRaw = await admittedAccessibilityRawBytes(root, inventory);
+  const { elevatorBytes, escalatorBytes } = accessibilityRaw;
   const registrationInputs = [
     { absolute: candidatePath, bytes: candidateBytes },
     { absolute: dependentPaths.mapXlsxPath, bytes: mapXlsxBytes },
     { absolute: dependentPaths.schematicCanvasPath, bytes: schematicCanvasBytes },
-    { absolute: dependentPaths.elevatorPath, bytes: elevatorBytes },
-    { absolute: dependentPaths.escalatorPath, bytes: escalatorBytes },
+    { absolute: accessibilityRaw.absolute, bytes: accessibilityRaw.bytes },
     { absolute: timetablePath, bytes: timetableSnapshotBytes },
   ];
   const governanceEntry = candidate.registrationMetadata?.governance;
