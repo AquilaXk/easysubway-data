@@ -170,19 +170,23 @@ test("커밋된 환승 지표는 전국 정본 팩 역-노선 식별자와 일�
 // #872 S2: 실제 발행 경로(전국 route-edge input·정본 팩)는 수도권 live-chain 필터와 무관하게 204방향 전체를 쓴다.
 test("전국 발행 경로는 환승 지표 204방향 전체를 route edge로, OFFICIAL_SOURCE 140방향을 경로 행으로 쓴다", async () => {
   const read = (relative) => readFile(new URL(relative, import.meta.url), "utf8").then(JSON.parse);
-  const [metrics, route, nationwide] = await Promise.all([read("./release/current-transfer-topology-metrics.json"), read("./release/nationwide-route-edge-input.json"), read("./release/nationwide-production-canonical-pack.json")]);
+  const [metrics, route, nationwide, busan] = await Promise.all([read("./release/current-transfer-topology-metrics.json"), read("./release/nationwide-route-edge-input.json"), read("./release/nationwide-production-canonical-pack.json"), read("./release/current-busan-transfer-metrics.json")]);
   const pack = nationwide.packs.find(({ id: packId }) => packId === nationwide.manifest.activePack.id);
   const transfers = new Map(route.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map((edge) => [edge.edgeId, edge]));
-  assert.equal(transfers.size, metrics.metrics.length);
-  assert.equal(transfers.size, 204);
+  // #872 S3: 전국 route edge에는 서울교통공사 지표 204방향과 부산교통공사 공식 환승 12방향(별도 원천)이 함께 있다.
+  assert.equal(metrics.metrics.length, 204);
+  assert.equal(busan.metrics.length, 12);
+  assert.equal(transfers.size, metrics.metrics.length + busan.metrics.length);
   for (const metric of metrics.metrics) {
     const edge = transfers.get(`transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`);
     assert.ok(edge, `${metric.stationId} ${metric.fromLineId}->${metric.toLineId}`);
     assert.deepEqual([edge.durationSeconds, edge.distanceMeters], [metric.officialDurationSecondsReference, metric.distanceMeters]);
   }
   const official = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE");
-  assert.equal(pack.stationPathwayEdges.length, official.length);
-  const pathwayHashes = new Set(pack.stationPathwayEdges.map(({ providerRecordHash }) => providerRecordHash));
+  const seoulPathwayEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
+  assert.equal(seoulPathwayEdges.length, official.length);
+  assert.equal(pack.stationPathwayEdges.length, official.length + busan.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length);
+  const pathwayHashes = new Set(seoulPathwayEdges.map(({ providerRecordHash }) => providerRecordHash));
   for (const metric of official) assert.ok(pathwayHashes.has(metric.sourceRecordSha256), metric.sourceRecordSha256);
   assert.ok(pack.stationPathwayEdges.every(({ provenanceKind, verificationStatus }) => provenanceKind === "OFFICIAL_SOURCE" && verificationStatus === "VERIFIED"));
 });
