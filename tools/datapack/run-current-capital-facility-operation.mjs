@@ -16,7 +16,8 @@ import { readStableRegularFile } from "./rebind-current-candidate-source-snapsho
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { validateCandidateSourceSet } from "./validate-candidate-source-set.mjs";
+import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
+import { selectCurrentFiveRegionSourceIds } from "./build-current-five-region-source-fan-in.mjs";
 
 const execFile = promisify(execFileCallback);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -27,9 +28,10 @@ const INPUTS = Object.freeze({
   routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
   sourceInventoryBytes: "tools/datapack/source-inventory.json",
 });
+// #862 결정 C: 사전 검사는 후보 spec·request가 아니라 fan-in이 고르는 원천의 원장 head를 판정한다.
 const RELEASE_INPUTS = Object.freeze({
-  candidate: "tools/datapack/release/candidate-build-spec.json",
-  releaseRequest: "tools/datapack/release/release-request.json",
+  targets: "tools/datapack/nationwide-coverage-targets.json",
+  tally: "tools/datapack/reports/nationwide-coverage-tally.json",
   inventory: "tools/datapack/source-inventory.json",
   snapshots: "tools/datapack/release/source-snapshots.json",
   governance: "tools/datapack/source-governance-policy.json",
@@ -171,25 +173,20 @@ function normalizeReplacingSourceIds(replacingSourceId, replacingSourceIds) {
 }
 async function validateReleasePreflight(root, planBytes, now, { replacingSourceIds = new Set() } = {}) {
   const release = Object.fromEntries(await Promise.all(Object.entries(RELEASE_INPUTS).map(async ([key, relative]) => [key, await readStableRegularFile(path.join(root, relative), key)])));
-  const candidate = parse(release.candidate.bytes, "candidate"); const request = parse(release.releaseRequest.bytes, "release request"); const inventory = parse(release.inventory.bytes, "source inventory"); const snapshots = parse(release.snapshots.bytes, "source snapshot ledger"); const governance = parse(release.governance.bytes, "source governance policy"); const freshness = parse(release.freshness.bytes, "freshness SLA");
-  if (request?.buildSpecSha256 !== hash(release.candidate.bytes)) throw new Error("release request is not bound to candidate bytes");
+  const inventory = parse(release.inventory.bytes, "source inventory"); const snapshots = parse(release.snapshots.bytes, "source snapshot ledger"); const governance = parse(release.governance.bytes, "source governance policy"); const freshness = parse(release.freshness.bytes, "freshness SLA");
   validateSourceGovernancePolicy({ policy: governance, inventory, freshnessPolicy: freshness });
-  const { headsBySource: heads } = validateCandidateSourceSet({
-    productionScopeBytes: release.productionScope.bytes,
-    sourceInventoryBytes: release.inventory.bytes,
-    candidate,
-    ledger: snapshots,
-  });
-  // 원천 순서는 후보 생성기가 정한다. 전국 후보에서 TRANSFER는 마지막 원천이 아니므로 포함 여부만 본다.
-  if (!candidate.sourceSnapshots.some(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration")) {
-    throw new Error("candidate TRANSFER source is missing");
-  }
-  for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
-    const ledger = snapshots.find((entry) => entry?.snapshotId === snapshotId); const projection = candidate.sourceSnapshots[index]; const source = inventory.sources?.find(({ id }) => id === ledger?.sourceId); const governanceSource = governance.sources?.find(({ sourceId }) => sourceId === ledger?.sourceId); const review = governanceSource?.licenseReview;
+  const { requiredSourceIds } = readProductionSourceSet({ productionScopeBytes: release.productionScope.bytes, sourceInventoryBytes: release.inventory.bytes });
+  const selectedSourceIds = selectCurrentFiveRegionSourceIds({ targets: parse(release.targets.bytes, "coverage targets"), tally: parse(release.tally.bytes, "coverage tally"), inventory });
+  if (selectedSourceIds.length !== requiredSourceIds.length || requiredSourceIds.some((sourceId) => !selectedSourceIds.includes(sourceId))) throw new Error("selected source set mismatch");
+  // 원천 순서는 후보 생성기가 정한다. 포함 여부만 본다.
+  if (!selectedSourceIds.includes("seoul-metro-transfer-distance-duration")) throw new Error("selected TRANSFER source is missing");
+  const { headsBySource: heads } = validateLineage(snapshots);
+  for (const sourceId of selectedSourceIds) {
+    const ledger = snapshots.find((entry) => entry?.snapshotId === heads[sourceId]); const source = inventory.sources?.find(({ id }) => id === sourceId); const governanceSource = governance.sources?.find((entry) => entry.sourceId === sourceId); const review = governanceSource?.licenseReview;
     let freshnessExpiresAt; let rawRetentionExpiresAt; let nextReviewAt;
-    try { freshnessExpiresAt = requiredUtcInstant(ledger?.freshnessExpiresAt, "candidate freshnessExpiresAt"); rawRetentionExpiresAt = requiredUtcInstant(ledger?.rawRetentionExpiresAt, "candidate rawRetentionExpiresAt"); nextReviewAt = requiredUtcInstant(review?.nextReviewAt, "license nextReviewAt"); } catch { throw new Error("candidate source ledger/freshness binding mismatch"); }
-    const replacingExpiredSource = replacingSourceIds.has(ledger?.sourceId);
-    if (!ledger || projection?.sourceId !== ledger.sourceId || heads[ledger.sourceId] !== snapshotId || ledger.licenseStatus !== "PASS" || ledger.snapshotStatus !== "LOCKED" || ledger.credentialRedacted !== true || (!replacingExpiredSource && freshnessExpiresAt <= now.getTime()) || rawRetentionExpiresAt <= now.getTime() || review?.status !== "APPROVED" || nextReviewAt <= now.getTime() || review.termsHash !== source?.admissionEvidence?.licenseEvidenceHash) throw new Error("candidate source ledger/freshness binding mismatch");
+    try { freshnessExpiresAt = requiredUtcInstant(ledger?.freshnessExpiresAt, "selected freshnessExpiresAt"); rawRetentionExpiresAt = requiredUtcInstant(ledger?.rawRetentionExpiresAt, "selected rawRetentionExpiresAt"); nextReviewAt = requiredUtcInstant(review?.nextReviewAt, "license nextReviewAt"); } catch { throw new Error("selected source ledger/freshness binding mismatch"); }
+    const replacingExpiredSource = replacingSourceIds.has(sourceId);
+    if (!ledger || ledger.sourceId !== sourceId || ledger.licenseStatus !== "PASS" || ledger.snapshotStatus !== "LOCKED" || ledger.credentialRedacted !== true || (!replacingExpiredSource && freshnessExpiresAt <= now.getTime()) || rawRetentionExpiresAt <= now.getTime() || review?.status !== "APPROVED" || nextReviewAt <= now.getTime() || review.termsHash !== source?.admissionEvidence?.licenseEvidenceHash) throw new Error("selected source ledger/freshness binding mismatch");
   }
   const source = inventory.sources?.find(({ id }) => id === "kric-station-convenience-standard"); const relativeSnapshot = source?.accessibilityAdmissionEvidence?.snapshotPath;
   if (typeof relativeSnapshot !== "string" || path.isAbsolute(relativeSnapshot) || path.resolve(root, relativeSnapshot) !== path.join(root, "tools/datapack/sources", `${source?.accessibilityAdmissionEvidence?.snapshotId}.json`)) throw new Error("KRIC release snapshot identity is invalid");

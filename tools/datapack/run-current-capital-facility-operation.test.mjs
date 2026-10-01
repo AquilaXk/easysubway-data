@@ -9,7 +9,6 @@ import { KRIC_ACCESSIBILITY_OPERATIONS, writeKricStandardAccessibilityObservatio
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parseArgs, prepareCurrentCapitalFacilityOperation, recoverPublishedCurrentCapitalFacilityOperation, syncWrite } from "./run-current-capital-facility-operation.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
@@ -33,6 +32,7 @@ const FIXTURE_INPUTS = [
   "tools/datapack/release/current-capital-facility-source-admission.json",
   "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json", "tools/datapack/nationwide-coverage-targets.json",
+  "tools/datapack/reports/nationwide-coverage-tally.json",
   "release/product-gates/production-datapack-scope.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
   "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
@@ -160,13 +160,18 @@ async function currentReleaseFixture(t) {
     await mkdir(path.dirname(target), { recursive: true });
     await cp(path.join(REPOSITORY_ROOT, relative), target);
   }
-  await copySyntheticCurrentPublicRouteMapRepository(REPOSITORY_ROOT, root, { now: NOW });
+  // #862 결정 C: 사전 검사가 전국 fan-in 선택을 판정하므로 수도권 pilot으로 줄인 합성 저장소가 아니라 커밋된 전국 입력을 쓴다.
   const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const snapshotPath = inventory.sources.find(
     ({ id }) => id === "kric-station-convenience-standard",
   ).accessibilityAdmissionEvidence.snapshotPath;
   await mkdir(path.dirname(path.join(root, snapshotPath)), { recursive: true });
   await cp(path.join(REPOSITORY_ROOT, snapshotPath), path.join(root, snapshotPath));
+  // 커밋된 capital-route-topology 행의 credentialRedacted 누락은 별도 테스트가 막는다. 나머지 테스트에서는 채운다.
+  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  for (const row of ledger.filter(({ sourceId }) => sourceId === "capital-route-topology")) row.credentialRedacted = true;
+  await writeJson(ledgerPath, ledger);
   await bindReleaseRequestToCandidate(root);
   return root;
 }
@@ -359,7 +364,7 @@ test("collection preflight accepts the committed nationwide candidate order with
   await assert.rejects(collectCurrentCapitalFacilityOperation({
     repositoryRoot, operationRoot: asCommittedRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
     collectImpl: async () => { providerCalls += 1; },
-  }), /candidate source ledger\/freshness binding mismatch/);
+  }), /selected source ledger\/freshness binding mismatch/);
   assert.equal(providerCalls, 0);
 
   // 순서 계약만 분리해 보려고 그 한 행의 표시만 채운다. 다른 신선도·승인·라이선스 값은 커밋 그대로다.
@@ -412,7 +417,69 @@ test("collection preflight still rejects a nationwide candidate without the TRAN
   await assert.rejects(collectCurrentCapitalFacilityOperation({
     repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
     collectImpl: async () => { providerCalls += 1; },
-  }), /candidate TRANSFER source is missing/);
+  }), /selected TRANSFER source is missing/);
+  assert.equal(providerCalls, 0);
+});
+
+// #862 결정 C: 다른 원천 갱신은 후보 spec을 다시 만들지 않는다. 그 뒤에도 FACILITY가 돌 수 있도록
+// 사전 검사는 후보 spec이 아니라 fan-in이 고르는 원천의 원장 head를 같은 기준으로 판정한다.
+test("collection preflight judges fan-in selected ledger heads instead of the candidate spec (#862 결정 C)", async (t) => {
+  const repositoryRoot = await committedNationwideReleaseFixture(t);
+  const ledgerPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  const candidate = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  // 커밋된 capital-route-topology 행의 credentialRedacted 누락은 별도 검사로 막힌다(위 테스트). 여기서는 채운다.
+  const topologyId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "capital-route-topology").snapshotId;
+  ledger.find(({ snapshotId }) => snapshotId === topologyId).credentialRedacted = true;
+  // 다른 원천(인천 접근성)이 후보 재생성 없이 새 원장 head를 등록한 상태를 만든다.
+  const priorId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "incheon-transit-accessibility").snapshotId;
+  const prior = ledger.find(({ snapshotId }) => snapshotId === priorId);
+  const successor = {
+    ...structuredClone(prior),
+    snapshotId: `${prior.snapshotId}-successor`,
+    previousSnapshotId: prior.snapshotId,
+    retrievedAt: new Date(NOW.getTime() - 30_000).toISOString(),
+    freshnessExpiresAt: new Date(NOW.getTime() + 24 * 60 * 60 * 1_000).toISOString(),
+  };
+  delete successor.rootSupersession;
+  successor.diffSummary = buildSnapshotDiff(prior, successor);
+  ledger.push(successor);
+  await writeJson(ledgerPath, ledger);
+  await bindReleaseRequestToCandidate(repositoryRoot);
+  assert.ok(candidate.sourceSnapshotIds.includes(priorId));
+
+  const parent = await mkdtemp(path.join(tmpdir(), "facility-fan-in-heads-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const freshRoot = path.join(parent, "fresh");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: freshRoot,
+    expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  const reachedCollector = new Error("test collector boundary reached");
+  let providerCalls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot: freshRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
+    collectImpl: async () => { providerCalls += 1; throw reachedCollector; },
+  }), (error) => error === reachedCollector);
+  assert.equal(providerCalls, 1);
+
+  // 같은 기준: 새 head가 만료면 후보가 그 이전 snapshot을 가리키더라도 수집 전에 막는다.
+  successor.freshnessExpiresAt = NOW.toISOString();
+  await writeJson(ledgerPath, ledger);
+  const expiredRoot = path.join(parent, "expired");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: expiredRoot,
+    expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  providerCalls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot: expiredRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
+    collectImpl: async () => { providerCalls += 1; },
+  }), /selected source ledger\/freshness binding mismatch/);
+  assert.equal(providerCalls, 0);
+
+  // 교체 예외는 FACILITY 원천 2개뿐이다. 만료된 다른 원천은 교체 대상으로 넘겨도 막는다.
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot: expiredRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
+    replacingSourceIds: ["kric-station-convenience-standard", "incheon-transit-accessibility"],
+    collectImpl: async () => { providerCalls += 1; },
+  }), /replacement source identity mismatch/);
   assert.equal(providerCalls, 0);
 });
 
@@ -455,20 +522,21 @@ test("current release preflight rejects a missing required source before a provi
   const operationRoot = path.join(temporaryRoot, "operation");
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const repositoryRoot = await currentReleaseFixture(t);
+  // production scope가 요구하는 원천을 fan-in이 고르지 않는 상태(생산 사용 미승인)를 만든다.
+  const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json");
+  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  const incheon = inventory.sources.find(({ id }) => id === "incheon-transit-accessibility");
+  assert.ok(incheon);
+  incheon.productionUseAllowed = false;
+  incheon.capabilities.facility.productionUseAllowed = false;
+  incheon.admissionEvidence.decision = "PENDING";
+  await writeJson(inventoryPath, inventory);
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec });
-  const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
-  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
-  const incheonIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "incheon-transit-accessibility");
-  assert.notEqual(incheonIndex, -1);
-  candidate.sourceSnapshots.splice(incheonIndex, 1);
-  candidate.sourceSnapshotIds.splice(incheonIndex, 1);
-  await writeJson(candidatePath, candidate);
-  await bindReleaseRequestToCandidate(repositoryRoot);
   let providerCalls = 0;
   await assert.rejects(collectCurrentCapitalFacilityOperation({
-    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: exactMainExec,
+    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: exactMainExec, now: NOW,
     collectImpl: async () => { providerCalls += 1; },
-  }), /candidate source set mismatch/);
+  }), /selected source set mismatch/);
   assert.equal(providerCalls, 0);
 });
 
@@ -515,7 +583,7 @@ test("terminal source preflight may replace only an expired KRIC predecessor", a
     repositoryRoot, operationRoot: staleOtherRoot, serviceKey: "test", env: OCI_ENV, execFileImpl: exactMainExec,
     now: NOW, replacingSourceId: "kric-station-convenience-standard",
     collectImpl: async () => { providerCalls += 1; },
-  }), /candidate source ledger\/freshness binding mismatch/);
+  }), /selected source ledger\/freshness binding mismatch/);
   assert.equal(providerCalls, 0);
 
   const exactPairRoot = path.join(parent, "exact-pair");
@@ -764,10 +832,10 @@ test("published recovery runs current release preflight and rejects an expired o
     sourceOperationRoot: source.operationRoot,
     execFileImpl: exactMainExec,
     now: NOW,
-    releasePreflightImpl: async () => { invalidReleaseCalls.preflight += 1; throw new Error("candidate source ledger/freshness binding mismatch"); },
+    releasePreflightImpl: async () => { invalidReleaseCalls.preflight += 1; throw new Error("selected source ledger/freshness binding mismatch"); },
     durableCreateImpl: async () => { invalidReleaseCalls.copy += 1; },
     journalWriteImpl: async () => { invalidReleaseCalls.journal += 1; },
-  }), /candidate source ledger\/freshness binding mismatch/u);
+  }), /selected source ledger\/freshness binding mismatch/u);
   assert.deepEqual(invalidReleaseCalls, { preflight: 1, copy: 0, journal: 0 });
   await assertUnchanged(invalidRelease);
 
