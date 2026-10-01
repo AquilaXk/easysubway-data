@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { after } from "node:test";
 import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
-import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson, selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -28,9 +28,11 @@ await copySyntheticCurrentPublicRouteMapRepository(REPOSITORY_ROOT, FIXTURE_REPO
 });
 const root = path.join(FIXTURE_REPOSITORY_ROOT, "tools/datapack");
 const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt(root);
+// #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 roster 경로 금지).
+const CURRENT_ROUTE_ROSTERS = (await selectCurrentKricRouteRostersPath({ repositoryRoot: REPOSITORY_ROOT })).replace("tools/datapack/", "");
 const STATIC_SOURCE_PATHS = new Set([
   "sources/kric-provider-code-catalog-20260228.json",
-  "sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+  CURRENT_ROUTE_ROSTERS,
 ]);
 test("producer-neutral FACILITY admission emits a mapping-derived closed matrix", async () => {
   const values = await fixture();
@@ -85,7 +87,7 @@ test("scope-selected candidate evaluates projections at its published clock, not
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    `tools/datapack/${CURRENT_ROUTE_ROSTERS}`,
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/candidate-build-spec.json",
     "tools/datapack/release/source-snapshots.json",
@@ -103,7 +105,7 @@ test("scope-selected candidate evaluates projections at its published clock, not
     canonicalPackBytes: files["tools/datapack/release/capital-production-canonical-pack.json"],
     coverageTargetsBytes: files["tools/datapack/nationwide-coverage-targets.json"],
     providerCodeCatalogBytes: files["tools/datapack/sources/kric-provider-code-catalog-20260228.json"],
-    routeRostersBytes: files["tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"],
+    routeRostersBytes: files[`tools/datapack/${CURRENT_ROUTE_ROSTERS}`],
     sourceInventoryBytes: files["tools/datapack/source-inventory.json"],
   });
   const values = {
@@ -300,11 +302,11 @@ test("producer-neutral FACILITY admission normalizes byte inputs before binding 
 });
 
 async function fixture({ mixed = false } = {}) {
-  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", "sources/kric-nationwide-route-rosters-20260730T203926676Z.json", "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "../../release/product-gates/production-datapack-scope.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [
+  const files = Object.fromEntries(await Promise.all(["release/capital-production-canonical-pack.json", "nationwide-coverage-targets.json", "sources/kric-provider-code-catalog-20260228.json", CURRENT_ROUTE_ROSTERS, "source-inventory.json", "source-governance-policy.json", "../../release/product-gates/datapack-freshness-sla.json", "../../release/product-gates/production-datapack-scope.json", "release/candidate-build-spec.json", "release/source-snapshots.json"].map(async (name) => [
     name,
     await readFile(path.join(STATIC_SOURCE_PATHS.has(name) ? SOURCE_ROOT : root, name)),
   ])));
-  const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files["sources/kric-nationwide-route-rosters-20260730T203926676Z.json"], sourceInventoryBytes: files["source-inventory.json"] });
+  const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes: files["release/capital-production-canonical-pack.json"], coverageTargetsBytes: files["nationwide-coverage-targets.json"], providerCodeCatalogBytes: files["sources/kric-provider-code-catalog-20260228.json"], routeRostersBytes: files[CURRENT_ROUTE_ROSTERS], sourceInventoryBytes: files["source-inventory.json"] });
   const planBytes = Buffer.from(canonicalCurrentCapitalFacilityCollectionPlanJson(plan));
   const roster = plan.stationLineProviderMappings.map((m) => ({ stationId: m.stationId, lineId: m.lineId, railOprIsttCd: m.providerOperatorId, lnCd: m.providerLineId, stinCd: m.providerStationId, canonicalMappings: [{ artifactId: "bundled-capital", stationId: m.stationId, lineId: m.lineId }] }));
   const specialCodes = new Map([
