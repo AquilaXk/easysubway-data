@@ -10,8 +10,8 @@
   },
   "routeRosters": {
     "candidateId": "kric-subway-route-info",
-    "relativePath": "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
-    "sha256": "41814696e263b29fba712b4b53c615cfe35aa55291849b80f6dd83646b262ee3",
+    "relativePath": "tools/datapack/sources/kric-nationwide-route-rosters-20261001T050420765Z.json",
+    "sha256": "41b7af10d39f719a730202ab28307b9b2bd4529ba59397b0cf74564d0b857c35",
     "artifactKind": "kric-nationwide-route-rosters",
     "sourceId": "kric-subway-route-info",
     "targetVersion": "2026-07-13"
