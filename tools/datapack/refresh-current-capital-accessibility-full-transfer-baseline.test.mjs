@@ -169,3 +169,19 @@ test("CLI 경로는 refresh 잠금을 만들기 전에 baseline·clean tree를 �
   );
   await assert.rejects(readFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh.lock/owner.json")), /ENOENT/);
 });
+
+test("baseline 이후 코드(*.mjs)·테스트 등록 변경은 데이터 입력이 아니므로 허용하고, 데이터 경로는 계속 거부한다(#862 A2)", async (t) => {
+  const { root, baseline } = await repository(t);
+  await commit(root, "tool change", {
+    "tools/datapack/refresh-current-capital-accessibility-full.mjs": "export {};\n",
+    "tools/datapack/refresh-current-capital-accessibility-full-transfer-baseline.test.mjs": "export {};\n",
+    "tools/ci/data-test-ownership.json": { tests: [] },
+  });
+  const outputs = await deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: baseline });
+  assert.equal(outputs.length, 8);
+  await commit(root, "data json drift", { "tools/datapack/release/current-capital-live-chain-fan-in.json": "fan-in:v1\n" });
+  await assert.rejects(
+    deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: baseline }),
+    /TRANSFER source admission baseline changed non-TRANSFER inputs: tools\/datapack\/release\/current-capital-live-chain-fan-in\.json/,
+  );
+});

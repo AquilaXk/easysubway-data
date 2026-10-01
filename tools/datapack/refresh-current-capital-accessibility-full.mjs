@@ -910,7 +910,9 @@ export async function deriveTransferSourceAdmissionTransitionOutputs({ repositor
   const transferPaths = currentLiveChainTransferOutputPaths(descriptorPath, { sourceAdmissionOnly: true });
   const allowed = new Set([...transferPaths, ...TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS]);
   const changed = (await gitBytes(root, ["diff", "--name-only", "-z", baselineGitSha, "HEAD"])).toString("utf8").split("\0").filter(Boolean);
-  const unexpected = changed.filter((relative) => !allowed.has(relative)).sort(codepointCompare);
+  // 코드(*.mjs)와 테스트 등록 manifest는 데이터 입력이 아니다. 전이 행은 양쪽 모두 현재 코드로 다시 유도된다.
+  const isCode = (relative) => relative.endsWith(".mjs") || relative === "tools/ci/data-test-ownership.json";
+  const unexpected = changed.filter((relative) => !allowed.has(relative) && !isCode(relative)).sort(codepointCompare);
   if (unexpected.length !== 0) {
     throw new Error(`TRANSFER source admission baseline changed non-TRANSFER inputs: ${unexpected.join(", ")}`);
   }
