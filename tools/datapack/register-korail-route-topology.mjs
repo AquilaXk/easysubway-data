@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { validateKorailTimetableFileReceipt } from "./collect-korail-metropolitan-timetable-file.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { prepareKorailTopologyPublication } from "./parse-korail-metropolitan-timetable.mjs";
 import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { publishKorailTimetableRaw } from "./publish-korail-metropolitan-timetable-raw.mjs";
+import { assertSelectedHeadPreflight } from "./publish-seoul-transfer-raw.mjs";
 
 const SOURCE_ID = "korail-metropolitan-timetable-file";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
@@ -21,12 +26,12 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
   const context = await prepareKorailTopologyRegistration({ repositoryRoot, sourceInputPath, now });
   const { root, inputPath, sourceInput, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidatesBytes,
     inputBytes, membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes, inventory,
-    ledger, candidate, collectionReceipt, rawSha256, preparation } = context;
+    ledger, candidate, collectionReceipt, rawSha256, preparation, previousSource, previousHead } = context;
   const rawReceiptPath = absolute(receiptPath, "RECEIPT");
   const rawReceiptBytes = await readFile(rawReceiptPath);
   const snapshot = preparation.snapshot;
   const rawReceipt = validateRawReceipt(parse(rawReceiptBytes, "RAW_RECEIPT"), preparation, collectionReceiptBytes, rawSha256, rawBytes.length, now);
-  if (snapshot.snapshotId !== `${SOURCE_ID}-${snapshot.contentSha256}` || (ledger ?? []).some((entry) => entry?.snapshotId === snapshot.snapshotId)) fail("FIRST_ONLY");
+  if (snapshot.snapshotId !== `${SOURCE_ID}-${snapshot.contentSha256}` || (ledger ?? []).some((entry) => entry?.snapshotId === snapshot.snapshotId)) fail("SNAPSHOT_COLLISION");
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotBytes = json(snapshot);
   await writeDerivedSnapshot(path.join(root, snapshotRelative), snapshotBytes);
   const cadence = preparation.projectedFreshnessPolicy.sourceClasses.find((entry) => entry.id === candidate.topologyRegistration.sourceClassId)?.reverificationCadence;
@@ -60,7 +65,7 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
   const policyBytes = json(preparation.projectedGovernancePolicy);
   const ledgerRow = {
     schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: SOURCE_ID,
-    snapshotId: snapshot.snapshotId, previousSnapshotId: null, capturedAt: snapshot.capturedAt,
+    snapshotId: snapshot.snapshotId, previousSnapshotId: previousHead?.snapshotId ?? null, capturedAt: snapshot.capturedAt,
     retrievedAt: snapshot.capturedAt, sourceUpdatedAt: sourceInput.sourceUpdatedAt, provider,
     rowCount: snapshot.edgeCount, coverageCount: snapshot.stationCount, rawSha256,
     contentSha256: snapshot.contentSha256, rawObjectUri: rawReceipt.rawObjectUri,
@@ -77,7 +82,14 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
     redistributionAllowed: true, credentialRedacted: true,
     admissionEvidence: { licenseEvidenceHash: preparation.licenseEvidenceSha256 },
   };
-  const nextInventory = { ...inventory, sources: [...inventory.sources, inventorySource] }, nextLedger = [...ledger, ledgerRow];
+  // #862: 후속 등록은 같은 source 행에서 관측 시각·topology admission만 바꾼다(첫 등록은 추가).
+  if (previousHead) ledgerRow.diffSummary = buildSnapshotDiff(previousHead, ledgerRow);
+  const nextSource = previousSource ? { ...previousSource, observedDataUpdatedAt: inventorySource.observedDataUpdatedAt,
+    retrievedAt: inventorySource.retrievedAt, topologyAdmissionEvidence: evidence } : inventorySource;
+  const nextInventory = previousSource
+    ? { ...inventory, sources: inventory.sources.map((entry) => (entry?.id === SOURCE_ID ? nextSource : entry)) }
+    : { ...inventory, sources: [...inventory.sources, inventorySource] };
+  const nextLedger = [...ledger, ledgerRow];
   validateSourceGovernancePolicy({ policy: preparation.projectedGovernancePolicy, inventory: nextInventory, freshnessPolicy: preparation.projectedFreshnessPolicy });
   const inputs = [inputPath, rawReceiptPath, sourceInput.stationLineObservationPath, sourceInput.stationLineReceiptPath, sourceInput.canonicalCatalogPath, path.join(sourceInput.collectionDirectory, "receipt.json"), path.join(sourceInput.collectionDirectory, "timetable.xlsx")].map((absolute, index) => ({ absolute, bytes: [inputBytes, rawReceiptBytes, membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes][index] }));
   inputs.push({ absolute: path.join(root, "tools/datapack/source-candidates.json"), bytes: candidatesBytes },
@@ -99,7 +111,9 @@ export async function prepareKorailTopologyRegistration({ repositoryRoot, source
   ]);
   if (sha(catalogBytes) !== sourceInput.canonicalCatalogSha256) fail("CATALOG");
   const inventory = parse(inventoryBytes, "INVENTORY"), ledger = parse(ledgerBytes, "LEDGER"), candidates = parse(candidatesBytes, "CANDIDATES");
-  if ((inventory.sources ?? []).some((source) => source?.id === SOURCE_ID) || (ledger ?? []).some((snapshot) => snapshot?.sourceId === SOURCE_ID)) fail("FIRST_ONLY");
+  const previousSource = (inventory.sources ?? []).find((source) => source?.id === SOURCE_ID) ?? null;
+  const previousHead = (ledger ?? []).some((snapshot) => snapshot?.sourceId === SOURCE_ID) ? terminalHead(SOURCE_ID, ledger) : null;
+  if ((previousSource === null) !== (previousHead === null)) fail("SUCCESSOR_STATE");
   const matches = (candidates.candidates ?? []).filter((entry) => entry?.id === SOURCE_ID);
   if (matches.length !== 1 || !matches[0].coverageScope?.lineIds?.includes(sourceInput.lineId)) fail("CANDIDATE");
   const candidate = matches[0], collectionReceipt = parse(collectionReceiptBytes, "COLLECTION_RECEIPT"), rawSha256 = sha(rawBytes);
@@ -116,7 +130,7 @@ export async function prepareKorailTopologyRegistration({ repositoryRoot, source
     || source.collectionReceiptSha256 !== sha(collectionReceiptBytes) || !same(collectionReceipt, source.collectionReceipt)) fail("BINDING");
   return { root, inputPath, sourceInput, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidatesBytes,
     inputBytes, membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes, inventory,
-    ledger, candidate, collectionReceipt, rawSha256, preparation };
+    ledger, candidate, collectionReceipt, rawSha256, preparation, previousSource, previousHead };
 }
 
 function exactOutputs(outputs) {
@@ -177,3 +191,39 @@ function utc(value) { return typeof value === "string" && Number.isFinite(Date.p
 function utcOrNull(value) { return value === null || utc(value); }
 function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
 function fail(code) { throw new Error(`KORAIL_TOPOLOGY_REGISTRATION_${code}`); }
+
+// #862: 공식 원본 게시와 원장 등록을 한 번에 실행한다. 명시한 origin/main의 clean 후손 HEAD에서만 실행한다.
+export function parseKorailTopologyRegistrationArgs(argv) {
+  const names = ["source-input", "operation-directory", "expected-main-sha", "expected-head-sha"];
+  if (argv[0] !== "publish-register") fail("CLI");
+  const values = {};
+  for (let index = 1; index < argv.length; index += 2) {
+    const name = argv[index]?.startsWith("--") ? argv[index].slice(2) : null;
+    if (!names.includes(name) || Object.hasOwn(values, name) || typeof argv[index + 1] !== "string" || argv[index + 1].startsWith("--")) fail("CLI");
+    values[name] = argv[index + 1];
+  }
+  if (names.some((name) => !Object.hasOwn(values, name)) || !path.isAbsolute(values["source-input"]) || !path.isAbsolute(values["operation-directory"])) fail("CLI");
+  return values;
+}
+
+export async function publishAndRegisterKorailRouteTopology({ repositoryRoot, sourceInputPath, operationDirectory, expectedMainSha, expectedHeadSha, env = process.env, client = null, now = new Date(), gitRunner } = {}) {
+  const root = rootPath(repositoryRoot);
+  await assertSelectedHeadPreflight({ repositoryRoot: root, expectedMainSha, expectedHeadSha, ...(gitRunner ? { gitRunner } : {}) });
+  await recoverKorailRouteTopologyRegistration({ repositoryRoot: root });
+  const context = await prepareKorailTopologyRegistration({ repositoryRoot: root, sourceInputPath, now });
+  await publishKorailTimetableRaw({ preparation: context.preparation, collectionDirectory: context.sourceInput.collectionDirectory, operationDirectory, env, client });
+  const outputs = await buildKorailTopologyRegistrationOutputs({ repositoryRoot: root, sourceInputPath, receiptPath: path.join(operationDirectory, "receipt.json"), now: new Date() });
+  return commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {
+    const args = parseKorailTopologyRegistrationArgs(process.argv.slice(2));
+    await publishAndRegisterKorailRouteTopology({ repositoryRoot: path.resolve(import.meta.dirname, "../.."), sourceInputPath: args["source-input"],
+      operationDirectory: args["operation-directory"], expectedMainSha: args["expected-main-sha"], expectedHeadSha: args["expected-head-sha"] });
+    process.stdout.write(`${JSON.stringify({ sourceId: SOURCE_ID, status: "REGISTERED" })}\n`);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : "Korail topology registration failed"}\n`);
+    process.exitCode = 1;
+  }
+}

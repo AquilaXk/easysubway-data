@@ -42,11 +42,18 @@ export async function prepareKorailTopologyPublication({ candidate, freshnessPol
     throw new Error("Korail topology class conflicts");
   }
   if (!classes[0].sourceIds.includes(candidate.id)) classes[0].sourceIds = [...classes[0].sourceIds, candidate.id].sort(utf16Compare);
-  const registration = buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governancePolicyBytes,
-    addedSources: [structuredClone(governanceEntry)] });
+  // #862: 후속 등록은 이미 등록된 같은 거버넌스 항목을 그대로 쓴다(다르면 실패). 첫 등록만 append한다.
+  const currentPolicy = JSON.parse(Buffer.from(governancePolicyBytes).toString("utf8"));
+  const existingEntries = (currentPolicy.sources ?? []).filter((entry) => entry?.sourceId === candidate.id);
+  if (existingEntries.length > 1 || (existingEntries.length === 1 && canonicalJson(existingEntries[0]) !== canonicalJson(governanceEntry))) {
+    throw new Error("Korail governance license binding invalid");
+  }
+  const registration = existingEntries.length === 1 ? { policy: currentPolicy }
+    : buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governancePolicyBytes, addedSources: [structuredClone(governanceEntry)] });
   // 검증용 staging descriptor일 뿐 admission 기록이 아니다. 실제 등록은 OCI receipt 이후 수행한다.
+  const registered = inventory.sources.some((entry) => entry?.id === candidate.id);
   validateSourceGovernancePolicy({ policy: registration.policy, freshnessPolicy: policy,
-    inventory: { ...inventory, sources: [...inventory.sources,
+    inventory: registered ? inventory : { ...inventory, sources: [...inventory.sources,
       { id: candidate.id, admissionEvidence: { licenseEvidenceHash: licenseEvidenceSha256 } }] } });
   const snapshot = await buildCollectedKorailTopologySnapshot({ ...input, freshnessPolicy: policy });
   const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({ policy: registration.policy,

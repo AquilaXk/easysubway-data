@@ -10,6 +10,9 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
 import { buildRetainedKorailTimetable } from "./parse-korail-metropolitan-timetable.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
+import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { assertSelectedHeadPreflight } from "./publish-seoul-transfer-raw.mjs";
 
 const SOURCE_ID = "korail-metropolitan-planned-timetable";
 const SOURCE_FAMILY_ID = "korail-metropolitan-timetable-file";
@@ -57,15 +60,18 @@ export async function buildKorailTimetableRegistrationOutputs({ repositoryRoot, 
   const { root, inputPath, inputBytes, input, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidateBytes,
     inventory, ledger, candidate, topologySource, rawBytes, collectionReceiptBytes,
     membershipBytes, membershipReceiptBytes, catalogBytes, publicationReceiptBytes, calendarManifestBytes, calendarFiles,
-    snapshot, registration, freshness, scheduleCadence } = context;
-  if (inventory.sources.some((entry) => entry?.id === SOURCE_ID) || ledger.some((entry) => entry?.sourceId === SOURCE_ID)) fail("FIRST_ONLY");
+    snapshot, registration, freshness, scheduleCadence, previousHead, reverifiedUnchangedAt } = context;
+  if (ledger.some((entry) => entry?.snapshotId === snapshot.snapshotId)) fail("SNAPSHOT_COLLISION");
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotBytes = json(snapshot);
   await writeDerivedSnapshot(path.join(root, snapshotRelative), snapshotBytes);
   const source = inventorySource({ candidate, input, snapshot, topologySource, scheduleCadence });
-  const nextInventory = { ...inventory, sources: [...inventory.sources, source] };
+  // #862: 후속 등록은 같은 source 행을 제자리에서 바꾼다(첫 등록은 추가).
+  const nextInventory = previousHead
+    ? { ...inventory, sources: inventory.sources.map((entry) => (entry?.id === SOURCE_ID ? source : entry)) }
+    : { ...inventory, sources: [...inventory.sources, source] };
   const policyBytes = json(registration.policy);
   const ledgerRow = { schemaVersion: 1, artifactKind: "official-source-snapshot", sourceId: SOURCE_ID,
-    snapshotId: snapshot.snapshotId, previousSnapshotId: null, capturedAt: snapshot.originalCapturedAt,
+    snapshotId: snapshot.snapshotId, previousSnapshotId: previousHead?.snapshotId ?? null, capturedAt: snapshot.originalCapturedAt,
     retrievedAt: snapshot.originalCapturedAt, sourceUpdatedAt: null, serviceEffectiveAt: snapshot.serviceEffectiveAt,
     serviceEffectiveUntil: snapshot.serviceEffectiveUntil,
     provider: candidate.evidence.provider, rowCount: snapshot.tables.transitStopTimes.length,
@@ -78,7 +84,9 @@ export async function buildKorailTimetableRegistrationOutputs({ repositoryRoot, 
     schemaFingerprint: sha(canonicalJson({ artifactKind: snapshot.artifactKind, keys: Object.keys(snapshot).sort(order) })),
     redactedRequestFingerprint: sha(canonicalJson({ sourceFamilyId: SOURCE_FAMILY_ID, collectionReceiptSha256: snapshot.raw.collectionReceiptSha256 })),
     snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS", redistributionAllowed: true,
-    credentialRedacted: true, admissionEvidence: { licenseEvidenceHash: licenseHash(candidate) } };
+    credentialRedacted: true, admissionEvidence: { licenseEvidenceHash: licenseHash(candidate) },
+    ...(reverifiedUnchangedAt ? { reverifiedUnchangedAt } : {}) };
+  if (previousHead) ledgerRow.diffSummary = buildSnapshotDiff(previousHead, ledgerRow);
   const nextLedger = [...ledger, ledgerRow];
   validateSourceGovernancePolicy({ policy: registration.policy, inventory: nextInventory, freshnessPolicy: freshness });
   const inputs = [
@@ -101,7 +109,12 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
     ...OUTPUTS.map((relative) => readFile(path.join(root, relative))), readFile(path.join(root, "tools/datapack/source-candidates.json")), readFile(inputPath),
   ]);
   const input = exactInput(parse(inputBytes, "SOURCE_INPUT"));
+  // #862 QA 결정: 제공자 유효 종료일이 지난 파일은 받지 않는다.
+  if (input.serviceEffectiveUntil !== null && Date.parse(input.serviceEffectiveUntil) <= now.valueOf()) fail("PROVIDER_VALIDITY");
   const [inventory, ledger, freshnessBase, candidates] = [parse(inventoryBytes, "INVENTORY"), parse(ledgerBytes, "LEDGER"), parse(freshnessBytes, "FRESHNESS"), parse(candidateBytes, "CANDIDATES")];
+  const previousSource = inventory.sources.find((entry) => entry?.id === SOURCE_ID) ?? null;
+  const previousHead = ledger.some((entry) => entry?.sourceId === SOURCE_ID) ? terminalHead(SOURCE_ID, ledger) : null;
+  if ((previousSource === null) !== (previousHead === null)) fail("SUCCESSOR_STATE");
   const candidate = only(candidates.candidates, (entry) => entry?.id === SOURCE_ID, "CANDIDATE");
   const topologySource = only(inventory.sources, (entry) => entry?.id === SOURCE_FAMILY_ID, "TOPOLOGY_SOURCE");
   if (!candidate.coverageScope?.lineIds?.includes(input.lineId)
@@ -133,11 +146,17 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
   const sourceClass = only(freshnessBase.sourceClasses, (entry) => entry?.id === "planned_timetable", "FRESHNESS_CLASS");
   const freshness = structuredClone(freshnessBase);
   const nextClass = freshness.sourceClasses.find((entry) => entry.id === sourceClass.id);
-  if (nextClass.sourceIds.includes(SOURCE_ID)) fail("FIRST_ONLY");
-  nextClass.sourceIds = [...nextClass.sourceIds, SOURCE_ID].sort(order);
+  if (nextClass.sourceIds.includes(SOURCE_ID) !== (previousHead !== null)) fail("SUCCESSOR_STATE");
+  if (!nextClass.sourceIds.includes(SOURCE_ID)) nextClass.sourceIds = [...nextClass.sourceIds, SOURCE_ID].sort(order);
   const retainedLicenseHash = topologySource.admissionEvidence?.licenseEvidenceHash;
   if (!hash(retainedLicenseHash) || retainedLicenseHash !== licenseHash(candidate)) fail("LICENSE_BINDING");
-  const registration = buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governanceBytes, addedSources: [verifiedGovernance(input.governanceEntry, candidate, now, retainedLicenseHash)] });
+  const governanceEntry = verifiedGovernance(input.governanceEntry, candidate, now, retainedLicenseHash);
+  const currentGovernance = parse(governanceBytes, "GOVERNANCE");
+  const existingEntry = (currentGovernance.sources ?? []).filter((entry) => entry?.sourceId === SOURCE_ID);
+  if (existingEntry.length !== (previousHead ? 1 : 0) || (existingEntry.length === 1 && canonicalJson(existingEntry[0]) !== canonicalJson(governanceEntry))) fail("GOVERNANCE");
+  const registration = previousHead
+    ? { policy: currentGovernance }
+    : buildAppendOnlyGovernancePolicyRegistration({ predecessorPolicyBytes: governanceBytes, addedSources: [governanceEntry] });
   const ids = buildKorailScheduleIds({ lineId: input.lineId });
   const retained = await buildRetainedKorailTimetable({ inputPath: input.retainedWorkbookPath, sha256: sha(rawBytes), holidayDirectory: input.calendarDirectory,
     startDate: input.calendarWindow.startDate, endDate: input.calendarWindow.endDate, serviceIds: ids.services, routeIds: ids.routes,
@@ -154,7 +173,12 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
   const frozenInputs = [rawBytes, collectionReceiptBytes, publicationReceiptBytes, topologyBytes, membershipBytes,
     membershipReceiptBytes, catalogBytes, calendarManifestBytes, ...calendarFiles.map(({ bytes }) => bytes)];
   if (stableInputs.some((bytes, index) => !bytes.equals(frozenInputs[index]))) fail("INPUT_STABILITY");
-  const derivedFreshUntil = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: "planned_timetable", basisAt: input.serviceEffectiveAt, providerValidUntil: input.serviceEffectiveUntil, evaluationAt: now.toISOString() });
+  // #862 QA 결정(2026-10-01): 같은 공식 파일(바이트 sha256이 이전 head와 같음)의 재확인은 새 관측이다.
+  // 신선도 basis는 재확인 시각(정책 unchangedReverificationBasisField)이고, serviceEffectiveAt은 workbook 시행일 그대로 둔다.
+  // 바이트가 다르면(새 시행본) 일반 basis(serviceEffectiveAt)를 쓴다.
+  const reverifiedUnchangedAt = previousHead && previousHead.rawSha256 === sha(rawBytes) ? topologySnapshot.capturedAt : null;
+  if (reverifiedUnchangedAt && sourceClass.unchangedReverificationBasisField !== "reverifiedUnchangedAt") fail("FRESHNESS_POLICY");
+  const derivedFreshUntil = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: "planned_timetable", basisAt: reverifiedUnchangedAt ?? input.serviceEffectiveAt, providerValidUntil: input.serviceEffectiveUntil, evaluationAt: now.toISOString() });
   if (Date.parse(derivedFreshUntil) <= now.valueOf()) fail("FRESHNESS");
   if (retained.observation.sources.catalog.rawSha256 !== sha(catalogBytes)
     || retained.calendarManifestSha256 !== sha(calendarManifestBytes)
@@ -166,7 +190,7 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
     topology: { sourceId: SOURCE_FAMILY_ID, snapshotId: topologySnapshot.snapshotId, contentSha256: topologySnapshot.contentSha256 },
     raw: { sourceId: SOURCE_FAMILY_ID, rawSha256: sha(rawBytes), byteSize: rawBytes.length, collectionReceiptSha256: sha(collectionReceiptBytes), publicationReceiptSha256: sha(publicationReceiptBytes), rawObjectUri: parentLedger.rawObjectUri },
     calendar: { manifestSha256: retained.calendarManifestSha256, months: retained.tables.holidayCalendarSources.map(({ year, month, rawSha256 }) => ({ year, month, sha256: rawSha256 })) }, tables: retained.tables });
-  return { root, inputPath, input, inputBytes, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidateBytes, inventory, ledger, candidate, topologySource, topologySnapshot, topologyBytes, rawBytes, collectionReceipt, collectionReceiptBytes, publicationReceiptBytes, membershipBytes, membershipReceiptBytes, catalogBytes, calendarManifestBytes, calendarFiles, tables: retained.tables, snapshot, registration, freshness, scheduleCadence: nextClass.reverificationCadence ?? nextClass.maximumReverificationCadence };
+  return { root, inputPath, input, inputBytes, inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes, candidateBytes, inventory, ledger, candidate, topologySource, topologySnapshot, topologyBytes, rawBytes, collectionReceipt, collectionReceiptBytes, publicationReceiptBytes, membershipBytes, membershipReceiptBytes, catalogBytes, calendarManifestBytes, calendarFiles, tables: retained.tables, snapshot, registration, freshness, scheduleCadence: nextClass.reverificationCadence ?? nextClass.maximumReverificationCadence, previousHead, reverifiedUnchangedAt };
 }
 
 function inventorySource({ candidate, input, snapshot, topologySource, scheduleCadence }) {
@@ -269,7 +293,9 @@ async function main(argv) {
     if (!key?.startsWith("--") || value === undefined || values.has(key)) fail("CLI");
     values.set(key, value);
   }
-  if (!same([...values.keys()].sort(order), ["--repository-root", "--source-input"].sort(order))) fail("CLI");
+  if (!same([...values.keys()].sort(order), ["--repository-root", "--source-input", "--expected-main-sha", "--expected-head-sha"].sort(order))) fail("CLI");
+  // #862: 명시한 origin/main의 clean 후손 HEAD에서만 등록한다.
+  await assertSelectedHeadPreflight({ repositoryRoot: rootPath(values.get("--repository-root")), expectedMainSha: values.get("--expected-main-sha"), expectedHeadSha: values.get("--expected-head-sha") });
   await registerKorailTimetable({ repositoryRoot: values.get("--repository-root"), sourceInputPath: values.get("--source-input") });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

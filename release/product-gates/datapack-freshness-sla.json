@@ -85,7 +85,8 @@
         "line extension opening"
       ],
       "changePublishSla": "before-effective-date",
-      "freshnessMetric": "plannedEtaCoverageRatio"
+      "freshnessMetric": "plannedEtaCoverageRatio",
+      "unchangedReverificationBasisField": "reverifiedUnchangedAt"
     },
     {
       "id": "route_map_positions",
