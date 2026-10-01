@@ -835,32 +835,53 @@ test("#872 S1 MOLIT 환승 이동 원천은 거리·시간·무단차 간선에 
   assert.deepEqual(molitRouteTransfers.map(({ edgeId }) => edgeId), []);
 });
 
-test("#872 S1 서울 환승 간선은 같은 방향 지표의 sourceRecordSha256·거리·시간과 같고 역방향 값은 DERIVED_RECIPROCAL로 표기한다", async () => {
+test("#872 S1 서울 환승 경로 행은 같은 방향 공식 지표의 sourceRecordSha256·거리·시간과 같고, 역방향(DERIVED_RECIPROCAL) 쌍은 경로 행 없이 route edge만 유지한다", async () => {
   const { result, metrics, metricByDirection, edgeDirection } = await preparedTransferEvidence();
   const pack = result.finalPack;
   const sourceRecordHashes = new Set(metrics.map(({ sourceRecordSha256 }) => sourceRecordSha256));
+  const officialMetrics = metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE");
+  const derivedMetrics = metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL");
+  assert.ok(derivedMetrics.length > 0, "fixture must contain derived reciprocal metrics (강남·까치산)");
+  assert.equal(officialMetrics.length + derivedMetrics.length, metrics.length);
 
-  assert.equal(pack.stationPathwayEdges.length, metrics.length, "one official walk edge per metric direction");
+  // production pathway 계약은 DERIVED_RECIPROCAL을 받지 않는다(#872 D4 보완). 경로 행은 공식 지표에만 만든다.
+  assert.equal(pack.stationPathwayEdges.length, officialMetrics.length, "one official walk edge per OFFICIAL_SOURCE metric direction");
   for (const edge of pack.stationPathwayEdges) {
     const metric = metricByDirection.get(edgeDirection(edge));
+    assert.equal(metric.metricProvenance, "OFFICIAL_SOURCE", `edge ${edge.id} must not use a derived reciprocal value`);
     assert.equal(edge.sourceId, SEOUL_TRANSFER_SOURCE_ID);
+    assert.equal(edge.provenanceKind, "OFFICIAL_SOURCE");
+    assert.equal(edge.verificationStatus, "VERIFIED");
     assert.ok(sourceRecordHashes.has(edge.providerRecordHash), `edge ${edge.id} hash must exist in metrics`);
     assert.equal(edge.providerRecordHash, metric.sourceRecordSha256, `edge ${edge.id} hash must equal its direction metric`);
     assert.equal(edge.evidenceHash, metric.sourceRecordSha256);
     assert.equal(edge.durationSeconds, metric.officialDurationSecondsReference);
     assert.equal(edge.distanceMeters, metric.distanceMeters);
-    assert.equal(edge.provenanceKind, metric.metricProvenance, `edge ${edge.id} provenance must follow its metric (D4)`);
   }
-  const derived = pack.stationPathwayEdges.filter(({ provenanceKind }) => provenanceKind === "DERIVED_RECIPROCAL");
-  assert.equal(derived.length, metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length);
-  assert.ok(derived.length > 0, "fixture must contain derived reciprocal metrics (강남·까치산)");
-
   for (const rule of pack.transferRules.filter(({ pathwayEdgeId }) => pathwayEdgeId !== null)) {
     const metric = metricByDirection.get(`${rule.fromStationId}\0${rule.fromLineId}\0${rule.toLineId}`);
-    assert.ok(metric, `rule ${rule.id} references an edge without a metric`);
+    assert.equal(metric?.metricProvenance, "OFFICIAL_SOURCE", `rule ${rule.id} must reference only an official pathway edge`);
     assert.equal(rule.sourceId, SEOUL_TRANSFER_SOURCE_ID);
     assert.equal(rule.verificationStatus, "VERIFIED");
     assert.equal(rule.minTransferSeconds, metric.officialDurationSecondsReference);
+  }
+
+  const routeTransfers = new Map(result.routeInput.routeEdges
+    .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER")
+    .map((edge) => [edge.edgeId, edge]));
+  for (const metric of derivedMetrics) {
+    const key = `${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`;
+    assert.equal(pack.stationPathwayEdges.some(({ id }) => id.startsWith(`pathway-edge-${key}-`)), false, `derived pair ${key} must not emit a pathway row`);
+    const rule = pack.transferRules.find(({ id }) => id === `rule-transfer-${key}`);
+    assert.ok(rule, `derived pair ${key} keeps its transfer rule`);
+    assert.equal(rule.pathwayEdgeId, null);
+    assert.equal(rule.strictStepFreePathwayEdgeId, null);
+    assert.equal(rule.verificationStatus, "UNVERIFIED", `derived pair ${key} must not be presented as verified official`);
+    // 길찾기 route edge는 #350에서 승인된 역방향 지표 값을 그대로 쓴다(길찾기 동작 변경 없음).
+    const routeEdge = routeTransfers.get(`transfer-${key}`);
+    assert.ok(routeEdge, `derived pair ${key} keeps its route edge`);
+    assert.equal(routeEdge.durationSeconds, metric.officialDurationSecondsReference);
+    assert.equal(routeEdge.distanceMeters, metric.distanceMeters);
   }
 });
 
