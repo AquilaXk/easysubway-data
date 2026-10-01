@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,8 +10,10 @@ import { promisify } from "node:util";
 import {
   NATIONWIDE_CANDIDATE_REBIND_ALLOWED_DESCENDANT_PATHS,
   TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS,
+  appendOnlySourceRegistrationViolations,
   assertNationwideCandidateRebindBaseline,
   buildCurrentCapitalAccessibilityRefreshOutputs,
+  deriveNationwideCandidateSourceRegistration,
   nationwideCandidateRebindViolations,
   refreshCurrentCapitalAccessibilityFull,
 } from "./refresh-current-capital-accessibility-full.mjs";
@@ -182,4 +185,128 @@ test("커밋된 저장소에서 재결속 모드는 수도권 출력 바이트�
     assert.deepEqual(output.bytes, await readFile(path.join(ROOT, output.relative)), `${output.relative} must stay byte-identical`);
   }
   assert.deepEqual(outputs[0].fanIn.bytes, await readFile(path.join(ROOT, CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH)));
+});
+
+// #876 메인 결정 R1(2026-10-02, #866에서 live chain 폐기와 함께 삭제): 후보 선택 집합 밖 원천 하나의 append-only 등록만
+// 전국 후보 재결속에서 sourceInventory·sourceSnapshotLedger fan-in component 변경으로 허용한다. 판정은 JSON 구조로 한다.
+const REGISTERED = "seoul-metro-transfer-car-door-duration";
+function registrationFixture() {
+  const previousInventory = { schemaVersion: 1, region: "nationwide", artifactKind: "production-source-inventory", retrievedAt: "2026-10-01",
+    sources: [{ id: "seoul-metro-transfer-distance-duration", requiredForProductionPack: true }, { id: "molit-urban-rail-full-route", requiredForProductionPack: true }] };
+  const previousLedger = [{ sourceId: "seoul-metro-transfer-distance-duration", snapshotId: "s-1" }, { sourceId: "molit-urban-rail-full-route", snapshotId: "m-1" }];
+  const currentInventory = structuredClone(previousInventory);
+  currentInventory.sources.push({ id: REGISTERED, requiredForProductionPack: false });
+  const currentLedger = [...structuredClone(previousLedger), { sourceId: REGISTERED, snapshotId: `${REGISTERED}-1` }];
+  return {
+    previousInventory, currentInventory, previousLedger, currentLedger,
+    registeredSourceIds: [REGISTERED], selectedSourceIds: ["seoul-metro-transfer-distance-duration", "molit-urban-rail-full-route"],
+  };
+}
+
+test("#876 후보 선택 집합 밖 원천 하나의 append-only 등록은 위반이 없다", () => {
+  assert.deepEqual(appendOnlySourceRegistrationViolations(registrationFixture()), []);
+});
+
+test("#876 append-only 등록 판정은 기존 항목 수정·선택 원천 원장 행 추가·새 항목 2개·requiredForProductionPack=true·재정렬을 거부한다", () => {
+  const modified = registrationFixture();
+  modified.currentInventory.sources[0].requiredForProductionPack = false;
+  assert.deepEqual(appendOnlySourceRegistrationViolations(modified), ["source inventory existing entries changed"]);
+
+  const selectedRow = registrationFixture();
+  selectedRow.currentLedger.push({ sourceId: "molit-urban-rail-full-route", snapshotId: "m-2", previousSnapshotId: "m-1" });
+  assert.deepEqual(appendOnlySourceRegistrationViolations(selectedRow), ["source ledger appended rows outside the registered source: molit-urban-rail-full-route"]);
+
+  const twoEntries = registrationFixture();
+  twoEntries.currentInventory.sources.push({ id: "another-source", requiredForProductionPack: false });
+  assert.deepEqual(appendOnlySourceRegistrationViolations(twoEntries), ["source inventory must add exactly one registered source"]);
+
+  const required = registrationFixture();
+  required.currentInventory.sources.at(-1).requiredForProductionPack = true;
+  assert.deepEqual(appendOnlySourceRegistrationViolations(required), ["registered source must not be requiredForProductionPack"]);
+
+  const reordered = registrationFixture();
+  reordered.currentLedger = [reordered.currentLedger[1], reordered.currentLedger[0], reordered.currentLedger[2]];
+  assert.deepEqual(appendOnlySourceRegistrationViolations(reordered), ["source ledger existing rows changed"]);
+  const reorderedInventory = registrationFixture();
+  reorderedInventory.currentInventory.sources = [reorderedInventory.currentInventory.sources[1], reorderedInventory.currentInventory.sources[0], reorderedInventory.currentInventory.sources[2]];
+  assert.deepEqual(appendOnlySourceRegistrationViolations(reorderedInventory), ["source inventory existing entries changed"]);
+
+  const notRegistered = registrationFixture();
+  notRegistered.currentInventory.sources.at(-1).id = "unlisted-source";
+  notRegistered.currentLedger.at(-1).sourceId = "unlisted-source";
+  assert.deepEqual(appendOnlySourceRegistrationViolations(notRegistered), [
+    "source inventory must add exactly one registered source", "source ledger appended rows outside the registered source: unlisted-source",
+  ]);
+
+  const selected = registrationFixture();
+  selected.selectedSourceIds.push(REGISTERED);
+  assert.deepEqual(appendOnlySourceRegistrationViolations(selected), ["registered source is in the candidate selection"]);
+
+  const header = registrationFixture();
+  header.currentInventory.retrievedAt = "2026-10-02";
+  assert.deepEqual(appendOnlySourceRegistrationViolations(header), ["source inventory header changed"]);
+
+  const noRow = registrationFixture();
+  noRow.currentLedger.pop();
+  assert.deepEqual(appendOnlySourceRegistrationViolations(noRow), ["source ledger must append rows for the registered source"]);
+});
+
+test("#876 재결속 판정은 append-only 등록 판정이 통과하고 sha가 맞을 때만 sourceInventory·sourceSnapshotLedger 변경을 허용한다", () => {
+  const recomputed = boundary({ components: {
+    candidateBuildSpec: { path: "candidateBuildSpec.json", sha256: "f".repeat(64) },
+    sourceInventory: { path: "sourceInventory.json", sha256: "9".repeat(64) },
+    sourceSnapshotLedger: { path: "sourceSnapshotLedger.json", sha256: "8".repeat(64) },
+  } });
+  const committed = boundary({ components: { sourceSnapshotLedger: { path: "sourceSnapshotLedger.json", sha256: "7".repeat(64) } } });
+  const sourceRegistration = {
+    violations: [],
+    previousInventorySha256: "2".repeat(64), currentInventorySha256: "9".repeat(64),
+    previousLedgerSha256: "7".repeat(64), currentLedgerSha256: "8".repeat(64),
+  };
+  assert.deepEqual(nationwideCandidateRebindViolations(decision({ committedFanIn: committed, recomputedFanIn: recomputed })),
+    ["fan-in component changed outside candidateBuildSpec: sourceInventory, sourceSnapshotLedger"]);
+  assert.deepEqual(nationwideCandidateRebindViolations(decision({ committedFanIn: committed, recomputedFanIn: recomputed, sourceRegistration })), []);
+  assert.deepEqual(nationwideCandidateRebindViolations(decision({ committedFanIn: committed, recomputedFanIn: recomputed,
+    sourceRegistration: { ...sourceRegistration, violations: ["source inventory existing entries changed"] } })),
+  ["source inventory existing entries changed", "fan-in component changed outside candidateBuildSpec: sourceInventory, sourceSnapshotLedger"]);
+  assert.deepEqual(nationwideCandidateRebindViolations(decision({ committedFanIn: committed, recomputedFanIn: recomputed,
+    sourceRegistration: { ...sourceRegistration, currentLedgerSha256: "6".repeat(64) } })),
+  ["fan-in component changed outside candidateBuildSpec: sourceSnapshotLedger"]);
+  const transferToo = boundary({ components: { ...recomputed.components, transferMetrics: { path: "transferMetrics.json", sha256: "e".repeat(64) } } });
+  assert.deepEqual(nationwideCandidateRebindViolations(decision({ committedFanIn: committed, recomputedFanIn: transferToo, sourceRegistration })),
+    ["fan-in component changed outside candidateBuildSpec: transferMetrics"]);
+});
+
+test("#876 이전 바이트는 커밋된 fan-in sha와 같은 git 객체에서 찾고, 없으면 등록을 인정하지 않는다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-registration-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await git(root, "init", "-q");
+  await git(root, "config", "user.email", "fixture@example.invalid");
+  await git(root, "config", "user.name", "fixture");
+  const fixture = registrationFixture();
+  const inventoryPath = "tools/datapack/source-inventory.json";
+  const ledgerPath = "tools/datapack/release/source-snapshots.json";
+  const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
+  await commit(root, "before registration", {
+    [inventoryPath]: json(fixture.previousInventory), [ledgerPath]: json(fixture.previousLedger),
+    "tools/datapack/release/current-five-region-source-fan-in.json": json({ selectedSources: fixture.selectedSourceIds.map((sourceId) => ({ sourceId })) }),
+  });
+  await commit(root, "registration", { [inventoryPath]: json(fixture.currentInventory), [ledgerPath]: json(fixture.currentLedger) });
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const files = { [inventoryPath]: { bytes: Buffer.from(json(fixture.currentInventory)) }, [ledgerPath]: { bytes: Buffer.from(json(fixture.currentLedger)) } };
+  const fanIn = (inventoryBytes, ledgerBytes) => ({ components: {
+    sourceInventory: { path: inventoryPath, sha256: sha(inventoryBytes) }, sourceSnapshotLedger: { path: ledgerPath, sha256: sha(ledgerBytes) },
+  } });
+  const committedFanIn = fanIn(json(fixture.previousInventory), json(fixture.previousLedger));
+  const recomputedFanIn = fanIn(json(fixture.currentInventory), json(fixture.currentLedger));
+  const derived = await deriveNationwideCandidateSourceRegistration({ repositoryRoot: root, files, committedFanIn, recomputedFanIn });
+  assert.deepEqual(derived, {
+    violations: [],
+    previousInventorySha256: committedFanIn.components.sourceInventory.sha256, currentInventorySha256: recomputedFanIn.components.sourceInventory.sha256,
+    previousLedgerSha256: committedFanIn.components.sourceSnapshotLedger.sha256, currentLedgerSha256: recomputedFanIn.components.sourceSnapshotLedger.sha256,
+  });
+  assert.equal(await deriveNationwideCandidateSourceRegistration({ repositoryRoot: root, files, committedFanIn: recomputedFanIn, recomputedFanIn }), undefined);
+  const unknown = { components: { ...committedFanIn.components, sourceInventory: { path: inventoryPath, sha256: "0".repeat(64) } } };
+  assert.deepEqual((await deriveNationwideCandidateSourceRegistration({ repositoryRoot: root, files, committedFanIn: unknown, recomputedFanIn })).violations,
+    ["previous source inventory or ledger bytes for the committed fan-in are not in git history"]);
 });

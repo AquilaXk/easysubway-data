@@ -989,10 +989,107 @@ export async function assertNationwideCandidateRebindBaseline({ repositoryRoot =
 
 // #872 결정 1(#866에서 전국 경로로 대체 후 삭제): 재결속은 후보 식별이 같고, 수도권 station-line·route-edge 출력
 // 바이트가 같고, 다시 계산한 fan-in에서 candidateBuildSpec component만 바뀔 때만 허용한다. 어긋남 목록을 돌려준다.
-export function nationwideCandidateRebindViolations({
-  alreadyCurrent, stationPrestate, stationBytes, routePrestate, routeBytes, committedFanIn, recomputedFanIn,
+// #876 메인 결정 R1(2026-10-02): 후보 선택 집합 밖 원천 하나의 append-only 등록 판정. #866에서 live chain 폐기와 함께 삭제.
+// 판정은 JSON 구조로 한다. inventory는 머리 필드와 기존 원천 배열 원소가 순서까지 같아야 하고, 새 항목은 끝에 정확히 하나,
+// 허용 목록의 원천이며 requiredForProductionPack=false이고 후보 선택 집합 밖이어야 한다. 원장은 기존 행이 순서까지 같고,
+// 끝에 붙은 행이 하나 이상이며 모두 그 원천이어야 한다.
+export const NATIONWIDE_CANDIDATE_REBIND_REGISTERED_SOURCE_IDS = Object.freeze(["seoul-metro-transfer-car-door-duration"]);
+export function appendOnlySourceRegistrationViolations({
+  previousInventory, currentInventory, previousLedger, currentLedger, registeredSourceIds, selectedSourceIds,
 }) {
   const violations = [];
+  const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+  const previousSources = Array.isArray(previousInventory?.sources) ? previousInventory.sources : null;
+  const currentSources = Array.isArray(currentInventory?.sources) ? currentInventory.sources : null;
+  if (!previousSources || !currentSources || !Array.isArray(previousLedger) || !Array.isArray(currentLedger)
+    || !Array.isArray(registeredSourceIds) || !Array.isArray(selectedSourceIds)) {
+    return ["source registration inputs are invalid"];
+  }
+  const header = (inventory) => Object.fromEntries(Object.entries(inventory).filter(([key]) => key !== "sources"));
+  if (!same(header(previousInventory), header(currentInventory))) violations.push("source inventory header changed");
+  if (currentSources.length < previousSources.length
+    || previousSources.some((source, index) => !same(source, currentSources[index]))) {
+    violations.push("source inventory existing entries changed");
+  }
+  const added = currentSources.slice(previousSources.length);
+  const registered = added.length === 1 && registeredSourceIds.includes(added[0]?.id) ? added[0] : null;
+  if (!registered) {
+    violations.push("source inventory must add exactly one registered source");
+  } else {
+    if (registered.requiredForProductionPack !== false) violations.push("registered source must not be requiredForProductionPack");
+    if (selectedSourceIds.includes(registered.id)) violations.push("registered source is in the candidate selection");
+  }
+  if (currentLedger.length < previousLedger.length || previousLedger.some((row, index) => !same(row, currentLedger[index]))) {
+    violations.push("source ledger existing rows changed");
+  }
+  const appended = currentLedger.slice(previousLedger.length);
+  const ledgerSourceIds = new Set(added.map((source) => source?.id).filter((id) => registeredSourceIds.includes(id)));
+  const outside = [...new Set(appended.map(({ sourceId }) => sourceId).filter((sourceId) => !ledgerSourceIds.has(sourceId)))];
+  if (outside.length !== 0) violations.push(`source ledger appended rows outside the registered source: ${outside.join(", ")}`);
+  else if (appended.length === 0) violations.push("source ledger must append rows for the registered source");
+  return violations;
+}
+
+// #876 메인 결정 R1(#866에서 live chain 폐기와 함께 삭제): 커밋된 fan-in이 결속한 sha와 같은 바이트를 git 기록에서 찾는다.
+export async function gitBytesMatchingSha256({ repositoryRoot = ROOT, relative, sha256: expected }) {
+  const root = path.resolve(repositoryRoot);
+  const revisions = (await gitBytes(root, ["rev-list", "HEAD", "--", relative])).toString("utf8").split("\n").filter(Boolean);
+  for (const revision of revisions) {
+    const bytes = await gitBytes(root, ["show", `${revision}:${relative}`]);
+    if (sha(bytes) === expected) return bytes;
+  }
+  return null;
+}
+
+export async function deriveNationwideCandidateSourceRegistration({ repositoryRoot = ROOT, files, committedFanIn, recomputedFanIn }) {
+  const changed = ["sourceInventory", "sourceSnapshotLedger"]
+    .filter((name) => !equalJson(committedFanIn?.components?.[name], recomputedFanIn?.components?.[name]));
+  if (changed.length === 0) return undefined;
+  const inventoryPath = "tools/datapack/source-inventory.json";
+  const ledgerPath = "tools/datapack/release/source-snapshots.json";
+  const previousInventoryBytes = await gitBytesMatchingSha256({ repositoryRoot, relative: inventoryPath, sha256: committedFanIn.components.sourceInventory.sha256 });
+  const previousLedgerBytes = await gitBytesMatchingSha256({ repositoryRoot, relative: ledgerPath, sha256: committedFanIn.components.sourceSnapshotLedger.sha256 });
+  const fiveRegionFanIn = parse((await readStableRegularFile(target(path.resolve(repositoryRoot), "tools/datapack/release/current-five-region-source-fan-in.json"),
+    "five-region source fan-in")).bytes, "five-region source fan-in");
+  const violations = previousInventoryBytes === null || previousLedgerBytes === null
+    ? ["previous source inventory or ledger bytes for the committed fan-in are not in git history"]
+    : appendOnlySourceRegistrationViolations({
+      previousInventory: parse(previousInventoryBytes, "previous source inventory"),
+      currentInventory: parse(files[inventoryPath].bytes, "current source inventory"),
+      previousLedger: parse(previousLedgerBytes, "previous source ledger"),
+      currentLedger: parse(files[ledgerPath].bytes, "current source ledger"),
+      registeredSourceIds: NATIONWIDE_CANDIDATE_REBIND_REGISTERED_SOURCE_IDS,
+      selectedSourceIds: (fiveRegionFanIn?.selectedSources ?? []).map(({ sourceId }) => sourceId),
+    });
+  return {
+    violations,
+    previousInventorySha256: committedFanIn.components.sourceInventory.sha256,
+    currentInventorySha256: sha(files[inventoryPath].bytes),
+    previousLedgerSha256: committedFanIn.components.sourceSnapshotLedger.sha256,
+    currentLedgerSha256: sha(files[ledgerPath].bytes),
+  };
+}
+
+export function nationwideCandidateRebindViolations({
+  alreadyCurrent, stationPrestate, stationBytes, routePrestate, routeBytes, committedFanIn, recomputedFanIn, sourceRegistration = undefined,
+}) {
+  const violations = [];
+  // #876 메인 결정 R1(#866에서 live chain 폐기와 함께 삭제): append-only 등록 판정이 통과하고 이전·현재 sha가 커밋된·다시 계산한
+  // fan-in component와 정확히 같을 때만 sourceInventory·sourceSnapshotLedger 변경을 등록 결과로 인정한다.
+  const registrationExempt = new Set();
+  if (sourceRegistration !== undefined) {
+    violations.push(...sourceRegistration.violations);
+    if (sourceRegistration.violations.length === 0) {
+      for (const [name, previous, current] of [
+        ["sourceInventory", sourceRegistration.previousInventorySha256, sourceRegistration.currentInventorySha256],
+        ["sourceSnapshotLedger", sourceRegistration.previousLedgerSha256, sourceRegistration.currentLedgerSha256],
+      ]) {
+        if (committedFanIn?.components?.[name]?.sha256 === previous && recomputedFanIn?.components?.[name]?.sha256 === current) {
+          registrationExempt.add(name);
+        }
+      }
+    }
+  }
   if (alreadyCurrent !== true) violations.push("candidate identity changed");
   if (!Buffer.isBuffer(stationBytes) || !Buffer.isBuffer(stationPrestate) || !stationBytes.equals(stationPrestate)) {
     violations.push("capital station-line input bytes changed");
@@ -1002,7 +1099,7 @@ export function nationwideCandidateRebindViolations({
   }
   const names = [...new Set([...Object.keys(committedFanIn?.components ?? {}), ...Object.keys(recomputedFanIn?.components ?? {})])]
     .sort(codepointCompare);
-  const outside = names.filter((name) => name !== "candidateBuildSpec"
+  const outside = names.filter((name) => name !== "candidateBuildSpec" && !registrationExempt.has(name)
     && !equalJson(committedFanIn?.components?.[name], recomputedFanIn?.components?.[name]));
   if (outside.length !== 0) violations.push(`fan-in component changed outside candidateBuildSpec: ${outside.join(", ")}`);
   if (committedFanIn?.currentCandidateSourceSetSha256 !== recomputedFanIn?.currentCandidateSourceSetSha256
@@ -1102,14 +1199,18 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   ));
   const stationAfter = parse(stationBytes, "refreshed station input"); const routeAfter = parse(routeBytes, "refreshed route input");
   if (nationwideCandidateRebind) {
+    const committedFanIn = validateCurrentCapitalLiveChainFanInBoundary(parse(files[FAN_IN_OUTPUT].bytes, "current live-chain fan-in boundary"));
+    const recomputedFanIn = parse(fanInBytes, "recomputed live-chain fan-in boundary");
     const violations = nationwideCandidateRebindViolations({
       alreadyCurrent,
       stationPrestate: files[OUTPUTS[0]].bytes,
       stationBytes,
       routePrestate: files[OUTPUTS[1]].bytes,
       routeBytes,
-      committedFanIn: validateCurrentCapitalLiveChainFanInBoundary(parse(files[FAN_IN_OUTPUT].bytes, "current live-chain fan-in boundary")),
-      recomputedFanIn: parse(fanInBytes, "recomputed live-chain fan-in boundary"),
+      committedFanIn,
+      recomputedFanIn,
+      // #876 메인 결정 R1(#866에서 live chain 폐기와 함께 삭제)
+      sourceRegistration: await deriveNationwideCandidateSourceRegistration({ repositoryRoot: root, files, committedFanIn, recomputedFanIn }),
     });
     if (violations.length !== 0) throw new Error(`nationwide candidate rebind rejected: ${violations.join("; ")}`);
   } else if (alreadyCurrent && (!stationBytes.equals(files[OUTPUTS[0]].bytes)

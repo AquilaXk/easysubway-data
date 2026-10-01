@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { prepareNationwideCandidate, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { applyMeasuredTransferTimePrecedence, prepareNationwideCandidate, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -1035,4 +1035,62 @@ test("#872 S3 한 환승 방향을 두 공식 원천이 함께 주장하면 후�
     /nationwide candidate transfer metric is claimed by two sources: station-1fc7a7c971c8:line-ab1a041f6266->line-eb7b47920390/);
   assert.throws(() => officialTransferMetricsByDirection([{ ...busan, metrics: [...busan.metrics, ...busan.metrics] }]),
     /claimed by two sources/);
+});
+
+// #876(QA 결정 2026-10-02): 서울교통공사 실측 환승시간(15098252)은 공식 환승 시간 원천이다. 메인 결정 B(2026-10-02):
+// - 서울교통공사 거리 원천과 겹치는 방향은 시간 = 15098252 실측, 거리 = 서울교통공사 공식 거리다. 두 원천을 모두 기록한다.
+// - 거리 없이 시간만 있는 방향은 지표에 보존하되 전국 후보에서는 사용 불가로 둔다(거리 null 계약 확장은 후속).
+const MEASURED_TRANSFER_SOURCE_ID = "seoul-metro-transfer-car-door-duration";
+function precedenceFixture() {
+  const seoulMetric = { stationId: "station-a", fromLineId: "line-1", toLineId: "line-2", distanceMeters: 120, officialDurationSecondsReference: 100,
+    metricProvenance: "OFFICIAL_SOURCE", sourceRecordSha256: "a".repeat(64) };
+  const seoulReverse = { ...seoulMetric, fromLineId: "line-2", toLineId: "line-1", metricProvenance: "DERIVED_RECIPROCAL" };
+  const officialByDirection = officialTransferMetricsByDirection([{ sourceId: SEOUL_TRANSFER_SOURCE_ID, sourceSnapshotId: "seoul-snapshot",
+    lastVerifiedAt: "2026-08-15T09:40:38.817Z", metrics: [seoulMetric, seoulReverse], durationOf: (m) => m.officialDurationSecondsReference }]);
+  const measuredMetric = (fromLineId, toLineId, seconds, stationId = "station-a") => ({ stationId, fromLineId, toLineId, measuredDurationSeconds: seconds,
+    distanceMeters: null, metricProvenance: "OFFICIAL_SOURCE", measurement: "MEASURED", sourceRecordSha256: sha256(`${stationId}${fromLineId}${toLineId}`) });
+  const measured = { sourceId: MEASURED_TRANSFER_SOURCE_ID, sourceSnapshotId: "measured-snapshot", lastVerifiedAt: "2026-10-01T16:33:24.036Z",
+    metrics: [measuredMetric("line-1", "line-2", 214), measuredMetric("line-2", "line-1", 0), measuredMetric("line-1", "line-3", 300, "station-b")] };
+  return { officialByDirection, measured, seoulMetric, measuredMetric };
+}
+
+test("#876 겹치는 방향은 시간=실측 원천, 거리=서울교통공사 공식 거리이고 두 원천의 레코드 hash를 함께 결속한다", () => {
+  const { officialByDirection, measured, seoulMetric } = precedenceFixture();
+  const { byDirection, timeOnlyDirections } = applyMeasuredTransferTimePrecedence({ officialByDirection, measured });
+  const merged = byDirection.get("station-a:line-1->line-2");
+  assert.equal(merged.durationSeconds, 214, "시간은 실측 원천이 이긴다");
+  assert.equal(merged.metric.distanceMeters, 120, "거리는 서울교통공사 공식 거리를 유지한다");
+  assert.equal(merged.metric.metricProvenance, "OFFICIAL_SOURCE");
+  assert.equal(merged.sourceId, MEASURED_TRANSFER_SOURCE_ID);
+  assert.equal(merged.sourceSnapshotId, "measured-snapshot");
+  assert.equal(merged.lastVerifiedAt, "2026-10-01T16:33:24.036Z");
+  assert.deepEqual(merged.distanceSource, { sourceId: SEOUL_TRANSFER_SOURCE_ID, sourceSnapshotId: "seoul-snapshot",
+    sourceRecordSha256: seoulMetric.sourceRecordSha256, metricProvenance: "OFFICIAL_SOURCE" });
+  assert.equal(merged.durationSourceRecordSha256, measured.metrics[0].sourceRecordSha256);
+  assert.equal(merged.metric.sourceRecordSha256, sha256(JSON.stringify({
+    distanceSourceRecordSha256: seoulMetric.sourceRecordSha256, durationSourceRecordSha256: measured.metrics[0].sourceRecordSha256,
+  })));
+  // 역방향(DERIVED_RECIPROCAL) 거리와 겹치면 거리 표기는 역방향으로 남는다(경로 행 없이 route edge만, D4 보완). 0초 실측도 값이다.
+  const reverse = byDirection.get("station-a:line-2->line-1");
+  assert.equal(reverse.durationSeconds, 0);
+  assert.equal(reverse.metric.metricProvenance, "DERIVED_RECIPROCAL");
+  assert.deepEqual(timeOnlyDirections.map(({ stationId, fromLineId, toLineId, measuredDurationSeconds }) => [stationId, fromLineId, toLineId, measuredDurationSeconds]),
+    [["station-b", "line-1", "line-3", 300]]);
+  assert.equal(byDirection.has("station-b:line-1->line-3"), false, "거리 없는 방향은 후보에서 사용 불가로 둔다");
+});
+
+test("#876 실측 원천이 서울교통공사 거리 원천이 아닌 공식 원천(부산)과 겹치거나 계약이 다르면 실패한다", () => {
+  const { measured, measuredMetric } = precedenceFixture();
+  const busanByDirection = officialTransferMetricsByDirection([{ sourceId: BUSAN_TRANSFER_SOURCE_ID, sourceSnapshotId: "busan-snapshot",
+    lastVerifiedAt: "2026-10-01T04:15:27.569Z", durationOf: (m) => m.officialDurationSeconds,
+    metrics: [{ stationId: "station-a", fromLineId: "line-1", toLineId: "line-2", distanceMeters: 100, officialDurationSeconds: 120, metricProvenance: "OFFICIAL_SOURCE", sourceRecordSha256: "b".repeat(64) }] }]);
+  assert.throws(() => applyMeasuredTransferTimePrecedence({ officialByDirection: busanByDirection, measured }),
+    /measured transfer time overlaps a non-distance official source: station-a:line-1->line-2/);
+  const { officialByDirection } = precedenceFixture();
+  for (const patch of [{ distanceMeters: 0 }, { measurement: "ESTIMATED" }, { metricProvenance: "DERIVED_RECIPROCAL" }, { measuredDurationSeconds: -1 }, { measuredDurationSeconds: null }]) {
+    assert.throws(() => applyMeasuredTransferTimePrecedence({ officialByDirection, measured: { ...measured, metrics: [{ ...measuredMetric("line-1", "line-2", 214), ...patch }] } }),
+      /measured transfer metric contract mismatch/);
+  }
+  assert.throws(() => applyMeasuredTransferTimePrecedence({ officialByDirection, measured: { ...measured, metrics: [measured.metrics[0], measured.metrics[0]] } }),
+    /measured transfer direction is duplicated/);
 });

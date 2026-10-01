@@ -25,6 +25,13 @@ import {
   canonicalBusanTransferMetricsJson,
   readBusanTransferMetricsInputs,
 } from "./build-busan-transfer-metrics.mjs";
+import {
+  SEOUL_MEASURED_TRANSFER_METRICS_PATH,
+  buildSeoulMeasuredTransferMetrics,
+  canonicalSeoulMeasuredTransferMetricsJson,
+  readSeoulMeasuredTransferMetricsInputs,
+} from "./build-seoul-measured-transfer-metrics.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -323,6 +330,104 @@ export async function resolveBusanTransferMetrics({ fanIn, sourceInventory, read
   return { artifact, metrics: artifact.metrics, head };
 }
 
+// #876(QA 결정 2026-10-02): 서울교통공사_서울 도시철도 환승정보(15098252)의 실측 소요시간은 공식 환승 시간 원천이다.
+// 이 원천은 fan-in 선택 집합 밖(requiredForProductionPack=false)이다. inventory admission의 snapshot이 원장 head와 같고,
+// 그 snapshot으로 다시 만든 지표가 커밋된 산출물과 바이트까지 같고, 정책으로 유도한 신선도가 원장과 같고 후보 시계 이후일 때만 쓴다.
+const MEASURED_TRANSFER_SOURCE_ID = "seoul-metro-transfer-car-door-duration";
+const DISTANCE_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+export async function resolveSeoulMeasuredTransferMetrics({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt, read }) {
+  const admission = exactInventorySource(sourceInventory, MEASURED_TRANSFER_SOURCE_ID).admissionEvidence;
+  const head = validateLineage(sourceSnapshots).headsBySource[MEASURED_TRANSFER_SOURCE_ID];
+  if (typeof admission?.snapshotId !== "string" || head !== admission.snapshotId) {
+    throw new Error("nationwide candidate Seoul measured transfer admission is not the ledger head");
+  }
+  const row = sourceSnapshots.find(({ snapshotId }) => snapshotId === head);
+  const inputs = await readSeoulMeasuredTransferMetricsInputs({ snapshotId: head, read });
+  const rebuilt = Buffer.from(canonicalSeoulMeasuredTransferMetricsJson(buildSeoulMeasuredTransferMetrics({
+    ...inputs, sourceInventoryBytes: Buffer.from(JSON.stringify(sourceInventory)),
+  })));
+  const committed = await read(SEOUL_MEASURED_TRANSFER_METRICS_PATH);
+  if (!Buffer.isBuffer(committed) || !committed.equals(rebuilt)) {
+    throw new Error("nationwide candidate Seoul measured transfer metrics differ from the rebuild");
+  }
+  const artifact = JSON.parse(committed);
+  const identity = artifact.sourceIdentity;
+  if (identity.snapshotId !== row.snapshotId || identity.rawSha256 !== row.rawSha256
+    || identity.contentSha256 !== row.contentSha256 || identity.capturedAt !== row.capturedAt) {
+    throw new Error("nationwide candidate Seoul measured transfer metrics do not match the ledger head");
+  }
+  const snapshot = JSON.parse(inputs.snapshotBytes);
+  const evaluatedMillis = Date.parse(requiredInstant(evaluatedAt, "Seoul measured transfer evaluatedAt"));
+  if (Date.parse(policyBasisAt({ policy: freshnessPolicy, sourceId: MEASURED_TRANSFER_SOURCE_ID, record: snapshot })) > evaluatedMillis) {
+    throw new Error("nationwide candidate Seoul measured transfer snapshot is observed after the candidate clock");
+  }
+  const freshUntil = policyFreshUntil({ policy: freshnessPolicy, sourceId: MEASURED_TRANSFER_SOURCE_ID, record: snapshot, evaluationAt: evaluatedAt });
+  if (row.freshnessExpiresAt !== freshUntil) {
+    throw new Error("nationwide candidate Seoul measured transfer freshness does not match the freshness policy");
+  }
+  if (Date.parse(freshUntil) <= evaluatedMillis) throw new Error("nationwide candidate Seoul measured transfer snapshot is expired");
+  return { artifact, metrics: artifact.metrics, row };
+}
+
+// #876 메인 결정 B(2026-10-02): 실측 환승시간과 서울교통공사 거리 원천의 우선순위.
+// - 두 원천이 같은 방향을 덮으면 시간은 실측 원천, 거리는 서울교통공사 공식 거리다. 행의 원천 id는 시간 원천이고,
+//   거리 원천(id·snapshot·레코드 hash·표기)은 distanceSource로 함께 들고 간다. 레코드 hash는 두 원천 레코드 hash의 결속이다.
+// - 거리 원천이 역방향(DERIVED_RECIPROCAL)이면 그 표기를 유지한다(경로 행 없이 route edge만, #872 D4 보완).
+// - 실측 원천만 있는 방향은 거리가 없다. 거리 null을 받는 계약(스키마 확장)은 후속이므로 후보에 넣지 않고 사용 불가로 둔다.
+// - 실측 원천이 부산교통공사 등 다른 공식 원천과 겹치면 우선순위가 정해지지 않았으므로 실패한다.
+export function applyMeasuredTransferTimePrecedence({ officialByDirection, measured }) {
+  const byDirection = new Map(officialByDirection);
+  const timeOnlyDirections = [];
+  const seen = new Set();
+  for (const metric of measured.metrics) {
+    if (metric?.distanceMeters !== null || metric.metricProvenance !== "OFFICIAL_SOURCE" || metric.measurement !== "MEASURED"
+      || !Number.isSafeInteger(metric.measuredDurationSeconds) || metric.measuredDurationSeconds < 0
+      || !/^[a-f0-9]{64}$/u.test(metric.sourceRecordSha256 ?? "")) {
+      throw new Error("nationwide candidate measured transfer metric contract mismatch");
+    }
+    const key = `${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`;
+    if (seen.has(key)) throw new Error(`nationwide candidate measured transfer direction is duplicated: ${key}`);
+    seen.add(key);
+    const distance = officialByDirection.get(key);
+    if (!distance) {
+      timeOnlyDirections.push({ stationId: metric.stationId, fromLineId: metric.fromLineId, toLineId: metric.toLineId,
+        measuredDurationSeconds: metric.measuredDurationSeconds, sourceRecordSha256: metric.sourceRecordSha256 });
+      continue;
+    }
+    if (distance.sourceId !== DISTANCE_TRANSFER_SOURCE_ID) {
+      throw new Error(`nationwide candidate measured transfer time overlaps a non-distance official source: ${key}`);
+    }
+    if (!Number.isSafeInteger(distance.metric.distanceMeters) || distance.metric.distanceMeters <= 0) {
+      throw new Error(`nationwide candidate measured transfer distance source is invalid: ${key}`);
+    }
+    byDirection.set(key, {
+      metric: {
+        stationId: metric.stationId,
+        fromLineId: metric.fromLineId,
+        toLineId: metric.toLineId,
+        distanceMeters: distance.metric.distanceMeters,
+        metricProvenance: distance.metric.metricProvenance,
+        sourceRecordSha256: sha256(canonicalJson({
+          distanceSourceRecordSha256: distance.metric.sourceRecordSha256,
+          durationSourceRecordSha256: metric.sourceRecordSha256,
+        })),
+      },
+      sourceId: measured.sourceId,
+      sourceSnapshotId: measured.sourceSnapshotId,
+      lastVerifiedAt: measured.lastVerifiedAt,
+      durationSeconds: metric.measuredDurationSeconds,
+      durationSourceRecordSha256: metric.sourceRecordSha256,
+      distanceSource: {
+        sourceId: distance.sourceId,
+        sourceSnapshotId: distance.sourceSnapshotId,
+        sourceRecordSha256: distance.metric.sourceRecordSha256,
+        metricProvenance: distance.metric.metricProvenance,
+      },
+    });
+  }
+  return { byDirection, timeOnlyDirections };
+}
+
 // 광주 접근성 행의 FACILITY 판정. 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고
 // 미관측 유형이 남아 있으면 부재로 단정하지 않고 UNKNOWN으로 막는다(#862: 휠체어리프트 0만으로
 // VERIFIED_ABSENT가 되던 문제). 세 유형이 모두 0일 때만 부재다.
@@ -499,7 +604,7 @@ export async function prepareNationwideCandidate({
 
   // #872 S3: 공식 환승 지표는 서울교통공사 지표와 부산교통공사 지표다. 방향마다 원천 id·snapshot·검증 시각과
   // 값(거리, 원천 시간)을 함께 들고, 두 원천이 같은 방향을 주장하면 실패한다.
-  const officialTransferMetricMap = officialTransferMetricsByDirection([
+  const distanceTransferMetricMap = officialTransferMetricsByDirection([
     {
       sourceId: "seoul-metro-transfer-distance-duration", sourceSnapshotId: seoulTransferHead.snapshotId,
       lastVerifiedAt: seoulTransferCapturedAt, metrics: transferMetrics.metrics, durationOf: (m) => m.officialDurationSecondsReference,
@@ -510,6 +615,19 @@ export async function prepareNationwideCandidate({
       metrics: busanTransfer.metrics, durationOf: (m) => m.officialDurationSeconds,
     },
   ]);
+  // #876: 실측 환승시간 원천을 우선순위 규칙으로 합친다. 거리 없이 시간만 있는 방향은 후보에서 사용 불가로 남는다.
+  const measuredTransfer = await resolveSeoulMeasuredTransferMetrics({
+    sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
+  });
+  const { byDirection: officialTransferMetricMap } = applyMeasuredTransferTimePrecedence({
+    officialByDirection: distanceTransferMetricMap,
+    measured: {
+      sourceId: MEASURED_TRANSFER_SOURCE_ID,
+      sourceSnapshotId: measuredTransfer.row.snapshotId,
+      lastVerifiedAt: requiredInstant(measuredTransfer.row.capturedAt, "Seoul measured transfer capturedAt"),
+      metrics: measuredTransfer.metrics,
+    },
+  });
 
   const stationPathwayNodes = [];
   const stationPathwayEdges = [];
@@ -1381,6 +1499,8 @@ export async function prepareNationwideCandidate({
     { id: "molit-railway-transfer-movement", updatedAt: molitTransferMeta.capturedAt },
     // #872 S3: 부산 공식 환승 경로 행이 이 원천을 가리킨다(production pathway 계약: source_id는 팩 sourceInventory에 있어야 한다).
     { id: "busan-transportation-route-topology", updatedAt: busanTransfer.head.capturedAt },
+    // #876: 실측 환승시간 원천을 시간 원천으로 인용하는 경로 행·규칙이 이 원천을 가리킨다.
+    { id: MEASURED_TRANSFER_SOURCE_ID, updatedAt: measuredTransfer.row.capturedAt },
   ];
 
   for (const item of regionalSourcesToAdd) {
@@ -1394,17 +1514,18 @@ export async function prepareNationwideCandidate({
   // #872 S3 리뷰 F3: 부산 원천 설명에 이 원천이 실제로 채우는 환승 표와 공식 환승 도메인을 더한다. 하드코딩하지 않고 유도한다.
   // - 필드: inventory fieldsProvided(팩 표·컬럼 이름)에, 팩에서 이 원천을 인용하는 환승 표 이름을 더한다.
   // - 도메인: inventory 도메인에, 공식 환승 거리·시간 원천(서울교통공사) inventory가 선언한 도메인을 더한다.
-  {
-    const busanPackSource = finalPack.sourceInventory.find(({ id }) => id === "busan-transportation-route-topology");
+  // #876: 실측 환승시간 원천도 같은 규칙으로 유도한다.
+  for (const transferSourceId of ["busan-transportation-route-topology", MEASURED_TRANSFER_SOURCE_ID]) {
+    const transferPackSource = finalPack.sourceInventory.find(({ id }) => id === transferSourceId);
     const citingTables = [["station_pathway_edges", stationPathwayEdges], ["transfer_rules", transferRules]]
-      .filter(([, rows]) => rows.some(({ sourceId }) => sourceId === busanPackSource.id))
+      .filter(([, rows]) => rows.some(({ sourceId }) => sourceId === transferPackSource.id))
       .map(([table]) => table);
     const transferDomains = exactInventorySource(sourceInventory, "seoul-metro-transfer-distance-duration").coverageScope?.sourceDomains;
     if (!Array.isArray(transferDomains) || transferDomains.length === 0) {
       throw new Error("nationwide candidate official transfer source domain is missing");
     }
-    busanPackSource.fields = [...new Set([...busanPackSource.fields, ...citingTables])];
-    busanPackSource.coverageScope.sourceDomains = [...new Set([...busanPackSource.coverageScope.sourceDomains, ...transferDomains])];
+    transferPackSource.fields = [...new Set([...transferPackSource.fields, ...citingTables])];
+    transferPackSource.coverageScope.sourceDomains = [...new Set([...transferPackSource.coverageScope.sourceDomains, ...transferDomains])];
   }
 
   if (!finalPack.sourceInventory.some((s) => s.id === "gwangju-transportation-cyberstation-timetable")) {
