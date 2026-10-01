@@ -45,5 +45,7 @@ export async function currentTopologyAdmissionClock(repositoryRoot) {
   return {
     inWindow: new Date(inWindowAt),
     expiredAt: new Date(freshUntil),
+    // #862: capital topology는 Incheon 입력과 따로 재수집될 수 있으므로 자기 신선 경계를 따로 준다.
+    capitalTopologyExpiredAt: new Date(Date.parse(admission.freshUntil)),
   };
 }

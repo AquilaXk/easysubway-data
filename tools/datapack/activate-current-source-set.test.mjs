@@ -42,6 +42,7 @@ import {
 } from "./collect-capital-route-topology.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
+import { capitalRouteTopologySnapshotIdMatchesCapturedAt, capitalRouteTopologySnapshotVersion, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -85,7 +86,7 @@ async function readJson(relativePath) { return JSON.parse(await readFile(path.jo
 function currentCapitalTopologyAdmission(sourceInventory) {
   const admissions = sourceInventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+    .filter(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
   const admission = admissions[0];
   assert.equal(admissions.length, 16);
   assert.ok(admission);
@@ -1555,9 +1556,9 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const currentIncheonTimetableBytes = { 1: line1TimetableBytes, 2: line2TimetableBytes };
   assert.equal(currentIncheonTopology.topologyLineIds.length, 2);
   assert.equal(currentIncheonTopology.edgeCount, 116);
-  const capitalSnapshotDate = currentTopology.capturedAt.slice(0, 10).replaceAll("-", "");
   const incheonSnapshotDate = currentIncheonTopology.capturedAt.slice(0, 10).replaceAll("-", "");
-  assert.equal(topologySnapshotId.slice(-8), capitalSnapshotDate);
+  // #862: 현재 topology id는 날짜형이거나 수집 시각형이다. 어느 쪽이든 capturedAt에 결속돼야 한다.
+  assert.equal(capitalRouteTopologySnapshotIdMatchesCapturedAt(topologySnapshotId, currentTopology.capturedAt), true);
   assert.equal(path.basename(currentIncheonTopologyPath, ".json").slice(-8), incheonSnapshotDate);
   const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
   const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
@@ -1603,7 +1604,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     .filter(({ topologySnapshotId: admittedSnapshotId } = {}) => admittedSnapshotId === topologySnapshotId);
   assert.ok(admissions.length > 0);
   assert.ok(admissions.every((admission) => admission.topologySnapshotId === topologySnapshotId));
-  assert.equal(result.spec.candidateId, `capital-pilot-candidate-${topologySnapshotId.slice(-8)}`);
+  assert.equal(result.spec.candidateId, `capital-pilot-candidate-${capitalRouteTopologySnapshotVersion(topologySnapshotId)}`);
   assert.equal(result.spec.publishedAt, buildNow);
   assert.equal(result.spec.networkEdgeEvidence.sourceInventory.sha256, sha256(result.sourceInventoryBytes));
   assert.deepEqual(result.spec.networkEdgeEvidence.capitalTopology,

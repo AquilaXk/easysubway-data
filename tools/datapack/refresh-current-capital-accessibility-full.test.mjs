@@ -34,6 +34,7 @@ import {
   collectPositionSnapshotBytes,
 } from "./activate-current-source-set.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUTPUTS = [
@@ -662,7 +663,7 @@ async function stageCurrentTopologyFixture(root) {
   ]);
   const admission = sourceInventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .find(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+    .find(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
   if (admission == null) throw new Error("staged current capital topology admission is missing");
   const currentTopologyPath = `tools/datapack/sources/${admission.topologySnapshotId}.json`;
   const currentTopologyBytes = await readFile(path.join(root, currentTopologyPath));

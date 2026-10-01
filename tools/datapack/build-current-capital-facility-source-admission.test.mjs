@@ -12,14 +12,10 @@ import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { CURRENT_CAPITAL_BASE_SOURCE_IDS, selectedSourceHeadAt } from "./test-fixtures/selected-source-head-clock.mjs";
 
 const SOURCE_ROOT = import.meta.dirname;
 const REPOSITORY_ROOT = path.resolve(SOURCE_ROOT, "../..");
-const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
-  "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
-  "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
-]);
 const INITIAL_SOURCE_HEAD_AT = await selectedSourceHeadAt(SOURCE_ROOT);
 const FIXTURE_REPOSITORY_ROOT = await mkdtemp(path.join(os.tmpdir(), "current-public-route-map-facility-"));
 after(() => rm(FIXTURE_REPOSITORY_ROOT, { recursive: true, force: true }));
@@ -410,23 +406,6 @@ async function fixture({ mixed = false } = {}) {
   return { planBytes, canonicalPackBytes: files["release/capital-production-canonical-pack.json"], snapshotBytes, productionScopeBytes: files["../../release/product-gates/production-datapack-scope.json"], sourceInventoryBytes, sourceSnapshots, governancePolicy, governancePolicyBytes: files["source-governance-policy.json"], freshnessPolicy: freshnessSla, candidateBuildSpec, observedAt, candidateEvaluationAt: observedAt };
 }
 
-async function selectedSourceHeadAt(datapackRoot) {
-  const [buildSpec, sourceSnapshots] = await Promise.all([
-    readFile(path.join(datapackRoot, "release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(datapackRoot, "release/source-snapshots.json"), "utf8").then(JSON.parse),
-  ]);
-  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
-    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
-    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
-    return matches[0];
-  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
-  const basisAt = Math.max(...selected.flatMap((entry) => [
-    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
-  ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(...selected.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 120_000 < freshUntil);
-  return basisAt;
-}
 
 function mutateInventory(value, mutate) {
   const inventory = JSON.parse(Buffer.from(value.sourceInventoryBytes));

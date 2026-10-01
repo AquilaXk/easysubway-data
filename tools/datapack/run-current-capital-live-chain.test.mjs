@@ -52,6 +52,7 @@ import { preparePendingCurrentAccessibilityTransitionRepository } from "./test-f
 import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const execFile = promisify(execFileCallback);
@@ -385,7 +386,7 @@ async function currentTopologyFixture(root) {
   const source = (sourceId) => inventory.sources.find(({ id }) => id === sourceId);
   const capitalAdmission = inventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .find(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+    .find(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
   const topologyBuild = {
     capitalTopologyPath: `tools/datapack/sources/${capitalAdmission.topologySnapshotId}.json`,
     incheonTopologyPath: source("incheon-transit-station-info").topologyAdmissionEvidence.snapshotPath,
@@ -1739,7 +1740,7 @@ test("retained topology admission fails closed at its derived freshness boundary
   const clock = await currentTopologyAdmissionClock(ROOT);
   await assert.rejects(assertCurrentStaticNetworkTopologyAdmission({
     repositoryRoot: ROOT,
-    now: clock.expiredAt,
+    now: clock.capitalTopologyExpiredAt,
   }), /topology|fresh|stale|current/i);
 });
 
