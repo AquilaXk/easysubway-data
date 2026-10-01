@@ -60,7 +60,7 @@ import {
   canonicalCurrentCapitalAccessibilityTransitionJson,
   canonicalCurrentCapitalAccessibilityTransitionSuccessorJson,
 } from "./current-capital-accessibility-transition.mjs";
-import { buildCurrentCapitalFacilityCollectionPlan } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 import {
@@ -412,7 +412,7 @@ export async function verifyCurrentCapitalTerminalLineage({
       ["canonicalPackBytes", "tools/datapack/release/capital-production-canonical-pack.json"],
       ["coverageTargetsBytes", "tools/datapack/nationwide-coverage-targets.json"],
       ["providerCodeCatalogBytes", "tools/datapack/sources/kric-provider-code-catalog-20260228.json"],
-      ["routeRostersBytes", "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"],
+      ["routeRostersBytes", await selectCurrentKricRouteRostersPath({ repositoryRoot: replayRoot })],
       ["sourceInventoryBytes", "tools/datapack/source-inventory.json"],
     ].map(async ([key, relative]) => [key, (await lineageFile(replayRoot, relative, `source-main ${key}`)).bytes])));
     const planPath = path.join(replayParent, "facility-plan.json");
