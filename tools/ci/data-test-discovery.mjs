@@ -15,8 +15,8 @@ export const MAX_WORKERS_LIMIT = 4;
 export const PARTITION_TARGET_MS = 120_000;
 // 직렬 그룹: 실제 저장소의 추적 파일을 다시 쓰는 테스트다. 같은 job의 다른 테스트가 그 파일을
 // 읽는 도중 잘린 내용을 보지 않도록 병렬 pool 앞에서 혼자 실행한다(삭제·skip하지 않는다).
-//  - prepare-nationwide-candidate-run: tools/datapack/release/의 candidate-build-spec.json,
-//    nationwide-candidate-preparation.json 등 7개 파일을 writeFiles: true로 다시 쓴다.
+//  - prepare-nationwide-candidate-run: tools/datapack/release/의 nationwide-candidate-preparation.json,
+//    전국 팩·route/station-line 입력·격리 증거 등 6개 파일을 writeFiles: true로 다시 쓴다.
 export const EXCLUSIVE_TESTS = ['tools/datapack/prepare-nationwide-candidate-run.test.mjs'];
 const TOP_LEVEL_REPORTER = fileURLToPath(new URL('./data-test-top-level-reporter.mjs', import.meta.url));
 const SUPPORTED_TEST_PATTERN = /\.test\.mjs$/;

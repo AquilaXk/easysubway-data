@@ -182,7 +182,29 @@ test("전국 후보 갱신은 결속 검증이 실패해도 출력을 되돌리�
       }
     },
   }), /전국 후보 갱신 실패 \(binding verification\): .*facilityEvidenceLedgerHash mismatch/s);
-  assert.deepEqual(steps, ["five-region fan-in", "ownership ledger", "nationwide candidate preparation"]);
+  assert.deepEqual(steps, ["five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build"]);
   const after = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
   NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
+});
+
+test("#862 전국 후보 갱신은 spec·scope·request·hash를 build-nationwide-candidate 한 경로로만 만든다", async (t) => {
+  assert.ok(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.includes("release/product-gates/production-datapack-scope.json"));
+  const repositoryRoot = await copiedRepository(t);
+  const fanIn = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json")));
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const steps = [];
+  await assert.rejects(refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: fanIn.evaluatedAt,
+    releaseSequence: 122,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async ({ name }) => { steps.push(name); },
+  }), /전국 후보 갱신 실패 \(binding verification\)/);
+  assert.deepEqual(steps, ["five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build"]);
+  const prepare = await readFile(path.join(root, "tools/datapack/prepare-nationwide-candidate-run.mjs"), "utf8");
+  for (const output of ["candidate-build-spec.json", "release-request.json", "hash-evidence.json"]) {
+    assert.equal(prepare.includes(output), false, `prepare must not patch ${output}`);
+  }
 });

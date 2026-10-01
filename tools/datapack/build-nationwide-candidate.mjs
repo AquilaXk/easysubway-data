@@ -315,7 +315,7 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = proc
     return bytes;
   };
   const preparation = JSON.parse(await read(argv[1]));
-  const keys = ["schemaVersion", "artifactKind", "scopeId", "materialization", "releaseIdentity", "builderIdentity", "authority", "routeEdgeInput"];
+  const keys = ["schemaVersion", "artifactKind", "scopeId", "materialization", "releaseIdentity", "builderIdentity", "authority", "routeEdgeInput", "stationLineInput"];
   if (!preparation || Object.keys(preparation).length !== keys.length || keys.some((key) => !Object.hasOwn(preparation, key))
     || preparation.schemaVersion !== 1 || preparation.artifactKind !== "nationwide-candidate-preparation") {
     throw new Error("candidate preparation shape mismatch");
@@ -326,6 +326,11 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = proc
   const fixture = JSON.parse(await read(preparation.materialization.fixturePath));
   const routeBytes = await read(preparation.routeEdgeInput.path);
   if (sha256(routeBytes) !== preparation.routeEdgeInput.sha256) throw new Error("prepared route input digest mismatch");
+  const stationLineBytes = await read(preparation.stationLineInput.path);
+  if (sha256(stationLineBytes) !== preparation.stationLineInput.sha256) throw new Error("prepared station-line input digest mismatch");
+  if (JSON.parse(stationLineBytes).candidate?.candidateId !== preparation.releaseIdentity.candidateId) {
+    throw new Error("prepared station-line candidate identity mismatch");
+  }
   const route = JSON.parse(routeBytes);
   const selected = new Set(inputs.fanIn.selectedSources.map((row) => row.snapshotId));
   const sourceSetHash = sha256(JSON.stringify(inputs.sourceSnapshots.filter((row) => selected.has(row.snapshotId))));

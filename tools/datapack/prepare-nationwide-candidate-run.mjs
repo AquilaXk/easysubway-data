@@ -2006,43 +2006,8 @@ export async function prepareNationwideCandidate({
     await writeFile(path.join(repositoryRoot, preparationRelPath), jsonBytes(preparation));
   }
 
-  const buildSpecRelPath = "tools/datapack/release/candidate-build-spec.json";
-  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, buildSpecRelPath), "utf8"));
-  buildSpec.candidateId = candidateId;
-  buildSpec.releaseSequence = releaseSequence;
-  buildSpec.fixtureSha256 = sha256(nationwidePackBytes);
-  buildSpec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(sourceInventory)));
-  if (buildSpec.networkEdgeEvidence?.sourceInventory) {
-    buildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
-  }
-  const buildSpecBytes = jsonBytes(buildSpec);
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
-  }
-
-  const releaseRequestRelPath = "tools/datapack/release/release-request.json";
-  const releaseRequest = JSON.parse(await readFile(path.join(repositoryRoot, releaseRequestRelPath), "utf8"));
-  releaseRequest.candidateId = candidateId;
-  releaseRequest.approvalId = `release-request-${candidateId}`;
-  releaseRequest.requestedBy = requestedBy;
-  releaseRequest.approvedBy = approvedBy;
-  releaseRequest.buildSpecSha256 = sha256(buildSpecBytes);
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, releaseRequestRelPath), jsonBytes(releaseRequest));
-  }
-
-  const hashEvidenceRelPath = "tools/datapack/release/hash-evidence.json";
-  const hashEvidence = JSON.parse(await readFile(path.join(repositoryRoot, hashEvidenceRelPath), "utf8"));
-  hashEvidence.fixturePath.sha256 = sha256(nationwidePackBytes);
-  hashEvidence.identifiers.candidateId.value = candidateId;
-  hashEvidence.identifiers.approvalId.value = `release-request-${candidateId}`;
-  hashEvidence.sourceInventorySha256.value = sha256(Buffer.from(JSON.stringify(sourceInventory)));
-  if (hashEvidence.ledgerHashes?.facilityEvidenceLedgerHash) {
-    hashEvidence.ledgerHashes.facilityEvidenceLedgerHash.rowCount = finalPack.stationFacilityEvidence.length;
-  }
-  if (writeFiles) {
-    await writeFile(path.join(repositoryRoot, hashEvidenceRelPath), jsonBytes(hashEvidence));
-  }
+  // 후보 spec·production scope·release request·hash evidence는 build-nationwide-candidate.mjs --preparation 한 경로로만 만든다(#862).
+  // 이전처럼 커밋된 spec 일부 필드만 고치면 sourceSnapshotIds·sourceSnapshotSetHash·publishedAt·ledger 해시가 fan-in head와 어긋난다.
 
   return {
     candidateId,
@@ -2052,16 +2017,10 @@ export async function prepareNationwideCandidate({
     routeInput,
     stationLineInput,
     preparation,
-    buildSpec,
-    releaseRequest,
-    hashEvidence,
     preparationRelPath,
     routeInputRelPath,
     stationLineInputRelPath,
     nationwidePackRelPath,
-    buildSpecRelPath,
-    releaseRequestRelPath,
-    hashEvidenceRelPath,
   };
 }
 

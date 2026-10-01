@@ -9,7 +9,7 @@
 //     --evaluated-at <후보 시계, ISO-8601 UTC ms> --release-sequence <양의 정수> \
 //     --requested-by <요청자> --approved-by <승인자>
 //
-// 순서: 5권역 fan-in(--evaluated-at) → 소유권 원장 → prepare-nationwide-candidate-run → 결속 검증.
+// 순서: 5권역 fan-in(--evaluated-at) → 소유권 원장 → prepare-nationwide-candidate-run → build-nationwide-candidate(spec·scope·request·hash) → 결속 검증.
 // - 승인 역할은 명시 인자로만 받는다. 환경 변수나 이전 후보의 승인으로 채우지 않는다. 요청자와 승인자는 달라야 한다.
 // - 깨끗한 worktree에서만 실행한다. builder git SHA가 실제 코드를 가리켜야 하기 때문이다.
 // - 어느 단계든 실패하거나 결속 검증이 어긋나면 모든 출력을 실행 전 바이트로 되돌리고 실패로 끝낸다.
@@ -29,6 +29,7 @@ import {
   REGIONAL_TIMETABLE_QUARANTINE_PATH,
 } from "./prepare-nationwide-candidate-run.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { CANDIDATE_RELEASE_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -55,9 +56,11 @@ export const NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS = Object.freeze([
   "tools/datapack/release/nationwide-candidate-preparation.json",
   CAR_DOOR_HINT_QUARANTINE_PATH,
   REGIONAL_TIMETABLE_QUARANTINE_PATH,
-  SPEC_PATH,
-  REQUEST_PATH,
-  HASH_EVIDENCE_PATH,
+  ...CANDIDATE_RELEASE_OUTPUTS,
+]);
+const PREPARATION_PATH = "tools/datapack/release/nationwide-candidate-preparation.json";
+const STEPS = Object.freeze([
+  "five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build",
 ]);
 
 export function parseRefreshNationwideCandidateArgs(argv) {
@@ -209,6 +212,11 @@ async function defaultRunStep({ name, repositoryRoot, evaluatedAt, releaseSequen
     ]);
     return;
   }
+  if (name === "nationwide candidate build") {
+    // spec·scope·request·hash evidence는 이 단일 생성기가 fan-in head 기준으로 전부 다시 계산한다.
+    await runNodeScript(repositoryRoot, "build-nationwide-candidate.mjs", ["--preparation", PREPARATION_PATH]);
+    return;
+  }
   throw new Error(`unknown nationwide candidate refresh step: ${name}`);
 }
 
@@ -236,7 +244,7 @@ export async function refreshNationwideCandidate({
     ({ relative, bytes: await readOptional(path.join(repository, relative)) })));
   let step = "five-region fan-in";
   try {
-    for (const name of ["five-region fan-in", "ownership ledger", "nationwide candidate preparation"]) {
+    for (const name of STEPS) {
       step = name;
       await runStep({ name, repositoryRoot: repository, evaluatedAt, releaseSequence, requestedBy, approvedBy });
     }

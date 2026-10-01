@@ -317,12 +317,21 @@ test("nationwide preparation CLI consumes serialized inputs and writes the bound
   const routeBytes = fixtureBytes({ candidate: { candidateId: input.releaseIdentity.candidateId,
     sourceSetSha256: sha(JSON.stringify(JSON.parse(input.inputBytes.sourceSnapshots))) }, routeEdges });
   await put("route-input.json", routeBytes);
+  const stationLineBytes = fixtureBytes({ candidate: { candidateId: input.releaseIdentity.candidateId }, stationLines: [], evidenceRows: [] });
+  await put("station-line-input.json", stationLineBytes);
   const preparation = { schemaVersion: 1, artifactKind: "nationwide-candidate-preparation",
     scopeId: policyScope.routingLaunchScope.id, materialization: input.materialization,
     releaseIdentity: input.releaseIdentity, builderIdentity: input.builderIdentity,
     authority: { candidateId: input.releaseIdentity.candidateId, scopeId: policyScope.routingLaunchScope.id,
       approvalId: "fixture-approval", requestedBy: "fixture-requester", approvedBy: "fixture-owner" },
-    routeEdgeInput: { path: "route-input.json", sha256: sha(routeBytes) } };
+    routeEdgeInput: { path: "route-input.json", sha256: sha(routeBytes) },
+    stationLineInput: { path: "station-line-input.json", sha256: sha(stationLineBytes) } };
+  // #862: 현재 prepare가 쓰는 preparation 형태(stationLineInput 포함)를 그대로 받는다. 해시가 어긋나면 거부한다.
+  await put("preparation.json", fixtureBytes({ ...preparation, stationLineInput: { ...preparation.stationLineInput, sha256: "0".repeat(64) } }));
+  const tampered = spawnSync(process.execPath, [fileURLToPath(new URL("./build-nationwide-candidate.mjs", import.meta.url)),
+    "--preparation", "preparation.json"], { cwd: input.repositoryRoot, encoding: "utf8", timeout: 15000 });
+  assert.notEqual(tampered.status, 0);
+  assert.match(tampered.stderr, /prepared station-line input digest mismatch/);
   await put("preparation.json", fixtureBytes(preparation));
   const command = spawnSync(process.execPath, [fileURLToPath(new URL("./build-nationwide-candidate.mjs", import.meta.url)),
     "--preparation", "preparation.json"], { cwd: input.repositoryRoot, encoding: "utf8", timeout: 15000 });

@@ -261,9 +261,10 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(result.nationwidePackRelPath);
   assert.ok(result.routeInputRelPath);
   assert.ok(result.stationLineInputRelPath);
-  assert.ok(result.buildSpecRelPath);
-  assert.ok(result.releaseRequestRelPath);
-  assert.ok(result.hashEvidenceRelPath);
+  // #862: spec·request·hash evidence는 prepare가 아니라 build-nationwide-candidate.mjs --preparation이 만든다.
+  assert.equal(Object.hasOwn(result, "buildSpecRelPath"), false);
+  assert.equal(Object.hasOwn(result, "releaseRequestRelPath"), false);
+  assert.equal(Object.hasOwn(result, "hashEvidenceRelPath"), false);
 
   // 1. Verify nationwide production pack
   const packRaw = await readFile(path.join(root, result.nationwidePackRelPath), "utf8");
@@ -321,10 +322,13 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.strictEqual(prep.authority.requestedBy, "data-operator-lead");
   assert.strictEqual(prep.authority.approvedBy, "data-release-authority");
 
-  // 3. Verify candidate build spec
-  const buildSpecRaw = await readFile(path.join(root, result.buildSpecRelPath), "utf8");
-  const buildSpec = JSON.parse(buildSpecRaw);
-  assert.strictEqual(buildSpec.fixtureSha256, sha256(Buffer.from(packRaw)));
+  // 3. 준비 결과가 후보 생성기에 넘길 팩·입력 파일을 정확히 가리킨다.
+  assert.strictEqual(prep.materialization.fixturePath, result.nationwidePackRelPath);
+  assert.strictEqual(prep.stationLineInput.path, result.stationLineInputRelPath);
+  assert.strictEqual(prep.stationLineInput.sha256,
+    sha256(await readFile(path.join(root, result.stationLineInputRelPath))));
+  assert.strictEqual(prep.routeEdgeInput.sha256,
+    sha256(await readFile(path.join(root, result.routeInputRelPath))));
 });
 
 test("formatPlatformInfo normalizes KRIC and regional platform metadata to canonical JSON", () => {
