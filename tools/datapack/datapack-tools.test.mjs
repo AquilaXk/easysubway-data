@@ -139,7 +139,8 @@ test("official snapshot admission validates exact non-production raw binding", a
       /coverageScope.regionIds must be a non-empty array/,
     );
     mappedSource.coverageScope.regionIds = mappedRegionIds;
-    const metadataOnlyMutation = { ...metadata, freshUntil: "2027-08-11T00:00:00.000Z" };
+    // #862: 판이 바뀌면 고정 날짜가 실제 값과 같아질 수 있어, 현재 metadata에서 하루 뒤로 바꾼 값을 쓴다.
+    const metadataOnlyMutation = { ...metadata, freshUntil: new Date(Date.parse(metadata.freshUntil) + 86_400_000).toISOString() };
     const metadataOnlyMutationBytes = Buffer.from(JSON.stringify(metadataOnlyMutation));
     const metadataOnlyMutationPath = path.join(directory, `${binding.snapshotId}.csv.gz.json`);
     await writeFile(path.join(directory, metadata.gzipPath), await readFile(path.join(path.dirname(binding.metadataPath), metadata.gzipPath)));

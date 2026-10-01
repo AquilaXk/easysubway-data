@@ -14,6 +14,7 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   buildMolitRailwayTransferMovementSnapshot,
   molitRailwayTransferMovementEditionFromSnapshotId,
+  MOLIT_RAILWAY_TRANSFER_MOVEMENT_ADMITTED_RAW_SHA256,
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
 } from "./collect-molit-railway-transfer-movement.mjs";
 
@@ -412,8 +413,9 @@ async function validateAdmittedCandidateEvidence(inventory, candidates, official
         || !Number.isSafeInteger(candidateBinding.rowCount) || candidateBinding.rowCount < 1 || candidateBinding.status !== "LOCKED") {
         throw new Error(`${candidate.id} official snapshot binding invalid`);
       }
-      // #862: 판은 상수가 아니라 candidate·inventory binding이 고정한다(아래에서 파일 바이트로 재검증).
-      if (candidate.id !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID) {
+      // #862: 판은 binding이 고르고, 결속할 수 있는 raw 원본은 판별 승인 목록으로 고정한다.
+      if (candidate.id !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID
+        || MOLIT_RAILWAY_TRANSFER_MOVEMENT_ADMITTED_RAW_SHA256[candidateBinding.snapshotId] !== candidateBinding.rawSha256) {
         throw new Error(`${candidate.id} official snapshot raw hash is not the pinned provider artifact`);
       }
       const metadataBytes = await readFile(candidateBinding.metadataPath);

@@ -27,6 +27,11 @@ function requiredEditionDate(value) {
   if (!iso || !Number.isFinite(Date.parse(iso)) || new Date(iso).toISOString() !== iso) throw new Error("official file edition date is invalid");
   return text;
 }
+// 수집은 판 독립이지만, inventory에 결속할 수 있는 원본은 검토된 판별 provider 원본으로 고정한다.
+// 새 판을 받으려면 이 목록에 판 snapshotId와 raw sha256을 추가하는 검토된 변경이 필요하다(#862).
+export const MOLIT_RAILWAY_TRANSFER_MOVEMENT_ADMITTED_RAW_SHA256 = Object.freeze({
+  "molit-railway-transfer-movement-20260811": "8f9a448e1601bc49dd370de5af0d7ab8884d930131e05f8fc9773445bded16f8",
+});
 export const MOLIT_RAILWAY_TRANSFER_MOVEMENT_DETAIL_URL = "https://www.data.go.kr/data/15130556/fileData.do";
 
 const PROVIDER_COLUMNS = Object.freeze([
