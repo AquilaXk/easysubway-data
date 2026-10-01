@@ -154,7 +154,7 @@ function buildPhysicalPair(pair, records) {
   return { stationId: pair.stationId, lineIds: pair.lineIds, directions: [direction(first, second, forward), direction(second, first, reverse)] };
 }
 
-function assertExactDerivedReciprocals(metrics) {
+export function assertExactDerivedReciprocals(metrics) {
   const byKey = new Map(metrics.map((metric) => [directionKey(metric.stationId, metric.fromLineId, metric.toLineId), metric]));
   for (const metric of metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL")) {
     const { derivedFrom } = metric;

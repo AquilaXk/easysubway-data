@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { currentTransferLineIds, main } from "./build-current-transfer-topology-metrics.mjs";
+import { assertExactDerivedReciprocals, currentTransferLineIds, main } from "./build-current-transfer-topology-metrics.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 
 // #872 S2: 서울교통공사 1~8호선과 상대 노선 전체 매핑. 원천 행 → (역, 출발 노선, 도착 노선)은 정본 팩 식별자로만 정한다.
@@ -217,6 +217,30 @@ async function fixtureRoot(mutate = () => {}) {
   await writeFile(path.join(observationDirectory, "raw-snapshot.json"), snapshotBytes(raw));
   return { ...fixture, rows, root, observationDirectory };
 }
+
+// #875 F1: 파생(DERIVED_RECIPROCAL) 방향의 derivedFrom 결속은 절 하나만 깨져도 거부한다(절별 단독 위반).
+function reciprocalMetrics(patch = {}) {
+  const official = { stationId: "s", fromLineId: "A", toLineId: "B", distanceMeters: 100, officialDurationSecondsReference: 90, sourceRecordSha256: "h", metricProvenance: "OFFICIAL_SOURCE" };
+  const derived = { stationId: "s", fromLineId: "B", toLineId: "A", distanceMeters: 100, officialDurationSecondsReference: 90, sourceRecordSha256: "h", metricProvenance: "DERIVED_RECIPROCAL", derivedFrom: { stationId: "s", fromLineId: "A", toLineId: "B", sourceRecordSha256: "h" } };
+  const extra = patch.extra ?? [];
+  return [{ ...official, ...patch.official }, { ...derived, ...patch.derived, derivedFrom: { ...derived.derivedFrom, ...patch.derivedFrom } }, ...extra];
+}
+
+test("정상 파생 쌍은 통과하고 derivedFrom 결속이 한 절만 깨져도 NO_GO다", () => {
+  assert.doesNotThrow(() => assertExactDerivedReciprocals(reciprocalMetrics()));
+  const official = (overrides) => ({ stationId: "s", fromLineId: "A", toLineId: "B", distanceMeters: 100, officialDurationSecondsReference: 90, sourceRecordSha256: "h", metricProvenance: "OFFICIAL_SOURCE", ...overrides });
+  for (const [label, metrics] of [
+    ["derivedFrom 역 불일치", reciprocalMetrics({ derivedFrom: { stationId: "s2" }, extra: [official({ stationId: "s2" })] })],
+    ["derivedFrom 출발 노선 불일치", reciprocalMetrics({ derivedFrom: { fromLineId: "C" }, extra: [official({ fromLineId: "C" })] })],
+    ["derivedFrom 도착 노선 불일치", reciprocalMetrics({ derivedFrom: { toLineId: "C" }, extra: [official({ toLineId: "C" })] })],
+    ["공식 원천 방향 없음", reciprocalMetrics().slice(1)],
+    ["원천 방향이 OFFICIAL_SOURCE가 아님", reciprocalMetrics({ official: { metricProvenance: "DERIVED_RECIPROCAL", derivedFrom: { stationId: "s", fromLineId: "B", toLineId: "A", sourceRecordSha256: "h" } } })],
+    ["원천 방향 hash 불일치", reciprocalMetrics({ official: { sourceRecordSha256: "h2" } })],
+    ["derivedFrom hash 불일치", reciprocalMetrics({ derivedFrom: { sourceRecordSha256: "h2" } })],
+    ["원천 방향 거리 불일치", reciprocalMetrics({ official: { distanceMeters: 101 } })],
+    ["원천 방향 시간 불일치", reciprocalMetrics({ official: { officialDurationSecondsReference: 91 } })],
+  ]) assert.throws(() => assertExactDerivedReciprocals(metrics), /NO_GO derived reciprocal set mismatch/u, label);
+});
 
 const FILLER_STATION_COUNT = 65;
 function canonicalPack() {
