@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "3cb1c2b9d609be8e92facd02f9b7794decd299a7",
+  "builderGitSha": "c4913eb28bdd90de5d8852159cf2c6349e7ebb22",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,10 +31,10 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "a355ce223ca35ad1f8d286e61fc328d4fffee7bd6454c583abf006753f768b8e"
+    "value": "7b9c94f2f34cb39037e907df9a9f4b9232ec8bef11cfa97189fb8359abf29c07"
   },
   "sourceInventorySha256": {
-    "value": "6c9fceb80346463cf4d4e8a0bb8a7e487dbe59cf29f7512ff651d928f1250cb6"
+    "value": "95d8e726583fbe4efeaed0b1b28addcc380468654560bcf5c228af07a7427a05"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "922439e2110edb094fb5c8d5152bc8a3088e52748605ac26c17c55d5cc0516db"
+      "perSourceSnapshotSetHash": "7d60e0319ce06ee07951f958e5d773a5d9872305ccc3663b23e37a91670a3dbc"
     },
     {
       "sourceId": "incheon-transit-accessibility",

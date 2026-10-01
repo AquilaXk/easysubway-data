@@ -118,11 +118,11 @@
   },
   "releaseIdentity": {
     "candidateId": "nationwide-candidate-20261001-seq123",
-    "publishedAt": "2026-10-01T07:38:54.034Z",
+    "publishedAt": "2026-10-01T08:32:01.030Z",
     "releaseSequence": 123
   },
   "builderIdentity": {
-    "gitSha": "3cb1c2b9d609be8e92facd02f9b7794decd299a7",
+    "gitSha": "c4913eb28bdd90de5d8852159cf2c6349e7ebb22",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
@@ -134,10 +134,10 @@
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "08c0b9367f878e9ad21ced748d41aaf74ca6988553e19bd6d8f9af556d42f4a8"
+    "sha256": "7af4bededd6263223d62d4528184757f6935fae391db66c714e47802713a43b4"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "1d639201174e45b1e0e6fa435b50c76f329aeda212df2fe36411c6531bc4e245"
+    "sha256": "712b5592525b611c87bc42750a1fca17bc34738ea5a444dd475609c9a25ae2f0"
   }
 }
