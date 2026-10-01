@@ -58,8 +58,7 @@ function currentHeadSourcePath(repositoryRoot, head) {
 function expectedOutputs(snapshotId) {
   return [
     `tools/datapack/sources/${snapshotId}.json`, "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
-    "tools/datapack/inputs/capital-pilot-production-source-input.json", "tools/datapack/release/candidate-build-spec.json",
-    "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json",
+    "tools/datapack/inputs/capital-pilot-production-source-input.json",
   ];
 }
 
