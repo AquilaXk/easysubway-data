@@ -12,7 +12,7 @@ import {
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "./materialize-seoul-route-map-positions.mjs";
 import { requireExactPublicStaticNetworkV2SnapshotBinding } from "./public-static-network-v2-admission.mjs";
-import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE_ID = "seoul-metro-route-map-positions";
@@ -38,7 +38,8 @@ function sha256(bytes) {
 
 function pathFor(root, relative) {
   const permitted = OUTPUTS.includes(relative) || STAGE_INPUTS.includes(relative)
-    || /^tools\/datapack\/sources\/(?:seoul-metro-route-map-positions-current-\d{8}T\d{9}Z|capital-route-topology-\d{8})\.json$/u.test(relative) || relative === JOURNAL_PATH
+    || (/^tools\/datapack\/sources\/seoul-metro-route-map-positions-current-\d{8}T\d{9}Z\.json$/u.test(relative)
+      || CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(relative)) || relative === JOURNAL_PATH
     || /^tools\/datapack\/itx-cheongchun-topology-evidence-[0-9]{17}\.json$/u.test(relative);
   if (!permitted) throw new Error(`current public route-map path is not allowlisted: ${relative}`);
   const resolved = path.resolve(root, relative);

@@ -27,7 +27,7 @@ import {
 } from "./build-molit-nationwide-fixture.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 import { deriveCurrentMolitMembershipCoverage } from "./current-molit-observation.mjs";
-import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -82,7 +82,7 @@ function outputAllowlist(outputs) {
     || !Array.isArray(inputs) || JSON.stringify(inputs.slice(0, INPUTS.length).map(({ relative }) => relative)) !== JSON.stringify(INPUTS)
     || inputs.length !== INPUTS.length + 2 + TARGETS.length
     || inputs[INPUTS.length + 1]?.relative !== gwangjuTopologyAdmission(parse(inputs[0].bytes, "inventory")).snapshotPath
-    || !new RegExp("^tools/datapack/sources/capital-route-topology-20\\d{6}\\.json$", "u").test(inputs[INPUTS.length]?.relative ?? "")
+    || !CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(inputs[INPUTS.length]?.relative ?? "")
     || predecessorInputs.some(({ relative }, index) => !new RegExp(
       `^tools/datapack/sources/${TARGETS[index]}-current-20\\d{6}T\\d{9}Z\\.json$`, "u",
     ).test(relative ?? ""))
