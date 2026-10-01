@@ -357,7 +357,7 @@ function isImmutableOciObjectUri(value) {
   }
 }
 
-function terminalHead(sourceId, sourceSnapshots) {
+export function terminalHead(sourceId, sourceSnapshots) {
   const snapshots = sourceSnapshots.filter((snapshot) => snapshot?.sourceId === sourceId);
   if (snapshots.length === 0) throw new Error(`terminal snapshot head missing for ${sourceId}`);
   const byId = new Map();

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
@@ -94,6 +95,107 @@ export function formatPlatformInfo(info) {
   return JSON.stringify(canonical);
 }
 
+// #862 결정 #15: 후보 입력 snapshot은 고정 경로가 아니라 원장 head에서 고른다.
+// 원장(source-snapshots.json) 원천은 fan-in과 같은 terminal head 선택을 쓰고, fan-in 선택·시계와 맞아야 한다.
+// 인천 원천은 원장 행이 없어 inventory admission evidence가 가리키는 snapshot을 쓴다.
+const LEDGER_SELECTED_INPUT_SOURCE_IDS = Object.freeze({
+  busanAccessibility: "busan-transportation-accessibility",
+  daeguAccessibility: "daegu-transportation-accessibility",
+  daejeonAccessibility: "daejeon-transportation-accessibility",
+  gwangjuAccessibility: "gwangju-transportation-accessibility",
+  kricConvenience: "kric-station-convenience-standard",
+  busanTimetable: "busan-transportation-timetable",
+  daeguTimetable1: "daegu-line1-train-timetable",
+  daeguTimetable2: "daegu-line2-train-timetable",
+  daeguTimetable3: "daegu-line3-train-timetable",
+  daejeonTimetable: "daejeon-train-timetable",
+});
+const ADMISSION_EVIDENCE_INPUTS = Object.freeze({
+  incheonTopology: ["incheon-transit-station-info", "topologyAdmissionEvidence"],
+  incheonLine1: ["incheon-line1-train-timetable", "scheduleAdmissionEvidence"],
+  incheonLine2: ["incheon-line2-train-timetable", "scheduleAdmissionEvidence"],
+});
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+
+function exactInventorySource(sourceInventory, sourceId) {
+  const matches = (Array.isArray(sourceInventory?.sources) ? sourceInventory.sources : [])
+    .filter((source) => source?.id === sourceId);
+  if (matches.length !== 1) throw new Error(`nationwide candidate input inventory source missing or ambiguous for ${sourceId}`);
+  return matches[0];
+}
+
+function exactSnapshotEvidence(sourceId, snapshotId, evidences) {
+  const matching = evidences.filter((evidence) => evidence?.snapshotId === snapshotId && typeof evidence.snapshotPath === "string");
+  const paths = new Set(matching.map(({ snapshotPath }) => snapshotPath));
+  const rawShas = new Set(matching.map(({ rawSha256 }) => rawSha256));
+  if (paths.size !== 1 || rawShas.size !== 1) {
+    throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId}`);
+  }
+  const [snapshotPath] = paths;
+  const [rawSha256] = rawShas;
+  if (snapshotPath !== `tools/datapack/sources/${snapshotId}.json` || !SHA256_PATTERN.test(rawSha256 ?? "")) {
+    throw new Error(`nationwide candidate input snapshot path mismatch for ${sourceId}`);
+  }
+  return { snapshotPath, rawSha256 };
+}
+
+async function boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead, readSourceBytes }) {
+  const bytes = await readSourceBytes(snapshotPath);
+  let snapshot;
+  try { snapshot = JSON.parse(bytes); } catch { throw new Error(`nationwide candidate input is invalid JSON for ${sourceId}`); }
+  const ledgerRawSha256s = ledgerHead == null ? [rawSha256] : [ledgerHead.rawSha256, ledgerHead.rawReceipt?.snapshotRawSha256];
+  if (snapshot?.sourceId !== sourceId || (snapshot.snapshotId !== undefined && snapshot.snapshotId !== snapshotId)
+    || snapshot.rawSha256 !== rawSha256 || !ledgerRawSha256s.includes(snapshot.rawSha256)) {
+    throw new Error(`nationwide candidate input raw binding mismatch for ${sourceId}`);
+  }
+  return Buffer.from(bytes);
+}
+
+export async function resolveNationwideCandidateInputSnapshots({ sourceInventory, sourceSnapshots, fanIn, readSourceBytes }) {
+  if (!Array.isArray(sourceSnapshots) || !Array.isArray(fanIn?.selectedSources) || typeof readSourceBytes !== "function") {
+    throw new Error("nationwide candidate input selection arguments are invalid");
+  }
+  const evaluatedAt = Date.parse(fanIn.evaluatedAt);
+  if (!Number.isFinite(evaluatedAt) || new Date(evaluatedAt).toISOString() !== fanIn.evaluatedAt) {
+    throw new Error("nationwide candidate input fan-in clock is invalid");
+  }
+  const selected = {};
+  for (const [key, sourceId] of Object.entries(LEDGER_SELECTED_INPUT_SOURCE_IDS)) {
+    const head = terminalHead(sourceId, sourceSnapshots);
+    const fanInRows = fanIn.selectedSources.filter((row) => row?.sourceId === sourceId);
+    if (fanInRows.length !== 1) throw new Error(`nationwide candidate input is not selected by fan-in for ${sourceId}`);
+    if (fanInRows[0].snapshotId !== head.snapshotId) {
+      throw new Error(`nationwide candidate input fan-in selection does not match ledger head for ${sourceId}`);
+    }
+    const freshnessExpiresAt = fanInRows[0].freshnessExpiresAt;
+    const freshUntil = Date.parse(freshnessExpiresAt);
+    if (!Number.isFinite(freshUntil) || freshUntil <= evaluatedAt) {
+      throw new Error(`nationwide candidate input is expired for ${sourceId}`);
+    }
+    const source = exactInventorySource(sourceInventory, sourceId);
+    const { snapshotPath, rawSha256 } = exactSnapshotEvidence(sourceId, head.snapshotId,
+      Object.values(source).filter((value) => value && typeof value === "object" && !Array.isArray(value)));
+    selected[key] = {
+      sourceId, snapshotId: head.snapshotId, path: snapshotPath, freshnessExpiresAt,
+      bytes: await boundInputSnapshot({ sourceId, snapshotId: head.snapshotId, snapshotPath, rawSha256, ledgerHead: head, readSourceBytes }),
+    };
+  }
+  // 인천 3개는 원장 행·fan-in 선택이 없다. 만료 판정은 #862 2단계(인천 갱신)에서 추가한다.
+  for (const [key, [sourceId, evidenceKey]] of Object.entries(ADMISSION_EVIDENCE_INPUTS)) {
+    const evidence = exactInventorySource(sourceInventory, sourceId)[evidenceKey];
+    const snapshotId = evidence?.snapshotId;
+    if (typeof snapshotId !== "string" || snapshotId.length === 0) {
+      throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId}`);
+    }
+    const { snapshotPath, rawSha256 } = exactSnapshotEvidence(sourceId, snapshotId, [evidence]);
+    selected[key] = {
+      sourceId, snapshotId, path: snapshotPath,
+      bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
+    };
+  }
+  return selected;
+}
+
 export async function prepareNationwideCandidate({
   repositoryRoot = root,
   releaseSequence = 122,
@@ -123,37 +225,19 @@ export async function prepareNationwideCandidate({
   const read = async (rel) => readFile(path.join(repositoryRoot, rel));
 
   const [
-    targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes,
-    incheonTopologyBytes, incheonLine1Bytes, incheonLine2Bytes, sourceInventoryBytes,
-    busanAccessibilityBytes, daeguAccessibilityBytes, daejeonAccessibilityBytes, gwangjuAccessibilityBytes,
+    targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes, sourceInventoryBytes,
     molitTransferMetaBytes, molitTransferGzipBytes,
-    transferMetricsBytes, kricConvenienceBytes,
-    busanTimetableBytes,
-    daeguTimetable1Bytes, daeguTimetable2Bytes, daeguTimetable3Bytes,
-    daejeonTimetableBytes, gwangjuTimetableBytes,
+    transferMetricsBytes, gwangjuTimetableBytes,
   ] = await Promise.all([
     read("tools/datapack/nationwide-coverage-targets.json"),
     read("tools/datapack/release/current-five-region-source-fan-in.json"),
     read("tools/datapack/release/source-snapshots.json"),
     read("tools/datapack/release/capital-production-canonical-pack.json"),
     read("tools/datapack/fixtures/admin-review-overrides.json"),
-    read("tools/datapack/sources/incheon-transit-station-info-20260904.json"),
-    read("tools/datapack/sources/incheon-line1-train-timetable-20260905.json"),
-    read("tools/datapack/sources/incheon-line2-train-timetable-20260905.json"),
     read("tools/datapack/source-inventory.json"),
-    read("tools/datapack/sources/busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909.json"),
-    read("tools/datapack/sources/daegu-transportation-accessibility-25276f4f6e48ab8c6ffca6af833af14ad33fd86777af9d3376eed4b6a77fef9e-20260909.json"),
-    read("tools/datapack/sources/daejeon-transportation-accessibility-31ef85c5ac5d279d7322c028e05f7be16e6c5a794aa313aef314eef076b61426-20260909.json"),
-    read("tools/datapack/sources/gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909.json"),
     read("tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json"),
     read("tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz"),
     read("tools/datapack/release/current-transfer-topology-metrics.json"),
-    read("tools/datapack/sources/kric-station-convenience-standard-20260904T043909603Z.json"),
-    read("tools/datapack/sources/busan-transportation-timetable-20260909.json"),
-    read("tools/datapack/sources/daegu-line1-train-timetable-f923a86097012cd0d0b76e59599790fb4ec4756269fb0afd293ac9683c31f77c.json"),
-    read("tools/datapack/sources/daegu-line2-train-timetable-798b98f01d9803c2dbe148c6864a876ef991401f19105f711722740a8e5f8215.json"),
-    read("tools/datapack/sources/daegu-line3-train-timetable-9763cdb46b4b2a7ab6ae24f607bba79206763a7329a68b86d16d12f2622d3100.json"),
-    read("tools/datapack/sources/daejeon-train-timetable-20260909.json"),
     read("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
   ]);
 
@@ -162,22 +246,29 @@ export async function prepareNationwideCandidate({
   const snapshots = JSON.parse(snapshotsBytes);
   const baseFixture = JSON.parse(basePackBytes);
   const pack = baseFixture.packs[0];
-  const incheonTopology = JSON.parse(incheonTopologyBytes);
-  const incheonLine1 = JSON.parse(incheonLine1Bytes);
-  const incheonLine2 = JSON.parse(incheonLine2Bytes);
   const sourceInventory = JSON.parse(sourceInventoryBytes);
-  const busanAccessibility = JSON.parse(busanAccessibilityBytes);
-  const daeguAccessibility = JSON.parse(daeguAccessibilityBytes);
-  const daejeonAccessibility = JSON.parse(daejeonAccessibilityBytes);
-  const gwangjuAccessibility = JSON.parse(gwangjuAccessibilityBytes);
+  const inputSnapshots = await resolveNationwideCandidateInputSnapshots({
+    sourceInventory,
+    sourceSnapshots: snapshots,
+    fanIn,
+    readSourceBytes: read,
+  });
+  const inputJson = (key) => JSON.parse(inputSnapshots[key].bytes);
+  const incheonTopology = inputJson("incheonTopology");
+  const incheonLine1 = inputJson("incheonLine1");
+  const incheonLine2 = inputJson("incheonLine2");
+  const busanAccessibility = inputJson("busanAccessibility");
+  const daeguAccessibility = inputJson("daeguAccessibility");
+  const daejeonAccessibility = inputJson("daejeonAccessibility");
+  const gwangjuAccessibility = inputJson("gwangjuAccessibility");
   const molitTransferMeta = JSON.parse(molitTransferMetaBytes);
   const transferMetrics = JSON.parse(transferMetricsBytes);
-  const kricConvenience = JSON.parse(kricConvenienceBytes);
-  const busanTimetable = JSON.parse(busanTimetableBytes);
-  const daeguTimetable1 = JSON.parse(daeguTimetable1Bytes);
-  const daeguTimetable2 = JSON.parse(daeguTimetable2Bytes);
-  const daeguTimetable3 = JSON.parse(daeguTimetable3Bytes);
-  const daejeonTimetable = JSON.parse(daejeonTimetableBytes);
+  const kricConvenience = inputJson("kricConvenience");
+  const busanTimetable = inputJson("busanTimetable");
+  const daeguTimetable1 = inputJson("daeguTimetable1");
+  const daeguTimetable2 = inputJson("daeguTimetable2");
+  const daeguTimetable3 = inputJson("daeguTimetable3");
+  const daejeonTimetable = inputJson("daejeonTimetable");
   const gwangjuTimetable = JSON.parse(gwangjuTimetableBytes);
 
   const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
@@ -669,7 +760,7 @@ export async function prepareNationwideCandidate({
   const incheonNow = new Date(Math.max(Date.parse(incheonLine1.capturedAt), Date.parse(incheonLine2.capturedAt)) + 1000);
   const materializedFixture = materializeIncheonTimetable({
     baseFixture: nationwideFixture,
-    topologySnapshot: { ...incheonTopology, snapshotId: "incheon-transit-station-info-20260904" },
+    topologySnapshot: { ...incheonTopology, snapshotId: inputSnapshots.incheonTopology.snapshotId },
     timetableSnapshots: { 1: incheonLine1, 2: incheonLine2 },
     inventory: sourceInventory,
     now: incheonNow,
@@ -1333,7 +1424,7 @@ export async function prepareNationwideCandidate({
   const kricConvenienceRawSha = kricConvenience.rawSha256;
   const kricConvenienceLicenseId = "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398";
   const kricConvenienceCapturedAt = kricConvenience.capturedAt;
-  const kricConvenienceFreshUntil = "2026-12-03T04:39:09.603Z";
+  const kricConvenienceFreshUntil = inputSnapshots.kricConvenience.freshnessExpiresAt;
 
   const kricMovementRawSha = "9e9e66356d1f1a7275578f299882b3d2a42637d9cc5b4ce8b874ee78f3815106";
   const kricMovementLicenseId = "80555d4f86dfa1d51e0618df22b8392fc439a33daf80fed3a9c4f2a728fec9bb";
@@ -1396,7 +1487,7 @@ export async function prepareNationwideCandidate({
           domain: "FACILITY",
           state: "UNKNOWN",
           sourceId: "kric-station-convenience-standard",
-          sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
+          sourceSnapshotId: inputSnapshots.kricConvenience.snapshotId,
           evidenceRawSha256: kricConvenienceRawSha,
           providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
           capturedAt: kricConvenienceCapturedAt,
@@ -1417,7 +1508,7 @@ export async function prepareNationwideCandidate({
           domain: "FACILITY",
           state: "VERIFIED_PRESENT",
           sourceId: "kric-station-convenience-standard",
-          sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
+          sourceSnapshotId: inputSnapshots.kricConvenience.snapshotId,
           evidenceRawSha256: kricConvenienceRawSha,
           providerRecordHash: q.providerRecordHash,
           capturedAt: kricConvenienceCapturedAt,
@@ -1554,7 +1645,7 @@ export async function prepareNationwideCandidate({
         domain: "FACILITY",
         state: "UNKNOWN",
         sourceId: "kric-station-convenience-standard",
-        sourceSnapshotId: "kric-station-convenience-standard-20260904T043909603Z",
+        sourceSnapshotId: inputSnapshots.kricConvenience.snapshotId,
         evidenceRawSha256: kricConvenienceRawSha,
         providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
         capturedAt: kricConvenienceCapturedAt,
@@ -1754,18 +1845,11 @@ export async function prepareNationwideCandidate({
           path: "tools/datapack/itx-cheongchun-coverage-contract.json",
           sha256: "a5d64bbabd8d4ef5f88a3f06c6eb1a3ebc2c682e62e42b899d8b8e689bb26d8c",
         },
-        incheonTimetables: {
-          line1: {
-            path: "tools/datapack/sources/incheon-line1-train-timetable-20260905.json",
-            sha256: "001151642eaefbf3e0e21ef11efd3d514f95dd75674f3ee1026456b5d7b7f7e6",
-            snapshotId: "incheon-line1-train-timetable-20260905",
-          },
-          line2: {
-            path: "tools/datapack/sources/incheon-line2-train-timetable-20260905.json",
-            sha256: "7d802a53c00c42ed16e3adbb6be4262938b972d017a42db10245e3548efd800c",
-            snapshotId: "incheon-line2-train-timetable-20260905",
-          },
-        },
+        incheonTimetables: Object.fromEntries([["line1", "incheonLine1"], ["line2", "incheonLine2"]].map(([line, key]) => [line, {
+          path: inputSnapshots[key].path,
+          sha256: sha256(inputSnapshots[key].bytes),
+          snapshotId: inputSnapshots[key].snapshotId,
+        }])),
       },
       officialOdFareEvidence: {
         sourceId: "seoul-metro-official-od-fares",
