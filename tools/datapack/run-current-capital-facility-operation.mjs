@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson, selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { collectKricStandardAccessibilityObservation, validateKricAccessibilityRawCollection, validateKricAccessibilitySnapshotIdentity, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 import { publishKricAccessibilityRawArtifact } from "./publish-kric-accessibility-raw.mjs";
 import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
@@ -25,7 +25,6 @@ const INPUTS = Object.freeze({
   canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
   coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
   providerCodeCatalogBytes: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-  routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
   sourceInventoryBytes: "tools/datapack/source-inventory.json",
 });
 // #862 결정 C: 사전 검사는 후보 spec·request가 아니라 fan-in이 고르는 원천의 원장 head를 판정한다.
@@ -104,8 +103,10 @@ async function existingRegularBytes(target, label) {
   try { return await regularBytes(target, label); }
   catch (error) { if (error?.code === "ENOENT") return undefined; throw error; }
 }
+// #862: roster는 선택 함수가 고른 현재 파일을 쓴다(KRIC 역 코드 변경 대응).
+async function inputPaths(root) { return { ...INPUTS, routeRostersBytes: await selectCurrentKricRouteRostersPath({ repositoryRoot: root }) }; }
 async function inputSnapshots(root) {
-  return Object.fromEntries(await Promise.all(Object.entries(INPUTS).map(async ([key, relative]) => [key, await readStableRegularFile(path.join(root, relative), key)])));
+  return Object.fromEntries(await Promise.all(Object.entries(await inputPaths(root)).map(async ([key, relative]) => [key, await readStableRegularFile(path.join(root, relative), key)])));
 }
 function snapshotBytes(snapshots) { return Object.fromEntries(Object.entries(snapshots).map(([key, value]) => [key, value.bytes])); }
 async function acquireCollectionClaim(operationRoot) {
@@ -115,7 +116,7 @@ async function acquireCollectionClaim(operationRoot) {
 }
 async function assertPreparedInputs(root, journal) {
   const snapshots = await inputSnapshots(root); const expected = journal?.inputSha256;
-  if (!expected || Object.keys(expected).length !== Object.keys(INPUTS).length || Object.entries(snapshots).some(([key, value]) => expected[key] !== hash(value.bytes))) throw new Error("prepared input identity mismatch");
+  if (!expected || Object.keys(expected).length !== Object.keys(snapshots).length || Object.entries(snapshots).some(([key, value]) => expected[key] !== hash(value.bytes))) throw new Error("prepared input identity mismatch");
   return snapshots;
 }
 async function assertNoRegistrarResidues(root) {

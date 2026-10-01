@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { constants } from "node:fs";
-import { lstat, open, realpath, unlink } from "node:fs/promises";
+import { lstat, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,9 +31,28 @@ const CANONICAL_INPUTS = Object.freeze({
   canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
   coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
   providerCodeCatalogBytes: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-  routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
   sourceInventoryBytes: "tools/datapack/source-inventory.json",
 });
+const ROUTE_ROSTERS_DIRECTORY = "tools/datapack/sources";
+const ROUTE_ROSTERS_FILE_PATTERN = /^kric-nationwide-route-rosters-(\d{8}T\d{9}Z)\.json$/u;
+
+// #862: KRIC가 역 코드를 바꾸면 공식 수집기로 새 roster를 받는다. FACILITY 도구는 roster 경로를 상수로
+// 고정하지 않고 이 함수로 현재 roster(capturedAt이 가장 늦은 파일)를 고른다. 파일명 시각과 capturedAt이
+// 다르면 고르지 않고 실패한다.
+export async function selectCurrentKricRouteRostersPath({ repositoryRoot }) {
+  const directory = path.join(repositoryRoot, ROUTE_ROSTERS_DIRECTORY);
+  const candidates = (await readdir(directory)).map((name) => [name, ROUTE_ROSTERS_FILE_PATTERN.exec(name)?.[1]])
+    .filter(([, stamp]) => stamp !== undefined);
+  if (candidates.length === 0) throw new Error("KRIC route roster is missing");
+  for (const [name, stamp] of candidates) {
+    const capturedAt = JSON.parse(await readFile(path.join(directory, name), "utf8"))?.capturedAt;
+    const compact = typeof capturedAt === "string" && Number.isFinite(Date.parse(capturedAt))
+      && new Date(capturedAt).toISOString() === capturedAt ? capturedAt.replace(/[-:.]/gu, "") : null;
+    if (compact !== stamp) throw new Error(`KRIC route roster capturedAt does not match its file name: ${name}`);
+  }
+  const [latestName] = candidates.reduce((latest, candidate) => (candidate[1] > latest[1] ? candidate : latest));
+  return `${ROUTE_ROSTERS_DIRECTORY}/${latestName}`;
+}
 
 export function buildCurrentCapitalFacilityCollectionPlan(input) {
   assertInput(input);
@@ -100,7 +119,8 @@ export async function main(argv, { log = console.log } = {}) {
   const { repositoryRoot, output } = parseArguments(argv);
   const root = await regularDirectory(repositoryRoot, "repository root");
   const outputPath = await externalAbsentOutput(root, output);
-  const input = Object.fromEntries(await Promise.all(Object.entries(CANONICAL_INPUTS).map(async ([key, relative]) => [
+  const inputPaths = { ...CANONICAL_INPUTS, routeRostersBytes: await selectCurrentKricRouteRostersPath({ repositoryRoot: root }) };
+  const input = Object.fromEntries(await Promise.all(Object.entries(inputPaths).map(async ([key, relative]) => [
     key,
     await readStableRegularInput(root, relative),
   ])));
