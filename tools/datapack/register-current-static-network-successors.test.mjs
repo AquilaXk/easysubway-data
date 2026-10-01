@@ -10,15 +10,14 @@ import { buildPublicStaticNetworkV2SuccessorOutputs, commitStaticNetworkSuccesso
 import { buildPublicStaticNetworkV2Observations } from "./build-public-static-network-v2-observations.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { validateLineage } from "./source-snapshot-policy.mjs";
 import { createStaticNetworkRegistrarPredecessorFixture, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const STATIC_INPUT_PATHS = [
-  "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json",
-  "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json", "tools/datapack/source-governance-policy.json",
-  "release/product-gates/datapack-freshness-sla.json",
-  "release/product-gates/production-datapack-scope.json",
+  "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+  "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json",
 ];
 
 function currentCapitalTopologyAdmission(sourceInventory) {
@@ -33,14 +32,14 @@ function currentCapitalTopologyAdmission(sourceInventory) {
 async function registrationOutputs(root) {
   const output = (relative, before, after) => ({ relative, prestateBytes: before, bytes: after });
   const staticInputs = await Promise.all(STATIC_INPUT_PATHS.map(async (relative) => ({ relative, bytes: await readFile(path.join(root, relative)) })));
-  const candidate = JSON.parse(staticInputs[2].bytes);
+  const { headsBySource } = validateLineage(JSON.parse(staticInputs[1].bytes));
   const topologyAdmission = currentCapitalTopologyAdmission(JSON.parse(staticInputs[0].bytes));
   const topologyInput = {
     relative: `tools/datapack/sources/${topologyAdmission.topologySnapshotId}.json`,
     bytes: await readFile(path.join(root, "tools/datapack/sources", `${topologyAdmission.topologySnapshotId}.json`)),
   };
   const activeObservationPaths = ["seoul-metro-route-map-positions", "molit-urban-rail-full-route"].map((sourceId) =>
-    `tools/datapack/sources/${candidate.sourceSnapshots.find((source) => source.sourceId === sourceId).snapshotId}.json`);
+    `tools/datapack/sources/${headsBySource[sourceId]}.json`);
   const inventory = JSON.parse(staticInputs[0].bytes);
   const gwangjuPath = inventory.sources.find(({ id }) => id === "gwangju-transportation-route-topology").topologyAdmissionEvidence.snapshotPath;
   const inputs = [...staticInputs, topologyInput,
@@ -54,7 +53,6 @@ async function registrationOutputs(root) {
     output("tools/datapack/sources/molit-urban-rail-full-route-current-20260822T000000000Z.json", null, Buffer.from("molit\n")),
     output("tools/datapack/source-inventory.json", inputs[0].bytes, Buffer.from("inventory\n")),
     output("tools/datapack/release/source-snapshots.json", inputs[1].bytes, Buffer.from("ledger\n")),
-    output("tools/datapack/release/candidate-build-spec.json", inputs[2].bytes, Buffer.from("candidate\n")),
   ];
   return outputs.map((entry) => ({ ...entry, inputs }));
 }
@@ -95,7 +93,7 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
     (snapshotId) => readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`)),
   ));
   const input = await publicV2Input(root); const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
-  assert.equal(staged.length, 5); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/release/candidate-build-spec.json"]);
+  assert.equal(staged.length, 4); assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"]);
   assert.equal(staged[0].inputs.length, STATIC_INPUT_PATHS.length + 4);
   assert.deepEqual(staged[0].inputs.slice(-2).map(({ relative }) => relative), predecessorIds.map(
     (snapshotId) => `tools/datapack/sources/${snapshotId}.json`,
@@ -150,7 +148,7 @@ test("v2 registrar advances only the exact active V2 heads", async (t) => {
   );
   await writeFile(inventoryPath, inventoryBytes);
   const result = await registerPublicStaticNetworkV2Successors({ repositoryRoot: root, ...input });
-  assert.equal(result.outputs.length, 5); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/release-request.json")), request); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), hashes);
+  assert.equal(result.outputs.length, 4); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/release-request.json")), request); assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), hashes);
   const committedLedger = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8"));
   for (const predecessor of predecessorLedger) assert.deepEqual(committedLedger.find(({ snapshotId }) => snapshotId === predecessor.snapshotId), predecessor);
   for (const [index, snapshotId] of predecessorIds.entries()) assert.deepEqual(await readFile(path.join(root, `tools/datapack/sources/${snapshotId}.json`)), predecessorSourceBytes[index]);
@@ -230,54 +228,65 @@ test("v2 registrar requires exact active observation files instead of ledger-onl
   );
 });
 
-test("v2 registrar rejects current candidate and active-head drift without a bootstrap fallback", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-current-only-"));
+// #862 결정 C: 원천 등록은 수집 → 원본 게시 → 원장 등록에서 끝난다. 후보 spec에 결속하거나 다시 쓰지 않는다.
+// 만료된 MOLIT head도 후속으로 교체할 수 있어야 하므로 predecessor는 identity·bytes·보존기간만 검사하고,
+// 신선도는 새로 등록하는 후속 snapshot이 진다.
+test("v2 registrar registers without candidate binding or rewrite and replaces an expired MOLIT head (#862 결정 C)", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-decision-c-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await createStaticNetworkRegistrarPredecessorFixture(repositoryRoot, root, {
     now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
   });
   const input = await publicV2Input(root);
   const candidatePath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
-  const candidateBytes = await readFile(candidatePath);
-  let candidate = JSON.parse(candidateBytes);
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  // 후보는 다른 원천 갱신 뒤 낡은 상태일 수 있다. 등록은 후보와 무관해야 한다.
   candidate.sourceInventorySha256 = "0".repeat(64);
   await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
-  await assert.rejects(
-    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 current candidate binding is invalid/,
-  );
-  candidate = JSON.parse(candidateBytes);
-  candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-subway-timetable").rawSha256 = "0".repeat(64);
-  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
-  await assert.rejects(
-    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 current candidate binding is invalid/,
-  );
-  candidate = JSON.parse(candidateBytes);
-  candidate.sourceSnapshots[0].sourceId = "seoulmetro-cyberstation-route-map";
-  await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
-  await assert.rejects(
-    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 current candidate binding is invalid/,
-  );
-  await writeFile(candidatePath, candidateBytes);
+  const candidateBytes = await readFile(candidatePath);
+  const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  const molitHeadId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "molit-urban-rail-full-route").snapshotId;
+  const molitHead = ledger.find(({ snapshotId }) => snapshotId === molitHeadId);
+  molitHead.freshnessExpiresAt = new Date(input.now.getTime() - 1).toISOString();
+  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+
+  const staged = await buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input });
+  assert.deepEqual(staged.map(({ relative }) => relative).slice(2), ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json"]);
+  assert.equal(staged[0].inputs.some(({ relative }) => relative.startsWith("tools/datapack/release/candidate-build-spec") || relative.includes("release-request") || relative.includes("hash-evidence")), false);
+  const result = await registerPublicStaticNetworkV2Successors({ repositoryRoot: root, ...input });
+  assert.equal(result.outputs.length, 4);
+  assert.deepEqual(await readFile(candidatePath), candidateBytes);
+  const committed = JSON.parse(await readFile(ledgerPath, "utf8"));
+  const molit = committed.find(({ snapshotId }) => snapshotId === input.producerOutput.observations[1].snapshotId);
+  assert.equal(molit.previousSnapshotId, molitHeadId);
+  assert.ok(Date.parse(molit.freshnessExpiresAt) > input.now.getTime());
+});
+
+test("v2 registrar still rejects an expired-retention predecessor and an already stale successor (#862 결정 C)", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "static-network-v2-decision-c-reject-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await createStaticNetworkRegistrarPredecessorFixture(repositoryRoot, root, {
+    now: await nextSyntheticCurrentStaticNetworkNow(repositoryRoot),
+  });
+  const input = await publicV2Input(root);
   const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
   const ledgerBytes = await readFile(ledgerPath);
   const ledger = JSON.parse(ledgerBytes);
-  const timetableSnapshotId = JSON.parse(candidateBytes).sourceSnapshots
-    .find(({ sourceId }) => sourceId === "kric-subway-timetable").snapshotId;
-  ledger.find(({ snapshotId }) => snapshotId === timetableSnapshotId).provider = "drift";
+  const { headsBySource } = (await import("./source-snapshot-policy.mjs")).validateLineage(ledger);
+  ledger.find(({ snapshotId }) => snapshotId === headsBySource["molit-urban-rail-full-route"]).rawRetentionExpiresAt = input.now.toISOString();
   await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-  await assert.rejects(
-    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 current candidate binding is invalid/,
-  );
+  await assert.rejects(buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }), /public v2 active predecessor bytes are required/);
   await writeFile(ledgerPath, ledgerBytes);
-  const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
-  await writeFile(inventoryPath, `${await readFile(inventoryPath, "utf8")}\n`);
+
+  // 후속 snapshot의 신선도 검사는 그대로다: 정책 주기가 지난 시각에 등록하면 막는다.
+  const freshnessPath = path.join(root, "release/product-gates/datapack-freshness-sla.json");
+  const freshness = JSON.parse(await readFile(freshnessPath, "utf8"));
+  freshness.sourceClasses.find(({ sourceIds }) => sourceIds?.includes("molit-urban-rail-full-route")).reverificationCadence = "PT1S";
+  await writeFile(freshnessPath, `${JSON.stringify(freshness, null, 2)}\n`);
   await assert.rejects(
-    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input }),
-    /public v2 current candidate binding is invalid/,
+    buildPublicStaticNetworkV2SuccessorOutputs({ repositoryRoot: root, ...input, now: new Date(input.now.getTime() + 2_000) }),
+    /current v2 successor canonical outer snapshot is invalid/,
   );
 });
 
@@ -295,7 +304,7 @@ async function freePort() {
   return address.port;
 }
 
-test("registrar commits only the exact five source-output allowlist and rolls back an interrupted write", async (t) => {
+test("registrar commits only the exact four source-output allowlist and rolls back an interrupted write", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-registrar-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(path.resolve(import.meta.dirname, "../.."), root, { recursive: true, filter: (source) => !source.includes("node_modules") });
@@ -311,7 +320,7 @@ test("registrar commits only the exact five source-output allowlist and rolls ba
   assert.deepEqual(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json")), approvedHashes);
 });
 
-test("registrar rejects a recovery journal whose five records are not the exact output allowlist", async (t) => {
+test("registrar rejects a recovery journal whose four records are not the exact output allowlist", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "static-network-recovery-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(path.resolve(import.meta.dirname, "../.."), root, { recursive: true, filter: (source) => !source.includes("node_modules") });
