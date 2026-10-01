@@ -30,6 +30,10 @@ import { buildCurrentCapitalRouteTopologyRegistrationOutputs } from "../register
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./current-capital-topology-registration.mjs";
 import { requiresCurrentCapitalTopologyAdmission } from "../rebind-capital-route-map-admissions.mjs";
+import { selectCurrentKricRouteRostersPath } from "../build-current-capital-facility-collection-plan.mjs";
+// #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 경로 금지).
+const CURRENT_ROUTE_ROSTERS_PATH = await selectCurrentKricRouteRostersPath({ repositoryRoot: path.resolve(import.meta.dirname, "../../..") });
+
 
 const PUBLIC_SOURCE_ID = "seoul-metro-route-map-positions";
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
@@ -486,7 +490,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.json",
   "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.raw.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-  "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+  CURRENT_ROUTE_ROSTERS_PATH,
 ]);
 
 export async function copySyntheticCurrentPublicRouteMapRepository(

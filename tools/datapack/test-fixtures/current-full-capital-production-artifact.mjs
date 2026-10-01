@@ -48,6 +48,10 @@ import {
   copySyntheticCurrentPublicRouteMapRepository,
   nextSyntheticCurrentStaticNetworkNow,
 } from "./current-public-route-map-successor.mjs";
+import { selectCurrentKricRouteRostersPath } from "../build-current-capital-facility-collection-plan.mjs";
+// #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 경로 금지).
+const CURRENT_ROUTE_ROSTERS_PATH = await selectCurrentKricRouteRostersPath({ repositoryRoot: path.resolve(import.meta.dirname, "../../..") });
+
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const FACILITY_OPERATION = Object.freeze({
@@ -98,7 +102,7 @@ async function registerFreshFacilitySnapshot(repositoryRoot, now, repeatedSnapsh
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    CURRENT_ROUTE_ROSTERS_PATH,
     "tools/datapack/source-inventory.json",
     "tools/datapack/source-governance-policy.json",
   ].map((relative) => readFile(path.join(repositoryRoot, relative))));
@@ -181,7 +185,7 @@ async function writeFreshFacilityAdmission(repositoryRoot, observedAt) {
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    CURRENT_ROUTE_ROSTERS_PATH,
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/candidate-build-spec.json",
     "tools/datapack/release/source-snapshots.json",
@@ -219,7 +223,7 @@ export async function writeFreshExitAdmissionChain(repositoryRoot, observedAt) {
     canonicalPackBytes: "tools/datapack/release/capital-production-canonical-pack.json",
     coverageTargetsBytes: "tools/datapack/nationwide-coverage-targets.json",
     providerCodeCatalogBytes: "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    routeRostersBytes: "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    routeRostersBytes: CURRENT_ROUTE_ROSTERS_PATH,
     sourceInventoryBytes: "tools/datapack/source-inventory.json",
   };
   const input = Object.fromEntries(await Promise.all(Object.entries(inputPaths).map(async ([key, relative]) => [key, await readFile(path.join(repositoryRoot, relative))])));
