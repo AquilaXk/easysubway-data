@@ -447,6 +447,46 @@ test("current candidate selects scope-bound registered canonical provenance head
   assert.throws(() => currentCandidateReleaseSnapshots({ ...context, candidate: missing }), /candidate source set/);
 });
 
+test("current candidate release snapshots accept the committed nationwide candidate order", async () => {
+  // 커밋된 전국 후보 spec·scope·inventory·원장·capital canonical pack을 그대로 쓴다.
+  // 전국 후보에서 TRANSFER는 마지막 원천이 아니다.
+  const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+  const read = (relative) => readFile(path.join(repositoryRoot, relative));
+  const [candidateBytes, snapshotsBytes, canonicalBytes, productionScopeBytes, sourceInventoryBytes] = await Promise.all([
+    read("tools/datapack/release/candidate-build-spec.json"),
+    read("tools/datapack/release/source-snapshots.json"),
+    read("tools/datapack/release/capital-production-canonical-pack.json"),
+    read("release/product-gates/production-datapack-scope.json"),
+    read("tools/datapack/source-inventory.json"),
+  ]);
+  const candidate = JSON.parse(candidateBytes);
+  assert.equal(candidate.productionScopeId, "nationwide_routing_android_v1");
+  assert.notEqual(candidate.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
+  const context = {
+    snapshots: JSON.parse(snapshotsBytes), canonical: JSON.parse(canonicalBytes), candidate,
+    productionScopeBytes, sourceInventoryBytes,
+  };
+  const selected = currentCandidateReleaseSnapshots(context);
+  assert.deepEqual(selected.map(({ snapshotId }) => snapshotId), candidate.sourceSnapshotIds);
+
+  // TRANSFER가 빠진 후보는 scope에서도 함께 빼도 여전히 거부한다.
+  const scope = JSON.parse(productionScopeBytes);
+  scope.productionSourceSet.requiredSourceIds = scope.productionSourceSet.requiredSourceIds
+    .filter((sourceId) => sourceId !== "seoul-metro-transfer-distance-duration");
+  const inventory = JSON.parse(sourceInventoryBytes);
+  inventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").requiredForProductionPack = false;
+  const withoutTransfer = structuredClone(candidate);
+  const transferIndex = withoutTransfer.sourceSnapshots
+    .findIndex(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
+  withoutTransfer.sourceSnapshots.splice(transferIndex, 1);
+  withoutTransfer.sourceSnapshotIds.splice(transferIndex, 1);
+  assert.throws(() => currentCandidateReleaseSnapshots({
+    ...context, candidate: withoutTransfer,
+    productionScopeBytes: Buffer.from(JSON.stringify(scope)),
+    sourceInventoryBytes: Buffer.from(JSON.stringify(inventory)),
+  }), /current candidate source set does not match production scope/);
+});
+
 test("reviewed accessibility fixture must preserve the complete current canonical source authority", () => {
   const ids = [
     "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",

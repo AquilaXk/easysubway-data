@@ -46,7 +46,7 @@ const CAPITAL_CANONICAL_ACTIVE_SOURCE_IDS = Object.freeze([
   "kric-subway-timetable", "seoul-metro-accessibility", "kric-station-convenience-standard",
   "seoul-metro-official-od-fares", "seoul-metro-transfer-distance-duration",
 ]);
-const TERMINAL_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
   "stations", "stationLines", "stationExits", "stationCarDoorHints", "networkEdges",
   "routeMapPositions", "routeMapLineTracks", "facilities", "stationFacilityEvidence",
@@ -736,7 +736,8 @@ export function currentCandidateReleaseSnapshots({
     || new Set(candidate.sourceSnapshotIds).size !== candidate.sourceSnapshotIds.length
     || candidate.sourceSnapshots.some((projection, index) => projection.snapshotId !== candidate.sourceSnapshotIds[index])
     || requiredSourceIds.some((sourceId) => !candidateSourceIds.includes(sourceId))
-    || candidateSourceIds.at(-1) !== TERMINAL_TRANSFER_SOURCE_ID) {
+    // 원천 순서는 후보 생성기가 정한다. 전국 후보에서 TRANSFER는 마지막 원천이 아니므로 포함 여부만 본다.
+    || !candidateSourceIds.includes(TRANSFER_SOURCE_ID)) {
     throw new Error("current candidate source set does not match production scope");
   }
   const capital = canonical.packs?.find(({ id }) => id === "capital");
