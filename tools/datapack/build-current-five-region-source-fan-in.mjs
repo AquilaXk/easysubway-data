@@ -202,15 +202,7 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     const observedAt = typeof rawObservedAt === "string" && !isNaN(Date.parse(rawObservedAt))
       ? new Date(Date.parse(rawObservedAt)).toISOString()
       : rawObservedAt;
-    const rawFreshUntil = (snapshot.sourceId === "kric-station-convenience-standard"
-      || snapshot.sourceId === "seoul-metro-accessibility"
-      || snapshot.sourceId === "capital-route-topology"
-      || snapshot.sourceId === "korail-metropolitan-timetable-file")
-      ? (snapshot.serviceEffectiveUntil
-        ?? (snapshot.sourceId === "capital-route-topology" ? "2026-09-15T17:29:18.428Z" : null)
-        ?? (snapshot.sourceId === "korail-metropolitan-timetable-file" ? "2026-09-30T15:00:00.000Z" : null)
-        ?? snapshot.freshnessExpiresAt)
-      : (evidence.freshUntil ?? snapshot.serviceEffectiveUntil ?? snapshot.freshnessExpiresAt);
+    const rawFreshUntil = evidence.freshUntil ?? snapshot.freshnessExpiresAt;
     const freshUntil = typeof rawFreshUntil === "string" && !isNaN(Date.parse(rawFreshUntil))
       ? new Date(Date.parse(rawFreshUntil)).toISOString()
       : rawFreshUntil;
@@ -457,10 +449,7 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
     if (instant(snapshot.retrievedAt, "snapshot retrieval") > evaluatedAt) {
       throw new Error(`snapshot future retrieval mismatch for ${sourceId}`);
     }
-    const rawEffectiveFreshness = snapshot.serviceEffectiveUntil
-      ?? (snapshot.sourceId === "capital-route-topology" ? "2026-09-15T17:29:18.428Z" : null)
-      ?? (snapshot.sourceId === "korail-metropolitan-timetable-file" ? "2026-09-30T15:00:00.000Z" : null)
-      ?? snapshot.freshnessExpiresAt;
+    const rawEffectiveFreshness = snapshot.freshnessExpiresAt;
     const effectiveFreshnessExpiresAt = typeof rawEffectiveFreshness === "string" && !isNaN(Date.parse(rawEffectiveFreshness))
       ? new Date(Date.parse(rawEffectiveFreshness)).toISOString()
       : rawEffectiveFreshness;
