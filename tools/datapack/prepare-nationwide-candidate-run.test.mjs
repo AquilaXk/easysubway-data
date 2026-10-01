@@ -421,3 +421,26 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
 });
 
 
+
+test("nationwide candidate preparation은 tracked ITX coverage contract와 승인 원천의 버전 topology 증거에 결속된다", async () => {
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+    writeFiles: false,
+  });
+  const contractPath = "tools/datapack/itx-cheongchun-coverage-contract.json";
+  const contractBytes = await readFile(path.join(root, contractPath));
+  const artifactId = JSON.parse(contractBytes).sourceTimetableArtifact.artifactId;
+  const digits = /^itx-cheongchun-source-timetable-([0-9]{17})$/u.exec(artifactId)?.[1];
+  assert.ok(digits, "tracked ITX source artifact id must be versioned");
+  const evidencePath = `tools/datapack/itx-cheongchun-topology-evidence-${digits}.json`;
+  const evidenceBytes = await readFile(path.join(root, evidencePath));
+  const { materialization } = result.preparation;
+  assert.deepEqual(materialization.networkEdgeEvidence.itxCoverageContract, {
+    path: contractPath,
+    sha256: sha256(contractBytes),
+  });
+  assert.equal(materialization.itxTopologyEvidencePath, evidencePath);
+  assert.equal(materialization.itxTopologyEvidenceSha256, sha256(evidenceBytes));
+});
