@@ -981,6 +981,18 @@ test("#872 S3 부산교통공사 공식 환승 행은 fan-in head에 결속된 O
   assert.ok(packSource, "Busan transfer source must be in the pack sourceInventory");
   assert.equal(packSource.updatedAt, head.capturedAt);
   assert.equal(packSource.redistributionAllowed, true);
+  // 리뷰 F3: 팩 원천 설명은 이 원천이 실제로 채우는 환승 표와 공식 환승 도메인을 담는다. 값은 inventory에서 유도한다:
+  // 필드 = inventory fieldsProvided + 이 원천을 인용하는 팩 표, 도메인 = inventory 도메인 + 공식 환승 거리·시간 원천의 도메인.
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const busanInventory = inventory.sources.find(({ id }) => id === BUSAN_TRANSFER_SOURCE_ID);
+  const seoulInventory = inventory.sources.find(({ id }) => id === SEOUL_TRANSFER_SOURCE_ID);
+  assert.deepEqual(packSource.fields, [...busanInventory.fieldsProvided, "station_pathway_edges", "transfer_rules"]);
+  assert.deepEqual(packSource.coverageScope, {
+    ...busanInventory.coverageScope,
+    sourceDomains: [...busanInventory.coverageScope.sourceDomains, ...seoulInventory.coverageScope.sourceDomains],
+  });
+  assert.ok(pack.stationPathwayEdges.some(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID));
+  assert.ok(pack.transferRules.some(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID));
 });
 
 test("#872 S3 생성기는 커밋된 부산 환승 지표가 fan-in head·재계산과 다르면 명시적으로 실패한다", async () => {

@@ -1391,6 +1391,22 @@ export async function prepareNationwideCandidate({
     }
   }
 
+  // #872 S3 리뷰 F3: 부산 원천 설명에 이 원천이 실제로 채우는 환승 표와 공식 환승 도메인을 더한다. 하드코딩하지 않고 유도한다.
+  // - 필드: inventory fieldsProvided(팩 표·컬럼 이름)에, 팩에서 이 원천을 인용하는 환승 표 이름을 더한다.
+  // - 도메인: inventory 도메인에, 공식 환승 거리·시간 원천(서울교통공사) inventory가 선언한 도메인을 더한다.
+  {
+    const busanPackSource = finalPack.sourceInventory.find(({ id }) => id === "busan-transportation-route-topology");
+    const citingTables = [["station_pathway_edges", stationPathwayEdges], ["transfer_rules", transferRules]]
+      .filter(([, rows]) => rows.some(({ sourceId }) => sourceId === busanPackSource.id))
+      .map(([table]) => table);
+    const transferDomains = exactInventorySource(sourceInventory, "seoul-metro-transfer-distance-duration").coverageScope?.sourceDomains;
+    if (!Array.isArray(transferDomains) || transferDomains.length === 0) {
+      throw new Error("nationwide candidate official transfer source domain is missing");
+    }
+    busanPackSource.fields = [...new Set([...busanPackSource.fields, ...citingTables])];
+    busanPackSource.coverageScope.sourceDomains = [...new Set([...busanPackSource.coverageScope.sourceDomains, ...transferDomains])];
+  }
+
   if (!finalPack.sourceInventory.some((s) => s.id === "gwangju-transportation-cyberstation-timetable")) {
     finalPack.sourceInventory.push({
       id: "gwangju-transportation-cyberstation-timetable",
