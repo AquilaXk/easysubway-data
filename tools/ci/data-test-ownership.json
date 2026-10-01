@@ -267,6 +267,10 @@
     "data854": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/854",
       "title": "[Fix] 전국 정본 팩의 운행 요일 값·노선도 라벨 결함으로 release-candidate 빌드 실패"
+    },
+    "data855": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/855",
+      "title": "[Fix] 대전·광주 시간표 통합의 추정 도착 시각 제거"
     }
   },
   "workflows": {
@@ -435,6 +439,7 @@
     {"path":"tools/datapack/canonical-number-contract.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":4},
     {"path":"tools/datapack/canonical-pack-service-calendar-flags.test.mjs","semanticOwner":"data854","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/canonical-pack-transit-car-door-contract.test.mjs","semanticOwner":"data854","classes":["required-pr"],"durationMs":1500},
+    {"path":"tools/datapack/regional-timetable-official-stop-times.test.mjs","semanticOwner":"data855","classes":["required-pr"],"durationMs":1500},
     {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":9},
     {"path":"tools/datapack/check-manifest-acceptance-floor.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":133},
     {"path":"tools/datapack/check-timetable-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":25},

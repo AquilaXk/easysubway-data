@@ -28,6 +28,8 @@ export function integrateRegionalTimetables({
   const stopTimes = [...(finalPack.transitStopTimes ?? [])];
   const calendars = [...(finalPack.serviceCalendars ?? [])];
   const calendarDates = [...(finalPack.serviceCalendarDates ?? [])];
+  // #855: 원천 정차 2개 이상으로 열차를 만들 수 없는 대전·광주 원천 시각. 추정 정차를 붙이지 않고 증거로 남긴다.
+  const regionalTimetableQuarantine = [];
 
   function cleanName(n) {
     return String(n ?? "").replace(/\(.*?\)/g, "").replace(/\d+$/, "").replace(/[·•ㆍ]/g, ".").trim();
@@ -355,56 +357,50 @@ export function integrateRegionalTimetables({
               }
             }
 
-            // Terminal station arrival
-            const termStn = dirCfg.stnOrder[dirCfg.stnOrder.length - 1];
-            tripStops.push({ stn: termStn, time: curTime + 120 });
+            // 원천은 역별 시각 하나만 준다(종착역 행 없음). 정차 시각 하나는 도착 = 출발 = 원천 값이고,
+            // 원천에 없는 종착역 도착은 만들지 않는다(#855).
+            const tripStopTimes = [];
+            let seq = 1;
+            for (const stopEntry of tripStops) {
+              const stationId = daejeonResolver.resolveByIdOrCode(stopEntry.stn, null);
+              if (!stationId) continue;
 
-            if (tripStops.length >= 2) {
-              const tripStopTimes = [];
-              let seq = 1;
-              for (let sIdx = 0; sIdx < tripStops.length; sIdx++) {
-                const stopEntry = tripStops[sIdx];
-                const stationId = daejeonResolver.resolveByIdOrCode(stopEntry.stn, null);
-                if (!stationId) continue;
+              tripStopTimes.push({
+                tripId,
+                stationId,
+                lineId: daejeonLineId,
+                stopSequence: seq++,
+                arrivalSeconds: stopEntry.time,
+                departureSeconds: stopEntry.time,
+                pickupType: 0,
+                dropOffType: 0,
+                sourceId: "daejeon-train-timetable",
+              });
+            }
 
-                let arrTime;
-                let depTime;
-                if (sIdx === 0) {
-                  arrTime = stopEntry.time;
-                  depTime = stopEntry.time;
-                } else if (sIdx === tripStops.length - 1) {
-                  arrTime = stopEntry.time;
-                  depTime = stopEntry.time;
-                } else {
-                  depTime = stopEntry.time;
-                  const prevDep = tripStops[sIdx - 1].time;
-                  arrTime = Math.max(prevDep + 30, depTime - 20);
-                }
-
-                tripStopTimes.push({
-                  tripId,
-                  stationId,
-                  lineId: daejeonLineId,
-                  stopSequence: seq++,
-                  arrivalSeconds: arrTime,
-                  departureSeconds: depTime,
-                  pickupType: 0,
-                  dropOffType: 0,
+            if (tripStopTimes.length >= 2) {
+              trips.push({
+                id: tripId,
+                routeId: "route-daejeon-line-1",
+                serviceId,
+                tripHeadsign: dirCfg.tripHeadsign,
+                directionId: dirCfg.directionId,
+                lineId: daejeonLineId,
+                sourceId: "daejeon-train-timetable",
+              });
+              stopTimes.push(...tripStopTimes);
+            } else {
+              for (const stopEntry of tripStops) {
+                regionalTimetableQuarantine.push({
                   sourceId: "daejeon-train-timetable",
-                });
-              }
-
-              if (tripStopTimes.length >= 2) {
-                trips.push({
-                  id: tripId,
-                  routeId: "route-daejeon-line-1",
                   serviceId,
-                  tripHeadsign: dirCfg.tripHeadsign,
-                  directionId: dirCfg.directionId,
-                  lineId: daejeonLineId,
-                  sourceId: "daejeon-train-timetable",
+                  sourceDayKey: dayType,
+                  sourceDirection: dirCfg.drctType,
+                  stationCode: stopEntry.stn,
+                  stationId: daejeonResolver.resolveByIdOrCode(stopEntry.stn, null),
+                  departureSeconds: stopEntry.time,
+                  reason: "FEWER_THAN_TWO_SOURCE_STOPS",
                 });
-                stopTimes.push(...tripStopTimes);
               }
             }
           }
@@ -446,14 +442,12 @@ export function integrateRegionalTimetables({
         directionId: 1,
         tripHeadsign: "평동",
         stnOrder: ["100", ...Array.from({ length: 19 }, (_, i) => String(101 + i))],
-        terminalDelta: 180,
       },
       {
         direction: "st",
         directionId: 0,
         tripHeadsign: "소태",
         stnOrder: Array.from({ length: 19 }, (_, i) => String(119 - i)),
-        terminalDelta: 120,
       },
     ];
 
@@ -505,56 +499,50 @@ export function integrateRegionalTimetables({
               }
             }
 
-            // Terminal station arrival
-            const termStn = dirCfg.stnOrder[dirCfg.stnOrder.length - 1];
-            tripStops.push({ stn: termStn, time: curTime + dirCfg.terminalDelta });
+            // 원천은 역별 시각 하나만 준다(종착역 행 없음). 정차 시각 하나는 도착 = 출발 = 원천 값이고,
+            // 원천에 없는 종착역 도착은 만들지 않는다(#855).
+            const tripStopTimes = [];
+            let seq = 1;
+            for (const stopEntry of tripStops) {
+              const stationId = gwangjuResolver.resolveByIdOrCode(stopEntry.stn, null);
+              if (!stationId) continue;
 
-            if (tripStops.length >= 2) {
-              const tripStopTimes = [];
-              let seq = 1;
-              for (let sIdx = 0; sIdx < tripStops.length; sIdx++) {
-                const stopEntry = tripStops[sIdx];
-                const stationId = gwangjuResolver.resolveByIdOrCode(stopEntry.stn, null);
-                if (!stationId) continue;
+              tripStopTimes.push({
+                tripId,
+                stationId,
+                lineId: gwangjuLineId,
+                stopSequence: seq++,
+                arrivalSeconds: stopEntry.time,
+                departureSeconds: stopEntry.time,
+                pickupType: 0,
+                dropOffType: 0,
+                sourceId: "gwangju-transportation-cyberstation-timetable",
+              });
+            }
 
-                let arrTime;
-                let depTime;
-                if (sIdx === 0) {
-                  arrTime = stopEntry.time;
-                  depTime = stopEntry.time;
-                } else if (sIdx === tripStops.length - 1) {
-                  arrTime = stopEntry.time;
-                  depTime = stopEntry.time;
-                } else {
-                  depTime = stopEntry.time;
-                  const prevDep = tripStops[sIdx - 1].time;
-                  arrTime = Math.max(prevDep + 30, depTime - 20);
-                }
-
-                tripStopTimes.push({
-                  tripId,
-                  stationId,
-                  lineId: gwangjuLineId,
-                  stopSequence: seq++,
-                  arrivalSeconds: arrTime,
-                  departureSeconds: depTime,
-                  pickupType: 0,
-                  dropOffType: 0,
+            if (tripStopTimes.length >= 2) {
+              trips.push({
+                id: tripId,
+                routeId: "route-gwangju-line-1",
+                serviceId,
+                tripHeadsign: dirCfg.tripHeadsign,
+                directionId: dirCfg.directionId,
+                lineId: gwangjuLineId,
+                sourceId: "gwangju-transportation-cyberstation-timetable",
+              });
+              stopTimes.push(...tripStopTimes);
+            } else {
+              for (const stopEntry of tripStops) {
+                regionalTimetableQuarantine.push({
                   sourceId: "gwangju-transportation-cyberstation-timetable",
-                });
-              }
-
-              if (tripStopTimes.length >= 2) {
-                trips.push({
-                  id: tripId,
-                  routeId: "route-gwangju-line-1",
                   serviceId,
-                  tripHeadsign: dirCfg.tripHeadsign,
-                  directionId: dirCfg.directionId,
-                  lineId: gwangjuLineId,
-                  sourceId: "gwangju-transportation-cyberstation-timetable",
+                  sourceDayKey: dayCode,
+                  sourceDirection: dirCfg.direction,
+                  stationCode: stopEntry.stn,
+                  stationId: gwangjuResolver.resolveByIdOrCode(stopEntry.stn, null),
+                  departureSeconds: stopEntry.time,
+                  reason: "FEWER_THAN_TWO_SOURCE_STOPS",
                 });
-                stopTimes.push(...tripStopTimes);
               }
             }
           }
@@ -569,5 +557,6 @@ export function integrateRegionalTimetables({
     transitStopTimes: stopTimes,
     serviceCalendars: calendars,
     serviceCalendarDates: calendarDates,
+    regionalTimetableQuarantine,
   };
 }

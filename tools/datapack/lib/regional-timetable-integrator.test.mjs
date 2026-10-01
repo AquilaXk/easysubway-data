@@ -87,18 +87,21 @@ test("integrateRegionalTimetables integrates all 4 regional authorities with aut
   assert.strictEqual(busanTrips.length, 3733);
   assert.strictEqual(daeguTrips.length, 2540);
   assert.strictEqual(daejeonTrips.length, 460); // 121 weekday dn + 121 weekday up + 109 holiday dn + 109 holiday up
-  assert.strictEqual(gwangjuTrips.length, 438); // 236 weekday + 202 holiday
+  // #855: 원천 정차 하나뿐인 녹동 출발 38건(평일 21·휴일 17)은 추정 종착역을 붙이지 않아 열차가 되지 않고 격리된다.
+  assert.strictEqual(gwangjuTrips.length, 400); // 215 weekday + 185 holiday
+  assert.strictEqual(integrated.regionalTimetableQuarantine.length, 38);
 
-  assert.strictEqual(regionalTrips.length, 7171);
-  assert.strictEqual(regionalStopTimes.length, 202495);
-  assert.strictEqual(integrated.transitTrips.length, initialTripCount + 7171);
-  assert.strictEqual(integrated.transitStopTimes.length, initialStopCount + 202495);
+  // #855: 대전 460·광주 438개 추정 종착역 정차와 격리된 녹동 출발 38개가 빠진다(202,495 - 936).
+  assert.strictEqual(regionalTrips.length, 7133);
+  assert.strictEqual(regionalStopTimes.length, 201559);
+  assert.strictEqual(integrated.transitTrips.length, initialTripCount + 7133);
+  assert.strictEqual(integrated.transitStopTimes.length, initialStopCount + 201559);
 
   // Deep Parity Check: Gwangju weekday schedule must NOT be empty (resolves issue where 'WEEK' was wrongly checked as 'WEEKDAY')
   const gwangjuWeekdayTrips = gwangjuTrips.filter((t) => t.serviceId === "gwangju-weekday-2026");
   const gwangjuHolidayTrips = gwangjuTrips.filter((t) => t.serviceId === "gwangju-holiday-2026");
-  assert.strictEqual(gwangjuWeekdayTrips.length, 236);
-  assert.strictEqual(gwangjuHolidayTrips.length, 202);
+  assert.strictEqual(gwangjuWeekdayTrips.length, 215);
+  assert.strictEqual(gwangjuHolidayTrips.length, 185);
 
   // Deep Parity Check: Gwangju Songjeong Station (117) must be resolved and present in stop times
   const songjeongStationId = initialPack.stations.find((s) => s.nameKo === "광주송정역")?.id;
