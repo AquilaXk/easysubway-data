@@ -727,3 +727,17 @@ test("nationwide candidate preparation은 tracked ITX coverage contract와 승�
   assert.equal(materialization.itxTopologyEvidencePath, evidencePath);
   assert.equal(materialization.itxTopologyEvidenceSha256, sha256(evidenceBytes));
 });
+
+// #862: build spec은 prepare가 아니라 build-nationwide-candidate --preparation이 만든다(결정 C).
+// 커밋된 spec이 커밋된 preparation과 같은 ITX 결속을 쓰는지 본다.
+test("nationwide candidate build spec은 preparation과 같은 ITX coverage contract·topology 증거 결속을 쓴다", async () => {
+  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const { materialization } = await readJson("tools/datapack/release/nationwide-candidate-preparation.json");
+  const buildSpec = await readJson("tools/datapack/release/candidate-build-spec.json");
+  assert.deepEqual(
+    buildSpec.networkEdgeEvidence.itxCoverageContract,
+    materialization.networkEdgeEvidence.itxCoverageContract,
+  );
+  assert.equal(buildSpec.itxTopologyEvidencePath, materialization.itxTopologyEvidencePath);
+  assert.equal(buildSpec.itxTopologyEvidenceSha256, materialization.itxTopologyEvidenceSha256);
+});
