@@ -6,7 +6,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { KRIC_ACCESSIBILITY_OPERATIONS, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
-import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parseArgs, prepareCurrentCapitalFacilityOperation, recoverPublishedCurrentCapitalFacilityOperation, syncWrite } from "./run-current-capital-facility-operation.mjs";
@@ -356,7 +356,12 @@ test("collection preflight accepts the committed nationwide candidate order with
   const parent = await mkdtemp(path.join(tmpdir(), "facility-nationwide-preflight-"));
   t.after(() => rm(parent, { recursive: true, force: true }));
 
-  // 커밋된 capital-route-topology 원장 행은 credentialRedacted 표시가 없다. 이 엄격 검사는 그대로 막는다.
+  // credentialRedacted 표시가 없는 선택 원천 head는 엄격 검사가 막는다(capital-route-topology head에서 표시를 지워 재현).
+  const ledgerPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  const topology = ledger.find(({ snapshotId }) => snapshotId === validateLineage(ledger).headsBySource["capital-route-topology"]);
+  delete topology.credentialRedacted;
+  await writeJson(ledgerPath, ledger);
   const asCommittedRoot = path.join(parent, "as-committed");
   await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: asCommittedRoot,
     expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
@@ -368,11 +373,6 @@ test("collection preflight accepts the committed nationwide candidate order with
   assert.equal(providerCalls, 0);
 
   // 순서 계약만 분리해 보려고 그 한 행의 표시만 채운다. 다른 신선도·승인·라이선스 값은 커밋 그대로다.
-  const ledgerPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
-  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
-  const topologyId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "capital-route-topology").snapshotId;
-  const topology = ledger.find(({ snapshotId }) => snapshotId === topologyId);
-  assert.equal(topology.credentialRedacted, undefined);
   topology.credentialRedacted = true;
   await writeJson(ledgerPath, ledger);
   await bindReleaseRequestToCandidate(repositoryRoot);
