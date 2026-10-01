@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   admitBusanRouteTopology,
   collectBusanRouteTopology,
+  extractBusanTransferRows,
   parseBusanRouteTopologyScope,
   validateBusanRouteTopologySnapshot,
 } from "./collect-busan-route-topology.mjs";
@@ -177,6 +178,52 @@ test("부산 topology collector는 exchange=Y인 범위 밖 환승 edge만 분�
   await assert.rejects(collect({
     fetchImpl: async () => response(XML.replace("</body>", `${transfer.replace("<exchange>Y", "<exchange>N")}</body>`)),
   }), /station scope/);
+});
+
+// #872 S3: 수집기는 exchange=Y 환승 행을 세기만 하고 버렸다. 이제 원천 값(역 코드·dist·time·stoppingTime)을
+// 그대로 보존해 환승 지표 빌더가 쓰게 한다. 역명(EUC-KR)은 매핑에 쓰지 않으므로 보존 행에 넣지 않는다.
+test("#872 S3 부산 topology collector는 exchange=Y 환승 행을 역 코드와 원천 값 그대로 보존한다", async () => {
+  const internal = "<item><startSn>서면</startSn><startSc>119</startSc><endSn>서면</endSn><endSc>219</endSc>"
+    + "<dist>1</dist><time>120</time><stoppingTime>0</stoppingTime><exchange>Y</exchange></item>";
+  const external = "<item><startSn>부전</startSn><startSc>120</startSc><endSn>부전</endSn><endSc>801</endSc>"
+    + "<dist></dist><time></time><stoppingTime></stoppingTime><exchange>Y</exchange></item>";
+  const body = XML.replace("</body>", `${internal}${external}</body>`);
+  const snapshot = await collect({ fetchImpl: async () => response(body) });
+  assert.equal(snapshot.edgeCount, 4);
+  assert.equal(snapshot.excludedTransferCount, 2);
+
+  const rows = extractBusanTransferRows(snapshot);
+  const rawResponseSha256 = createHash("sha256").update(Buffer.from(body)).digest("hex");
+  assert.deepEqual(rows, [
+    { requestStationCode: null, rawResponseSha256, fromStationCode: "119", toStationCode: "219", dist: "1", time: "120", stoppingTime: "0" },
+    { requestStationCode: null, rawResponseSha256, fromStationCode: "120", toStationCode: "801", dist: "", time: "", stoppingTime: "" },
+  ]);
+  assert.equal(rows.some((row) => Object.hasOwn(row, "fromStationName") || Object.hasOwn(row, "startSn")), false);
+});
+
+test("#872 S3 커밋된 fan-in 선택 부산 snapshot의 raw 응답에서 환승 18행을 다시 꺼내고, raw가 바뀌면 거부한다", async () => {
+  const snapshotPath = "./sources/busan-transportation-route-topology-31fc36651cdb7859ac3c0171c2ee26af8808809b8443899905908960d295d275.json";
+  const snapshot = JSON.parse(await readFile(new URL(snapshotPath, import.meta.url), "utf8"));
+  const rows = extractBusanTransferRows(snapshot);
+  assert.equal(rows.length, snapshot.excludedTransferCount);
+  assert.equal(rows.length, 18);
+  const seomyeon = rows.find(({ fromStationCode, toStationCode }) => fromStationCode === "119" && toStationCode === "219");
+  assert.deepEqual({ ...seomyeon, rawResponseSha256: undefined },
+    { requestStationCode: "119", rawResponseSha256: undefined, fromStationCode: "119", toStationCode: "219", dist: "1", time: "120", stoppingTime: "0" });
+  assert.match(seomyeon.rawResponseSha256, /^[a-f0-9]{64}$/);
+  for (const row of rows) assert.equal(row.requestStationCode, row.fromStationCode, "환승 행은 요청 역 코드의 응답에서 나온다");
+
+  const tampered = structuredClone(snapshot);
+  const index = tampered.rawResponses.findIndex(({ stationCode }) => stationCode === "119");
+  tampered.rawResponses[index].bytesBase64 = Buffer.from(
+    Buffer.from(tampered.rawResponses[index].bytesBase64, "base64").toString("latin1").replace("<time>120</time>", "<time>060</time>"),
+    "latin1",
+  ).toString("base64");
+  assert.throws(() => extractBusanTransferRows(tampered), /raw hash mismatch/);
+
+  const withoutRaw = structuredClone(snapshot);
+  delete withoutRaw.rawResponses;
+  assert.throws(() => extractBusanTransferRows(withoutRaw), /raw responses are required/);
 });
 
 test("부산 topology collector는 공식 station/adjacency scope 전체를 bounded fan-out한다", async () => {
