@@ -527,3 +527,118 @@ test("prepare-nationwide-candidate-run은 원장 head로 고르는 입력 경로
     assert.equal(source.includes(snapshotId), false, `${snapshotId} must come from the ledger head`);
   }
 });
+
+// #862 2단계 추가 사항: 신선도·식별자 상수를 원장 head(fan-in)·inventory head·정책에서 유도한다.
+const HARDCODED_CANDIDATE_CONSTANTS = Object.freeze([
+  "nationwide-candidate-20260923",
+  "2026-12-08T03:16:08.098Z",
+  "2027-08-11T00:00:00.000Z",
+  "2027-08-15T09:40:38.817Z",
+  "2026-08-15T09:40:38.817Z",
+  "2026-07-29T12:32:28.000Z",
+  "2026-09-05T17:29:18.428Z",
+  "2026-09-04T17:29:18.428Z",
+  "seoul-metro-transfer-distance-duration-20260815T094038817Z",
+  "molit-railway-transfer-movement-20250811",
+  "capital-route-topology-20260904",
+  "capital-route-topology-20260724",
+  "capital-topology-reverification-20260904",
+  "seoul-metro-official-od-fares-current-20260826T035408251Z",
+  "itx-cheongchun-topology-evidence-20260830151508786",
+  "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3",
+  "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
+  "c64b8a890c1576368566e89b5a70fdbaa88292f1b87fd44462d9a0a2bd33b4b0",
+  "82dc0d5a7c726532e8aca86b31603c0edd3cd238a67b4067f4aab0ac59e27edf",
+  "56aea1437ed41bfa113dae3553aa6823b9eb1a0c18418fa2e4f4347ca4155595",
+  "057e89316465215d7bc0add5d28d4bddc7f10d3756970ff4d2def02c51838a1f",
+  "0532458dc81590ad020987ddb34ef301ab96a86d1475325f94c8c956066f8b84",
+  "1026e93ae3c6fd81bf9a6ac92b810439fc7e7e9fdd0a7c8167840cb5876d84a4",
+  "6734a85960a9c14c177f1df6754f764fadfd44a9e2c2627ce77d771b75208d18",
+  "02a70526eb373f2e9925075e588f8b520fc1eeeb292eb53d43655439a897d608",
+  "a5d64bbabd8d4ef5f88a3f06c6eb1a3ebc2c682e62e42b899d8b8e689bb26d8c",
+  "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d",
+  "9b15822f3e82d8c360be1c9006ae691ec87c7117e3f8ec47d25eec93132fcb4a",
+]);
+
+test("#862 prepare는 신선도·식별자 상수와 날짜 fallback을 하드코딩하지 않는다", async () => {
+  const source = await readFile(path.join(root, "tools/datapack/prepare-nationwide-candidate-run.mjs"), "utf8");
+  for (const literal of HARDCODED_CANDIDATE_CONSTANTS) {
+    assert.equal(source.includes(literal), false, `${literal} must be derived from the ledger, inventory or policy head`);
+  }
+  assert.doesNotMatch(source, /\?\?\s*"20[0-9]{2}-[0-9]{2}-[0-9]{2}/u, "date fallbacks must not hide a missing source date");
+});
+
+test("#862 prepare 증거 행·네트워크 증거·운임 증거는 fan-in head·inventory head·정책에서 유도된다", async () => {
+  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const fanIn = await readJson("tools/datapack/release/current-five-region-source-fan-in.json");
+  const inventory = await readJson("tools/datapack/source-inventory.json");
+  const policy = await readJson("release/product-gates/datapack-freshness-sla.json");
+  const head = (sourceId) => fanIn.selectedSources.find((row) => row.sourceId === sourceId);
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122, writeFiles: false,
+  });
+
+  const date = fanIn.evaluatedAt.slice(0, 10).replaceAll("-", "");
+  assert.equal(result.candidateId, `nationwide-candidate-${date}-seq122`);
+
+  const rows = result.stationLineInput.evidenceRows;
+  for (const sourceId of [
+    "busan-transportation-accessibility", "daegu-transportation-accessibility",
+    "daejeon-transportation-accessibility", "gwangju-transportation-accessibility",
+    "kric-station-convenience-standard", "seoul-metro-transfer-distance-duration",
+  ]) {
+    const selected = rows.filter((row) => row.sourceId === sourceId);
+    assert.ok(selected.length > 0, sourceId);
+    for (const row of selected) {
+      assert.equal(row.sourceSnapshotId, head(sourceId).snapshotId, sourceId);
+      assert.equal(row.freshUntil, head(sourceId).freshnessExpiresAt, sourceId);
+      assert.equal(row.licenseId, head(sourceId).licenseRecordSha256, sourceId);
+    }
+  }
+
+  const molitSource = inventory.sources.find(({ id }) => id === "molit-railway-transfer-movement");
+  const molitMeta = await readJson(molitSource.rawSnapshotAdmission.metadataPath);
+  const molitClass = policy.sourceClasses.find(({ sourceIds }) => sourceIds?.includes("molit-railway-transfer-movement"));
+  const { deriveFreshnessExpiresAt } = await import("./freshness-policy.mjs");
+  const molitFreshUntil = deriveFreshnessExpiresAt({
+    policy, sourceClassId: molitClass.id, basisAt: molitMeta[molitClass.basisField], evaluationAt: molitMeta.capturedAt,
+  });
+  const molitRows = rows.filter((row) => row.sourceId === "molit-railway-transfer-movement");
+  assert.ok(molitRows.length > 0);
+  for (const row of molitRows) {
+    assert.equal(row.sourceSnapshotId, molitSource.rawSnapshotAdmission.snapshotId);
+    assert.equal(row.freshUntil, molitFreshUntil);
+    assert.equal(row.evidenceRawSha256, molitSource.rawSnapshotAdmission.rawSha256);
+  }
+
+  const edges = result.preparation.materialization.networkEdgeEvidence;
+  const capitalHead = head("capital-route-topology");
+  const candidateSnapshot = await readJson(`tools/datapack/sources/${capitalHead.snapshotId}.json`);
+  assert.equal(edges.capitalTopologyCandidate.snapshotId, capitalHead.snapshotId);
+  assert.equal(edges.capitalTopologyAdmission.snapshotId, capitalHead.snapshotId);
+  assert.equal(edges.capitalTopologyAdmission.contentSha256, capitalHead.contentSha256);
+  assert.equal(edges.capitalTopologyAdmission.freshUntil, candidateSnapshot.freshUntil);
+  const reverification = await readJson(edges.capitalTopologyReverification.path);
+  assert.equal(reverification.candidate.contentSha256, capitalHead.contentSha256);
+  assert.equal(edges.capitalTopology.snapshotId, reverification.baseline.snapshotId);
+  for (const key of ["capitalTopology", "capitalTopologyCandidate", "capitalTopologyReverification", "itxCoverageContract"]) {
+    assert.equal(edges[key].sha256, sha256(await readFile(path.join(root, edges[key].path))), key);
+  }
+
+  const contract = await readJson("tools/datapack/itx-cheongchun-coverage-contract.json");
+  const artifactStamp = contract.sourceTimetableArtifact.artifactId.replace("itx-cheongchun-source-timetable-", "");
+  assert.equal(result.preparation.materialization.itxTopologyEvidencePath, `tools/datapack/itx-cheongchun-topology-evidence-${artifactStamp}.json`);
+  assert.equal(result.preparation.materialization.itxTopologyEvidenceSha256,
+    sha256(await readFile(path.join(root, result.preparation.materialization.itxTopologyEvidencePath))));
+
+  const admissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));
+  const fareAdmission = JSON.parse(admissionBytes).admissions.find(({ sourceId }) => sourceId === "seoul-metro-official-od-fares");
+  const fare = result.preparation.materialization.officialOdFareEvidence;
+  assert.deepEqual(Object.keys(fare).sort(), ["admissionHash", "evidenceHash", "mappingLedgerHash", "quoteSetHash", "quotes", "snapshotId", "sourceId"]);
+  assert.equal(fare.snapshotId, fareAdmission.snapshotId);
+  assert.equal(fare.evidenceHash, fareAdmission.evidenceHash);
+  assert.equal(fare.admissionHash, sha256(admissionBytes));
+  assert.equal(fare.quoteSetHash, fareAdmission.quoteSetHash);
+  assert.equal(fare.mappingLedgerHash, fareAdmission.fareStationLineMappingLedgerHash);
+  assert.deepEqual(fare.quotes, result.finalPack.officialOdFareQuotes.filter(({ sourceId }) => sourceId === fare.sourceId));
+});
