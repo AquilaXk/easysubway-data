@@ -109,6 +109,25 @@ test("수도권 station-line·route-edge 출력 바이트가 바뀌면 거부한
     ["capital route-edge input bytes changed"]);
 });
 
+test("station-line·route-edge 입력이 Buffer가 아니면 TypeError나 성공 없이 위반으로 거부한다(#874 F1)", () => {
+  const cases = [
+    ["stationBytes", undefined, "capital station-line input bytes changed"],
+    ["stationBytes", "station\n", "capital station-line input bytes changed"],
+    ["stationPrestate", undefined, "capital station-line input bytes changed"],
+    ["stationPrestate", "station\n", "capital station-line input bytes changed"],
+    ["routeBytes", undefined, "capital route-edge input bytes changed"],
+    ["routeBytes", "route\n", "capital route-edge input bytes changed"],
+    ["routePrestate", undefined, "capital route-edge input bytes changed"],
+    ["routePrestate", "route\n", "capital route-edge input bytes changed"],
+  ];
+  for (const [field, value, violation] of cases) {
+    assert.deepEqual(nationwideCandidateRebindViolations(decision({ [field]: value })), [violation], `${field}=${String(value)}`);
+  }
+  assert.deepEqual(nationwideCandidateRebindViolations(decision({
+    stationBytes: "station\n", stationPrestate: "station\n", routeBytes: undefined, routePrestate: undefined,
+  })), ["capital station-line input bytes changed", "capital route-edge input bytes changed"]);
+});
+
 test("후보 id·source set이 바뀌면(alreadyCurrent 아님) 거부한다(#872 결정 1)", () => {
   assert.deepEqual(nationwideCandidateRebindViolations(decision({ alreadyCurrent: false })),
     ["candidate identity changed"]);
