@@ -333,13 +333,65 @@ export function validateBusanRouteTopologySnapshot(snapshot) {
   return snapshot;
 }
 
+// #872 S3: snapshot에 보존된 키 없는 raw 응답에서 수집 때와 같은 파서로 환승 행(exchange=Y)을 다시 꺼낸다.
+// snapshot 형식은 바꾸지 않으므로 이미 승인된 snapshot도 재수집 없이 쓴다. raw hash·역간 edge·환승 행 수가
+// snapshot 기록과 하나라도 다르면 실패한다.
+export function extractBusanTransferRows(snapshot) {
+  if (snapshot?.sourceId !== "busan-transportation-route-topology" || snapshot.credentialRedacted !== true) {
+    throw new Error("Busan route topology transfer extraction identity is invalid");
+  }
+  if (!Array.isArray(snapshot.rawResponses) || snapshot.rawResponses.length === 0
+    || snapshot.rawResponses.length !== snapshot.requestCount) {
+    throw new Error("Busan route topology raw responses are required");
+  }
+  const decoded = snapshot.rawResponses.map((entry) => {
+    if (typeof entry?.bytesBase64 !== "string") throw new Error("Busan route topology raw responses are required");
+    const bytes = Buffer.from(entry.bytesBase64, "base64");
+    if (bytes.toString("base64") !== entry.bytesBase64) throw new Error("Busan route topology raw response encoding is invalid");
+    return { stationCode: entry.stationCode ?? null, bytes, rawSha256: sha256(bytes) };
+  });
+  const rawSha256 = sha256(JSON.stringify(decoded.map(({ stationCode, rawSha256: responseSha256 }) => ({
+    stationCode,
+    rawSha256: responseSha256,
+  }))));
+  if (rawSha256 !== snapshot.rawSha256) throw new Error("Busan route topology raw hash mismatch");
+  const parsed = decoded.map(({ stationCode, bytes, rawSha256: responseSha256 }) => {
+    const { raw } = decodeXmlBytes(bytes);
+    const envelope = parseXmlEnvelope(raw);
+    if (envelope.resultCode !== "00" || envelope.body == null) {
+      throw new Error(`Busan route topology retained response is not a success: ${safeToken(stationCode ?? "all")}`);
+    }
+    return { stationCode, responseSha256, ...parseEdges(envelope.body) };
+  });
+  const edges = parsed.flatMap(({ edges: responseEdges }) => responseEdges)
+    .sort((left, right) => left.edgeId.localeCompare(right.edgeId, "en"));
+  if (JSON.stringify(edges) !== JSON.stringify(snapshot.edges)) {
+    throw new Error("Busan route topology retained raw edges do not match the snapshot");
+  }
+  const rows = parsed.flatMap(({ stationCode, responseSha256, transfers }) => transfers.map((transfer) => ({
+    requestStationCode: stationCode,
+    rawResponseSha256: responseSha256,
+    ...transfer,
+  })));
+  if (rows.length !== snapshot.excludedTransferCount) {
+    throw new Error("Busan route topology retained transfer row count does not match the snapshot");
+  }
+  return rows;
+}
+
+export function busanLineIdForStationCode(stationCode) {
+  return lineIdForStationCode(stationCode);
+}
+
 function parseEdges(body) {
   const items = [...body.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)];
   if (items.length === 0) throw new Error("Busan route topology schema mismatch: XML items");
   const bodyRemainder = body.replace(/<item\b[^>]*>[\s\S]*?<\/item>/gi, "").trim();
   if (bodyRemainder !== "") throw new Error("Busan route topology schema mismatch: response body envelope");
   const seen = new Set();
-  let excludedTransferCount = 0;
+  // #872 S3: 환승 행(exchange=Y)은 역간 edge가 아니므로 edge 목록에서는 빼되, 버리지 않고 원천 값 그대로 보존한다.
+  // 역명은 매핑에 쓰지 않으므로 담지 않는다. 숫자 검증은 환승 지표 빌더가 대상 행에만 한다.
+  const transfers = [];
   const edges = items.map(([, item], index) => {
     const values = Object.fromEntries(FIELDS.map((field) => [field, singleScalar(item, field, `item[${index}]`)]));
     const itemRemainder = FIELDS.reduce(
@@ -358,7 +410,9 @@ function parseEdges(body) {
       if (!lineId || (!endLineId && !externalTransfer) || endLineId === lineId) {
         throw new Error(`Busan route topology schema mismatch: item[${index}] transfer scope`);
       }
-      excludedTransferCount += 1;
+      transfers.push({
+        fromStationCode: startSc, toStationCode: endSc, dist: values.dist, time: values.time, stoppingTime: values.stoppingTime,
+      });
       return null;
     }
     if (!lineId || endLineId !== lineId) {
@@ -387,7 +441,8 @@ function parseEdges(body) {
   edges.sort((left, right) => left.edgeId.localeCompare(right.edgeId, "en"));
   return {
     edges,
-    excludedTransferCount,
+    excludedTransferCount: transfers.length,
+    transfers,
   };
 }
 

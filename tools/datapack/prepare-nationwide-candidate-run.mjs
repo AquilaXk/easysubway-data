@@ -19,6 +19,12 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { officialOdFareAdmissionsBySource, officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
 import { capitalTopologyReverificationPathForSnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import {
+  BUSAN_TRANSFER_METRICS_PATH,
+  buildBusanTransferMetrics,
+  canonicalBusanTransferMetricsJson,
+  readBusanTransferMetricsInputs,
+} from "./build-busan-transfer-metrics.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -282,6 +288,27 @@ export async function resolveMolitTransferSnapshot({ sourceInventory, freshnessP
   return { admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil };
 }
 
+// #872 S3: 부산교통공사 공식 환승 지표는 fan-in이 고른 부산 원천 head snapshot에서 다시 만든 결과와 커밋된 산출물이
+// 바이트까지 같고, 원천 식별(snapshot·raw·content·수집 시각)이 그 head와 같을 때만 쓴다.
+export async function resolveBusanTransferMetrics({ fanIn, sourceInventory, read }) {
+  const head = fanInHead(fanIn, "busan-transportation-route-topology");
+  const inputs = await readBusanTransferMetricsInputs({ snapshotId: head.snapshotId, read });
+  const rebuilt = Buffer.from(canonicalBusanTransferMetricsJson(buildBusanTransferMetrics({
+    ...inputs, sourceInventoryBytes: Buffer.from(JSON.stringify(sourceInventory)),
+  })));
+  const committed = await read(BUSAN_TRANSFER_METRICS_PATH);
+  if (!Buffer.isBuffer(committed) || !committed.equals(rebuilt)) {
+    throw new Error("nationwide candidate Busan transfer metrics differ from the rebuild");
+  }
+  const artifact = JSON.parse(committed);
+  const identity = artifact.sourceIdentity;
+  if (identity.snapshotId !== head.snapshotId || identity.rawSha256 !== head.rawSha256
+    || identity.contentSha256 !== head.contentSha256 || identity.capturedAt !== head.capturedAt) {
+    throw new Error("nationwide candidate Busan transfer metrics do not match the fan-in head");
+  }
+  return { artifact, metrics: artifact.metrics, head };
+}
+
 // 광주 접근성 행의 FACILITY 판정. 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고
 // 미관측 유형이 남아 있으면 부재로 단정하지 않고 UNKNOWN으로 막는다(#862: 휠체어리프트 0만으로
 // VERIFIED_ABSENT가 되던 문제). 세 유형이 모두 0일 때만 부재다.
@@ -373,6 +400,7 @@ export async function prepareNationwideCandidate({
     throw new Error("nationwide candidate Seoul transfer metrics do not match the fan-in head");
   }
   const seoulTransferCapturedAt = requiredInstant(transferMetrics.sourceIdentity.capturedAt, "Seoul transfer capturedAt");
+  const busanTransfer = await resolveBusanTransferMetrics({ fanIn, sourceInventory, read });
   const kricConvenience = inputJson("kricConvenience");
   const busanTimetable = inputJson("busanTimetable");
   const daeguTimetable1 = inputJson("daeguTimetable1");
@@ -455,9 +483,25 @@ export async function prepareNationwideCandidate({
   ]);
   const busanDaeguTransferStationIds = new Set(busanDaeguTransferInfo.keys());
 
-  const seoulTransferMetricMap = new Map();
+  // #872 S3: 공식 환승 지표는 서울교통공사 지표와 부산교통공사 지표다. 방향마다 원천 id·snapshot·검증 시각과
+  // 값(거리, 원천 시간)을 함께 들고, 두 원천이 같은 방향을 주장하면 실패한다.
+  const officialTransferMetricMap = new Map();
+  const addOfficialTransferMetric = (metric, entry) => {
+    const key = `${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`;
+    if (officialTransferMetricMap.has(key)) throw new Error(`nationwide candidate transfer metric is claimed by two sources: ${key}`);
+    officialTransferMetricMap.set(key, { metric, ...entry });
+  };
   for (const m of transferMetrics.metrics) {
-    seoulTransferMetricMap.set(`${m.stationId}:${m.fromLineId}->${m.toLineId}`, m);
+    addOfficialTransferMetric(m, {
+      sourceId: "seoul-metro-transfer-distance-duration", sourceSnapshotId: seoulTransferHead.snapshotId,
+      lastVerifiedAt: seoulTransferCapturedAt, durationSeconds: m.officialDurationSecondsReference,
+    });
+  }
+  for (const m of busanTransfer.metrics) {
+    addOfficialTransferMetric(m, {
+      sourceId: "busan-transportation-route-topology", sourceSnapshotId: busanTransfer.head.snapshotId,
+      lastVerifiedAt: requiredInstant(busanTransfer.head.capturedAt, "Busan transfer capturedAt"), durationSeconds: m.officialDurationSeconds,
+    });
   }
 
   const stationPathwayNodes = [];
@@ -485,12 +529,13 @@ export async function prepareNationwideCandidate({
           const fromLine = lines[i];
           const toLine = lines[j];
           const ruleId = `rule-transfer-${stationId}-${fromLine}-${toLine}`;
-          const seoulMetric = seoulTransferMetricMap.get(`${stationId}:${fromLine}->${toLine}`);
+          const official = officialTransferMetricMap.get(`${stationId}:${fromLine}->${toLine}`);
+          const officialMetric = official?.metric;
 
           // #872 S1: 공식 거리·시간이 없는 환승은 경로 행·route edge를 만들지 않는다. 규칙은 FK 없이 UNVERIFIED로 남겨
           // 서버가 사용 불가로 드러내게 한다. MOLIT 환승 이동 원천은 거리·시간이 없어 여기서 쓰지 않는다.
           // 무단차 간선은 공식 경로와 공식 거리가 함께 있는 원천이 생길 때만 만든다(현재 없음).
-          if (!seoulMetric) {
+          if (!official) {
             transferRules.push({
               id: ruleId,
               fromStationId: stationId,
@@ -506,16 +551,16 @@ export async function prepareNationwideCandidate({
             });
             continue;
           }
-          if (!["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(seoulMetric.metricProvenance)) {
-            throw new Error(`nationwide candidate Seoul transfer metric provenance is not allowed: ${stationId} ${fromLine}->${toLine}`);
+          if (!["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(officialMetric.metricProvenance)) {
+            throw new Error(`nationwide candidate transfer metric provenance is not allowed: ${stationId} ${fromLine}->${toLine}`);
           }
           const normalized = {
             edgeId: `transfer-${stationId}-${fromLine}-${toLine}`,
             edgeType: "IN_STATION_TRANSFER",
             fromNodeId: `${stationId}:${fromLine}`,
             toNodeId: `${stationId}:${toLine}`,
-            durationSeconds: seoulMetric.officialDurationSecondsReference,
-            distanceMeters: seoulMetric.distanceMeters,
+            durationSeconds: official.durationSeconds,
+            distanceMeters: officialMetric.distanceMeters,
             servicePattern: "",
             serviceClass: "SUBWAY",
           };
@@ -523,7 +568,7 @@ export async function prepareNationwideCandidate({
 
           // D4(보완): 역방향 값(DERIVED_RECIPROCAL)은 #350 승인대로 길찾기 route edge에만 쓴다. production pathway 계약은
           // DERIVED_RECIPROCAL을 받지 않으므로 경로 행을 만들지 않고, 규칙은 FK 없이 UNVERIFIED로 둔다.
-          if (seoulMetric.metricProvenance === "DERIVED_RECIPROCAL") {
+          if (officialMetric.metricProvenance === "DERIVED_RECIPROCAL") {
             transferRules.push({
               id: ruleId,
               fromStationId: stationId,
@@ -531,10 +576,10 @@ export async function prepareNationwideCandidate({
               toStationId: stationId,
               toLineId: toLine,
               transferType: "IN_STATION",
-              minTransferSeconds: seoulMetric.officialDurationSecondsReference,
+              minTransferSeconds: official.durationSeconds,
               pathwayEdgeId: null,
               strictStepFreePathwayEdgeId: null,
-              sourceId: "seoul-metro-transfer-distance-duration",
+              sourceId: official.sourceId,
               verificationStatus: "UNVERIFIED",
             });
             continue;
@@ -547,21 +592,21 @@ export async function prepareNationwideCandidate({
             fromNodeId: `pathway-node-${stationId}-${fromLine}`,
             toNodeId: `pathway-node-${stationId}-${toLine}`,
             edgeType: "WALK",
-            durationSeconds: seoulMetric.officialDurationSecondsReference,
-            distanceMeters: seoulMetric.distanceMeters,
+            durationSeconds: official.durationSeconds,
+            distanceMeters: officialMetric.distanceMeters,
             bidirectional: false,
             includesStairs: false,
             requiresElevator: false,
             requiresEscalator: false,
             accessibilityStatus: "UNKNOWN",
             reliabilityScore: 100,
-            sourceId: "seoul-metro-transfer-distance-duration",
-            sourceSnapshotId: seoulTransferHead.snapshotId,
-            providerRecordHash: seoulMetric.sourceRecordSha256,
+            sourceId: official.sourceId,
+            sourceSnapshotId: official.sourceSnapshotId,
+            providerRecordHash: officialMetric.sourceRecordSha256,
             provenanceKind: "OFFICIAL_SOURCE",
             verificationStatus: "VERIFIED",
-            lastVerifiedAt: seoulTransferCapturedAt,
-            evidenceHash: seoulMetric.sourceRecordSha256,
+            lastVerifiedAt: official.lastVerifiedAt,
+            evidenceHash: officialMetric.sourceRecordSha256,
             instruction: "환승 이동 경로",
           });
 
@@ -572,10 +617,10 @@ export async function prepareNationwideCandidate({
             toStationId: stationId,
             toLineId: toLine,
             transferType: "IN_STATION",
-            minTransferSeconds: seoulMetric.officialDurationSecondsReference,
+            minTransferSeconds: official.durationSeconds,
             pathwayEdgeId: walkPathwayEdgeId,
             strictStepFreePathwayEdgeId: null,
-            sourceId: "seoul-metro-transfer-distance-duration",
+            sourceId: official.sourceId,
             verificationStatus: "VERIFIED",
           });
         }
@@ -1327,6 +1372,8 @@ export async function prepareNationwideCandidate({
     { id: "daejeon-train-timetable", updatedAt: policyBasisAt({ policy: freshnessPolicy, sourceId: "daejeon-train-timetable", record: daejeonTimetable }) },
     { id: "gwangju-transportation-accessibility", updatedAt: gwangjuAccessibility.capturedAt },
     { id: "molit-railway-transfer-movement", updatedAt: molitTransferMeta.capturedAt },
+    // #872 S3: 부산 공식 환승 경로 행이 이 원천을 가리킨다(production pathway 계약: source_id는 팩 sourceInventory에 있어야 한다).
+    { id: "busan-transportation-route-topology", updatedAt: busanTransfer.head.capturedAt },
   ];
 
   for (const item of regionalSourcesToAdd) {
