@@ -2880,6 +2880,26 @@ export async function readBuilderBaselineBytes(
   return Buffer.from(stdout);
 }
 
+// 현재 토폴로지 갱신이 쓸 candidate spec을 정하고, 선택한 ITX 증거가 그 spec과 맞는지 검사한다.
+export async function resolveCurrentTopologyRefreshSpec({
+  baseSpec,
+  approvedItxBootstrap,
+  itxCurrentAdmissionPath,
+  selectedItxTopologyEvidencePath,
+  currentItxTopologyEvidenceBytes,
+  buildNow,
+  bindApprovedSpec,
+}) {
+  validateCurrentTopologyRefreshItxEvidence({
+    spec: baseSpec,
+    itxCurrentAdmissionPath,
+    selectedItxTopologyEvidencePath,
+    currentItxTopologyEvidenceBytes,
+    buildNow,
+  });
+  return approvedItxBootstrap ? bindApprovedSpec(baseSpec) : baseSpec;
+}
+
 export async function generateCurrentCapitalTopologyRefresh({
   repositoryRoot = root,
   capitalTopologyPath,
@@ -2983,35 +3003,35 @@ export async function generateCurrentCapitalTopologyRefresh({
       ]);
     await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
-    let baseSpec = parseJson(baseSpecBytes, "candidate build spec");
-    validateCurrentTopologyRefreshItxEvidence({
-      spec: baseSpec,
+    let approvedItxTopology = null;
+    const baseSpec = await resolveCurrentTopologyRefreshSpec({
+      baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
+      approvedItxBootstrap,
       itxCurrentAdmissionPath,
       selectedItxTopologyEvidencePath,
       currentItxTopologyEvidenceBytes,
       buildNow,
+      bindApprovedSpec: async (priorSpec) => {
+        const [sourceBytes, completenessBytes] = await Promise.all([
+          readRegularBytes(repositoryPath, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
+          readRegularBytes(
+            repositoryPath,
+            approvedItxCoverageReference?.completenessEvidencePath,
+            "approved ITX completeness evidence",
+          ),
+        ]);
+        approvedItxTopology = deriveTopology(parseJson(sourceBytes, "approved ITX source"));
+        return bindApprovedItxCurrentSourceSpec({
+          baseSpec: priorSpec,
+          coverageContractBytes: approvedItxCoverageContractBytes,
+          sourceBytes,
+          completenessBytes,
+          topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
+          topologyEvidencePath: selectedItxTopologyEvidencePath,
+          buildNow,
+        });
+      },
     });
-    let approvedItxTopology = null;
-    if (approvedItxBootstrap) {
-      const [sourceBytes, completenessBytes] = await Promise.all([
-        readRegularBytes(repositoryPath, approvedItxCoverageReference?.artifactPath, "approved ITX source"),
-        readRegularBytes(
-          repositoryPath,
-          approvedItxCoverageReference?.completenessEvidencePath,
-          "approved ITX completeness evidence",
-        ),
-      ]);
-      baseSpec = await bindApprovedItxCurrentSourceSpec({
-        baseSpec,
-        coverageContractBytes: approvedItxCoverageContractBytes,
-        sourceBytes,
-        completenessBytes,
-        topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
-        topologyEvidencePath: selectedItxTopologyEvidencePath,
-        buildNow,
-      });
-      approvedItxTopology = deriveTopology(parseJson(sourceBytes, "approved ITX source"));
-    }
     const primary = buildCurrentTopologyRefreshPrimaryOutputs({
       baseSpec,
       builderGitSha,
