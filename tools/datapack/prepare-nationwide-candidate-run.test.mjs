@@ -704,6 +704,7 @@ test("#862 prepare 증거 행·네트워크 증거·운임 증거는 fan-in head
   assert.equal(fare.quoteSetHash, fareAdmission.quoteSetHash);
   assert.equal(fare.mappingLedgerHash, fareAdmission.fareStationLineMappingLedgerHash);
   assert.deepEqual(fare.quotes, result.finalPack.officialOdFareQuotes.filter(({ sourceId }) => sourceId === fare.sourceId));
+});
 
 test("nationwide candidate preparation은 tracked ITX coverage contract와 승인 원천의 버전 topology 증거에 결속된다", async () => {
   const result = await prepareNationwideCandidate({
