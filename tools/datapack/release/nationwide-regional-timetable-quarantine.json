@@ -1,0 +1,414 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "datapack-regional-timetable-quarantine",
+  "issue": "https://github.com/AquilaXk/easysubway-data/issues/855",
+  "contract": {
+    "stopTime": "원천 시각 하나인 정차는 arrivalSeconds = departureSeconds = 원천 값. 원천 시각이 없는 정차(종착역 도착)는 만들지 않는다.",
+    "references": [
+      "tools/datapack/schema/catalog-schema.sql transit_stop_times arrival_seconds NOT NULL, arrival_seconds <= departure_seconds",
+      "tools/datapack/reconstruct-transit-trips.mjs arrivalSeconds ?? departureSeconds"
+    ]
+  },
+  "sources": [
+    {
+      "sourceId": "daejeon-train-timetable",
+      "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
+      "admittedStopTimeCount": 9574,
+      "quarantinedCount": 0
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "rawSha256": "852b75f79ca7cccf8dfefc65ee4fe226f833e6cd2e52f5e721efdfac2efdc31a",
+      "admittedStopTimeCount": 7187,
+      "quarantinedCount": 38
+    }
+  ],
+  "summary": {
+    "quarantinedCount": 38,
+    "byReason": {
+      "FEWER_THAN_TWO_SOURCE_STOPS": 38
+    }
+  },
+  "rows": [
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 22440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 23640,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 30060,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 31440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 33240,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 36840,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 40440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 44040,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 47640,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 51240,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 54840,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 58440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 62040,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 64140,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 66240,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 68340,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 70020,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 71640,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 73440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 77040,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-weekday-2026",
+      "sourceDayKey": "WEEK",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 80220,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 26280,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 29640,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 31440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 33240,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 36840,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 40440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 44040,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 47640,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 51240,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 54840,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 58440,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 62040,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 63840,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 65640,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 69240,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 72840,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    },
+    {
+      "sourceId": "gwangju-transportation-cyberstation-timetable",
+      "serviceId": "gwangju-holiday-2026",
+      "sourceDayKey": "DAYOFF",
+      "sourceDirection": "pd",
+      "stationCode": "100",
+      "stationId": "station-73a324a117ea",
+      "departureSeconds": 78120,
+      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+    }
+  ]
+}
