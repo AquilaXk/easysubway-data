@@ -113895,5 +113895,52 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "korail-metropolitan-planned-timetable",
+    "snapshotId": "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
+    "previousSnapshotId": "korail-metropolitan-planned-timetable-0ca60bd0f21f25bb5b517ac6abc1bcb773e0ec1186cd17c09d4bc2c7c53f3793",
+    "capturedAt": "2026-10-01T04:42:23.685Z",
+    "retrievedAt": "2026-10-01T04:42:23.685Z",
+    "sourceUpdatedAt": null,
+    "serviceEffectiveAt": "2026-08-31T15:00:00.000Z",
+    "serviceEffectiveUntil": null,
+    "provider": "한국철도공사",
+    "rowCount": 1488,
+    "coverageCount": 194,
+    "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "contentSha256": "cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261001/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
+    "rawObjectSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+    "rawReceiptSha256": "b5d9572dd91b164328b46f81d6ae75c71d6cb153d5eb66906845d754e2c1438b",
+    "byteSize": 51799,
+    "freshUntil": "2026-10-31T04:42:23.685Z",
+    "freshnessExpiresAt": "2026-10-31T04:42:23.685Z",
+    "rawRetentionExpiresAt": "2026-12-30T04:42:23.685Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
+    "schemaFingerprint": "7efdcf5965f67c84e84957995f359bbcf6f390a7f407e7581ad31d8a08ecef72",
+    "redactedRequestFingerprint": "2e224c0c55f1fc1f2d0b9c3df5e6d123c3634358cb2d5726b3b684890eb47ef7",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
+    },
+    "reverifiedUnchangedAt": "2026-10-01T04:42:23.685Z",
+    "diffSummary": {
+      "status": "CHANGED",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": true,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
