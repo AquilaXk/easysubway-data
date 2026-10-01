@@ -98,13 +98,13 @@ function validateMetrics(value, bytes, canonical) {
   if (stationLines.length === 0 || new Set(stationLines.map(({ stationId, lineId }) => cellKey(stationId, lineId))).size !== stationLines.length) {
     throw new Error("NO_GO canonical target denominator mismatch");
   }
-  const physicalPairs = derivePairs(stationLines);
-  if (physicalPairs.length === 0 || identity.physicalPairCount !== physicalPairs.length
-    || canonicalJson(physicalPairs) !== canonicalJson(value.physicalPairs)) throw new Error("NO_GO canonical pair identity mismatch");
+  // #872 S2: 쌍은 원천이 실제로 덮는 (역, 노선 2개)이다. 두 끝점은 분모 안에 있어야 하고 정렬·중복 없음이어야 한다.
+  const physicalPairs = validatePairs(value.physicalPairs, stationLines);
+  if (physicalPairs.length === 0 || identity.physicalPairCount !== physicalPairs.length) throw new Error("NO_GO canonical pair identity mismatch");
   if (!Array.isArray(value.metrics)) throw new Error("NO_GO transfer topology metric composition mismatch");
   const provenance = metricProvenanceSummary(value.metrics);
   if (value.metrics.length !== physicalPairs.length * 2
-    || provenance.DERIVED_RECIPROCAL !== 2 || provenance.OFFICIAL_SOURCE !== value.metrics.length - provenance.DERIVED_RECIPROCAL) {
+    || provenance.OFFICIAL_SOURCE < physicalPairs.length || provenance.OFFICIAL_SOURCE + (provenance.DERIVED_RECIPROCAL ?? 0) !== value.metrics.length) {
     throw new Error("NO_GO transfer topology metric composition mismatch");
   }
   const expectedDirections = new Set(physicalPairs.flatMap(({ stationId, lineIds: [a, b] }) => [metricKey(stationId, a, b), metricKey(stationId, b, a)]));
@@ -154,9 +154,22 @@ function validateDerivedReciprocal(metric, metricsByKey) {
   }
 }
 
-function derivePairs(stationLines) {
-  const byStation = Map.groupBy(stationLines, ({ stationId }) => stationId);
-  return [...byStation.entries()].flatMap(([stationId, memberships]) => combinations(memberships.map(({ lineId }) => lineId).sort(compareBytes), 2).map((lineIds) => ({ stationId, lineIds }))).sort(comparePair);
+function validatePairs(pairs, stationLines) {
+  if (!Array.isArray(pairs)) throw new Error("NO_GO canonical pair identity mismatch");
+  const cells = new Set(stationLines.map(({ stationId, lineId }) => cellKey(stationId, lineId)));
+  const normalized = pairs.map((pair) => {
+    assertExactKeys(pair, ["stationId", "lineIds"], "physical pair");
+    const { stationId, lineIds } = pair;
+    if (!nonBlank(stationId) || !Array.isArray(lineIds) || lineIds.length !== 2 || compareBytes(lineIds[0], lineIds[1]) >= 0
+      || lineIds.some((lineId) => !cells.has(cellKey(stationId, lineId)))) throw new Error("NO_GO canonical pair identity mismatch");
+    return { stationId, lineIds: [...lineIds] };
+  });
+  const sorted = [...normalized].sort(comparePair);
+  if (canonicalJson(sorted) !== canonicalJson(normalized)
+    || new Set(normalized.map(({ stationId, lineIds }) => metricKey(stationId, ...lineIds))).size !== normalized.length) {
+    throw new Error("NO_GO canonical pair identity mismatch");
+  }
+  return normalized;
 }
 
 function metricProvenanceSummary(metrics) { return Object.fromEntries(["DERIVED_RECIPROCAL", "OFFICIAL_SOURCE"].map((state) => [state, metrics.filter(({ metricProvenance }) => metricProvenance === state).length])); }
@@ -167,7 +180,6 @@ async function readRegularFile(file, label) { const before = await lstat(file); 
 async function outputMustBeAbsent(file) { if (!path.isAbsolute(file)) throw new Error("output path must be absolute"); const parent = await lstat(path.dirname(file)); if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error("output parent must be a regular directory"); try { await lstat(file); } catch (error) { if (error?.code === "ENOENT") return; throw error; } throw new Error("output must be absent"); }
 function parseJson(bytes, label) { try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); } catch { throw new Error(`${label} must be strict UTF-8 JSON`); } }
 function assertExactKeys(value, keys, label) { if (!value || typeof value !== "object" || Array.isArray(value) || canonicalJson(Object.keys(value).sort(compareBytes)) !== canonicalJson([...keys].sort(compareBytes))) throw new Error(`NO_GO ${label} schema mismatch`); }
-function combinations(values, size) { return values.flatMap((value, index) => size === 1 ? [[value]] : combinations(values.slice(index + 1), size - 1).map((tail) => [value, ...tail])); }
 function canonicalObject(value) { return sortValue(value); }
 function canonicalBytes(value) { return Buffer.from(`${canonicalJson(value)}\n`); }
 function canonicalJson(value) { return JSON.stringify(sortValue(value)); }

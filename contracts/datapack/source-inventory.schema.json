@@ -264,7 +264,7 @@
               "artifactKind": { "const": "transfer-source-admission-evidence" }, "approvalIssue": { "const": 350 }, "decision": { "const": "APPROVED" }, "approvedBy": { "const": "AquilaXk" }, "approvedAt": { "type": "string", "format": "date-time" }, "productionUseAllowed": { "const": true },
               "snapshotId": { "type": "string" }, "snapshotPath": { "type": "string", "pattern": "^tools/datapack/sources/seoul-metro-transfer-distance-duration-[0-9TZ]+\\.json$" }, "snapshotFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "capturedAt": { "type": "string", "format": "date-time" }, "observedAt": { "type": "string", "format": "date-time" }, "freshUntil": { "type": "string", "format": "date-time" }, "sourceEffectiveDate": { "const": "2025-12-31" },
               "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "schemaFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "metricsPath": { "const": "tools/datapack/release/current-transfer-topology-metrics.json" }, "metricsArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "applicabilityPath": { "const": "tools/datapack/release/current-capital-transfer-topology-applicability.json" }, "applicabilityArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-              "rowCount": { "const": 145 }, "physicalPairCount": { "const": 15 }, "directedMetricCount": { "const": 30 }, "officialMetricCount": { "const": 28 }, "derivedReciprocalMetricCount": { "const": 2 }, "stationLineCount": { "const": 213 }, "applicableStationLineCount": { "const": 27 }, "notApplicableStationLineCount": { "const": 186 }, "durationRole": { "const": "REFERENCE_ONLY" }, "licenseEvidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              "rowCount": { "const": 145 }, "physicalPairCount": { "type": "integer", "minimum": 1 }, "directedMetricCount": { "type": "integer", "minimum": 2 }, "officialMetricCount": { "type": "integer", "minimum": 1 }, "derivedReciprocalMetricCount": { "type": "integer", "minimum": 0 }, "stationLineCount": { "type": "integer", "minimum": 1 }, "applicableStationLineCount": { "type": "integer", "minimum": 1 }, "notApplicableStationLineCount": { "type": "integer", "minimum": 0 }, "durationRole": { "const": "REFERENCE_ONLY" }, "licenseEvidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
           },
           "membershipAdmissionEvidence": {
@@ -824,7 +824,7 @@
                       "properties": {
                         "status": { "const": "SUPPORTED" },
                         "productionUseAllowed": { "const": true },
-                        "coverageStatus": { "const": "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS" },
+                        "coverageStatus": { "type": "string", "pattern": "^CAPITAL_SEOUL_METRO_[1-9][0-9]*_PAIRS_[1-9][0-9]*_DIRECTED_METRICS$" },
                         "updateFrequency": { "const": "annual file snapshot" },
                         "unsupportedNotes": { "const": "공식 소요시간은 reference-only이며 runtime 환승시간은 거리와 선택한 보행속도로 계산한다" }
                       }

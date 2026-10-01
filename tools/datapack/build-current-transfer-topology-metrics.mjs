@@ -11,17 +11,42 @@ const SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const SOURCE_EFFECTIVE_DATE = "2025-12-31";
 const SNAPSHOT_FILES = ["manifest.json", "observation.json", "raw-snapshot.json"];
 const FIELDS = ["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"];
-const LINE_BY_SOURCE_NAME = new Map([
-  ["2호선", "seoul-2"], ["4호선", "seoul-4"], ["5호선", "line-80fc4d5350d4"],
-  ["6호선", "line-3f41718e0833"], ["신분당선", "shinbundang"],
+// #872 S2: 원천의 "호선"은 서울교통공사 1~8호선이다. "환승노선"은 상대 노선 이름이다. 둘 다 정본 팩 노선 id와
+// 노선 이름(nameKo)이 정확히 같을 때만 쓴다. 이름 유사도·추정 매핑은 쓰지 않는다.
+const SEOUL_METRO_LINES = Object.freeze([
+  ["1호선", "line-472a81add377", "수도권 1호선"], ["2호선", "seoul-2", "수도권 2호선"], ["3호선", "line-41a8c75ec9d8", "수도권 3호선"],
+  ["4호선", "seoul-4", "수도권 4호선"], ["5호선", "line-80fc4d5350d4", "수도권 5호선"], ["6호선", "line-3f41718e0833", "수도권 6호선"],
+  ["7호선", "line-15b3b8a93259", "수도권 7호선"], ["8호선", "line-2b2d9eaa53d0", "수도권 8호선"],
 ]);
-const DERIVED_RECIPROCALS = new Map([
-  ["station-b35616704ce3\0seoul-2\0line-80fc4d5350d4", "station-b35616704ce3\0line-80fc4d5350d4\0seoul-2"],
-  ["station-gangnam\0shinbundang\0seoul-2", "station-gangnam\0seoul-2\0shinbundang"],
+const COUNTERPART_LINES = Object.freeze([
+  ...SEOUL_METRO_LINES,
+  ["9호선", "line-f0e747248a31", "수도권 9호선"], ["공항철도", "line-e9e9a5b520a4", "수도권 공항"], ["경의중앙선", "line-6e39be0cb6e2", "수도권 경의중앙"],
+  ["경춘선", "line-54a7b980b7c3", "수도권 경춘"], ["수인분당선", "line-558d0bd8312d", "수도권 수인분당"], ["신분당선", "shinbundang", "수도권 신분당"],
+  ["우이신설선", "line-30886152e4f8", "수도권 우이신설"], ["김포골드라인", "line-5500c1600f71", "수도권 김포골드라인"], ["서해선", "line-051552e50435", "수도권 서해선"],
+  ["신림선", "line-aefa08ccc0a9", "수도권 신림선"], ["GTX-A", "line-8604048b6430", "수도권 GTX-A"],
+]);
+const SEOUL_METRO_LINE_BY_SOURCE_NAME = new Map(SEOUL_METRO_LINES.map(([sourceName, lineId]) => [sourceName, lineId]));
+const COUNTERPART_LINE_BY_SOURCE_NAME = new Map(COUNTERPART_LINES.map(([sourceName, lineId]) => [sourceName, lineId]));
+const LINE_NAME_BY_ID = new Map(COUNTERPART_LINES.map(([, lineId, nameKo]) => [lineId, nameKo]));
+// 쓰지 않는 원천 행은 연번과 행 전체 값으로 고정하고 사유를 밝힌다. 원천 값이 바뀌면 NO_GO다.
+// - BRANCH_TRANSFER_MODEL_ABSENT: 같은 노선 지선 환승(성수·신도림·강동). 정본 팩은 지선을 같은 노선 id 안에서 표현하므로
+//   역내 환승 간선으로 나타낼 수 없다(후속 과제).
+// - AMBIGUOUS_COUNTERPART_LINE_NAME: 상대 노선명이 정본 팩 노선 하나로 정해지지 않는다(국철·경원선).
+const EXCLUDED_SOURCE_ROWS = new Map([
+  [24, { row: { 호선: "2호선", 환승역명: "성수", 환승노선: "2호선", 환승거리: 23, 환승소요시간: "00:19" }, reason: "BRANCH_TRANSFER_MODEL_ABSENT" }],
+  [35, { row: { 호선: "2호선", 환승역명: "신도림", 환승노선: "2호선", 환승거리: 81, 환승소요시간: "01:08" }, reason: "BRANCH_TRANSFER_MODEL_ABSENT" }],
+  [59, { row: { 호선: "3호선", 환승역명: "수서", 환승노선: "국철", 환승거리: 92, 환승소요시간: "01:17" }, reason: "AMBIGUOUS_COUNTERPART_LINE_NAME" }],
+  [102, { row: { 호선: "5호선", 환승역명: "강동", 환승노선: "5호선", 환승거리: 19, 환승소요시간: "00:16" }, reason: "BRANCH_TRANSFER_MODEL_ABSENT" }],
+  [107, { row: { 호선: "6호선", 환승역명: "석계", 환승노선: "경원선", 환승거리: 125, 환승소요시간: "01:44" }, reason: "AMBIGUOUS_COUNTERPART_LINE_NAME" }],
+]);
+// 공식 소요시간은 거리/1.2m/s 반올림과 같아야 한다. 아래 행만 공식 값이 이 관계와 다르다(원천 내부 불일치 의심,
+// 제공기관 확인 필요). 공식 원천 우선 원칙에 따라 값을 바꾸지 않고 OFFICIAL_SOURCE로 쓴다.
+const OFFICIAL_DURATION_REFERENCE_EXCEPTIONS = new Map([
+  [79, { row: { 호선: "5호선", 환승역명: "김포공항", 환승노선: "공항철도", 환승거리: 122, 환승소요시간: "04:42" }, reason: "SOURCE_INTERNAL_INCONSISTENCY_SUSPECTED" }],
 ]);
 
 export function currentTransferLineIds() {
-  return [...LINE_BY_SOURCE_NAME.values()].toSorted(compareBytes);
+  return [...new Set(COUNTERPART_LINE_BY_SOURCE_NAME.values())].toSorted(compareBytes);
 }
 
 export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log } = {}) {
@@ -66,13 +91,18 @@ export function validateAuthenticatedTransferObservation({ observation, sourceCa
 export function buildTransferTopologyMetrics({ canonical, canonicalPackBytes, observation, sourceCandidate, sourceCandidatesBytes }) {
   if (!Buffer.isBuffer(canonicalPackBytes) || !Buffer.isBuffer(sourceCandidatesBytes)) throw new Error("NO_GO canonical input bytes mismatch");
   const records = indexSourceRecords(observation.observation.rows, canonical);
-  const physicalPairs = canonical.physicalPairs.map((pair) => buildPhysicalPair(pair, records));
+  // #872 S2: 쌍은 원천이 실제로 덮는 (역, 노선 2개)뿐이다. 원천에 없는 쌍은 만들지 않는다.
+  const sourcePairs = [...new Map([...records.values()].map(({ stationId, fromLineId, toLineId }) => {
+    const lineIds = [fromLineId, toLineId].sort(compareBytes);
+    return [directionKey(stationId, ...lineIds), { stationId, lineIds }];
+  })).values()].sort(comparePair);
+  const physicalPairs = sourcePairs.map((pair) => buildPhysicalPair(pair, records));
   const metrics = physicalPairs.flatMap(({ stationId, lineIds, directions }) => directions.map((direction) => ({ stationId, ...direction })))
     .sort(compareMetric);
   const derivedCount = metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
   const officialCount = metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
   if (physicalPairs.length === 0 || metrics.length !== physicalPairs.length * 2
-    || derivedCount !== DERIVED_RECIPROCALS.size || officialCount !== metrics.length - derivedCount) {
+    || officialCount !== records.size || derivedCount !== metrics.length - officialCount) {
     throw new Error("NO_GO transfer topology metric composition mismatch");
   }
   assertExactDerivedReciprocals(metrics);
@@ -98,7 +128,7 @@ export function buildTransferTopologyMetrics({ canonical, canonicalPackBytes, ob
       canonicalPackSha256: sha256(canonicalPackBytes),
       stationLineCount: canonical.stationLines.length,
       stationCount: canonical.stationIds.length,
-      physicalPairCount: canonical.physicalPairs.length,
+      physicalPairCount: physicalPairs.length,
     },
     physicalPairs: physicalPairs.map(({ stationId, lineIds }) => ({ stationId, lineIds })),
     metrics,
@@ -116,11 +146,8 @@ function buildPhysicalPair(pair, records) {
   if (forward && reverse && (forward.distanceMeters !== reverse.distanceMeters || forward.officialDurationSecondsReference !== reverse.officialDurationSecondsReference)) {
     throw new Error("NO_GO reciprocal official transfer metric conflict");
   }
+  // D4: 원천에 없는 반대 방향은 원천 방향 값을 DERIVED_RECIPROCAL로만 표기한다.
   const source = forward ?? reverse;
-  const missingKey = forward ? (reverse ? null : reverseKey) : forwardKey;
-  if (missingKey !== null && DERIVED_RECIPROCALS.get(missingKey) !== directionKey(pair.stationId, source.fromLineId, source.toLineId)) {
-    throw new Error("NO_GO derived reciprocal direction mismatch");
-  }
   const direction = (fromLineId, toLineId, record) => record
     ? canonicalObject({ fromLineId, toLineId, distanceMeters: record.distanceMeters, officialDurationSecondsReference: record.officialDurationSecondsReference, durationRole: "REFERENCE_ONLY", sourceRecordSha256: record.sourceRecordSha256, metricProvenance: "OFFICIAL_SOURCE" })
     : canonicalObject({ fromLineId, toLineId, distanceMeters: source.distanceMeters, officialDurationSecondsReference: source.officialDurationSecondsReference, durationRole: "REFERENCE_ONLY", sourceRecordSha256: source.sourceRecordSha256, metricProvenance: "DERIVED_RECIPROCAL", derivedFrom: { stationId: pair.stationId, fromLineId: source.fromLineId, toLineId: source.toLineId, sourceRecordSha256: source.sourceRecordSha256 } });
@@ -128,32 +155,72 @@ function buildPhysicalPair(pair, records) {
 }
 
 function assertExactDerivedReciprocals(metrics) {
-  const derived = metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL");
-  if (derived.length !== DERIVED_RECIPROCALS.size
-    || derived.some((metric) => DERIVED_RECIPROCALS.get(directionKey(metric.stationId, metric.fromLineId, metric.toLineId)) !== directionKey(metric.derivedFrom.stationId, metric.derivedFrom.fromLineId, metric.derivedFrom.toLineId))) {
-    throw new Error("NO_GO derived reciprocal set mismatch");
+  const byKey = new Map(metrics.map((metric) => [directionKey(metric.stationId, metric.fromLineId, metric.toLineId), metric]));
+  for (const metric of metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL")) {
+    const { derivedFrom } = metric;
+    const source = byKey.get(directionKey(derivedFrom.stationId, derivedFrom.fromLineId, derivedFrom.toLineId));
+    if (derivedFrom.stationId !== metric.stationId || derivedFrom.fromLineId !== metric.toLineId || derivedFrom.toLineId !== metric.fromLineId
+      || source?.metricProvenance !== "OFFICIAL_SOURCE" || source.sourceRecordSha256 !== metric.sourceRecordSha256 || derivedFrom.sourceRecordSha256 !== metric.sourceRecordSha256
+      || source.distanceMeters !== metric.distanceMeters || source.officialDurationSecondsReference !== metric.officialDurationSecondsReference) {
+      throw new Error("NO_GO derived reciprocal set mismatch");
+    }
   }
 }
 
+// 원천 행마다 (역, 출발 노선, 도착 노선)을 하나로 정한다. 제외 목록 밖에서 정해지지 않는 행은 NO_GO다.
 function indexSourceRecords(rows, canonical) {
-  const stationByName = new Map(canonical.stations.map(({ id, nameKo }) => [nameKo, id]));
-  const targetKeys = new Set(canonical.physicalPairs.flatMap(({ stationId, lineIds: [a, b] }) => [directionKey(stationId, a, b), directionKey(stationId, b, a)]));
   const records = new Map();
+  const consumed = new Set();
   for (const row of rows) {
-    const stationId = stationByName.get(row["환승역명"]);
-    const fromLineId = sourceLineId(normalizeLineName(row["호선"]), row["환승역명"], stationId);
-    const toLineId = sourceLineId(row["환승노선"], row["환승역명"], stationId);
-    if (!stationId || !fromLineId || !toLineId || fromLineId === toLineId) continue;
-    const key = directionKey(stationId, fromLineId, toLineId);
-    if (!targetKeys.has(key)) continue;
+    const serial = row["연번"];
+    const fromName = normalizeLineName(row["호선"]);
+    const toName = row["환승노선"];
+    const excluded = EXCLUDED_SOURCE_ROWS.get(serial);
+    if (excluded) {
+      assertPinnedRow(row, excluded.row, "NO_GO excluded official transfer row drift");
+      const fromLineId = SEOUL_METRO_LINE_BY_SOURCE_NAME.get(fromName);
+      const toLineId = COUNTERPART_LINE_BY_SOURCE_NAME.get(toName);
+      const holds = excluded.reason === "BRANCH_TRANSFER_MODEL_ABSENT" ? fromLineId !== undefined && fromLineId === toLineId
+        : excluded.reason === "AMBIGUOUS_COUNTERPART_LINE_NAME" ? fromLineId !== undefined && toLineId === undefined : false;
+      if (!holds) throw new Error("NO_GO excluded official transfer row reason mismatch");
+      consumed.add(serial);
+      continue;
+    }
+    const fromLineId = SEOUL_METRO_LINE_BY_SOURCE_NAME.get(fromName);
+    const toLineId = COUNTERPART_LINE_BY_SOURCE_NAME.get(toName);
+    if (!fromLineId || !toLineId || fromLineId === toLineId) throw new Error(`NO_GO unmapped official transfer row: ${serial}`);
+    const stationId = resolveStation(canonical, row["환승역명"], fromLineId, toLineId, serial);
     const duration = parseDuration(row["환승소요시간"]);
-    const expected = Math.round(row["환승거리"] / 1.2);
-    if (duration !== expected) throw new Error("NO_GO official transfer reference duration mismatch");
-    const record = { fromLineId, toLineId, distanceMeters: row["환승거리"], officialDurationSecondsReference: duration, sourceRecordSha256: sha256(canonicalJson(row)) };
+    const exception = OFFICIAL_DURATION_REFERENCE_EXCEPTIONS.get(serial);
+    if (exception) {
+      assertPinnedRow(row, exception.row, "NO_GO official duration exception row drift");
+      if (duration === Math.round(row["환승거리"] / 1.2)) throw new Error("NO_GO official duration exception is stale");
+    } else if (duration !== Math.round(row["환승거리"] / 1.2)) {
+      throw new Error("NO_GO official transfer reference duration mismatch");
+    }
+    const key = directionKey(stationId, fromLineId, toLineId);
     if (records.has(key)) throw new Error("NO_GO duplicate official transfer direction");
-    records.set(key, record);
+    records.set(key, { stationId, fromLineId, toLineId, distanceMeters: row["환승거리"], officialDurationSecondsReference: duration, sourceRecordSha256: sha256(canonicalJson(row)) });
+    consumed.add(serial);
   }
+  for (const serial of [...EXCLUDED_SOURCE_ROWS.keys(), ...OFFICIAL_DURATION_REFERENCE_EXCEPTIONS.keys()]) {
+    if (!consumed.has(serial)) throw new Error("NO_GO pinned official transfer row is absent");
+  }
+  if (consumed.size !== rows.length) throw new Error("NO_GO official transfer row accounting mismatch");
   return records;
+}
+
+// 역은 정본 팩 역의 nameKo 또는 nameSub가 원천 역명과 정확히 같고 두 노선을 모두 가진 역 하나뿐이어야 한다.
+function resolveStation(canonical, stationName, fromLineId, toLineId, serial) {
+  const matches = canonical.stations.filter(({ id, nameKo, nameSub }) => (nameKo === stationName || nameSub === stationName)
+    && canonical.membership.get(id)?.has(fromLineId) && canonical.membership.get(id)?.has(toLineId));
+  if (matches.length !== 1) throw new Error(`NO_GO official transfer station mapping mismatch: ${serial}`);
+  return matches[0].id;
+}
+
+function assertPinnedRow(row, pinned, message) {
+  if (normalizeLineName(row["호선"]) !== pinned.호선 || row["환승역명"] !== pinned.환승역명 || row["환승노선"] !== pinned.환승노선
+    || row["환승거리"] !== pinned.환승거리 || row["환승소요시간"] !== pinned.환승소요시간) throw new Error(message);
 }
 
 function deriveCanonicalTarget(value, kricCatalogBytes) {
@@ -163,9 +230,10 @@ function deriveCanonicalTarget(value, kricCatalogBytes) {
   const evidence = parseProductionCoverageEvidence(capital.metadata?.productionCoverageEvidence);
   if (!evidence.some(({ regionId, operatorId, sourceDomain }) => regionId === "capital" && operatorId === "seoul-metro" && sourceDomain === "station_line_membership")) throw new Error("NO_GO canonical coverage identity mismatch");
   validateShinbundangIdentity(parseJson(kricCatalogBytes, "KRIC line identity"));
-  const lines = new Map(capital.lines?.map((line) => [line.id, line]));
+  const lines = Map.groupBy(capital.lines ?? [], ({ id }) => id);
   const activeIds = new Set(currentTransferLineIds());
-  if ([...activeIds].some((id) => lines.get(id)?.operatorId !== "seoul-metro")) throw new Error("NO_GO canonical line identity mismatch");
+  // 운영기관 표기가 아니라 노선 id와 노선 이름이 정확히 같은지로 노선을 확인한다.
+  if ([...activeIds].some((id) => lines.get(id)?.length !== 1 || lines.get(id)[0].nameKo !== LINE_NAME_BY_ID.get(id))) throw new Error("NO_GO canonical line identity mismatch");
   const stations = capital.stations?.filter(({ id, nameKo }) => nonBlank(id) && nonBlank(nameKo));
   const stationLines = capital.stationLines?.filter(({ stationId, lineId }) => activeIds.has(lineId) && nonBlank(stationId));
   if (!Array.isArray(stations) || !Array.isArray(stationLines) || stationLines.length === 0) throw new Error("NO_GO canonical target denominator mismatch");
@@ -173,10 +241,8 @@ function deriveCanonicalTarget(value, kricCatalogBytes) {
   if (stationIds.size !== stations.length || stationLines.some(({ stationId }) => !stationIds.has(stationId))) throw new Error("NO_GO canonical station identity mismatch");
   const seen = new Set();
   for (const { stationId, lineId } of stationLines) { const key = `${stationId}\0${lineId}`; if (seen.has(key)) throw new Error("NO_GO duplicate canonical station-line"); seen.add(key); }
-  const grouped = Map.groupBy(stationLines, ({ stationId }) => stationId);
-  const physicalPairs = [...grouped.entries()].flatMap(([stationId, memberships]) => combinations(memberships.map(({ lineId }) => lineId).sort(compareBytes), 2).map((lineIds) => ({ stationId, lineIds }))).sort(comparePair);
-  if (physicalPairs.length === 0) throw new Error("NO_GO canonical physical transfer pair count mismatch");
-  return { stations, stationIds: [...new Set(stationLines.map(({ stationId }) => stationId))].sort(compareBytes), stationLines, physicalPairs, kricProviderCatalogSha256: sha256(kricCatalogBytes) };
+  const membership = new Map([...Map.groupBy(stationLines, ({ stationId }) => stationId).entries()].map(([stationId, rows]) => [stationId, new Set(rows.map(({ lineId }) => lineId))]));
+  return { stations, membership, stationIds: [...new Set(stationLines.map(({ stationId }) => stationId))].sort(compareBytes), stationLines, kricProviderCatalogSha256: sha256(kricCatalogBytes) };
 }
 
 function validateObservation(value, sourceCandidate) {
@@ -219,10 +285,8 @@ function parseCanonicalJson(bytes, label) { let value; try { value = JSON.parse(
 function parseJson(bytes, label) { try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); } catch { throw new Error(`${label} must be strict UTF-8 JSON`); } }
 function parseProductionCoverageEvidence(value) { try { const parsed = JSON.parse(value); if (!Array.isArray(parsed)) throw new Error(); return parsed; } catch { throw new Error("NO_GO canonical coverage evidence mismatch"); } }
 function normalizeLineName(value) { return Number.isInteger(value) ? `${value}호선` : value; }
-function sourceLineId(sourceLineName, stationName, stationId) { if (sourceLineName !== "신분당선") return LINE_BY_SOURCE_NAME.get(sourceLineName); return stationName === "강남" && stationId === "station-gangnam" ? "shinbundang" : undefined; }
 function validDuration(value) { const match = typeof value === "string" ? /^(\d{2}):(\d{2})$/u.exec(value) : null; return match !== null && Number(match[1]) <= 59 && Number(match[2]) <= 59; }
 function parseDuration(value) { const [minutes, seconds] = value.split(":").map(Number); if (minutes > 59 || seconds > 59) throw new Error("NO_GO official duration schema mismatch"); return minutes * 60 + seconds; }
-function combinations(values, size) { return values.flatMap((value, index) => size === 1 ? [[value]] : combinations(values.slice(index + 1), size - 1).map((tail) => [value, ...tail])); }
 function directionKey(stationId, fromLineId, toLineId) { return `${stationId}\0${fromLineId}\0${toLineId}`; }
 function compareMetric(left, right) { return compareBytes(left.stationId, right.stationId) || compareBytes(left.fromLineId, right.fromLineId) || compareBytes(left.toLineId, right.toLineId); }
 function comparePair(left, right) { return compareBytes(left.stationId, right.stationId) || compareBytes(left.lineIds.join("\0"), right.lineIds.join("\0")); }
