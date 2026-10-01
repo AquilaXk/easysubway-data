@@ -34,6 +34,7 @@ import {
 } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { admittedTopologySource, deriveTopology, projectItxTopologyIntoCanonicalFixture } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OUTPUTS = Object.freeze([
@@ -73,12 +74,12 @@ export const APPROVED_ITX_TOPOLOGY_DELTAS = Object.freeze([Object.freeze({
 
 const TERMINAL_MARKERS = Object.freeze([TRANSITION, SUCCESSOR]);
 const TERMINAL_TOPOLOGY_INPUT_PATTERNS = Object.freeze([
-  /^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u,
+  CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN,
   /^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u,
   /^tools\/datapack\/sources\/incheon-line1-train-timetable-[0-9]{8}\.json$/u,
   /^tools\/datapack\/sources\/incheon-line2-train-timetable-[0-9]{8}\.json$/u,
 ]);
-const TERMINAL_TOPOLOGY_REVERIFICATION = /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u;
+const TERMINAL_TOPOLOGY_REVERIFICATION = CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN;
 const TERMINAL_TRANSFER_DESCRIPTOR = /^tools\/datapack\/sources\/seoul-metro-transfer-distance-duration-[0-9]{8}T[0-9]{9}Z\.json$/u;
 
 function target(root, relative) {

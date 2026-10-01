@@ -27,6 +27,7 @@ import {
 } from "./build-molit-nationwide-fixture.mjs";
 import { assertCurrentTopologyAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 import { deriveCurrentMolitMembershipCoverage } from "./current-molit-observation.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TARGETS = Object.freeze(["seoul-metro-route-map-positions", "molit-urban-rail-full-route"]);
@@ -187,7 +188,7 @@ async function readCurrentTopologyAdmissionInput({ root, inventory, now, read })
   assertCurrentTopologyAdmissionFreshness(topologyAdmission, topology, now);
   const requiredLineIds = ["line-472a81add377", "seoul-2", "line-41a8c75ec9d8", "seoul-4", "line-80fc4d5350d4", "line-3f41718e0833", "line-15b3b8a93259", "line-2b2d9eaa53d0"].sort(compareStrings);
   const lineages = topologyAdmission.topologyLineages?.map(({ sourceId, snapshotId, contentSha256, lineId }) => ({ sourceId, snapshotId, contentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b)));
-  if (topology?.sourceId !== "capital-route-topology" || topology.artifactKind !== "capital-route-topology-snapshot" || topology.official !== true || topology.fixture !== false || topology.contentSha256 !== topologyAdmission.topologyContentSha256 || topologyAdmission.topologySnapshotId !== `capital-route-topology-${topologyAdmission.topologySnapshotId.slice(-8)}` || !Array.isArray(lineages) || JSON.stringify(lineages) !== JSON.stringify(requiredLineIds.map((lineId) => ({ sourceId: "capital-route-topology", snapshotId: topologyAdmission.topologySnapshotId, contentSha256: topologyAdmission.topologyContentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b))))) throw new Error("static network topology identity is invalid");
+  if (topology?.sourceId !== "capital-route-topology" || topology.artifactKind !== "capital-route-topology-snapshot" || topology.official !== true || topology.fixture !== false || topology.contentSha256 !== topologyAdmission.topologyContentSha256 || !isCapitalRouteTopologySnapshotId(topologyAdmission.topologySnapshotId) || !Array.isArray(lineages) || JSON.stringify(lineages) !== JSON.stringify(requiredLineIds.map((lineId) => ({ sourceId: "capital-route-topology", snapshotId: topologyAdmission.topologySnapshotId, contentSha256: topologyAdmission.topologyContentSha256, lineId })).sort((a, b) => compareStrings(JSON.stringify(a), JSON.stringify(b))))) throw new Error("static network topology identity is invalid");
   return { topologyAdmission, topologyRelative, topologyBytes, topology };
 }
 

@@ -18,6 +18,7 @@ import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { officialOdFareAdmissionsBySource, officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
+import { capitalTopologyReverificationPathForSnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -1923,7 +1924,7 @@ export async function prepareNationwideCandidate({
     || capitalCandidate.contentSha256 !== capitalHead.contentSha256) {
     throw new Error("nationwide candidate capital topology snapshot binding mismatch");
   }
-  const capitalReverificationPath = `tools/datapack/release/capital-topology-reverification-${capitalHead.snapshotId.slice(-8)}.json`;
+  const capitalReverificationPath = capitalTopologyReverificationPathForSnapshotId(capitalHead.snapshotId);
   const capitalReverificationBytes = await read(capitalReverificationPath);
   const capitalReverification = JSON.parse(capitalReverificationBytes);
   if (capitalReverification.candidate?.contentSha256 !== capitalHead.contentSha256

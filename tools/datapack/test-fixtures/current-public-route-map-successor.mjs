@@ -31,6 +31,7 @@ import { currentTopologyAdmissionClock } from "./current-topology-admission-cloc
 import { createFixtureCapitalTopologyReceipt } from "./current-capital-topology-registration.mjs";
 import { requiresCurrentCapitalTopologyAdmission } from "../rebind-capital-route-map-admissions.mjs";
 import { selectCurrentKricRouteRostersPath } from "../build-current-capital-facility-collection-plan.mjs";
+import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, capitalRouteTopologySnapshotVersion } from "../lib/capital-route-topology-snapshot-id.mjs";
 // #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 경로 금지).
 const CURRENT_ROUTE_ROSTERS_PATH = await selectCurrentKricRouteRostersPath({ repositoryRoot: path.resolve(import.meta.dirname, "../../..") });
 
@@ -518,7 +519,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
   const fixture = projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory, governancePolicy, scope });
   const historicalTopologyEvidence = candidate.networkEdgeEvidence?.capitalTopology;
   if (!historicalTopologyEvidence
-    || !/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u.test(historicalTopologyEvidence.path ?? "")
+    || !CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(historicalTopologyEvidence.path ?? "")
     || !/^[a-f0-9]{64}$/u.test(historicalTopologyEvidence.sha256 ?? "")
     || historicalTopologyEvidence.snapshotId !== path.basename(historicalTopologyEvidence.path, ".json")) {
     throw new Error("synthetic historical capital topology evidence is incomplete");
@@ -695,7 +696,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   }
   const historicalTopologyEvidence = structuredClone(candidate.networkEdgeEvidence?.capitalTopology);
   if (!historicalTopologyEvidence
-    || !/^tools\/datapack\/sources\/capital-route-topology-[0-9]{8}\.json$/u.test(historicalTopologyEvidence.path ?? "")
+    || !CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(historicalTopologyEvidence.path ?? "")
     || !/^[a-f0-9]{64}$/u.test(historicalTopologyEvidence.sha256 ?? "")
     || historicalTopologyEvidence.snapshotId !== path.basename(historicalTopologyEvidence.path, ".json")) {
     throw new Error("synthetic historical capital topology evidence is incomplete");
@@ -963,7 +964,7 @@ export async function activateSyntheticCurrentPublicRouteMapSuccessor(root, { no
   if (typeof currentTopologySnapshotId !== "string") {
     throw new Error("synthetic current topology admission fixture is incomplete");
   }
-  candidate.candidateId = `capital-pilot-candidate-${currentTopologySnapshotId.slice(-8)}`;
+  candidate.candidateId = `capital-pilot-candidate-${capitalRouteTopologySnapshotVersion(currentTopologySnapshotId)}`;
   candidate.publishedAt = now.toISOString();
   const currentTopologyPath = `tools/datapack/sources/${currentTopologySnapshotId}.json`;
   const currentTopology = JSON.parse(topologySnapshotBytes);

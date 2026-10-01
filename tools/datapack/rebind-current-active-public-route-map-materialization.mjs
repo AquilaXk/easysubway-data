@@ -12,6 +12,7 @@ import {
   verifyCurrentCapitalPublicRouteMapDocument,
 } from "./materialize-seoul-route-map-positions.mjs";
 import { requireExactPublicStaticNetworkV2SnapshotBinding } from "./public-static-network-v2-admission.mjs";
+import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE_ID = "seoul-metro-route-map-positions";
@@ -140,7 +141,7 @@ function requiredRouteMapSource(inventory) {
     || admission.status !== "ADMITTED" || typeof admission.positionSnapshotId !== "string"
     || !/^seoul-metro-route-map-positions-current-\d{8}T\d{9}Z$/u.test(admission.positionSnapshotId)
     || observationPath !== `tools/datapack/sources/${admission.positionSnapshotId}.json`
-    || !/^capital-route-topology-\d{8}$/u.test(admission.topologySnapshotId ?? "")
+    || !isCapitalRouteTopologySnapshotId(admission.topologySnapshotId)
     || ![admission.snapshotSha256, admission.topologySnapshotSha256].every((value) => /^[a-f0-9]{64}$/u.test(value ?? ""))) {
     throw new Error("current public route-map admission is missing");
   }

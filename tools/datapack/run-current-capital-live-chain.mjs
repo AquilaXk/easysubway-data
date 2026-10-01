@@ -71,6 +71,7 @@ import { rebindCurrentActivePublicRouteMapMaterialization } from "./rebind-curre
 import { currentLiveChainTransferStageInputs, rebindCurrentLiveChainTransferDerivedIdentities } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN } from "./lib/capital-route-topology-snapshot-id.mjs";
 
 const execFile = promisify(execFileCallback);
 const DATA_MAIN_REMOTE = "https://github.com/AquilaXk/easysubway-data.git";
@@ -484,9 +485,9 @@ export async function verifyCurrentCapitalTerminalLineage({
     const before = await optionalLineageFile(retainedRoot, relativePath, `retained topology ${relativePath}`);
     return { relativePath, beforeSha256: before == null ? null : sha256(before.bytes), generatedSha256: sha256(bytes) };
   }));
-  const reverification = topologyProofOutputs.filter(({ relativePath }) => /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relativePath));
+  const reverification = topologyProofOutputs.filter(({ relativePath }) => CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN.test(relativePath));
   if (topologyProofOutputs.length !== generated.outputs.length || reverification.length !== 1
-    || topologyProofOutputs.some(({ beforeSha256, relativePath }) => beforeSha256 == null && !/^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relativePath))) {
+    || topologyProofOutputs.some(({ beforeSha256, relativePath }) => beforeSha256 == null && !CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN.test(relativePath))) {
     throw new Error("terminal topology output subset mismatch");
   }
   const createOncePaths = new Set([
@@ -1495,7 +1496,7 @@ export async function runCurrentCapitalExitTerminalConsumer({
   const createOnce = new Set([
     ...accessibilitySourceHandoff.outputs.filter(({ operation }) => operation === "create").map(({ relativePath }) => relativePath),
     ...topologyInputs,
-    ...topologyOutputs.filter((relative) => /^tools\/datapack\/release\/capital-topology-reverification-[0-9]{8}\.json$/u.test(relative)),
+    ...topologyOutputs.filter((relative) => CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN.test(relative)),
   ]);
   const replacementPrestates = new Map(preparedTerminal.proof.replacementPrestates?.map((entry) => [entry.relativePath, entry.sha256]));
   if (JSON.stringify([...replacementPrestates.keys()].sort(codepointCompare))

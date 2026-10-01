@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { isCapitalRouteTopologySnapshotId } from "../lib/capital-route-topology-snapshot-id.mjs";
 
 export async function currentTopologyAdmissionClock(repositoryRoot) {
   const [inventory, candidate, snapshots] = await Promise.all([
@@ -9,7 +10,7 @@ export async function currentTopologyAdmissionClock(repositoryRoot) {
   ]);
   const admissions = inventory.sources
     .map(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.currentTopologyAdmission)
-    .filter(({ topologySnapshotId } = {}) => /^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId));
+    .filter(({ topologySnapshotId } = {}) => isCapitalRouteTopologySnapshotId(topologySnapshotId));
   const admission = admissions[0];
   const incheonAdmissions = inventory.sources
     .filter(({ id }) => id === "incheon-transit-station-info")
