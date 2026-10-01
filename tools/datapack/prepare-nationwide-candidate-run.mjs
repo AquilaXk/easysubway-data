@@ -282,6 +282,16 @@ export async function resolveMolitTransferSnapshot({ sourceInventory, freshnessP
   return { admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil };
 }
 
+// 광주 접근성 행의 FACILITY 판정. 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고
+// 미관측 유형이 남아 있으면 부재로 단정하지 않고 UNKNOWN으로 막는다(#862: 휠체어리프트 0만으로
+// VERIFIED_ABSENT가 되던 문제). 세 유형이 모두 0일 때만 부재다.
+export function gwangjuFacilityState({ elevator, wheelchair_lift: wheelchairLift, escalator }) {
+  const facilityCounts = [elevator, wheelchairLift, escalator];
+  if (facilityCounts.some((count) => count > 0)) return "VERIFIED_PRESENT";
+  if (facilityCounts.some((count) => count === null)) return "UNKNOWN";
+  return "VERIFIED_ABSENT";
+}
+
 export async function prepareNationwideCandidate({
   repositoryRoot = root,
   releaseSequence = 122,
@@ -1693,10 +1703,8 @@ export async function prepareNationwideCandidate({
       });
     } else if (gwangjuMap.has(key)) {
       const r = gwangjuMap.get(key);
-      // 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고 미관측 유형이 남아 있으면
-      // 부재로 단정하지 않고 UNKNOWN으로 막는다(#862: 수집기의 휠체어리프트 0만으로 VERIFIED_ABSENT가 되던 문제).
-      const facilityCounts = [r.elevator, r.wheelchair_lift, r.escalator];
-      if (!facilityCounts.some((count) => count > 0) && facilityCounts.some((count) => count === null)) {
+      const facilityState = gwangjuFacilityState(r);
+      if (facilityState === "UNKNOWN") {
         evidenceRows.push({
           ...stationLineCandidate,
           stationId,
@@ -1718,14 +1726,14 @@ export async function prepareNationwideCandidate({
           evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
         });
       } else {
-        const hasFac = ((r.elevator ?? 0) > 0) || ((r.wheelchair_lift ?? 0) > 0) || ((r.escalator ?? 0) > 0);
+        const hasFac = facilityState === "VERIFIED_PRESENT";
         evidenceRows.push({
           ...stationLineCandidate,
           stationId,
           lineId,
           operatorId,
           domain: "FACILITY",
-          state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+          state: facilityState,
           sourceId: "gwangju-transportation-accessibility",
           sourceSnapshotId: gwangjuSnapshotId,
           evidenceRawSha256: gwangjuRawSha,
