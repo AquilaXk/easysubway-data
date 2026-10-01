@@ -167,6 +167,25 @@ test("커밋된 환승 지표는 전국 정본 팩 역-노선 식별자와 일�
   // 이수(7→4)는 총신대입구 역의 공식 방향이다.
   assert.equal(byKey.get(`station-2a2d0080fa4a|${id(7)}|${id(4)}`).metricProvenance, "OFFICIAL_SOURCE");
 });
+// #872 S2: 실제 발행 경로(전국 route-edge input·정본 팩)는 수도권 live-chain 필터와 무관하게 204방향 전체를 쓴다.
+test("전국 발행 경로는 환승 지표 204방향 전체를 route edge로, OFFICIAL_SOURCE 140방향을 경로 행으로 쓴다", async () => {
+  const read = (relative) => readFile(new URL(relative, import.meta.url), "utf8").then(JSON.parse);
+  const [metrics, route, nationwide] = await Promise.all([read("./release/current-transfer-topology-metrics.json"), read("./release/nationwide-route-edge-input.json"), read("./release/nationwide-production-canonical-pack.json")]);
+  const pack = nationwide.packs.find(({ id: packId }) => packId === nationwide.manifest.activePack.id);
+  const transfers = new Map(route.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map((edge) => [edge.edgeId, edge]));
+  assert.equal(transfers.size, metrics.metrics.length);
+  assert.equal(transfers.size, 204);
+  for (const metric of metrics.metrics) {
+    const edge = transfers.get(`transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`);
+    assert.ok(edge, `${metric.stationId} ${metric.fromLineId}->${metric.toLineId}`);
+    assert.deepEqual([edge.durationSeconds, edge.distanceMeters], [metric.officialDurationSecondsReference, metric.distanceMeters]);
+  }
+  const official = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE");
+  assert.equal(pack.stationPathwayEdges.length, official.length);
+  const pathwayHashes = new Set(pack.stationPathwayEdges.map(({ providerRecordHash }) => providerRecordHash));
+  for (const metric of official) assert.ok(pathwayHashes.has(metric.sourceRecordSha256), metric.sourceRecordSha256);
+  assert.ok(pack.stationPathwayEdges.every(({ provenanceKind, verificationStatus }) => provenanceKind === "OFFICIAL_SOURCE" && verificationStatus === "VERIFIED"));
+});
 function pick({ distanceMeters, officialDurationSecondsReference, metricProvenance }) { return { distanceMeters, officialDurationSecondsReference, metricProvenance }; }
 
 async function fixtureRoot(mutate = () => {}) {
