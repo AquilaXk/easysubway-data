@@ -267,6 +267,38 @@ export function assertRebuiltCurrentLiveChainTransferCandidateIdentity(previousC
   return true;
 }
 
+// #872 S2: admission evidence의 결속 해시와 함께 지표·applicability에서 유도한 개수, inventory coverageStatus, 원장
+// coverageCount를 같은 값으로 맞춘다. 승인 레코드(approvalIssue·decision·approvedBy·approvedAt)는 바꾸지 않는다.
+// 범위 확대 근거: #872 D2(QA 승인 2026-10-01, 공식 거리로 채운 뒤 발행)·D4.
+export function nextTransferAdmissionState({ inventory, snapshots, snapshotId, descriptor, descriptorBytes, receipt }) {
+  const topology = descriptor?.transferTopology;
+  if (descriptor?.snapshotId !== snapshotId || !topology || !Buffer.isBuffer(descriptorBytes)) throw new Error("TRANSFER admission state input mismatch");
+  const nextInventory = structuredClone(inventory);
+  const sources = nextInventory.sources?.filter(({ id }) => id === SOURCE) ?? [];
+  if (sources.length !== 1 || !sources[0].transferAdmissionEvidence || !sources[0].capabilities?.transfer) throw new Error("TRANSFER admission state input mismatch");
+  const [source] = sources;
+  Object.assign(source.transferAdmissionEvidence, {
+    metricsArtifactSha256: topology.metricsArtifactSha256,
+    applicabilityArtifactSha256: topology.applicabilityArtifactSha256,
+    snapshotFileSha256: sha256(descriptorBytes),
+    physicalPairCount: topology.physicalPairCount,
+    directedMetricCount: topology.directedMetricCount,
+    officialMetricCount: topology.officialMetricCount,
+    derivedReciprocalMetricCount: topology.derivedReciprocalMetricCount,
+    stationLineCount: topology.stationLineCount,
+    applicableStationLineCount: topology.applicableStationLineCount,
+    notApplicableStationLineCount: topology.notApplicableStationLineCount,
+  });
+  source.capabilities.transfer.coverageStatus = `CAPITAL_SEOUL_METRO_${topology.physicalPairCount}_PAIRS_${topology.directedMetricCount}_DIRECTED_METRICS`;
+  const nextSnapshots = structuredClone(snapshots);
+  const rows = nextSnapshots.filter((row) => row.snapshotId === snapshotId && row.sourceId === SOURCE);
+  if (rows.length !== 1) throw new Error("TRANSFER admission state input mismatch");
+  rows[0].transferTopology = topology;
+  rows[0].rawReceipt = receipt;
+  rows[0].coverageCount = topology.directedMetricCount;
+  return { nextInventory, nextSnapshots };
+}
+
 export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: inputRoot = ROOT, observationDirectory, receiptPath, sourceAdmissionOnly = false } = {}) {
   const root = repositoryRoot(inputRoot);
   const [candidateBytes, inventoryBytes, snapshotsBytes, packBytes, sourceCandidatesBytes, kricBytes, receiptBytes] = await Promise.all([
@@ -299,16 +331,9 @@ export async function buildCurrentLiveChainTransferDerivedIdentityOutputs({ repo
   const descriptorPath = `tools/datapack/sources/${descriptor.snapshotId}.json`;
   if (descriptorPath !== descriptorIdentity.relativePath) throw new Error("TRANSFER descriptor output path mismatch");
   const nextDescriptorBytes = json(descriptor);
-  const nextInventory = structuredClone(inventory);
-  Object.assign(nextInventory.sources.find(({ id }) => id === SOURCE).transferAdmissionEvidence, {
-    metricsArtifactSha256: descriptor.transferTopology.metricsArtifactSha256,
-    applicabilityArtifactSha256: descriptor.transferTopology.applicabilityArtifactSha256,
-    snapshotFileSha256: sha256(nextDescriptorBytes),
+  const { nextInventory, nextSnapshots } = nextTransferAdmissionState({
+    inventory, snapshots, snapshotId: active.row.snapshotId, descriptor, descriptorBytes: nextDescriptorBytes, receipt,
   });
-  const nextSnapshots = structuredClone(snapshots);
-  const nextSnapshot = nextSnapshots.find(({ snapshotId }) => snapshotId === active.row.snapshotId);
-  nextSnapshot.transferTopology = descriptor.transferTopology;
-  nextSnapshot.rawReceipt = receipt;
   if (sourceAdmissionOnly) {
     const nextBytes = new Map([
       ["tools/datapack/release/current-transfer-topology-metrics.json", metricsBytes],

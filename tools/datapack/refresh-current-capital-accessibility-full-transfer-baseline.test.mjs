@@ -185,3 +185,39 @@ test("baseline 이후 코드(*.mjs)·테스트 등록 변경은 데이터 입력
     /TRANSFER source admission baseline changed non-TRANSFER inputs: tools\/datapack\/release\/current-capital-live-chain-fan-in\.json/,
   );
 });
+
+// #872 S2(#866에서 전국 경로로 대체 후 삭제): 환승 재결속 뒤 refresh-nationwide-candidate가 전국 정본 팩을 다시 만든다.
+// transfer baseline 모드는 전국 정본 팩 변경을, 같은 입력으로 다시 계산한 후보 재생성 출력과 바이트가 같을 때만 허용한다.
+const NATIONWIDE_PACK = "tools/datapack/release/nationwide-production-canonical-pack.json";
+
+test("전국 정본 팩 변경은 후보 재생성 재계산 출력과 바이트가 같을 때만 허용한다(#872 S2)", async (t) => {
+  const { root, baseline } = await repository(t);
+  await commit(root, "nationwide pack refresh", { [NATIONWIDE_PACK]: "nationwide-pack:v1\n" });
+  let recomputed = 0;
+  const outputs = await deriveTransferSourceAdmissionTransitionOutputs({
+    repositoryRoot: root, baselineGitSha: baseline,
+    recomputeNationwideCanonicalPack: async ({ repositoryRoot }) => { recomputed += 1; assert.equal(repositoryRoot, root); return Buffer.from("nationwide-pack:v1\n"); },
+  });
+  assert.equal(recomputed, 1);
+  assert.deepEqual(outputs.map(({ relative }) => relative), ALL_PATHS);
+  // 손으로 바꾼 팩(재계산 출력과 다른 바이트)은 거부한다.
+  await assert.rejects(
+    deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: baseline, recomputeNationwideCanonicalPack: async () => Buffer.from("nationwide-pack:v2\n") }),
+    /TRANSFER source admission nationwide canonical pack differs from the recomputed candidate refresh output/,
+  );
+  // 팩과 함께 그 밖의 데이터 경로가 바뀌면 재계산과 무관하게 거부한다.
+  await commit(root, "fan-in drift", { "tools/datapack/release/current-capital-live-chain-fan-in.json": "fan-in:v1\n" });
+  await assert.rejects(
+    deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: baseline, recomputeNationwideCanonicalPack: async () => Buffer.from("nationwide-pack:v1\n") }),
+    /TRANSFER source admission baseline changed non-TRANSFER inputs: tools\/datapack\/release\/current-capital-live-chain-fan-in\.json/,
+  );
+});
+
+test("전국 정본 팩이 바뀌지 않았으면 재계산하지 않는다(#872 S2)", async (t) => {
+  const { root, baseline } = await repository(t);
+  const outputs = await deriveTransferSourceAdmissionTransitionOutputs({
+    repositoryRoot: root, baselineGitSha: baseline,
+    recomputeNationwideCanonicalPack: async () => { throw new Error("must not recompute"); },
+  });
+  assert.equal(outputs.length, 8);
+});

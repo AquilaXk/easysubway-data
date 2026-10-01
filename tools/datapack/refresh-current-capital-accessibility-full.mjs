@@ -21,6 +21,7 @@ import {
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_COMPONENT_PATHS,
   CURRENT_CAPITAL_LIVE_CHAIN_FAN_IN_PATH,
   readCurrentCapitalLiveChainFanInBoundary,
+  validateCurrentCapitalLiveChainFanInBoundary,
 } from "./build-current-capital-live-chain-boundary.mjs";
 import { CURRENT_CAPITAL_LIVE_CHAIN_FIXED_OUTPUT_PATHS } from "./validate-current-capital-live-chain-materialization.mjs";
 import { CURRENT_TOPOLOGY_REFRESH_OUTPUTS } from "./activate-current-source-set.mjs";
@@ -73,6 +74,12 @@ export const TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS = Object.freeze(
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
   "contracts/documentation/documentation-fragment.json",
+]);
+// #872 결정 1: 전국 후보 재생성 뒤 live-chain fan-in의 candidateBuildSpec 결속만 다시 쓰는 좁은 모드의 허용 경로.
+// refresh-nationwide-candidate 출력(전국 정본 팩 포함)과 문서 파편뿐이다. #866에서 전국 경로로 대체 후 삭제.
+export const NATIONWIDE_CANDIDATE_REBIND_ALLOWED_DESCENDANT_PATHS = Object.freeze([
+  ...TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS,
+  "tools/datapack/release/nationwide-production-canonical-pack.json",
 ]);
 const MOLIT = "molit-urban-rail-full-route";
 const PUBLIC_STATIC_NETWORK_V2_SUCCESSOR = "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
@@ -891,7 +898,26 @@ async function gitBytes(root, args) {
 // #862 결정 1(A2): 결정 C의 환승 source-admission-only 재결속(5출력)은 후보·request·hash를 쓰지 않는다.
 // 재결속 직전 커밋(baseline)의 8개 경로 바이트를 prestate로, 현재 작업 트리 바이트를 bytes로 삼아
 // 기존 검증 함수(buildAuthenticatedCurrentCapitalTransferEvidenceTransition)에 그대로 넘긴다.
-export async function deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot = ROOT, baselineGitSha } = {}) {
+// #872 S2(#866에서 전국 경로로 대체 후 삭제): 환승 재결속 뒤 refresh-nationwide-candidate가 전국 정본 팩을 다시 만든다.
+// transfer baseline 모드는 전국 정본 팩 변경을, 커밋된 입력으로 prepare-nationwide-candidate-run을 다시 계산한 출력과
+// 바이트가 같을 때만 허용한다. 커밋된 preparation의 후보 식별·승인 역할을 그대로 쓴다(팩 바이트에는 들어가지 않는다).
+const NATIONWIDE_CANONICAL_PACK = "tools/datapack/release/nationwide-production-canonical-pack.json";
+export async function recomputeNationwideCanonicalPackBytes({ repositoryRoot = ROOT } = {}) {
+  const root = path.resolve(repositoryRoot);
+  const preparation = parse((await readStableRegularFile(target(root, "tools/datapack/release/nationwide-candidate-preparation.json"), "nationwide candidate preparation")).bytes, "nationwide candidate preparation");
+  const { prepareNationwideCandidate } = await import("./prepare-nationwide-candidate-run.mjs");
+  const result = await prepareNationwideCandidate({
+    repositoryRoot: root,
+    releaseSequence: preparation?.releaseIdentity?.releaseSequence,
+    candidateId: preparation?.releaseIdentity?.candidateId,
+    requestedBy: preparation?.authority?.requestedBy,
+    approvedBy: preparation?.authority?.approvedBy,
+    writeFiles: false,
+  });
+  return Buffer.from(`${JSON.stringify(result.materializedFixture)}\n`);
+}
+
+export async function deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot = ROOT, baselineGitSha, recomputeNationwideCanonicalPack = recomputeNationwideCanonicalPackBytes } = {}) {
   const root = path.resolve(repositoryRoot);
   if (typeof baselineGitSha !== "string" || !/^[0-9a-f]{40}$/u.test(baselineGitSha)) {
     throw new Error("TRANSFER source admission baseline must be a full git SHA");
@@ -912,9 +938,16 @@ export async function deriveTransferSourceAdmissionTransitionOutputs({ repositor
   const changed = (await gitBytes(root, ["diff", "--name-only", "-z", baselineGitSha, "HEAD"])).toString("utf8").split("\0").filter(Boolean);
   // 코드(*.mjs)와 테스트 등록 manifest는 데이터 입력이 아니다. 전이 행은 양쪽 모두 현재 코드로 다시 유도된다.
   const isCode = (relative) => relative.endsWith(".mjs") || relative === "tools/ci/data-test-ownership.json";
-  const unexpected = changed.filter((relative) => !allowed.has(relative) && !isCode(relative)).sort(codepointCompare);
+  const unexpected = changed.filter((relative) => !allowed.has(relative) && relative !== NATIONWIDE_CANONICAL_PACK && !isCode(relative)).sort(codepointCompare);
   if (unexpected.length !== 0) {
     throw new Error(`TRANSFER source admission baseline changed non-TRANSFER inputs: ${unexpected.join(", ")}`);
+  }
+  if (changed.includes(NATIONWIDE_CANONICAL_PACK)) {
+    const committed = (await readStableRegularFile(target(root, NATIONWIDE_CANONICAL_PACK), NATIONWIDE_CANONICAL_PACK)).bytes;
+    const recomputed = await recomputeNationwideCanonicalPack({ repositoryRoot: root });
+    if (!Buffer.isBuffer(recomputed) || !recomputed.equals(committed)) {
+      throw new Error("TRANSFER source admission nationwide canonical pack differs from the recomputed candidate refresh output");
+    }
   }
   const rebindCommit = (await gitBytes(root, ["rev-list", "-1", `${baselineGitSha}..HEAD`, "--", ...transferPaths])).toString("utf8").trim();
   if (!/^[0-9a-f]{40}$/u.test(rebindCommit)) throw new Error("TRANSFER source admission baseline has no later rebind commit");
@@ -929,6 +962,56 @@ export async function deriveTransferSourceAdmissionTransitionOutputs({ repositor
   return outputs;
 }
 
+// #872 결정 1: 전국 후보 재결속 baseline 검사(#866에서 전국 경로로 대체 후 삭제). baseline은 refresh-nationwide-candidate
+// 실행 직전 커밋의 전체 SHA다. 그 뒤 바뀐 데이터 경로는 후보 재생성 출력과 문서 파편뿐이어야 한다.
+// 코드(*.mjs)와 테스트 등록은 데이터 입력이 아니다.
+export async function assertNationwideCandidateRebindBaseline({ repositoryRoot = ROOT, baselineGitSha } = {}) {
+  const root = path.resolve(repositoryRoot);
+  if (typeof baselineGitSha !== "string" || !/^[0-9a-f]{40}$/u.test(baselineGitSha)) {
+    throw new Error("nationwide candidate rebind baseline must be a full git SHA");
+  }
+  try {
+    await gitBytes(root, ["merge-base", "--is-ancestor", baselineGitSha, "HEAD"]);
+  } catch {
+    throw new Error("nationwide candidate rebind baseline is not an ancestor of HEAD");
+  }
+  if ((await gitBytes(root, ["status", "--porcelain"])).length !== 0) {
+    throw new Error("nationwide candidate rebind requires a clean tree");
+  }
+  const allowed = new Set(NATIONWIDE_CANDIDATE_REBIND_ALLOWED_DESCENDANT_PATHS);
+  const changed = (await gitBytes(root, ["diff", "--name-only", "-z", baselineGitSha, "HEAD"])).toString("utf8").split("\0").filter(Boolean);
+  const isCode = (relative) => relative.endsWith(".mjs") || relative === "tools/ci/data-test-ownership.json";
+  const unexpected = changed.filter((relative) => !allowed.has(relative) && !isCode(relative)).sort(codepointCompare);
+  if (unexpected.length !== 0) {
+    throw new Error(`nationwide candidate rebind baseline changed non-candidate inputs: ${unexpected.join(", ")}`);
+  }
+}
+
+// #872 결정 1(#866에서 전국 경로로 대체 후 삭제): 재결속은 후보 식별이 같고, 수도권 station-line·route-edge 출력
+// 바이트가 같고, 다시 계산한 fan-in에서 candidateBuildSpec component만 바뀔 때만 허용한다. 어긋남 목록을 돌려준다.
+export function nationwideCandidateRebindViolations({
+  alreadyCurrent, stationPrestate, stationBytes, routePrestate, routeBytes, committedFanIn, recomputedFanIn,
+}) {
+  const violations = [];
+  if (alreadyCurrent !== true) violations.push("candidate identity changed");
+  if (!Buffer.isBuffer(stationBytes) || !Buffer.isBuffer(stationPrestate) || !stationBytes.equals(stationPrestate)) {
+    violations.push("capital station-line input bytes changed");
+  }
+  if (!Buffer.isBuffer(routeBytes) || !Buffer.isBuffer(routePrestate) || !routeBytes.equals(routePrestate)) {
+    violations.push("capital route-edge input bytes changed");
+  }
+  const names = [...new Set([...Object.keys(committedFanIn?.components ?? {}), ...Object.keys(recomputedFanIn?.components ?? {})])]
+    .sort(codepointCompare);
+  const outside = names.filter((name) => name !== "candidateBuildSpec"
+    && !equalJson(committedFanIn?.components?.[name], recomputedFanIn?.components?.[name]));
+  if (outside.length !== 0) violations.push(`fan-in component changed outside candidateBuildSpec: ${outside.join(", ")}`);
+  if (committedFanIn?.currentCandidateSourceSetSha256 !== recomputedFanIn?.currentCandidateSourceSetSha256
+    || committedFanIn?.evidenceSourceSetSha256 !== recomputedFanIn?.evidenceSourceSetSha256) {
+    violations.push("fan-in source set changed");
+  }
+  return violations;
+}
+
 export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   repositoryRoot = ROOT,
   phase = ACTIVATED_CURRENT_OUTPUT,
@@ -938,6 +1021,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   markerState = "PRESENT",
   approvedItxTopologyDeltaProof = undefined,
   transferSourceAdmissionOutputs = undefined,
+  nationwideCandidateRebind = false,
 } = {}) {
   requireTerminalMarkerState(markerState);
   requirePhase(phase);
@@ -967,10 +1051,23 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
       route: routeBefore,
     });
   }
+  if (nationwideCandidateRebind) {
+    // #872 결정 1(#866에서 전국 경로로 대체 후 삭제): 터미널 전이·환승·ITX 모드와 함께 쓰지 않는다.
+    if (marker || transferRebindOutputs !== undefined || transferSourceAdmissionOutputs !== undefined
+      || approvedItxTopologyDeltaProof !== undefined || phase !== ACTIVATED_CURRENT_OUTPUT) {
+      throw new Error("nationwide candidate rebind cannot combine with another refresh mode");
+    }
+    if (alreadyCurrent !== true) throw new Error("nationwide candidate rebind rejected: candidate identity changed");
+  }
   const input = await readCurrentCapitalInputs(root, marker
     ? undefined
     : alreadyCurrent
-      ? { readCurrentFanInBoundaryImpl: readCurrentCapitalLiveChainFanInBoundary }
+      ? { readCurrentFanInBoundaryImpl: nationwideCandidateRebind
+        ? async () => {
+          const components = fanInComponents(files);
+          return { boundary: buildCurrentCapitalLiveChainFanInBoundary(components), components };
+        }
+        : readCurrentCapitalLiveChainFanInBoundary }
       : { readTransitionBoundaryImpl: async () => ({ ...transition, facilityAdmissionBytesSha256: sha(files["tools/datapack/release/current-capital-facility-source-admission.json"].bytes) }) });
   const hasOverride = candidateBuildSpec !== undefined || canonicalPack !== undefined;
   if (phase === ACTIVATED_CURRENT_OUTPUT && hasOverride) {
@@ -1004,7 +1101,18 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     buildCurrentCapitalLiveChainFanInBoundary(fanInComponents(files)),
   ));
   const stationAfter = parse(stationBytes, "refreshed station input"); const routeAfter = parse(routeBytes, "refreshed route input");
-  if (alreadyCurrent && (!stationBytes.equals(files[OUTPUTS[0]].bytes)
+  if (nationwideCandidateRebind) {
+    const violations = nationwideCandidateRebindViolations({
+      alreadyCurrent,
+      stationPrestate: files[OUTPUTS[0]].bytes,
+      stationBytes,
+      routePrestate: files[OUTPUTS[1]].bytes,
+      routeBytes,
+      committedFanIn: validateCurrentCapitalLiveChainFanInBoundary(parse(files[FAN_IN_OUTPUT].bytes, "current live-chain fan-in boundary")),
+      recomputedFanIn: parse(fanInBytes, "recomputed live-chain fan-in boundary"),
+    });
+    if (violations.length !== 0) throw new Error(`nationwide candidate rebind rejected: ${violations.join("; ")}`);
+  } else if (alreadyCurrent && (!stationBytes.equals(files[OUTPUTS[0]].bytes)
     || !routeBytes.equals(files[OUTPUTS[1]].bytes)
     || !fanInBytes.equals(files[FAN_IN_OUTPUT].bytes))) throw new Error("current-capital refresh current output bytes mismatch");
   const isNationwide = selectedInput.candidateBuildSpec?.productionScopeId === "nationwide_routing_android_v1"
@@ -1521,6 +1629,7 @@ async function commitApprovedItxTopologyDelta({ root, outputs, beforeCommit }) {
 export async function refreshCurrentCapitalAccessibilityFull({
   repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined, markerState = "PRESENT",
   approvedItxTopologyDeltaProof = undefined, transferSourceAdmissionBaselineGitSha = undefined,
+  nationwideCandidateRebindBaselineGitSha = undefined,
 } = {}) {
   requireTerminalMarkerState(markerState);
   const root = path.resolve(repositoryRoot);
@@ -1528,11 +1637,17 @@ export async function refreshCurrentCapitalAccessibilityFull({
   // 기존 검증 함수와 assertInputsStable이 출력 바이트가 그 사이 바뀌지 않았는지 다시 확인한다.
   const transferSourceAdmissionOutputs = transferSourceAdmissionBaselineGitSha === undefined ? undefined
     : await deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: transferSourceAdmissionBaselineGitSha });
+  // #872 결정 1: 전국 후보 재결속 baseline·clean tree 검사도 잠금 전에 한다(#866에서 전국 경로로 대체 후 삭제).
+  const nationwideCandidateRebind = nationwideCandidateRebindBaselineGitSha !== undefined;
+  if (nationwideCandidateRebind) {
+    await assertNationwideCandidateRebindBaseline({ repositoryRoot: root, baselineGitSha: nationwideCandidateRebindBaselineGitSha });
+  }
   const release = await acquireLock(root);
   try {
     await recover(root);
     const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
       repositoryRoot: root, transferRebindOutputs, markerState, approvedItxTopologyDeltaProof, transferSourceAdmissionOutputs,
+      nationwideCandidateRebind,
     });
     await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
     const marker = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, TRANSITION));
@@ -1541,6 +1656,11 @@ export async function refreshCurrentCapitalAccessibilityFull({
       if (marker) throw new Error("current-capital refresh TRANSFER source admission cannot run inside a terminal transition");
       await commitApprovedItxTopologyDelta({ root, outputs: transactionOutputs, beforeCommit });
       return { outputs: TRANSACTION_OUTPUTS, transferSourceAdmissionBaselineGitSha };
+    }
+    if (nationwideCandidateRebind) {
+      // 수도권 출력 바이트는 같고 fan-in만 바뀐다. 잠금 안에서 prestate를 다시 확인하고 바뀐 출력만 교체한다.
+      await commitApprovedItxTopologyDelta({ root, outputs: transactionOutputs, beforeCommit });
+      return { outputs: TRANSACTION_OUTPUTS, nationwideCandidateRebindBaselineGitSha };
     }
     if (approvedItxTopologyDeltaProof !== undefined) {
       if (marker) throw new Error("ITX topology delta proof mode cannot run inside a terminal transition");
@@ -1586,6 +1706,13 @@ async function main(argv) {
   // #862 결정 1(A2): 결정 C 환승 재결속 뒤 재생성. baseline은 재결속 직전 커밋의 전체 SHA다.
   if (argv.length === 2 && argv[0] === "--transfer-source-admission-baseline") {
     const result = await refreshCurrentCapitalAccessibilityFull({ transferSourceAdmissionBaselineGitSha: argv[1] });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
+  }
+  // #872 결정 1: 전국 후보 재생성 뒤 fan-in candidateBuildSpec 결속만 재생성한다. #866에서 전국 경로로 대체 후 삭제.
+  // baseline은 refresh-nationwide-candidate 실행 직전 커밋의 전체 SHA다.
+  if (argv.length === 2 && argv[0] === "--nationwide-candidate-rebind-baseline") {
+    const result = await refreshCurrentCapitalAccessibilityFull({ nationwideCandidateRebindBaselineGitSha: argv[1] });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }

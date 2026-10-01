@@ -161,12 +161,13 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
   const transferUnknown = transferRows.filter(
     (r) => r.state === "UNKNOWN" && r.evidenceKind === "PROVIDER_NO_DATA" && r.evidenceReason === "TRANSFER_DATA_NOT_PROVIDED"
   );
-  assert.strictEqual(transferUnknown.length, 251, "Unmeasured transfer stations must be UNKNOWN/PROVIDER_NO_DATA");
+  // #872 S2: 서울교통공사 환승 지표 끝점이 27에서 160으로 늘어 미측정 환승 역-노선이 251에서 118로 줄었다.
+  assert.strictEqual(transferUnknown.length, 118, "Unmeasured transfer stations must be UNKNOWN/PROVIDER_NO_DATA");
 
   const transferPresent = transferRows.filter(
     (r) => r.state === "VERIFIED_PRESENT" && r.evidenceKind === "OBSERVED"
   );
-  assert.strictEqual(transferPresent.length, 53, "Measured transfer stations must be VERIFIED_PRESENT");
+  assert.strictEqual(transferPresent.length, 186, "Measured transfer stations must be VERIFIED_PRESENT");
 });
 
 test("nationwide route edge input rejects fake constants and unverified outdoor links", async () => {
@@ -187,7 +188,9 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   // 1. Total counts
   assert.strictEqual(entries.length, 1102);
   assert.strictEqual(exits.length, 1102);
-  assert.strictEqual(inStationTransfers.length, 388);
+  // #872 S1(D1): 공식 지표가 없는 역내 환승은 0s/0m 행으로 두지 않고 뺀다.
+  // #872 S2: 서울교통공사 지표가 1~8호선과 상대 노선 전체(102쌍, OFFICIAL 140·DERIVED_RECIPROCAL 64)로 넓어졌다.
+  assert.strictEqual(inStationTransfers.length, 204);
   assert.strictEqual(outOfStationTransfers.length, 14);
 
   // 2. ENTRY edges: no fake 90s/50m constant, all 0s/0m
@@ -208,11 +211,11 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   );
   assert.strictEqual(uniformFakeTransfers.length, 0, "No transfer edge may have 120s/50m fake uniform constant");
 
-  // Unmeasured in-station transfers are 0s/0m, measured ones are >0
+  // 미측정 역내 환승(0s/0m)과 MOLIT 추정 공식 값은 없다. 남은 환승은 모두 공식 측정값(>0)이다.
   const zeroTransfers = inStationTransfers.filter((e) => e.durationSeconds === 0 && e.distanceMeters === 0);
   const measuredTransfers = inStationTransfers.filter((e) => e.durationSeconds > 0 && e.distanceMeters > 0);
-  assert.strictEqual(zeroTransfers.length, 332);
-  assert.strictEqual(measuredTransfers.length, 56);
+  assert.strictEqual(zeroTransfers.length, 0);
+  assert.strictEqual(measuredTransfers.length, 204);
 
   // 5. Canonical pack outdoor transfers must NOT have future timestamps or fabricated NO_STAIRS/AVAILABLE
   const canonicalPack = result.finalPack;
@@ -753,4 +756,151 @@ test("광주 FACILITY 판정은 null을 미관측으로, 0만 있을 때만 부�
   assert.equal(gwangjuFacilityState(row(0, 0, 0)), "VERIFIED_ABSENT", "전부 0");
   assert.equal(gwangjuFacilityState(row(2, null, 0)), "VERIFIED_PRESENT", "양수와 null·0 혼합");
   assert.equal(gwangjuFacilityState(row(0, 0, 1)), "VERIFIED_PRESENT", "양수와 0");
+});
+
+// #872 S1: 환승 경로(station_pathway_edges)와 역내 환승 route edge는 공식 원천의 거리·시간에만 근거한다.
+// 공식 지표가 없는 쌍은 경로 행을 만들지 않고, 추정 공식·다른 방향 대체·무단차 단정을 쓰지 않는다.
+const TRANSFER_METRICS_PATH = "tools/datapack/release/current-transfer-topology-metrics.json";
+const SEOUL_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
+const MOLIT_TRANSFER_SOURCE_ID = "molit-railway-transfer-movement";
+// 이슈 #872 재현 근거의 부산·대구 MOLIT 환승역: 동래(역 밖 횡단 경로를 무단차로 단정), 거제·벡스코(다른 방향 경로 대체).
+const MOLIT_ESTIMATE_STATION_IDS = ["station-dbfe9e072d98", "station-623ba7995f56", "station-fbcc387e1db9"];
+
+async function preparedTransferEvidence() {
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+    writeFiles: false,
+  });
+  const metrics = JSON.parse(await readFile(path.join(root, TRANSFER_METRICS_PATH), "utf8")).metrics;
+  const metricByDirection = new Map(metrics.map((metric) => [
+    `${metric.stationId}\0${metric.fromLineId}\0${metric.toLineId}`, metric,
+  ]));
+  const nodeById = new Map(result.finalPack.stationPathwayNodes.map((node) => [node.id, node]));
+  const edgeDirection = (edge) => {
+    const from = nodeById.get(edge.fromNodeId);
+    const to = nodeById.get(edge.toNodeId);
+    assert.ok(from && to, `pathway edge ${edge.id} endpoints must be pathway nodes`);
+    assert.equal(from.stationId, to.stationId, `pathway edge ${edge.id} must stay in one station`);
+    return `${from.stationId}\0${from.lineId}\0${to.lineId}`;
+  };
+  return { result, metrics, metricByDirection, edgeDirection };
+}
+
+test("#872 S1 공식 지표가 없는 환승 쌍은 경로 행을 만들지 않고 규칙 FK는 null·UNVERIFIED다", async () => {
+  const { result, metricByDirection, edgeDirection } = await preparedTransferEvidence();
+  const pack = result.finalPack;
+
+  for (const edge of pack.stationPathwayEdges) {
+    assert.ok(metricByDirection.has(edgeDirection(edge)), `pathway edge ${edge.id} has no official metric for its direction`);
+    assert.notEqual(edge.verificationStatus, "UNVERIFIED", `UNVERIFIED pathway edge must not be emitted: ${edge.id}`);
+    assert.ok(edge.sourceId, `pathway edge ${edge.id} must carry a source`);
+  }
+
+  const edgeIds = new Set(pack.stationPathwayEdges.map(({ id }) => id));
+  const unfounded = pack.transferRules.filter((rule) =>
+    !metricByDirection.has(`${rule.fromStationId}\0${rule.fromLineId}\0${rule.toLineId}`));
+  assert.ok(unfounded.length > 0, "fixture must contain transfer pairs without official metrics");
+  for (const rule of unfounded) {
+    assert.equal(rule.pathwayEdgeId, null, `rule ${rule.id} must not reference a pathway edge`);
+    assert.equal(rule.strictStepFreePathwayEdgeId, null, `rule ${rule.id} must not reference a step-free edge`);
+    assert.equal(rule.verificationStatus, "UNVERIFIED", `rule ${rule.id} must stay UNVERIFIED`);
+    assert.equal(rule.sourceId, "", `rule ${rule.id} must not claim a source`);
+    assert.equal(rule.minTransferSeconds, 0, `rule ${rule.id} must not carry an estimated transfer time`);
+  }
+  for (const rule of pack.transferRules) {
+    if (rule.pathwayEdgeId !== null) assert.ok(edgeIds.has(rule.pathwayEdgeId), `rule ${rule.id} references a missing edge`);
+  }
+  assert.equal(pack.minimumTableRows.station_pathway_edges, pack.stationPathwayEdges.length);
+});
+
+test("#872 S1 MOLIT 환승 이동 원천은 거리·시간·무단차 간선에 쓰지 않는다(추정 공식·다른 방향 대체·AVAILABLE 단정 금지)", async () => {
+  const { result } = await preparedTransferEvidence();
+  const pack = result.finalPack;
+  const molitStations = new Set(MOLIT_ESTIMATE_STATION_IDS);
+
+  assert.deepEqual(pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === MOLIT_TRANSFER_SOURCE_ID).map(({ id }) => id), []);
+  assert.deepEqual(pack.stationPathwayEdges.filter(({ id }) => [...molitStations].some((stationId) => id.includes(stationId))).map(({ id }) => id), []);
+  for (const rule of pack.transferRules.filter(({ fromStationId }) => molitStations.has(fromStationId))) {
+    assert.equal(rule.sourceId, "", `MOLIT rule ${rule.id} must not claim a source`);
+    assert.equal(rule.verificationStatus, "UNVERIFIED", `MOLIT rule ${rule.id} must stay UNVERIFIED`);
+    assert.equal(rule.minTransferSeconds, 0, `MOLIT rule ${rule.id} must not carry max(120, n*30) estimate`);
+  }
+  // 무단차 간선은 공식 경로와 공식 거리가 함께 있을 때만 만든다. 현재 그런 원천은 없다.
+  assert.deepEqual(pack.stationPathwayEdges.filter(({ requiresElevator }) => requiresElevator).map(({ id }) => id), []);
+  assert.deepEqual(pack.stationPathwayEdges.filter(({ accessibilityStatus }) => accessibilityStatus === "AVAILABLE").map(({ id }) => id), []);
+  assert.deepEqual(pack.transferRules.filter(({ strictStepFreePathwayEdgeId }) => strictStepFreePathwayEdgeId !== null).map(({ id }) => id), []);
+
+  const molitRouteTransfers = result.routeInput.routeEdges.filter(({ edgeType, fromNodeId }) =>
+    edgeType === "IN_STATION_TRANSFER" && molitStations.has(fromNodeId.split(":")[0]));
+  assert.deepEqual(molitRouteTransfers.map(({ edgeId }) => edgeId), []);
+});
+
+test("#872 S1 서울 환승 경로 행은 같은 방향 공식 지표의 sourceRecordSha256·거리·시간과 같고, 역방향(DERIVED_RECIPROCAL) 쌍은 경로 행 없이 route edge만 유지한다", async () => {
+  const { result, metrics, metricByDirection, edgeDirection } = await preparedTransferEvidence();
+  const pack = result.finalPack;
+  const sourceRecordHashes = new Set(metrics.map(({ sourceRecordSha256 }) => sourceRecordSha256));
+  const officialMetrics = metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE");
+  const derivedMetrics = metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL");
+  assert.ok(derivedMetrics.length > 0, "fixture must contain derived reciprocal metrics (강남·까치산)");
+  assert.equal(officialMetrics.length + derivedMetrics.length, metrics.length);
+
+  // production pathway 계약은 DERIVED_RECIPROCAL을 받지 않는다(#872 D4 보완). 경로 행은 공식 지표에만 만든다.
+  assert.equal(pack.stationPathwayEdges.length, officialMetrics.length, "one official walk edge per OFFICIAL_SOURCE metric direction");
+  for (const edge of pack.stationPathwayEdges) {
+    const metric = metricByDirection.get(edgeDirection(edge));
+    assert.equal(metric.metricProvenance, "OFFICIAL_SOURCE", `edge ${edge.id} must not use a derived reciprocal value`);
+    assert.equal(edge.sourceId, SEOUL_TRANSFER_SOURCE_ID);
+    assert.equal(edge.provenanceKind, "OFFICIAL_SOURCE");
+    assert.equal(edge.verificationStatus, "VERIFIED");
+    assert.ok(sourceRecordHashes.has(edge.providerRecordHash), `edge ${edge.id} hash must exist in metrics`);
+    assert.equal(edge.providerRecordHash, metric.sourceRecordSha256, `edge ${edge.id} hash must equal its direction metric`);
+    assert.equal(edge.evidenceHash, metric.sourceRecordSha256);
+    assert.equal(edge.durationSeconds, metric.officialDurationSecondsReference);
+    assert.equal(edge.distanceMeters, metric.distanceMeters);
+  }
+  for (const rule of pack.transferRules.filter(({ pathwayEdgeId }) => pathwayEdgeId !== null)) {
+    const metric = metricByDirection.get(`${rule.fromStationId}\0${rule.fromLineId}\0${rule.toLineId}`);
+    assert.equal(metric?.metricProvenance, "OFFICIAL_SOURCE", `rule ${rule.id} must reference only an official pathway edge`);
+    assert.equal(rule.sourceId, SEOUL_TRANSFER_SOURCE_ID);
+    assert.equal(rule.verificationStatus, "VERIFIED");
+    assert.equal(rule.minTransferSeconds, metric.officialDurationSecondsReference);
+  }
+
+  const routeTransfers = new Map(result.routeInput.routeEdges
+    .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER")
+    .map((edge) => [edge.edgeId, edge]));
+  for (const metric of derivedMetrics) {
+    const key = `${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`;
+    assert.equal(pack.stationPathwayEdges.some(({ id }) => id.startsWith(`pathway-edge-${key}-`)), false, `derived pair ${key} must not emit a pathway row`);
+    const rule = pack.transferRules.find(({ id }) => id === `rule-transfer-${key}`);
+    assert.ok(rule, `derived pair ${key} keeps its transfer rule`);
+    assert.equal(rule.pathwayEdgeId, null);
+    assert.equal(rule.strictStepFreePathwayEdgeId, null);
+    assert.equal(rule.verificationStatus, "UNVERIFIED", `derived pair ${key} must not be presented as verified official`);
+    // 길찾기 route edge는 #350에서 승인된 역방향 지표 값을 그대로 쓴다(길찾기 동작 변경 없음).
+    const routeEdge = routeTransfers.get(`transfer-${key}`);
+    assert.ok(routeEdge, `derived pair ${key} keeps its route edge`);
+    assert.equal(routeEdge.durationSeconds, metric.officialDurationSecondsReference);
+    assert.equal(routeEdge.distanceMeters, metric.distanceMeters);
+  }
+});
+
+test("#872 S1 route-edge input은 공식 지표가 없는 역내 환승을 0s/0m로 두지 않고 뺀다(D1)", async () => {
+  const { result, metrics, metricByDirection } = await preparedTransferEvidence();
+  const transfers = result.routeInput.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
+
+  assert.equal(transfers.length, metrics.length);
+  for (const edge of transfers) {
+    const [fromStationId, fromLineId] = edge.fromNodeId.split(":");
+    const [toStationId, toLineId] = edge.toNodeId.split(":");
+    assert.equal(fromStationId, toStationId);
+    const metric = metricByDirection.get(`${fromStationId}\0${fromLineId}\0${toLineId}`);
+    assert.ok(metric, `route transfer ${edge.edgeId} has no official metric`);
+    assert.equal(edge.durationSeconds, metric.officialDurationSecondsReference);
+    assert.equal(edge.distanceMeters, metric.distanceMeters);
+  }
+  assert.deepEqual(transfers.filter(({ durationSeconds, distanceMeters }) => durationSeconds === 0 || distanceMeters === 0)
+    .map(({ edgeId }) => edgeId), []);
 });

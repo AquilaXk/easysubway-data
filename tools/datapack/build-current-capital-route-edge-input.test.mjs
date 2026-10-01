@@ -11,7 +11,7 @@ import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInpu
 import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson } from "./build-current-capital-station-line-input.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { canonicalRideEdgeSetSha256, evaluateRouteAccessibilityEdges, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
-import { buildCurrentCapitalStationLineInputFixture } from "./test-fixtures/current-capital-station-line-input.mjs";
+import { buildCurrentCapitalStationLineInputFixture, widenFixtureTransferMetricsBeyondCapitalDomain } from "./test-fixtures/current-capital-station-line-input.mjs";
 import {
   copySyntheticCurrentPublicRouteMapRepository,
   nextSyntheticCurrentStaticNetworkNow,
@@ -39,6 +39,34 @@ test("full-capital route fan-in은 input-derived edge sets를 만든다", async 
   const terminalExitResult = evaluated.results.find(({ edgeId }) => edgeId === terminalExitEdge.edgeId);
   assert.equal(terminalExitResult.state, "BLOCKED");
   assert.equal(terminalExitResult.reason, "출구 이동경로가 검증되지 않아 경로를 차단했습니다.");
+});
+
+// #872 S2(#866에서 전국 경로로 대체 후 삭제): 수도권 route-edge input은 수도권 station-line 분모 안에 두 끝점이 모두 있는
+// 쌍의 지표만 IN_STATION_TRANSFER로 쓴다. 분모 밖·한쪽만 분모 안인 쌍은 전국 경로에서만 쓴다.
+test("수도권 route-edge input은 분모 안에 온전히 들어가는 환승 쌍만 쓴다", async () => {
+  const input = widenFixtureTransferMetricsBeyondCapitalDomain(await buildCurrentCapitalStationLineInputFixture());
+  const routeOnly = addFullRouteStationLines(input);
+  input.canonicalPack.packs[0].networkEdges = [rideEdgeBetween(routeOnly[0], routeOnly[1])];
+  const result = buildCurrentCapitalRouteEdgeInput(input);
+  const station = buildCurrentCapitalStationLineInput(input);
+  // 독립 기대값: 분모(station-line input stationLines) 안에 두 끝점이 모두 있는 지표만 고른다.
+  const domain = new Set(station.stationLines.map(({ stationId, lineId }) => `${stationId}|${lineId}`));
+  const inside = input.transferMetrics.metrics.filter(({ stationId, fromLineId, toLineId }) => domain.has(`${stationId}|${fromLineId}`) && domain.has(`${stationId}|${toLineId}`));
+  assert.equal(inside.length, 2);
+  assert.equal(input.transferMetrics.metrics.length, 6);
+  const rides = routeFixtureRides(input.canonicalPack.packs[0].networkEdges);
+  assertExactRouteFanIn(result.routeEdges, { rides, stationLines: station.stationLines, metrics: inside });
+  const transferIds = result.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map(({ edgeId }) => edgeId).sort();
+  assert.deepEqual(transferIds, ["edge-transfer-station-z-fixture-transfer-fixture-a-fixture-b", "edge-transfer-station-z-fixture-transfer-fixture-b-fixture-a"]);
+});
+
+// #872 S2: S2 전후로 수도권 route-edge input의 routeEdges·stationLines 바이트는 같다(origin/main 8a1d0c36 기준 hash).
+test("커밋된 수도권 route-edge input의 routeEdges·stationLines는 S2 전과 같다", async () => {
+  const route = JSON.parse(await readFile(new URL("./release/current-capital-accessibility-full/route-edge-input.json", import.meta.url), "utf8"));
+  const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  assert.equal(route.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").length, 30);
+  assert.equal(hash(route.routeEdges), "438b21f3d4f57c48af60fc6ae6016116c99286de2abc496c4f8d9fe4c0bf240f");
+  assert.equal(hash(route.stationLines), "024fedb7010b863ed9dc1de6452c8d608961d6d2316cbb44181d1c666bd02e2c");
 });
 
 test("route builder 직접 호출은 projected fixture의 non-RIDE drift를 거부한다", async () => {

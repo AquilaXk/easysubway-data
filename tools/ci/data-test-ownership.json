@@ -268,6 +268,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/862",
       "title": "[Fix] 전국 후보 기준으로 데이터 릴리스 파이프라인 복구(상위 이슈)"
     },
+    "data872": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/872",
+      "title": "[Fix] 환승 경로의 근거 없는 거리·시간 제거와 공식 원천 기반 환승 검증 확대"
+    },
     "data854": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/854",
       "title": "[Fix] 전국 정본 팩의 운행 요일 값·노선도 라벨 결함으로 release-candidate 빌드 실패"
@@ -608,6 +612,8 @@
     {"path":"tools/datapack/recover-current-live-chain-transfer-observation.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":37},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":8},
     {"path":"tools/datapack/refresh-current-capital-accessibility-full.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":257524},
+    {"path":"tools/datapack/refresh-current-capital-accessibility-full-nationwide-rebind.test.mjs","semanticOwner":"data872","classes":["required-pr"],"durationMs":15000},
+    {"path":"tools/datapack/refresh-current-capital-accessibility-full-nationwide-pack-recompute.test.mjs","semanticOwner":"data872","classes":["required-pr"],"durationMs":8000},
     {"path":"tools/datapack/refresh-current-capital-accessibility-full-transfer-baseline.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":25000},
     {"path":"tools/datapack/refresh-nationwide-candidate.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":2100},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":17},
