@@ -18,9 +18,8 @@ const candidateSpec = JSON.parse(await readFile(
   path.join(root, "tools/datapack/release/candidate-build-spec.json"),
   "utf8",
 ));
-const candidateReplayAt = candidateSpec.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt
-  ? "2026-09-04T17:29:32.665Z"
-  : candidateSpec.publishedAt;
+// #862: 후보는 같은 날 등록한 원천으로 재생성되므로 후보 시계(publishedAt)가 모든 입력의 신선도 창 안이다.
+const candidateReplayAt = candidateSpec.publishedAt;
 const env = {
   ...process.env,
   EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY: "true",
@@ -56,7 +55,11 @@ async function loadFixtureBoundCandidate(workspace) {
   const capitalSnapshots = spec.sourceSnapshots.filter((s) => s.adminReviewRecordHash);
   spec.sourceSnapshots = capitalSnapshots;
   spec.sourceSnapshotIds = capitalSnapshots.map((s) => s.snapshotId);
-  spec.sourceSnapshotSetHash = "a1638b3df8e92c59db8525b68d687580177345cc983a22645f60833f52322fb0";
+  // 수도권 부분집합의 set hash는 추적 원장 행(build-datapack의 결속 정의)으로 다시 계산한다.
+  const ledger = JSON.parse(await readFile("tools/datapack/release/source-snapshots.json", "utf8"));
+  spec.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(
+    ledger.filter(({ snapshotId }) => spec.sourceSnapshotIds.includes(snapshotId)),
+  )));
   const productionScopePolicyInput = spec.productionScopePolicy;
   const productionScopePolicyBytes = await readFile(productionScopePolicyInput.path);
   spec.productionScopePolicy = {
