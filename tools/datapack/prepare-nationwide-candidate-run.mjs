@@ -1815,6 +1815,11 @@ export async function prepareNationwideCandidate({
   if (buildSpec.networkEdgeEvidence?.sourceInventory) {
     buildSpec.networkEdgeEvidence.sourceInventory.sha256 = sha256(sourceInventoryBytes);
   }
+  buildSpec.networkEdgeEvidence.itxCoverageContract = structuredClone(
+    preparation.materialization.networkEdgeEvidence.itxCoverageContract,
+  );
+  buildSpec.itxTopologyEvidencePath = preparation.materialization.itxTopologyEvidencePath;
+  buildSpec.itxTopologyEvidenceSha256 = preparation.materialization.itxTopologyEvidenceSha256;
   const buildSpecBytes = jsonBytes(buildSpec);
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, buildSpecRelPath), buildSpecBytes);
