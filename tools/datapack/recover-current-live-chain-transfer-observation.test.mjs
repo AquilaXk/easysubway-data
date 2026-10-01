@@ -87,3 +87,30 @@ async function writeRepoInputs(root, receipt) {
     writeFile(path.join(root, "tools/datapack/source-candidates.json"), JSON.stringify({ candidates: [{ id: "seoul-metro-transfer-distance-duration", requestUrl: endpoint, operation: { endpoint, method: "GET", auth: { env: "DATA_GO_KR_SERVICE_KEY", parameter: "serviceKey", placement: "query", valueEncoding: "url-search-params-once", loadPolicy: "process-env-no-shell-parsing" }, requiredParameters: ["serviceKey", "page", "perPage", "returnType"] }, evidence: { endpoint, outputFields: ["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"], coverageLimitations: ["145개 환승역(2025-12-31 기준) 커버"] } }] })),
   ]);
 }
+
+// #862 결정 1(A): 결정 C(전국 후보)에서 쓰는 source-admission-only 모드를 CLI와 rebind 호출에 그대로 전달한다.
+test("recovery CLI accepts an optional trailing --source-admission-only and passes the mode to rebind(#862 결정 C)", async (t) => {
+  assert.deepEqual(
+    parseRecoveryArgs(["--repository-root", "/tmp/repository", "--recovery-root", "/tmp/recovery", "--source-admission-only"]),
+    { repositoryRoot: "/tmp/repository", recoveryRoot: "/tmp/recovery", sourceAdmissionOnly: true },
+  );
+  for (const argv of [
+    ["--repository-root", "/tmp/repository", "--recovery-root", "/tmp/recovery", "--other"],
+    ["--source-admission-only", "--repository-root", "/tmp/repository", "--recovery-root", "/tmp/recovery"],
+  ]) assert.throws(() => parseRecoveryArgs(argv), /arguments must be/);
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "transfer-recovery-source-admission-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const rawBytes = bytes(rawSnapshot()); const receipt = fullReceipt({ rawBytes, capturedAt: "2026-08-15T09:40:38.817Z" });
+  await writeRepoInputs(root, receipt);
+  const modes = [];
+  for (const [name, sourceAdmissionOnly] of [["default", undefined], ["source-admission", true]]) {
+    await recoverCurrentLiveChainTransferObservation({
+      repositoryRoot: root, recoveryRoot: path.join(root, `recovery-${name}`), sourceAdmissionOnly,
+      env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/test/n/axvym6vk8g7i/b/easysubway-datapacks/o" },
+      client: { async readObject() { return { exists: true, body: rawBytes }; } },
+      rebind: async (options) => { modes.push(options.sourceAdmissionOnly); return { targets: [] }; },
+    });
+  }
+  assert.deepEqual(modes, [false, true]);
+});

@@ -26,6 +26,7 @@ export async function recoverCurrentLiveChainTransferObservation({
   client = null,
   rebind = rebindCurrentLiveChainTransferDerivedIdentities,
   readFileImpl = readFile,
+  sourceAdmissionOnly = false,
 } = {}) {
   const root = requiredAbsolute(repositoryRoot, "repository root");
   const recovery = requiredAbsolute(recoveryRoot, "recovery root");
@@ -57,7 +58,7 @@ export async function recoverCurrentLiveChainTransferObservation({
     const observationDirectory = path.join(recovery, "observation");
     await writeReconstructedSeoulTransferObservation({ output: observationDirectory, runnerTemp: recovery, reconstruction });
     preserveRecoveryEvidence = true;
-    return await rebind({ repositoryRoot: root, observationDirectory, receiptPath: path.join(recovery, "receipt.json") });
+    return await rebind({ repositoryRoot: root, observationDirectory, receiptPath: path.join(recovery, "receipt.json"), sourceAdmissionOnly: sourceAdmissionOnly === true });
   } finally {
     if (!preserveRecoveryEvidence) await rm(recovery, { recursive: true, force: true });
   }
@@ -81,11 +82,16 @@ function requiredAbsolute(value, label) {
   return path.resolve(value);
 }
 
+// #862 결정 1(A): 결정 C(전국 후보)에서는 마지막에 --source-admission-only를 붙인다.
 export function parseRecoveryArgs(argv) {
-  if (!Array.isArray(argv) || argv.length !== 4 || argv[0] !== "--repository-root" || argv[2] !== "--recovery-root") {
-    throw new Error("arguments must be --repository-root <absolute> --recovery-root <absolute>");
+  const sourceAdmissionOnly = Array.isArray(argv) && argv.length === 5 && argv[4] === "--source-admission-only";
+  if (!Array.isArray(argv) || (argv.length !== 4 && !sourceAdmissionOnly) || argv[0] !== "--repository-root" || argv[2] !== "--recovery-root") {
+    throw new Error("arguments must be --repository-root <absolute> --recovery-root <absolute> [--source-admission-only]");
   }
-  return { repositoryRoot: requiredAbsolute(argv[1], "repository root"), recoveryRoot: requiredAbsolute(argv[3], "recovery root") };
+  return {
+    repositoryRoot: requiredAbsolute(argv[1], "repository root"), recoveryRoot: requiredAbsolute(argv[3], "recovery root"),
+    ...(sourceAdmissionOnly ? { sourceAdmissionOnly: true } : {}),
+  };
 }
 
 async function main(argv = process.argv.slice(2)) {

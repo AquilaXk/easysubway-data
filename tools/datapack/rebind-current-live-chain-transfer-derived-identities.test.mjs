@@ -205,3 +205,57 @@ test("current live-chain TRANSFER retains recovery journal and lock when rollbac
     assert.equal((await stat(path.join(root, "tools/datapack/.current-live-chain-transfer-derived-identities.lock"))).isDirectory(), true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+// #862 결정 1(A): 결정 C(전국 후보)에서는 환승 원천 admission만 다시 결속한다. 후보·request·hash는
+// refresh-nationwide-candidate만 만들므로 이 모드는 그 셋을 출력하지도, 쓰지도 않는다. 기존 8출력 모드는 그대로다.
+const SOURCE_ADMISSION_ONLY_DESCRIPTOR = "tools/datapack/sources/seoul-metro-transfer-distance-duration-20991231T235959999Z.json";
+const RELEASE_EVIDENCE_PATHS = Object.freeze([
+  "tools/datapack/release/candidate-build-spec.json",
+  "tools/datapack/release/release-request.json",
+  "tools/datapack/release/hash-evidence.json",
+]);
+
+test("source-admission-only TRANSFER rebind derives exactly the five source admission outputs(#862 결정 C)", () => {
+  assert.deepEqual(currentLiveChainTransferOutputPaths(SOURCE_ADMISSION_ONLY_DESCRIPTOR, { sourceAdmissionOnly: true }), [
+    "tools/datapack/release/current-transfer-topology-metrics.json",
+    "tools/datapack/release/current-capital-transfer-topology-applicability.json",
+    SOURCE_ADMISSION_ONLY_DESCRIPTOR,
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/source-snapshots.json",
+  ]);
+  assert.equal(currentLiveChainTransferOutputPaths(SOURCE_ADMISSION_ONLY_DESCRIPTOR, { sourceAdmissionOnly: false }).length, 8);
+  assert.equal(currentLiveChainTransferOutputPaths(SOURCE_ADMISSION_ONLY_DESCRIPTOR).length, 8);
+});
+
+test("source-admission-only TRANSFER commit writes the five outputs and never touches candidate, request or hash evidence(#862 결정 C)", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "current-live-chain-transfer-source-admission-test-"));
+  try {
+    const writePrestate = async (relative, index) => {
+      const file = path.join(root, relative);
+      await mkdir(path.dirname(file), { recursive: true });
+      const prestate = Buffer.from(`before-${index}\n`);
+      await writeFile(file, prestate);
+      return { relative, prestate, bytes: Buffer.from(`after-${index}\n`) };
+    };
+    const fivePaths = currentLiveChainTransferOutputPaths(SOURCE_ADMISSION_ONLY_DESCRIPTOR, { sourceAdmissionOnly: true });
+    const five = await Promise.all(fivePaths.map(writePrestate));
+    const releaseEvidence = await Promise.all(RELEASE_EVIDENCE_PATHS.map((relative, index) => writePrestate(relative, 100 + index)));
+    const eightPaths = currentLiveChainTransferOutputPaths(SOURCE_ADMISSION_ONLY_DESCRIPTOR);
+    const eight = eightPaths.map((relative) => [...five, ...releaseEvidence].find((output) => output.relative === relative));
+
+    await assert.rejects(
+      commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: root, outputs: eight, sourceAdmissionOnly: true }),
+      /TRANSFER commit requires exact five source admission outputs/,
+    );
+    await assert.rejects(
+      commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: root, outputs: five }),
+      /TRANSFER commit requires exact eight outputs/,
+    );
+    const committed = await commitCurrentLiveChainTransferDerivedIdentityOutputs({ repositoryRoot: root, outputs: five, sourceAdmissionOnly: true });
+    assert.deepEqual(committed.targets, fivePaths);
+    for (const { relative, bytes } of five) assert.deepEqual(await readFile(path.join(root, relative)), bytes);
+    for (const { relative, prestate } of releaseEvidence) assert.deepEqual(await readFile(path.join(root, relative)), prestate);
+    await assert.rejects(stat(path.join(root, "tools/datapack/.current-live-chain-transfer-derived-identities.json")), /ENOENT/);
+    await assert.rejects(stat(path.join(root, "tools/datapack/.current-live-chain-transfer-derived-identities.lock")), /ENOENT/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
