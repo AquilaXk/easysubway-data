@@ -74,7 +74,8 @@ function validatePolicy(policy) {
     || sourceClass?.basisField !== "observedAt"
     || sourceClass.reverificationCadence !== "P1Y"
     || sourceClass.offlinePackEligible !== true
-    || JSON.stringify(sourceClass.sourceIds) !== JSON.stringify([SOURCE_ID, "seoul-metro-transfer-distance-duration"])) {
+    // #876: 서울교통공사 실측 환승시간 원천(15098252)이 같은 연간 공식 파일 클래스로 등록됐다. 구성은 여전히 정확히 고정한다.
+    || JSON.stringify(sourceClass.sourceIds) !== JSON.stringify([SOURCE_ID, "seoul-metro-transfer-distance-duration", "seoul-metro-transfer-car-door-duration"])) {
     fail("POLICY");
   }
 }
