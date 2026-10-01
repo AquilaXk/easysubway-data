@@ -225,8 +225,11 @@ test("first registration binds the exact policy prestate without changing prior 
     .filter(({ sourceId }) => !sourceIds.has(sourceId)));
   const freshnessPath = path.join(root, "release/product-gates/datapack-freshness-sla.json");
   const freshness = JSON.parse(await readFile(freshnessPath));
+  // 거버넌스에 없는 원천(#862 인천 후보 입력의 클래스 매핑)도 등록 이후에 붙은 구성원이므로 함께 되감는다.
+  const governedSourceIds = new Set(JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-governance-policy.json")))
+    .sources.map(({ sourceId }) => sourceId));
   freshness.sourceClasses = freshness.sourceClasses.filter((entry) =>
-    !entry.sourceIds.every((id) => sourceIds.has(id)));
+    !entry.sourceIds.every((id) => sourceIds.has(id) || !governedSourceIds.has(id)));
   await writeJson(freshnessPath, freshness);
   const { receiptPath } = await receiptFixture(root, now);
   const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
