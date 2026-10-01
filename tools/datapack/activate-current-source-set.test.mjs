@@ -27,6 +27,7 @@ import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidatio
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
   readOptionalCurrentItxAdmissionBytes,
+  resolveCurrentTopologyRefreshSpec,
   stageValidationItxTopologyEvidence,
   validateCurrentTopologyRefreshItxEvidence,
   validateFreshCandidateSelectedItxEvidence,
@@ -2812,4 +2813,55 @@ test("check mode는 builder code가 같은 output-only descendant만 수용한�
     }),
     /builder source|builder identity/,
   );
+});
+
+test("approved ITX bootstrap은 교체한 spec과 새 증거로 같은 ITX 증거 검사를 실행한다(#848)", async () => {
+  const spec = await readJson("tools/datapack/release/candidate-build-spec.json");
+  const evidencePath = spec.itxTopologyEvidencePath;
+  const evidenceBytes = await readFile(path.join(root, evidencePath));
+  const inputs = {
+    itxCurrentAdmissionPath: null,
+    selectedItxTopologyEvidencePath: evidencePath,
+    currentItxTopologyEvidenceBytes: evidenceBytes,
+    buildNow: "2026-08-30T16:00:00.000Z",
+  };
+  // 교체 전 spec은 다른(옛) 증거를 가리킨다. 새 증거로 교체하는 것은 bind 단계다.
+  const priorSpec = {
+    ...spec,
+    itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260101000000000.json",
+  };
+  const outsideBootstrap = async () => assert.fail("bind must not run outside bootstrap");
+
+  // 교체 모드는 옛 spec으로 새 증거를 먼저 검사하지 않고, 교체한 spec으로 검사한다.
+  assert.equal(await resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: priorSpec,
+    approvedItxBootstrap: true,
+    bindApprovedSpec: async (baseSpec) => {
+      assert.equal(baseSpec, priorSpec);
+      return spec;
+    },
+  }), spec);
+
+  // 교체 결과가 새 증거와 맞지 않으면 같은 검사가 실패한다(검사를 건너뛰지 않는다).
+  await assert.rejects(resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: priorSpec,
+    approvedItxBootstrap: true,
+    bindApprovedSpec: async (baseSpec) => baseSpec,
+  }), /identity is invalid/);
+
+  // 일반 모드는 교체 없이 기존 spec으로 검사한다.
+  await assert.rejects(resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: priorSpec,
+    approvedItxBootstrap: false,
+    bindApprovedSpec: outsideBootstrap,
+  }), /identity is invalid/);
+  assert.equal(await resolveCurrentTopologyRefreshSpec({
+    ...inputs,
+    baseSpec: spec,
+    approvedItxBootstrap: false,
+    bindApprovedSpec: outsideBootstrap,
+  }), spec);
 });
