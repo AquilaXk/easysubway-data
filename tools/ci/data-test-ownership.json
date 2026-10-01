@@ -608,6 +608,7 @@
     {"path":"tools/datapack/recover-current-live-chain-transfer-observation.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":37},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":8},
     {"path":"tools/datapack/refresh-current-capital-accessibility-full.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":257524},
+    {"path":"tools/datapack/refresh-current-capital-accessibility-full-transfer-baseline.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":25000},
     {"path":"tools/datapack/refresh-nationwide-candidate.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":2100},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":17},
     {"path":"tools/datapack/register-current-seoul-accessibility-snapshot.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":2898},

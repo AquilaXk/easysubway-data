@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { buildCurrentCapitalRouteEdgeInput, canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
 import {
@@ -54,6 +56,24 @@ const ACTIVATED_CURRENT_OUTPUT = "ACTIVATED_CURRENT_OUTPUT";
 const PRE_APPROVAL_CURRENT_CANDIDATE = "PRE_APPROVAL_CURRENT_CANDIDATE";
 const SEOUL = "seoul-metro-accessibility";
 const TRANSFER = "seoul-metro-transfer-distance-duration";
+const execFileAsync = promisify(execFile);
+// #862 결정 1(A2): 결정 C 환승 재결속 baseline 이후 바뀌어도 되는 경로. refresh-nationwide-candidate의 출력
+// (NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS, 전국 정본 팩 제외)과 문서 파편뿐이다. 순환 import를 피하려고
+// 문자열로 두고, 테스트가 원래 목록과 같은지 고정한다.
+export const TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS = Object.freeze([
+  "tools/datapack/release/current-five-region-source-fan-in.json",
+  "tools/datapack/reports/nationwide-requirement-ownership-ledger.json",
+  "tools/datapack/release/nationwide-route-edge-input.json",
+  "tools/datapack/release/nationwide-station-line-input.json",
+  "tools/datapack/release/nationwide-candidate-preparation.json",
+  "tools/datapack/release/nationwide-car-door-hint-quarantine.json",
+  "tools/datapack/release/nationwide-regional-timetable-quarantine.json",
+  "tools/datapack/release/candidate-build-spec.json",
+  "release/product-gates/production-datapack-scope.json",
+  "tools/datapack/release/release-request.json",
+  "tools/datapack/release/hash-evidence.json",
+  "contracts/documentation/documentation-fragment.json",
+]);
 const MOLIT = "molit-urban-rail-full-route";
 const PUBLIC_STATIC_NETWORK_V2_SUCCESSOR = "PUBLIC_STATIC_NETWORK_V2_SUCCESSOR_REFRESH";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -863,6 +883,50 @@ function assertEvidenceDelta(before, after, allowCandidateIdentityTransition, ex
   }
 }
 
+async function gitBytes(root, args) {
+  const { stdout } = await execFileAsync("git", args, { cwd: root, encoding: "buffer", maxBuffer: 1024 * 1024 * 1024 });
+  return stdout;
+}
+
+// #862 결정 1(A2): 결정 C의 환승 source-admission-only 재결속(5출력)은 후보·request·hash를 쓰지 않는다.
+// 재결속 직전 커밋(baseline)의 8개 경로 바이트를 prestate로, 현재 작업 트리 바이트를 bytes로 삼아
+// 기존 검증 함수(buildAuthenticatedCurrentCapitalTransferEvidenceTransition)에 그대로 넘긴다.
+export async function deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot = ROOT, baselineGitSha } = {}) {
+  const root = path.resolve(repositoryRoot);
+  if (typeof baselineGitSha !== "string" || !/^[0-9a-f]{40}$/u.test(baselineGitSha)) {
+    throw new Error("TRANSFER source admission baseline must be a full git SHA");
+  }
+  try {
+    await gitBytes(root, ["merge-base", "--is-ancestor", baselineGitSha, "HEAD"]);
+  } catch {
+    throw new Error("TRANSFER source admission baseline is not an ancestor of HEAD");
+  }
+  if ((await gitBytes(root, ["status", "--porcelain"])).length !== 0) {
+    throw new Error("TRANSFER source admission requires a clean tree");
+  }
+  const inventory = parse((await readStableRegularFile(target(root, "tools/datapack/source-inventory.json"), "source inventory")).bytes, "source inventory");
+  const descriptorPath = inventory.sources?.find(({ id }) => id === TRANSFER)?.transferAdmissionEvidence?.snapshotPath;
+  const outputPaths = currentLiveChainTransferOutputPaths(descriptorPath);
+  const transferPaths = currentLiveChainTransferOutputPaths(descriptorPath, { sourceAdmissionOnly: true });
+  const allowed = new Set([...transferPaths, ...TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS]);
+  const changed = (await gitBytes(root, ["diff", "--name-only", "-z", baselineGitSha, "HEAD"])).toString("utf8").split("\0").filter(Boolean);
+  const unexpected = changed.filter((relative) => !allowed.has(relative)).sort(codepointCompare);
+  if (unexpected.length !== 0) {
+    throw new Error(`TRANSFER source admission baseline changed non-TRANSFER inputs: ${unexpected.join(", ")}`);
+  }
+  const rebindCommit = (await gitBytes(root, ["rev-list", "-1", `${baselineGitSha}..HEAD`, "--", ...transferPaths])).toString("utf8").trim();
+  if (!/^[0-9a-f]{40}$/u.test(rebindCommit)) throw new Error("TRANSFER source admission baseline has no later rebind commit");
+  const outputs = [];
+  for (const relative of outputPaths) {
+    const prestate = await gitBytes(root, ["show", `${baselineGitSha}:${relative}`]);
+    if (transferPaths.includes(relative) && !prestate.equals(await gitBytes(root, ["show", `${rebindCommit}^:${relative}`]))) {
+      throw new Error(`TRANSFER source admission baseline bytes differ from the rebind commit prestate: ${relative}`);
+    }
+    outputs.push({ relative, bytes: (await readStableRegularFile(target(root, relative), `current ${relative}`)).bytes, prestate });
+  }
+  return outputs;
+}
+
 export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   repositoryRoot = ROOT,
   phase = ACTIVATED_CURRENT_OUTPUT,
@@ -871,6 +935,7 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
   transferRebindOutputs = undefined,
   markerState = "PRESENT",
   approvedItxTopologyDeltaProof = undefined,
+  transferSourceAdmissionOutputs = undefined,
 } = {}) {
   requireTerminalMarkerState(markerState);
   requirePhase(phase);
@@ -998,6 +1063,20 @@ export async function buildCurrentCapitalAccessibilityRefreshOutputs({
     }
   } else if (transferRebindOutputs !== undefined) {
     throw new Error("current-capital refresh TRANSFER evidence transition requires pending markers");
+  }
+  if (transferSourceAdmissionOutputs !== undefined) {
+    // #862 결정 1(A2): 결정 C 환승 재결속은 터미널 전이 밖에서만, 기존 검증 함수를 그대로 거쳐 받는다.
+    if (marker) throw new Error("current-capital refresh TRANSFER source admission cannot run inside a terminal transition");
+    if (approvedItxTopologyDeltaProof !== undefined) throw new Error("current-capital refresh TRANSFER source admission cannot combine with an ITX topology delta");
+    const transferTransition = await buildAuthenticatedCurrentCapitalTransferEvidenceTransition({
+      repositoryRoot: root,
+      outputs: transferSourceAdmissionOutputs,
+      beforeStation: stationBefore,
+      afterStation: stationAfter,
+    });
+    expectedBeforeTransferRows = transferTransition.beforeRows;
+    expectedAfterTransferRows = transferTransition.afterRows;
+    transferRebindInputs = transferTransition.inputs;
   }
   let itxTopologyDelta = null;
   if (approvedItxTopologyDeltaProof !== undefined) {
@@ -1439,18 +1518,25 @@ async function commitApprovedItxTopologyDelta({ root, outputs, beforeCommit }) {
 
 export async function refreshCurrentCapitalAccessibilityFull({
   repositoryRoot = ROOT, beforeCommit = async () => {}, transferRebindOutputs = undefined, markerState = "PRESENT",
-  approvedItxTopologyDeltaProof = undefined,
+  approvedItxTopologyDeltaProof = undefined, transferSourceAdmissionBaselineGitSha = undefined,
 } = {}) {
   requireTerminalMarkerState(markerState);
   const root = path.resolve(repositoryRoot); const release = await acquireLock(root);
   try {
     await recover(root);
+    const transferSourceAdmissionOutputs = transferSourceAdmissionBaselineGitSha === undefined ? undefined
+      : await deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: transferSourceAdmissionBaselineGitSha });
     const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
-      repositoryRoot: root, transferRebindOutputs, markerState, approvedItxTopologyDeltaProof,
+      repositoryRoot: root, transferRebindOutputs, markerState, approvedItxTopologyDeltaProof, transferSourceAdmissionOutputs,
     });
     await assertInputsStable(outputs.flatMap(({ inputs = [] }) => inputs));
     const marker = outputs[0]?.inputs?.find(({ target: inputTarget }) => inputTarget === target(root, TRANSITION));
     const transactionOutputs = [...outputs, outputs[0].fanIn];
+    if (transferSourceAdmissionOutputs !== undefined) {
+      if (marker) throw new Error("current-capital refresh TRANSFER source admission cannot run inside a terminal transition");
+      await commitApprovedItxTopologyDelta({ root, outputs: transactionOutputs, beforeCommit });
+      return { outputs: TRANSACTION_OUTPUTS, transferSourceAdmissionBaselineGitSha };
+    }
     if (approvedItxTopologyDeltaProof !== undefined) {
       if (marker) throw new Error("ITX topology delta proof mode cannot run inside a terminal transition");
       await commitApprovedItxTopologyDelta({ root, outputs: transactionOutputs, beforeCommit });
@@ -1489,6 +1575,12 @@ async function main(argv) {
     const proof = parse((await readStableRegularFile(target(ROOT, relative), relative)).bytes, "ITX topology delta proof");
     if (proof?.artifactKind !== ITX_TOPOLOGY_DELTA_PROOF_KIND) throw new Error("ITX topology delta proof is required");
     const result = await refreshCurrentCapitalAccessibilityFull({ approvedItxTopologyDeltaProof: proof });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
+  }
+  // #862 결정 1(A2): 결정 C 환승 재결속 뒤 재생성. baseline은 재결속 직전 커밋의 전체 SHA다.
+  if (argv.length === 2 && argv[0] === "--transfer-source-admission-baseline") {
+    const result = await refreshCurrentCapitalAccessibilityFull({ transferSourceAdmissionBaselineGitSha: argv[1] });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
