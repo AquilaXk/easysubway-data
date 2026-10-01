@@ -187,8 +187,9 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   // 1. Total counts
   assert.strictEqual(entries.length, 1102);
   assert.strictEqual(exits.length, 1102);
-  // #872 S1(D1): 공식 지표가 없는 역내 환승은 0s/0m 행으로 두지 않고 뺀다. 서울교통공사 지표 30개만 남는다.
-  assert.strictEqual(inStationTransfers.length, 30);
+  // #872 S1(D1): 공식 지표가 없는 역내 환승은 0s/0m 행으로 두지 않고 뺀다.
+  // #872 S2: 서울교통공사 지표가 1~8호선과 상대 노선 전체(102쌍, OFFICIAL 140·DERIVED_RECIPROCAL 64)로 넓어졌다.
+  assert.strictEqual(inStationTransfers.length, 204);
   assert.strictEqual(outOfStationTransfers.length, 14);
 
   // 2. ENTRY edges: no fake 90s/50m constant, all 0s/0m
@@ -213,7 +214,7 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   const zeroTransfers = inStationTransfers.filter((e) => e.durationSeconds === 0 && e.distanceMeters === 0);
   const measuredTransfers = inStationTransfers.filter((e) => e.durationSeconds > 0 && e.distanceMeters > 0);
   assert.strictEqual(zeroTransfers.length, 0);
-  assert.strictEqual(measuredTransfers.length, 30);
+  assert.strictEqual(measuredTransfers.length, 204);
 
   // 5. Canonical pack outdoor transfers must NOT have future timestamps or fabricated NO_STAIRS/AVAILABLE
   const canonicalPack = result.finalPack;

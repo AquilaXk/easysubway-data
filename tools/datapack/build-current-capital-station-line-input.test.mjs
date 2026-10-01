@@ -207,6 +207,46 @@ test("TRANSFER admission은 허용된 provenance가 전체 metric을 소진해�
   );
 });
 
+// #872 S2: 환승 지표는 서울교통공사 1~8호선과 상대 노선 전체로 넓어졌다. 수도권 station-line 분모(서울교통공사 운영 노선)
+// 밖의 쌍이 있어도 분모 안 TRANSFER 행만 만들고, 분모 밖 끝점의 applicability·지표 결속은 계속 검사한다.
+test("TRANSFER 지표가 분모 밖 쌍을 담아도 분모 안 행만 만들고 분모 밖 결속은 검사한다", async () => {
+  const widen = (value) => {
+    const metrics = value.transferMetrics;
+    const official = { ...structuredClone(metrics.metrics.find(({ metricProvenance }) => metricProvenance !== "DERIVED_RECIPROCAL") ?? metrics.metrics[0]), stationId: "station-outside", fromLineId: "fixture-c", toLineId: "fixture-d", sourceRecordSha256: "e".repeat(64), metricProvenance: "OFFICIAL_SOURCE" };
+    delete official.derivedFrom;
+    const derived = { ...official, fromLineId: "fixture-d", toLineId: "fixture-c", metricProvenance: "DERIVED_RECIPROCAL", derivedFrom: { stationId: "station-outside", fromLineId: "fixture-c", toLineId: "fixture-d", sourceRecordSha256: official.sourceRecordSha256 } };
+    metrics.physicalPairs.push({ stationId: "station-outside", lineIds: ["fixture-c", "fixture-d"] });
+    metrics.metrics.push(official, derived);
+    metrics.canonicalIdentity.physicalPairCount = metrics.physicalPairs.length;
+    metrics.canonicalIdentity.stationLineCount += 2;
+    metrics.canonicalIdentity.stationCount += 1;
+    value.transferApplicability.canonicalIdentity = metrics.canonicalIdentity;
+    value.transferApplicability.cells.push({ stationId: "station-outside", lineId: "fixture-c", state: "APPLICABLE_TRANSFER_ENDPOINT" }, { stationId: "station-outside", lineId: "fixture-d", state: "APPLICABLE_TRANSFER_ENDPOINT" });
+    const admission = value.sourceInventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").transferAdmissionEvidence;
+    admission.physicalPairCount = metrics.physicalPairs.length;
+    admission.directedMetricCount = metrics.metrics.length;
+    admission.officialMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+    admission.derivedReciprocalMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
+    rebindTransferArtifacts(value);
+  };
+  const baseline = buildCurrentCapitalStationLineInput(await buildCurrentCapitalStationLineInputFixture());
+  const value = await buildCurrentCapitalStationLineInputFixture();
+  widen(value);
+  const result = buildCurrentCapitalStationLineInput(value);
+  const transferRows = result.evidenceRows.filter(({ domain }) => domain === "TRANSFER");
+  assert.deepEqual(new Set(transferRows.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)), new Set(result.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)));
+  assert.deepEqual(transferRows.map(({ stationId, lineId, state }) => ({ stationId, lineId, state })), baseline.evidenceRows.filter(({ domain }) => domain === "TRANSFER").map(({ stationId, lineId, state }) => ({ stationId, lineId, state })));
+  assert.ok(transferRows.every(({ providerRecordHash }) => providerRecordHash === value.transferMetrics.artifactSha256));
+  for (const mutate of [
+    (drift) => { drift.transferApplicability.cells.find(({ stationId, lineId }) => stationId === "station-outside" && lineId === "fixture-d").state = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET"; rebindTransferArtifacts(drift); },
+    (drift) => { drift.transferApplicability.cells = drift.transferApplicability.cells.filter(({ stationId, lineId }) => !(stationId === "station-outside" && lineId === "fixture-d")); rebindTransferArtifacts(drift); },
+    (drift) => { drift.transferMetrics.metrics = drift.transferMetrics.metrics.filter(({ stationId, fromLineId }) => !(stationId === "station-outside" && fromLineId === "fixture-d")); rebindTransferArtifacts(drift); },
+  ]) {
+    const drift = await buildCurrentCapitalStationLineInputFixture(); widen(drift); mutate(drift);
+    assert.throws(() => buildCurrentCapitalStationLineInput(drift), /full-capital TRANSFER/);
+  }
+});
+
 test("count를 유지한 blocked carrier·directed pair·applicability swap drift도 fail-closed다", async () => {
   for (const mutate of [
     (value) => {
