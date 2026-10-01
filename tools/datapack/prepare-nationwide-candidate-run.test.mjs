@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { prepareNationwideCandidate, formatPlatformInfo, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { prepareNationwideCandidate, formatPlatformInfo, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -536,6 +536,24 @@ test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 
   const future = await committedSelectionInputsWithinIncheonWindow();
   future.fanIn.evaluatedAt = "2026-09-04T17:29:30.000Z";
   await assert.rejects(resolveNationwideCandidateInputSnapshots(future), /nationwide candidate input is observed after the candidate clock for incheon-line1-train-timetable/);
+});
+
+// #862: MOLIT 환승 이동 원천은 정책으로 유도한 freshUntil이 후보 시계 이전이면 만료로 실패한다.
+test("MOLIT 환승 이동 원천은 정책 신선도가 후보 시계 이전이면 만료로 실패한다(#862)", async () => {
+  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const sourceInventory = await readJson("tools/datapack/source-inventory.json");
+  const freshnessPolicy = await readJson("release/product-gates/datapack-freshness-sla.json");
+  const admission = sourceInventory.sources.find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission;
+  const metadata = await readJson(admission.metadataPath);
+  const read = (relative) => readFile(path.join(root, relative));
+  const before = new Date(Date.parse(metadata.freshUntil) - 60_000).toISOString();
+  const resolved = await resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: before, read });
+  assert.equal(resolved.metadata.snapshotId, admission.snapshotId);
+  await assert.rejects(resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: metadata.freshUntil, read }),
+    /nationwide candidate MOLIT transfer snapshot is expired/);
+  const future = new Date(Date.parse(metadata.observedAt) - 60_000).toISOString();
+  await assert.rejects(resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: future, read }),
+    /nationwide candidate MOLIT transfer snapshot is observed after the candidate clock/);
 });
 
 test("인천 입력은 inventory admission evidence가 없거나 원본 바이트가 다르면 실패한다", async () => {

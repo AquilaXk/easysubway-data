@@ -13,7 +13,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   buildMolitRailwayTransferMovementSnapshot,
-  MOLIT_RAILWAY_TRANSFER_MOVEMENT_RAW_SHA256,
+  molitRailwayTransferMovementEditionFromSnapshotId,
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
 } from "./collect-molit-railway-transfer-movement.mjs";
 
@@ -409,11 +409,11 @@ async function validateAdmittedCandidateEvidence(inventory, candidates, official
       if (!/^[0-9a-f]{64}$/.test(candidateBinding.metadataFileSha256)
         || !/^[0-9a-f]{64}$/.test(candidateBinding.rawSha256)
         || !/^[0-9a-f]{64}$/.test(candidateBinding.gzipSha256)
-        || candidateBinding.rowCount !== 8054 || candidateBinding.status !== "LOCKED") {
+        || !Number.isSafeInteger(candidateBinding.rowCount) || candidateBinding.rowCount < 1 || candidateBinding.status !== "LOCKED") {
         throw new Error(`${candidate.id} official snapshot binding invalid`);
       }
-      if (candidate.id !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID
-        || candidateBinding.rawSha256 !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_RAW_SHA256) {
+      // #862: 판은 상수가 아니라 candidate·inventory binding이 고정한다(아래에서 파일 바이트로 재검증).
+      if (candidate.id !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID) {
         throw new Error(`${candidate.id} official snapshot raw hash is not the pinned provider artifact`);
       }
       const metadataBytes = await readFile(candidateBinding.metadataPath);
@@ -437,7 +437,12 @@ async function validateAdmittedCandidateEvidence(inventory, candidates, official
       if (sha256(rawBytes) !== candidateBinding.rawSha256) {
         throw new Error(`${candidate.id} official snapshot raw hash mismatch`);
       }
-      const rebuilt = buildMolitRailwayTransferMovementSnapshot({ bytes: rawBytes, capturedAt: metadata.capturedAt });
+      const rebuilt = buildMolitRailwayTransferMovementSnapshot({
+        bytes: rawBytes, capturedAt: metadata.capturedAt,
+        editionDate: molitRailwayTransferMovementEditionFromSnapshotId(candidateBinding.snapshotId),
+        freshnessPolicy: JSON.parse(await readFile("release/product-gates/datapack-freshness-sla.json", "utf8")),
+        expectedRowCount: candidateBinding.rowCount, expectedRawSha256: candidateBinding.rawSha256,
+      });
       const { gzipBytes: ignoredGzipBytes, gzipSha256: ignoredRebuiltGzipSha256, rows: ignoredRows, ...rebuiltMetadata } = rebuilt;
       const { gzipSha256: ignoredMetadataGzipSha256, ...logicalMetadata } = metadata;
       if (JSON.stringify({ ...rebuiltMetadata, gzipPath: metadata.gzipPath }) !== JSON.stringify(logicalMetadata)) {

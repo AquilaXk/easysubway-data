@@ -245,6 +245,42 @@ function policyBasisAt({ policy, sourceId, record }) {
   return requiredInstant(record?.[classes[0].basisField], `${sourceId} ${classes[0].basisField}`);
 }
 
+// MOLIT 환승 이동 원천은 원장 행이 없다. inventory rawSnapshotAdmission이 head이고, 신선도는 정책으로 유도한다.
+// 유도한 freshUntil이 후보 시계 이전이면 만료로 실패한다(#862).
+export async function resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt, read }) {
+  const molitAdmission = exactInventorySource(sourceInventory, "molit-railway-transfer-movement").rawSnapshotAdmission;
+  if (molitAdmission?.status !== "LOCKED" || typeof molitAdmission.metadataPath !== "string") {
+    throw new Error("nationwide candidate MOLIT transfer snapshot admission is missing");
+  }
+  const molitTransferMetaBytes = await read(molitAdmission.metadataPath);
+  if (sha256(molitTransferMetaBytes) !== molitAdmission.metadataFileSha256) {
+    throw new Error("nationwide candidate MOLIT transfer metadata binding mismatch");
+  }
+  const molitTransferMeta = JSON.parse(molitTransferMetaBytes);
+  if (molitTransferMeta.snapshotId !== molitAdmission.snapshotId || molitTransferMeta.rawSha256 !== molitAdmission.rawSha256
+    || molitTransferMeta.gzipSha256 !== molitAdmission.gzipSha256 || typeof molitTransferMeta.gzipPath !== "string") {
+    throw new Error("nationwide candidate MOLIT transfer metadata identity mismatch");
+  }
+  const molitTransferGzipBytes = await read(path.posix.join(path.posix.dirname(molitAdmission.metadataPath), molitTransferMeta.gzipPath));
+  if (sha256(molitTransferGzipBytes) !== molitAdmission.gzipSha256) {
+    throw new Error("nationwide candidate MOLIT transfer raw binding mismatch");
+  }
+  const evaluatedMillis = Date.parse(requiredInstant(evaluatedAt, "MOLIT transfer evaluatedAt"));
+  if (Date.parse(policyBasisAt({ policy: freshnessPolicy, sourceId: "molit-railway-transfer-movement", record: molitTransferMeta })) > evaluatedMillis) {
+    throw new Error("nationwide candidate MOLIT transfer snapshot is observed after the candidate clock");
+  }
+  const molitTransferFreshUntil = policyFreshUntil({
+    policy: freshnessPolicy, sourceId: "molit-railway-transfer-movement", record: molitTransferMeta, evaluationAt: evaluatedAt,
+  });
+  if (molitTransferMeta.freshUntil !== molitTransferFreshUntil) {
+    throw new Error("nationwide candidate MOLIT transfer freshness does not match the freshness policy");
+  }
+  if (Date.parse(molitTransferFreshUntil) <= evaluatedMillis) {
+    throw new Error("nationwide candidate MOLIT transfer snapshot is expired");
+  }
+  return { admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil };
+}
+
 export async function prepareNationwideCandidate({
   repositoryRoot = root,
   releaseSequence = 122,
@@ -297,30 +333,11 @@ export async function prepareNationwideCandidate({
   const sourceInventory = JSON.parse(sourceInventoryBytes);
   const freshnessPolicy = JSON.parse(freshnessPolicyBytes);
 
-  // MOLIT 환승 이동 원천은 원장 행이 없다. inventory rawSnapshotAdmission이 head이고, 신선도는 정책으로 유도한다.
-  const molitAdmission = exactInventorySource(sourceInventory, "molit-railway-transfer-movement").rawSnapshotAdmission;
-  if (molitAdmission?.status !== "LOCKED" || typeof molitAdmission.metadataPath !== "string") {
-    throw new Error("nationwide candidate MOLIT transfer snapshot admission is missing");
-  }
-  const molitTransferMetaBytes = await read(molitAdmission.metadataPath);
-  if (sha256(molitTransferMetaBytes) !== molitAdmission.metadataFileSha256) {
-    throw new Error("nationwide candidate MOLIT transfer metadata binding mismatch");
-  }
-  const molitTransferMeta = JSON.parse(molitTransferMetaBytes);
-  if (molitTransferMeta.snapshotId !== molitAdmission.snapshotId || molitTransferMeta.rawSha256 !== molitAdmission.rawSha256
-    || molitTransferMeta.gzipSha256 !== molitAdmission.gzipSha256 || typeof molitTransferMeta.gzipPath !== "string") {
-    throw new Error("nationwide candidate MOLIT transfer metadata identity mismatch");
-  }
-  const molitTransferGzipBytes = await read(path.posix.join(path.posix.dirname(molitAdmission.metadataPath), molitTransferMeta.gzipPath));
-  if (sha256(molitTransferGzipBytes) !== molitAdmission.gzipSha256) {
-    throw new Error("nationwide candidate MOLIT transfer raw binding mismatch");
-  }
-  const molitTransferFreshUntil = policyFreshUntil({
-    policy: freshnessPolicy, sourceId: "molit-railway-transfer-movement", record: molitTransferMeta, evaluationAt: fanIn.evaluatedAt,
+  const {
+    admission: molitAdmission, metadata: molitTransferMeta, gzipBytes: molitTransferGzipBytes, freshUntil: molitTransferFreshUntil,
+  } = await resolveMolitTransferSnapshot({
+    sourceInventory, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
   });
-  if (molitTransferMeta.freshUntil !== molitTransferFreshUntil) {
-    throw new Error("nationwide candidate MOLIT transfer freshness does not match the freshness policy");
-  }
 
   // 서울 환승 거리·시간은 fan-in head(원장)와 환승 지표 원천 식별이 같아야 한다.
   const seoulTransferHead = fanInHead(fanIn, "seoul-metro-transfer-distance-duration");

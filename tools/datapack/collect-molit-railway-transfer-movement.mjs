@@ -5,9 +5,28 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 
 export const MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID = "molit-railway-transfer-movement";
-export const MOLIT_RAILWAY_TRANSFER_MOVEMENT_SNAPSHOT_ID = "molit-railway-transfer-movement-20250811";
+// #862: 판(edition)은 상수가 아니라 공식 파일명(…_YYYYMMDD.csv)에서 유도한다.
+export function molitRailwayTransferMovementSnapshotId(editionDate) {
+  return `${MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID}-${requiredEditionDate(editionDate)}`;
+}
+export function molitRailwayTransferMovementEditionDate(officialFileName) {
+  const match = /_(\d{8})\.csv$/u.exec(String(officialFileName ?? ""));
+  return requiredEditionDate(match?.[1]);
+}
+export function molitRailwayTransferMovementEditionFromSnapshotId(snapshotId) {
+  const prefix = `${MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID}-`;
+  if (typeof snapshotId !== "string" || !snapshotId.startsWith(prefix)) throw new Error("official file edition date is invalid");
+  return requiredEditionDate(snapshotId.slice(prefix.length));
+}
+function requiredEditionDate(value) {
+  const text = String(value ?? "");
+  const iso = /^\d{8}$/u.test(text) ? `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}T00:00:00.000Z` : "";
+  if (!iso || !Number.isFinite(Date.parse(iso)) || new Date(iso).toISOString() !== iso) throw new Error("official file edition date is invalid");
+  return text;
+}
 export const MOLIT_RAILWAY_TRANSFER_MOVEMENT_DETAIL_URL = "https://www.data.go.kr/data/15130556/fileData.do";
 
 const PROVIDER_COLUMNS = Object.freeze([
@@ -17,20 +36,19 @@ const COLUMNS = Object.freeze([
   "RAIL_OPR_ISTT_CD", "LN_NM", "STIN_NM", "CHTN_MV_TP_ORDR", "MV_CONT_DTL", "CHTN_MV_CONT",
 ]);
 const LICENSE_TEXT = "이용허락범위 제한 없음";
-const EXPECTED_ROW_COUNT = 8054;
-export const MOLIT_RAILWAY_TRANSFER_MOVEMENT_RAW_SHA256 = "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3";
 
+// 행 수·sha는 파일에서 계산한다. expected 값을 주면(기존 binding 재검증) 같아야 한다.
 export function buildMolitRailwayTransferMovementSnapshot({
-  bytes, capturedAt, expectedRowCount = EXPECTED_ROW_COUNT,
-  expectedRawSha256 = MOLIT_RAILWAY_TRANSFER_MOVEMENT_RAW_SHA256,
+  bytes, capturedAt, editionDate, freshnessPolicy, expectedRowCount, expectedRawSha256,
 }) {
   if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw new Error("CSV input is required");
   const capturedMillis = requiredUtcInstant(capturedAt, "capturedAt");
-  const observedAt = "2025-08-11T00:00:00.000Z";
+  const edition = requiredEditionDate(editionDate);
+  const observedAt = `${edition.slice(0, 4)}-${edition.slice(4, 6)}-${edition.slice(6, 8)}T00:00:00.000Z`;
   if (capturedMillis < Date.parse(observedAt) || capturedMillis > Date.now()) {
     throw new Error("capturedAt must be between observedAt and now");
   }
-  if (!Number.isSafeInteger(expectedRowCount) || expectedRowCount < 1) throw new Error("expected row count is invalid");
+  if (expectedRowCount !== undefined && (!Number.isSafeInteger(expectedRowCount) || expectedRowCount < 1)) throw new Error("expected row count is invalid");
   const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   const text = utf8.startsWith(PROVIDER_COLUMNS[0]) ? utf8 : new TextDecoder("euc-kr").decode(bytes);
   const parsed = parseCsv(text);
@@ -38,10 +56,10 @@ export function buildMolitRailwayTransferMovementSnapshot({
   if (JSON.stringify(header) !== JSON.stringify(PROVIDER_COLUMNS)) {
     throw new Error(`header mismatch: ${header?.join(",") ?? "<missing>"}`);
   }
-  if (parsed.length !== expectedRowCount) {
-    throw new Error(`row count mismatch: ${parsed.length}/${expectedRowCount}`);
+  if (parsed.length === 0 || (expectedRowCount !== undefined && parsed.length !== expectedRowCount)) {
+    throw new Error(`row count mismatch: ${parsed.length}/${expectedRowCount ?? "nonempty"}`);
   }
-  if (sha256(bytes) !== expectedRawSha256) throw new Error("raw hash mismatch");
+  if (expectedRawSha256 !== undefined && sha256(bytes) !== expectedRawSha256) throw new Error("raw hash mismatch");
   const rows = parsed.map((values, index) => {
     if (values.length !== COLUMNS.length) throw new Error(`column count mismatch at row ${index + 2}`);
     const row = Object.fromEntries(COLUMNS.map((column, columnIndex) => [column, values[columnIndex]]));
@@ -54,12 +72,14 @@ export function buildMolitRailwayTransferMovementSnapshot({
     return row;
   });
   const gzipBytes = gzipSync(bytes, { mtime: 0 });
-  const freshUntil = "2026-08-11T00:00:00.000Z";
+  const sourceClass = (freshnessPolicy?.sourceClasses ?? []).filter(({ sourceIds }) => sourceIds?.includes(MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID));
+  if (sourceClass.length !== 1 || sourceClass[0].basisField !== "observedAt") throw new Error("MOLIT transfer freshness policy is invalid");
+  const freshUntil = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: sourceClass[0].id, basisAt: observedAt, evaluationAt: capturedAt });
   return {
     schemaVersion: 1,
     artifactKind: "molit-railway-transfer-movement-snapshot-metadata",
     sourceId: MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
-    snapshotId: MOLIT_RAILWAY_TRANSFER_MOVEMENT_SNAPSHOT_ID,
+    snapshotId: molitRailwayTransferMovementSnapshotId(edition),
     officialUrl: MOLIT_RAILWAY_TRANSFER_MOVEMENT_DETAIL_URL,
     detailUrl: MOLIT_RAILWAY_TRANSFER_MOVEMENT_DETAIL_URL,
     capturedAt,
@@ -92,18 +112,19 @@ export async function runMolitRailwayTransferMovementCollector(argv, fixture = {
   const output = path.resolve(required(args.output, "--output"));
   if (!path.isAbsolute(args.output)) throw new Error("--output must be absolute");
   if (!output.endsWith(".csv.gz")) throw new Error("--output must end with .csv.gz");
-  if (path.basename(output) !== `${MOLIT_RAILWAY_TRANSFER_MOVEMENT_SNAPSHOT_ID}.csv.gz`) {
-    throw new Error("--output must use the canonical snapshot filename");
-  }
   if (args["verify-existing"] !== undefined && args["verify-existing"] !== "true") throw new Error("--verify-existing must be true");
+  const freshnessPolicy = fixture.freshnessPolicy
+    ?? JSON.parse(await readFile(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url), "utf8"));
   const metadataPath = `${output}.json`;
   if (args["verify-existing"] === "true") {
     const [metadataBytes, gzipBytes] = await Promise.all([readFile(metadataPath), readFile(output)]);
     const metadata = JSON.parse(metadataBytes);
+    if (path.basename(output) !== `${metadata.snapshotId}.csv.gz`) throw new Error("--output must use the canonical snapshot filename");
     if (sha256(gzipBytes) !== metadata.gzipSha256) throw new Error("gzip hash mismatch");
     const rebuilt = buildMolitRailwayTransferMovementSnapshot({
       bytes: gunzipSync(gzipBytes), capturedAt: required(args["captured-at"], "--captured-at"),
-      expectedRowCount: fixture.expectedRowCount, expectedRawSha256: fixture.expectedRawSha256,
+      editionDate: molitRailwayTransferMovementEditionFromSnapshotId(metadata.snapshotId), freshnessPolicy,
+      expectedRowCount: fixture.expectedRowCount ?? metadata.rowCount, expectedRawSha256: fixture.expectedRawSha256 ?? metadata.rawSha256,
     });
     const { gzipBytes: ignored, gzipSha256: ignoredRebuiltGzipSha256, rows, ...rebuiltMetadata } = rebuilt;
     const { gzipSha256: ignoredMetadataGzipSha256, ...logicalMetadata } = metadata;
@@ -112,9 +133,15 @@ export async function runMolitRailwayTransferMovementCollector(argv, fixture = {
     }
     return metadata;
   }
+  const editionDate = molitRailwayTransferMovementEditionDate(required(args["official-file-name"], "--official-file-name"));
+  if (path.basename(output) !== `${molitRailwayTransferMovementSnapshotId(editionDate)}.csv.gz`) {
+    throw new Error("--output must use the canonical snapshot filename");
+  }
   const snapshot = buildMolitRailwayTransferMovementSnapshot({
     bytes: await readFile(input),
     capturedAt: required(args["captured-at"], "--captured-at"),
+    editionDate,
+    freshnessPolicy,
     expectedRowCount: fixture.expectedRowCount,
     expectedRawSha256: fixture.expectedRawSha256,
   });
@@ -146,7 +173,7 @@ function parseCsv(text) {
 }
 
 function parseArgs(argv) {
-  const allowed = new Set(["input", "output", "captured-at", "verify-existing"]);
+  const allowed = new Set(["input", "official-file-name", "output", "captured-at", "verify-existing"]);
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     const option = argv[index];

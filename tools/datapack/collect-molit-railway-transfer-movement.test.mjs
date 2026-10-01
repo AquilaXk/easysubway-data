@@ -8,8 +8,12 @@ import { gzipSync, gunzipSync } from "node:zlib";
 
 import {
   buildMolitRailwayTransferMovementSnapshot,
+  molitRailwayTransferMovementEditionDate,
   runMolitRailwayTransferMovementCollector,
 } from "./collect-molit-railway-transfer-movement.mjs";
+
+const POLICY = JSON.parse(await readFile(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url), "utf8"));
+const OFFICIAL_FILE_NAME = "국토교통부_철도역 환승 이동경로 정보_20250811.csv";
 
 const HEADER = "철도운영기관코드,선명,역명,환승이동순서,이동내용상세,환승이동내용";
 const ROWS = [
@@ -20,7 +24,23 @@ const ROWS = [
 function csv(rows = ROWS, header = HEADER) {
   return Buffer.from(`${header}\r\n${rows.join("\r\n")}\r\n`, "utf8");
 }
-function options(bytes = csv()) { return { capturedAt: "2026-07-29T00:00:00.000Z", expectedRowCount: 2, expectedRawSha256: createHash("sha256").update(bytes).digest("hex") }; }
+function options(bytes = csv()) { return { capturedAt: "2026-07-29T00:00:00.000Z", editionDate: "20250811", freshnessPolicy: POLICY, expectedRowCount: 2, expectedRawSha256: createHash("sha256").update(bytes).digest("hex") }; }
+
+// #862: 판 날짜·행 수·sha를 상수가 아니라 공식 파일명과 파일에서 유도한다(2026 판 수용).
+test("MOLIT transfer movement collector derives the edition from the official file name and freshness from policy (#862)", () => {
+  assert.equal(molitRailwayTransferMovementEditionDate("국토교통부_철도역 환승 이동경로 정보_20260811.csv"), "20260811");
+  assert.throws(() => molitRailwayTransferMovementEditionDate("official.csv"), /edition date/);
+  assert.throws(() => molitRailwayTransferMovementEditionDate("국토교통부_철도역 환승 이동경로 정보_20261341.csv"), /edition date/);
+  const bytes = csv([...ROWS, "S1,2호선,나,1,엘리베이터,2호선 승강장 이동"]);
+  const snapshot = buildMolitRailwayTransferMovementSnapshot({ bytes, capturedAt: "2026-10-01T00:00:00.000Z", editionDate: "20260811", freshnessPolicy: POLICY });
+  assert.equal(snapshot.snapshotId, "molit-railway-transfer-movement-20260811");
+  assert.equal(snapshot.observedAt, "2026-08-11T00:00:00.000Z");
+  assert.equal(snapshot.freshUntil, "2027-08-11T00:00:00.000Z");
+  assert.equal(snapshot.rowCount, 3);
+  assert.equal(snapshot.rawSha256, createHash("sha256").update(bytes).digest("hex"));
+  assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ bytes, capturedAt: "2026-10-01T00:00:00.000Z", editionDate: "20260811", freshnessPolicy: POLICY, expectedRowCount: 2 }), /row count mismatch/);
+  assert.throws(() => buildMolitRailwayTransferMovementSnapshot({ bytes, capturedAt: "2026-08-10T00:00:00.000Z", editionDate: "20260811", freshnessPolicy: POLICY }), /between observedAt and now/);
+});
 
 test("MOLIT transfer movement collector는 exact schema·순서와 공란을 보존한 deterministic gzip snapshot을 만든다", () => {
   const snapshot = buildMolitRailwayTransferMovementSnapshot({
@@ -66,10 +86,11 @@ test("MOLIT transfer movement collector CLI는 output gzip과 metadata hash 변�
     await writeFile(input, csv());
     const fixture = { expectedRowCount: 2, expectedRawSha256: createHash("sha256").update(csv()).digest("hex") };
     await assert.rejects(() => runMolitRailwayTransferMovementCollector([
-      "--input", input, "--output", path.join(directory, "snapshot.csv.gz"), "--captured-at", "2026-07-29T00:00:00.000Z",
+      "--input", input, "--official-file-name", OFFICIAL_FILE_NAME, "--output", path.join(directory, "snapshot.csv.gz"), "--captured-at", "2026-07-29T00:00:00.000Z",
     ], fixture), /canonical snapshot filename/);
     const generated = await runMolitRailwayTransferMovementCollector([
       "--input", input,
+      "--official-file-name", OFFICIAL_FILE_NAME,
       "--output", output,
       "--captured-at", "2026-07-29T00:00:00.000Z",
     ], fixture);
@@ -122,5 +143,23 @@ test("MOLIT transfer movement collector CLI는 output gzip과 metadata hash 변�
     ], fixture), /raw hash mismatch/);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// #862: 2026 판 수용 — 환승 admission 도구는 판 날짜·행 수·바이트 수·raw sha를 상수로 고정하지 않는다.
+test("MOLIT transfer consumers do not pin an edition literal (#862)", async () => {
+  for (const tool of [
+    "collect-molit-railway-transfer-movement.mjs",
+    "build-current-transfer-source-admission.mjs",
+    "evaluate-current-molit-transfer-freshness.mjs",
+    "revalidate-current-molit-transfer-source.mjs",
+    "build-transfer-topology-admission.mjs",
+    "validate-source-inventory.mjs",
+    "build-accessibility-source-coverage-report.mjs",
+  ]) {
+    const source = await readFile(new URL(`./${tool}`, import.meta.url), "utf8");
+    for (const literal of [/2025-?08-?11/u, /\b8_?054\b/u, /\b598_?455\b/u, /3a45dc1d82f8/u, /94e712d32860/u, /2026-08-11/u]) {
+      assert.doesNotMatch(source, literal, `${tool} pins ${literal}`);
+    }
   }
 });

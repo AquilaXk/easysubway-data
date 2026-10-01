@@ -9,6 +9,7 @@ import { gunzipSync } from "node:zlib";
 
 import {
   buildMolitRailwayTransferMovementSnapshot,
+  molitRailwayTransferMovementEditionFromSnapshotId,
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
@@ -602,6 +603,10 @@ export async function loadMolitTransferSnapshot({
   const rebuilt = buildMolitRailwayTransferMovementSnapshot({
     bytes: gunzipSync(gzipBytes),
     capturedAt: metadata.capturedAt,
+    editionDate: molitRailwayTransferMovementEditionFromSnapshotId(admission.snapshotId),
+    freshnessPolicy: JSON.parse(await readFile(path.resolve(repositoryRoot, "release/product-gates/datapack-freshness-sla.json"), "utf8")),
+    expectedRowCount: admission.rowCount,
+    expectedRawSha256: admission.rawSha256,
   });
   const rows = rebuilt.rows;
   const rebuiltMetadata = { ...rebuilt };

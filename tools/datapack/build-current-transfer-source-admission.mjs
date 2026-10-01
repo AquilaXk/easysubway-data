@@ -10,17 +10,31 @@ import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.m
 import { canonicalFacilitySourceAdmissionJson } from "./build-facility-source-admission.mjs";
 import { canonicalTransferTopologyAdmissionJson } from "./build-transfer-topology-admission.mjs";
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
-import { buildMolitRailwayTransferMovementSnapshot } from "./collect-molit-railway-transfer-movement.mjs";
+import {
+  buildMolitRailwayTransferMovementSnapshot,
+  molitRailwayTransferMovementEditionFromSnapshotId,
+} from "./collect-molit-railway-transfer-movement.mjs";
 import { evaluateCurrentMolitTransferFreshness } from "./evaluate-current-molit-transfer-freshness.mjs";
 import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const SOURCE_ID = "molit-railway-transfer-movement";
-const SNAPSHOT_ID = "molit-railway-transfer-movement-20250811";
 const ABSENCE_MODE = "EXHAUSTIVE_OFFICIAL_FILE";
 const NOT_APPLICABLE_REASON = "OFFICIAL_EXHAUSTIVE_TRANSFER_TOPOLOGY_NOT_APPLICABLE";
-const SOURCE_FILE = "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz";
-const METADATA_FILE = `${SOURCE_FILE}.json`;
+// #862: 판(snapshotId·경로)은 상수가 아니라 source inventory binding에서 유도한다.
+const sourceFileOf = (snapshotId) => `tools/datapack/sources/${snapshotId}.csv.gz`;
+
+function boundSnapshotId(sourceInventory) {
+  const matches = sourceInventory?.sources?.filter(({ id }) => id === SOURCE_ID) ?? [];
+  if (matches.length !== 1) throw new Error("source inventory identity mismatch");
+  const snapshotId = matches[0].rawSnapshotAdmission?.snapshotId;
+  try {
+    molitRailwayTransferMovementEditionFromSnapshotId(snapshotId);
+  } catch (error) {
+    throw new Error("source inventory admission mismatch", { cause: error });
+  }
+  return snapshotId;
+}
 const FACILITY_FILE = "tools/datapack/release/facility-source-admission.json";
 const CANDIDATE_FILE = "tools/datapack/release/candidate-build-spec.json";
 const PRODUCTION_INPUT_FILE = "tools/datapack/inputs/capital-pilot-production-source-input.json";
@@ -51,12 +65,15 @@ export function buildCurrentTransferSourceAdmission(input) {
     "revalidationEvidence", "sourceInventory", "sourceSnapshots",
   ], "current TRANSFER input keys");
   const observedAtMillis = requiredUtcInstant(input.observedAt, "observedAt");
+  const snapshotId = boundSnapshotId(input.sourceInventory);
   const facility = validateFacilityAdmission(input.facilityAdmission);
-  const candidate = validateCandidateContext(input.candidateBuildSpec, input.sourceSnapshots, facility.candidate);
+  const candidate = validateCandidateContext(input.candidateBuildSpec, input.sourceSnapshots, facility.candidate, snapshotId);
   const sourceContext = validateSourceContext({
     gzipBytes: input.gzipBytes,
     metadata: input.metadata,
     metadataBytes: input.metadataBytes,
+    policy: input.policy,
+    snapshotId,
     sourceInventory: input.sourceInventory,
   });
   const freshness = validateFreshness({
@@ -91,7 +108,7 @@ export function buildCurrentTransferSourceAdmission(input) {
     artifactKind: "transfer-topology-source-admission",
     candidateId: candidate.candidateId,
     sourceId: SOURCE_ID,
-    snapshotId: SNAPSHOT_ID,
+    snapshotId,
     sourceSnapshotSetHash: candidate.sourceSetSha256,
     stationSetSha256: candidate.stationSetSha256,
     stationLineSetSha256: facility.stationLineSetSha256,
@@ -119,7 +136,7 @@ export function buildCurrentTransferSourceAdmission(input) {
   });
   const topologySourceIdentity = canonicalObject({
     sourceId: SOURCE_ID,
-    snapshotId: SNAPSHOT_ID,
+    snapshotId,
     rawSha256: sourceContext.metadata.rawSha256,
     gzipSha256: sourceContext.metadata.gzipSha256,
     metadataFileSha256: sourceContext.metadataFileSha256,
@@ -189,6 +206,7 @@ export async function main(argv, { repositoryRoot = fileURLToPath(new URL("../..
   await outputMustBeAbsent(args.outputDirectory);
   const root = path.resolve(repositoryRoot);
   await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
+  const sourceFile = sourceFileOf(boundSnapshotId(await readJson(path.join(root, SOURCE_INVENTORY_FILE))));
   const [
     candidateBuildSpec, facilityAdmission, freshnessFile, gzipBytes, metadataBytes, policy,
     productionInput, providerCodeCatalog, revalidationFile, sourceInventory, sourceSnapshots,
@@ -196,8 +214,8 @@ export async function main(argv, { repositoryRoot = fileURLToPath(new URL("../..
     readJson(path.join(root, CANDIDATE_FILE)),
     readJson(path.join(root, FACILITY_FILE)),
     readRegularSnapshot(args.freshnessResult, "freshness result"),
-    readFile(path.join(root, SOURCE_FILE)),
-    readFile(path.join(root, METADATA_FILE)),
+    readFile(path.join(root, sourceFile)),
+    readFile(path.join(root, `${sourceFile}.json`)),
     readJson(path.join(root, FRESHNESS_POLICY_FILE)),
     readJson(path.join(root, PRODUCTION_INPUT_FILE)),
     readJson(path.join(root, PROVIDER_CATALOG_FILE)),
@@ -243,11 +261,11 @@ function validateFacilityAdmission(value) {
   return value;
 }
 
-function validateCandidateContext(value, sourceSnapshots, candidate) {
+function validateCandidateContext(value, sourceSnapshots, candidate, snapshotId) {
   if (value?.schemaVersion !== 1 || value.artifactKind !== "datapack-candidate-build-spec"
     || value.candidateId !== candidate.candidateId || !Array.isArray(value.sourceSnapshots)
     || !Array.isArray(value.sourceSnapshotIds) || !Array.isArray(sourceSnapshots)
-    || value.sourceSnapshotIds.includes(SNAPSHOT_ID)) {
+    || value.sourceSnapshotIds.includes(snapshotId)) {
     throw new Error("candidate identity mismatch");
   }
   const selected = value.sourceSnapshotIds.map((snapshotId, index) => {
@@ -270,7 +288,7 @@ function validateCandidateContext(value, sourceSnapshots, candidate) {
   return canonicalObject(candidate);
 }
 
-function validateSourceContext({ gzipBytes, metadata, metadataBytes, sourceInventory }) {
+function validateSourceContext({ gzipBytes, metadata, metadataBytes, policy, snapshotId, sourceInventory }) {
   const gzip = Buffer.from(gzipBytes);
   const metadataBuffer = Buffer.from(metadataBytes);
   if (sha256(gzip) !== metadata?.gzipSha256) throw new Error("source gzip identity mismatch");
@@ -279,13 +297,15 @@ function validateSourceContext({ gzipBytes, metadata, metadataBytes, sourceInven
     rebuilt = buildMolitRailwayTransferMovementSnapshot({
       bytes: gunzipSync(gzip),
       capturedAt: metadata.capturedAt,
+      editionDate: molitRailwayTransferMovementEditionFromSnapshotId(snapshotId),
+      freshnessPolicy: policy,
     });
   } catch (error) {
     throw new Error("source snapshot identity mismatch", { cause: error });
   }
   const { gzipBytes: ignoredBytes, gzipSha256: ignoredGzip, rows, ...rebuiltMetadata } = rebuilt;
   const { gzipSha256: ignoredTrackedGzip, ...trackedLogicalMetadata } = metadata;
-  if (JSON.stringify({ ...rebuiltMetadata, gzipPath: path.basename(SOURCE_FILE) })
+  if (JSON.stringify({ ...rebuiltMetadata, gzipPath: path.basename(sourceFileOf(snapshotId)) })
       !== JSON.stringify(trackedLogicalMetadata)) {
     throw new Error("source metadata identity mismatch");
   }
@@ -297,8 +317,8 @@ function validateSourceContext({ gzipBytes, metadata, metadataBytes, sourceInven
     || source.coverageScope?.mappingStatus !== "UNMAPPED_RAW_SNAPSHOT"
     || source.capabilities?.facility?.status !== "CANDIDATE"
     || source.capabilities.facility.productionUseAllowed !== false
-    || admission?.status !== "LOCKED" || admission.snapshotId !== SNAPSHOT_ID
-    || admission.metadataPath !== METADATA_FILE
+    || admission?.status !== "LOCKED" || admission.snapshotId !== snapshotId
+    || admission.metadataPath !== `${sourceFileOf(snapshotId)}.json`
     || admission.metadataFileSha256 !== sha256(metadataBuffer)
     || admission.rawSha256 !== metadata.rawSha256 || admission.gzipSha256 !== metadata.gzipSha256
     || admission.rowCount !== metadata.rowCount
@@ -310,6 +330,7 @@ function validateSourceContext({ gzipBytes, metadata, metadataBytes, sourceInven
     "id", "owner", "provider", "providerDepartment", "sourceSystem", "datasetUrl", "datasetKind",
   ].map((key) => [key, source[key]])));
   return {
+    snapshotId,
     metadata,
     metadataFileSha256: sha256(metadataBuffer),
     rows,
@@ -504,7 +525,7 @@ function buildCell({
     provenanceId: sourceContext.provenanceId,
     licenseId: sourceContext.licenseId,
     sourceId: SOURCE_ID,
-    sourceSnapshotId: SNAPSHOT_ID,
+    sourceSnapshotId: sourceContext.snapshotId,
     mappingContractVersion: candidate.mappingContractVersion,
     materializerVersion: candidate.materializerVersion,
     applicabilityReason: joined ? "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT" : NOT_APPLICABLE_REASON,

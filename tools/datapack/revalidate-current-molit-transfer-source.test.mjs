@@ -24,9 +24,12 @@ const columnProjection = Object.freeze({
   이동내용상세: "MV_CONT_DTL",
   환승이동내용: "CHTN_MV_CONT",
 });
-const trackedRawBytes = gunzipSync(await readFile(
-  new URL("./sources/molit-railway-transfer-movement-20250811.csv.gz", import.meta.url),
-));
+// #862: 판은 커밋된 source-candidates binding에서 유도한다.
+const BOUND = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"))
+  .candidates.find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission;
+const BOUND_EDITION = BOUND.snapshotId.slice("molit-railway-transfer-movement-".length);
+const POLICY = JSON.parse(await readFile(new URL("../../release/product-gates/datapack-freshness-sla.json", import.meta.url), "utf8"));
+const trackedRawBytes = gunzipSync(await readFile(path.join(root, BOUND.metadataPath.replace(/\.json$/u, ""))));
 const trackedRows = await loadTrackedRows();
 
 test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change evidence를 쓴다", async () => {
@@ -47,8 +50,8 @@ test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change e
       perPage === "1000" && returnType === "JSON" && credential === serviceKey
       && redirect === "error" && signal instanceof AbortSignal));
     assert.equal(evidence.outcome, "NO_CHANGE_REVALIDATED");
-    assert.equal(evidence.lockedSnapshot.rowCount, 8054);
-    assert.equal(evidence.providerObservation.totalCount, 8054);
+    assert.equal(evidence.lockedSnapshot.rowCount, BOUND.rowCount);
+    assert.equal(evidence.providerObservation.totalCount, BOUND.rowCount);
     assert.equal(evidence.credentialRedacted, true);
     assert.match(evidence.evidenceHash, /^[0-9a-f]{64}$/u);
     assert.deepEqual(JSON.parse(await readFile(output, "utf8")), evidence);
@@ -70,8 +73,8 @@ test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change e
       repositoryRoot: root,
     });
     assert.equal(officialProviderCalls, 0);
-    assert.equal(officialEvidence.operation.operationId, "15130556-fileData-20250811");
-    assert.equal(officialEvidence.providerObservation.totalCount, 8054);
+    assert.equal(officialEvidence.operation.operationId, `15130556-fileData-${BOUND_EDITION}`);
+    assert.equal(officialEvidence.providerObservation.totalCount, BOUND.rowCount);
     // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
     assert.equal(officialEvidence.providerObservation.rawSha256, evidence.lockedSnapshot.rawSha256);
     assert.doesNotMatch(JSON.stringify(officialEvidence), /official\.csv|api\.odcloud\.kr/u);
@@ -180,7 +183,7 @@ test("content/schema/total pagination drift는 output 없이 fail closed한다",
   const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-metadata-drift-"));
   let calls = 0;
   try {
-    const metadataPath = path.join(root, "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json");
+    const metadataPath = path.join(root, BOUND.metadataPath);
     const candidatesPath = path.join(root, "tools/datapack/source-candidates.json");
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
     metadata.gzipSha256 = "0".repeat(64);
@@ -378,13 +381,15 @@ test("existing output와 symlink output은 provider 호출 전 보존한다", as
 
 async function loadTrackedRows() {
   const [metadata, gzipBytes] = await Promise.all([
-    readFile(new URL("./sources/molit-railway-transfer-movement-20250811.csv.gz.json", import.meta.url), "utf8"),
-    readFile(new URL("./sources/molit-railway-transfer-movement-20250811.csv.gz", import.meta.url)),
+    readFile(path.join(root, BOUND.metadataPath), "utf8"),
+    readFile(path.join(root, BOUND.metadataPath.replace(/\.json$/u, ""))),
   ]);
   const parsed = JSON.parse(metadata);
   return buildMolitRailwayTransferMovementSnapshot({
     bytes: gunzipSync(gzipBytes),
     capturedAt: parsed.capturedAt,
+    editionDate: BOUND_EDITION,
+    freshnessPolicy: POLICY,
   }).rows.map((row) => Object.fromEntries(providerColumns.map((providerColumn) => [
     providerColumn,
     providerColumn === "환승이동순서" ? Number(row[columnProjection[providerColumn]]) : row[columnProjection[providerColumn]],
