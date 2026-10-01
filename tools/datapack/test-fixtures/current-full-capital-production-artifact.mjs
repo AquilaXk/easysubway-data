@@ -120,10 +120,12 @@ async function registerFreshFacilitySnapshot(repositoryRoot, now, repeatedSnapsh
     allowTerminalResult03: true,
     fetchImpl: async (url) => {
       const search = new URL(url).searchParams;
+      // #862: 재생 대상 snapshot은 역 코드가 바뀌기 전(예: 신분당선 4305→D005) 수집본일 수 있다.
+      // 요청한 provider tuple을 현재 roster로 정본 역·노선에 되돌려, 같은 역·노선의 이전 응답을 재생한다.
+      const requested = roster.find((entry) => entry.railOprIsttCd === search.get("railOprIsttCd")
+        && entry.lnCd === search.get("lnCd") && entry.stinCd === search.get("stinCd"));
       const repeated = repeatedSnapshot?.queries?.find((query) =>
-        query.railOprIsttCd === search.get("railOprIsttCd")
-        && query.lnCd === search.get("lnCd")
-        && query.stinCd === search.get("stinCd"));
+        query.stationId === requested?.stationId && query.lineId === requested?.lineId);
       if (repeatedSnapshot != null && repeated == null) {
         throw new Error("synthetic FACILITY replay query is missing");
       }
@@ -609,6 +611,15 @@ function transferDerivedBaseTransitionInputs(current) {
   };
 }
 
+async function alignCommittedFacilityAdmissionWithActiveHead(repositoryRoot) {
+  const admission = await json(repositoryRoot, "tools/datapack/release/current-capital-facility-source-admission.json");
+  const inventory = await json(repositoryRoot, "tools/datapack/source-inventory.json");
+  const active = inventory.sources.find(({ id }) => id === "kric-station-convenience-standard")?.accessibilityAdmissionEvidence;
+  if (admission.sourceIdentity?.snapshotId === active?.snapshotId) return;
+  const admittedSnapshot = await json(repositoryRoot, admission.sourceIdentity.snapshotPath);
+  await currentizeFreshFacilitySource(repositoryRoot, await nextSyntheticCurrentStaticNetworkNow(repositoryRoot), admittedSnapshot);
+}
+
 export async function preparePendingCurrentAccessibilityTransitionRepository(sourceRoot, {
   transitionKind = "FACILITY_SOURCE_ADVANCE",
 } = {}) {
@@ -619,6 +630,10 @@ export async function preparePendingCurrentAccessibilityTransitionRepository(sou
     });
     const fixtureNow = await nextSyntheticCurrentStaticNetworkNow(repositoryRoot);
     await activateSyntheticCurrentPublicRouteMapSuccessor(repositoryRoot, { now: fixtureNow });
+    // #862: 커밋된 수도권 FACILITY admission은 이력 산출물이라 활성 FACILITY head(역 코드 변경 뒤 재등록)와
+    // 다른 snapshot에 묶여 있을 수 있다. 그 admission snapshot의 같은 역·노선 응답을 재생한 fresh FACILITY로
+    // 먼저 정합해, main 당시처럼 admission과 활성 snapshot이 같은 상태에서 시나리오를 시작한다.
+    await alignCommittedFacilityAdmissionWithActiveHead(repositoryRoot);
     if (transitionKind === "FACILITY_SOURCE_ADVANCE") {
       // 같은 governance 아래의 두 snapshot으로 갱신 관계를 만든다. 과거 hash는 덮어쓰지 않는다.
       const retained = await readCurrentAccessibilityTransitionInputs(repositoryRoot);

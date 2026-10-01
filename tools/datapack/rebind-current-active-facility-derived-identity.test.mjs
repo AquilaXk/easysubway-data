@@ -28,12 +28,21 @@ test("current route-map proof는 two-hop same-source current head에서 유일�
   ]);
   const selected = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-route-map-positions");
   const currentHead = snapshots.find(({ snapshotId }) => snapshotId === selected.snapshotId);
-  const marker = snapshots.find(({ snapshotId }) => snapshotId === currentHead.previousSnapshotId);
+  // #862: 재등록으로 head가 한 단계 더 이어지면 projection 교체 marker는 직전 행이 아니라 lineage 위쪽에 있다.
+  // previousSnapshotId 사슬을 따라 projectionMigration을 가진 유일한 조상을 marker로 고른다.
+  const ancestors = [];
+  for (let cursor = snapshots.find(({ snapshotId }) => snapshotId === currentHead.previousSnapshotId); cursor;
+    cursor = snapshots.find(({ snapshotId }) => snapshotId === cursor.previousSnapshotId)) ancestors.push(cursor);
+  const markers = ancestors.filter(({ projectionMigration }) => projectionMigration != null);
+  assert.equal(markers.length, 1);
+  const [marker] = markers;
+  // #862: 합성 후속 head는 현재 head보다 늦게 관측돼야 lineage가 성립한다(고정 날짜 대신 현재 head에서 유도).
+  const twoHopRetrievedAt = new Date(Date.parse(currentHead.retrievedAt) + 1).toISOString();
   const twoHopHead = {
     ...structuredClone(currentHead),
-    snapshotId: "seoul-metro-route-map-positions-current-20260826T035408252Z",
+    snapshotId: `seoul-metro-route-map-positions-current-${twoHopRetrievedAt.replace(/[-:.]/gu, "")}`,
     previousSnapshotId: currentHead.snapshotId,
-    retrievedAt: "2026-08-26T03:54:08.252Z",
+    retrievedAt: twoHopRetrievedAt,
   };
   snapshots.push(twoHopHead);
   selected.snapshotId = twoHopHead.snapshotId;
