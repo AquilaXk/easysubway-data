@@ -1521,11 +1521,14 @@ export async function refreshCurrentCapitalAccessibilityFull({
   approvedItxTopologyDeltaProof = undefined, transferSourceAdmissionBaselineGitSha = undefined,
 } = {}) {
   requireTerminalMarkerState(markerState);
-  const root = path.resolve(repositoryRoot); const release = await acquireLock(root);
+  const root = path.resolve(repositoryRoot);
+  // #862 A2: 잠금 디렉터리는 untracked라서 baseline·clean tree 검사는 잠금 전에 한다. 잠금 뒤에는
+  // 기존 검증 함수와 assertInputsStable이 출력 바이트가 그 사이 바뀌지 않았는지 다시 확인한다.
+  const transferSourceAdmissionOutputs = transferSourceAdmissionBaselineGitSha === undefined ? undefined
+    : await deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: transferSourceAdmissionBaselineGitSha });
+  const release = await acquireLock(root);
   try {
     await recover(root);
-    const transferSourceAdmissionOutputs = transferSourceAdmissionBaselineGitSha === undefined ? undefined
-      : await deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot: root, baselineGitSha: transferSourceAdmissionBaselineGitSha });
     const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({
       repositoryRoot: root, transferRebindOutputs, markerState, approvedItxTopologyDeltaProof, transferSourceAdmissionOutputs,
     });

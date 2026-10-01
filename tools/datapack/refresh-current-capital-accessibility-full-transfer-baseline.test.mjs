@@ -10,6 +10,7 @@ import {
   TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS,
   buildCurrentCapitalAccessibilityRefreshOutputs,
   deriveTransferSourceAdmissionTransitionOutputs,
+  refreshCurrentCapitalAccessibilityFull,
 } from "./refresh-current-capital-accessibility-full.mjs";
 import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./refresh-nationwide-candidate.mjs";
 import { currentLiveChainTransferOutputPaths } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
@@ -151,4 +152,20 @@ test("TRANSFER source admission 허용 경로는 후보 재생성 출력(전국 
       "contracts/documentation/documentation-fragment.json",
     ].sort(),
   );
+});
+
+test("CLI 경로는 refresh 잠금을 만들기 전에 baseline·clean tree를 검사한다(#862 A2)", async (t) => {
+  const { root, baseline } = await repository(t);
+  // 잠금 디렉터리는 untracked라서, 잠금 뒤에 검사하면 clean tree가 항상 dirty로 보인다.
+  // 합성 저장소에는 refresh 입력이 없으므로 baseline 검사를 통과한 뒤 다음 단계에서 멈춰야 한다.
+  await assert.rejects(
+    refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root, transferSourceAdmissionBaselineGitSha: baseline }),
+    (error) => !/TRANSFER source admission/.test(error.message),
+  );
+  await write(root, "tools/datapack/release/release-request.json", "uncommitted\n");
+  await assert.rejects(
+    refreshCurrentCapitalAccessibilityFull({ repositoryRoot: root, transferSourceAdmissionBaselineGitSha: baseline }),
+    /TRANSFER source admission requires a clean tree/,
+  );
+  await assert.rejects(readFile(path.join(root, "tools/datapack/.current-capital-accessibility-refresh.lock/owner.json")), /ENOENT/);
 });
