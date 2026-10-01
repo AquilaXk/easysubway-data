@@ -433,8 +433,17 @@ async function committedSelectionInputs() {
     sourceInventory: await readJson("tools/datapack/source-inventory.json"),
     sourceSnapshots: await readJson("tools/datapack/release/source-snapshots.json"),
     fanIn: await readJson("tools/datapack/release/current-five-region-source-fan-in.json"),
+    freshnessPolicy: await readJson("release/product-gates/datapack-freshness-sla.json"),
     readSourceBytes: (relative) => readFile(path.join(root, relative)),
   };
+}
+
+// 커밋된 인천 입력(2026-09-04 수집)은 커밋된 후보 시계(2026-09-09)에서 이미 만료다(#862 릴리스 차단 항목).
+// 선택 규칙만 보는 테스트는 인천 station-info(route_graph_topology, P1D) 창 안의 시계를 쓴다.
+async function committedSelectionInputsWithinIncheonWindow() {
+  const inputs = await committedSelectionInputs();
+  inputs.fanIn.evaluatedAt = "2026-09-05T00:00:00.000Z";
+  return inputs;
 }
 
 const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
@@ -454,7 +463,7 @@ const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
 });
 
 test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 13개를 고른다", async () => {
-  const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputs());
+  const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputsWithinIncheonWindow());
   assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
   for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
     assert.equal(selected[key].snapshotId, snapshotId, key);
@@ -465,7 +474,7 @@ test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 �
 });
 
 test("원장 head가 새 snapshot으로 이어지면 코드 수정 없이 새 입력을 고른다", async () => {
-  const inputs = await committedSelectionInputs();
+  const inputs = await committedSelectionInputsWithinIncheonWindow();
   const sourceId = "busan-transportation-accessibility";
   const previous = inputs.sourceSnapshots.find((row) => row.sourceId === sourceId);
   const successorId = `${sourceId}-successor-20260930`;
@@ -510,12 +519,31 @@ test("후보 입력 head가 없거나 모호하거나 만료됐거나 fan-in과 
   await assert.rejects(resolveNationwideCandidateInputSnapshots(diverged), /fan-in selection does not match ledger head for gwangju-transportation-accessibility/);
 });
 
+test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 이전이면 만료로 실패한다(#862 3c)", async () => {
+  // 커밋 상태: station-info(route_graph_topology, P1D)는 2026-09-05에 만료됐고 후보 시계는 2026-09-09다.
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(await committedSelectionInputs()),
+    /nationwide candidate input is expired for incheon-transit-station-info/);
+
+  // 시간표(incheon_timetable_observation, capturedAt·P30D)는 수집 30일 뒤 만료다.
+  const timetable = await committedSelectionInputs();
+  const capturedAt = timetable.sourceInventory.sources.find(({ id }) => id === "incheon-line1-train-timetable").scheduleAdmissionEvidence.capturedAt;
+  timetable.fanIn.evaluatedAt = new Date(Date.parse(capturedAt) + 30 * 24 * 60 * 60 * 1_000).toISOString();
+  timetable.sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence.capturedAt
+    = new Date(Date.parse(timetable.fanIn.evaluatedAt) - 60_000).toISOString();
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(timetable), /nationwide candidate input is expired for incheon-line1-train-timetable/);
+
+  // 후보 시계보다 늦은 수집은 미래 관측으로 실패한다.
+  const future = await committedSelectionInputsWithinIncheonWindow();
+  future.fanIn.evaluatedAt = "2026-09-04T17:29:30.000Z";
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(future), /nationwide candidate input is observed after the candidate clock for incheon-line1-train-timetable/);
+});
+
 test("인천 입력은 inventory admission evidence가 없거나 원본 바이트가 다르면 실패한다", async () => {
-  const missing = await committedSelectionInputs();
+  const missing = await committedSelectionInputsWithinIncheonWindow();
   delete missing.sourceInventory.sources.find(({ id }) => id === "incheon-line1-train-timetable").scheduleAdmissionEvidence;
   await assert.rejects(resolveNationwideCandidateInputSnapshots(missing), /snapshot path missing or ambiguous for incheon-line1-train-timetable/);
 
-  const tampered = await committedSelectionInputs();
+  const tampered = await committedSelectionInputsWithinIncheonWindow();
   const readCommitted = tampered.readSourceBytes;
   tampered.readSourceBytes = async (relative) => {
     const bytes = await readCommitted(relative);

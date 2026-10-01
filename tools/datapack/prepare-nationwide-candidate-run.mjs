@@ -154,8 +154,9 @@ async function boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha25
   return Buffer.from(bytes);
 }
 
-export async function resolveNationwideCandidateInputSnapshots({ sourceInventory, sourceSnapshots, fanIn, readSourceBytes }) {
-  if (!Array.isArray(sourceSnapshots) || !Array.isArray(fanIn?.selectedSources) || typeof readSourceBytes !== "function") {
+export async function resolveNationwideCandidateInputSnapshots({ sourceInventory, sourceSnapshots, fanIn, freshnessPolicy, readSourceBytes }) {
+  if (!Array.isArray(sourceSnapshots) || !Array.isArray(fanIn?.selectedSources) || typeof readSourceBytes !== "function"
+    || !Array.isArray(freshnessPolicy?.sourceClasses)) {
     throw new Error("nationwide candidate input selection arguments are invalid");
   }
   const evaluatedAt = Date.parse(fanIn.evaluatedAt);
@@ -183,7 +184,9 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
       bytes: await boundInputSnapshot({ sourceId, snapshotId: head.snapshotId, snapshotPath, rawSha256, ledgerHead: head, readSourceBytes }),
     };
   }
-  // 인천 3개는 원장 행·fan-in 선택이 없다. 만료 판정은 #862 2단계(인천 갱신)에서 추가한다.
+  // 인천 3개는 원장 행·fan-in 선택이 없다(원장·거버넌스 등록은 QA 라이선스 검토가 필요한 후속 이슈).
+  // #862 결정 B: inventory admission evidence의 수집 시각에 정책 클래스(시간표 incheon_timetable_observation,
+  // station-info route_graph_topology)를 적용해 신선도를 유도하고 후보 시계와 비교한다.
   for (const [key, [sourceId, evidenceKey]] of Object.entries(ADMISSION_EVIDENCE_INPUTS)) {
     const evidence = exactInventorySource(sourceInventory, sourceId)[evidenceKey];
     const snapshotId = evidence?.snapshotId;
@@ -191,8 +194,19 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
       throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId}`);
     }
     const { snapshotPath, rawSha256 } = exactSnapshotEvidence(sourceId, snapshotId, [evidence]);
+    const capturedAt = requiredInstant(evidence.capturedAt, `${sourceId} capturedAt`);
+    if (Date.parse(capturedAt) > evaluatedAt) {
+      throw new Error(`nationwide candidate input is observed after the candidate clock for ${sourceId}`);
+    }
+    // admission evidence에는 원장의 retrievedAt이 없다. capturedAt이 수집(조회) 시각이므로 두 basisField에 같은 값을 쓴다.
+    const freshnessExpiresAt = policyFreshUntil({
+      policy: freshnessPolicy, sourceId, record: { capturedAt, retrievedAt: capturedAt }, evaluationAt: fanIn.evaluatedAt,
+    });
+    if (Date.parse(freshnessExpiresAt) <= evaluatedAt) {
+      throw new Error(`nationwide candidate input is expired for ${sourceId}`);
+    }
     selected[key] = {
-      sourceId, snapshotId, path: snapshotPath,
+      sourceId, snapshotId, path: snapshotPath, freshnessExpiresAt,
       bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
     };
   }
@@ -314,6 +328,7 @@ export async function prepareNationwideCandidate({
     sourceInventory,
     sourceSnapshots: snapshots,
     fanIn,
+    freshnessPolicy,
     readSourceBytes: read,
   });
   const inputJson = (key) => JSON.parse(inputSnapshots[key].bytes);
