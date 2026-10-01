@@ -444,3 +444,19 @@ test("nationwide candidate preparation은 tracked ITX coverage contract와 승�
   assert.equal(materialization.itxTopologyEvidencePath, evidencePath);
   assert.equal(materialization.itxTopologyEvidenceSha256, sha256(evidenceBytes));
 });
+
+test("nationwide candidate build spec은 preparation과 같은 ITX coverage contract·topology 증거 결속을 쓴다", async () => {
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+    writeFiles: false,
+  });
+  const { materialization } = result.preparation;
+  assert.deepEqual(
+    result.buildSpec.networkEdgeEvidence.itxCoverageContract,
+    materialization.networkEdgeEvidence.itxCoverageContract,
+  );
+  assert.equal(result.buildSpec.itxTopologyEvidencePath, materialization.itxTopologyEvidencePath);
+  assert.equal(result.buildSpec.itxTopologyEvidenceSha256, materialization.itxTopologyEvidenceSha256);
+});
