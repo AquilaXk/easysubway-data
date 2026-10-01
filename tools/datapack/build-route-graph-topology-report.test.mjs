@@ -511,10 +511,12 @@ test("route graph topology report CLI writes artifact json", async () => {
 
 test("route graph topology report는 candidate build spec의 일치하는 pack bytes와 ITX 위상을 검증한다", async (context) => {
   const { sqlitePath, mobilePackBytes, mobileSqliteBytes } = await stageMobileCapitalSqlite(context);
+  // #862: 증거 sha·ITX 구간 수는 고정 상수 대신 tracked 증거 파일에서 유도한다(승인 ITX 원천 반영 후 48).
+  const trackedEvidenceBytes = await readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"));
   const matchingBuildSpec = {
     ...currentBuildSpec,
     itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence.json",
-    itxTopologyEvidenceSha256: "e8e95947210eb4a7dc264f799582353d5ed396f885465cf672c98e6090768f3c",
+    itxTopologyEvidenceSha256: sha256(trackedEvidenceBytes),
   };
   const binding = await validateCurrentItxTopologyEvidencePack({
     compressed: mobilePackBytes,
@@ -531,7 +533,7 @@ test("route graph topology report는 candidate build spec의 일치하는 pack b
     version: "1",
     artifactKind: "production",
   }, binding);
-  assert.equal(report.itxServiceLayerSegmentCount, 64);
+  assert.equal(report.itxServiceLayerSegmentCount, JSON.parse(trackedEvidenceBytes).topology.edgeCount);
 });
 
 test("route graph topology report는 candidate build spec이어도 pack id mismatch를 fail-closed한다", async (context) => {
@@ -551,9 +553,12 @@ test("route graph topology report는 candidate build spec이어도 pack id misma
 
 test("route graph topology report는 candidate build spec이어도 pack byte 변조를 fail-closed한다", async (context) => {
   const { sqlitePath, mobilePackBytes, mobileSqliteBytes } = await stageMobileCapitalSqlite(context);
+  // #862: 고정 fixture가 증거와 우연히 어긋나는 데 기대지 않고, 압축 pack 바이트를 실제로 변조한다.
+  const tamperedPackBytes = Buffer.from(mobilePackBytes);
+  tamperedPackBytes[tamperedPackBytes.length - 1] ^= 0xff;
   await assert.rejects(
     validateCurrentItxTopologyEvidencePack({
-      compressed: mobilePackBytes,
+      compressed: tamperedPackBytes,
       sqliteBytes: mobileSqliteBytes,
       sqlitePath,
       pack: { id: "capital", version: "1" },
