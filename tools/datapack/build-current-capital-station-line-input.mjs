@@ -443,11 +443,17 @@ export function buildValidatedCurrentCapitalTransferEvidenceRows({
       || !["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(metricProvenance))
     || metrics.artifactSha256 !== sha256(canonicalJson(without(metrics, "artifactSha256")))) throw new Error("full-capital TRANSFER metrics mismatch");
   const stationLineKeys = new Set(stationLines.map(key));
+  // #872 S2: 지표 분모는 서울교통공사 1~8호선과 상대 노선 전체 역-노선이다(applicability cells). 수도권 station-line
+  // 분모는 그 부분집합이다. 쌍의 끝점은 지표 분모 안에 있어야 하고, 행은 수도권 분모 안에서만 만든다.
+  const metricCells = Array.isArray(applicability?.cells) ? applicability.cells : [];
+  const metricCellKeys = new Set(metricCells.map(key));
+  if (metricCellKeys.size !== metricCells.length || metricCells.length !== metrics.canonicalIdentity?.stationLineCount
+    || [...stationLineKeys].some((cellKey) => !metricCellKeys.has(cellKey))) throw new Error("full-capital TRANSFER applicability mismatch");
   const expectedDirections = new Set();
   const physicalPairs = new Set();
   for (const pair of metrics.physicalPairs) {
     if (!nonBlank(pair?.stationId) || !Array.isArray(pair.lineIds) || pair.lineIds.length !== 2 || pair.lineIds[0] === pair.lineIds[1]
-      || pair.lineIds.some((lineId) => !stationLineKeys.has(`${pair.stationId}\0${lineId}`))) throw new Error("full-capital TRANSFER physical pair mismatch");
+      || pair.lineIds.some((lineId) => !metricCellKeys.has(`${pair.stationId}\0${lineId}`))) throw new Error("full-capital TRANSFER physical pair mismatch");
     physicalPairs.add(`${pair.stationId}\0${[...pair.lineIds].sort(compareBytes).join("\0")}`);
     expectedDirections.add(transferDirectionKey(pair.stationId, pair.lineIds[0], pair.lineIds[1]));
     expectedDirections.add(transferDirectionKey(pair.stationId, pair.lineIds[1], pair.lineIds[0]));
@@ -467,9 +473,9 @@ export function buildValidatedCurrentCapitalTransferEvidenceRows({
     || admission.derivedReciprocalMetricCount !== derivedReciprocalMetricCount
     || admission.officialMetricCount + admission.derivedReciprocalMetricCount !== admission.directedMetricCount
     || admission.durationRole !== "REFERENCE_ONLY") throw new Error("full-capital TRANSFER admission mismatch");
-  const cells = indexExact(applicability.cells, stationLines, "TRANSFER applicability");
+  const cells = indexExact(metricCells.filter((cell) => stationLineKeys.has(key(cell))), stationLines, "TRANSFER applicability");
   const endpoints = new Set(metrics.metrics.flatMap(({ stationId, fromLineId, toLineId }) => [`${stationId}\0${fromLineId}`, `${stationId}\0${toLineId}`]));
-  const applicableEndpoints = new Set([...cells.entries()].filter(([, { state }]) => state === "APPLICABLE_TRANSFER_ENDPOINT").map(([cellKey]) => cellKey));
+  const applicableEndpoints = new Set(metricCells.filter(({ state }) => state === "APPLICABLE_TRANSFER_ENDPOINT").map(key));
   if (!equalSets(endpoints, applicableEndpoints)) throw new Error("full-capital TRANSFER endpoint mismatch");
   return stationLines.map((line) => {
     const state = cells.get(key(line)).state;

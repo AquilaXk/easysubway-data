@@ -898,7 +898,26 @@ async function gitBytes(root, args) {
 // #862 결정 1(A2): 결정 C의 환승 source-admission-only 재결속(5출력)은 후보·request·hash를 쓰지 않는다.
 // 재결속 직전 커밋(baseline)의 8개 경로 바이트를 prestate로, 현재 작업 트리 바이트를 bytes로 삼아
 // 기존 검증 함수(buildAuthenticatedCurrentCapitalTransferEvidenceTransition)에 그대로 넘긴다.
-export async function deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot = ROOT, baselineGitSha } = {}) {
+// #872 S2(#866에서 전국 경로로 대체 후 삭제): 환승 재결속 뒤 refresh-nationwide-candidate가 전국 정본 팩을 다시 만든다.
+// transfer baseline 모드는 전국 정본 팩 변경을, 커밋된 입력으로 prepare-nationwide-candidate-run을 다시 계산한 출력과
+// 바이트가 같을 때만 허용한다. 커밋된 preparation의 후보 식별·승인 역할을 그대로 쓴다(팩 바이트에는 들어가지 않는다).
+const NATIONWIDE_CANONICAL_PACK = "tools/datapack/release/nationwide-production-canonical-pack.json";
+export async function recomputeNationwideCanonicalPackBytes({ repositoryRoot = ROOT } = {}) {
+  const root = path.resolve(repositoryRoot);
+  const preparation = parse((await readStableRegularFile(target(root, "tools/datapack/release/nationwide-candidate-preparation.json"), "nationwide candidate preparation")).bytes, "nationwide candidate preparation");
+  const { prepareNationwideCandidate } = await import("./prepare-nationwide-candidate-run.mjs");
+  const result = await prepareNationwideCandidate({
+    repositoryRoot: root,
+    releaseSequence: preparation?.releaseIdentity?.releaseSequence,
+    candidateId: preparation?.releaseIdentity?.candidateId,
+    requestedBy: preparation?.authority?.requestedBy,
+    approvedBy: preparation?.authority?.approvedBy,
+    writeFiles: false,
+  });
+  return Buffer.from(`${JSON.stringify(result.materializedFixture)}\n`);
+}
+
+export async function deriveTransferSourceAdmissionTransitionOutputs({ repositoryRoot = ROOT, baselineGitSha, recomputeNationwideCanonicalPack = recomputeNationwideCanonicalPackBytes } = {}) {
   const root = path.resolve(repositoryRoot);
   if (typeof baselineGitSha !== "string" || !/^[0-9a-f]{40}$/u.test(baselineGitSha)) {
     throw new Error("TRANSFER source admission baseline must be a full git SHA");
@@ -919,9 +938,16 @@ export async function deriveTransferSourceAdmissionTransitionOutputs({ repositor
   const changed = (await gitBytes(root, ["diff", "--name-only", "-z", baselineGitSha, "HEAD"])).toString("utf8").split("\0").filter(Boolean);
   // 코드(*.mjs)와 테스트 등록 manifest는 데이터 입력이 아니다. 전이 행은 양쪽 모두 현재 코드로 다시 유도된다.
   const isCode = (relative) => relative.endsWith(".mjs") || relative === "tools/ci/data-test-ownership.json";
-  const unexpected = changed.filter((relative) => !allowed.has(relative) && !isCode(relative)).sort(codepointCompare);
+  const unexpected = changed.filter((relative) => !allowed.has(relative) && relative !== NATIONWIDE_CANONICAL_PACK && !isCode(relative)).sort(codepointCompare);
   if (unexpected.length !== 0) {
     throw new Error(`TRANSFER source admission baseline changed non-TRANSFER inputs: ${unexpected.join(", ")}`);
+  }
+  if (changed.includes(NATIONWIDE_CANONICAL_PACK)) {
+    const committed = (await readStableRegularFile(target(root, NATIONWIDE_CANONICAL_PACK), NATIONWIDE_CANONICAL_PACK)).bytes;
+    const recomputed = await recomputeNationwideCanonicalPack({ repositoryRoot: root });
+    if (!Buffer.isBuffer(recomputed) || !recomputed.equals(committed)) {
+      throw new Error("TRANSFER source admission nationwide canonical pack differs from the recomputed candidate refresh output");
+    }
   }
   const rebindCommit = (await gitBytes(root, ["rev-list", "-1", `${baselineGitSha}..HEAD`, "--", ...transferPaths])).toString("utf8").trim();
   if (!/^[0-9a-f]{40}$/u.test(rebindCommit)) throw new Error("TRANSFER source admission baseline has no later rebind commit");

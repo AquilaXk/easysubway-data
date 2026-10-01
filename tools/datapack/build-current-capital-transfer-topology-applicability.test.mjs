@@ -63,10 +63,11 @@ test("tracked raw canonical pack binds its parsed object without requiring lexic
     "--output", output,
   ], { log: () => {} });
 
-  assert.equal(result.cells.length, 213);
+  // #872 S2: 분모는 서울교통공사 1~8호선과 상대 노선 19개의 역-노선 전체다.
+  assert.equal(result.cells.length, 698);
   assert.deepEqual(result.stateSummary, {
-    APPLICABLE_TRANSFER_ENDPOINT: 27,
-    NOT_APPLICABLE_IN_CANONICAL_PAIR_SET: 186,
+    APPLICABLE_TRANSFER_ENDPOINT: 160,
+    NOT_APPLICABLE_IN_CANONICAL_PAIR_SET: 538,
   });
   const crossPairedPack = JSON.parse(canonicalPackBytes);
   crossPairedPack.manifest.keyId = "cross-paired-but-unbound";

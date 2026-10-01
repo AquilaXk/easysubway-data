@@ -61,8 +61,11 @@ function validateTopologyMetrics(metrics) {
   const actual = new Set(metrics.metrics.map(({ stationId, fromLineId, toLineId }) => metricKey(stationId, fromLineId, toLineId)));
   const derivedReciprocalMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;
   const officialMetricCount = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
+  // #872 S2: 쌍마다 OFFICIAL_SOURCE가 하나 이상 있어야 하고, DERIVED_RECIPROCAL은 그 반대 방향뿐이다.
+  const officialKeys = new Set(metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").map(({ stationId, fromLineId, toLineId }) => metricKey(stationId, fromLineId, toLineId)));
   if (expected.size !== metrics.metrics.length || actual.size !== expected.size || [...actual].some((key) => !expected.has(key))
-    || derivedReciprocalMetricCount !== 2 || officialMetricCount !== metrics.metrics.length - derivedReciprocalMetricCount) throw new Error("transfer metrics identity mismatch");
+    || officialMetricCount !== metrics.metrics.length - derivedReciprocalMetricCount
+    || metrics.metrics.some(({ stationId, fromLineId, toLineId, metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL" && !officialKeys.has(metricKey(stationId, toLineId, fromLineId)))) throw new Error("transfer metrics identity mismatch");
   return { stationLineCount, stationCount, physicalPairCount, directedMetricCount: metrics.metrics.length, officialMetricCount, derivedReciprocalMetricCount };
 }
 function validateApplicability(applicability, topology, metrics) {

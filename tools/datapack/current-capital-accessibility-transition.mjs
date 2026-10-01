@@ -648,7 +648,8 @@ function reverseTransferInventoryActivation({ candidate, inventory, inventoryByt
   if (source?.requiredForProductionPack !== true
     || source.capabilities?.transfer?.status !== "SUPPORTED"
     || source.capabilities.transfer.productionUseAllowed !== true
-    || source.capabilities.transfer.coverageStatus !== "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS"
+    // #872 S2: coverageStatus는 admission 개수에서 유도한다(validate-source-inventory의 transferCoverageStatus와 같은 형식).
+    || source.capabilities.transfer.coverageStatus !== `CAPITAL_SEOUL_METRO_${source.transferAdmissionEvidence?.physicalPairCount}_PAIRS_${source.transferAdmissionEvidence?.directedMetricCount}_DIRECTED_METRICS`
     || source.transferAdmissionEvidence?.decision !== "APPROVED"
     || source.transferAdmissionEvidence.productionUseAllowed !== true
     || source.transferAdmissionEvidence.snapshotId !== transferSnapshotId) {

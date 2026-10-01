@@ -33,12 +33,15 @@ const KRIC_CATALOG_PATH = "tools/datapack/sources/kric-provider-code-catalog-202
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const canonicalBytes = (value) => Buffer.from(`${canonicalJson(value)}\n`);
 const without = (value, key) => { const copy = { ...value }; delete copy[key]; return copy; };
-function deriveCanonicalPairs(stationLines) {
-  const byStation = Map.groupBy(stationLines, ({ stationId }) => stationId);
-  return [...byStation.entries()].flatMap(([stationId, memberships]) => {
-    const lineIds = memberships.map(({ lineId }) => lineId).sort(compareBytes);
-    return lineIds.flatMap((lineId, index) => lineIds.slice(index + 1).map((other) => ({ stationId, lineIds: [lineId, other] })));
-  }).sort((left, right) => compareBytes(`${left.stationId}\0${left.lineIds.join("\0")}`, `${right.stationId}\0${right.lineIds.join("\0")}`));
+// #872 S2: 쌍은 원천이 실제로 덮는 (역, 노선 2개)이다. 정본 팩에서 다시 만들 수 없으므로 끝점이 분모 안에 있고
+// 정렬·중복 없음인지 검사한다. 쌍 집합 자체는 아래 rebuildAuthenticatedTransferTopologyMetrics 재계산과 바이트로 비교한다.
+function validatedSourcePairs(pairs, membershipKeys) {
+  if (!Array.isArray(pairs)) return null;
+  const keys = pairs.map((pair) => (pair && typeof pair.stationId === "string" && Array.isArray(pair.lineIds) && pair.lineIds.length === 2
+    && compareBytes(pair.lineIds[0], pair.lineIds[1]) < 0 && pair.lineIds.every((lineId) => membershipKeys.has(`${pair.stationId}\0${lineId}`))
+    ? `${pair.stationId}\0${pair.lineIds.join("\0")}` : null));
+  if (keys.some((key) => key === null) || new Set(keys).size !== keys.length || keys.some((key, index) => index > 0 && compareBytes(keys[index - 1], key) >= 0)) return null;
+  return pairs;
 }
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
 
@@ -179,12 +182,11 @@ function validateCurrentTransferInputs({ observation, receipt, metrics, metricsB
     throw new Error("transfer canonical pack input mismatch");
   }
   const capital = canonicalPack.packs[0];
-  const seoulLines = new Set((capital.lines ?? []).filter(({ operatorId }) => operatorId === "seoul-metro").map(({ id }) => id));
   const sourceLineIds = new Set(currentTransferLineIds());
-  const membership = (capital.stationLines ?? []).filter(({ lineId }) => seoulLines.has(lineId) && sourceLineIds.has(lineId));
+  const membership = (capital.stationLines ?? []).filter(({ lineId }) => sourceLineIds.has(lineId));
   const membershipKeys = new Set(membership.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
   const stationCount = new Set(membership.map(({ stationId }) => stationId)).size;
-  const physicalPairs = deriveCanonicalPairs(membership);
+  const physicalPairs = validatedSourcePairs(metrics?.physicalPairs, membershipKeys) ?? [];
   const directedMetricCount = metrics?.metrics?.length;
   const officialMetricCount = metrics?.metrics?.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length;
   const derivedReciprocalMetricCount = metrics?.metrics?.filter(({ metricProvenance }) => metricProvenance === "DERIVED_RECIPROCAL").length;

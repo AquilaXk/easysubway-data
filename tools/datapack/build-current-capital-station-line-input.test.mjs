@@ -10,6 +10,7 @@ import {
   FIXTURE_PUBLISHED_AT,
   FIXTURE_RETENTION_UNTIL,
   resealFixtureFacilityAdmission as resealFacility,
+  widenFixtureTransferMetricsBeyondCapitalDomain,
 } from "./test-fixtures/current-capital-station-line-input.mjs";
 
 test("full-capital FACILITY·EXIT·TRANSFER fan-in은 station-line exact-set input을 만든다", async () => {
@@ -205,6 +206,50 @@ test("TRANSFER admission은 허용된 provenance가 전체 metric을 소진해�
     () => buildCurrentCapitalStationLineInput(value),
     /full-capital TRANSFER metrics mismatch/,
   );
+});
+
+// #872 S2: 환승 지표는 서울교통공사 1~8호선과 상대 노선 전체로 넓어졌다. 수도권 station-line 분모(서울교통공사 운영 노선)
+// 밖의 쌍이 있어도 분모 안 TRANSFER 행만 만들고, 분모 밖 끝점의 applicability·지표 결속은 계속 검사한다.
+test("TRANSFER 지표가 분모 밖 쌍을 담아도 분모 안 행만 만들고 분모 밖 결속은 검사한다", async () => {
+  const widen = widenFixtureTransferMetricsBeyondCapitalDomain;
+  const baseline = buildCurrentCapitalStationLineInput(await buildCurrentCapitalStationLineInputFixture());
+  const value = await buildCurrentCapitalStationLineInputFixture();
+  widen(value);
+  const result = buildCurrentCapitalStationLineInput(value);
+  const transferRows = result.evidenceRows.filter(({ domain }) => domain === "TRANSFER");
+  assert.deepEqual(new Set(transferRows.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)), new Set(result.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`)));
+  assert.deepEqual(transferRows.map(({ stationId, lineId, state }) => ({ stationId, lineId, state })), baseline.evidenceRows.filter(({ domain }) => domain === "TRANSFER").map(({ stationId, lineId, state }) => ({ stationId, lineId, state })));
+  assert.ok(transferRows.every(({ providerRecordHash }) => providerRecordHash === value.transferMetrics.artifactSha256));
+  for (const mutate of [
+    (drift) => { drift.transferApplicability.cells.find(({ stationId, lineId }) => stationId === "station-outside" && lineId === "fixture-d").state = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET"; rebindTransferArtifacts(drift); },
+    (drift) => { drift.transferApplicability.cells = drift.transferApplicability.cells.filter(({ stationId, lineId }) => !(stationId === "station-outside" && lineId === "fixture-d")); rebindTransferArtifacts(drift); },
+    (drift) => { drift.transferMetrics.metrics = drift.transferMetrics.metrics.filter(({ stationId, fromLineId }) => !(stationId === "station-outside" && fromLineId === "fixture-d")); rebindTransferArtifacts(drift); },
+  ]) {
+    const drift = await buildCurrentCapitalStationLineInputFixture(); widen(drift); mutate(drift);
+    assert.throws(() => buildCurrentCapitalStationLineInput(drift), /full-capital TRANSFER/);
+  }
+});
+
+// #875 F2: 지표 applicability 분모 검사는 절 하나만 깨져도 거부한다. count를 맞춰 다른 절이 통과하도록 단독 위반을 만든다.
+test("분모 밖 중복 applicability cell과 수도권 cell 누락은 count를 맞춰도 각각 거부한다", async () => {
+  const [capitalCell] = buildCurrentCapitalStationLineInput(await buildCurrentCapitalStationLineInputFixture()).stationLines;
+  for (const [label, mutate] of [
+    ["수도권 분모 밖 중복 cell", (drift) => {
+      const outside = drift.transferApplicability.cells.find(({ stationId, lineId }) => stationId === "station-outside" && lineId === "fixture-d");
+      drift.transferApplicability.cells.push({ ...outside });
+      drift.transferMetrics.canonicalIdentity.stationLineCount += 1;
+    }],
+    ["수도권 분모 cell 누락(count 일치)", (drift) => {
+      drift.transferApplicability.cells = drift.transferApplicability.cells.filter(({ stationId, lineId }) => !(stationId === capitalCell.stationId && lineId === capitalCell.lineId));
+      drift.transferMetrics.canonicalIdentity.stationLineCount -= 1;
+    }],
+  ]) {
+    const drift = await buildCurrentCapitalStationLineInputFixture();
+    widenFixtureTransferMetricsBeyondCapitalDomain(drift);
+    mutate(drift);
+    rebindTransferArtifacts(drift);
+    assert.throws(() => buildCurrentCapitalStationLineInput(drift), /full-capital TRANSFER applicability mismatch/, label);
+  }
 });
 
 test("count를 유지한 blocked carrier·directed pair·applicability swap drift도 fail-closed다", async () => {

@@ -14,6 +14,7 @@ import {
   commitCurrentLiveChainTransferDerivedIdentityOutputs,
   currentLiveChainTransferStageInputs,
   deriveCurrentOnlyProjection,
+  nextTransferAdmissionState,
 } from "./rebind-current-live-chain-transfer-derived-identities.mjs";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
@@ -258,4 +259,32 @@ test("source-admission-only TRANSFER commit writes the five outputs and never to
     await assert.rejects(stat(path.join(root, "tools/datapack/.current-live-chain-transfer-derived-identities.json")), /ENOENT/);
     await assert.rejects(stat(path.join(root, "tools/datapack/.current-live-chain-transfer-derived-identities.lock")), /ENOENT/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// #872 S2: 재결속은 지표·applicability에서 유도한 개수로 admission evidence·coverageStatus·원장 coverageCount를 맞춘다.
+// 승인 레코드(approvalIssue·approvedBy·approvedAt·decision)는 바꾸지 않는다. 범위 확대 근거: #872 D2(QA 승인 2026-10-01)·D4.
+test("source-admission TRANSFER rebind updates derived topology counts and keeps the approval record", () => {
+  const snapshotId = "seoul-metro-transfer-distance-duration-20260815T094038817Z";
+  const approval = { artifactKind: "transfer-source-admission-evidence", approvalIssue: 350, decision: "APPROVED", approvedBy: "AquilaXk", approvedAt: "2026-08-21T08:47:48.289Z", productionUseAllowed: true, snapshotId };
+  const oldCounts = { physicalPairCount: 15, directedMetricCount: 30, officialMetricCount: 28, derivedReciprocalMetricCount: 2, stationLineCount: 213, applicableStationLineCount: 27, notApplicableStationLineCount: 186 };
+  const inventory = { sources: [
+    { id: "other-source", capabilities: {} },
+    { id: "seoul-metro-transfer-distance-duration", capabilities: { transfer: { status: "SUPPORTED", productionUseAllowed: true, coverageStatus: "CAPITAL_SEOUL_METRO_15_PAIRS_30_DIRECTED_METRICS", updateFrequency: "annual file snapshot", unsupportedNotes: "notes" } }, transferAdmissionEvidence: { ...approval, ...oldCounts, metricsArtifactSha256: "1".repeat(64), applicabilityArtifactSha256: "2".repeat(64), snapshotFileSha256: "3".repeat(64), durationRole: "REFERENCE_ONLY" } },
+  ] };
+  const snapshots = [{ snapshotId: "other", sourceId: "other-source", coverageCount: 7 }, { snapshotId, sourceId: "seoul-metro-transfer-distance-duration", coverageCount: 30, transferTopology: { physicalPairCount: 15 }, rawReceipt: { old: true } }];
+  const transferTopology = { canonicalPackSha256: "4".repeat(64), metricsArtifactSha256: "5".repeat(64), applicabilityArtifactSha256: "6".repeat(64), stationLineCount: 698, stationCount: 567, physicalPairCount: 102, directedMetricCount: 204, officialMetricCount: 140, derivedReciprocalMetricCount: 64, applicableStationLineCount: 160, notApplicableStationLineCount: 538, durationRole: "REFERENCE_ONLY" };
+  const descriptorBytes = Buffer.from("descriptor\n");
+  const receipt = { snapshotId, fresh: true };
+  const { nextInventory, nextSnapshots } = nextTransferAdmissionState({ inventory, snapshots, snapshotId, descriptor: { snapshotId, transferTopology }, descriptorBytes, receipt });
+  const source = nextInventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration");
+  assert.deepEqual(source.transferAdmissionEvidence, {
+    ...approval, durationRole: "REFERENCE_ONLY", metricsArtifactSha256: "5".repeat(64), applicabilityArtifactSha256: "6".repeat(64), snapshotFileSha256: createHash("sha256").update(descriptorBytes).digest("hex"),
+    physicalPairCount: 102, directedMetricCount: 204, officialMetricCount: 140, derivedReciprocalMetricCount: 64, stationLineCount: 698, applicableStationLineCount: 160, notApplicableStationLineCount: 538,
+  });
+  assert.equal(source.capabilities.transfer.coverageStatus, "CAPITAL_SEOUL_METRO_102_PAIRS_204_DIRECTED_METRICS");
+  assert.deepEqual({ ...source.capabilities.transfer, coverageStatus: null }, { ...inventory.sources[1].capabilities.transfer, coverageStatus: null });
+  assert.deepEqual(nextInventory.sources[0], inventory.sources[0]);
+  assert.deepEqual(nextSnapshots[1], { ...snapshots[1], coverageCount: 204, transferTopology, rawReceipt: receipt });
+  assert.deepEqual(nextSnapshots[0], snapshots[0]);
+  assert.equal(inventory.sources[1].transferAdmissionEvidence.physicalPairCount, 15);
 });
