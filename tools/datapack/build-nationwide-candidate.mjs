@@ -174,6 +174,8 @@ export async function buildNationwideReleaseArtifacts({ authority, ...input } = 
         ? { adminReviewRecordHash: admission.get(row.snapshotId).adminReviewRecordHash }
         : { admissionRecordSha256s: admission.get(row.snapshotId).admissionRecordSha256s }),
       perSourceSnapshotSetHash: sha256(JSON.stringify([row])) })),
+    // #862: 경로 통합 전(prepare가 hash evidence를 고치던 때)과 같이 승인된 공식 OD 운임 증거를 함께 남긴다.
+    ...(candidate.officialOdFareEvidence ? { officialOdFareEvidence: candidate.officialOdFareEvidence } : {}),
   };
   return { ...prepared, candidateBytes, productionScopeBytes: Buffer.from(input.inputBytes.productionScope),
     requestBytes: jsonBytes(request), hashEvidenceBytes: jsonBytes(evidence) };

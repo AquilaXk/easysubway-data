@@ -439,6 +439,9 @@ test("nationwide release preparation binds recorded authority to exact candidate
   assert.deepEqual(evidence.perSourceEvidence.map((row) => row.perSourceSnapshotSetHash),
     selected.map((row) => sha(JSON.stringify([row]))));
   assert.equal(Object.hasOwn(evidence, "buildDryRun"), false);
+  // #862: 경로 통합 뒤에도 hash evidence는 후보 spec과 같은 승인 공식 OD 운임 증거를 결속한다.
+  assert.ok(candidate.officialOdFareEvidence);
+  assert.deepEqual(evidence.officialOdFareEvidence, candidate.officialOdFareEvidence);
   for (const changedAuthority of [undefined, { ...authority, candidateId: "other" },
     { ...authority, scopeId: "other" }, { ...authority, approvedBy: authority.requestedBy }]) {
     await assert.rejects(buildNationwideReleaseArtifacts({ ...input, authority: changedAuthority }), /release authority/);
