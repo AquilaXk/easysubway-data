@@ -484,163 +484,99 @@ export async function prepareNationwideCandidate({
           if (i === j) continue;
           const fromLine = lines[i];
           const toLine = lines[j];
-          const edgeId = `transfer-${stationId}-${fromLine}-${toLine}`;
-          const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
-          const stepFreePathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-step-free`;
-          const isBusanDaeguTransfer = busanDaeguTransferStationIds.has(stationId);
+          const ruleId = `rule-transfer-${stationId}-${fromLine}-${toLine}`;
           const seoulMetric = seoulTransferMetricMap.get(`${stationId}:${fromLine}->${toLine}`);
 
-          let transferDuration = 0;
-          let transferDistance = 0;
-          let walkDuration = 0;
-          let walkDistance = 0;
-          let walkSourceId = "";
-          let walkSourceSnapshotId = "";
-          let walkProviderRecordHash = "";
-          let walkProvenanceKind = "UNVERIFIED";
-          let walkVerificationStatus = "UNVERIFIED";
-          let walkLastVerifiedAt = 0;
-          let walkEvidenceHash = "";
-          let walkInstruction = "";
-
-          let stepDuration = 0;
-          let stepDistance = 0;
-          let stepInstruction = "";
-          let stepRecordHash = "";
-          let stepSourceId = "";
-          let stepSourceSnapshotId = "";
-          let stepProvenanceKind = "UNVERIFIED";
-          let stepVerificationStatus = "UNVERIFIED";
-          let stepLastVerifiedAt = 0;
-          let stepEvidenceHash = "";
-          let stepAccessibilityStatus = "UNKNOWN";
-
-          const molitRawSha = molitAdmission.rawSha256;
-
-          if (seoulMetric) {
-            transferDuration = seoulMetric.officialDurationSecondsReference;
-            transferDistance = seoulMetric.distanceMeters;
-
-            walkDuration = seoulMetric.officialDurationSecondsReference;
-            walkDistance = seoulMetric.distanceMeters;
-            walkSourceId = "seoul-metro-transfer-distance-duration";
-            walkSourceSnapshotId = seoulTransferHead.snapshotId;
-            walkProviderRecordHash = seoulMetric.sourceRecordSha256;
-            walkProvenanceKind = "OFFICIAL_SOURCE";
-            walkVerificationStatus = "VERIFIED";
-            walkLastVerifiedAt = seoulTransferCapturedAt;
-            walkEvidenceHash = seoulMetric.sourceRecordSha256;
-            walkInstruction = "환승 이동 경로";
-          } else if (isBusanDaeguTransfer) {
-            const info = busanDaeguTransferInfo.get(stationId);
-            const fromLineMolit = info.lineMapping[fromLine];
-            let matchedRows = molitRows.filter((r) => r.STIN_NM === info.molitStation && r.LN_NM === fromLineMolit);
-            if (matchedRows.length === 0) {
-              matchedRows = molitRows.filter((r) => r.STIN_NM === info.molitStation);
-            }
-            const firstSeq = [];
-            for (const r of matchedRows) {
-              if (firstSeq.length > 0 && r.CHTN_MV_TP_ORDR === "1") break;
-              firstSeq.push(r);
-            }
-            if (firstSeq.length > 0) {
-              stepInstruction = firstSeq.map((r) => r.MV_CONT_DTL).join(" -> ");
-              stepDuration = Math.max(120, firstSeq.length * 30);
-              stepDistance = Math.max(60, firstSeq.length * 20);
-              transferDuration = stepDuration;
-              transferDistance = stepDistance;
-              walkDuration = stepDuration;
-              walkDistance = stepDistance;
-            }
-            stepRecordHash = sha256(canonicalJson(matchedRows));
-            stepSourceId = "molit-railway-transfer-movement";
-            stepSourceSnapshotId = molitAdmission.snapshotId;
-            stepProvenanceKind = "OFFICIAL_SOURCE";
-            stepVerificationStatus = "VERIFIED";
-            stepLastVerifiedAt = molitTransferMeta.capturedAt;
-            stepEvidenceHash = molitRawSha;
-            stepAccessibilityStatus = "AVAILABLE";
-
-            walkSourceId = "molit-railway-transfer-movement";
-            walkSourceSnapshotId = molitAdmission.snapshotId;
-            walkProviderRecordHash = stepRecordHash;
-            walkProvenanceKind = "OFFICIAL_SOURCE";
-            walkVerificationStatus = "VERIFIED";
-            walkLastVerifiedAt = molitTransferMeta.capturedAt;
-            walkEvidenceHash = molitRawSha;
-            walkInstruction = stepInstruction || "환승 이동 경로";
+          // #872 S1: 공식 거리·시간이 없는 환승은 경로 행·route edge를 만들지 않는다. 규칙은 FK 없이 UNVERIFIED로 남겨
+          // 서버가 사용 불가로 드러내게 한다. MOLIT 환승 이동 원천은 거리·시간이 없어 여기서 쓰지 않는다.
+          // 무단차 간선은 공식 경로와 공식 거리가 함께 있는 원천이 생길 때만 만든다(현재 없음).
+          if (!seoulMetric) {
+            transferRules.push({
+              id: ruleId,
+              fromStationId: stationId,
+              fromLineId: fromLine,
+              toStationId: stationId,
+              toLineId: toLine,
+              transferType: "IN_STATION",
+              minTransferSeconds: 0,
+              pathwayEdgeId: null,
+              strictStepFreePathwayEdgeId: null,
+              sourceId: "",
+              verificationStatus: "UNVERIFIED",
+            });
+            continue;
           }
-
+          if (!["OFFICIAL_SOURCE", "DERIVED_RECIPROCAL"].includes(seoulMetric.metricProvenance)) {
+            throw new Error(`nationwide candidate Seoul transfer metric provenance is not allowed: ${stationId} ${fromLine}->${toLine}`);
+          }
           const normalized = {
-            edgeId,
+            edgeId: `transfer-${stationId}-${fromLine}-${toLine}`,
             edgeType: "IN_STATION_TRANSFER",
             fromNodeId: `${stationId}:${fromLine}`,
             toNodeId: `${stationId}:${toLine}`,
-            durationSeconds: transferDuration,
-            distanceMeters: transferDistance,
+            durationSeconds: seoulMetric.officialDurationSecondsReference,
+            distanceMeters: seoulMetric.distanceMeters,
             servicePattern: "",
             serviceClass: "SUBWAY",
           };
           transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
+
+          // D4(보완): 역방향 값(DERIVED_RECIPROCAL)은 #350 승인대로 길찾기 route edge에만 쓴다. production pathway 계약은
+          // DERIVED_RECIPROCAL을 받지 않으므로 경로 행을 만들지 않고, 규칙은 FK 없이 UNVERIFIED로 둔다.
+          if (seoulMetric.metricProvenance === "DERIVED_RECIPROCAL") {
+            transferRules.push({
+              id: ruleId,
+              fromStationId: stationId,
+              fromLineId: fromLine,
+              toStationId: stationId,
+              toLineId: toLine,
+              transferType: "IN_STATION",
+              minTransferSeconds: seoulMetric.officialDurationSecondsReference,
+              pathwayEdgeId: null,
+              strictStepFreePathwayEdgeId: null,
+              sourceId: "seoul-metro-transfer-distance-duration",
+              verificationStatus: "UNVERIFIED",
+            });
+            continue;
+          }
+
+          const walkPathwayEdgeId = `pathway-edge-${stationId}-${fromLine}-${toLine}-walk`;
 
           stationPathwayEdges.push({
             id: walkPathwayEdgeId,
             fromNodeId: `pathway-node-${stationId}-${fromLine}`,
             toNodeId: `pathway-node-${stationId}-${toLine}`,
             edgeType: "WALK",
-            durationSeconds: walkDuration,
-            distanceMeters: walkDistance,
+            durationSeconds: seoulMetric.officialDurationSecondsReference,
+            distanceMeters: seoulMetric.distanceMeters,
             bidirectional: false,
             includesStairs: false,
             requiresElevator: false,
             requiresEscalator: false,
             accessibilityStatus: "UNKNOWN",
-            reliabilityScore: (seoulMetric || isBusanDaeguTransfer) ? 100 : 0,
-            sourceId: walkSourceId,
-            sourceSnapshotId: walkSourceSnapshotId,
-            providerRecordHash: walkProviderRecordHash,
-            provenanceKind: walkProvenanceKind,
-            verificationStatus: walkVerificationStatus,
-            lastVerifiedAt: walkLastVerifiedAt,
-            evidenceHash: walkEvidenceHash,
-            instruction: walkInstruction,
-          });
-
-          stationPathwayEdges.push({
-            id: stepFreePathwayEdgeId,
-            fromNodeId: `pathway-node-${stationId}-${fromLine}`,
-            toNodeId: `pathway-node-${stationId}-${toLine}`,
-            edgeType: "WALK",
-            durationSeconds: stepDuration,
-            distanceMeters: stepDistance,
-            bidirectional: false,
-            includesStairs: false,
-            requiresElevator: true,
-            requiresEscalator: false,
-            accessibilityStatus: stepAccessibilityStatus,
-            reliabilityScore: isBusanDaeguTransfer ? 100 : 0,
-            sourceId: stepSourceId,
-            sourceSnapshotId: stepSourceSnapshotId,
-            providerRecordHash: stepRecordHash,
-            provenanceKind: stepProvenanceKind,
-            verificationStatus: stepVerificationStatus,
-            lastVerifiedAt: stepLastVerifiedAt,
-            evidenceHash: stepEvidenceHash,
-            instruction: stepInstruction,
+            reliabilityScore: 100,
+            sourceId: "seoul-metro-transfer-distance-duration",
+            sourceSnapshotId: seoulTransferHead.snapshotId,
+            providerRecordHash: seoulMetric.sourceRecordSha256,
+            provenanceKind: "OFFICIAL_SOURCE",
+            verificationStatus: "VERIFIED",
+            lastVerifiedAt: seoulTransferCapturedAt,
+            evidenceHash: seoulMetric.sourceRecordSha256,
+            instruction: "환승 이동 경로",
           });
 
           transferRules.push({
-            id: `rule-transfer-${stationId}-${fromLine}-${toLine}`,
+            id: ruleId,
             fromStationId: stationId,
             fromLineId: fromLine,
             toStationId: stationId,
             toLineId: toLine,
             transferType: "IN_STATION",
-            minTransferSeconds: transferDuration,
+            minTransferSeconds: seoulMetric.officialDurationSecondsReference,
             pathwayEdgeId: walkPathwayEdgeId,
-            strictStepFreePathwayEdgeId: (isBusanDaeguTransfer && stepDuration > 0) ? stepFreePathwayEdgeId : null,
-            sourceId: seoulMetric ? "seoul-metro-transfer-distance-duration" : (isBusanDaeguTransfer ? "molit-railway-transfer-movement" : ""),
-            verificationStatus: (seoulMetric || isBusanDaeguTransfer) ? "VERIFIED" : "UNVERIFIED",
+            strictStepFreePathwayEdgeId: null,
+            sourceId: "seoul-metro-transfer-distance-duration",
+            verificationStatus: "VERIFIED",
           });
         }
       }
