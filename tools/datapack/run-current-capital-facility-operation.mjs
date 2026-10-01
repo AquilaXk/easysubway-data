@@ -189,8 +189,9 @@ async function validateReleasePreflight(root, planBytes, now, { replacingSourceI
     candidate,
     ledger: snapshots,
   });
-  if (candidate.sourceSnapshots.at(-1).sourceId !== "seoul-metro-transfer-distance-duration") {
-    throw new Error("candidate terminal TRANSFER source order mismatch");
+  // 원천 순서는 후보 생성기가 정한다. 전국 후보에서 TRANSFER는 마지막 원천이 아니므로 포함 여부만 본다.
+  if (!candidate.sourceSnapshots.some(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration")) {
+    throw new Error("candidate TRANSFER source is missing");
   }
   for (const [index, snapshotId] of candidate.sourceSnapshotIds.entries()) {
     const ledger = snapshots.find((entry) => entry?.snapshotId === snapshotId); const projection = candidate.sourceSnapshots[index]; const source = inventory.sources?.find(({ id }) => id === ledger?.sourceId); const governanceSource = governance.sources?.find(({ sourceId }) => sourceId === ledger?.sourceId); const review = governanceSource?.licenseReview;

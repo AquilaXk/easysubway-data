@@ -4,7 +4,13 @@ import path from "node:path";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const AUTOMATION_BRANCH = /^automation\/629-kric-facility-refresh-[0-9]+$/;
-const CLAIM_REF = /^([0-9a-f]{40})\trefs\/heads\/(automation\/629-kric-facility-refresh-[0-9]+)$/;
+const CLAIM_REF = /^([0-9a-f]{40})\trefs\/heads\/(automation\/629-kric-facility-refresh-[0-9]+)\t([^\t]+)$/;
+const SOURCE_RUN_ID = /^[1-9][0-9]*$/;
+const GITHUB_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+// 회수할 수 없는 claim을 닫았다는 기록이다. 브랜치를 지우지 않고 이 subject의 빈 커밋을 남긴다.
+export const ABANDONED_CLAIM_SUBJECT = "Abandon KRIC facility refresh claim";
+// workflow의 evidence upload retention-days와 같아야 한다(workflow 계약 테스트가 확인한다).
+export const KRIC_FACILITY_EVIDENCE_RETENTION_DAYS = 14;
 
 function parseJson(bytes, label) {
   try { return JSON.parse(bytes); }
@@ -49,7 +55,7 @@ function automationClaims(bytes) {
   const claims = lines.map((line) => {
     const match = CLAIM_REF.exec(line);
     if (!match) throw new Error("KRIC refresh claim is invalid");
-    return { sha: match[1], branch: match[2] };
+    return { sha: match[1], branch: match[2], subject: match[3] };
   });
   if (new Set(claims.map(({ branch }) => branch)).size !== claims.length) {
     throw new Error("duplicate KRIC refresh claims exist");
@@ -88,8 +94,13 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
       pullRequestState: associated[0]?.state ?? null,
     };
   });
-  const recoverable = analyzedClaims.filter(({ pullRequestState }) => pullRequestState === null);
-  const closed = analyzedClaims.filter(({ pullRequestState }) => pullRequestState === "CLOSED");
+  const abandoned = analyzedClaims.filter(({ subject }) => subject === ABANDONED_CLAIM_SUBJECT);
+  if (abandoned.some(({ pullRequestState }) => pullRequestState !== null)) {
+    throw new Error("abandoned KRIC refresh claim has a pull request");
+  }
+  const active = analyzedClaims.filter(({ subject }) => subject !== ABANDONED_CLAIM_SUBJECT);
+  const recoverable = active.filter(({ pullRequestState }) => pullRequestState === null);
+  const closed = active.filter(({ pullRequestState }) => pullRequestState === "CLOSED");
   if (recoverable.length > 1) throw new Error("duplicate KRIC refresh claims exist");
   if (closed.length > 1 || (closed.length === 1 && recoverable.length === 1)) {
     throw new Error("KRIC refresh claims are ambiguous");
@@ -101,6 +112,36 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry };
   if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry };
   return { state: "NOT_DUE", alertBeforePackExpiry };
+}
+
+// RECOVER_CLAIM이 원래 run의 보존 증거(journal·raw receipt)를 받을 수 있는지 판정한다.
+// AVAILABLE: 이름이 정확한 artifact가 만료되지 않았다.
+// EXPIRED: GitHub가 만료로 표시했거나, 원래 run 종료 뒤 보존 기간이 지나 목록에서 사라졌다.
+// 보존 기간 안에서 artifact가 없으면 만료 근거가 없으므로 실패로 남긴다(수동 처리).
+export function classifyKricFacilityClaimEvidence({ sourceRunId, sourceRunUpdatedAt, artifacts, now = new Date() } = {}) {
+  if (typeof sourceRunId !== "string" || !SOURCE_RUN_ID.test(sourceRunId)) {
+    throw new Error("KRIC refresh claim source run identity is invalid");
+  }
+  if (typeof sourceRunUpdatedAt !== "string" || !GITHUB_INSTANT.test(sourceRunUpdatedAt)
+    || !Number.isFinite(Date.parse(sourceRunUpdatedAt))) {
+    throw new Error("KRIC refresh claim source run updatedAt is invalid");
+  }
+  const currentTime = now instanceof Date ? now.getTime() : NaN;
+  if (!Number.isFinite(currentTime)) throw new Error("decision time is invalid");
+  requireObject(artifacts, "KRIC refresh claim artifact listing");
+  if (!Number.isSafeInteger(artifacts.total_count) || !Array.isArray(artifacts.artifacts)
+    || artifacts.artifacts.length !== artifacts.total_count
+    || artifacts.artifacts.some((artifact) => !artifact || typeof artifact !== "object"
+      || typeof artifact.name !== "string" || typeof artifact.expired !== "boolean")) {
+    throw new Error("KRIC refresh claim artifact listing is invalid");
+  }
+  const named = artifacts.artifacts.filter(({ name }) => name === `kric-current-facility-refresh-${sourceRunId}`);
+  if (named.length > 1) throw new Error("duplicate KRIC refresh claim evidence artifacts exist");
+  if (named.length === 1 && named[0].expired === false) return "AVAILABLE";
+  if (named.length === 1) return "EXPIRED";
+  const retentionEndsAt = Date.parse(sourceRunUpdatedAt) + KRIC_FACILITY_EVIDENCE_RETENTION_DAYS * 86_400_000;
+  if (currentTime >= retentionEndsAt) return "EXPIRED";
+  throw new Error("KRIC refresh retained evidence is missing inside its retention window");
 }
 
 export async function runCurrentKricFacilityRefreshDecision({ inventoryPath, policyPath, prsPath, claimsPath, repository, outputPath, githubOutputPath, now } = {}) {

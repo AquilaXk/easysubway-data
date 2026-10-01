@@ -334,6 +334,100 @@ test("collection preflight accepts the scope-bound expanded source set", async (
   assert.equal(calls, 1);
 });
 
+// 커밋된 전국 후보 spec을 수도권 pilot 모양으로 투영하지 않고 그대로 쓴다.
+// 전국 후보는 TRANSFER가 마지막 원천이 아니다(마지막은 busan 접근성 원천).
+async function committedNationwideReleaseFixture(t) {
+  const root = await mkdtemp(path.join(tmpdir(), "facility-nationwide-release-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const relative of FIXTURE_INPUTS) {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await cp(path.join(REPOSITORY_ROOT, relative), target);
+  }
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const snapshotPath = inventory.sources.find(
+    ({ id }) => id === "kric-station-convenience-standard",
+  ).accessibilityAdmissionEvidence.snapshotPath;
+  await mkdir(path.dirname(path.join(root, snapshotPath)), { recursive: true });
+  await cp(path.join(REPOSITORY_ROOT, snapshotPath), path.join(root, snapshotPath));
+  await bindReleaseRequestToCandidate(root);
+  return root;
+}
+
+test("collection preflight accepts the committed nationwide candidate order without a terminal TRANSFER", async (t) => {
+  const repositoryRoot = await committedNationwideReleaseFixture(t);
+  const candidate = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  assert.equal(candidate.productionScopeId, "nationwide_routing_android_v1");
+  assert.ok(candidate.sourceSnapshots.some(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration"));
+  assert.notEqual(candidate.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
+  const parent = await mkdtemp(path.join(tmpdir(), "facility-nationwide-preflight-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+
+  // 커밋된 capital-route-topology 원장 행은 credentialRedacted 표시가 없다. 이 엄격 검사는 그대로 막는다.
+  const asCommittedRoot = path.join(parent, "as-committed");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: asCommittedRoot,
+    expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  let providerCalls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot: asCommittedRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
+    collectImpl: async () => { providerCalls += 1; },
+  }), /candidate source ledger\/freshness binding mismatch/);
+  assert.equal(providerCalls, 0);
+
+  // 순서 계약만 분리해 보려고 그 한 행의 표시만 채운다. 다른 신선도·승인·라이선스 값은 커밋 그대로다.
+  const ledgerPath = path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json");
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  const topologyId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "capital-route-topology").snapshotId;
+  const topology = ledger.find(({ snapshotId }) => snapshotId === topologyId);
+  assert.equal(topology.credentialRedacted, undefined);
+  topology.credentialRedacted = true;
+  await writeJson(ledgerPath, ledger);
+  await bindReleaseRequestToCandidate(repositoryRoot);
+  const operationRoot = path.join(parent, "operation");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot,
+    expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  const reachedCollector = new Error("test collector boundary reached");
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
+    collectImpl: async () => { providerCalls += 1; throw reachedCollector; },
+  }), (error) => error === reachedCollector);
+  assert.equal(providerCalls, 1);
+});
+
+test("collection preflight still rejects a nationwide candidate without the TRANSFER source", async (t) => {
+  const repositoryRoot = await committedNationwideReleaseFixture(t);
+  const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
+  const scopePath = path.join(repositoryRoot, "release/product-gates/production-datapack-scope.json");
+  const inventoryPath = path.join(repositoryRoot, "tools/datapack/source-inventory.json");
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  const transferIndex = candidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
+  candidate.sourceSnapshots.splice(transferIndex, 1);
+  candidate.sourceSnapshotIds.splice(transferIndex, 1);
+  // scope와 inventory에서도 함께 빼서 원천 집합 검사만으로는 잡히지 않는 후보를 만든다.
+  const scope = JSON.parse(await readFile(scopePath, "utf8"));
+  scope.productionSourceSet.requiredSourceIds = scope.productionSourceSet.requiredSourceIds
+    .filter((sourceId) => sourceId !== "seoul-metro-transfer-distance-duration");
+  await writeJson(scopePath, scope);
+  const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  inventory.sources.find(({ id }) => id === "seoul-metro-transfer-distance-duration").requiredForProductionPack = false;
+  await writeJson(inventoryPath, inventory);
+  candidate.sourceInventorySha256 = sha(JSON.stringify(inventory));
+  candidate.networkEdgeEvidence.sourceInventory.sha256 = sha(await readFile(inventoryPath));
+  await writeJson(candidatePath, candidate);
+  await bindReleaseRequestToCandidate(repositoryRoot);
+  const parent = await mkdtemp(path.join(tmpdir(), "facility-nationwide-transfer-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const operationRoot = path.join(parent, "operation");
+  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot,
+    expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
+  let providerCalls = 0;
+  await assert.rejects(collectCurrentCapitalFacilityOperation({
+    repositoryRoot, operationRoot, serviceKey: "test", env: OCI_ENV, now: NOW, execFileImpl: exactMainExec,
+    collectImpl: async () => { providerCalls += 1; },
+  }), /candidate TRANSFER source is missing/);
+  assert.equal(providerCalls, 0);
+});
+
 test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider call 0", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "facility-operation-")); const root = path.join(temporaryRoot, "operation");
   const repositoryRoot = await currentReleaseFixture(t); const sha = EXACT_MAIN;

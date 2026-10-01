@@ -49,10 +49,18 @@ jobs:
           set -euo pipefail
           prs="${RUNNER_TEMP}/kric-current-facility-refresh/open-prs.json"
           claims="${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
+          claim_refs="${RUNNER_TEMP}/kric-current-facility-refresh/claim-refs.txt"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 \
             --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${prs}"
           git ls-remote --heads origin \
-            "refs/heads/automation/629-kric-facility-refresh-*" > "${claims}"
+            "refs/heads/automation/629-kric-facility-refresh-*" > "${claim_refs}"
+          # decision은 claim head subject로 닫힌(Abandon) claim을 회수 대상에서 뺀다.
+          while IFS=$'\t' read -r claim_head claim_ref; do
+            [[ -n "${claim_head}" ]] || continue
+            git fetch --no-tags origin "${claim_ref}"
+            claim_subject="$(git log -1 --format=%s "${claim_head}")"
+            printf '%s\t%s\t%s\n' "${claim_head}" "${claim_ref}" "${claim_subject}"
+          done < "${claim_refs}" > "${claims}"
           node tools/ci/decide-current-kric-facility-refresh.mjs \
             --inventory tools/datapack/source-inventory.json \
             --policy release/product-gates/datapack-freshness-sla.json \
@@ -188,15 +196,47 @@ jobs:
               exit 1
             }
             metadata="$(gh run view "${source_run_id}" --repo "${GITHUB_REPOSITORY}" \
-              --json headSha,status,conclusion,event,workflowName \
-              --jq '[.headSha,.status,.conclusion,.event,.workflowName] | @tsv')"
-            IFS=$'\t' read -r run_head run_status run_conclusion run_event run_workflow <<< "${metadata}"
+              --json headSha,status,conclusion,event,workflowName,updatedAt \
+              --jq '[.headSha,.status,.conclusion,.event,.workflowName,.updatedAt] | @tsv')"
+            IFS=$'\t' read -r run_head run_status run_conclusion run_event run_workflow run_updated_at <<< "${metadata}"
             [[ "${run_head}" == "${source_main_sha}" \
               && "${run_status}" == "completed" \
               && "${run_conclusion}" == "failure" \
               && ( "${run_event}" == "schedule" || "${run_event}" == "workflow_dispatch" ) \
               && "${run_workflow}" == "KRIC Current Facility Refresh" ]] || {
               echo "KRIC refresh source run identity is invalid" >&2
+              exit 1
+            }
+            claim_artifacts="${RUNNER_TEMP}/kric-current-facility-refresh/claim-artifacts.json"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}/artifacts?per_page=100" > "${claim_artifacts}"
+            evidence_state="$(SOURCE_RUN_ID="${source_run_id}" SOURCE_RUN_UPDATED_AT="${run_updated_at}" \
+              CLAIM_ARTIFACTS="${claim_artifacts}" node --input-type=module -e '
+              import { readFile } from "node:fs/promises";
+              import { classifyKricFacilityClaimEvidence } from "./tools/ci/decide-current-kric-facility-refresh.mjs";
+              const artifacts = JSON.parse(await readFile(process.env.CLAIM_ARTIFACTS, "utf8"));
+              process.stdout.write(classifyKricFacilityClaimEvidence({
+                sourceRunId: process.env.SOURCE_RUN_ID,
+                sourceRunUpdatedAt: process.env.SOURCE_RUN_UPDATED_AT,
+                artifacts,
+              }));
+            ')"
+            if [[ "${evidence_state}" == "EXPIRED" ]]; then
+              # 보존 증거가 만료돼 회수할 수 없는 claim이다. 성공으로 넘기지 않고 claim을 닫은 기록을 남긴 뒤 실패한다.
+              # 다음 run의 decision은 이 claim을 회수 대상에서 빼고 신선도 상태(DUE/EXPIRED)로 새로 판정한다.
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              gh auth setup-git
+              git switch --detach "origin/${branch}"
+              git commit --allow-empty -m "Abandon KRIC facility refresh claim" \
+                -m "Retained evidence of source run ${source_run_id} expired before recovery; nothing was recovered or published from this claim."
+              git push origin "HEAD:refs/heads/${branch}"
+              message="KRIC refresh claim ${branch} was abandoned: retained evidence of run ${source_run_id} expired before recovery"
+              echo "::error title=KRIC refresh claim abandoned::${message}"
+              printf '%s\n' "${message}" >> "${GITHUB_STEP_SUMMARY}"
+              exit 1
+            fi
+            [[ "${evidence_state}" == "AVAILABLE" ]] || {
+              echo "KRIC refresh retained evidence state is invalid" >&2
               exit 1
             }
             evidence_root="${RUNNER_TEMP}/kric-current-facility-refresh/retained-${source_run_id}"
