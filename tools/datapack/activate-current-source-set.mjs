@@ -146,6 +146,12 @@ export const CURRENT_TOPOLOGY_REFRESH_OUTPUTS = Object.freeze([
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
 ]);
+// #862 결정 C: topology 원천 갱신은 원천 admission까지만 쓴다. 후보 spec·request·hash는 전국 후보 갱신이 만든다.
+export const CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS = Object.freeze([
+  "tools/datapack/source-inventory.json",
+  "tools/datapack/release/capital-production-reviewed-pack.json",
+  "tools/datapack/release/capital-production-canonical-pack.json",
+]);
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
 const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
   "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -1685,9 +1691,8 @@ export function buildCurrentSourcePrimaryOutputs({
   };
 }
 
-export function buildCurrentTopologyRefreshPrimaryOutputs({
+export function buildCurrentTopologySourceAdmissionOutputs({
   baseSpec,
-  builderGitSha,
   sourceInventory,
   currentTopology,
   currentTopologyBytes,
@@ -1701,18 +1706,12 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
   currentIncheonTimetables,
   currentIncheonTimetableBytes,
   currentIncheonTimetablePaths,
-  currentItxTopologyEvidencePath,
-  currentItxTopologyEvidenceBytes,
-  currentItxAdmissionPath,
-  currentItxAdmissionBytes,
   approvedItxTopology = null,
   baselineTopology,
   baselineTopologyBytes,
   canonical,
   productionInput,
-  productionScopePolicyBytes,
   buildNow,
-  terminalCandidateId,
   snapshotBytesByPath,
   layoutTopologySnapshotBytesById,
 }) {
@@ -1859,6 +1858,51 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     projectItxTopologyIntoCanonicalFixture(canonicalWithIncheon, approvedItxTopology);
   }
   const canonicalBytes = jsonBytes(canonicalWithIncheon, false);
+  return {
+    sourceInventory: nextInventory,
+    sourceInventoryBytes,
+    topologyReverification,
+    topologyReverificationBytes,
+    sourceSeparatedTopologyPath,
+    sourceSeparatedTopologyBytes,
+    reviewedPack,
+    reviewedPackBytes: jsonBytes(reviewedPack),
+    incheonProjection,
+    canonical: canonicalWithIncheon,
+    canonicalBytes,
+    projectedEdgeCount: projection.edgeCount,
+  };
+}
+
+export function buildCurrentTopologyRefreshPrimaryOutputs({
+  baseSpec,
+  builderGitSha,
+  currentItxTopologyEvidencePath,
+  currentItxTopologyEvidenceBytes,
+  currentItxAdmissionPath,
+  currentItxAdmissionBytes,
+  productionScopePolicyBytes,
+  terminalCandidateId,
+  ...sourceAdmissionInputs
+}) {
+  const admission = buildCurrentTopologySourceAdmissionOutputs({ baseSpec, ...sourceAdmissionInputs });
+  const {
+    currentTopology, currentTopologyBytes, currentTopologyPath,
+    currentIncheonAccessibility, currentIncheonAccessibilityBytes, currentIncheonAccessibilityPath,
+    currentIncheonTopology, currentIncheonTimetablePaths, currentIncheonTimetableBytes, buildNow,
+  } = sourceAdmissionInputs;
+  const topology = requireCurrentSourceSeparatedCapitalTopology(loadCapitalRouteTopologySnapshot(currentTopology));
+  const activationNow = new Date(requiredUtcInstant(buildNow, "buildNow"));
+  const nextInventory = admission.sourceInventory;
+  const { sourceInventoryBytes, topologyReverificationBytes } = admission;
+  const incheonAccessibilityAdmission = admittedIncheonAccessibilityEvidence({
+    sourceInventory: nextInventory,
+    snapshot: currentIncheonAccessibility,
+    snapshotBytes: currentIncheonAccessibilityBytes,
+    topologySnapshot: currentIncheonTopology,
+    topologyMode: "registered-topology-successor",
+    now: activationNow,
+  });
   const spec = buildCurrentCandidateSpec({
     baseSpec,
     builderGitSha,
@@ -1889,21 +1933,7 @@ export function buildCurrentTopologyRefreshPrimaryOutputs({
     || sha256(currentItxTopologyEvidenceBytes) !== baseSpec.itxTopologyEvidenceSha256) {
     throw new Error("current ITX topology evidence input is invalid");
   }
-  return {
-    sourceInventory: nextInventory,
-    sourceInventoryBytes,
-    topologyReverification,
-    topologyReverificationBytes,
-    sourceSeparatedTopologyPath,
-    sourceSeparatedTopologyBytes,
-    reviewedPack,
-    reviewedPackBytes: jsonBytes(reviewedPack),
-    incheonProjection,
-    canonical: canonicalWithIncheon,
-    canonicalBytes,
-    projectedEdgeCount: projection.edgeCount,
-    spec,
-  };
+  return { ...admission, spec };
 }
 
 function exactCurrentTopologySnapshotIdentity({
@@ -3133,6 +3163,113 @@ export async function generateApprovedItxCurrentSourceBootstrap(options) {
   });
 }
 
+/**
+ * #862 결정 C: topology 원천 갱신의 마지막 단계다. 원천 admission(inventory·reviewed pack·
+ * canonical pack·재검증 증거)만 만든다. 후보 spec·release request·hash evidence는 쓰지 않으며,
+ * 후보 재생성은 "전국 후보 갱신"(refresh-nationwide-candidate.mjs)만 한다.
+ */
+export async function generateCurrentCapitalTopologySourceAdmission({
+  repositoryRoot = root,
+  capitalTopologyPath,
+  incheonTopologyPath,
+  incheonAccessibilityPath,
+  incheonLine1TimetablePath,
+  incheonLine2TimetablePath,
+  builderGitSha,
+  buildNow,
+  check = false,
+}) {
+  const repositoryPath = path.resolve(repositoryRoot);
+  const capitalPathMatch = /^tools\/datapack\/sources\/capital-route-topology-([0-9]{8})\.json$/u
+    .exec(capitalTopologyPath ?? "");
+  if (capitalPathMatch == null) {
+    throw new Error("current topology input must be a tracked source snapshot path");
+  }
+  if (!/^tools\/datapack\/sources\/incheon-transit-station-info-[0-9]{8}\.json$/u
+    .test(incheonTopologyPath ?? "")) {
+    throw new Error("current Incheon topology input must be a tracked source snapshot path");
+  }
+  if ([
+    [incheonAccessibilityPath, /^tools\/datapack\/sources\/incheon-transit-accessibility-[0-9]{8}T[0-9]{9}Z\.json$/u],
+    [incheonLine1TimetablePath, /^tools\/datapack\/sources\/incheon-line1-train-timetable-[0-9]{8}\.json$/u],
+    [incheonLine2TimetablePath, /^tools\/datapack\/sources\/incheon-line2-train-timetable-[0-9]{8}\.json$/u],
+  ].some(([value, pattern]) => !pattern.test(value ?? ""))) {
+    throw new Error("current Incheon dependent inputs must be tracked source snapshot paths");
+  }
+  const topologyReverificationPath =
+    `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
+  const allowedDescendantPaths = [...CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS, topologyReverificationPath];
+  await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
+  const readMutableInput = (relativePath) => check
+    ? readBuilderBaselineBytes(builderGitSha, relativePath, repositoryPath)
+    : readRegularBytes(repositoryPath, relativePath);
+  const [currentTopologyBytes, currentIncheonTopologyBytes, currentIncheonAccessibilityBytes,
+    currentIncheonLine1TimetableBytes, currentIncheonLine2TimetableBytes, baselineTopologyBytes,
+    sourceInventoryBytes, productionInputBytes, baseSpecBytes, canonicalBytes] = await Promise.all([
+    readRegularBytes(repositoryPath, capitalTopologyPath, "current capital topology"),
+    readRegularBytes(repositoryPath, incheonTopologyPath, "current Incheon topology"),
+    readRegularBytes(repositoryPath, incheonAccessibilityPath, "current Incheon accessibility"),
+    readRegularBytes(repositoryPath, incheonLine1TimetablePath, "current Incheon line 1 timetable"),
+    readRegularBytes(repositoryPath, incheonLine2TimetablePath, "current Incheon line 2 timetable"),
+    readRegularBytes(repositoryPath, "tools/datapack/sources/capital-route-topology-20260724.json"),
+    readMutableInput("tools/datapack/source-inventory.json"),
+    readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
+    // 후보 spec은 재검증 기준선(networkEdgeEvidence.capitalTopology) 조회에만 읽고 쓰지 않는다.
+    readRegularBytes(repositoryPath, "tools/datapack/release/candidate-build-spec.json"),
+    readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
+  ]);
+  await requireCleanBuilder(builderGitSha, { check, repositoryRoot: repositoryPath, allowedDescendantPaths });
+  const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
+  const primary = buildCurrentTopologySourceAdmissionOutputs({
+    baseSpec: parseJson(baseSpecBytes, "candidate build spec"),
+    sourceInventory,
+    currentTopology: parseJson(currentTopologyBytes, "current capital topology"),
+    currentTopologyBytes,
+    currentTopologyPath: capitalTopologyPath,
+    currentIncheonTopology: parseJson(currentIncheonTopologyBytes, "current Incheon topology"),
+    currentIncheonTopologyBytes,
+    currentIncheonTopologyPath: incheonTopologyPath,
+    currentIncheonAccessibility: parseJson(currentIncheonAccessibilityBytes, "current Incheon accessibility"),
+    currentIncheonAccessibilityBytes,
+    currentIncheonAccessibilityPath: incheonAccessibilityPath,
+    currentIncheonTimetables: {
+      1: parseJson(currentIncheonLine1TimetableBytes, "current Incheon line 1 timetable"),
+      2: parseJson(currentIncheonLine2TimetableBytes, "current Incheon line 2 timetable"),
+    },
+    currentIncheonTimetableBytes: { 1: currentIncheonLine1TimetableBytes, 2: currentIncheonLine2TimetableBytes },
+    currentIncheonTimetablePaths: { 1: incheonLine1TimetablePath, 2: incheonLine2TimetablePath },
+    baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
+    baselineTopologyBytes,
+    canonical: parseJson(canonicalBytes, "canonical pack"),
+    productionInput: parseJson(productionInputBytes, "production input"),
+    buildNow,
+    snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory, repositoryPath),
+    layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory, repositoryPath),
+  });
+  const outputs = [
+    { relativePath: topologyReverificationPath, bytes: primary.topologyReverificationBytes },
+    { relativePath: CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS[0], bytes: primary.sourceInventoryBytes },
+    { relativePath: CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS[1], bytes: primary.reviewedPackBytes },
+    { relativePath: CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS[2], bytes: primary.canonicalBytes },
+  ];
+  const validateOutputBytes = async () => {
+    for (const output of outputs) {
+      const actual = await readRegularBytes(repositoryPath, output.relativePath);
+      if (!actual.equals(output.bytes)) {
+        throw new Error(`current topology source admission output mismatch: ${output.relativePath}`);
+      }
+    }
+  };
+  if (check) await validateOutputBytes();
+  else await commitCurrentSourceActivation({ repositoryRoot: repositoryPath, outputs, validate: validateOutputBytes });
+  return {
+    topologySnapshotId: path.basename(capitalTopologyPath, ".json"),
+    sourceInventorySha256: sha256(primary.sourceInventoryBytes),
+    outputCount: outputs.length,
+    check,
+  };
+}
+
 export async function generateCurrentSourceActivation({
   capitalTopologyPath,
   incheonTopologyPath,
@@ -3483,6 +3620,33 @@ export function parseCurrentTopologyRefreshArgs(argv) {
   return args;
 }
 
+export function parseCurrentTopologySourceAdmissionArgs(argv) {
+  const args = { check: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === "--check") {
+      args.check = true;
+      continue;
+    }
+    if (!["--capital-topology", "--incheon-topology", "--incheon-accessibility",
+      "--incheon-line1-timetable", "--incheon-line2-timetable",
+      "--builder-git-sha", "--build-now"].includes(flag)) {
+      throw new Error(`unknown topology source admission argument: ${flag ?? ""}`);
+    }
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value`);
+    const key = flag.slice(2).replaceAll("-", "_");
+    if (args[key] != null) throw new Error(`duplicate topology source admission argument: ${flag}`);
+    args[key] = value;
+    index += 1;
+  }
+  for (const key of ["capital_topology", "incheon_topology", "incheon_accessibility",
+    "incheon_line1_timetable", "incheon_line2_timetable", "builder_git_sha", "build_now"]) {
+    if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
+  }
+  return args;
+}
+
 export function parseApprovedItxBootstrapArgs(argv) {
   const args = { approved_itx_bootstrap: true, check: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -3513,6 +3677,21 @@ export function parseApprovedItxBootstrapArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2);
+  if (argv.includes("--topology-source-admission")) {
+    const args = parseCurrentTopologySourceAdmissionArgs(argv.filter((value) => value !== "--topology-source-admission"));
+    const result = await generateCurrentCapitalTopologySourceAdmission({
+      capitalTopologyPath: args.capital_topology,
+      incheonTopologyPath: args.incheon_topology,
+      incheonAccessibilityPath: args.incheon_accessibility,
+      incheonLine1TimetablePath: args.incheon_line1_timetable,
+      incheonLine2TimetablePath: args.incheon_line2_timetable,
+      builderGitSha: args.builder_git_sha,
+      buildNow: args.build_now,
+      check: args.check,
+    });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
   const topologyOnly = argv.includes("--topology-only");
   const approvedItxBootstrap = argv.includes("--approved-itx-bootstrap");
   if (topologyOnly && approvedItxBootstrap) {
