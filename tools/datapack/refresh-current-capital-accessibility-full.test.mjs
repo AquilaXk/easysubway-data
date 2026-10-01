@@ -6,11 +6,15 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  APPROVED_ITX_TOPOLOGY_DELTAS,
+  assertCurrentCapitalRefreshNarrowDelta,
   assertExactCurrentCapitalFacilityEvidenceTransition,
   assertExactCurrentCapitalTransferEvidenceTransition,
   assertPendingMarkerProducerBoundary,
   buildCurrentCapitalAccessibilityRefreshOutputs,
+  deriveApprovedItxTopologyDeltaProof,
   refreshCurrentCapitalAccessibilityFull,
+  verifyApprovedItxTopologyRouteDelta,
 } from "./refresh-current-capital-accessibility-full.mjs";
 import { buildAuthenticatedCurrentCapitalFacilityEvidenceRows } from "./build-current-capital-station-line-input.mjs";
 import { canonicalCurrentExitReboundAdmissionOciReceiptJson } from "./build-current-exit-admission-oci-receipt.mjs";
@@ -980,3 +984,88 @@ async function writeRefreshLease(root, lease) {
   await mkdir(lock, { mode: 0o700 });
   await writeFile(path.join(lock, "owner.json"), JSON.stringify(lease));
 }
+
+// #862: 승인 ITX topology delta 전용 proof 모드. #866에서 live-chain terminal proof를 전국 후보 형식으로
+// 이식하면 그 proof로 대체한다. 이 모드는 승인 ITX evidence를 정본 팩에 적용해 유도한 delta만 허용한다.
+test("승인 ITX topology delta proof는 evidence·원천·정본 팩·edge 목록을 tracked 입력에서 다시 계산한다", async () => {
+  const { proof } = await deriveApprovedItxTopologyDeltaProof({ repositoryRoot: ROOT });
+  const contract = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+  const approved = APPROVED_ITX_TOPOLOGY_DELTAS.find(({ evidenceSha256 }) => evidenceSha256 === proof.evidenceSha256);
+  assert.ok(approved);
+  assert.equal(proof.sourceSha256, contract.sourceTimetableArtifact.sha256);
+  assert.equal(proof.sourceSha256, "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658");
+  assert.equal(proof.previousSourceSha256, contract.sourceTimetableArtifact.promotion.previousArtifactSha256);
+  assert.equal(proof.evidenceSha256, sha(await readFile(path.join(ROOT, approved.evidencePath))));
+  assert.equal(proof.previousEvidenceSha256, sha(await readFile(path.join(ROOT, approved.previousEvidencePath))));
+  assert.equal(proof.afterCanonicalPackSha256,
+    sha(await readFile(path.join(ROOT, "tools/datapack/release/capital-production-canonical-pack.json"))));
+  assert.notEqual(proof.beforeCanonicalPackSha256, proof.afterCanonicalPackSha256);
+  assert.equal(proof.beforeItxEdgeCount, 64);
+  assert.equal(proof.afterItxEdgeCount, 48);
+  assert.equal(proof.beforeItxEdgeCount - proof.removedEdgeIds.length + proof.addedEdgeIds.length, proof.afterItxEdgeCount);
+  assert.deepEqual(proof.removedEdgeIds, [...proof.removedEdgeIds].sort());
+  assert.deepEqual(proof.addedEdgeIds, [...proof.addedEdgeIds].sort());
+  assert.ok(proof.removedEdgeIds.every((id) => id.startsWith("itx-cheongchun:") && !proof.addedEdgeIds.includes(id)));
+  assert.ok(proof.addedEdgeIds.every((id) => id.startsWith("itx-cheongchun:")));
+});
+
+function syntheticItxRouteDelta() {
+  const ride = (edgeId, serviceClass) => ({ edgeId, edgeType: "RIDE", serviceClass, fromNodeId: `${edgeId}:from`, toNodeId: `${edgeId}:to` });
+  const stationLines = [{ stationId: "station-a", lineId: "line-a" }];
+  const candidate = { candidateId: "c", sourceSetSha256: "s", topologySha256: "t" };
+  const routeBefore = { candidate, stationLines, routeEdges: [ride("local-1", "SUBWAY"), ride("itx-cheongchun:1", "ITX_CHEONGCHUN"), ride("itx-cheongchun:2", "ITX_CHEONGCHUN")] };
+  const routeAfter = { candidate: { ...candidate, topologySha256: "u" }, stationLines, routeEdges: [ride("itx-cheongchun:2", "ITX_CHEONGCHUN"), ride("itx-cheongchun:3", "ITX_CHEONGCHUN"), ride("local-1", "SUBWAY")] };
+  const proof = {
+    ...APPROVED_ITX_TOPOLOGY_DELTAS[0], schemaVersion: 1, artifactKind: "current-capital-itx-topology-delta-proof",
+    sourceSha256: "1".repeat(64), previousSourceSha256: "2".repeat(64),
+    beforeCanonicalPackSha256: "3".repeat(64), afterCanonicalPackSha256: "4".repeat(64),
+    beforeItxEdgeCount: 2, afterItxEdgeCount: 2, removedEdgeIds: ["itx-cheongchun:1"], addedEdgeIds: ["itx-cheongchun:3"],
+  };
+  return { proof, expectedProof: structuredClone(proof), routeBefore, routeAfter,
+    counterfactualBefore: structuredClone(routeBefore), counterfactualAfter: structuredClone(routeAfter) };
+}
+
+test("승인 ITX topology delta는 proof·재계산·committed 선행 상태가 모두 같을 때만 통과한다", () => {
+  assert.deepEqual(verifyApprovedItxTopologyRouteDelta(syntheticItxRouteDelta()), {
+    removedEdgeIds: ["itx-cheongchun:1"], addedEdgeIds: ["itx-cheongchun:3"],
+  });
+  const reject = (mutate, pattern) => {
+    const input = syntheticItxRouteDelta(); mutate(input);
+    assert.throws(() => verifyApprovedItxTopologyRouteDelta(input), pattern);
+  };
+  // proof 없이 들어온 topology 변경
+  reject((input) => { input.proof = undefined; }, /ITX topology delta proof is required/);
+  // ITX가 아닌 edge의 변경(추가·삭제·제자리 변경)
+  reject((input) => { input.routeAfter.routeEdges.push({ edgeId: "local-2", edgeType: "RIDE", serviceClass: "SUBWAY" }); input.counterfactualAfter = structuredClone(input.routeAfter); }, /non-ITX topology delta/);
+  reject((input) => { input.routeAfter.routeEdges = input.routeAfter.routeEdges.filter(({ edgeId }) => edgeId !== "local-1"); input.counterfactualAfter = structuredClone(input.routeAfter); }, /non-ITX topology delta/);
+  reject((input) => { input.routeAfter.routeEdges.find(({ edgeId }) => edgeId === "local-1").toNodeId = "moved"; input.counterfactualAfter = structuredClone(input.routeAfter); }, /non-ITX topology delta/);
+  reject((input) => { input.routeAfter.routeEdges.find(({ edgeId }) => edgeId === "itx-cheongchun:2").toNodeId = "moved"; input.counterfactualAfter = structuredClone(input.routeAfter); }, /ITX edge changed in place/);
+  // delta가 하나라도 다른 경우(proof·재계산·route 어느 쪽이든)
+  reject((input) => { input.proof.removedEdgeIds = []; }, /ITX topology delta proof mismatch/);
+  reject((input) => { input.proof.addedEdgeIds = ["itx-cheongchun:3", "itx-cheongchun:4"]; input.expectedProof = structuredClone(input.proof); }, /ITX topology delta route mismatch/);
+  reject((input) => { input.proof.afterCanonicalPackSha256 = "5".repeat(64); }, /ITX topology delta proof mismatch/);
+  reject((input) => { input.counterfactualBefore.routeEdges.pop(); }, /committed route is not the approved ITX predecessor/);
+  reject((input) => { input.counterfactualAfter.routeEdges.pop(); }, /ITX topology counterfactual method mismatch/);
+  reject((input) => { input.routeAfter.stationLines = []; input.counterfactualAfter = structuredClone(input.routeAfter); }, /topology delta mismatch/);
+  // evidence sha가 승인 목록에 없는 경우
+  reject((input) => { input.proof.evidenceSha256 = "0".repeat(64); input.expectedProof = structuredClone(input.proof); }, /ITX topology delta evidence is not approved/);
+});
+
+test("narrow delta는 검증된 ITX delta 없이 topology 변경을 계속 거부한다", () => {
+  const { routeBefore, routeAfter } = syntheticItxRouteDelta();
+  const station = { candidate: { candidateId: "c", sourceSetSha256: "s" }, stationLines: routeBefore.stationLines, evidenceRows: [] };
+  assert.throws(() => assertCurrentCapitalRefreshNarrowDelta({
+    stationBefore: station, stationAfter: station, routeBefore, routeAfter,
+  }), /topology delta mismatch/);
+  assert.doesNotThrow(() => assertCurrentCapitalRefreshNarrowDelta({
+    stationBefore: station, stationAfter: station, routeBefore, routeAfter,
+    itxTopologyDelta: verifyApprovedItxTopologyRouteDelta(syntheticItxRouteDelta()),
+  }));
+  // 검증된 delta가 있어도 delta 밖의 route 변경은 거부한다.
+  const drifted = structuredClone(routeAfter);
+  drifted.routeEdges.find(({ edgeId }) => edgeId === "local-1").toNodeId = "moved";
+  assert.throws(() => assertCurrentCapitalRefreshNarrowDelta({
+    stationBefore: station, stationAfter: station, routeBefore, routeAfter: drifted,
+    itxTopologyDelta: verifyApprovedItxTopologyRouteDelta(syntheticItxRouteDelta()),
+  }), /topology delta mismatch/);
+});
