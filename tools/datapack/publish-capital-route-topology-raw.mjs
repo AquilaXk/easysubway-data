@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { assertExactMainPreflight } from "./publish-seoul-transfer-raw.mjs";
+import { assertSelectedHeadPreflight } from "./publish-seoul-transfer-raw.mjs";
 import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { readCurrentCapitalRouteTopologyAdmission } from "./register-current-capital-route-topology.mjs";
@@ -22,11 +22,12 @@ async function writeReceiptCreateOnce(receiptPath, receipt) {
   if (!persisted.equals(bytes)) throw new Error("capital topology OCI receipt persistence failed");
 }
 
-export async function publishCapitalRouteTopologyRaw({ repositoryRoot, expectedMainSha, gitRunner, operationRoot, rawRelativePath = "capital-route-topology.raw.json", receiptPath, env = process.env, client = null, now = new Date() } = {}) {
+export async function publishCapitalRouteTopologyRaw({ repositoryRoot, expectedMainSha, expectedHeadSha = expectedMainSha, gitRunner, operationRoot, rawRelativePath = "capital-route-topology.raw.json", receiptPath, env = process.env, client = null, now = new Date() } = {}) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !path.isAbsolute(operationRoot ?? "") || !/^[0-9a-f]{40}$/u.test(expectedMainSha ?? "")
     || !path.isAbsolute(receiptPath ?? "") || rawRelativePath !== "capital-route-topology.raw.json" || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology OCI publication arguments are invalid");
   if (!PAR.test(env?.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim() ?? "")) throw new Error("capital topology OCI publication requires an OCI PAR URL");
-  await assertExactMainPreflight({ repositoryRoot, expectedMainSha, gitRunner });
+  // #862: 명시한 origin/main의 clean 후손 HEAD에서 게시한다. HEAD를 생략하면 main과 같다.
+  await assertSelectedHeadPreflight({ repositoryRoot, expectedMainSha, expectedHeadSha, gitRunner });
   const admission = await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot, now });
   const stagedBytes = await readFile(path.join(operationRoot, rawRelativePath));
   if (!stagedBytes.equals(admission.topologyBytes)) throw new Error("capital topology OCI staged bytes do not match protected topology bytes");
