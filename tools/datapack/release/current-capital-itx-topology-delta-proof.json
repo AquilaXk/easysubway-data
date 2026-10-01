@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "current-capital-itx-topology-delta-proof",
+  "evidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260930163854026.json",
+  "evidenceSha256": "91436f7722d2faf8e8b17e91936fa044f5020c51c6dc1a79d8ff2930c33946ab",
+  "previousEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
+  "previousEvidenceSha256": "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d",
+  "sourceSha256": "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
+  "previousSourceSha256": "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
+  "beforeCanonicalPackSha256": "b63716d06abda24ea56ec18ebaa2c742d4fc6410105c24fd5b86d33d06a241d1",
+  "afterCanonicalPackSha256": "d417bcfae31e81a85873190e7b64f360dfef593927d5c0427750400eb8461fee",
+  "beforeItxEdgeCount": 64,
+  "afterItxEdgeCount": 48,
+  "removedEdgeIds": [
+    "itx-cheongchun:0b62e0991cde032d0a51",
+    "itx-cheongchun:0f5b3e2df6de834f50e2",
+    "itx-cheongchun:3a896f33423be93d3bbc",
+    "itx-cheongchun:49c9d113312d4daa3bd4",
+    "itx-cheongchun:4a311cd59eb121099295",
+    "itx-cheongchun:6487c1b6d4db1f563ee4",
+    "itx-cheongchun:7748f63dbc48fb44030d",
+    "itx-cheongchun:77b3e3d7c5e4902a9eeb",
+    "itx-cheongchun:7df198237d9cae841720",
+    "itx-cheongchun:89299a7664151aabe8e7",
+    "itx-cheongchun:95eea42a3e66f2a00d51",
+    "itx-cheongchun:9a5db05f8cf6aa52bb78",
+    "itx-cheongchun:9ec80976117b84fc1bb1",
+    "itx-cheongchun:a1900a3d8fb881150566",
+    "itx-cheongchun:a2eccb882a3c6d190424",
+    "itx-cheongchun:aca81cdea244b08859ab",
+    "itx-cheongchun:ce4503d7ee047e5e9cdd",
+    "itx-cheongchun:de19769fc3f971cd1ba4",
+    "itx-cheongchun:fa5c4beef27b87683230"
+  ],
+  "addedEdgeIds": [
+    "itx-cheongchun:654b518c485a9bec67fb",
+    "itx-cheongchun:890d5297f14bdce2b2c7",
+    "itx-cheongchun:feb459561ba218637ecb"
+  ]
+}
