@@ -15,7 +15,6 @@ import {
   normalizeUnprovenInternalRouteEdges,
   stripLegacyCoreClaims,
   syncAccessibilityEdges,
-  activeReleaseSnapshots,
   currentCandidateReleaseSnapshots,
   overlayReviewedSourcesOnCanonicalRoster,
   syncReleaseEvidence,
@@ -339,27 +338,6 @@ test("canonical sync는 reviewed 필수 계약과 fare table minimum을 함께 �
   const synced = syncCanonicalFixture(canonical(), reviewed).packs[0];
   assert.deepEqual(synced.requiredTables, ["stations"]);
   assert.equal("official_od_fare_quotes" in synced.minimumTableRows, false);
-});
-
-test("active canonical source inventory excludes retired movement snapshot heads", () => {
-  const snapshots = [
-    { sourceId: "active-source", snapshotId: "active-old", supersededBy: "active-head" },
-    { sourceId: "active-source", snapshotId: "active-head" },
-    { sourceId: "kric-station-elevator-movement", snapshotId: "elevator-movement-head" },
-    { sourceId: "kric-wheelchair-lift-movement", snapshotId: "lift-movement-head" },
-  ];
-  const canonical = { packs: [{
-    id: "capital",
-    sourceInventory: [{ id: "active-source" }],
-  }] };
-
-  assert.deepEqual(activeReleaseSnapshots(snapshots, canonical, {
-    "active-source": "active-head",
-    "kric-station-elevator-movement": "elevator-movement-head",
-    "kric-wheelchair-lift-movement": "lift-movement-head",
-  }), [
-    { sourceId: "active-source", snapshotId: "active-head" },
-  ]);
 });
 
 test("current candidate selects scope-bound registered canonical provenance heads", () => {

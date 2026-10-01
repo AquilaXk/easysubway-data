@@ -695,14 +695,6 @@ async function stripLegacyCore({ check }) {
   }
 }
 
-export function activeReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource) {
-  const capital = canonical.packs?.find(({ id }) => id === "capital");
-  if (!capital) throw new Error("canonical capital pack is missing");
-  const activeSourceIds = new Set((capital.sourceInventory ?? []).map(({ id }) => id));
-  return snapshots.filter((snapshot) => activeSourceIds.has(snapshot.sourceId)
-    && headsBySource[snapshot.sourceId] === snapshot.snapshotId);
-}
-
 function canonicalProvenanceSourceIds(capital) {
   return new Set(CANONICAL_PROVENANCE_PROPERTIES.flatMap((property) =>
     (capital[property] ?? []).map(({ sourceId }) => sourceId)
