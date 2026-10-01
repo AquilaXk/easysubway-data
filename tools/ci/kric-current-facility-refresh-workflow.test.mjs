@@ -102,3 +102,31 @@ test("KRIC refresh workflow retains both canonical release identity outputs", ()
   assert.match(yml, /git commit -m "Refresh KRIC facility snapshot"/);
   assert.match(yml, /git push origin "\$\{branch\}"/);
 });
+
+test("KRIC refresh workflow passes each claim head subject to the decision", () => {
+  const yml = readFileSync(workflowPath, "utf8");
+  assert.match(yml, /git ls-remote --heads origin \\\n\s+"refs\/heads\/automation\/629-kric-facility-refresh-\*" > "\$\{claim_refs\}"/);
+  assert.match(yml, /while IFS=\$'\\t' read -r claim_head claim_ref; do[\s\S]*git fetch --no-tags origin "\$\{claim_ref\}"[\s\S]*git log -1 --format=%s "\$\{claim_head\}"[\s\S]*printf '%s\\t%s\\t%s\\n' "\$\{claim_head\}" "\$\{claim_ref\}" "\$\{claim_subject\}"[\s\S]*done < "\$\{claim_refs\}" > "\$\{claims\}"/);
+});
+
+test("KRIC refresh workflow closes out an expired claim explicitly instead of downloading forever", async () => {
+  const { ABANDONED_CLAIM_SUBJECT, KRIC_FACILITY_EVIDENCE_RETENTION_DAYS } = await import("./decide-current-kric-facility-refresh.mjs");
+  const yml = readFileSync(workflowPath, "utf8");
+  assert.equal((yml.match(/retention-days: (\d+)/g) ?? []).join(","), `retention-days: ${KRIC_FACILITY_EVIDENCE_RETENTION_DAYS}`);
+  assert.match(yml, /--json headSha,status,conclusion,event,workflowName,updatedAt/);
+  assert.match(yml, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{source_run_id\}\/artifacts\?per_page=100" > "\$\{claim_artifacts\}"/);
+  assert.match(yml, /classifyKricFacilityClaimEvidence/);
+  const recover = yml.slice(yml.indexOf("Recover claimed refresh"), yml.indexOf("Create durable claim"));
+  const classifyAt = recover.indexOf("classifyKricFacilityClaimEvidence");
+  const abandonAt = recover.indexOf(`git commit --allow-empty -m "${ABANDONED_CLAIM_SUBJECT}"`);
+  const downloadAt = recover.indexOf("gh run download");
+  assert.ok(classifyAt > 0 && abandonAt > classifyAt && downloadAt > abandonAt);
+  const abandon = recover.slice(recover.indexOf('if [[ "${evidence_state}" == "EXPIRED" ]]'), downloadAt);
+  assert.match(abandon, /git switch --detach "origin\/\$\{branch\}"/);
+  assert.match(abandon, /git push origin "HEAD:refs\/heads\/\$\{branch\}"/);
+  assert.match(abandon, /::error title=KRIC refresh claim abandoned::/);
+  assert.match(abandon, /GITHUB_STEP_SUMMARY/);
+  assert.match(abandon, /exit 1\n\s+fi/);
+  assert.doesNotMatch(abandon, /--force|\s-f\s|--delete|\+refs/);
+  assert.match(recover, /\[\[ "\$\{evidence_state\}" == "AVAILABLE" \]\] \|\| \{/);
+});
