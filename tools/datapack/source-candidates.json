@@ -8491,10 +8491,10 @@
       },
       "displayName": "국토교통부_철도역 환승 이동경로 정보",
       "detailUrl": "https://www.data.go.kr/data/15130556/fileData.do",
-      "requestUrl": "https://api.odcloud.kr/api/15130556/v1/uddi:93021737-5337-442c-9006-b9748f87d0a4",
+      "requestUrl": "https://api.odcloud.kr/api/15130556/v1/uddi:26d9d0f2-a4fb-489c-b4b7-dfc6e50ecf76",
       "operation": {
         "method": "GET",
-        "endpoint": "https://api.odcloud.kr/api/15130556/v1/uddi:93021737-5337-442c-9006-b9748f87d0a4",
+        "endpoint": "https://api.odcloud.kr/api/15130556/v1/uddi:26d9d0f2-a4fb-489c-b4b7-dfc6e50ecf76",
         "auth": {
           "env": "DATA_GO_KR_SERVICE_KEY",
           "placement": "query",
@@ -8519,19 +8519,19 @@
       "admissionStatus": "official_snapshot_admitted",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "retrievedAt": "2026-08-14",
+        "retrievedAt": "2026-10-01",
         "detailPageUrl": "https://www.data.go.kr/data/15130556/fileData.do",
-        "endpoint": "https://api.odcloud.kr/api/15130556/v1/uddi:93021737-5337-442c-9006-b9748f87d0a4",
-        "sampleUrl": "https://api.odcloud.kr/api/15130556/v1/uddi:93021737-5337-442c-9006-b9748f87d0a4?serviceKey=[서비스키값]&page=1&perPage=1000&returnType=JSON",
+        "endpoint": "https://api.odcloud.kr/api/15130556/v1/uddi:26d9d0f2-a4fb-489c-b4b7-dfc6e50ecf76",
+        "sampleUrl": "https://api.odcloud.kr/api/15130556/v1/uddi:26d9d0f2-a4fb-489c-b4b7-dfc6e50ecf76?serviceKey=[서비스키값]&page=1&perPage=1000&returnType=JSON",
         "formats": ["CSV", "JSON", "XML"],
         "searchTerms": ["철도역", "환승 이동경로"],
         "outputFields": ["철도운영기관코드", "선명", "역명", "환승이동순서", "이동내용상세", "환승이동내용"],
         "licenseText": "이용허락범위 제한 없음",
-        "currentDatasetVersion": "20250811",
-        "currentRowCount": 8054,
-        "currentOperationVerifiedAt": "2026-08-14"
+        "currentDatasetVersion": "20260811",
+        "currentRowCount": 8094,
+        "currentOperationVerifiedAt": "2026-10-01"
       },
-      "rawSnapshotAdmission": { "snapshotId": "molit-railway-transfer-movement-20250811", "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json", "metadataFileSha256": "f75e3ec2a2270cdd8d3b2303f12db0167cf0b5f5525115f6c980680468faa284", "rawSha256": "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3", "gzipSha256": "94e712d32860a7a6e4b4c1f1d9651dc25823305f537e50370142009c1ca66d28", "rowCount": 8054, "status": "LOCKED" }
+      "rawSnapshotAdmission": { "snapshotId": "molit-railway-transfer-movement-20260811", "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json", "metadataFileSha256": "e59ad302178f583ca959be87f04dc387eb08f781bb5a0a24648549299883f150", "rawSha256": "8f9a448e1601bc49dd370de5af0d7ab8884d930131e05f8fc9773445bded16f8", "gzipSha256": "d509b22ec20e770e1e55853feae88721741a91a8d3ee85eaae27b44455ed3ef5", "rowCount": 8094, "status": "LOCKED" }
     },
     {
       "id": "seoul-metro-congestion-statistics",

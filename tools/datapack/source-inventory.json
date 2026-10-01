@@ -8496,8 +8496,8 @@
       "requiredForProductionPack": false,
       "productionUseAllowed": false,
       "updateFrequency": "annual snapshot",
-      "observedDataUpdatedAt": "2025-08-11",
-      "retrievedAt": "2026-07-29",
+      "observedDataUpdatedAt": "2026-08-11",
+      "retrievedAt": "2026-10-01",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "이용허락범위 제한 없음",
@@ -8541,12 +8541,12 @@
         }
       },
       "rawSnapshotAdmission": {
-        "snapshotId": "molit-railway-transfer-movement-20250811",
-        "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json",
-        "metadataFileSha256": "f75e3ec2a2270cdd8d3b2303f12db0167cf0b5f5525115f6c980680468faa284",
-        "rawSha256": "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3",
-        "gzipSha256": "94e712d32860a7a6e4b4c1f1d9651dc25823305f537e50370142009c1ca66d28",
-        "rowCount": 8054,
+        "snapshotId": "molit-railway-transfer-movement-20260811",
+        "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",
+        "metadataFileSha256": "e59ad302178f583ca959be87f04dc387eb08f781bb5a0a24648549299883f150",
+        "rawSha256": "8f9a448e1601bc49dd370de5af0d7ab8884d930131e05f8fc9773445bded16f8",
+        "gzipSha256": "d509b22ec20e770e1e55853feae88721741a91a8d3ee85eaae27b44455ed3ef5",
+        "rowCount": 8094,
         "status": "LOCKED"
       }
     },
