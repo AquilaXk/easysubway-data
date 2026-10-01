@@ -292,6 +292,19 @@ test("capital topology 원장 행은 다른 등록기처럼 credentialRedacted: 
   assert.equal(snapshot.credentialRedacted, true);
 });
 
+// #862: 환승 rebind(currentReleaseSnapshots)는 선택된 원장 행마다 거버넌스 결속을 요구한다.
+// 다른 등록기처럼 등록 시점의 거버넌스 정책 버전·sha를 원장 행에 남긴다(기존 행은 소급하지 않음).
+test("capital topology 원장 행은 다른 등록기처럼 거버넌스 정책 버전·sha256을 결속한다(#862)", async (t) => {
+  const { root, now } = await fixture(t);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const snapshot = JSON.parse(outputs[1].bytes).at(-1);
+  const governance = JSON.parse(outputs[2].bytes);
+  assert.equal(snapshot.sourceId, "capital-route-topology");
+  assert.equal(snapshot.governancePolicyVersion, governance.policyVersion);
+  assert.equal(snapshot.governancePolicySha256, createHash("sha256").update(outputs[2].bytes).digest("hex"));
+});
+
 test("rejects receipt, freshness, and protected-scope mismatches without output mutation", async (t) => {
   const { root, topologyRelative, now } = await fixture(t);
   const { receipt, receiptPath } = await receiptFixture(root, now);
