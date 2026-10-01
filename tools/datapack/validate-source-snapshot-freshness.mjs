@@ -109,14 +109,45 @@ export function validateSourceSnapshotFreshness({
     const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
     const derivedMillis = requiredUtcInstant(derivedExpiresAt, "freshnessExpiresAt");
     const storedMillis = requiredUtcInstant(snapshot.freshnessExpiresAt, "freshnessExpiresAt");
-    if (storedMillis < derivedMillis) {
-      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
-    }
-    const hasExtension = (snapshot.admissionEvidence != null
-      || Array.isArray(snapshot.admissionRecordSha256s)
-      || snapshot.serviceEffectiveUntil != null);
-    if (storedMillis > derivedMillis && !hasExtension) {
-      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
+    if (sourceClass.unchangedReverificationBasisField != null) {
+      // #867 리뷰 F2: 재확인 규칙이 있는 클래스는 범용 연장(hasExtension) 분기로 통과하지 않는다.
+      // 재확인 행은 이전 head와 원본 sha가 같아야 하고, 신선도는 재확인 시각 + 상한(유효 종료일로 제한)과 정확히 같아야 한다.
+      // 재확인 시각이 없는 행은 일반 basis로 다시 계산한 값과 정확히 같아야 한다.
+      const providerValidUntil = sourceClass.providerValidityEndField
+        ? snapshot[sourceClass.providerValidityEndField]
+        : undefined;
+      if (providerValidUntil != null
+        && evaluatedMillis >= requiredUtcInstant(providerValidUntil, sourceClass.providerValidityEndField)) {
+        throw new Error("SOURCE_SNAPSHOT_EXPIRED: provider validity ended");
+      }
+      const reverifiedAt = snapshot[sourceClass.unchangedReverificationBasisField] ?? null;
+      let expectedMillis = derivedMillis;
+      if (reverifiedAt != null) {
+        const previous = snapshots.find(({ snapshotId }) => snapshotId === snapshot.previousSnapshotId);
+        if (!previous || previous.sourceId !== sourceId || previous.rawSha256 !== snapshot.rawSha256) {
+          throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: unchanged reverification raw hash");
+        }
+        expectedMillis = requiredUtcInstant(deriveFreshnessExpiresAt({
+          policy,
+          sourceClassId: sourceClass.id,
+          basisAt: reverifiedAt,
+          providerValidUntil,
+          evaluationAt,
+        }), "freshnessExpiresAt");
+      }
+      if (storedMillis !== expectedMillis) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: unchanged reverification freshness");
+      }
+    } else {
+      if (storedMillis < derivedMillis) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
+      }
+      const hasExtension = (snapshot.admissionEvidence != null
+        || Array.isArray(snapshot.admissionRecordSha256s)
+        || snapshot.serviceEffectiveUntil != null);
+      if (storedMillis > derivedMillis && !hasExtension) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
+      }
     }
     const stale = evaluatedMillis >= storedMillis;
     return {
