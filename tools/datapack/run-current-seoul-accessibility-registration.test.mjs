@@ -16,9 +16,6 @@ const outputsFor = (snapshotId = SNAPSHOT_ID) => [
   "tools/datapack/source-inventory.json",
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
-  "tools/datapack/release/candidate-build-spec.json",
-  "tools/datapack/release/release-request.json",
-  "tools/datapack/release/hash-evidence.json",
 ];
 
 async function fixture(t, { receiptSha = null } = {}) {
@@ -108,7 +105,7 @@ test("collector and publisher failures stop later operations", async (t) => {
 });
 
 test("partial, foreign, or reordered registration outputs cannot return PASS", async (t) => {
-  const cases = [outputsFor().slice(0, -1), [...outputsFor().slice(0, 6), "tools/datapack/release/foreign.json"], [...outputsFor().slice(1), outputsFor()[0]]];
+  const cases = [outputsFor().slice(0, -1), [...outputsFor().slice(0, 3), "tools/datapack/release/candidate-build-spec.json"], [...outputsFor().slice(1), outputsFor()[0]]];
   for (const registrationOutputs of cases) {
     const values = await fixture(t); const events = [];
     await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(values, dependencies(events, { registrationOutputs }))), /output allowlist/);

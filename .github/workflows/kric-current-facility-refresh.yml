@@ -90,11 +90,8 @@ jobs:
               echo "KRIC refresh claim is incomplete" >&2
               exit 1
             }
+            # #862 결정 C: 원천 갱신은 원장 등록까지만 한다. 후보 spec·request·hash는 전국 후보 갱신이 만든다.
             for required in \
-              tools/datapack/release/candidate-build-spec.json \
-              tools/datapack/release/current-capital-facility-source-admission.json \
-              tools/datapack/release/release-request.json \
-              tools/datapack/release/hash-evidence.json \
               tools/datapack/release/source-snapshots.json \
               tools/datapack/source-inventory.json; do
               grep -Fqx "${required}" <<< "${changed}" || {
@@ -108,7 +105,7 @@ jobs:
             }
             local unexpected
             unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
-              'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/release-request\.json|release/hash-evidence\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
+              'tools/datapack/(release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
             if [[ -n "${unexpected}" ]]; then
               echo "KRIC refresh claim changed an unsupported path" >&2
               exit 1
@@ -260,10 +257,6 @@ jobs:
               --phase finalize --operation-root "${target_root}"
             validate_output_set "$(changed_outputs)" "$(git diff --name-only --diff-filter=D)"
             git stash push --include-untracked -m "Recover KRIC facility snapshot ${source_run_id}" -- \
-              tools/datapack/release/candidate-build-spec.json \
-              tools/datapack/release/current-capital-facility-source-admission.json \
-              tools/datapack/release/release-request.json \
-              tools/datapack/release/hash-evidence.json \
               tools/datapack/release/source-snapshots.json \
               tools/datapack/source-inventory.json tools/datapack/sources
             git config user.name "github-actions[bot]"
@@ -273,11 +266,7 @@ jobs:
             git merge --no-edit "${main_sha}"
             git stash pop
             validate_output_set "$(changed_outputs)" "$(git diff --name-only --diff-filter=D)"
-            git add tools/datapack/release/candidate-build-spec.json \
-              tools/datapack/release/current-capital-facility-source-admission.json \
-              tools/datapack/release/release-request.json \
-              tools/datapack/release/hash-evidence.json \
-              tools/datapack/release/source-snapshots.json \
+            git add tools/datapack/release/source-snapshots.json \
               tools/datapack/source-inventory.json tools/datapack/sources
             git diff --cached --quiet && exit 1
             git commit -m "Refresh KRIC facility snapshot"
@@ -374,11 +363,8 @@ jobs:
             echo "KRIC refresh produced no tracked update" >&2
             exit 1
           fi
+          # #862 결정 C: 원천 갱신은 원장 등록까지만 한다. 후보 spec·request·hash는 전국 후보 갱신이 만든다.
           for required in \
-            tools/datapack/release/candidate-build-spec.json \
-            tools/datapack/release/current-capital-facility-source-admission.json \
-            tools/datapack/release/release-request.json \
-            tools/datapack/release/hash-evidence.json \
             tools/datapack/release/source-snapshots.json \
             tools/datapack/source-inventory.json; do
             grep -Fqx "${required}" <<< "${changed}" || {
@@ -391,7 +377,7 @@ jobs:
             exit 1
           }
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev \
-            'tools/datapack/(release/candidate-build-spec\.json|release/current-capital-facility-source-admission\.json|release/release-request\.json|release/hash-evidence\.json|release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
+            'tools/datapack/(release/source-snapshots\.json|source-inventory\.json|sources/[^/]+\.json)' || true)"
           if [[ -n "${unexpected}" ]]; then
             echo "KRIC refresh changed an unsupported path" >&2
             exit 1

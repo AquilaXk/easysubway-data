@@ -12,22 +12,20 @@ import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
-import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE_ID = "seoul-metro-accessibility";
 const KRIC_SOURCE_ID = "kric-station-convenience-standard";
 const SHA256 = /^[a-f0-9]{64}$/u;
+// #862 결정 C: 원천 등록은 원천 snapshot·inventory·원장·원천 입력까지만 쓴다.
+// 후보 spec·release request·hash evidence는 "전국 후보 갱신"(refresh-nationwide-candidate.mjs)만 다시 만든다.
 const FIXED_OUTPUTS = Object.freeze([
   "tools/datapack/source-inventory.json",
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
-  "tools/datapack/release/candidate-build-spec.json",
-  "tools/datapack/release/release-request.json",
-  "tools/datapack/release/hash-evidence.json",
 ]);
+const OUTPUT_COUNT = FIXED_OUTPUTS.length + 1;
 const SUPPORT = Object.freeze([
-  "tools/datapack/release/capital-production-canonical-pack.json",
   "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json",
 ]);
@@ -157,93 +155,34 @@ function buildLedger({ snapshots, inventory, snapshot, receipt, governance, gove
   next.diffSummary = buildSnapshotDiff(previous, next);
   return next;
 }
-function deriveReleaseEvidence({ snapshots, inventory, canonical, governance, freshness, spec, request, hashes, canonicalBytes, inventoryBytes, governanceBytes, itxBytes }) {
-  const heads = validateLineage(snapshots).headsBySource; const capital = canonical.packs?.find(({ id }) => id === "capital");
-  if (!capital) throw new Error("canonical capital pack is missing");
-  const releaseSnapshots = snapshots.filter((snapshot) => capital.sourceInventory.some(({ id }) => id === snapshot.sourceId) && heads[snapshot.sourceId] === snapshot.snapshotId);
-  const bySource = new Map(inventory.sources.map((source) => [source.id, source])); const nextSpec = structuredClone(spec);
-  nextSpec.sourceSnapshotIds = releaseSnapshots.map(({ snapshotId }) => snapshotId);
-  nextSpec.sourceSnapshots = releaseSnapshots.map((snapshot) => {
-    const source = bySource.get(snapshot.sourceId); const review = source?.admissionEvidence?.adminReviewRecordHash;
-    const sourceClass = freshness.sourceClasses.find(({ sourceIds }) => sourceIds.includes(snapshot.sourceId));
-    if (!SHA256.test(review ?? "") || !sourceClass) throw new Error(`release source projection is invalid: ${snapshot.sourceId}`);
-    const expires = deriveFreshnessExpiresAt({ policy: freshness, sourceClassId: sourceClass.id, basisAt: snapshot[sourceClass.basisField], providerValidUntil: sourceClass.providerValidityEndField == null ? undefined : snapshot[sourceClass.providerValidityEndField], evaluationAt: snapshot.retrievedAt });
-    return { snapshotId: snapshot.snapshotId, sourceId: snapshot.sourceId, rawObjectUri: snapshot.rawObjectUri, rawSha256: snapshot.rawSha256, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, licenseStatus: snapshot.licenseStatus, redistributionAllowed: snapshot.redistributionAllowed, adminReviewRecordHash: review, snapshotStatus: snapshot.snapshotStatus, credentialRedacted: snapshot.credentialRedacted, freshnessExpiresAt: expires, rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governance, sourceId: snapshot.sourceId, retrievedAt: snapshot.retrievedAt }), governancePolicyVersion: governance.policyVersion, governancePolicySha256: sha(governanceBytes) };
-  });
-  nextSpec.sourceSnapshotSetHash = sha(JSON.stringify(releaseSnapshots)); nextSpec.sourceInventorySha256 = sha(JSON.stringify(inventory)); nextSpec.itxTopologyEvidenceSha256 = sha(itxBytes); nextSpec.networkEdgeEvidence.sourceInventory.sha256 = sha(inventoryBytes);
-  const specBytes = jsonBytes(nextSpec); const nextRequest = structuredClone(request); nextRequest.buildSpecSha256 = sha(specBytes); nextRequest.sourceSnapshotSetHash = nextSpec.sourceSnapshotSetHash;
-  const nextHashes = structuredClone(hashes); nextHashes.sourceSnapshotSetHash.value = nextSpec.sourceSnapshotSetHash; nextHashes.sourceInventorySha256.value = nextSpec.sourceInventorySha256; nextHashes.fixturePath.sha256 = sha(canonicalBytes);
-  if (nextHashes.sourceSnapshots) nextHashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
-  nextHashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({ sourceId: snapshot.sourceId, snapshotId: snapshot.snapshotId, rawSha256: snapshot.rawSha256, adminReviewRecordHash: bySource.get(snapshot.sourceId).admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: sha(JSON.stringify([snapshot])) }));
-  return { specBytes, requestBytes: jsonBytes(nextRequest), hashBytes: jsonBytes(nextHashes) };
-}
-
 export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot = ROOT, snapshotPath, receiptPath, now = new Date() } = {}) {
   const root = await repositoryRootInfo(repositoryRoot); if (!path.isAbsolute(snapshotPath ?? "") || !path.isAbsolute(receiptPath ?? "")) throw new Error("external Seoul observation and receipt paths are required");
   const external = (target, label) => assertExternalTarget(root, target, label);
   const repository = (relative, label) => { const target = contained(root.lexical, relative); return { target, checked: assertRepositoryTarget(root, target, label) }; };
   await Promise.all([external(snapshotPath, "external Seoul snapshot"), external(receiptPath, "external Seoul OCI receipt")]);
   const readRepository = async (relative, label) => { const item = repository(relative, label); await item.checked; return stableBytes(item.target, label); };
-  const [snapshotBytes, receiptBytes, inventoryBytes, ledgerBytes, inputBytes, specBytes, requestBytes, hashBytes, ...support] = await Promise.all([
+  const [snapshotBytes, receiptBytes, inventoryBytes, ledgerBytes, inputBytes, ...support] = await Promise.all([
     stableBytes(snapshotPath, "external Seoul snapshot", external), stableBytes(receiptPath, "external Seoul OCI receipt", external),
-    readRepository("tools/datapack/source-inventory.json", "source inventory"), readRepository("tools/datapack/release/source-snapshots.json", "source ledger"), readRepository("tools/datapack/inputs/capital-pilot-production-source-input.json", "capital source input"), readRepository("tools/datapack/release/candidate-build-spec.json", "candidate build spec"), readRepository("tools/datapack/release/release-request.json", "release request"), readRepository("tools/datapack/release/hash-evidence.json", "hash evidence"), ...SUPPORT.map((relative) => readRepository(relative, relative)),
+    readRepository("tools/datapack/source-inventory.json", "source inventory"), readRepository("tools/datapack/release/source-snapshots.json", "source ledger"), readRepository("tools/datapack/inputs/capital-pilot-production-source-input.json", "capital source input"), ...SUPPORT.map((relative) => readRepository(relative, relative)),
   ]);
   const snapshot = validateSeoulAccessibilitySnapshotIdentity(parse(snapshotBytes, "external Seoul snapshot")); const receipt = parse(receiptBytes, "external Seoul OCI receipt");
   if (receipt.snapshotFileSha256 !== sha(snapshotBytes)) throw new Error("Seoul OCI receipt snapshot bytes mismatch");
   const inventory = parse(inventoryBytes, "source inventory"); const snapshots = parse(ledgerBytes, "source ledger"); const input = parse(inputBytes, "capital source input");
-  const [canonicalBytes, governanceBytes, freshnessBytes] = support; const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
+  const [governanceBytes, freshnessBytes] = support; const governance = parse(governanceBytes, "source governance policy"); const freshness = parse(freshnessBytes, "freshness policy");
   const nextLedger = buildLedger({ snapshots, inventory, snapshot, receipt, governance, governanceBytes, freshness, now });
   const nextInventory = structuredClone(inventory); const source = sourceById(nextInventory, SOURCE_ID);
   source.retrievedAt = snapshot.capturedAt.slice(0, 10); source.observedDataUpdatedAt = snapshot.observedAt.slice(0, 10);
   source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence, productionUseAllowed: true, snapshotId: snapshot.snapshotId, snapshotPath: `tools/datapack/sources/${snapshot.snapshotId}.json`, capturedAt: snapshot.capturedAt, observedAt: snapshot.observedAt, freshUntil: snapshot.freshUntil, absenceEvidenceMode: snapshot.absenceEvidenceMode, rawSha256: snapshot.rawSha256, contentSha256: snapshot.contentSha256, schemaFingerprint: snapshot.schemaFingerprint, snapshotFileSha256: sha(snapshotBytes) };
   const kricEvidence = sourceById(inventory, KRIC_SOURCE_ID).accessibilityAdmissionEvidence;
   const currentHeads = validateLineage(snapshots).headsBySource;
-  const currentCandidate = parse(specBytes, "candidate build spec");
-  if (currentHeads[KRIC_SOURCE_ID] !== kricEvidence?.snapshotId
-    || currentCandidate.sourceSnapshots?.find(({ sourceId }) => sourceId === KRIC_SOURCE_ID)?.snapshotId !== kricEvidence.snapshotId) {
+  // 후보 결속은 전국 후보 갱신이 검사한다. 여기서는 원장 head와 inventory evidence가 같은 KRIC snapshot인지 본다.
+  if (currentHeads[KRIC_SOURCE_ID] !== kricEvidence?.snapshotId) {
     throw new Error("current KRIC accessibility input is not the active head");
   }
   const kricBytes = await readRepository(kricEvidence.snapshotPath, "current KRIC accessibility snapshot");
   const nextInput = materializeAccessibilitySourceInput({ input: structuredClone(input), kricSnapshot: parse(kricBytes, "current KRIC accessibility snapshot"), seoulSnapshot: snapshot });
   const nextSnapshots = [...snapshots, nextLedger]; validateLineage(nextSnapshots);
-  const nextInventoryBytes = jsonBytes(nextInventory); const derived = deriveReleaseEvidence({ snapshots: nextSnapshots, inventory: nextInventory, canonical: parse(canonicalBytes, "canonical pack"), governance, freshness, spec: currentCandidate, request: parse(requestBytes, "release request"), hashes: parse(hashBytes, "hash evidence"), canonicalBytes, inventoryBytes: nextInventoryBytes, governanceBytes, itxBytes: await readRepository(currentCandidate.itxTopologyEvidencePath, "ITX evidence") });
-  const allDerivedCandidate = parse(derived.specBytes, "derived candidate build spec");
-  const nextCandidate = structuredClone(currentCandidate);
-  nextCandidate.publishedAt = now.toISOString();
-  const seoulIndex = nextCandidate.sourceSnapshots.findIndex(({ sourceId }) => sourceId === SOURCE_ID);
-  const derivedSeoulProjection = allDerivedCandidate.sourceSnapshots.find(({ sourceId }) => sourceId === SOURCE_ID);
-  if (seoulIndex < 0 || !derivedSeoulProjection) throw new Error("current Seoul candidate projection is missing");
-  nextCandidate.sourceSnapshotIds[seoulIndex] = nextLedger.snapshotId;
-  nextCandidate.sourceSnapshots[seoulIndex] = derivedSeoulProjection;
-  nextCandidate.sourceSnapshotSetHash = allDerivedCandidate.sourceSnapshotSetHash;
-  nextCandidate.sourceInventorySha256 = allDerivedCandidate.sourceInventorySha256;
-  nextCandidate.networkEdgeEvidence.sourceInventory.sha256 = allDerivedCandidate.networkEdgeEvidence.sourceInventory.sha256;
-  const nextRequest = parse(derived.requestBytes, "derived release request");
-  const nextHashEvidence = parse(derived.hashBytes, "derived hash evidence");
-  for (const projection of currentCandidate.sourceSnapshots) {
-    if (projection.sourceId !== SOURCE_ID
-      && canonicalJson(nextCandidate.sourceSnapshots.find(({ sourceId }) => sourceId === projection.sourceId)) !== canonicalJson(projection)) {
-      throw new Error("non-Seoul active candidate projection changed");
-    }
-  }
-  const finalSelected = nextSnapshots.filter(({ snapshotId }) => nextCandidate.sourceSnapshotIds.includes(snapshotId));
-  if (finalSelected.length !== nextCandidate.sourceSnapshotIds.length
-    || JSON.stringify(finalSelected.map(({ snapshotId }) => snapshotId).sort((left, right) => left.localeCompare(right)))
-      !== JSON.stringify([...nextCandidate.sourceSnapshotIds].sort((left, right) => left.localeCompare(right)))) {
-    throw new Error("final candidate selected source IDs are invalid");
-  }
-  nextCandidate.sourceSnapshotSetHash = sha(JSON.stringify(finalSelected));
-  nextRequest.sourceSnapshotSetHash = nextCandidate.sourceSnapshotSetHash;
-  nextHashEvidence.sourceSnapshotSetHash.value = nextCandidate.sourceSnapshotSetHash;
-  if (nextHashEvidence.sourceSnapshotSetHash?.contract) {
-    nextHashEvidence.sourceSnapshotSetHash.contract = `source별 head ${finalSelected.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
-  }
-  if (nextHashEvidence.sourceSnapshots) {
-    nextHashEvidence.sourceSnapshots.order = `release snapshot 순서: ${finalSelected.map(({ sourceId }) => sourceId).join(" → ")}`;
-  }
-  nextHashEvidence.perSourceEvidence = finalSelected.map((entry) => ({ sourceId: entry.sourceId, snapshotId: entry.snapshotId, rawSha256: entry.rawSha256, adminReviewRecordHash: nextInventory.sources.find(({ id }) => id === entry.sourceId).admissionEvidence.adminReviewRecordHash, perSourceSnapshotSetHash: sha(JSON.stringify([entry])) }));
-  const nextCandidateFinalBytes = jsonBytes(nextCandidate);
-  nextRequest.buildSpecSha256 = sha(nextCandidateFinalBytes);
+  const nextInventoryBytes = jsonBytes(nextInventory);
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`; const snapshotTarget = repository(snapshotRelative, "Seoul snapshot target"); await snapshotTarget.checked;
   const existingSnapshot = await optionalBytes(snapshotTarget.target, "Seoul snapshot target");
   if (existingSnapshot != null && !existingSnapshot.equals(snapshotBytes)) throw new Error("Seoul snapshot target immutable collision");
@@ -252,14 +191,11 @@ export async function buildCurrentSeoulAccessibilityRegistrationOutputs({ reposi
     { relative: "tools/datapack/source-inventory.json", bytes: nextInventoryBytes, prestateBytes: inventoryBytes },
     { relative: "tools/datapack/release/source-snapshots.json", bytes: jsonBytes(nextSnapshots), prestateBytes: ledgerBytes },
     { relative: "tools/datapack/inputs/capital-pilot-production-source-input.json", bytes: jsonBytes(nextInput), prestateBytes: inputBytes },
-    { relative: "tools/datapack/release/candidate-build-spec.json", bytes: nextCandidateFinalBytes, prestateBytes: specBytes },
-    { relative: "tools/datapack/release/release-request.json", bytes: jsonBytes(nextRequest), prestateBytes: requestBytes },
-    { relative: "tools/datapack/release/hash-evidence.json", bytes: jsonBytes(nextHashEvidence), prestateBytes: hashBytes },
   ];
 }
 
 function assertOutputs(outputs) {
-  if (!Array.isArray(outputs) || outputs.length !== 7 || !outputs.every(({ relative, bytes, prestateBytes }) => typeof relative === "string" && Buffer.isBuffer(bytes) && (prestateBytes === null || Buffer.isBuffer(prestateBytes)))) throw new Error("Seoul registration must stage exactly seven outputs");
+  if (!Array.isArray(outputs) || outputs.length !== OUTPUT_COUNT || !outputs.every(({ relative, bytes, prestateBytes }) => typeof relative === "string" && Buffer.isBuffer(bytes) && (prestateBytes === null || Buffer.isBuffer(prestateBytes)))) throw new Error("Seoul registration must stage exactly four outputs");
   if (!/^tools\/datapack\/sources\/seoul-metro-accessibility-[0-9TZ]+\.json$/u.test(outputs[0].relative) || JSON.stringify(outputs.slice(1).map(({ relative }) => relative)) !== JSON.stringify(FIXED_OUTPUTS)) throw new Error("Seoul registration output allowlist mismatch");
 }
 async function currentBytes(target) { return optionalBytes(target, "Seoul registration target"); }
@@ -322,7 +258,7 @@ async function acquireLock(root, hooks = {}) {
 }
 function journalRecords(outputs) { return outputs.map(({ relative, bytes, prestateBytes }) => ({ relative, before: prestateBytes?.toString("base64") ?? null, after: bytes.toString("base64"), beforeSha256: prestateBytes == null ? null : sha(prestateBytes), afterSha256: sha(bytes) })); }
 async function recover(root, journal) {
-  if (!journal || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== 7) throw new Error("Seoul registration recovery required");
+  if (!journal || !["PREPARED", "COMMITTED"].includes(journal.state) || !Array.isArray(journal.records) || journal.records.length !== OUTPUT_COUNT) throw new Error("Seoul registration recovery required");
   for (const record of journal.records) { const target = contained(root.lexical, record.relative); await assertRepositoryTarget(root, target, "Seoul registration recovery target"); const before = record.before == null ? null : Buffer.from(record.before, "base64"); const after = Buffer.from(record.after, "base64"); if (sha(after) !== record.afterSha256 || (before != null && sha(before) !== record.beforeSha256)) throw new Error("Seoul registration recovery required"); const current = await currentBytes(target); if (journal.state === "COMMITTED") { if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); continue; } if ((before != null && current?.equals(before)) || (current == null && before == null)) continue; if (!current?.equals(after)) throw new Error("Seoul registration preserves foreign replacement"); if (before == null) { await unlink(target); await syncParent(target); } else await writeAtomic(target, before, after); }
   const journalTarget = contained(root.lexical, JOURNAL); await unlink(journalTarget); await syncParent(journalTarget);
 }

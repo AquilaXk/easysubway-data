@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { prepareNationwideCandidate, formatPlatformInfo } from "./prepare-nationwide-candidate-run.mjs";
+import { prepareNationwideCandidate, formatPlatformInfo, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -421,3 +421,109 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
 });
 
 
+
+// #862 결정 #15: 후보 입력 snapshot은 고정 경로가 아니라 원장 head(+ fan-in 선택)에서 고른다.
+async function committedSelectionInputs() {
+  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  return {
+    sourceInventory: await readJson("tools/datapack/source-inventory.json"),
+    sourceSnapshots: await readJson("tools/datapack/release/source-snapshots.json"),
+    fanIn: await readJson("tools/datapack/release/current-five-region-source-fan-in.json"),
+    readSourceBytes: (relative) => readFile(path.join(root, relative)),
+  };
+}
+
+const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
+  incheonTopology: "incheon-transit-station-info-20260904",
+  incheonLine1: "incheon-line1-train-timetable-20260905",
+  incheonLine2: "incheon-line2-train-timetable-20260905",
+  busanAccessibility: "busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909",
+  daeguAccessibility: "daegu-transportation-accessibility-25276f4f6e48ab8c6ffca6af833af14ad33fd86777af9d3376eed4b6a77fef9e-20260909",
+  daejeonAccessibility: "daejeon-transportation-accessibility-31ef85c5ac5d279d7322c028e05f7be16e6c5a794aa313aef314eef076b61426-20260909",
+  gwangjuAccessibility: "gwangju-transportation-accessibility-a39793ed95d7f0075fa0fd58378e651823d9c1ed752ac310a86c853f8853f521-20260909",
+  kricConvenience: "kric-station-convenience-standard-20260904T043909603Z",
+  busanTimetable: "busan-transportation-timetable-20260909",
+  daeguTimetable1: "daegu-line1-train-timetable-f923a86097012cd0d0b76e59599790fb4ec4756269fb0afd293ac9683c31f77c",
+  daeguTimetable2: "daegu-line2-train-timetable-798b98f01d9803c2dbe148c6864a876ef991401f19105f711722740a8e5f8215",
+  daeguTimetable3: "daegu-line3-train-timetable-9763cdb46b4b2a7ab6ae24f607bba79206763a7329a68b86d16d12f2622d3100",
+  daejeonTimetable: "daejeon-train-timetable-20260909",
+});
+
+test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 13개를 고른다", async () => {
+  const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputs());
+  assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
+  for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
+    assert.equal(selected[key].snapshotId, snapshotId, key);
+    assert.equal(selected[key].path, `tools/datapack/sources/${snapshotId}.json`, key);
+    assert.ok(Buffer.isBuffer(selected[key].bytes), key);
+  }
+  assert.equal(selected.kricConvenience.freshnessExpiresAt, "2026-12-03T04:39:09.603Z");
+});
+
+test("원장 head가 새 snapshot으로 이어지면 코드 수정 없이 새 입력을 고른다", async () => {
+  const inputs = await committedSelectionInputs();
+  const sourceId = "busan-transportation-accessibility";
+  const previous = inputs.sourceSnapshots.find((row) => row.sourceId === sourceId);
+  const successorId = `${sourceId}-successor-20260930`;
+  const successorPath = `tools/datapack/sources/${successorId}.json`;
+  const successorBytes = Buffer.from(JSON.stringify({ sourceId, rawSha256: "f".repeat(64), rows: [] }));
+  inputs.sourceSnapshots.push({ ...previous, snapshotId: successorId, previousSnapshotId: previous.snapshotId, rawSha256: "f".repeat(64) });
+  const source = inputs.sourceInventory.sources.find(({ id }) => id === sourceId);
+  source.accessibilityAdmissionEvidence = { ...source.accessibilityAdmissionEvidence, snapshotId: successorId, snapshotPath: successorPath, rawSha256: "f".repeat(64) };
+  const selectedSource = inputs.fanIn.selectedSources.find((row) => row.sourceId === sourceId);
+  selectedSource.snapshotId = successorId;
+  const readCommitted = inputs.readSourceBytes;
+  inputs.readSourceBytes = async (relative) => relative === successorPath ? successorBytes : readCommitted(relative);
+
+  const selected = await resolveNationwideCandidateInputSnapshots(inputs);
+  assert.equal(selected.busanAccessibility.snapshotId, successorId);
+  assert.equal(selected.busanAccessibility.path, successorPath);
+  assert.deepEqual(selected.busanAccessibility.bytes, successorBytes);
+});
+
+test("후보 입력 head가 없거나 모호하거나 만료됐거나 fan-in과 다르면 명시적으로 실패한다", async () => {
+  const missing = await committedSelectionInputs();
+  missing.sourceSnapshots = missing.sourceSnapshots.filter(({ sourceId }) => sourceId !== "daejeon-train-timetable");
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(missing), /terminal snapshot head missing for daejeon-train-timetable/);
+
+  const ambiguous = await committedSelectionInputs();
+  const busanTimetable = ambiguous.sourceSnapshots.find(({ sourceId }) => sourceId === "busan-transportation-timetable");
+  ambiguous.sourceSnapshots.push({ ...busanTimetable, snapshotId: "busan-transportation-timetable-fork", previousSnapshotId: null });
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(ambiguous), /terminal snapshot head mismatch for busan-transportation-timetable/);
+
+  const expired = await committedSelectionInputs();
+  expired.fanIn.selectedSources.find(({ sourceId }) => sourceId === "kric-station-convenience-standard")
+    .freshnessExpiresAt = expired.fanIn.evaluatedAt;
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(expired), /nationwide candidate input is expired for kric-station-convenience-standard/);
+
+  const unselected = await committedSelectionInputs();
+  unselected.fanIn.selectedSources = unselected.fanIn.selectedSources.filter(({ sourceId }) => sourceId !== "daegu-line2-train-timetable");
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(unselected), /not selected by fan-in for daegu-line2-train-timetable/);
+
+  const diverged = await committedSelectionInputs();
+  diverged.fanIn.selectedSources.find(({ sourceId }) => sourceId === "gwangju-transportation-accessibility")
+    .snapshotId = "gwangju-transportation-accessibility-older";
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(diverged), /fan-in selection does not match ledger head for gwangju-transportation-accessibility/);
+});
+
+test("인천 입력은 inventory admission evidence가 없거나 원본 바이트가 다르면 실패한다", async () => {
+  const missing = await committedSelectionInputs();
+  delete missing.sourceInventory.sources.find(({ id }) => id === "incheon-line1-train-timetable").scheduleAdmissionEvidence;
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(missing), /snapshot path missing or ambiguous for incheon-line1-train-timetable/);
+
+  const tampered = await committedSelectionInputs();
+  const readCommitted = tampered.readSourceBytes;
+  tampered.readSourceBytes = async (relative) => {
+    const bytes = await readCommitted(relative);
+    if (relative !== "tools/datapack/sources/incheon-line2-train-timetable-20260905.json") return bytes;
+    return Buffer.from(JSON.stringify({ ...JSON.parse(bytes), rawSha256: "0".repeat(64) }));
+  };
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(tampered), /raw binding mismatch for incheon-line2-train-timetable/);
+});
+
+test("prepare-nationwide-candidate-run은 원장 head로 고르는 입력 경로를 하드코딩하지 않는다", async () => {
+  const source = await readFile(path.join(root, "tools/datapack/prepare-nationwide-candidate-run.mjs"), "utf8");
+  for (const snapshotId of Object.values(COMMITTED_INPUT_SNAPSHOT_IDS)) {
+    assert.equal(source.includes(snapshotId), false, `${snapshotId} must come from the ledger head`);
+  }
+});

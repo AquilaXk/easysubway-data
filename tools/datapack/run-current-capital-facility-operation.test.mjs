@@ -5,9 +5,7 @@ import { cp, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "no
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
-import { buildCurrentCapitalFacilitySourceAdmission, canonicalCurrentCapitalFacilitySourceAdmissionJson } from "./build-current-capital-facility-source-admission.mjs";
 import { KRIC_ACCESSIBILITY_OPERATIONS, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
-import { rebindCurrentCandidateSourceSnapshots } from "./rebind-current-candidate-source-snapshots.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
@@ -217,7 +215,7 @@ async function finalizeFixture(t, { prepared = false, observationFreshUntil } = 
     await writeJson(path.join(operationRoot, "journal.json"), { ...preparedJournal, phase: "FINALIZE_STARTED", planSha256: sha(planBytes), completedObservation: { snapshotId: snapshot.snapshotId, manifestSha256: sha(Buffer.from(manifestBytes)), snapshotSha256: sha(observedSnapshotBytes), rawSha256: sha(rawBytes) }, completedStages: {} });
   } else {
     await writeFile(path.join(operationRoot, "plan.json"), planBytes);
-    await writeJson(path.join(operationRoot, "journal.json"), { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", phase: "FINALIZE_STARTED", expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, planSha256: sha(planBytes), priorAdmissionSha256: sha(await readFile(path.join(root, "tools/datapack/release/current-capital-facility-source-admission.json"))), completedObservation: { snapshotId: snapshot.snapshotId, manifestSha256: sha(Buffer.from(manifestBytes)), snapshotSha256: sha(observedSnapshotBytes), rawSha256: sha(rawBytes) }, completedStages: {} });
+    await writeJson(path.join(operationRoot, "journal.json"), { schemaVersion: 1, artifactKind: "current-capital-facility-operation-journal", phase: "FINALIZE_STARTED", expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, planSha256: sha(planBytes), completedObservation: { snapshotId: snapshot.snapshotId, manifestSha256: sha(Buffer.from(manifestBytes)), snapshotSha256: sha(observedSnapshotBytes), rawSha256: sha(rawBytes) }, completedStages: {} });
   }
   return { root, operationRoot, snapshot, snapshotBytes, rawBytes, plan, ledger: next };
 }
@@ -249,7 +247,7 @@ async function publishedRecoveryFixture(t, options) {
   const journal = JSON.parse(await readFile(journalPath, "utf8"));
   journal.collectionStartedAt = source.snapshot.capturedAt;
   journal.finalizeObservedAt = NOW.toISOString();
-  journal.completedStages = { published: { snapshotId: source.snapshot.snapshotId, receiptSha256: sha(receiptBytes) }, registered: { ignored: true }, rebound: { ignored: true } };
+  journal.completedStages = { published: { snapshotId: source.snapshot.snapshotId, receiptSha256: sha(receiptBytes) }, registered: { ignored: true } };
   await writeJson(journalPath, journal);
   return { source, sourceReceipt, receiptBytes, journal, journalPath };
 }
@@ -271,21 +269,11 @@ async function finalizedPublishedRecoveryFixture(t) {
       await mkdir(path.dirname(snapshotTargetPath), { recursive: true });
       await writeFile(snapshotTargetPath, source.snapshotBytes);
     },
-    rebindImpl: ({ repositoryRoot, now }) => rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now }),
   });
   const journalPath = path.join(source.operationRoot, "journal.json");
   const journal = JSON.parse(await readFile(journalPath, "utf8"));
   assert.equal(journal.phase, "FINALIZED");
   return { source, sourceReceipt, receiptBytes, journal, journalPath };
-}
-
-async function admissionFor({ root, operationRoot, snapshot }) {
-  const read = (relative) => readFile(path.join(root, relative));
-  const [planBytes, canonicalPackBytes, snapshotBytes, candidateBytes, inventoryBytes, snapshotsBytes, governanceBytes, freshnessBytes, productionScopeBytes] = await Promise.all([
-    read(path.relative(root, path.join(operationRoot, "plan.json"))), read("tools/datapack/release/capital-production-canonical-pack.json"), read(`tools/datapack/sources/${snapshot.snapshotId}.json`), read("tools/datapack/release/candidate-build-spec.json"), read("tools/datapack/source-inventory.json"), read("tools/datapack/release/source-snapshots.json"), read("tools/datapack/source-governance-policy.json"), read("release/product-gates/datapack-freshness-sla.json"), read("release/product-gates/production-datapack-scope.json"),
-  ]);
-  const candidateBuildSpec = JSON.parse(candidateBytes);
-  return buildCurrentCapitalFacilitySourceAdmission({ observedAt: NOW.toISOString(), candidateEvaluationAt: candidateBuildSpec.publishedAt, planBytes, canonicalPackBytes, snapshotBytes, candidateBuildSpec, productionScopeBytes, sourceInventoryBytes: inventoryBytes, sourceSnapshots: JSON.parse(snapshotsBytes), governancePolicy: JSON.parse(governanceBytes), governancePolicyBytes: governanceBytes, freshnessPolicy: JSON.parse(freshnessBytes) });
 }
 
 test("collect records failure after COLLECTION_STARTED and never resumes a provider call", async (t) => {
@@ -435,19 +423,6 @@ test("missing OCI PAR preflight stops before COLLECTION_STARTED and provider cal
   let calls = 0;
   await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: root, serviceKey: "test", env: {}, now: NOW, execFileImpl: exactMainExec, collectImpl: async () => { calls += 1; } }), /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/);
   assert.equal(calls, 0); assert.equal(JSON.parse(await readFile(path.join(root, "journal.json"), "utf8")).phase, "PREPARED");
-});
-
-test("missing target admission binding stops collection before the provider call", async (t) => {
-  const operationRoot = path.join(await mkdtemp(path.join(tmpdir(), "facility-operation-")), "operation");
-  const repositoryRoot = await currentReleaseFixture(t);
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec });
-  const journalPath = path.join(operationRoot, "journal.json");
-  const journal = JSON.parse(await readFile(journalPath, "utf8"));
-  delete journal.priorAdmissionSha256;
-  await writeJson(journalPath, journal);
-  let calls = 0;
-  await assert.rejects(collectCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot, serviceKey: "test", execFileImpl: exactMainExec, collectImpl: async () => { calls += 1; } }), /prepared prior admission SHA/);
-  assert.equal(calls, 0);
 });
 
 test("stale prepared main stops before provider call", async (t) => {
@@ -647,19 +622,6 @@ test("published observation recovery adopts exact bytes into a clean prepared ro
   for (const file of ["observation.json", `${source.snapshot.snapshotId}.json`, `${source.snapshot.snapshotId}.raw.json`]) {
     assert.deepEqual(await readFile(path.join(targetRoot, "observation", file)), await readFile(path.join(source.operationRoot, "observation", file)));
   }
-
-  const unboundTarget = path.join(targetParent, "unbound-target");
-  await prepareCurrentCapitalFacilityOperation({ repositoryRoot, operationRoot: unboundTarget, expectedMainSha: EXACT_MAIN, expectedFacilityHeadSha: EXACT_MAIN, execFileImpl: exactMainExec, now: NOW });
-  const unboundJournalPath = path.join(unboundTarget, "journal.json");
-  const unboundJournal = JSON.parse(await readFile(unboundJournalPath, "utf8"));
-  delete unboundJournal.priorAdmissionSha256;
-  await writeJson(unboundJournalPath, unboundJournal);
-  let durableCopies = 0;
-  await assert.rejects(recoverPublishedCurrentCapitalFacilityOperation({
-    repositoryRoot, operationRoot: unboundTarget, sourceOperationRoot: source.operationRoot, execFileImpl: exactMainExec, now: NOW,
-    durableCreateImpl: async () => { durableCopies += 1; },
-  }), /prepared prior admission SHA/);
-  assert.equal(durableCopies, 0);
 
   async function preparedRoot(name) {
     const root = path.join(targetParent, name);
@@ -943,97 +905,56 @@ test("journal replace failure preserves the prior durable journal", async (t) =>
   assert.equal(await readFile(journalPath, "utf8"), '{"phase":"PREPARED"}\n');
 });
 
-test("finalize crash-resume reconciles exact effects without replay and admits the rebound candidate", async (t) => {
+test("finalize crash-resume reconciles exact publish and registration effects without replay", async (t) => {
   const cases = [
-    { stage: "published", expected: { register: 1, rebind: 1 } },
-    { stage: "partial", expected: { register: 1, rebind: 1 } },
-    { stage: "registered", expected: { register: 0, rebind: 1 } },
-    { stage: "rebound", expected: { register: 0, rebind: 0 } },
-    { stage: "admitted", expected: { register: 0, rebind: 0 } },
+    { stage: "published", expected: { register: 1 } },
+    { stage: "partial", expected: { register: 1 } },
+    { stage: "registered", expected: { register: 0 } },
   ];
   for (const { stage, expected } of cases) {
     const fixture = await finalizeFixture(t); const receiptPath = path.join(fixture.operationRoot, "receipt.json");
     const targetSnapshot = path.join(fixture.root, "tools/datapack/sources", `${fixture.snapshot.snapshotId}.json`);
     await writeJson(receiptPath, receipt(fixture));
     if (stage !== "published") { await mkdir(path.dirname(targetSnapshot), { recursive: true }); await writeFile(targetSnapshot, stage === "partial" ? "partial" : fixture.snapshotBytes); }
-    if (["rebound", "admitted"].includes(stage)) {
-      await rebindCurrentCandidateSourceSnapshots({ repositoryRoot: fixture.root, now: NOW });
-      const journalPath = path.join(fixture.operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8"));
-      journal.reboundExpectedCandidateSha256 = sha(await readFile(path.join(fixture.root, "tools/datapack/release/candidate-build-spec.json")));
-      await writeJson(journalPath, journal);
-    }
-    if (stage === "admitted") {
-      const admission = await admissionFor(fixture); await writeFile(path.join(fixture.root, "tools/datapack/release/current-capital-facility-source-admission.json"), canonicalCurrentCapitalFacilitySourceAdmissionJson(admission));
-      const journalPath = path.join(fixture.operationRoot, "journal.json"); const journal = JSON.parse(await readFile(journalPath, "utf8")); journal.finalizeObservedAt = NOW.toISOString(); await writeJson(journalPath, journal);
-    }
-    const calls = { publish: 0, register: 0, rebind: 0 };
-    const admissionInputs = [];
+    const calls = { publish: 0, register: 0 };
     await main(["--phase", "finalize", "--operation-root", fixture.operationRoot], {
       repositoryRoot: fixture.root, now: NOW, env: {}, execFileImpl: exactMainExec,
       publishImpl: async () => { calls.publish += 1; throw new Error("published receipt must reconcile before replay"); },
       registerImpl: async ({ snapshotTargetPath }) => { calls.register += 1; await mkdir(path.dirname(snapshotTargetPath), { recursive: true }); await writeFile(snapshotTargetPath, fixture.snapshotBytes); },
-      rebindImpl: async ({ repositoryRoot, now }) => { calls.rebind += 1; return rebindCurrentCandidateSourceSnapshots({ repositoryRoot, now }); },
-      buildAdmissionImpl: (input) => { admissionInputs.push(input); return buildCurrentCapitalFacilitySourceAdmission(input); },
     });
-    assert.deepEqual(calls, { publish: 0, ...expected });
-    const admission = JSON.parse(await readFile(path.join(fixture.root, "tools/datapack/release/current-capital-facility-source-admission.json"), "utf8"));
-    assert.equal(admission.sourceIdentity.snapshotId, fixture.snapshot.snapshotId, stage);
-    assert.equal(admission.candidate.sourceSnapshotSetHash, JSON.parse(await readFile(path.join(fixture.root, "tools/datapack/release/candidate-build-spec.json"), "utf8")).sourceSnapshotSetHash, stage);
-    assert.equal(admissionInputs.length, 1, stage);
-    assert.equal(admissionInputs[0].candidateEvaluationAt, admissionInputs[0].candidateBuildSpec.publishedAt, stage);
-    assert.equal(JSON.parse(await readFile(path.join(fixture.operationRoot, "journal.json"), "utf8")).phase, "FINALIZED", stage);
+    assert.deepEqual(calls, { publish: 0, ...expected }, stage);
+    assert.deepEqual(await readFile(targetSnapshot), fixture.snapshotBytes, stage);
+    const journal = JSON.parse(await readFile(path.join(fixture.operationRoot, "journal.json"), "utf8"));
+    assert.equal(journal.phase, "FINALIZED", stage);
+    assert.equal(journal.snapshotId, fixture.snapshot.snapshotId, stage);
   }
 });
 
-test("finalize atomically replaces the prepared stale admission without provider replay", async (t) => {
-  const fixture = await finalizeFixture(t, { prepared: true });
-  const target = path.join(fixture.root, "tools/datapack/release/current-capital-facility-source-admission.json");
-  const staleAdmissionBytes = await readFile(target);
-  const journalPath = path.join(fixture.operationRoot, "journal.json");
-  const preparedJournal = JSON.parse(await readFile(journalPath, "utf8"));
-  assert.equal(preparedJournal.priorAdmissionSha256, sha(staleAdmissionBytes));
-
+test("finalize는 원본 게시·원장 등록에서 끝나고 후보·request·hash·FACILITY admission을 다시 만들지 않는다(#862 결정 C)", async (t) => {
+  const fixture = await finalizeFixture(t);
   await writeJson(path.join(fixture.operationRoot, "receipt.json"), receipt(fixture));
-  const targetSnapshot = path.join(fixture.root, "tools/datapack/sources", `${fixture.snapshot.snapshotId}.json`);
-  await mkdir(path.dirname(targetSnapshot), { recursive: true });
-  await writeFile(targetSnapshot, fixture.snapshotBytes);
-  await rebindCurrentCandidateSourceSnapshots({ repositoryRoot: fixture.root, now: NOW });
-  const journal = JSON.parse(await readFile(journalPath, "utf8"));
-  journal.reboundExpectedCandidateSha256 = sha(await readFile(path.join(fixture.root, "tools/datapack/release/candidate-build-spec.json")));
-  await writeJson(journalPath, journal);
-
-  const calls = { publish: 0, register: 0, rebind: 0 };
-  const dependencies = {
+  const candidateSide = [
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
+    "tools/datapack/release/current-capital-facility-source-admission.json",
+  ];
+  const before = await Promise.all(candidateSide.map((relative) => readFile(path.join(fixture.root, relative))));
+  const calls = { publish: 0, register: 0, rebind: 0, admission: 0 };
+  await main(["--phase", "finalize", "--operation-root", fixture.operationRoot], {
     repositoryRoot: fixture.root, now: NOW, env: {}, execFileImpl: exactMainExec,
-    publishImpl: async () => { calls.publish += 1; },
-    registerImpl: async () => { calls.register += 1; },
-    rebindImpl: async () => { calls.rebind += 1; },
-  };
-  delete journal.priorAdmissionSha256;
-  await writeJson(journalPath, journal);
-  await assert.rejects(main(["--phase", "finalize", "--operation-root", fixture.operationRoot], dependencies), /prepared prior admission SHA/);
-  assert.deepEqual(calls, { publish: 0, register: 0, rebind: 0 });
-  journal.priorAdmissionSha256 = sha(staleAdmissionBytes);
-  await writeJson(journalPath, journal);
-
-  const sharedLock = path.join(fixture.root, "tools/datapack/.active-facility-derived-identity-rebind.lock");
-  await mkdir(sharedLock, { mode: 0o700 });
-  await assert.rejects(main(["--phase", "finalize", "--operation-root", fixture.operationRoot], dependencies), /admission replacement is already in progress/);
-  assert.deepEqual(await readFile(target), staleAdmissionBytes);
-  await rm(sharedLock, { recursive: true, force: true });
-
-  await writeFile(target, "{}\n");
-  await assert.rejects(
-    main(["--phase", "finalize", "--operation-root", fixture.operationRoot], dependencies),
-    /current capital facility admission replacement verification failed/,
-  );
-  assert.equal(await readFile(target, "utf8"), "{}\n");
-  assert.deepEqual(calls, { publish: 0, register: 0, rebind: 0 });
-
-  await writeFile(target, staleAdmissionBytes);
-  await main(["--phase", "finalize", "--operation-root", fixture.operationRoot], dependencies);
-  assert.deepEqual(calls, { publish: 0, register: 0, rebind: 0 });
-  assert.notEqual(await readFile(target, "utf8"), staleAdmissionBytes.toString("utf8"));
+    publishImpl: async () => { calls.publish += 1; throw new Error("published receipt must reconcile before replay"); },
+    registerImpl: async ({ snapshotTargetPath }) => { calls.register += 1; await mkdir(path.dirname(snapshotTargetPath), { recursive: true }); await writeFile(snapshotTargetPath, fixture.snapshotBytes); },
+    rebindImpl: async () => { calls.rebind += 1; throw new Error("source refresh must not rebind the candidate"); },
+    buildAdmissionImpl: () => { calls.admission += 1; throw new Error("source refresh must not rebuild candidate-bound admission"); },
+  });
+  assert.deepEqual(calls, { publish: 0, register: 1, rebind: 0, admission: 0 });
+  const after = await Promise.all(candidateSide.map((relative) => readFile(path.join(fixture.root, relative))));
+  candidateSide.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
+  assert.deepEqual(await readFile(path.join(fixture.root, "tools/datapack/sources", `${fixture.snapshot.snapshotId}.json`)), fixture.snapshotBytes);
+  const journal = JSON.parse(await readFile(path.join(fixture.operationRoot, "journal.json"), "utf8"));
+  assert.equal(journal.phase, "FINALIZED");
+  assert.deepEqual(Object.keys(journal.completedStages).sort(), ["published", "registered"]);
 });
 
 test("finalize fails closed for an existing partial receipt before publishing again", async (t) => {

@@ -20,10 +20,11 @@ import {
 import { requireCurrentIncheonTopologyAdmission, activateStaticSourceRevalidations,
   bindApprovedItxCurrentSourceSpec,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs,
-  buildCurrentTopologyRefreshPrimaryOutputs, commitCurrentSourceActivation,
+  buildCurrentTopologyRefreshPrimaryOutputs, buildCurrentTopologySourceAdmissionOutputs, commitCurrentSourceActivation,
+  CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS, parseCurrentTopologySourceAdmissionArgs,
   collectLayoutTopologySnapshotBytes, collectPositionSnapshotBytes, parseCurrentSourceActivationArgs,
   deriveApprovedItxTopologyEvidencePath,
-  parseApprovedItxBootstrapArgs, parseCurrentTopologyRefreshArgs, requireCleanBuilder,
+  parseApprovedItxBootstrapArgs, requireCleanBuilder,
   CURRENT_PRODUCTION_SOURCE_IDS, CURRENT_SOURCE_INVENTORY_IDS,
   readBuilderBaselineBytes,
   readOptionalCurrentItxAdmissionBytes,
@@ -811,39 +812,8 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     "--builder-git-sha", "a".repeat(40),
     "--build-now", "2026-08-11T00:00:00.000Z",
   ]), /unknown activation argument/);
-  assert.deepEqual(parseCurrentTopologyRefreshArgs([
-    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260814.json",
-    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260814.json",
-    "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260814.json",
-    "--incheon-line1-timetable", "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
-    "--incheon-line2-timetable", "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
-    "--itx-topology-evidence", "tools/datapack/itx-cheongchun-topology-evidence.json",
-    "--itx-current-admission", "tools/datapack/itx-current-network-edge-admission-20260823.json",
-    "--builder-git-sha", "b".repeat(40),
-    "--build-now", "2026-08-23T14:53:48.203Z",
-    "--check",
-  ]), {
-    check: true,
-    capital_topology: "tools/datapack/sources/capital-route-topology-20260814.json",
-    incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260814.json",
-    incheon_accessibility: "tools/datapack/sources/incheon-transit-accessibility-20260814.json",
-    incheon_line1_timetable: "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
-    incheon_line2_timetable: "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
-    itx_topology_evidence: "tools/datapack/itx-cheongchun-topology-evidence.json",
-    itx_current_admission: "tools/datapack/itx-current-network-edge-admission-20260823.json",
-    builder_git_sha: "b".repeat(40),
-    build_now: "2026-08-23T14:53:48.203Z",
-  });
-  assert.deepEqual(parseCurrentTopologyRefreshArgs([
-    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260814.json",
-    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260814.json",
-    "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260814T000000000Z.json",
-    "--incheon-line1-timetable", "tools/datapack/sources/incheon-line1-train-timetable-20260814.json",
-    "--incheon-line2-timetable", "tools/datapack/sources/incheon-line2-train-timetable-20260814.json",
-    "--itx-topology-evidence", "tools/datapack/itx-cheongchun-topology-evidence.json",
-    "--builder-git-sha", "b".repeat(40),
-    "--build-now", "2026-08-23T14:53:48.203Z",
-  ]).itx_current_admission, undefined);
+  // #862 결정 C: 후보를 다시 쓰던 --topology-only CLI 모드는 없앴다. topology 갱신은 --topology-source-admission만 쓴다.
+  assert.throws(() => parseCurrentSourceActivationArgs(["--topology-only"]), /unknown activation argument: --topology-only/);
 });
 
 test("topology refresh skips the optional ITX admission file read", async () => {
@@ -2159,6 +2129,84 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     productionInput, productionScopePolicyBytes, buildNow,
     snapshotBytesByPath, layoutTopologySnapshotBytesById,
   }), /current Incheon dependent snapshot lineage mismatch/);
+});
+
+// #862 결정 C: topology 원천 갱신은 원천 admission(inventory·reviewed pack·canonical pack·재검증 증거)까지만 만든다.
+test("topology source admission은 후보 spec 없이 inventory·reviewed·canonical·재검증 증거만 만든다(#862 결정 C)", async () => {
+  assert.deepEqual(CURRENT_TOPOLOGY_SOURCE_ADMISSION_OUTPUTS, [
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/capital-production-reviewed-pack.json",
+    "tools/datapack/release/capital-production-canonical-pack.json",
+  ]);
+  const [baseSpec, sourceInventory, canonical, productionInput, productionScopePolicyBytes] = await Promise.all([
+    readJson("tools/datapack/release/candidate-build-spec.json"),
+    readJson("tools/datapack/source-inventory.json"),
+    readJson("tools/datapack/release/capital-production-canonical-pack.json"),
+    readJson("tools/datapack/inputs/capital-pilot-production-source-input.json"),
+    readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json")),
+  ]);
+  const { topology: baselineTopology, bytes: baselineTopologyBytes } = await historicalCandidateCapitalTopology(baseSpec);
+  const currentTopologyPath = baseSpec.networkEdgeEvidence.capitalTopologyCandidate.path;
+  const incheonSource = (id) => sourceInventory.sources.find((source) => source.id === id);
+  const currentIncheonTopologyPath = incheonSource("incheon-transit-station-info").topologyAdmissionEvidence.snapshotPath;
+  const currentIncheonAccessibilityPath = `tools/datapack/sources/${incheonSource("incheon-transit-accessibility").registrationEvidence.snapshotId}.json`;
+  const currentIncheonTimetablePaths = {
+    1: incheonSource("incheon-line1-train-timetable").scheduleAdmissionEvidence.snapshotPath,
+    2: incheonSource("incheon-line2-train-timetable").scheduleAdmissionEvidence.snapshotPath,
+  };
+  const [currentTopologyBytes, currentIncheonTopologyBytes, currentIncheonAccessibilityBytes, line1Bytes, line2Bytes] = await Promise.all([
+    currentTopologyPath, currentIncheonTopologyPath, currentIncheonAccessibilityPath,
+    currentIncheonTimetablePaths[1], currentIncheonTimetablePaths[2],
+  ].map((relative) => readFile(path.join(root, relative))));
+  const currentTopology = JSON.parse(currentTopologyBytes);
+  const currentIncheonTopology = JSON.parse(currentIncheonTopologyBytes);
+  const currentIncheonAccessibility = JSON.parse(currentIncheonAccessibilityBytes);
+  const currentIncheonTimetables = { 1: JSON.parse(line1Bytes), 2: JSON.parse(line2Bytes) };
+  const buildNow = new Date(Math.max(...[currentTopology, currentIncheonTopology, currentIncheonAccessibility,
+    currentIncheonTimetables[1], currentIncheonTimetables[2]].map(({ capturedAt }) => Date.parse(capturedAt))) + 1).toISOString();
+  const common = {
+    baseSpec, builderGitSha: "a".repeat(40), sourceInventory,
+    currentTopology, currentTopologyBytes, currentTopologyPath,
+    currentIncheonTopology, currentIncheonTopologyBytes, currentIncheonTopologyPath,
+    currentIncheonAccessibility, currentIncheonAccessibilityBytes, currentIncheonAccessibilityPath,
+    currentIncheonTimetables, currentIncheonTimetableBytes: { 1: line1Bytes, 2: line2Bytes }, currentIncheonTimetablePaths,
+    baselineTopology, baselineTopologyBytes, canonical, productionInput, productionScopePolicyBytes, buildNow,
+    snapshotBytesByPath: await collectPositionSnapshotBytes(sourceInventory),
+    layoutTopologySnapshotBytesById: await collectLayoutTopologySnapshotBytes(sourceInventory),
+  };
+  const admission = buildCurrentTopologySourceAdmissionOutputs(common);
+  assert.equal(Object.hasOwn(admission, "spec"), false);
+  const currentItxTopologyEvidencePath = baseSpec.itxTopologyEvidencePath;
+  const primary = buildCurrentTopologyRefreshPrimaryOutputs({
+    ...common,
+    currentItxTopologyEvidencePath,
+    currentItxTopologyEvidenceBytes: await readFile(path.join(root, currentItxTopologyEvidencePath)),
+  });
+  for (const key of ["sourceInventoryBytes", "reviewedPackBytes", "canonicalBytes", "topologyReverificationBytes"]) {
+    assert.deepEqual(admission[key], primary[key], key);
+  }
+  assert.deepEqual(parseCurrentTopologySourceAdmissionArgs([
+    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260930.json",
+    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260930.json",
+    "--incheon-accessibility", "tools/datapack/sources/incheon-transit-accessibility-20260930T000000000Z.json",
+    "--incheon-line1-timetable", "tools/datapack/sources/incheon-line1-train-timetable-20260930.json",
+    "--incheon-line2-timetable", "tools/datapack/sources/incheon-line2-train-timetable-20260930.json",
+    "--builder-git-sha", "b".repeat(40),
+    "--build-now", "2026-09-30T00:00:00.000Z",
+    "--check",
+  ]), {
+    check: true,
+    capital_topology: "tools/datapack/sources/capital-route-topology-20260930.json",
+    incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260930.json",
+    incheon_accessibility: "tools/datapack/sources/incheon-transit-accessibility-20260930T000000000Z.json",
+    incheon_line1_timetable: "tools/datapack/sources/incheon-line1-train-timetable-20260930.json",
+    incheon_line2_timetable: "tools/datapack/sources/incheon-line2-train-timetable-20260930.json",
+    builder_git_sha: "b".repeat(40),
+    build_now: "2026-09-30T00:00:00.000Z",
+  });
+  for (const flag of ["--itx-topology-evidence", "--itx-current-admission"]) {
+    assert.throws(() => parseCurrentTopologySourceAdmissionArgs([flag, "tools/datapack/x.json"]), /unknown topology source admission argument/);
+  }
 });
 
 test("stale Incheon input은 current topology materialization 전에 fail-closed한다", async () => {

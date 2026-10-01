@@ -264,6 +264,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/846",
       "title": "[Fix] 원천 인벤토리 변경 뒤 fan-in·소유권 원장 고정값 재생성과 드리프트 검사"
     },
+    "data862": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/862",
+      "title": "[Fix] 전국 후보 기준으로 데이터 릴리스 파이프라인 복구(상위 이슈)"
+    },
     "data854": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/854",
       "title": "[Fix] 전국 정본 팩의 운행 요일 값·노선도 라벨 결함으로 release-candidate 빌드 실패"
@@ -603,6 +607,7 @@
     {"path":"tools/datapack/recover-current-live-chain-transfer-observation.test.mjs","semanticOwner":"data560","classes":["required-pr"],"durationMs":37},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":8},
     {"path":"tools/datapack/refresh-current-capital-accessibility-full.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":257524},
+    {"path":"tools/datapack/refresh-nationwide-candidate.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":2100},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":17},
     {"path":"tools/datapack/register-current-seoul-accessibility-snapshot.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":2898},
     {"path":"tools/datapack/register-current-seoul-transfer-source.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":15752},

@@ -279,6 +279,16 @@ test("commits two registrations while preserving existing ledger history and one
   assert.deepEqual(snapshots.at(-1).admissionEvidence.predecessorSnapshotIds, [initialSnapshot]);
 });
 
+test("capital topology 원장 행은 다른 등록기처럼 credentialRedacted: true를 기록한다(#862 결정 #14)", async (t) => {
+  const { root, now } = await fixture(t);
+  const { receiptPath } = await receiptFixture(root, now);
+  const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
+  const snapshot = JSON.parse(outputs[1].bytes).at(-1);
+  assert.equal(snapshot.sourceId, "capital-route-topology");
+  // FACILITY 사전 검사(run-current-capital-facility-operation validateReleasePreflight)는 `=== true`만 통과시킨다.
+  assert.equal(snapshot.credentialRedacted, true);
+});
+
 test("rejects receipt, freshness, and protected-scope mismatches without output mutation", async (t) => {
   const { root, topologyRelative, now } = await fixture(t);
   const { receipt, receiptPath } = await receiptFixture(root, now);

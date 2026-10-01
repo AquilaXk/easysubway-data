@@ -27,14 +27,19 @@ async function lease(port = 0) {
 async function closeLease(server) { if (server.listening) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
 async function closedLeasePort() { const server = await lease(); const { port } = server.address(); await closeLease(server); return port; }
 const lockRecord = (port, token = "00000000-0000-4000-8000-000000000000") => JSON.stringify({ schemaVersion: 1, host: "127.0.0.1", port, pid: process.pid, token });
+// #862 결정 C: 서울 접근성 등록은 원천 snapshot·inventory·원장·원천 입력까지만 쓴다.
 const OUTPUTS = [
   "tools/datapack/source-inventory.json",
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
+];
+const CANDIDATE_SIDE = [
   "tools/datapack/release/candidate-build-spec.json",
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
-  "tools/datapack/release/capital-production-canonical-pack.json",
+];
+const TRACKED = [...OUTPUTS, ...CANDIDATE_SIDE];
+const SUPPORT = [
   "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json",
 ];
@@ -43,8 +48,7 @@ async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "seoul-accessibility-registration-"));
   const readJson = async (relative) => JSON.parse(await readFile(path.join(ROOT, relative), "utf8"));
   const candidate = await readJson("tools/datapack/release/candidate-build-spec.json");
-  const itx = candidate.itxTopologyEvidencePath;
-  for (const relative of [...OUTPUTS, itx]) {
+  for (const relative of [...TRACKED, ...SUPPORT]) {
     const target = path.join(root, relative);
     await mkdir(path.dirname(target), { recursive: true });
     await cp(path.join(ROOT, relative), target);
@@ -104,30 +108,27 @@ async function writeObservation(values, snapshot, receipt) {
   await writeFile(values.receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 }
 
-test("fresh Seoul observation and OCI receipt rebind exactly seven outputs", async (t) => {
+test("fresh Seoul observation registers exactly four source-side outputs and leaves the candidate untouched", async (t) => {
   const values = await fixture();
   t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
-  const before = await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative))));
+  const before = await Promise.all(TRACKED.map((relative) => readFile(path.join(values.root, relative))));
   const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({
     repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath,
     now: values.now,
   });
-  assert.equal(outputs.length, 7);
-  assert.deepEqual(outputs.map(({ relative }) => relative).slice(1), OUTPUTS.slice(0, 6));
+  assert.equal(outputs.length, 4);
+  assert.deepEqual(outputs.map(({ relative }) => relative).slice(1), OUTPUTS);
   assert.equal(outputs[0].relative, `tools/datapack/sources/${values.snapshot.snapshotId}.json`);
   await commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs });
-  const after = await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative))));
-  assert.equal(after.some((bytes, index) => !bytes.equals(before[index])), true);
+  const after = await Promise.all(TRACKED.map((relative) => readFile(path.join(values.root, relative))));
+  OUTPUTS.slice(0, 2).forEach((relative, index) => assert.equal(after[index].equals(before[index]), false, relative));
+  CANDIDATE_SIDE.forEach((relative, offset) => assert.deepEqual(after[OUTPUTS.length + offset], before[OUTPUTS.length + offset], relative));
   const ledger = JSON.parse(await readFile(path.join(values.root, OUTPUTS[1]), "utf8"));
   assert.equal(ledger.at(-1).sourceId, "seoul-metro-accessibility");
   assert.equal(ledger.at(-1).rawObjectUri.startsWith("oci://"), true);
-  const candidate = JSON.parse(await readFile(path.join(values.root, OUTPUTS[3]), "utf8"));
-  assert.equal(candidate.publishedAt, values.now.toISOString());
-  assert.equal(candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-accessibility").snapshotId, ledger.at(-1).snapshotId);
-  const beforeCandidate = JSON.parse(before[3]);
-  for (const projection of beforeCandidate.sourceSnapshots.filter(({ sourceId }) => sourceId !== "seoul-metro-accessibility")) {
-    assert.deepEqual(candidate.sourceSnapshots.find(({ sourceId }) => sourceId === projection.sourceId), projection);
-  }
+  assert.equal(ledger.at(-1).credentialRedacted, true);
+  const inventory = JSON.parse(await readFile(path.join(values.root, OUTPUTS[0]), "utf8"));
+  assert.equal(inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence.snapshotId, ledger.at(-1).snapshotId);
   assert.deepEqual(await readFile(path.join(values.root, values.kricPath)), await readFile(path.join(ROOT, values.kricPath)));
   const beforeInput = JSON.parse(before[2]);
   const afterInput = JSON.parse(await readFile(path.join(values.root, OUTPUTS[2]), "utf8"));
@@ -136,32 +137,34 @@ test("fresh Seoul observation and OCI receipt rebind exactly seven outputs", asy
   const afterHeads = validateLineage(ledger).headsBySource;
   // anti-cheat-allow: circular-oracle -- 무관한 스냅샷 갱신 시 타 영역 head 식별자 보존 검증
   assert.equal(afterHeads["kric-station-convenience-standard"], beforeHeads["kric-station-convenience-standard"]);
-  const selected = ledger.filter(({ snapshotId }) => candidate.sourceSnapshotIds.includes(snapshotId));
-  assert.equal(selected.length, candidate.sourceSnapshotIds.length);
-  assert.equal(selected.some(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration"), true);
-  assert.equal(candidate.sourceSnapshotSetHash, sha(Buffer.from(JSON.stringify(selected))));
-  const request = JSON.parse(await readFile(path.join(values.root, OUTPUTS[4]), "utf8"));
-  const hashes = JSON.parse(await readFile(path.join(values.root, OUTPUTS[5]), "utf8"));
-  assert.equal(request.sourceSnapshotSetHash, candidate.sourceSnapshotSetHash);
-  assert.equal(hashes.sourceSnapshotSetHash.value, candidate.sourceSnapshotSetHash);
-  assert.deepEqual(hashes.perSourceEvidence.map(({ snapshotId }) => snapshotId), selected.map(({ snapshotId }) => snapshotId));
+  assert.equal(afterHeads["seoul-metro-accessibility"], values.snapshot.snapshotId);
+});
+
+test("Seoul registration does not read the candidate spec, request, or hash evidence (#862 결정 C)", async (t) => {
+  const values = await fixture();
+  t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
+  await Promise.all(CANDIDATE_SIDE.map((relative) => rm(path.join(values.root, relative))));
+  const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({
+    repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now,
+  });
+  assert.deepEqual(outputs.map(({ relative }) => relative).slice(1), OUTPUTS);
 });
 
 test("invalid receipt, foreign replacement, and partial commit do not leave a mixed success", async (t) => {
   const values = await fixture();
   t.after(() => Promise.all([rm(values.root, { recursive: true, force: true }), rm(values.observation, { recursive: true, force: true })]));
-  const before = await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative))));
+  const before = await Promise.all(TRACKED.map((relative) => readFile(path.join(values.root, relative))));
   const receipt = JSON.parse(await readFile(values.receiptPath, "utf8"));
   receipt.rawObjectUri = "oci://other-bucket/source-raw/invalid.json";
   await writeFile(values.receiptPath, `${JSON.stringify(receipt)}\n`);
   await assert.rejects(buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now }), /OCI receipt URI/);
-  assert.deepEqual(await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative)))), before);
+  assert.deepEqual(await Promise.all(TRACKED.map((relative) => readFile(path.join(values.root, relative)))), before);
 
   receipt.rawObjectUri = `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/${values.snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${receipt.rawObjectSha256}.json`;
   await writeFile(values.receiptPath, `${JSON.stringify(receipt)}\n`);
   const outputs = await buildCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, snapshotPath: values.snapshotPath, receiptPath: values.receiptPath, now: values.now });
   await assert.rejects(commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs, failAfter: 2 }), /injected transaction failure/);
-  assert.deepEqual(await Promise.all(OUTPUTS.slice(0, 6).map((relative) => readFile(path.join(values.root, relative)))), before);
+  assert.deepEqual(await Promise.all(TRACKED.map((relative) => readFile(path.join(values.root, relative)))), before);
 
   await writeFile(path.join(values.root, OUTPUTS[0]), "foreign");
   await assert.rejects(commitCurrentSeoulAccessibilityRegistrationOutputs({ repositoryRoot: values.root, outputs }), /preserves foreign replacement/);

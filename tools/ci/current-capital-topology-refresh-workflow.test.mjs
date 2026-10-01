@@ -23,8 +23,8 @@ test("derived GitHub environment values use physical records", () => {
 test("activation dependencies are validated after GitHub environment update", () => {
   const derive = stepBody("Derive current activation dependencies");
   const validate = stepBody("Validate current activation dependencies");
-  assert.doesNotMatch(derive, /\$\{TOPOLOGY_INCHEON_ACCESSIBILITY_PATH\}|\$\{TOPOLOGY_ITX_EVIDENCE_PATH\}/);
-  assert.match(validate, /\[\[ -f "\$\{TOPOLOGY_INCHEON_ACCESSIBILITY_PATH\}" && -f "\$\{TOPOLOGY_ITX_EVIDENCE_PATH\}" && ! -e "\$\{TOPOLOGY_REVERIFICATION_PATH\}" \]\]/);
+  assert.doesNotMatch(derive, /\$\{TOPOLOGY_INCHEON_ACCESSIBILITY_PATH\}/);
+  assert.match(validate, /\[\[ -f "\$\{TOPOLOGY_INCHEON_ACCESSIBILITY_PATH\}" && ! -e "\$\{TOPOLOGY_REVERIFICATION_PATH\}" \]\]/);
   assert.ok(yml.indexOf("Derive current activation dependencies") < yml.indexOf("Validate current activation dependencies"));
   assert.ok(yml.indexOf("Validate current activation dependencies") < yml.indexOf("Activate current topology inputs exactly once"));
 });
@@ -96,27 +96,26 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.match(collectItx, /collection_input="\$\{TOPOLOGY_OPERATION_ROOT\}\/itx-completeness\.json"[\s\S]*if \[\[ "\$\{collector_status\}" == "1" \]\]; then collection_input="\$\{TOPOLOGY_OPERATION_ROOT\}\/itx-result\.json"; fi[\s\S]*--collection "\$\{collection_input\}"/);
   assert.match(collectItx, /run-current-itx-collection\.mjs[\s\S]*--freshness-output "\$\{TOPOLOGY_OPERATION_ROOT\}\/freshness\.json"/);
   assert.match(yml, /build-itx-current-topology-admission\.mjs[\s\S]*--collection[\s\S]*--coverage-contract tools\/datapack\/itx-cheongchun-coverage-contract\.json[\s\S]*--output/);
-  assert.match(yml, /TOPOLOGY_BUILD_NOW/); assert.equal((yml.match(/activate-current-source-set\.mjs --topology-only/g) ?? []).length, 2); assert.match(yml, /--check/);
-  assert.match(yml, /registrationEvidence\.snapshotId/); assert.match(yml, /itxTopologyEvidencePath/); assert.match(yml, /source_key="\$\{key\}_SOURCE"; source="\$\{!source_key\}"/); assert.match(yml, /itxRefreshRequired: process\.env\.ITX_REFRESH_REQUIRED === "true"/); assert.match(yml, /four-input topology claim must not select an ITX admission/); assert.match(yml, /five-input topology claim ITX admission binding is invalid/); assert.match(yml, /exactly four or five immutable current topology inputs/);
+  assert.match(yml, /TOPOLOGY_BUILD_NOW/); assert.equal((yml.match(/activate-current-source-set\.mjs --topology-source-admission/g) ?? []).length, 2); assert.match(yml, /--check/);
+  assert.doesNotMatch(yml, /--topology-only|--itx-current-admission|itx_args/);
+  assert.match(yml, /registrationEvidence\.snapshotId/); assert.match(yml, /source_key="\$\{key\}_SOURCE"; source="\$\{!source_key\}"/); assert.match(yml, /itxRefreshRequired: process\.env\.ITX_REFRESH_REQUIRED === "true"/); assert.match(yml, /four-input topology claim has an ITX admission/); assert.match(yml, /five-input topology claim is missing its ITX admission/); assert.match(yml, /exactly four or five immutable current topology inputs/);
   const recovery = stepBody("Recover a completed claimed refresh");
   assert.match(recovery, /git diff --quiet HEAD "origin\/\$\{branch\}\^\^"/);
   assert.match(recovery, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^\^" "origin\/\$\{branch\}\^"/);
   assert.match(recovery, /git diff --name-only --diff-filter=ACMR "origin\/\$\{branch\}\^" "origin\/\$\{branch\}"/);
   assert.match(recovery, /topology input commit must change exactly four or five paths/);
-  assert.match(recovery, /topology activation commit must change a nonempty subset of the seven activation paths/);
+  assert.match(recovery, /topology activation commit must change a nonempty subset of the four source admission paths/);
   assert.match(recovery, /capital-topology-reverification-\[0-9\]\{8\}/);
   assert.doesNotMatch(recovery, /exactly eleven or twelve paths/);
   const activate = stepBody("Activate current topology inputs exactly once");
-  assert.match(activate, /topology activation must change a nonempty subset of the seven activation paths/);
+  assert.match(activate, /topology activation must change a nonempty subset of the four source admission paths/);
   assert.match(activate, /grep -Fqx "\$\{TOPOLOGY_REVERIFICATION_PATH\}"/);
   assert.match(activate, /topology activation changed an unsupported path/);
-  assert.ok(activate.indexOf('git commit -m "Activate current topology inputs"') < activate.indexOf("--topology-only --check"));
-  assert.ok(activate.indexOf("--topology-only --check") < activate.indexOf('[[ -z "$(git diff --name-only)"'));
+  assert.ok(activate.indexOf('git commit -m "Activate current topology inputs"') < activate.indexOf("--topology-source-admission --check"));
+  assert.ok(activate.indexOf("--topology-source-admission --check") < activate.indexOf('[[ -z "$(git diff --name-only)"'));
   assert.ok(activate.indexOf('[[ -z "$(git diff --name-only)"') < activate.indexOf('git push origin "${TOPOLOGY_BRANCH}"'));
   assert.doesNotMatch(activate, /exactly seven activation paths/);
   assert.doesNotMatch(yml, /- name: Verify current topology activation exactly once/);
-  assert.equal((yml.match(/itx_args=\(\)/g) ?? []).length, 1);
-  assert.match(yml, /if \[\[ "\$\{\{ steps\.decision\.outputs\.itx_refresh_required \}\}" == "true" \]\]; then itx_args=\(--itx-current-admission "\$\{TOPOLOGY_ITX_ADMISSION_PATH\}"\); fi/);
   assert.match(stepBody("Activate current topology inputs exactly once"), /env:\n\s+GH_TOKEN: \$\{\{ github\.token \}\}/);
   const uploadItx = stepBody("Upload sanitized ITX review evidence");
   assert.match(uploadItx, /steps\.decision\.outputs\.itx_refresh_required == 'true'/);
@@ -125,4 +124,18 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.doesNotMatch(uploadItx, /provider-response|credential|secret|raw-response/i);
   assert.match(yml, /secrets\.DATA_GO_KR_SERVICE_KEY/);
   assert.match(yml, /Refs #636, #625/); assert.doesNotMatch(yml, /oci:|aws|retry|fallback|automerge|git push origin main/i);
+});
+
+test("topology refresh ends at source admission and never commits candidate-side outputs (#862 결정 C)", () => {
+  for (const candidateSide of ["release-request.json", "hash-evidence.json"]) {
+    assert.equal(yml.includes(candidateSide), false, `${candidateSide} belongs to the nationwide candidate refresh`);
+  }
+  // 후보 spec은 due 판정 입력으로만 읽는다.
+  assert.deepEqual(yml.match(/[^\n]*candidate-build-spec\.json[^\n]*/g)?.map((line) => line.trim().split(" ").slice(0, 3).join(" ")), [
+    "node tools/ci/decide-current-capital-topology-refresh.mjs --inventory",
+  ]);
+  const activate = stepBody("Activate current topology inputs exactly once");
+  assert.match(activate, /allowed_activation_paths=\(tools\/datapack\/source-inventory\.json tools\/datapack\/release\/capital-production-reviewed-pack\.json tools\/datapack\/release\/capital-production-canonical-pack\.json "\$\{TOPOLOGY_REVERIFICATION_PATH\}"\)/);
+  const recovery = stepBody("Recover a completed claimed refresh");
+  assert.match(recovery, /grep -Ev '\^\(tools\/datapack\/source-inventory\\\.json\|tools\/datapack\/release\/\(capital-production-reviewed-pack\\\.json\|capital-production-canonical-pack\\\.json\|capital-topology-reverification-\[0-9\]\{8\}\\\.json\)\)\$'/);
 });
