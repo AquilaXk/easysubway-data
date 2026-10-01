@@ -13,7 +13,7 @@ test("current runner exposes only the input-only v2 transition", async () => {
 test("v2 transition is input-only, builds once, exact-main fences registration, and registers once", async () => {
   const calls = []; const positionRawBytes = Buffer.from("position"); const molitRawBytes = Buffer.from("molit");
   const result = await runPublicStaticNetworkV2Transition({ repositoryRoot, positionRawBytes, molitRawBytes, positionReceipt: { receipt: "position" }, molitReceipt: { receipt: "molit" }, capturedAt: "2026-08-25T00:00:00.000Z",
-    assertExactMain: async () => { calls.push("main"); return "a".repeat(40); },
+    assertSelectedHead: async () => { calls.push("main"); return "a".repeat(40); },
     produceImpl: (input) => { calls.push(input); return { output: true }; },
     registerImpl: async (input) => { calls.push(input); return { outputs: ["ok"] }; },
   });

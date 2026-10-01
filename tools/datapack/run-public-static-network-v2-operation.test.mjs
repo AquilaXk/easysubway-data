@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { runPublicStaticNetworkV2Operation } from "./run-public-static-network-v2-operation.mjs";
+import { parsePublicStaticNetworkV2OperationArgs, runPublicStaticNetworkV2Operation } from "./run-public-static-network-v2-operation.mjs";
 import { parseSeoulRouteMapPositionsCsv } from "./collect-seoul-route-map-positions.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 
@@ -50,11 +50,11 @@ test("one-shot v2 operation validates both raws before exactly two OCI publicati
   const published = []; const transitions = [];
   const result = await runPublicStaticNetworkV2Operation({
     repositoryRoot: root, operationRoot, now, env, serviceKey: "test-key",
-    assertExactMain: async () => "a".repeat(40), collectImpl: async () => raw,
+    assertSelectedHead: async () => "a".repeat(40), collectImpl: async () => raw,
     publishImpl: async (input) => { published.push(input); return { sourceId: input.sourceId, snapshotId: input.snapshotId, capturedAt: input.capturedAt }; },
-    transitionImpl: async (input) => { transitions.push(input); return { outputs: Array(5).fill("output") }; },
+    transitionImpl: async (input) => { transitions.push(input); return { outputs: Array(4).fill("output") }; },
   });
-  assert.deepEqual(result, { outputs: Array(5).fill("output") });
+  assert.deepEqual(result, { outputs: Array(4).fill("output") });
   assert.deepEqual(published.map(({ sourceId, rawRelativePath }) => [sourceId, rawRelativePath]), [
     ["seoul-metro-route-map-positions", "positions.raw.json"], ["molit-urban-rail-full-route", "molit.raw.csv"],
   ]);
@@ -70,7 +70,7 @@ test("one-shot v2 operation never publishes after collection or raw validation f
   t.after(() => rm(operationRoot, { recursive: true, force: true }));
   let publications = 0; let transitions = 0;
   await assert.rejects(runPublicStaticNetworkV2Operation({
-    repositoryRoot: root, operationRoot, now, env, serviceKey: "test-key", assertExactMain: async () => "a".repeat(40),
+    repositoryRoot: root, operationRoot, now, env, serviceKey: "test-key", assertSelectedHead: async () => "a".repeat(40),
     collectImpl: async () => ({ ...raw, molitRawBytes: Buffer.from("invalid") }),
     publishImpl: async () => { publications += 1; }, transitionImpl: async () => { transitions += 1; },
   }), /PUBLIC_STATIC_NETWORK_V2_MOLIT_SCHEMA/);
@@ -93,7 +93,7 @@ test("one-shot v2 operation rejects stale, future-dated, or mismatched topology 
     t.after(() => rm(operationRoot, { recursive: true, force: true }));
     let collections = 0; let publications = 0; let transitions = 0;
     await assert.rejects(runPublicStaticNetworkV2Operation({
-      repositoryRoot, operationRoot, now: at, env, serviceKey: "test-key", assertExactMain: async () => "a".repeat(40),
+      repositoryRoot, operationRoot, now: at, env, serviceKey: "test-key", assertSelectedHead: async () => "a".repeat(40),
       collectImpl: async () => { collections += 1; return raw; },
       publishImpl: async () => { publications += 1; }, transitionImpl: async () => { transitions += 1; },
     }), expected);
@@ -107,7 +107,7 @@ test("one-shot v2 operation stops before transition when main changes after both
   let mainChecks = 0; let publications = 0; let transitions = 0;
   await assert.rejects(runPublicStaticNetworkV2Operation({
     repositoryRoot: root, operationRoot, now, env, serviceKey: "test-key",
-    assertExactMain: async () => (mainChecks += 1) === 1 ? "a".repeat(40) : "b".repeat(40),
+    assertSelectedHead: async () => (mainChecks += 1) === 1 ? "a".repeat(40) : "b".repeat(40),
     collectImpl: async () => raw,
     publishImpl: async () => { publications += 1; return { published: publications }; },
     transitionImpl: async () => { transitions += 1; },
@@ -124,4 +124,25 @@ test("one-shot v2 operation rejects malformed DATA_GO_KR_SERVICE_KEY before coll
     collectImpl: async () => { calls += 1; },
   }), /PUBLIC_STATIC_NETWORK_V2_ARGUMENT/);
   assert.equal(calls, 0);
+});
+
+// #862: 수집·게시·등록 모두 같은 명시 main·HEAD SHA로 가드한다. CLI도 두 SHA를 요구한다.
+test("one-shot v2 operation passes the explicit main and selected HEAD to every guard", async (t) => {
+  const operationRoot = await mkdtemp(path.join(os.tmpdir(), "public-static-v2-operation-head-"));
+  t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  const MAIN = "a".repeat(40); const HEAD = "b".repeat(40);
+  const guards = []; const published = []; const transitions = [];
+  await runPublicStaticNetworkV2Operation({
+    repositoryRoot: root, operationRoot, now, env, serviceKey: "test-key", expectedMainSha: MAIN, expectedHeadSha: HEAD,
+    assertSelectedHead: async (input) => { guards.push(input); return HEAD; }, collectImpl: async () => raw,
+    publishImpl: async (input) => { published.push(input); return { sourceId: input.sourceId }; },
+    transitionImpl: async (input) => { transitions.push(input); return { outputs: Array(4).fill("output") }; },
+  });
+  assert.deepEqual(guards.map(({ expectedMainSha, expectedHeadSha }) => [expectedMainSha, expectedHeadSha]), [[MAIN, HEAD], [MAIN, HEAD]]);
+  assert.deepEqual(published.map(({ expectedMainSha, expectedHeadSha }) => [expectedMainSha, expectedHeadSha]), [[MAIN, HEAD], [MAIN, HEAD]]);
+  assert.deepEqual([transitions[0].expectedMainSha, transitions[0].expectedHeadSha], [MAIN, HEAD]);
+  assert.throws(() => parsePublicStaticNetworkV2OperationArgs([operationRoot]), /arguments are invalid/);
+  assert.throws(() => parsePublicStaticNetworkV2OperationArgs(["--operation-root", operationRoot, "--expected-main-sha", MAIN]), /expected-head-sha/);
+  assert.deepEqual(parsePublicStaticNetworkV2OperationArgs(["--operation-root", operationRoot, "--expected-main-sha", MAIN, "--expected-head-sha", HEAD]),
+    { "operation-root": operationRoot, "expected-main-sha": MAIN, "expected-head-sha": HEAD });
 });
