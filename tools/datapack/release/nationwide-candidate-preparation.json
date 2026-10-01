@@ -41,24 +41,24 @@
         "snapshotId": "capital-route-topology-20260724"
       },
       "capitalTopologyCandidate": {
-        "path": "tools/datapack/sources/capital-route-topology-20260904.json",
-        "sha256": "6734a85960a9c14c177f1df6754f764fadfd44a9e2c2627ce77d771b75208d18",
-        "snapshotId": "capital-route-topology-20260904"
+        "path": "tools/datapack/sources/capital-route-topology-20261001.json",
+        "sha256": "f3e0115636b999d442385e81f669b29c197c298bb2320032d7529bb62bc99fdd",
+        "snapshotId": "capital-route-topology-20261001"
       },
       "capitalTopologyReverification": {
-        "path": "tools/datapack/release/capital-topology-reverification-20260904.json",
-        "sha256": "02a70526eb373f2e9925075e588f8b520fc1eeeb292eb53d43655439a897d608"
+        "path": "tools/datapack/release/capital-topology-reverification-20261001.json",
+        "sha256": "ad2431f8a8adb5347042e7eb63557a79c33e9c5974c91e99e10d745160db4eda"
       },
       "capitalTopologyAdmission": {
         "schemaVersion": 1,
         "artifactKind": "capital-network-edge-admission",
         "issue": 2649,
         "status": "ADMITTED",
-        "snapshotId": "capital-route-topology-20260904",
+        "snapshotId": "capital-route-topology-20261001",
         "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-        "reviewedAt": "2026-09-04T17:29:18.428Z",
-        "reverifiedAt": "2026-09-04T17:29:18.428Z",
-        "freshUntil": "2026-09-05T17:29:18.428Z"
+        "reviewedAt": "2026-10-01T04:09:54.809Z",
+        "reverifiedAt": "2026-10-01T04:09:54.809Z",
+        "freshUntil": "2026-10-02T04:09:54.809Z"
       },
       "itxCoverageContract": {
         "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -66,47 +66,78 @@
       },
       "incheonTimetables": {
         "line1": {
-          "path": "tools/datapack/sources/incheon-line1-train-timetable-20260905.json",
-          "sha256": "001151642eaefbf3e0e21ef11efd3d514f95dd75674f3ee1026456b5d7b7f7e6",
-          "snapshotId": "incheon-line1-train-timetable-20260905"
+          "path": "tools/datapack/sources/incheon-line1-train-timetable-20261001.json",
+          "sha256": "e045da956c27715ccc21aaec4df8d22080d27b503790491c1cba7aa4a9715876",
+          "snapshotId": "incheon-line1-train-timetable-20261001"
         },
         "line2": {
-          "path": "tools/datapack/sources/incheon-line2-train-timetable-20260905.json",
-          "sha256": "7d802a53c00c42ed16e3adbb6be4262938b972d017a42db10245e3548efd800c",
-          "snapshotId": "incheon-line2-train-timetable-20260905"
+          "path": "tools/datapack/sources/incheon-line2-train-timetable-20261001.json",
+          "sha256": "cffc06507f69437aa6f2e16f44e5b9e8274c75eec5adffd56efd78ecf8b33fe6",
+          "snapshotId": "incheon-line2-train-timetable-20261001"
         }
       }
     },
     "officialOdFareEvidence": {
       "sourceId": "seoul-metro-official-od-fares",
-      "snapshotId": "seoul-metro-official-od-fares-current-20260826T035408251Z",
-      "rawSha256": "9b15822f3e82d8c360be1c9006ae691ec87c7117e3f8ec47d25eec93132fcb4a"
+      "snapshotId": "seoul-metro-official-od-fares-20260712",
+      "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
+      "admissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
+      "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
+      "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+      "quotes": [
+        {
+          "originStationId": "station-sangnoksu",
+          "destinationStationId": "station-sadang",
+          "sourceId": "seoul-metro-official-od-fares",
+          "snapshotId": "seoul-metro-official-od-fares-20260712",
+          "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+          "gnrlCardFare": 1950,
+          "gnrlCashFare": 2050,
+          "yungCardFare": 1220,
+          "yungCashFare": 2050,
+          "childCardFare": 750,
+          "childCashFare": 750
+        },
+        {
+          "originStationId": "station-sadang",
+          "destinationStationId": "station-sangnoksu",
+          "sourceId": "seoul-metro-official-od-fares",
+          "snapshotId": "seoul-metro-official-od-fares-20260712",
+          "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+          "gnrlCardFare": 1950,
+          "gnrlCashFare": 2050,
+          "yungCardFare": 1220,
+          "yungCashFare": 2050,
+          "childCardFare": 750,
+          "childCashFare": 750
+        }
+      ]
     },
     "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260830151508786.json",
     "itxTopologyEvidenceSha256": "50e2f03b2975c26d488b4f0a23c9a0f5cad7e91a56eb9b7b4977fbbba611745d"
   },
   "releaseIdentity": {
-    "candidateId": "nationwide-candidate-20260923-seq122",
-    "publishedAt": "2026-09-09T03:16:08.098Z",
-    "releaseSequence": 122
+    "candidateId": "nationwide-candidate-20261001-seq123",
+    "publishedAt": "2026-10-01T05:09:26.343Z",
+    "releaseSequence": 123
   },
   "builderIdentity": {
-    "gitSha": "a4c6dc5c7c6a4fc4bf16e93652faab30ca99de39",
+    "gitSha": "2881ba518049a03589c3fce445e1253f4db6e810",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
-    "candidateId": "nationwide-candidate-20260923-seq122",
+    "candidateId": "nationwide-candidate-20261001-seq123",
     "scopeId": "nationwide_routing_android_v1",
-    "approvalId": "release-request-nationwide-candidate-20260923-seq122",
+    "approvalId": "release-request-nationwide-candidate-20261001-seq123",
     "requestedBy": "data-operator-lead",
     "approvedBy": "data-release-authority"
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "f2dc971aee7b817dcb8c16472638b20110b7135abb5dc58ea173e7463d859168"
+    "sha256": "f8260f01e9996194ef5d02242da099e2e4c7192ef35baf51e4181a881598889b"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "064daad4cc14eb8f76a25c820a4cc9640ef0354833346a80fd74f3795b170029"
+    "sha256": "8fd86f118806a2a47bf50424240313f2484c25e0c55f49d473126a4b2149e1ce"
   }
 }
