@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "eccda1e87c7f8edf571b33fa9c3bef279dc8f61b330a5bd6ec1f3fde6d532edb"
+        "sha256": "ce7722d6335f08b08edb2e99fbc88bcb17670e9e6e3c7bc14e81a64c385ff737"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -31,10 +31,10 @@
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "29fca7f164b8df1765e09b758b2cb566173e39bafcd975af4de74f8093608b62",
-        "fanInSha256": "fe9b326067f7b54e649bc999dd6ef1aa5a51ebd6d9fac5e3b67982755e96bca5",
+        "sha256": "b8883e0b83bcca9f4ebfee2e928064e71436e1119425472243de7948969436a5",
+        "fanInSha256": "82ef8131e273f538dc37683154f654eef237e8dea0f86574dac0110475852047",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
-        "sourceSetSha256": "abed69f215ea718daa1f33505f5873ac0479abba4e2cf68da347bdbb9b4f3afd",
+        "sourceSetSha256": "9e4876f896dbb255d0906debaba51b828fbbc80fb51e49eba86e523798687df0",
         "regionalMatrixSha256": "ec59bd620ac189e14a0194516a08b6fc1df05a151514d8d72ecded5a034cb7e5"
       }
     }
@@ -30341,8 +30341,6 @@
                   "verificationTest": "tools/datapack/capital-official-timetable.test.mjs",
                   "snapshotId": "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
                   "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00.json",
-                  "observedAt": "2026-10-02T15:57:05.773Z",
-                  "rawFile": "kric-nationwide-timetable-file-20261003.xlsx",
                   "rawByteLength": 17949564,
                   "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
                   "observationRecordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
@@ -30490,7 +30488,15 @@
                     "sourceDomains": [
                       "schedule_timetable"
                     ]
-                  }
+                  },
+                  "observedAt": "2026-10-02T15:57:05.773Z",
+                  "reverifications": [
+                    {
+                      "observedAt": "2026-10-02T15:57:05.773Z",
+                      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+                      "collectionReceiptSha256": "f8994ba5965b1ad03869a4a7da242e573097efda8f119f17ea5d09d47a56adcc"
+                    }
+                  ]
                 }
               ]
             }
