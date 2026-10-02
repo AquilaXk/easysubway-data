@@ -36,9 +36,10 @@ const LOCAL = (trnNo, dayCd, base = "06") => [trnNo, dayCd, [["T01", null, `${ba
 test("역별 응답을 열차번호·요일로 묶어 시각순 정차열로 재구성한다", () => {
   const result = buildApiStationTimetableTrips({ responses: responses([LOCAL("X1", "8"), LOCAL("H1", "9")]), bindings: [BINDING] });
   assert.equal(result.trips.length, 2);
-  const trip = result.trips.find(({ providerTripKey }) => providerTripKey === "T1|X1|8");
+  const trip = result.trips.find(({ providerTripKey }) => providerTripKey === "T1|X1|8|ASC");
   assert.equal(trip.lineId, "line-api");
-  assert.equal(trip.providerTripKey, "T1|X1|8");
+  assert.equal(trip.providerTripKey, "T1|X1|8|ASC");
+  assert.equal(trip.provenance.direction, "ASC");
   assert.equal(trip.serviceDayKind, "WEEKDAY");
   assert.equal(trip.servicePattern, "LOCAL");
   assert.equal(trip.headsign, "다역");
@@ -65,7 +66,7 @@ test("dayCd 7이 전 역 '데이터 없음'이면 휴일(dayCd 9)을 토·일·�
 
 test("자정을 넘는 열차는 다음날 초로 이어 정렬한다", () => {
   const late = ["X4", "8", [["T01", null, "23:58:00"], ["T02", "00:00:30", "00:01:00"], ["T03", "00:03:00", null]]];
-  const trip = buildApiStationTimetableTrips({ responses: responses([late, LOCAL("H2", "9")]), bindings: [BINDING] }).trips.find(({ providerTripKey }) => providerTripKey === "T1|X4|8");
+  const trip = buildApiStationTimetableTrips({ responses: responses([late, LOCAL("H2", "9")]), bindings: [BINDING] }).trips.find(({ providerTripKey }) => providerTripKey === "T1|X4|8|ASC");
   assert.deepEqual(trip.stops.map(({ stationName }) => stationName), ["가역(부역명)", "나역", "다역"]);
   assert.deepEqual(trip.stops.map(({ arrivalSeconds }) => arrivalSeconds), [null, 86430, 86580]);
 });
@@ -89,6 +90,31 @@ test("중간역 출발이 도착보다 이르면(음수 정차) quarantine한다
   const result = buildApiStationTimetableTrips({ responses: responses([...good, LOCAL("H4", "9"), negative]), bindings: [BINDING] });
   assert.deepEqual(result.quarantine.map(({ providerTripKey, reason }) => [providerTripKey, reason]), [["T1|N1|8", "DWELL_NEGATIVE"]]);
   assert.equal(result.trips.some(({ providerTripKey }) => providerTripKey === "T1|N1|8"), false);
+});
+
+test("연속 정차는 같은 구간의 인접역이고 방향이 일정해야 하며, 방향은 trip 키에 들어간다", () => {
+  const LINE4 = { ...BINDING, stations: [["TT", "T01", "가역(부역명)"], ["TT", "T02", "나역"], ["TT", "T03", "다역"], ["TT", "T04", "라역"]],
+    segments: [["T01", "T02", "T03", "T04"]] };
+  const good = Array.from({ length: 40 }, (_, index) => [`G${index}`, "8", [["T01", null, "06:00:00"], ["T02", "06:02:00", "06:02:30"], ["T03", "06:04:00", "06:04:30"], ["T04", "06:06:00", null]]]);
+  const reverse = ["V1", "8", [["T04", null, "09:00:00"], ["T03", "09:02:00", "09:02:30"], ["T02", "09:04:00", "09:04:30"], ["T01", "09:06:00", null]]];
+  const skip = ["S1", "8", [["T01", null, "07:00:00"], ["T03", "07:04:00", null]]];
+  // 같은 열차번호가 반대 방향 다른 운행(겹치지 않는 역)에 다시 쓰이면 한 그룹으로 섞인다: 혼합 trip이 아니라 quarantine이어야 한다.
+  const reused = ["R1", "8", [["T01", null, "06:30:00"], ["T02", "06:32:00", null], ["T04", null, "08:30:00"], ["T03", "08:32:00", null]]];
+  const result = buildApiStationTimetableTrips({ responses: responses([...good, reverse, skip, reused, ["H5", "9", good[0][2]]], { binding: LINE4 }), bindings: [LINE4] });
+  assert.ok(result.trips.some(({ providerTripKey }) => providerTripKey === "T1|V1|8|DESC"));
+  assert.ok(result.trips.some(({ providerTripKey }) => providerTripKey === "T1|G0|8|ASC"));
+  assert.deepEqual(result.quarantine.map(({ providerTripKey, reason }) => [providerTripKey, reason]),
+    [["T1|R1|8", "INNER_STOP_TIME_MISSING"], ["T1|S1|8", "STOP_SEQUENCE_NOT_ADJACENT"]]);
+  assert.equal(result.trips.some(({ providerTripKey }) => /\|(R1|S1)\|/u.test(providerTripKey)), false);
+});
+
+test("두 구간으로 나뉜 노선(GTX-A형)에서 구간을 건너는 정차열은 quarantine한다", () => {
+  const SPLIT = { ...BINDING, stations: [["TT", "T01", "가역(부역명)"], ["TT", "T02", "나역"], ["TT", "T03", "다역"], ["TT", "T04", "라역"]],
+    segments: [["T01", "T02"], ["T03", "T04"]] };
+  const good = Array.from({ length: 40 }, (_, index) => [`G${index}`, "8", [["T03", null, "06:00:00"], ["T04", "06:03:00", null]]]);
+  const cross = ["C1", "8", [["T01", null, "07:00:00"], ["T02", "07:02:00", "07:02:30"], ["T03", "07:05:00", null]]];
+  const result = buildApiStationTimetableTrips({ responses: responses([...good, cross, ["H6", "9", [["T01", null, "06:00:00"], ["T02", "06:03:00", null]]], ["H7", "9", [["T03", null, "06:00:00"], ["T04", "06:03:00", null]]]], { binding: SPLIT }), bindings: [SPLIT] });
+  assert.deepEqual(result.quarantine.map(({ providerTripKey, reason }) => [providerTripKey, reason]), [["T1|C1|8", "STOP_SEQUENCE_NOT_ADJACENT"]]);
 });
 
 test("역 응답이 빠지거나 오류 코드이거나 행이 요청과 다르면 명시적으로 실패한다", () => {
@@ -125,7 +151,10 @@ test("고정 바인딩은 GTX-A·에버라인·의정부·김포골드·부산�
     ["A", "line-8604048b6430", 9], ["E1", "line-828f04afc588", 15], ["U1", "line-62096860ab09", 15],
     ["G1", "line-5500c1600f71", 10], ["B1", "line-e4cce88f0d7f", 21],
   ]);
+  assert.deepEqual(KRIC_API_STATION_TIMETABLE_BINDINGS.find(({ lnCd }) => lnCd === "A").segments,
+    [["X101", "X102", "X103", "X105", "X106"], ["X108", "X109", "X110", "X111"]]);
   for (const entry of KRIC_API_STATION_TIMETABLE_BINDINGS) {
+    assert.deepEqual(entry.segments.flat().sort(), entry.stations.map(([, stinCd]) => stinCd).sort(), `${entry.lnCd} segments cover stations once`);
     assert.deepEqual(Object.keys(entry.aliasEvidence).sort(), Object.keys(entry.stationAliases).sort(), entry.lnCd);
     for (const name of Object.keys(entry.stationAliases)) assert.ok(entry.stations.some(([, , stinNm]) => stinNm === name), name);
   }

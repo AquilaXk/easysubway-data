@@ -9,6 +9,9 @@ export { HOLIDAY_INCLUDES_SATURDAY_POLICY };
 // 다음 조건을 모두 만족할 때만 채택한다. 하나라도 어기면 그 열차는 quarantine한다(추정·보정 없음).
 //   - 시발역은 도착 없이 출발만, 종착역은 출발 없이 도착만, 중간역은 도착·출발이 모두 있다.
 //   - 정렬 후 시각이 엄격히 증가한다(동시각이면 순서를 정할 수 없어 quarantine).
+//   - 연속 정차가 같은 구간(segment)의 인접역이고 방향이 한쪽으로 일정하다. 응답 행에 방향 필드가 없으므로
+//     방향(구간 순서 기준 ASC/DESC)은 이 검증으로 정하고 trip 키에 넣는다. 같은 열차번호가 다른 운행에 다시 쓰여
+//     한 그룹으로 섞이면 끝점·인접 조건을 어겨 quarantine된다(혼합 trip을 만들지 않는다).
 // 노선 소속·인접 정차는 validateStationRowTripsAgainstPack으로 팩 기준 검증한다.
 
 const SECONDS_PER_DAY = 86_400;
@@ -18,12 +21,14 @@ const SATURDAY_DAY_CD = "7";
 const DAY_CDS = Object.freeze(["7", "8", "9"]);
 const ALIAS_REASON = "KRIC 역사 roster 역명의 부역명 괄호 표기; 팩 역명은 주역명";
 
-function apiBinding(mreaWideCd, lnCd, lineId, stations) {
+function apiBinding(mreaWideCd, lnCd, lineId, stations, segments = [stations.map(([, stinCd]) => stinCd)]) {
   const aliases = Object.fromEntries(stations.map(([, , name]) => name).filter((name) => /\(.+\)$/u.test(name))
     .map((name) => [name, name.replace(/\(.+\)$/u, "")]));
   return Object.freeze({
     mreaWideCd, lnCd, lineId, routeIdPrefix: `route-kric-api-${lnCd.toLowerCase()}`,
     stations: Object.freeze(stations.map((station) => Object.freeze(station))),
+    // 운행 구간별 역 순서(물리 인접 순). roster 순서가 곧 노선 순서인 노선은 한 구간이다.
+    segments: Object.freeze(segments.map((segment) => Object.freeze([...segment]))),
     stationAliases: Object.freeze(aliases),
     aliasEvidence: Object.freeze(Object.fromEntries(Object.entries(aliases).map(([from, to]) => [from, `${ALIAS_REASON} '${to}'`]))),
   });
@@ -31,7 +36,9 @@ function apiBinding(mreaWideCd, lnCd, lineId, stations) {
 
 /** roster 스냅샷 kric-nationwide-route-rosters-20261001T050420765Z.json의 역 목록을 그대로 고정한다. */
 export const KRIC_API_STATION_TIMETABLE_BINDINGS = Object.freeze([
-  apiBinding("01", "A", "line-8604048b6430", [["GX", "X108", "수서"], ["GX", "X109", "성남"], ["GX", "X110", "구성"], ["SR", "X111", "동탄"], ["GX", "X106", "서울역"], ["GX", "X105", "연신내"], ["GX", "X103", "대곡"], ["GX", "X102", "킨텍스"], ["GX", "X101", "운정중앙"]]),
+  apiBinding("01", "A", "line-8604048b6430", [["GX", "X108", "수서"], ["GX", "X109", "성남"], ["GX", "X110", "구성"], ["SR", "X111", "동탄"], ["GX", "X106", "서울역"], ["GX", "X105", "연신내"], ["GX", "X103", "대곡"], ["GX", "X102", "킨텍스"], ["GX", "X101", "운정중앙"]],
+  // GTX-A는 운정중앙–서울역, 수서–동탄 두 구간으로 따로 운행한다(창릉·삼성 미개통, roster에 없음).
+  [["X101", "X102", "X103", "X105", "X106"], ["X108", "X109", "X110", "X111"]]),
   apiBinding("01", "E1", "line-828f04afc588", [["EV", "Y110", "기흥(백남준아트센터)"], ["EV", "Y111", "강남대"], ["EV", "Y112", "지석"], ["EV", "Y113", "어정"], ["EV", "Y114", "동백"], ["EV", "Y115", "초당"], ["EV", "Y116", "삼가"], ["EV", "Y117", "시청.용인대"], ["EV", "Y118", "명지대"], ["EV", "Y119", "김량장"], ["EV", "Y120", "용인중앙시장(용인예술과학대)"], ["EV", "Y121", "고진"], ["EV", "Y122", "보평"], ["EV", "Y123", "둔전"], ["EV", "Y124", "전대.에버랜드"]]),
   apiBinding("01", "U1", "line-62096860ab09", [["UL", "0110", "발곡"], ["UL", "0111", "회룡"], ["UL", "0112", "범골"], ["UL", "0113", "경전철의정부"], ["UL", "0114", "의정부시청"], ["UL", "0115", "흥선"], ["UL", "0117", "의정부중앙"], ["UL", "0118", "동오"], ["UL", "0119", "새말"], ["UL", "0120", "경기도청북부청사"], ["UL", "0121", "효자"], ["UL", "0122", "곤제"], ["UL", "0123", "어룡(용현산업단지)"], ["UL", "0124", "송산"], ["UL", "0125", "탑석"]]),
   apiBinding("01", "G1", "line-5500c1600f71", [["GM", "G100", "양촌"], ["GM", "G101", "구래"], ["GM", "G102", "마산"], ["GM", "G103", "장기"], ["GM", "G104", "운양"], ["GM", "G105", "걸포북변"], ["GM", "G106", "사우(김포시청)"], ["GM", "G107", "풍무"], ["GM", "G108", "고촌"], ["GM", "G109", "김포공항"]]),
@@ -67,6 +74,8 @@ export function buildApiStationTimetableTrips({ responses, bindings = KRIC_API_S
     }
     const saturdayCodes = new Set();
     const groups = new Map();
+    const segments = entry.segments ?? [entry.stations.map(([, stinCd]) => stinCd)];
+    const position = new Map(segments.flatMap((segment, segmentIndex) => segment.map((stinCd, index) => [stinCd, { segmentIndex, index }])));
     for (const [railOprIsttCd, stinCd, stinNm] of entry.stations) {
       for (const dayCd of DAY_CDS) {
         const response = lineResponses.get(`${stinCd}|${dayCd}`);
@@ -101,7 +110,7 @@ export function buildApiStationTimetableTrips({ responses, bindings = KRIC_API_S
     let built = 0;
     let bad = 0;
     for (const [key, stops] of groups) {
-      const outcome = reconstructApiTrip(stops);
+      const outcome = reconstructApiTrip(stops, position);
       if (outcome.reason) {
         bad += 1;
         quarantine.push({ lineId: entry.lineId, providerTripKey: key, reason: outcome.reason,
@@ -110,14 +119,16 @@ export function buildApiStationTimetableTrips({ responses, bindings = KRIC_API_S
       }
       built += 1;
       const [, trainNumber, dayCd] = key.split("|");
+      const providerTripKey = `${key}|${outcome.direction}`;
       const terminal = outcome.stops.at(-1).stinNm;
       const canonicalRows = outcome.stops.map(({ stinCd, arvTm, dptTm }) => ({ stinCd, arvTm, dptTm }));
       trips.push({
-        lineId: entry.lineId, providerTripKey: key, serviceDayKind: serviceDayKindByDayCd[dayCd], servicePattern: "LOCAL",
+        lineId: entry.lineId, providerTripKey, serviceDayKind: serviceDayKindByDayCd[dayCd], servicePattern: "LOCAL",
         headsign: entry.stationAliases[terminal] ?? terminal,
         sourceRowSha256: sha256(JSON.stringify(canonicalRows)),
         stops: outcome.stops.map(({ stinNm, arrivalSeconds, departureSeconds }) => ({ stationName: stinNm, arrivalSeconds, departureSeconds })),
-        provenance: { lnCd: entry.lnCd, trainNumber, dayCd, stopOrderBasis: "TIME_ORDER_WITH_ENDPOINT_NULL_PATTERN",
+        provenance: { lnCd: entry.lnCd, trainNumber, dayCd, direction: outcome.direction, segmentIndex: outcome.segmentIndex,
+          stopOrderBasis: "TIME_ORDER_WITH_ENDPOINT_NULL_PATTERN_AND_SEGMENT_ADJACENCY",
           stationCodes: outcome.stops.map(({ stinCd }) => stinCd), saturdayDayCdResult: "03",
           ...(dayCd === "9" ? { serviceDayPolicy: HOLIDAY_INCLUDES_SATURDAY_POLICY } : {}) },
       });
@@ -130,7 +141,7 @@ export function buildApiStationTimetableTrips({ responses, bindings = KRIC_API_S
   return { trips: trips.sort(order), quarantine: quarantine.sort(order), summary };
 }
 
-function reconstructApiTrip(rows) {
+function reconstructApiTrip(rows, position) {
   if (rows.length < 2) return { reason: "SINGLE_STOP_TRIP" };
   if (new Set(rows.map(({ stinCd }) => stinCd)).size !== rows.length) return { reason: "DUPLICATE_STATION" };
   const values = rows.flatMap(({ arrival, departure }) => [arrival, departure]).filter((value) => value !== null);
@@ -150,8 +161,14 @@ function reconstructApiTrip(rows) {
     if (arrivalSeconds !== null && departureSeconds !== null && departureSeconds < arrivalSeconds) return { reason: "DWELL_NEGATIVE" };
     previousDeparture = departureSeconds ?? previousDeparture;
   }
+  const places = stops.map(({ stinCd }) => position.get(stinCd));
+  const step = places[1].index - places[0].index;
+  if (places.some((place) => place.segmentIndex !== places[0].segmentIndex) || Math.abs(step) !== 1
+    || places.some((place, index) => index > 0 && place.index - places[index - 1].index !== step)) {
+    return { reason: "STOP_SEQUENCE_NOT_ADJACENT" };
+  }
   const first = stops[0].departureSeconds;
   const last = stops.at(-1).arrivalSeconds;
   if (last - first > HALF_DAY) return { reason: "TRIP_SPAN_EXCEEDS_HALF_DAY" };
-  return { stops };
+  return { stops, direction: step > 0 ? "ASC" : "DESC", segmentIndex: places[0].segmentIndex };
 }

@@ -61,7 +61,7 @@ test("역 × 요일코드(7·8·9)마다 한 번씩 요청하고 키 없이 원�
     rows: [{ railOprIsttCd: "TT", trnNo: "X8", dayCd: "8", dayNm: "평일", stinCd: "T01", lnCd: "T1", arvTm: null, dptTm: "060000" }] });
   const { trips } = buildApiStationTimetableTrips({ responses: decoded, bindings: [BINDING] });
   assert.deepEqual(trips.map(({ providerTripKey, serviceDayKind }) => [providerTripKey, serviceDayKind]),
-    [["T1|X8|8", "WEEKDAY"], ["T1|X9|9", "SATURDAY_SUNDAY_HOLIDAY"]]);
+    [["T1|X8|8|ASC", "WEEKDAY"], ["T1|X9|9|ASC", "SATURDAY_SUNDAY_HOLIDAY"]]);
 });
 
 test("HTTP 실패·거부 결과코드·JSON 아님은 재시도 없이 명시적으로 실패한다", async () => {
