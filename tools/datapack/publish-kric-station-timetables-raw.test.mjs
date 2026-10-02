@@ -70,3 +70,22 @@ test("게시 전에 수집본 재구성·기대 해시·게시 시각을 검증�
     expectedRawObjectSha256: values.sha256, expectedByteSize: values.bytes.length, env: {}, client: storage.client, now }), /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/u);
   assert.equal(storage.calls.length, 0);
 });
+
+test("저장소 오류에 PAR URL이 있어도 출력하지 않고, 같은 키에 다른 바이트가 있으면 덮어쓰지 않고 거부한다", async (t) => {
+  const values = await fixture(t);
+  const now = new Date(Date.parse(values.artifact.collectedAt) + 60_000);
+  const options = { inputPath: values.inputPath, receiptPath: values.receiptPath, expectedRawObjectSha256: values.sha256,
+    expectedByteSize: values.bytes.length, env: OCI_ENV, now };
+  const par = OCI_ENV.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL;
+  const leaking = { async putObjectIfAbsent() { throw new Error(`HTTP 403 PUT ${par}/source-raw/x`); }, async readObject() { return { exists: false, body: Buffer.alloc(0) }; } };
+  const error = await publishKricStationTimetablesRaw({ ...options, client: leaking }).catch((caught) => caught);
+  assert.equal(error.message, "KRIC station raw object storage publication failed: HTTP 403");
+  assert.equal(error.message.includes("objectstorage"), false);
+  const writes = [];
+  const tampered = {
+    async putObjectIfAbsent(key, bytes) { writes.push(bytes); return false; },
+    async readObject() { return { exists: true, body: Buffer.from("different bytes") }; },
+  };
+  await assert.rejects(publishKricStationTimetablesRaw({ ...options, client: tampered }), /^Error: KRIC station raw object storage publication failed/u);
+  await assert.rejects(readFile(values.receiptPath), /ENOENT/u);
+});
