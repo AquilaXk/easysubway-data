@@ -191,7 +191,8 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   // #872 S1(D1): 공식 지표가 없는 역내 환승은 0s/0m 행으로 두지 않고 뺀다.
   // #872 S2: 서울교통공사 지표가 1~8호선과 상대 노선 전체(102쌍, OFFICIAL 140·DERIVED_RECIPROCAL 64)로 넓어졌다.
   // #872 S3: 부산교통공사 원천의 1~4호선 내부 환승 6역 12방향(OFFICIAL)이 더해졌다.
-  assert.strictEqual(inStationTransfers.length, 216);
+  // #878: 서울교통공사 실측 환승시간만 있는 93방향(0초 1방향 제외)이 표준 보행속도 유도 거리로 더해졌다.
+  assert.strictEqual(inStationTransfers.length, 216 + 93);
   assert.strictEqual(outOfStationTransfers.length, 14);
 
   // 2. ENTRY edges: no fake 90s/50m constant, all 0s/0m
@@ -216,7 +217,7 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   const zeroTransfers = inStationTransfers.filter((e) => e.durationSeconds === 0 && e.distanceMeters === 0);
   const measuredTransfers = inStationTransfers.filter((e) => e.durationSeconds > 0 && e.distanceMeters > 0);
   assert.strictEqual(zeroTransfers.length, 0);
-  assert.strictEqual(measuredTransfers.length, 216);
+  assert.strictEqual(measuredTransfers.length, 216 + 93);
 
   // 5. Canonical pack outdoor transfers must NOT have future timestamps or fabricated NO_STAIRS/AVAILABLE
   const canonicalPack = result.finalPack;
@@ -768,6 +769,7 @@ const BUSAN_TRANSFER_METRICS_PATH = "tools/datapack/release/current-busan-transf
 const BUSAN_TRANSFER_SOURCE_ID = "busan-transportation-route-topology";
 const MEASURED_METRICS_PATH = "tools/datapack/release/current-seoul-measured-transfer-metrics.json";
 const MEASURED_SOURCE_ID = "seoul-metro-transfer-car-door-duration";
+const DISTANCE_DERIVATION = "STANDARD_PACE_FROM_MEASURED_TIME";
 // 이슈 #872 재현 근거의 부산·대구 MOLIT 환승역: 동래(역 밖 횡단 경로를 무단차로 단정), 거제·벡스코(다른 방향 경로 대체).
 const MOLIT_ESTIMATE_STATION_IDS = ["station-dbfe9e072d98", "station-623ba7995f56", "station-fbcc387e1db9"];
 
@@ -795,7 +797,18 @@ async function preparedTransferEvidence() {
       sourceRecordSha256: sha256(JSON.stringify({ distanceSourceRecordSha256: metric.sourceRecordSha256, durationSourceRecordSha256: timed.sourceRecordSha256 })),
     };
   };
-  const metrics = [...seoulMetrics.map(precedence), ...busanMetrics];
+  // #878(QA 결정 2026-10-02): 거리 원천이 없는 실측 방향은 거리 = round(실측초 × 1.2)로 유도한 공식 시간 환승이다.
+  // 유도 표기와 실측 레코드 hash를 함께 결속한다. 실측 0초 방향은 거리·시간이 모두 0이라 서버 근거 판별을 통과하지 못해 사용 불가다.
+  const seoulDirections = new Set(seoulMetrics.map((metric) => `${metric.stationId}\0${metric.fromLineId}\0${metric.toLineId}`));
+  const derivedMetrics = [...measuredByDirection.entries()]
+    .filter(([key, timed]) => !seoulDirections.has(key) && timed.measuredDurationSeconds > 0)
+    .map(([, timed]) => ({
+      stationId: timed.stationId, fromLineId: timed.fromLineId, toLineId: timed.toLineId, sourceId: MEASURED_SOURCE_ID,
+      distanceMeters: Math.round(timed.measuredDurationSeconds * 1.2), officialDurationSecondsReference: timed.measuredDurationSeconds,
+      metricProvenance: "OFFICIAL_SOURCE", distanceDerivation: DISTANCE_DERIVATION,
+      sourceRecordSha256: sha256(JSON.stringify({ derivationPaceMetersPerSecond: 1.2, distanceDerivation: DISTANCE_DERIVATION, durationSourceRecordSha256: timed.sourceRecordSha256 })),
+    }));
+  const metrics = [...seoulMetrics.map(precedence), ...busanMetrics, ...derivedMetrics];
   const metricByDirection = new Map(metrics.map((metric) => [
     `${metric.stationId}\0${metric.fromLineId}\0${metric.toLineId}`, metric,
   ]));
@@ -1053,7 +1066,8 @@ test("#872 S3 한 환승 방향을 두 공식 원천이 함께 주장하면 후�
 
 // #876(QA 결정 2026-10-02): 서울교통공사 실측 환승시간(15098252)은 공식 환승 시간 원천이다. 메인 결정 B(2026-10-02):
 // - 서울교통공사 거리 원천과 겹치는 방향은 시간 = 15098252 실측, 거리 = 서울교통공사 공식 거리다. 두 원천을 모두 기록한다.
-// - 거리 없이 시간만 있는 방향은 지표에 보존하되 전국 후보에서는 사용 불가로 둔다(거리 null 계약 확장은 후속).
+// - #878(QA 결정 2026-10-02, 스키마 v20 계획 대체): 거리 없이 시간만 있는 방향은 거리 = round(실측초 × 1.2)m로 유도한다.
+//   1.2 m/s는 표준 보행속도 앵커(#1700)다. 유도값임을 표기하고, 거리 원천이 있는 방향에는 유도를 쓰지 않는다.
 const MEASURED_TRANSFER_SOURCE_ID = "seoul-metro-transfer-car-door-duration";
 function precedenceFixture() {
   const seoulMetric = { stationId: "station-a", fromLineId: "line-1", toLineId: "line-2", distanceMeters: 120, officialDurationSecondsReference: 100,
@@ -1064,13 +1078,14 @@ function precedenceFixture() {
   const measuredMetric = (fromLineId, toLineId, seconds, stationId = "station-a") => ({ stationId, fromLineId, toLineId, measuredDurationSeconds: seconds,
     distanceMeters: null, metricProvenance: "OFFICIAL_SOURCE", measurement: "MEASURED", sourceRecordSha256: sha256(`${stationId}${fromLineId}${toLineId}`) });
   const measured = { sourceId: MEASURED_TRANSFER_SOURCE_ID, sourceSnapshotId: "measured-snapshot", lastVerifiedAt: "2026-10-01T16:33:24.036Z",
-    metrics: [measuredMetric("line-1", "line-2", 214), measuredMetric("line-2", "line-1", 0), measuredMetric("line-1", "line-3", 300, "station-b")] };
+    metrics: [measuredMetric("line-1", "line-2", 214), measuredMetric("line-2", "line-1", 0), measuredMetric("line-1", "line-3", 300, "station-b"),
+      measuredMetric("line-3", "line-1", 311, "station-b"), measuredMetric("line-1", "line-4", 5, "station-b"), measuredMetric("line-1", "line-4", 0, "station-c")] };
   return { officialByDirection, measured, seoulMetric, measuredMetric };
 }
 
 test("#876 겹치는 방향은 시간=실측 원천, 거리=서울교통공사 공식 거리이고 두 원천의 레코드 hash를 함께 결속한다", () => {
   const { officialByDirection, measured, seoulMetric } = precedenceFixture();
-  const { byDirection, timeOnlyDirections } = applyMeasuredTransferTimePrecedence({ officialByDirection, measured });
+  const { byDirection } = applyMeasuredTransferTimePrecedence({ officialByDirection, measured });
   const merged = byDirection.get("station-a:line-1->line-2");
   assert.equal(merged.durationSeconds, 214, "시간은 실측 원천이 이긴다");
   assert.equal(merged.metric.distanceMeters, 120, "거리는 서울교통공사 공식 거리를 유지한다");
@@ -1088,9 +1103,51 @@ test("#876 겹치는 방향은 시간=실측 원천, 거리=서울교통공사 �
   const reverse = byDirection.get("station-a:line-2->line-1");
   assert.equal(reverse.durationSeconds, 0);
   assert.equal(reverse.metric.metricProvenance, "DERIVED_RECIPROCAL");
-  assert.deepEqual(timeOnlyDirections.map(({ stationId, fromLineId, toLineId, measuredDurationSeconds }) => [stationId, fromLineId, toLineId, measuredDurationSeconds]),
-    [["station-b", "line-1", "line-3", 300]]);
-  assert.equal(byDirection.has("station-b:line-1->line-3"), false, "거리 없는 방향은 후보에서 사용 불가로 둔다");
+  // #878: 거리 원천이 있는 방향은 표준 보행속도 유도를 쓰지 않는다(공식 거리 그대로, 유도 표기 없음).
+  for (const overlap of [merged, reverse]) {
+    assert.equal(overlap.distanceDerivation, undefined, "거리 원천이 있는 방향에 유도 표기가 붙으면 안 된다");
+    assert.equal(overlap.derivationPaceMetersPerSecond, undefined);
+  }
+  assert.equal(reverse.metric.distanceMeters, 120, "역방향 거리도 거리 원천 값 그대로다");
+});
+
+// #878(QA 결정 2026-10-02): 시간만 있는 실측 방향의 거리 = round(실측초 × 1.2)m. 유도값임을 표기하고 실측 레코드 hash와 함께 결속한다.
+test("#878 시간만 있는 실측 방향은 거리 = round(실측초 × 1.2)이고, 유도 표기가 붙어 공식 측정 거리와 구별된다", () => {
+  const { officialByDirection, measured } = precedenceFixture();
+  const { byDirection, derivedDistanceDirections } = applyMeasuredTransferTimePrecedence({ officialByDirection, measured });
+  const expected = [["station-b", "line-1", "line-3", 300, 360], ["station-b", "line-3", "line-1", 311, 373], ["station-b", "line-1", "line-4", 5, 6]];
+  for (const [stationId, fromLineId, toLineId, seconds, meters] of expected) {
+    const timed = measured.metrics.find((metric) => metric.stationId === stationId && metric.fromLineId === fromLineId && metric.toLineId === toLineId);
+    const entry = byDirection.get(`${stationId}:${fromLineId}->${toLineId}`);
+    assert.ok(entry, `${stationId} ${fromLineId}->${toLineId} must be usable with a derived distance`);
+    assert.equal(entry.durationSeconds, seconds, "시간은 실측값 그대로다");
+    assert.equal(entry.metric.distanceMeters, meters, "거리 = round(실측초 × 1.2)");
+    assert.equal(entry.metric.metricProvenance, "OFFICIAL_SOURCE", "근거(시간)는 공식 실측 원천이다");
+    assert.equal(entry.sourceId, MEASURED_TRANSFER_SOURCE_ID);
+    assert.equal(entry.sourceSnapshotId, "measured-snapshot");
+    assert.equal(entry.lastVerifiedAt, "2026-10-01T16:33:24.036Z");
+    assert.equal(entry.distanceDerivation, "STANDARD_PACE_FROM_MEASURED_TIME");
+    assert.equal(entry.derivationPaceMetersPerSecond, 1.2);
+    assert.equal(entry.distanceSource, undefined, "유도 거리는 거리 원천을 주장하지 않는다");
+    assert.equal(entry.durationSourceRecordSha256, timed.sourceRecordSha256);
+    const binding = sha256(JSON.stringify({ derivationPaceMetersPerSecond: 1.2, distanceDerivation: "STANDARD_PACE_FROM_MEASURED_TIME", durationSourceRecordSha256: timed.sourceRecordSha256 }));
+    assert.equal(entry.metric.sourceRecordSha256, binding, "레코드 hash는 유도 표기와 실측 레코드 hash의 결속이다");
+    assert.notEqual(entry.metric.sourceRecordSha256, timed.sourceRecordSha256, "유도 거리 행은 실측 레코드 hash만으로 보이면 안 된다");
+  }
+  assert.deepEqual(derivedDistanceDirections.map(({ stationId, fromLineId, toLineId, measuredDurationSeconds, distanceMeters }) =>
+    [stationId, fromLineId, toLineId, measuredDurationSeconds, distanceMeters]), expected);
+});
+
+// #878: 실측 0초 방향은 유도 거리도 0이다. 서버 근거 판별(distance > 0 || duration > 0)이 0/0을 버리므로 값을 만들지 않고 사용 불가로 남긴다.
+test("#878 시간만 있는 실측 0초 방향은 거리를 만들지 않고 사용 불가 목록에 남긴다", () => {
+  const { officialByDirection, measured } = precedenceFixture();
+  const { byDirection, derivedDistanceDirections, unavailableDirections } = applyMeasuredTransferTimePrecedence({ officialByDirection, measured });
+  assert.equal(byDirection.has("station-c:line-1->line-4"), false, "0초·0m 방향은 후보에 넣지 않는다");
+  assert.equal(derivedDistanceDirections.some(({ stationId }) => stationId === "station-c"), false);
+  assert.deepEqual(unavailableDirections.map(({ stationId, fromLineId, toLineId, measuredDurationSeconds, reason }) => [stationId, fromLineId, toLineId, measuredDurationSeconds, reason]),
+    [["station-c", "line-1", "line-4", 0, "ZERO_MEASURED_DURATION"]]);
+  // 거리 원천과 겹치는 0초 실측은 거리 원천이 있으므로 그대로 쓴다(유도 없음).
+  assert.equal(byDirection.get("station-a:line-2->line-1").durationSeconds, 0);
 });
 
 test("#876 실측 원천이 서울교통공사 거리 원천이 아닌 공식 원천(부산)과 겹치거나 계약이 다르면 실패한다", () => {
@@ -1109,7 +1166,9 @@ test("#876 실측 원천이 서울교통공사 거리 원천이 아닌 공식 �
     /measured transfer direction is duplicated/);
 });
 
-test("#876 전국 후보는 겹치는 방향에 실측 시간·서울 거리를 쓰고, 시간만 있는 방향은 사용 불가로 두며, 팩 원천 목록에 실측 원천을 싣는다", async () => {
+// #878: 시간만 있는 방향(94)은 거리 = round(실측초 × 1.2)로 유도한 VERIFIED 공식 시간 환승이 된다. 실측 0초 방향(중랑 경의중앙→경춘)만 사용 불가로 남는다.
+const ZERO_MEASURED_DIRECTION = "station-edf782c1647a-line-6e39be0cb6e2-line-54a7b980b7c3";
+test("#876 #878 전국 후보는 겹치는 방향에 실측 시간·서울 거리를, 시간만 있는 방향에 실측 시간·유도 거리를 쓰고, 팩 원천 목록에 실측 원천을 싣는다", async () => {
   const { result, metricByDirection, measuredByDirection } = await preparedTransferEvidence();
   const pack = result.finalPack;
   const routeTransfers = new Map(result.routeInput.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map((edge) => [edge.edgeId, edge]));
@@ -1120,7 +1179,7 @@ test("#876 전국 후보는 겹치는 방향에 실측 시간·서울 거리를 
     const id = `${timed.stationId}-${timed.fromLineId}-${timed.toLineId}`;
     const rule = pack.transferRules.find(({ id: ruleId }) => ruleId === `rule-transfer-${id}`);
     assert.ok(rule, `measured direction ${id} must be a canonical transfer pair`);
-    if (metricByDirection.get(key)?.sourceId === MEASURED_SOURCE_ID) {
+    if (metricByDirection.get(key)?.sourceId === MEASURED_SOURCE_ID && metricByDirection.get(key).distanceDerivation === undefined) {
       overlapping += 1;
       assert.equal(routeTransfers.get(`transfer-${id}`).durationSeconds, timed.measuredDurationSeconds);
       assert.equal(rule.minTransferSeconds, timed.measuredDurationSeconds);
@@ -1128,13 +1187,29 @@ test("#876 전국 후보는 겹치는 방향에 실측 시간·서울 거리를 
       continue;
     }
     timeOnly += 1;
-    assert.equal(routeTransfers.has(`transfer-${id}`), false, `time-only direction ${id} must not be a route edge until distance null is contracted`);
-    assert.equal(pack.stationPathwayEdges.some(({ id: edgeId }) => edgeId.startsWith(`pathway-edge-${id}-`)), false);
-    assert.deepEqual([rule.verificationStatus, rule.sourceId, rule.minTransferSeconds, rule.pathwayEdgeId], ["UNVERIFIED", "", 0, null]);
+    if (timed.measuredDurationSeconds === 0) {
+      assert.equal(id, ZERO_MEASURED_DIRECTION);
+      assert.equal(routeTransfers.has(`transfer-${id}`), false, "0초·0m 방향은 서버 근거 판별을 통과하지 못하므로 route edge를 만들지 않는다");
+      assert.equal(pack.stationPathwayEdges.some(({ id: edgeId }) => edgeId.startsWith(`pathway-edge-${id}-`)), false);
+      assert.deepEqual([rule.verificationStatus, rule.sourceId, rule.minTransferSeconds, rule.pathwayEdgeId], ["UNVERIFIED", "", 0, null]);
+      continue;
+    }
+    const derivedMeters = Math.round(timed.measuredDurationSeconds * 1.2);
+    const routeEdge = routeTransfers.get(`transfer-${id}`);
+    assert.ok(routeEdge, `time-only direction ${id} must be a route edge with a derived distance`);
+    assert.deepEqual([routeEdge.durationSeconds, routeEdge.distanceMeters], [timed.measuredDurationSeconds, derivedMeters]);
+    const edge = pack.stationPathwayEdges.find(({ id: edgeId }) => edgeId === `pathway-edge-${id}-walk`);
+    assert.ok(edge, `time-only direction ${id} must be a VERIFIED pathway row`);
+    assert.deepEqual([edge.durationSeconds, edge.distanceMeters, edge.sourceId, edge.provenanceKind, edge.verificationStatus],
+      [timed.measuredDurationSeconds, derivedMeters, MEASURED_SOURCE_ID, "OFFICIAL_SOURCE", "VERIFIED"]);
+    const binding = sha256(JSON.stringify({ derivationPaceMetersPerSecond: 1.2, distanceDerivation: DISTANCE_DERIVATION, durationSourceRecordSha256: timed.sourceRecordSha256 }));
+    assert.deepEqual([edge.providerRecordHash, edge.evidenceHash], [binding, binding], `derived row ${id} must bind the derivation marker`);
+    assert.deepEqual([rule.verificationStatus, rule.sourceId, rule.minTransferSeconds, rule.pathwayEdgeId],
+      ["VERIFIED", MEASURED_SOURCE_ID, timed.measuredDurationSeconds, `pathway-edge-${id}-walk`]);
   }
   assert.deepEqual([overlapping, timeOnly], [169, 94]);
   const measuredEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === MEASURED_SOURCE_ID);
-  assert.equal(measuredEdges.length, 124, "서울 OFFICIAL_SOURCE 거리와 겹치는 방향만 경로 행이 된다");
+  assert.equal(measuredEdges.length, 124 + 93, "서울 OFFICIAL_SOURCE 거리와 겹치는 방향(124)과 유도 거리 방향(93)이 경로 행이 된다");
   const head = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8")).filter(({ sourceId }) => sourceId === MEASURED_SOURCE_ID).at(-1);
   for (const edge of measuredEdges) {
     assert.equal(edge.sourceSnapshotId, head.snapshotId);
