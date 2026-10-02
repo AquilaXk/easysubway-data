@@ -4,10 +4,10 @@
   "candidateId": "nationwide-candidate-20261001-seq123",
   "publishedAt": "2026-10-01T23:36:22.000Z",
   "releaseSequence": 123,
-  "builderGitSha": "72b1426f4cc48de4a0443a7ca72065c39ed8d791",
+  "builderGitSha": "5eb3a557444cc78bd6e28cb39e795ed99e94c675",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "b8eca4f6649b68e7d7e4cd72beb9d2e84e5eaa2bcfde42ab6617c3965af01a7b",
+  "fixtureSha256": "f89712422b05ca7ede84f20045dec229e3fb23c19cd692d55b86990cc9040c4e",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -627,7 +627,7 @@
   "sourceInventorySha256": "356186877215a68d3164101260434cebacd427fc2b061057801a26d596aa9706",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
-    "sha256": "c5e56af9d071df3462b51f4ccc286e5167d802797247d55a9838a15a8ba46487"
+    "sha256": "af5b202334213b9b0013fa059b97477625029581a6f2df771dd32476e006373c"
   },
   "productionScopePolicy": {
     "path": "tools/datapack/nationwide-coverage-targets.json",
