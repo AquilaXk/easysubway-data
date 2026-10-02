@@ -487,17 +487,22 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
 }
 
 // #872 후속(#866 메인 결정 D1 선행): 역 밖 환승 링크는 링크 자체에 공식 VERIFIED 근거가 있을 때만 쓴다.
-// 근거는 OFFICIAL_SOURCE·VERIFIED 표기, 원천 id·snapshot·레코드 hash·evidence hash, 0보다 큰 거리·시간이다.
+// 근거는 OFFICIAL_SOURCE·VERIFIED 표기, inventory에서 productionUseAllowed인 원천 id, 그 원천의 원장 snapshot id,
+// 64자 소문자 hex 레코드 hash·evidence hash, 0보다 큰 거리·시간이다(#883 F1).
 // 근거가 없는 링크는 고정 거리·시간으로 채우지 않고 끝점과 사유만 제외 목록에 남긴다(Fallback 금지, #872 D1).
-export function admitOutOfStationTransferLinks(links) {
+export function admitOutOfStationTransferLinks(links, { sourceInventory, sourceSnapshots }) {
   const admitted = [];
   const excluded = [];
-  const bound = (value) => typeof value === "string" && value !== "";
+  const hash = (value) => typeof value === "string" && SHA256_PATTERN.test(value);
+  const boundToLedger = (link) => (Array.isArray(sourceInventory?.sources) ? sourceInventory.sources : [])
+    .filter((source) => source?.id === link.sourceId && source.productionUseAllowed === true).length === 1
+    && (Array.isArray(sourceSnapshots) ? sourceSnapshots : [])
+      .some((row) => row?.sourceId === link.sourceId && row.snapshotId === link.sourceSnapshotId);
   const positive = (value) => Number.isInteger(value) && value > 0;
   for (const link of links) {
     let reason = null;
     if (link.provenanceKind !== "OFFICIAL_SOURCE" || link.verificationStatus !== "VERIFIED"
-      || ![link.sourceId, link.sourceSnapshotId, link.providerRecordHash, link.evidenceHash].every(bound)) {
+      || !boundToLedger(link) || !hash(link.providerRecordHash) || !hash(link.evidenceHash)) {
       reason = "NO_OFFICIAL_VERIFIED_EVIDENCE";
     } else if (!positive(link.durationSeconds) || !positive(link.distanceMeters)) {
       reason = "NO_OFFICIAL_MEASUREMENT";
@@ -869,7 +874,7 @@ export async function prepareNationwideCandidate({
     { id: "out-link-gwangju-songjeong-dosan", fromStationId: "station-45d732c94df2", fromLineId: "line-e57a361e8892", toStationId: "station-25f856602c61", toLineId: "line-e57a361e8892", bidirectional: true },
   ].map((candidate) => ({ bidirectional: false, ...candidate, provenanceKind: "UNVERIFIED", verificationStatus: "UNVERIFIED" }));
   const { admitted: outOfStationTransferLinks, excluded: excludedOutOfStationTransferLinks } =
-    admitOutOfStationTransferLinks(outOfStationTransferCandidates);
+    admitOutOfStationTransferLinks(outOfStationTransferCandidates, { sourceInventory, sourceSnapshots: snapshots });
 
   const rides = pack.networkEdges.filter((e) => e.edgeType === "RIDE");
   const rideEdges = rides.map((edge) => {
@@ -893,18 +898,15 @@ export async function prepareNationwideCandidate({
   nationwidePack.stationPathwayNodes = stationPathwayNodes;
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
   nationwidePack.transferRules = transferRules;
-  const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => {
-    const clean = {
-      ...link,
-      accessibilityStatus: "UNKNOWN",
-      stairAccessState: "UNKNOWN",
-      curbCutStatus: "UNKNOWN",
-      sidewalkStatus: "UNKNOWN",
-      crossingRisk: "UNKNOWN",
-      coveredRoute: "UNKNOWN",
-    };
-    return clean;
-  });
+  const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => ({
+    ...link,
+    accessibilityStatus: "UNKNOWN",
+    stairAccessState: "UNKNOWN",
+    curbCutStatus: "UNKNOWN",
+    sidewalkStatus: "UNKNOWN",
+    crossingRisk: "UNKNOWN",
+    coveredRoute: "UNKNOWN",
+  }));
   nationwidePack.outOfStationTransferLinks = cleanOutOfStationTransferLinks;
   nationwidePack.networkEdges = rides;
 

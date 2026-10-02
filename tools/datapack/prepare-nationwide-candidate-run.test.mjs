@@ -1265,6 +1265,34 @@ function verifiedOutOfStationLink(overrides = {}) {
   };
 }
 
+const outOfStationEvidenceContext = {
+  sourceInventory: { sources: [{ id: "official-out-of-station-source", productionUseAllowed: true }, { id: "blocked-source", productionUseAllowed: false }] },
+  sourceSnapshots: [{ sourceId: "official-out-of-station-source", snapshotId: "snapshot-1" }, { sourceId: "blocked-source", snapshotId: "blocked-snapshot" }],
+};
+
+test("#883 F1 역 밖 환승 근거는 hash 형식·원천 inventory 허용·원장 snapshot에 결속될 때만 인정된다", () => {
+  const valid = verifiedOutOfStationLink();
+  const badHashes = [
+    verifiedOutOfStationLink({ id: "bad-record-hash", providerRecordHash: "x" }),
+    verifiedOutOfStationLink({ id: "bad-evidence-hash", evidenceHash: "B".repeat(64) }),
+    verifiedOutOfStationLink({ id: "short-hash", providerRecordHash: "a".repeat(63) }),
+  ];
+  const unknownSource = verifiedOutOfStationLink({ id: "unknown-source", sourceId: "no-such-source" });
+  const blockedSource = verifiedOutOfStationLink({ id: "blocked", sourceId: "blocked-source", sourceSnapshotId: "blocked-snapshot" });
+  const unknownSnapshot = verifiedOutOfStationLink({ id: "unknown-snapshot", sourceSnapshotId: "no-such-snapshot" });
+  const otherSourceSnapshot = verifiedOutOfStationLink({ id: "other-source-snapshot", sourceSnapshotId: "blocked-snapshot" });
+  const { admitted, excluded } = admitOutOfStationTransferLinks(
+    [valid, ...badHashes, unknownSource, blockedSource, unknownSnapshot, otherSourceSnapshot], outOfStationEvidenceContext);
+  assert.deepEqual(admitted, [valid]);
+  assert.deepEqual(excluded.map(({ id, reason }) => [id, reason]), [
+    ...badHashes.map(({ id }) => [id, "NO_OFFICIAL_VERIFIED_EVIDENCE"]),
+    ["unknown-source", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+    ["blocked", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+    ["unknown-snapshot", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+    ["other-source-snapshot", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+  ]);
+});
+
 test("#872 역 밖 환승은 링크 자체의 공식 VERIFIED 근거가 있을 때만 남고, 나머지는 사유와 함께 제외된다", () => {
   const verified = verifiedOutOfStationLink();
   const unverified = { id: "out-link-unverified", fromStationId: "station-c", fromLineId: "line-1", toStationId: "station-d", toLineId: "line-3", bidirectional: true, provenanceKind: "UNVERIFIED", verificationStatus: "UNVERIFIED" };
@@ -1274,7 +1302,7 @@ test("#872 역 밖 환승은 링크 자체의 공식 VERIFIED 근거가 있을 �
   const zeroDistance = verifiedOutOfStationLink({ id: "out-link-zero-distance", distanceMeters: 0 });
   const zeroDuration = verifiedOutOfStationLink({ id: "out-link-zero-duration", durationSeconds: 0 });
 
-  const { admitted, excluded } = admitOutOfStationTransferLinks([verified, unverified, noSource, noHash, derived, zeroDistance, zeroDuration]);
+  const { admitted, excluded } = admitOutOfStationTransferLinks([verified, unverified, noSource, noHash, derived, zeroDistance, zeroDuration], outOfStationEvidenceContext);
 
   assert.deepEqual(admitted, [verified], "공식 VERIFIED 근거와 실측 거리·시간이 있는 링크는 그대로 남는다");
   assert.deepEqual(excluded.map(({ id, reason }) => [id, reason]), [
