@@ -427,3 +427,135 @@ test("CLI는 일반 실행과 alert-only의 manifest 누락을 구분한다", ()
   assert.notEqual(alertOnly.status, 0);
   assert.match(alertOnly.stderr, /--current-manifest is required with --alert-only/);
 });
+
+async function runDecisionCli({
+  candidate,
+  current,
+  approved = true,
+  publishAttempted = false,
+  remoteValidationPassed = false,
+  attest = false,
+}) {
+  const { createHash } = await import("node:crypto");
+  const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const dir = await mkdtemp(path.join(tmpdir(), "datapack-release-decision-"));
+  const candidatePath = path.join(dir, "candidate.json");
+  const currentPath = path.join(dir, "current.json");
+  const buildSpecPath = path.join(dir, "build-spec.json");
+  const requestPath = path.join(dir, "request.json");
+  const outputPath = path.join(dir, "decision.json");
+  const candidateBytes = Buffer.from(JSON.stringify(candidate));
+  await Promise.all([
+    writeFile(candidatePath, candidateBytes),
+    writeFile(currentPath, JSON.stringify(current)),
+    writeFile(buildSpecPath, JSON.stringify(buildSpec())),
+  ]);
+  const args = [
+    "tools/datapack/decide-datapack-release.mjs",
+    "--candidate-manifest", candidatePath,
+    "--current-manifest", currentPath,
+    "--build-spec", buildSpecPath,
+    "--strict-validation-status", "PASS",
+    "--evaluation-at", evaluationAt,
+    "--output", outputPath,
+  ];
+  if (approved) {
+    await writeFile(requestPath, JSON.stringify(approval(sha(await readFile(buildSpecPath)))));
+    args.push("--release-request", requestPath);
+  }
+  if (publishAttempted) args.push("--publish-attempted", "true");
+  if (remoteValidationPassed) args.push("--remote-validation-status", "PASS");
+  if (attest) {
+    const reportPath = path.join(dir, "launch-denominator-report.json");
+    const bundlePath = path.join(dir, "release-evidence-bundle.json");
+    const attestation = releaseAttestation({
+      manifestSha256: sha(candidateBytes),
+      releaseSequence: candidate.releaseSequence,
+    });
+    const reportBytes = Buffer.from(JSON.stringify(attestation.launchDenominatorReport));
+    await writeFile(reportPath, reportBytes);
+    await writeFile(bundlePath, JSON.stringify({
+      ...attestation.releaseEvidenceBundle,
+      launchDenominatorReportSha256: sha(reportBytes),
+    }));
+    args.push("--launch-denominator-report", reportPath, "--release-evidence-bundle", bundlePath);
+  }
+  const result = spawnSync(process.execPath, args, { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return { result, decision: JSON.parse(await readFile(outputPath, "utf8")) };
+}
+
+const changedPack = () => ({ ...manifest().packs[0], sha256: hash("f") });
+const expiredCurrent = () => manifest({ expiresAt: "2026-07-14T12:00:00.000Z" });
+
+test("CLI는 FAILED 결정의 사유와 sequence를 stderr에 출력한다", async () => {
+  const { result, decision } = await runDecisionCli({
+    candidate: manifest({ releaseSequence: 123, packs: [changedPack()] }),
+    current: manifest({ releaseSequence: 123 }),
+  });
+
+  assert.equal(decision.outcome, "FAILED");
+  assert.match(result.stderr, /outcome=FAILED/);
+  assert.match(result.stderr, /reasonCodes=PUBLISH_SEQUENCE_NOT_INCREASING/);
+  assert.match(result.stderr, /candidateReleaseSequence=123/);
+  assert.match(result.stderr, /currentReleaseSequence=123/);
+});
+
+test("CLI는 CHANGE_BLOCKED 결정의 사유를 stderr에 출력한다", async () => {
+  const { result, decision } = await runDecisionCli({
+    candidate: manifest({ releaseSequence: 11, packs: [changedPack()] }),
+    current: manifest(),
+    approved: false,
+  });
+
+  assert.equal(decision.outcome, "CHANGE_BLOCKED");
+  assert.match(result.stderr, /outcome=CHANGE_BLOCKED/);
+  assert.match(result.stderr, /reasonCodes=MATERIAL_CHANGE_UNAPPROVED/);
+});
+
+test("CLI는 write가 허가되지 않은 PUBLISH_REQUIRED의 사유를 stderr에 출력한다", async () => {
+  const { result, decision } = await runDecisionCli({
+    candidate: expiredCurrent(),
+    current: expiredCurrent(),
+    approved: false,
+  });
+
+  assert.equal(decision.outcome, "PUBLISH_REQUIRED");
+  assert.equal(decision.productionWriteAllowed, false);
+  assert.match(result.stderr, /outcome=PUBLISH_REQUIRED productionWriteAllowed=false/);
+  assert.match(result.stderr, /reasonCodes=PACK_PUBLISH_FRESHNESS_EXPIRED,PUBLISH_SEQUENCE_NOT_INCREASING,PUBLISH_REQUIRED_NOT_COMPLETED/);
+});
+
+test("CLI는 write가 허가된 PUBLISH_REQUIRED에서는 stderr에 출력하지 않는다", async () => {
+  const { result, decision } = await runDecisionCli({
+    candidate: manifest({ releaseSequence: 124, packs: [changedPack()] }),
+    current: manifest({ releaseSequence: 123 }),
+  });
+
+  assert.equal(decision.outcome, "PUBLISH_REQUIRED");
+  assert.equal(decision.productionWriteAllowed, true);
+  assert.deepEqual(decision.reasonCodes, ["PUBLISH_REQUIRED_NOT_COMPLETED"]);
+  assert.equal(result.stderr, "");
+});
+
+test("CLI는 NO_CHANGE_VALID에서는 stderr에 출력하지 않는다", async () => {
+  const { result, decision } = await runDecisionCli({ candidate: manifest(), current: manifest() });
+
+  assert.equal(decision.outcome, "NO_CHANGE_VALID");
+  assert.equal(decision.productionWriteAllowed, false);
+  assert.equal(result.stderr, "");
+});
+
+test("CLI는 PUBLISHED_AND_VERIFIED에서는 stderr에 출력하지 않는다", async () => {
+  const { result, decision } = await runDecisionCli({
+    candidate: manifest({ releaseSequence: 11, packs: [changedPack()] }),
+    current: expiredCurrent(),
+    publishAttempted: true,
+    remoteValidationPassed: true,
+    attest: true,
+  });
+
+  assert.equal(decision.outcome, "PUBLISHED_AND_VERIFIED");
+  assert.deepEqual(decision.reasonCodes, ["PACK_PUBLISH_FRESHNESS_EXPIRED"]);
+  assert.equal(result.stderr, "");
+});
