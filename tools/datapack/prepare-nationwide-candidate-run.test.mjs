@@ -5,7 +5,9 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { admitOutOfStationTransferLinks, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+
+import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -162,12 +164,13 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
     (r) => r.state === "UNKNOWN" && r.evidenceKind === "PROVIDER_NO_DATA" && r.evidenceReason === "TRANSFER_DATA_NOT_PROVIDED"
   );
   // #872 S2: 서울교통공사 환승 지표 끝점이 27에서 160으로 늘어 미측정 환승 역-노선이 251에서 118로 줄었다.
-  assert.strictEqual(transferUnknown.length, 118, "Unmeasured transfer stations must be UNKNOWN/PROVIDER_NO_DATA");
+  // #876: 실측 환승시간 원천이 뒷받침하는 역내 환승 간선의 끝점 77칸이 닫혀 118에서 41로 줄었다.
+  assert.strictEqual(transferUnknown.length, 41, "Unmeasured transfer stations must be UNKNOWN/PROVIDER_NO_DATA");
 
   const transferPresent = transferRows.filter(
     (r) => r.state === "VERIFIED_PRESENT" && r.evidenceKind === "OBSERVED"
   );
-  assert.strictEqual(transferPresent.length, 186, "Measured transfer stations must be VERIFIED_PRESENT");
+  assert.strictEqual(transferPresent.length, 186 + 77, "Measured transfer stations must be VERIFIED_PRESENT");
 });
 
 test("nationwide route edge input rejects fake constants and unverified outdoor links", async () => {
@@ -1222,6 +1225,129 @@ test("#876 #878 전국 후보는 겹치는 방향에 실측 시간·서울 거�
   assert.ok(packSource.fields.includes("station_pathway_edges") && packSource.fields.includes("transfer_rules"));
 });
 
+// #876(#866 메인 결정 D1 선행): 역내 환승 간선의 양끝 TRANSFER 칸은 그 간선을 뒷받침하는 공식 환승 원천(서울 거리·서울 실측 시간·부산)의
+// 레코드로 닫는다. 증거 필드(원천 id·snapshot·원문 hash·레코드 hash·신선도·라이선스)는 서울 거리 원천과 같은 기준으로 그 원천의 원장에서 온다.
+// MOLIT 환승 이동 원천은 새로 닫는 근거로 쓰지 않는다(#872). 근거가 없는 칸은 UNKNOWN으로 남는다.
+test("#876 역내 환승 간선 양끝 TRANSFER 칸은 간선을 뒷받침하는 공식 원천(실측·부산) 레코드로 닫히고, MOLIT 근거는 늘지 않는다", async () => {
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+    writeFiles: false,
+  });
+  const read = async (relativePath) => JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
+  const cells = new Map(result.stationLineInput.evidenceRows.filter(({ domain }) => domain === "TRANSFER")
+    .map((row) => [`${row.stationId}:${row.lineId}`, row]));
+  const transferEdges = result.routeInput.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
+  const edgeIds = new Set(transferEdges.map(({ edgeId }) => edgeId));
+  const endpoints = new Set(transferEdges.flatMap(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId]));
+
+  // 1. 양끝이 닫히지 않은 역내 환승 간선은 0개다(이전 73개).
+  const open = transferEdges.filter(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId]
+    .some((node) => cells.get(node)?.state !== "VERIFIED_PRESENT"));
+  assert.deepEqual(open.map(({ edgeId }) => edgeId), []);
+
+  // 2. 기대 증거: 서울 거리 원천이 닿는 칸은 기존 그대로, 그 밖의 끝점은 간선을 뒷받침하는 부산·실측 원천의 레코드다.
+  const fanIn = await read("tools/datapack/release/current-five-region-source-fan-in.json");
+  const busanHead = fanIn.selectedSources.find(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID);
+  const measuredRow = (await read("tools/datapack/release/source-snapshots.json")).filter(({ sourceId }) => sourceId === MEASURED_SOURCE_ID).at(-1);
+  const measuredInventory = (await read("tools/datapack/source-inventory.json")).sources.find(({ id }) => id === MEASURED_SOURCE_ID);
+  assert.equal(measuredInventory.admissionEvidence.snapshotId, measuredRow.snapshotId);
+  const seoulCells = new Set((await read(TRANSFER_METRICS_PATH)).metrics
+    .flatMap(({ stationId, fromLineId, toLineId }) => [`${stationId}:${fromLineId}`, `${stationId}:${toLineId}`]));
+  const backingRecords = (metrics) => {
+    const byCell = new Map();
+    for (const metric of metrics) {
+      if (!edgeIds.has(`transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`)) continue;
+      for (const lineId of [metric.fromLineId, metric.toLineId]) {
+        const cell = `${metric.stationId}:${lineId}`;
+        byCell.set(cell, [...(byCell.get(cell) ?? []), metric]);
+      }
+    }
+    return byCell;
+  };
+  const busanRecords = backingRecords((await read(BUSAN_TRANSFER_METRICS_PATH)).metrics);
+  const measuredRecords = backingRecords((await read(MEASURED_METRICS_PATH)).metrics);
+  const evidence = (row) => [row.state, row.sourceId, row.sourceSnapshotId, row.evidenceRawSha256, row.providerRecordHash,
+    row.capturedAt, row.freshUntil, row.provenanceId, row.licenseId, row.evidenceKind, row.evidenceReason];
+  let busanClosed = 0;
+  let measuredClosed = 0;
+  for (const cell of endpoints) {
+    if (seoulCells.has(cell)) {
+      assert.equal(cells.get(cell).sourceId, SEOUL_TRANSFER_SOURCE_ID, `${cell} keeps the Seoul distance evidence`);
+      continue;
+    }
+    if (busanRecords.has(cell)) {
+      busanClosed += 1;
+      assert.equal(measuredRecords.has(cell), false);
+      assert.deepEqual(evidence(cells.get(cell)), ["VERIFIED_PRESENT", BUSAN_TRANSFER_SOURCE_ID, busanHead.snapshotId, busanHead.rawSha256,
+        sha256(canonicalJson(busanRecords.get(cell))), busanHead.capturedAt, busanHead.freshnessExpiresAt, busanHead.rawSha256,
+        busanHead.licenseRecordSha256, "OBSERVED", "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT"], `${cell} must be closed by the Busan record`);
+      continue;
+    }
+    assert.ok(measuredRecords.has(cell), `${cell} must be backed by an official transfer source`);
+    measuredClosed += 1;
+    assert.deepEqual(evidence(cells.get(cell)), ["VERIFIED_PRESENT", MEASURED_SOURCE_ID, measuredRow.snapshotId, measuredRow.rawSha256,
+      sha256(canonicalJson(measuredRecords.get(cell))), measuredRow.capturedAt, measuredRow.freshnessExpiresAt, measuredRow.rawSha256,
+      measuredInventory.admissionEvidence.licenseEvidenceHash, "OBSERVED", "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT"],
+    `${cell} must be closed by the measured record`);
+  }
+  assert.deepEqual([busanClosed, measuredClosed], [12, 77]);
+
+  // 3. 실측 0초 방향(간선 없음)의 레코드는 칸 근거에 들어가지 않는다.
+  const [zeroStation] = ZERO_MEASURED_DIRECTION.split(/-(?=line-|seoul-)/u);
+  for (const cell of endpoints) {
+    if (!cell.startsWith(`${zeroStation}:`) || cells.get(cell).sourceId !== MEASURED_SOURCE_ID) continue;
+    assert.ok(measuredRecords.get(cell).every(({ measuredDurationSeconds }) => measuredDurationSeconds > 0));
+  }
+
+  // 4. MOLIT 근거는 늘지 않고, 어떤 간선의 끝점도 MOLIT로 닫히지 않는다.
+  const molitCells = [...cells.values()].filter(({ sourceId }) => sourceId === MOLIT_TRANSFER_SOURCE_ID);
+  assert.equal(molitCells.length, 14, "부산 환승 간선 끝점 12칸은 부산 원천 레코드로 옮겨지고 나머지 MOLIT 칸만 남는다");
+  assert.equal(molitCells.filter(({ stationId, lineId }) => endpoints.has(`${stationId}:${lineId}`)).length, 0);
+
+  // 5. 끝점이 아닌 칸은 그대로다: 단일 노선 NOT_APPLICABLE 798, 서울 거리 원천 VERIFIED_PRESENT 160, 나머지 UNKNOWN.
+  const tally = (predicate) => [...cells.values()].filter(predicate).length;
+  assert.equal(tally(({ state }) => state === "NOT_APPLICABLE"), 798);
+  assert.equal(tally(({ state, sourceId }) => state === "VERIFIED_PRESENT" && sourceId === SEOUL_TRANSFER_SOURCE_ID), 160);
+  const unknown = [...cells.values()].filter(({ state }) => state === "UNKNOWN");
+  assert.equal(unknown.length, 118 - 77);
+  for (const row of unknown) {
+    assert.equal(endpoints.has(`${row.stationId}:${row.lineId}`), false, "UNKNOWN 칸은 역내 환승 간선의 끝점이 아니다");
+    assert.deepEqual([row.sourceId, row.evidenceKind, row.evidenceReason], [SEOUL_TRANSFER_SOURCE_ID, "PROVIDER_NO_DATA", "TRANSFER_DATA_NOT_PROVIDED"]);
+  }
+});
+
+test("#876 끝점 근거 레코드는 route edge가 있고 그 방향을 실제로 뒷받침하는 원천의 레코드만 모은다", () => {
+  const metric = (stationId, fromLineId, toLineId, extra = {}) => ({ stationId, fromLineId, toLineId, sourceRecordSha256: "a".repeat(64), ...extra });
+  const measured = [
+    metric("s1", "l1", "l2", { measuredDurationSeconds: 30 }),
+    metric("s1", "l2", "l1", { measuredDurationSeconds: 0 }),
+    metric("s2", "l1", "l3", { measuredDurationSeconds: 40 }),
+  ];
+  const busan = [metric("s3", "l4", "l5")];
+  const officialByDirection = new Map([
+    ["s1:l1->l2", { sourceId: MEASURED_SOURCE_ID }],
+    ["s2:l1->l3", { sourceId: SEOUL_TRANSFER_SOURCE_ID }],
+    ["s3:l4->l5", { sourceId: BUSAN_TRANSFER_SOURCE_ID }],
+  ]);
+  const records = officialTransferEndpointRecords({
+    edgeDirections: new Set(["s1:l1->l2", "s2:l1->l3", "s3:l4->l5"]),
+    officialByDirection,
+    sources: [{ sourceId: MEASURED_SOURCE_ID, metrics: measured }, { sourceId: BUSAN_TRANSFER_SOURCE_ID, metrics: busan }],
+  });
+  assert.deepEqual([...records.keys()].sort(), ["s1\0l1", "s1\0l2", "s3\0l4", "s3\0l5"]);
+  assert.deepEqual(records.get("s1\0l1"), { sourceId: MEASURED_SOURCE_ID, metrics: [measured[0]] }, "간선 없는 0초 방향은 빠진다");
+  assert.deepEqual(records.get("s3\0l5"), { sourceId: BUSAN_TRANSFER_SOURCE_ID, metrics: busan });
+  assert.equal(records.has("s2\0l1"), false, "다른 원천(서울 거리)이 뒷받침하는 방향은 실측 레코드로 닫지 않는다");
+
+  assert.throws(() => officialTransferEndpointRecords({
+    edgeDirections: new Set(["s1:l1->l2", "s1:l2->l3"]),
+    officialByDirection: new Map([["s1:l1->l2", { sourceId: MEASURED_SOURCE_ID }], ["s1:l2->l3", { sourceId: BUSAN_TRANSFER_SOURCE_ID }]]),
+    sources: [{ sourceId: MEASURED_SOURCE_ID, metrics: [metric("s1", "l1", "l2")] }, { sourceId: BUSAN_TRANSFER_SOURCE_ID, metrics: [metric("s1", "l2", "l3")] }],
+  }), /claimed by two official transfer sources/u);
+});
+
 // #879 리뷰 F1: 후보 시계(evaluatedAt = publishedAt)는 후보가 인용하는 원문 OCI 객체의 저장 시각(receipt storedAt)보다 앞설 수 없다.
 test("#879 F1 후보 시계가 인용 원문의 OCI 저장 시각보다 앞서면 후보 생성이 실패한다", () => {
   const stored = [{ sourceId: "a", storedAt: "2026-10-01T22:47:24.547Z" }, { sourceId: "b", storedAt: "2026-10-01T05:09:04.373Z" }];
@@ -1248,6 +1374,12 @@ test("#879 F1 실측 환승 원천은 원장 영수증 hash에 결속된 OCI 영
   const tampered = async (relative) => (relative.endsWith(".receipt.json") ? Buffer.from((await read(relative)).toString("utf8").replace(receipt.storedAt, "2026-10-01T16:40:00.000Z")) : read(relative));
   await assert.rejects(resolveSeoulMeasuredTransferMetrics({ sourceInventory, sourceSnapshots, freshnessPolicy, evaluatedAt: receipt.storedAt, read: tampered }),
     /nationwide candidate Seoul measured transfer receipt does not match the ledger/);
+  // #876: 끝점 TRANSFER 칸에 쓰는 라이선스 id는 inventory license 레코드 hash(fan-in licenseRecordSha256 기준)이고 admission과 같아야 한다.
+  assert.equal(resolved.licenseRecordSha256, sha256(canonicalJson(sourceInventory.sources.find(({ id }) => id === MEASURED_SOURCE_ID).license)));
+  const relicensed = structuredClone(sourceInventory);
+  relicensed.sources.find(({ id }) => id === MEASURED_SOURCE_ID).license.attribution = "tampered";
+  await assert.rejects(resolveSeoulMeasuredTransferMetrics({ sourceInventory: relicensed, sourceSnapshots, freshnessPolicy, evaluatedAt: receipt.storedAt, read }),
+    /nationwide candidate Seoul measured transfer license evidence does not match the inventory license/);
   // 커밋된 후보는 인용 원문 저장 이후의 시계를 쓴다.
   const spec = await readJson("tools/datapack/release/candidate-build-spec.json");
   assert.ok(Date.parse(spec.publishedAt) >= Date.parse(receipt.storedAt), `${spec.publishedAt} < ${receipt.storedAt}`);
