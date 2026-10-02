@@ -143,7 +143,8 @@ async function readLockedRaw({ client, receipt, parBaseUrl }) {
     throw new Error(`locked TRANSFER raw GET failed: ${redactPar(String(error?.message ?? "request failed"), parBaseUrl)}`);
   }
   if (!fetched?.exists) throw new Error("locked TRANSFER raw object is missing");
-  if (!Buffer.isBuffer(fetched.body) || fetched.body.length !== receipt.byteSize || sha256(fetched.body) !== receipt.rawObjectSha256) {
+  // 바이트 수 상한은 GET의 maxResponseBytes(receipt byteSize)가 지키고, 잘리거나 덧붙은 본문은 sha256 대조가 막는다.
+  if (!Buffer.isBuffer(fetched.body) || sha256(fetched.body) !== receipt.rawObjectSha256) {
     throw new Error("locked TRANSFER raw bytes mismatch");
   }
   return fetched.body;
