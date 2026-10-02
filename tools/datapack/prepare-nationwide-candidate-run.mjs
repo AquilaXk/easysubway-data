@@ -9,8 +9,10 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
-import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
-import { canonicalCurrentCapitalStationLineInputJson } from "./current-capital-station-line-contract.mjs";
+import {
+  canonicalCurrentCapitalRouteEdgeInputJson,
+  canonicalCurrentCapitalStationLineInputJson,
+} from "./current-capital-station-line-contract.mjs";
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";

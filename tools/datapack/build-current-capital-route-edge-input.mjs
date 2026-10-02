@@ -6,6 +6,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildCurrentCapitalStationLineInput, canonicalCurrentCapitalStationLineInputJson, readCurrentCapitalInputs } from "./build-current-capital-station-line-input.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
+import {
+  canonicalCurrentCapitalRouteEdgeInputJson,
+  currentCapitalTransferEdgesFromMetrics,
+} from "./current-capital-station-line-contract.mjs";
+
+// #866 PR-B: 두 공용 함수는 전국 발행 경로가 live chain 모듈을 import하지 않도록 계약 모듈로 옮겼다.
+export { canonicalCurrentCapitalRouteEdgeInputJson, currentCapitalTransferEdgesFromMetrics };
 
 const OUTPUT_DIRECTORY = "tools/datapack/release/current-capital-accessibility-full";
 
@@ -23,33 +30,6 @@ export function buildCurrentCapitalRouteEdgeInput(input) {
   validateRouteEdgeEndpoints(routeEdges, stationLines);
   const candidate = { candidateId: station.candidate.candidateId, evaluatorVersion: "1", policyVersion: input.policy.policyVersion, sourceSetSha256: station.candidate.sourceSetSha256, stationSetSha256: station.candidate.stationSetSha256, topologySha256: canonicalRideEdgeSetSha256(rides) };
   return canonicalObject({ candidate, stationLines, routeEdges });
-}
-
-// #872 S2(#866에서 전국 경로로 대체 후 삭제): 환승 지표는 서울교통공사 1~8호선과 상대 노선 전체로 넓어졌다.
-// 수도권 live-chain(route-edge input·release-candidate transfer 대조)은 수도권 station-line 분모 안에 두 끝점이 모두 있는
-// 쌍만 쓴다. 전국 경로는 prepare-nationwide-candidate-run이 지표 전체를 쓴다.
-export function currentCapitalTransferEdgesFromMetrics(metrics, stationLines) {
-  if (!Array.isArray(metrics) || metrics.length === 0) {
-    throw new Error("full-capital TRANSFER metrics are required");
-  }
-  if (!Array.isArray(stationLines) || stationLines.length === 0) throw new Error("full-capital TRANSFER station-line domain is required");
-  const domain = new Set(stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
-  const domainMetrics = metrics.filter(({ stationId, fromLineId, toLineId }) => domain.has(`${stationId}\0${fromLineId}`) && domain.has(`${stationId}\0${toLineId}`));
-  if (domainMetrics.length === 0) throw new Error("full-capital TRANSFER metrics are required");
-  return domainMetrics.map((metric) => edge({
-    edgeId: `edge-transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`,
-    edgeType: "IN_STATION_TRANSFER",
-    fromNodeId: `${metric.stationId}:${metric.fromLineId}`,
-    toNodeId: `${metric.stationId}:${metric.toLineId}`,
-    durationSeconds: 0,
-    distanceMeters: metric.distanceMeters,
-  }));
-}
-
-export function canonicalCurrentCapitalRouteEdgeInputJson(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value) || canonicalJson(Object.keys(value).sort(compareBytes)) !== canonicalJson(["candidate", "routeEdges", "stationLines"])) throw new Error("full-capital route output keys mismatch");
-  if (!Array.isArray(value.stationLines) || !Array.isArray(value.routeEdges)) throw new Error("full-capital route arrays are required");
-  return canonicalJson(value);
 }
 
 export async function main(argv = process.argv.slice(2), { repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)), log = console.log, readTransitionBoundaryImpl, readCurrentFanInBoundaryImpl, projectFixtureImpl = defaultProjectFixture } = {}) {

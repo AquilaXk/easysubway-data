@@ -30,6 +30,21 @@ import {
 } from "./test-fixtures/current-capital-station-line-input.mjs";
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import {
+  assertNationwideCandidateInputBytes,
+  bindNationwideCandidatePreparation,
+  main as verifyNationwideCandidateInputBinding,
+} from "./nationwide-candidate-input-binding.mjs";
+import {
+  buildSyntheticNationwideReleaseCandidate,
+  rebindSyntheticNationwideReleaseCandidate,
+  setSyntheticNationwideEvidenceState,
+  SYNTHETIC_NATIONWIDE_CAPTURED_AT,
+  SYNTHETIC_NATIONWIDE_PATHS,
+  syntheticNationwideAuthorityInput,
+  syntheticNationwideTransferEndpoints,
+  writeSyntheticNationwideRepository,
+} from "./test-fixtures/synthetic-nationwide-release-candidate.mjs";
 import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { prepareCurrentStaticNetworkProductionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 
@@ -154,16 +169,27 @@ test("합성 current public successor는 input-derived metadata, route, authorit
     ...stationLineInput,
     observedAt: result.authority.buildInput.observedAt,
   });
-  const expectedBlockedCellCount = materialization.rows.filter(({ stationId, lineId, domain, state }) =>
-    state === "UNVERIFIED_EVIDENCE_BLOCKED" && authorityCellKeys.has(`${stationId}:${lineId}:${domain}`)).length;
-  assert.ok(expectedBlockedCellCount > 0);
-  assert.equal(authorityCells.filter(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED").length, expectedBlockedCellCount);
+  // D1(#866): ENTRY/EXIT는 authority 증거 요구에서 빠진다. 차단된 FACILITY/EXIT row가 있어도 authority cell이 되지 않는다.
+  assert.ok(materialization.rows.some(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED"));
+  assert.ok(authorityCells.length > 0);
+  assert.ok(authorityCells.every(({ domain }) => domain === "TRANSFER"));
+  assert.equal(authorityCellKeys.size, new Set(result.authority.edges
+    .filter(({ edgeType }) => edgeType.endsWith("_TRANSFER"))
+    .flatMap(({ fromNodeId, toNodeId }) => [`${fromNodeId}:TRANSFER`, `${toNodeId}:TRANSFER`])).size);
+  assert.ok(result.authority.edges
+    .filter(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT")
+    .every(({ requiredCells }) => requiredCells.length === 0));
   assert.equal(result.candidateFixture.packs[0].networkEdges.length, route.routeEdges.length);
 });
 
 test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에 fail-closed다", async () => {
   const cases = [
-    ["unresolved", (value) => { value.stationLineInput.evidenceRows.pop(); }, /unresolved|denominator|missing/i],
+    ["unresolved transfer endpoint", (value) => {
+      const transfer = value.route.routeEdges.find(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
+      const [stationId, lineId] = transfer.fromNodeId.split(":");
+      value.stationLineInput.evidenceRows = value.stationLineInput.evidenceRows
+        .filter((row) => !(row.stationId === stationId && row.lineId === lineId && row.domain === "TRANSFER"));
+    }, /transfer endpoint accessibility evidence is unresolved/],
     ["stale", (value) => { value.stationLineInput.evidenceRows[0].freshUntil = value.stationLineInput.evidenceRows[0].capturedAt; }, /fresh|stale/i],
     ["candidate", (value) => { value.route.candidate.sourceSetSha256 = "0".repeat(64); }, /candidate/i],
     ["route hash", (value) => { value.route.routeEdges[0].edgeSha256 = "0".repeat(64); }, /hash/i],
@@ -305,7 +331,7 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
   }));
 
   const requiredCellDrift = structuredClone(authority);
-  requiredCellDrift.edges[0].requiredCells[0].state = "VERIFIED_ABSENT";
+  requiredCellDrift.edges.find(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").requiredCells[0].state = "VERIFIED_ABSENT";
   resealAuthority(requiredCellDrift);
   assert.throws(
     () => validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
@@ -375,220 +401,358 @@ test("consumer replay는 재봉인한 authority의 required cell·route projecti
   );
 });
 
-test("CLI는 current tuple을 재생성해 canonical input/fixture/authority 네 파일을 만들고 collision에는 mutation 0이다", async (context) => {
-  const directory = await mkdtemp(path.join(tmpdir(), "full-capital-authority-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const input = await fullInput();
-  const buildSpec = {
-    ...input.buildSpec,
-    fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
-  };
-  const buildSpecBytes = Buffer.from(canonical(buildSpec));
-  const files = {
-    fixture: buildSpec.fixturePath,
-    buildSpec: "tools/datapack/release/candidate-build-spec.json",
-    stationOutput: path.join(directory, "station.json"),
-    routeOutput: path.join(directory, "route.json"),
-    fixtureOutput: path.join(directory, "candidate.json"),
-    authorityOutput: path.join(directory, "authority.json"),
-  };
-  await Promise.all([
-    mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true }),
-    mkdir(path.join(directory, path.dirname(files.fixture)), { recursive: true }),
-  ]);
-  await writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes);
-  await writeFile(path.join(directory, files.buildSpec), buildSpecBytes);
-  const argv = cliArgs(files);
-  await main(argv, {
-    repositoryRoot: directory,
-    projectFixtureImpl: async () => structuredClone(input.projectedFixture),
-    buildRefreshOutputsImpl: async () => [
-      {
-        relative: "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
-        bytes: input.stationLineInputBytes,
-      },
-      {
-        relative: "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
-        bytes: input.routeBytes,
-      },
-    ],
-    readTransferMetricsImpl: async () => input.transferMetricsBytes,
+test("전국 authority(D1)는 ENTRY/EXIT에 증거 cell을 요구하지 않고 환승 간선 양끝 TRANSFER cell만 요구한다", () => {
+  const value = buildSyntheticNationwideReleaseCandidate();
+  const input = syntheticNationwideAuthorityInput(value);
+  const materialization = materializeStationLineAccessibility({
+    ...value.stationLineInput,
+    observedAt: SYNTHETIC_NATIONWIDE_CAPTURED_AT,
   });
-  const [stationBytes, routeBytes, fixtureBytes, authorityBytes, stationStat, routeStat, fixtureStat, authorityStat] = await Promise.all([
-    readFile(files.stationOutput),
-    readFile(files.routeOutput),
-    readFile(files.fixtureOutput),
-    readFile(files.authorityOutput),
-    stat(files.stationOutput),
-    stat(files.routeOutput),
-    stat(files.fixtureOutput),
-    stat(files.authorityOutput),
-  ]);
-  assert.equal(stationBytes.toString("utf8"), canonicalCurrentCapitalStationLineInputJson(input.stationLineInput));
-  assert.equal(routeBytes.toString("utf8"), canonicalCurrentCapitalRouteEdgeInputJson(input.route));
-  assert.equal(
-    fixtureBytes.toString("utf8"),
-    canonicalCurrentReleaseCandidateFixtureJson(JSON.parse(fixtureBytes)),
-  );
-  assert.equal(
-    authorityBytes.toString("utf8"),
-    canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(JSON.parse(authorityBytes)),
-  );
-  for (const info of [stationStat, routeStat, fixtureStat, authorityStat]) {
-    assert.equal(info.mode & 0o777, 0o600);
+  // 전국 실데이터처럼 EXIT 전체·FACILITY 일부가 UNKNOWN이어도 authority는 만들어진다.
+  assert.ok(materialization.stateSummary.UNKNOWN > 0);
+  const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
+
+  assert.deepEqual(result.authority.edgeCounts, {
+    ENTRY: 5, EXIT: 5, IN_STATION_TRANSFER: 2, OUT_OF_STATION_TRANSFER: 2, total: 14,
+  });
+  for (const edge of result.authority.edges) {
+    if (edge.edgeType === "ENTRY" || edge.edgeType === "EXIT") {
+      assert.deepEqual(edge.requiredCells, [], edge.edgeId);
+      continue;
+    }
+    const [from, to] = [edge.fromNodeId, edge.toNodeId].map((node) => node.split(":"));
+    assert.deepEqual(edge.requiredCells.map(({ stationId, lineId, domain, state }) => [stationId, lineId, domain, state]), [
+      [from[0], from[1], "TRANSFER", "VERIFIED_PRESENT"],
+      [to[0], to[1], "TRANSFER", "VERIFIED_PRESENT"],
+    ], edge.edgeId);
   }
-
-  const collisionFixture = path.join(directory, "collision-candidate.json");
-  const collisionAuthority = path.join(directory, "collision-authority.json");
-  await writeFile(collisionAuthority, "owned");
-  await assert.rejects(
-    main(cliArgs({ ...files, fixtureOutput: collisionFixture, authorityOutput: collisionAuthority }), {
-      repositoryRoot: directory,
-      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
-      buildRefreshOutputsImpl: async () => [],
-    }),
-    /output must be absent/,
+  // 간선 자체(ENTRY/EXIT 포함)는 #873 전까지 팩에 남는다.
+  assert.deepEqual(edgeCounts(result.candidateFixture.packs[0].networkEdges), edgeCounts(value.route.routeEdges));
+  assert.doesNotThrow(() => validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
+    authority: result.authority,
+    projectedFixture: value.projectedFixture,
+    stationLineInputBytes: value.stationLineInputBytes,
+    routeEdgeInputBytes: value.routeBytes,
+    transferMetricsBytes: value.transferMetricsBytes,
+  }));
+  assert.equal(
+    canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(result.authority),
+    canonical(result.authority),
   );
-  await assertFileAbsent(collisionFixture);
-  assert.equal(await readFile(collisionAuthority, "utf8"), "owned");
+});
 
+test("환승 끝점 TRANSFER cell이 UNKNOWN·MISSING이면 역 안·역 밖 환승 모두 명시적으로 실패한다", () => {
+  for (const endpoint of syntheticNationwideTransferEndpoints()) {
+    const value = setSyntheticNationwideEvidenceState(
+      buildSyntheticNationwideReleaseCandidate(), endpoint, "TRANSFER", "UNKNOWN",
+    );
+    assert.throws(
+      () => buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(value)),
+      (error) => /transfer endpoint accessibility evidence is unresolved/.test(error.message)
+        && error.message.includes(`${endpoint} UNKNOWN`),
+      endpoint,
+    );
+  }
+  const missing = buildSyntheticNationwideReleaseCandidate();
+  missing.stationLineInput.evidenceRows = missing.stationLineInput.evidenceRows
+    .filter((row) => !(row.stationId === "station-c" && row.domain === "TRANSFER"));
+  const rebound = rebindSyntheticNationwideReleaseCandidate(missing);
+  assert.throws(
+    () => buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(rebound)),
+    /transfer endpoint accessibility evidence is unresolved: 2 edges .*station-c:line-3 MISSING/,
+  );
+  // 환승이 없는 역의 TRANSFER UNKNOWN과 ENTRY/EXIT 쪽 UNKNOWN은 차단 조건이 아니다(D1).
+  const notTransferEndpoint = setSyntheticNationwideEvidenceState(
+    buildSyntheticNationwideReleaseCandidate(), "station-d:line-2", "TRANSFER", "UNKNOWN",
+  );
+  assert.doesNotThrow(() => buildCurrentReleaseCandidateAccessibilityAuthority(
+    syntheticNationwideAuthorityInput(notTransferEndpoint),
+  ));
+});
+
+test("역 안 환승은 같은 역 다른 노선, 역 밖 환승은 다른 역 끝점만 허용한다", () => {
+  // 리뷰 F2: 역 안 환승의 두 조건(다른 역, 같은 노선)을 하나씩만 깨는 케이스로 각각 고정한다.
+  for (const [label, edgeId, toNodeId] of [
+    ["역 안 환승이 다른 역(노선은 다름)", "transfer-station-a-line-1-line-2", "station-d:line-2"],
+    ["역 안 환승이 같은 역 같은 노선", "transfer-station-a-line-1-line-2", "station-a:line-1"],
+    ["역 밖 환승이 같은 역", "out-link-b1-c3", "station-b:line-1"],
+  ]) {
+    const value = buildSyntheticNationwideReleaseCandidate();
+    const edge = value.route.routeEdges.find((candidate) => candidate.edgeId === edgeId);
+    edge.toNodeId = toNodeId;
+    rebindRouteEdge(value.route, edge);
+    const rebound = rebindSyntheticNationwideReleaseCandidate(value);
+    assert.throws(
+      () => buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(rebound)),
+      /transfer edge endpoint mismatch/,
+      label,
+    );
+  }
+});
+
+test("authority validator는 재봉인해도 ENTRY/EXIT cell 추가·환승 cell 누락·닫히지 않은 cell을 거부한다", () => {
+  const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(
+    syntheticNationwideAuthorityInput(buildSyntheticNationwideReleaseCandidate()),
+  );
+  const transferIndex = authority.edges.findIndex(({ edgeType }) => edgeType === "OUT_OF_STATION_TRANSFER");
+  const entryIndex = authority.edges.findIndex(({ edgeType }) => edgeType === "ENTRY");
+  for (const [label, mutate, pattern] of [
+    ["ENTRY cell 추가", (value) => {
+      value.edges[entryIndex].requiredCells = [structuredClone(value.edges[transferIndex].requiredCells[0])];
+    }, /required cell denominator mismatch/],
+    ["환승 cell 누락", (value) => { value.edges[transferIndex].requiredCells.pop(); }, /required cell denominator mismatch/],
+    ["환승 cell UNKNOWN", (value) => { value.edges[transferIndex].requiredCells[0].state = "UNKNOWN"; }, /required cell mismatch/],
+    ["환승 cell domain", (value) => { value.edges[transferIndex].requiredCells[0].domain = "EXIT"; }, /required cell endpoint mismatch/],
+    ["edgeCounts 키 누락", (value) => { delete value.edgeCounts.OUT_OF_STATION_TRANSFER; }, /edge denominator mismatch/],
+  ]) {
+    const forged = structuredClone(authority);
+    mutate(forged);
+    resealAuthority(forged);
+    assert.throws(() => canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(forged), pattern, label);
+  }
+});
+
+test("candidate override freshness는 D1 authority의 ENTRY/EXIT UNKNOWN materialization을 받는다", async () => {
+  const value = buildSyntheticNationwideReleaseCandidate();
+  const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(value));
+  const { candidateOverrideAccessibilityFreshUntil } = await import("./build-datapack.mjs");
+  assert.equal(candidateOverrideAccessibilityFreshUntil({
+    authority,
+    stationLineInputBytes: value.stationLineInputBytes,
+    routeEdgeInputBytes: value.routeBytes,
+    validationNow: new Date(SYNTHETIC_NATIONWIDE_CAPTURED_AT),
+    isNationwide: true,
+  }), "2026-10-08T00:00:00.000Z");
+  assert.throws(() => candidateOverrideAccessibilityFreshUntil({
+    authority: { ...authority, buildInput: { ...authority.buildInput, materializationDigest: "0".repeat(64) } },
+    stationLineInputBytes: value.stationLineInputBytes,
+    validationNow: new Date(SYNTHETIC_NATIONWIDE_CAPTURED_AT),
+    isNationwide: true,
+  }), /station-line input identity mismatch/);
+});
+
+test("CLI는 nationwide-candidate-preparation이 sha로 결속한 전국 입력을 바이트 그대로 출력한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "nationwide-rc-input-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const value = buildSyntheticNationwideReleaseCandidate();
+  await writeSyntheticNationwideRepository(directory, value);
+  const files = outputFiles(directory, "bound");
+  const result = await main(cliArgs(files), {
+    repositoryRoot: directory,
+    projectFixtureImpl: async () => structuredClone(value.projectedFixture),
+  });
+  const [stationBytes, routeBytes, fixtureBytes, authorityBytes] = await Promise.all([
+    readFile(files.stationOutput), readFile(files.routeOutput), readFile(files.fixtureOutput), readFile(files.authorityOutput),
+  ]);
+  assert.ok(stationBytes.equals(value.stationLineInputBytes));
+  assert.ok(routeBytes.equals(value.routeBytes));
+  assert.equal(sha256(stationBytes), value.preparation.stationLineInput.sha256);
+  assert.equal(sha256(routeBytes), value.preparation.routeEdgeInput.sha256);
+  assert.equal(result.authority.buildInput.stationLineInputSha256, value.preparation.stationLineInput.sha256);
+  assert.equal(result.authority.buildInput.routeEdgeInputSha256, value.preparation.routeEdgeInput.sha256);
+  assert.equal(result.authority.buildInput.transferMetricsSha256, sha256(value.transferMetricsBytes));
+  assert.equal(fixtureBytes.toString("utf8"), canonicalCurrentReleaseCandidateFixtureJson(JSON.parse(fixtureBytes)));
+  assert.equal(authorityBytes.toString("utf8"), canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(JSON.parse(authorityBytes)));
+  for (const file of Object.values(files).filter((target) => path.isAbsolute(target))) {
+    assert.equal((await stat(file)).mode & 0o777, 0o600);
+  }
+  await assert.rejects(main(cliArgs({ ...outputFiles(directory, "collision"), authorityOutput: files.authorityOutput }), {
+    repositoryRoot: directory,
+    projectFixtureImpl: async () => structuredClone(value.projectedFixture),
+  }), /output must be absent/);
+  await assertNoOutputs(outputFiles(directory, "collision"), ["authorityOutput"]);
   const sameOutput = path.join(directory, "same-output.json");
-  await assert.rejects(
-    main(cliArgs({ ...files, stationOutput: sameOutput, authorityOutput: sameOutput }), {
-      repositoryRoot: directory,
-      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
-      buildRefreshOutputsImpl: async () => [],
-    }),
-    /output paths must be distinct/,
-  );
+  await assert.rejects(main(cliArgs({ ...outputFiles(directory, "same"), stationOutput: sameOutput, authorityOutput: sameOutput }), {
+    repositoryRoot: directory,
+    projectFixtureImpl: async () => structuredClone(value.projectedFixture),
+  }), /output paths must be distinct/);
   await assertFileAbsent(sameOutput);
 });
 
-test("CLI는 workflow가 검증한 repo-relative build spec과 fixture의 동일 raw bytes를 pre-approval phase로 전달한다", async (context) => {
-  const directory = await mkdtemp(path.join(tmpdir(), "per-run-capital-authority-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const input = await fullInput();
-  const buildSpec = {
-    ...input.buildSpec,
-    fixturePath: "data/capital.json",
-  };
-  const buildSpecBytes = Buffer.from(`${canonical(buildSpec)}\n`);
-  const sourceFixture = JSON.parse(input.sourceFixtureBytes);
-  const files = {
-    fixture: "./data/capital.json",
-    buildSpec: "./release/per-run-build-spec.json",
-    stationOutput: path.join(directory, "station.json"),
-    routeOutput: path.join(directory, "route.json"),
-    fixtureOutput: path.join(directory, "candidate.json"),
-    authorityOutput: path.join(directory, "authority.json"),
-  };
-  await Promise.all([
-    mkdir(path.join(directory, path.dirname(files.buildSpec)), { recursive: true }),
-    mkdir(path.join(directory, path.dirname(files.fixture)), { recursive: true }),
-  ]);
-  await Promise.all([
-    writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes),
-    writeFile(path.join(directory, files.buildSpec), buildSpecBytes),
-  ]);
-
-  await main(cliArgs(files), {
-    repositoryRoot: directory,
-    projectFixtureImpl: async ({ buildSpec: selected, sourceFixture: selectedFixture }) => {
-      assert.deepEqual(selected, buildSpec);
-      assert.deepEqual(selectedFixture, sourceFixture);
-      return structuredClone(input.projectedFixture);
-    },
-    buildRefreshOutputsImpl: async ({ phase, candidateBuildSpec, canonicalPack }) => {
-      assert.equal(phase, "PRE_APPROVAL_CURRENT_CANDIDATE");
-      assert.deepEqual(candidateBuildSpec, buildSpec);
-      assert.deepEqual(canonicalPack, sourceFixture);
-      return [
-        {
-          relative: "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
-          bytes: input.stationLineInputBytes,
-        },
-        {
-          relative: "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
-          bytes: input.routeBytes,
-        },
-      ];
-    },
-    readTransferMetricsImpl: async () => input.transferMetricsBytes,
-  });
-
-  const authority = JSON.parse(await readFile(files.authorityOutput, "utf8"));
-  assert.equal(authority.buildInput.buildSpecSha256, sha256(buildSpecBytes));
-
-  await assert.rejects(
-    main(cliArgs({
-      ...files,
-      fixture: "source.json",
-      stationOutput: path.join(directory, "mismatch-station.json"),
-      routeOutput: path.join(directory, "mismatch-route.json"),
-      fixtureOutput: path.join(directory, "mismatch-candidate.json"),
-      authorityOutput: path.join(directory, "mismatch-authority.json"),
-    }), {
+test("CLI는 preparation sha·후보 id·경로 불일치와 preparation 부재를 출력 전에 거부한다", async (context) => {
+  const cases = [
+    ["route-edge 입력 sha 불일치", async (directory, value) => {
+      const route = structuredClone(value.route);
+      route.routeEdges = route.routeEdges.filter(({ edgeId }) => edgeId !== "exit-station-d-line-2");
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.routeEdgeInput), canonical(route));
+    }, /route-edge input sha256 mismatch/],
+    ["station-line 입력 sha 불일치", async (directory, value) => {
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.stationLineInput), `${canonical(value.stationLineInput)}\n`);
+    }, /station-line input sha256 mismatch/],
+    ["preparation 후보 id 불일치", async (directory, value) => {
+      const preparation = structuredClone(value.preparation);
+      preparation.releaseIdentity.candidateId = "nationwide-candidate-20261001-seq901";
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.preparation), JSON.stringify(preparation));
+    }, /candidate preparation identity mismatch/],
+    ["preparation authority 후보 id 불일치", async (directory, value) => {
+      const preparation = structuredClone(value.preparation);
+      preparation.authority.candidateId = "nationwide-candidate-20261001-seq901";
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.preparation), JSON.stringify(preparation));
+    }, /candidate preparation identity mismatch/],
+    ["preparation fixture 경로 불일치", async (directory, value) => {
+      const preparation = structuredClone(value.preparation);
+      preparation.materialization.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.preparation), JSON.stringify(preparation));
+    }, /candidate preparation identity mismatch/],
+    ["preparation 입력 경로 탈출", async (directory, value) => {
+      const preparation = structuredClone(value.preparation);
+      preparation.routeEdgeInput.path = "../nationwide-route-edge-input.json";
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.preparation), JSON.stringify(preparation));
+    }, /route-edge input path/],
+    ["입력 후보 id 불일치", async (directory, value) => {
+      const station = structuredClone(value.stationLineInput);
+      station.candidate.candidateId = "nationwide-candidate-20261001-seq901";
+      const bytes = canonical(station);
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.stationLineInput), bytes);
+      const preparation = structuredClone(value.preparation);
+      preparation.stationLineInput.sha256 = sha256(bytes);
+      await writeFile(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.preparation), JSON.stringify(preparation));
+    }, /station-line input candidate identity mismatch/],
+    ["preparation 부재", async (directory) => {
+      await rm(path.join(directory, SYNTHETIC_NATIONWIDE_PATHS.preparation));
+    }, /ENOENT|candidate preparation/],
+  ];
+  for (const [label, mutate, pattern] of cases) {
+    const directory = await mkdtemp(path.join(tmpdir(), "nationwide-rc-reject-"));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const value = buildSyntheticNationwideReleaseCandidate();
+    await writeSyntheticNationwideRepository(directory, value);
+    await mutate(directory, value);
+    const files = outputFiles(directory, "rejected");
+    await assert.rejects(main(cliArgs(files), {
       repositoryRoot: directory,
-      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
-      buildRefreshOutputsImpl: async () => [],
-    }),
-    /fixture path mismatch/,
+      projectFixtureImpl: async () => structuredClone(value.projectedFixture),
+    }), pattern, label);
+    await assertNoOutputs(files);
+  }
+});
+
+test("CLI는 환승 끝점 UNKNOWN이면 출력 0개로 명시적으로 실패한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "nationwide-rc-unknown-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const value = setSyntheticNationwideEvidenceState(
+    buildSyntheticNationwideReleaseCandidate(), "station-a:line-2", "TRANSFER", "UNKNOWN",
   );
+  await writeSyntheticNationwideRepository(directory, value);
+  const files = outputFiles(directory, "unknown");
+  await assert.rejects(main(cliArgs(files), {
+    repositoryRoot: directory,
+    projectFixtureImpl: async () => structuredClone(value.projectedFixture),
+  }), /transfer endpoint accessibility evidence is unresolved/);
+  await assertNoOutputs(files);
 });
 
 test("CLI는 build spec/fixture path 경계를 fail closed하고 출력 전에 중단한다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "candidate-input-path-boundary-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  const input = await fullInput();
-  const buildSpec = { ...input.buildSpec, fixturePath: "data/capital.json" };
-  const buildSpecBytes = Buffer.from(`${canonical(buildSpec)}\n`);
-  const files = {
-    fixture: "data/capital.json",
-    buildSpec: "release/per-run-build-spec.json",
-    stationOutput: path.join(directory, "station.json"),
-    routeOutput: path.join(directory, "route.json"),
-    fixtureOutput: path.join(directory, "candidate.json"),
-    authorityOutput: path.join(directory, "authority.json"),
-  };
-  await Promise.all([
-    mkdir(path.join(directory, "release"), { recursive: true }),
-    mkdir(path.join(directory, "data"), { recursive: true }),
-  ]);
-  await Promise.all([
-    writeFile(path.join(directory, files.buildSpec), buildSpecBytes),
-    writeFile(path.join(directory, files.fixture), input.sourceFixtureBytes),
-  ]);
-  const noOutput = async (candidate) => {
+  const value = buildSyntheticNationwideReleaseCandidate();
+  await writeSyntheticNationwideRepository(directory, value);
+  const files = outputFiles(directory, "base");
+  const noOutput = async (suffix, changes) => {
+    const candidate = { ...outputFiles(directory, suffix), ...changes };
     await assert.rejects(main(cliArgs(candidate), {
       repositoryRoot: directory,
-      projectFixtureImpl: async () => structuredClone(input.projectedFixture),
-      buildRefreshOutputsImpl: async () => [],
-    }), /path|mismatch|regular file/i);
-    await Promise.all([
-      assertFileAbsent(candidate.stationOutput),
-      assertFileAbsent(candidate.routeOutput),
-      assertFileAbsent(candidate.fixtureOutput),
-      assertFileAbsent(candidate.authorityOutput),
-    ]);
+      projectFixtureImpl: async () => structuredClone(value.projectedFixture),
+    }), /path|mismatch|regular file/i, suffix);
+    await assertNoOutputs(candidate);
   };
-  const candidate = (suffix, changes) => ({
-    ...files,
+  await noOutput("absolute", { buildSpec: path.join(directory, files.buildSpec) });
+  await noOutput("parent", { buildSpec: "../tools/datapack/release/candidate-build-spec.json" });
+  await mkdir(path.join(directory, "release"), { recursive: true });
+  await writeFile(path.join(directory, "release/debug-build-spec.json"), value.buildSpecBytes);
+  await noOutput("fixture-like", { buildSpec: "release/debug-build-spec.json" });
+  await noOutput("sample-fixture", { fixture: "data/sample-nationwide.json" });
+  const linkedSpec = path.join(directory, "release", "linked-build-spec.json");
+  await symlink(path.join(directory, files.buildSpec), linkedSpec);
+  await noOutput("symlink", { buildSpec: "release/linked-build-spec.json" });
+  await noOutput("fixture-mismatch", { fixture: "tools/datapack/release/capital-production-canonical-pack.json" });
+});
+
+// 리뷰 F1: RC·stage·map-catalog이 함께 쓰는 결속 검사는 필드 하나만 달라도 거부해야 한다.
+// scope는 preparation.authority.scopeId도 같이 바꿔 다른 비교가 대신 잡지 못하게 한다.
+test("preparation 결속은 scopeId·releaseSequence·입력 source set이 하나만 달라도 거부한다", () => {
+  const value = buildSyntheticNationwideReleaseCandidate();
+  const preparationBytes = (mutate) => {
+    const preparation = structuredClone(value.preparation);
+    mutate(preparation);
+    return Buffer.from(JSON.stringify(preparation));
+  };
+  const binding = bindNationwideCandidatePreparation({ preparationBytes: value.preparationBytes, buildSpec: value.buildSpec });
+  assert.doesNotThrow(() => assertNationwideCandidateInputBytes({
+    binding, buildSpec: value.buildSpec,
+    stationLineInputBytes: value.stationLineInputBytes, routeEdgeInputBytes: value.routeBytes,
+  }));
+  assert.throws(() => bindNationwideCandidatePreparation({
+    preparationBytes: preparationBytes((preparation) => {
+      preparation.scopeId = "capital_pilot_android_v1";
+      preparation.authority.scopeId = "capital_pilot_android_v1";
+    }),
+    buildSpec: value.buildSpec,
+  }), /candidate preparation identity mismatch/, "scopeId");
+  assert.throws(() => bindNationwideCandidatePreparation({
+    preparationBytes: preparationBytes((preparation) => { preparation.releaseIdentity.releaseSequence += 1; }),
+    buildSpec: value.buildSpec,
+  }), /candidate preparation identity mismatch/, "releaseSequence");
+  for (const [field, label] of [["stationLineInput", "station-line input"], ["route", "route-edge input"]]) {
+    const changed = structuredClone(value[field]);
+    changed.candidate.sourceSetSha256 = "0".repeat(64);
+    const changedBytes = Buffer.from(canonical(changed));
+    const changedBinding = structuredClone(binding);
+    changedBinding[field === "route" ? "routeEdgeInput" : "stationLineInput"].sha256 = sha256(changedBytes);
+    assert.throws(() => assertNationwideCandidateInputBytes({
+      binding: changedBinding,
+      buildSpec: value.buildSpec,
+      stationLineInputBytes: field === "route" ? value.stationLineInputBytes : changedBytes,
+      routeEdgeInputBytes: field === "route" ? changedBytes : value.routeBytes,
+    }), new RegExp(`${label} candidate identity mismatch`), `${label} sourceSetSha256`);
+  }
+});
+
+// map-catalog-publish CLI 경로에서는 입력 후보 id·source set을 이 결속만 확인한다.
+test("결속 CLI(map-catalog 경로)는 preparation sha는 맞지만 source set이 다른 입력을 거부한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "nationwide-binding-cli-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const value = buildSyntheticNationwideReleaseCandidate();
+  await writeSyntheticNationwideRepository(directory, value);
+  const argv = [
+    "--build-spec", SYNTHETIC_NATIONWIDE_PATHS.buildSpec,
+    "--candidate-preparation", SYNTHETIC_NATIONWIDE_PATHS.preparation,
+    "--station-line-input", SYNTHETIC_NATIONWIDE_PATHS.stationLineInput,
+    "--route-edge-input", SYNTHETIC_NATIONWIDE_PATHS.routeEdgeInput,
+  ];
+  const previous = process.cwd();
+  process.chdir(directory);
+  try {
+    await verifyNationwideCandidateInputBinding(argv);
+    const route = structuredClone(value.route);
+    route.candidate.sourceSetSha256 = "0".repeat(64);
+    const routeBytes = canonical(route);
+    await writeFile(SYNTHETIC_NATIONWIDE_PATHS.routeEdgeInput, routeBytes);
+    const preparation = structuredClone(value.preparation);
+    preparation.routeEdgeInput.sha256 = sha256(routeBytes);
+    await writeFile(SYNTHETIC_NATIONWIDE_PATHS.preparation, JSON.stringify(preparation));
+    await assert.rejects(verifyNationwideCandidateInputBinding(argv), /route-edge input candidate identity mismatch/);
+  } finally {
+    process.chdir(previous);
+  }
+});
+
+function outputFiles(directory, suffix) {
+  return {
+    fixture: SYNTHETIC_NATIONWIDE_PATHS.fixture,
+    buildSpec: SYNTHETIC_NATIONWIDE_PATHS.buildSpec,
     stationOutput: path.join(directory, `${suffix}-station.json`),
     routeOutput: path.join(directory, `${suffix}-route.json`),
     fixtureOutput: path.join(directory, `${suffix}-candidate.json`),
     authorityOutput: path.join(directory, `${suffix}-authority.json`),
-    ...changes,
-  });
+  };
+}
 
-  await noOutput(candidate("absolute", { buildSpec: path.join(directory, files.buildSpec) }));
-  await noOutput(candidate("parent", { buildSpec: "../release/per-run-build-spec.json" }));
-  await noOutput(candidate("fixture-like", { buildSpec: "release/debug-build-spec.json" }));
-  await noOutput(candidate("sample-fixture", { fixture: "data/sample-capital.json" }));
-  const linkedSpec = path.join(directory, "release", "linked-build-spec.json");
-  await symlink(path.join(directory, files.buildSpec), linkedSpec);
-  await noOutput(candidate("symlink", { buildSpec: "release/linked-build-spec.json" }));
-  await noOutput(candidate("fixture-mismatch", { fixture: "data/other.json" }));
-});
+async function assertNoOutputs(files, except = []) {
+  for (const name of ["stationOutput", "routeOutput", "fixtureOutput", "authorityOutput"]) {
+    if (!except.includes(name)) await assertFileAbsent(files[name]);
+  }
+}
 
 function cliArgs(files) {
   return [

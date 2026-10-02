@@ -64,7 +64,7 @@ test("단독 override·noncanonical·hash·projection drift는 build input 선�
     ["source fixture", (value) => { value.sourceFixtureBytes = Buffer.from("{\"changed\":true}"); }, /binding/i],
     ["authority", (value) => { value.authority.authoritySha256 = "0".repeat(64); value.authorityBytes = Buffer.from(canonical(value.authority)); }, /authority hash/i],
     ["candidate hash", (value) => { value.authority.buildInput.candidateFixtureSha256 = "0".repeat(64); resealAuthority(value); }, /binding/i],
-    ["required cell endpoint", (value) => { value.authority.edges[0].requiredCells[0].lineId = "seoul-4"; resealAuthority(value); }, /cell endpoint/i],
+    ["required cell endpoint", (value) => { value.authority.edges.find(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").requiredCells[0].lineId = "seoul-9"; resealAuthority(value); }, /cell endpoint/i],
     ["route edge hash", (value) => { value.authority.edges[0].routeEdgeSha256 = "0".repeat(64); resealAuthority(value); }, /route edge hash/i],
     ["projection", (value) => { value.projectedFixture.packs[0].networkEdges[0].distanceMeters += 1; }, /projection/i],
   ]) {
@@ -144,7 +144,8 @@ function authorityEdge(edgeType, index) {
         cell(stationId, "seoul-2", "TRANSFER", index === 0 ? "UNVERIFIED_EVIDENCE_BLOCKED" : "VERIFIED_PRESENT"),
         cell(stationId, "seoul-4", "TRANSFER", "NOT_APPLICABLE"),
       ]
-    : [cell(stationId, lineId, edgeType === "ENTRY" ? "FACILITY" : "EXIT", edgeType === "EXIT" && index === 0 ? "UNVERIFIED_EVIDENCE_BLOCKED" : "VERIFIED_PRESENT")];
+    // #866 D1: ENTRY/EXIT는 증거 cell 없이 열거만 한다(#873에서 간선 생성 중단과 함께 제거).
+    : [];
   const edge = {
     edgeId: `edge-${edgeType.toLowerCase()}-${padded}`,
     edgeType,

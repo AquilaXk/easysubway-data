@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { buildServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
-import { stageCurrentServerRouteBundleCandidate } from "./stage-current-server-route-bundle-candidate.mjs";
+import {
+  parseStageCurrentServerRouteBundleCandidateArgs,
+  stageCurrentServerRouteBundleCandidate,
+} from "./stage-current-server-route-bundle-candidate.mjs";
 
 const CANDIDATE = { candidateId: "capital-pilot-candidate-20260814", sourceSetSha256: "a".repeat(64) };
 const BUNDLE_CANDIDATE = {
@@ -26,6 +29,7 @@ const BUNDLE_CANDIDATE = {
   freshUntil: "2026-08-15T12:47:35.000+09:00",
   keyId: "production-v1",
 };
+const NATIONWIDE_BUNDLE_CANDIDATE = { ...BUNDLE_CANDIDATE, bundleId: "nationwide-route-bundle-1" };
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
 const BOUND_SUPPORT = [
   ["artifact-inventory.json", "artifactInventory"],
@@ -371,43 +375,11 @@ test("third publish rename failure rolls back the exact three candidate outputs"
 test("nationwide candidate selects nationwide pack and sets nationwide bundle/map/catalog ids", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-nationwide-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const input = await fixture(root);
+  const input = await nationwideFixture(root);
   const output = path.join(root, "candidate");
   await mkdir(output);
 
-  const buildSpec = JSON.parse(await readFile(input.buildSpecPath, "utf8"));
-  buildSpec.candidateId = "nationwide-candidate-20260909";
-  buildSpec.productionScopeId = "nationwide_routing_android_v1";
-  const buildSpecBytes = Buffer.from(JSON.stringify(buildSpec));
-  await writeFile(input.buildSpecPath, buildSpecBytes);
-
-  const manifest = JSON.parse(await readFile(path.join(input.datapackRoot, "current.json"), "utf8"));
-  manifest.activePack = { id: "nationwide", version: "1" };
-  manifest.packs[0].id = "nationwide";
-  await writeFile(path.join(input.datapackRoot, "current.json"), JSON.stringify(manifest));
-  await (await import("node:fs/promises")).copyFile(
-    path.join(input.datapackRoot, "catalog", "capital-v1.sqlite.gz"),
-    path.join(input.datapackRoot, "catalog", "nationwide-v1.sqlite.gz")
-  );
-
-  const provenance = JSON.parse(await readFile(path.join(input.datapackRoot, "current.provenance.json"), "utf8"));
-  provenance.candidateBuild.candidateId = buildSpec.candidateId;
-  provenance.candidateBuild.buildSpecSha256 = sha256(buildSpecBytes);
-  await writeFile(path.join(input.datapackRoot, "current.provenance.json"), JSON.stringify(provenance));
-
-  const stationLine = JSON.parse(await readFile(input.stationLineInputPath, "utf8"));
-  stationLine.candidate.candidateId = buildSpec.candidateId;
-  await writeFile(input.stationLineInputPath, JSON.stringify(stationLine));
-
-  const routeEdge = JSON.parse(await readFile(input.routeEdgeInputPath, "utf8"));
-  routeEdge.candidate.candidateId = buildSpec.candidateId;
-  await writeFile(input.routeEdgeInputPath, JSON.stringify(routeEdge));
-
   const calls = [];
-  const candidate = {
-    ...BUNDLE_CANDIDATE,
-    bundleId: "nationwide-route-bundle-1",
-  };
   await stageCurrentServerRouteBundleCandidate({
     ...input,
     repositoryGitSha: "b".repeat(40),
@@ -416,7 +388,7 @@ test("nationwide candidate selects nationwide pack and sets nationwide bundle/ma
     stages: {
       prepare: async (prepareInput) => {
         calls.push(prepareInput);
-        await writePreparedOutputs(prepareInput.output, candidate);
+        await writePreparedOutputs(prepareInput.output, NATIONWIDE_BUNDLE_CANDIDATE);
       },
     },
   });
@@ -426,6 +398,137 @@ test("nationwide candidate selects nationwide pack and sets nationwide bundle/ma
   assert.equal(calls[0].emitterInputs.catalogPackId, "nationwide-catalog-1");
   assert.equal(calls[0].emitterInputs.bundleId, "nationwide-route-bundle-1");
 });
+
+// #866 PR-B: 예전에는 입력 옆이나 저장소의 nationwide-*-input.json으로 조용히 바꿔 썼다(catch {}).
+// 이제 preparation이 sha로 결속한 입력만 받고, 받은 bytes를 그대로 stage한다.
+test("nationwide 후보는 preparation이 sha로 결속한 입력 bytes만 그대로 stage하고 옆 파일로 바꾸지 않는다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-nationwide-bound-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await nationwideFixture(root);
+  // 예전 대체 경로가 찾던 위치에 같은 후보 id의 다른 입력을 둔다.
+  const decoy = { ...JSON.parse(await readFile(input.stationLineInputPath, "utf8")), decoy: true };
+  await writeFile(path.join(root, "nationwide-station-line-input.json"), JSON.stringify(decoy));
+  await writeFile(path.join(root, "nationwide-route-edge-input.json"), await readFile(input.routeEdgeInputPath));
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+  const staged = [];
+  await stageCurrentServerRouteBundleCandidate({
+    ...input,
+    repositoryGitSha: "b".repeat(40),
+    keyId: "production-v1",
+    output,
+    stages: {
+      prepare: async (prepareInput) => {
+        staged.push(await readFile(prepareInput.stationLineInputPath), await readFile(prepareInput.routeEdgeInputPath));
+        await writePreparedOutputs(prepareInput.output, NATIONWIDE_BUNDLE_CANDIDATE);
+      },
+    },
+  });
+  assert.ok(staged[0].equals(await readFile(input.stationLineInputPath)));
+  assert.ok(staged[1].equals(await readFile(input.routeEdgeInputPath)));
+  for (const [source, target] of [[input.stationLineInputPath, "station-line-input.json"], [input.routeEdgeInputPath, "route-edge-input.json"]]) {
+    assert.ok((await readFile(path.join(output, "server-route-bundle-inputs", target))).equals(await readFile(source)));
+  }
+});
+
+test("nationwide 후보는 preparation과 다른 입력·후보 id·preparation 부재를 prepare 전에 거부한다", async (t) => {
+  const cases = [
+    ["다른 station-line 입력", async (input) => {
+      const stationLine = JSON.parse(await readFile(input.stationLineInputPath, "utf8"));
+      stationLine.stationLines = ["capital-only"];
+      await writeFile(input.stationLineInputPath, JSON.stringify(stationLine));
+    }, /station-line input sha256 mismatch/],
+    ["다른 route-edge 입력", async (input) => {
+      await writeFile(input.routeEdgeInputPath, `${await readFile(input.routeEdgeInputPath, "utf8")}\n`);
+    }, /route-edge input sha256 mismatch/],
+    ["preparation 후보 id 불일치", async (input) => {
+      const preparation = JSON.parse(await readFile(input.candidatePreparationPath, "utf8"));
+      preparation.releaseIdentity.candidateId = "nationwide-candidate-20260910";
+      await writeFile(input.candidatePreparationPath, JSON.stringify(preparation));
+    }, /candidate preparation identity mismatch/],
+    ["preparation 부재", async (input) => {
+      await rm(input.candidatePreparationPath);
+    }, /ENOENT/],
+    ["preparation 경로 미지정", async (input) => {
+      delete input.candidatePreparationPath;
+    }, /candidate preparation is required/],
+  ];
+  for (const [label, mutate, error] of cases) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-nationwide-reject-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const input = await nationwideFixture(root);
+    await mutate(input);
+    const output = path.join(root, "candidate");
+    await mkdir(output);
+    await assertPrepareRejectedBeforeCandidateOutputs({ input, output, error }).catch((cause) => {
+      cause.message = `${label}: ${cause.message}`;
+      throw cause;
+    });
+  }
+});
+
+test("stage CLI는 --candidate-preparation을 필수 인자로 받는다", () => {
+  const argv = [
+    "--datapack-root", "out", "--build-spec", "spec.json", "--station-line-input", "station.json",
+    "--route-edge-input", "route.json", "--repository-git-sha", "b".repeat(40), "--key-id", "production-v1",
+    "--output", "stage",
+  ];
+  assert.throws(() => parseStageCurrentServerRouteBundleCandidateArgs(argv), /CLI arguments mismatch/);
+  assert.equal(parseStageCurrentServerRouteBundleCandidateArgs([
+    ...argv, "--candidate-preparation", "tools/datapack/release/nationwide-candidate-preparation.json",
+  ]).candidatePreparationPath, "tools/datapack/release/nationwide-candidate-preparation.json");
+});
+
+async function nationwideFixture(root) {
+  const input = await fixture(root);
+  const buildSpec = JSON.parse(await readFile(input.buildSpecPath, "utf8"));
+  buildSpec.candidateId = "nationwide-candidate-20260909";
+  buildSpec.productionScopeId = "nationwide_routing_android_v1";
+  buildSpec.fixturePath = "tools/datapack/release/nationwide-production-canonical-pack.json";
+  const buildSpecBytes = Buffer.from(JSON.stringify(buildSpec));
+  await writeFile(input.buildSpecPath, buildSpecBytes);
+
+  const manifest = JSON.parse(await readFile(path.join(input.datapackRoot, "current.json"), "utf8"));
+  manifest.activePack = { id: "nationwide", version: "1" };
+  manifest.packs[0].id = "nationwide";
+  await writeFile(path.join(input.datapackRoot, "current.json"), JSON.stringify(manifest));
+  await copyFile(
+    path.join(input.datapackRoot, "catalog", "capital-v1.sqlite.gz"),
+    path.join(input.datapackRoot, "catalog", "nationwide-v1.sqlite.gz"),
+  );
+
+  const provenance = JSON.parse(await readFile(path.join(input.datapackRoot, "current.provenance.json"), "utf8"));
+  provenance.candidateBuild.candidateId = buildSpec.candidateId;
+  provenance.candidateBuild.buildSpecSha256 = sha256(buildSpecBytes);
+  await writeFile(path.join(input.datapackRoot, "current.provenance.json"), JSON.stringify(provenance));
+
+  const stationLine = JSON.parse(await readFile(input.stationLineInputPath, "utf8"));
+  stationLine.candidate.candidateId = buildSpec.candidateId;
+  const stationLineBytes = Buffer.from(JSON.stringify(stationLine));
+  await writeFile(input.stationLineInputPath, stationLineBytes);
+  const routeEdge = JSON.parse(await readFile(input.routeEdgeInputPath, "utf8"));
+  routeEdge.candidate.candidateId = buildSpec.candidateId;
+  const routeEdgeBytes = Buffer.from(JSON.stringify(routeEdge));
+  await writeFile(input.routeEdgeInputPath, routeEdgeBytes);
+
+  const candidatePreparationPath = path.join(root, "nationwide-candidate-preparation.json");
+  await writeFile(candidatePreparationPath, JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "nationwide-candidate-preparation",
+    scopeId: buildSpec.productionScopeId,
+    materialization: { fixturePath: buildSpec.fixturePath },
+    releaseIdentity: {
+      candidateId: buildSpec.candidateId,
+      publishedAt: buildSpec.publishedAt,
+      releaseSequence: buildSpec.releaseSequence,
+    },
+    builderIdentity: { gitSha: "a".repeat(40), version: "build-datapack.mjs@26" },
+    authority: { candidateId: buildSpec.candidateId, scopeId: buildSpec.productionScopeId },
+    routeEdgeInput: { path: "tools/datapack/release/nationwide-route-edge-input.json", sha256: sha256(routeEdgeBytes) },
+    stationLineInput: { path: "tools/datapack/release/nationwide-station-line-input.json", sha256: sha256(stationLineBytes) },
+  }));
+  return { ...input, candidatePreparationPath };
+}
 
 async function inventory(root) {
   const entries = [];

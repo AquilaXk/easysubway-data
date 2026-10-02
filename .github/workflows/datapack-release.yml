@@ -877,6 +877,7 @@ jobs:
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
             --station-line-input "${EASYSUBWAY_DATAPACK_STATION_LINE_INPUT}" \
             --route-edge-input "${EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT}" \
+            --candidate-preparation tools/datapack/release/nationwide-candidate-preparation.json \
             --repository-git-sha "${GITHUB_SHA}" \
             --key-id "${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID}" \
             --output "${EASYSUBWAY_DATAPACK_STAGE}"
@@ -2003,20 +2004,25 @@ jobs:
           const root = process.env.DATAPACK_ROOT;
           const manifest = JSON.parse(readFileSync(`${root}/current.json`, "utf8"));
           const active = selectEffectiveDataPack(manifest);
-          if (!active || active.id !== "capital" || active.version !== "1") throw new Error("current build must select capital@1");
+          if (!active || active.id !== "nationwide" || active.version !== "1") throw new Error("current build must select nationwide@1");
           const gzip = readFileSync(`${root}/${stagedPackPath(active)}`);
           if (active.sha256 !== sha256(gzip)) throw new Error("current active pack SHA mismatch");
           const sqlite = gunzipSync(gzip);
           if (active.sqliteSha256 !== sha256(sqlite)) throw new Error("current active pack gunzip SHA mismatch");
           writeFileSync(process.env.SOURCE_SQLITE, sqlite, { flag: "wx", mode: 0o600 });
           NODE
+          node tools/datapack/nationwide-candidate-input-binding.mjs \
+            --build-spec "${MAP_CATALOG_BUILD_SPEC_PATH}" \
+            --candidate-preparation tools/datapack/release/nationwide-candidate-preparation.json \
+            --station-line-input tools/datapack/release/nationwide-station-line-input.json \
+            --route-edge-input tools/datapack/release/nationwide-route-edge-input.json
           node tools/datapack/emit-artifact-components.mjs \
             --source-sqlite "${source_sqlite}" \
             --source-provenance "${datapack_root}/current.provenance.json" \
             --build-spec "${MAP_CATALOG_BUILD_SPEC_PATH}" \
             --output "${artifact_root}" \
-            --map-pack-id "capital-map-1" \
-            --catalog-pack-id "capital-catalog-1" \
+            --map-pack-id "nationwide-map-1" \
+            --catalog-pack-id "nationwide-catalog-1" \
             --bundle-id "${MAP_CATALOG_BUNDLE_ID}" \
             --release-sequence "${MAP_CATALOG_RELEASE_SEQUENCE}" \
             --active-from "${MAP_CATALOG_ACTIVE_FROM}" \
@@ -2024,8 +2030,8 @@ jobs:
             --built-at "${MAP_CATALOG_BUILT_AT}" \
             --key-id "${MAP_CATALOG_KEY_ID}" \
             --evaluation-at "${MAP_CATALOG_BUILT_AT}" \
-            --station-line-input tools/datapack/release/current-capital-accessibility-full/station-line-input.json \
-            --route-edge-input tools/datapack/release/current-capital-accessibility-full/route-edge-input.json
+            --station-line-input tools/datapack/release/nationwide-station-line-input.json \
+            --route-edge-input tools/datapack/release/nationwide-route-edge-input.json
           ARTIFACT_ROOT="${artifact_root}" DESCRIPTOR_OUTPUT="${RUNNER_TEMP}/map-catalog-signed-current-publication.json" node --input-type=module <<'NODE'
           import { buildMapCatalogSignedCurrentPublication } from "./tools/datapack/build-map-catalog-signed-current-publication.mjs";
           const serverRoute = {

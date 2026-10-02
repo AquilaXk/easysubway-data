@@ -258,6 +258,7 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.match(stagerText, /--station-line-input "\$\{EASYSUBWAY_DATAPACK_STATION_LINE_INPUT\}"/);
   assert.match(stagerText, /--route-edge-input "\$\{EASYSUBWAY_DATAPACK_ROUTE_EDGE_INPUT\}"/);
   assert.match(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}"/);
+  assert.match(stagerText, /--candidate-preparation tools\/datapack\/release\/nationwide-candidate-preparation\.json/);
   assert.doesNotMatch(stagerText, /--output "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-bundle"/);
   assert.ok(stager < step("Data Pack Release / Publish OCI candidate descriptor"));
   const evidenceBundle = yml.slice(step("Data Pack Release / Write release evidence bundle"), step("Data Pack Release / Validate release evidence bundle"));
@@ -284,6 +285,12 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.match(remote, /--server-route-coverage-evidence "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/server-route-coverage-authority\.json"/);
   assert.match(remote, /--server-route-coverage-provenance "\$\{EASYSUBWAY_DATAPACK_STAGE\}\/current\.provenance\.json"/);
   assert.match(prepare, /elif \[\[ "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "release-candidate" \|\| "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "candidate-create" \]\]; then/);
+});
+
+// #866 PR-B: 발행 workflow는 수도권 live chain 산출물(current-capital-accessibility-full)을 참조하지 않는다.
+test("datapack-release workflow는 current-capital-accessibility-full 산출물 참조가 0개다", () => {
+  assert.equal(yml.match(/current-capital-accessibility-full/g)?.length ?? 0, 0);
+  assert.doesNotMatch(yml, /refresh-current-capital-accessibility-full|run-current-capital-live-chain|build-current-capital-live-chain-boundary/);
 });
 
 test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
@@ -383,13 +390,23 @@ test("map-catalog production publication은 current main·검증된 server-route
   assert.match(job, /descriptor\.manifest\.freshUntil/);
   assert.match(job, /descriptor\.manifest\.bundleId/);
   assert.match(job, /descriptor\.manifest\.keyId/);
-  assert.match(job, /capital-map-1/);
-  assert.match(job, /capital-catalog-1/);
+  // #866 PR-B(D3): map-catalog도 전국 후보 입력·nationwide@1·RC stage와 같은 식별자를 쓴다.
+  assert.match(job, /active\.id !== "nationwide" \|\| active\.version !== "1"\) throw new Error\("current build must select nationwide@1"\)/);
+  assert.match(job, /--map-pack-id "nationwide-map-1"/);
+  assert.match(job, /--catalog-pack-id "nationwide-catalog-1"/);
+  assert.doesNotMatch(job, /capital@1|capital-map-1|capital-catalog-1|current-capital-accessibility-full/);
   assert.match(job, /build-datapack\.mjs/);
   assert.match(job, /gunzipSync/);
   assert.match(job, /emit-artifact-components\.mjs/);
   assert.match(job, /buildMapCatalogSignedCurrentPublication/);
   assert.match(job, /mapCatalog\.stationSetSha256 !== serverRoute\.stationSetSha256/);
+
+  const buildText = step("Map catalog publication / Build signed current publication").text;
+  const binding = buildText.indexOf("node tools/datapack/nationwide-candidate-input-binding.mjs");
+  const emit = buildText.indexOf("node tools/datapack/emit-artifact-components.mjs");
+  assert.ok(binding !== -1 && binding < emit, "map-catalog은 emit 전에 preparation sha 결속을 확인한다");
+  assert.match(buildText, /nationwide-candidate-input-binding\.mjs \\\n\s+--build-spec "\$\{MAP_CATALOG_BUILD_SPEC_PATH\}" \\\n\s+--candidate-preparation tools\/datapack\/release\/nationwide-candidate-preparation\.json \\\n\s+--station-line-input tools\/datapack\/release\/nationwide-station-line-input\.json \\\n\s+--route-edge-input tools\/datapack\/release\/nationwide-route-edge-input\.json/);
+  assert.match(buildText, /--station-line-input tools\/datapack\/release\/nationwide-station-line-input\.json \\\n\s+--route-edge-input tools\/datapack\/release\/nationwide-route-edge-input\.json\n/);
 
   const preflight = step("Map catalog publication / Validate immutable inputs");
   const build = step("Map catalog publication / Build signed current publication");
