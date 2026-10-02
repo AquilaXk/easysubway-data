@@ -395,11 +395,20 @@ export async function resolveSeoulMeasuredTransferMetrics({ sourceInventory, sou
 // - 두 원천이 같은 방향을 덮으면 시간은 실측 원천, 거리는 서울교통공사 공식 거리다. 행의 원천 id는 시간 원천이고,
 //   거리 원천(id·snapshot·레코드 hash·표기)은 distanceSource로 함께 들고 간다. 레코드 hash는 두 원천 레코드 hash의 결속이다.
 // - 거리 원천이 역방향(DERIVED_RECIPROCAL)이면 그 표기를 유지한다(경로 행 없이 route edge만, #872 D4 보완).
-// - 실측 원천만 있는 방향은 거리가 없다. 거리 null을 받는 계약(스키마 확장)은 후속이므로 후보에 넣지 않고 사용 불가로 둔다.
+// - #878(QA 결정 2026-10-02, 스키마 v20 계획 대체): 실측 원천만 있는 방향은 실측 시간을 표준 보행속도(1.2 m/s, #1700 앵커)로
+//   걸은 시간으로 보고 거리 = round(실측초 × 1.2)m로 유도한다. 시간은 실측 그대로다. 행 원천은 시간 원천이고,
+//   유도 표기(distanceDerivation·derivationPaceMetersPerSecond)를 함께 들고 간다. 레코드 hash는 유도 표기와 실측 레코드 hash의 결속이라
+//   실측 레코드 hash만 가진 행(공식 측정 거리)과 구별된다. 팩 v19에는 유도 표기 열이 없으므로 이 결속이 팩 행의 표기다.
+// - 실측 0초 방향은 유도 거리도 0이다. 서버 근거 판별(거리 > 0 또는 시간 > 0)이 0/0을 버리므로 값을 만들지 않고 사용 불가로 남긴다.
 // - 실측 원천이 부산교통공사 등 다른 공식 원천과 겹치면 우선순위가 정해지지 않았으므로 실패한다.
+export const STANDARD_PACE_DISTANCE_DERIVATION = "STANDARD_PACE_FROM_MEASURED_TIME";
+// 1.2 m/s를 정수 비율(12/10)로 곱한다. 초 × 12는 짝수라 반올림 경계(.5)가 생기지 않는다.
+const STANDARD_PACE_METERS_PER_SECOND = 1.2;
+const standardPaceDistanceMeters = (seconds) => Math.round((seconds * 12) / 10);
 export function applyMeasuredTransferTimePrecedence({ officialByDirection, measured }) {
   const byDirection = new Map(officialByDirection);
-  const timeOnlyDirections = [];
+  const derivedDistanceDirections = [];
+  const unavailableDirections = [];
   const seen = new Set();
   for (const metric of measured.metrics) {
     if (metric?.distanceMeters !== null || metric.metricProvenance !== "OFFICIAL_SOURCE" || metric.measurement !== "MEASURED"
@@ -412,8 +421,35 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
     seen.add(key);
     const distance = officialByDirection.get(key);
     if (!distance) {
-      timeOnlyDirections.push({ stationId: metric.stationId, fromLineId: metric.fromLineId, toLineId: metric.toLineId,
-        measuredDurationSeconds: metric.measuredDurationSeconds, sourceRecordSha256: metric.sourceRecordSha256 });
+      const direction = { stationId: metric.stationId, fromLineId: metric.fromLineId, toLineId: metric.toLineId,
+        measuredDurationSeconds: metric.measuredDurationSeconds, sourceRecordSha256: metric.sourceRecordSha256 };
+      const distanceMeters = standardPaceDistanceMeters(metric.measuredDurationSeconds);
+      if (distanceMeters === 0) {
+        unavailableDirections.push({ ...direction, reason: "ZERO_MEASURED_DURATION" });
+        continue;
+      }
+      derivedDistanceDirections.push({ ...direction, distanceMeters });
+      byDirection.set(key, {
+        metric: {
+          stationId: metric.stationId,
+          fromLineId: metric.fromLineId,
+          toLineId: metric.toLineId,
+          distanceMeters,
+          metricProvenance: "OFFICIAL_SOURCE",
+          sourceRecordSha256: sha256(canonicalJson({
+            derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
+            distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
+            durationSourceRecordSha256: metric.sourceRecordSha256,
+          })),
+        },
+        sourceId: measured.sourceId,
+        sourceSnapshotId: measured.sourceSnapshotId,
+        lastVerifiedAt: measured.lastVerifiedAt,
+        durationSeconds: metric.measuredDurationSeconds,
+        durationSourceRecordSha256: metric.sourceRecordSha256,
+        distanceDerivation: STANDARD_PACE_DISTANCE_DERIVATION,
+        derivationPaceMetersPerSecond: STANDARD_PACE_METERS_PER_SECOND,
+      });
       continue;
     }
     if (distance.sourceId !== DISTANCE_TRANSFER_SOURCE_ID) {
@@ -447,7 +483,7 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
       },
     });
   }
-  return { byDirection, timeOnlyDirections };
+  return { byDirection, derivedDistanceDirections, unavailableDirections };
 }
 
 // 광주 접근성 행의 FACILITY 판정. 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고
@@ -645,7 +681,8 @@ export async function prepareNationwideCandidate({
       metrics: busanTransfer.metrics, durationOf: (m) => m.officialDurationSeconds,
     },
   ]);
-  // #876: 실측 환승시간 원천을 우선순위 규칙으로 합친다. 거리 없이 시간만 있는 방향은 후보에서 사용 불가로 남는다.
+  // #876: 실측 환승시간 원천을 우선순위 규칙으로 합친다. #878: 거리 없이 시간만 있는 방향은 표준 보행속도로 거리를 유도해 쓰고,
+  // 실측 0초 방향만 사용 불가로 남는다.
   const measuredTransfer = await resolveSeoulMeasuredTransferMetrics({
     sourceInventory, sourceSnapshots: snapshots, freshnessPolicy, evaluatedAt: fanIn.evaluatedAt, read,
   });

@@ -177,10 +177,30 @@ test("전국 발행 경로는 환승 지표 204방향 전체를 route edge로, O
   const transfers = new Map(route.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map((edge) => [edge.edgeId, edge]));
   const measuredByKey = new Map(measured.metrics.map((metric) => [`${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`, metric]));
   // #872 S3: 전국 route edge에는 서울교통공사 지표 204방향과 부산교통공사 공식 환승 12방향(별도 원천)이 함께 있다.
-  // #876: 실측 원천만 있는 방향(거리 없음)은 route edge가 아니다.
+  // #878(QA 결정 2026-10-02): 실측 원천만 있는 방향은 거리 = round(실측초 × 1.2)로 유도한 route edge·경로 행이 된다.
+  // 실측 0초 방향(중랑 경의중앙→경춘)은 거리·시간이 모두 0이라 서버 근거 판별을 통과하지 못하므로 route edge가 아니다.
+  const seoulKeys = new Set(metrics.metrics.map((metric) => `${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`));
+  const timeOnly = measured.metrics.filter((metric) => !seoulKeys.has(`${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`));
+  const derived = timeOnly.filter(({ measuredDurationSeconds }) => measuredDurationSeconds > 0);
+  assert.deepEqual([timeOnly.length, derived.length], [94, 93]);
   assert.equal(metrics.metrics.length, 204);
   assert.equal(busan.metrics.length, 12);
-  assert.equal(transfers.size, metrics.metrics.length + busan.metrics.length);
+  assert.equal(transfers.size, metrics.metrics.length + busan.metrics.length + derived.length);
+  const derivedBinding = (measuredHash) => sha256(JSON.stringify({ derivationPaceMetersPerSecond: 1.2, distanceDerivation: "STANDARD_PACE_FROM_MEASURED_TIME", durationSourceRecordSha256: measuredHash }));
+  const pathwayById = new Map(pack.stationPathwayEdges.map((edge) => [edge.id, edge]));
+  for (const timed of timeOnly) {
+    const key = `${timed.stationId}-${timed.fromLineId}-${timed.toLineId}`;
+    if (timed.measuredDurationSeconds === 0) {
+      assert.equal(transfers.has(`transfer-${key}`), false, key);
+      assert.equal(pathwayById.has(`pathway-edge-${key}-walk`), false, key);
+      continue;
+    }
+    const meters = Math.round(timed.measuredDurationSeconds * 1.2);
+    assert.deepEqual([transfers.get(`transfer-${key}`)?.durationSeconds, transfers.get(`transfer-${key}`)?.distanceMeters], [timed.measuredDurationSeconds, meters], key);
+    const edge = pathwayById.get(`pathway-edge-${key}-walk`);
+    assert.deepEqual([edge?.durationSeconds, edge?.distanceMeters, edge?.sourceId, edge?.providerRecordHash, edge?.evidenceHash],
+      [timed.measuredDurationSeconds, meters, "seoul-metro-transfer-car-door-duration", derivedBinding(timed.sourceRecordSha256), derivedBinding(timed.sourceRecordSha256)], key);
+  }
   const composite = (seoulHash, measuredHash) => sha256(JSON.stringify({ distanceSourceRecordSha256: seoulHash, durationSourceRecordSha256: measuredHash }));
   let overlapping = 0;
   for (const metric of metrics.metrics) {
@@ -197,8 +217,8 @@ test("전국 발행 경로는 환승 지표 204방향 전체를 route edge로, O
   const seoulPathwayEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
   const measuredPathwayEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === "seoul-metro-transfer-car-door-duration");
   assert.equal(seoulPathwayEdges.length, seoulOnly.length);
-  assert.equal(measuredPathwayEdges.length, official.length - seoulOnly.length);
-  assert.equal(pack.stationPathwayEdges.length, official.length + busan.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length);
+  assert.equal(measuredPathwayEdges.length, official.length - seoulOnly.length + derived.length);
+  assert.equal(pack.stationPathwayEdges.length, official.length + busan.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length + derived.length);
   const pathwayHashes = new Set(pack.stationPathwayEdges.map(({ providerRecordHash }) => providerRecordHash));
   for (const metric of official) {
     const timed = measuredByKey.get(`${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`);
