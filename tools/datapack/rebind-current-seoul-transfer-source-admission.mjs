@@ -231,8 +231,10 @@ async function compareAndSwap(root, { relative, prestate, bytes }) {
   } finally { await unlink(temporary).catch(() => {}); }
 }
 
+// beforeOutputWrite는 각 CAS 직전에 불린다(기본 no-op). 테스트가 동시 외부 쓰기(drift)를 재현할 때만 쓴다.
 export async function rebindCurrentSeoulTransferSourceAdmission(options = {}) {
   const root = requiredAbsolute(options.repositoryRoot ?? ROOT, "repository root");
+  const beforeOutputWrite = options.beforeOutputWrite ?? (async () => {});
   const derived = await deriveCurrentSeoulTransferSourceAdmissionOutputs({ ...options, repositoryRoot: root });
   const targets = derived.outputs.map(({ relative }) => relative);
   const summary = {
@@ -243,11 +245,18 @@ export async function rebindCurrentSeoulTransferSourceAdmission(options = {}) {
   if (pending.length === 0) return { ...summary, changed: false };
   const written = [];
   try {
-    for (const output of pending) { await compareAndSwap(root, output); written.push(output); }
+    for (const output of pending) {
+      await beforeOutputWrite({ relative: output.relative, phase: "commit" });
+      await compareAndSwap(root, output);
+      written.push(output);
+    }
   } catch (error) {
     // 이미 쓴 출력만 실행 전 바이트로 되돌린다. 되돌리기도 실패하면 두 오류를 함께 드러낸다.
     try {
-      for (const output of written.reverse()) await compareAndSwap(root, { relative: output.relative, prestate: output.bytes, bytes: output.prestate });
+      for (const output of written.reverse()) {
+        await beforeOutputWrite({ relative: output.relative, phase: "rollback" });
+        await compareAndSwap(root, { relative: output.relative, prestate: output.bytes, bytes: output.prestate });
+      }
     } catch (rollbackError) {
       throw new AggregateError([error, rollbackError], "TRANSFER re-binding failed and rollback did not complete");
     }

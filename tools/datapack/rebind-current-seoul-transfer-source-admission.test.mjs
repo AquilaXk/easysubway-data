@@ -288,4 +288,53 @@ test("OCI GET 오류 메시지에서 PAR base URL·토큰을 지운다", async (
   }
 });
 
+// #893 F4: 쓰는 도중 실패하면 이미 쓴 출력을 실행 전 바이트로 되돌리고, 되돌리기마저 실패하면 두 오류를 함께 드러낸다.
+test("뒤쪽 출력에 외부 쓰기가 끼어들면 앞서 쓴 출력을 모두 실행 전 바이트로 되돌리고 실패한다", async (t) => {
+  const { root, fixture } = await repository(t);
+  await rewriteSeoulTransferFixtureCanonicalPack(root, rotateKeyId);
+  const before = await snapshot(root, outputPaths(fixture));
+  const foreign = Buffer.from("[]\n");
+  const phases = [];
+  await assert.rejects(rebindCurrentSeoulTransferSourceAdmission({
+    repositoryRoot: root, env, now: NOW, client: lockedRawClient(fixture.rawBytes),
+    async beforeOutputWrite({ relative, phase }) {
+      phases.push(`${phase}:${relative}`);
+      if (phase === "commit" && relative === PATHS.ledger) await writeFile(path.join(root, PATHS.ledger), foreign);
+    },
+  }), /TRANSFER output drift before commit: tools\/datapack\/release\/source-snapshots\.json/);
+  const [metrics, applicability, descriptor, inventory, ledger] = outputPaths(fixture);
+  assert.deepEqual(phases, [
+    ...[metrics, applicability, descriptor, inventory, ledger].map((relative) => `commit:${relative}`),
+    ...[inventory, descriptor, applicability, metrics].map((relative) => `rollback:${relative}`),
+  ]);
+  for (const relative of [metrics, applicability, descriptor, inventory]) assert.ok((await readFile(path.join(root, relative))).equals(before.get(relative)), relative);
+  // 끼어든 외부 쓰기는 덮어쓰지 않는다.
+  assert.ok((await readFile(path.join(root, ledger))).equals(foreign));
+});
+
+test("되돌리기 중에도 외부 쓰기가 끼어들면 AggregateError로 두 오류를 함께 드러낸다", async (t) => {
+  const { root, fixture } = await repository(t);
+  await rewriteSeoulTransferFixtureCanonicalPack(root, rotateKeyId);
+  const before = await snapshot(root, outputPaths(fixture));
+  const foreign = Buffer.from("{}\n");
+  await assert.rejects(rebindCurrentSeoulTransferSourceAdmission({
+    repositoryRoot: root, env, now: NOW, client: lockedRawClient(fixture.rawBytes),
+    async beforeOutputWrite({ relative, phase }) {
+      if (phase === "commit" && relative === PATHS.ledger) await writeFile(path.join(root, PATHS.ledger), Buffer.from("[]\n"));
+      if (phase === "rollback" && relative === PATHS.inventory) await writeFile(path.join(root, PATHS.inventory), foreign);
+    },
+  }), (error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.message, "TRANSFER re-binding failed and rollback did not complete");
+    assert.deepEqual(error.errors.map(({ message }) => message), [
+      `TRANSFER output drift before commit: ${PATHS.ledger}`,
+      `TRANSFER output drift before commit: ${PATHS.inventory}`,
+    ]);
+    return true;
+  });
+  // 되돌리기는 inventory에서 멈췄다: 외부 쓰기를 덮어쓰지 않고, 그보다 앞 출력(descriptor·applicability·지표)은 새 바이트로 남아 명시적으로 드러난다.
+  assert.ok((await readFile(path.join(root, PATHS.inventory))).equals(foreign));
+  assert.equal((await readFile(path.join(root, PATHS.metrics))).equals(before.get(PATHS.metrics)), false);
+});
+
 function lineBytesOf(value) { return Buffer.from(`${JSON.stringify(value)}\n`); }
