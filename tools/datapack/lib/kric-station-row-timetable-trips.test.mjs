@@ -108,6 +108,13 @@ test("급행은 정차·통과를 구분할 수 없어 적재하지 않고, 고�
     note: "급행 정차·통과 구분 불가, #902에서 보강", rowCount: 2, tripCount: 1, rowSetSha256: rowSetSha256(express) });
   assert.throws(() => buildKorailStationRowTrips({ records: [...express, ...local], bindings: [BINDING] }),
     /EXPRESS_QUARANTINE_ROW_SET_CHANGED: TEST1/u);
+  // 행 수는 같고 내용(해시)만 다른 경우와 해시는 같고 행 수만 다른 경우를 각각 막는다.
+  const sameCountOtherRows = { ...BINDING, expressQuarantine: { rowCount: 2, rowSetSha256: rowSetSha256(local) } };
+  assert.throws(() => buildKorailStationRowTrips({ records: [...express, ...local], bindings: [sameCountOtherRows] }),
+    /EXPRESS_QUARANTINE_ROW_SET_CHANGED: TEST1 rows=2/u);
+  const sameShaOtherCount = { ...BINDING, expressQuarantine: { rowCount: 3, rowSetSha256: rowSetSha256(express) } };
+  assert.throws(() => buildKorailStationRowTrips({ records: [...express, ...local], bindings: [sameShaOtherCount] }),
+    /EXPRESS_QUARANTINE_ROW_SET_CHANGED: TEST1 rows=2/u);
 });
 
 test("수도권 밖·미바인딩 노선번호 행(경부선 동대구-경산 등)은 어떤 노선에도 넣지 않는다", () => {
