@@ -264,4 +264,28 @@ test("지표·applicability는 같고 descriptor 본문만 달라지면 쓰지 �
   for (const [relative, bytes] of before) assert.ok((await readFile(path.join(root, relative))).equals(bytes), relative);
 });
 
+// #893 F3: GET 오류 메시지가 PAR URL·토큰(원문, /p/<token> 경로, URL 인코딩)을 담아도 노출하지 않는다.
+test("OCI GET 오류 메시지에서 PAR base URL·토큰을 지운다", async (t) => {
+  const { root, fixture } = await repository(t);
+  await rewriteSeoulTransferFixtureCanonicalPack(root, rotateKeyId);
+  const token = "par+Secret=Token";
+  const baseUrl = `https://objectstorage.ap-seoul-1.oraclecloud.com/p/${token}/n/axvym6vk8g7i/b/easysubway-datapacks/o`;
+  const href = new URL(baseUrl).href;
+  for (const [label, leak] of [
+    ["base URL", `GET ${href}/${fixture.receipt.objectKey} failed`],
+    ["/p/<token> 경로", `socket hang up at /p/${token}/n/axvym6vk8g7i/b/easysubway-datapacks/o/${fixture.receipt.objectKey}`],
+    ["URL 인코딩", `request to ${encodeURIComponent(href)} failed`],
+  ]) {
+    const client = { async readObject() { throw new Error(leak); } };
+    await assert.rejects(
+      rebindCurrentSeoulTransferSourceAdmission({ repositoryRoot: root, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: baseUrl }, now: NOW, client }),
+      (error) => {
+        assert.match(error.message, /^locked TRANSFER raw GET failed: /u, label);
+        for (const secret of [token, encodeURIComponent(token), href, encodeURIComponent(href)]) assert.equal(error.message.includes(secret), false, `${label}: ${secret}`);
+        return true;
+      },
+    );
+  }
+});
+
 function lineBytesOf(value) { return Buffer.from(`${JSON.stringify(value)}\n`); }

@@ -122,13 +122,25 @@ const eraseDescriptorBinding = (value) => {
   delete value.snapshotSha256; eraseKeys(value.transferTopology, TOPOLOGY_BINDING_KEYS); eraseKeys(value.observationIdentity, INPUT_CONTRACT_BINDING_KEYS);
 };
 
+// PAR URL은 토큰이 곧 접근 권한이다. 오류 메시지에서 base URL과 토큰을 원문·디코딩·URL 인코딩 형태 모두 지운다.
+function redactPar(message, parBaseUrl) {
+  const token = parBaseUrl.pathname.split("/")[2] ?? "";
+  let decoded = token;
+  try { decoded = decodeURIComponent(token); } catch { /* 디코딩할 수 없는 토큰은 원문만 지운다 */ }
+  const secrets = [...new Set([parBaseUrl.href, token, decoded].flatMap((value) => [value, encodeURIComponent(value)]))]
+    .filter((value) => value !== "")
+    .sort((left, right) => right.length - left.length);
+  let redacted = message;
+  for (const secret of secrets) redacted = redacted.replaceAll(secret, "[redacted]");
+  return redacted.replaceAll(/\/p\/[^/\s]+/gu, "/p/[redacted]");
+}
+
 async function readLockedRaw({ client, receipt, parBaseUrl }) {
   let fetched;
   try {
     fetched = await client.readObject(receipt.objectKey, { maxResponseBytes: receipt.byteSize });
   } catch (error) {
-    const message = String(error?.message ?? "request failed").replaceAll(parBaseUrl.href, "[PAR]").replaceAll(/\/p\/[^/\s]+/gu, "/p/[redacted]");
-    throw new Error(`locked TRANSFER raw GET failed: ${message}`);
+    throw new Error(`locked TRANSFER raw GET failed: ${redactPar(String(error?.message ?? "request failed"), parBaseUrl)}`);
   }
   if (!fetched?.exists) throw new Error("locked TRANSFER raw object is missing");
   if (!Buffer.isBuffer(fetched.body) || fetched.body.length !== receipt.byteSize || sha256(fetched.body) !== receipt.rawObjectSha256) {
