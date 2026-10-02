@@ -39,6 +39,7 @@ const KRIC_PORTAL_DETAIL_IDS = Object.freeze({
   "kric-station-transfer-info": "181",
   "kric-subway-route-info": "431",
   "kric-subway-timetable": "162",
+  "kric-subway-timetable-station-lines": "162",
   "kric-subway-timetable-exp": "434",
   "kric-train-operation-organ": "266",
   "kric-transfer-movement-detailed": "307",
