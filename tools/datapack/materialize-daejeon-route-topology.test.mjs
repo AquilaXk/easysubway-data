@@ -535,11 +535,15 @@ test("접근성 coverage는 같은 운영기관의 scope 밖 지역 station-line
   });
 });
 
-test("명시된 접근성 coverage scope의 station-line evidence 누락을 거부한다", async (context) => {
+test("#873 청구 범위에 환승역이 없으면 역 단위 ENTRY/EXIT 증거 누락은 발행 차단이 아니고 TRANSFER 분모는 0이다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-accessibility-scope-gap-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const [baseFixture, snapshot, inventory, canonicalStationMappings] = await inputs();
   const pack = baseFixture.packs[0];
+  // #873(QA 방향 전환): 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나므로 역 단위 ENTRY/EXIT coverage는 발행 차단
+  // 조건이 아니다. 예전에는 상록수 역-노선의 증거·간선을 지우면 "verified ENTRY coverage gap"으로 거부했다.
+  // 이 지역 팩의 청구 범위에는 환승역이 없어 TRANSFER 분모가 0이다. TRANSFER coverage 차단은 datapack-tools의
+  // current production 환승 간선 누락 테스트가 고정한다.
   pack.stationFacilityEvidence = pack.stationFacilityEvidence
     .filter(({ stationId }) => stationId !== "station-sangnoksu");
   pack.networkEdges = pack.networkEdges.filter(({ fromNodeId, toNodeId }) =>
@@ -565,7 +569,7 @@ test("명시된 접근성 coverage scope의 station-line evidence 누락을 거�
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
   await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
-  await assert.rejects(execFileAsync(process.execPath, [
+  const { stdout } = await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
@@ -573,7 +577,12 @@ test("명시된 접근성 coverage scope의 station-line evidence 누락을 거�
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
-  }), /verified ENTRY coverage gap/);
+  });
+  const report = JSON.parse(stdout.trim().split("\n").at(-1));
+  assert.equal(report.type, "datapack_verified_edge_coverage");
+  assert.equal(Object.hasOwn(report, "entry"), false);
+  assert.equal(Object.hasOwn(report, "exit"), false);
+  assert.deepEqual(report.transfer, { denominator: 0, verified: 0, missingCount: 0, ratio: 1 });
 });
 
 test("접근성 source가 있는 production pack은 접근성 coverage metadata 삭제를 거부한다", async (context) => {

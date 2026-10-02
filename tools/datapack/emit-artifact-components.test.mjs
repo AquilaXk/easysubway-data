@@ -567,12 +567,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
         { path_id: "kric-mv:S1:2:201:202:1", group_kind: "DIRECTION", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
         { path_id: "kric-mv:S1:2:201:202:1", group_kind: "EXIT", facility_id: "smrt-elev:0201:2:1번 출입구" },
       ]);
-      // #827: 운영 빌드 경로가 번들에 적재된 경로·시설 묶음에서 기존 역 ENTRY·EXIT edge(entry-s1/exit-s1)의 요구 행을 만든다.
+      // #827: 운영 빌드 경로가 번들에 적재된 경로·시설 묶음에서 승강장 노드(s1:l1, #873)의 요구 행을 만든다.
       assert.deepEqual(componentDb.prepare("SELECT * FROM transition_facility_requirement ORDER BY transition_key, path_id, group_kind, facility_id").all().map((row) => ({ ...row })), [
-        { transition_key: "entry-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
-        { transition_key: "entry-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
-        { transition_key: "exit-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
-        { transition_key: "exit-s1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
+        { transition_key: "s1:l1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
+        { transition_key: "s1:l1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
       ]);
       // #837: 운영 빌드 경로가 역코드 membership으로 결속한 승강장 연단 간격 등급 행을 적재한다(결속 실패 행은 제외).
       assert.deepEqual(componentDb.prepare("SELECT * FROM station_platform_gaps ORDER BY id").all().map((row) => ({ ...row })), [
