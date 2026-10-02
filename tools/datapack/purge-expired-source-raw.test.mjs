@@ -459,7 +459,8 @@ test("legal hold report는 검증된 metadata만 기록한다", async () => {
   });
 });
 
-test("같은 object key가 만료와 legal hold entry에 중복되면 DELETE 전에 거부한다", async () => {
+// #870: 같은 원본 재확인 행은 기존 원본 객체를 공유한다. 공유 객체는 참조하는 행 가운데 가장 늦은 만료·보호를 따른다.
+test("같은 object key를 legal hold entry와 공유하면 만료 entry가 있어도 삭제하지 않는다(#870)", async () => {
   await withFixture(async ({ baseUrl, objects, requests, workDir }) => {
     const files = await writeInputs(workDir, [
       rawEntry("expired", "raw/shared.json"),
@@ -467,9 +468,55 @@ test("같은 object key가 만료와 legal hold entry에 중복되면 DELETE 전
     ]);
     objects.add("/raw/shared.json");
 
+    const report = await runPurge({ ...files, baseUrl, output: path.join(workDir, "shared-hold.json") });
+    assert.deepEqual(requests, []);
+    assert.equal(objects.has("/raw/shared.json"), true);
+    assert.deepEqual(report.deleted, []);
+    assert.deepEqual(report.protected.map((entry) => entry.snapshotId).sort(), ["expired", "legal-hold"]);
+  });
+});
+
+test("같은 object key를 공유하는 entry 중 하나라도 만료 전이면 가장 늦은 만료까지 삭제하지 않는다(#870)", async () => {
+  await withFixture(async ({ baseUrl, objects, requests, workDir }) => {
+    const files = await writeInputs(workDir, [
+      rawEntry("expired", "raw/shared.json"),
+      rawEntry("reverified", "raw/shared.json", { retrievedAt: "2099-01-01T00:00:00Z", rawRetentionExpiresAt: "2099-04-01T00:00:00.000Z" }),
+    ]);
+    objects.add("/raw/shared.json");
+
+    const report = await runPurge({ ...files, baseUrl, output: path.join(workDir, "shared-latest.json") });
+    assert.deepEqual(requests, []);
+    assert.equal(objects.has("/raw/shared.json"), true);
+    assert.deepEqual(report.deleted, []);
+    assert.deepEqual(report.retained.map((entry) => entry.snapshotId).sort(), ["expired", "reverified"]);
+  });
+});
+
+test("같은 object key를 공유하는 entry가 모두 만료되면 공유 객체를 삭제한다(#870)", async () => {
+  await withFixture(async ({ baseUrl, objects, requests, workDir }) => {
+    const files = await writeInputs(workDir, [
+      rawEntry("expired", "raw/shared.json"),
+      rawEntry("expired-later", "raw/shared.json", { retrievedAt: "2026-04-20T00:00:00Z", rawRetentionExpiresAt: "2026-07-19T00:00:00.000Z" }),
+    ]);
+    objects.add("/raw/shared.json");
+
+    await runPurge({ ...files, baseUrl, output: path.join(workDir, "shared-expired.json") });
+    assert.equal(objects.has("/raw/shared.json"), false);
+    assert.ok(requests.every((request) => request === "/raw/shared.json"));
+  });
+});
+
+test("같은 object key를 다른 원본 hash로 가리키는 entry는 DELETE 전에 거부한다", async () => {
+  await withFixture(async ({ baseUrl, objects, requests, workDir }) => {
+    const files = await writeInputs(workDir, [
+      rawEntry("expired", "raw/shared.json"),
+      rawEntry("other", "raw/shared.json", { rawSha256: sha256("different raw") }),
+    ]);
+    objects.add("/raw/shared.json");
+
     await assert.rejects(
-      runPurge({ ...files, baseUrl, output: path.join(workDir, "duplicate-object.json") }),
-      /duplicate object key/,
+      runPurge({ ...files, baseUrl, output: path.join(workDir, "conflicting-object.json") }),
+      /conflicting object key/,
     );
     assert.deepEqual(requests, []);
     assert.equal(objects.has("/raw/shared.json"), true);
