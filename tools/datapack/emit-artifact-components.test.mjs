@@ -24,7 +24,7 @@ import {
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
-import { emitArtifactComponents, serializeArtifactComponents } from "./emit-artifact-components.mjs";
+import { emitArtifactComponents, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -117,6 +117,37 @@ async function selectedSourceWindow() {
 function kstInstant(milliseconds) {
   return new Date(milliseconds + 9 * 60 * 60 * 1_000).toISOString().replace("Z", "+09:00");
 }
+
+// #866 PR-B(D3): emit 입력 결속은 capital@1 하드코딩이 아니라 current.json이 선택한 active production pack을 따른다.
+test("emit 입력 결속은 pack id와 무관하게 current.json active production pack의 sqlite에 결속한다", () => {
+  const sourceHash = "1".repeat(64);
+  const otherHash = "2".repeat(64);
+  const buildSpecHash = "3".repeat(64);
+  const binding = (id, packs = [{ id, version: "1", artifactKind: "production", sqliteSha256: sourceHash }], activePack = { id, version: "1" }) => {
+    const current = { ...(activePack === undefined ? {} : { activePack }), packs };
+    const currentHash = createHash("sha256").update(JSON.stringify(current)).digest("hex");
+    const provenance = {
+      schemaVersion: 1,
+      artifactKind: "datapack-field-provenance",
+      manifestSha256: currentHash,
+      packs: structuredClone(packs),
+      candidateBuild: { buildSpecSha256: buildSpecHash },
+    };
+    return [provenance, current, currentHash, sourceHash, buildSpecHash];
+  };
+  for (const id of ["capital", "nationwide", "fixture-national-network"]) {
+    assert.doesNotThrow(() => validateInputBinding(...binding(id)), id);
+    assert.throws(() => validateInputBinding(...binding(id, [{ id, version: "1", artifactKind: "production", sqliteSha256: otherHash }])), /source pack identity mismatch/, id);
+    assert.throws(() => validateInputBinding(...binding(id, [{ id, version: "1", artifactKind: "fixture", sqliteSha256: sourceHash }])), /source pack identity mismatch/, id);
+  }
+  // active pack이 아닌 다른 production pack의 sqlite로는 결속하지 않는다.
+  assert.throws(() => validateInputBinding(...binding("nationwide", [
+    { id: "capital", version: "1", artifactKind: "production", sqliteSha256: sourceHash },
+    { id: "nationwide", version: "1", artifactKind: "production", sqliteSha256: otherHash },
+  ])), /source pack identity mismatch/);
+  // active pack 선택이 없으면 이름으로 추측하지 않고 실패한다.
+  assert.throws(() => validateInputBinding(...binding("capital", undefined, null)), /source pack identity mismatch/);
+});
 
 test("current full-capital producer 출력은 합성 public successor의 route/evaluation 계약과 일치한다", async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-public-successor-"));
@@ -227,7 +258,8 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await cp("tools/datapack/source-candidates.json", path.join(fixtureRoot, "tools/datapack/source-candidates.json"));
   const stationElevatorPaths = await writeStationElevatorFixtureInputs(fixtureRoot, temp);
   const stationPlatformGaps = await writeStationPlatformGapFixtureInputs(fixtureRoot);
-  const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: CURRENT_SOURCE_EXPIRES_AT };
+  // emit 입력 결속은 current.json이 선택한 active pack을 따른다(#866 PR-B).
+  const current = { activePack: { id: "capital", version: "1" }, packs: [{ id: "capital", version: "1", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: CURRENT_SOURCE_EXPIRES_AT };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
   const spec = await readFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"));
   const buildSpec = JSON.parse(spec);
