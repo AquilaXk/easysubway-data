@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261002-seq124",
-  "publishedAt": "2026-10-02T12:55:28.315Z",
-  "releaseSequence": 124,
-  "builderGitSha": "19d5ed32ea1ce0e31c4813f437e753e24bccd05c",
+  "candidateId": "nationwide-candidate-20261002-seq125",
+  "publishedAt": "2026-10-02T21:55:02.841Z",
+  "releaseSequence": 125,
+  "builderGitSha": "a5b276f3007c94e982396c1a92333ac66c3479f6",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "e3af379486b0441f7df184589abb0516cf0e376fbbbec99ddf9e327b39ab4608",
+  "fixtureSha256": "aa4138f0897fe3a60b6c3b051d2d3bb71a246fc8f475c51f822d548d395e38cf",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -624,7 +624,7 @@
     }
   ],
   "sourceSnapshotSetHash": "3ce728bde4d2b2f87bbafb29e6b2c180e48861135d7415612ac04ac555e24338",
-  "sourceInventorySha256": "323c4639c4d3616b43d080aff615f759e0f20b7094b23cef1e768e903ec1c914",
+  "sourceInventorySha256": "9142ea9b39b79fc28e6bed1a4f47a889db15a1afb7a1d71509544440b6947277",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "19e2fc4810a23cf7ed07eaf9cad70493fcd66b074363befca646220d6038ad05"
@@ -678,7 +678,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "6a8e57b7b0ece17705444217eb3f21ba1e2ecdac7e62d3d3ccaaf70f88b122a6"
+      "sha256": "eccda1e87c7f8edf571b33fa9c3bef279dc8f61b330a5bd6ec1f3fde6d532edb"
     }
   },
   "officialOdFareEvidence": {

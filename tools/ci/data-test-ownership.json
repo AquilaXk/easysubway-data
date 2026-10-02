@@ -287,6 +287,10 @@
     "data903": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/903",
       "title": "[Feat] 코레일 단독 노선 등 시간표 미지원 노선의 공식 시간표 적재"
+    },
+    "data899": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/899",
+      "title": "[Fix] 수도권 지하철 공식 시간표를 전국 데이터팩에 적재"
     }
   },
   "workflows": {
@@ -445,6 +449,10 @@
     {"path":"tools/datapack/canonical-pack-service-calendar-flags.test.mjs","semanticOwner":"data854","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/canonical-pack-transit-car-door-contract.test.mjs","semanticOwner":"data854","classes":["required-pr"],"durationMs":1500},
     {"path":"tools/datapack/regional-timetable-official-stop-times.test.mjs","semanticOwner":"data855","classes":["required-pr"],"durationMs":1500},
+    {"path":"tools/datapack/capital-official-timetable.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":15000},
+    {"path":"tools/datapack/lib/official-line-timetable.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/lib/kric-capital-timetable-records.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/lib/external-stop-times.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":9},
     {"path":"tools/datapack/check-manifest-acceptance-floor.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":133},
     {"path":"tools/datapack/check-timetable-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":25},

@@ -11,6 +11,7 @@ import {
   checkTableCompleteness,
   checkNoFakeConstants,
   checkNoSyntheticScheduleLoops,
+  OFFICIAL_UNIFORM_INTERVAL_TRIPS,
   runAntiCheatAudit,
 } from './guard-datapack-anti-cheat.mjs';
 
@@ -136,6 +137,23 @@ test('checkNoSyntheticScheduleLoops catches synthetic uniform stop interval loop
 
   const violations = checkNoSyntheticScheduleLoops(fakePack);
   assert.ok(violations.some((v) => v.gate === 'GATE_NO_SYNTHETIC_SCHEDULE_LOOPS' && v.message.includes('synthetic uniform schedule interval')));
+});
+
+test('checkNoSyntheticScheduleLoops exempts a uniform official trip only when source id and source row hash both match (#899)', () => {
+  const official = OFFICIAL_UNIFORM_INTERVAL_TRIPS[0];
+  const uniformStops = (tripId) => Array.from({ length: 10 }, (_, i) => ({
+    tripId, stopSequence: i + 1, arrivalSeconds: 88_920 + i * 120, departureSeconds: 88_920 + i * 120,
+  }));
+  const exempt = { id: 'kc-s1101-w-000000000001', sourceId: official.sourceId, providerRecordHash: official.providerRecordHash };
+  assert.deepEqual(checkNoSyntheticScheduleLoops({ transitTrips: [exempt], transitStopTimes: uniformStops(exempt.id) }), []);
+
+  for (const trip of [
+    { ...exempt, providerRecordHash: '0'.repeat(64) },
+    { ...exempt, sourceId: 'other-source' },
+  ]) {
+    const violations = checkNoSyntheticScheduleLoops({ transitTrips: [trip], transitStopTimes: uniformStops(trip.id) });
+    assert.ok(violations.some((v) => v.gate === 'GATE_NO_SYNTHETIC_SCHEDULE_LOOPS'), JSON.stringify(trip));
+  }
 });
 
 test('checkHollowAssertions catches tautological assertions in test sources', () => {

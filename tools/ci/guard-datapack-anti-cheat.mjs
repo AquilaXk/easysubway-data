@@ -18,6 +18,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { expandExternalStopTimes } from '../datapack/lib/external-stop-times.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = resolve(__filename, '..');
 const REPO_ROOT = resolve(__dirname, '../..');
@@ -695,11 +697,27 @@ export function checkNoFakeConstants(routeEdges) {
 // ============================================================================
 // Gate 7: Anti-Synthetic Schedule Loops
 // ============================================================================
+// 공식 원천 행을 직접 확인한 균일 간격 trip(#899). 원천 id와 원천 행 sha256(trip providerRecordHash)이
+// 둘 다 같을 때만 균일 간격 검사에서 뺀다. 원천이 바뀌어 행 hash가 달라지면 다시 검사 대상이 된다.
+export const OFFICIAL_UNIFORM_INTERVAL_TRIPS = Object.freeze([
+  Object.freeze({
+    sourceId: 'kric-nationwide-timetable-file',
+    providerRecordHash: 'b0b9d73d2ef49217c9b61018f0a292bd1b23eb4907f38900a30625b295dd0bb9',
+    reason: 'KRIC 전체_도시철도운행정보 S1101 평일 907열차 청량리→서울역(24:42~25:00) 10정차가 원천에서 2분 간격이다.',
+  }),
+]);
+
+function isOfficialUniformIntervalTrip(trip) {
+  return OFFICIAL_UNIFORM_INTERVAL_TRIPS.some(({ sourceId, providerRecordHash }) =>
+    trip?.sourceId === sourceId && trip?.providerRecordHash === providerRecordHash);
+}
+
 export function checkNoSyntheticScheduleLoops(packInput) {
   const pack = packInput?.packs?.[0] ?? packInput ?? {};
   const violations = [];
   const trips = pack.transitTrips ?? [];
   const stopTimes = pack.transitStopTimes ?? [];
+  const tripsById = new Map(trips.map((trip) => [trip.id, trip]));
 
   for (const trip of trips) {
     if (typeof trip.id === 'string' && /-(?:wd|hd)-(?:19800|21600|23400|25200)\b/.test(trip.id)) {
@@ -720,6 +738,7 @@ export function checkNoSyntheticScheduleLoops(packInput) {
     }
 
     for (const [tripId, stops] of tripStopTimesMap) {
+      if (isOfficialUniformIntervalTrip(tripsById.get(tripId))) continue;
       if (stops.length >= 10) {
         let allSameDelta = true;
         const firstDelta = (stops[1].departureTimeSeconds ?? stops[1].departureSeconds ?? stops[1].arrivalTimeSeconds) -
@@ -780,6 +799,20 @@ export function runAntiCheatAudit(options = {}) {
           message: `Failed to load canonical pack: ${err.message}`,
         });
       }
+    }
+  }
+
+  // #899: 팩이 sha로 결속한 외부 공식 stop_times까지 펼쳐 검사한다. 결속이 어긋나면 위반이다.
+  if (pack) {
+    try {
+      pack = expandExternalStopTimes(pack, { repositoryRoot: repoRoot });
+    } catch (err) {
+      allViolations.push({
+        gate: 'GATE_TABLE_COMPLETENESS',
+        target: canonicalPackPath,
+        message: `Failed to bind external stop times: ${err.message}`,
+      });
+      pack = null;
     }
   }
 

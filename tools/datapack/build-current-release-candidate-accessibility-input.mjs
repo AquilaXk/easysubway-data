@@ -23,6 +23,7 @@ import {
   bindNationwideCandidatePreparation,
   NATIONWIDE_CANDIDATE_PREPARATION_PATH,
 } from "./nationwide-candidate-input-binding.mjs";
+import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 
 export const CURRENT_TRANSFER_METRICS = "tools/datapack/release/current-transfer-topology-metrics.json";
 const REJECTED_INPUT_PATH_TOKEN = /fixture|debug|demo|sample/iu;
@@ -804,7 +805,8 @@ export async function main(
   }
   const fixtureFile = await readAuthenticatedRegularRepoFile(root, fixtureRelative, "fixture");
   const sourceFixtureBytes = fixtureFile.bytes;
-  const sourceFixture = parseInputJson(sourceFixtureBytes, "fixture");
+  // #899: 팩이 sha로 결속한 외부 공식 stop_times를 펼친다(결속 불일치는 실패).
+  const sourceFixture = expandExternalStopTimes(parseInputJson(sourceFixtureBytes, "fixture"), { repositoryRoot: root });
   await Promise.all(outputs.map(outputMustBeAbsent));
   const preparationFile = await readAuthenticatedRegularRepoFile(
     root,

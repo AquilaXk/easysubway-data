@@ -11,11 +11,11 @@ import {
 const CONTRACT_PATH = "contracts/datapack/server-route-bundle-build-contract.json";
 const SCHEMA_PATH = "contracts/datapack/server-route-bundle-build-contract.schema.json";
 
-test("server route bundle build contract pins maxTotalDecompressedBytes to 58720256 with explanation", () => {
+test("server route bundle build contract pins maxTotalDecompressedBytes to 201326592 with explanation", () => {
   const contract = JSON.parse(readFileSync(CONTRACT_PATH, "utf8"));
   const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
 
-  assert.equal(contract.maxTotalDecompressedBytes, 58720256);
+  assert.equal(contract.maxTotalDecompressedBytes, 201326592);
   assert.equal(typeof contract.maxTotalDecompressedBytesDescription, "string");
   assert.match(
     contract.maxTotalDecompressedBytesDescription,
