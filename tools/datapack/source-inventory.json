@@ -8931,6 +8931,96 @@
         "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04",
         "retainedReceiptSourceId": "korail-metropolitan-timetable-file"
       }
+    },
+    {
+      "id": "seoul-metro-transfer-car-door-duration",
+      "displayName": "서울교통공사_서울 도시철도 환승정보",
+      "owner": "서울교통공사",
+      "provider": "서울교통공사",
+      "providerDepartment": "정보운영센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15098252/fileData.do",
+      "datasetKind": "file",
+      "coverage": "서울 도시철도 환승역의 하차 칸·문에서 환승 승차 칸·문까지 실측 환승 소요시간(거리 없음)",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "transfer_walk_duration"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "irregular official file",
+      "observedDataUpdatedAt": "2026-09-02",
+      "retrievedAt": "2026-10-01",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "서울교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15098252/fileData.do"
+      },
+      "fieldsProvided": [
+        "고유번호",
+        "환승시작역",
+        "환승시작역 코드",
+        "환승시작 호선",
+        "하차 열차 방면",
+        "하차위치(호차)",
+        "하차위치(문)",
+        "환승종료역",
+        "환승 열차 방면",
+        "환승 승차위치(호차)",
+        "환승 승차위치(문)",
+        "소요시간"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "irregular official file",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "irregular official file",
+          "unsupportedNotes": "source does not provide realtime arrival data",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "irregular official file",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "official-file-source-admission",
+        "issue": 876,
+        "candidateId": "seoul-metro-transfer-car-door-duration",
+        "sourceId": "seoul-metro-transfer-car-door-duration",
+        "snapshotId": "seoul-metro-transfer-car-door-duration-296daef16e19656b8b9271131b19540f672e804da5588f2c564552704608b32d",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-10-01T15:00:00.000Z",
+        "rawSha256": "db32978f44208ec03f79174056f4f076dec193b7cd30e2f8493830a896feace2",
+        "schemaFingerprint": "1d0aa14b4ec0baa11bc660b43671411d67f32f60fbad5c2cc5fcad8e8b76addd",
+        "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-transfer-car-door-duration/20261001/296daef16e19656b8b9271131b19540f672e804da5588f2c564552704608b32d.json",
+        "licenseEvidenceHash": "01eacf354bff12ea667b9db874dfa53fc8a77ed4723c246ba877e954a3c635b3",
+        "productionUseNoteKo": "QA 채택 결정(2026-10-02, data#876): 15098252를 공식 환승 시간 원천으로 채택한다. QA 확인: 소요시간은 실측값이다. 같은 방향 칸·문 조합 중 가장 짧은 시간을 쓰고, 빈 시간은 사용 불가로 둔다."
+      }
     }
   ]
 }

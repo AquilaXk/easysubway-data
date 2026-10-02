@@ -8915,6 +8915,119 @@
           "unsupportedNotes": "candidate facility coverage requires approved-key live sample evidence and inventory admission before production use"
         }
       }
+    },
+    {
+      "id": "seoul-metro-transfer-car-door-duration",
+      "priority": "P0",
+      "domain": "transfer_walk_duration",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ]
+      },
+      "displayName": "서울교통공사_서울 도시철도 환승정보",
+      "detailUrl": "https://www.data.go.kr/data/15098252/fileData.do",
+      "requestUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000007644508&fileDetailSn=1&insertDataPrcus=N",
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "official_file_full_snapshot",
+      "admissionStatus": "official_file_admitted_to_production_inventory",
+      "productionInventoryReferenceId": "seoul-metro-transfer-car-door-duration",
+      "registrationMetadata": {
+        "admissionReference": "https://github.com/AquilaXk/easysubway-data/issues/876",
+        "approval": {
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-10-01T15:00:00.000Z",
+          "noteKo": "QA 채택 결정(2026-10-02, data#876): 15098252를 공식 환승 시간 원천으로 채택한다. QA 확인: 소요시간은 실측값이다. 같은 방향 칸·문 조합 중 가장 짧은 시간을 쓰고, 빈 시간은 사용 불가로 둔다."
+        },
+        "governance": {
+          "sourceId": "seoul-metro-transfer-car-door-duration",
+          "sourceClassId": "annual_official_file",
+          "retentionClassId": "standard-90d",
+          "ownerRole": "datapack-source-owner",
+          "stewardRole": "datapack-data-steward",
+          "approvalRole": "datapack-release-approver",
+          "escalationHours": 4,
+          "alertRoute": "github:area-datapack",
+          "licenseReview": {
+            "status": "APPROVED",
+            "termsHash": "01eacf354bff12ea667b9db874dfa53fc8a77ed4723c246ba877e954a3c635b3",
+            "reviewedAt": "2026-10-01T15:00:00.000Z",
+            "nextReviewAt": "2027-10-01T15:00:00.000Z",
+            "termsUrl": "https://www.data.go.kr/data/15098252/fileData.do",
+            "reviewedProvider": "서울교통공사",
+            "reviewedDatasetUrl": "https://www.data.go.kr/data/15098252/fileData.do",
+            "redistributionScopes": [
+              "DERIVED_DATAPACK"
+            ],
+            "approvedByRole": "datapack-release-approver"
+          }
+        }
+      },
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-10-02",
+        "detailPageUrl": "https://www.data.go.kr/data/15098252/fileData.do",
+        "endpoint": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000007644508&fileDetailSn=1&insertDataPrcus=N",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "encoding": "cp949",
+        "outputFields": [
+          "고유번호",
+          "환승시작역",
+          "환승시작역 코드",
+          "환승시작 호선",
+          "하차 열차 방면",
+          "하차위치(호차)",
+          "하차위치(문)",
+          "환승종료역",
+          "환승 열차 방면",
+          "환승 승차위치(호차)",
+          "환승 승차위치(문)",
+          "소요시간"
+        ],
+        "currentDatasetVersion": "20260902",
+        "currentRowCount": 1024,
+        "updateCycle": "수시 (1회성 데이터)",
+        "coverageLimitations": [
+          "소요시간은 하차 칸·문에서 환승 승차 칸·문까지의 실측값이다(QA 확인 2026-10-02). 거리는 제공하지 않는다.",
+          "환승종료역 열은 환승 열차 방면의 다음 역 코드다. 도착 노선은 서울 역코드 카탈로그(seoulmetro-station-line-info)로 정한다.",
+          "소요시간이 빈 행이 있다(노선 경유). 빈 행은 사용 불가로 둔다.",
+          "포털 설명은 개인 걸음걸이에 따라 차이가 있어 단순 참고용이라고 안내한다. 측정 방식은 제공기관(정보운영센터) 확인 대상이다."
+        ]
+      },
+      "nextAction": "수집기(collect-seoul-metro-transfer-car-door-duration.mjs)·등록기(register-seoul-metro-transfer-car-door-duration.mjs)로 원문을 OCI source-raw에 보존하고 원장에 등록한 뒤, 실측 환승시간 지표(current-seoul-measured-transfer-metrics.json)를 전국 후보에 반영한다. 거리 null 계약 확장은 후속이다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "irregular official file",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "irregular official file",
+          "unsupportedNotes": "source does not provide realtime arrival data",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "irregular official file",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      }
     }
   ]
 }

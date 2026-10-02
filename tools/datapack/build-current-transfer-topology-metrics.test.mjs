@@ -168,26 +168,43 @@ test("커밋된 환승 지표는 전국 정본 팩 역-노선 식별자와 일�
   assert.equal(byKey.get(`station-2a2d0080fa4a|${id(7)}|${id(4)}`).metricProvenance, "OFFICIAL_SOURCE");
 });
 // #872 S2: 실제 발행 경로(전국 route-edge input·정본 팩)는 수도권 live-chain 필터와 무관하게 204방향 전체를 쓴다.
+// #876(메인 결정 B): 실측 환승시간(15098252)과 겹치는 방향은 시간 = 실측, 거리 = 서울교통공사 공식 거리이고, 경로 행의 원천은
+// 시간 원천(실측)이며 레코드 hash는 두 원천 레코드 hash의 결속이다. 겹치지 않는 방향은 서울교통공사 값 그대로다.
 test("전국 발행 경로는 환승 지표 204방향 전체를 route edge로, OFFICIAL_SOURCE 140방향을 경로 행으로 쓴다", async () => {
   const read = (relative) => readFile(new URL(relative, import.meta.url), "utf8").then(JSON.parse);
-  const [metrics, route, nationwide, busan] = await Promise.all([read("./release/current-transfer-topology-metrics.json"), read("./release/nationwide-route-edge-input.json"), read("./release/nationwide-production-canonical-pack.json"), read("./release/current-busan-transfer-metrics.json")]);
+  const [metrics, route, nationwide, busan, measured] = await Promise.all([read("./release/current-transfer-topology-metrics.json"), read("./release/nationwide-route-edge-input.json"), read("./release/nationwide-production-canonical-pack.json"), read("./release/current-busan-transfer-metrics.json"), read("./release/current-seoul-measured-transfer-metrics.json")]);
   const pack = nationwide.packs.find(({ id: packId }) => packId === nationwide.manifest.activePack.id);
   const transfers = new Map(route.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map((edge) => [edge.edgeId, edge]));
+  const measuredByKey = new Map(measured.metrics.map((metric) => [`${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`, metric]));
   // #872 S3: 전국 route edge에는 서울교통공사 지표 204방향과 부산교통공사 공식 환승 12방향(별도 원천)이 함께 있다.
+  // #876: 실측 원천만 있는 방향(거리 없음)은 route edge가 아니다.
   assert.equal(metrics.metrics.length, 204);
   assert.equal(busan.metrics.length, 12);
   assert.equal(transfers.size, metrics.metrics.length + busan.metrics.length);
+  const composite = (seoulHash, measuredHash) => sha256(JSON.stringify({ distanceSourceRecordSha256: seoulHash, durationSourceRecordSha256: measuredHash }));
+  let overlapping = 0;
   for (const metric of metrics.metrics) {
-    const edge = transfers.get(`transfer-${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`);
+    const key = `${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`;
+    const edge = transfers.get(`transfer-${key}`);
     assert.ok(edge, `${metric.stationId} ${metric.fromLineId}->${metric.toLineId}`);
-    assert.deepEqual([edge.durationSeconds, edge.distanceMeters], [metric.officialDurationSecondsReference, metric.distanceMeters]);
+    const timed = measuredByKey.get(key);
+    if (timed) overlapping += 1;
+    assert.deepEqual([edge.durationSeconds, edge.distanceMeters], [timed ? timed.measuredDurationSeconds : metric.officialDurationSecondsReference, metric.distanceMeters]);
   }
+  assert.equal(overlapping, 169);
   const official = metrics.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE");
+  const seoulOnly = official.filter((metric) => !measuredByKey.has(`${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`));
   const seoulPathwayEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === "seoul-metro-transfer-distance-duration");
-  assert.equal(seoulPathwayEdges.length, official.length);
+  const measuredPathwayEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === "seoul-metro-transfer-car-door-duration");
+  assert.equal(seoulPathwayEdges.length, seoulOnly.length);
+  assert.equal(measuredPathwayEdges.length, official.length - seoulOnly.length);
   assert.equal(pack.stationPathwayEdges.length, official.length + busan.metrics.filter(({ metricProvenance }) => metricProvenance === "OFFICIAL_SOURCE").length);
-  const pathwayHashes = new Set(seoulPathwayEdges.map(({ providerRecordHash }) => providerRecordHash));
-  for (const metric of official) assert.ok(pathwayHashes.has(metric.sourceRecordSha256), metric.sourceRecordSha256);
+  const pathwayHashes = new Set(pack.stationPathwayEdges.map(({ providerRecordHash }) => providerRecordHash));
+  for (const metric of official) {
+    const timed = measuredByKey.get(`${metric.stationId}-${metric.fromLineId}-${metric.toLineId}`);
+    const expected = timed ? composite(metric.sourceRecordSha256, timed.sourceRecordSha256) : metric.sourceRecordSha256;
+    assert.ok(pathwayHashes.has(expected), expected);
+  }
   assert.ok(pack.stationPathwayEdges.every(({ provenanceKind, verificationStatus }) => provenanceKind === "OFFICIAL_SOURCE" && verificationStatus === "VERIFIED"));
 });
 function pick({ distanceMeters, officialDurationSecondsReference, metricProvenance }) { return { distanceMeters, officialDurationSecondsReference, metricProvenance }; }
