@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -216,6 +216,43 @@ test("원장 receipt·inventory 결속 불일치, 보존 만료, PAR 누락은 G
     await assert.rejects(rebindCurrentSeoulTransferSourceAdmission({ repositoryRoot: root, ...options, client: lockedRawClient(fixture.rawBytes, calls) }), pattern, label);
     assert.deepEqual(calls, [], label);
   }
+});
+
+// #893 F1: 지표가 같아도 applicability·descriptor 본문이 달라지면 각 단언이 따로 막는다.
+test("지표는 같고 applicability 본문만 달라지면 쓰지 않고 실패한다", async (t) => {
+  const { root, fixture } = await repository(t);
+  // 환승과 무관한 단일 노선 역 하나의 id만 바꾼다: 역·역-노선 개수와 쌍은 같아 지표는 같고, applicability 칸만 달라진다.
+  const renamed = `station-only-${seoulTransferFixtureLineId(9)}`;
+  await rewriteSeoulTransferFixtureCanonicalPack(root, (pack) => {
+    const [capital] = pack.packs;
+    capital.stations.find(({ id }) => id === renamed).id = "station-only-renamed";
+    capital.stationLines.find(({ stationId }) => stationId === renamed).stationId = "station-only-renamed";
+  });
+  const before = await snapshot(root, outputPaths(fixture));
+  await assert.rejects(
+    rebindCurrentSeoulTransferSourceAdmission({ repositoryRoot: root, env, now: NOW, client: lockedRawClient(fixture.rawBytes) }),
+    /TRANSFER applicability values changed under canonical pack re-binding/,
+  );
+  for (const [relative, bytes] of before) assert.ok((await readFile(path.join(root, relative))).equals(bytes), relative);
+});
+
+test("지표·applicability는 같고 descriptor 본문만 달라지면 쓰지 않고 실패한다", async (t) => {
+  const { root, fixture } = await repository(t);
+  await rewriteSeoulTransferFixtureCanonicalPack(root, rotateKeyId);
+  // 커밋된 descriptor 본문(결속 hash 밖 필드)이 현재 생성기 결과와 다른 상태다. inventory 파일 sha 결속은 맞춘다.
+  const descriptor = JSON.parse(fixture.descriptorBytes);
+  descriptor.freshUntil = "2027-08-14T09:40:38.817Z";
+  const descriptorBytes = Buffer.from(`${JSON.stringify(descriptor, null, 2)}\n`);
+  await writeFile(path.join(root, fixture.descriptorPath), descriptorBytes);
+  const inventory = JSON.parse(await readFile(path.join(root, PATHS.inventory)));
+  inventory.sources.find(({ id }) => id === SEOUL_TRANSFER_SOURCE_ID).transferAdmissionEvidence.snapshotFileSha256 = sha256(descriptorBytes);
+  await writeFile(path.join(root, PATHS.inventory), `${JSON.stringify(inventory, null, 2)}\n`);
+  const before = await snapshot(root, outputPaths(fixture));
+  await assert.rejects(
+    rebindCurrentSeoulTransferSourceAdmission({ repositoryRoot: root, env, now: NOW, client: lockedRawClient(fixture.rawBytes) }),
+    /TRANSFER descriptor values changed under canonical pack re-binding/,
+  );
+  for (const [relative, bytes] of before) assert.ok((await readFile(path.join(root, relative))).equals(bytes), relative);
 });
 
 function lineBytesOf(value) { return Buffer.from(`${JSON.stringify(value)}\n`); }
