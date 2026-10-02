@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   KRIC_SUBWAY_TIMETABLE_ENDPOINT,
   collectKricStationTimetables,
+  formatCollectionError,
   responsesFromCollection,
   runKricStationTimetableCollection,
 } from "./collect-kric-station-timetables.mjs";
@@ -111,4 +112,19 @@ test("CLI 실행은 환경 변수 키만 쓰고 새 파일로만 기록한다", 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("키는 percent·form 인코딩 형태로 응답에 섞여도 막고, fetch 오류·CLI 출력에는 URL과 키를 남기지 않는다", async () => {
+  const special = "ab+cd/ef== z";
+  const encodedForms = [encodeURIComponent(special), new URLSearchParams({ k: special }).toString().slice(2)];
+  for (const echoed of encodedForms) {
+    const echo = fakeFetch({ body: () => JSON.stringify({ header: { resultCode: "03", echo: `serviceKey=${echoed}` }, body: [] }) });
+    await assert.rejects(collectKricStationTimetables({ bindings: [BINDING], serviceKey: special, fetchImpl: echo.impl, now: clock() }), /CREDENTIAL_LEAK/u);
+  }
+  const throwing = async (url) => { throw new Error(`connect ECONNRESET ${url}`); };
+  const error = await collectKricStationTimetables({ bindings: [BINDING], serviceKey: special, fetchImpl: throwing, now: clock() }).catch((caught) => caught);
+  assert.match(error.message, /^KRIC_FETCH_FAILED: T1 T01 dayCd=7$/u);
+  for (const form of [special, ...encodedForms]) assert.equal(error.message.includes(form), false);
+  const printed = formatCollectionError(new Error(`boom ${special} ${encodedForms[0]} ${encodedForms[1]}`), { KRIC_SERVICE_KEY: special });
+  assert.equal(printed, "boom [REDACTED] [REDACTED] [REDACTED]");
 });

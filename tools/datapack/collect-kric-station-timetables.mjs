@@ -17,10 +17,24 @@ const ACCEPTED_RESULT_CODES = new Set(["00", "03"]);
 const REQUEST_TIMEOUT_MS = 30_000;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
+/** 요청 URL에 실릴 수 있는 키 표현 전부(원문, percent 인코딩, form 인코딩). */
+function credentialForms(serviceKey) {
+  return [...new Set([serviceKey, encodeURIComponent(serviceKey), new URLSearchParams({ k: serviceKey }).toString().slice(2)])];
+}
+
+/** CLI 출력용: 오류 문구에서 키 표현을 모두 가린다. */
+export function formatCollectionError(error, env = process.env) {
+  let text = error instanceof Error ? error.message : String(error);
+  const key = env.KRIC_SERVICE_KEY;
+  if (typeof key === "string" && key !== "") for (const form of credentialForms(key)) text = text.split(form).join("[REDACTED]");
+  return text;
+}
+
 export async function collectKricStationTimetables({
   bindings = KRIC_API_STATION_TIMETABLE_BINDINGS, serviceKey, fetchImpl = fetch, now = () => new Date(),
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey.trim() === "") throw new Error("KRIC_SERVICE_KEY_REQUIRED");
+  const forms = credentialForms(serviceKey);
   const responses = [];
   let capturedAt = null;
   for (const binding of bindings) {
@@ -32,10 +46,17 @@ export async function collectKricStationTimetables({
         url.searchParams.set("serviceKey", serviceKey);
         for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
         capturedAt ??= now().toISOString();
-        const response = await fetchImpl(url.href, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+        // 전송 오류 문구에는 요청 URL(키 포함)이 들어갈 수 있어 원문을 버리고 식별자만 남긴다.
+        let response;
+        let bytes;
+        try {
+          response = await fetchImpl(url.href, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+          if (response.status === 200) bytes = Buffer.from(await response.arrayBuffer());
+        } catch {
+          throw new Error(`KRIC_FETCH_FAILED: ${label}`);
+        }
         if (response.status !== 200) throw new Error(`KRIC_HTTP_FAILED: ${label} status=${response.status}`);
-        const bytes = Buffer.from(await response.arrayBuffer());
-        if (bytes.includes(Buffer.from(serviceKey))) throw new Error(`CREDENTIAL_LEAK: ${label}`);
+        if (forms.some((form) => bytes.includes(Buffer.from(form)))) throw new Error(`CREDENTIAL_LEAK: ${label}`);
         let parsed;
         try { parsed = JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`KRIC_RESPONSE_NOT_JSON: ${label}`); }
         const resultCode = parsed?.header?.resultCode;
@@ -54,7 +75,8 @@ export async function collectKricStationTimetables({
       stations: stations.map(([railOprIsttCd, stinCd, stinNm]) => ({ railOprIsttCd, stinCd, stinNm })) })),
     responses,
   };
-  if (JSON.stringify(artifact).includes(serviceKey)) throw new Error("CREDENTIAL_LEAK: artifact");
+  const serialized = JSON.stringify(artifact);
+  if (forms.some((form) => serialized.includes(form))) throw new Error("CREDENTIAL_LEAK: artifact");
   return artifact;
 }
 
@@ -99,7 +121,7 @@ export async function runKricStationTimetableCollection(argv = process.argv.slic
 
 if (isMainModule(import.meta.url)) {
   runKricStationTimetableCollection().then((summary) => console.log(JSON.stringify(summary))).catch((error) => {
-    console.error(error.message);
+    console.error(formatCollectionError(error));
     process.exitCode = 1;
   });
 }
