@@ -264,3 +264,47 @@ test("candidate의 노선 목록·카탈로그 provider가 고정 바인딩과 �
   await writeFile(candidatesPath, original);
   assert.deepEqual(await snapshotOf(root), before);
 });
+
+test("receipt 결속 조건은 피연산자 하나만 달라도 RAW_RECEIPT로 거부한다", async (t) => {
+  const { root, files, receipt, artifact, now } = await fixture(t);
+  const before = await snapshotOf(root);
+  const register = (at = now) => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: at, expected: EXPECTED });
+  const later = (ms) => new Date(Date.parse(artifact.collectedAt) + ms).toISOString();
+  const { schemaVersion: ignored, ...withoutSchemaVersion } = receipt;
+  for (const changed of [
+    { ...receipt, extra: true }, withoutSchemaVersion, { ...receipt, schemaVersion: 2 },
+    { ...receipt, artifactKind: "korail-metropolitan-timetable-raw-receipt" }, { ...receipt, sourceId: PILOT_SOURCE_ID },
+    { ...receipt, snapshotId: `${receipt.snapshotId}x` }, { ...receipt, capturedAt: later(1) }, { ...receipt, collectedAt: later(2) },
+    { ...receipt, rawObjectSha256: "0".repeat(64) }, { ...receipt, byteSize: receipt.byteSize + 1 },
+    { ...receipt, ociNamespace: "other" }, { ...receipt, bucket: "other" }, { ...receipt, objectKey: `${receipt.objectKey}x` },
+    { ...receipt, capturedDate: "20990101" }, { ...receipt, rawObjectUri: `${receipt.rawObjectUri}x` },
+    { ...receipt, storedAt: later(-1) }, { ...receipt, storedAt: later(11 * 60_000) },
+    { ...receipt, rawRetentionExpiresAt: later(1) },
+  ]) {
+    await writeFile(files.receiptPath, `${JSON.stringify(changed, null, 2)}\n`);
+    await assert.rejects(register(), /KRIC_STATION_REGISTRATION_RAW_RECEIPT/u, JSON.stringify(Object.keys(changed)));
+  }
+  // 보존 만료가 지난 시점의 등록도 같은 이유로 거부한다(receipt 값은 정책 계산과 같다).
+  await writeFile(files.receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+  await assert.rejects(register(new Date(Date.parse(receipt.rawRetentionExpiresAt) + 1000)), /KRIC_STATION_REGISTRATION_RAW_RECEIPT/u);
+  assert.deepEqual(await snapshotOf(root), before);
+});
+
+test("신선도 클래스 조건은 피연산자 하나만 달라도 FRESHNESS_CLASS로 거부한다", async (t) => {
+  const { root, files, now } = await fixture(t);
+  const freshnessPath = path.join(root, OUTPUTS[3]);
+  const original = await readFile(freshnessPath);
+  const register = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  for (const change of [
+    (policy) => { policy.sourceClasses = policy.sourceClasses.filter(({ id }) => id !== "planned_timetable"); },
+    (policy) => { const planned = policy.sourceClasses.find(({ id }) => id === "planned_timetable"); planned.sourceIds = planned.sourceIds.filter((id) => id !== PILOT_SOURCE_ID); },
+    (policy) => { const planned = policy.sourceClasses.find(({ id }) => id === "planned_timetable"); planned.sourceIds = [...planned.sourceIds, STATION_LINES_SOURCE_ID]; },
+    (policy) => { policy.sourceClasses.find(({ id }) => id === "planned_timetable").basisField = "retrievedAt"; },
+  ]) {
+    const policy = JSON.parse(original);
+    change(policy);
+    await writeFile(freshnessPath, `${JSON.stringify(policy, null, 2)}\n`);
+    await assert.rejects(register(), /KRIC_STATION_REGISTRATION_FRESHNESS_CLASS/u);
+  }
+  await writeFile(freshnessPath, original);
+});
