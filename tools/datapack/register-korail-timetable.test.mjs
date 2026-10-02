@@ -127,7 +127,7 @@ test("rejects a parent-bound input outside the candidate coverage before outputs
 
 // #862 QA 결정(2026-10-01): 같은 공식 파일(바이트 sha256 동일)의 재확인을 새 관측으로 인정한다.
 // 신선도 basis는 재확인 시각(reverifiedUnchangedAt)이고 serviceEffectiveAt은 workbook 시행일 그대로다.
-async function reverificationFixture(root) {
+async function reverificationFixture(root, { reverificationReceipt = false } = {}) {
   const first = await writeRegistrationFixture(root);
   const firstOutputs = await buildKorailTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath: first.sourceInputPath, now: first.time.now });
   await commitKorailTimetableRegistrationOutputs({ repositoryRoot: root, outputs: firstOutputs });
@@ -159,18 +159,25 @@ async function reverificationFixture(root) {
     canonicalCatalogPath: firstInput.canonicalCatalogPath, canonicalCatalogSha256: firstInput.canonicalCatalogSha256, lineId: firstInput.lineId });
   const topologyPath = path.join(root, "tools/datapack/sources", `${topology.snapshotId}.json`);
   await writeJson(topologyPath, topology);
-  const publicationReceipt = { ...JSON.parse(await readFile(firstInput.publicationReceiptPath, "utf8")),
-    snapshotId: topology.snapshotId, contentSha256: topology.contentSha256, collectionReceiptSha256: hash(await readFile(collectionReceiptPath)),
-    capturedAt, storedAt: new Date(reverifiedAt.valueOf() + 60_000).toISOString(),
-    rawRetentionExpiresAt: new Date(reverifiedAt.valueOf() + 90 * 24 * 60 * 60 * 1_000).toISOString() };
-  const publicationReceiptPath = path.join(root, "reverified/publication-receipt.json");
-  await writeJson(publicationReceiptPath, publicationReceipt);
   const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
   const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
   const previousTopology = ledger.find(({ sourceId }) => sourceId === "korail-metropolitan-timetable-file");
+  const firstPublication = JSON.parse(await readFile(firstInput.publicationReceiptPath, "utf8"));
+  const rawRetentionExpiresAt = new Date(reverifiedAt.valueOf() + 90 * 24 * 60 * 60 * 1_000).toISOString();
+  const shared = { snapshotId: topology.snapshotId, contentSha256: topology.contentSha256, collectionReceiptSha256: hash(await readFile(collectionReceiptPath)),
+    capturedAt, rawRetentionExpiresAt };
+  // #870: 같은 원본 재확인은 원본을 다시 게시하지 않고 head 객체를 확인한 재확인 영수증을 남긴다.
+  const publicationReceipt = reverificationReceipt
+    ? { schemaVersion: 1, artifactKind: "korail-metropolitan-timetable-raw-reverification-receipt", sourceId: firstPublication.sourceId, ...shared,
+      rawObjectUri: previousTopology.rawObjectUri, rawObjectSha256: firstPublication.rawObjectSha256, byteSize: firstPublication.byteSize,
+      verifiedAt: new Date(reverifiedAt.valueOf() + 60_000).toISOString(), reusedFromSnapshotId: previousTopology.snapshotId }
+    : { ...firstPublication, ...shared, storedAt: new Date(reverifiedAt.valueOf() + 60_000).toISOString() };
+  const publicationReceiptPath = path.join(root, "reverified/publication-receipt.json");
+  await writeJson(publicationReceiptPath, publicationReceipt);
   ledger.push({ ...previousTopology, snapshotId: topology.snapshotId, previousSnapshotId: previousTopology.snapshotId,
     contentSha256: topology.contentSha256, capturedAt, retrievedAt: capturedAt, rawReceiptSha256: hash(await readFile(publicationReceiptPath)),
-    rawRetentionExpiresAt: publicationReceipt.rawRetentionExpiresAt });
+    rawRetentionExpiresAt: publicationReceipt.rawRetentionExpiresAt,
+    ...(reverificationReceipt ? { rawObjectReusedFromSnapshotId: previousTopology.snapshotId } : {}) });
   await writeJson(ledgerPath, ledger);
   const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
@@ -207,6 +214,28 @@ test("same official bytes re-verified after the effective window register a succ
   }
 });
 
+test("planned timetable accepts a parent topology re-verified without re-publishing the raw object (#870)", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "korail-schedule-raw-reuse-"));
+  try {
+    const { sourceInputPath, now, ledgerPath } = await reverificationFixture(root, { reverificationReceipt: true });
+    const ledgerBefore = JSON.parse(await readFile(ledgerPath, "utf8"));
+    const parent = ledgerBefore.at(-1);
+    const outputs = await buildKorailTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath, now });
+    const ledger = JSON.parse(outputs[1].bytes);
+    assert.deepEqual(ledger.slice(0, -1), ledgerBefore, "append-only: earlier rows stay byte-identical");
+    const row = ledger.at(-1);
+    assert.equal(row.rawObjectUri, parent.rawObjectUri);
+    assert.equal(row.rawReceiptSha256, parent.rawReceiptSha256);
+    // 재확인 영수증이 head 객체가 아닌 다른 URI를 가리키면 실패한다.
+    const input = JSON.parse(await readFile(sourceInputPath, "utf8"));
+    const receipt = JSON.parse(await readFile(input.publicationReceiptPath, "utf8"));
+    await writeJson(input.publicationReceiptPath, { ...receipt, rawObjectUri: `${receipt.rawObjectUri}.other` });
+    await assert.rejects(buildKorailTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath, now }), /KORAIL_TIMETABLE_REGISTRATION_PUBLICATION_RECEIPT/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("re-verification freshness still rejects different bytes and an expired provider validity end (#862)", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "korail-schedule-reverification-reject-"));
   try {
@@ -228,7 +257,7 @@ test("re-verification freshness still rejects different bytes and an expired pro
 });
 
 // #862: Korail topology 등록기는 같은 공식 파일을 다시 수집한 후속 snapshot도 등록한다(결정 C, 첫 등록 전용 해제).
-async function topologyRegistrationRound({ root, capturedAt, now, candidate, governanceEntry, workbook, membership, membershipReceipt, catalogPath, catalogBytes, lineId, label }) {
+async function topologyRegistrationRound({ root, capturedAt, now, candidate, governanceEntry, workbook, membership, membershipReceipt, catalogPath, catalogBytes, lineId, label, reverifyFrom = null, receiptMutation = (value) => value }) {
   const collectionDirectory = path.join(root, `${label}/collection`);
   await mkdir(collectionDirectory, { recursive: true });
   await writeFile(path.join(collectionDirectory, "timetable.xlsx"), workbook);
@@ -245,10 +274,15 @@ async function topologyRegistrationRound({ root, capturedAt, now, candidate, gov
   const { preparation, collectionReceiptBytes } = await prepareKorailTopologyRegistration({ repositoryRoot: root, sourceInputPath, now });
   const rawSha256 = hash(workbook); const key = `source-raw/${candidate.id}/${capturedAt.slice(0, 10).replaceAll("-", "")}/${rawSha256}.xlsx`;
   const receiptPath = path.join(root, `${label}/raw-receipt.json`);
-  await writeJson(receiptPath, { schemaVersion: 1, artifactKind: "korail-metropolitan-timetable-raw-receipt", sourceId: candidate.id,
+  const common = { schemaVersion: 1, sourceId: candidate.id,
     snapshotId: preparation.snapshot.snapshotId, contentSha256: preparation.snapshot.contentSha256, collectionReceiptSha256: hash(collectionReceiptBytes),
-    capturedAt, rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${key}`, rawObjectSha256: rawSha256, byteSize: workbook.length,
-    storedAt: new Date(Date.parse(capturedAt) + 60_000).toISOString(), rawRetentionExpiresAt: preparation.rawRetentionExpiresAt });
+    capturedAt, rawObjectSha256: rawSha256, byteSize: workbook.length, rawRetentionExpiresAt: preparation.rawRetentionExpiresAt };
+  // #870: 재확인 라운드는 원본을 다시 게시하지 않고 원장 head 객체를 확인한 재확인 영수증을 쓴다.
+  await writeJson(receiptPath, receiptMutation(reverifyFrom
+    ? { ...common, artifactKind: "korail-metropolitan-timetable-raw-reverification-receipt", rawObjectUri: reverifyFrom.rawObjectUri,
+      verifiedAt: new Date(Date.parse(capturedAt) + 60_000).toISOString(), reusedFromSnapshotId: reverifyFrom.snapshotId }
+    : { ...common, artifactKind: "korail-metropolitan-timetable-raw-receipt", rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${key}`,
+      storedAt: new Date(Date.parse(capturedAt) + 60_000).toISOString() }));
   return buildKorailTopologyRegistrationOutputs({ repositoryRoot: root, sourceInputPath, receiptPath, now });
 }
 
@@ -305,6 +339,39 @@ test("Korail topology registrar registers a same-file re-collection as a success
     assert.equal(sources.length, 1);
     assert.equal(sources[0].topologyAdmissionEvidence.snapshotId, row.snapshotId);
     assert.deepEqual(second[2].bytes, governanceBytes);
+
+    // #870: 같은 UTC 날짜의 같은 원본 재수집은 기존 객체를 재사용하는 재확인 행으로 등록한다(원장 append-only).
+    await commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs: second });
+    const ledgerBeforeThird = JSON.parse(second[1].bytes);
+    const thirdCapturedAt = "2026-10-03T05:00:00.000Z";
+    const third = await topologyRegistrationRound({ ...common, capturedAt: thirdCapturedAt, now: new Date("2026-10-03T06:00:00.000Z"), label: "third", reverifyFrom: row });
+    const thirdLedger = JSON.parse(third[1].bytes);
+    assert.deepEqual(thirdLedger.slice(0, -1), ledgerBeforeThird);
+    const reused = thirdLedger.at(-1);
+    assert.equal(reused.previousSnapshotId, row.snapshotId);
+    assert.equal(reused.rawObjectUri, row.rawObjectUri);
+    assert.equal(reused.rawObjectReusedFromSnapshotId, row.snapshotId);
+    assert.equal(reused.retrievedAt, thirdCapturedAt);
+    assert.equal(reused.rawSha256, row.rawSha256);
+
+    // 재확인 영수증이 head 객체가 아닌 URI·다른 snapshot을 가리키면 등록하지 않는다.
+    for (const mutation of [
+      (value) => ({ ...value, rawObjectUri: value.rawObjectUri.replace("20261003", "20261004") }),
+      (value) => ({ ...value, reusedFromSnapshotId: firstRow.snapshotId }),
+      (value) => ({ ...value, rawObjectSha256: "0".repeat(64) }),
+    ]) {
+      await assert.rejects(topologyRegistrationRound({ ...common, capturedAt: thirdCapturedAt, now: new Date("2026-10-03T06:00:00.000Z"), label: `bad-${Math.random()}`, reverifyFrom: row, receiptMutation: mutation }),
+        /KORAIL_TOPOLOGY_REGISTRATION_RAW_RECEIPT/);
+    }
+    // 원장 head의 원본 sha가 새 원본과 다르면(신규 게시 경로) 재확인 영수증을 받지 않는다.
+    const ledgerPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+    const committedLedger = await readFile(ledgerPath);
+    const changedLedger = JSON.parse(committedLedger);
+    changedLedger.at(-1).rawObjectSha256 = "1".repeat(64);
+    await writeJson(ledgerPath, changedLedger);
+    await assert.rejects(topologyRegistrationRound({ ...common, capturedAt: thirdCapturedAt, now: new Date("2026-10-03T06:00:00.000Z"), label: "changed", reverifyFrom: row }),
+      /KORAIL_TOPOLOGY_REGISTRATION_RAW_RECEIPT/);
+    await writeFile(ledgerPath, committedLedger);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
