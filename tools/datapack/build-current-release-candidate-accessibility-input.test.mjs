@@ -11,6 +11,7 @@ import {
   buildCurrentReleaseCandidateAccessibilityAuthority,
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   canonicalCurrentReleaseCandidateFixtureJson,
+  isNationwideCandidateId,
   main,
   validateCurrentReleaseCandidateAccessibilityAuthorityReplay,
 } from "./build-current-release-candidate-accessibility-input.mjs";
@@ -101,7 +102,7 @@ test("full-capital authority는 입력-derived edge와 materialization exact set
   assert.deepEqual(input.projectedFixture, before);
 });
 
-test("합성 current public successor의 legacy 수도권 route(ENTRY/EXIT)는 전국 build spec authority에서 명시적으로 거부된다", async (t) => {
+test("합성 current public successor는 input-derived metadata, route, authority를 완성한다", async (t) => {
   const sourceRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
   const temp = await mkdtemp(path.join(tmpdir(), "public-route-map-authority-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
@@ -148,12 +149,7 @@ test("합성 current public successor의 legacy 수도권 route(ENTRY/EXIT)는 �
   );
   assert.deepEqual(Object.keys(edgeCounts(sourceFixture.packs[0].networkEdges)), ["RIDE"]);
   assert.deepEqual(Object.keys(edgeCounts(projectedFixture.packs[0].networkEdges)), ["RIDE"]);
-  // #873: committed build spec은 전국 후보다. 수도권 live chain(legacy) route 입력의 역 단위 ENTRY/EXIT 간선은
-  // 전국 authority에서 명시적으로 거부된다. legacy 입력 생성 경로는 PR-C(#866)에서 live chain과 함께 제거한다.
-  assert.equal(buildSpec.productionScopeId, "nationwide_routing_android_v1");
-  assert.ok(route.routeEdges.some(({ edgeType }) => edgeType === "ENTRY"));
-  assert.ok(route.routeEdges.some(({ edgeType }) => edgeType === "EXIT"));
-  assert.throws(() => buildCurrentReleaseCandidateAccessibilityAuthority({
+  const result = buildCurrentReleaseCandidateAccessibilityAuthority({
     buildSpec,
     buildSpecBytes,
     projectedFixture,
@@ -164,7 +160,28 @@ test("합성 current public successor의 legacy 수도권 route(ENTRY/EXIT)는 �
     stationLineInputBytes,
     transferMetrics: JSON.parse(transferMetricsBytes),
     transferMetricsBytes,
-  }), /nationwide route-edge input must not contain ENTRY\/EXIT edges/);
+  });
+
+  assert.ok(route.stationLines.length > 0);
+  assert.equal(result.authority.edges.length, route.routeEdges.filter(({ edgeType }) => edgeType !== "RIDE").length);
+  const authorityCells = result.authority.edges.flatMap(({ requiredCells }) => requiredCells);
+  const authorityCellKeys = new Set(authorityCells.map(({ stationId, lineId, domain }) =>
+    `${stationId}:${lineId}:${domain}`));
+  const materialization = materializeStationLineAccessibility({
+    ...stationLineInput,
+    observedAt: result.authority.buildInput.observedAt,
+  });
+  // D1(#866): ENTRY/EXIT는 authority 증거 요구에서 빠진다. 차단된 FACILITY/EXIT row가 있어도 authority cell이 되지 않는다.
+  assert.ok(materialization.rows.some(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED"));
+  assert.ok(authorityCells.length > 0);
+  assert.ok(authorityCells.every(({ domain }) => domain === "TRANSFER"));
+  assert.equal(authorityCellKeys.size, new Set(result.authority.edges
+    .filter(({ edgeType }) => edgeType.endsWith("_TRANSFER"))
+    .flatMap(({ fromNodeId, toNodeId }) => [`${fromNodeId}:TRANSFER`, `${toNodeId}:TRANSFER`])).size);
+  assert.ok(result.authority.edges
+    .filter(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT")
+    .every(({ requiredCells }) => requiredCells.length === 0));
+  assert.equal(result.candidateFixture.packs[0].networkEdges.length, route.routeEdges.length);
 });
 
 test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에 fail-closed다", async () => {
@@ -442,6 +459,58 @@ test("전국 route-edge 입력에 ENTRY/EXIT 간선이 있으면 authority·결�
       routeEdgeInputBytes: value.routeBytes,
     }), /route-edge input must not contain ENTRY\/EXIT edges/, edgeTypes.join("+"));
   }
+});
+
+test("#873 F2: build·replay·authority 검증은 같은 후보 id 판정 함수로 전국 여부를 정한다", () => {
+  assert.equal(isNationwideCandidateId("nationwide-candidate-20261001-seq123"), true);
+  assert.equal(isNationwideCandidateId("capital-pilot-candidate-20260816"), false);
+  assert.equal(isNationwideCandidateId(undefined), false);
+  // 같은 ENTRY/EXIT 간선을 담은 authority도 후보 id로만 판정한다: legacy id는 받고 전국 id는 거부한다.
+  // (범위는 전국이고 후보 id가 legacy인 수도권 입력의 build 경로는 "합성 current public successor" 테스트가 실제 지표로 확인한다.)
+  const base = buildCurrentReleaseCandidateAccessibilityAuthority(
+    syntheticNationwideAuthorityInput(buildSyntheticNationwideReleaseCandidate()),
+  ).authority;
+  const accessAuthority = (candidateId) => {
+    const value = structuredClone(base);
+    value.candidate.candidateId = candidateId;
+    for (const edgeType of ["ENTRY", "EXIT"]) {
+      const payload = {
+        edgeId: `${edgeType.toLowerCase()}-station-a-line-1`, edgeType,
+        fromNodeId: edgeType === "ENTRY" ? "station-a" : "station-a:line-1",
+        toNodeId: edgeType === "ENTRY" ? "station-a:line-1" : "station-a",
+        durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY",
+      };
+      const { servicePattern: _p, serviceClass: _c, ...edge } = payload;
+      value.edges.push({ ...edge, routeEdgeSha256: sha256(Buffer.from(canonical(payload))), requiredCells: [] });
+    }
+    value.edges.sort((left, right) => Buffer.compare(Buffer.from(left.edgeId), Buffer.from(right.edgeId)));
+    value.edgeCounts = { ...value.edgeCounts, ENTRY: 1, EXIT: 1, total: value.edges.length };
+    resealAuthority(value);
+    return value;
+  };
+  assert.doesNotThrow(() => canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(accessAuthority("capital-pilot-candidate-20261001")));
+  assert.throws(
+    () => canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(accessAuthority("nationwide-candidate-20261001-seq900")),
+    /nationwide authority must not contain ENTRY\/EXIT edges/,
+  );
+  // 전국 후보 id면 같은 legacy 간선을 build와 replay가 모두 거부한다(replay는 재봉인한 authority로 확인).
+  const nationwide = buildSyntheticNationwideReleaseCandidate();
+  const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(nationwide));
+  const withAccess = addSyntheticLegacyAccessEdges(buildSyntheticNationwideReleaseCandidate());
+  assert.throws(
+    () => buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(withAccess)),
+    /nationwide route-edge input must not contain ENTRY\/EXIT edges/,
+  );
+  const resealed = structuredClone(authority);
+  resealed.buildInput.routeEdgeInputSha256 = sha256(withAccess.routeBytes);
+  resealAuthority(resealed);
+  assert.throws(() => validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
+    authority: resealed,
+    projectedFixture: withAccess.projectedFixture,
+    stationLineInputBytes: withAccess.stationLineInputBytes,
+    routeEdgeInputBytes: withAccess.routeBytes,
+    transferMetricsBytes: withAccess.transferMetricsBytes,
+  }), /nationwide route-edge input must not contain ENTRY\/EXIT edges/);
 });
 
 test("환승 끝점 TRANSFER cell이 UNKNOWN·MISSING이면 역 안·역 밖 환승 모두 명시적으로 실패한다", () => {

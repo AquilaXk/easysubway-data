@@ -82,8 +82,8 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     route,
     projectedPack,
   );
-  const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
-    || isNationwideCandidateId(buildSpec.candidateId);
+  // build·replay·authority 검증·validate-datapack이 같은 판정 함수 하나를 쓴다(#873 리뷰 F2).
+  const isNationwide = isNationwideCandidateId(buildSpec.candidateId);
   const routeEdges = validateRoute(route, stationLineInput, routeStationIndex, isNationwide);
   if (!isNationwide) {
     validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
@@ -97,7 +97,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   const candidateFixture = candidateFixtureFrom(input.projectedFixture, projectedRides, routeEdges);
   const candidateFixtureBytes = Buffer.from(canonicalCurrentReleaseCandidateFixtureJson(candidateFixture));
   const authorityEdges = authorityEdgesFrom(routeEdges, materializationRowIndex(materialization));
-  const edgeCounts = countAuthorityEdges(authorityEdges, isNationwideCandidateId(stationLineInput.candidate.candidateId));
+  const edgeCounts = countAuthorityEdges(authorityEdges, isNationwide);
   const payload = canonicalObject({
     schemaVersion: 1,
     artifactKind: "server-route-coverage-authority",
@@ -320,7 +320,9 @@ function authorityEdgeTypeSet(counts, isNationwide) {
     && keys.every((key) => AUTHORITY_EDGE_TYPES.has(key));
 }
 
-function isNationwideCandidateId(candidateId) {
+// 전국 후보 판정의 단일 기준이다. build·replay·authority 검증·validate-datapack(#873)이 모두 이 함수만 쓴다.
+// authority 형식에는 범위 id가 없으므로 후보 id 접두어로 판정한다.
+export function isNationwideCandidateId(candidateId) {
   return typeof candidateId === "string" && candidateId.startsWith("nationwide-candidate");
 }
 
