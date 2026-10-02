@@ -388,7 +388,12 @@ export async function resolveSeoulMeasuredTransferMetrics({ sourceInventory, sou
     throw new Error("nationwide candidate Seoul measured transfer receipt does not match the ledger");
   }
   assertCandidateClockAfterRawStorage({ evaluatedAt, stored: [{ sourceId: MEASURED_TRANSFER_SOURCE_ID, storedAt: receipt.storedAt }] });
-  return { artifact, metrics: artifact.metrics, row, receipt };
+  // #876: 끝점 TRANSFER 칸의 라이선스 id는 fan-in licenseRecordSha256과 같은 기준(inventory license 레코드 hash)이다.
+  const licenseRecordSha256 = sha256(canonicalJson(exactInventorySource(sourceInventory, MEASURED_TRANSFER_SOURCE_ID).license));
+  if (admission.licenseEvidenceHash !== licenseRecordSha256) {
+    throw new Error("nationwide candidate Seoul measured transfer license evidence does not match the inventory license");
+  }
+  return { artifact, metrics: artifact.metrics, row, receipt, licenseRecordSha256 };
 }
 
 // #876 메인 결정 B(2026-10-02): 실측 환승시간과 서울교통공사 거리 원천의 우선순위.
@@ -484,6 +489,29 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
     });
   }
   return { byDirection, derivedDistanceDirections, unavailableDirections };
+}
+
+// #876(#866 메인 결정 D1 선행): 역내 환승 간선의 끝점 TRANSFER 칸을 닫는 근거는 그 간선 방향을 실제로 뒷받침하는 공식 환승 원천의 레코드다.
+// route edge가 없는 방향(실측 0초 등)과 다른 원천이 뒷받침하는 방향의 레코드는 모으지 않는다. 한 칸을 두 원천이 함께 뒷받침하면
+// 우선순위가 정해지지 않았으므로 실패한다. 반환: `${stationId}\0${lineId}` → { sourceId, metrics(원천 레코드 원문) }.
+export function officialTransferEndpointRecords({ edgeDirections, officialByDirection, sources }) {
+  const byCell = new Map();
+  for (const { sourceId, metrics } of sources) {
+    for (const metric of metrics) {
+      const direction = `${metric.stationId}:${metric.fromLineId}->${metric.toLineId}`;
+      if (!edgeDirections.has(direction) || officialByDirection.get(direction)?.sourceId !== sourceId) continue;
+      for (const lineId of [metric.fromLineId, metric.toLineId]) {
+        const cell = `${metric.stationId}\0${lineId}`;
+        const records = byCell.get(cell);
+        if (records && records.sourceId !== sourceId) {
+          throw new Error(`nationwide candidate transfer endpoint is claimed by two official transfer sources: ${metric.stationId} ${lineId}`);
+        }
+        if (records) records.metrics.push(metric);
+        else byCell.set(cell, { sourceId, metrics: [metric] });
+      }
+    }
+  }
+  return byCell;
 }
 
 // #872 후속(#866 메인 결정 D1 선행): 역 밖 환승 링크는 링크 자체에 공식 VERIFIED 근거가 있을 때만 쓴다.
@@ -743,6 +771,7 @@ export async function prepareNationwideCandidate({
   const stationPathwayNodes = [];
   const stationPathwayEdges = [];
   const transferEdges = [];
+  const transferEdgeDirections = new Set();
   const transferRules = [];
 
   for (const [stationId, lines] of stationToLines) {
@@ -801,6 +830,7 @@ export async function prepareNationwideCandidate({
             serviceClass: "SUBWAY",
           };
           transferEdges.push({ ...normalized, edgeSha256: routeEdgeSha256(normalized) });
+          transferEdgeDirections.add(`${stationId}:${fromLine}->${toLine}`);
 
           // D4(보완): 역방향 값(DERIVED_RECIPROCAL)은 #350 승인대로 길찾기 route edge에만 쓴다. production pathway 계약은
           // DERIVED_RECIPROCAL을 받지 않으므로 경로 행을 만들지 않고, 규칙은 FK 없이 UNVERIFIED로 둔다.
@@ -863,6 +893,33 @@ export async function prepareNationwideCandidate({
       }
     }
   }
+
+  // #876(#866 D1 선행): 실측·부산 원천이 뒷받침하는 역내 환승 간선의 끝점은 그 원천 레코드로 TRANSFER 칸을 닫는다.
+  // 서울 거리 원천은 아래 기존 경로(지표가 닿는 역-노선)로 닫는다.
+  const officialEndpointRecords = officialTransferEndpointRecords({
+    edgeDirections: transferEdgeDirections,
+    officialByDirection: officialTransferMetricMap,
+    sources: [
+      { sourceId: MEASURED_TRANSFER_SOURCE_ID, metrics: measuredTransfer.metrics },
+      { sourceId: "busan-transportation-route-topology", metrics: busanTransfer.metrics },
+    ],
+  });
+  const officialEndpointSources = new Map([
+    [MEASURED_TRANSFER_SOURCE_ID, {
+      sourceSnapshotId: measuredTransfer.row.snapshotId,
+      rawSha256: measuredTransfer.row.rawSha256,
+      capturedAt: requiredInstant(measuredTransfer.row.capturedAt, "Seoul measured transfer capturedAt"),
+      freshUntil: measuredTransfer.row.freshnessExpiresAt,
+      licenseId: measuredTransfer.licenseRecordSha256,
+    }],
+    ["busan-transportation-route-topology", {
+      sourceSnapshotId: busanTransfer.head.snapshotId,
+      rawSha256: busanTransfer.head.rawSha256,
+      capturedAt: requiredInstant(busanTransfer.head.capturedAt, "Busan transfer capturedAt"),
+      freshUntil: busanTransfer.head.freshnessExpiresAt,
+      licenseId: busanTransfer.head.licenseRecordSha256,
+    }],
+  ]);
 
   // 역 밖 환승 후보(끝점만). 공식 거리·시간·접근성 근거가 없으므로 값을 싣지 않는다.
   // admitOutOfStationTransferLinks가 공식 VERIFIED 근거가 있는 링크만 남기고, 나머지는 제외 사유 목록으로 돌려준다(#872).
@@ -1893,6 +1950,10 @@ export async function prepareNationwideCandidate({
     // TRANSFER
     const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1 || outOfStationTransferStationIds.has(stationId);
     const isBusanDaeguTransfer = busanDaeguTransferStationIds.has(stationId);
+    const matchedMetrics = (transferMetrics?.metrics ?? []).filter(
+      (m) => m.stationId === stationId && (m.fromLineId === lineId || m.toLineId === lineId)
+    );
+    const endpointRecords = officialEndpointRecords.get(key);
     if (!isTransfer) {
       evidenceRows.push({
         ...stationLineCandidate,
@@ -1913,6 +1974,30 @@ export async function prepareNationwideCandidate({
         materializerVersion: "1",
         evidenceKind: "CURRENT_APPLICABILITY_RULE",
         evidenceReason: "canonical transfer applicability",
+      });
+    } else if (endpointRecords && matchedMetrics.length === 0) {
+      // #876: 서울 거리 지표가 닿지 않는 끝점은 간선을 뒷받침하는 실측·부산 원천 레코드로 닫는다. 부산 환승 간선 끝점은
+      // MOLIT 환승 존재 대신 부산교통공사 공식 레코드가 근거다(#872: MOLIT는 새 근거로 쓰지 않는다).
+      const source = officialEndpointSources.get(endpointRecords.sourceId);
+      evidenceRows.push({
+        ...stationLineCandidate,
+        stationId,
+        lineId,
+        operatorId,
+        domain: "TRANSFER",
+        state: "VERIFIED_PRESENT",
+        sourceId: endpointRecords.sourceId,
+        sourceSnapshotId: source.sourceSnapshotId,
+        evidenceRawSha256: source.rawSha256,
+        providerRecordHash: sha256(canonicalJson(endpointRecords.metrics)),
+        capturedAt: source.capturedAt,
+        freshUntil: source.freshUntil,
+        provenanceId: source.rawSha256,
+        licenseId: source.licenseId,
+        mappingContractVersion: "station-line-v1",
+        materializerVersion: "1",
+        evidenceKind: "OBSERVED",
+        evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
       });
     } else if (isBusanDaeguTransfer) {
       const info = busanDaeguTransferInfo.get(stationId);
@@ -1944,9 +2029,6 @@ export async function prepareNationwideCandidate({
         evidenceReason: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
       });
     } else {
-      const matchedMetrics = (transferMetrics?.metrics ?? []).filter(
-        (m) => m.stationId === stationId && (m.fromLineId === lineId || m.toLineId === lineId)
-      );
       if (matchedMetrics.length > 0) {
         evidenceRows.push({
           ...stationLineCandidate,
