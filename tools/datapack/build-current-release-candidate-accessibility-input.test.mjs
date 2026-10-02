@@ -31,6 +31,11 @@ import {
 import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import {
+  assertNationwideCandidateInputBytes,
+  bindNationwideCandidatePreparation,
+  main as verifyNationwideCandidateInputBinding,
+} from "./nationwide-candidate-input-binding.mjs";
+import {
   buildSyntheticNationwideReleaseCandidate,
   rebindSyntheticNationwideReleaseCandidate,
   setSyntheticNationwideEvidenceState,
@@ -659,6 +664,75 @@ test("CLI는 build spec/fixture path 경계를 fail closed하고 출력 전에 �
   await symlink(path.join(directory, files.buildSpec), linkedSpec);
   await noOutput("symlink", { buildSpec: "release/linked-build-spec.json" });
   await noOutput("fixture-mismatch", { fixture: "tools/datapack/release/capital-production-canonical-pack.json" });
+});
+
+// 리뷰 F1: RC·stage·map-catalog이 함께 쓰는 결속 검사는 필드 하나만 달라도 거부해야 한다.
+// scope는 preparation.authority.scopeId도 같이 바꿔 다른 비교가 대신 잡지 못하게 한다.
+test("preparation 결속은 scopeId·releaseSequence·입력 source set이 하나만 달라도 거부한다", () => {
+  const value = buildSyntheticNationwideReleaseCandidate();
+  const preparationBytes = (mutate) => {
+    const preparation = structuredClone(value.preparation);
+    mutate(preparation);
+    return Buffer.from(JSON.stringify(preparation));
+  };
+  const binding = bindNationwideCandidatePreparation({ preparationBytes: value.preparationBytes, buildSpec: value.buildSpec });
+  assert.doesNotThrow(() => assertNationwideCandidateInputBytes({
+    binding, buildSpec: value.buildSpec,
+    stationLineInputBytes: value.stationLineInputBytes, routeEdgeInputBytes: value.routeBytes,
+  }));
+  assert.throws(() => bindNationwideCandidatePreparation({
+    preparationBytes: preparationBytes((preparation) => {
+      preparation.scopeId = "capital_pilot_android_v1";
+      preparation.authority.scopeId = "capital_pilot_android_v1";
+    }),
+    buildSpec: value.buildSpec,
+  }), /candidate preparation identity mismatch/, "scopeId");
+  assert.throws(() => bindNationwideCandidatePreparation({
+    preparationBytes: preparationBytes((preparation) => { preparation.releaseIdentity.releaseSequence += 1; }),
+    buildSpec: value.buildSpec,
+  }), /candidate preparation identity mismatch/, "releaseSequence");
+  for (const [field, label] of [["stationLineInput", "station-line input"], ["route", "route-edge input"]]) {
+    const changed = structuredClone(value[field]);
+    changed.candidate.sourceSetSha256 = "0".repeat(64);
+    const changedBytes = Buffer.from(canonical(changed));
+    const changedBinding = structuredClone(binding);
+    changedBinding[field === "route" ? "routeEdgeInput" : "stationLineInput"].sha256 = sha256(changedBytes);
+    assert.throws(() => assertNationwideCandidateInputBytes({
+      binding: changedBinding,
+      buildSpec: value.buildSpec,
+      stationLineInputBytes: field === "route" ? value.stationLineInputBytes : changedBytes,
+      routeEdgeInputBytes: field === "route" ? changedBytes : value.routeBytes,
+    }), new RegExp(`${label} candidate identity mismatch`), `${label} sourceSetSha256`);
+  }
+});
+
+// map-catalog-publish CLI 경로에서는 입력 후보 id·source set을 이 결속만 확인한다.
+test("결속 CLI(map-catalog 경로)는 preparation sha는 맞지만 source set이 다른 입력을 거부한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "nationwide-binding-cli-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const value = buildSyntheticNationwideReleaseCandidate();
+  await writeSyntheticNationwideRepository(directory, value);
+  const argv = [
+    "--build-spec", SYNTHETIC_NATIONWIDE_PATHS.buildSpec,
+    "--candidate-preparation", SYNTHETIC_NATIONWIDE_PATHS.preparation,
+    "--station-line-input", SYNTHETIC_NATIONWIDE_PATHS.stationLineInput,
+    "--route-edge-input", SYNTHETIC_NATIONWIDE_PATHS.routeEdgeInput,
+  ];
+  const previous = process.cwd();
+  process.chdir(directory);
+  try {
+    await verifyNationwideCandidateInputBinding(argv);
+    const route = structuredClone(value.route);
+    route.candidate.sourceSetSha256 = "0".repeat(64);
+    const routeBytes = canonical(route);
+    await writeFile(SYNTHETIC_NATIONWIDE_PATHS.routeEdgeInput, routeBytes);
+    const preparation = structuredClone(value.preparation);
+    preparation.routeEdgeInput.sha256 = sha256(routeBytes);
+    await writeFile(SYNTHETIC_NATIONWIDE_PATHS.preparation, JSON.stringify(preparation));
+    await assert.rejects(verifyNationwideCandidateInputBinding(argv), /route-edge input candidate identity mismatch/);
+  } finally {
+    process.chdir(previous);
+  }
 });
 
 function outputFiles(directory, suffix) {
