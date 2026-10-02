@@ -4,7 +4,7 @@
   "candidateId": "nationwide-candidate-20261001-seq123",
   "publishedAt": "2026-10-01T23:36:22.000Z",
   "releaseSequence": 123,
-  "builderGitSha": "7a40264a94195fa7200167eb14ab0d76d3568f74",
+  "builderGitSha": "1e7e3cc61590972dad47010834ffa635dba4cf6f",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
   "fixtureSha256": "07f60e6744997e3d2a858abe027a66dc4261db8570486ae3b738f97212363267",
@@ -624,7 +624,7 @@
     }
   ],
   "sourceSnapshotSetHash": "3516d9dac75e4de46fed2ffa51b4fd0b0ed6000fc9f811cfac1558f0a18dc759",
-  "sourceInventorySha256": "356186877215a68d3164101260434cebacd427fc2b061057801a26d596aa9706",
+  "sourceInventorySha256": "2ed6b3aa4e5d067708d6bf794542198317f53391a0024f54e41d80af1412dd6e",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "19e2fc4810a23cf7ed07eaf9cad70493fcd66b074363befca646220d6038ad05"
@@ -678,7 +678,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "aaec15a403d5c201ad18818e704e7a261982e2063cdbc2dcc757b151c6d19e09"
+      "sha256": "10855e6f753cd696b6640b6015295e2867e6100ed8100b0cddd69ec962c6892e"
     }
   },
   "officialOdFareEvidence": {
