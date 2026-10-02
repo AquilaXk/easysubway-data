@@ -1393,3 +1393,98 @@ test("facility 행의 설치 상태가 FACILITY claim의 evidenceKind가 된다(
     ["f-absent", "NOT_EXISTS"],
   ]);
 });
+
+// 리뷰 F3: 지역 원천 검증의 각 조건은 다른 조건이 모두 맞을 때 단독으로 깨져도 정확히 한 위반을 낸다.
+for (const [name, mutate, partition, code] of [
+  ["license hash 형식", (input) => {
+    input.inventory.sources[0].admissionEvidence.licenseEvidenceHash = "not-a-hash";
+    input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = "not-a-hash";
+  }, "license", "LICENSE_EVIDENCE_MISMATCH"],
+  ["policy license hash", (input) => {
+    input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = hash("other-license");
+  }, "license", "LICENSE_EVIDENCE_MISMATCH"],
+  ["시설 capability 상태", (input) => {
+    input.inventory.sources[0].capabilities.facility.status = "CANDIDATE";
+  }, "provenance", "ACCESSIBILITY_ADMISSION_NOT_APPROVED"],
+  ["시설 capability 운영 허용", (input) => {
+    input.inventory.sources[0].capabilities.facility.productionUseAllowed = false;
+  }, "provenance", "ACCESSIBILITY_ADMISSION_NOT_APPROVED"],
+  ["capturedAt 형식", (input) => {
+    for (const target of [input.snapshots[0], input.inventory.sources[0].accessibilityAdmissionEvidence, input.sourceSnapshotPolicies[0]]) {
+      target.capturedAt = "not-a-time";
+    }
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ["freshUntil 형식", (input) => {
+    input.snapshots[0].freshUntil = "not-a-time";
+    input.inventory.sources[0].accessibilityAdmissionEvidence.freshUntil = "not-a-time";
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ["미래 capturedAt", (input) => {
+    for (const target of [input.snapshots[0], input.inventory.sources[0].accessibilityAdmissionEvidence, input.sourceSnapshotPolicies[0]]) {
+      target.capturedAt = "2026-07-28T00:00:00.001Z";
+    }
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ...["snapshotPath", "capturedAt", "freshUntil", "rawSha256", "rowsSha256", "stationCount", "rowCount"].map((key) => [
+    `inventory ${key}`,
+    (input) => {
+      const evidence = input.inventory.sources[0].accessibilityAdmissionEvidence;
+      evidence[key] = typeof evidence[key] === "number" ? evidence[key] + 1 : `${evidence[key]}-x`;
+      if (key === "capturedAt") evidence[key] = "2026-07-27T22:00:00.000Z";
+      if (key === "freshUntil") evidence[key] = "2026-07-28T22:00:00.000Z";
+      if (key === "rawSha256" || key === "rowsSha256") evidence[key] = hash(`other-${key}`);
+    },
+    "snapshot",
+    "SNAPSHOT_IDENTITY_MISMATCH",
+  ]),
+  ["rawSha256 형식", (input) => {
+    input.snapshots[0].rawSha256 = "raw";
+    input.inventory.sources[0].accessibilityAdmissionEvidence.rawSha256 = "raw";
+    input.sourceSnapshotPolicies[0].rawSha256 = "raw";
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy capturedAt", (input) => {
+    input.sourceSnapshotPolicies[0].capturedAt = "2026-07-27T22:00:00.000Z";
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy rawSha256", (input) => {
+    input.sourceSnapshotPolicies[0].rawSha256 = hash("other-raw");
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy contentSha256", (input) => {
+    input.sourceSnapshotPolicies[0].contentSha256 = hash("other-content");
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ...["snapshotStatus", "fetchStatus", "schemaStatus", "licenseStatus"].map((key) => [
+    `policy ${key}`, (input) => { input.sourceSnapshotPolicies[0][key] = "PENDING"; }, "snapshot", "SNAPSHOT_POLICY_MISMATCH",
+  ]),
+  ...["redistributionAllowed", "credentialRedacted"].map((key) => [
+    `policy ${key}`, (input) => { input.sourceSnapshotPolicies[0][key] = false; }, "snapshot", "SNAPSHOT_POLICY_MISMATCH",
+  ]),
+  ["policy freshnessExpiresAt 형식", (input) => {
+    input.sourceSnapshotPolicies[0].freshnessExpiresAt = "not-a-time";
+  }, "freshness", "SNAPSHOT_STALE"],
+  ["policy 만료", (input) => {
+    input.sourceSnapshotPolicies[0].freshnessExpiresAt = EVALUATED_AT;
+  }, "freshness", "SNAPSHOT_STALE"],
+]) {
+  test(`지역 원천 ${name}만 깨지면 ${code} 하나만 낸다(F3)`, () => {
+    const input = regionalCountInput("daegu");
+    mutate(input);
+
+    const report = buildAccessibilitySourceCoverageReport(input);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations[partition], [`daegu-transportation-accessibility:${code}`]);
+    for (const other of Object.keys(emptyViolations()).filter((key) => key !== partition && key !== "provenance")) {
+      assert.deepEqual(report.violations[other], [], `${other} must stay empty`);
+    }
+  });
+}
+
+test("rowsSha256과 다른 지역 row는 hash 밖 필드만 바뀌어도 claim을 결속하지 못한다(F3)", () => {
+  const input = regionalCountInput("daegu");
+  // provider record hash에 들어가지 않는 역 이름만 바꾸고 claim도 그 이름으로 맞춘다. rowsSha256은 그대로다.
+  input.snapshots[0].rows[0].stationName = "바뀐역";
+  for (const claim of input.artifacts[0].claims) claim.stationName = "바뀐역";
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.equal(report.violations.provenance.filter((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")).length,
+    input.artifacts[0].claims.length);
+});
