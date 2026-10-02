@@ -517,6 +517,19 @@ export function admitOutOfStationTransferLinks(links, { sourceInventory, sourceS
   return { admitted, excluded };
 }
 
+// 팩에 싣는 역 밖 환승 링크. 접근성 필드는 공식 근거가 없으므로 UNKNOWN으로 두고, 출처 필드(원천·snapshot·hash·검증 표기)는 지우지 않고 보존한다(#883 F2).
+export function packOutOfStationTransferLinks(links) {
+  return links.map((link) => ({
+    ...link,
+    accessibilityStatus: "UNKNOWN",
+    stairAccessState: "UNKNOWN",
+    curbCutStatus: "UNKNOWN",
+    sidewalkStatus: "UNKNOWN",
+    crossingRisk: "UNKNOWN",
+    coveredRoute: "UNKNOWN",
+  }));
+}
+
 // 광주 접근성 행의 FACILITY 판정. 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고
 // 미관측 유형이 남아 있으면 부재로 단정하지 않고 UNKNOWN으로 막는다(#862: 휠체어리프트 0만으로
 // VERIFIED_ABSENT가 되던 문제). 세 유형이 모두 0일 때만 부재다.
@@ -898,15 +911,7 @@ export async function prepareNationwideCandidate({
   nationwidePack.stationPathwayNodes = stationPathwayNodes;
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
   nationwidePack.transferRules = transferRules;
-  const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => ({
-    ...link,
-    accessibilityStatus: "UNKNOWN",
-    stairAccessState: "UNKNOWN",
-    curbCutStatus: "UNKNOWN",
-    sidewalkStatus: "UNKNOWN",
-    crossingRisk: "UNKNOWN",
-    coveredRoute: "UNKNOWN",
-  }));
+  const cleanOutOfStationTransferLinks = packOutOfStationTransferLinks(outOfStationTransferLinks);
   nationwidePack.outOfStationTransferLinks = cleanOutOfStationTransferLinks;
   nationwidePack.networkEdges = rides;
 

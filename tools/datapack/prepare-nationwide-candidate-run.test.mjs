@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { admitOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { admitOutOfStationTransferLinks, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -1291,6 +1291,18 @@ test("#883 F1 역 밖 환승 근거는 hash 형식·원천 inventory 허용·원
     ["unknown-snapshot", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
     ["other-source-snapshot", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
   ]);
+});
+
+test("#883 F2 팩에 실리는 승인된 역 밖 환승 링크는 출처 필드를 보존하고 접근성 필드만 UNKNOWN으로 둔다", () => {
+  const verified = verifiedOutOfStationLink({ lastVerifiedAt: "2026-10-01T00:00:00Z", lastFieldVerifiedAt: "2026-10-01T00:00:00Z", accessibilityStatus: "ACCESSIBLE", stairAccessState: "STEP_FREE" });
+  const { admitted } = admitOutOfStationTransferLinks([verified], outOfStationEvidenceContext);
+  const [packed] = packOutOfStationTransferLinks(admitted);
+  for (const field of ["sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash", "provenanceKind", "verificationStatus", "lastVerifiedAt", "lastFieldVerifiedAt", "durationSeconds", "distanceMeters"]) {
+    assert.equal(packed[field], verified[field], `${field} 보존`);
+  }
+  for (const field of ["accessibilityStatus", "stairAccessState", "curbCutStatus", "sidewalkStatus", "crossingRisk", "coveredRoute"]) {
+    assert.equal(packed[field], "UNKNOWN", `${field} UNKNOWN`);
+  }
 });
 
 test("#872 역 밖 환승은 링크 자체의 공식 VERIFIED 근거가 있을 때만 남고, 나머지는 사유와 함께 제외된다", () => {
