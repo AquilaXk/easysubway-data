@@ -9,13 +9,13 @@ import {
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const SOURCE_ID = "incheon-transit-station-info";
 const OPERATOR_ID = "incheon-transit";
 const PACK_ID = "nationwide-incheon-station-info";
 const REGION = "수도권";
 const REGION_ID = "capital";
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
@@ -443,7 +443,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
     || !Number.isFinite(observedNow)
     || observedNow < Date.parse(snapshot.capturedAt)
     || observedNow >= Date.parse(snapshot.freshUntil)
-    || Date.parse(snapshot.freshUntil) !== Date.parse(snapshot.capturedAt) + FRESHNESS_MILLIS) {
+    || Date.parse(snapshot.freshUntil) !== Date.parse(topologySnapshotFreshUntil(snapshot.capturedAt))) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
   assertRouteMapAdmissionFreshness(routeMap, now, SOURCE_ID);

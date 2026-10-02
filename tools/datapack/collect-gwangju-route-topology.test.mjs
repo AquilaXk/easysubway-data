@@ -69,6 +69,28 @@ test("광주 공식 운행정보 API를 20개 역·38개 방향성 인접 edge�
   assert.equal(snapshot.freshUntil, "2026-07-21T13:10:00.000Z");
 });
 
+test("광주 topology는 컷오버(2026-10-03T00:00Z) 이후 수집분에 P7D, 이전 수집분에 P1D freshUntil을 기록한다", async () => {
+  const fetchImpl = async (url) => {
+    const stationId = Number(new URL(url).searchParams.get("station_id"));
+    return Response.json(Array.from({ length: 20 }, (_, index) => index + 1)
+      .filter((endStationId) => endStationId !== stationId)
+      .map((endStationId) => ({
+        start_station_id: stationId,
+        start_station_name: stationNames[stationId - 1],
+        end_station_id: endStationId,
+        end_station_name: stationNames[endStationId - 1],
+        station_distance: Math.abs(stationId - endStationId) * 1.25,
+        station_time: Math.abs(stationId - endStationId) * 2.5,
+      })));
+  };
+  const day = 86_400_000;
+  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
+  const current = await collectGwangjuRouteTopology({ stationScope, now: new Date(cutover), fetchImpl });
+  assert.equal(current.freshUntil, new Date(cutover + 7 * day).toISOString());
+  const legacy = await collectGwangjuRouteTopology({ stationScope, now: new Date(cutover - 1), fetchImpl });
+  assert.equal(legacy.freshUntil, new Date(cutover - 1 + day).toISOString());
+});
+
 test("광주 topology collector는 HTTP·schema·OD 완결성 오류를 fail closed한다", async () => {
   await assert.rejects(collectGwangjuRouteTopology({
     stationScope,

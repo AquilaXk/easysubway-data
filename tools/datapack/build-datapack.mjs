@@ -23,6 +23,7 @@ import {
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
+import { topologySnapshotFreshnessMillis } from "./lib/topology-freshness-cutover.mjs";
 import {
   officialOdFareAdmissionsBySource,
   officialOdFareQuoteSetHash,
@@ -30,7 +31,6 @@ import {
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
   CAPITAL_MAP_LINE_IDS,
-  FRESHNESS_MILLIS,
   normalizeStationName,
   projectCapitalTopologyOwnership,
   requireCurrentSourceSeparatedCapitalTopology,
@@ -1988,7 +1988,7 @@ export function validateCapitalTopologyReverification(
     evidence.candidate.freshUntil,
     "capital topology reverification candidate freshUntil",
   ));
-  if (freshUntil - capturedAt !== FRESHNESS_MILLIS
+  if (freshUntil - capturedAt !== topologySnapshotFreshnessMillis(capturedAt)
     || capturedAt > Date.parse(admission.reverifiedAt)
     || freshUntil <= Date.parse(admission.reverifiedAt)) {
     throw new Error("capital topology reverification freshness is invalid");

@@ -15,6 +15,7 @@ import {
 import { parseCurrentMolitDaeguStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS, createSourceRegistrationTransaction } from "./lib/source-registration-transaction.mjs";
@@ -531,7 +532,7 @@ function projectFreshness({ freshness, candidateById }) {
     throw new Error("Daegu topology freshness class is inconsistent");
   }
   const topologyClass = select(classes, ({ id }) => id === [...topologyClassIds][0], "Daegu topology freshness class");
-  if (topologyClass.basisField !== "retrievedAt" || topologyClass.reverificationCadence !== "P1D") {
+  if (topologyClass.basisField !== "retrievedAt" || topologyClass.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE) {
     throw new Error("Daegu topology freshness class is invalid");
   }
   topologyClass.sourceIds = appendExactSourceIds(topologyClass.sourceIds, TOPOLOGY_SOURCE_IDS);

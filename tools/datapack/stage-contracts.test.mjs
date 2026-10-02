@@ -7,8 +7,8 @@ import test from "node:test";
 
 import { stageContracts } from "./stage-contracts.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/63737fd7f91888dff5c5a6eb48e846e473ebdc22/contracts/bundles/data-contracts-v1.0.0.json";
-const bundleSha256 = "6bf3036fbe94d8e2b9c9eb1f8a1af6978966cc564adea91e3a297ca7882d9b35";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/506306c666ecc23d77c254a99d990fa23e3e8261/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleSha256 = "13c9bd12609352d4dca7df996e661bc3415dbe1faaeb37c0aed71fcd6fdb100c";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
@@ -53,6 +53,7 @@ const resources = {
       { id: "route_map_positions", sourceIds: routeMapPositionSourceIds, reverificationCadence: "P90D", offlinePackEligible: true },
       { id: "route_map_asset_historical", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: false },
       { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
+      { id: "route_graph_topology", reverificationCadence: "P7D" },
     ],
   })}\n`,
   "datapack/source-governance-policy.json": `${JSON.stringify({
@@ -220,6 +221,23 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     await assert.rejects(
       stageContracts({ root, fetchBundle: async () => missingRouteMapPositionBytes }),
       /production requiredSourceIds/,
+    );
+
+    // 수집기·등록기의 topology 창(lib 컷오버 이후 P7D)과 release가 쓰는 고정 Hub 정책이 갈라지면 stage 단계에서 막는다.
+    const legacyTopologyResources = structuredClone(resources);
+    const legacyTopologyFreshness = JSON.parse(legacyTopologyResources["datapack/datapack-freshness-sla.json"]);
+    legacyTopologyFreshness.sourceClasses.find(({ id }) => id === "route_graph_topology").reverificationCadence = "P1D";
+    legacyTopologyResources["datapack/datapack-freshness-sla.json"] = `${JSON.stringify(legacyTopologyFreshness)}\n`;
+    const legacyTopologyBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: legacyTopologyResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(legacyTopologyBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => legacyTopologyBytes }),
+      /route_graph_topology reverificationCadence/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -4,7 +4,9 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/63737fd7f91888dff5c5a6eb48e846e473ebdc22/contracts/bundles/data-contracts-v1.0.0.json";
+import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
+
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/506306c666ecc23d77c254a99d990fa23e3e8261/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
@@ -100,6 +102,12 @@ export async function stageContracts({ root = process.cwd(), fetchBundle = downl
   if (JSON.stringify(productionScope.productionSourceSet?.requiredSourceIds)
       !== JSON.stringify(productionRequiredSourceIds)) {
     throw new Error("contract bundle production requiredSourceIds are invalid");
+  }
+  // 수집기·등록기는 lib 컷오버 이후 topology 창을 TOPOLOGY_REVERIFICATION_CADENCE로 만든다.
+  // release가 판정에 쓰는 고정 Hub 정책이 다른 주기면 원장 저장값과 유도값이 갈라지므로 stage에서 막는다.
+  const routeGraphTopology = freshnessPolicy.sourceClasses?.find(({ id }) => id === "route_graph_topology");
+  if (routeGraphTopology?.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE) {
+    throw new Error("contract bundle route_graph_topology reverificationCadence is invalid");
   }
 
   const build = path.join(root, "build");

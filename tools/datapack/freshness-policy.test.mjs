@@ -5,7 +5,13 @@ import test from "node:test";
 import {
   decideScheduledRun,
   deriveFreshness,
+  deriveFreshnessExpiresAt,
 } from "./freshness-policy.mjs";
+import {
+  TOPOLOGY_FRESHNESS_CUTOVER_AT,
+  TOPOLOGY_REVERIFICATION_CADENCE,
+  topologySnapshotFreshUntil,
+} from "./lib/topology-freshness-cutover.mjs";
 
 const policy = {
   clockSkewSeconds: 300,
@@ -208,7 +214,8 @@ test("tracked freshness policy는 수동 decision 없이 파생 필드를 선언
       "string",
     );
     const cadence = sourceClass.reverificationCadence ?? sourceClass.maximumReverificationCadence;
-    const basisAt = "2026-07-01T00:00:00.000Z";
+    // 컷오버 이후 basis에서는 모든 클래스가 정책 주기를 그대로 쓴다(컷오버 이전 topology는 아래 테스트가 고정).
+    const basisAt = TOPOLOGY_FRESHNESS_CUTOVER_AT;
     const storedExpiresAt = expectedExpiry(basisAt, cadence);
     assert.equal(deriveFreshness({
       policy: tracked,
@@ -239,6 +246,36 @@ test("공공 노선도 위치 freshness는 90일이며 historical web asset을 c
   assert.equal(positions.reverificationCadence, "P90D");
   assert.equal(historical.offlinePackEligible, false);
   assert.deepEqual(historical.sourceIds, ["seoulmetro-cyberstation-route-map"]);
+});
+
+test("노선 topology 신선도는 컷오버 전 수집분은 P1D, 컷오버 이후 수집분은 정책 P7D로 정확히 유도한다", async () => {
+  const tracked = JSON.parse(await readFile(
+    "release/product-gates/datapack-freshness-sla.json",
+    "utf8",
+  ));
+  const topology = tracked.sourceClasses.find(({ id }) => id === "route_graph_topology");
+  // QA 승인(2026-10-02): topology는 이벤트 기반 갱신 + P7D 만료 안전망. lib 상수와 정책이 어긋나면 수집기·등록기가 갈라진다.
+  assert.equal(topology.reverificationCadence, "P7D");
+  assert.equal(TOPOLOGY_REVERIFICATION_CADENCE, topology.reverificationCadence);
+  assert.equal(TOPOLOGY_FRESHNESS_CUTOVER_AT, "2026-10-03T00:00:00.000Z");
+
+  const cutover = Date.parse(TOPOLOGY_FRESHNESS_CUTOVER_AT);
+  const beforeCutover = new Date(cutover - 1).toISOString();
+  const derive = (sourceClassId, basisAt) => deriveFreshnessExpiresAt({
+    policy: tracked, sourceClassId, basisAt, evaluationAt: basisAt,
+  });
+  assert.equal(derive("route_graph_topology", beforeCutover), new Date(cutover - 1 + 86_400_000).toISOString());
+  assert.equal(derive("route_graph_topology", TOPOLOGY_FRESHNESS_CUTOVER_AT), new Date(cutover + 7 * 86_400_000).toISOString());
+  // 다른 클래스는 컷오버와 무관하게 자기 정책 주기를 쓴다.
+  assert.equal(derive("static_accessibility_facility", beforeCutover), new Date(cutover - 1 + 90 * 86_400_000).toISOString());
+  assert.equal(derive("official_static_timetable_confirmation", beforeCutover), new Date(cutover - 1 + 7 * 86_400_000).toISOString());
+
+  assert.equal(topologySnapshotFreshUntil(beforeCutover), derive("route_graph_topology", beforeCutover));
+  assert.equal(topologySnapshotFreshUntil(TOPOLOGY_FRESHNESS_CUTOVER_AT), derive("route_graph_topology", TOPOLOGY_FRESHNESS_CUTOVER_AT));
+  assert.equal(topologySnapshotFreshUntil(new Date(cutover)), new Date(cutover + 7 * 86_400_000).toISOString());
+  for (const invalid of [undefined, null, "", "not-a-date", Number.NaN]) {
+    assert.throws(() => topologySnapshotFreshUntil(invalid), /topology capturedAt/);
+  }
 });
 
 function expectedExpiry(basisAt, cadence) {

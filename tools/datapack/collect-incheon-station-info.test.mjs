@@ -89,6 +89,22 @@ async function loadCurrentCsv() {
   return synthesizeCurrentCsv(await loadCurrentStationSnapshot());
 }
 
+test("인천 station-info는 컷오버(2026-10-03T00:00Z) 이후 수집분에 P7D, 이전 수집분에 P1D freshUntil만 허용한다", async () => {
+  const csvBytes = await loadCurrentCsv();
+  const day = 86_400_000;
+  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
+  const current = collectIncheonStationInfo({ csvBytes, now: new Date(cutover) });
+  assert.equal(current.freshUntil, new Date(cutover + 7 * day).toISOString());
+  assert.equal(validateIncheonStationInfoSnapshot(current), current);
+  assert.throws(
+    () => validateIncheonStationInfoSnapshot({ ...current, freshUntil: new Date(cutover + day).toISOString() }),
+    /invalid Incheon station info snapshot/,
+  );
+  const legacy = collectIncheonStationInfo({ csvBytes, now: new Date(cutover - 1) });
+  assert.equal(legacy.freshUntil, new Date(cutover - 1 + day).toISOString());
+  assert.equal(validateIncheonStationInfoSnapshot(legacy), legacy);
+});
+
 test("인천 station-info collector는 1·2·7호선 71역 membership/positions와 1·2호선 116 edge를 정규화한다", async () => {
   const currentSnapshot = await loadCurrentStationSnapshot();
   const csvBytes = await loadCurrentCsv();

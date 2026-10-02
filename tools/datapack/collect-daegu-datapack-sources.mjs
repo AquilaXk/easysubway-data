@@ -6,6 +6,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_PREFIX = Object.freeze({ "평일": "WEEK", "토요일": "SAT", "휴일": "HOLI" });
@@ -192,7 +193,7 @@ export function parseDaeguRouteTopology(intervalBytes, { lineNumber, capturedAt 
     datasetId: config.intervalDatasetId,
     lineId: config.lineId,
     capturedAt: captured.toISOString(),
-    freshUntil: new Date(captured.getTime() + FRESHNESS_MILLIS).toISOString(),
+    freshUntil: topologySnapshotFreshUntil(captured),
     credentialRequired: false,
     credentialRedacted: true,
     stationCount: scope.length,

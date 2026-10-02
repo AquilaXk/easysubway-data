@@ -181,7 +181,7 @@
         "official capital route graph topology"
       ],
       "basisField": "retrievedAt",
-      "reverificationCadence": "P1D",
+      "reverificationCadence": "P7D",
       "offlinePackEligible": true,
       "eventTriggers": [
         "official source revision",

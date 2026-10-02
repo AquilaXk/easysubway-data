@@ -8438,7 +8438,7 @@
         "freshness": {
           "examples": ["official capital route graph topology"],
           "basisField": "retrievedAt",
-          "reverificationCadence": "P1D",
+          "reverificationCadence": "P7D",
           "offlinePackEligible": true,
           "eventTriggers": ["official source revision", "line extension opening"],
           "changePublishSla": "P3D",
