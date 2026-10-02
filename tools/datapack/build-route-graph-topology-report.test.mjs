@@ -553,6 +553,56 @@ test("route graph topology report는 Mobile 번들 pack과 id·바이트가 다�
   assert.deepEqual(report.violations.localRideAdjacency, []);
 });
 
+// F1(#896 리뷰): ITX 간선 0개는 pack id와 무관하게, build spec이 ITX 승인 원천을 고정했고 pack이
+// 그 원천의 ITX 운행역(역·노선 소속)을 담고 있으면 거부한다. 운행역이 없는 regional pack만 빈 admission을 받는다.
+test("route graph topology report는 ITX 운행역을 담은 nationwide pack의 ITX 간선 0개를 fail-closed한다", async (context) => {
+  const { sqlitePath, sqliteBytes, compressed } = await stageRcPackWithMobileItxEdges(context, () => []);
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed,
+      sqliteBytes,
+      sqlitePath,
+      pack: { id: "nationwide", version: "1", artifactKind: "production" },
+      buildSpec: currentBuildSpec,
+      repositoryRoot: root,
+    }),
+    /ITX corridor pack requires admitted ITX RIDE edges/,
+  );
+});
+
+test("route graph topology report는 ITX 운행역을 담은 새 pack id도 ITX 간선 0개면 fail-closed한다", async (context) => {
+  const { sqlitePath, sqliteBytes, compressed } = await stageRcPackWithMobileItxEdges(context, () => []);
+  await assert.rejects(
+    validateCurrentItxTopologyEvidencePack({
+      compressed,
+      sqliteBytes,
+      sqlitePath,
+      pack: { id: "nationwide-next", version: "1", artifactKind: "production" },
+      buildSpec: currentBuildSpec,
+      repositoryRoot: root,
+    }),
+    /ITX corridor pack requires admitted ITX RIDE edges/,
+  );
+});
+
+test("route graph topology report는 ITX 운행역이 없는 regional pack에는 ITX 승인 build spec에서도 빈 admission을 준다", async (context) => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [["station-a", "line-1", 1], ["station-b", "line-1", 2]],
+    edges: [["edge-a-b-local", "station-a:line-1", "station-b:line-1", "RIDE", "LOCAL", 120, 1000]],
+  });
+  context.after(() => rm(sqlitePath, { force: true }));
+  const sqliteBytes = await readFile(sqlitePath);
+  const binding = await validateCurrentItxTopologyEvidencePack({
+    compressed: gzipSync(sqliteBytes),
+    sqliteBytes,
+    sqlitePath,
+    pack: { id: "regional", version: "1", artifactKind: "production" },
+    buildSpec: currentBuildSpec,
+    repositoryRoot: root,
+  });
+  assert.equal(binding.admittedItxEdgeSetSha256, emptyItxEdgeSetSha256);
+});
+
 test("route graph topology report는 수·EXPRESS가 같아도 승인 원천과 다른 ITX edge 집합을 fail-closed한다", async (context) => {
   const { sqlitePath, sqliteBytes, compressed } = await stageRcPackWithMobileItxEdges(context, (edges) => {
     const [first, second] = edges;
