@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   CURRENT_ROUTE_EDGE_INPUT_PATH,
@@ -70,8 +75,34 @@ const TWO_DIRECTION_ROWS_FOR = (transitionKey) => [
   { transition_key: transitionKey, path_id: P_DOWN, direction_next_station_id: "station-down", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: W1 },
 ];
 
-test("#866 커버리지 CLI는 전국 후보 route-edge 입력을 읽는다", () => {
-  assert.equal(CURRENT_ROUTE_EDGE_INPUT_PATH, "tools/datapack/release/nationwide-route-edge-input.json");
+test("#866 커버리지 CLI는 전국 후보 route-edge 입력을 읽고 전환 키는 그 입력의 역 ENTRY/EXIT edge id다", async () => {
+  const repositoryRoot = path.resolve(import.meta.dirname, "../..");
+  const nationwideInput = "tools/datapack/release/nationwide-route-edge-input.json";
+  assert.equal(CURRENT_ROUTE_EDGE_INPUT_PATH, nationwideInput);
+  const { stdout } = await promisify(execFile)(process.execPath, [
+    path.join(import.meta.dirname, "build-step-free-path-transitions.mjs"), "--repository-root", repositoryRoot,
+  ], { maxBuffer: 64 * 1024 * 1024 });
+  const report = JSON.parse(stdout);
+  const inputBytes = await readFile(path.join(repositoryRoot, nationwideInput));
+  assert.deepEqual(report.routeEdgeInput, {
+    path: nationwideInput,
+    sha256: createHash("sha256").update(inputBytes).digest("hex"),
+  });
+  // 전국 입력의 역 ENTRY/EXIT edge id는 "entry-station-…"/"exit-station-…" 형식이다(수도권 입력의 "edge-" 접두어 없음).
+  const stationEdges = new Map(JSON.parse(inputBytes).routeEdges
+    .filter(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT")
+    .map((edge) => [edge.edgeId, edge]));
+  const transitionKeys = report.byStationLine.flatMap(({ stationId, lineId, transitionKeys: keys }) =>
+    keys.map((key) => ({ key, stationId, lineId })));
+  assert.equal(new Set(transitionKeys.map(({ key }) => key)).size, report.summary.transitionCount);
+  assert.ok(report.summary.transitionCount > 0);
+  for (const { key, stationId, lineId } of transitionKeys) {
+    const edge = stationEdges.get(key);
+    assert.ok(edge, `transition key is not a nationwide station edge: ${key}`);
+    assert.match(key, new RegExp(`^${edge.edgeType.toLowerCase()}-${stationId}-${lineId}$`));
+    const [stationNode, stationLineNode] = edge.edgeType === "ENTRY" ? [edge.fromNodeId, edge.toNodeId] : [edge.toNodeId, edge.fromNodeId];
+    assert.deepEqual([stationNode, stationLineNode], [stationId, `${stationId}:${lineId}`]);
+  }
 });
 
 test("group_kind는 #834 EXIT/DIRECTION 묶음을 EXIT_ELEVATORS/PLATFORM_DIRECTION_ELEVATORS로 옮긴다", () => {
