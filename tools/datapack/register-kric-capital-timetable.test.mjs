@@ -85,6 +85,22 @@ test("재확인 이력은 append-only다: 기존 항목을 바꾸거나 지우�
   assert.throws(() => assertAppendOnlyReverifications(previous, previous), /REVERIFICATIONS_APPEND_ONLY/u);
 });
 
+// #911 F3: 원본이 A → B → A로 돌아오면 A snapshot 파일이 이미 있다. 바이트가 같으면 다시 쓰지 않고 재사용하고, 다르면 실패한다.
+test("원본이 이전 snapshot으로 돌아오면 같은 바이트의 기존 파일을 재사용하고, 다르면 실패한다(#911 F3)", () => {
+  const a = snapshot();
+  const b = snapshot("e".repeat(64), "f".repeat(64));
+  const afterA = first().evidence;
+  const afterB = planKricCapitalTimetableRegistration({ previousEvidence: afterA, snapshot: b, snapshotBytes: bytesOf(b), existingSnapshotBytes: null,
+    observation: observation("2026-10-05T15:00:00.000Z"), evidenceTemplate: template(b), now: new Date("2026-10-05T15:05:00.000Z") }).evidence;
+  const backToA = { previousEvidence: afterB, snapshot: a, snapshotBytes: bytesOf(a), observation: observation("2026-10-09T15:00:00.000Z"), evidenceTemplate: template(a), now: NOW };
+  const plan = planKricCapitalTimetableRegistration({ ...backToA, existingSnapshotBytes: bytesOf(a) });
+  assert.equal(plan.mode, RAW_PUBLICATION_MODE.PUBLISH_NEW);
+  assert.equal(plan.writeSnapshot, false);
+  assert.equal(plan.evidence.snapshotId, a.snapshotId);
+  assert.deepEqual(plan.evidence.reverifications.map(({ rawSha256 }) => rawSha256), [RAW, "e".repeat(64), RAW]);
+  assert.throws(() => planKricCapitalTimetableRegistration({ ...backToA, existingSnapshotBytes: Buffer.from("{}\n") }), /SNAPSHOT_MISMATCH/u);
+});
+
 // #911 F1: 관측 시각은 등록 실행의 시계 기준으로 검사한다. 미래이거나 수집 실행 허용 시간(1시간)보다 오래되면 실패한다.
 test("관측 시각이 등록 시계보다 미래이거나 1시간보다 오래되면 재확인 이력을 붙이지 않는다(#911 F1)", () => {
   const previous = first().evidence;

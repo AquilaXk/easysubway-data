@@ -96,6 +96,11 @@ export function planKricCapitalTimetableRegistration({ previousEvidence, snapsho
     if (!Buffer.isBuffer(existingSnapshotBytes) || !existingSnapshotBytes.equals(snapshotBytes)) fail("SNAPSHOT_MISMATCH");
     return { mode: RAW_PUBLICATION_MODE.REVERIFY_EXISTING, writeSnapshot: false, evidence };
   }
+  // #911 F3: 원본이 이전 snapshot으로 돌아오면(A → B → A) 같은 id의 파일이 이미 있다. 바이트가 같을 때만 재사용한다.
+  if (existingSnapshotBytes != null) {
+    if (!Buffer.isBuffer(existingSnapshotBytes) || !existingSnapshotBytes.equals(snapshotBytes)) fail("SNAPSHOT_MISMATCH");
+    return { mode: RAW_PUBLICATION_MODE.PUBLISH_NEW, writeSnapshot: false, evidence };
+  }
   return { mode: RAW_PUBLICATION_MODE.PUBLISH_NEW, writeSnapshot: true, evidence };
 }
 
