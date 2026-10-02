@@ -97,6 +97,10 @@ const SERVICE_DAY_START_HOUR = 4;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`KRIC_CAPITAL_TIMETABLE_${code}${detail ? `: ${detail}` : ""}`); };
 
+const SNAPSHOT_KEYS = Object.freeze([
+  "schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawByteLength", "rawSha256", "observationRecordsSha256",
+  "routes", "recordCount", "recordsSha256", "records",
+]);
 const SNAPSHOT_RECORD_FIELDS = Object.freeze([
   "trainNumber", "routeNumber", "routeName", "originStationName", "destinationStationName", "serviceType",
   "weekdayType", "stationName", "arrivalTime", "departureTime", "dataReferenceDate", "sourceRowNumber", "sourceRowSha256",
@@ -105,6 +109,8 @@ const SNAPSHOT_RECORD_FIELDS = Object.freeze([
 /**
  * buildKricNationwideTimetableObservation 결과에서 수도권 대상 노선 행만 골라 커밋할 snapshot을 만든다.
  * 셀 값은 원문 그대로 둔다(문자열 셀 value만, 숫자 셀은 cellType과 함께).
+ * #870: snapshot은 원본 내용만 담고 관측 시각·수집 파일명과 무관하다. 같은 원본을 다시 관측하면 같은 바이트다.
+ * 관측 시각은 inventory evidence의 append-only 재확인 이력(reverifications)이 정한다.
  */
 export function projectKricCapitalTimetableSnapshot(observation) {
   if (observation?.artifactKind !== "kric-nationwide-timetable-observation"
@@ -124,12 +130,10 @@ export function projectKricCapitalTimetableSnapshot(observation) {
   }
   const recordsSha256 = sha256(Buffer.from(`${JSON.stringify(records)}\n`));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: KRIC_CAPITAL_TIMETABLE_SNAPSHOT_KIND,
     sourceId: KRIC_CAPITAL_TIMETABLE_SOURCE_ID,
     snapshotId: `${KRIC_CAPITAL_TIMETABLE_SOURCE_ID}-capital-${recordsSha256}`,
-    observedAt: observation.observedAt,
-    rawFile: observation.rawFile,
     rawByteLength: observation.rawByteLength,
     rawSha256: observation.rawSha256,
     observationRecordsSha256: observation.recordsSha256,
@@ -166,9 +170,10 @@ function projectedField(record, field) {
 
 /** 커밋된 snapshot이 자기 식별자·해시와 맞는지 확인한다. */
 export function validateKricCapitalTimetableSnapshot(snapshot) {
-  if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== KRIC_CAPITAL_TIMETABLE_SNAPSHOT_KIND
+  if (snapshot?.schemaVersion !== 2 || snapshot.artifactKind !== KRIC_CAPITAL_TIMETABLE_SNAPSHOT_KIND
+    || JSON.stringify(Object.keys(snapshot)) !== JSON.stringify(SNAPSHOT_KEYS)
     || snapshot.sourceId !== KRIC_CAPITAL_TIMETABLE_SOURCE_ID || !Array.isArray(snapshot.records)
-    || !SHA256.test(snapshot.rawSha256 ?? "") || !Number.isFinite(Date.parse(snapshot.observedAt))) {
+    || !SHA256.test(snapshot.rawSha256 ?? "") || !Number.isSafeInteger(snapshot.rawByteLength) || snapshot.rawByteLength <= 0) {
     fail("SNAPSHOT");
   }
   const recordsSha256 = sha256(Buffer.from(`${JSON.stringify(snapshot.records)}\n`));
@@ -185,8 +190,10 @@ export function validateKricCapitalTimetableSnapshot(snapshot) {
  * snapshot 행을 정규화 trip으로 바꾼다. 문법·시각 검증에 실패한 행은 trip을 만들지 않고 quarantine에 남긴다.
  * 반환: { provider, lineBindings }. provider/lineBindings는 materializeOfficialLineTimetables 입력이다.
  */
-export function kricCapitalOfficialTimetable(snapshot) {
+export function kricCapitalOfficialTimetable(snapshot, { observedAt } = {}) {
   validateKricCapitalTimetableSnapshot(snapshot);
+  // #870: 관측 시각은 snapshot이 아니라 호출자(inventory evidence의 최신 재확인)가 준다.
+  if (typeof observedAt !== "string" || !Number.isFinite(Date.parse(observedAt)) || new Date(observedAt).toISOString() !== observedAt) fail("OBSERVED_AT");
   const trips = [];
   const quarantine = [];
   const dataReferenceDates = new Map();
@@ -227,7 +234,7 @@ export function kricCapitalOfficialTimetable(snapshot) {
       sourceSnapshotId: snapshot.snapshotId,
       rawSha256: snapshot.rawSha256,
       recordsSha256: snapshot.recordsSha256,
-      observedAt: snapshot.observedAt,
+      observedAt,
       dataReferenceDateByLine: Object.fromEntries([...dataReferenceDates]
         .map(([lineId, dates]) => [lineId, [...dates].sort(codepointCompare)])
         .sort(([left], [right]) => codepointCompare(left, right))),
