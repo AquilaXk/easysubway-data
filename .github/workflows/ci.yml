@@ -120,6 +120,22 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
+      - name: Validate source inventory against pinned Hub contracts
+        # Data Pack Release는 contracts.lock.json으로 고정한 Hub 번들의 신선도 정책으로 governance 결속을
+        # 판정한다. data 사본에만 등록한 원천이 main release에서야 드러나지 않도록 같은 stage와 같은 인자로
+        # PR에서 먼저 검증한다(#876). 인자 일치는 datapack-release-workflow 계약 테스트가 고정한다.
+        env:
+          EASYSUBWAY_DATAPACK_FRESHNESS_POLICY: build/contracts/datapack/datapack-freshness-sla.json
+          EASYSUBWAY_DATAPACK_SCOPE_POLICY: release/product-gates/production-datapack-scope.json
+        run: |
+          set -euo pipefail
+          node tools/datapack/stage-contracts.mjs
+          node tools/datapack/validate-source-inventory.mjs \
+            --inventory tools/datapack/source-inventory.json \
+            --scope "${EASYSUBWAY_DATAPACK_SCOPE_POLICY}" \
+            --governance-policy tools/datapack/source-governance-policy.json \
+            --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}"
+
   contracts_live_chain:
     name: Data contracts (capital live-chain OCI)
     permissions:

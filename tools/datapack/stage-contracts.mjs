@@ -4,10 +4,11 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/70e91a0e7659dfb72a06a767f6cb1fde8a1e4197/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/63737fd7f91888dff5c5a6eb48e846e473ebdc22/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
+  "seoul-metro-transfer-car-door-duration",
 ];
 const staticAccessibilitySourceIds = [
   "incheon-transit-accessibility",
