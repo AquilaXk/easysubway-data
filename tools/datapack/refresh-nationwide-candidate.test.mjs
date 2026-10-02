@@ -15,6 +15,14 @@ import {
   refreshNationwideCandidate,
   runNationwideCandidateRefreshStep,
 } from "./refresh-nationwide-candidate.mjs";
+import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { rebindCurrentSeoulTransferSourceAdmission } from "./rebind-current-seoul-transfer-source-admission.mjs";
+import {
+  rewriteSeoulTransferFixtureCanonicalPack,
+  SEOUL_TRANSFER_REBIND_PAR_BASE_URL,
+  SEOUL_TRANSFER_REBIND_PATHS,
+  writeSeoulTransferRebindRepository,
+} from "./test-fixtures/seoul-transfer-rebind-repository.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -418,4 +426,30 @@ test("#866 PR-C 후보 식별 결속 검사기는 출력 밖에 심은 결속을
     "release/stale-input.json: candidateId",
     "tools/datapack/release/stale/fan-in.json: sha256(tools/datapack/release/candidate-build-spec.json)",
   ]);
+});
+
+// #866 PR-C에서 수도권 live chain과 함께 환승 재결속 명령이 지워져 전국 발행 PR이 막혔다(#892).
+// 일일 갱신의 activate 단계는 수도권 정본 팩을 다시 쓰므로, 전국 후보 갱신 전에 서울 환승 증거를 새 팩에
+// 다시 묶는 명령이 있어야 한다. 그 명령(과 그 테스트)이 다시 지워지면 이 테스트가 실패한다.
+test("#866 일일 정본 팩 변경으로 풀린 서울 환승 증거 결속은 기존 명령으로 재결속된 뒤 전국 후보 갱신으로 넘어간다", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-seoul-transfer-rebind-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const fixture = await writeSeoulTransferRebindRepository(repositoryRoot);
+  const packBytes = await rewriteSeoulTransferFixtureCanonicalPack(repositoryRoot, (pack) => { pack.manifest.keyId = "daily-activate"; });
+  const regenerate = async () => {
+    const metricsBytes = await readFile(path.join(repositoryRoot, SEOUL_TRANSFER_REBIND_PATHS.metrics));
+    return buildApplicability({ canonicalPack: JSON.parse(packBytes), canonicalPackBytes: packBytes, transferTopologyMetrics: JSON.parse(metricsBytes), metricsBytes });
+  };
+  await assert.rejects(regenerate(), /NO_GO canonical identity mismatch/);
+  const result = await rebindCurrentSeoulTransferSourceAdmission({
+    repositoryRoot,
+    env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: SEOUL_TRANSFER_REBIND_PAR_BASE_URL },
+    now: new Date("2026-10-02T09:00:00.000Z"),
+    client: { async readObject(key) { assert.equal(key, fixture.receipt.objectKey); return { exists: true, body: fixture.rawBytes }; } },
+  });
+  assert.equal(result.changed, true);
+  assert.equal(result.canonicalPackSha256, sha256(packBytes));
+  assert.deepEqual(await regenerate(), JSON.parse(await readFile(path.join(repositoryRoot, SEOUL_TRANSFER_REBIND_PATHS.applicability))));
+  // 재결속은 후보 spec·request·hash를 쓰지 않는다. 그것들은 이 명령(refresh-nationwide-candidate)의 출력이다.
+  assert.equal(result.targets.some((relative) => NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.includes(relative)), false);
 });
