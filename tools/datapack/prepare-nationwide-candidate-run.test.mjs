@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { admitOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -193,7 +193,8 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   // #872 S3: 부산교통공사 원천의 1~4호선 내부 환승 6역 12방향(OFFICIAL)이 더해졌다.
   // #878: 서울교통공사 실측 환승시간만 있는 93방향(0초 1방향 제외)이 표준 보행속도 유도 거리로 더해졌다.
   assert.strictEqual(inStationTransfers.length, 216 + 93);
-  assert.strictEqual(outOfStationTransfers.length, 14);
+  // #872 후속(#866 D1 선행): 공식 근거가 없는 역 밖 환승(고정 거리·시간)은 route-edge 입력에 넣지 않는다.
+  assert.strictEqual(outOfStationTransfers.length, 0);
 
   // 2. ENTRY edges: no fake 90s/50m constant, all 0s/0m
   for (const e of entries) {
@@ -1250,4 +1251,81 @@ test("#879 F1 실측 환승 원천은 원장 영수증 hash에 결속된 OCI 영
   // 커밋된 후보는 인용 원문 저장 이후의 시계를 쓴다.
   const spec = await readJson("tools/datapack/release/candidate-build-spec.json");
   assert.ok(Date.parse(spec.publishedAt) >= Date.parse(receipt.storedAt), `${spec.publishedAt} < ${receipt.storedAt}`);
+});
+
+// #872 후속(#866 메인 결정 D1 선행): 역 밖 환승 링크는 링크 자체에 공식 VERIFIED 근거(원천·snapshot·레코드 hash·실측 거리·시간)가
+// 있을 때만 route-edge 입력과 팩 환승 데이터에 들어간다. 근거가 없는 링크는 고정 거리·시간 없이 사유와 함께 제외 목록에 남는다.
+function verifiedOutOfStationLink(overrides = {}) {
+  return {
+    id: "out-link-verified", fromStationId: "station-a", fromLineId: "line-1", toStationId: "station-b", toLineId: "line-2",
+    durationSeconds: 300, distanceMeters: 250, bidirectional: false,
+    sourceId: "official-out-of-station-source", sourceSnapshotId: "snapshot-1", providerRecordHash: "a".repeat(64),
+    evidenceHash: "b".repeat(64), provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "VERIFIED",
+    ...overrides,
+  };
+}
+
+test("#872 역 밖 환승은 링크 자체의 공식 VERIFIED 근거가 있을 때만 남고, 나머지는 사유와 함께 제외된다", () => {
+  const verified = verifiedOutOfStationLink();
+  const unverified = { id: "out-link-unverified", fromStationId: "station-c", fromLineId: "line-1", toStationId: "station-d", toLineId: "line-3", bidirectional: true, provenanceKind: "UNVERIFIED", verificationStatus: "UNVERIFIED" };
+  const noSource = verifiedOutOfStationLink({ id: "out-link-no-source", sourceId: "" });
+  const noHash = verifiedOutOfStationLink({ id: "out-link-no-hash", providerRecordHash: "" });
+  const derived = verifiedOutOfStationLink({ id: "out-link-derived", provenanceKind: "DERIVED_RECIPROCAL" });
+  const zeroDistance = verifiedOutOfStationLink({ id: "out-link-zero-distance", distanceMeters: 0 });
+  const zeroDuration = verifiedOutOfStationLink({ id: "out-link-zero-duration", durationSeconds: 0 });
+
+  const { admitted, excluded } = admitOutOfStationTransferLinks([verified, unverified, noSource, noHash, derived, zeroDistance, zeroDuration]);
+
+  assert.deepEqual(admitted, [verified], "공식 VERIFIED 근거와 실측 거리·시간이 있는 링크는 그대로 남는다");
+  assert.deepEqual(excluded.map(({ id, reason }) => [id, reason]), [
+    ["out-link-unverified", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+    ["out-link-no-source", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+    ["out-link-no-hash", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+    ["out-link-derived", "NO_OFFICIAL_VERIFIED_EVIDENCE"],
+    ["out-link-zero-distance", "NO_OFFICIAL_MEASUREMENT"],
+    ["out-link-zero-duration", "NO_OFFICIAL_MEASUREMENT"],
+  ]);
+  assert.deepEqual(excluded[0], {
+    id: "out-link-unverified", fromStationId: "station-c", fromLineId: "line-1", toStationId: "station-d", toLineId: "line-3",
+    bidirectional: true, reason: "NO_OFFICIAL_VERIFIED_EVIDENCE",
+  }, "제외 목록은 끝점과 사유만 남기고 거리·시간 값을 싣지 않는다");
+});
+
+test("#872 전국 후보는 미검증 역 밖 환승을 route-edge 입력·팩에서 빼고, 제외 사유 목록을 돌려주며, 고정 거리·시간을 남기지 않는다", async () => {
+  const result = await prepareNationwideCandidate({
+    requestedBy: "data-operator-lead",
+    approvedBy: "data-release-authority",
+    releaseSequence: 122,
+    writeFiles: false,
+  });
+
+  assert.deepEqual(result.routeInput.routeEdges.filter(({ edgeType }) => edgeType === "OUT_OF_STATION_TRANSFER"), []);
+  assert.deepEqual(result.finalPack.outOfStationTransferLinks, []);
+  assert.equal(result.finalPack.networkEdges.some(({ edgeType }) => edgeType === "OUT_OF_STATION_TRANSFER"), false);
+  assert.equal(result.finalPack.minimumTableRows.out_of_station_transfer_links, 0);
+
+  const expectedExcluded = [
+    "out-link-sinchon-2-to-gj", "out-link-sinchon-gj-to-2", "out-link-seongnam-7-incheon2",
+    "out-link-dongnae-1-to-dh", "out-link-dongnae-dh-to-1", "out-link-bujeon-1-to-dh",
+    "out-link-daegu-cheongna-to-banwoldang", "out-link-daegu-banwoldang-to-cheongna",
+    "out-link-daejeon-seodaejeon-to-oryong", "out-link-daejeon-oryong-to-seodaejeon",
+    "out-link-gwangju-songjeong-dosan",
+  ];
+  assert.deepEqual(result.excludedOutOfStationTransferLinks.map(({ id }) => id), expectedExcluded);
+  // 양방향 3개를 펼치면 제외된 방향은 14개다.
+  assert.equal(result.excludedOutOfStationTransferLinks.reduce((sum, { bidirectional }) => sum + (bidirectional ? 2 : 1), 0), 14);
+  for (const link of result.excludedOutOfStationTransferLinks) {
+    assert.equal(link.reason, "NO_OFFICIAL_VERIFIED_EVIDENCE", `${link.id} has no official evidence`);
+    assert.equal(Object.hasOwn(link, "durationSeconds"), false, `${link.id} must not carry a fixed duration`);
+    assert.equal(Object.hasOwn(link, "distanceMeters"), false, `${link.id} must not carry a fixed distance`);
+  }
+
+  // 제외된 역 밖 환승의 끝점 TRANSFER 칸은 환승 없음(NOT_APPLICABLE)으로 바꾸지 않는다. 근거가 없으므로 사용 불가로 드러난다.
+  const transferCells = new Map(result.stationLineInput.evidenceRows
+    .filter(({ domain }) => domain === "TRANSFER").map((row) => [`${row.stationId}:${row.lineId}`, row.state]));
+  for (const link of result.excludedOutOfStationTransferLinks) {
+    for (const node of [`${link.fromStationId}:${link.fromLineId}`, `${link.toStationId}:${link.toLineId}`]) {
+      assert.notEqual(transferCells.get(node), "NOT_APPLICABLE", `${link.id} endpoint ${node} must stay unavailable, not NOT_APPLICABLE`);
+    }
+  }
 });
