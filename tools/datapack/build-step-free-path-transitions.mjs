@@ -18,7 +18,7 @@ export const TRANSITION_REQUIREMENT_GROUP_KINDS = Object.freeze({
   EXIT: "EXIT_ELEVATORS",
   DIRECTION: "PLATFORM_DIRECTION_ELEVATORS",
 });
-export const CURRENT_ROUTE_EDGE_INPUT_PATH = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
+export const CURRENT_ROUTE_EDGE_INPUT_PATH = "tools/datapack/release/nationwide-route-edge-input.json";
 const REQUIREMENT_GROUP_KINDS = new Set(Object.values(TRANSITION_REQUIREMENT_GROUP_KINDS));
 const REQUIREMENT_FIELDS = ["transition_key", "path_id", "direction_next_station_id", "group_kind", "facility_id"];
 const STATION_EDGE_TYPES = ["ENTRY", "EXIT"];

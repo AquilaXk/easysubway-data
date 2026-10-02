@@ -12,6 +12,7 @@ import {
   parseRefreshNationwideCandidateArgs,
   readNationwideCandidateRefreshState,
   refreshNationwideCandidate,
+  runNationwideCandidateRefreshStep,
 } from "./refresh-nationwide-candidate.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -122,13 +123,23 @@ test("결속 검증은 fan-in head·시계·ledger 해시·request 결속이 하
   assert.ok(evaluate(staleHashEvidence).some((violation) => violation.startsWith("hash evidence sourceSnapshotSetHash mismatch")));
 });
 
+const ROUTE_EDGE_POLICY = "release/product-gates/route-edge-evaluation-policy.json";
+const NATIONWIDE_ROUTE_EDGE_INPUT = "tools/datapack/release/nationwide-route-edge-input.json";
+const ITX_CONTRACT = "tools/datapack/itx-cheongchun-coverage-contract.json";
+const STEPS = ["five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build", "route edge policy sync"];
+
 async function copiedRepository(t) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-refresh-"));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  // 정책 sync는 ITX 승인 원천을 읽는다. 계약이 가리키는 원천·완결성 증거도 함께 복사한다.
+  const itxReference = JSON.parse(await readFile(path.join(root, ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
   for (const relative of [
     ...NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS,
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/fixtures/admin-review-overrides.json",
+    ITX_CONTRACT,
+    itxReference.artifactPath,
+    itxReference.completenessEvidencePath,
   ]) {
     await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true });
     await cp(path.join(root, relative), path.join(repositoryRoot, relative));
@@ -184,7 +195,7 @@ test("전국 후보 갱신은 결속 검증이 실패해도 출력을 되돌리�
       }
     },
   }), /전국 후보 갱신 실패 \(binding verification\): .*facilityEvidenceLedgerHash mismatch/s);
-  assert.deepEqual(steps, ["five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build"]);
+  assert.deepEqual(steps, STEPS);
   const after = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
   NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
 });
@@ -205,9 +216,153 @@ test("#862 전국 후보 갱신은 spec·scope·request·hash를 build-nationwid
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => { steps.push(name); },
   }));
-  assert.deepEqual(steps, ["five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build"]);
+  assert.deepEqual(steps, STEPS);
   const prepare = await readFile(path.join(root, "tools/datapack/prepare-nationwide-candidate-run.mjs"), "utf8");
   for (const output of ["candidate-build-spec.json", "release-request.json", "hash-evidence.json"]) {
     assert.equal(prepare.includes(output), false, `prepare must not patch ${output}`);
   }
+});
+
+test("#866 전국 후보 갱신은 마지막 단계에서 route-edge 정책을 전국 입력 sync 결과로 다시 만든다", async (t) => {
+  assert.ok(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.includes(ROUTE_EDGE_POLICY));
+  const repositoryRoot = await copiedRepository(t);
+  const committedPolicy = await readFile(path.join(root, ROUTE_EDGE_POLICY));
+  // 정책 digest를 다른 값으로 바꿔 둔다. 갱신이 전국 입력에서 다시 계산해야만 커밋 바이트로 돌아온다.
+  const policy = JSON.parse(committedPolicy);
+  const stalePolicy = committedPolicy.toString("utf8")
+    .replace(policy.rideInvariant.subwayLocal.admittedEdgeSetSha256, "a".repeat(64))
+    .replace(policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256, "b".repeat(64));
+  assert.notEqual(stalePolicy, committedPolicy.toString("utf8"));
+  await writeFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY), stalePolicy);
+  const fanIn = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json")));
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")));
+  const steps = [];
+  const result = await refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: fanIn.evaluatedAt,
+    releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async (context) => {
+      steps.push(context.name);
+      // 앞 단계(원천·prepare·build)는 커밋 산출물을 그대로 둔다. 정책 sync만 실제 단계로 실행한다.
+      if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
+    },
+  });
+  assert.deepEqual(steps, STEPS);
+  assert.ok(result.outputs.includes(ROUTE_EDGE_POLICY));
+  assert.deepEqual(await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY)), committedPolicy);
+});
+
+test("#866 route-edge 정책 sync가 실패하면 정책을 포함한 모든 출력을 실행 전 바이트로 되돌린다", async (t) => {
+  const repositoryRoot = await copiedRepository(t);
+  const before = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  const fanIn = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json")));
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")));
+  const steps = [];
+  await assert.rejects(refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: fanIn.evaluatedAt,
+    releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async (context) => {
+      steps.push(context.name);
+      if (context.name === "nationwide candidate preparation") {
+        // 전국 입력의 RIDE 간선 hash를 깨뜨린다. 정책 sync가 이 입력을 거부해야 한다.
+        const input = JSON.parse(await readFile(path.join(repositoryRoot, NATIONWIDE_ROUTE_EDGE_INPUT)));
+        input.routeEdges.find(({ edgeType }) => edgeType === "RIDE").durationSeconds += 1;
+        await writeFile(path.join(repositoryRoot, NATIONWIDE_ROUTE_EDGE_INPUT), jsonBytes(input));
+      }
+      if (context.name === "nationwide candidate build") {
+        // 실패 전에 정책 파일이 바뀐 상태를 만든다. 롤백이 정책까지 되돌리는지 본다.
+        const policyPath = path.join(repositoryRoot, ROUTE_EDGE_POLICY);
+        const policyText = await readFile(policyPath, "utf8");
+        const { rideInvariant } = JSON.parse(policyText);
+        await writeFile(policyPath, policyText.replace(rideInvariant.subwayLocal.admittedEdgeSetSha256, "c".repeat(64)));
+      }
+      if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
+    },
+  }), /전국 후보 갱신 실패 \(route edge policy sync\): .*hash mismatch/s);
+  assert.deepEqual(steps, STEPS);
+  const after = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
+  assert.deepEqual(await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY)), await readFile(path.join(root, ROUTE_EDGE_POLICY)));
+});
+
+// #866 F1: 정책 단계의 ITX 원천 승인은 벽시계(EASYSUBWAY_DATAPACK_BUILD_NOW 또는 현재 시각)가 아니라 후보 시계(--evaluated-at)로 판정한다.
+async function withWallClock(t, instant) {
+  const previous = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = instant;
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(instant) });
+  t.after(() => {
+    t.mock.timers.reset();
+    if (previous === undefined) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previous;
+  });
+}
+
+async function itxFreshUntilMillis() {
+  const reference = JSON.parse(await readFile(path.join(root, ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
+  const freshUntil = Date.parse(reference.freshUntil);
+  assert.ok(Number.isFinite(freshUntil), "ITX freshUntil must be an instant");
+  return freshUntil;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+test("#866 F1 후보 시계가 ITX freshUntil 이후면 벽시계가 신선해도 정책 단계가 expired로 실패하고 모든 출력을 되돌린다", async (t) => {
+  const repositoryRoot = await copiedRepository(t);
+  const before = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  const freshUntil = await itxFreshUntilMillis();
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")));
+  // 벽시계는 freshUntil 이전(신선)이다. 벽시계로 판정하면 sync가 성공해 이 테스트가 실패한다.
+  await withWallClock(t, new Date(freshUntil - DAY_MS).toISOString());
+  const steps = [];
+  await assert.rejects(refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: new Date(freshUntil + DAY_MS).toISOString(),
+    releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async (context) => {
+      steps.push(context.name);
+      if (context.name === "five-region fan-in") {
+        await writeFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json"), "partial\n");
+      }
+      if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
+    },
+  }), /전국 후보 갱신 실패 \(route edge policy sync\): ITX topology source artifact is expired/);
+  assert.deepEqual(steps, STEPS);
+  const after = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
+});
+
+test("#866 F1 벽시계가 ITX freshUntil 이후여도 후보 시계가 신선하면 정책 단계는 후보 시계로 판정해 성공한다", async (t) => {
+  const repositoryRoot = await copiedRepository(t);
+  const freshUntil = await itxFreshUntilMillis();
+  const fanIn = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json")));
+  assert.ok(Date.parse(fanIn.evaluatedAt) < freshUntil, "committed candidate clock must precede ITX freshUntil");
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")));
+  // 벽시계는 freshUntil 이후(만료)다. 벽시계로 판정하면 expired로 실패해 이 테스트가 실패한다.
+  await withWallClock(t, new Date(freshUntil + DAY_MS).toISOString());
+  await refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: fanIn.evaluatedAt,
+    releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async (context) => {
+      if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
+    },
+  });
+  assert.deepEqual(await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY)), await readFile(path.join(root, ROUTE_EDGE_POLICY)));
 });
