@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   RAW_PUBLICATION_MODE,
   appendLedgerRow,
+  assertReverificationReceiptMatchesHead,
   planRawObjectPublication,
   verifyReusedRawObject,
 } from "./same-raw-reverification.mjs";
@@ -92,4 +93,19 @@ test("원장은 append-only다: 기존 행을 그대로 두고 head를 잇는 �
   assert.throws(() => appendLedgerRow(ledger, { ...row, previousSnapshotId: null }), /SAME_RAW_REVERIFICATION_LINEAGE/u);
   assert.throws(() => appendLedgerRow(ledger, { ...row, sourceId: "new-source", previousSnapshotId: "official-file-a" }), /SAME_RAW_REVERIFICATION_LINEAGE/u);
   assert.deepEqual(appendLedgerRow(ledger, { sourceId: "new-source", snapshotId: "new-a", previousSnapshotId: null }).length, 3);
+});
+
+// #911 F2: 재확인 영수증의 결속 필드를 하나씩 바꾸면 각각 실패한다.
+test("재확인 영수증은 head의 URI·snapshot·sha·크기와 각각 정확히 같아야 한다(#911 F2)", () => {
+  const receipt = { rawObjectUri: head().rawObjectUri, reusedFromSnapshotId: "official-file-a", rawObjectSha256: RAW_SHA, byteSize: RAW.length };
+  assert.equal(assertReverificationReceiptMatchesHead({ receipt, head: head(), rawSha256: RAW_SHA, byteSize: RAW.length }).mode, RAW_PUBLICATION_MODE.REVERIFY_EXISTING);
+  for (const [field, value] of [
+    ["rawObjectUri", head().rawObjectUri.replace("20261001", "20261002")],
+    ["reusedFromSnapshotId", "official-file-other"],
+    ["rawObjectSha256", "0".repeat(64)],
+    ["byteSize", RAW.length + 1],
+  ]) {
+    assert.throws(() => assertReverificationReceiptMatchesHead({ receipt: { ...receipt, [field]: value }, head: head(), rawSha256: RAW_SHA, byteSize: RAW.length }),
+      /SAME_RAW_REVERIFICATION_RECEIPT_HEAD/u, field);
+  }
 });

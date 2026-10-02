@@ -236,6 +236,34 @@ test("planned timetable accepts a parent topology re-verified without re-publish
   }
 });
 
+// #911 F2: 부모 재확인 영수증의 결속 필드를 하나씩 바꾸고 부모 원장 영수증 hash는 다시 맞춘다. 각 필드 검사만으로 실패해야 한다.
+test("planned timetable rejects a parent re-verification receipt whose bound fields are each altered (#911 F2)", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "korail-schedule-raw-reuse-fields-"));
+  try {
+    const { sourceInputPath, now, ledgerPath } = await reverificationFixture(root, { reverificationReceipt: true });
+    const input = JSON.parse(await readFile(sourceInputPath, "utf8"));
+    const receiptBytes = await readFile(input.publicationReceiptPath);
+    const ledgerBytes = await readFile(ledgerPath);
+    const receipt = JSON.parse(receiptBytes);
+    for (const [field, value] of [
+      ["rawObjectUri", `${receipt.rawObjectUri}.other`],
+      ["reusedFromSnapshotId", "korail-metropolitan-timetable-file-other"],
+      ["byteSize", receipt.byteSize + 1],
+      ["collectionReceiptSha256", "0".repeat(64)],
+    ]) {
+      await writeJson(input.publicationReceiptPath, { ...receipt, [field]: value });
+      const ledger = JSON.parse(ledgerBytes);
+      ledger.findLast(({ sourceId }) => sourceId === "korail-metropolitan-timetable-file").rawReceiptSha256 = hash(await readFile(input.publicationReceiptPath));
+      await writeJson(ledgerPath, ledger);
+      await assert.rejects(buildKorailTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath, now }), /KORAIL_TIMETABLE_REGISTRATION_PUBLICATION_RECEIPT/, field);
+    }
+    await writeFile(input.publicationReceiptPath, receiptBytes);
+    await writeFile(ledgerPath, ledgerBytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("re-verification freshness still rejects different bytes and an expired provider validity end (#862)", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "korail-schedule-reverification-reject-"));
   try {
@@ -359,6 +387,8 @@ test("Korail topology registrar registers a same-file re-collection as a success
       (value) => ({ ...value, rawObjectUri: value.rawObjectUri.replace("20261003", "20261004") }),
       (value) => ({ ...value, reusedFromSnapshotId: firstRow.snapshotId }),
       (value) => ({ ...value, rawObjectSha256: "0".repeat(64) }),
+      (value) => ({ ...value, byteSize: value.byteSize + 1 }),
+      (value) => ({ ...value, collectionReceiptSha256: "0".repeat(64) }),
     ]) {
       await assert.rejects(topologyRegistrationRound({ ...common, capturedAt: thirdCapturedAt, now: new Date("2026-10-03T06:00:00.000Z"), label: `bad-${Math.random()}`, reverifyFrom: row, receiptMutation: mutation }),
         /KORAIL_TOPOLOGY_REGISTRATION_RAW_RECEIPT/);
