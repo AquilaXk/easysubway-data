@@ -27,6 +27,8 @@ import { CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH } from "./build-current-five-reg
 import { LEDGER_PATH as OWNERSHIP_LEDGER_PATH } from "./build-nationwide-requirement-ownership-ledger.mjs";
 import { exportLedgerHash } from "./export-ledger-hashes.mjs";
 import {
+  CAPITAL_TIMETABLE_REPORT_PATH,
+  OFFICIAL_STOP_TIMES_PATH,
   CAR_DOOR_HINT_QUARANTINE_PATH,
   REGIONAL_TIMETABLE_QUARANTINE_PATH,
 } from "./prepare-nationwide-candidate-run.mjs";
@@ -63,6 +65,8 @@ export const NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS = Object.freeze([
   "tools/datapack/release/nationwide-candidate-preparation.json",
   CAR_DOOR_HINT_QUARANTINE_PATH,
   REGIONAL_TIMETABLE_QUARANTINE_PATH,
+  CAPITAL_TIMETABLE_REPORT_PATH,
+  OFFICIAL_STOP_TIMES_PATH,
   ...CANDIDATE_RELEASE_OUTPUTS,
   ROUTE_EDGE_POLICY_PATH,
 ]);

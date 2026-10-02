@@ -16,7 +16,7 @@ import {
   canonicalCurrentCapitalStationLineInputJson,
 } from "./current-capital-station-line-contract.mjs";
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
-import { materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
+import { HOLIDAYS_2026, materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -36,6 +36,24 @@ import {
   readSeoulMeasuredTransferMetricsInputs,
 } from "./build-seoul-measured-transfer-metrics.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
+import {
+  EXTERNAL_STOP_TIMES_KEY,
+  OFFICIAL_STOP_TIMES_PATH,
+  buildExternalStopTimesArtifact,
+} from "./lib/external-stop-times.mjs";
+import {
+  CAPITAL_TIMETABLE_EVIDENCE_KEY,
+  CAPITAL_TIMETABLE_REPORT_PATH,
+  CAPITAL_TIMETABLE_SOURCE_ID,
+  buildCapitalOfficialTimetable,
+  removeLine4PilotTimetable,
+} from "./lib/capital-official-timetable.mjs";
+
+export { CAPITAL_TIMETABLE_REPORT_PATH, OFFICIAL_STOP_TIMES_PATH };
+// 팩 JSON 밖 결정적 gzip 파일로 싣는 공식 원천 시간표. trip이 원천 공통 provenance와 행 hash를 가진 원천만 둔다.
+const EXTERNAL_TIMETABLE_SOURCE_IDS = Object.freeze([
+  CAPITAL_TIMETABLE_SOURCE_ID, "incheon-line1-train-timetable", "incheon-line2-train-timetable",
+]);
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -224,6 +242,31 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
       throw new Error(`nationwide candidate input is expired for ${sourceId}`);
     }
     selected[key] = {
+      sourceId, snapshotId, path: snapshotPath, freshnessExpiresAt,
+      bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
+    };
+  }
+  // #899: 수도권 공식 시간표(KRIC 전체_도시철도운행정보 projection)도 원장 행이 없다. inventory admission evidence가
+  // 가리키는 snapshot을 쓰고, 신선도는 원천 정책 클래스(official_static_timetable_confirmation, observedAt)로 유도한다.
+  {
+    const sourceId = CAPITAL_TIMETABLE_SOURCE_ID;
+    const evidence = exactInventorySource(sourceInventory, sourceId)[CAPITAL_TIMETABLE_EVIDENCE_KEY];
+    const snapshotId = evidence?.snapshotId;
+    if (typeof snapshotId !== "string" || snapshotId.length === 0) {
+      throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId} ${CAPITAL_TIMETABLE_EVIDENCE_KEY}`);
+    }
+    const { snapshotPath, rawSha256 } = exactSnapshotEvidence(sourceId, snapshotId, [evidence]);
+    const observedAt = requiredInstant(evidence.observedAt, `${sourceId} observedAt`);
+    if (Date.parse(observedAt) > evaluatedAt) {
+      throw new Error(`nationwide candidate input is observed after the candidate clock for ${sourceId}`);
+    }
+    const freshnessExpiresAt = policyFreshUntil({
+      policy: freshnessPolicy, sourceId, record: { observedAt }, evaluationAt: fanIn.evaluatedAt,
+    });
+    if (Date.parse(freshnessExpiresAt) <= evaluatedAt) {
+      throw new Error(`nationwide candidate input is expired for ${sourceId}`);
+    }
+    selected.capitalTimetable = {
       sourceId, snapshotId, path: snapshotPath, freshnessExpiresAt,
       bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
     };
@@ -709,6 +752,7 @@ export async function prepareNationwideCandidate({
   const daeguTimetable3 = inputJson("daeguTimetable3");
   const daejeonTimetable = inputJson("daejeonTimetable");
   const gwangjuTimetable = JSON.parse(gwangjuTimetableBytes);
+  const capitalTimetable = inputJson("capitalTimetable");
 
   const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
   const molitTransferText = new TextDecoder("euc-kr").decode(molitTransferUncompressed);
@@ -1017,6 +1061,8 @@ export async function prepareNationwideCandidate({
   nationwidePack.transitTrips = (baseFixture.packs[0].transitTrips ?? []).filter((t) => !t.id.startsWith("trip-incheon-"));
   nationwidePack.transitStopTimes = (baseFixture.packs[0].transitStopTimes ?? []).filter((st) => !st.tripId.startsWith("trip-incheon-"));
   nationwidePack.stationCarDoorHints = baseFixture.packs[0].stationCarDoorHints ?? [];
+  // #899: 4호선 pilot(상록수·사당 2정차)은 아래 수도권 공식 시간표(4호선 전 노선)로 교체한다.
+  Object.assign(nationwidePack, removeLine4PilotTimetable(nationwidePack));
 
   const incheonNow = new Date(Math.max(Date.parse(incheonLine1.capturedAt), Date.parse(incheonLine2.capturedAt)) + 1000);
   const materializedFixture = materializeIncheonTimetable({
@@ -1028,6 +1074,19 @@ export async function prepareNationwideCandidate({
   });
 
   const finalPack = materializedFixture.packs[0];
+
+  // #899: 수도권 공식 시간표(정차 순서를 명시한 노선)를 싣는다. 역 미매칭·노선 trip 0·격리 상한 초과는 실패한다.
+  const capitalSchedule = buildCapitalOfficialTimetable({
+    pack: finalPack,
+    snapshot: capitalTimetable,
+    inventorySource: exactInventorySource(sourceInventory, CAPITAL_TIMETABLE_SOURCE_ID),
+    holidayDates: HOLIDAYS_2026,
+  });
+  for (const [table, rows] of Object.entries(capitalSchedule.tables)) finalPack[table] = [...finalPack[table], ...rows];
+  if (finalPack.sourceInventory.some(({ id }) => id === CAPITAL_TIMETABLE_SOURCE_ID)) {
+    throw new Error(`nationwide candidate pack source already exists: ${CAPITAL_TIMETABLE_SOURCE_ID}`);
+  }
+  finalPack.sourceInventory.push(capitalSchedule.packSource);
 
   function findRegionalStationId(lineId, rawName) {
     const name = regionalProviderStationNameKey(rawName);
@@ -1381,6 +1440,7 @@ export async function prepareNationwideCandidate({
   };
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, REGIONAL_TIMETABLE_QUARANTINE_PATH), jsonBytes(regionalTimetableQuarantine));
+    await writeFile(path.join(repositoryRoot, CAPITAL_TIMETABLE_REPORT_PATH), jsonBytes(capitalSchedule.report));
   }
 
   // Expand nationwide station_car_door_hints with KRIC elevator platform door positions
@@ -1624,8 +1684,25 @@ export async function prepareNationwideCandidate({
   });
 
   const nationwidePackRelPath = "tools/datapack/release/nationwide-production-canonical-pack.json";
-  const nationwidePackBytes = Buffer.from(`${JSON.stringify(materializedFixture)}\n`);
+  // #899: 공식 원천(수도권 KRIC·인천 1·2호선) trip·stop_times는 결정적 gzip 파일로 분리하고 팩에는 sha·건수만 결속한다.
+  // 반환하는 finalPack은 펼친 상태 그대로다(읽는 쪽은 expandExternalStopTimes로 같은 표를 얻는다).
+  const officialStopTimes = buildExternalStopTimesArtifact({
+    trips: finalPack.transitTrips,
+    stopTimes: finalPack.transitStopTimes,
+    sourceIds: EXTERNAL_TIMETABLE_SOURCE_IDS,
+  });
+  const writtenFixture = {
+    ...materializedFixture,
+    packs: [{
+      ...finalPack,
+      transitTrips: officialStopTimes.inlineTrips,
+      transitStopTimes: officialStopTimes.inlineStopTimes,
+      [EXTERNAL_STOP_TIMES_KEY]: officialStopTimes.binding,
+    }, ...materializedFixture.packs.slice(1)],
+  };
+  const nationwidePackBytes = Buffer.from(`${JSON.stringify(writtenFixture)}\n`);
   if (writeFiles) {
+    await writeFile(path.join(repositoryRoot, OFFICIAL_STOP_TIMES_PATH), officialStopTimes.bytes);
     await writeFile(path.join(repositoryRoot, nationwidePackRelPath), nationwidePackBytes);
   }
 

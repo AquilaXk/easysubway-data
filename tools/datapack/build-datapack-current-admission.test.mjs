@@ -6,6 +6,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
+
 import {
   admittedIncheonTopologyEvidence,
   admittedTrackedIncheonAccessibilityEvidence,
@@ -199,7 +201,8 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
   const validationOnlyFixturePath = path.join(directory, "validation-only-source-fixture.json");
   const validationOnlyBuildSpecPath = path.join(directory, "validation-only-build-spec.json");
-  const sourceFixture = JSON.parse(await readFile(path.join(root, buildSpec.fixturePath)));
+  // #899: 정본 팩이 sha로 결속한 외부 공식 시간표를 펼친 fixture가 release 경로의 원본이다.
+  const sourceFixture = expandExternalStopTimes(JSON.parse(await readFile(path.join(root, buildSpec.fixturePath))), { repositoryRoot: root });
   const activePackId = sourceFixture.manifest.activePack.id;
   const validationOnlyFixture = await projectCandidateFixtureForAccessibilityAuthority({
     buildSpec,

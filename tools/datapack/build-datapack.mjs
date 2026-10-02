@@ -70,6 +70,7 @@ import {
 } from "./materialize-incheon-timetable.mjs";
 import { bindStationContacts, loadStationContactInputs } from "./build-station-contacts.mjs";
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -628,8 +629,10 @@ async function loadBuildInput(
     repositoryRoot,
   );
   const sourceFixtureBytes = await readFile(sourceFixturePath);
-  const sourceFixture = JSON.parse(sourceFixtureBytes);
-  assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, sourceFixture);
+  const boundFixture = JSON.parse(sourceFixtureBytes);
+  assertBuildSpecFixtureSha256(buildSpec, sourceFixtureBytes, boundFixture);
+  // #899: 팩이 sha로 결속한 외부 공식 stop_times를 펼친다(결속 불일치는 실패).
+  const sourceFixture = expandExternalStopTimes(boundFixture, { repositoryRoot });
   rejectTestOnlyBuildInput(sourceFixture);
   const hasProductionPack = sourceFixture.packs?.some(({ artifactKind }) => artifactKind === "production") === true;
   const replaysAccessibilityAuthority = candidateFixtureOverrideArg != null;
@@ -784,11 +787,11 @@ export async function projectCandidateFixtureForAccessibilityAuthority({
   if (typeof retainPreAuthorityRideOnly !== "boolean") {
     throw new TypeError("retainPreAuthorityRideOnly must be a boolean");
   }
-  const trackedSourceFixture = JSON.parse(await readFile(await resolveBuildInputPath(
+  const trackedSourceFixture = expandExternalStopTimes(JSON.parse(await readFile(await resolveBuildInputPath(
     buildSpec?.fixturePath,
     "buildSpec.fixturePath",
     repositoryRoot,
-  )));
+  ))), { repositoryRoot });
   if (canonicalJson(sourceFixture) !== canonicalJson(trackedSourceFixture)) {
     throw new Error("accessibility replay source fixture mismatch");
   }

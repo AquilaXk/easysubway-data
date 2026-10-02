@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
@@ -276,14 +277,19 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
 
   // 1. Verify nationwide production pack
   const packRaw = await readFile(path.join(root, result.nationwidePackRelPath), "utf8");
-  const packData = JSON.parse(packRaw);
+  // #899: 공식 원천(수도권·인천) trip·stop_times는 팩이 sha로 결속한 외부 파일에 있다. 펼친 표로 센다.
+  const packData = expandExternalStopTimes(JSON.parse(packRaw), { repositoryRoot: root });
   const pack = packData.packs[0];
 
   // Authentic routes across all nationwide operational scopes
-  assert.strictEqual(pack.transitRoutes.length, 15);
+  // #899: 4호선 2정차 pilot(route-seoul-4-up/down)은 KRIC 공식 수도권 시간표 13개 노선으로 교체됐다.
+  assert.strictEqual(pack.transitRoutes.length, 26);
   const routeIds = new Set(pack.transitRoutes.map((r) => r.id));
-  assert.ok(routeIds.has("route-seoul-4-up"));
-  assert.ok(routeIds.has("route-seoul-4-down"));
+  assert.ok(!routeIds.has("route-seoul-4-up"));
+  assert.ok(!routeIds.has("route-seoul-4-down"));
+  for (const routeKey of ["s1101", "s1102", "s1103", "s1104", "s1105", "s1106", "s1107", "s1108", "s1109", "i11d1", "l11ui", "l11sl", "i28a1"]) {
+    assert.ok(routeIds.has(`route-kric-capital-${routeKey}`), routeKey);
+  }
   assert.ok(routeIds.has("route-incheon-1-up"));
   assert.ok(routeIds.has("route-incheon-1-dn"));
   assert.ok(routeIds.has("route-incheon-2-up"));
@@ -302,10 +308,12 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
   assert.strictEqual(syntheticTrips.length, 0, "Pack must contain 0 synthetic trips");
   // #855: 대전·광주 추정 종착역 정차 898개와 원천 정차 하나뿐인 녹동 출발 38개(격리 증거)가 빠진다.
-  assert.strictEqual(pack.transitTrips.length, 9013, "Pack must contain exactly 9,013 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 243389, "Pack must contain exactly 243,389 authentic stop times");
-  assert.strictEqual(pack.serviceCalendars.length, 22);
-  assert.strictEqual(pack.serviceCalendarDates.length, 104);
+  // #899: 4호선 pilot trip 466·정차 932·달력 2·달력 예외 28을 빼고 수도권 공식 trip 11,426·정차 319,526·
+  // 달력 4·달력 예외 56을 더한다.
+  assert.strictEqual(pack.transitTrips.length, 19973, "Pack must contain exactly 19,973 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 561983, "Pack must contain exactly 561,983 authentic stop times");
+  assert.strictEqual(pack.serviceCalendars.length, 24);
+  assert.strictEqual(pack.serviceCalendarDates.length, 132);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
@@ -467,9 +475,10 @@ const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
   daeguTimetable2: "daegu-line2-train-timetable-353999c055eaae2d77e602901c15a2354ed3220ccd1b1327498fe6c1cf9976d7",
   daeguTimetable3: "daegu-line3-train-timetable-beb4ff8616336afea038efb54a47610a232dd890eba37c01ba82bf9f433e1085",
   daejeonTimetable: "daejeon-train-timetable-20261002",
+  capitalTimetable: "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
 });
 
-test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 13개를 고른다", async () => {
+test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 14개를 고른다", async () => {
   const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputsWithinIncheonWindow());
   assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
   for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
@@ -568,6 +577,34 @@ test("MOLIT 환승 이동 원천은 정책 신선도가 후보 시계 이전이�
   const future = new Date(Date.parse(metadata.observedAt) - 60_000).toISOString();
   await assert.rejects(resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: future, read }),
     /nationwide candidate MOLIT transfer snapshot is observed after the candidate clock/);
+});
+
+test("#899 수도권 공식 시간표 입력은 admission evidence가 없거나 후보 시계 뒤에 관측됐거나 만료되면 실패한다", async () => {
+  const missing = await committedSelectionInputs();
+  delete missing.sourceInventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file").capitalScheduleAdmissionEvidence;
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(missing),
+    /snapshot path missing or ambiguous for kric-nationwide-timetable-file capitalScheduleAdmissionEvidence/);
+
+  const future = await committedSelectionInputs();
+  const evidence = future.sourceInventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file").capitalScheduleAdmissionEvidence;
+  evidence.observedAt = new Date(Date.parse(future.fanIn.evaluatedAt) + 60_000).toISOString();
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(future),
+    /observed after the candidate clock for kric-nationwide-timetable-file/);
+
+  // official_static_timetable_confirmation(P7D): 관측 7일 뒤 후보 시계에서는 만료다.
+  const expired = await committedSelectionInputs();
+  const expiredEvidence = expired.sourceInventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file").capitalScheduleAdmissionEvidence;
+  expiredEvidence.observedAt = new Date(Date.parse(expired.fanIn.evaluatedAt) - 7 * 86_400_000).toISOString();
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(expired), /nationwide candidate input is expired for kric-nationwide-timetable-file/);
+
+  const tampered = await committedSelectionInputs();
+  const readCommitted = tampered.readSourceBytes;
+  tampered.readSourceBytes = async (relative) => {
+    const bytes = await readCommitted(relative);
+    if (relative !== `tools/datapack/sources/${COMMITTED_INPUT_SNAPSHOT_IDS.capitalTimetable}.json`) return bytes;
+    return Buffer.from(JSON.stringify({ ...JSON.parse(bytes), rawSha256: "0".repeat(64) }));
+  };
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(tampered), /raw binding mismatch for kric-nationwide-timetable-file/);
 });
 
 test("인천 입력은 inventory admission evidence가 없거나 원본 바이트가 다르면 실패한다", async () => {
