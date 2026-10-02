@@ -240,6 +240,15 @@ export async function validateCurrentItxTopologyEvidencePack({
       if (pack?.id === "capital" && pack?.artifactKind === "production") {
         throw new Error("production capital pack requires ITX topology evidence");
       }
+      // pack id와 무관하게, build spec이 ITX 승인 원천을 고정했고 pack이 그 운행역을 담으면 ITX 간선이 있어야 한다.
+      if (buildSpecDeclaresItx(buildSpec)) {
+        const { topology } = await admittedItxTopology(buildSpec, repositoryRoot);
+        const servedMembership = database
+          .prepare("SELECT 1 FROM station_lines WHERE station_id = ? AND line_id = ? LIMIT 1");
+        if (topology.servedStations.some(({ stationId, lineId }) => servedMembership.get(stationId, lineId))) {
+          throw new Error("ITX corridor pack requires admitted ITX RIDE edges");
+        }
+      }
       return { admittedItxEdgeSetSha256: canonicalRideEdgeSetSha256(canonicalItxEdges) };
     }
     const validation = await validateTrackedItxTopologyEvidence(buildSpec, {
@@ -270,7 +279,12 @@ export async function validateCurrentItxTopologyEvidencePack({
   }
 }
 
-async function admittedItxEdgeSetSha256ForEvidence(buildSpec, topologyEvidence, repositoryRoot) {
+function buildSpecDeclaresItx(buildSpec) {
+  return buildSpec?.itxTopologyEvidencePath != null
+    || buildSpec?.networkEdgeEvidence?.itxCoverageContract != null;
+}
+
+async function admittedItxTopology(buildSpec, repositoryRoot) {
   const pinnedContract = buildSpec?.networkEdgeEvidence?.itxCoverageContract;
   if (typeof pinnedContract?.path !== "string" || pinnedContract.path === "") {
     throw new Error("buildSpec.networkEdgeEvidence.itxCoverageContract.path is required for ITX topology evidence");
@@ -281,16 +295,22 @@ async function admittedItxEdgeSetSha256ForEvidence(buildSpec, topologyEvidence, 
     throw new Error("ITX coverage contract bytes mismatch");
   }
   const reference = JSON.parse(contractBytes).sourceTimetableArtifact;
-  if (reference?.artifactId !== topologyEvidence.sourceArtifact.id
-    || reference?.sha256 !== topologyEvidence.sourceArtifact.sha256
-    || typeof reference?.artifactPath !== "string") {
+  if (typeof reference?.artifactPath !== "string") {
     throw new Error("ITX topology evidence source artifact mismatch");
   }
   const sourceBytes = await readFile(path.resolve(repositoryRoot, reference.artifactPath));
   if (sha256(sourceBytes) !== reference.sha256) {
     throw new Error("ITX topology evidence source artifact mismatch");
   }
-  const topology = deriveTopology(JSON.parse(sourceBytes));
+  return { reference, topology: deriveTopology(JSON.parse(sourceBytes)) };
+}
+
+async function admittedItxEdgeSetSha256ForEvidence(buildSpec, topologyEvidence, repositoryRoot) {
+  const { reference, topology } = await admittedItxTopology(buildSpec, repositoryRoot);
+  if (reference.artifactId !== topologyEvidence.sourceArtifact.id
+    || reference.sha256 !== topologyEvidence.sourceArtifact.sha256) {
+    throw new Error("ITX topology evidence source artifact mismatch");
+  }
   if (topology.sha256 !== topologyEvidence.topology.sha256
     || topology.edges.length !== topologyEvidence.topology.edgeCount) {
     throw new Error("ITX topology evidence topology identity mismatch");
