@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import {
   EXTERNAL_STOP_TIMES_KEY,
@@ -88,4 +90,57 @@ test("파일 바이트·결속 요약이 다르거나 펼친 행이 팩 행과 �
   assert.throws(() => expandExternalStopTimes(written(duplicateTrip).fixture, { readBytes: () => artifact.bytes }), /TRIP_DUPLICATE: t-1/u);
   const duplicateStop = { ...artifact, inlineStopTimes: [...artifact.inlineStopTimes, stop("t-1", 1, "s-a")] };
   assert.throws(() => expandExternalStopTimes(written(duplicateStop).fixture, { readBytes: () => artifact.bytes }), /DUPLICATE_STOP_TIME/u);
+});
+
+// #910 F2: sha와 결속을 다시 맞춘 변조 파일도 expand가 내용 검사로 막는지 고정한다.
+// 결속 요약은 테스트가 직접 고친다(제품 함수로 다시 만들지 않는다).
+function reseal(artifact, mutateContent, mutateBinding = (binding) => binding) {
+  const content = JSON.parse(gunzipSync(artifact.bytes).toString("utf8"));
+  mutateContent(content);
+  const bytes = gzipSync(Buffer.from(`${JSON.stringify(content)}\n`), { level: 9 });
+  const binding = mutateBinding(structuredClone(artifact.binding));
+  binding.sha256 = createHash("sha256").update(bytes).digest("hex");
+  return { ...artifact, bytes, binding };
+}
+const officialSection = (content) => content.sections.find(({ header }) => header.sourceId === "official-source");
+const expandResealed = (resealed) => expandExternalStopTimes(written(resealed).fixture, { readBytes: () => resealed.bytes });
+
+test("sha·결속을 다시 맞춘 파일이라도 고아 stop_time·stop_time 없는 trip은 expand에서 실패한다(#910 F2)", () => {
+  const artifact = build();
+  // 섹션 trip에 없는 tripId의 stop_time 한 행(결속 요약은 그 행만큼 늘린다)
+  const orphan = reseal(artifact, (content) => {
+    officialSection(content).stopTimes.push(["ghost", 1, "s-a", "line-x", 21_660, 21_690, 0, 0]);
+  }, (binding) => {
+    const section = binding.sections.find(({ sourceId }) => sourceId === "official-source");
+    section.stopTimeCount += 1;
+    section.byLine["line-x"] = { tripCount: section.byLine["line-x"].tripCount + 1, stopTimeCount: section.byLine["line-x"].stopTimeCount + 1 };
+    binding.stopTimeCount += 1;
+    return binding;
+  });
+  assert.throws(() => expandResealed(orphan), /ORPHAN_STOP_TIME: ghost/u);
+  // stop_time이 하나도 없는 trip 한 행(결속 trip 수만 늘린다)
+  const emptyTrip = reseal(artifact, (content) => {
+    officialSection(content).trips.push(["t-9", "route-x", "svc", "끝", "", "LOCAL", "SUBWAY", 0, "t-9-hash"]);
+  }, (binding) => {
+    binding.sections.find(({ sourceId }) => sourceId === "official-source").tripCount += 1;
+    binding.tripCount += 1;
+    return binding;
+  });
+  assert.throws(() => expandResealed(emptyTrip), /TRIP_WITHOUT_STOP_TIMES: t-9/u);
+});
+
+test("sha·결속을 다시 맞춘 파일이라도 섹션 헤더 불일치·모르는 필드·행 열 수 불일치는 expand에서 실패한다(#910 F2)", () => {
+  const artifact = build();
+  const extraHeader = reseal(artifact, (content) => { officialSection(content).header.lineId = "line-x"; });
+  assert.throws(() => expandResealed(extraHeader), /EXTERNAL_STOP_TIMES_SECTION: official-source/u);
+  const blankHeader = reseal(artifact, (content) => { officialSection(content).header.evidenceHash = ""; });
+  assert.throws(() => expandResealed(blankHeader), /EXTERNAL_STOP_TIMES_SECTION: official-source/u);
+  const unknownSectionField = reseal(artifact, (content) => { officialSection(content).note = "x"; });
+  assert.throws(() => expandResealed(unknownSectionField), /EXTERNAL_STOP_TIMES_SECTION: official-source/u);
+  const unknownTopField = reseal(artifact, (content) => { content.generatedBy = "x"; });
+  assert.throws(() => expandResealed(unknownTopField), /EXTERNAL_STOP_TIMES_CONTENT/u);
+  const longTripRow = reseal(artifact, (content) => { officialSection(content).trips[0].push("extra"); });
+  assert.throws(() => expandResealed(longTripRow), /EXTERNAL_STOP_TIMES_ROW_SHAPE/u);
+  const shortStopRow = reseal(artifact, (content) => { officialSection(content).stopTimes[0].pop(); });
+  assert.throws(() => expandResealed(shortStopRow), /EXTERNAL_STOP_TIMES_ROW_SHAPE/u);
 });

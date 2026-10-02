@@ -26,6 +26,8 @@ const HEADER_FIELDS = Object.freeze(["sourceId", "sourceSnapshotId", "evidenceHa
 const TRIP_COLUMNS = Object.freeze(["id", "routeId", "serviceId", "tripHeadsign", "directionId", "servicePattern", "serviceClass", "serviceDayStartSeconds", "providerRecordHash"]);
 const STOP_TIME_COLUMNS = Object.freeze(["tripId", "stopSequence", "stationId", "lineId", "arrivalSeconds", "departureSeconds", "pickupType", "dropOffType"]);
 const ROW_PROVENANCE_FIELDS = Object.freeze([...HEADER_FIELDS, "providerRecordHash"]);
+const CONTENT_KEYS = Object.freeze(["schemaVersion", "artifactKind", "tripColumns", "stopTimeColumns", "sections"]);
+const SECTION_KEYS = Object.freeze(["header", "stopTimeProvenance", "trips", "stopTimes"]);
 const STOP_TIME_PROVENANCE = Object.freeze({ TRIP_INHERITED: "TRIP_INHERITED", ROW_COPY: "ROW_COPY" });
 const GZIP_LEVEL = 9;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -170,10 +172,19 @@ function readBoundTimetable(binding, pack, readBytes) {
   if (sha256(bytes) !== binding.sha256) fail("SHA256_MISMATCH", binding.path);
   let content;
   try { content = JSON.parse(gunzipSync(bytes).toString("utf8")); } catch { fail("CONTENT", binding.path); }
-  if (content?.schemaVersion !== 2 || content.artifactKind !== ARTIFACT_KIND
+  if (!sameKeys(content ?? {}, CONTENT_KEYS) || content.schemaVersion !== 2 || content.artifactKind !== ARTIFACT_KIND
     || JSON.stringify(content.tripColumns) !== JSON.stringify(TRIP_COLUMNS)
     || JSON.stringify(content.stopTimeColumns) !== JSON.stringify(STOP_TIME_COLUMNS) || !Array.isArray(content.sections)) {
     fail("CONTENT", binding.path);
+  }
+  // 결속 요약을 계산하기 전에 섹션·행 모양을 닫힌 계약으로 확인한다(모르는 필드·열 수 불일치는 실패).
+  for (const section of content.sections) {
+    if (!section || typeof section !== "object" || !sameKeys(section, SECTION_KEYS)
+      || !sameKeys(section.header ?? {}, HEADER_FIELDS) || HEADER_FIELDS.some((field) => typeof section.header[field] !== "string" || section.header[field].length === 0)
+      || !Object.values(STOP_TIME_PROVENANCE).includes(section.stopTimeProvenance)
+      || !Array.isArray(section.trips) || !Array.isArray(section.stopTimes)) fail("SECTION", section?.header?.sourceId);
+    if (section.trips.some((values) => !Array.isArray(values) || values.length !== TRIP_COLUMNS.length)
+      || section.stopTimes.some((values) => !Array.isArray(values) || values.length !== STOP_TIME_COLUMNS.length)) fail("ROW_SHAPE", section.header.sourceId);
   }
   if (JSON.stringify(bindingFor(content, bytes)) !== JSON.stringify(binding)) fail("BINDING_MISMATCH", binding.path);
   const inlineTripIds = new Set((pack.transitTrips ?? []).map(({ id }) => id));
@@ -181,8 +192,6 @@ function readBoundTimetable(binding, pack, readBytes) {
   const trips = [];
   const stopTimes = [];
   for (const section of content.sections) {
-    if (!sameKeys(section.header ?? {}, HEADER_FIELDS) || HEADER_FIELDS.some((field) => typeof section.header[field] !== "string" || section.header[field].length === 0)
-      || !Object.values(STOP_TIME_PROVENANCE).includes(section.stopTimeProvenance)) fail("SECTION", section.header?.sourceId);
     const sectionTrips = new Map();
     for (const values of section.trips) {
       const trip = { ...Object.fromEntries(TRIP_COLUMNS.map((column, index) => [column, values[index]])), ...section.header };
