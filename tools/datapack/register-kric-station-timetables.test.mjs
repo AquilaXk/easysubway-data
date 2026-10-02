@@ -241,3 +241,24 @@ test("같은 스냅샷 재등록은 SNAPSHOT_COLLISION, 원장·inventory·정�
   await restore();
   assert.deepEqual(await snapshotOf(root), registered);
 });
+
+test("candidate의 노선 목록·카탈로그 provider가 고정 바인딩과 다르면 CANDIDATE로 거부한다", async (t) => {
+  const { root, files, now } = await fixture(t);
+  const candidatesPath = path.join(root, "tools/datapack/source-candidates.json");
+  const original = await readFile(candidatesPath);
+  const before = await snapshotOf(root);
+  const register = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  for (const change of [
+    (candidate) => { candidate.coverageScope.lineIds = candidate.coverageScope.lineIds.slice(1); },
+    (candidate) => { candidate.coverageScope.lineIds = [...candidate.coverageScope.lineIds].reverse(); },
+    (candidate) => { candidate.coverageScope.lineIds = [...candidate.coverageScope.lineIds, "line-other"]; },
+    (candidate) => { candidate.catalogProviderId = "provider:kric-station-timetable"; },
+  ]) {
+    const document = JSON.parse(original);
+    change(document.candidates.find(({ id }) => id === STATION_LINES_SOURCE_ID));
+    await writeFile(candidatesPath, `${JSON.stringify(document, null, 2)}\n`);
+    await assert.rejects(register(), /KRIC_STATION_REGISTRATION_CANDIDATE/u);
+  }
+  await writeFile(candidatesPath, original);
+  assert.deepEqual(await snapshotOf(root), before);
+});
