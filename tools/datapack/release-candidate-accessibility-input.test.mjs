@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 
 import { main as buildCandidateAccessibilityInput } from "./build-current-release-candidate-accessibility-input.mjs";
 import {
@@ -14,37 +15,22 @@ import { buildCurrentCapitalRouteEdgeInput } from "./build-current-capital-route
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
-const TRACKED_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
-const TRACKED_ROUTE_INPUT = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
-// 후보 산출물이 커밋된 입력과 달라도 되는 필드는 후보 식별자뿐이다.
-const CANDIDATE_IDENTITY_KEYS = ["candidateId", "sourceSetSha256"];
+const PREPARATION = "tools/datapack/release/nationwide-candidate-preparation.json";
 
-function readRepoJson(relative) {
-  return JSON.parse(readFileSync(resolve(root, relative), "utf8"));
+function readRepoJson(relativePath) {
+  return JSON.parse(readFileSync(resolve(root, relativePath), "utf8"));
 }
 
-function withoutIdentity(row) {
-  const stripped = { ...row };
-  for (const key of CANDIDATE_IDENTITY_KEYS) delete stripped[key];
-  return stripped;
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
-// candidate 헤더와 evidenceRows의 후보 식별 필드만 제외한다. 나머지는 모두 같아야 한다.
-function withoutCandidateIdentity(document) {
-  return {
-    ...document,
-    candidate: withoutIdentity(document.candidate),
-    ...(document.evidenceRows ? { evidenceRows: document.evidenceRows.map(withoutIdentity) } : {}),
-  };
-}
-
-function candidateIdentities(document) {
-  return new Set([document.candidate, ...(document.evidenceRows ?? [])]
-    .map((row) => CANDIDATE_IDENTITY_KEYS.map((key) => row[key]).join("\0")));
-}
-
-test("committed build spec으로 release-candidate accessibility input을 만들면 커밋된 capital accessibility 입력과 같다", async () => {
+// #866 PR-B: release-candidate 입력은 전국 후보 준비(nationwide-candidate-preparation.json)가
+// sha로 결속한 전국 입력을 그대로 쓴다. 수도권 live chain 재생성(213 역-노선)을 거치지 않는다.
+// 실데이터가 authority(D1: 환승 양끝 TRANSFER cell 닫힘)를 만족하지 못하면 이 테스트는 명시적으로 실패한다.
+test("committed build spec으로 release-candidate accessibility input을 만들면 preparation이 결속한 전국 입력과 바이트가 같다", async () => {
   const buildSpec = readRepoJson(BUILD_SPEC);
+  const preparation = readRepoJson(PREPARATION);
   const tmpDir = await mkdtemp(resolve(tmpdir(), "rc-accessibility-input-"));
   const outputs = {
     stationLine: resolve(tmpDir, "station-line-input.json"),
@@ -62,31 +48,92 @@ test("committed build spec으로 release-candidate accessibility input을 만들
       "--authority-output", outputs.authority,
     ], { repositoryRoot: root });
 
-    const written = Object.fromEntries(await Promise.all(Object.entries(outputs)
-      .map(async ([name, target]) => [name, JSON.parse(await readFile(target, "utf8"))])));
+    const [stationLineBytes, routeEdgeBytes] = await Promise.all([
+      readFile(outputs.stationLine),
+      readFile(outputs.routeEdge),
+    ]);
+    const boundStationLineBytes = readFileSync(resolve(root, preparation.stationLineInput.path));
+    const boundRouteEdgeBytes = readFileSync(resolve(root, preparation.routeEdgeInput.path));
+    const stationLine = JSON.parse(stationLineBytes);
+    const routeEdge = JSON.parse(routeEdgeBytes);
+    assert.equal(stationLine.stationLines.length, JSON.parse(boundStationLineBytes).stationLines.length);
+    assert.equal(routeEdge.routeEdges.length, JSON.parse(boundRouteEdgeBytes).routeEdges.length);
+    assert.equal(sha256(stationLineBytes), preparation.stationLineInput.sha256);
+    assert.equal(sha256(routeEdgeBytes), preparation.routeEdgeInput.sha256);
+    assert.ok(stationLineBytes.equals(boundStationLineBytes));
+    assert.ok(routeEdgeBytes.equals(boundRouteEdgeBytes));
+    for (const candidate of [stationLine.candidate, routeEdge.candidate]) {
+      assert.equal(candidate.candidateId, buildSpec.candidateId);
+      assert.equal(candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
+    }
 
-    const trackedStation = readRepoJson(TRACKED_STATION_INPUT);
-    const trackedRoute = readRepoJson(TRACKED_ROUTE_INPUT);
-    assert.equal(written.stationLine.stationLines.length, trackedStation.stationLines.length);
-    assert.equal(written.stationLine.evidenceRows.length, trackedStation.evidenceRows.length);
-    assert.equal(written.routeEdge.routeEdges.length, trackedRoute.routeEdges.length);
-    assert.equal(written.routeEdge.stationLines.length, trackedRoute.stationLines.length);
-    assert.deepEqual(withoutCandidateIdentity(written.stationLine), withoutCandidateIdentity(trackedStation));
-    assert.deepEqual(withoutCandidateIdentity(written.routeEdge), withoutCandidateIdentity(trackedRoute));
-    assert.equal(written.stationLine.candidate.stationSetSha256, trackedStation.candidate.stationSetSha256);
-    assert.equal(written.routeEdge.candidate.stationSetSha256, trackedRoute.candidate.stationSetSha256);
-
-    // 제외한 후보 식별 필드는 committed build spec의 후보 식별자로 채워져야 한다.
-    const expectedIdentity = new Set([`${buildSpec.candidateId}\0${buildSpec.sourceSnapshotSetHash}`]);
-    assert.deepEqual(candidateIdentities(written.stationLine), expectedIdentity);
-    assert.deepEqual(candidateIdentities(written.routeEdge), expectedIdentity);
-    assert.equal(written.fixture.manifest.activePack.id, "nationwide");
-    assert.deepEqual(written.fixture.packs.map(({ id }) => id), ["nationwide"]);
-    assert.equal(typeof written.authority, "object");
-    assert.notEqual(written.authority, null);
+    const fixture = JSON.parse(await readFile(outputs.fixture, "utf8"));
+    const authority = JSON.parse(await readFile(outputs.authority, "utf8"));
+    assert.equal(fixture.manifest.activePack.id, "nationwide");
+    assert.deepEqual(fixture.packs.map(({ id }) => id), ["nationwide"]);
+    assert.equal(authority.buildInput.stationLineInputSha256, preparation.stationLineInput.sha256);
+    assert.equal(authority.buildInput.routeEdgeInputSha256, preparation.routeEdgeInput.sha256);
+    const nonRide = routeEdge.routeEdges.filter(({ edgeType }) => edgeType !== "RIDE");
+    assert.equal(authority.edgeCounts.total, nonRide.length);
+    assert.equal(authority.edges.length, nonRide.length);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
+});
+
+// 전국 발행 경로 모듈은 수도권 live chain 모듈을 정적으로(동적 import 문자열 포함) 끌어오지 않는다.
+const RELEASE_PATH_MODULES = [
+  "tools/datapack/build-current-release-candidate-accessibility-input.mjs",
+  "tools/datapack/build-datapack.mjs",
+  "tools/datapack/emit-artifact-components.mjs",
+  "tools/datapack/nationwide-candidate-input-binding.mjs",
+  "tools/datapack/prepare-current-server-route-bundle-final.mjs",
+  "tools/datapack/prepare-nationwide-candidate-run.mjs",
+  "tools/datapack/refresh-nationwide-candidate.mjs",
+  "tools/datapack/stage-current-server-route-bundle-candidate.mjs",
+  "tools/datapack/validate-datapack.mjs",
+];
+const LIVE_CHAIN_MODULES = [
+  "tools/datapack/build-current-capital-live-chain-boundary.mjs",
+  "tools/datapack/refresh-current-capital-accessibility-full.mjs",
+  "tools/datapack/run-current-capital-live-chain.mjs",
+];
+const IMPORT_SPECIFIER = /(?:\bimport|\bexport)\s[^'"`;]*?\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\bimport\s*["']([^"']+)["']/gu;
+
+function relativeImportGraph(entries) {
+  const parents = new Map();
+  const pending = entries.map((entry) => [resolve(root, entry), null]);
+  while (pending.length > 0) {
+    const [file, parent] = pending.pop();
+    if (parents.has(file)) continue;
+    parents.set(file, parent);
+    for (const match of readFileSync(file, "utf8").matchAll(IMPORT_SPECIFIER)) {
+      const specifier = match[1] ?? match[2] ?? match[3];
+      if (!specifier.startsWith(".")) continue;
+      const target = resolve(dirname(file), specifier);
+      assert.ok(existsSync(target), `${relative(root, file)} imports missing ${specifier}`);
+      pending.push([target, file]);
+    }
+  }
+  return parents;
+}
+
+test("전국 발행 경로 모듈은 수도권 live chain 모듈을 정적 import 그래프에 포함하지 않는다", () => {
+  for (const module of [...RELEASE_PATH_MODULES, ...LIVE_CHAIN_MODULES]) {
+    assert.ok(existsSync(resolve(root, module)), module);
+  }
+  const graph = relativeImportGraph(RELEASE_PATH_MODULES);
+  // 검사기가 실제로 그래프를 따라가는지 확인한다(live chain 쪽에서 시작하면 반드시 걸린다).
+  assert.ok(relativeImportGraph(["tools/datapack/refresh-current-capital-accessibility-full.mjs"])
+    .has(resolve(root, "tools/datapack/build-current-capital-live-chain-boundary.mjs")));
+  const offenders = LIVE_CHAIN_MODULES.map((module) => resolve(root, module))
+    .filter((module) => graph.has(module))
+    .map((module) => {
+      const chain = [];
+      for (let current = module; current; current = graph.get(current)) chain.push(relative(root, current));
+      return chain.join(" <- ");
+    });
+  assert.deepEqual(offenders, []);
 });
 
 function productionFixture({ activePack, packIds }) {
