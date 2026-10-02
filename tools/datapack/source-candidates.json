@@ -5565,6 +5565,85 @@
       "productionInventoryRelationship": "same_dataset_inventory_entry_for_line4_pilot_schedule"
     },
     {
+      "id": "kric-subway-timetable-station-lines",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "catalogProviderId": "provider:kric-subway-timetable",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan"
+        ],
+        "operatorIds": [
+          "operator-5ca780d7dee1",
+          "operator-9e999d4aa596",
+          "operator-b2d80436b438",
+          "operator-29e323a78a93",
+          "operator-2e23276dfa94",
+          "operator-72566d06475a"
+        ],
+        "lineIds": [
+          "line-8604048b6430",
+          "line-828f04afc588",
+          "line-62096860ab09",
+          "line-5500c1600f71",
+          "line-e4cce88f0d7f"
+        ]
+      },
+      "displayName": "도시철도 열차운행시각표 — 역별 수집 노선(GTX-A·에버라인·의정부·김포골드·부산김해)",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+      "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "auth": {
+          "env": "KRIC_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "format",
+          "railOprIsttCd",
+          "dayCd",
+          "lnCd",
+          "stinCd"
+        ],
+        "responseEnvelope": "{header:{resultCode,resultMsg},body:row[]}",
+        "runner": {
+          "command": "node tools/datapack/collect-kric-station-timetables.mjs",
+          "arguments": [
+            "--output",
+            "[absent-task-owned-absolute-file.json]"
+          ],
+          "requiredEnv": [
+            "KRIC_SERVICE_KEY"
+          ]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "preflight_only",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "provider": "국가철도공단",
+        "license": "KOGL-1",
+        "licenseEvidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "coverage": "KRIC subwayTimetable 역별 응답(dayCd 7·8·9)으로 재구성한 GTX-A·에버라인·의정부·김포골드·부산김해 운행 시각",
+        "liveSampleRetrievedAt": "2026-10-02T16:15:02Z",
+        "liveSampleNote": "#903 실수집: 5개 노선 전 역 dayCd 8·9 resultCode 00, dayCd 7 resultCode 03, 응답 210건, trip 3,956건 quarantine 0건",
+        "sameTermsAs": "kric-subway-timetable"
+      }
+    },
+    {
       "id": "kric-subway-timetable-exp",
       "priority": "P0",
       "domain": "schedule_timetable",
