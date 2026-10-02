@@ -24,6 +24,8 @@ function storageWith(objects) {
   const calls = [];
   return {
     calls,
+    // 실제 GET 본문으로 sha·크기를 계산하는 클라이언트임을 표시한다(#911 F4).
+    verifiesObjectBytes: true,
     async putObjectIfAbsent(key) { calls.push(["put", key]); throw new Error("reverification must not publish"); },
     async verifyObject(key, step) {
       calls.push(["verify", key]);
@@ -108,4 +110,22 @@ test("재확인 영수증은 head의 URI·snapshot·sha·크기와 각각 정확
     assert.throws(() => assertReverificationReceiptMatchesHead({ receipt: { ...receipt, [field]: value }, head: head(), rawSha256: RAW_SHA, byteSize: RAW.length }),
       /SAME_RAW_REVERIFICATION_RECEIPT_HEAD/u, field);
   }
+});
+
+// #911 F4: 재확인은 실제 GET 본문으로 sha를 계산하는 클라이언트만 받는다. HEAD 메타데이터만 보는 클라이언트는 거부한다.
+test("실제 바이트를 읽지 않는(HEAD 메타데이터) 저장소 클라이언트로는 재확인하지 않는다(#911 F4)", async () => {
+  const plan = planRawObjectPublication({ head: head(), rawSha256: RAW_SHA, byteSize: RAW.length });
+  const calls = [];
+  const headOnly = { async verifyObject(key) { calls.push(["head", key]); } };
+  await assert.rejects(verifyReusedRawObject({ plan, storage: headOnly, ...AUTHORITY, contentType: "application/octet-stream" }), /SAME_RAW_REVERIFICATION_STORAGE/u);
+  await assert.rejects(verifyReusedRawObject({ plan, storage: { ...headOnly, verifiesObjectBytes: "yes" }, ...AUTHORITY, contentType: "application/octet-stream" }), /SAME_RAW_REVERIFICATION_STORAGE/u);
+  assert.deepEqual(calls, []);
+});
+
+test("PAR 저장소 클라이언트는 실제 GET 본문으로 확인하는 클라이언트로 표시되고, 서명 클라이언트는 아니다(#911 F4)", async () => {
+  const { preauthenticatedObjectStorageClient, objectStorageClient } = await import("../publish-object-storage.mjs");
+  assert.equal(preauthenticatedObjectStorageClient("https://objectstorage.ap-seoul-1.oraclecloud.com/p/x/n/ns/b/bucket/o", { requestImpl: async () => ({}) }).verifiesObjectBytes, true);
+  const signed = objectStorageClient({ EASYSUBWAY_OBJECT_STORAGE_ENDPOINT: "https://example.invalid", EASYSUBWAY_DATAPACK_BUCKET: "bucket",
+    EASYSUBWAY_OBJECT_STORAGE_REGION: "r", EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY: "k", EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY: "s" });
+  assert.notEqual(signed?.verifiesObjectBytes, true);
 });

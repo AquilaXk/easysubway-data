@@ -332,6 +332,8 @@ export function preauthenticatedObjectStorageClient(baseUrl, { includeErrorBody 
   const failureSuffix = (body) => includeErrorBody ? errorBodySuffix(body) : "";
   const boundedRequest = (options) => requestImpl({ ...options, timeoutMs: OCI_PAR_REQUEST_TIMEOUT_MS, maxResponseBytes: options.maxResponseBytes ?? OCI_PAR_MAX_RESPONSE_BYTES });
   return {
+    // verifyObject가 실제 GET 본문으로 크기·sha256을 계산한다(같은 원본 재확인이 요구하는 능력, #911 F4).
+    verifiesObjectBytes: true,
     putObject: async (key, bytes, step) => {
       const response = await boundedRequest({
         url: preauthObjectUrl(baseUrl, key),

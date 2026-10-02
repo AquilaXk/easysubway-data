@@ -40,12 +40,14 @@ export function planRawObjectPublication({ head, rawSha256, byteSize }) {
 
 /**
  * 재사용할 기존 원본 객체를 실제로 읽어(크기·sha256) 확인한다. 새로 게시하지 않는다.
- * storage는 publish-object-storage의 verifyObject(key, { sha256, sizeBytes, contentType })를 제공해야 한다.
+ * storage는 실제 GET 본문으로 확인하는 verifyObject(key, { sha256, sizeBytes, contentType })와
+ * verifiesObjectBytes: true를 제공해야 한다(publish-object-storage의 PAR 클라이언트).
  */
 export async function verifyReusedRawObject({ plan, storage, namespace, bucket, contentType }) {
   if (plan?.mode !== RAW_PUBLICATION_MODE.REVERIFY_EXISTING) fail("PLAN");
   if (plan.namespace !== namespace || plan.bucket !== bucket) fail("OBJECT_AUTHORITY");
-  if (!storage || typeof storage.verifyObject !== "function") fail("STORAGE");
+  // #911 F4: verifyObject가 실제 GET 본문으로 크기·sha를 계산하는 클라이언트만 받는다(HEAD 메타데이터 비교는 거부).
+  if (!storage || typeof storage.verifyObject !== "function" || storage.verifiesObjectBytes !== true) fail("STORAGE");
   try {
     await storage.verifyObject(plan.objectKey, { sha256: plan.rawObjectSha256, sizeBytes: plan.byteSize, contentType });
   } catch {
