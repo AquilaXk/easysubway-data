@@ -98,6 +98,17 @@ test("한 열차의 원천 행이 연속하지 않거나 시발·종착이 첫·
   assert.deepEqual(result.quarantine.map(({ reason }) => reason).sort(), ["ENDPOINT_MISMATCH", "ROWS_NOT_CONTIGUOUS"]);
 });
 
+test("같은 열차에 같은 역이 두 번 나오거나 도착·출발 시각이 모두 비면 quarantine한다", () => {
+  const repeated = trip({ trainNumber: "K310", stops: [["가역", "09:20", "09:20"], ["나역", "09:23", "09:23"], ["가역", "09:26", "09:26"]] });
+  const empty = trip({ trainNumber: "K311", stops: [["가역", "09:30", "09:30"], ["나역", null, null], ["다역", "09:36", "09:36"]] });
+  const fill = Array.from({ length: 40 }, (_, index) => trip({ trainNumber: `K3${60 + index}`,
+    stops: [["가역", "11:00", "11:00"], ["나역", "11:03", "11:03"]] })).flat();
+  const result = buildKorailStationRowTrips({ records: [...repeated, ...empty, ...fill], bindings: [BINDING] });
+  assert.deepEqual(result.quarantine.map(({ providerTripKey, reason }) => [providerTripKey, reason]),
+    [["TEST1|K310|평일", "DUPLICATE_STATION"], ["TEST1|K311|평일", "MISSING_STOP_TIME"]]);
+  assert.equal(result.trips.some(({ providerTripKey }) => ["TEST1|K310|평일", "TEST1|K311|평일"].includes(providerTripKey)), false);
+});
+
 test("급행은 정차·통과를 구분할 수 없어 적재하지 않고, 고정한 행 집합과 다르면 실패한다", () => {
   const express = trip({ trainNumber: "K400", serviceType: "급행", stops: [["가역", "11:00", "11:00"], ["나역", "11:02", "11:02"]] });
   const local = trip({ trainNumber: "K401", stops: [["가역", "11:05", "11:05"], ["나역", "11:08", "11:08"]] });
