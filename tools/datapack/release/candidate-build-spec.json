@@ -4,10 +4,10 @@
   "candidateId": "nationwide-candidate-20261001-seq123",
   "publishedAt": "2026-10-01T23:36:22.000Z",
   "releaseSequence": 123,
-  "builderGitSha": "5eb3a557444cc78bd6e28cb39e795ed99e94c675",
+  "builderGitSha": "beb91b07a04b84a844abe854607f84572597245a",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "f89712422b05ca7ede84f20045dec229e3fb23c19cd692d55b86990cc9040c4e",
+  "fixtureSha256": "bbada957b589c56f10b7748ef8be1134b582d6e30506c585d76e21b592f5b9a6",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
