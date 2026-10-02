@@ -11,7 +11,7 @@
   },
   "contract": {
     "stopOrder": "원천 역명 칸이 명시한 정차 순서(001..N 순번 또는 역 코드 토큰 순서)를 그대로 쓴다.",
-    "stopTime": "도착·출발 중 원천 값이 하나뿐인 정차는 그 값을 두 칸에 쓴다. 기점 도착·종점 출발 00:00은 원천 자리표시라 미제공으로 본다.",
+    "stopTime": "도착·출발 중 원천 값이 하나뿐인 정차는 그 값을 정차 시각(도착 = 출발)으로 쓰고 stop_time.timeSource에 SINGLE_PROVIDER_TIME_ARRIVAL/DEPARTURE로 표기한다(QA 결정 2026-10-03). 노선별 건수는 lines[].singleProviderTimeStopCount. 둘 다 없으면 격리한다. 기점 도착·종점 출발 00:00은 원천 자리표시라 미제공으로 본다.",
     "serviceDay": "04시 전 시각(24시 미만 표기)은 전날 운행일의 심야 시각이다(+24h).",
     "quarantine": "시각 역전·문법 오류·일반열차 비인접 정차 행은 적재하지 않는다. 노선별 상한 0.05(고정 집합 제외), 초과 시 실패."
   },
@@ -23,6 +23,11 @@
       "sourceTripCount": 1576,
       "admittedTripCount": 1123,
       "admittedStopTimeCount": 46332,
+      "singleProviderTimeStopCount": {
+        "origin": 1123,
+        "intermediate": 0,
+        "terminal": 1123
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 581,
         "WEEKEND_HOLIDAY": 542
@@ -49,6 +54,11 @@
       "sourceTripCount": 1818,
       "admittedTripCount": 1818,
       "admittedStopTimeCount": 42616,
+      "singleProviderTimeStopCount": {
+        "origin": 1818,
+        "intermediate": 0,
+        "terminal": 1818
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 976,
         "WEEKEND_HOLIDAY": 842
@@ -68,6 +78,11 @@
       "sourceTripCount": 773,
       "admittedTripCount": 772,
       "admittedStopTimeCount": 29032,
+      "singleProviderTimeStopCount": {
+        "origin": 772,
+        "intermediate": 0,
+        "terminal": 772
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 406,
         "WEEKEND_HOLIDAY": 366
@@ -89,6 +104,11 @@
       "sourceTripCount": 896,
       "admittedTripCount": 889,
       "admittedStopTimeCount": 32744,
+      "singleProviderTimeStopCount": {
+        "origin": 889,
+        "intermediate": 0,
+        "terminal": 888
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 481,
         "WEEKEND_HOLIDAY": 408
@@ -110,6 +130,11 @@
       "sourceTripCount": 774,
       "admittedTripCount": 772,
       "admittedStopTimeCount": 34391,
+      "singleProviderTimeStopCount": {
+        "origin": 772,
+        "intermediate": 0,
+        "terminal": 772
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 428,
         "WEEKEND_HOLIDAY": 344
@@ -131,6 +156,11 @@
       "sourceTripCount": 591,
       "admittedTripCount": 591,
       "admittedStopTimeCount": 20831,
+      "singleProviderTimeStopCount": {
+        "origin": 591,
+        "intermediate": 0,
+        "terminal": 591
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 340,
         "WEEKEND_HOLIDAY": 251
@@ -150,6 +180,11 @@
       "sourceTripCount": 752,
       "admittedTripCount": 752,
       "admittedStopTimeCount": 34475,
+      "singleProviderTimeStopCount": {
+        "origin": 752,
+        "intermediate": 0,
+        "terminal": 752
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 420,
         "WEEKEND_HOLIDAY": 332
@@ -169,6 +204,11 @@
       "sourceTripCount": 566,
       "admittedTripCount": 566,
       "admittedStopTimeCount": 13374,
+      "singleProviderTimeStopCount": {
+        "origin": 566,
+        "intermediate": 0,
+        "terminal": 566
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 324,
         "WEEKEND_HOLIDAY": 242
@@ -188,6 +228,11 @@
       "sourceTripCount": 880,
       "admittedTripCount": 880,
       "admittedStopTimeCount": 23515,
+      "singleProviderTimeStopCount": {
+        "origin": 880,
+        "intermediate": 0,
+        "terminal": 880
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 492,
         "WEEKEND_HOLIDAY": 388
@@ -207,6 +252,11 @@
       "sourceTripCount": 866,
       "admittedTripCount": 866,
       "admittedStopTimeCount": 13667,
+      "singleProviderTimeStopCount": {
+        "origin": 9,
+        "intermediate": 0,
+        "terminal": 3
+      },
       "tripsByServiceDayKind": {
         "SATURDAY": 267,
         "SUNDAY_HOLIDAY": 267,
@@ -227,6 +277,11 @@
       "sourceTripCount": 940,
       "admittedTripCount": 940,
       "admittedStopTimeCount": 12220,
+      "singleProviderTimeStopCount": {
+        "origin": 940,
+        "intermediate": 0,
+        "terminal": 940
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 516,
         "WEEKEND_HOLIDAY": 424
@@ -246,6 +301,11 @@
       "sourceTripCount": 696,
       "admittedTripCount": 663,
       "admittedStopTimeCount": 7213,
+      "singleProviderTimeStopCount": {
+        "origin": 663,
+        "intermediate": 0,
+        "terminal": 663
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 382,
         "WEEKEND_HOLIDAY": 281
@@ -269,6 +329,11 @@
       "sourceTripCount": 794,
       "admittedTripCount": 794,
       "admittedStopTimeCount": 9116,
+      "singleProviderTimeStopCount": {
+        "origin": 794,
+        "intermediate": 7528,
+        "terminal": 794
+      },
       "tripsByServiceDayKind": {
         "WEEKDAY": 421,
         "WEEKEND_HOLIDAY": 373
