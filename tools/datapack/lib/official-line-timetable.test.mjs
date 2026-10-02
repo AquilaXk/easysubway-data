@@ -119,6 +119,21 @@ test("고정 격리 집합은 사유·건수·행 집합이 정확히 같을 때
     /LINE_QUARANTINE_RATIO_EXCEEDED: line-x X1 2\/33 > 0.05/u);
 });
 
+test("고정 격리 집합은 건수가 같아도 행 하나가 다르면, 행 집합이 같아도 고정 건수가 다르면 각각 실패한다(#910 F1)", () => {
+  const damaged = Array.from({ length: 10 }, (_, index) => ({
+    sourceId: "official-source", lineId: "line-x", routeKey: "X1", trainNumber: `d${index}`, serviceDayKind: "WEEKDAY",
+    sourceRowSha256: ROW(1000 + index), reason: "TIME_NOT_MONOTONIC",
+  }));
+  const allowance = { reason: "TIME_NOT_MONOTONIC", rowCount: 10, rowSetSha256: quarantineRowSetSha256(damaged), note: "원천 손상 행" };
+  // 건수 10은 그대로이고 행 하나만 다른 원천 행으로 바뀐다(행 집합 hash만 달라진다).
+  const swapped = [...damaged.slice(0, 9), { ...damaged[9], sourceRowSha256: ROW(3000) }];
+  assert.throws(() => materializeOfficialLineTimetables(args({ provider: provider(manyWeekdayAndWeekend(), swapped), lineBindings: [{ ...BINDING, quarantineAllowance: allowance }] })),
+    /QUARANTINE_ALLOWANCE_MISMATCH: line-x X1 TIME_NOT_MONOTONIC 10\/10/u);
+  // 행 집합은 고정 hash와 같고 고정 건수만 다르다(건수만 달라진다).
+  assert.throws(() => materializeOfficialLineTimetables(args({ provider: provider(manyWeekdayAndWeekend(), damaged), lineBindings: [{ ...BINDING, quarantineAllowance: { ...allowance, rowCount: 11 } }] })),
+    /QUARANTINE_ALLOWANCE_MISMATCH: line-x X1 TIME_NOT_MONOTONIC 10\/11/u);
+});
+
 test("별칭이 실제 역명을 가리거나 대상 역이 노선에 없으면 실패한다", () => {
   const shadow = { ...BINDING, stationAliases: { A역명: { nameKo: "B역명", reason: "x" } } };
   assert.throws(() => materializeOfficialLineTimetables(args({ provider: provider(manyWeekdayAndWeekend()), lineBindings: [shadow] })), /ALIAS_SHADOWS_STATION/u);
