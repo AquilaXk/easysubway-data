@@ -145,6 +145,12 @@ test("emit 입력 결속은 pack id와 무관하게 current.json active producti
     { id: "capital", version: "1", artifactKind: "production", sqliteSha256: sourceHash },
     { id: "nationwide", version: "1", artifactKind: "production", sqliteSha256: otherHash },
   ])), /source pack identity mismatch/);
+  // 리뷰 F3: 같은 id라도 provenance의 pack version이 active pack과 다르면 결속하지 않는다.
+  {
+    const [provenance, current, currentHash] = binding("nationwide");
+    provenance.packs = [{ id: "nationwide", version: "2", artifactKind: "production", sqliteSha256: sourceHash }];
+    assert.throws(() => validateInputBinding(provenance, current, currentHash, sourceHash, buildSpecHash), /source pack identity mismatch/);
+  }
   // active pack 선택이 없으면 이름으로 추측하지 않고 실패한다.
   assert.throws(() => validateInputBinding(...binding("capital", undefined, null)), /source pack identity mismatch/);
 });
