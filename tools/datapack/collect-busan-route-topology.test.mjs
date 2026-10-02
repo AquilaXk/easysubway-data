@@ -399,6 +399,39 @@ test("부산 topology collector는 HTTP/content-type/transport failure를 bounde
   });
 });
 
+test("부산 topology는 컷오버(2026-10-03T00:00Z) 이후 수집분을 P7D 창으로 만들고 정확히 그 창만 허용한다", async () => {
+  const scope = parseBusanRouteTopologyScope(SCOPE_HTML);
+  const names = new Map(scope.map(({ stationCode, stationName }) => [stationCode, stationName]));
+  const byCode = new Map(scope.map((entry) => [entry.stationCode, entry]));
+  const collectAt = (now) => collect({
+    now,
+    stationScopes: scope,
+    fetchImpl: async (url) => {
+      const stationCode = new URL(url).searchParams.get("scode");
+      const station = byCode.get(stationCode);
+      const items = station.neighborCodes.map((neighborCode) => `<item>
+        <startSn>${station.stationName}</startSn><startSc>${stationCode}</startSc>
+        <endSn>${names.get(neighborCode)}</endSn><endSc>${neighborCode}</endSc>
+        <dist>10</dist><time>60</time><stoppingTime>20</stoppingTime><exchange></exchange>
+      </item>`).join("");
+      return response(successXml(items));
+    },
+  });
+  const day = 86_400_000;
+  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
+  const snapshot = await collectAt(new Date(cutover));
+  assert.equal(snapshot.freshUntil, new Date(cutover + 7 * day).toISOString());
+  assert.equal(admitBusanRouteTopology(snapshot, { now: new Date(cutover + 7 * day - 1) }).status, "ADMITTED");
+  assert.throws(() => admitBusanRouteTopology(snapshot, { now: new Date(cutover + 7 * day) }), /stale/);
+  assert.throws(
+    () => validateBusanRouteTopologySnapshot({ ...snapshot, freshUntil: new Date(cutover + day).toISOString() }),
+    /freshness contract/,
+  );
+  const legacy = await collectAt(new Date(cutover - 1));
+  assert.equal(legacy.freshUntil, new Date(cutover - 1 + day).toISOString());
+  assert.equal(validateBusanRouteTopologySnapshot(legacy), legacy);
+});
+
 test("부산 topology admission은 4개 노선 full snapshot만 허용하고 stale·partial·fixture를 거부한다", async () => {
   const scope = parseBusanRouteTopologyScope(SCOPE_HTML);
   const names = new Map(scope.map(({ stationCode, stationName }) => [stationCode, stationName]));

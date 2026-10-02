@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15001019/openapi.do";
@@ -30,7 +31,6 @@ const LINE_IDS = Object.freeze(Object.fromEntries(
 ));
 const EXPECTED_LINE_IDS = Object.values(LINE_IDS).sort((left, right) => left.localeCompare(right, "en"));
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1000;
 const RETRY_FALLBACK_DELAY_MILLIS = 250;
 const RETRY_MAX_DELAY_MILLIS = 2_000;
 
@@ -87,7 +87,7 @@ export async function collectBusanRouteTopology({
     detailUrl: DETAIL_URL,
     endpoint: ENDPOINT,
     capturedAt: capturedAt.toISOString(),
-    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
+    freshUntil: topologySnapshotFreshUntil(capturedAt),
     official: true,
     fixture: false,
     credentialRedacted: true,
@@ -327,7 +327,7 @@ export function validateBusanRouteTopologySnapshot(snapshot) {
   }
   const capturedAt = validDate(new Date(snapshot.capturedAt), "snapshot.capturedAt");
   const freshUntil = validDate(new Date(snapshot.freshUntil), "snapshot.freshUntil");
-  if (freshUntil.getTime() !== capturedAt.getTime() + FRESHNESS_MILLIS) {
+  if (freshUntil.toISOString() !== topologySnapshotFreshUntil(capturedAt)) {
     throw new Error("Busan route topology admission freshness contract is invalid");
   }
   return snapshot;

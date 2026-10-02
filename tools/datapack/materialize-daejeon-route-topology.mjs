@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { DAEJEON_TOPOLOGY_ENDPOINT } from "./collect-daejeon-route-topology.mjs";
+import { topologySnapshotFreshnessMillis } from "./lib/topology-freshness-cutover.mjs";
 
 const SOURCE_ID = "daejeon-station-distance-fare";
 const MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-daejeon-membership";
@@ -16,7 +17,6 @@ export const DAEJEON_LINES = Object.freeze([
   Object.freeze({ lineNumber: 1, lineId: LINE_ID }),
 ]);
 const PACK_ID = "nationwide-daejeon-topology";
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const STATION_NUMBERS = Object.freeze(Array.from({ length: 22 }, (_, index) => String(101 + index)));
 
 export function materializeDaejeonRouteTopology({
@@ -276,7 +276,7 @@ function requiredSource(inventory, snapshot) {
   if (!Number.isFinite(freshUntil)) throw new Error(`${SOURCE_ID} topology evidence freshUntil is invalid`);
   const capturedAt = Date.parse(evidence.capturedAt);
   if (!Number.isFinite(capturedAt)) throw new Error(`${SOURCE_ID} topology evidence capturedAt is invalid`);
-  if (freshUntil !== capturedAt + FRESHNESS_MILLIS) {
+  if (freshUntil !== capturedAt + topologySnapshotFreshnessMillis(capturedAt)) {
     throw new Error(`${SOURCE_ID} topology evidence freshness contract is invalid`);
   }
   return source;

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { assertCurrentStaticNetworkTopologyAdmission } from "./register-current-static-network-successors.mjs";
@@ -63,7 +64,7 @@ function registrationMetadata(candidate) {
     || !metadata.governance.licenseReview || typeof metadata.governance.licenseReview !== "object"
     || JSON.stringify(Object.keys(metadata.governance.licenseReview).sort()) !== JSON.stringify([...licenseReviewKeys].sort())
     || !Array.isArray(metadata.freshness.examples) || !Array.isArray(metadata.freshness.eventTriggers)
-    || metadata.freshness.reverificationCadence !== "P1D" || metadata.freshness.basisField !== "retrievedAt"
+    || metadata.freshness.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE || metadata.freshness.basisField !== "retrievedAt"
     || metadata.governance.retentionClassId !== "standard-90d"
     || !Number.isInteger(metadata.governance.escalationHours) || metadata.governance.escalationHours <= 0
     || typeof metadata.governance.ownerRole !== "string" || typeof metadata.governance.stewardRole !== "string" || typeof metadata.governance.approvalRole !== "string" || typeof metadata.governance.alertRoute !== "string"
@@ -151,7 +152,7 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
   const reviewedAt = instant(review?.reviewedAt, "capital topology license reviewedAt");
   const nextReviewAt = instant(review?.nextReviewAt, "capital topology license nextReviewAt");
   if (governance.sourceClassId !== candidate.domain || typeof governance.retentionClassId !== "string"
-    || freshness.reverificationCadence !== "P1D" || JSON.stringify(freshness.sourceIds) !== JSON.stringify([SOURCE_ID]) || freshness.basisField !== "retrievedAt") throw new Error("capital topology governance or freshness selection is invalid");
+    || freshness.reverificationCadence !== TOPOLOGY_REVERIFICATION_CADENCE || JSON.stringify(freshness.sourceIds) !== JSON.stringify([SOURCE_ID]) || freshness.basisField !== "retrievedAt") throw new Error("capital topology governance or freshness selection is invalid");
   const expectedFreshUntil = deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: candidate.domain, basisAt: topology.capturedAt, evaluationAt: now.toISOString() });
   if (expectedFreshUntil !== topology.freshUntil) throw new Error("capital topology freshness extends protected snapshot");
   const license = topology.license;

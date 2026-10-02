@@ -19,6 +19,7 @@ import {
 } from "./lib/source-registration-transaction.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./test-fixtures/current-capital-topology-registration.mjs";
 import { evaluateSourceGovernance } from "./source-governance-policy.mjs";
+import { TOPOLOGY_FRESHNESS_CUTOVER_AT, topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -85,7 +86,8 @@ async function advanceProtectedTopology(root, previousNow, minimumCapturedAt = n
   const snapshotId = "capital-route-topology-" + (sameDay
     ? captured.replace(/[-:.]/gu, "")
     : captured.slice(0, 10).replaceAll("-", ""));
-  const topology = { ...previousTopology, capturedAt: captured, freshUntil: new Date(Date.parse(captured) + 86_400_000).toISOString() };
+  // 수집기와 같은 규칙: 컷오버 이후 수집분은 P7D, 이전 수집분은 P1D 창이다.
+  const topology = { ...previousTopology, capturedAt: captured, freshUntil: topologySnapshotFreshUntil(captured) };
   const admission = {
     ...previous,
     topologySnapshotId: snapshotId,
@@ -142,6 +144,11 @@ test("registered topology license identity satisfies the downstream governance e
     evaluationAt: now.toISOString(),
   });
   assert.equal(result.reasonCodes.includes("LICENSE_REVIEW_REQUIRED"), false);
+  // 커밋된 최신 수집분 다음 날 수집은 컷오버 이후이므로 원장·inventory가 P7D 창을 기록하고 governance가 그대로 인정한다.
+  assert.ok(Date.parse(snapshot.retrievedAt) >= Date.parse(TOPOLOGY_FRESHNESS_CUTOVER_AT));
+  assert.equal(snapshot.freshnessExpiresAt, new Date(Date.parse(snapshot.retrievedAt) + 7 * 86_400_000).toISOString());
+  assert.equal(source.updateFrequency, "P7D");
+  assert.equal(result.reasonCodes.includes("SOURCE_FRESHNESS_POLICY_MISSING"), false);
   const mismatchedPolicy = JSON.parse(outputs[2].bytes);
   mismatchedPolicy.sources.find(({ sourceId }) => sourceId === source.id)
     .licenseReview.reviewedProvider = source.owner;

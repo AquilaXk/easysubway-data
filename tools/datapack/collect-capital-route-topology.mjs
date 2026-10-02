@@ -57,12 +57,12 @@ import {
   normalizeStationName,
   parseCapitalLine1RouteTopology,
 } from "./collect-capital-line1-route-topology.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 export { decodeOfficialCsv, normalizeStationName };
 
 export const SOURCE_ID = "capital-route-topology";
 export const ARTIFACT_KIND = "capital-route-topology-snapshot";
-export const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 // Kept in lockstep with the capital-route-topology operation contract.
 export const CAPITAL_TOPOLOGY_REQUEST_TIMEOUT_MS = 30_000;
 export const MOLIT_FULL_ROUTE_DETAIL_URL = "https://www.data.go.kr/data/15122916/fileData.do";
@@ -1721,7 +1721,7 @@ export async function collectCapitalRouteTopology({
     official: true,
     fixture: false,
     capturedAt: captured.toISOString(),
-    freshUntil: new Date(captured.getTime() + FRESHNESS_MILLIS).toISOString(),
+    freshUntil: topologySnapshotFreshUntil(captured),
     credentialRequired: false,
     credentialRedacted: true,
     capitalMapLineIds: [...CAPITAL_MAP_LINE_IDS],
