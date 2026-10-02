@@ -32,13 +32,19 @@ const EXPECTED = syntheticExpectedObservation();
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-station-register-repo-"));
-  const operation = await mkdtemp(path.join(os.tmpdir(), "kric-station-register-op-"));
-  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(operation, { recursive: true, force: true })]));
+  t.after(() => rm(root, { recursive: true, force: true }));
   for (const relative of INPUTS) {
     await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
     await cp(path.join(REPOSITORY_ROOT, relative), path.join(root, relative));
   }
-  let tick = COLLECTED_START;
+  return { root, ...(await inputSet(t, root, COLLECTED_START)) };
+}
+
+// 같은 저장소에 대해 collectedStart 시각의 수집본·receipt·admission·입력 파일 한 벌을 만든다.
+async function inputSet(t, root, collectedStart) {
+  const operation = await mkdtemp(path.join(os.tmpdir(), "kric-station-register-op-"));
+  t.after(() => rm(operation, { recursive: true, force: true }));
+  let tick = collectedStart;
   const artifact = await collectKricStationTimetables({ serviceKey: "test-key", fetchImpl: syntheticKricStationFetch(), now: () => new Date(tick += 1000) });
   const bytes = Buffer.from(`${JSON.stringify(artifact, null, 2)}\n`);
   const rawSha256 = sha(bytes);
@@ -46,7 +52,8 @@ async function fixture(t) {
   const governance = JSON.parse(await readFile(path.join(root, OUTPUTS[2]), "utf8"));
   const pilotEntry = governance.sources.find(({ sourceId }) => sourceId === PILOT_SOURCE_ID);
   const governanceEntry = { ...structuredClone(pilotEntry), sourceId: STATION_LINES_SOURCE_ID };
-  const projected = { ...governance, sources: [...governance.sources, governanceEntry] };
+  const registered = governance.sources.some(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID);
+  const projected = registered ? governance : { ...governance, sources: [...governance.sources, governanceEntry] };
   const objectKey = `source-raw/${STATION_LINES_SOURCE_ID}/${date}/${rawSha256}.json`;
   const receipt = {
     schemaVersion: 1, artifactKind: "kric-timetable-raw-object-receipt", sourceId: STATION_LINES_SOURCE_ID,
@@ -72,7 +79,7 @@ async function fixture(t) {
     collectionPath: files.collectionPath, receiptPath: files.receiptPath, reviewAdmissionPath: files.reviewAdmissionPath, governanceEntry };
   await writeFile(files.sourceInputPath, `${JSON.stringify(input, null, 2)}\n`);
   const now = new Date(Date.parse(artifact.collectedAt) + 10 * 60_000);
-  return { root, files, input, receipt, review, rawSha256, artifact, governanceEntry, now };
+  return { files, input, receipt, review, rawSha256, artifact, governanceEntry, now };
 }
 
 const snapshotOf = async (root) => Object.fromEntries(await Promise.all(INPUTS.map(async (relative) => [relative, await readFile(path.join(root, relative))])));
@@ -180,4 +187,57 @@ test("수집본의 노선 목록·역 집합이 고정 바인딩과 다르면 CO
     await assert.rejects(register(), /KRIC_STATION_REGISTRATION_COLLECTION_LINES/u);
   }
   assert.deepEqual(await snapshotOf(root), before);
+});
+
+test("후속 등록은 원장에 한 행만 덧붙여 이전 head를 잇고, 정책 항목은 그대로 두며 inventory 항목을 제자리에서 바꾼다", async (t) => {
+  const { root, files, receipt, now } = await fixture(t);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  const afterFirst = await snapshotOf(root);
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
+  const ledger = JSON.parse(await readFile(path.join(root, OUTPUTS[1]), "utf8"));
+  const firstLedger = JSON.parse(afterFirst[OUTPUTS[1]]);
+  assert.deepEqual(ledger.slice(0, -1), firstLedger);
+  const row = ledger.at(-1);
+  assert.equal(row.snapshotId, next.receipt.snapshotId);
+  assert.equal(row.previousSnapshotId, receipt.snapshotId);
+  assert.ok(row.diffSummary && typeof row.diffSummary === "object");
+  assert.deepEqual(await readFile(path.join(root, OUTPUTS[2])), afterFirst[OUTPUTS[2]]);
+  assert.deepEqual(await readFile(path.join(root, OUTPUTS[3])), afterFirst[OUTPUTS[3]]);
+  const sources = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8")).sources.filter(({ id }) => id === STATION_LINES_SOURCE_ID);
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].admissionEvidence.snapshotId, next.receipt.snapshotId);
+});
+
+test("같은 스냅샷 재등록은 SNAPSHOT_COLLISION, 원장·inventory·정책 상태가 어긋나면 SUCCESSOR_STATE로 쓰기 전에 거부한다", async (t) => {
+  const { root, files, now } = await fixture(t);
+  const register = (input = files.sourceInputPath) => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: input, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  await register();
+  const registered = await snapshotOf(root);
+  await assert.rejects(register(), /KRIC_STATION_REGISTRATION_SNAPSHOT_COLLISION/u);
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  const registerNext = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
+  const rewrite = async (relative, change) => {
+    const value = JSON.parse(registered[relative]);
+    change(value);
+    await writeFile(path.join(root, relative), `${JSON.stringify(value, null, 2)}\n`);
+  };
+  const restore = async () => { for (const relative of OUTPUTS) await writeFile(path.join(root, relative), registered[relative]); };
+  // 원장 head는 있는데 inventory 항목이 없다.
+  await rewrite(OUTPUTS[0], (value) => { value.sources = value.sources.filter(({ id }) => id !== STATION_LINES_SOURCE_ID); });
+  await assert.rejects(registerNext(), /KRIC_STATION_REGISTRATION_SUCCESSOR_STATE/u);
+  await restore();
+  // 원장 head는 있는데 governance 항목이 없다.
+  await rewrite(OUTPUTS[2], (value) => { value.sources = value.sources.filter(({ sourceId }) => sourceId !== STATION_LINES_SOURCE_ID); });
+  await assert.rejects(registerNext(), /KRIC_STATION_REGISTRATION_SUCCESSOR_STATE/u);
+  await restore();
+  // governance 항목이 두 개다.
+  await rewrite(OUTPUTS[2], (value) => { value.sources.push(structuredClone(value.sources.find(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID))); });
+  await assert.rejects(registerNext(), /KRIC_STATION_REGISTRATION_SUCCESSOR_STATE/u);
+  await restore();
+  // 원장 head가 없는데 inventory 항목만 있다(원장에서 새 원천 행 제거).
+  await rewrite(OUTPUTS[1], (value) => { value.splice(value.findIndex(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID), 1); });
+  await assert.rejects(registerNext(), /KRIC_STATION_REGISTRATION_SUCCESSOR_STATE/u);
+  await restore();
+  assert.deepEqual(await snapshotOf(root), registered);
 });
