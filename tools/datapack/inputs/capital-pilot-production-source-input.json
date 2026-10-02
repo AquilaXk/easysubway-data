@@ -296,10 +296,10 @@
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "NOT_VERIFIED",
-      "lastVerifiedAt": "2026-10-01T04:25:52.955Z",
-      "sourceSnapshotId": "seoul-metro-accessibility-20261001T042552955Z",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
       "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
-      "evidenceHash": "7a11ac9c40ba747d5e617ebb315246e624fe6e89c27d9f23ed5341b1def62d34"
+      "evidenceHash": "f6165e3a2fabfacabbad043653f555a8e193f4ad8a7c90dc1bd6b471077e7180"
     },
     {
       "id": "edge-exit-sangnoksu-seoul-4",
@@ -325,10 +325,10 @@
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "NOT_VERIFIED",
-      "lastVerifiedAt": "2026-10-01T04:25:52.955Z",
-      "sourceSnapshotId": "seoul-metro-accessibility-20261001T042552955Z",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
       "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
-      "evidenceHash": "ece9db04356b80e84f335cd580ee491a7e3081df61e394a4f742686408cb0d2d"
+      "evidenceHash": "55ad6d6b8f358a63facd8c1f704f4a20bcda0dfeaba11303884fa583a66b9779"
     },
     {
       "id": "edge-entry-sadang-seoul-4",
@@ -354,10 +354,10 @@
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "NOT_VERIFIED",
-      "lastVerifiedAt": "2026-10-01T04:25:52.955Z",
-      "sourceSnapshotId": "seoul-metro-accessibility-20261001T042552955Z",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
       "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
-      "evidenceHash": "4da54232ff7c45602f37e8cb4364e956a14dd2488c565ea6ba843516ea08cdc6"
+      "evidenceHash": "9d136c9e4f5d2bcebb3abdd06d85f25fc082d2be653c1e11d9a2c0bcbf91fb81"
     },
     {
       "id": "edge-exit-sadang-seoul-4",
@@ -383,10 +383,10 @@
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "NOT_VERIFIED",
-      "lastVerifiedAt": "2026-10-01T04:25:52.955Z",
-      "sourceSnapshotId": "seoul-metro-accessibility-20261001T042552955Z",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
       "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
-      "evidenceHash": "f27078084b405ef21ec91312a6450a421c0a52bac9a26a1f37e5c10dbd292875"
+      "evidenceHash": "f9b7dad341ad7475acb78dca1dcceb01e22dbca51a609a7671af2aa90423ed2d"
     }
   ],
   "routeMapPositions": [],
@@ -579,16 +579,16 @@
       "facilityType": "ACCESSIBILITY_STATUS_PROBE",
       "evidenceKind": "NOT_EXISTS",
       "sourceId": "seoul-metro-accessibility",
-      "sourceSnapshotId": "seoul-metro-accessibility-20261001T042552955Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
       "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
-      "evidenceHash": "e33bc56ccd92534ebdc343ab30b2d190a2bff9b374a5696b6ac7e9e7813c69db",
+      "evidenceHash": "422d3747edd00d1300050a74e205c816d1e188817a7674579b7121fc64651698",
       "provenanceKind": "OFFICIAL_SOURCE",
       "installationStatus": "NOT_COVERED",
       "operationalStatus": "NOT_COVERED",
       "statusMeaning": "FEED_ABSENCE_RECORD",
       "confidence": 100,
-      "verifiedAt": "2026-10-01T04:25:52.955Z",
-      "retrievedAt": "2026-10-01T04:25:52.955Z",
+      "verifiedAt": "2026-10-02T06:11:20.173Z",
+      "retrievedAt": "2026-10-02T06:11:20.173Z",
       "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED",
       "note": "서울교통공사 운행상황 feed의 구조적 미커버."
     },
@@ -598,16 +598,16 @@
       "facilityType": "ACCESSIBILITY_STATUS_PROBE",
       "evidenceKind": "EXISTS",
       "sourceId": "seoul-metro-accessibility",
-      "sourceSnapshotId": "seoul-metro-accessibility-20261001T042552955Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
       "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
-      "evidenceHash": "1eef03cd67a6740b306d0a6831af07b6a189122804af847379f9b1950d868492",
+      "evidenceHash": "8ff26b67c0f181c6385f23170f1a802f24dbce14c19b264a35308261cd22a97d",
       "provenanceKind": "OFFICIAL_SOURCE",
       "installationStatus": "INSTALLED",
       "operationalStatus": "AVAILABLE",
       "statusMeaning": "REALTIME_OPERATION",
       "confidence": 100,
-      "verifiedAt": "2026-10-01T04:25:52.955Z",
-      "retrievedAt": "2026-10-01T04:25:52.955Z",
+      "verifiedAt": "2026-10-02T06:11:20.173Z",
+      "retrievedAt": "2026-10-02T06:11:20.173Z",
       "strictRouteEligibleReason": "STATUS_PROBE_NOT_ROUTE_EVIDENCE",
       "note": "서울교통공사 전체 승강기 운행상황 snapshot 실측."
     }
