@@ -280,6 +280,19 @@ function absolute(value, code) {
 function validateParentSnapshot(snapshot) { const { snapshotId, contentSha256, ...content } = snapshot ?? {}; if (!text(snapshotId) || !hash(contentSha256) || sha(canonicalJson(content)) !== contentSha256) fail("TOPOLOGY_BINDING"); }
 function validateParentPublicationReceipt({ bytes, topologySnapshot, parentLedger, collectionReceiptBytes, rawBytes, now }) {
   const value = parse(bytes, "PUBLICATION_RECEIPT");
+  // #870: 부모 topology가 같은 원본 재확인으로 등록된 경우, 재확인 영수증은 부모 원장 행이 참조한 기존 객체를 가리켜야 한다.
+  if (value?.artifactKind === "korail-metropolitan-timetable-raw-reverification-receipt") {
+    const reverificationKeys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "contentSha256", "collectionReceiptSha256", "capturedAt", "rawObjectUri", "rawObjectSha256", "byteSize", "verifiedAt", "reusedFromSnapshotId", "rawRetentionExpiresAt"].sort(order);
+    if (!same(Object.keys(value).sort(order), reverificationKeys) || value.schemaVersion !== 1 || value.sourceId !== SOURCE_FAMILY_ID
+      || value.snapshotId !== topologySnapshot.snapshotId || value.contentSha256 !== topologySnapshot.contentSha256
+      || value.collectionReceiptSha256 !== sha(collectionReceiptBytes) || value.capturedAt !== topologySnapshot.capturedAt
+      || value.rawObjectUri !== parentLedger.rawObjectUri || parentLedger.rawObjectReusedFromSnapshotId !== value.reusedFromSnapshotId
+      || value.rawObjectSha256 !== sha(rawBytes) || value.byteSize !== rawBytes.length
+      || !utc(value.verifiedAt) || !utc(value.rawRetentionExpiresAt) || Date.parse(value.verifiedAt) < Date.parse(value.capturedAt)
+      || Date.parse(value.verifiedAt) > now.valueOf() || Date.parse(value.rawRetentionExpiresAt) <= now.valueOf()
+      || parentLedger.rawObjectSha256 !== value.rawObjectSha256 || parentLedger.rawReceiptSha256 !== sha(bytes)) fail("PUBLICATION_RECEIPT");
+    return value;
+  }
   const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "contentSha256", "collectionReceiptSha256", "capturedAt", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"].sort(order);
   if (!same(Object.keys(value).sort(order), keys) || value.schemaVersion !== 1 || value.artifactKind !== "korail-metropolitan-timetable-raw-receipt" || value.sourceId !== SOURCE_FAMILY_ID || value.snapshotId !== topologySnapshot.snapshotId || value.contentSha256 !== topologySnapshot.contentSha256 || value.collectionReceiptSha256 !== sha(collectionReceiptBytes) || value.capturedAt !== topologySnapshot.capturedAt || value.rawObjectUri !== parentLedger.rawObjectUri || value.rawObjectSha256 !== sha(rawBytes) || value.byteSize !== rawBytes.length || !utc(value.storedAt) || !utc(value.rawRetentionExpiresAt) || Date.parse(value.storedAt) < Date.parse(value.capturedAt) || Date.parse(value.storedAt) > now.valueOf() || Date.parse(value.rawRetentionExpiresAt) <= now.valueOf() || parentLedger.rawObjectSha256 !== value.rawObjectSha256 || parentLedger.rawReceiptSha256 !== sha(bytes)) fail("PUBLICATION_RECEIPT");
   return value;
