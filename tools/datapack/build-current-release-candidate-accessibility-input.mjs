@@ -15,16 +15,16 @@ import {
 } from "./evaluate-route-accessibility-edges.mjs";
 import {
   canonicalCurrentCapitalRouteEdgeInputJson,
-  currentCapitalTransferEdgesFromMetrics,
-} from "./build-current-capital-route-edge-input.mjs";
-import {
   canonicalCurrentCapitalStationLineInputJson,
+  currentCapitalTransferEdgesFromMetrics,
   deriveCurrentReleaseCandidateObservedAt,
 } from "./current-capital-station-line-contract.mjs";
-import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
+import {
+  assertNationwideCandidateInputBytes,
+  bindNationwideCandidatePreparation,
+  NATIONWIDE_CANDIDATE_PREPARATION_PATH,
+} from "./nationwide-candidate-input-binding.mjs";
 
-const CURRENT_STATION_INPUT = "tools/datapack/release/current-capital-accessibility-full/station-line-input.json";
-const CURRENT_ROUTE_INPUT = "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
 export const CURRENT_TRANSFER_METRICS = "tools/datapack/release/current-transfer-topology-metrics.json";
 const REJECTED_INPUT_PATH_TOKEN = /fixture|debug|demo|sample/iu;
 
@@ -46,8 +46,13 @@ const STATION_CANDIDATE_KEYS = [
   "candidateId", "mappingContractVersion", "materializerVersion",
   "sourceSetSha256", "stationSetSha256",
 ];
-const ROUTE_EDGE_TYPES = new Set(["ENTRY", "EXIT", "IN_STATION_TRANSFER", "RIDE"]);
-const AUTHORITY_EDGE_TYPES = new Set(["ENTRY", "EXIT", "IN_STATION_TRANSFER"]);
+// #866 D1: authority는 환승 간선(역 안·역 밖) 양끝의 TRANSFER cell만 요구한다.
+// ENTRY/EXIT는 증거 cell 없이(requiredCells: []) 열거만 한다. 후보 fixture가 authority 간선으로 재구성되므로
+// 간선 자체는 남긴다. ENTRY/EXIT 열거는 #873에서 간선 생성 중단과 함께 제거한다.
+const TRANSFER_EDGE_TYPES = new Set(["IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER"]);
+const REQUIRED_ROUTE_EDGE_TYPES = ["ENTRY", "EXIT", "RIDE"];
+const ROUTE_EDGE_TYPES = new Set([...REQUIRED_ROUTE_EDGE_TYPES, ...TRANSFER_EDGE_TYPES]);
+const AUTHORITY_EDGE_TYPES = new Set(["ENTRY", "EXIT", ...TRANSFER_EDGE_TYPES]);
 const MATERIALIZATION_DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
 
 export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
@@ -90,11 +95,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
 
   const candidateFixture = candidateFixtureFrom(input.projectedFixture, projectedRides, routeEdges);
   const candidateFixtureBytes = Buffer.from(canonicalCurrentReleaseCandidateFixtureJson(candidateFixture));
-  const rows = materializationRowIndex(materialization);
-  const authorityEdges = routeEdges
-    .filter(({ edgeType }) => edgeType !== "RIDE")
-    .map((edge) => authorityEdge(edge, rows))
-    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
+  const authorityEdges = authorityEdgesFrom(routeEdges, materializationRowIndex(materialization));
   const edgeCounts = countAuthorityEdges(authorityEdges);
   const payload = canonicalObject({
     schemaVersion: 1,
@@ -201,10 +202,7 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
     || authority.buildInput.materializationDigest !== materialization.materializationDigest) {
     throw new Error("authority replay input mismatch");
   }
-  const expectedEdges = routeEdges
-    .filter(({ edgeType }) => edgeType !== "RIDE")
-    .map((edge) => authorityEdge(edge, materializationRowIndex(materialization)))
-    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
+  const expectedEdges = authorityEdgesFrom(routeEdges, materializationRowIndex(materialization));
   if (canonicalJson(countAuthorityEdges(expectedEdges)) !== canonicalJson(authority.edgeCounts)
     || canonicalJson(expectedEdges) !== canonicalJson(authority.edges)) {
     throw new Error("authority replay mismatch");
@@ -222,7 +220,7 @@ function validateAuthorityPayload(payload) {
     "stationLineInputSha256", "routeEdgeInputSha256", "transferMetricsSha256",
     "materializationDigest", "observedAt",
   ], "authority build input");
-  exact(payload.edgeCounts, ["ENTRY", "EXIT", "IN_STATION_TRANSFER", "total"], "authority edge counts");
+  validateAuthorityEdgeCountKeys(payload.edgeCounts);
   for (const key of [
     "buildSpecSha256", "sourceFixtureSha256", "candidateFixtureSha256",
     "stationLineInputSha256", "routeEdgeInputSha256", "transferMetricsSha256",
@@ -238,8 +236,8 @@ function validateAuthorityPayload(payload) {
     throw new Error("authority edge denominator mismatch");
   }
   const actualCounts = edgeTypeCounts(payload.edges);
-  if (!exactKeySet(actualCounts, AUTHORITY_EDGE_TYPES)
-    || canonicalJson(payload.edgeCounts) !== canonicalJson({ ...actualCounts, total: payload.edges.length })) {
+  if (!authorityEdgeTypeSet(actualCounts)
+    || canonicalJson(payload.edgeCounts) !== canonicalJson(canonicalObject({ ...actualCounts, total: payload.edges.length }))) {
     throw new Error("authority edge denominator mismatch");
   }
   const ids = new Set();
@@ -250,7 +248,7 @@ function validateAuthorityPayload(payload) {
       "distanceMeters", "routeEdgeSha256", "requiredCells",
     ], "authority edge");
     if (typeof edge.edgeId !== "string" || edge.edgeId.length === 0
-      || !["ENTRY", "EXIT", "IN_STATION_TRANSFER"].includes(edge.edgeType)
+      || !AUTHORITY_EDGE_TYPES.has(edge.edgeType)
       || ids.has(edge.edgeId) || !/^[a-f0-9]{64}$/u.test(edge.routeEdgeSha256)
       || !Number.isSafeInteger(edge.durationSeconds) || edge.durationSeconds < 0
       || !Number.isSafeInteger(edge.distanceMeters) || edge.distanceMeters < 0
@@ -272,7 +270,7 @@ function validateAuthorityPayload(payload) {
     if (edge.routeEdgeSha256 !== routeEdgeSha256(routePayload)) {
       throw new Error("authority route edge hash mismatch");
     }
-    const requiredCount = edge.edgeType === "IN_STATION_TRANSFER" ? 2 : 1;
+    const requiredCount = TRANSFER_EDGE_TYPES.has(edge.edgeType) ? 2 : 0;
     if (!Array.isArray(edge.requiredCells) || edge.requiredCells.length !== requiredCount) {
       throw new Error("authority required cell denominator mismatch");
     }
@@ -291,23 +289,39 @@ function validateAuthorityPayload(payload) {
 }
 
 function validateAuthorityEdgeCells(edge) {
-  if (edge.edgeType === "ENTRY") {
-    const endpoint = stationLineNode(edge.toNodeId);
-    assertAuthorityCell(edge.requiredCells[0], endpoint, "FACILITY");
-    return;
-  }
-  if (edge.edgeType === "EXIT") {
-    const endpoint = stationLineNode(edge.fromNodeId);
-    assertAuthorityCell(edge.requiredCells[0], endpoint, "EXIT");
-    return;
-  }
-  const from = stationLineNode(edge.fromNodeId);
-  const to = stationLineNode(edge.toNodeId);
-  if (from.stationId !== to.stationId || from.lineId === to.lineId) {
-    throw new Error("authority transfer endpoint mismatch");
-  }
+  // ENTRY/EXIT는 증거 cell이 없다(requiredCount 0). 열거는 #873에서 간선 생성 중단과 함께 제거한다.
+  if (!TRANSFER_EDGE_TYPES.has(edge.edgeType)) return;
+  const { from, to } = transferEndpoints(edge, "authority transfer endpoint mismatch");
   assertAuthorityCell(edge.requiredCells[0], from, "TRANSFER");
   assertAuthorityCell(edge.requiredCells[1], to, "TRANSFER");
+}
+
+function validateAuthorityEdgeCountKeys(edgeCounts) {
+  if (!edgeCounts || typeof edgeCounts !== "object" || Array.isArray(edgeCounts)
+    || !Object.hasOwn(edgeCounts, "total")) {
+    throw new Error("authority edge counts shape mismatch");
+  }
+  const { total: _total, ...counts } = edgeCounts;
+  if (!authorityEdgeTypeSet(counts)) throw new Error("authority edge counts shape mismatch");
+}
+
+// ENTRY·EXIT·환승 1종 이상이 있어야 하고, 모르는 간선 종류는 받지 않는다.
+function authorityEdgeTypeSet(counts) {
+  const keys = Object.keys(counts);
+  return keys.includes("ENTRY") && keys.includes("EXIT")
+    && keys.some((key) => TRANSFER_EDGE_TYPES.has(key))
+    && keys.every((key) => AUTHORITY_EDGE_TYPES.has(key));
+}
+
+// 역 안 환승은 같은 역의 다른 노선, 역 밖 환승은 다른 역의 역-노선 끝점이어야 한다.
+function transferEndpoints(edge, message) {
+  const from = stationLineNode(edge.fromNodeId);
+  const to = stationLineNode(edge.toNodeId);
+  const sameStation = from.stationId === to.stationId;
+  if (edge.edgeType === "IN_STATION_TRANSFER" ? (!sameStation || from.lineId === to.lineId) : sameStation) {
+    throw new Error(message);
+  }
+  return { from, to };
 }
 
 function assertAuthorityCell(cell, endpoint, domain) {
@@ -452,8 +466,10 @@ function validateReplayCandidateIdentity(authority, stationLineInput, route) {
 
 function validateRoute(route, stationLineInput, routeStationIndex) {
   const routeEdges = validateRouteEdgeShapes(route.routeEdges);
-  const counts = edgeTypeCounts(routeEdges);
-  if (!exactKeySet(counts, ROUTE_EDGE_TYPES)) {
+  const counts = Object.keys(edgeTypeCounts(routeEdges));
+  if (REQUIRED_ROUTE_EDGE_TYPES.some((type) => !counts.includes(type))
+    || !counts.some((type) => TRANSFER_EDGE_TYPES.has(type))
+    || counts.some((type) => !ROUTE_EDGE_TYPES.has(type))) {
     throw new Error("route edge coverage mismatch");
   }
   const rides = routeEdges.filter(({ edgeType }) => edgeType === "RIDE");
@@ -557,19 +573,18 @@ function validateProjectedFixtureEdges(edges, routeEdges) {
   return validateRideFixtureEdges(edges, routeEdges, "projected fixture");
 }
 
+// 분모(역-노선 × 3 domain)와 digest는 그대로 검사한다. 닫힘(UNKNOWN·MISSING·STALE 0) 요구는 D1에 따라
+// 환승 간선 양끝 TRANSFER cell에만 적용한다(authorityEdgesFrom).
 function validateMaterialization(value, stationLines) {
-  if (!Array.isArray(value.rows)) throw new Error("full-capital materialization has unresolved evidence");
+  if (!Array.isArray(value.rows)) throw new Error("station-line materialization denominator mismatch");
   const expected = new Set(stationLines.flatMap(({ stationId, lineId }) =>
     MATERIALIZATION_DOMAINS.map((domain) => `${stationId}:${lineId}:${domain}`)));
   const actual = new Set(value.rows.map(({ stationId, lineId, domain }) =>
     `${stationId}:${lineId}:${domain}`));
-  if (!Array.isArray(value.rows) || expected.size === 0 || actual.size !== value.rows.length
+  if (expected.size === 0 || actual.size !== value.rows.length
     || actual.size !== expected.size || [...expected].some((key) => !actual.has(key))
-    || value.stateSummary.UNKNOWN !== 0 || value.stateSummary.MISSING !== 0
-    || value.stateSummary.STALE !== 0
-    || value.rows.some(({ state }) => !CLOSED_STATES.has(state))
     || value.materializationDigest !== sha256(Buffer.from(canonicalStationLineAccessibilityPayloadJson(value)))) {
-    throw new Error("full-capital materialization has unresolved evidence");
+    throw new Error("station-line materialization denominator mismatch");
   }
 }
 
@@ -616,24 +631,33 @@ function materializationRowIndex(materialization) {
   return rows;
 }
 
-function authorityEdge(edge, rows) {
+// 환승 끝점 TRANSFER cell이 하나라도 닫혀 있지 않으면(UNKNOWN·MISSING·STALE) 전체를 명시적으로 실패시킨다.
+// 대체 값이나 부분 성공은 만들지 않는다.
+function authorityEdgesFrom(routeEdges, rows) {
+  const unresolved = [];
+  const edges = routeEdges
+    .filter(({ edgeType }) => edgeType !== "RIDE")
+    .map((edge) => authorityEdge(edge, rows, unresolved))
+    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
+  if (unresolved.length > 0) {
+    const edgeIds = new Set(unresolved.map(({ edgeId }) => edgeId));
+    const details = unresolved
+      .sort((left, right) => compareBytes(left.edgeId, right.edgeId) || compareBytes(left.endpoint, right.endpoint))
+      .map(({ edgeId, endpoint, state }) => `${edgeId} ${endpoint} ${state}`);
+    throw new Error(`transfer endpoint accessibility evidence is unresolved: ${edgeIds.size} edges (${details.join(", ")})`);
+  }
+  return edges;
+}
+
+function authorityEdge(edge, rows, unresolved) {
   let required;
-  if (edge.edgeType === "ENTRY") {
-    const { stationId, lineId } = stationLineNode(edge.toNodeId);
-    required = [requiredCell(rows, stationId, lineId, "FACILITY")];
-  } else if (edge.edgeType === "EXIT") {
-    const { stationId, lineId } = stationLineNode(edge.fromNodeId);
-    required = [requiredCell(rows, stationId, lineId, "EXIT")];
-  } else if (edge.edgeType === "IN_STATION_TRANSFER") {
-    const from = stationLineNode(edge.fromNodeId);
-    const to = stationLineNode(edge.toNodeId);
-    if (from.stationId !== to.stationId || from.lineId === to.lineId) {
-      throw new Error("transfer edge endpoint mismatch");
-    }
-    required = [
-      requiredCell(rows, from.stationId, from.lineId, "TRANSFER"),
-      requiredCell(rows, to.stationId, to.lineId, "TRANSFER"),
-    ];
+  if (edge.edgeType === "ENTRY" || edge.edgeType === "EXIT") {
+    // D1: ENTRY/EXIT는 발행 차단 증거를 요구하지 않는다. 열거는 #873에서 간선 생성 중단과 함께 제거한다.
+    required = [];
+  } else if (TRANSFER_EDGE_TYPES.has(edge.edgeType)) {
+    const { from, to } = transferEndpoints(edge, "transfer edge endpoint mismatch");
+    required = [from, to].map(({ stationId, lineId }) =>
+      requiredTransferCell(rows, edge.edgeId, stationId, lineId, unresolved));
   } else {
     throw new Error("unsupported authority edge type");
   }
@@ -649,10 +673,12 @@ function authorityEdge(edge, rows) {
   });
 }
 
-function requiredCell(rows, stationId, lineId, domain) {
+function requiredTransferCell(rows, edgeId, stationId, lineId, unresolved) {
+  const domain = "TRANSFER";
   const row = rows.get(`${stationId}:${lineId}:${domain}`);
   if (!row || !CLOSED_STATES.has(row.state)) {
-    throw new Error("terminal accessibility evidence required");
+    unresolved.push({ edgeId, endpoint: `${stationId}:${lineId}`, state: row?.state ?? "MISSING" });
+    return null;
   }
   return canonicalObject({
     stationId,
@@ -665,7 +691,7 @@ function requiredCell(rows, stationId, lineId, domain) {
 
 function countAuthorityEdges(edges) {
   const counts = edgeTypeCounts(edges);
-  if (!Array.isArray(edges) || edges.length === 0 || !exactKeySet(counts, AUTHORITY_EDGE_TYPES)) {
+  if (!Array.isArray(edges) || edges.length === 0 || !authorityEdgeTypeSet(counts)) {
     throw new Error("authority edge denominator mismatch");
   }
   return canonicalObject({ ...counts, total: edges.length });
@@ -794,12 +820,13 @@ async function defaultProjectFixture({ buildSpec, sourceFixture, repositoryRoot 
   return projectCandidateFixtureForAccessibilityAuthority({ buildSpec, sourceFixture, repositoryRoot });
 }
 
+// #866 PR-B: RC 입력은 수도권 live chain(refresh-current-capital-accessibility-full)을 다시 돌려 만들지 않는다.
+// 전국 후보 준비(nationwide-candidate-preparation.json)가 sha로 결속한 전국 입력을 검증해 바이트 그대로 쓴다.
 export async function main(
   argv = process.argv.slice(2),
   {
     repositoryRoot = fileURLToPath(new URL("../../", import.meta.url)),
     projectFixtureImpl = defaultProjectFixture,
-    buildRefreshOutputsImpl = buildCurrentCapitalAccessibilityRefreshOutputs,
     readTransferMetricsImpl = defaultReadTransferMetrics,
   } = {},
 ) {
@@ -834,25 +861,25 @@ export async function main(
   const sourceFixtureBytes = fixtureFile.bytes;
   const sourceFixture = parseInputJson(sourceFixtureBytes, "fixture");
   await Promise.all(outputs.map(outputMustBeAbsent));
-  const refreshed = await buildRefreshOutputsImpl({
-    repositoryRoot: root,
-    phase: "PRE_APPROVAL_CURRENT_CANDIDATE",
-    candidateBuildSpec: buildSpec,
-    canonicalPack: sourceFixture,
-  });
-  if (!Array.isArray(refreshed) || refreshed.length !== 2) {
-    throw new Error("current candidate accessibility regeneration mismatch");
+  const preparationFile = await readAuthenticatedRegularRepoFile(
+    root,
+    NATIONWIDE_CANDIDATE_PREPARATION_PATH,
+    "nationwide candidate preparation",
+  );
+  const binding = bindNationwideCandidatePreparation({ preparationBytes: preparationFile.bytes, buildSpec });
+  const [stationLineFile, routeFile] = await Promise.all([
+    readAuthenticatedRegularRepoFile(root, binding.stationLineInput.path, "station-line input"),
+    readAuthenticatedRegularRepoFile(root, binding.routeEdgeInput.path, "route-edge input"),
+  ]);
+  const stationLineInputBytes = stationLineFile.bytes;
+  const routeBytes = routeFile.bytes;
+  assertNationwideCandidateInputBytes({ binding, buildSpec, stationLineInputBytes, routeEdgeInputBytes: routeBytes });
+  const stationLineInput = parseInputJson(stationLineInputBytes, "station-line input");
+  const route = parseInputJson(routeBytes, "route-edge input");
+  if (stationLineInputBytes.toString("utf8") !== canonicalCurrentCapitalStationLineInputJson(stationLineInput)
+    || routeBytes.toString("utf8") !== canonicalCurrentCapitalRouteEdgeInputJson(route)) {
+    throw new Error("nationwide candidate input bytes are not canonical");
   }
-  const refreshedByPath = new Map(refreshed.map(({ relative, bytes }) => [relative, bytes]));
-  if (refreshedByPath.size !== 2
-    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_STATION_INPUT))
-    || !Buffer.isBuffer(refreshedByPath.get(CURRENT_ROUTE_INPUT))) {
-    throw new Error("current candidate accessibility regeneration mismatch");
-  }
-  const stationLineInputBytes = refreshedByPath.get(CURRENT_STATION_INPUT);
-  const routeBytes = refreshedByPath.get(CURRENT_ROUTE_INPUT);
-  const stationLineInput = JSON.parse(stationLineInputBytes.toString("utf8"));
-  const route = JSON.parse(routeBytes.toString("utf8"));
   const transferMetricsBytes = await readTransferMetricsImpl(root);
   const transferMetrics = parseInputJson(transferMetricsBytes, "transfer metrics");
   const projectedFixture = await projectFixtureImpl({ buildSpec, sourceFixture, repositoryRoot: root });

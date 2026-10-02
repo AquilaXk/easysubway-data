@@ -1551,7 +1551,7 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
     `)
     .all();
   const accessibilityEvidence = productionAccessibilityEvidence(database, pack);
-  const coverage = productionVerifiedCoverage(database, edgeRows, accessibilityEvidence);
+  const { coverage, requiredPairs } = productionVerifiedCoverage(database, edgeRows, accessibilityEvidence);
   const unverifiedAccessibilityCoverageEdges = edgeRows
     .filter(isUnverifiedAccessibilityCoverageEdge)
     .map((edge) => edge.id);
@@ -1585,6 +1585,7 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
   return productionCoverageError({
     pack,
     coverage,
+    requiredPairs,
     edgeRows,
     unverifiedAccessibilityCoverageEdges,
     serverRouteCoverageEvidence,
@@ -1594,6 +1595,7 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
 function productionCoverageError({
   pack,
   coverage,
+  requiredPairs,
   edgeRows,
   unverifiedAccessibilityCoverageEdges,
   serverRouteCoverageEvidence,
@@ -1603,6 +1605,7 @@ function productionCoverageError({
     report: serverRouteCoverageEvidence.report,
     provenance: serverRouteCoverageEvidence.provenance,
     coverage,
+    requiredPairs,
     edgeRows,
     unverifiedAccessibilityCoverageEdges,
   })) {
@@ -1953,9 +1956,12 @@ function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
   const verifiedPairs = verifiedAccessibilityCoveragePairs(edgeRows, accessibilityEvidence);
 
   return {
-    entry: coverageItem(requiredPairs.entry, verifiedPairs.entry),
-    exit: coverageItem(requiredPairs.exit, verifiedPairs.exit),
-    transfer: coverageItem(requiredPairs.transfer, verifiedPairs.transfer),
+    coverage: {
+      entry: coverageItem(requiredPairs.entry, verifiedPairs.entry),
+      exit: coverageItem(requiredPairs.exit, verifiedPairs.exit),
+      transfer: coverageItem(requiredPairs.transfer, verifiedPairs.transfer),
+    },
+    requiredPairs,
   };
 }
 
@@ -2487,52 +2493,78 @@ export function parseServerRouteCoverageEvidence(bytes) {
   return report;
 }
 
+const SERVER_ROUTE_AUTHORITY_EDGE_TYPES = ["ENTRY", "EXIT", "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER"];
+const COVERAGE_KINDS = ["entry", "exit", "transfer"];
+
+// #866 PR-B(#873 일부 앞당김, 검사 제거가 아니라 일반화): 예전에는 capital@1과 213/213/30·456 상수만 인정했다.
+// 이제 분모를 active pack의 비RIDE(ENTRY/EXIT/환승) 간선에서 유도하고, authority edgeCounts와 정확히 같아야 한다.
+// - pack의 비RIDE 간선은 authority 간선과 id·끝점·type·시간·거리가 1:1로 같고 모두 UNKNOWN이어야 한다.
+// - coverage 필수 쌍은 모두 미검증이어야 하고, 각 쌍은 같은 종류의 authority 간선으로 뒷받침돼야 한다.
+// - 환승(역 안·역 밖) 양끝 TRANSFER cell이 닫혀 있는지는 authority 파싱(parseServerRouteCoverageEvidence)이 확인한다.
+// - ENTRY/EXIT는 requiredCells []로 열거만 한다(D1). ENTRY/EXIT 열거는 #873에서 간선 생성 중단과 함께 제거한다.
 export function isAuthorizedServerRouteCoverageGap({
   pack,
   report,
   provenance,
   coverage,
+  requiredPairs,
   edgeRows,
   unverifiedAccessibilityCoverageEdges,
 }) {
-  if (pack.id !== "capital" || String(pack.version) !== "1" || pack.artifactKind !== "production"
+  if (String(pack.version) !== "1" || pack.artifactKind !== "production"
     || report.candidate.candidateId !== provenance.candidateId || report.candidate.sourceSetSha256 !== provenance.sourceSetSha256
     || report.buildInput.buildSpecSha256 !== provenance.buildSpecSha256
     || report.buildInput.sourceFixtureSha256 !== provenance.sourceFixtureSha256
     || report.buildInput.candidateFixtureSha256 !== provenance.candidateFixtureSha256
     || report.authoritySha256 !== provenance.serverRouteCoverageAuthoritySha256
-    || coverage.entry.denominator !== 213 || coverage.entry.missingCount !== 213
-    || coverage.exit.denominator !== 213 || coverage.exit.missingCount !== 213
-    || coverage.transfer.denominator !== 30 || coverage.transfer.missingCount !== 30
     || unverifiedAccessibilityCoverageEdges.length !== 0) {
     return false;
   }
-  const reportIds = new Set(report.edges.map((edge) => edge.edgeId));
-  if (reportIds.size !== 456) {
+  if (COVERAGE_KINDS.some((kind) => !coverage?.[kind] || !(requiredPairs?.[kind] instanceof Set)
+    || coverage[kind].denominator !== requiredPairs[kind].size
+    || coverage[kind].missingCount !== coverage[kind].denominator)) {
     return false;
   }
-  const missingRows = edgeRows.filter((edge) => ["ENTRY", "EXIT", "IN_STATION_TRANSFER"].includes(edge.edge_type)
-    && edge.verification_status === "UNKNOWN"
-    && edge.stair_access_state === "UNKNOWN"
-    && edge.accessibility_status === "UNKNOWN");
-  if (missingRows.length !== 456
-    || new Set(missingRows.map(({ id }) => id)).size !== 456
-    || missingRows.some(({ id }) => !reportIds.has(id))) {
+  const authorityRows = edgeRows.filter((edge) => SERVER_ROUTE_AUTHORITY_EDGE_TYPES.includes(edge.edge_type));
+  const packCounts = { total: authorityRows.length };
+  for (const edge of authorityRows) packCounts[edge.edge_type] = (packCounts[edge.edge_type] ?? 0) + 1;
+  if (canonicalJson(packCounts) !== canonicalJson(report.edgeCounts)) {
     return false;
   }
-  return report.edges.every((authorityEdge) => {
-    const rows = edgeRows.filter((edge) => edge.id === authorityEdge.edgeId);
-    const edge = rows[0];
-    return rows.length === 1
-      && edge.from_node_id === authorityEdge.fromNodeId
-      && edge.to_node_id === authorityEdge.toNodeId
-      && edge.edge_type === authorityEdge.edgeType
-      && edge.duration_seconds === authorityEdge.durationSeconds
-      && edge.distance_meters === authorityEdge.distanceMeters
-      && edge.verification_status === "UNKNOWN"
-      && edge.stair_access_state === "UNKNOWN"
-      && edge.accessibility_status === "UNKNOWN";
-  });
+  const rowsById = new Map();
+  for (const edge of authorityRows) {
+    if (rowsById.has(edge.id)) return false;
+    rowsById.set(edge.id, edge);
+  }
+  if (rowsById.size !== report.edges.length) {
+    return false;
+  }
+  const authorityPairs = { entry: new Set(), exit: new Set(), transfer: new Set() };
+  for (const authorityEdge of report.edges) {
+    const edge = rowsById.get(authorityEdge.edgeId);
+    if (!edge
+      || edge.from_node_id !== authorityEdge.fromNodeId
+      || edge.to_node_id !== authorityEdge.toNodeId
+      || edge.edge_type !== authorityEdge.edgeType
+      || edge.duration_seconds !== authorityEdge.durationSeconds
+      || edge.distance_meters !== authorityEdge.distanceMeters
+      || edge.verification_status !== "UNKNOWN"
+      || edge.stair_access_state !== "UNKNOWN"
+      || edge.accessibility_status !== "UNKNOWN") {
+      return false;
+    }
+    const fromNodeId = coverageNodeId(authorityEdge.fromNodeId);
+    const toNodeId = coverageNodeId(authorityEdge.toNodeId);
+    if (authorityEdge.edgeType === "ENTRY") {
+      authorityPairs.entry.add(edgePairKey(fromNodeId, toNodeId));
+    } else if (authorityEdge.edgeType === "EXIT") {
+      authorityPairs.exit.add(edgePairKey(fromNodeId, toNodeId));
+    } else {
+      authorityPairs.transfer.add(edgePairKey(fromNodeId, toNodeId));
+      authorityPairs.transfer.add(edgePairKey(toNodeId, fromNodeId));
+    }
+  }
+  return COVERAGE_KINDS.every((kind) => [...requiredPairs[kind]].every((pair) => authorityPairs[kind].has(pair)));
 }
 
 export function parseServerRouteCoverageProvenance(bytes) {

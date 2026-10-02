@@ -992,17 +992,9 @@ export function candidateOverrideAccessibilityFreshUntil({
     ...stationLineInput,
     observedAt,
   });
-  const closedStates = new Set([
-    "VERIFIED_PRESENT",
-    "VERIFIED_ABSENT",
-    "NOT_APPLICABLE",
-    "UNVERIFIED_EVIDENCE_BLOCKED",
-  ]);
-  if (materialization.materializationDigest !== authority.buildInput.materializationDigest
-    || materialization.stateSummary.UNKNOWN !== 0
-    || materialization.stateSummary.MISSING !== 0
-    || materialization.stateSummary.STALE !== 0
-    || materialization.rows.some(({ state }) => !closedStates.has(state))) {
+  // #866 D1: 닫힘 요구는 authority가 환승 간선 양끝 TRANSFER cell에만 건다(authority replay가 다시 확인한다).
+  // 여기서는 materialization이 authority에 결속된 것과 같은지만 본다.
+  if (materialization.materializationDigest !== authority.buildInput.materializationDigest) {
     throw new Error("station-line input identity mismatch");
   }
   const earliestFreshUntil = Math.min(...freshness

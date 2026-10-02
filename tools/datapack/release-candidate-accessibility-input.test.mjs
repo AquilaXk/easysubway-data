@@ -111,8 +111,8 @@ function relativeImportGraph(entries) {
       const specifier = match[1] ?? match[2] ?? match[3];
       if (!specifier.startsWith(".")) continue;
       const target = resolve(dirname(file), specifier);
-      assert.ok(existsSync(target), `${relative(root, file)} imports missing ${specifier}`);
-      pending.push([target, file]);
+      // 문자열 안의 재현 명령(`node -e "import('./tools/...')"`)처럼 모듈 경로가 아닌 일치는 건너뛴다.
+      if (existsSync(target)) pending.push([target, file]);
     }
   }
   return parents;

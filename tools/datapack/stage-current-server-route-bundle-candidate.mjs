@@ -6,12 +6,16 @@ import { pathToFileURL } from "node:url";
 
 import { prepareCurrentServerRouteBundleFinal } from "./prepare-current-server-route-bundle-final.mjs";
 import { deriveCurrentReleaseCandidateObservedAt } from "./current-capital-station-line-contract.mjs";
+import {
+  assertNationwideCandidateInputBytes,
+  bindNationwideCandidatePreparation,
+} from "./nationwide-candidate-input-binding.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { canonicalJson, selectEffectiveDataPack, sha256, stagedPackPath } from "./lib/manifest-validation.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
-const REQUIRED_ARGS = ["datapack-root", "build-spec", "station-line-input", "route-edge-input", "repository-git-sha", "key-id", "output"];
+const REQUIRED_ARGS = ["datapack-root", "build-spec", "station-line-input", "route-edge-input", "candidate-preparation", "repository-git-sha", "key-id", "output"];
 const SIGNED_PATHS = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"];
 const EVIDENCE_PATHS = ["route-accessibility-eligibility.json", "server-route-bundle-final.json"];
 const BOUND_SUPPORT = [
@@ -52,53 +56,28 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const isNationwide = buildSpec.productionScopeId === "nationwide_routing_android_v1"
     || buildSpec.candidateId?.startsWith("nationwide-candidate");
 
-  let effectiveStationLineBytes = stationLineBytes;
-  let effectiveRouteBytes = routeBytes;
-  let effectiveStationLine = stationLine;
-  let effectiveRoute = route;
-
+  // #866 PR-B: 전국 후보는 preparation이 sha로 결속한 입력만 받는다. 예전처럼 입력 옆이나 저장소의
+  // nationwide-*-input.json으로 조용히 바꾸지 않는다. 다르거나 없으면 prepare 전에 명시적으로 실패한다.
   if (isNationwide) {
-    const candidates = [
-      [
-        path.resolve(path.dirname(input.stationLineInputPath), "nationwide-station-line-input.json"),
-        path.resolve(path.dirname(input.routeEdgeInputPath), "nationwide-route-edge-input.json"),
-      ],
-      [
-        path.resolve("tools/datapack/release/nationwide-station-line-input.json"),
-        path.resolve("tools/datapack/release/nationwide-route-edge-input.json"),
-      ],
-    ];
-    for (const [stPath, rtPath] of candidates) {
-      try {
-        const [stBytes, rtBytes] = await Promise.all([
-          regular(stPath, "nationwide station-line"),
-          regular(rtPath, "nationwide route-edge"),
-        ]);
-        const st = JSON.parse(stBytes.toString("utf8"));
-        const rt = JSON.parse(rtBytes.toString("utf8"));
-        const stObserved = candidateIdentity(st?.candidate, "nationwide station");
-        const rtObserved = candidateIdentity(rt?.candidate, "nationwide route");
-        if (stObserved.candidateId === candidate.candidateId
-          && stObserved.sourceSetSha256 === candidate.sourceSetSha256
-          && rtObserved.candidateId === candidate.candidateId
-          && rtObserved.sourceSetSha256 === candidate.sourceSetSha256
-          && (st.stationLines?.length ?? 0) >= 1000) {
-          effectiveStationLineBytes = stBytes;
-          effectiveRouteBytes = rtBytes;
-          effectiveStationLine = st;
-          effectiveRoute = rt;
-          break;
-        }
-      } catch {
-        // continue trying next candidate path
-      }
+    if (typeof input.candidatePreparationPath !== "string" || input.candidatePreparationPath.length === 0) {
+      throw new Error("nationwide candidate preparation is required");
     }
+    const binding = bindNationwideCandidatePreparation({
+      preparationBytes: await regular(input.candidatePreparationPath, "nationwide candidate preparation"),
+      buildSpec,
+    });
+    assertNationwideCandidateInputBytes({
+      binding,
+      buildSpec,
+      stationLineInputBytes: stationLineBytes,
+      routeEdgeInputBytes: routeBytes,
+    });
   }
 
   const canonicalInputBytes = {
     buildSpecPath: buildSpecBytes,
-    stationLineInputPath: effectiveStationLineBytes,
-    routeEdgeInputPath: effectiveRouteBytes,
+    stationLineInputPath: stationLineBytes,
+    routeEdgeInputPath: routeBytes,
   };
   const active = selectEffectiveDataPack(manifest);
   const validPacks = isNationwide ? ["capital", "nationwide"] : ["capital"];
@@ -120,7 +99,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
     || provenanceValue.candidateBuild.buildSpecSha256 !== sha256(buildSpecBytes)) {
     throw new Error("current provenance build identity mismatch");
   }
-  for (const [name, value] of [["station-line input", effectiveStationLine], ["route-edge input", effectiveRoute]]) {
+  for (const [name, value] of [["station-line input", stationLine], ["route-edge input", route]]) {
     const observed = candidateIdentity(value?.candidate, name);
     if (observed.candidateId !== candidate.candidateId || observed.sourceSetSha256 !== candidate.sourceSetSha256) {
       throw new Error(`${name} candidate identity mismatch`);
@@ -138,7 +117,7 @@ export async function stageCurrentServerRouteBundleCandidate(input) {
   const provenance = path.join(datapackRoot, "current.provenance.json");
   const releaseSequence = positiveInteger(buildSpec.releaseSequence, "build spec releaseSequence");
   const stagedFreshUntil = kstInstant(expiresAt);
-  const evaluationAt = deriveCurrentReleaseCandidateObservedAt(effectiveStationLine.evidenceRows);
+  const evaluationAt = deriveCurrentReleaseCandidateObservedAt(stationLine.evidenceRows);
   if (new Date(evaluationAt).getTime() >= expiresAt.getTime()) {
     throw new Error("current manifest expiresAt must be after evidence observation time");
   }
@@ -381,6 +360,6 @@ function kstInstant(value) { return new Date(value.getTime() + 9 * 60 * 60 * 100
 export function parseStageCurrentServerRouteBundleCandidateArgs(argv) {
   const args = parseArgs(argv);
   if (args.size !== REQUIRED_ARGS.length || REQUIRED_ARGS.some((name) => !args.has(name))) throw new Error("CLI arguments mismatch");
-  return { datapackRoot: requiredArg(args, "datapack-root"), buildSpecPath: requiredArg(args, "build-spec"), stationLineInputPath: requiredArg(args, "station-line-input"), routeEdgeInputPath: requiredArg(args, "route-edge-input"), repositoryGitSha: requiredArg(args, "repository-git-sha"), keyId: requiredArg(args, "key-id"), output: requiredArg(args, "output") };
+  return { datapackRoot: requiredArg(args, "datapack-root"), buildSpecPath: requiredArg(args, "build-spec"), stationLineInputPath: requiredArg(args, "station-line-input"), routeEdgeInputPath: requiredArg(args, "route-edge-input"), candidatePreparationPath: requiredArg(args, "candidate-preparation"), repositoryGitSha: requiredArg(args, "repository-git-sha"), keyId: requiredArg(args, "key-id"), output: requiredArg(args, "output") };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) stageCurrentServerRouteBundleCandidate(parseStageCurrentServerRouteBundleCandidateArgs(process.argv.slice(2))).catch((error) => { process.stderr.write(`stage-current-server-route-bundle-candidate: ${error.message}\n`); process.exitCode = 1; });
