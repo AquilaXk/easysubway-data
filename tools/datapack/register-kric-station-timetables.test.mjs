@@ -128,8 +128,10 @@ test("첫 등록은 새 sourceId 원장 행·inventory·정책 항목·파생 �
   assert.equal(snapshot.snapshotId, receipt.snapshotId);
   assert.equal(sha(JSON.stringify(snapshot.trips)), evidence.tripsSha256);
   assert.equal(snapshot.serviceDayPolicy, HOLIDAY_INCLUDES_SATURDAY_POLICY);
-  assert.deepEqual(snapshot.lines.map(({ lnCd, lineId, stationCodes, rowCountByDayCd, tripCount }) => [lnCd, lineId, stationCodes.length, rowCountByDayCd, tripCount]),
-    KRIC_API_STATION_TIMETABLE_BINDINGS.map(({ lnCd, lineId, stations, segments }) => [lnCd, lineId, stations.length, { 7: 0, 8: stations.length, 9: stations.length }, segments.length * 2]));
+  assert.deepEqual(snapshot.lines.map(({ lnCd, lineId, stationCodes, rowCountByDayCd, tripCount }) => [lnCd, lineId, stationCodes, rowCountByDayCd, tripCount]),
+    KRIC_API_STATION_TIMETABLE_BINDINGS.map(({ lnCd, lineId, stations, segments }) => [lnCd, lineId, stations.map(([, stinCd]) => stinCd), { 7: 0, 8: stations.length, 9: stations.length }, segments.length * 2]));
+  // 역 코드는 개수가 아니라 값으로 고정한다(GTX-A roster 순서).
+  assert.deepEqual(snapshot.lines[0].stationCodes, ["X108", "X109", "X110", "X111", "X106", "X105", "X103", "X102", "X101"]);
 });
 
 test("다른 약관(termsHash·데이터셋)·미승인 검토·receipt 불일치·수집 결손·HEAD 불일치는 쓰기 전에 거부한다", async (t) => {
