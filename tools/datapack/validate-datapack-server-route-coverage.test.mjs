@@ -138,6 +138,20 @@ test("#873 coverage는 환승 필수 쌍만 요구하고, 환승 coverage가 빠
   assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, edgeRows: withoutTransferEdges }), false);
 });
 
+test("legacy(수도권) authority는 ENTRY·EXIT가 둘 다 있거나 둘 다 없어야 한다(PR-C에서 제거)", () => {
+  const legacy = { id: "capital", legacyAccessStations: 3, transfers: 2, outOfStation: 0 };
+  assert.doesNotThrow(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(authorityReport(legacy)))));
+  assert.doesNotThrow(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(authorityReport({ ...legacy, legacyAccessStations: 0 })))));
+  for (const removed of ["ENTRY", "EXIT"]) {
+    const report = authorityReport(legacy);
+    report.edges = report.edges.filter(({ edgeType }) => edgeType !== removed);
+    delete report.edgeCounts[removed];
+    report.edgeCounts.total = report.edges.length;
+    reseal(report);
+    assert.throws(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(report))), /shape mismatch|denominator/, removed);
+  }
+});
+
 test("server route coverage evidence는 provenance와 --require-production이 함께여야 하고 한 번만 소비된다", () => {
   const parsedArgs = parseArgs(["--manifest", "manifest.json", "--root", "out", "--require-production", "--server-route-coverage-evidence", "authority.json", "--server-route-coverage-provenance", "provenance.json"]);
   assert.equal(parsedArgs["server-route-coverage-evidence"], "authority.json");

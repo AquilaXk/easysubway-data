@@ -52,8 +52,7 @@ const STATION_CANDIDATE_KEYS = [
 // 기존 계약을 유지한다. 이 legacy 분기는 PR-C(#866)에서 live chain과 함께 제거한다.
 const TRANSFER_EDGE_TYPES = new Set(["IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER"]);
 const ACCESS_EDGE_TYPES = new Set(["ENTRY", "EXIT"]);
-const LEGACY_REQUIRED_ROUTE_EDGE_TYPES = ["ENTRY", "EXIT", "RIDE"];
-const ROUTE_EDGE_TYPES = new Set([...LEGACY_REQUIRED_ROUTE_EDGE_TYPES, ...TRANSFER_EDGE_TYPES]);
+const ROUTE_EDGE_TYPES = new Set([...ACCESS_EDGE_TYPES, "RIDE", ...TRANSFER_EDGE_TYPES]);
 const AUTHORITY_EDGE_TYPES = new Set([...ACCESS_EDGE_TYPES, ...TRANSFER_EDGE_TYPES]);
 const MATERIALIZATION_DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
 
@@ -309,13 +308,14 @@ function validateAuthorityEdgeCountKeys(edgeCounts, isNationwide) {
 }
 
 // 환승 1종 이상이 있어야 하고, 모르는 간선 종류는 받지 않는다.
-// 전국 authority는 ENTRY/EXIT가 있으면 명시적으로 실패한다(#873). legacy(수도권)는 ENTRY·EXIT가 모두 있어야 한다.
+// 전국 후보 authority는 ENTRY/EXIT가 있으면 명시적으로 실패한다(#873). legacy(수도권 live chain) authority는 ENTRY·EXIT가
+// 둘 다 있거나 둘 다 없어야 한다(승강장 기준으로 투영한 입력은 둘 다 없다). legacy 분기는 PR-C(#866)에서 제거한다.
 function authorityEdgeTypeSet(counts, isNationwide) {
   const keys = Object.keys(counts);
   if (isNationwide && keys.some((key) => ACCESS_EDGE_TYPES.has(key))) {
     throw new Error("nationwide authority must not contain ENTRY/EXIT edges");
   }
-  return (isNationwide || (keys.includes("ENTRY") && keys.includes("EXIT")))
+  return keys.includes("ENTRY") === keys.includes("EXIT")
     && keys.some((key) => TRANSFER_EDGE_TYPES.has(key))
     && keys.every((key) => AUTHORITY_EDGE_TYPES.has(key));
 }
@@ -481,8 +481,7 @@ function validateRoute(route, stationLineInput, routeStationIndex, isNationwide)
   if (isNationwide && counts.some((type) => ACCESS_EDGE_TYPES.has(type))) {
     throw new Error("nationwide route-edge input must not contain ENTRY/EXIT edges");
   }
-  const requiredTypes = isNationwide ? ["RIDE"] : LEGACY_REQUIRED_ROUTE_EDGE_TYPES;
-  if (requiredTypes.some((type) => !counts.includes(type))
+  if (!counts.includes("RIDE")
     || !counts.some((type) => TRANSFER_EDGE_TYPES.has(type))
     || counts.some((type) => !ROUTE_EDGE_TYPES.has(type))) {
     throw new Error("route edge coverage mismatch");
@@ -492,7 +491,9 @@ function validateRoute(route, stationLineInput, routeStationIndex, isNationwide)
     throw new Error("route topology hash mismatch");
   }
   validateRouteEndpoints(routeEdges, stationLineInput.stationLines, routeStationIndex);
-  if (!isNationwide) validateEntryExitBijections(routeEdges, stationLineInput.stationLines);
+  // legacy(수도권 live chain) 입력에 ENTRY/EXIT가 있으면 역-노선마다 정확히 하나씩이어야 한다(기존 계약).
+  // 승강장 기준으로 투영한 입력에는 없다. PR-C(#866)에서 live chain과 함께 제거한다.
+  if (counts.some((type) => ACCESS_EDGE_TYPES.has(type))) validateEntryExitBijections(routeEdges, stationLineInput.stationLines);
   return routeEdges;
 }
 

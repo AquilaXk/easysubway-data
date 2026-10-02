@@ -260,17 +260,26 @@ function validateMaterialization(value, candidate, stationLineIndex, evaluationA
     if (keys.has(key)) throw new Error("duplicate materialization cell");
     keys.add(key);
   }
+  const targets = new Map();
   for (const edge of edges) {
     const mapping = policy.edgeDomainMap[edge.edgeType];
     if (!mapping || edge.edgeType === "RIDE") continue;
     validateKnownEndpointShape(edge, mapping.endpointTarget);
+    for (const target of targetStationLines(edge, mapping.endpointTarget)) {
+      targets.set(stationLineKey(target), target);
+    }
   }
-  // #873: 분모는 route station-line 전체 × domain이다. 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나므로
-  // 역 단위 ENTRY/EXIT 간선이 모든 역-노선을 덮지 않는다. 어느 간선이 어느 cell을 요구하는지는 evaluateEdge가 정한다.
-  const targetRows = stationLineIndex.rows;
-  const expected = new Set(targetRows.flatMap((line) => DOMAINS.map((domain) => materializationCellKey({ ...line, domain }))));
-  if (keys.size !== expected.size || [...expected].some((key) => !keys.has(key))) throw new Error("materialization policy target denominator mismatch");
-  const scopedHash = sha256(canonicalJson([...new Set(targetRows.map(({ stationId }) => stationId))].sort(compareBytes)));
+  // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선이 없으면 간선이 요구하는
+  // station-line(환승 끝점)이 materialization 전체보다 좁다. 그래서 분모는 materialization에 행이 있는 station-line마다
+  // domain이 모두 있어야 하고, 간선이 요구하는 station-line을 모두 포함해야 한다. station set 식별은 materialization
+  // 자기 station 집합으로 확인한다.
+  const materializedLines = new Map(rows.map((row) => [stationLineKey(row), row]));
+  const expected = new Set([...materializedLines.values()].flatMap((line) => DOMAINS.map((domain) => materializationCellKey({ ...line, domain }))));
+  if (keys.size !== expected.size || [...expected].some((key) => !keys.has(key))
+    || [...targets.keys()].some((key) => !materializedLines.has(key))) {
+    throw new Error("materialization policy target denominator mismatch");
+  }
+  const scopedHash = sha256(canonicalJson([...new Set([...materializedLines.values()].map(({ stationId }) => stationId))].sort(compareBytes)));
   if (value.candidate.stationSetSha256 !== scopedHash) throw new Error("materialization scoped station set identity mismatch");
   const summary = Object.fromEntries([...MATERIALIZATION_STATES, ...(rows.some(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED") ? ["UNVERIFIED_EVIDENCE_BLOCKED"] : [])].map((state) => [state, 0]));
   for (const row of rows) summary[row.state] += 1;
