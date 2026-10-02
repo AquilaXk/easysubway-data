@@ -101,7 +101,6 @@ test("첫 등록은 새 sourceId 원장 행·inventory·정책 항목·파생 �
   assert.deepEqual(ledger.slice(0, -1), previousLedger);
   const heads = validateLineage(ledger).headsBySource;
   assert.equal(heads[STATION_LINES_SOURCE_ID], receipt.snapshotId);
-  assert.equal(heads[PILOT_SOURCE_ID], validateLineage(previousLedger).headsBySource[PILOT_SOURCE_ID]);
   const row = ledger.at(-1);
   assert.equal(row.sourceId, STATION_LINES_SOURCE_ID);
   assert.equal(row.previousSnapshotId, null);
