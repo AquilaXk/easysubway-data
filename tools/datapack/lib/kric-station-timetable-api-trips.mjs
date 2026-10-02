@@ -45,6 +45,42 @@ export const KRIC_API_STATION_TIMETABLE_BINDINGS = Object.freeze([
   apiBinding("02", "B1", "line-e4cce88f0d7f", [["BG", "0101", "사상(서부터미널)"], ["BG", "0102", "괘법르네시떼(강변공원)"], ["BG", "0103", "서부산유통지구(금호마을)"], ["BG", "0104", "공항"], ["BG", "0105", "덕두"], ["BG", "0106", "등구"], ["BG", "0107", "대저"], ["BG", "0108", "평강"], ["BG", "0109", "대사"], ["BG", "0110", "불암"], ["BG", "0111", "지내"], ["BG", "0112", "김해대학(안동)"], ["BG", "0113", "인제대(활천)"], ["BG", "0114", "김해시청"], ["BG", "0115", "부원"], ["BG", "0116", "봉황(김해여객터미널)"], ["BG", "0117", "수로왕릉(김해보건소)"], ["BG", "0118", "박물관"], ["BG", "0119", "연지공원"], ["BG", "0120", "장신대(화정)"], ["BG", "0121", "가야대(삼계)"]]),
 ]);
 
+// #903 실수집(2026-10-02T16:15Z, 수집본 sha256 186d8fae…)에서 확인한 노선별 기대값. 제공처 시간표가 바뀌면
+// 수집·등록이 EXPECTED_OBSERVATION_CHANGED로 실패하고, 새 실측 근거와 함께 이 값을 갱신하는 PR로만 반영한다.
+export const KRIC_API_EXPECTED_OBSERVATION = Object.freeze({
+  totalTrips: 3956,
+  lines: Object.freeze({
+    "line-8604048b6430": Object.freeze({ lnCd: "A", weekdayTrips: 402, holidayTrips: 402, quarantined: 0, weekdayEqualsHoliday: true }),
+    "line-828f04afc588": Object.freeze({ lnCd: "E1", weekdayTrips: 412, holidayTrips: 334, quarantined: 0, weekdayEqualsHoliday: false }),
+    "line-62096860ab09": Object.freeze({ lnCd: "U1", weekdayTrips: 440, holidayTrips: 354, quarantined: 0, weekdayEqualsHoliday: false }),
+    "line-5500c1600f71": Object.freeze({ lnCd: "G1", weekdayTrips: 506, holidayTrips: 348, quarantined: 0, weekdayEqualsHoliday: false }),
+    "line-e4cce88f0d7f": Object.freeze({ lnCd: "B1", weekdayTrips: 394, holidayTrips: 364, quarantined: 0, weekdayEqualsHoliday: false }),
+  }),
+});
+
+/** 재구성 결과가 고정 기대값과 같은지 검사한다. lineIds를 주지 않으면 전 노선과 합계를 검사한다. */
+export function assertExpectedApiObservation({ trips, quarantine }, { expected = KRIC_API_EXPECTED_OBSERVATION, lineIds = null } = {}) {
+  const changed = (detail) => { throw new Error(`EXPECTED_OBSERVATION_CHANGED: ${detail}`); };
+  const selected = lineIds ?? Object.keys(expected.lines);
+  for (const lineId of selected) {
+    const line = expected.lines[lineId];
+    if (!line) changed(`${lineId} not expected`);
+    const lineTrips = trips.filter((trip) => trip.lineId === lineId);
+    const weekday = lineTrips.filter(({ serviceDayKind }) => serviceDayKind === "WEEKDAY");
+    const holiday = lineTrips.filter(({ serviceDayKind }) => serviceDayKind === "SATURDAY_SUNDAY_HOLIDAY");
+    if (weekday.length !== line.weekdayTrips) changed(`${lineId} weekdayTrips ${weekday.length}`);
+    if (holiday.length !== line.holidayTrips) changed(`${lineId} holidayTrips ${holiday.length}`);
+    const quarantined = quarantine.filter((entry) => entry.lineId === lineId).length;
+    if (quarantined !== line.quarantined) changed(`${lineId} quarantined ${quarantined}`);
+    if (line.weekdayEqualsHoliday) {
+      const signature = (list) => list.map((trip) => JSON.stringify([trip.provenance?.trainNumber ?? trip.providerTripKey.replace(trip.serviceDayKind, ""),
+        trip.provenance?.direction ?? null, trip.stops])).sort(codepointCompare).join("\n");
+      if (signature(weekday) !== signature(holiday)) changed(`${lineId} weekdayEqualsHoliday`);
+    }
+  }
+  if (lineIds === null && trips.length !== expected.totalTrips) changed(`totalTrips ${trips.length}`);
+}
+
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /** KRIC API 시각(HHMMSS)을 초로 바꾼다. null은 해당 시각 없음이다. */

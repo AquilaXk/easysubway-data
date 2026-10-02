@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
-import { KRIC_API_STATION_TIMETABLE_BINDINGS, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
+import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
 
 export const KRIC_SUBWAY_TIMETABLE_ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable";
 const DAY_CDS = Object.freeze(["7", "8", "9"]);
@@ -82,13 +82,17 @@ export function responsesFromCollection(artifact, { bindings = KRIC_API_STATION_
 
 export async function runKricStationTimetableCollection(argv = process.argv.slice(2), {
   env = process.env, bindings = KRIC_API_STATION_TIMETABLE_BINDINGS, fetchImpl = fetch, now = () => new Date(),
+  expected = KRIC_API_EXPECTED_OBSERVATION,
 } = {}) {
   if (argv.length !== 2 || argv[0] !== "--output" || !path.isAbsolute(argv[1] ?? "")) {
     throw new Error("usage: collect-kric-station-timetables.mjs --output <absolute new file>");
   }
   const artifact = await collectKricStationTimetables({ bindings, serviceKey: env.KRIC_SERVICE_KEY, fetchImpl, now });
   // 기록 전에 재구성까지 통과해야 한다. 실패한 수집본은 남기지 않는다.
-  const { summary } = buildApiStationTimetableTrips({ responses: responsesFromCollection(artifact, { bindings }), bindings });
+  const result = buildApiStationTimetableTrips({ responses: responsesFromCollection(artifact, { bindings }), bindings });
+  // 고정 기대값과 다르면(제공처 시간표 변경 포함) 수집본을 쓰지 않고 실패한다.
+  assertExpectedApiObservation(result, { expected, lineIds: bindings === KRIC_API_STATION_TIMETABLE_BINDINGS ? null : bindings.map(({ lineId }) => lineId) });
+  const { summary } = result;
   await writeFile(argv[1], `${JSON.stringify(artifact, null, 2)}\n`, { flag: "wx" });
   return { output: argv[1], responses: artifact.responses.length, trips: summary };
 }

@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import {
   HOLIDAY_INCLUDES_SATURDAY_POLICY,
+  KRIC_API_EXPECTED_OBSERVATION,
   KRIC_API_STATION_TIMETABLE_BINDINGS,
+  assertExpectedApiObservation,
   buildApiStationTimetableTrips,
   parseKricApiClock,
 } from "./kric-station-timetable-api-trips.mjs";
@@ -158,4 +161,50 @@ test("고정 바인딩은 GTX-A·에버라인·의정부·김포골드·부산�
     assert.deepEqual(Object.keys(entry.aliasEvidence).sort(), Object.keys(entry.stationAliases).sort(), entry.lnCd);
     for (const name of Object.keys(entry.stationAliases)) assert.ok(entry.stations.some(([, , stinNm]) => stinNm === name), name);
   }
+});
+
+test("실측 기대값(노선별 평일·휴일 trip 수, GTX-A 평일=휴일, 합계 3,956, quarantine 0)을 저장소에 고정한다", () => {
+  assert.deepEqual(KRIC_API_EXPECTED_OBSERVATION, {
+    totalTrips: 3956,
+    lines: {
+      "line-8604048b6430": { lnCd: "A", weekdayTrips: 402, holidayTrips: 402, quarantined: 0, weekdayEqualsHoliday: true },
+      "line-828f04afc588": { lnCd: "E1", weekdayTrips: 412, holidayTrips: 334, quarantined: 0, weekdayEqualsHoliday: false },
+      "line-62096860ab09": { lnCd: "U1", weekdayTrips: 440, holidayTrips: 354, quarantined: 0, weekdayEqualsHoliday: false },
+      "line-5500c1600f71": { lnCd: "G1", weekdayTrips: 506, holidayTrips: 348, quarantined: 0, weekdayEqualsHoliday: false },
+      "line-e4cce88f0d7f": { lnCd: "B1", weekdayTrips: 394, holidayTrips: 364, quarantined: 0, weekdayEqualsHoliday: false },
+    },
+  });
+});
+
+function gtxFixtureResponses(mutate = (rows) => rows) {
+  const fixture = JSON.parse(readFileSync(new URL("../fixtures/kric-station-timetable-raw/gtx-a-20261002.json", import.meta.url), "utf8"));
+  const binding = KRIC_API_STATION_TIMETABLE_BINDINGS.find(({ lnCd }) => lnCd === "A");
+  const names = new Map(binding.stations.map(([, stinCd, stinNm]) => [stinCd, stinNm]));
+  return fixture.responses.map(({ railOprIsttCd, stinCd, dayCd, resultCode, rows }) => ({ railOprIsttCd, lnCd: "A", stinCd, stinNm: names.get(stinCd), dayCd, resultCode,
+    rows: mutate(rows, stinCd, dayCd).map(([trnNo, arvTm, dptTm]) => ({ railOprIsttCd, trnNo, dayCd, dayNm: dayCd === "8" ? "평일" : "휴일", stinCd, lnCd: "A", arvTm, dptTm })) }));
+}
+
+test("GTX-A 실측 응답 발췌로 기대값(402/402, 평일=휴일)을 확인하고, 한 행만 달라도 실패한다", () => {
+  const gtx = KRIC_API_STATION_TIMETABLE_BINDINGS.filter(({ lnCd }) => lnCd === "A");
+  const result = buildApiStationTimetableTrips({ responses: gtxFixtureResponses(), bindings: gtx });
+  assert.deepEqual(result.summary, { "line-8604048b6430": { lnCd: "A", trips: 804, quarantined: 0 } });
+  assertExpectedApiObservation(result, { lineIds: ["line-8604048b6430"] });
+  // 휴일 한 열차의 한 역 출발 시각만 30초 바꾸면 평일=휴일 불변이 깨진다.
+  const shifted = buildApiStationTimetableTrips({ bindings: gtx, responses: gtxFixtureResponses((rows, stinCd, dayCd) =>
+    dayCd === "9" && stinCd === "X102" ? rows.map((row, index) => (index === 0 ? [row[0], row[1], row[2] === null ? null : `${row[2].slice(0, 4)}30`] : row)) : rows) });
+  assert.throws(() => assertExpectedApiObservation(shifted, { lineIds: ["line-8604048b6430"] }), /EXPECTED_OBSERVATION_CHANGED: line-8604048b6430 weekdayEqualsHoliday/u);
+});
+
+test("기대값 검증은 노선별 trip 수·quarantine·합계가 다르면 실패한다", () => {
+  const trips = (lineId, dayKind, count) => Array.from({ length: count }, (_, index) => ({ lineId, serviceDayKind: dayKind, providerTripKey: `${lineId}|${dayKind}|${index}`, stops: [] }));
+  const full = Object.entries(KRIC_API_EXPECTED_OBSERVATION.lines).flatMap(([lineId, line]) =>
+    [...trips(lineId, "WEEKDAY", line.weekdayTrips), ...trips(lineId, "SATURDAY_SUNDAY_HOLIDAY", line.holidayTrips)]);
+  const summary = Object.fromEntries(Object.entries(KRIC_API_EXPECTED_OBSERVATION.lines).map(([lineId, line]) => [lineId, { lnCd: line.lnCd, trips: line.weekdayTrips + line.holidayTrips, quarantined: 0 }]));
+  const lineIds = Object.keys(KRIC_API_EXPECTED_OBSERVATION.lines).filter((lineId) => lineId !== "line-8604048b6430");
+  assertExpectedApiObservation({ trips: full, quarantine: [], summary }, { lineIds });
+  assert.throws(() => assertExpectedApiObservation({ trips: full.filter(({ providerTripKey }) => providerTripKey !== "line-5500c1600f71|SATURDAY_SUNDAY_HOLIDAY|0"), quarantine: [], summary }, { lineIds }),
+    /EXPECTED_OBSERVATION_CHANGED: line-5500c1600f71 holidayTrips 347/u);
+  assert.throws(() => assertExpectedApiObservation({ trips: full, quarantine: [{ lineId: "line-62096860ab09" }], summary }, { lineIds }),
+    /EXPECTED_OBSERVATION_CHANGED: line-62096860ab09 quarantined 1/u);
+  assert.throws(() => assertExpectedApiObservation({ trips: full.slice(1), quarantine: [], summary }), /EXPECTED_OBSERVATION_CHANGED/u);
 });

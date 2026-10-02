@@ -95,13 +95,18 @@ test("CLI 실행은 환경 변수 키만 쓰고 새 파일로만 기록한다", 
   const directory = await mkdtemp(path.join(tmpdir(), "kric-station-collect-"));
   try {
     const output = path.join(directory, "collection.json");
+    const expected = { totalTrips: 2, lines: { "line-api": { lnCd: "T1", weekdayTrips: 1, holidayTrips: 1, quarantined: 0, weekdayEqualsHoliday: false } } };
+    const changed = { totalTrips: 3, lines: { "line-api": { ...expected.lines["line-api"], holidayTrips: 2 } } };
+    await assert.rejects(runKricStationTimetableCollection(["--output", output],
+      { env: { KRIC_SERVICE_KEY: KEY }, bindings: [BINDING], fetchImpl: fakeFetch().impl, now: clock(), expected: changed }), /EXPECTED_OBSERVATION_CHANGED: line-api holidayTrips 1/u);
+    await assert.rejects(readFile(output), /ENOENT/u);
     const summary = await runKricStationTimetableCollection(["--output", output],
-      { env: { KRIC_SERVICE_KEY: KEY }, bindings: [BINDING], fetchImpl: fakeFetch().impl, now: clock() });
+      { env: { KRIC_SERVICE_KEY: KEY }, bindings: [BINDING], fetchImpl: fakeFetch().impl, now: clock(), expected });
     assert.deepEqual(summary, { output, responses: 6, trips: { "line-api": { lnCd: "T1", trips: 2, quarantined: 0 } } });
     const written = await readFile(output, "utf8");
     assert.equal(written.includes(KEY), false);
     await assert.rejects(runKricStationTimetableCollection(["--output", output],
-      { env: { KRIC_SERVICE_KEY: KEY }, bindings: [BINDING], fetchImpl: fakeFetch().impl, now: clock() }), /EEXIST/u);
+      { env: { KRIC_SERVICE_KEY: KEY }, bindings: [BINDING], fetchImpl: fakeFetch().impl, now: clock(), expected }), /EEXIST/u);
     await assert.rejects(runKricStationTimetableCollection(["--output", "relative.json"], { env: { KRIC_SERVICE_KEY: KEY }, bindings: [BINDING] }), /--output <absolute new file>/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
