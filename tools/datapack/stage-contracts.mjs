@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 
 import { TOPOLOGY_REVERIFICATION_CADENCE } from "./lib/topology-freshness-cutover.mjs";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/63737fd7f91888dff5c5a6eb48e846e473ebdc22/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/506306c666ecc23d77c254a99d990fa23e3e8261/contracts/bundles/data-contracts-v1.0.0.json";
 const annualOfficialFileSourceIds = [
   "molit-railway-transfer-movement",
   "seoul-metro-transfer-distance-duration",
