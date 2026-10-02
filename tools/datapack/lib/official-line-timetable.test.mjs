@@ -134,6 +134,14 @@ test("고정 격리 집합은 건수가 같아도 행 하나가 다르면, 행 �
     /QUARANTINE_ALLOWANCE_MISMATCH: line-x X1 TIME_NOT_MONOTONIC 10\/11/u);
 });
 
+test("서로 다른 원천 행이 같은 짧은 trip_id로 모이면 TRIP_ID_COLLISION으로 실패한다(#910 F3)", () => {
+  const trips = manyWeekdayAndWeekend();
+  // 같은 provider key(=같은 짧은 trip_id)를 가진 다른 원천 행
+  const twin = { ...trip(999, ["A역명", "B역명"]), providerTripKey: trips[0].providerTripKey };
+  assert.throws(() => materializeOfficialLineTimetables(args({ provider: provider([...trips, twin]) })),
+    new RegExp(`OFFICIAL_LINE_TIMETABLE_TRIP_ID_COLLISION: of-x1-w-${createHash("sha256").update(trips[0].providerTripKey).digest("hex").slice(0, 12)}`, "u"));
+});
+
 test("별칭이 실제 역명을 가리거나 대상 역이 노선에 없으면 실패한다", () => {
   const shadow = { ...BINDING, stationAliases: { A역명: { nameKo: "B역명", reason: "x" } } };
   assert.throws(() => materializeOfficialLineTimetables(args({ provider: provider(manyWeekdayAndWeekend()), lineBindings: [shadow] })), /ALIAS_SHADOWS_STATION/u);
