@@ -6,18 +6,35 @@ import test from "node:test";
 
 import {
   CURRENT_ROUTE_EDGE_INPUT,
+  ROUTE_EDGE_POLICY_PATH,
   syncCurrentRouteEdgePolicy,
   syncCurrentRouteEdgePolicyFile,
 } from "./sync-current-route-edge-policy.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import * as itxTopology from "./apply-itx-topology-to-bundled-pack.mjs";
 
-test("policy CLI는 current full-capital route output만 소비한다", () => {
-  assert.equal(
-    CURRENT_ROUTE_EDGE_INPUT,
-    "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
-  );
-  assert.equal(CURRENT_ROUTE_EDGE_INPUT.includes("current-route-edge-evaluation"), false);
+test("#866 policy CLI는 전국 후보 route-edge 입력만 소비한다", () => {
+  assert.equal(CURRENT_ROUTE_EDGE_INPUT, "tools/datapack/release/nationwide-route-edge-input.json");
+  assert.equal(ROUTE_EDGE_POLICY_PATH, "release/product-gates/route-edge-evaluation-policy.json");
+});
+
+test("#866 커밋된 route-edge 정책은 커밋된 전국 입력의 sync 결과와 바이트 동일하다(drift)", async (t) => {
+  const repositoryRoot = path.resolve(import.meta.dirname, "../..");
+  const committedBytes = await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY_PATH));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "route-policy-drift-"));
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const policyPath = path.join(temporary, "policy.json");
+  await writeFile(policyPath, committedBytes);
+  await syncCurrentRouteEdgePolicyFile({
+    repositoryRoot,
+    inputPath: path.join(repositoryRoot, CURRENT_ROUTE_EDGE_INPUT),
+    policyPath,
+    // 후보 시계(publishedAt)로 ITX 원천 승인을 본다. 벽시계에 따라 결과가 바뀌지 않게 한다.
+    readAdmittedItxRideEdgeSetSha256Impl: (root) =>
+      itxTopology.readAdmittedItxRideEdgeSetSha256(root, { buildNow: new Date(buildSpec.publishedAt) }),
+  });
+  assert.deepEqual(await readFile(policyPath), committedBytes);
 });
 
 test("current route edge policy는 exact RIDE partition digest만 동기화한다", async () => {

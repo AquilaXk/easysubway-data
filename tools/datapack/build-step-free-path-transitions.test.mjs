@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CURRENT_ROUTE_EDGE_INPUT_PATH,
   TRANSITION_REQUIREMENT_GROUP_KINDS,
   buildStepFreeTransitionCoverageReport,
   buildTransitionFacilityRequirements,
@@ -68,6 +69,10 @@ const TWO_DIRECTION_ROWS_FOR = (transitionKey) => [
   { transition_key: transitionKey, path_id: P_DOWN, direction_next_station_id: "station-down", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: W2 },
   { transition_key: transitionKey, path_id: P_DOWN, direction_next_station_id: "station-down", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: W1 },
 ];
+
+test("#866 커버리지 CLI는 전국 후보 route-edge 입력을 읽는다", () => {
+  assert.equal(CURRENT_ROUTE_EDGE_INPUT_PATH, "tools/datapack/release/nationwide-route-edge-input.json");
+});
 
 test("group_kind는 #834 EXIT/DIRECTION 묶음을 EXIT_ELEVATORS/PLATFORM_DIRECTION_ELEVATORS로 옮긴다", () => {
   assert.deepEqual(TRANSITION_REQUIREMENT_GROUP_KINDS, {

@@ -6,8 +6,9 @@ import { pathToFileURL } from "node:url";
 import { readAdmittedItxRideEdgeSetSha256 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 
-export const CURRENT_ROUTE_EDGE_INPUT =
-  "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json";
+// #866: 정책 RIDE digest는 전국 후보 route-edge 입력에서 계산한다. 생산자는 refresh-nationwide-candidate 마지막 단계다.
+export const CURRENT_ROUTE_EDGE_INPUT = "tools/datapack/release/nationwide-route-edge-input.json";
+export const ROUTE_EDGE_POLICY_PATH = "release/product-gates/route-edge-evaluation-policy.json";
 const SHA = /^[a-f0-9]{64}$/u;
 
 export function syncCurrentRouteEdgePolicy(input, policy, admittedItxRideEdgeSetSha256) {
@@ -91,6 +92,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   await syncCurrentRouteEdgePolicyFile({
     repositoryRoot: path.resolve(import.meta.dirname, "../.."),
     inputPath: CURRENT_ROUTE_EDGE_INPUT,
-    policyPath: "release/product-gates/route-edge-evaluation-policy.json",
+    policyPath: ROUTE_EDGE_POLICY_PATH,
   });
 }

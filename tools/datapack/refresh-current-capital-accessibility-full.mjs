@@ -73,6 +73,8 @@ export const TRANSFER_SOURCE_ADMISSION_ALLOWED_DESCENDANT_PATHS = Object.freeze(
   "release/product-gates/production-datapack-scope.json",
   "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
+  // #866 PR-A: route-edge 정책도 refresh-nationwide-candidate 마지막 단계가 다시 만든다.
+  "release/product-gates/route-edge-evaluation-policy.json",
   "contracts/documentation/documentation-fragment.json",
 ]);
 // #872 결정 1: 전국 후보 재생성 뒤 live-chain fan-in의 candidateBuildSpec 결속만 다시 쓰는 좁은 모드의 허용 경로.

@@ -9,7 +9,8 @@
 //     --evaluated-at <후보 시계, ISO-8601 UTC ms> --release-sequence <양의 정수> \
 //     --requested-by <요청자> --approved-by <승인자>
 //
-// 순서: 5권역 fan-in(--evaluated-at) → 소유권 원장 → prepare-nationwide-candidate-run → build-nationwide-candidate(spec·scope·request·hash) → 결속 검증.
+// 순서: 5권역 fan-in(--evaluated-at) → 소유권 원장 → prepare-nationwide-candidate-run → build-nationwide-candidate(spec·scope·request·hash)
+//       → route-edge 정책 sync(전국 route-edge 입력, #866) → 결속 검증.
 // - 승인 역할은 명시 인자로만 받는다. 환경 변수나 이전 후보의 승인으로 채우지 않는다. 요청자와 승인자는 달라야 한다.
 // - 깨끗한 worktree에서만 실행한다. builder git SHA가 실제 코드를 가리켜야 하기 때문이다.
 // - 어느 단계든 실패하거나 결속 검증이 어긋나면 모든 출력을 실행 전 바이트로 되돌리고 실패로 끝낸다.
@@ -21,6 +22,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { readAdmittedItxRideEdgeSetSha256 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH } from "./build-current-five-region-source-fan-in.mjs";
 import { LEDGER_PATH as OWNERSHIP_LEDGER_PATH } from "./build-nationwide-requirement-ownership-ledger.mjs";
 import { exportLedgerHash } from "./export-ledger-hashes.mjs";
@@ -28,6 +30,11 @@ import {
   CAR_DOOR_HINT_QUARANTINE_PATH,
   REGIONAL_TIMETABLE_QUARANTINE_PATH,
 } from "./prepare-nationwide-candidate-run.mjs";
+import {
+  CURRENT_ROUTE_EDGE_INPUT as NATIONWIDE_ROUTE_EDGE_INPUT_PATH,
+  ROUTE_EDGE_POLICY_PATH,
+  syncCurrentRouteEdgePolicyFile,
+} from "./sync-current-route-edge-policy.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { CANDIDATE_RELEASE_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 
@@ -51,16 +58,18 @@ export const NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS = Object.freeze([
   CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH,
   OWNERSHIP_LEDGER_PATH,
   "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "tools/datapack/release/nationwide-route-edge-input.json",
+  NATIONWIDE_ROUTE_EDGE_INPUT_PATH,
   "tools/datapack/release/nationwide-station-line-input.json",
   "tools/datapack/release/nationwide-candidate-preparation.json",
   CAR_DOOR_HINT_QUARANTINE_PATH,
   REGIONAL_TIMETABLE_QUARANTINE_PATH,
   ...CANDIDATE_RELEASE_OUTPUTS,
+  ROUTE_EDGE_POLICY_PATH,
 ]);
 const PREPARATION_PATH = "tools/datapack/release/nationwide-candidate-preparation.json";
 const STEPS = Object.freeze([
   "five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build",
+  "route edge policy sync",
 ]);
 
 export function parseRefreshNationwideCandidateArgs(argv) {
@@ -182,7 +191,7 @@ async function runNodeScript(repositoryRoot, script, args) {
   }
 }
 
-async function defaultRunStep({ name, repositoryRoot, evaluatedAt, releaseSequence, requestedBy, approvedBy }) {
+export async function runNationwideCandidateRefreshStep({ name, repositoryRoot, evaluatedAt, releaseSequence, requestedBy, approvedBy }) {
   if (name === "five-region fan-in") {
     const temporary = await mkdtemp(path.join(os.tmpdir(), "nationwide-fan-in-"));
     try {
@@ -217,6 +226,17 @@ async function defaultRunStep({ name, repositoryRoot, evaluatedAt, releaseSequen
     await runNodeScript(repositoryRoot, "build-nationwide-candidate.mjs", ["--preparation", PREPARATION_PATH]);
     return;
   }
+  if (name === "route edge policy sync") {
+    // 정책 RIDE digest를 이번 전국 route-edge 입력에서 다시 계산한다. ITX 원천 승인은 벽시계가 아니라 후보 시계로 본다.
+    await syncCurrentRouteEdgePolicyFile({
+      repositoryRoot,
+      inputPath: path.join(repositoryRoot, NATIONWIDE_ROUTE_EDGE_INPUT_PATH),
+      policyPath: path.join(repositoryRoot, ROUTE_EDGE_POLICY_PATH),
+      readAdmittedItxRideEdgeSetSha256Impl: (root) =>
+        readAdmittedItxRideEdgeSetSha256(root, { buildNow: new Date(evaluatedAt) }),
+    });
+    return;
+  }
   throw new Error(`unknown nationwide candidate refresh step: ${name}`);
 }
 
@@ -235,7 +255,7 @@ export async function refreshNationwideCandidate({
   releaseSequence,
   requestedBy,
   approvedBy,
-  runStep = defaultRunStep,
+  runStep = runNationwideCandidateRefreshStep,
   assertCleanWorktree = assertGitCleanWorktree,
 } = {}) {
   const repository = path.resolve(repositoryRoot);
