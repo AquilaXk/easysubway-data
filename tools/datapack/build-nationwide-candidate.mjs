@@ -80,13 +80,17 @@ export function deriveNationwideProductionScope({ policyScope, scopeId, targets,
   return scope;
 }
 
+// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 출시 분모가 아니고,
+// 입력에 있으면 명시적으로 실패한다. 필수 기본 간선은 없으므로 requiredBaseEdgeIds는 빈 집합이다.
 function deriveRoutingDenominator({ routeEdges, endpoints, unique }) {
-  const baseEdges = routeEdges.filter((row) => ["ENTRY", "EXIT"].includes(row.edgeType));
+  if (routeEdges.some((row) => ["ENTRY", "EXIT"].includes(row?.edgeType))) {
+    throw new Error("scope route edges must not contain ENTRY/EXIT edges");
+  }
+  const baseEdges = [];
   const transferEdges = routeEdges.filter((row) => ["TRANSFER", "IN_STATION_TRANSFER"].includes(row.edgeType));
-  const accessEdges = [...baseEdges, ...transferEdges];
-  if (!baseEdges.length || !transferEdges.length || accessEdges.some((row) => !row.edgeId
+  if (!transferEdges.length || transferEdges.some((row) => !row.edgeId
     || !endpoints.has(row.fromNodeId) || !endpoints.has(row.toNodeId))) {
-    throw new Error("scope requires materialized access edges with canonical endpoints");
+    throw new Error("scope requires materialized transfer edges with canonical endpoints");
   }
   const serviceIds = unique(routeEdges.filter((row) => row.edgeType === "RIDE").map((row) => row.serviceClass));
   if (!serviceIds.length || serviceIds.some((id) => typeof id !== "string" || !id)) {

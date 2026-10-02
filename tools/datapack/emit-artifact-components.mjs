@@ -608,7 +608,7 @@ function insertStationElevatorRows(target, data) {
   }
 }
 
-// #827: 방금 적재한 번들 경로·시설 묶음 테이블과 번들 topology와 같은 route edge의 역 ENTRY/EXIT edge로 무단차 요구 행을 만든다.
+// #827: 방금 적재한 번들 경로·시설 묶음 테이블과 번들 topology와 같은 route edge의 승강장 노드(#873)로 무단차 요구 행을 만든다.
 // 요구 행이 0개면 모든 전환이 "요구 없음"으로 보이므로 건너뛰지 않고 빌드를 실패시킨다.
 function insertTransitionFacilityRequirements(target, routeEdges) {
   const requirements = buildTransitionFacilityRequirements({ ...readBundledStepFreeInputs(target), routeEdges });
@@ -682,6 +682,8 @@ function validateBundleReferences(db, layout) {
     if (rows.some((row) => row.value != null && !targets.has(row.value))) throw new Error("cross-component reference mismatch");
   }
 }
+// table-layout 계약의 stationEndpointTypes(ENTRY/EXIT) 끝점 모양은 수도권 live chain(legacy) 팩을 위해 남긴다.
+// 전국 입력에는 ENTRY/EXIT 간선이 없다(#873). PR-C(#866)에서 live chain과 함께 제거한다.
 function validateNetworkEdges(db) { const stations = new Set(db.prepare("SELECT id FROM stations").all().map((row) => row.id)); const pairs = new Set(db.prepare("SELECT station_id,line_id FROM station_lines").all().map((row) => `${row.station_id}\u0000${row.line_id}`)); for (const row of db.prepare("SELECT from_node_id,to_node_id,edge_type FROM network_edges").all()) { const from = endpoint(row.from_node_id, stations, pairs); const to = endpoint(row.to_node_id, stations, pairs); const valid = row.edge_type === "ENTRY" ? from.kind === "station" && to.kind === "line" && from.station === to.station : row.edge_type === "EXIT" ? from.kind === "line" && to.kind === "station" && from.station === to.station : from.kind === "line" && to.kind === "line"; if (!valid) throw new Error("network edge endpoint mismatch"); } }
 function endpoint(value, stations, pairs) { if (typeof value !== "string" || !value || /:/.test(value) && value.split(":").some((part) => !part)) throw new Error("invalid network endpoint"); const parts = value.split(":"); if (parts.length === 1) { if (!stations.has(value)) throw new Error("network station endpoint missing"); return { kind: "station", station: value }; } if (!pairs.has(`${parts[0]}\u0000${parts[1]}`)) throw new Error("network station-line endpoint missing"); return { kind: "line", station: parts[0] }; }
 function sqliteProfile(db) { db.exec("PRAGMA page_size=4096; PRAGMA auto_vacuum=NONE; PRAGMA encoding='UTF-8'; PRAGMA foreign_keys=OFF;"); }

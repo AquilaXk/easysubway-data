@@ -12485,7 +12485,7 @@
     "minimumProductionCoverageValuesMustBePositive": true,
     "releaseModeAllowGaps": false,
     "p0CoverageGapPolicy": "fail-release",
-    "p0DefinitionKo": "지원한다고 표시한 역, 노선, 시설, ENTRY/EXIT/TRANSFER/route edge 누락 또는 앱/Play listing 지원 범위와 모순되는 P1/P2 gap",
+    "p0DefinitionKo": "지원한다고 표시한 역, 노선, 시설, 환승(TRANSFER)·RIDE route edge 누락 또는 앱/Play listing 지원 범위와 모순되는 P1/P2 gap",
     "p1p2PolicyKo": "P1/P2 gap은 evidence와 support copy에 기록하되 지원 claim을 깨면 P0로 승격한다.",
     "routeSafetyRequired": true,
     "representativeRouteRegressionsRequired": false,

@@ -7,8 +7,9 @@ import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
 
-// #827 QA 결정(2026-09-30): 새 edge를 만들지 않는다. 무단차 요구는 기존 역 단위 ENTRY/EXIT edge에 붙이고,
-// 행은 (transition_key, path_id, direction_next_station_id, group_kind, facility_id)이다.
+// #827 QA 결정(2026-09-30): 새 edge를 만들지 않는다. 행은 (transition_key, path_id, direction_next_station_id, group_kind, facility_id)이다.
+// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나고 역 단위 ENTRY/EXIT edge는 만들지 않는다. 그래서 무단차 요구의
+// transition_key는 그 경로의 승강장 노드(stationId:lineId)다. 그 노드는 route edge 끝점으로 존재해야 한다.
 // - group 안의 시설은 한 대 이상 가동이면 그 group이 통과한다.
 // - 경로는 모든 group이 통과할 때 통과한다.
 // - 전환은 요구 행이 있는 모든 방향(다음 역)에서 통과하는 경로가 하나 이상 있을 때만 무단차 통과다.
@@ -21,7 +22,6 @@ export const TRANSITION_REQUIREMENT_GROUP_KINDS = Object.freeze({
 export const CURRENT_ROUTE_EDGE_INPUT_PATH = "tools/datapack/release/nationwide-route-edge-input.json";
 const REQUIREMENT_GROUP_KINDS = new Set(Object.values(TRANSITION_REQUIREMENT_GROUP_KINDS));
 const REQUIREMENT_FIELDS = ["transition_key", "path_id", "direction_next_station_id", "group_kind", "facility_id"];
-const STATION_EDGE_TYPES = ["ENTRY", "EXIT"];
 
 // 번들 accessibility component에 적재된 #834 테이블에서 요구 생성 입력을 읽는다. facilities가 없으면 undefined로 두어
 // 생성·검증 단계가 실패로 드러내게 한다.
@@ -38,7 +38,7 @@ export function buildTransitionFacilityRequirements({ paths, pathFacilities, fac
   const facilities = facilityIdSet(facilityIds);
   const pathsById = indexPaths(requireRows(paths, "station_elevator_path"));
   requireRows(pathFacilities, "station_elevator_path_facility");
-  const stationEdges = indexStationEdges(routeEdges);
+  const platformNodes = indexPlatformNodes(routeEdges);
   const groupsByPath = new Map();
   for (const row of pathFacilities) {
     const groupKind = TRANSITION_REQUIREMENT_GROUP_KINDS[row.group_kind];
@@ -53,36 +53,33 @@ export function buildTransitionFacilityRequirements({ paths, pathFacilities, fac
   for (const [pathId, groups] of groupsByPath) {
     if ([...groups.values()].some((facilityIdsInGroup) => facilityIdsInGroup.length === 0)) continue;
     const meta = pathsById.get(pathId);
-    // 출입구↔승강장 이동경로는 들어갈 때(ENTRY)와 나갈 때(EXIT) 같은 엘리베이터를 쓰므로 두 edge에 같은 요구를 붙인다.
-    for (const edgeType of STATION_EDGE_TYPES) {
-      const transitionKey = requireStationEdge(stationEdges.byStationLine, edgeType, meta.stationId, meta.lineId);
-      for (const [groupKind, facilityIdsInGroup] of groups) {
-        for (const facilityId of facilityIdsInGroup) {
-          requirements.push({
-            transition_key: transitionKey,
-            path_id: pathId,
-            direction_next_station_id: meta.nextStationId,
-            group_kind: groupKind,
-            facility_id: facilityId,
-          });
-        }
+    // 출입구↔승강장 이동경로는 들어갈 때와 나갈 때 같은 엘리베이터를 쓰므로 승강장 노드 하나에 요구를 붙인다.
+    const transitionKey = requirePlatformNode(platformNodes, meta.stationId, meta.lineId);
+    for (const [groupKind, facilityIdsInGroup] of groups) {
+      for (const facilityId of facilityIdsInGroup) {
+        requirements.push({
+          transition_key: transitionKey,
+          path_id: pathId,
+          direction_next_station_id: meta.nextStationId,
+          group_kind: groupKind,
+          facility_id: facilityId,
+        });
       }
     }
   }
   return sortTransitionFacilityRequirements(requirements);
 }
 
-// 적재된 요구 행의 참조 무결성: transition_key는 그 경로 역·노선의 ENTRY/EXIT edge, path_id·facility_id는 번들 행이어야 한다.
+// 적재된 요구 행의 참조 무결성: transition_key는 그 경로 역·노선의 승강장 노드(route edge 끝점), path_id·facility_id는 번들 행이어야 한다.
 export function validateTransitionFacilityRequirements({ requirements, paths, facilityIds, routeEdges } = {}) {
   const facilities = facilityIdSet(facilityIds);
   const pathsById = indexPaths(requireRows(paths, "station_elevator_path"));
-  const stationEdges = indexStationEdges(routeEdges);
+  const platformNodes = indexPlatformNodes(routeEdges);
   for (const row of requireRows(requirements, "transition_facility_requirement")) {
     if (!REQUIREMENT_GROUP_KINDS.has(row.group_kind)) throw new Error(`transition_facility_requirement group_kind is invalid: ${row.group_kind}`);
     const meta = pathsById.get(row.path_id);
     if (!meta) throw new Error(`transition_facility_requirement contains orphan path_id: ${row.path_id}`);
-    const edge = stationEdges.byId.get(row.transition_key);
-    if (!edge || edge.stationId !== meta.stationId || edge.lineId !== meta.lineId) {
+    if (row.transition_key !== platformNodeId(meta.stationId, meta.lineId) || !platformNodes.has(row.transition_key)) {
       throw new Error(`transition_facility_requirement contains orphan transition_key: ${row.transition_key}`);
     }
     if (!facilities.has(row.facility_id)) throw new Error(`transition_facility_requirement contains orphan facility_id: ${row.facility_id}`);
@@ -281,29 +278,27 @@ function indexPaths(paths) {
   return byId;
 }
 
-// 역 단위 ENTRY는 역 노드 → 역:노선 노드, EXIT는 역:노선 노드 → 역 노드다. id 문자열이 아니라 끝점 구조로 찾는다.
-function indexStationEdges(routeEdges) {
+// 승강장 노드는 route edge 끝점 중 정확히 stationId:lineId 두 부분인 노드다(ITX ":EXPRESS" 접미 노드와 역 노드는 제외).
+function indexPlatformNodes(routeEdges) {
   if (!Array.isArray(routeEdges)) throw new Error("route edges are required");
-  const byId = new Map();
-  const byStationLine = new Map();
+  const nodes = new Set();
   for (const edge of routeEdges) {
-    if (!STATION_EDGE_TYPES.includes(edge.edgeType)) continue;
-    const [stationNode, stationLineNode] = edge.edgeType === "ENTRY" ? [edge.fromNodeId, edge.toNodeId] : [edge.toNodeId, edge.fromNodeId];
-    const parts = typeof stationLineNode === "string" ? stationLineNode.split(":") : [];
-    if (parts.length !== 2 || parts[0] !== stationNode || !parts[1]) continue;
-    const [stationId, lineId] = parts;
-    byId.set(edge.edgeId, { edgeType: edge.edgeType, stationId, lineId });
-    const key = `${edge.edgeType}\0${stationLineKey(stationId, lineId)}`;
-    byStationLine.set(key, [...(byStationLine.get(key) ?? []), edge.edgeId]);
+    for (const node of [edge?.fromNodeId, edge?.toNodeId]) {
+      const parts = typeof node === "string" ? node.split(":") : [];
+      if (parts.length === 2 && parts.every(Boolean)) nodes.add(node);
+    }
   }
-  return { byId, byStationLine };
+  return nodes;
 }
 
-function requireStationEdge(byStationLine, edgeType, stationId, lineId) {
-  const edgeIds = byStationLine.get(`${edgeType}\0${stationLineKey(stationId, lineId)}`) ?? [];
-  if (edgeIds.length === 0) throw new Error(`station ${edgeType} edge is missing: ${stationId}/${lineId}`);
-  if (edgeIds.length > 1) throw new Error(`station ${edgeType} edge is ambiguous: ${stationId}/${lineId}`);
-  return edgeIds[0];
+function requirePlatformNode(platformNodes, stationId, lineId) {
+  const nodeId = platformNodeId(stationId, lineId);
+  if (!platformNodes.has(nodeId)) throw new Error(`station-line route node is missing: ${stationId}/${lineId}`);
+  return nodeId;
+}
+
+function platformNodeId(stationId, lineId) {
+  return `${stationId}:${lineId}`;
 }
 
 function stationLineKey(stationId, lineId) {

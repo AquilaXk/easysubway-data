@@ -691,33 +691,8 @@ export async function prepareNationwideCandidate({
     pairs.set(JSON.stringify([row.stationId, row.lineId]), row);
   }
 
-  const entryEdges = [...pairs.values()].map(({ stationId, lineId }) => {
-    const normalized = {
-      edgeId: `entry-${stationId}-${lineId}`,
-      edgeType: "ENTRY",
-      fromNodeId: stationId,
-      toNodeId: `${stationId}:${lineId}`,
-      durationSeconds: 0,
-      distanceMeters: 0,
-      servicePattern: "",
-      serviceClass: "SUBWAY",
-    };
-    return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
-  });
-
-  const exitEdges = [...pairs.values()].map(({ stationId, lineId }) => {
-    const normalized = {
-      edgeId: `exit-${stationId}-${lineId}`,
-      edgeType: "EXIT",
-      fromNodeId: `${stationId}:${lineId}`,
-      toNodeId: stationId,
-      durationSeconds: 0,
-      distanceMeters: 0,
-      servicePattern: "",
-      serviceClass: "SUBWAY",
-    };
-    return { ...normalized, edgeSha256: routeEdgeSha256(normalized) };
-  });
+  // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 만들지 않는다.
+  // 출구·엘리베이터는 역 정보(station-elevator path)로만 제공하고 경로 계산에 쓰지 않는다.
 
   const stationToLines = new Map();
   for (const { stationId, lineId } of pairs.values()) {
@@ -1631,7 +1606,7 @@ export async function prepareNationwideCandidate({
   }
 
   // 3. Prepare route edges
-  const routeEdges = [...entryEdges, ...exitEdges, ...transferEdges, ...outOfStationEdges, ...rideEdges]
+  const routeEdges = [...transferEdges, ...outOfStationEdges, ...rideEdges]
     .sort((a, b) => Buffer.compare(Buffer.from(a.edgeId), Buffer.from(b.edgeId)));
 
   const selectedSnapshotIds = new Set(fanIn.selectedSources.map((s) => s.snapshotId));
@@ -1696,12 +1671,6 @@ export async function prepareNationwideCandidate({
   const kricConvenienceLicenseId = fanInHead(fanIn, "kric-station-convenience-standard").licenseRecordSha256;
   const kricConvenienceCapturedAt = kricConvenience.capturedAt;
   const kricConvenienceFreshUntil = inputSnapshots.kricConvenience.freshnessExpiresAt;
-
-  // KRIC 출구(EXIT) 원천은 원장 등록기가 없어 원장 행이 0개다. 행은 PROVIDER_NO_DATA로만 쓰며, 원장 등록은 #866에서 한다.
-  const kricMovementRawSha = "9e9e66356d1f1a7275578f299882b3d2a42637d9cc5b4ce8b874ee78f3815106";
-  const kricMovementLicenseId = "80555d4f86dfa1d51e0618df22b8392fc439a33daf80fed3a9c4f2a728fec9bb";
-  const kricMovementCapturedAt = "2026-09-04T17:29:43.075Z";
-  const kricMovementFreshUntil = "2027-09-05T17:29:43.075Z";
 
   const seoulTransferRawSha = seoulTransferHead.rawSha256;
   const seoulTransferLicenseId = seoulTransferHead.licenseRecordSha256;
@@ -1927,27 +1896,7 @@ export async function prepareNationwideCandidate({
       });
     }
 
-    // EXIT
-    evidenceRows.push({
-      ...stationLineCandidate,
-      stationId,
-      lineId,
-      operatorId,
-      domain: "EXIT",
-      state: "UNKNOWN",
-      sourceId: "kric-station-movement-standard",
-      sourceSnapshotId: "kric-station-movement-standard-20260904T172943075Z",
-      evidenceRawSha256: kricMovementRawSha,
-      providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "EXIT", state: "UNKNOWN" })),
-      capturedAt: kricMovementCapturedAt,
-      freshUntil: kricMovementFreshUntil,
-      provenanceId: kricMovementRawSha,
-      licenseId: kricMovementLicenseId,
-      mappingContractVersion: "station-line-v1",
-      materializerVersion: "1",
-      evidenceKind: "PROVIDER_NO_DATA",
-      evidenceReason: "EXIT_DATA_NOT_PROVIDED",
-    });
+    // EXIT: #873 승강장 기준 경로에서는 출구 이동 증거를 경로 판단에 쓰지 않는다. 원장 근거 없는 하드코딩 행을 만들지 않는다.
 
     // TRANSFER
     const isTransfer = (stationToLines.get(stationId)?.length ?? 0) > 1 || outOfStationTransferStationIds.has(stationId);

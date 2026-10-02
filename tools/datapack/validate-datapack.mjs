@@ -1568,17 +1568,13 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
     }
   }
 
+  // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 coverage 분모가 아니다.
   const report = {
     type: "datapack_verified_edge_coverage",
     pack: `${pack.id}@${pack.version}`,
-    entry: coverage.entry,
-    exit: coverage.exit,
     transfer: coverage.transfer,
     unverifiedAccessibilityCoverageEdges,
-    generatedConnectorGapCount:
-      coverage.entry.missingCount +
-      coverage.exit.missingCount +
-      coverage.transfer.missingCount,
+    generatedConnectorGapCount: coverage.transfer.missingCount,
   };
   console.log(JSON.stringify(report));
 
@@ -1957,8 +1953,6 @@ function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
 
   return {
     coverage: {
-      entry: coverageItem(requiredPairs.entry, verifiedPairs.entry),
-      exit: coverageItem(requiredPairs.exit, verifiedPairs.exit),
       transfer: coverageItem(requiredPairs.transfer, verifiedPairs.transfer),
     },
     requiredPairs,
@@ -2008,15 +2002,12 @@ function accessibilityCoverageScopeKey(regionId, operatorId) {
   return `${regionId}\0${operatorId}`;
 }
 
+// #873: 필수 쌍은 같은 역의 다른 노선 사이 환승(TRANSFER)뿐이다. 역 단위 ENTRY/EXIT 쌍은 요구하지 않는다.
 function requiredAccessibilityCoveragePairs(stationLineRows) {
-  const requiredEntryPairs = new Set();
-  const requiredExitPairs = new Set();
   const requiredTransferPairs = new Set();
   const lineNodesByStation = new Map();
   for (const row of stationLineRows) {
     const nodeId = stationLineNodeId(row.station_id, row.line_id);
-    requiredEntryPairs.add(edgePairKey(row.station_id, nodeId));
-    requiredExitPairs.add(edgePairKey(nodeId, row.station_id));
     const stationNodes = lineNodesByStation.get(row.station_id) ?? [];
     stationNodes.push(nodeId);
     lineNodesByStation.set(row.station_id, stationNodes);
@@ -2030,30 +2021,24 @@ function requiredAccessibilityCoveragePairs(stationLineRows) {
       }
     }
   }
-  return { entry: requiredEntryPairs, exit: requiredExitPairs, transfer: requiredTransferPairs };
+  return { transfer: requiredTransferPairs };
 }
 
 function verifiedAccessibilityCoveragePairs(edgeRows, accessibilityEvidence) {
-  const verifiedEntryPairs = new Set();
-  const verifiedExitPairs = new Set();
   const verifiedTransferPairs = new Set();
   for (const edge of edgeRows) {
     if (!isVerifiedAccessibilityCoverageEdge(edge, accessibilityEvidence)) {
       continue;
     }
     const edgeType = normalizedEdgeType(edge.edge_type);
-    const fromNodeId = coverageNodeId(edge.from_node_id);
-    const toNodeId = coverageNodeId(edge.to_node_id);
-    if (edgeType === "ENTRY") {
-      verifiedEntryPairs.add(edgePairKey(fromNodeId, toNodeId));
-    } else if (edgeType === "EXIT") {
-      verifiedExitPairs.add(edgePairKey(fromNodeId, toNodeId));
-    } else if (isNetworkTransferEdgeType(edgeType)) {
+    if (isNetworkTransferEdgeType(edgeType)) {
+      const fromNodeId = coverageNodeId(edge.from_node_id);
+      const toNodeId = coverageNodeId(edge.to_node_id);
       verifiedTransferPairs.add(edgePairKey(fromNodeId, toNodeId));
       verifiedTransferPairs.add(edgePairKey(toNodeId, fromNodeId));
     }
   }
-  return { entry: verifiedEntryPairs, exit: verifiedExitPairs, transfer: verifiedTransferPairs };
+  return { transfer: verifiedTransferPairs };
 }
 
 function coverageItem(requiredPairs, verifiedPairs) {
@@ -2493,15 +2478,16 @@ export function parseServerRouteCoverageEvidence(bytes) {
   return report;
 }
 
+// ENTRY/EXIT는 수도권 live chain(legacy) authority·팩의 1:1 결속을 위해서만 남긴다. 전국 authority는 파싱에서
+// ENTRY/EXIT를 거부한다(#873). legacy 분기는 PR-C(#866)에서 live chain과 함께 제거한다.
 const SERVER_ROUTE_AUTHORITY_EDGE_TYPES = ["ENTRY", "EXIT", "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER"];
-const COVERAGE_KINDS = ["entry", "exit", "transfer"];
+const COVERAGE_KINDS = ["transfer"];
 
-// #866 PR-B(#873 일부 앞당김, 검사 제거가 아니라 일반화): 예전에는 capital@1과 213/213/30·456 상수만 인정했다.
-// 이제 분모를 active pack의 비RIDE(ENTRY/EXIT/환승) 간선에서 유도하고, authority edgeCounts와 정확히 같아야 한다.
+// #866 PR-B: 분모를 active pack의 비RIDE 간선에서 유도하고, authority edgeCounts와 정확히 같아야 한다.
 // - pack의 비RIDE 간선은 authority 간선과 id·끝점·type·시간·거리가 1:1로 같고 모두 UNKNOWN이어야 한다.
-// - coverage 필수 쌍은 모두 미검증이어야 하고, 각 쌍은 같은 종류의 authority 간선으로 뒷받침돼야 한다.
+// - coverage 필수 쌍(환승)은 모두 미검증이어야 하고, 각 쌍은 환승 authority 간선으로 뒷받침돼야 한다.
 // - 환승(역 안·역 밖) 양끝 TRANSFER cell이 닫혀 있는지는 authority 파싱(parseServerRouteCoverageEvidence)이 확인한다.
-// - ENTRY/EXIT는 requiredCells []로 열거만 한다(D1). ENTRY/EXIT 열거는 #873에서 간선 생성 중단과 함께 제거한다.
+// - #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나므로 ENTRY/EXIT는 coverage 필수 쌍이 아니다.
 export function isAuthorizedServerRouteCoverageGap({
   pack,
   report,
@@ -2539,7 +2525,7 @@ export function isAuthorizedServerRouteCoverageGap({
   if (rowsById.size !== report.edges.length) {
     return false;
   }
-  const authorityPairs = { entry: new Set(), exit: new Set(), transfer: new Set() };
+  const authorityPairs = { transfer: new Set() };
   for (const authorityEdge of report.edges) {
     const edge = rowsById.get(authorityEdge.edgeId);
     if (!edge
@@ -2555,11 +2541,7 @@ export function isAuthorizedServerRouteCoverageGap({
     }
     const fromNodeId = coverageNodeId(authorityEdge.fromNodeId);
     const toNodeId = coverageNodeId(authorityEdge.toNodeId);
-    if (authorityEdge.edgeType === "ENTRY") {
-      authorityPairs.entry.add(edgePairKey(fromNodeId, toNodeId));
-    } else if (authorityEdge.edgeType === "EXIT") {
-      authorityPairs.exit.add(edgePairKey(fromNodeId, toNodeId));
-    } else {
+    if (authorityEdge.edgeType !== "ENTRY" && authorityEdge.edgeType !== "EXIT") {
       authorityPairs.transfer.add(edgePairKey(fromNodeId, toNodeId));
       authorityPairs.transfer.add(edgePairKey(toNodeId, fromNodeId));
     }
