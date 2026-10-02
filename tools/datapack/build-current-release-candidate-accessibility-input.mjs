@@ -16,7 +16,6 @@ import {
 import {
   canonicalCurrentCapitalRouteEdgeInputJson,
   canonicalCurrentCapitalStationLineInputJson,
-  currentCapitalTransferEdgesFromMetrics,
   deriveCurrentReleaseCandidateObservedAt,
 } from "./current-capital-station-line-contract.mjs";
 import {
@@ -47,13 +46,12 @@ const STATION_CANDIDATE_KEYS = [
   "sourceSetSha256", "stationSetSha256",
 ];
 // #866 D1: authority는 환승 간선(역 안·역 밖) 양끝의 TRANSFER cell만 요구한다.
-// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 전국 후보 입력·authority에 ENTRY/EXIT 간선이 있으면
-// 명시적으로 실패한다. 수도권 live chain(legacy) 입력은 ENTRY/EXIT를 증거 cell 없이(requiredCells: []) 열거하는
-// 기존 계약을 유지한다. 이 legacy 분기는 PR-C(#866)에서 live chain과 함께 제거한다.
+// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. route-edge 입력·authority에 역 단위 ENTRY/EXIT 간선이
+// 있으면 명시적으로 실패한다. #866 PR-C로 수도권 live chain(legacy) 분기가 없어져 후보 id와 무관하게 같은 규칙이다.
 const TRANSFER_EDGE_TYPES = new Set(["IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER"]);
 const ACCESS_EDGE_TYPES = new Set(["ENTRY", "EXIT"]);
-const ROUTE_EDGE_TYPES = new Set([...ACCESS_EDGE_TYPES, "RIDE", ...TRANSFER_EDGE_TYPES]);
-const AUTHORITY_EDGE_TYPES = new Set([...ACCESS_EDGE_TYPES, ...TRANSFER_EDGE_TYPES]);
+const ROUTE_EDGE_TYPES = new Set(["RIDE", ...TRANSFER_EDGE_TYPES]);
+const AUTHORITY_EDGE_TYPES = TRANSFER_EDGE_TYPES;
 const MATERIALIZATION_DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
 
 export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
@@ -66,11 +64,8 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     "station-line input",
   );
   const route = parseBoundJson(input.routeBytes, input.route, "route-edge input");
-  const transferMetrics = parseBoundJson(
-    input.transferMetricsBytes,
-    input.transferMetrics,
-    "transfer metrics",
-  );
+  // 환승 지표는 authority buildInput sha로 결속한다(값·바이트가 같은지 확인).
+  parseBoundJson(input.transferMetricsBytes, input.transferMetrics, "transfer metrics");
   const sourcePack = activeProductionPack(sourceFixture, "source fixture");
   const projectedPack = activeProductionPack(input.projectedFixture, "projected fixture");
   if (sourcePack.id !== projectedPack.id || sourcePack.version !== projectedPack.version) {
@@ -82,12 +77,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
     route,
     projectedPack,
   );
-  // build·replay·authority 검증·validate-datapack이 같은 판정 함수 하나를 쓴다(#873 리뷰 F2).
-  const isNationwide = isNationwideCandidateId(buildSpec.candidateId);
-  const routeEdges = validateRoute(route, stationLineInput, routeStationIndex, isNationwide);
-  if (!isNationwide) {
-    validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
-  }
+  const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
   validateRideFixtureEdges(sourcePack.networkEdges, routeEdges, "source fixture");
   const projectedRides = validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
@@ -97,7 +87,7 @@ export function buildCurrentReleaseCandidateAccessibilityAuthority(input) {
   const candidateFixture = candidateFixtureFrom(input.projectedFixture, projectedRides, routeEdges);
   const candidateFixtureBytes = Buffer.from(canonicalCurrentReleaseCandidateFixtureJson(candidateFixture));
   const authorityEdges = authorityEdgesFrom(routeEdges, materializationRowIndex(materialization));
-  const edgeCounts = countAuthorityEdges(authorityEdges, isNationwide);
+  const edgeCounts = countAuthorityEdges(authorityEdges);
   const payload = canonicalObject({
     schemaVersion: 1,
     artifactKind: "server-route-coverage-authority",
@@ -180,7 +170,7 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
   }
   const stationLineInput = parseBoundJson(stationLineInputBytes, null, "station-line input");
   const route = parseBoundJson(routeEdgeInputBytes, null, "route-edge input");
-  const transferMetrics = parseBoundJson(transferMetricsBytes, null, "transfer metrics");
+  parseBoundJson(transferMetricsBytes, null, "transfer metrics");
   if (stationLineInputBytes.toString("utf8") !== canonicalCurrentCapitalStationLineInputJson(stationLineInput)
     || routeEdgeInputBytes.toString("utf8") !== canonicalCurrentCapitalRouteEdgeInputJson(route)
     || sha256(stationLineInputBytes) !== authority.buildInput.stationLineInputSha256
@@ -189,11 +179,7 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
     throw new Error("authority replay input mismatch");
   }
   const routeStationIndex = validateReplayCandidateIdentity(authority, stationLineInput, route);
-  const isNationwide = isNationwideCandidateId(authority?.candidate?.candidateId);
-  const routeEdges = validateRoute(route, stationLineInput, routeStationIndex, isNationwide);
-  if (!isNationwide) {
-    validateTransferEdgeSet(transferMetrics, stationLineInput, routeEdges);
-  }
+  const routeEdges = validateRoute(route, stationLineInput, routeStationIndex);
   const projectedPack = activeProductionPack(projectedFixture, "projected fixture");
   validateProjectedFixtureEdges(projectedPack.networkEdges, routeEdges);
   const observedAt = deriveCurrentReleaseCandidateObservedAt(stationLineInput.evidenceRows);
@@ -204,7 +190,7 @@ export function validateCurrentReleaseCandidateAccessibilityAuthorityReplay({
     throw new Error("authority replay input mismatch");
   }
   const expectedEdges = authorityEdgesFrom(routeEdges, materializationRowIndex(materialization));
-  if (canonicalJson(countAuthorityEdges(expectedEdges, isNationwide)) !== canonicalJson(authority.edgeCounts)
+  if (canonicalJson(countAuthorityEdges(expectedEdges)) !== canonicalJson(authority.edgeCounts)
     || canonicalJson(expectedEdges) !== canonicalJson(authority.edges)) {
     throw new Error("authority replay mismatch");
   }
@@ -221,8 +207,7 @@ function validateAuthorityPayload(payload) {
     "stationLineInputSha256", "routeEdgeInputSha256", "transferMetricsSha256",
     "materializationDigest", "observedAt",
   ], "authority build input");
-  const isNationwide = isNationwideCandidateId(payload.candidate.candidateId);
-  validateAuthorityEdgeCountKeys(payload.edgeCounts, isNationwide);
+  validateAuthorityEdgeCountKeys(payload.edgeCounts);
   for (const key of [
     "buildSpecSha256", "sourceFixtureSha256", "candidateFixtureSha256",
     "stationLineInputSha256", "routeEdgeInputSha256", "transferMetricsSha256",
@@ -238,7 +223,7 @@ function validateAuthorityPayload(payload) {
     throw new Error("authority edge denominator mismatch");
   }
   const actualCounts = edgeTypeCounts(payload.edges);
-  if (!authorityEdgeTypeSet(actualCounts, isNationwide)
+  if (!authorityEdgeTypeSet(actualCounts)
     || canonicalJson(payload.edgeCounts) !== canonicalJson(canonicalObject({ ...actualCounts, total: payload.edges.length }))) {
     throw new Error("authority edge denominator mismatch");
   }
@@ -272,8 +257,7 @@ function validateAuthorityPayload(payload) {
     if (edge.routeEdgeSha256 !== routeEdgeSha256(routePayload)) {
       throw new Error("authority route edge hash mismatch");
     }
-    const requiredCount = TRANSFER_EDGE_TYPES.has(edge.edgeType) ? 2 : 0;
-    if (!Array.isArray(edge.requiredCells) || edge.requiredCells.length !== requiredCount) {
+    if (!Array.isArray(edge.requiredCells) || edge.requiredCells.length !== 2) {
       throw new Error("authority required cell denominator mismatch");
     }
     const cells = new Set();
@@ -291,37 +275,32 @@ function validateAuthorityPayload(payload) {
 }
 
 function validateAuthorityEdgeCells(edge) {
-  // legacy(수도권) ENTRY/EXIT는 증거 cell이 없다(requiredCount 0). PR-C(#866)에서 live chain과 함께 제거한다.
-  if (!TRANSFER_EDGE_TYPES.has(edge.edgeType)) return;
   const { from, to } = transferEndpoints(edge, "authority transfer endpoint mismatch");
   assertAuthorityCell(edge.requiredCells[0], from, "TRANSFER");
   assertAuthorityCell(edge.requiredCells[1], to, "TRANSFER");
 }
 
-function validateAuthorityEdgeCountKeys(edgeCounts, isNationwide) {
+function validateAuthorityEdgeCountKeys(edgeCounts) {
   if (!edgeCounts || typeof edgeCounts !== "object" || Array.isArray(edgeCounts)
     || !Object.hasOwn(edgeCounts, "total")) {
     throw new Error("authority edge counts shape mismatch");
   }
   const { total: _total, ...counts } = edgeCounts;
-  if (!authorityEdgeTypeSet(counts, isNationwide)) throw new Error("authority edge counts shape mismatch");
+  if (!authorityEdgeTypeSet(counts)) throw new Error("authority edge counts shape mismatch");
 }
 
-// 환승 1종 이상이 있어야 하고, 모르는 간선 종류는 받지 않는다.
-// 전국 후보 authority는 ENTRY/EXIT가 있으면 명시적으로 실패한다(#873). legacy(수도권 live chain) authority는 ENTRY·EXIT가
-// 둘 다 있거나 둘 다 없어야 한다(승강장 기준으로 투영한 입력은 둘 다 없다). legacy 분기는 PR-C(#866)에서 제거한다.
-function authorityEdgeTypeSet(counts, isNationwide) {
+// 환승 1종 이상이 있어야 하고, 모르는 간선 종류는 받지 않는다. ENTRY/EXIT가 있으면 명시적으로 실패한다(#873).
+function authorityEdgeTypeSet(counts) {
   const keys = Object.keys(counts);
-  if (isNationwide && keys.some((key) => ACCESS_EDGE_TYPES.has(key))) {
+  if (keys.some((key) => ACCESS_EDGE_TYPES.has(key))) {
     throw new Error("nationwide authority must not contain ENTRY/EXIT edges");
   }
-  return keys.includes("ENTRY") === keys.includes("EXIT")
-    && keys.some((key) => TRANSFER_EDGE_TYPES.has(key))
+  return keys.some((key) => TRANSFER_EDGE_TYPES.has(key))
     && keys.every((key) => AUTHORITY_EDGE_TYPES.has(key));
 }
 
-// 전국 후보 판정의 단일 기준이다. build·replay·authority 검증·validate-datapack(#873)이 모두 이 함수만 쓴다.
-// authority 형식에는 범위 id가 없으므로 후보 id 접두어로 판정한다.
+// 전국 후보 판정 함수다. #866 PR-C로 authority·route 검증은 후보 id와 무관하게 ENTRY/EXIT를 거부하므로 이 모듈은
+// 쓰지 않는다. validate-datapack의 청구 역-노선 존재성 legacy 판정(--legacy-fixture-production)만 쓰며, 그 정리는 PR-D(#866)에서 한다.
 export function isNationwideCandidateId(candidateId) {
   return typeof candidateId === "string" && candidateId.startsWith("nationwide-candidate");
 }
@@ -477,10 +456,10 @@ function validateReplayCandidateIdentity(authority, stationLineInput, route) {
   return { byKey, stationIds };
 }
 
-function validateRoute(route, stationLineInput, routeStationIndex, isNationwide) {
+function validateRoute(route, stationLineInput, routeStationIndex) {
   const routeEdges = validateRouteEdgeShapes(route.routeEdges);
   const counts = Object.keys(edgeTypeCounts(routeEdges));
-  if (isNationwide && counts.some((type) => ACCESS_EDGE_TYPES.has(type))) {
+  if (counts.some((type) => ACCESS_EDGE_TYPES.has(type))) {
     throw new Error("nationwide route-edge input must not contain ENTRY/EXIT edges");
   }
   if (!counts.includes("RIDE")
@@ -493,9 +472,6 @@ function validateRoute(route, stationLineInput, routeStationIndex, isNationwide)
     throw new Error("route topology hash mismatch");
   }
   validateRouteEndpoints(routeEdges, stationLineInput.stationLines, routeStationIndex);
-  // legacy(수도권 live chain) 입력에 ENTRY/EXIT가 있으면 역-노선마다 정확히 하나씩이어야 한다(기존 계약).
-  // 승강장 기준으로 투영한 입력에는 없다. PR-C(#866)에서 live chain과 함께 제거한다.
-  if (counts.some((type) => ACCESS_EDGE_TYPES.has(type))) validateEntryExitBijections(routeEdges, stationLineInput.stationLines);
   return routeEdges;
 }
 
@@ -527,12 +503,7 @@ function validateRouteEndpoints(routeEdges, stationLines, routeStationIndex) {
       validateRouteEndpoint(node, edge, routeStationIndex);
     }
     if (edge.edgeType === "RIDE") continue;
-    const accessibilityNodes = edge.edgeType === "ENTRY"
-      ? [edge.toNodeId]
-      : edge.edgeType === "EXIT"
-        ? [edge.fromNodeId]
-        : [edge.fromNodeId, edge.toNodeId];
-    if (accessibilityNodes.some((node) => !stationKeys.has(node))) {
+    if ([edge.fromNodeId, edge.toNodeId].some((node) => !stationKeys.has(node))) {
       throw new Error("route edge endpoint mismatch");
     }
   }
@@ -669,11 +640,7 @@ function authorityEdgesFrom(routeEdges, rows) {
 
 function authorityEdge(edge, rows, unresolved) {
   let required;
-  if (ACCESS_EDGE_TYPES.has(edge.edgeType)) {
-    // legacy(수도권) ENTRY/EXIT는 발행 차단 증거를 요구하지 않는다(D1). 전국 입력은 validateRoute가 이미 거부했다.
-    // PR-C(#866)에서 live chain과 함께 제거한다.
-    required = [];
-  } else if (TRANSFER_EDGE_TYPES.has(edge.edgeType)) {
+  if (TRANSFER_EDGE_TYPES.has(edge.edgeType)) {
     const { from, to } = transferEndpoints(edge, "transfer edge endpoint mismatch");
     required = [from, to].map(({ stationId, lineId }) =>
       requiredTransferCell(rows, edge.edgeId, stationId, lineId, unresolved));
@@ -708,9 +675,9 @@ function requiredTransferCell(rows, edgeId, stationId, lineId, unresolved) {
   });
 }
 
-function countAuthorityEdges(edges, isNationwide) {
+function countAuthorityEdges(edges) {
   const counts = edgeTypeCounts(edges);
-  if (!Array.isArray(edges) || edges.length === 0 || !authorityEdgeTypeSet(counts, isNationwide)) {
+  if (!Array.isArray(edges) || edges.length === 0 || !authorityEdgeTypeSet(counts)) {
     throw new Error("authority edge denominator mismatch");
   }
   return canonicalObject({ ...counts, total: edges.length });
@@ -774,47 +741,6 @@ function routeStationLineIndex(stationLines) {
   return index;
 }
 
-function validateEntryExitBijections(routeEdges, stationLines) {
-  const expected = new Set(stationLines.map(stationLineKey));
-  for (const [type, node] of [["ENTRY", "toNodeId"], ["EXIT", "fromNodeId"]]) {
-    const selected = routeEdges.filter(({ edgeType }) => edgeType === type);
-    const actual = new Set(selected
-      .map((edge) => stationLineKey(stationLineNode(edge[node]))));
-    if (selected.length !== expected.size || actual.size !== expected.size
-      || [...expected].some((key) => !actual.has(key))) {
-      throw new Error("route edge coverage mismatch");
-    }
-  }
-}
-
-function validateTransferEdgeSet(metrics, stationLineInput, routeEdges) {
-  if (metrics?.artifactKind !== "current-transfer-topology-metrics"
-    || !Array.isArray(metrics.metrics) || metrics.metrics.length === 0
-    || metrics.artifactSha256 !== sha256(Buffer.from(canonicalJson(without(metrics, "artifactSha256"))))) {
-    throw new Error("transfer metrics identity mismatch");
-  }
-  const transferEvidence = stationLineInput.evidenceRows
-    .filter(({ domain }) => domain === "TRANSFER");
-  if (transferEvidence.length === 0
-    || transferEvidence.some(({ providerRecordHash, sourceId }) =>
-      providerRecordHash !== metrics.artifactSha256
-      || sourceId !== metrics.sourceIdentity?.sourceId)) {
-    throw new Error("transfer metrics evidence mismatch");
-  }
-  const expected = currentCapitalTransferEdgesFromMetrics(metrics.metrics, stationLineInput.stationLines)
-    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
-  const actual = routeEdges
-    .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER")
-    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
-  if (canonicalJson(actual) !== canonicalJson(expected)) {
-    throw new Error("transfer edge set mismatch");
-  }
-}
-
-function without(value, key) {
-  return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
-}
-
 function exact(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)
     || Object.keys(value).length !== keys.length
@@ -839,7 +765,7 @@ async function defaultProjectFixture({ buildSpec, sourceFixture, repositoryRoot 
   return projectCandidateFixtureForAccessibilityAuthority({ buildSpec, sourceFixture, repositoryRoot });
 }
 
-// #866 PR-B: RC 입력은 수도권 live chain(refresh-current-capital-accessibility-full)을 다시 돌려 만들지 않는다.
+// #866 PR-B: RC 입력은 수도권 사본을 다시 만들지 않는다.
 // 전국 후보 준비(nationwide-candidate-preparation.json)가 sha로 결속한 전국 입력을 검증해 바이트 그대로 쓴다.
 export async function main(
   argv = process.argv.slice(2),

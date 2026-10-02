@@ -148,10 +148,7 @@ test("CI는 EXIT path admission contract를 owned required runner에서 실행�
     "tools/datapack/plan-kric-exit-path-collection.test.mjs",
     "tools/datapack/build-current-kric-exit-collection-plan.test.mjs",
     "tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs",
-    "tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs",
-    "tools/datapack/diagnose-current-kric-exit-path-query.test.mjs",
     "tools/datapack/build-exit-path-admission.test.mjs",
-    "tools/datapack/build-current-exit-path-source-admission.test.mjs",
   ]);
 });
 
@@ -226,7 +223,7 @@ test("CI는 구형 v18 migration 또는 station-catalog bootstrap을 실행하�
 });
 
 const shardIds = ["contracts_shard_1", "contracts_shard_2", "contracts_shard_3", "contracts_shard_4"];
-const contractJobIds = ["contracts_mobile_v19", "contracts_live_chain", ...shardIds];
+const contractJobIds = ["contracts_mobile_v19", ...shardIds];
 
 function assertPinnedFixtureJob(job) {
   assert.match(job, /^    timeout-minutes: 30$/m);
@@ -284,29 +281,28 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
       "각 shard job은 자체 Chrome setup 뒤에 runner를 실행해야 함",
     );
   }
-  // mobile-v19 profile과 live-chain OCI context도 각자 pinned fixture를 stage한 독립 job이다.
+  // mobile-v19 profile도 pinned fixture를 stage한 독립 job이다.
   const mobile = namedJob(ci, "contracts_mobile_v19");
   assert.match(mobile, /^    name: Data contracts \(mobile-v19\)$/m);
   assertPinnedFixtureJob(mobile);
-  const liveChain = namedJob(ci, "contracts_live_chain");
-  assert.match(liveChain, /^    name: Data contracts \(capital live-chain OCI\)$/m);
-  assertPinnedFixtureJob(liveChain);
-  assert.match(
-    namedWorkflowStep(liveChain, "Verify current capital live-chain OCI contracts"),
-    /node --test tools\/datapack\/run-current-capital-live-chain\.test\.mjs/,
-  );
+  // #866 PR-C: 수도권 live chain 전용 job은 없다. 집계 job의 needs는 실제 Data contracts 하위 job 전체와 정확히 같다.
+  const jobIds = [...ci.matchAll(/^  ([a-z0-9_]+):$/gmu)].map(([, id]) => id);
+  assert.deepEqual(jobIds.filter((id) => id.startsWith("contracts_")).sort(), [...contractJobIds].sort());
+  assert.ok(jobIds.includes("contracts"), "aggregate Data contracts job is required");
   // required check는 집계 job 이름 "Data contracts" 하나이고 모든 job 성공을 요구한다.
   assert.match(contracts, /^    name: Data contracts$/m);
   assert.match(contracts, new RegExp(`needs:\\s*\\[${contractJobIds.join(", ")}\\]`));
   assert.match(contracts, /if:\s*\$\{\{ always\(\) \}\}/);
   for (const [variable, id] of [
     ["MOBILE_V19_RESULT", "contracts_mobile_v19"],
-    ["LIVE_CHAIN_RESULT", "contracts_live_chain"],
     ...shardIds.map((id, index) => [`SHARD_${index + 1}_RESULT`, id]),
   ]) {
     assert.match(contracts, new RegExp(`${variable}:\\s*\\$\\{\\{ needs\\.${id}\\.result \\}\\}`));
     assert.ok(contracts.includes(`[[ "\${${variable}}" == "success" ]]`), `${variable} must be required`);
   }
+  // 집계 step은 needs에 있는 job 결과만 읽고, 모두 success여야 한다(빠지거나 남는 결과 변수가 없다).
+  assert.equal([...contracts.matchAll(/_RESULT: \$\{\{ needs\.([a-z0-9_]+)\.result \}\}/gu)].length, contractJobIds.length);
+  assert.equal([...contracts.matchAll(/== "success" \]\]/gu)].length, contractJobIds.length);
 });
 
 test("CI는 PR 실행만 새 head에서 취소하고 main push·dispatch는 취소하지 않는다", () => {

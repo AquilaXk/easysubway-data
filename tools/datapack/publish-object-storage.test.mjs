@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, access } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,34 +10,14 @@ import test from "node:test";
 
 import {
   preauthenticatedObjectStorageClient,
-  publishCurrentKricExitProviderOciPlan,
   publishImmutableObjectPlan,
   requireCurrentCapitalLiveChainOciParBaseUrl,
 } from "./publish-object-storage.mjs";
-import { buildCurrentKricExitProviderOciPlan, canonicalCurrentKricExitProviderOciPlanJson } from "./build-current-kric-exit-provider-oci-plan.mjs";
-import { buildCanonicalCurrentKricExitCollectionBundle, canonicalCurrentKricExitCollectionReceiptJson } from "./test-fixtures/current-live-chain-artifacts.mjs";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const OCI_PAR = "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted-token/n/axvym6vk8g7i/b/easysubway-datapacks/o/";
-
-function memoryImmutableClient({ mismatch = false } = {}) {
-  const objects = new Map();
-  return {
-    objects,
-    async putObjectIfAbsent(key, bytes) {
-      if (objects.has(key)) return false;
-      objects.set(key, Buffer.from(bytes));
-      return true;
-    },
-    async readObject(key) {
-      const body = objects.get(key);
-      if (!body) return { exists: false };
-      return { exists: true, body: mismatch ? Buffer.from("wrong") : Buffer.from(body) };
-    },
-  };
-}
 
 test("current live-chain은 exact OCI PAR만 허용하며 generic/AWS 경로를 거부한다", () => {
   for (const value of [
@@ -64,27 +44,6 @@ test("current live-chain OCI 오류는 provider response에 반사된 PAR secret
   );
   assert.equal(observed.timeoutMs, 20_000);
   assert.equal(observed.maxResponseBytes, 64 * 1024 * 1024);
-});
-
-test("EXIT provider writes a create-new receipt only after one-object PUT and full GET", async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), "current-exit-provider-oci-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const providerArtifact = await buildCanonicalCurrentKricExitCollectionBundle({ operationId: "current-capital-647" });
-  await writeFile(path.join(root, "current-kric-exit-collection-bundle.json"), providerArtifact.bytes);
-  const plan = buildCurrentKricExitProviderOciPlan({
-    mainSha: "a".repeat(40), operationId: "current-capital-647",
-    providerCollectionBundleBytes: providerArtifact.bytes,
-    providerCapturedAt: providerArtifact.snapshot.capturedAt,
-  });
-  const planBytes = Buffer.from(`${canonicalCurrentKricExitProviderOciPlanJson(plan)}\n`);
-  const receiptPath = path.join(root, "exit-provider-receipt.json");
-  const client = memoryImmutableClient();
-  const receipt = await publishCurrentKricExitProviderOciPlan({ planBytes, root, receiptPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client });
-  assert.equal(receipt.providerObject.objectKey, plan.providerObject.objectKey);
-  assert.deepEqual(client.objects.get(plan.providerObject.objectKey), providerArtifact.bytes);
-  const failedReceiptPath = path.join(root, "failed-receipt.json");
-  await assert.rejects(() => publishCurrentKricExitProviderOciPlan({ planBytes, root, receiptPath: failedReceiptPath, env: { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: OCI_PAR }, client: memoryImmutableClient({ mismatch: true }) }), /immutable violation|uploaded checksum mismatch/);
-  await assert.rejects(() => access(failedReceiptPath));
 });
 
 // 메모리 객체 저장소 mock: PUT 저장, HEAD/GET 응답. Cache-Control·meta-sha256 기록.

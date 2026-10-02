@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -365,4 +366,56 @@ test("#866 F1 벽시계가 ITX freshUntil 이후여도 후보 시계가 신선�
     },
   });
   assert.deepEqual(await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY)), await readFile(path.join(root, ROUTE_EDGE_POLICY)));
+});
+
+// #866 PR-C: 후보 재생성(새 후보 id·새 build spec bytes)이 갱신 연쇄 밖의 재결속 게이트에 걸리지 않아야 한다.
+// 갱신은 NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS 전체를 다시 쓴다. 그러므로 출력 밖의 커밋 JSON이 현재 후보 id나
+// 출력 파일의 sha256을 담고 있으면, 새 후보로 갱신한 순간 그 파일이 stale 결속이 된다(예전 수도권 live chain
+// fan-in과 수도권 accessibility 입력 사본이 그랬다). 출력 밖 결속이 0이어야 한다.
+function listJsonFiles(directory, files = []) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) listJsonFiles(absolute, files);
+    else if (entry.name.endsWith(".json")) files.push(absolute);
+  }
+  return files;
+}
+
+function candidateIdentityBindersOutsideRefresh(repositoryRoot) {
+  const outputs = new Set(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS);
+  const buildSpec = JSON.parse(readFileSync(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const tokens = [
+    [buildSpec.candidateId, "candidateId"],
+    ...NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => [
+      sha256(readFileSync(path.join(repositoryRoot, relative))), `sha256(${relative})`,
+    ]),
+  ];
+  const binders = [];
+  for (const absolute of ["tools", "release"].flatMap((scanRoot) => listJsonFiles(path.join(repositoryRoot, scanRoot)))) {
+    const relative = path.relative(repositoryRoot, absolute).split(path.sep).join("/");
+    if (outputs.has(relative)) continue;
+    const text = readFileSync(absolute, "utf8");
+    const hits = tokens.filter(([token]) => text.includes(token)).map(([, label]) => label);
+    if (hits.length > 0) binders.push(`${relative}: ${hits.join(", ")}`);
+  }
+  return binders.sort();
+}
+
+test("#866 PR-C 현재 후보 식별을 결속한 커밋 JSON은 전국 후보 갱신 출력뿐이다(새 후보 id로 재생성해도 다른 재결속 게이트가 없다)", () => {
+  assert.deepEqual(candidateIdentityBindersOutsideRefresh(root), []);
+});
+
+test("#866 PR-C 후보 식별 결속 검사기는 출력 밖에 심은 결속을 잡는다", async (t) => {
+  const repositoryRoot = await copiedRepository(t);
+  assert.deepEqual(candidateIdentityBindersOutsideRefresh(repositoryRoot), []);
+  const buildSpecBytes = await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"));
+  const buildSpec = JSON.parse(buildSpecBytes);
+  await mkdir(path.join(repositoryRoot, "tools/datapack/release/stale"), { recursive: true });
+  await writeFile(path.join(repositoryRoot, "tools/datapack/release/stale/fan-in.json"),
+    jsonBytes({ candidateBuildSpec: { sha256: sha256(buildSpecBytes) } }));
+  await writeFile(path.join(repositoryRoot, "release/stale-input.json"), jsonBytes({ candidate: { candidateId: buildSpec.candidateId } }));
+  assert.deepEqual(candidateIdentityBindersOutsideRefresh(repositoryRoot), [
+    "release/stale-input.json: candidateId",
+    "tools/datapack/release/stale/fan-in.json: sha256(tools/datapack/release/candidate-build-spec.json)",
+  ]);
 });

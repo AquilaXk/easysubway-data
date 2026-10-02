@@ -13,7 +13,8 @@ import {
 test("candidate fixture override는 original/projected/authority identity를 exact 결속한다", () => {
   const value = overrideFixture();
   const result = buildDatapack.validateCandidateFixtureOverride(value);
-  assert.equal(result.fixture.packs[0].networkEdges.length, 2654);
+  // #866 PR-C: authority 간선은 환승뿐이다(RIDE 2,198 + 역 안 환승 30).
+  assert.equal(result.fixture.packs[0].networkEdges.length, 2228);
   assert.deepEqual(result.binding, {
     sourceFixtureSha256: sha(value.sourceFixtureBytes),
     candidateFixtureSha256: sha(value.candidateFixtureBytes),
@@ -95,9 +96,8 @@ function overrideFixture() {
     sourceSetSha256: buildSpec.sourceSnapshotSetHash,
     stationSetSha256: "b".repeat(64),
   };
+  // #866 PR-C: authority는 후보 id와 무관하게 ENTRY/EXIT를 받지 않는다(수도권 live chain legacy 열거 삭제).
   const edges = [
-    ...Array.from({ length: 213 }, (_, index) => authorityEdge("ENTRY", index)),
-    ...Array.from({ length: 213 }, (_, index) => authorityEdge("EXIT", index)),
     ...Array.from({ length: 30 }, (_, index) => authorityEdge("IN_STATION_TRANSFER", index)),
   ].sort((left, right) => left.edgeId.localeCompare(right.edgeId));
   const payload = {
@@ -114,7 +114,7 @@ function overrideFixture() {
       materializationDigest: "e".repeat(64),
       observedAt: "2026-08-16T00:00:00.000Z",
     },
-    edgeCounts: { ENTRY: 213, EXIT: 213, IN_STATION_TRANSFER: 30, total: 456 },
+    edgeCounts: { IN_STATION_TRANSFER: 30, total: 30 },
     edges,
   };
   let authority = { ...payload, authoritySha256: sha(Buffer.from(canonical(payload))) };
@@ -144,7 +144,6 @@ function authorityEdge(edgeType, index) {
         cell(stationId, "seoul-2", "TRANSFER", index === 0 ? "UNVERIFIED_EVIDENCE_BLOCKED" : "VERIFIED_PRESENT"),
         cell(stationId, "seoul-4", "TRANSFER", "NOT_APPLICABLE"),
       ]
-    // #866 D1: ENTRY/EXIT는 증거 cell 없이 열거만 한다(#873에서 간선 생성 중단과 함께 제거).
     : [];
   const edge = {
     edgeId: `edge-${edgeType.toLowerCase()}-${padded}`,

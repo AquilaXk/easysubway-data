@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstat, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { readEffectiveCurrentCapitalAccessibilityTransition } from "../datapack/current-capital-accessibility-transition.mjs";
 import { requiresCurrentCapitalTopologyAdmission } from "../datapack/rebind-capital-route-map-admissions.mjs";
 
 const BRANCH = /^automation\/636-current-topology-refresh-[0-9]+$/u;
 const SHA = /^[0-9a-f]{40}$/u;
 const SUBJECTS = ["Claim current topology refresh", "Register current topology inputs", "Activate current topology inputs"];
 const INCHEON = new Map([["incheon-transit-station-info", "topologyAdmissionEvidence"], ["incheon-line1-train-timetable", "scheduleAdmissionEvidence"], ["incheon-line2-train-timetable", "scheduleAdmissionEvidence"]]);
-const TRANSITION = "tools/datapack/release/current-capital-accessibility-transition.json";
-const TRANSITION_SUCCESSOR = "tools/datapack/release/current-capital-accessibility-transition-successor.json";
 
 function object(value, label) { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} is invalid`); return value; }
 function json(bytes, label) { try { return JSON.parse(bytes); } catch { throw new Error(`${label} is invalid JSON`); } }
@@ -123,29 +120,9 @@ function availableTopologyRefreshClaims(prs, claims) {
   return available;
 }
 
-async function exists(file) {
-  try { await lstat(file); return true; }
-  catch (error) { if (error?.code === "ENOENT") return false; throw error; }
-}
-async function hasPendingAccessibilityTransition(repositoryRoot, readTransitionBoundary) {
-  const root = path.resolve(repositoryRoot);
-  if (!await exists(path.join(root, TRANSITION))) {
-    if (await exists(path.join(root, TRANSITION_SUCCESSOR))) {
-      throw new Error("current accessibility transition successor has no base transition");
-    }
-    return false;
-  }
-  await readTransitionBoundary({ repositoryRoot: root });
-  return true;
-}
-
 export function currentCapitalTopologyPreflight({ now = new Date(), jobWindowMinutes = 45, existingPaths = [], itxRefreshRequired = true } = {}) { const start = now instanceof Date ? now.getTime() : NaN; if (!Number.isFinite(start) || !Number.isInteger(jobWindowMinutes) || jobWindowMinutes < 1 || !Array.isArray(existingPaths) || existingPaths.some((item) => typeof item !== "string") || typeof itxRefreshRequired !== "boolean") throw new Error("current topology preflight is invalid"); const dates = new Set(); for (let point = start; point <= start + jobWindowMinutes * 60_000; point += 60_000) { const date = new Date(point); dates.add(date.toISOString().slice(0, 10).replaceAll("-", "")); dates.add(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date).filter(({ type }) => type !== "literal").map(({ value }) => value).join("")); } const candidates = [...dates].flatMap((stamp) => [`tools/datapack/sources/capital-route-topology-${stamp}.json`, `tools/datapack/sources/incheon-transit-station-info-${stamp}.json`, `tools/datapack/sources/incheon-line1-train-timetable-${stamp}.json`, `tools/datapack/sources/incheon-line2-train-timetable-${stamp}.json`, ...(itxRefreshRequired ? [`tools/datapack/itx-current-network-edge-admission-${stamp}.json`] : []), `tools/datapack/release/capital-topology-reverification-${stamp}.json`]); const conflicts = candidates.filter((candidate) => existingPaths.includes(candidate)); return { state: conflicts.length ? "WAIT_IMMUTABLE_IDENTITY" : "CLEAR", conflicts }; }
 
-export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candidatePath, policyPath, prsPath, claimsPath, repositoryRoot = process.cwd(), repository, currentMainSha, now = new Date(), readTransitionBoundary = readEffectiveCurrentCapitalAccessibilityTransition } = {}) {
-  if (typeof readTransitionBoundary !== "function") throw new Error("transition boundary reader is invalid");
-  if (await hasPendingAccessibilityTransition(repositoryRoot, readTransitionBoundary)) {
-    return { state: "PENDING_FULL_FAN_IN" };
-  }
+export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candidatePath, policyPath, prsPath, claimsPath, repositoryRoot = process.cwd(), repository, currentMainSha, now = new Date() } = {}) {
   const [inventoryBytes, candidateBytes, policyBytes, prsBytes, claimsBytes] = await Promise.all([
     readFile(path.resolve(inventoryPath)), readFile(path.resolve(candidatePath)), readFile(path.resolve(policyPath)),
     readFile(path.resolve(prsPath)), readFile(path.resolve(claimsPath)),

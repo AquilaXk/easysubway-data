@@ -47,7 +47,6 @@ import {
 } from "./collect-incheon-station-info.mjs";
 import { incheonStationInfoPackSource } from "./materialize-incheon-station-info.mjs";
 import { assertNoRetiredTransitReferences } from "./project-retired-transit-lines.mjs";
-import { assertCurrentCapitalAccessibilityBuildAllowed } from "./current-capital-accessibility-transition.mjs";
 import {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   canonicalCurrentReleaseCandidateFixtureJson,
@@ -367,9 +366,6 @@ export async function main(
   const args = parseArgs(argv);
   const buildSpecValidationOnlyRequested = args["build-spec"] != null
     && process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_VALIDATION_ONLY === "true";
-  if (args["build-spec"] != null && !buildSpecValidationOnlyRequested) {
-    await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });
-  }
   const outputDir = path.resolve(root, requireArg(args, "output"));
   const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
   const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));

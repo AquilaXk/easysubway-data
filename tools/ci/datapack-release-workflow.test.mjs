@@ -287,12 +287,6 @@ test("route-final candidate는 authority·strict validation·signed route stage�
   assert.match(prepare, /elif \[\[ "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "release-candidate" \|\| "\$\{EASYSUBWAY_DATAPACK_RELEASE_MODE\}" == "candidate-create" \]\]; then/);
 });
 
-// #866 PR-B: 발행 workflow는 수도권 live chain 산출물(current-capital-accessibility-full)을 참조하지 않는다.
-test("datapack-release workflow는 current-capital-accessibility-full 산출물 참조가 0개다", () => {
-  assert.equal(yml.match(/current-capital-accessibility-full/g)?.length ?? 0, 0);
-  assert.doesNotMatch(yml, /refresh-current-capital-accessibility-full|run-current-capital-live-chain|build-current-capital-live-chain-boundary/);
-});
-
 test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
   // trigger 범위만 검사한다. jobs의 정상적인 정책 입력까지 포함하지 않는다.
   const push = yml.match(/^  push:\n(?:[ \t]*\n| {4}[^\n]*\n)*/m)?.[0];
@@ -394,7 +388,7 @@ test("map-catalog production publication은 current main·검증된 server-route
   assert.match(job, /active\.id !== "nationwide" \|\| active\.version !== "1"\) throw new Error\("current build must select nationwide@1"\)/);
   assert.match(job, /--map-pack-id "nationwide-map-1"/);
   assert.match(job, /--catalog-pack-id "nationwide-catalog-1"/);
-  assert.doesNotMatch(job, /capital@1|capital-map-1|capital-catalog-1|current-capital-accessibility-full/);
+  assert.doesNotMatch(job, /capital@1|capital-map-1|capital-catalog-1/);
   assert.match(job, /build-datapack\.mjs/);
   assert.match(job, /gunzipSync/);
   assert.match(job, /emit-artifact-components\.mjs/);
@@ -1216,7 +1210,7 @@ test("required PR CI는 release와 같은 인자로 고정 Hub 계약 기준 sou
   assert.match(ciYml, /needs: \[contracts_mobile_v19,/);
 });
 
-// #873 메인 결정 (a): legacy fixture 팩 검증 플래그는 발행 경로가 쓸 수 없다. PR-C(#866)에서 플래그와 함께 제거한다.
+// #873 메인 결정 (a): legacy fixture 팩 검증 플래그는 발행 경로가 쓸 수 없다. PR-D(#866)에서 플래그와 함께 제거한다.
 test("#873 어떤 workflow도 --legacy-fixture-production을 쓰지 않는다", async () => {
   const { readdir, readFile: readText } = await import("node:fs/promises");
   const workflowDir = new URL("../../.github/workflows/", import.meta.url);

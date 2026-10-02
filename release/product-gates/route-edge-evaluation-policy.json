@@ -17,8 +17,6 @@
     "UNKNOWN"
   ],
   "edgeDomainMap": {
-    "ENTRY": { "endpointTarget": "TO", "domains": ["FACILITY"] },
-    "EXIT": { "endpointTarget": "FROM", "domains": ["EXIT"] },
     "IN_STATION_TRANSFER": { "endpointTarget": "BOTH", "domains": ["TRANSFER"] },
     "OUT_OF_STATION_TRANSFER": { "endpointTarget": "BOTH", "domains": ["TRANSFER"] },
     "LEGACY_TRANSFER": { "endpointTarget": "BOTH", "domains": ["TRANSFER"] },

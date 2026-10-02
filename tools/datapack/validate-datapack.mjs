@@ -1990,7 +1990,7 @@ function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
 //   --legacy-fixture-production(fixture 빌드 legacy 팩 전용) 중 정확히 하나가 있어야 한다. 입력이 빠졌다고 legacy로 내려가지 않는다.
 // - --legacy-fixture-production은 전국 후보 팩(팩 id nationwide 또는 후보 provenance가 전국 후보)에 쓸 수 없다.
 // - --require-production이 아니면 출시 게이트를 판정하지 않는다(null).
-// --legacy-fixture-production은 PR-C(#866)에서 제거한다. 발행 workflow는 이 플래그를 쓸 수 없다(workflow 계약 테스트).
+// --legacy-fixture-production은 PR-D(#866)에서 제거한다. 발행 workflow는 이 플래그를 쓸 수 없다(workflow 계약 테스트).
 export function resolveRoutePresenceScope({ requireProduction, provenance, legacyFixtureProduction, nationwideArtifact }) {
   if (legacyFixtureProduction && provenance) {
     throw new Error("--legacy-fixture-production cannot be combined with server route coverage provenance");
@@ -2031,7 +2031,7 @@ async function isNationwideCandidateArtifact(manifest, root) {
 // #873 리뷰 F1: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 예전에는 역 단위 ENTRY coverage가 청구 범위
 // 역-노선의 존재도 함께 확인했다. 이제 청구 범위의 모든 역-노선은 경로 간선 끝점(승강장 노드)으로 존재해야 한다.
 // - 전국 팩: RIDE·환승 간선 끝점만 인정한다. ENTRY/EXIT로만 존재하는 역-노선은 실패한다.
-// - legacy(비전국) 팩: 2026-06 pilot처럼 ENTRY/EXIT만 있는 역-노선도 인정한다. 이 legacy 허용은 PR-C(#866)에서 제거한다.
+// - legacy(비전국) 팩: 2026-06 pilot처럼 ENTRY/EXIT만 있는 역-노선도 인정한다. 이 legacy 허용은 PR-D(#866)에서 제거한다.
 // authority로 인정할 수 있는 coverage gap이 아니므로 인정 경로 전에 명시적으로 실패한다.
 export function assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows, nationwide }) {
   if (typeof nationwide !== "boolean") throw new Error("claimed station-line presence nationwide flag is required");
@@ -2574,8 +2574,8 @@ export function parseServerRouteCoverageEvidence(bytes) {
   return report;
 }
 
-// ENTRY/EXIT는 수도권 live chain(legacy) authority·팩의 1:1 결속을 위해서만 남긴다. 전국 authority는 파싱에서
-// ENTRY/EXIT를 거부한다(#873). legacy 분기는 PR-C(#866)에서 live chain과 함께 제거한다.
+// authority는 파싱에서 후보 id와 무관하게 ENTRY/EXIT를 거부한다(#873, #866 PR-C). 팩 쪽 1:1 결속 대상에는 ENTRY/EXIT를
+// 남긴다. 팩에 역 단위 ENTRY/EXIT 간선이 있으면 authority edgeCounts와 분모가 어긋나 coverage gap을 인정하지 않는다.
 const SERVER_ROUTE_AUTHORITY_EDGE_TYPES = ["ENTRY", "EXIT", "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER"];
 const COVERAGE_KINDS = ["transfer"];
 
@@ -2699,7 +2699,7 @@ export function parseArgs(argv) {
       args["releases-target"] = true;
       continue;
     }
-    // legacy fixture 빌드 production 팩 전용(#873 메인 결정 (a)). PR-C(#866)에서 제거한다.
+    // legacy fixture 빌드 production 팩 전용(#873 메인 결정 (a)). PR-D(#866)에서 제거한다.
     if (key === "--legacy-fixture-production") {
       args["legacy-fixture-production"] = true;
       continue;
