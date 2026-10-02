@@ -486,6 +486,50 @@ export function applyMeasuredTransferTimePrecedence({ officialByDirection, measu
   return { byDirection, derivedDistanceDirections, unavailableDirections };
 }
 
+// #872 후속(#866 메인 결정 D1 선행): 역 밖 환승 링크는 링크 자체에 공식 VERIFIED 근거가 있을 때만 쓴다.
+// 근거는 OFFICIAL_SOURCE·VERIFIED 표기, inventory에서 productionUseAllowed인 원천 id, 그 원천의 원장 snapshot id,
+// 64자 소문자 hex 레코드 hash·evidence hash, 0보다 큰 거리·시간이다(#883 F1).
+// 근거가 없는 링크는 고정 거리·시간으로 채우지 않고 끝점과 사유만 제외 목록에 남긴다(Fallback 금지, #872 D1).
+export function admitOutOfStationTransferLinks(links, { sourceInventory, sourceSnapshots }) {
+  const admitted = [];
+  const excluded = [];
+  const hash = (value) => typeof value === "string" && SHA256_PATTERN.test(value);
+  const boundToLedger = (link) => (Array.isArray(sourceInventory?.sources) ? sourceInventory.sources : [])
+    .filter((source) => source?.id === link.sourceId && source.productionUseAllowed === true).length === 1
+    && (Array.isArray(sourceSnapshots) ? sourceSnapshots : [])
+      .some((row) => row?.sourceId === link.sourceId && row.snapshotId === link.sourceSnapshotId);
+  const positive = (value) => Number.isInteger(value) && value > 0;
+  for (const link of links) {
+    let reason = null;
+    if (link.provenanceKind !== "OFFICIAL_SOURCE" || link.verificationStatus !== "VERIFIED"
+      || !boundToLedger(link) || !hash(link.providerRecordHash) || !hash(link.evidenceHash)) {
+      reason = "NO_OFFICIAL_VERIFIED_EVIDENCE";
+    } else if (!positive(link.durationSeconds) || !positive(link.distanceMeters)) {
+      reason = "NO_OFFICIAL_MEASUREMENT";
+    }
+    if (reason === null) {
+      admitted.push(link);
+      continue;
+    }
+    const { id, fromStationId, fromLineId, toStationId, toLineId } = link;
+    excluded.push({ id, fromStationId, fromLineId, toStationId, toLineId, bidirectional: link.bidirectional === true, reason });
+  }
+  return { admitted, excluded };
+}
+
+// 팩에 싣는 역 밖 환승 링크. 접근성 필드는 공식 근거가 없으므로 UNKNOWN으로 두고, 출처 필드(원천·snapshot·hash·검증 표기)는 지우지 않고 보존한다(#883 F2).
+export function packOutOfStationTransferLinks(links) {
+  return links.map((link) => ({
+    ...link,
+    accessibilityStatus: "UNKNOWN",
+    stairAccessState: "UNKNOWN",
+    curbCutStatus: "UNKNOWN",
+    sidewalkStatus: "UNKNOWN",
+    crossingRisk: "UNKNOWN",
+    coveredRoute: "UNKNOWN",
+  }));
+}
+
 // 광주 접근성 행의 FACILITY 판정. 공식 행이 없는 유형(null)은 미관측이다. 관측된 시설이 하나도 없고
 // 미관측 유형이 남아 있으면 부재로 단정하지 않고 UNKNOWN으로 막는다(#862: 휠체어리프트 0만으로
 // VERIFIED_ABSENT가 되던 문제). 세 유형이 모두 0일 때만 부재다.
@@ -820,153 +864,30 @@ export async function prepareNationwideCandidate({
     }
   }
 
-  const makeOutOfStationLink = ({
-    id, fromStationId, fromLineId, toStationId, toLineId,
-    durationSeconds, distanceMeters, bidirectional = false,
-    slopeLevel = 1, coveredRoute = "UNKNOWN", stairAccessState = "UNKNOWN",
-  }) => ({
-    id,
-    fromStationId,
-    fromLineId,
-    toStationId,
-    toLineId,
-    durationSeconds,
-    distanceMeters,
-    bidirectional,
-    slopeLevel,
-    requiresFareExit: true,
-    requiresReentry: true,
-    coveredRoute,
-    crossingRisk: "UNKNOWN",
-    curbCutStatus: "UNKNOWN",
-    sidewalkStatus: "UNKNOWN",
-    accessibilityStatus: "UNKNOWN",
-    stairAccessState,
-    reliabilityScore: 0,
-    sourceId: "",
-    sourceSnapshotId: "",
-    providerRecordHash: "",
-    provenanceKind: "UNVERIFIED",
-    verificationStatus: "UNVERIFIED",
-    lastFieldVerifiedAt: null,
-    evidenceHash: "",
-  });
-
-  const outOfStationTransferLinks = [
+  // 역 밖 환승 후보(끝점만). 공식 거리·시간·접근성 근거가 없으므로 값을 싣지 않는다.
+  // admitOutOfStationTransferLinks가 공식 VERIFIED 근거가 있는 링크만 남기고, 나머지는 제외 사유 목록으로 돌려준다(#872).
+  const outOfStationTransferCandidates = [
     // 1. 수도권: 신촌 2호선 <-> 신촌 경의중앙선
-    makeOutOfStationLink({
-      id: "out-link-sinchon-2-to-gj",
-      fromStationId: "station-4e123a19a88f",
-      fromLineId: "seoul-2",
-      toStationId: "station-d6935359840d",
-      toLineId: "line-6e39be0cb6e2",
-      durationSeconds: 600,
-      distanceMeters: 550,
-      slopeLevel: 2,
-    }),
-    makeOutOfStationLink({
-      id: "out-link-sinchon-gj-to-2",
-      fromStationId: "station-d6935359840d",
-      fromLineId: "line-6e39be0cb6e2",
-      toStationId: "station-4e123a19a88f",
-      toLineId: "seoul-2",
-      durationSeconds: 540,
-      distanceMeters: 550,
-    }),
+    { id: "out-link-sinchon-2-to-gj", fromStationId: "station-4e123a19a88f", fromLineId: "seoul-2", toStationId: "station-d6935359840d", toLineId: "line-6e39be0cb6e2" },
+    { id: "out-link-sinchon-gj-to-2", fromStationId: "station-d6935359840d", fromLineId: "line-6e39be0cb6e2", toStationId: "station-4e123a19a88f", toLineId: "seoul-2" },
     // 2. 수도권: 석남 7호선 <-> 석남 인천2호선
-    makeOutOfStationLink({
-      id: "out-link-seongnam-7-incheon2",
-      fromStationId: "station-57db2f1fb4f6",
-      fromLineId: "line-15b3b8a93259",
-      toStationId: "station-37866f28b417",
-      toLineId: "line-42b5805f3b5a",
-      durationSeconds: 240,
-      distanceMeters: 180,
-      bidirectional: true,
-    }),
+    { id: "out-link-seongnam-7-incheon2", fromStationId: "station-57db2f1fb4f6", fromLineId: "line-15b3b8a93259", toStationId: "station-37866f28b417", toLineId: "line-42b5805f3b5a", bidirectional: true },
     // 3. 부산권: 동래 1호선 <-> 동래 동해선
-    makeOutOfStationLink({
-      id: "out-link-dongnae-1-to-dh",
-      fromStationId: "station-dbfe9e072d98",
-      fromLineId: "line-ab1a041f6266",
-      toStationId: "station-b65d6408d975",
-      toLineId: "line-f52eb59d8497",
-      durationSeconds: 420,
-      distanceMeters: 350,
-      slopeLevel: 2,
-    }),
-    makeOutOfStationLink({
-      id: "out-link-dongnae-dh-to-1",
-      fromStationId: "station-b65d6408d975",
-      fromLineId: "line-f52eb59d8497",
-      toStationId: "station-dbfe9e072d98",
-      toLineId: "line-ab1a041f6266",
-      durationSeconds: 360,
-      distanceMeters: 350,
-    }),
+    { id: "out-link-dongnae-1-to-dh", fromStationId: "station-dbfe9e072d98", fromLineId: "line-ab1a041f6266", toStationId: "station-b65d6408d975", toLineId: "line-f52eb59d8497" },
+    { id: "out-link-dongnae-dh-to-1", fromStationId: "station-b65d6408d975", fromLineId: "line-f52eb59d8497", toStationId: "station-dbfe9e072d98", toLineId: "line-ab1a041f6266" },
     // 4. 부산권: 부전 1호선 <-> 동해선
-    makeOutOfStationLink({
-      id: "out-link-bujeon-1-to-dh",
-      fromStationId: "station-9acc028dded4",
-      fromLineId: "line-ab1a041f6266",
-      toStationId: "station-ee8407a487c2",
-      toLineId: "line-f52eb59d8497",
-      durationSeconds: 300,
-      distanceMeters: 260,
-      bidirectional: true,
-    }),
+    { id: "out-link-bujeon-1-to-dh", fromStationId: "station-9acc028dded4", fromLineId: "line-ab1a041f6266", toStationId: "station-ee8407a487c2", toLineId: "line-f52eb59d8497", bidirectional: true },
     // 5. 대구권: 청라언덕 <-> 반월당
-    makeOutOfStationLink({
-      id: "out-link-daegu-cheongna-to-banwoldang",
-      fromStationId: "station-3de9d5097085",
-      fromLineId: "line-e2938a4cc492",
-      toStationId: "station-44dc03b65cae",
-      toLineId: "line-5b8d9b05e7e6",
-      durationSeconds: 600,
-      distanceMeters: 550,
-      slopeLevel: 2,
-    }),
-    makeOutOfStationLink({
-      id: "out-link-daegu-banwoldang-to-cheongna",
-      fromStationId: "station-44dc03b65cae",
-      fromLineId: "line-5b8d9b05e7e6",
-      toStationId: "station-3de9d5097085",
-      toLineId: "line-e2938a4cc492",
-      durationSeconds: 540,
-      distanceMeters: 550,
-    }),
+    { id: "out-link-daegu-cheongna-to-banwoldang", fromStationId: "station-3de9d5097085", fromLineId: "line-e2938a4cc492", toStationId: "station-44dc03b65cae", toLineId: "line-5b8d9b05e7e6" },
+    { id: "out-link-daegu-banwoldang-to-cheongna", fromStationId: "station-44dc03b65cae", fromLineId: "line-5b8d9b05e7e6", toStationId: "station-3de9d5097085", toLineId: "line-e2938a4cc492" },
     // 6. 대전권: 서대전네거리 <-> 오룡
-    makeOutOfStationLink({
-      id: "out-link-daejeon-seodaejeon-to-oryong",
-      fromStationId: "station-ee3cc9d04ee7",
-      fromLineId: "line-7051a9c2525c",
-      toStationId: "station-49f924643e04",
-      toLineId: "line-7051a9c2525c",
-      durationSeconds: 600,
-      distanceMeters: 500,
-      slopeLevel: 2,
-    }),
-    makeOutOfStationLink({
-      id: "out-link-daejeon-oryong-to-seodaejeon",
-      fromStationId: "station-49f924643e04",
-      fromLineId: "line-7051a9c2525c",
-      toStationId: "station-ee3cc9d04ee7",
-      toLineId: "line-7051a9c2525c",
-      durationSeconds: 500,
-      distanceMeters: 500,
-    }),
+    { id: "out-link-daejeon-seodaejeon-to-oryong", fromStationId: "station-ee3cc9d04ee7", fromLineId: "line-7051a9c2525c", toStationId: "station-49f924643e04", toLineId: "line-7051a9c2525c" },
+    { id: "out-link-daejeon-oryong-to-seodaejeon", fromStationId: "station-49f924643e04", fromLineId: "line-7051a9c2525c", toStationId: "station-ee3cc9d04ee7", toLineId: "line-7051a9c2525c" },
     // 7. 광주권: 광주송정역 <-> 도산
-    makeOutOfStationLink({
-      id: "out-link-gwangju-songjeong-dosan",
-      fromStationId: "station-45d732c94df2",
-      fromLineId: "line-e57a361e8892",
-      toStationId: "station-25f856602c61",
-      toLineId: "line-e57a361e8892",
-      durationSeconds: 480,
-      distanceMeters: 400,
-      bidirectional: true,
-    }),
-  ];
+    { id: "out-link-gwangju-songjeong-dosan", fromStationId: "station-45d732c94df2", fromLineId: "line-e57a361e8892", toStationId: "station-25f856602c61", toLineId: "line-e57a361e8892", bidirectional: true },
+  ].map((candidate) => ({ bidirectional: false, ...candidate, provenanceKind: "UNVERIFIED", verificationStatus: "UNVERIFIED" }));
+  const { admitted: outOfStationTransferLinks, excluded: excludedOutOfStationTransferLinks } =
+    admitOutOfStationTransferLinks(outOfStationTransferCandidates, { sourceInventory, sourceSnapshots: snapshots });
 
   const rides = pack.networkEdges.filter((e) => e.edgeType === "RIDE");
   const rideEdges = rides.map((edge) => {
@@ -990,26 +911,7 @@ export async function prepareNationwideCandidate({
   nationwidePack.stationPathwayNodes = stationPathwayNodes;
   nationwidePack.stationPathwayEdges = stationPathwayEdges;
   nationwidePack.transferRules = transferRules;
-  const cleanOutOfStationTransferLinks = outOfStationTransferLinks.map((link) => {
-    const clean = {
-      ...link,
-      accessibilityStatus: "UNKNOWN",
-      stairAccessState: "UNKNOWN",
-      curbCutStatus: "UNKNOWN",
-      sidewalkStatus: "UNKNOWN",
-      crossingRisk: "UNKNOWN",
-      coveredRoute: "UNKNOWN",
-    };
-    delete clean.sourceId;
-    delete clean.sourceSnapshotId;
-    delete clean.providerRecordHash;
-    delete clean.provenanceKind;
-    delete clean.verificationStatus;
-    delete clean.lastFieldVerifiedAt;
-    delete clean.lastVerifiedAt;
-    delete clean.evidenceHash;
-    return clean;
-  });
+  const cleanOutOfStationTransferLinks = packOutOfStationTransferLinks(outOfStationTransferLinks);
   nationwidePack.outOfStationTransferLinks = cleanOutOfStationTransferLinks;
   nationwidePack.networkEdges = rides;
 
@@ -1772,8 +1674,9 @@ export async function prepareNationwideCandidate({
   const gwangjuMap = new Map(gwangjuAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
   const kricMap = new Map((kricConvenience.queries ?? []).map((q) => [`${q.stationId}\0${q.lineId}`, q]));
 
+  // 제외된 역 밖 환승 후보의 끝점도 환승역으로 본다. 근거가 없으므로 TRANSFER 칸은 환승 없음이 아니라 사용 불가로 남는다(#872).
   const outOfStationTransferStationIds = new Set(
-    outOfStationTransferLinks.flatMap((l) => [l.fromStationId, l.toStationId])
+    outOfStationTransferCandidates.flatMap((l) => [l.fromStationId, l.toStationId])
   );
 
   const evidenceRows = [];
@@ -2254,6 +2157,7 @@ export async function prepareNationwideCandidate({
     finalPack,
     routeInput,
     stationLineInput,
+    excludedOutOfStationTransferLinks,
     preparation,
     preparationRelPath,
     routeInputRelPath,
