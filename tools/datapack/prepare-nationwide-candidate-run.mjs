@@ -7,6 +7,7 @@ import { gunzipSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
+import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
@@ -1028,18 +1029,12 @@ export async function prepareNationwideCandidate({
 
   const finalPack = materializedFixture.packs[0];
 
-  function cleanStationName(n) {
-    return n.replace(/\(.*?\)/g, "").replace(/\d+$/, "").replace(/[·•ㆍ]/g, ".").trim();
-  }
-
   function findRegionalStationId(lineId, rawName) {
-    let name = cleanStationName(rawName);
-    if (name === "성서산단") name = "성서산업단지";
-    if (name === "광주송정") name = "광주송정역";
+    const name = regionalProviderStationNameKey(rawName);
     const candidates = finalPack.stationLines.filter((sl) => sl.lineId === lineId);
     const found = candidates.find((sl) => {
       const st = finalPack.stations.find((s) => s.id === sl.stationId);
-      return st && (cleanStationName(st.nameKo) === name);
+      return st && (cleanRegionalStationName(st.nameKo) === name);
     });
     if (!found) throw new Error(`Station not found: ${lineId} ${rawName}`);
     return found.stationId;

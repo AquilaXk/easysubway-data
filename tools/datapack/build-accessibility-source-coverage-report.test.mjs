@@ -1229,10 +1229,10 @@ function regionalCountInput(region) {
       const count = facilityType === "ELEVATOR" ? row.elevator : row.escalator;
       const base = regionalCountHash({ region, row: rows[0], facilityType, count });
       return [{
-        stationId: `station-${region}-100`, lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE",
+        stationId: `station-${region}-100`, stationName: "역", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE",
         evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId, providerRecordHash: base, evidenceHash: rowsSha256,
       }, {
-        claimId: `facility-${region}-100-${facilityType}`, stationId: `station-${region}-100`, lineId: "", facilityType,
+        claimId: `facility-${region}-100-${facilityType}`, stationId: `station-${region}-100`, stationName: "역", lineId: "", facilityType,
         domain: "FACILITY", evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId,
         providerRecordHash: base, evidenceHash: rowsSha256,
       }];
@@ -1244,6 +1244,7 @@ function regionalCountClaim(input, region, facilityType, count, evidenceKind) {
   const snapshot = input.snapshots[0];
   return {
     stationId: `station-${region}-100`,
+    stationName: snapshot.rows[0].stationName,
     lineId: snapshot.rows[0].lineId,
     facilityType,
     domain: "STATION_FACILITY_EVIDENCE",
@@ -1300,8 +1301,35 @@ function regionalBusanInput({ wheelchairRaw = "0" } = {}) {
       ["ESCALATOR", 0, "NOT_EXISTS"],
       ["WHEELCHAIR_LIFT", 0, "NOT_EXISTS"],
     ].map(([facilityType, count, evidenceKind]) => ({
-      stationId: "station-busan-100", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE", evidenceKind,
+      stationId: "station-busan-100", stationName: "동매", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE", evidenceKind,
       sourceId, sourceSnapshotId: snapshotId, providerRecordHash: busanHash(facilityType, count), evidenceHash: rowsSha256,
     })),
   });
 }
+
+test("지역 claim은 원천 row의 역 이름에 결속되어 다른 역 stationId로 옮길 수 없다(F1)", () => {
+  const input = regionalCountInput("daegu");
+  assert.equal(buildAccessibilitySourceCoverageReport(input).decision, "GO");
+
+  // loader는 stationId에서 정본 역 이름을 붙인다. 다른 역으로 옮기면 그 역의 이름이 따라온다.
+  const moved = regionalCountInput("daegu");
+  for (const claim of moved.artifacts[0].claims) Object.assign(claim, { stationId: "station-daegu-200", stationName: "다른역" });
+  const movedReport = buildAccessibilitySourceCoverageReport(moved);
+  assert.equal(movedReport.decision, "NO_GO");
+  assert.equal(movedReport.violations.provenance.length, moved.artifacts[0].claims.length);
+  assert.ok(movedReport.violations.provenance.every((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")));
+
+  // 정본 이름을 알 수 없는 claim도 결속하지 않는다.
+  const unnamed = regionalCountInput("daegu");
+  delete unnamed.artifacts[0].claims[0].stationName;
+  assert.equal(buildAccessibilitySourceCoverageReport(unnamed).decision, "NO_GO");
+
+  // 원천 이름의 괄호 부기·별칭은 후보 생성과 같은 규칙으로만 맞춘다.
+  const annotated = regionalCountInput("daegu");
+  annotated.snapshots[0].rows[0].stationName = "역(대학교)";
+  annotated.snapshots[0].rowsSha256 = hash(JSON.stringify(annotated.snapshots[0].rows));
+  annotated.inventory.sources[0].accessibilityAdmissionEvidence.rowsSha256 = annotated.snapshots[0].rowsSha256;
+  annotated.sourceSnapshotPolicies[0].contentSha256 = annotated.snapshots[0].rowsSha256;
+  for (const claim of annotated.artifacts[0].claims) claim.evidenceHash = annotated.snapshots[0].rowsSha256;
+  assert.equal(buildAccessibilitySourceCoverageReport(annotated).decision, "GO");
+});

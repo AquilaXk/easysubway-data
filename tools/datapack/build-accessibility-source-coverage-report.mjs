@@ -14,6 +14,7 @@ import {
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
+import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { normalizeMolitProviderLineName } from "./lib/molit-svg-provider-identity.mjs";
 
 const VIOLATION_KEYS = Object.freeze([
@@ -1207,8 +1208,12 @@ function regionalClaimMatchesSnapshot(snapshot, claim) {
     : undefined;
   const observedRows = observedRegionalRows(snapshot);
   if (!fields || !observedRows || claim.evidenceHash !== snapshot.rowsSha256) return false;
+  // claim의 정본 역(loader가 stationId에서 붙인 이름)이 원천 row의 역과 같아야 한다. 후보 생성과 같은 규칙이다.
+  const claimStationName = cleanRegionalStationName(claim.stationName);
+  if (!claimStationName) return false;
   return snapshot.rows.some((row, index) => {
     if (claim.lineId && row.lineId !== claim.lineId) return false;
+    if (regionalProviderStationNameKey(row.stationName) !== claimStationName) return false;
     const counts = fields.map((field) => observedRows[index][field]);
     if (counts.some((count) => !Number.isInteger(count) || count < 0)) return false;
     const count = counts.reduce((total, value) => total + value, 0);
