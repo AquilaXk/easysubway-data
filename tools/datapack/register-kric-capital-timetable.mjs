@@ -2,9 +2,9 @@
 // #899: KRIC 전체_도시철도운행정보(파일 id 900) 수집본에서 수도권 정차 순서 명시 노선을 projection snapshot으로
 // 커밋하고, inventory kric-nationwide-timetable-file.capitalScheduleAdmissionEvidence를 그 snapshot에 결속한다.
 //
-// 사용(수집은 기존 collect-kric-nationwide-timetable-file.mjs):
-//   node tools/datapack/collect-kric-nationwide-timetable-file.mjs --output-file <abs>/kric-nationwide-timetable-file-<tag>.xlsx > <abs>/receipt.json
-//   node tools/datapack/register-kric-capital-timetable.mjs --workbook <abs xlsx> --receipt <abs receipt.json>
+// 사용(원본 수집과 등록을 한 실행에서 한다, #911 F1):
+//   node tools/datapack/register-kric-capital-timetable.mjs --operation-directory <absolute empty directory>
+// 같은 원본(raw sha256)이면 기존 snapshot을 재사용하고 재확인 이력만 append한다(#870).
 //
 // 원천 행을 바꾸지 않는다. 노선 적재 검증(역 매칭·노선 trip·격리 상한)은 후보 생성(prepare)에서 다시 수행한다.
 import { createHash } from "node:crypto";
@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { buildKricNationwideTimetableObservation } from "./build-kric-nationwide-timetable-observation.mjs";
+import { collectKricNationwideTimetableFile } from "./collect-kric-nationwide-timetable-file.mjs";
 import {
   KRIC_CAPITAL_ROUTE_PROFILES,
   kricCapitalOfficialTimetable,
@@ -28,10 +29,11 @@ const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const TARGETS_PATH = "tools/datapack/nationwide-coverage-targets.json";
 const jsonBytes = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const fail = (code) => { throw new Error(`KRIC_CAPITAL_TIMETABLE_REGISTRATION_${code}`); };
+const MAX_OBSERVATION_AGE_MILLIS = 60 * 60 * 1_000;
 
 /** 수집본 → snapshot·evidence 기본값(관측 시각·재확인 이력 제외). 파일을 쓰지 않는다. */
-export async function buildKricCapitalTimetableRegistration({ workbookPath, receipt, inventory, targets }) {
-  const observation = await buildKricNationwideTimetableObservation({ inputFile: workbookPath, receipt });
+export async function buildKricCapitalTimetableRegistration({ workbookPath, receipt, inventory, targets, observe = buildKricNationwideTimetableObservation }) {
+  const observation = await observe({ inputFile: workbookPath, receipt });
   const snapshot = projectKricCapitalTimetableSnapshot(observation);
   const { provider } = kricCapitalOfficialTimetable(snapshot, { observedAt: observation.observedAt });
   const lineIds = [...new Set(KRIC_CAPITAL_ROUTE_PROFILES.map(({ lineId }) => lineId))].sort(codepointCompare);
@@ -71,7 +73,12 @@ export async function buildKricCapitalTimetableRegistration({ workbookPath, rece
  * - 같은 원본인데 records sha가 다르거나 기존 snapshot 파일 바이트가 다르면 실패한다.
  * - 새 관측 시각은 직전 관측보다 뒤여야 한다.
  */
-export function planKricCapitalTimetableRegistration({ previousEvidence, snapshot, snapshotBytes, existingSnapshotBytes, observation, evidenceTemplate }) {
+export function planKricCapitalTimetableRegistration({ previousEvidence, snapshot, snapshotBytes, existingSnapshotBytes, observation, evidenceTemplate, now }) {
+  if (!(now instanceof Date) || Number.isNaN(now.valueOf())) fail("CLOCK");
+  // 관측 시각은 등록 시계보다 미래일 수 없고, 같은 실행의 수집(다운로드·파싱, 수 분)보다 오래될 수 없다.
+  // 허용 범위 1시간: 18MB 다운로드·관측 파싱 실측 수 분에 느린 망·시계 오차 여유를 둔 값이다.
+  const observedMillis = Date.parse(observation?.observedAt);
+  if (!Number.isFinite(observedMillis) || observedMillis > now.valueOf() || now.valueOf() - observedMillis > MAX_OBSERVATION_AGE_MILLIS) fail("OBSERVATION_CLOCK");
   const entry = { observedAt: observation?.observedAt, rawSha256: snapshot?.rawSha256, collectionReceiptSha256: observation?.collectionReceiptSha256 };
   const previousHistory = previousEvidence ? previousEvidence.reverifications : [];
   if (previousEvidence) {
@@ -98,12 +105,27 @@ export function assertAppendOnlyReverifications(previous, next) {
     || previous.some((entry, index) => JSON.stringify(entry) !== JSON.stringify(next[index]))) fail("REVERIFICATIONS_APPEND_ONLY");
 }
 
-export async function registerKricCapitalTimetable({ repositoryRoot = ROOT, workbookPath, receiptPath }) {
-  const receiptBytes = await readFile(receiptPath);
-  const receipt = JSON.parse(receiptBytes.toString("utf8"));
+/**
+ * #911 F1: 등록기가 원본을 직접 수집한다(실제 GET·sha 계산). 영수증은 같은 실행에서 수집기가 만든 것만 쓰고,
+ * 외부 영수증 파일은 받지 않는다. 관측 시각은 수집 실행 시계이며, 등록 시계 기준 허용 범위를 다시 확인한다.
+ * 외부 영수증에 시계 검사만 더하는 방식보다, 손으로 고친 capturedAt이 끼어들 경로 자체가 없다.
+ */
+export async function registerKricCapitalTimetable({
+  repositoryRoot = ROOT, operationDirectory, fetchImpl = fetch, clock = () => new Date(),
+  observe = buildKricNationwideTimetableObservation,
+} = {}) {
+  if (typeof operationDirectory !== "string" || !path.isAbsolute(operationDirectory)) fail("OPERATION_DIRECTORY");
+  const collectedAt = clock();
+  const outputFile = path.join(operationDirectory, `kric-nationwide-timetable-file-${collectedAt.toISOString().replaceAll(/[-:.]/gu, "")}.xlsx`);
+  const receipt = await collectKricNationwideTimetableFile({ outputFile, fetchImpl, now: collectedAt });
+  const receiptBytes = Buffer.from(`${JSON.stringify(receipt)}\n`);
+  await writeFile(path.join(operationDirectory, "receipt.json"), receiptBytes, { flag: "wx" });
   const inventory = JSON.parse(await readFile(path.join(repositoryRoot, INVENTORY_PATH), "utf8"));
   const targets = JSON.parse(await readFile(path.join(repositoryRoot, TARGETS_PATH), "utf8"));
-  const { snapshot, snapshotPath, evidenceTemplate, observedAt, previousEvidence } = await buildKricCapitalTimetableRegistration({ workbookPath, receipt, inventory, targets });
+  const { snapshot, snapshotPath, evidenceTemplate, observedAt, previousEvidence } = await buildKricCapitalTimetableRegistration({
+    workbookPath: outputFile, receipt, inventory, targets, observe,
+  });
+  if (observedAt !== receipt.capturedAt) fail("OBSERVATION");
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const existingSnapshotBytes = await readFile(path.join(repositoryRoot, snapshotPath)).catch((error) => {
     if (error?.code === "ENOENT") return null;
@@ -112,7 +134,7 @@ export async function registerKricCapitalTimetable({ repositoryRoot = ROOT, work
   const plan = planKricCapitalTimetableRegistration({
     previousEvidence, snapshot, snapshotBytes, existingSnapshotBytes,
     observation: { observedAt, collectionReceiptSha256: createHash("sha256").update(receiptBytes).digest("hex") },
-    evidenceTemplate,
+    evidenceTemplate, now: clock(),
   });
   if (plan.writeSnapshot) await writeFile(path.join(repositoryRoot, snapshotPath), snapshotBytes, { flag: "wx" });
   const source = inventory.sources.find(({ id }) => id === CAPITAL_TIMETABLE_SOURCE_ID);
@@ -121,17 +143,16 @@ export async function registerKricCapitalTimetable({ repositoryRoot = ROOT, work
   return { snapshotPath, mode: plan.mode, evidence: plan.evidence };
 }
 
-function parseArgs(argv) {
-  if (argv.length !== 4 || argv[0] !== "--workbook" || argv[2] !== "--receipt"
-    || !path.isAbsolute(argv[1]) || !path.isAbsolute(argv[3])) {
-    throw new Error("usage: register-kric-capital-timetable.mjs --workbook <absolute.xlsx> --receipt <absolute.json>");
+export function parseRegisterKricCapitalTimetableArgs(argv) {
+  if (argv.length !== 2 || argv[0] !== "--operation-directory" || !path.isAbsolute(argv[1])) {
+    throw new Error("usage: register-kric-capital-timetable.mjs --operation-directory <absolute empty directory>");
   }
-  return { workbookPath: argv[1], receiptPath: argv[3] };
+  return { operationDirectory: argv[1] };
 }
 
 if (isMainModule(import.meta.url)) {
   try {
-    const { snapshotPath, mode, evidence } = await registerKricCapitalTimetable(parseArgs(process.argv.slice(2)));
+    const { snapshotPath, mode, evidence } = await registerKricCapitalTimetable(parseRegisterKricCapitalTimetableArgs(process.argv.slice(2)));
     process.stdout.write(`${JSON.stringify({ snapshotPath, mode, snapshotId: evidence.snapshotId, recordCount: evidence.recordCount, observedAt: evidence.observedAt, reverificationCount: evidence.reverifications.length })}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
