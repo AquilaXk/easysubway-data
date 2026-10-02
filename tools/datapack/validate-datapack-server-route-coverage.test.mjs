@@ -15,10 +15,10 @@ import {
 
 // #866 PR-B: 인정 경로는 capital@1·213·30·456 상수가 아니라 pack의 비RIDE 간선에서 분모를 유도한다.
 // D1: 환승(역 안·역 밖)은 양끝 TRANSFER cell이 닫혀야 한다.
-// #873: 전국 authority·팩에는 ENTRY/EXIT 간선이 없고 coverage 필수 쌍은 환승뿐이다. 수도권 live chain(legacy)
-// authority만 ENTRY/EXIT를 requiredCells []로 열거한다(PR-C(#866)에서 제거).
+// #873: authority·팩에는 ENTRY/EXIT 간선이 없고 coverage 필수 쌍은 환승뿐이다.
+// #866 PR-C: 수도권 live chain(legacy) authority의 ENTRY/EXIT 열거가 없어졌다. pack id·후보 id와 무관하게 같은 규칙이다.
 const SHAPES = [
-  ["capital@1(legacy, ENTRY/EXIT 213 열거·환승 30)", { id: "capital", legacyAccessStations: 213, transfers: 30, outOfStation: 0 }],
+  ["capital@1(수도권 후보 id, 환승 30)", { id: "capital", transfers: 30, outOfStation: 0 }],
   ["nationwide@1", { id: "nationwide", transfers: 6, outOfStation: 2 }],
   ["다른 pack id", { id: "fixture-national-network", transfers: 2, outOfStation: 2 }],
 ];
@@ -140,22 +140,24 @@ test("#873 coverage는 환승 필수 쌍만 요구하고, 환승 coverage가 빠
   assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, edgeRows: withoutTransferEdges }), false);
 });
 
-test("legacy(수도권) authority는 ENTRY·EXIT가 둘 다 있거나 둘 다 없어야 한다(PR-C에서 제거)", () => {
-  const legacy = { id: "capital", legacyAccessStations: 3, transfers: 2, outOfStation: 0 };
-  assert.doesNotThrow(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(authorityReport(legacy)))));
-  assert.doesNotThrow(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(authorityReport({ ...legacy, legacyAccessStations: 0 })))));
-  for (const removed of ["ENTRY", "EXIT"]) {
-    const report = authorityReport(legacy);
-    report.edges = report.edges.filter(({ edgeType }) => edgeType !== removed);
-    delete report.edgeCounts[removed];
-    report.edgeCounts.total = report.edges.length;
-    reseal(report);
-    assert.throws(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(report))), /shape mismatch|denominator/, removed);
+// #866 PR-C: 예전에는 수도권 후보 id authority가 ENTRY·EXIT를 증거 cell 없이 열거할 수 있었다(둘 다 있거나 둘 다 없음).
+// 이제 후보 id와 무관하게 ENTRY/EXIT가 하나라도 있으면 파싱에서 명시적으로 실패한다.
+test("#866 PR-C authority는 후보 id와 무관하게 ENTRY/EXIT 간선을 거부한다", () => {
+  for (const id of ["capital", "nationwide"]) {
+    const shape = { id, transfers: 2, outOfStation: 0 };
+    assert.doesNotThrow(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(authorityReport(shape)))), id);
+    for (const edgeTypes of [["ENTRY"], ["EXIT"], ["ENTRY", "EXIT"]]) {
+      const report = authorityReport(shape);
+      for (const edgeType of edgeTypes) addAuthorityEdge(report, edge(edgeType, 0));
+      reseal(report);
+      assert.throws(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(report))),
+        /nationwide authority must not contain ENTRY\/EXIT edges/, `${id} ${edgeTypes.join("+")}`);
+    }
   }
 });
 
 // #873 리뷰 F1: ENTRY coverage가 함께 확인하던 청구 역-노선 존재성을 승강장 기준으로 옮긴다.
-// 전국 팩은 RIDE·환승 간선 끝점만 인정하고, legacy(비전국) 팩만 ENTRY/EXIT 끝점도 인정한다(PR-C에서 제거).
+// 전국 팩은 RIDE·환승 간선 끝점만 인정하고, legacy(비전국) 팩만 ENTRY/EXIT 끝점도 인정한다(PR-D(#866)에서 제거).
 function presenceRows() {
   const pack = { id: "nationwide", version: "1" };
   const stationLineRows = [
@@ -283,7 +285,7 @@ function addAuthorityEdge(report, value) {
   report.edgeCounts = { ...report.edgeCounts, [value.edgeType]: (report.edgeCounts[value.edgeType] ?? 0) + 1, total: report.edges.length };
 }
 
-function authorityReport({ id, legacyAccessStations = 0, transfers, outOfStation }) {
+function authorityReport({ id, transfers, outOfStation }) {
   const candidate = {
     candidateId: id === "capital" ? "current-capital-candidate-20260816" : "nationwide-candidate-20261001-seq900",
     mappingContractVersion: "station-line-v1",
@@ -292,13 +294,11 @@ function authorityReport({ id, legacyAccessStations = 0, transfers, outOfStation
     stationSetSha256: "b".repeat(64),
   };
   const edges = [
-    ...Array.from({ length: legacyAccessStations }, (_, index) => edge("ENTRY", index)),
-    ...Array.from({ length: legacyAccessStations }, (_, index) => edge("EXIT", index)),
     ...Array.from({ length: transfers }, (_, index) => edge("IN_STATION_TRANSFER", index)),
     ...Array.from({ length: outOfStation }, (_, index) => edge("OUT_OF_STATION_TRANSFER", index)),
   ].sort((left, right) => Buffer.compare(Buffer.from(left.edgeId), Buffer.from(right.edgeId)));
   const edgeCounts = Object.fromEntries(Object.entries({
-    ENTRY: legacyAccessStations, EXIT: legacyAccessStations, IN_STATION_TRANSFER: transfers, OUT_OF_STATION_TRANSFER: outOfStation,
+    IN_STATION_TRANSFER: transfers, OUT_OF_STATION_TRANSFER: outOfStation,
   }).filter(([, count]) => count > 0));
   const payload = {
     schemaVersion: 1,
@@ -338,7 +338,7 @@ function edge(edgeType, index) {
     toNodeId: nodes[1],
     durationSeconds: transfer ? 120 : 0,
     distanceMeters: transfer ? 150 : 0,
-    // legacy(수도권) ENTRY/EXIT만 증거 cell 없이 열거한다(D1). 전국 authority에는 ENTRY/EXIT가 없다(#873).
+    // ENTRY/EXIT 간선은 거부 회귀용으로만 만든다(증거 cell 없음). authority는 이를 받지 않는다(#873, #866 PR-C).
     requiredCells: transfer
       ? [
         cell(...nodes[0].split(":"), "TRANSFER", "VERIFIED_PRESENT"),

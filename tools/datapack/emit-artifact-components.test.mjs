@@ -23,7 +23,7 @@ import {
   writeSeoulAccessibilityObservation,
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
-import { canonicalCurrentCapitalRouteEdgeInputJson } from "./build-current-capital-route-edge-input.mjs";
+import { canonicalCurrentCapitalRouteEdgeInputJson } from "./current-capital-station-line-contract.mjs";
 import { emitArtifactComponents, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
@@ -35,8 +35,6 @@ import {
   canonicalStationLineAccessibilityJson,
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
-import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
-import { prepareCurrentStaticNetworkProductionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { createIndependentSourceGovernanceFixture } from "./test-fixtures/independent-source-governance.mjs";
@@ -57,16 +55,11 @@ const CURRENT_SOURCE_EXPIRES_AT = CURRENT_SOURCE_WINDOW.sourceExpiresAt;
 const CURRENT_CANDIDATE_FIXTURE = JSON.parse(await readFile(
   JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8")).fixturePath, "utf8",
 ));
-const CURRENT_ROUTE_EDGE_COUNTS = Object.freeze({
-  ENTRY: 213,
-  EXIT: 213,
-  IN_STATION_TRANSFER: 30,
-  RIDE: CURRENT_CANDIDATE_FIXTURE.packs
-    .find(({ id }) => id === CURRENT_CANDIDATE_FIXTURE.manifest.activePack.id)
-    .networkEdges.filter(({ edgeType }) => edgeType === "RIDE").length,
-});
-const CURRENT_ROUTE_EDGE_COUNT = Object.values(CURRENT_ROUTE_EDGE_COUNTS)
-  .reduce((sum, count) => sum + count, 0);
+// #866 PR-C: 수도권 live chain 출력(ENTRY/EXIT 213·환승 30) 대신 전국 후보 준비가 결속한 전국 입력을 쓴다.
+// 승강장 기준(#873)이라 ENTRY/EXIT가 없다. 환승 수는 tracked 후보 fixture의 역 안 환승 링크에서 유도한다.
+const CURRENT_ACTIVE_CANDIDATE_PACK = CURRENT_CANDIDATE_FIXTURE.packs
+  .find(({ id }) => id === CURRENT_CANDIDATE_FIXTURE.manifest.activePack.id);
+const CURRENT_PREPARATION = JSON.parse(await readFile("tools/datapack/release/nationwide-candidate-preparation.json", "utf8"));
 const buildNowEnvironmentKey = "EASYSUBWAY_DATAPACK_BUILD_NOW";
 const hadBuildNowEnvironmentValue = Object.hasOwn(process.env, buildNowEnvironmentKey);
 const previousBuildNowEnvironmentValue = process.env[buildNowEnvironmentKey];
@@ -155,21 +148,17 @@ test("emit 입력 결속은 pack id와 무관하게 current.json active producti
   assert.throws(() => validateInputBinding(...binding("capital", undefined, null)), /source pack identity mismatch/);
 });
 
-test("current full-capital producer 출력은 합성 public successor의 route/evaluation 계약과 일치한다", async (t) => {
-  const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-public-successor-"));
-  t.after(() => rm(temp, { recursive: true, force: true }));
-  const repositoryRoot = path.join(temp, "repository");
-  await prepareCurrentStaticNetworkProductionRepository(process.cwd(), repositoryRoot, {
-    now: new Date(CURRENT_EVALUATION_AT),
-  });
-  const [stationOutput, routeOutput] = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
-  const policyBytes = await readFile(path.join(
-    repositoryRoot,
-    "release/product-gates/route-edge-evaluation-policy.json",
-  ));
+test("전국 후보 준비가 결속한 route·station-line 입력은 RIDE 정책·evaluation 계약과 일치한다", async () => {
+  const [stationLineBytes, routeBytes, policyBytes] = await Promise.all([
+    readFile(CURRENT_PREPARATION.stationLineInput.path),
+    readFile(CURRENT_PREPARATION.routeEdgeInput.path),
+    readFile("release/product-gates/route-edge-evaluation-policy.json"),
+  ]);
+  assert.equal(createHash("sha256").update(stationLineBytes).digest("hex"), CURRENT_PREPARATION.stationLineInput.sha256);
+  assert.equal(createHash("sha256").update(routeBytes).digest("hex"), CURRENT_PREPARATION.routeEdgeInput.sha256);
   const policy = JSON.parse(policyBytes);
-  const stationLineInput = JSON.parse(stationOutput.bytes);
-  const input = JSON.parse(routeOutput.bytes);
+  const stationLineInput = JSON.parse(stationLineBytes);
+  const input = JSON.parse(routeBytes);
   const observedAt = new Date(Math.max(
     ...stationLineInput.evidenceRows.map(({ capturedAt }) => Date.parse(capturedAt)),
   )).toISOString();
@@ -177,26 +166,31 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
     ...stationLineInput,
     observedAt,
   });
-  assert.equal(canonicalCurrentCapitalRouteEdgeInputJson(input), routeOutput.bytes.toString("utf8"));
+  assert.equal(canonicalCurrentCapitalRouteEdgeInputJson(input), routeBytes.toString("utf8"));
 
   assert.equal(
     input.candidate.topologySha256,
     canonicalRideEdgeSetSha256(input.routeEdges.filter(({ edgeType }) => edgeType === "RIDE")),
   );
   assert.equal(input.candidate.stationSetSha256, stationLineInput.candidate.stationSetSha256);
-  assert.equal(input.stationLines.length, 1102);
-  assert.equal(input.routeEdges.length, CURRENT_ROUTE_EDGE_COUNT);
-  assert.deepEqual(Object.fromEntries(input.routeEdges.reduce((counts, edge) => {
-    counts.set(edge.edgeType, (counts.get(edge.edgeType) ?? 0) + 1);
-    return counts;
-  }, new Map())), CURRENT_ROUTE_EDGE_COUNTS);
+  assert.equal(input.stationLines.length, CURRENT_ACTIVE_CANDIDATE_PACK.stationLines.length);
+  assert.equal(input.stationLines.length, stationLineInput.stationLines.length);
+  const counts = Object.fromEntries(input.routeEdges.reduce((values, edge) => {
+    values.set(edge.edgeType, (values.get(edge.edgeType) ?? 0) + 1);
+    return values;
+  }, new Map()));
+  assert.equal(counts.ENTRY, undefined);
+  assert.equal(counts.EXIT, undefined);
+  assert.equal(counts.RIDE, CURRENT_ACTIVE_CANDIDATE_PACK.networkEdges.filter(({ edgeType }) => edgeType === "RIDE").length);
+  assert.ok(counts.IN_STATION_TRANSFER > 0);
+  assert.deepEqual(Object.keys(counts).filter((type) => !["RIDE", "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER"].includes(type)), []);
   const localRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
     edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"
   ));
   const itxRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
     edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN" && servicePattern === "EXPRESS"
   ));
-  assert.equal(localRideEdges.length + itxRideEdges.length, CURRENT_ROUTE_EDGE_COUNTS.RIDE);
+  assert.equal(localRideEdges.length + itxRideEdges.length, counts.RIDE);
   assert.equal(
     canonicalRideEdgeSetSha256(localRideEdges),
     policy.rideInvariant.subwayLocal.admittedEdgeSetSha256,
@@ -211,37 +205,13 @@ test("current full-capital producer 출력은 합성 public successor의 route/e
     materialization,
     ...values,
   }, JSON.parse(policyBytes));
-  assert.equal(evaluate().denominator.edgeCount, CURRENT_ROUTE_EDGE_COUNT);
+  assert.equal(evaluate().denominator.edgeCount, input.routeEdges.length);
   assert.throws(() => evaluate({ stationLines: [] }), /stationLines must be a non-empty array/);
   const staleOperatorMaterialization = structuredClone(materialization);
   staleOperatorMaterialization.rows[0].operatorId = "stale-operator";
   assert.throws(
     () => evaluate({ materialization: staleOperatorMaterialization }),
     /unmapped materialization row/,
-  );
-});
-
-test("current full-capital producer는 alternate repository root의 nested evidence drift를 거부한다", async (t) => {
-  const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-root-"));
-  t.after(() => rm(temp, { recursive: true, force: true }));
-  const repositoryRoot = path.join(temp, "repository");
-  await prepareCurrentStaticNetworkProductionRepository(process.cwd(), repositoryRoot, {
-    now: new Date(CURRENT_EVALUATION_AT),
-  });
-  const outputs = await buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot });
-  assert.equal(JSON.parse(outputs[1].bytes).routeEdges.length, CURRENT_ROUTE_EDGE_COUNT);
-  const buildSpec = JSON.parse(await readFile(
-    path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
-    "utf8",
-  ));
-  const sourceInventoryPath = path.join(repositoryRoot, buildSpec.networkEdgeEvidence.sourceInventory.path);
-  await writeFile(sourceInventoryPath, Buffer.concat([
-    await readFile(sourceInventoryPath),
-    Buffer.from(" "),
-  ]));
-  await assert.rejects(
-    () => buildCurrentCapitalAccessibilityRefreshOutputs({ repositoryRoot }),
-    /source inventory|sourceInventory|mismatch/i,
   );
 });
 

@@ -4,32 +4,15 @@ import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
-import { projectCandidateFixtureForAccessibilityAuthority } from "./build-datapack.mjs";
 import {
   buildCurrentReleaseCandidateAccessibilityAuthority,
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   canonicalCurrentReleaseCandidateFixtureJson,
-  isNationwideCandidateId,
   main,
   validateCurrentReleaseCandidateAccessibilityAuthorityReplay,
 } from "./build-current-release-candidate-accessibility-input.mjs";
-import {
-  buildCurrentCapitalRouteEdgeInput,
-  canonicalCurrentCapitalRouteEdgeInputJson,
-} from "./build-current-capital-route-edge-input.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
-import {
-  buildCurrentCapitalStationLineInput,
-  canonicalCurrentCapitalStationLineInputJson,
-} from "./build-current-capital-station-line-input.mjs";
-import {
-  buildCurrentCapitalStationLineInputFixture as fullCapitalFixture,
-  FIXTURE_CAPTURED_AT,
-  widenFixtureTransferMetricsBeyondCapitalDomain,
-} from "./test-fixtures/current-capital-station-line-input.mjs";
-import { buildCurrentCapitalAccessibilityRefreshOutputs } from "./refresh-current-capital-accessibility-full.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import {
   assertNationwideCandidateInputBytes,
@@ -47,8 +30,6 @@ import {
   syntheticNationwideTransferEndpoints,
   writeSyntheticNationwideRepository,
 } from "./test-fixtures/synthetic-nationwide-release-candidate.mjs";
-import { nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
-import { prepareCurrentStaticNetworkProductionRepository } from "./test-fixtures/current-full-capital-production-artifact.mjs";
 
 test("release authority selects the exact manifest pack without a Capital name pin", async () => {
   const input = await fullInput();
@@ -70,7 +51,7 @@ test("release authority selects the exact manifest pack without a Capital name p
   assert.throws(() => canonicalCurrentReleaseCandidateFixtureJson(wrongVersion), /active pack mismatch/);
 });
 
-test("full-capital authority는 입력-derived edge와 materialization exact sets에 결속한다", async () => {
+test("authority는 입력-derived edge와 materialization exact sets에 결속한다", async () => {
   const input = await fullInput();
   const before = structuredClone(input.projectedFixture);
   const result = buildCurrentReleaseCandidateAccessibilityAuthority(input);
@@ -85,12 +66,16 @@ test("full-capital authority는 입력-derived edge와 materialization exact set
   assert.deepEqual(edgeCounts(result.candidateFixture.packs[0].networkEdges), routeCounts);
   assert.deepEqual(result.authority.edgeCounts, { ...edgeCounts(authorityEdges), total: authorityEdges.length });
   assert.equal(result.authority.edges.length, authorityEdges.length);
+  // #866 PR-C: authority 간선은 모두 환승(역 안·역 밖)이고 각각 양끝 TRANSFER cell 2개를 요구한다.
+  assert.ok(authorityEdges.length > 0);
+  assert.ok(authorityEdges.every(({ edgeType }) => edgeType === "IN_STATION_TRANSFER" || edgeType === "OUT_OF_STATION_TRANSFER"));
+  assert.ok(authorityEdges.some(({ edgeType }) => edgeType === "OUT_OF_STATION_TRANSFER"));
   assert.equal(result.authority.edges.filter(({ requiredCells }) => requiredCells.length === 2).length,
-    authorityEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").length);
+    authorityEdges.length);
   assert.match(result.authority.buildInput.buildSpecSha256, /^[a-f0-9]{64}$/u);
   assert.match(result.authority.buildInput.sourceFixtureSha256, /^[a-f0-9]{64}$/u);
   assert.match(result.authority.buildInput.candidateFixtureSha256, /^[a-f0-9]{64}$/u);
-  assert.equal(result.authority.buildInput.observedAt, FIXTURE_CAPTURED_AT);
+  assert.equal(result.authority.buildInput.observedAt, SYNTHETIC_NATIONWIDE_CAPTURED_AT);
   assert.equal(
     result.authority.buildInput.candidateFixtureSha256,
     sha256(Buffer.from(canonicalCurrentReleaseCandidateFixtureJson(result.candidateFixture))),
@@ -100,88 +85,6 @@ test("full-capital authority는 입력-derived edge와 materialization exact set
     sha256(Buffer.from(canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(result.authority, { payloadOnly: true }))),
   );
   assert.deepEqual(input.projectedFixture, before);
-});
-
-test("합성 current public successor는 input-derived metadata, route, authority를 완성한다", async (t) => {
-  const sourceRoot = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
-  const temp = await mkdtemp(path.join(tmpdir(), "public-route-map-authority-"));
-  t.after(() => rm(temp, { recursive: true, force: true }));
-  const repositoryRoot = path.join(temp, "repository");
-  await prepareCurrentStaticNetworkProductionRepository(sourceRoot, repositoryRoot, {
-    now: await nextSyntheticCurrentStaticNetworkNow(sourceRoot),
-  });
-  const buildSpecBytes = await readFile(
-    path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"),
-  );
-  const buildSpec = JSON.parse(buildSpecBytes);
-  const sourceFixtureBytes = await readFile(
-    path.join(repositoryRoot, buildSpec.fixturePath),
-  );
-  const sourceFixture = JSON.parse(sourceFixtureBytes);
-  const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({
-    buildSpec,
-    sourceFixture,
-    repositoryRoot,
-  });
-  const [stationOutput, routeOutput] = await buildCurrentCapitalAccessibilityRefreshOutputs({
-    repositoryRoot,
-  });
-  const stationLineInputBytes = stationOutput.bytes;
-  const routeBytes = routeOutput.bytes;
-  const transferMetricsBytes = await readFile(path.join(
-    repositoryRoot,
-    "tools/datapack/release/current-transfer-topology-metrics.json",
-  ));
-  const stationLineInput = JSON.parse(stationLineInputBytes);
-  const route = JSON.parse(routeBytes);
-  assert.equal(
-    stationLineInput.candidate.sourceSetSha256,
-    buildSpec.sourceSnapshotSetHash,
-  );
-  assert.equal(route.candidate.sourceSetSha256, stationLineInput.candidate.sourceSetSha256);
-  assert.equal(
-    stationLineInputBytes.toString("utf8"),
-    canonicalCurrentCapitalStationLineInputJson(stationLineInput),
-  );
-  assert.equal(
-    routeBytes.toString("utf8"),
-    canonicalCurrentCapitalRouteEdgeInputJson(route),
-  );
-  assert.deepEqual(Object.keys(edgeCounts(sourceFixture.packs[0].networkEdges)), ["RIDE"]);
-  assert.deepEqual(Object.keys(edgeCounts(projectedFixture.packs[0].networkEdges)), ["RIDE"]);
-  const result = buildCurrentReleaseCandidateAccessibilityAuthority({
-    buildSpec,
-    buildSpecBytes,
-    projectedFixture,
-    route,
-    routeBytes,
-    sourceFixtureBytes,
-    stationLineInput,
-    stationLineInputBytes,
-    transferMetrics: JSON.parse(transferMetricsBytes),
-    transferMetricsBytes,
-  });
-
-  assert.ok(route.stationLines.length > 0);
-  assert.equal(result.authority.edges.length, route.routeEdges.filter(({ edgeType }) => edgeType !== "RIDE").length);
-  const authorityCells = result.authority.edges.flatMap(({ requiredCells }) => requiredCells);
-  const authorityCellKeys = new Set(authorityCells.map(({ stationId, lineId, domain }) =>
-    `${stationId}:${lineId}:${domain}`));
-  const materialization = materializeStationLineAccessibility({
-    ...stationLineInput,
-    observedAt: result.authority.buildInput.observedAt,
-  });
-  // D1(#866): ENTRY/EXIT는 authority 증거 요구에서 빠진다. 차단된 FACILITY/EXIT row가 있어도 authority cell이 되지 않는다.
-  assert.ok(materialization.rows.some(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED"));
-  assert.ok(authorityCells.length > 0);
-  assert.ok(authorityCells.every(({ domain }) => domain === "TRANSFER"));
-  assert.equal(authorityCellKeys.size, new Set(result.authority.edges
-    .filter(({ edgeType }) => edgeType.endsWith("_TRANSFER"))
-    .flatMap(({ fromNodeId, toNodeId }) => [`${fromNodeId}:TRANSFER`, `${toNodeId}:TRANSFER`])).size);
-  assert.ok(result.authority.edges
-    .filter(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT")
-    .every(({ requiredCells }) => requiredCells.length === 0));
-  assert.equal(result.candidateFixture.packs[0].networkEdges.length, route.routeEdges.length);
 });
 
 test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에 fail-closed다", async () => {
@@ -262,45 +165,20 @@ test("unresolved·stale·candidate·route·projected RIDE drift는 output 전에
   }
 });
 
-test("authority는 authenticated metric의 complete transfer-edge set을 요구한다", async () => {
-  const input = await fullInput();
-  const transferIndex = input.route.routeEdges
-    .findIndex(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
-  assert.notEqual(transferIndex, -1);
-  input.route.routeEdges.splice(transferIndex, 1);
-  input.routeBytes = Buffer.from(canonical(input.route));
-
-  assert.throws(
-    () => buildCurrentReleaseCandidateAccessibilityAuthority(input),
-    /transfer edge set mismatch/,
-  );
-});
-
-// #872 S2(#866에서 전국 경로로 대체 후 삭제): 수도권 후보의 transfer 대조는 route-edge input과 같은 공용 함수로
-// 분모 안에 온전히 들어가는 쌍만 대조한다. 그 쌍의 edge가 빠지면 계속 거부한다.
-test("authority는 분모 밖 쌍이 있는 지표에서도 분모 안 쌍의 complete transfer-edge set을 요구한다", async () => {
-  const input = await fullInput({ widen: true });
-  assert.doesNotThrow(() => buildCurrentReleaseCandidateAccessibilityAuthority(input));
-  const transferIndex = input.route.routeEdges.findIndex(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
-  assert.notEqual(transferIndex, -1);
-  input.route.routeEdges.splice(transferIndex, 1);
-  input.routeBytes = Buffer.from(canonical(input.route));
-  assert.throws(() => buildCurrentReleaseCandidateAccessibilityAuthority(input), /transfer edge set mismatch/);
-});
-
 test("authority validator는 actual edge type denominator를 재집계한다", async () => {
   const input = await fullInput();
   const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(input);
   const forged = structuredClone(authority);
-  const entry = forged.edges.find(({ edgeType }) => edgeType === "ENTRY");
-  const exit = forged.edges.find(({ edgeType }) => edgeType === "EXIT");
+  // 역 밖 환승 하나를 역 안 환승의 모양으로 바꾸고 edgeCounts는 그대로 둔다. 재집계가 어긋나야 한다.
+  const inStation = forged.edges.find(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
+  const exit = forged.edges.find(({ edgeType }) => edgeType === "OUT_OF_STATION_TRANSFER");
   Object.assign(exit, {
-    edgeType: "ENTRY",
-    fromNodeId: entry.fromNodeId,
-    toNodeId: entry.toNodeId,
-    durationSeconds: entry.durationSeconds,
-    distanceMeters: entry.distanceMeters,
-    requiredCells: structuredClone(entry.requiredCells),
+    edgeType: "IN_STATION_TRANSFER",
+    fromNodeId: inStation.fromNodeId,
+    toNodeId: inStation.toNodeId,
+    durationSeconds: inStation.durationSeconds,
+    distanceMeters: inStation.distanceMeters,
+    requiredCells: structuredClone(inStation.requiredCells),
   });
   exit.routeEdgeSha256 = sha256(Buffer.from(canonical({
     edgeId: exit.edgeId,
@@ -461,12 +339,9 @@ test("전국 route-edge 입력에 ENTRY/EXIT 간선이 있으면 authority·결�
   }
 });
 
-test("#873 F2: build·replay·authority 검증은 같은 후보 id 판정 함수로 전국 여부를 정한다", () => {
-  assert.equal(isNationwideCandidateId("nationwide-candidate-20261001-seq123"), true);
-  assert.equal(isNationwideCandidateId("capital-pilot-candidate-20260816"), false);
-  assert.equal(isNationwideCandidateId(undefined), false);
-  // 같은 ENTRY/EXIT 간선을 담은 authority도 후보 id로만 판정한다: legacy id는 받고 전국 id는 거부한다.
-  // (범위는 전국이고 후보 id가 legacy인 수도권 입력의 build 경로는 "합성 current public successor" 테스트가 실제 지표로 확인한다.)
+// #866 PR-C: 수도권 live chain(legacy) 분기가 없어졌다. 후보 id가 전국 후보 접두어가 아니어도 ENTRY/EXIT 간선을
+// 담은 authority·route 입력은 build·replay·검증 모두에서 명시적으로 실패한다(예전에는 legacy 후보 id면 받았다).
+test("#866 PR-C 후보 id와 무관하게 ENTRY/EXIT 간선을 담은 authority·route 입력은 build·replay·검증이 모두 거부한다", () => {
   const base = buildCurrentReleaseCandidateAccessibilityAuthority(
     syntheticNationwideAuthorityInput(buildSyntheticNationwideReleaseCandidate()),
   ).authority;
@@ -488,19 +363,30 @@ test("#873 F2: build·replay·authority 검증은 같은 후보 id 판정 함수
     resealAuthority(value);
     return value;
   };
-  assert.doesNotThrow(() => canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(accessAuthority("capital-pilot-candidate-20261001")));
-  assert.throws(
-    () => canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(accessAuthority("nationwide-candidate-20261001-seq900")),
-    /nationwide authority must not contain ENTRY\/EXIT edges/,
-  );
-  // 전국 후보 id면 같은 legacy 간선을 build와 replay가 모두 거부한다(replay는 재봉인한 authority로 확인).
+  for (const candidateId of ["capital-pilot-candidate-20261001", "current-capital-candidate-20260816", "nationwide-candidate-20261001-seq900"]) {
+    assert.throws(
+      () => canonicalCurrentReleaseCandidateAccessibilityAuthorityJson(accessAuthority(candidateId)),
+      /nationwide authority must not contain ENTRY\/EXIT edges/,
+      candidateId,
+    );
+  }
+  for (const candidateId of ["capital-pilot-candidate-20261001", "nationwide-candidate-20261001-seq900"]) {
+    const withAccess = buildSyntheticNationwideReleaseCandidate();
+    withAccess.buildSpec.candidateId = candidateId;
+    withAccess.stationLineInput.candidate.candidateId = candidateId;
+    for (const row of withAccess.stationLineInput.evidenceRows) row.candidateId = candidateId;
+    withAccess.route.candidate.candidateId = candidateId;
+    const rebound = addSyntheticLegacyAccessEdges(rebindSyntheticNationwideReleaseCandidate(withAccess));
+    assert.throws(
+      () => buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(rebound)),
+      /nationwide route-edge input must not contain ENTRY\/EXIT edges/,
+      candidateId,
+    );
+  }
+  // replay도 재봉인한 authority로 같은 입력을 거부한다.
   const nationwide = buildSyntheticNationwideReleaseCandidate();
   const { authority } = buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(nationwide));
   const withAccess = addSyntheticLegacyAccessEdges(buildSyntheticNationwideReleaseCandidate());
-  assert.throws(
-    () => buildCurrentReleaseCandidateAccessibilityAuthority(syntheticNationwideAuthorityInput(withAccess)),
-    /nationwide route-edge input must not contain ENTRY\/EXIT edges/,
-  );
   const resealed = structuredClone(authority);
   resealed.buildInput.routeEdgeInputSha256 = sha256(withAccess.routeBytes);
   resealAuthority(resealed);
@@ -856,68 +742,9 @@ async function assertFileAbsent(file) {
   await assert.rejects(stat(file), (error) => error?.code === "ENOENT");
 }
 
-async function fullInput({ widen = false } = {}) {
-  const source = await fullCapitalFixture();
-  if (widen) widenFixtureTransferMetricsBeyondCapitalDomain(source);
-  const routeOnly = source.canonicalPack.packs[0].stationLines;
-  source.canonicalPack.packs[0].networkEdges = [
-    ...routeOnly.slice(0, 2).map(({ stationId, lineId }, index) => ({
-      id: `ride-${index}`,
-      edgeType: "RIDE",
-      fromNodeId: `${stationId}:${lineId}`,
-      toNodeId: `${routeOnly[(index + 1) % routeOnly.length].stationId}:${routeOnly[(index + 1) % routeOnly.length].lineId}`,
-      durationSeconds: 120,
-      distanceMeters: 1000,
-      serviceClass: "SUBWAY",
-      servicePattern: "LOCAL",
-    })),
-  ];
-  const stationLineInput = buildCurrentCapitalStationLineInput(source);
-  const route = buildCurrentCapitalRouteEdgeInput(source);
-  const projectedFixture = {
-    manifest: { activePack: { id: "capital", version: "1" }, channel: "production", keyId: "fixture", manifestVersion: 2, ttlSeconds: 3600 },
-    packs: [{
-      id: "capital",
-      version: "1",
-      lines: structuredClone(source.canonicalPack.packs[0].lines),
-      stationLines: structuredClone(source.canonicalPack.packs[0].stationLines),
-      networkEdges: [
-        ...route.routeEdges.filter(({ edgeType }) => edgeType === "RIDE").map(routeRide),
-      ],
-    }],
-  };
-  const sourceFixture = structuredClone(projectedFixture);
-  const buildSpec = { candidateId: stationLineInput.candidate.candidateId, sourceSnapshotSetHash: stationLineInput.candidate.sourceSetSha256 };
-  return {
-    buildSpec,
-    buildSpecBytes: Buffer.from(canonical(buildSpec)),
-    projectedFixture,
-    route,
-    routeBytes: Buffer.from(canonical(route)),
-    sourceFixtureBytes: Buffer.from(canonical(sourceFixture)),
-    stationLineInput,
-    stationLineInputBytes: Buffer.from(canonical(stationLineInput)),
-    transferMetrics: source.transferMetrics,
-    transferMetricsBytes: Buffer.from(canonical(source.transferMetrics)),
-  };
-}
-
-function routeRide(edge) {
-  return {
-    id: edge.edgeId,
-    fromNodeId: edge.fromNodeId,
-    toNodeId: edge.toNodeId,
-    durationSeconds: edge.durationSeconds,
-    distanceMeters: edge.distanceMeters,
-    edgeType: edge.edgeType,
-    servicePattern: edge.servicePattern,
-    serviceClass: edge.serviceClass,
-    includesStairs: false,
-    stairAccessState: "UNKNOWN",
-    accessibilityStatus: "UNKNOWN",
-    reliabilityScore: 100,
-    facilityId: null,
-  };
+// #866 PR-C: 단위 입력은 합성 전국 fixture다(수도권 live chain fixture 삭제).
+async function fullInput() {
+  return syntheticNationwideAuthorityInput(buildSyntheticNationwideReleaseCandidate());
 }
 
 function nonRideEdge(id, edgeType) {

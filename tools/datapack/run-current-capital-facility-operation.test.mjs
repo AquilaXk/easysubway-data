@@ -25,7 +25,6 @@ const FIXTURE_INPUTS = [
   "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json",
   "tools/datapack/release/hash-evidence.json",
   "tools/datapack/release/source-snapshots.json", "tools/datapack/release/capital-production-canonical-pack.json",
-  "tools/datapack/release/current-capital-facility-source-admission.json",
   "tools/datapack/source-inventory.json", "tools/datapack/source-governance-policy.json",
   "release/product-gates/datapack-freshness-sla.json", "tools/datapack/nationwide-coverage-targets.json",
   "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -984,7 +983,6 @@ test("finalize는 원본 게시·원장 등록에서 끝나고 후보·request·
     "tools/datapack/release/candidate-build-spec.json",
     "tools/datapack/release/release-request.json",
     "tools/datapack/release/hash-evidence.json",
-    "tools/datapack/release/current-capital-facility-source-admission.json",
   ];
   const before = await Promise.all(candidateSide.map((relative) => readFile(path.join(fixture.root, relative))));
   const calls = { publish: 0, register: 0, rebind: 0, admission: 0 };

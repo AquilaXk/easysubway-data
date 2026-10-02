@@ -13,7 +13,6 @@ import {
   projectCapitalTopologyIntoCanonicalFixture,
   validateSourceSeparatedCurrentTopology,
 } from "../build-datapack.mjs";
-import { buildFixtureCurrentExitV2Receipt, canonicalFixtureCurrentExitV2ReceiptJson } from "./current-exit-v2-receipt.mjs";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
 import { canonicalJson } from "../lib/manifest-validation.mjs";
 import {
@@ -473,16 +472,7 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "release/product-gates/production-datapack-scope.json",
   "tools/datapack/official-od-fare-admission.json",
   "tools/datapack/nationwide-coverage-targets.json",
-  "tools/datapack/release/current-capital-accessibility-full/station-line-input.json",
-  "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
-  "tools/datapack/release/current-capital-accessibility-full/route-edge-evaluation.json",
   "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-  "tools/datapack/release/current-capital-live-chain-fan-in.json",
-  "tools/datapack/release/current-kric-exit-plan-inputs.json",
-  "tools/datapack/release/current-capital-facility-source-admission.json",
-  "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json",
-  "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json",
-  "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json",
   "tools/datapack/release/current-transfer-topology-metrics.json",
   "tools/datapack/release/current-capital-transfer-topology-applicability.json",
   "release/product-gates/route-edge-evaluation-policy.json",
@@ -503,7 +493,7 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     regularRoot(sourceRoot),
     regularRoot(targetRoot, { create: true }),
   ]);
-  const [candidate, request, hashes, inventory, snapshots, pack, governanceBytes, scope, itxContract, facilityAdmission] = await Promise.all([
+  const [candidate, request, hashes, inventory, snapshots, pack, governanceBytes, scope, itxContract] = await Promise.all([
     readJson(source, "tools/datapack/release/candidate-build-spec.json"),
     readJson(source, "tools/datapack/release/release-request.json"),
     readJson(source, "tools/datapack/release/hash-evidence.json"),
@@ -513,7 +503,6 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     readFile(path.join(source, "tools/datapack/source-governance-policy.json")),
     readJson(source, "release/product-gates/production-datapack-scope.json"),
     readJson(source, "tools/datapack/itx-cheongchun-coverage-contract.json"),
-    readJson(source, "tools/datapack/release/current-capital-facility-source-admission.json"),
   ]);
   const governancePolicy = JSON.parse(governanceBytes);
   const fixture = projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory, governancePolicy, scope });
@@ -555,7 +544,6 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
       .map(({ snapshotId }) => `tools/datapack/sources/${snapshotId}.json`),
     ...referencedPaths(candidate),
     ...referencedPaths(itxContract),
-    facilityAdmission.sourceIdentity?.snapshotPath,
   ];
   const relatives = [...new Set([...SUCCESSOR_FIXTURE_PATHS, ...dynamicPaths]
     .filter((relative) => typeof relative === "string"))];
@@ -596,32 +584,8 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
     writeFile(path.join(target, "tools/datapack/release/release-request.json"), jsonBytes(request)),
     writeFile(path.join(target, "tools/datapack/release/hash-evidence.json"), jsonBytes(hashes)),
   ]);
-  await writeSyntheticCurrentExitOciReceipt(target);
   if (!activatePublicRouteMap) return null;
   return activateSyntheticCurrentPublicRouteMapSuccessor(target, { now });
-}
-
-async function writeSyntheticCurrentExitOciReceipt(root) {
-  const normalizedPath = "tools/datapack/release/current-exit-admission-v2/exit-path-normalized-source-snapshot.json";
-  const admissionPath = "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json";
-  const receiptPath = "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json";
-  const [normalizedBytes, admissionBytes] = await Promise.all([
-    readFile(path.join(root, normalizedPath)),
-    readFile(path.join(root, admissionPath)),
-  ]);
-  const admission = JSON.parse(admissionBytes);
-  const providerCapturedAt = admission.sourceIdentity?.capturedAt;
-  if (typeof providerCapturedAt !== "string" || !Number.isFinite(Date.parse(providerCapturedAt))) {
-    throw new Error("synthetic current EXIT admission capture time is invalid");
-  }
-  const providerCollectionBundleBytes = Buffer.from(canonicalJson({ normalized: sha256(normalizedBytes), admission: sha256(admissionBytes) }));
-  const receipt = buildFixtureCurrentExitV2Receipt({
-    providerCollectionBundleBytes, providerCapturedAt, normalizedBytes, admissionBytes,
-    candidateBytes: Buffer.from(canonicalJson(admission.candidate)),
-  });
-  const target = path.join(root, receiptPath);
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, Buffer.from(`${canonicalFixtureCurrentExitV2ReceiptJson(receipt)}\n`));
 }
 
 export async function nextSyntheticCurrentStaticNetworkNow(root) {

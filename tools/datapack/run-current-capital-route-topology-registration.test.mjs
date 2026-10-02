@@ -28,13 +28,6 @@ test("runs protected admission, create-once publication, and registration in ord
   });
   assert.deepEqual(calls, ["admission", "publish", "register"]); assert.deepEqual(result, { status: "PASS", sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", targets: TARGETS });
 });
-test("rejects terminal markers before publication", async (t) => {
-  const f = await fixture(); t.after(() => rm(f.base, { recursive: true, force: true }));
-  await writeFile(path.join(f.repositoryRoot, "tools/datapack/release/current-capital-accessibility-transition.json"), "{}\n");
-  let published = false;
-  await assert.rejects(() => runCurrentCapitalRouteTopologyRegistration({ repositoryRoot: f.repositoryRoot, operationRoot: f.operationRoot, expectedMainSha: SHA, readAdmission: async () => { throw new Error("must not read"); }, publish: async () => { published = true; } }), /terminal marker/);
-  assert.equal(published, false);
-});
 test("does not register after publication failure", async (t) => {
   const f = await fixture(); t.after(() => rm(f.base, { recursive: true, force: true }));
   let registered = false;

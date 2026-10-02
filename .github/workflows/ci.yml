@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 소유 required-pr 테스트는 네 갈래로 나눠 동시에 돈다. mobile-v19 profile, capital live-chain
-  # OCI context, 기본 profile 4 shard다. 각 job 안에서도 러너 4 vCPU만큼 test 프로세스를 병렬로
-  # 돌리고, 오래 걸리는 파일은 top-level test 이름으로 나눈다(data-test-discovery가 실행된 이름
-  # 집합을 정적 목록과 대조해 누락·중복이면 실패한다). 테스트를 빼거나 건너뛰지 않는다.
+  # 소유 required-pr 테스트는 갈래를 나눠 동시에 돈다. mobile-v19 profile과 기본 profile 4 shard다.
+  # 각 job 안에서도 러너 4 vCPU만큼 test 프로세스를 병렬로 돌리고, 오래 걸리는 파일은 top-level
+  # test 이름으로 나눈다(data-test-discovery가 실행된 이름 집합을 정적 목록과 대조해 누락·중복이면
+  # 실패한다). 테스트를 빼거나 건너뛰지 않는다.
   contracts_mobile_v19:
     name: Data contracts (mobile-v19)
     permissions:
@@ -135,66 +135,6 @@ jobs:
             --scope "${EASYSUBWAY_DATAPACK_SCOPE_POLICY}" \
             --governance-policy tools/datapack/source-governance-policy.json \
             --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}"
-
-  contracts_live_chain:
-    name: Data contracts (capital live-chain OCI)
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Checkout pinned Mobile fixture
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: AquilaXk/easysubway-mobile
-          ref: f21e653dacb418fad743962b50ddd0ac9c812062
-          path: .external/mobile
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Stage pinned Mobile fixture
-        shell: bash
-        run: |
-          set -euo pipefail
-          expected_revision="f21e653dacb418fad743962b50ddd0ac9c812062"
-          source=".external/mobile/apps/mobile"
-          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e"
-
-          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
-          [[ "${actual_revision}" == "${expected_revision}" ]]
-          [[ -d "${source}" && ! -L "${source}" ]]
-          if find "${source}" -type l -print -quit | grep -q .; then
-            echo "pinned Mobile fixture contains a symlink" >&2
-            exit 1
-          fi
-          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
-          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
-          [[ "${actual_sha256}" == "${expected_sha256}" ]]
-          test ! -e apps/mobile
-          test ! -L apps/mobile
-
-          if [[ -e apps || -L apps ]]; then
-            [[ -d apps && ! -L apps ]]
-          else
-            mkdir apps
-          fi
-          cp -a "${source}" apps/mobile
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "24.19.0"
-
-      - name: Verify current capital live-chain OCI contracts
-        run: |
-          node --test tools/datapack/run-current-capital-live-chain.test.mjs
 
   contracts_shard_1:
     name: Data contracts (shard 1/4)
@@ -476,7 +416,7 @@ jobs:
     name: Data contracts
     permissions:
       contents: read
-    needs: [contracts_mobile_v19, contracts_live_chain, contracts_shard_1, contracts_shard_2, contracts_shard_3, contracts_shard_4]
+    needs: [contracts_mobile_v19, contracts_shard_1, contracts_shard_2, contracts_shard_3, contracts_shard_4]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -485,7 +425,6 @@ jobs:
         shell: bash
         env:
           MOBILE_V19_RESULT: ${{ needs.contracts_mobile_v19.result }}
-          LIVE_CHAIN_RESULT: ${{ needs.contracts_live_chain.result }}
           SHARD_1_RESULT: ${{ needs.contracts_shard_1.result }}
           SHARD_2_RESULT: ${{ needs.contracts_shard_2.result }}
           SHARD_3_RESULT: ${{ needs.contracts_shard_3.result }}
@@ -493,7 +432,6 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${MOBILE_V19_RESULT}" == "success" ]]
-          [[ "${LIVE_CHAIN_RESULT}" == "success" ]]
           [[ "${SHARD_1_RESULT}" == "success" ]]
           [[ "${SHARD_2_RESULT}" == "success" ]]
           [[ "${SHARD_3_RESULT}" == "success" ]]

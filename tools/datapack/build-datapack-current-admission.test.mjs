@@ -38,16 +38,8 @@ import {
 import { activateCurrentIncheonSourceAdmissions } from "./activate-current-source-set.mjs";
 import { retainPreAuthorityRideEdges } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
-import { buildCurrentCapitalStationLineInput } from "./build-current-capital-station-line-input.mjs";
-import {
-  buildCurrentCapitalAccessibilityTransition,
-  canonicalCurrentCapitalAccessibilityTransitionJson,
-} from "./current-capital-accessibility-transition.mjs";
-import {
-  materializeCurrentFanInCandidateArtifact,
-  prepareCurrentFullCapitalProductionRepository,
-} from "./test-fixtures/current-full-capital-production-artifact.mjs";
-import { buildCurrentCapitalStationLineInputFixture } from "./test-fixtures/current-capital-station-line-input.mjs";
+import { main as buildCurrentReleaseCandidateAccessibilityInput } from "./build-current-release-candidate-accessibility-input.mjs";
+import { buildSyntheticNationwideReleaseCandidate } from "./test-fixtures/synthetic-nationwide-release-candidate.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -72,19 +64,17 @@ async function withEnvironment(values, action) {
   }
 }
 
-test("build-datapack은 ordinary candidate를 먼저 차단하고 validation-only shape를 output 전에 확정한다", async () => {
+// #866 PR-C: 수도권 accessibility transition 표지(staged transition guard)는 live chain과 함께 삭제됐다.
+// 표지 파일이 없어 항상 통과하던 guard다. validation-only 분류와 shape 확정 순서는 그대로 고정한다.
+test("build-datapack은 validation-only 요청을 먼저 분류하고 validation-only shape를 output 전에 확정한다", async () => {
   const source = await readFile(path.join(root, "tools/datapack/build-datapack.mjs"), "utf8");
   const validationOnlyRequest = source.indexOf("const buildSpecValidationOnlyRequested =");
-  const candidateMode = source.indexOf('if (args["build-spec"] != null && !buildSpecValidationOnlyRequested) {');
-  const guard = source.indexOf("await assertCurrentCapitalAccessibilityBuildAllowed({ repositoryRoot: root });");
   const buildInput = source.indexOf("await loadBuildInput(");
   const validationOnlyShape = source.indexOf("if (buildSpecValidationOnlyRequested && validationOnlyProductionFixture !== true) {");
   const fixtureValidation = source.indexOf("validateFixture(fixture);");
   assert.ok(validationOnlyRequest >= 0, "validation-only 요청을 명시적으로 분류해야 한다");
-  assert.ok(candidateMode >= 0, "ordinary candidate transition guard가 필요하다");
-  assert.ok(guard >= 0, "staged transition guard가 필요하다");
-  assert.ok(validationOnlyRequest < candidateMode && candidateMode < guard, "ordinary candidate mode를 확인한 뒤 guard를 실행해야 한다");
-  assert.ok(guard < buildInput, "staged transition guard는 candidate 입력보다 먼저 실행돼야 한다");
+  assert.equal(source.includes("AccessibilityBuildAllowed"), false, "삭제된 transition guard가 남으면 안 된다");
+  assert.ok(validationOnlyRequest < buildInput, "validation-only 요청은 candidate 입력보다 먼저 분류해야 한다");
   assert.ok(buildInput < validationOnlyShape && validationOnlyShape < fixtureValidation, "validation-only shape는 input 검증 후 output 전에 확정해야 한다");
 });
 test("retired production transit unprojected fixture는 candidate admission에서 거부된다", async () => {
@@ -159,31 +149,14 @@ function networkEdgeEvidenceFixture() {
   };
 }
 
+// #866 PR-C: 수도권 live chain 합성 저장소 대신 커밋된 전국 후보와 release workflow의 RC 경로
+// (build-current-release-candidate-accessibility-input → build-datapack override·authority)로 같은 불변식을 고정한다.
 test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
-  const directory = await prepareCurrentFullCapitalProductionRepository(root);
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-release-identity-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const buildSpecBytes = await readFile(path.join(directory, buildSpecPath));
+  const buildSpecBytes = await readFile(path.join(root, buildSpecPath));
   const buildSpec = JSON.parse(buildSpecBytes);
-  const [ledger, exitAdmissionBytes, exitReceiptBytes] = await Promise.all([
-    readFile(path.join(directory, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
-    readFile(path.join(directory, "tools/datapack/release/current-exit-admission-v2/exit-path-source-admission.json")),
-    readFile(path.join(directory, "tools/datapack/release/current-exit-admission-v2/exit-path-admission-oci-receipt.json"), "utf8").then(JSON.parse),
-  ]);
-  const predecessorIds = new Set(buildSpec.sourceSnapshotIds.slice(0, -1));
-  const predecessorSourceSetSha256 = sha256(Buffer.from(JSON.stringify(
-    ledger.filter(({ snapshotId }) => predecessorIds.has(snapshotId)),
-  )));
-  const exitAdmission = JSON.parse(exitAdmissionBytes);
-  assert.equal(exitAdmission.candidate.candidateId, buildSpec.candidateId);
-  assert.equal(exitAdmission.candidate.sourceSetSha256, predecessorSourceSetSha256);
-  assert.notEqual(exitAdmission.candidate.sourceSetSha256, buildSpec.sourceSnapshotSetHash);
-  for (const row of [...exitAdmission.cells, ...exitAdmission.materializerEvidenceRows]) {
-    assert.equal(row.candidateId, buildSpec.candidateId);
-    assert.equal(row.sourceSetSha256, predecessorSourceSetSha256);
-  }
-  assert.equal(exitReceiptBytes.admissionSha256, sha256(exitAdmissionBytes));
-  assert.equal(exitReceiptBytes.admissionDigest, exitAdmission.admissionDigest);
   const topologyAdmission = buildSpec.networkEdgeEvidence.capitalTopologyAdmission;
   const firstBuildAt = Math.max(
     Date.parse(buildSpec.publishedAt),
@@ -203,10 +176,14 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const candidateRouteEdge = path.join(directory, "candidate-route-edge-input.json");
   const candidateFixture = path.join(directory, "candidate-fixture.json");
   const routeCoverageAuthority = path.join(directory, "server-route-coverage-authority.json");
-  await materializeCurrentFanInCandidateArtifact({
-    repositoryRoot: directory, stationLineOutput: candidateStationLine, routeEdgeOutput: candidateRouteEdge,
-    fixtureOutput: candidateFixture, authorityOutput: routeCoverageAuthority,
-  });
+  await buildCurrentReleaseCandidateAccessibilityInput([
+    "--fixture", buildSpec.fixturePath,
+    "--build-spec", buildSpecPath,
+    "--station-line-output", candidateStationLine,
+    "--route-edge-output", candidateRouteEdge,
+    "--fixture-output", candidateFixture,
+    "--authority-output", routeCoverageAuthority,
+  ], { repositoryRoot: root });
   const directOutput = path.join(directory, "direct-build");
   await assert.rejects(
     withEnvironment({
@@ -216,70 +193,35 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     }, () => buildDatapackMain([
       "--build-spec", buildSpecPath,
       "--output", directOutput,
-    ], { repositoryRoot: directory })),
+    ], { repositoryRoot: root })),
     /production accessibility evidence mismatch/,
   );
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
-  const transitionPaths = {
-    candidate: "tools/datapack/release/candidate-build-spec.json",
-    facility: "tools/datapack/release/current-capital-facility-source-admission.json",
-    ledger: "tools/datapack/release/source-snapshots.json",
-    inventory: "tools/datapack/source-inventory.json",
-  };
-  const transitionBytes = Object.fromEntries(await Promise.all(
-    Object.entries(transitionPaths).map(async ([key, relativePath]) => [
-      key,
-      await readFile(path.join(directory, relativePath)),
-    ]),
-  ));
-  const previousBytes = await readFile(path.join(
-    root,
-    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-  ));
-  const previousPath = path.join(
-    directory,
-    "tools/datapack/release/current-station-line-accessibility/station-line-input.json",
-  );
-  await mkdir(path.dirname(previousPath), { recursive: true });
-  await writeFile(previousPath, previousBytes);
-  const transition = buildCurrentCapitalAccessibilityTransition({
-    productionScopeBytes: await readFile(path.join(directory, "release/product-gates/production-datapack-scope.json")),
-    candidate: JSON.parse(transitionBytes.candidate),
-    candidateBytes: transitionBytes.candidate,
-    previous: JSON.parse(previousBytes),
-    previousBytes,
-    facilityAdmission: JSON.parse(transitionBytes.facility),
-    facilityBytes: transitionBytes.facility,
-    ledger: JSON.parse(transitionBytes.ledger),
-    ledgerBytes: transitionBytes.ledger,
-    inventory: JSON.parse(transitionBytes.inventory),
-    inventoryBytes: transitionBytes.inventory,
-  });
-  await writeFile(
-    path.join(directory, "tools/datapack/release/current-capital-accessibility-transition.json"),
-    canonicalCurrentCapitalAccessibilityTransitionJson(transition),
-  );
-  const validationOnlyFixturePath = "validation-only-source-fixture.json";
-  const validationOnlyBuildSpecPath = "validation-only-build-spec.json";
-  const sourceFixture = JSON.parse(await readFile(path.join(directory, buildSpec.fixturePath)));
+  const validationOnlyFixturePath = path.join(directory, "validation-only-source-fixture.json");
+  const validationOnlyBuildSpecPath = path.join(directory, "validation-only-build-spec.json");
+  const sourceFixture = JSON.parse(await readFile(path.join(root, buildSpec.fixturePath)));
+  const activePackId = sourceFixture.manifest.activePack.id;
   const validationOnlyFixture = await projectCandidateFixtureForAccessibilityAuthority({
     buildSpec,
     sourceFixture,
-    repositoryRoot: directory,
+    repositoryRoot: root,
   });
   const sourcePack = retainPreAuthorityRideEdges(sourceFixture, "validation-only source").packs
-    .find(({ id }) => id === "capital");
-  const validationOnlyPack = validationOnlyFixture.packs.find(({ id }) => id === "capital");
+    .find(({ id }) => id === activePackId);
+  const validationOnlyPack = validationOnlyFixture.packs.find(({ id }) => id === activePackId);
   validationOnlyPack.networkEdges = structuredClone(sourcePack.networkEdges);
   validationOnlyPack.outOfStationTransferLinks = structuredClone(sourcePack.outOfStationTransferLinks);
+  // 전국 build spec은 정본 팩 bytes(fixtureSha256)에 결속한다. validation-only 팩은 그 bytes 결속만 새 bytes로 바꾼다.
+  const validationOnlyFixtureBytes = Buffer.from(`${JSON.stringify(validationOnlyFixture, null, 2)}\n`);
   await Promise.all([
+    writeFile(validationOnlyFixturePath, validationOnlyFixtureBytes),
     writeFile(
-      path.join(directory, validationOnlyFixturePath),
-      `${JSON.stringify(validationOnlyFixture, null, 2)}\n`,
-    ),
-    writeFile(
-      path.join(directory, validationOnlyBuildSpecPath),
-      `${JSON.stringify({ ...buildSpec, fixturePath: validationOnlyFixturePath }, null, 2)}\n`,
+      validationOnlyBuildSpecPath,
+      `${JSON.stringify({
+        ...buildSpec,
+        fixturePath: validationOnlyFixturePath,
+        ...(Object.hasOwn(buildSpec, "fixtureSha256") ? { fixtureSha256: sha256(validationOnlyFixtureBytes) } : {}),
+      }, null, 2)}\n`,
     ),
   ]);
   const validationOnlyOutput = path.join(directory, "validation-only-build");
@@ -291,7 +233,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   }, () => buildDatapackMain([
     "--build-spec", validationOnlyBuildSpecPath,
     "--output", validationOnlyOutput,
-  ], { repositoryRoot: directory }));
+  ], { repositoryRoot: root }));
   const validationOnlyManifest = JSON.parse(await readFile(
     path.join(validationOnlyOutput, "current.json"),
     "utf8",
@@ -309,7 +251,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     validationOnlyProvenance.packs.map(({ artifactKind }) => artifactKind),
     ["fixture"],
   );
-  async function build(name, buildNow, runNumber, repositoryRoot = directory) {
+  async function build(name, buildNow, runNumber) {
     const output = path.join(directory, name);
     await withEnvironment({
       EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
@@ -323,12 +265,12 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       "--current-capital-station-line-input", candidateStationLine,
       "--current-capital-route-edge-input", candidateRouteEdge,
       "--output", output,
-    ], { repositoryRoot }));
+    ], { repositoryRoot: root }));
     return {
       manifest: await readFile(path.join(output, "current.json")),
       provenance: await readFile(path.join(output, "current.provenance.json")),
-      sqlite: await readFile(path.join(output, "catalog/capital-v1.sqlite")),
-      gzip: await readFile(path.join(output, "catalog/capital-v1.sqlite.gz")),
+      sqlite: await readFile(path.join(output, `catalog/${activePackId}-v1.sqlite`)),
+      gzip: await readFile(path.join(output, `catalog/${activePackId}-v1.sqlite.gz`)),
     };
   }
 
@@ -345,41 +287,21 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       "--current-capital-station-line-input", candidateStationLine,
       "--current-capital-route-edge-input", candidateRouteEdge,
       "--output", path.join(directory, "validation-only-replay-blocked"),
-    ], { repositoryRoot: directory })),
+    ], { repositoryRoot: root })),
     /build-spec validation-only requires a production source fixture without accessibility authority replay/,
   );
-  await assert.rejects(
-    build("transition-blocked", secondBuildNow, "303", directory),
-    /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
-  );
-  await rm(
-    path.join(directory, "tools/datapack/release/current-capital-accessibility-transition.json"),
-  );
-
-  try {
-    await readFile(path.join(root, "tools/datapack/release/current-capital-accessibility-transition.json"));
-    await assert.rejects(
-      build("transition-blocked", secondBuildNow, "303", root),
-      /CURRENT_ACCESSIBILITY_TRANSITION_BLOCKED/,
-    );
-    await assert.rejects(
-      readFile(path.join(directory, "transition-blocked/current.json")),
-      /ENOENT/,
-    );
-    return;
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
 
   const first = await build("first", firstBuildNow, "101");
   const second = await build("second", secondBuildNow, "202");
   const manifest = JSON.parse(first.manifest);
   const provenance = JSON.parse(first.provenance);
   const snapshots = await readFile(
-    path.join(directory, "tools/datapack/release/source-snapshots.json"),
+    path.join(root, "tools/datapack/release/source-snapshots.json"),
     "utf8",
   ).then(JSON.parse);
-  const publicSnapshot = snapshots.find(({ sourceId }) => sourceId === PUBLIC_ROUTE_MAP_SOURCE_ID);
+  const selectedIds = new Set(buildSpec.sourceSnapshotIds);
+  const publicSnapshot = snapshots.find(({ sourceId, snapshotId }) =>
+    sourceId === PUBLIC_ROUTE_MAP_SOURCE_ID && selectedIds.has(snapshotId));
   assert.ok(publicSnapshot?.routeMapLayoutArtifact);
 
   assert.equal(manifest.publishedAt, buildSpec.publishedAt);
@@ -389,7 +311,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   for (const key of ["manifest", "provenance", "sqlite", "gzip"]) {
     assert.deepEqual(first[key], second[key], `${key} bytes drifted`);
   }
-  const database = new DatabaseSync(path.join(directory, "first/catalog/capital-v1.sqlite"), {
+  const database = new DatabaseSync(path.join(directory, `first/catalog/${activePackId}-v1.sqlite`), {
     readOnly: true,
   });
   try {
@@ -446,9 +368,10 @@ test("candidate build spec release identity는 wall clock과 workflow run number
 });
 
 test("candidate override accessibility freshness는 authority input identity와 earliest expiry에 결속된다", async () => {
-  const stationLineInput = buildCurrentCapitalStationLineInput(
-    await buildCurrentCapitalStationLineInputFixture(),
-  );
+  // #866 PR-C: 합성 전국 station-line 입력을 쓴다. 이 테스트는 전국이 아닌 후보 id(벽시계 기준 stale 판정) 분기를 고정한다.
+  const stationLineInput = buildSyntheticNationwideReleaseCandidate().stationLineInput;
+  stationLineInput.candidate.candidateId = "release-identity-candidate";
+  for (const row of stationLineInput.evidenceRows) row.candidateId = stationLineInput.candidate.candidateId;
   const stationLineInputBytes = Buffer.from(JSON.stringify(stationLineInput));
   const observedAt = new Date(Math.max(...stationLineInput.evidenceRows
     .map(({ capturedAt }) => Date.parse(capturedAt)))).toISOString();

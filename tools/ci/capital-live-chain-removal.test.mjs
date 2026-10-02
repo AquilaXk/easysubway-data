@@ -66,7 +66,8 @@ const DELETED_ARTIFACTS = [
 ];
 const DELETED_WORKFLOWS = [".github/workflows/kric-exit-full-capital-refresh.yml"];
 
-// 참조 검사 토큰: 모듈 basename, 산출물 경로 꼬리, workflow 이름, CI job id, 우회 플래그.
+// 참조 검사 토큰: 모듈 basename, 산출물 경로 꼬리, workflow 이름, CI job id, live chain 우회 모드 플래그.
+// validate-datapack의 legacy fixture 플래그는 대전 지역 팩 테스트가 의존하므로 PR-D(#866)에서 정리한다(메인 결정).
 const TOKENS = [...new Set([
   ...DELETED_MODULES.map((module) => (module.includes("/test-fixtures/")
     ? `test-fixtures/${path.basename(module)}`
@@ -76,7 +77,6 @@ const TOKENS = [...new Set([
   "kric-exit-full-capital-refresh",
   "contracts_live_chain",
   "capital live-chain OCI",
-  "legacy-fixture-production",
   "nationwide-candidate-rebind-baseline",
   "transfer-source-admission-baseline",
 ])];
@@ -128,7 +128,6 @@ test("#866 PR-C 검사기는 삭제 대상 참조를 실제로 잡는다", () =>
     "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json",
     "uses: ./.github/workflows/kric-exit-full-capital-refresh.yml",
     "needs: [contracts_mobile_v19, contracts_live_chain]",
-    '"--legacy-fixture-production"',
     'import { y } from "./test-fixtures/current-full-capital-production-artifact.mjs";',
   ]) {
     assert.match(sample, pattern, sample);

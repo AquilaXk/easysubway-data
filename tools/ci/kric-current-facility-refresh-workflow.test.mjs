@@ -95,7 +95,6 @@ test("KRIC refresh workflow ends at ledger registration and never commits candid
     "candidate-build-spec.json",
     "release-request.json",
     "hash-evidence.json",
-    "current-capital-facility-source-admission.json",
   ]) {
     assert.equal(yml.includes(candidateSide), false, `${candidateSide} belongs to the nationwide candidate refresh`);
   }

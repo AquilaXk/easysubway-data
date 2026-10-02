@@ -219,14 +219,11 @@ function rehash(plan) {
 
 // #862: KRIC가 역 코드를 바꾸면(2026-10 신분당선) 새 roster를 받아야 한다. FACILITY 도구는 roster 경로를
 // 상수로 고정하지 않고, 한 선택 함수가 sources/의 roster 중 capturedAt이 가장 늦은 것을 고른다.
-test("FACILITY operation·계획·probe·rebind·live-chain은 roster 경로를 고정하지 않고 선택 함수로 현재 roster를 고른다(#862)", async () => {
+test("FACILITY operation·계획·probe는 roster 경로를 고정하지 않고 선택 함수로 현재 roster를 고른다(#862)", async () => {
   for (const tool of [
     "build-current-capital-facility-collection-plan.mjs",
     "run-current-capital-facility-operation.mjs",
     "probe-kric-facility-provider-tuples.mjs",
-    // #862: #866 중 roster 선택 부분만 흡수한다.
-    "rebind-current-active-facility-derived-identity.mjs",
-    "run-current-capital-live-chain.mjs",
   ]) {
     const source = await readFile(path.join(datapackRoot, tool), "utf8");
     assert.doesNotMatch(source, /kric-nationwide-route-rosters-\d{8}T/u, `${tool} pins a roster file`);

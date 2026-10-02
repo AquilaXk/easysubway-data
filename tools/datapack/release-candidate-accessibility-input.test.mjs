@@ -1,17 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import { main as buildCandidateAccessibilityInput } from "./build-current-release-candidate-accessibility-input.mjs";
 import {
   retainPreAuthorityRideEdges,
   syncCanonicalAccessibilityEvidence,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
-import { buildCurrentCapitalRouteEdgeInput } from "./build-current-capital-route-edge-input.mjs";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
@@ -76,64 +75,21 @@ test("committed build spec으로 release-candidate accessibility input을 만들
     const nonRide = routeEdge.routeEdges.filter(({ edgeType }) => edgeType !== "RIDE");
     assert.equal(authority.edgeCounts.total, nonRide.length);
     assert.equal(authority.edges.length, nonRide.length);
+    // #866 PR-C: 삭제한 "합성 current public successor" 테스트가 수도권 사본으로 보던 authority 불변식을 실데이터
+    // 전국 입력에 건다. ENTRY/EXIT가 없고, authority cell은 모두 TRANSFER이며 그 집합은 환승 간선 끝점 집합과 같다.
+    assert.equal(routeEdge.routeEdges.some(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT"), false);
+    assert.ok(nonRide.length > 0);
+    assert.ok(nonRide.every(({ edgeType }) => edgeType.endsWith("_TRANSFER")));
+    const authorityCells = authority.edges.flatMap(({ requiredCells }) => requiredCells);
+    assert.ok(authorityCells.every(({ domain }) => domain === "TRANSFER"));
+    assert.deepEqual(
+      [...new Set(authorityCells.map(({ stationId, lineId }) => `${stationId}:${lineId}`))].sort(),
+      [...new Set(nonRide.flatMap(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId]))].sort(),
+    );
+    assert.equal(fixture.packs[0].networkEdges.length, routeEdge.routeEdges.length);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
-});
-
-// 전국 발행 경로 모듈은 수도권 live chain 모듈을 정적으로(동적 import 문자열 포함) 끌어오지 않는다.
-const RELEASE_PATH_MODULES = [
-  "tools/datapack/build-current-release-candidate-accessibility-input.mjs",
-  "tools/datapack/build-datapack.mjs",
-  "tools/datapack/emit-artifact-components.mjs",
-  "tools/datapack/nationwide-candidate-input-binding.mjs",
-  "tools/datapack/prepare-current-server-route-bundle-final.mjs",
-  "tools/datapack/prepare-nationwide-candidate-run.mjs",
-  "tools/datapack/refresh-nationwide-candidate.mjs",
-  "tools/datapack/stage-current-server-route-bundle-candidate.mjs",
-  "tools/datapack/validate-datapack.mjs",
-];
-const LIVE_CHAIN_MODULES = [
-  "tools/datapack/build-current-capital-live-chain-boundary.mjs",
-  "tools/datapack/refresh-current-capital-accessibility-full.mjs",
-  "tools/datapack/run-current-capital-live-chain.mjs",
-];
-const IMPORT_SPECIFIER = /(?:\bimport|\bexport)\s[^'"`;]*?\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\bimport\s*["']([^"']+)["']/gu;
-
-function relativeImportGraph(entries) {
-  const parents = new Map();
-  const pending = entries.map((entry) => [resolve(root, entry), null]);
-  while (pending.length > 0) {
-    const [file, parent] = pending.pop();
-    if (parents.has(file)) continue;
-    parents.set(file, parent);
-    for (const match of readFileSync(file, "utf8").matchAll(IMPORT_SPECIFIER)) {
-      const specifier = match[1] ?? match[2] ?? match[3];
-      if (!specifier.startsWith(".")) continue;
-      const target = resolve(dirname(file), specifier);
-      // 문자열 안의 재현 명령(`node -e "import('./tools/...')"`)처럼 모듈 경로가 아닌 일치는 건너뛴다.
-      if (existsSync(target)) pending.push([target, file]);
-    }
-  }
-  return parents;
-}
-
-test("전국 발행 경로 모듈은 수도권 live chain 모듈을 정적 import 그래프에 포함하지 않는다", () => {
-  for (const module of [...RELEASE_PATH_MODULES, ...LIVE_CHAIN_MODULES]) {
-    assert.ok(existsSync(resolve(root, module)), module);
-  }
-  const graph = relativeImportGraph(RELEASE_PATH_MODULES);
-  // 검사기가 실제로 그래프를 따라가는지 확인한다(live chain 쪽에서 시작하면 반드시 걸린다).
-  assert.ok(relativeImportGraph(["tools/datapack/refresh-current-capital-accessibility-full.mjs"])
-    .has(resolve(root, "tools/datapack/build-current-capital-live-chain-boundary.mjs")));
-  const offenders = LIVE_CHAIN_MODULES.map((module) => resolve(root, module))
-    .filter((module) => graph.has(module))
-    .map((module) => {
-      const chain = [];
-      for (let current = module; current; current = graph.get(current)) chain.push(relative(root, current));
-      return chain.join(" <- ");
-    });
-  assert.deepEqual(offenders, []);
 });
 
 function productionFixture({ activePack, packIds }) {
@@ -168,13 +124,6 @@ for (const [label, shape] of UNRESOLVED_ACTIVE_PACKS) {
     assert.throws(
       () => syncCanonicalAccessibilityEvidence(productionFixture(shape), { sourceInventory: [] }),
       /canonical capital pack is missing/u,
-    );
-  });
-
-  test(`buildCurrentCapitalRouteEdgeInput: ${label} 오류로 드러낸다`, () => {
-    assert.throws(
-      () => buildCurrentCapitalRouteEdgeInput({ canonicalPack: productionFixture(shape) }),
-      /full-capital projected fixture mismatch/u,
     );
   });
 }
