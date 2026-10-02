@@ -471,8 +471,10 @@ test("환승 끝점 TRANSFER cell이 UNKNOWN·MISSING이면 역 안·역 밖 환
 });
 
 test("역 안 환승은 같은 역 다른 노선, 역 밖 환승은 다른 역 끝점만 허용한다", () => {
+  // 리뷰 F2: 역 안 환승의 두 조건(다른 역, 같은 노선)을 하나씩만 깨는 케이스로 각각 고정한다.
   for (const [label, edgeId, toNodeId] of [
-    ["역 안 환승이 다른 역", "transfer-station-a-line-1-line-2", "station-b:line-1"],
+    ["역 안 환승이 다른 역(노선은 다름)", "transfer-station-a-line-1-line-2", "station-d:line-2"],
+    ["역 안 환승이 같은 역 같은 노선", "transfer-station-a-line-1-line-2", "station-a:line-1"],
     ["역 밖 환승이 같은 역", "out-link-b1-c3", "station-b:line-1"],
   ]) {
     const value = buildSyntheticNationwideReleaseCandidate();
