@@ -431,7 +431,9 @@ test("#866 PR-C 후보 식별 결속 검사기는 출력 밖에 심은 결속을
 // #866 PR-C에서 수도권 live chain과 함께 환승 재결속 명령이 지워져 전국 발행 PR이 막혔다(#892).
 // 일일 갱신의 activate 단계는 수도권 정본 팩을 다시 쓰므로, 전국 후보 갱신 전에 서울 환승 증거를 새 팩에
 // 다시 묶는 명령이 있어야 한다. 그 명령(과 그 테스트)이 다시 지워지면 이 테스트가 실패한다.
-test("#866 일일 정본 팩 변경으로 풀린 서울 환승 증거 결속은 기존 명령으로 재결속된 뒤 전국 후보 갱신으로 넘어간다", async (t) => {
+// 이 테스트는 재결속 명령의 존재·동작과 출력 경계만 증명한다. 전국 후보 갱신은 호출하지 않는다. 지금은 workflow가
+// 이 명령을 부르지 않으므로 activate 뒤 운영자가 실행한다(자동화는 #870 항목).
+test("#866 일일 정본 팩 변경으로 풀린 서울 환승 증거 결속을 다시 묶는 명령이 있고 그 출력은 전국 후보 갱신 출력과 겹치지 않는다", async (t) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-seoul-transfer-rebind-"));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   const fixture = await writeSeoulTransferRebindRepository(repositoryRoot);
