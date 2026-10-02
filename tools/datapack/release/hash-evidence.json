@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "7e4770db748c8bb0e252588f70f57560fd044ca2",
+  "builderGitSha": "7a40264a94195fa7200167eb14ab0d76d3568f74",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,9 +12,9 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "48e38be1d249e9dbee58bd87ad6eed01d95f12184b109199660dd0671e144d8e",
+      "value": "b920b1379d59ffaaad5f7a94bc92f49d892eb0fee2c2062a0d071ffe091bc56b",
       "exporterKind": "facility-evidence",
-      "rowCount": 967,
+      "rowCount": 919,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "routeEvidenceLedgerHash": {
@@ -38,7 +38,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "bbada957b589c56f10b7748ef8be1134b582d6e30506c585d76e21b592f5b9a6"
+    "sha256": "07f60e6744997e3d2a858abe027a66dc4261db8570486ae3b738f97212363267"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",

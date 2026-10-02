@@ -4,10 +4,10 @@
   "candidateId": "nationwide-candidate-20261001-seq123",
   "publishedAt": "2026-10-01T23:36:22.000Z",
   "releaseSequence": 123,
-  "builderGitSha": "7e4770db748c8bb0e252588f70f57560fd044ca2",
+  "builderGitSha": "7a40264a94195fa7200167eb14ab0d76d3568f74",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "bbada957b589c56f10b7748ef8be1134b582d6e30506c585d76e21b592f5b9a6",
+  "fixtureSha256": "07f60e6744997e3d2a858abe027a66dc4261db8570486ae3b738f97212363267",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -720,7 +720,7 @@
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260930163854026.json",
   "itxTopologyEvidenceSha256": "91436f7722d2faf8e8b17e91936fa044f5020c51c6dc1a79d8ff2930c33946ab",
   "approvedAliasLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
-  "facilityEvidenceLedgerHash": "48e38be1d249e9dbee58bd87ad6eed01d95f12184b109199660dd0671e144d8e",
+  "facilityEvidenceLedgerHash": "b920b1379d59ffaaad5f7a94bc92f49d892eb0fee2c2062a0d071ffe091bc56b",
   "routeEvidenceLedgerHash": "cfe6e6513493770f7095f5e47ccbe6dc3d9f80ac3254d0aedd28ad2ec746e0ec",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd"
 }
