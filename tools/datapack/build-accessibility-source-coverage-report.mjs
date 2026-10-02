@@ -726,11 +726,15 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           evidenceHash: row.evidence_hash,
         }))
       : [];
+    // 미설치(NOT_INSTALLED) 시설 행은 존재 주장이 아니라 부재 주장이다. 설치 상태 열이 있으면 그대로 claim에 옮긴다.
+    const facilityInstallationColumn = tableHasColumns(database, "facilities", ["installation_status"])
+      ? "installation_status"
+      : "NULL";
     const facilityClaims = tableExists(database, "facilities")
       ? database.prepare(tableHasColumns(database, "facilities", ["source_id", "source_snapshot_id", "provider_record_hash", "evidence_hash"])
         ? `
           SELECT id, station_id, type, source_id, source_snapshot_id,
-                 provider_record_hash, evidence_hash
+                 provider_record_hash, evidence_hash, ${facilityInstallationColumn} AS installation_status
           FROM facilities
           ORDER BY station_id, type, id
         `
@@ -742,7 +746,7 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           lineId: "",
           facilityType: row.type,
           domain: "FACILITY",
-          evidenceKind: "EXISTS",
+          evidenceKind: row.installation_status === "NOT_INSTALLED" ? "NOT_EXISTS" : "EXISTS",
           sourceId: row.source_id,
           sourceSnapshotId: row.source_snapshot_id,
           providerRecordHash: row.provider_record_hash,
@@ -1225,7 +1229,7 @@ function regionalClaimMatchesSnapshot(snapshot, claim) {
       ...Object.fromEntries(regional.recordFields.map((field) => [field, row[field]])),
     }));
     if (providerRecordHash !== claim.providerRecordHash) return false;
-    if (claim.domain === "FACILITY") return claim.evidenceKind === "EXISTS";
+    // 존재는 관측 count ≥ 1, 부재는 원문에 명시된 0에서만 결속한다(FACILITY·evidence 공통).
     return claim.evidenceKind === (count > 0 ? "EXISTS" : "NOT_EXISTS");
   });
 }

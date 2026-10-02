@@ -1333,3 +1333,63 @@ test("지역 claim은 원천 row의 역 이름에 결속되어 다른 역 statio
   for (const claim of annotated.artifacts[0].claims) claim.evidenceHash = annotated.snapshots[0].rowsSha256;
   assert.equal(buildAccessibilitySourceCoverageReport(annotated).decision, "GO");
 });
+
+test("지역 FACILITY claim은 설치 상태가 원천 count와 맞을 때만 결속된다(F2)", () => {
+  const input = regionalCountInput("daegu");
+  const zeroLift = regionalCountClaim(input, "daegu", "WHEELCHAIR_LIFT", 0, "NOT_EXISTS");
+  const facility = { ...zeroLift, claimId: "facility-daegu-100-WHEELCHAIR_LIFT", lineId: "", domain: "FACILITY" };
+
+  // count 0 row 위의 FACILITY 존재 주장은 지어낸 존재다.
+  const fabricated = structuredClone(input);
+  fabricated.artifacts[0].claims.push({ ...facility, evidenceKind: "EXISTS" });
+  const fabricatedReport = buildAccessibilitySourceCoverageReport(fabricated);
+  assert.equal(fabricatedReport.decision, "NO_GO");
+  assert.deepEqual(fabricatedReport.violations.provenance, [
+    "bundled-nationwide:station-daegu-100||WHEELCHAIR_LIFT|FACILITY:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+
+  // 명시적 0의 미설치 시설 행은 부재로 결속된다.
+  const notInstalled = structuredClone(input);
+  notInstalled.artifacts[0].claims.push({ ...facility, evidenceKind: "NOT_EXISTS" });
+  assert.deepEqual(buildAccessibilitySourceCoverageReport(notInstalled).violations, emptyViolations());
+
+  // count가 양수인 row 위의 미설치 주장도 결속되지 않는다.
+  const hidden = structuredClone(input);
+  const elevator = hidden.artifacts[0].claims.find(({ domain, facilityType }) => domain === "FACILITY" && facilityType === "ELEVATOR");
+  elevator.evidenceKind = "NOT_EXISTS";
+  assert.equal(buildAccessibilitySourceCoverageReport(hidden).decision, "NO_GO");
+});
+
+test("facility 행의 설치 상태가 FACILITY claim의 evidenceKind가 된다(F2)", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-facility-installation-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "pack.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(`
+    CREATE TABLE stations (id TEXT, name_ko TEXT);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    CREATE TABLE facilities (id TEXT, station_id TEXT, type TEXT, source_id TEXT, source_snapshot_id TEXT,
+      provider_record_hash TEXT, evidence_hash TEXT, installation_status TEXT);
+    INSERT INTO stations VALUES ('station-a', '역');
+    INSERT INTO station_lines VALUES ('station-a', 'line-a');
+    INSERT INTO facilities VALUES ('f-installed', 'station-a', 'ELEVATOR', 's', 'snap', 'h1', 'e1', 'INSTALLED');
+    INSERT INTO facilities VALUES ('f-absent', 'station-a', 'WHEELCHAIR_LIFT', 's', 'snap', 'h2', 'e2', 'NOT_INSTALLED');
+  `);
+  database.close();
+  const bytes = await readFile(sqlitePath);
+  await mkdir(path.join(directory, "catalog"), { recursive: true });
+  const gzipBytes = gzipSync(bytes);
+  await writeFile(path.join(directory, "catalog", "pack.sqlite.gz"), gzipBytes);
+  const manifest = { packs: [{
+    id: "pack-a", url: "https://example.invalid/catalog/pack.sqlite.gz", sha256: hashBytes(gzipBytes), sqliteSha256: hashBytes(bytes),
+  }] };
+  const artifacts = await loadSelectableAccessibilityArtifacts({
+    manifest, manifestRoot: directory, bundledIndex: { packs: [] }, bundledRoot: directory,
+  }).catch((error) => error);
+  if (artifacts instanceof Error) throw artifacts;
+  const facilityClaims = artifacts.flatMap(({ claims }) => claims).filter(({ domain }) => domain === "FACILITY");
+  assert.deepEqual(facilityClaims.map(({ claimId, evidenceKind }) => [claimId, evidenceKind]), [
+    ["f-installed", "EXISTS"],
+    ["f-absent", "NOT_EXISTS"],
+  ]);
+});
