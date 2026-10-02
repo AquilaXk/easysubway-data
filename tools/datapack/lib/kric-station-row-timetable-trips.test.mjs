@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   KORAIL_STATION_ROW_BINDINGS,
@@ -185,9 +186,23 @@ test("고정 바인딩은 코레일 단독 5개 노선과 동해선을 정확히
     ["I41WS", "line-051552e50435"], ["I41K2", "line-54a7b980b7c3"], ["I28K1", "line-558d0bd8312d"],
     ["I4108", "line-6e39be0cb6e2"], ["I41K5", "line-e4939a4b4713"], ["I26K6", "line-f52eb59d8497"],
   ]);
+  const pack = JSON.parse(readFileSync(new URL("../release/nationwide-production-canonical-pack.json", import.meta.url), "utf8")).packs[0];
+  const nameById = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
   for (const binding of KORAIL_STATION_ROW_BINDINGS) {
     assert.deepEqual(Object.keys(binding.aliasEvidence).sort(), Object.keys(binding.stationAliases).sort(), binding.routeNumber);
-    for (const reason of Object.values(binding.aliasEvidence)) assert.ok(reason.length > 10, binding.routeNumber);
+    // 근거는 KRIC 축약 표기(약어 패턴) 설명이어야 한다.
+    for (const reason of Object.values(binding.aliasEvidence)) {
+      assert.match(reason, /^KRIC 파일 900 코레일 행의 역명 칸 축약 표기: \S/u, binding.routeNumber);
+    }
+    // alias 대상은 그 노선 팩 소속 역이며, 노선 안에서 이름이 유일하고, 대상끼리 겹치지 않고, 원천 이름과 다르다.
+    const lineNames = pack.stationLines.filter(({ lineId }) => lineId === binding.lineId).map(({ stationId }) => nameById.get(stationId));
+    const targets = Object.values(binding.stationAliases);
+    assert.equal(new Set(targets).size, targets.length, `${binding.routeNumber} alias targets unique`);
+    for (const [from, to] of Object.entries(binding.stationAliases)) {
+      assert.notEqual(from, to, `${binding.routeNumber} ${from}`);
+      assert.equal(lineNames.filter((name) => name === to).length, 1, `${binding.routeNumber} ${from}->${to} on line once`);
+      assert.equal(lineNames.includes(from), false, `${binding.routeNumber} ${from} shadows a line station`);
+    }
     assert.match(binding.expressQuarantine.rowSetSha256, /^[a-f0-9]{64}$/u);
     assert.ok(Number.isSafeInteger(binding.expressQuarantine.rowCount));
   }
