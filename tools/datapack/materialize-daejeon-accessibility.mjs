@@ -10,7 +10,8 @@ const TIMETABLE_SOURCE_ID = "daejeon-train-timetable";
 const PACK_ID = "nationwide-daejeon-accessibility";
 const LINE_ID = "line-7051a9c2525c";
 const EXPECTED_STATION_COUNT = 22;
-const EXPECTED_FACILITY_COUNT = EXPECTED_STATION_COUNT * 3;
+// 원천(엘리베이터·에스컬레이터 파일)이 제공하는 시설 종류만 materialize한다.
+const EXPECTED_FACILITY_COUNT = EXPECTED_STATION_COUNT * 2;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DATASET_IDS = Object.freeze(["15041384", "15041361"]);
 const STATION_NUMBERS = Object.freeze(Array.from({ length: EXPECTED_STATION_COUNT }, (_, index) => String(101 + index)));
@@ -32,14 +33,9 @@ const FACILITY_TYPES = Object.freeze([
     labelKo: "에스컬레이터",
     countOf: (row) => row.escalator,
   },
-  {
-    type: "WHEELCHAIR_LIFT",
-    field: "wheelchair_lift",
-    slug: "wheelchair-lift",
-    labelKo: "휠체어리프트",
-    countOf: (row) => row.wheelchair_lift,
-  },
 ]);
+// 대전 원천에는 휠체어리프트 열이 없다. 이전 수집기가 지어낸 wheelchair_lift 0은 관측값이 아니므로
+// 부재 claim·"미설치" 시설 행을 만들지 않는다(QA 승인 2026-10-02, Fallback 금지).
 
 export function materializeDaejeonAccessibility({
   baseFixture,
@@ -199,8 +195,9 @@ function validateSnapshot(snapshot) {
   const codes = new Set();
   for (const row of snapshot.rows) {
     if (row.lineId !== LINE_ID || typeof row.stationCode !== "string" || codes.has(row.stationCode)
-      || !Number.isInteger(row.wheelchair_lift) || !Number.isInteger(row.elevator) || !Number.isInteger(row.escalator)
-      || row.wheelchair_lift !== 0 || row.elevator < 1 || row.escalator < 1) {
+      || !(row.wheelchair_lift === null || row.wheelchair_lift === 0)
+      || !Number.isInteger(row.elevator) || !Number.isInteger(row.escalator)
+      || row.elevator < 1 || row.escalator < 1) {
       throw new Error(`invalid Daejeon accessibility row: ${row?.stationCode}`);
     }
     codes.add(row.stationCode);
@@ -210,6 +207,12 @@ function validateSnapshot(snapshot) {
     throw new Error("invalid Daejeon accessibility snapshot scope");
   }
   return snapshot.rows;
+}
+
+// 등록 도구(register-regional-accessibility.mjs)의 facilityCount와 같은 규칙: 정수 값이 저장된 셀 수.
+function registeredFacilityCellCount(rows) {
+  return rows.reduce((total, row) => total + ["elevator", "escalator", "wheelchair_lift"]
+    .filter((field) => Number.isInteger(row[field])).length, 0);
 }
 
 function requiredSource(inventory, snapshot, topologySnapshot) {
@@ -230,7 +233,7 @@ function requiredSource(inventory, snapshot, topologySnapshot) {
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
-    || evidence.facilityCount !== EXPECTED_FACILITY_COUNT
+    || evidence.facilityCount !== registeredFacilityCellCount(snapshot.rows)
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
     || evidence.topologySnapshotId !== topologyEvidence?.snapshotId

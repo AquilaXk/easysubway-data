@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
 import { busanRouteTopologyContentHash } from "./collect-busan-route-topology.mjs";
 import { normalizedStationName } from "./materialize-busan-route-topology.mjs";
 
@@ -11,7 +12,6 @@ const SOURCE_ID = "busan-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "busan-transportation-route-topology";
 const PACK_ID = "nationwide-busan-accessibility";
 const EXPECTED_STATION_COUNT = 114;
-const EXPECTED_FACILITY_COUNT = EXPECTED_STATION_COUNT * 3;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const LINE_IDS = Object.freeze([
   "line-ab1a041f6266",
@@ -25,21 +25,21 @@ const FACILITY_TYPES = Object.freeze([
     field: "elevator",
     slug: "elevator",
     labelKo: "엘리베이터",
-    countOf: (row) => row.el_i + row.el_o,
+    countOf: (row) => observedSum(row.el_i, row.el_o),
   },
   {
     type: "ESCALATOR",
     field: "escalator",
     slug: "escalator",
     labelKo: "에스컬레이터",
-    countOf: (row) => row.es,
+    countOf: (row) => observedSum(row.es),
   },
   {
     type: "WHEELCHAIR_LIFT",
     field: "wheelchair_lift",
     slug: "wheelchair-lift",
     labelKo: "휠체어리프트",
-    countOf: (row) => row.wl_i + row.wl_o,
+    countOf: (row) => observedSum(row.wl_i, row.wl_o),
   },
 ]);
 
@@ -50,6 +50,8 @@ export function materializeBusanAccessibility({
   inventory,
 }) {
   const rows = validateSnapshot(accessibilitySnapshot);
+  // count는 보존 원문에 명시된 값만 쓴다. 빈 필드(미관측)가 섞인 시설 종류는 claim·시설 행을 만들지 않는다.
+  const observedRows = observedBusanAccessibilityRows(accessibilitySnapshot);
   const source = requiredSource(inventory, accessibilitySnapshot, topologySnapshot);
   const fixture = structuredClone(baseFixture);
   const pack = fixture.packs?.[0];
@@ -65,14 +67,15 @@ export function materializeBusanAccessibility({
   const snapshotId = source.accessibilityAdmissionEvidence.snapshotId;
   const facilities = [];
   const evidence = [];
-  for (const row of rows) {
+  for (const [rowIndex, row] of rows.entries()) {
     const stationId = stations.get(`${row.lineId}:${row.stationCode}`);
     if (!stationId) {
       throw new Error(`Busan accessibility canonical station missing: ${row.lineId}:${row.stationCode}`);
     }
     const stationName = pack.stations.find(({ id }) => id === stationId)?.nameKo ?? row.stationName;
     for (const facilityType of FACILITY_TYPES) {
-      const count = facilityType.countOf(row);
+      const count = facilityType.countOf(observedRows[rowIndex]);
+      if (count === null) continue;
       if (!Number.isInteger(count) || count < 0) {
         throw new Error(`Busan accessibility count invalid: ${row.stationCode}:${facilityType.type}`);
       }
@@ -138,10 +141,11 @@ export function materializeBusanAccessibility({
       });
     }
   }
-  if (facilities.length !== EXPECTED_FACILITY_COUNT || evidence.length !== EXPECTED_FACILITY_COUNT
-    || new Set(facilities.map(({ id }) => id)).size !== EXPECTED_FACILITY_COUNT
+  const expectedFacilityCount = observedFacilityCount(observedRows);
+  if (facilities.length !== expectedFacilityCount || evidence.length !== expectedFacilityCount
+    || new Set(facilities.map(({ id }) => id)).size !== expectedFacilityCount
     || new Set(evidence.map(({ stationId, lineId, facilityType }) => `${stationId}:${lineId}:${facilityType}`)).size
-      !== EXPECTED_FACILITY_COUNT) {
+      !== expectedFacilityCount) {
     throw new Error("Busan accessibility materialized facility counts are invalid");
   }
 
@@ -176,6 +180,16 @@ export function materializedBusanAccessibilityPackContentHash(pack, version) {
   return sha256(JSON.stringify({ version, content }));
 }
 
+function observedSum(...values) {
+  return values.some((value) => value === null) ? null : values.reduce((total, value) => total + value, 0);
+}
+
+// 등록 도구(register-regional-accessibility.mjs)의 facilityCount와 같은 규칙: count가 관측된 시설 종류 셀 수.
+function observedFacilityCount(rows) {
+  return rows.reduce((total, row) => total + FACILITY_TYPES
+    .filter((facilityType) => facilityType.countOf(row) !== null).length, 0);
+}
+
 function validateSnapshot(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot.artifactKind !== "busan-accessibility-snapshot"
     || snapshot.sourceId !== SOURCE_ID || snapshot.official !== true || snapshot.fixture !== false
@@ -193,9 +207,8 @@ function validateSnapshot(snapshot) {
   const codes = new Set();
   for (const row of snapshot.rows) {
     if (!LINE_IDS.includes(row.lineId) || !/^\d{2,3}$/.test(row.stationCode) || codes.has(row.stationCode)
-      || !Number.isInteger(row.wl_i) || !Number.isInteger(row.wl_o)
-      || !Number.isInteger(row.el_i) || !Number.isInteger(row.el_o) || !Number.isInteger(row.es)
-      || row.wl_i < 0 || row.wl_o < 0 || row.el_i < 0 || row.el_o < 0 || row.es < 0) {
+      || [row.wl_i, row.wl_o, row.el_i, row.el_o, row.es]
+        .some((value) => value !== null && (!Number.isInteger(value) || value < 0))) {
       throw new Error(`invalid Busan accessibility row: ${row?.stationCode}`);
     }
     codes.add(row.stationCode);
@@ -220,7 +233,7 @@ function requiredSource(inventory, snapshot, topologySnapshot) {
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== EXPECTED_STATION_COUNT || evidence.rowCount !== EXPECTED_STATION_COUNT
-    || evidence.facilityCount !== EXPECTED_FACILITY_COUNT
+    || evidence.facilityCount !== observedFacilityCount(snapshot.rows)
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
@@ -377,7 +390,7 @@ export async function runBusanAccessibilityMaterializer(argv) {
   });
   fixture.fixtureClass = "TEST_ONLY";
   await writeFile(args.output, `${JSON.stringify(fixture, null, 2)}\n`);
-  console.log(`Busan accessibility materialized: stations=${EXPECTED_STATION_COUNT} facilities=${EXPECTED_FACILITY_COUNT}`);
+  console.log(`Busan accessibility materialized: stations=${EXPECTED_STATION_COUNT} facilities=${fixture.packs[0].facilities.filter(({ sourceId }) => sourceId === SOURCE_ID).length}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

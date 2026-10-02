@@ -66,7 +66,7 @@ async function inputs() {
   };
 }
 
-test("대전 공식 22역 편의시설을 facility·evidence 66건으로 materialize한다", async () => {
+test("대전 공식 22역 편의시설을 원천이 제공하는 엘리베이터·에스컬레이터 44건으로만 materialize한다", async () => {
   const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeDaejeonAccessibility({
     baseFixture: timetableFixture,
@@ -79,18 +79,20 @@ test("대전 공식 22역 편의시설을 facility·evidence 66건으로 materia
   const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
 
-  assert.equal(facilities.length, 66);
-  assert.equal(evidence.length, 66);
-  assert.equal(new Set(facilities.map(({ id }) => id)).size, 66);
+  assert.equal(facilities.length, 44);
+  assert.equal(evidence.length, 44);
+  assert.equal(new Set(facilities.map(({ id }) => id)).size, 44);
   assert.equal(new Set(evidence.map(({ stationId, lineId, facilityType }) =>
-    `${stationId}:${lineId}:${facilityType}`)).size, 66);
+    `${stationId}:${lineId}:${facilityType}`)).size, 44);
   assert.deepEqual([...new Set(facilities.map(({ type }) => type))].sort(), [
-    "ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT",
+    "ELEVATOR", "ESCALATOR",
   ]);
   assert.equal(new Set(facilities.map(({ lineId }) => lineId)).size, 1);
   assert.deepEqual([...new Set(facilities.map(({ lineId }) => lineId))], [LINE_ID]);
-  assert.equal(facilities.filter(({ type }) => type === "WHEELCHAIR_LIFT")
-    .every(({ installationStatus }) => installationStatus === "NOT_INSTALLED"), true);
+  // 대전 원천(엘리베이터·에스컬레이터 파일)에는 휠체어리프트 열이 없다. 근거 없는 부재 claim·문구를 만들지 않는다.
+  assert.equal(evidence.filter(({ facilityType }) => facilityType === "WHEELCHAIR_LIFT").length, 0);
+  assert.equal(evidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 0);
+  assert.ok(facilities.every(({ name, description }) => !`${name}${description}`.includes("휠체어리프트")));
   assert.ok(facilities.every(({ status, statusMeaning, provenanceKind, derivationKind, operationalStatus }) => (
     status === "UNKNOWN"
       && statusMeaning === "STATIC_LOCATION"
@@ -203,7 +205,7 @@ test("대전 accessibility admission은 freshness·hash·scope·중복을 fail c
   }), /already exists/);
 });
 
-test("materialized SQLite와 provenance가 대전 accessibility_facilities 1건을 SUPPORTED로 만든다", async (context) => {
+test("materialized SQLite와 provenance는 대전 휠체어리프트 미제공을 wheelchair_lift gap으로 드러낸다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-daejeon-accessibility-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -237,14 +239,14 @@ test("materialized SQLite와 provenance가 대전 accessibility_facilities 1건�
   ).replace(/\.gz$/, "");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM facilities WHERE source_id = ?")
-    .get(SOURCE_ID).count, 66);
+    .get(SOURCE_ID).count, 44);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_facility_evidence WHERE source_id = ?")
-    .get(SOURCE_ID).count, 66);
+    .get(SOURCE_ID).count, 44);
   assert.equal(database.prepare(`
     SELECT COUNT(DISTINCT facility_type) AS count
     FROM station_facility_evidence
     WHERE source_id = ?
-  `).get(SOURCE_ID).count, 3);
+  `).get(SOURCE_ID).count, 2);
   database.close();
 
   const provenance = JSON.parse(await readFile(path.join(packOutput, "current.provenance.json"), "utf8"));
@@ -253,7 +255,10 @@ test("materialized SQLite와 provenance가 대전 accessibility_facilities 1건�
   const facilityRecords = provenance.packs.flatMap(({ records }) => records).filter(
     ({ sourceId, entityType }) => sourceId === SOURCE_ID && entityType === "facility",
   );
-  for (const field of ACCESSIBILITY_FIELDS) {
+  // 원천이 휠체어리프트를 공표하지 않으므로 wheelchair_lift 필드 provenance가 없다. 이 공백은 지어낸 0으로
+  // 메우지 않고 LAUNCH_REQUIRED gap(MISSING)으로 드러낸다(QA 결정 2026-10-02).
+  assert.equal(facilityRecords.filter((record) => record.field === "wheelchair_lift").length, 0);
+  for (const field of ACCESSIBILITY_FIELDS.filter((name) => name !== "wheelchair_lift")) {
     const fieldRecords = facilityRecords.filter((record) => record.field === field);
     assert.ok(fieldRecords.length > 0, `provenance missing field: ${field}`);
     assert.deepEqual(
@@ -285,7 +290,8 @@ test("materialized SQLite와 provenance가 대전 accessibility_facilities 1건�
       && sourceDomain === "accessibility_facilities",
   );
   assert.equal(accessibilityRequirements.length, 1);
-  assert.ok(accessibilityRequirements.every(({ status }) => status === "SUPPORTED"));
+  assert.ok(accessibilityRequirements.every(({ status, missingFields }) => status === "MISSING"
+    && JSON.stringify(missingFields) === JSON.stringify(["wheelchair_lift"])));
   assert.deepEqual(
     accessibilityRequirements.map(({ lineId }) => lineId),
     [LINE_ID],

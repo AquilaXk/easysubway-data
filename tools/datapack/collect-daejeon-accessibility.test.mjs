@@ -114,7 +114,7 @@ test("대전 accessibility collector는 엘리베이터·에스컬레이터 CSV 
     row.lineId === LINE_ID
       && Number.isInteger(row.elevator) && row.elevator >= 1
       && Number.isInteger(row.escalator) && row.escalator >= 1
-      && row.wheelchair_lift === 0
+      && row.wheelchair_lift === null
   )), true);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.elevator, 0), 76);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.escalator, 0), 168);

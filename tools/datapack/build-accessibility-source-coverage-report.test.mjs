@@ -1050,3 +1050,258 @@ function hash(value) {
 function hashBytes(value) {
   return createHash("sha256").update(value).digest("hex");
 }
+
+test("지역 접근성 원천은 잠긴 snapshot policy·원문 row에 결속되면 GO다", () => {
+  const input = regionalBusanInput();
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("부산 원문 빈 count 필드는 미관측이라 NOT_EXISTS claim을 결속하지 못한다", () => {
+  const input = regionalBusanInput({ wheelchairRaw: "" });
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "bundled-nationwide:station-busan-100|line-busan-1|WHEELCHAIR_LIFT|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});
+
+test("원천에 열이 없는 대전·광주 휠체어리프트 claim은 결속되지 않는다", () => {
+  for (const region of ["daejeon", "gwangju"]) {
+    const input = regionalCountInput(region);
+    const report = buildAccessibilitySourceCoverageReport(input);
+    assert.equal(report.decision, "GO", region);
+
+    input.artifacts[0].claims.push(regionalCountClaim(input, region, "WHEELCHAIR_LIFT", 0, "NOT_EXISTS"));
+    const blocked = buildAccessibilitySourceCoverageReport(input);
+    assert.equal(blocked.decision, "NO_GO", region);
+    assert.ok(blocked.violations.provenance.some((value) =>
+      value.includes("|WHEELCHAIR_LIFT|") && value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")), region);
+  }
+});
+
+test("대구 명시적 0은 EXPLICIT_ZERO 부재 claim으로 결속된다", () => {
+  const input = regionalCountInput("daegu");
+  input.artifacts[0].claims.push(regionalCountClaim(input, "daegu", "WHEELCHAIR_LIFT", 0, "NOT_EXISTS"));
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("지역 원천 license hash가 잠긴 policy 검토 hash와 다르면 NO_GO다", () => {
+  const input = regionalBusanInput();
+  input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = hash("stale-license");
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.license, ["busan-transportation-accessibility:LICENSE_EVIDENCE_MISMATCH"]);
+});
+
+test("지역 원천 row가 rowsSha256과 다르면 snapshot identity와 claim 결속이 모두 실패한다", () => {
+  const input = regionalBusanInput();
+  input.snapshots[0].rows[0].el_i = 9;
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.snapshot, ["busan-transportation-accessibility:SNAPSHOT_IDENTITY_MISMATCH"]);
+  assert.ok(report.violations.provenance.every((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")));
+});
+
+test("지역 원천 snapshot 파일은 내용 hash와 관측일로 snapshot id를 유도한다", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-regional-accessibility-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const { snapshots: [snapshot] } = regionalCountInput("daegu");
+  const { snapshotId: _snapshotId, snapshotPath: _snapshotPath, snapshotFileSha256: _fileSha256, ...fileJson } = snapshot;
+  const bytes = `${JSON.stringify(fileJson, null, 2)}\n`;
+  const derivedId = `daegu-transportation-accessibility-${hash(JSON.stringify(fileJson))}-20260728`;
+  await writeFile(path.join(repositoryRoot, "regional.json"), bytes);
+
+  const [loaded] = await loadAccessibilityAdmissionSnapshots({
+    sources: [{
+      id: "daegu-transportation-accessibility",
+      accessibilityAdmissionEvidence: { snapshotId: derivedId, snapshotPath: "regional.json" },
+    }],
+    referencedSourceIds: new Set(["daegu-transportation-accessibility"]),
+    repositoryRoot,
+  });
+
+  assert.equal(loaded.snapshotId, derivedId);
+  assert.equal(loaded.snapshotFileSha256, hashBytes(bytes));
+});
+
+const REGIONAL_COUNT_KINDS = Object.freeze({
+  daegu: { lineId: "line-daegu-1", row: { wheelchair_lift: 0, elevator: 4, escalator: 16 } },
+  daejeon: { lineId: "line-daejeon-1", row: { wheelchair_lift: 0, elevator: 4, escalator: 2 } },
+  gwangju: { lineId: "line-gwangju-1", row: { wheelchair_lift: 0, elevator: 2, escalator: 3 } },
+});
+
+function regionalSourceInput({ region, snapshotFields, rows, claims }) {
+  const sourceId = `${region}-transportation-accessibility`;
+  const capturedAt = "2026-07-27T23:00:00.000Z";
+  const freshUntil = "2026-07-28T23:00:00.000Z";
+  const rowsSha256 = hash(JSON.stringify(rows));
+  const fileJson = {
+    schemaVersion: 1,
+    artifactKind: `${region}-accessibility-snapshot`,
+    sourceId,
+    capturedAt,
+    freshUntil,
+    stationCount: rows.length,
+    rowCount: rows.length,
+    ...snapshotFields,
+    rowsSha256,
+    rows,
+  };
+  const snapshotId = `${sourceId}-${hash(JSON.stringify(fileJson))}-20260728`;
+  const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
+  const licenseEvidenceHash = hash(`${region}-license`);
+  return {
+    evaluatedAt: EVALUATED_AT,
+    artifacts: [{
+      artifactId: "bundled-nationwide",
+      sqliteSha256: hash("sqlite-nationwide"),
+      searchableStationIds: [`station-${region}-100`],
+      claims: claims({ sourceId, snapshotId, rowsSha256 }),
+    }],
+    inventory: {
+      sources: [{
+        id: sourceId,
+        productionUseAllowed: true,
+        license: { redistributionAllowed: true, attribution: "공식 제공기관" },
+        admissionEvidence: { licenseEvidenceHash },
+        capabilities: { facility: { status: "SUPPORTED", productionUseAllowed: true } },
+        accessibilityAdmissionEvidence: {
+          issue: 1,
+          materializer: `tools/datapack/materialize-${region}-accessibility.mjs`,
+          verificationTest: `tools/datapack/materialize-${region}-accessibility.test.mjs`,
+          snapshotId,
+          snapshotPath,
+          capturedAt,
+          freshUntil,
+          stationCount: rows.length,
+          rowCount: rows.length,
+          rawSha256: fileJson.rawSha256,
+          rowsSha256,
+        },
+      }],
+    },
+    snapshots: [{
+      ...structuredClone(fileJson),
+      snapshotId,
+      snapshotPath,
+      snapshotFileSha256: hash(`${snapshotId}-file`),
+    }],
+    sourceSnapshotPolicies: [{
+      sourceId,
+      snapshotId,
+      capturedAt,
+      rawSha256: fileJson.rawSha256,
+      contentSha256: rowsSha256,
+      snapshotStatus: "LOCKED",
+      fetchStatus: "SUCCESS",
+      schemaStatus: "PASS",
+      licenseStatus: "PASS",
+      redistributionAllowed: true,
+      credentialRedacted: true,
+      admissionEvidence: { licenseEvidenceHash },
+      freshnessExpiresAt: "2026-10-26T23:00:00.000Z",
+    }],
+  };
+}
+
+function regionalCountInput(region) {
+  const { lineId, row } = REGIONAL_COUNT_KINDS[region];
+  const rows = [{ stationCode: "100", stationName: "역", lineId, ...row }];
+  return regionalSourceInput({
+    region,
+    snapshotFields: { rawSha256: hash(`${region}-raw`) },
+    rows,
+    claims: ({ sourceId, snapshotId, rowsSha256 }) => ["ELEVATOR", "ESCALATOR"].flatMap((facilityType) => {
+      const count = facilityType === "ELEVATOR" ? row.elevator : row.escalator;
+      const base = regionalCountHash({ region, row: rows[0], facilityType, count });
+      return [{
+        stationId: `station-${region}-100`, lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE",
+        evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId, providerRecordHash: base, evidenceHash: rowsSha256,
+      }, {
+        claimId: `facility-${region}-100-${facilityType}`, stationId: `station-${region}-100`, lineId: "", facilityType,
+        domain: "FACILITY", evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId,
+        providerRecordHash: base, evidenceHash: rowsSha256,
+      }];
+    }),
+  });
+}
+
+function regionalCountClaim(input, region, facilityType, count, evidenceKind) {
+  const snapshot = input.snapshots[0];
+  return {
+    stationId: `station-${region}-100`,
+    lineId: snapshot.rows[0].lineId,
+    facilityType,
+    domain: "STATION_FACILITY_EVIDENCE",
+    evidenceKind,
+    sourceId: snapshot.sourceId,
+    sourceSnapshotId: snapshot.snapshotId,
+    providerRecordHash: regionalCountHash({ region, row: snapshot.rows[0], facilityType, count }),
+    evidenceHash: snapshot.rowsSha256,
+  };
+}
+
+function regionalCountHash({ row, facilityType, count }) {
+  return hash(JSON.stringify({
+    stationCode: row.stationCode,
+    lineId: row.lineId,
+    type: facilityType,
+    count,
+    elevator: row.elevator,
+    escalator: row.escalator,
+    wheelchair_lift: row.wheelchair_lift,
+  }));
+}
+
+function regionalBusanInput({ wheelchairRaw = "0" } = {}) {
+  const lineId = "line-busan-1";
+  const values = {
+    sname: "동매", wl_i: wheelchairRaw, wl_o: wheelchairRaw, el_i: "2", el_o: "1", es: "0", blindroad: "1",
+    ourbridge: "0", helptake: "0", toilet: "2", toilet_gubun: "분리",
+  };
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>00</resultCode></header><body><item>${
+    Object.entries(values).map(([name, value]) => `<${name}>${value}</${name}>`).join("")
+  }</item></body></response>`;
+  const bytes = Buffer.from(xml);
+  const rawResponses = [{ stationCode: "100", rawSha256: hashBytes(bytes), bytesBase64: bytes.toString("base64") }];
+  // 잠긴 기존 snapshot은 빈 필드를 0으로 저장했다. 원문이 그 0의 근거인지 원문으로 다시 판정해야 한다.
+  const rows = [{
+    stationCode: "100", stationName: "동매", lineId,
+    wl_i: 0, wl_o: 0, el_i: 2, el_o: 1, es: 0, blindroad: 1, ourbridge: 0, helptake: 0, toilet: 2,
+    toilet_gubun: "분리",
+  }];
+  const busanHash = (facilityType, count) => hash(JSON.stringify({
+    stationCode: "100", lineId, type: facilityType, count,
+    wl_i: rows[0].wl_i, wl_o: rows[0].wl_o, el_i: rows[0].el_i, el_o: rows[0].el_o, es: rows[0].es,
+  }));
+  return regionalSourceInput({
+    region: "busan",
+    snapshotFields: {
+      rawSha256: hash(JSON.stringify(rawResponses.map(({ stationCode, rawSha256 }) => ({ stationCode, rawSha256 })))),
+      rawResponses,
+    },
+    rows,
+    claims: ({ sourceId, snapshotId, rowsSha256 }) => [
+      ["ELEVATOR", 3, "EXISTS"],
+      ["ESCALATOR", 0, "NOT_EXISTS"],
+      ["WHEELCHAIR_LIFT", 0, "NOT_EXISTS"],
+    ].map(([facilityType, count, evidenceKind]) => ({
+      stationId: "station-busan-100", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE", evidenceKind,
+      sourceId, sourceSnapshotId: snapshotId, providerRecordHash: busanHash(facilityType, count), evidenceHash: rowsSha256,
+    })),
+  });
+}

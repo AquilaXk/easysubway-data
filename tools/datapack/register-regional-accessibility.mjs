@@ -479,10 +479,18 @@ function lineage(snapshot, topology) {
 function facilityCount(snapshot) {
   // admission의 facilityCount는 실제 설비 대수가 아니라 값이 관측된 설비 종류 셀 수다.
   const rows = snapshot.sourceId === "busan-transportation-accessibility"
-    ? snapshot.rows.map((row) => ({ elevator: row.el_i + row.el_o, escalator: row.es, wheelchair_lift: row.wl_i + row.wl_o }))
+    ? snapshot.rows.map((row) => ({
+      elevator: observedSum(row.el_i, row.el_o),
+      escalator: observedSum(row.es),
+      wheelchair_lift: observedSum(row.wl_i, row.wl_o),
+    }))
     : snapshot.rows;
   return rows.reduce((total, row) => total + ["elevator", "escalator", "wheelchair_lift"]
     .filter((field) => Number.isInteger(row[field])).length, 0);
+}
+// 부산 count 필드의 null은 원문 빈 값(미관측)이다. 미관측이 섞인 합계는 0이 아니라 미관측이다.
+function observedSum(...values) {
+  return values.some((value) => value === null) ? null : values.reduce((total, value) => total + value, 0);
 }
 function one(rows, predicate, label) {
   const found = Array.isArray(rows) ? rows.filter((row) => predicate(row)) : [];
