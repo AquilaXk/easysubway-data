@@ -226,10 +226,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const source = path.join(temp, "source.sqlite");
   const db = new DatabaseSync(source);
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
-  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('entry-s1','s1','s1:l1',0,0,'ENTRY','','SUBWAY'),('exit-s1','s1:l1','s1',0,0,'EXIT','','SUBWAY'),('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#abcdef','source','source','https://example.test','license','PASS');");
+  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('walkway-s1','s1:l1','s1:l1',0,0,'WALKWAY','','SUBWAY'),('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#abcdef','source','source','https://example.test','license','PASS');");
   db.exec("UPDATE network_edges SET accessibility_status='UNAVAILABLE' WHERE id='ride-s1-s2'");
   db.exec("INSERT INTO station_exits(id,station_id,exit_number) VALUES('s1-exit-1','s1','1')");
-  db.exec("INSERT INTO operators VALUES('seoul-metro','서울교통공사','Seoul Metro'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('seoul-2','seoul-metro','2호선','Line 2','#00aa00'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('station-b35616704ce3','검증역','Terminal','검증역','수도권'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('station-b35616704ce3','seoul-2',1); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class,accessibility_status) VALUES('entry-terminal','station-b35616704ce3','station-b35616704ce3:seoul-2',0,0,'ENTRY','','SUBWAY','AVAILABLE'),('exit-terminal','station-b35616704ce3:seoul-2','station-b35616704ce3',0,0,'EXIT','','SUBWAY','AVAILABLE');");
+  db.exec("INSERT INTO operators VALUES('seoul-metro','서울교통공사','Seoul Metro'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('seoul-2','seoul-metro','2호선','Line 2','#00aa00'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('station-b35616704ce3','검증역','Terminal','검증역','수도권'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('station-b35616704ce3','seoul-2',1); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class,accessibility_status) VALUES('walkway-terminal','station-b35616704ce3:seoul-2','station-b35616704ce3:seoul-2',0,0,'WALKWAY','','SUBWAY','AVAILABLE');");
   db.close();
   await cp("tools/datapack/source-candidates.json", path.join(fixtureRoot, "tools/datapack/source-candidates.json"));
   const stationElevatorPaths = await writeStationElevatorFixtureInputs(fixtureRoot, temp);
@@ -464,7 +464,9 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   assert.equal(catalog.prepare("SELECT count(*) AS count FROM pragma_table_info('lines') WHERE name IN ('operator_id','color')").get().count, 0);
   catalog.close();
   const signingInput = JSON.parse(await readFile(path.join(temp, "one", "server-route-bundle/manifest.signing-input.json"), "utf8"));
-  assert.notEqual(signingInput.stationSetSha256, routeEdgeInput.candidate.stationSetSha256);
+  // #866 PR-C: route 범위는 승강장 전체(legacy 간선 대상 부분집합 없음)라 번들 역 집합과 같은 식별이다.
+  // 다른 역 집합을 넣으면 거부되는지는 routeStationSetMismatch 회귀가 고정한다.
+  assert.equal(signingInput.stationSetSha256, routeEdgeInput.candidate.stationSetSha256);
   assert.equal(signingInput.payloadSha256, await payloadDigest(path.join(temp, "one", "server-route-bundle")));
   const buildContract = JSON.parse(await readFile(path.join(fixtureRoot, "contracts/datapack/server-route-bundle-build-contract.json"), "utf8"));
   for (const metadata of ["provenance", "compatibility"]) {
@@ -487,7 +489,8 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     assert.deepEqual(componentDb.prepare("PRAGMA table_info(station_lines)").all().map((column) => column.name), ["station_id", "line_id", "line_sequence"]);
     assert.equal(componentDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('route_map_positions','station_aliases','station_search_index')").all().length, 0);
     assert.deepEqual(componentDb.prepare("SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL").all(), []);
-    if (component === "topology") assert.deepEqual(componentDb.prepare("SELECT id, accessibility_status AS status FROM network_edges WHERE id IN ('entry-terminal','exit-terminal','ride-s1-s2','entry-s1') ORDER BY id").all().map((row) => ({ ...row })), [{ id: "entry-s1", status: "UNKNOWN" }, { id: "entry-terminal", status: "UNAVAILABLE" }, { id: "exit-terminal", status: "UNAVAILABLE" }, { id: "ride-s1-s2", status: "UNAVAILABLE" }]);
+    // #866 PR-C: 역 단위 ENTRY/EXIT 대신 FACILITY를 요구하는 역-노선 WALKWAY로 terminal 차단을 확인한다.
+    if (component === "topology") assert.deepEqual(componentDb.prepare("SELECT id, accessibility_status AS status FROM network_edges WHERE id IN ('walkway-terminal','ride-s1-s2','walkway-s1') ORDER BY id").all().map((row) => ({ ...row })), [{ id: "ride-s1-s2", status: "UNAVAILABLE" }, { id: "walkway-s1", status: "UNKNOWN" }, { id: "walkway-terminal", status: "UNAVAILABLE" }]);
     for (const table of ["stations", "station_lines"]) {
       assert.deepEqual(tablePrimaryKey(componentDb, table), tablePrimaryKey(sourceDb, table));
       assert.deepEqual(groupedForeignKeys(componentDb, table), groupedForeignKeys(sourceDb, table));
@@ -504,8 +507,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
         evaluationAt: CURRENT_EVALUATION_AT,
         materialization,
       }, routePolicy);
-      assert.equal(evaluation.results.find(({ edgeId }) => edgeId === "exit-terminal").state, "BLOCKED");
-      assert.equal(evaluation.results.find(({ edgeId }) => edgeId === "exit-terminal").reason, "출구 이동경로가 검증되지 않아 경로를 차단했습니다.");
+      assert.equal(evaluation.results.find(({ edgeId }) => edgeId === "walkway-terminal").state, "BLOCKED");
+      assert.equal(evaluation.results.find(({ edgeId }) => edgeId === "walkway-terminal").reason, "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.");
+      // EXIT terminal cell은 materialization에 남지만 어떤 경로 간선도 EXIT domain을 요구하지 않는다(#873).
+      assert.equal(evaluation.results.some(({ materializationCells }) => materializationCells.some(({ domain }) => domain === "EXIT")), false);
       assert.deepEqual(componentDb.prepare("PRAGMA table_info(station_line_accessibility_evidence)").all().map((column) => column.name), ["materialization_digest", "canonical_json"]);
       assert.deepEqual(componentDb.prepare("PRAGMA table_info(route_accessibility_edge_evidence)").all().map((column) => column.name), ["evaluation_digest", "materialization_digest", "canonical_json"]);
       assert.deepEqual({ ...componentDb.prepare("SELECT * FROM station_line_accessibility_evidence").get() }, {
@@ -656,6 +661,12 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   assert.equal(await exists(path.join(temp, "bad-endpoint")), false);
   mutate("DELETE FROM network_edges WHERE id='unknown-walkway'");
 
+  // #866 PR-C: 역 끝점(ENTRY/EXIT 모양)은 방향과 무관하게 거부한다. 예전에 허용되던 정방향 ENTRY도 실패한다.
+  mutate("INSERT INTO network_edges(id,from_node_id,to_node_id,edge_type) VALUES('forward-entry','s1','s1:l1','ENTRY')");
+  await writeBindings(temp, source, current, spec);
+  await assert.rejects(() => run("forward-entry"), /network edge endpoint mismatch/);
+  assert.equal(await exists(path.join(temp, "forward-entry")), false);
+  mutate("DELETE FROM network_edges WHERE id='forward-entry'");
   mutate("INSERT INTO network_edges(id,from_node_id,to_node_id,edge_type) VALUES('reversed-entry','s1:l1','s1','ENTRY')");
   await writeBindings(temp, source, current, spec);
   await assert.rejects(() => run("reversed-entry"), /network edge endpoint mismatch/);
@@ -698,16 +709,18 @@ function completeStationLineInput(sourceSetSha256, candidateId) {
   const freshUntil = new Date(evaluationAt + 24 * 60 * 60 * 1_000).toISOString();
   const candidate = {
     candidateId,
-    stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "station-b35616704ce3"]))),
+    // #866 PR-C: materialization 분모는 route stationLines 전체다(legacy 간선 대상 집합 분기 삭제). s2도 포함한다.
+    stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "s2", "station-b35616704ce3"]))),
     sourceSetSha256,
     mappingContractVersion: "station-line-v1",
     materializerVersion: "1",
   };
   const stationLines = [
     { stationId: "s1", lineId: "l1", operatorId: "o1" },
+    { stationId: "s2", lineId: "l1", operatorId: "o1" },
     { stationId: "station-b35616704ce3", lineId: "seoul-2", operatorId: "seoul-metro" },
   ];
-  const evidenceRows = stationLines.filter(({ stationId }) => stationId === "s1").flatMap((line) => ["FACILITY", "EXIT", "TRANSFER"].map((domain) => ({
+  const evidenceRows = stationLines.filter(({ stationId }) => stationId !== "station-b35616704ce3").flatMap((line) => ["FACILITY", "EXIT", "TRANSFER"].map((domain) => ({
     ...candidate,
     ...line,
     domain,
@@ -746,11 +759,9 @@ function resealTerminalEvidence(row) {
 }
 function completeRouteEdgeInput(sourceSetSha256, candidateId, stationSetSha256) {
   const rawEdges = [
-    { edgeId: "entry-s1", edgeType: "ENTRY", fromNodeId: "s1", toNodeId: "s1:l1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
-    { edgeId: "exit-s1", edgeType: "EXIT", fromNodeId: "s1:l1", toNodeId: "s1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
+    { edgeId: "walkway-s1", edgeType: "WALKWAY", fromNodeId: "s1:l1", toNodeId: "s1:l1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
     { edgeId: "ride-s1-s2", edgeType: "RIDE", fromNodeId: "s1:l1", toNodeId: "s2:l1", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL", serviceClass: "SUBWAY" },
-    { edgeId: "entry-terminal", edgeType: "ENTRY", fromNodeId: "station-b35616704ce3", toNodeId: "station-b35616704ce3:seoul-2", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
-    { edgeId: "exit-terminal", edgeType: "EXIT", fromNodeId: "station-b35616704ce3:seoul-2", toNodeId: "station-b35616704ce3", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
+    { edgeId: "walkway-terminal", edgeType: "WALKWAY", fromNodeId: "station-b35616704ce3:seoul-2", toNodeId: "station-b35616704ce3:seoul-2", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
   ];
   return {
     candidate: {

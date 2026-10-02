@@ -253,12 +253,6 @@ test("bundle references, metadata digests, topology node grammar, raw component 
     stationIdSegmentPattern: "^[^:]+$",
     lineIdSegmentPattern: "^[^:]+$",
     forbidEmptySegment: true,
-    stationEndpointTypes: ["ENTRY", "EXIT"],
-    stationEndpointDirections: {
-      ENTRY: { from: "station", to: "station-line" },
-      EXIT: { from: "station-line", to: "station" },
-    },
-    stationEndpointConnectsTo: "same-station-station-line-endpoint",
     forbidden: ["accessibility.internal_route_nodes", "accessibility.station_pathway_nodes"],
   });
   assert.match("station-a", new RegExp(contract.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern));
@@ -332,8 +326,9 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.delimiter = "-"; },
     (value) => { delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationEndpointIdPattern = value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; },
-    (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationEndpointDirections.ENTRY = { from: "station-line", to: "station" }; },
-    (value) => { delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointDirections.EXIT; },
+    // #866 PR-C: 역 단위 ENTRY/EXIT 끝점 모양은 계약에서 지웠다. 다시 넣으면 거부한다.
+    (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationEndpointTypes = ["ENTRY", "EXIT"]; },
+    (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationEndpointDirections = { ENTRY: { from: "station", to: "station-line" } }; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationIdSegmentPattern = ".+"; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.lineIdSegmentPattern = "^[^;]+$"; },
     (value) => { value.stationSet.sort = "locale"; },

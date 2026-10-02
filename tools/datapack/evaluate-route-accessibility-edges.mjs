@@ -23,13 +23,13 @@ const MATERIALIZATION_STATES = [
   "VERIFIED_PRESENT", "VERIFIED_ABSENT", "NOT_APPLICABLE", "UNKNOWN", "MISSING", "STALE",
 ];
 // station-line materialization 계약의 domain이다. EXIT domain은 전국 입력에서 증거 행이 없어 MISSING으로 남지만
-// 어떤 경로 간선도 요구하지 않는다(#873). 수도권 live chain(legacy) 정리는 PR-C(#866)에서 한다.
+// 어떤 경로 간선도 요구하지 않는다(#873). materializer의 EXIT domain은 2026-08-14 pilot v1 산출물과 함께 PR-D(#866)에서 정리한다.
 const DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
 const RESULT_STATES = ["PASS", "BLOCKED", "NOT_APPLICABLE", "UNKNOWN", "MISSING", "STALE", "NOT_EVALUATED"];
-// ENTRY/EXIT 매핑은 수도권 live chain(legacy)이 커밋한 평가를 재현하려고 남긴다. 전국 입력에는 ENTRY/EXIT 간선이 없다(#873).
-// PR-C(#866)에서 live chain과 함께 제거한다.
+// #873·#866 PR-C: 경로는 승강장에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT는 정책 매핑에 없고 route 입력에
+// 있으면 명시적으로 실패한다(수도권 live chain 평가 재현용 매핑을 live chain과 함께 지웠다).
 const POLICY_EDGE_TYPES = [
-  "ENTRY", "EXIT", "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER", "LEGACY_TRANSFER",
+  "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER", "LEGACY_TRANSFER",
   "WALKWAY", "ELEVATOR", "RAMP", "STAIR", "ESCALATOR", "FACILITY_CONNECTOR", "RIDE",
 ];
 const LINEAGE_FIELDS = [
@@ -143,8 +143,6 @@ export function validateRouteEdgeEvaluationPolicy(policy) {
   assertExactArray(policy.unresolvedStatePrecedence, ["STALE", "MISSING", "UNKNOWN"], "unresolved state precedence");
   assertKeys(policy.edgeDomainMap, POLICY_EDGE_TYPES, "policy edge domain map keys");
   const expectedMappings = {
-    ENTRY: ["TO", ["FACILITY"]],
-    EXIT: ["FROM", ["EXIT"]],
     IN_STATION_TRANSFER: ["BOTH", ["TRANSFER"]],
     OUT_OF_STATION_TRANSFER: ["BOTH", ["TRANSFER"]],
     LEGACY_TRANSFER: ["BOTH", ["TRANSFER"]],
@@ -260,22 +258,15 @@ function validateMaterialization(value, candidate, stationLineIndex, evaluationA
     if (keys.has(key)) throw new Error("duplicate materialization cell");
     keys.add(key);
   }
-  const targets = new Map();
   for (const edge of edges) {
     const mapping = policy.edgeDomainMap[edge.edgeType];
     if (!mapping || edge.edgeType === "RIDE") continue;
     validateKnownEndpointShape(edge, mapping.endpointTarget);
-    for (const target of targetStationLines(edge, mapping.endpointTarget)) {
-      targets.set(stationLineKey(target), target);
-    }
   }
   // #873 리뷰 F3: materialization 분모와 station set 식별은 route 입력에서 유도한 기대 집합과 정확히 같아야 한다.
-  // - 승강장 기준 입력(ENTRY/EXIT 없음): 경로는 승강장에서 시작해 승강장에서 끝나므로 기대 집합은 route stationLines 전체다.
-  //   간선이 요구하는 cell(환승 끝점)은 그 부분집합이고, 어느 cell을 요구하는지는 evaluateEdge가 정한다.
-  // - legacy 입력(수도권 live chain, ENTRY/EXIT 있음): 기대 집합은 간선 대상 station-line이다(#873 이전 규칙).
-  //   이 legacy 분기는 PR-C(#866)에서 live chain과 함께 제거한다.
-  const legacyAccessShape = edges.some(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT");
-  const targetRows = legacyAccessShape ? [...targets.values()] : stationLineIndex.rows;
+  // 경로는 승강장에서 시작해 승강장에서 끝나므로 기대 집합은 route stationLines 전체다. 간선이 요구하는 cell(환승 끝점)은
+  // 그 부분집합이고, 어느 cell을 요구하는지는 evaluateEdge가 정한다. #866 PR-C로 legacy(ENTRY/EXIT) 분기를 지웠다.
+  const targetRows = stationLineIndex.rows;
   const expected = new Set(targetRows.flatMap((line) => DOMAINS.map((domain) => materializationCellKey({ ...line, domain }))));
   if (keys.size !== expected.size || [...expected].some((key) => !keys.has(key))) throw new Error("materialization policy target denominator mismatch");
   const scopedHash = sha256(canonicalJson([...new Set(targetRows.map(({ stationId }) => stationId))].sort(compareBytes)));
@@ -363,6 +354,9 @@ function validateEdges(values, stationLineIndex) {
 function validateEdge(value, stationLineIndex) {
   assertKeys(value, EDGE_KEYS, "route edge keys");
   for (const key of ["edgeId", "edgeType", "fromNodeId", "toNodeId", "serviceClass"]) assertNonBlank(value[key], `route edge ${key}`);
+  if (value.edgeType === "ENTRY" || value.edgeType === "EXIT") {
+    throw new Error("route-edge input must not contain ENTRY/EXIT edges");
+  }
   if (typeof value.servicePattern !== "string") throw new Error("route edge servicePattern must be a string");
   for (const key of ["durationSeconds", "distanceMeters"]) {
     if (!Number.isSafeInteger(value[key]) || value[key] < 0) throw new Error(`route edge ${key} is invalid`);
@@ -438,18 +432,6 @@ function evaluateEdge(context) {
 function validateKnownEndpointShape(edge, endpointTarget) {
   const fromIsStationLine = edge.from.lineId !== null;
   const toIsStationLine = edge.to.lineId !== null;
-  if (edge.edgeType === "ENTRY") {
-    if (fromIsStationLine || !toIsStationLine || edge.from.stationId !== edge.to.stationId) {
-      throw new Error("ENTRY route edge endpoint identity mismatch");
-    }
-    return;
-  }
-  if (edge.edgeType === "EXIT") {
-    if (!fromIsStationLine || toIsStationLine || edge.from.stationId !== edge.to.stationId) {
-      throw new Error("EXIT route edge endpoint identity mismatch");
-    }
-    return;
-  }
   if (edge.edgeType === "IN_STATION_TRANSFER" && edge.from.stationId !== edge.to.stationId) {
     throw new Error("IN_STATION_TRANSFER station identity mismatch");
   }

@@ -91,6 +91,7 @@ function materialization(lines = stationLines()) {
       evidence(),
       evidence({ domain: "EXIT", state: "VERIFIED_ABSENT", evidenceKind: "EXPLICIT_ZERO", evidenceReason: "official zero exit" }),
       evidence({ domain: "TRANSFER", state: "NOT_APPLICABLE", evidenceKind: "CURRENT_APPLICABILITY_RULE", evidenceReason: "no interchange at this line" }),
+      evidence({ stationId: "station-a", lineId: "line-2", operatorId: "operator-2", domain: "FACILITY", state: "VERIFIED_ABSENT", evidenceKind: "EXPLICIT_ZERO", evidenceReason: "official zero facility" }),
       evidence({ stationId: "station-a", lineId: "line-2", operatorId: "operator-2", domain: "TRANSFER", state: "NOT_APPLICABLE", evidenceKind: "CURRENT_APPLICABILITY_RULE", evidenceReason: "no interchange at this line" }),
       evidence({ stationId: "station-b", domain: "FACILITY", state: "UNKNOWN", evidenceKind: "PROVIDER_NO_DATA", evidenceReason: "provider no data" }),
       evidence({ stationId: "station-b", domain: "TRANSFER" }),
@@ -113,15 +114,17 @@ function edge(value) {
   return { ...withoutHash, edgeSha256: routeEdgeSha256(withoutHash) };
 }
 
+// #866 PR-C: 역 단위 ENTRY/EXIT 매핑을 지웠다. 같은 상태 분포를 FACILITY를 요구하는 WALKWAY(역-노선 양끝)와
+// TRANSFER를 요구하는 환승 간선으로 만든다.
 function routeEdges() {
   return [
     edge({ edgeId: "ride-a-b", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL" }),
-    edge({ edgeId: "entry-a", edgeType: "ENTRY", fromNodeId: "station-a", toNodeId: "station-a:line-1" }),
-    edge({ edgeId: "exit-a", edgeType: "EXIT", fromNodeId: "station-a:line-1", toNodeId: "station-a" }),
+    edge({ edgeId: "walkway-a1", edgeType: "WALKWAY", fromNodeId: "station-a:line-1", toNodeId: "station-a:line-1" }),
+    edge({ edgeId: "walkway-a2", edgeType: "WALKWAY", fromNodeId: "station-a:line-2", toNodeId: "station-a:line-2" }),
     edge({ edgeId: "transfer-a", edgeType: "IN_STATION_TRANSFER", fromNodeId: "station-a:line-1", toNodeId: "station-a:line-2" }),
-    edge({ edgeId: "entry-b", edgeType: "ENTRY", fromNodeId: "station-b", toNodeId: "station-b:line-1" }),
-    edge({ edgeId: "exit-b", edgeType: "EXIT", fromNodeId: "station-b:line-1", toNodeId: "station-b" }),
-    edge({ edgeId: "entry-c", edgeType: "ENTRY", fromNodeId: "station-c", toNodeId: "station-c:line-3" }),
+    edge({ edgeId: "walkway-b1", edgeType: "WALKWAY", fromNodeId: "station-b:line-1", toNodeId: "station-b:line-1" }),
+    edge({ edgeId: "out-b1-c3", edgeType: "OUT_OF_STATION_TRANSFER", fromNodeId: "station-b:line-1", toNodeId: "station-c:line-3" }),
+    edge({ edgeId: "walkway-c3", edgeType: "WALKWAY", fromNodeId: "station-c:line-3", toNodeId: "station-c:line-3" }),
     edge({ edgeId: "future-edge", edgeType: "FUTURE_EDGE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1" }),
   ];
 }
@@ -168,7 +171,8 @@ function terminalScenario(overrides = {}) {
   const summary = { VERIFIED_PRESENT: 2, VERIFIED_ABSENT: 0, NOT_APPLICABLE: 0, UNKNOWN: 0, MISSING: 0, STALE: terminal.state === "STALE" ? 1 : 0, ...(terminal.state === "UNVERIFIED_EVIDENCE_BLOCKED" ? { UNVERIFIED_EVIDENCE_BLOCKED: 1 } : {}) };
   if (terminal.state === "STALE") summary.VERIFIED_PRESENT = 2;
   const materialization = rebindMaterialization({ candidate, rows, stateSummary: summary, materializationDigest: "0".repeat(64) });
-  const raw = { edgeId: "entry-terminal", edgeType: "ENTRY", fromNodeId: stationId, toNodeId: `${stationId}:${lineId}`, durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" };
+  // #866 PR-C: FACILITY를 요구하는 간선은 역-노선 양끝 WALKWAY다(ENTRY 매핑 삭제).
+  const raw = { edgeId: "walkway-terminal", edgeType: "WALKWAY", fromNodeId: `${stationId}:${lineId}`, toNodeId: `${stationId}:${lineId}`, durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" };
   const route = { ...raw, edgeSha256: routeEdgeSha256(raw) };
   const value = { candidate: { ...evaluationCandidate(), stationSetSha256 }, evaluationAt: NOW, stationLines: [{ stationId, lineId, operatorId, lineSequence: 1 }], routeEdges: [route], materialization };
   return { value, policy: policyForEdges([route]) };
@@ -184,7 +188,8 @@ function exitTerminalScenario() {
   const terminal = { ...base, domain: "EXIT", state: "UNVERIFIED_EVIDENCE_BLOCKED", sourceId: "kric-station-movement-standard", sourceSnapshotId: "kric-exit-path-20260816", providerRecordHash: null, evidenceKind: "UNVERIFIED_EVIDENCE_BLOCKED", evidenceReason: "출구 이동경로가 검증되지 않아 경로를 차단했습니다.", terminalPolicy: "PROVIDER_NO_DATA_RESULT_03_BLOCKED", providerResultCode: "03", strictRouteEligible: false, strictRouteEligibleReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED", statusMeaning: "PROVIDER_NO_DATA_NOT_ABSENCE", confidence: 0, providerResponseSha256: responseSha256, evidenceHash: terminalHash };
   const normal = (domain) => ({ ...base, domain, state: "VERIFIED_PRESENT", sourceId: "official-accessibility", sourceSnapshotId: "official-accessibility-20260809", providerRecordHash: "b".repeat(64), evidenceKind: "OBSERVED", evidenceReason: "official evidence" });
   const materialization = materializeStationLineAccessibility({ candidate, observedAt: NOW, stationLines: [{ stationId, lineId, operatorId }], evidenceRows: [normal("FACILITY"), terminal, normal("TRANSFER")] });
-  const raw = { edgeId: "exit-terminal", edgeType: "EXIT", fromNodeId: `${stationId}:${lineId}`, toNodeId: stationId, durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" };
+  // #866 PR-C: EXIT domain을 요구하는 간선은 없다. FACILITY를 요구하는 WALKWAY 하나로 materialization 계약만 검사한다.
+  const raw = { edgeId: "walkway-exit-station", edgeType: "WALKWAY", fromNodeId: `${stationId}:${lineId}`, toNodeId: `${stationId}:${lineId}`, durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" };
   const route = { ...raw, edgeSha256: routeEdgeSha256(raw) };
   const value = { candidate: { ...evaluationCandidate(), stationSetSha256 }, evaluationAt: NOW, stationLines: [{ stationId, lineId, operatorId, lineSequence: 1 }], routeEdges: [route], materialization };
   return { value, policy: policyForEdges([route]) };
@@ -202,14 +207,14 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
   assert.equal(first.denominator.edgeCount, value.routeEdges.length);
   assert.equal(first.results.length, value.routeEdges.length);
   assert.deepEqual(first.results.map(({ edgeId, state }) => ({ edgeId, state })), [
-    { edgeId: "entry-a", state: "PASS" },
-    { edgeId: "entry-b", state: "UNKNOWN" },
-    { edgeId: "entry-c", state: "STALE" },
-    { edgeId: "exit-a", state: "BLOCKED" },
-    { edgeId: "exit-b", state: "MISSING" },
     { edgeId: "future-edge", state: "NOT_EVALUATED" },
+    { edgeId: "out-b1-c3", state: "MISSING" },
     { edgeId: "ride-a-b", state: "PASS" },
     { edgeId: "transfer-a", state: "NOT_APPLICABLE" },
+    { edgeId: "walkway-a1", state: "PASS" },
+    { edgeId: "walkway-a2", state: "BLOCKED" },
+    { edgeId: "walkway-b1", state: "UNKNOWN" },
+    { edgeId: "walkway-c3", state: "STALE" },
   ]);
   assert.deepEqual(first.stateSummary, {
     PASS: 2,
@@ -227,7 +232,7 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
   assert.equal(canonicalRouteEdgeEvaluationJson(first), canonicalRouteEdgeEvaluationJson(second));
   // anti-cheat-allow: circular-oracle -- 무관한 필드 변경 또는 비변경 상황에서 기존 식별자/바이트 불변성(invariance) 검증
   assert.equal(first.evaluationDigest, second.evaluationDigest);
-  assert.equal(first.results.find(({ edgeId }) => edgeId === "exit-a").materializationCells[0].state, "VERIFIED_ABSENT");
+  assert.equal(first.results.find(({ edgeId }) => edgeId === "walkway-a2").materializationCells[0].state, "VERIFIED_ABSENT");
   assert.equal(first.results.find(({ edgeId }) => edgeId === "ride-a-b").materializationCells.length, 0);
 });
 
@@ -316,7 +321,7 @@ test("exact terminal FACILITY cell은 availability claim 없이 dependent edge�
   const { value, policy: fixturePolicy } = terminalScenario();
   const result = evaluateRouteAccessibilityEdges(value, fixturePolicy);
 
-  const edgeResult = result.results.find(({ edgeId }) => edgeId === "entry-terminal");
+  const edgeResult = result.results.find(({ edgeId }) => edgeId === "walkway-terminal");
   assert.equal(edgeResult.state, "BLOCKED");
   assert.equal(edgeResult.reason, "시설 존재·부재가 검증되지 않아 경로를 차단했습니다.");
   assert.equal(edgeResult.materializationCells[0].providerRecordHash, null);
@@ -325,7 +330,7 @@ test("exact terminal FACILITY cell은 availability claim 없이 dependent edge�
     const { value: invalid, policy } = terminalScenario({ [field]: value });
     if (field === "stationId") {
       invalid.stationLines[0].stationId = value;
-      invalid.routeEdges[0] = { ...invalid.routeEdges[0], fromNodeId: value, toNodeId: `${value}:seoul-2` };
+      invalid.routeEdges[0] = { ...invalid.routeEdges[0], fromNodeId: `${value}:seoul-2`, toNodeId: `${value}:seoul-2` };
       const { edgeSha256: _edgeSha256, ...raw } = invalid.routeEdges[0];
       invalid.routeEdges[0].edgeSha256 = routeEdgeSha256(raw);
       const stationSetSha256 = createHash("sha256").update(JSON.stringify([value])).digest("hex");
@@ -337,15 +342,16 @@ test("exact terminal FACILITY cell은 availability claim 없이 dependent edge�
   }
 });
 
-test("provider no-data EXIT terminal cell은 exact EXIT edge를 BLOCKED로 만든다", () => {
+// #866 PR-C·#873: 어떤 경로 간선도 EXIT domain을 요구하지 않는다(ENTRY/EXIT 매핑 삭제). provider no-data EXIT terminal cell은
+// 경로를 막지 않지만 materialization 계약(domain·source·결과 코드)은 계속 fail closed로 검사한다.
+test("provider no-data EXIT terminal cell은 경로 간선을 막지 않지만 terminal 계약은 계속 검사한다", () => {
   const { value, policy: fixturePolicy } = exitTerminalScenario();
   const result = evaluateRouteAccessibilityEdges(value, fixturePolicy);
 
-  const edgeResult = result.results.find(({ edgeId }) => edgeId === "exit-terminal");
-  assert.equal(edgeResult.state, "BLOCKED");
-  assert.equal(edgeResult.reason, "출구 이동경로가 검증되지 않아 경로를 차단했습니다.");
-  assert.equal(edgeResult.materializationCells[0].providerRecordHash, null);
-  assert.equal(edgeResult.materializationCells[0].providerResponseSha256, "9".repeat(64));
+  const edgeResult = result.results.find(({ edgeId }) => edgeId === "walkway-exit-station");
+  assert.equal(edgeResult.state, "PASS");
+  assert.deepEqual(edgeResult.materializationCells.map(({ domain }) => domain), ["FACILITY"]);
+  assert.equal(result.eligible, true);
 
   for (const [field, changed] of [["domain", "TRANSFER"], ["sourceId", "wrong-source"], ["providerResultCode", "00"]]) {
     const { value: invalid, policy } = exitTerminalScenario();
@@ -361,7 +367,7 @@ test("stale terminal carrier는 schema-valid unresolved STALE로 남는다", () 
   const { value, policy: fixturePolicy } = terminalScenario({ state: "STALE", freshUntil: NOW });
   const result = evaluateRouteAccessibilityEdges(value, fixturePolicy);
 
-  assert.equal(result.results.find(({ edgeId }) => edgeId === "entry-terminal").state, "STALE");
+  assert.equal(result.results.find(({ edgeId }) => edgeId === "walkway-terminal").state, "STALE");
   assert.equal(result.stateSummary.STALE, 1);
   assert.equal(result.eligible, false);
 });
@@ -457,11 +463,13 @@ test("identity·closed schema·digest·endpoint·denominator 오류를 fail clos
     materialization: rebindMaterialization(missingCell),
   }), unitPolicy), /materialization policy target denominator mismatch/);
   const extraLine = { stationId: "station-d", lineId: "line-4", operatorId: "operator-4", lineSequence: 1 };
+  // #866 PR-C: 기대 집합은 route stationLines 전체다(legacy 간선 대상 집합 분기 삭제). station-d까지 materialization하면
+  // 분모는 맞지만 materialization 식별(station set)이 route 역 집합과 어긋나 실패한다.
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     stationLines: [...stationLines(), extraLine],
     materialization: materialization([...stationLines(), extraLine]),
-  }), unitPolicy), /materialization policy target denominator mismatch/);
-  // 간선이 요구하는 station-line(entry-c → station-c:line-3)이 materialization에 없으면 분모 불일치다.
+  }), unitPolicy), /materialization scoped station set identity mismatch/);
+  // 간선이 요구하는 station-line(walkway-c3 → station-c:line-3)이 materialization에 없으면 분모 불일치다.
   const withoutTarget = materialization();
   for (const row of withoutTarget.rows.filter(({ stationId }) => stationId === "station-c")) withoutTarget.stateSummary[row.state] -= 1;
   withoutTarget.rows = withoutTarget.rows.filter(({ stationId }) => stationId !== "station-c");
@@ -495,4 +503,22 @@ test("identity·closed schema·digest·endpoint·denominator 오류를 fail clos
     materialization: rebindMaterialization(future),
   }), unitPolicy), /materialization capturedAt is after evaluationAt/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input(), { ...unitPolicy, unexpected: true }), /policy keys mismatch/);
+});
+
+test("#866 PR-C route 입력에 역 단위 ENTRY/EXIT 간선이 있으면 정책 매핑과 무관하게 명시적으로 실패한다", () => {
+  assert.equal(Object.hasOwn(policy.edgeDomainMap, "ENTRY"), false);
+  assert.equal(Object.hasOwn(policy.edgeDomainMap, "EXIT"), false);
+  for (const access of [
+    edge({ edgeId: "entry-a", edgeType: "ENTRY", fromNodeId: "station-a", toNodeId: "station-a:line-1" }),
+    edge({ edgeId: "exit-a", edgeType: "EXIT", fromNodeId: "station-a:line-1", toNodeId: "station-a" }),
+  ]) {
+    const routeEdges = [...platformRouteEdges(), access];
+    assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges }), policyForEdges(routeEdges)),
+      /route-edge input must not contain ENTRY\/EXIT edges/, access.edgeType);
+  }
+  // 예전 ENTRY/EXIT 매핑을 정책에 다시 넣으면 정책 검증이 거부한다.
+  const legacyPolicy = policyForEdges(platformRouteEdges());
+  legacyPolicy.edgeDomainMap = { ENTRY: { endpointTarget: "TO", domains: ["FACILITY"] }, ...legacyPolicy.edgeDomainMap };
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: platformRouteEdges() }), legacyPolicy),
+    /policy edge domain map keys/);
 });

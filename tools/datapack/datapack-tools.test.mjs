@@ -376,7 +376,7 @@ function materializeCurrentAvailableEntryEvidence(database, pack, {
     });
   assert.ok(source, "current production artifact requires the selected source domain");
   // #873: 전국 승강장 기준 팩에는 역 단위 ENTRY/EXIT 간선이 없다. validate-datapack에 남아 있는 legacy ENTRY/EXIT
-  // 검증 규칙(PR-C(#866)에서 정리)을 확인하려고 exact UNKNOWN legacy ENTRY 간선 하나를 넣은 뒤 같은 변조를 한다.
+  // 검증 규칙(PR-D(#866)에서 정리)을 확인하려고 exact UNKNOWN legacy ENTRY 간선 하나를 넣은 뒤 같은 변조를 한다.
   const legacyLine = database.prepare("SELECT station_id, line_id FROM station_lines ORDER BY station_id, line_id LIMIT 1").get();
   assert.ok(legacyLine, "current production artifact requires one station-line");
   database.prepare(`
@@ -2597,7 +2597,7 @@ test("데이터팩 생성기는 일반 fixture 입력으로 production channel�
         "--manifest", path.join(workspace, "validation-output/current.json"),
         "--root", path.join(workspace, "validation-output"),
         "--require-production",
-        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-D(#866)에서 제거
       ], { cwd: root, env: productionEnv }),
       /production artifactKind/,
     );
@@ -2735,7 +2735,7 @@ test("데이터팩 검증기는 원격 publish 전 fixture pack을 거부한다"
         "--root",
         outputDir,
         "--require-production",
-        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-D(#866)에서 제거
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -13420,7 +13420,7 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
         "--root",
         packOutputDir,
         "--require-production",
-        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-D(#866)에서 제거
       ],
       { cwd: root, env: productionEnv },
     ),

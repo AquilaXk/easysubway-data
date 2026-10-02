@@ -91,15 +91,9 @@ test("current accessibility eligibility는 canonical prepublication evidence만 
   assert.equal(report.decision, "ELIGIBLE");
   assert.equal(report.stationLineAccessibility.rowCount, 6);
   assert.equal(report.routeEdgeEvaluation.edgeCount, fixture.routeEdgeInput.routeEdges.length);
+  // #866 PR-C: 경로가 요구하는 cell은 환승 끝점 TRANSFER뿐이다(ENTRY→FACILITY 매핑 삭제). 환승 끝점을 UNKNOWN으로 둔다.
   const unresolvedFixture = await createFixture(t, {
-    configureInputs: ({ stationLineInput }) => {
-      stationLineInput.evidenceRows[0] = {
-        ...stationLineInput.evidenceRows[0],
-        state: "UNKNOWN",
-        evidenceKind: "PROVIDER_NO_DATA",
-        evidenceReason: "official record unavailable",
-      };
-    },
+    configureInputs: configurePlatformInputs({ transferEndpointState: "UNKNOWN" }),
   });
   await writeEligibilityInputs(unresolvedFixture);
   const unresolvedRoot = path.join(unresolvedFixture.temp, "prepublication");
@@ -599,10 +593,13 @@ test("stale source와 unresolved #8/#9 denominator를 NO_GO gate로 보존한다
   assert.equal(staleFinal.gates.sourceFreshness.state, "STALE");
   assert.ok(staleFinal.blockers.includes("sourceFreshness:STALE"));
 
+  // #866 PR-C: 경로가 요구하는 cell(환승 끝점 TRANSFER) 하나를 지운다. 승강장 기준 입력이라 EXIT 행은 원래 없다.
+  const configurePlatform = configurePlatformInputs();
   const incomplete = await createFixture(t, {
-    configureInputs: ({ stationLineInput }) => {
-      stationLineInput.evidenceRows = stationLineInput.evidenceRows.filter((row) => !(
-        row.stationId === "station-a" && row.domain === "FACILITY"
+    configureInputs: (inputs) => {
+      configurePlatform(inputs);
+      inputs.stationLineInput.evidenceRows = inputs.stationLineInput.evidenceRows.filter((row) => !(
+        row.stationId === "station-a" && row.lineId === "line-1" && row.domain === "TRANSFER"
       ));
     },
   });
@@ -615,9 +612,10 @@ test("stale source와 unresolved #8/#9 denominator를 NO_GO gate로 보존한다
   assert.ok(incompleteFinal.blockers.includes("routeEdgeEvaluation:MISSING"));
   const materialization = await readJson(path.join(incompleteOutput, "station-line-accessibility.json"));
   const evaluation = await readJson(path.join(incompleteOutput, "route-edge-evaluation.json"));
-  assert.equal(materialization.stateSummary.MISSING, 1);
+  // EXIT 3개(역-노선 3개, 증거 행 없음)와 지운 환승 끝점 TRANSFER 1개가 MISSING이다. 게이트는 환승 끝점만 본다.
+  assert.equal(materialization.stateSummary.MISSING, 4);
   assert.equal(evaluation.denominator.edgeCount, incomplete.routeEdgeInput.routeEdges.length);
-  assert.equal(evaluation.stateSummary.MISSING, 1);
+  assert.equal(evaluation.stateSummary.MISSING, 2);
 });
 
 test("evidence observation time이 candidate publishedAt보다 이전일 때 candidate publishedAt 기준으로 source freshness를 평가한다", async (t) => {
@@ -1227,10 +1225,6 @@ function completeRouteEdgeInput(sourceSetSha256, topologySha256, candidateId) {
     candidate,
     stationLines,
     routeEdges: [
-      edge({ edgeId: "entry-a", edgeType: "ENTRY", fromNodeId: "station-a", toNodeId: "station-a:line-1" }),
-      edge({ edgeId: "entry-b", edgeType: "ENTRY", fromNodeId: "station-b", toNodeId: "station-b:line-1" }),
-      edge({ edgeId: "exit-a", edgeType: "EXIT", fromNodeId: "station-a:line-1", toNodeId: "station-a" }),
-      edge({ edgeId: "exit-b", edgeType: "EXIT", fromNodeId: "station-b:line-1", toNodeId: "station-b" }),
       ...Array.from({ length: 2220 }, (_, index) => edge({
         edgeId: `ride-${String(index).padStart(4, "0")}`,
         edgeType: "RIDE",
