@@ -293,3 +293,76 @@ test("#866 route-edge 정책 sync가 실패하면 정책을 포함한 모든 출
   NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
   assert.deepEqual(await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY)), await readFile(path.join(root, ROUTE_EDGE_POLICY)));
 });
+
+// #866 F1: 정책 단계의 ITX 원천 승인은 벽시계(EASYSUBWAY_DATAPACK_BUILD_NOW 또는 현재 시각)가 아니라 후보 시계(--evaluated-at)로 판정한다.
+async function withWallClock(t, instant) {
+  const previous = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = instant;
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse(instant) });
+  t.after(() => {
+    t.mock.timers.reset();
+    if (previous === undefined) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previous;
+  });
+}
+
+async function itxFreshUntilMillis() {
+  const reference = JSON.parse(await readFile(path.join(root, ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
+  const freshUntil = Date.parse(reference.freshUntil);
+  assert.ok(Number.isFinite(freshUntil), "ITX freshUntil must be an instant");
+  return freshUntil;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+test("#866 F1 후보 시계가 ITX freshUntil 이후면 벽시계가 신선해도 정책 단계가 expired로 실패하고 모든 출력을 되돌린다", async (t) => {
+  const repositoryRoot = await copiedRepository(t);
+  const before = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  const freshUntil = await itxFreshUntilMillis();
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")));
+  // 벽시계는 freshUntil 이전(신선)이다. 벽시계로 판정하면 sync가 성공해 이 테스트가 실패한다.
+  await withWallClock(t, new Date(freshUntil - DAY_MS).toISOString());
+  const steps = [];
+  await assert.rejects(refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: new Date(freshUntil + DAY_MS).toISOString(),
+    releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async (context) => {
+      steps.push(context.name);
+      if (context.name === "five-region fan-in") {
+        await writeFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json"), "partial\n");
+      }
+      if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
+    },
+  }), /전국 후보 갱신 실패 \(route edge policy sync\): ITX topology source artifact is expired/);
+  assert.deepEqual(steps, STEPS);
+  const after = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map((relative) => readFile(path.join(repositoryRoot, relative))));
+  NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
+});
+
+test("#866 F1 벽시계가 ITX freshUntil 이후여도 후보 시계가 신선하면 정책 단계는 후보 시계로 판정해 성공한다", async (t) => {
+  const repositoryRoot = await copiedRepository(t);
+  const freshUntil = await itxFreshUntilMillis();
+  const fanIn = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json")));
+  assert.ok(Date.parse(fanIn.evaluatedAt) < freshUntil, "committed candidate clock must precede ITX freshUntil");
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")));
+  // 벽시계는 freshUntil 이후(만료)다. 벽시계로 판정하면 expired로 실패해 이 테스트가 실패한다.
+  await withWallClock(t, new Date(freshUntil + DAY_MS).toISOString());
+  await refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: fanIn.evaluatedAt,
+    releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async (context) => {
+      if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
+    },
+  });
+  assert.deepEqual(await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY)), await readFile(path.join(root, ROUTE_EDGE_POLICY)));
+});
