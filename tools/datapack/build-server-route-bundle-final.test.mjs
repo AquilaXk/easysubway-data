@@ -131,6 +131,51 @@ test("current accessibility eligibility는 canonical prepublication evidence만 
   }
 });
 
+test("#873 승강장 기준 입력은 FACILITY UNKNOWN·EXIT MISSING이어도 환승 끝점 TRANSFER가 닫히면 FINAL·eligibility 게이트를 통과한다", async (t) => {
+  const fixture = await createFixture(t, { configureInputs: configurePlatformInputs() });
+  assert.ok(fixture.routeEdgeInput.routeEdges.every(({ edgeType }) => edgeType !== "ENTRY" && edgeType !== "EXIT"));
+  await writeEligibilityInputs(fixture);
+  const provisional = path.join(fixture.temp, "provisional");
+  await build(fixture, provisional, FRESH_AT);
+  const materialization = await readJson(path.join(provisional, "station-line-accessibility.json"));
+  // 환승 간선이 쓰지 않는 cell은 닫혀 있지 않다: FACILITY UNKNOWN 2, EXIT MISSING 3(증거 행 없음).
+  assert.equal(materialization.stateSummary.UNKNOWN, 2);
+  assert.equal(materialization.stateSummary.MISSING, 3);
+  const final = await readJson(path.join(provisional, "server-route-bundle-final.json"));
+  assert.equal(final.gates.stationLineAccessibility.state, "PASS");
+  assert.equal(final.gates.routeEdgeEvaluation.state, "PASS");
+  const reportPath = path.join(fixture.temp, "eligibility.json");
+  const report = await buildRouteAccessibilityEligibility(eligibilityInput(fixture, provisional, reportPath));
+  assert.equal(report.decision, "ELIGIBLE");
+  assert.deepEqual(report.blockers, []);
+  const bound = path.join(fixture.temp, "bound");
+  await build(fixture, bound, FRESH_AT, undefined, { eligibilityReportPath: reportPath });
+  const boundFinal = await readJson(path.join(bound, "server-route-bundle-final.json"));
+  assert.equal(boundFinal.gates.routeAccessibilityEligibility.state, "PASS");
+});
+
+test("#873 승강장 기준 입력도 환승 끝점 TRANSFER cell이 UNKNOWN이면 FINAL·eligibility 게이트가 실패한다", async (t) => {
+  const fixture = await createFixture(t, { configureInputs: configurePlatformInputs({ transferEndpointState: "UNKNOWN" }) });
+  await writeEligibilityInputs(fixture);
+  const provisional = path.join(fixture.temp, "provisional");
+  await build(fixture, provisional, FRESH_AT);
+  const final = await readJson(path.join(provisional, "server-route-bundle-final.json"));
+  assert.equal(final.gates.stationLineAccessibility.state, "UNKNOWN");
+  assert.equal(final.gates.routeEdgeEvaluation.state, "UNKNOWN");
+  assert.ok(final.blockers.includes("stationLineAccessibility:UNKNOWN"));
+  assert.ok(final.blockers.includes("routeEdgeEvaluation:UNKNOWN"));
+  const reportPath = path.join(fixture.temp, "eligibility.json");
+  const report = await buildRouteAccessibilityEligibility(eligibilityInput(fixture, provisional, reportPath));
+  assert.equal(report.decision, "INELIGIBLE");
+  for (const blocker of ["routeEdgeEvaluation:INELIGIBLE", "routeEdgeEvaluation:UNKNOWN", "stationLineAccessibility:UNKNOWN"]) {
+    assert.ok(report.blockers.includes(blocker), blocker);
+  }
+  const bound = path.join(fixture.temp, "bound");
+  await build(fixture, bound, FRESH_AT, undefined, { eligibilityReportPath: reportPath });
+  const boundFinal = await readJson(path.join(bound, "server-route-bundle-final.json"));
+  assert.equal(boundFinal.gates.routeAccessibilityEligibility.state, "INELIGIBLE");
+});
+
 test("current Data #8 three-handoff input과 materialization bytes를 exact consumer로 수용한다", async () => {
   const [inputBytes, materializationBytes] = await Promise.all([
     readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
@@ -267,11 +312,12 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["missing-facilities-table", "DROP TABLE facilities", /facilities table is missing/],
     ["missing-transition-facility-requirement-table", "DROP TABLE transition_facility_requirement", /embedded transition_facility_requirement schema mismatch/],
     ["empty-transition-facility-requirement", "DELETE FROM transition_facility_requirement", /transition_facility_requirement is empty/],
-    ["orphan-transition-key", `INSERT INTO transition_facility_requirement VALUES('entry-ghost','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan transition_key: entry-ghost/],
-    ["other-station-transition-key", `INSERT INTO transition_facility_requirement VALUES('entry-b','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan transition_key: entry-b/],
-    ["orphan-requirement-facility-id", `INSERT INTO transition_facility_requirement VALUES('entry-a','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','smrt-elev:ghost')`, /transition_facility_requirement contains orphan facility_id: smrt-elev:ghost/],
-    ["orphan-requirement-path-id", `INSERT INTO transition_facility_requirement VALUES('entry-a','kric-mv:ghost','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan path_id: kric-mv:ghost/],
-    ["requirement-derivation-mismatch", "DELETE FROM transition_facility_requirement WHERE transition_key='exit-a' AND group_kind='EXIT_ELEVATORS'", /transition_facility_requirement does not match station elevator path derivation/],
+    ["orphan-transition-key", `INSERT INTO transition_facility_requirement VALUES('station-ghost:line-1','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan transition_key: station-ghost:line-1/],
+    ["other-station-transition-key", `INSERT INTO transition_facility_requirement VALUES('station-b:line-1','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan transition_key: station-b:line-1/],
+    ["legacy-entry-transition-key", `INSERT INTO transition_facility_requirement VALUES('entry-a','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan transition_key: entry-a/],
+    ["orphan-requirement-facility-id", `INSERT INTO transition_facility_requirement VALUES('station-a:line-1','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','smrt-elev:ghost')`, /transition_facility_requirement contains orphan facility_id: smrt-elev:ghost/],
+    ["orphan-requirement-path-id", `INSERT INTO transition_facility_requirement VALUES('station-a:line-1','kric-mv:ghost','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}')`, /transition_facility_requirement contains orphan path_id: kric-mv:ghost/],
+    ["requirement-derivation-mismatch", "DELETE FROM transition_facility_requirement WHERE transition_key='station-a:line-1' AND group_kind='EXIT_ELEVATORS'", /transition_facility_requirement does not match station elevator path derivation/],
   ]) {
     await t.test(name, async () => {
       const fixture = await createFixture(t);
@@ -971,17 +1017,15 @@ async function createArtifact(
     materialization.materializationDigest,
     canonicalRouteEdgeEvaluationJson(evaluation),
   );
-  // #827 fixture: station-a/line-1의 연결 완전 경로 1개와 기존 역 ENTRY·EXIT edge(entry-a/exit-a) 요구 행.
+  // #827 fixture: station-a/line-1의 연결 완전 경로 1개와 승강장 노드(station-a:line-1) 요구 행(#873).
   accessibilityDatabase.exec(`
     CREATE TABLE facilities (id TEXT NOT NULL PRIMARY KEY);
     INSERT INTO facilities VALUES('${FIXTURE_EXIT_ELEVATOR}'), ('${FIXTURE_DIRECTION_ELEVATOR}');
     INSERT INTO station_elevator_path VALUES('${FIXTURE_PATH_ID}','station-a','line-1','station-b','1','나역',1,'1) 1번 출입구 엘리베이터로 이동');
     INSERT INTO station_elevator_path_facility VALUES('${FIXTURE_PATH_ID}','EXIT','${FIXTURE_EXIT_ELEVATOR}'), ('${FIXTURE_PATH_ID}','DIRECTION','${FIXTURE_DIRECTION_ELEVATOR}');
     INSERT INTO transition_facility_requirement VALUES
-      ('entry-a','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}'),
-      ('entry-a','${FIXTURE_PATH_ID}','station-b','PLATFORM_DIRECTION_ELEVATORS','${FIXTURE_DIRECTION_ELEVATOR}'),
-      ('exit-a','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}'),
-      ('exit-a','${FIXTURE_PATH_ID}','station-b','PLATFORM_DIRECTION_ELEVATORS','${FIXTURE_DIRECTION_ELEVATOR}');
+      ('station-a:line-1','${FIXTURE_PATH_ID}','station-b','EXIT_ELEVATORS','${FIXTURE_EXIT_ELEVATOR}'),
+      ('station-a:line-1','${FIXTURE_PATH_ID}','station-b','PLATFORM_DIRECTION_ELEVATORS','${FIXTURE_DIRECTION_ELEVATOR}');
   `);
   accessibilityDatabase.exec("PRAGMA user_version=19; VACUUM");
   accessibilityDatabase.close();
@@ -1134,6 +1178,35 @@ function evidence(candidate, line, domain, state, evidenceKind, evidenceReason) 
     licenseId: "public-data-license",
     evidenceKind,
     evidenceReason,
+  };
+}
+
+// #873 승강장 기준 입력: ENTRY/EXIT 간선과 EXIT 증거 행이 없다. station-a에 역 안 환승(line-1↔line-2)이 있고,
+// 환승이 쓰지 않는 cell(station-b·station-a:line-2 FACILITY)은 UNKNOWN이다.
+function configurePlatformInputs({ transferEndpointState = "VERIFIED_PRESENT" } = {}) {
+  return ({ stationLineInput, routeEdgeInput }) => {
+    const extra = { stationId: "station-a", lineId: "line-2", operatorId: "operator-2" };
+    const candidate = stationLineInput.candidate;
+    const unknown = (line, domain) => evidence(candidate, line, domain, "UNKNOWN", "PROVIDER_NO_DATA", "provider no data");
+    const present = (line, domain) => evidence(candidate, line, domain, "VERIFIED_PRESENT", "OBSERVED", "official transfer");
+    stationLineInput.stationLines.push(extra);
+    stationLineInput.evidenceRows = [
+      ...stationLineInput.evidenceRows
+        .filter(({ domain }) => domain !== "EXIT")
+        .map((row) => {
+          if (row.stationId === "station-b" && row.domain === "FACILITY") return unknown(row, "FACILITY");
+          if (row.stationId === "station-a" && row.domain === "TRANSFER") return present(row, "TRANSFER");
+          return row;
+        }),
+      unknown(extra, "FACILITY"),
+      transferEndpointState === "VERIFIED_PRESENT" ? present(extra, "TRANSFER") : unknown(extra, "TRANSFER"),
+    ];
+    routeEdgeInput.stationLines.push({ ...extra, lineSequence: 1 });
+    routeEdgeInput.routeEdges = [
+      ...routeEdgeInput.routeEdges.filter(({ edgeType }) => edgeType !== "ENTRY" && edgeType !== "EXIT"),
+      edge({ edgeId: "transfer-a-1-2", edgeType: "IN_STATION_TRANSFER", fromNodeId: "station-a:line-1", toNodeId: "station-a:line-2", durationSeconds: 90, distanceMeters: 100 }),
+      edge({ edgeId: "transfer-a-2-1", edgeType: "IN_STATION_TRANSFER", fromNodeId: "station-a:line-2", toNodeId: "station-a:line-1", durationSeconds: 90, distanceMeters: 100 }),
+    ];
   };
 }
 

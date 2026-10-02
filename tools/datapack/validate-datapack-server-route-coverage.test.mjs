@@ -12,12 +12,15 @@ import {
 } from "./validate-datapack.mjs";
 
 // #866 PR-B: 인정 경로는 capital@1·213·30·456 상수가 아니라 pack의 비RIDE 간선에서 분모를 유도한다.
-// D1: ENTRY/EXIT는 requiredCells []로 열거만 하고, 환승(역 안·역 밖)은 양끝 TRANSFER cell이 닫혀야 한다.
+// D1: 환승(역 안·역 밖)은 양끝 TRANSFER cell이 닫혀야 한다.
+// #873: 전국 authority·팩에는 ENTRY/EXIT 간선이 없고 coverage 필수 쌍은 환승뿐이다. 수도권 live chain(legacy)
+// authority만 ENTRY/EXIT를 requiredCells []로 열거한다(PR-C(#866)에서 제거).
 const SHAPES = [
-  ["capital@1(기존 213/213/30)", { id: "capital", stations: 213, transfers: 30, outOfStation: 0 }],
-  ["nationwide@1", { id: "nationwide", stations: 40, transfers: 6, outOfStation: 2 }],
-  ["다른 pack id", { id: "fixture-national-network", stations: 3, transfers: 2, outOfStation: 2 }],
+  ["capital@1(legacy, ENTRY/EXIT 213 열거·환승 30)", { id: "capital", legacyAccessStations: 213, transfers: 30, outOfStation: 0 }],
+  ["nationwide@1", { id: "nationwide", transfers: 6, outOfStation: 2 }],
+  ["다른 pack id", { id: "fixture-national-network", transfers: 2, outOfStation: 2 }],
 ];
+const NATIONWIDE = { id: "nationwide", transfers: 6, outOfStation: 2 };
 
 for (const [label, shape] of SHAPES) {
   test(`server route coverage authority는 ${label}의 pack 유도 분모·1:1 결속·provenance를 한 번 소비한다`, () => {
@@ -37,13 +40,14 @@ for (const [label, shape] of SHAPES) {
 }
 
 test("authority에 없는 비RIDE 간선·누락 간선·시간·거리·끝점·상태 불일치는 인정하지 않는다", () => {
-  const shape = { id: "nationwide", stations: 40, transfers: 6, outOfStation: 2 };
+  const shape = NATIONWIDE;
   const report = authorityReport(shape);
   const args = authorizationArgs(report, shape);
   const rows = args.edgeRows;
   const index = rows.findIndex(({ edge_type: type }) => type === "OUT_OF_STATION_TRANSFER");
   const cases = [
-    ["authority에 없는 ENTRY", [...rows, { ...rows.find(({ edge_type: type }) => type === "ENTRY"), id: "edge-entry-extra" }]],
+    ["authority에 없는 ENTRY", [...rows, accessRow("ENTRY")]],
+    ["authority에 없는 EXIT", [...rows, accessRow("EXIT")]],
     ["authority에 없는 역 밖 환승", [...rows, { ...rows[index], id: "edge-out-extra" }]],
     ["pack에서 빠진 간선", rows.filter((_, position) => position !== index)],
     ["중복 간선", [...rows, rows[index]]],
@@ -59,22 +63,22 @@ test("authority에 없는 비RIDE 간선·누락 간선·시간·거리·끝점�
 });
 
 test("edgeCounts가 pack 간선 수와 다르면 재봉인해도 인정하지 않는다", () => {
-  const shape = { id: "nationwide", stations: 40, transfers: 6, outOfStation: 2 };
+  const shape = NATIONWIDE;
   const report = authorityReport(shape);
   const args = authorizationArgs(report, shape);
   // authority 자체는 edgeCounts와 실제 간선이 어긋나면 파싱에서 거부된다.
   const forged = structuredClone(report);
-  forged.edgeCounts.ENTRY += 1;
+  forged.edgeCounts.IN_STATION_TRANSFER += 1;
   forged.edgeCounts.total += 1;
   reseal(forged);
   assert.throws(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(forged))), /denominator/);
   // pack에만 간선이 더 있는 경우(authority 분모 밖)도 인정하지 않는다.
-  const extraRide = { ...args.edgeRows.find(({ edge_type: type }) => type === "EXIT"), id: "edge-exit-zzz" };
-  assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, edgeRows: [...args.edgeRows, extraRide] }), false);
+  const extraTransfer = { ...args.edgeRows.find(({ edge_type: type }) => type === "IN_STATION_TRANSFER"), id: "edge-in-station-transfer-zzz" };
+  assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, edgeRows: [...args.edgeRows, extraTransfer] }), false);
 });
 
 test("coverage 필수 쌍이 authority 간선으로 뒷받침되지 않으면 인정하지 않는다", () => {
-  const shape = { id: "nationwide", stations: 40, transfers: 6, outOfStation: 2 };
+  const shape = NATIONWIDE;
   const report = authorityReport(shape);
   const args = authorizationArgs(report, shape);
   const transfer = new Set(args.requiredPairs.transfer);
@@ -89,14 +93,14 @@ test("coverage 필수 쌍이 authority 간선으로 뒷받침되지 않으면 �
 });
 
 test("authority edge/cell/candidate/provenance drift는 canonical hash를 다시 봉인해도 거부된다", () => {
-  const shape = { id: "nationwide", stations: 40, transfers: 6, outOfStation: 2 };
+  const shape = NATIONWIDE;
   const transferIndex = (value) => value.edges.findIndex(({ edgeType }) => edgeType === "OUT_OF_STATION_TRANSFER");
-  const entryIndex = (value) => value.edges.findIndex(({ edgeType }) => edgeType === "ENTRY");
   for (const [label, mutate, pattern] of [
     ["edge denominator", (value) => { value.edges.pop(); }, /denominator|coverage/i],
     ["환승 끝점 UNKNOWN", (value) => { value.edges[transferIndex(value)].requiredCells[0].state = "UNKNOWN"; }, /cell|state/i],
     ["환승 cell 누락", (value) => { value.edges[transferIndex(value)].requiredCells.pop(); }, /required cell denominator/i],
-    ["ENTRY cell 추가", (value) => { value.edges[entryIndex(value)].requiredCells.push(cell("station-000", "line-a", "FACILITY", "VERIFIED_PRESENT")); }, /required cell denominator/i],
+    ["전국 ENTRY 간선 추가", (value) => { addAuthorityEdge(value, edge("ENTRY", 0)); }, /nationwide authority must not contain ENTRY\/EXIT edges/],
+    ["전국 EXIT 간선 추가", (value) => { addAuthorityEdge(value, edge("EXIT", 0)); }, /nationwide authority must not contain ENTRY\/EXIT edges/],
     ["cell endpoint", (value) => { value.edges[transferIndex(value)].requiredCells[0].lineId = "seoul-4"; }, /cell endpoint/i],
     ["route hash", (value) => { value.edges[0].routeEdgeSha256 = "0".repeat(64); }, /route edge hash/i],
     ["candidate", (value) => { value.candidate.sourceSetSha256 = "0".repeat(64); }, /candidate|binding/i],
@@ -115,6 +119,23 @@ test("authority edge/cell/candidate/provenance drift는 canonical hash를 다시
       assert.throws(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(report))), pattern, label);
     }
   }
+});
+
+test("#873 coverage는 환승 필수 쌍만 요구하고, 환승 coverage가 빠지거나 덜 미검증이면 인정하지 않는다", () => {
+  const report = authorityReport(NATIONWIDE);
+  const args = authorizationArgs(report, NATIONWIDE);
+  assert.deepEqual(Object.keys(args.coverage), ["transfer"]);
+  assert.equal(isAuthorizedServerRouteCoverageGap(args), true);
+  const { transfer: _transfer, ...withoutTransferCoverage } = args.coverage;
+  assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, coverage: withoutTransferCoverage }), false);
+  assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, requiredPairs: {} }), false);
+  assert.equal(isAuthorizedServerRouteCoverageGap({
+    ...args,
+    coverage: { transfer: { ...args.coverage.transfer, denominator: args.coverage.transfer.denominator + 1 } },
+  }), false);
+  // 환승 authority 간선이 빠지면 필수 쌍을 뒷받침하지 못한다.
+  const withoutTransferEdges = args.edgeRows.filter(({ edge_type: type }) => type !== "IN_STATION_TRANSFER");
+  assert.equal(isAuthorizedServerRouteCoverageGap({ ...args, edgeRows: withoutTransferEdges }), false);
 });
 
 test("server route coverage evidence는 provenance와 --require-production이 함께여야 하고 한 번만 소비된다", () => {
@@ -141,34 +162,51 @@ function authorizationArgs(report, shape) {
   };
 }
 
-// validate-datapack은 claimed scope의 역-노선에서 필수 쌍을 만든다. 여기서는 authority 간선과 같은 쌍을 쓴다.
+// validate-datapack은 claimed scope의 역-노선에서 환승 필수 쌍만 만든다(#873). 여기서는 authority 간선과 같은 쌍을 쓴다.
 function requiredPairsFrom(report) {
-  const pairs = { entry: new Set(), exit: new Set(), transfer: new Set() };
+  const pairs = { transfer: new Set() };
   for (const edge of report.edges) {
-    const key = `${edge.fromNodeId}->${edge.toNodeId}`;
-    if (edge.edgeType === "ENTRY") pairs.entry.add(key);
-    else if (edge.edgeType === "EXIT") pairs.exit.add(key);
-    else if (edge.edgeType === "IN_STATION_TRANSFER") pairs.transfer.add(key);
+    if (edge.edgeType === "IN_STATION_TRANSFER") pairs.transfer.add(`${edge.fromNodeId}->${edge.toNodeId}`);
   }
   return pairs;
 }
 
-function authorityReport({ stations, transfers, outOfStation }) {
+function accessRow(edgeType) {
+  const value = edge(edgeType, 999);
+  return {
+    id: value.edgeId,
+    from_node_id: value.fromNodeId,
+    to_node_id: value.toNodeId,
+    edge_type: value.edgeType,
+    duration_seconds: value.durationSeconds,
+    distance_meters: value.distanceMeters,
+    verification_status: "UNKNOWN",
+    stair_access_state: "UNKNOWN",
+    accessibility_status: "UNKNOWN",
+  };
+}
+
+function addAuthorityEdge(report, value) {
+  report.edges = [...report.edges, value].sort((left, right) => Buffer.compare(Buffer.from(left.edgeId), Buffer.from(right.edgeId)));
+  report.edgeCounts = { ...report.edgeCounts, [value.edgeType]: (report.edgeCounts[value.edgeType] ?? 0) + 1, total: report.edges.length };
+}
+
+function authorityReport({ id, legacyAccessStations = 0, transfers, outOfStation }) {
   const candidate = {
-    candidateId: "nationwide-candidate-20261001-seq900",
+    candidateId: id === "capital" ? "current-capital-candidate-20260816" : "nationwide-candidate-20261001-seq900",
     mappingContractVersion: "station-line-v1",
     materializerVersion: "1",
     sourceSetSha256: "a".repeat(64),
     stationSetSha256: "b".repeat(64),
   };
   const edges = [
-    ...Array.from({ length: stations }, (_, index) => edge("ENTRY", index)),
-    ...Array.from({ length: stations }, (_, index) => edge("EXIT", index)),
+    ...Array.from({ length: legacyAccessStations }, (_, index) => edge("ENTRY", index)),
+    ...Array.from({ length: legacyAccessStations }, (_, index) => edge("EXIT", index)),
     ...Array.from({ length: transfers }, (_, index) => edge("IN_STATION_TRANSFER", index)),
     ...Array.from({ length: outOfStation }, (_, index) => edge("OUT_OF_STATION_TRANSFER", index)),
   ].sort((left, right) => Buffer.compare(Buffer.from(left.edgeId), Buffer.from(right.edgeId)));
   const edgeCounts = Object.fromEntries(Object.entries({
-    ENTRY: stations, EXIT: stations, IN_STATION_TRANSFER: transfers, OUT_OF_STATION_TRANSFER: outOfStation,
+    ENTRY: legacyAccessStations, EXIT: legacyAccessStations, IN_STATION_TRANSFER: transfers, OUT_OF_STATION_TRANSFER: outOfStation,
   }).filter(([, count]) => count > 0));
   const payload = {
     schemaVersion: 1,
@@ -208,7 +246,7 @@ function edge(edgeType, index) {
     toNodeId: nodes[1],
     durationSeconds: transfer ? 120 : 0,
     distanceMeters: transfer ? 150 : 0,
-    // D1: ENTRY/EXIT 열거는 #873에서 간선 생성 중단과 함께 제거한다.
+    // legacy(수도권) ENTRY/EXIT만 증거 cell 없이 열거한다(D1). 전국 authority에는 ENTRY/EXIT가 없다(#873).
     requiredCells: transfer
       ? [
         cell(...nodes[0].split(":"), "TRANSFER", "VERIFIED_PRESENT"),

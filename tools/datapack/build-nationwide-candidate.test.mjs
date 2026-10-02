@@ -297,10 +297,8 @@ test("nationwide preparation CLI consumes serialized inputs and writes the bound
   pack.coverageLineOperatorScopes = targets.activeLineScopes;
   pack.stations = [{ id: "station-a" }];
   pack.stationLines = targets.activeLineScopes.map(({ lineId }) => ({ stationId: "station-a", lineId }));
-  const routeEdges = pack.stationLines.flatMap(({ stationId, lineId }) => [
-    { edgeId: `entry-${lineId}`, edgeType: "ENTRY", fromNodeId: stationId, toNodeId: `${stationId}:${lineId}` },
-    { edgeId: `exit-${lineId}`, edgeType: "EXIT", fromNodeId: `${stationId}:${lineId}`, toNodeId: stationId },
-  ]);
+  // #873: 전국 route-edge 입력에는 역 단위 ENTRY/EXIT 간선이 없다(승강장 기준).
+  const routeEdges = [];
   routeEdges.push({ edgeId: "transfer", edgeType: "IN_STATION_TRANSFER",
     fromNodeId: `station-a:${pack.stationLines[0].lineId}`, toNodeId: `station-a:${pack.stationLines[1].lineId}` },
   { edgeId: "ride", edgeType: "RIDE", serviceClass: "SUBWAY" });
@@ -351,10 +349,8 @@ test("nationwide scope derives multi-line rows and route sets without pilot coun
   stationLines.push({ stationId: stationLines[0].stationId, lineId: stationLines[1].lineId });
   const fixture = { packs: [{ coverageLineOperatorScopes: active, stationLines,
     stations: active.map((_, index) => ({ id: `station-${index}` })) }] };
-  const routeEdges = stationLines.flatMap(({ stationId, lineId }) => [
-    { edgeId: `entry-${stationId}-${lineId}`, edgeType: "ENTRY", fromNodeId: stationId, toNodeId: `${stationId}:${lineId}` },
-    { edgeId: `exit-${stationId}-${lineId}`, edgeType: "EXIT", fromNodeId: `${stationId}:${lineId}`, toNodeId: stationId },
-  ]);
+  // #873: 전국 route-edge 입력에는 역 단위 ENTRY/EXIT 간선이 없다(승강장 기준).
+  const routeEdges = [];
   routeEdges.push({ edgeId: "transfer", edgeType: "IN_STATION_TRANSFER",
     fromNodeId: `${stationLines[0].stationId}:${active[0].lineId}`,
     toNodeId: `${stationLines[0].stationId}:${active[1].lineId}` },
@@ -371,7 +367,9 @@ test("nationwide scope derives multi-line rows and route sets without pilot coun
   assert.ok(actual.verifiedAccessibilityScope.requiredRowIds.includes(`${stationLines[0].stationId}|${active[1].lineId}|ELEVATOR`));
   assert.deepEqual(actual.routingLaunchScope.requiredTransferStationIds, [stationLines[0].stationId]);
   assert.deepEqual(actual.routingLaunchScope.requiredTransferEdgeIds, ["transfer"]);
-  assert.equal(actual.routingLaunchScope.requiredBaseEdgeIds.length, stationLines.length * 2);
+  // #873: 출발·도착은 승강장 노드라 요구하는 역 단위 진입·하차 간선이 없다.
+  assert.deepEqual(actual.routingLaunchScope.requiredBaseEdgeIds, []);
+  assert.deepEqual(actual.routingLaunchScope.baseRoutingStationIds, [...new Set(stationLines.map(({ stationId }) => stationId))].sort());
   assert.equal(actual.decision.currentLaunchDecision, "NO_GO");
   assert.equal(Object.hasOwn(actual.decision, "approvedAt"), false);
   assert.equal(actual.nationwideRoadmapScope.blocksRoutingLaunch, true);
@@ -379,7 +377,16 @@ test("nationwide scope derives multi-line rows and route sets without pilot coun
   const missing = structuredClone(fixture);
   missing.packs[0].coverageLineOperatorScopes.pop();
   assert.throws(() => deriveNationwideProductionScope({ ...args, fixture: missing }), /target operator-line pair/);
-  assert.throws(() => deriveNationwideProductionScope({ ...args, routeEdges: routeEdges.filter((row) => row.edgeId !== "transfer") }), /materialized access edges/);
+  assert.throws(() => deriveNationwideProductionScope({ ...args, routeEdges: routeEdges.filter((row) => row.edgeId !== "transfer") }), /materialized transfer edges/);
+  for (const [edgeType, fromNodeId, toNodeId] of [
+    ["ENTRY", stationLines[0].stationId, `${stationLines[0].stationId}:${stationLines[0].lineId}`],
+    ["EXIT", `${stationLines[0].stationId}:${stationLines[0].lineId}`, stationLines[0].stationId],
+  ]) {
+    assert.throws(() => deriveNationwideProductionScope({
+      ...args,
+      routeEdges: [...routeEdges, { edgeId: `${edgeType.toLowerCase()}-legacy`, edgeType, fromNodeId, toNodeId }],
+    }), /must not contain ENTRY\/EXIT edges/, edgeType);
+  }
 });
 
 test("nationwide candidate transaction rolls back partial replacement and commits one bound tuple", async (context) => {

@@ -42,7 +42,8 @@ const TRANSFER_STATES = {
   "station-c:line-3": "VERIFIED_PRESENT",
   "station-d:line-2": "NOT_APPLICABLE",
 };
-// 전국 실데이터와 같이 FACILITY 일부·EXIT 전체는 UNKNOWN(PROVIDER_NO_DATA)이다.
+// 전국 실데이터와 같이 FACILITY 일부는 UNKNOWN(PROVIDER_NO_DATA)이다.
+// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 전국 입력에는 EXIT 증거 행과 ENTRY/EXIT 간선이 없다.
 const FACILITY_VERIFIED = new Set(["station-a:line-1", "station-a:line-2"]);
 
 export function syntheticNationwideTransferEndpoints() {
@@ -63,7 +64,6 @@ export function buildSyntheticNationwideReleaseCandidate() {
   }));
   const evidenceRows = stationLines.flatMap((line) => [
     evidence(candidate, line, "FACILITY", FACILITY_VERIFIED.has(key(line)) ? "VERIFIED_PRESENT" : "UNKNOWN"),
-    evidence(candidate, line, "EXIT", "UNKNOWN"),
     evidence(candidate, line, "TRANSFER", TRANSFER_STATES[key(line)]),
   ]);
   const stationLineInput = { candidate, stationLines, evidenceRows };
@@ -74,12 +74,6 @@ export function buildSyntheticNationwideReleaseCandidate() {
     routeEdge("ride-a2-d2", "RIDE", "station-a:line-2", "station-d:line-2", 150, 1200),
     routeEdge("ride-d2-a2", "RIDE", "station-d:line-2", "station-a:line-2", 150, 1200),
   ];
-  const entries = stationLines.map((line) => routeEdge(
-    `entry-${line.stationId}-${line.lineId}`, "ENTRY", line.stationId, key(line), 0, 0,
-  ));
-  const exits = stationLines.map((line) => routeEdge(
-    `exit-${line.stationId}-${line.lineId}`, "EXIT", key(line), line.stationId, 0, 0,
-  ));
   const transfers = [
     routeEdge("transfer-station-a-line-1-line-2", "IN_STATION_TRANSFER", "station-a:line-1", "station-a:line-2", 100, 120),
     routeEdge("transfer-station-a-line-2-line-1", "IN_STATION_TRANSFER", "station-a:line-2", "station-a:line-1", 100, 120),
@@ -99,7 +93,7 @@ export function buildSyntheticNationwideReleaseCandidate() {
       topologySha256: canonicalRideEdgeSetSha256(rides),
     },
     stationLines: routeStationLines,
-    routeEdges: [...rides, ...entries, ...exits, ...transfers]
+    routeEdges: [...rides, ...transfers]
       .sort((left, right) => compareBytes(left.edgeId, right.edgeId)),
   };
 
@@ -258,6 +252,16 @@ function evidenceFields(state, domain) {
     return { state, evidenceKind: "PROVIDER_NO_DATA", evidenceReason: `${domain}_DATA_NOT_PROVIDED` };
   }
   throw new Error(`unsupported synthetic evidence state: ${state}`);
+}
+
+// #873 거부 회귀용: 예전 생성기가 만들던 역 단위 ENTRY/EXIT 간선(0s/0m)을 route 입력에 다시 넣는다.
+export function addSyntheticLegacyAccessEdges(value, edgeTypes = ["ENTRY", "EXIT"]) {
+  const added = value.route.stationLines.flatMap((line) => edgeTypes.map((edgeType) => (edgeType === "ENTRY"
+    ? routeEdge(`entry-${line.stationId}-${line.lineId}`, "ENTRY", line.stationId, key(line), 0, 0)
+    : routeEdge(`exit-${line.stationId}-${line.lineId}`, "EXIT", key(line), line.stationId, 0, 0))));
+  value.route.routeEdges = [...value.route.routeEdges, ...added]
+    .sort((left, right) => compareBytes(left.edgeId, right.edgeId));
+  return rebindSyntheticNationwideReleaseCandidate(value);
 }
 
 function routeEdge(edgeId, edgeType, fromNodeId, toNodeId, durationSeconds, distanceMeters) {

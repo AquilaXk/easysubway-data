@@ -103,16 +103,21 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
     );
   }
 
-  // 2. Exactly 3,306 evidence rows (1,102 pairs * 3 domains)
-  assert.strictEqual(stationLineData.evidenceRows.length, 3306);
+  // 2. Exactly 2,204 evidence rows (1,102 pairs * FACILITY·TRANSFER)
+  // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. EXIT 행은 원장 근거 없이 하드코딩한 PROVIDER_NO_DATA였으므로
+  // 만들지 않는다. 출구·엘리베이터는 역 정보(station-elevator path)로만 제공한다.
+  assert.strictEqual(stationLineData.evidenceRows.length, 2204);
 
   const facilityRows = stationLineData.evidenceRows.filter((r) => r.domain === "FACILITY");
   const exitRows = stationLineData.evidenceRows.filter((r) => r.domain === "EXIT");
   const transferRows = stationLineData.evidenceRows.filter((r) => r.domain === "TRANSFER");
 
   assert.strictEqual(facilityRows.length, 1102);
-  assert.strictEqual(exitRows.length, 1102);
+  assert.strictEqual(exitRows.length, 0);
   assert.strictEqual(transferRows.length, 1102);
+  assert.strictEqual(stationLineData.evidenceRows.some((r) => r.sourceId === "kric-station-movement-standard"), false);
+  assert.strictEqual(stationLineRaw.includes("EXIT_DATA_NOT_PROVIDED"), false);
+  assert.strictEqual(stationLineRaw.includes("kric-station-movement-standard-20260904T172943075Z"), false);
 
   // None of the rows should match any fake literal hash
   for (const row of stationLineData.evidenceRows) {
@@ -147,12 +152,6 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
   const nokdong = facilityRows.find((r) => r.stationId === "station-73a324a117ea" && r.lineId === "line-e57a361e8892");
   assert.equal(nokdong.state, "UNKNOWN");
   assert.equal(nokdong.evidenceReason, "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED");
-
-  // 4. All 1,102 EXIT domain rows must be fail-closed UNKNOWN
-  const exitUnknown = exitRows.filter(
-    (r) => r.state === "UNKNOWN" && r.evidenceKind === "PROVIDER_NO_DATA" && r.evidenceReason === "EXIT_DATA_NOT_PROVIDED"
-  );
-  assert.strictEqual(exitUnknown.length, 1102, "All 1,102 stations must be fail-closed UNKNOWN in EXIT domain");
 
   // 5. TRANSFER domain distribution
   const transferNotApplicable = transferRows.filter(
@@ -189,8 +188,13 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   const outOfStationTransfers = routeData.routeEdges.filter((e) => e.edgeType === "OUT_OF_STATION_TRANSFER");
 
   // 1. Total counts
-  assert.strictEqual(entries.length, 1102);
-  assert.strictEqual(exits.length, 1102);
+  // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 만들지 않는다.
+  assert.strictEqual(entries.length, 0);
+  assert.strictEqual(exits.length, 0);
+  assert.deepEqual(
+    [...new Set(routeData.routeEdges.map((e) => e.edgeType))].sort(),
+    ["IN_STATION_TRANSFER", "RIDE"],
+  );
   // #872 S1(D1): 공식 지표가 없는 역내 환승은 0s/0m 행으로 두지 않고 뺀다.
   // #872 S2: 서울교통공사 지표가 1~8호선과 상대 노선 전체(102쌍, OFFICIAL 140·DERIVED_RECIPROCAL 64)로 넓어졌다.
   // #872 S3: 부산교통공사 원천의 1~4호선 내부 환승 6역 12방향(OFFICIAL)이 더해졌다.
@@ -198,18 +202,6 @@ test("nationwide route edge input rejects fake constants and unverified outdoor 
   assert.strictEqual(inStationTransfers.length, 216 + 93);
   // #872 후속(#866 D1 선행): 공식 근거가 없는 역 밖 환승(고정 거리·시간)은 route-edge 입력에 넣지 않는다.
   assert.strictEqual(outOfStationTransfers.length, 0);
-
-  // 2. ENTRY edges: no fake 90s/50m constant, all 0s/0m
-  for (const e of entries) {
-    assert.strictEqual(e.durationSeconds, 0, `Entry edge ${e.edgeId} must have durationSeconds 0`);
-    assert.strictEqual(e.distanceMeters, 0, `Entry edge ${e.edgeId} must have distanceMeters 0`);
-  }
-
-  // 3. EXIT edges: no fake 60s/50m constant, all 0s/0m
-  for (const e of exits) {
-    assert.strictEqual(e.durationSeconds, 0, `Exit edge ${e.edgeId} must have durationSeconds 0`);
-    assert.strictEqual(e.distanceMeters, 0, `Exit edge ${e.edgeId} must have distanceMeters 0`);
-  }
 
   // 4. IN_STATION_TRANSFER: no fake 120s/50m uniform constants
   const uniformFakeTransfers = inStationTransfers.filter(
