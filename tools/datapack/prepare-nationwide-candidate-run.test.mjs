@@ -452,21 +452,21 @@ async function committedSelectionInputsWithinIncheonWindow() {
   return committedSelectionInputs();
 }
 
-// 2026-10-01 공식 도구로 등록한 원장 head(커밋된 후보 seq123이 고른 입력)다.
+// 2026-10-02 공식 도구로 등록한 원장 head(커밋된 후보 seq123이 고른 입력)다.
 const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
-  incheonTopology: "incheon-transit-station-info-20261001",
-  incheonLine1: "incheon-line1-train-timetable-20261001",
-  incheonLine2: "incheon-line2-train-timetable-20261001",
-  busanAccessibility: "busan-transportation-accessibility-e375fb59a4dca444fbca4bf3c5b1f8d22798a2246eb1c079d89d94cf26539718-20261001",
-  daeguAccessibility: "daegu-transportation-accessibility-c4ad26c98f70af70ea6b934bf139cc5f8da2d9f79e431634c29e15363abd897f-20261001",
-  daejeonAccessibility: "daejeon-transportation-accessibility-15481d28be46f5f4ac48f56f869667c8848180a2f487879c8ed17a97f51a7c19-20261001",
-  gwangjuAccessibility: "gwangju-transportation-accessibility-31f78d5d42932d519fa8848f234bdce91348de567363e34f73ff9ef625d95ebd-20261001",
-  kricConvenience: "kric-station-convenience-standard-20261001T050747096Z",
-  busanTimetable: "busan-transportation-timetable-20261001",
-  daeguTimetable1: "daegu-line1-train-timetable-596c7bd51ae34e5f482df154316e08d166c89bcbb27ab180f6170f6c8ce9d264",
-  daeguTimetable2: "daegu-line2-train-timetable-bbc7d89913727bbc29c7ae2804994d6a901013df345a73ae8344d81b4800e17b",
-  daeguTimetable3: "daegu-line3-train-timetable-54570947f7cb59ad8b1ea510bdcbf696e15b4e21efef4f89997638fd441d3b55",
-  daejeonTimetable: "daejeon-train-timetable-20261001",
+  incheonTopology: "incheon-transit-station-info-20261002",
+  incheonLine1: "incheon-line1-train-timetable-20261002",
+  incheonLine2: "incheon-line2-train-timetable-20261002",
+  busanAccessibility: "busan-transportation-accessibility-ba05d3ff5501f5e47c0d0398fd03f084a74aede650465895503057881dd27a3e-20261002",
+  daeguAccessibility: "daegu-transportation-accessibility-02226d92d934146e631e719848a902d1c9f496589b5370c92fbde41d1181a96b-20261002",
+  daejeonAccessibility: "daejeon-transportation-accessibility-412f4d377c4554f0df19969faaae6652bb607f261c8b62673dc86a5e2849b231-20261002",
+  gwangjuAccessibility: "gwangju-transportation-accessibility-d63a869d119e4811857e2d87bf37279e012cac9282b633509845e43ea6d030dd-20261002",
+  kricConvenience: "kric-station-convenience-standard-20261002T061440559Z",
+  busanTimetable: "busan-transportation-timetable-20261002",
+  daeguTimetable1: "daegu-line1-train-timetable-2104d5539dea326b42dd7da308abd1634740a27711047284f2580d96642cc92c",
+  daeguTimetable2: "daegu-line2-train-timetable-353999c055eaae2d77e602901c15a2354ed3220ccd1b1327498fe6c1cf9976d7",
+  daeguTimetable3: "daegu-line3-train-timetable-beb4ff8616336afea038efb54a47610a232dd890eba37c01ba82bf9f433e1085",
+  daejeonTimetable: "daejeon-train-timetable-20261002",
 });
 
 test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 13개를 고른다", async () => {
@@ -477,7 +477,7 @@ test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 �
     assert.equal(selected[key].path, `tools/datapack/sources/${snapshotId}.json`, key);
     assert.ok(Buffer.isBuffer(selected[key].bytes), key);
   }
-  assert.equal(selected.kricConvenience.freshnessExpiresAt, "2026-12-30T05:07:47.096Z");
+  assert.equal(selected.kricConvenience.freshnessExpiresAt, "2026-12-31T06:14:40.559Z");
 });
 
 test("원장 head가 새 snapshot으로 이어지면 코드 수정 없이 새 입력을 고른다", async () => {
