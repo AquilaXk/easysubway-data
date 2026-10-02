@@ -109,7 +109,7 @@ test("sha·결속을 다시 맞춘 파일이라도 고아 stop_time·stop_time �
   const artifact = build();
   // 섹션 trip에 없는 tripId의 stop_time 한 행(결속 요약은 그 행만큼 늘린다)
   const orphan = reseal(artifact, (content) => {
-    officialSection(content).stopTimes.push(["ghost", 1, "s-a", "line-x", 21_660, 21_690, 0, 0]);
+    officialSection(content).stopTimes.push(["ghost", 1, "s-a", "line-x", 21_660, 21_690, 0, 0, null]);
   }, (binding) => {
     const section = binding.sections.find(({ sourceId }) => sourceId === "official-source");
     section.stopTimeCount += 1;
@@ -143,4 +143,15 @@ test("sha·결속을 다시 맞춘 파일이라도 섹션 헤더 불일치·모�
   assert.throws(() => expandResealed(longTripRow), /EXTERNAL_STOP_TIMES_ROW_SHAPE/u);
   const shortStopRow = reseal(artifact, (content) => { officialSection(content).stopTimes[0].pop(); });
   assert.throws(() => expandResealed(shortStopRow), /EXTERNAL_STOP_TIMES_ROW_SHAPE/u);
+});
+
+test("정차 시각 출처(timeSource)는 있는 행만 그대로 실려 펼칠 때 복원되고, 없는 행에는 키가 생기지 않는다(#910 F4)", () => {
+  const marked = STOPS.map((row) => (row.tripId === "t-1" && row.stopSequence === 1 ? { ...row, timeSource: "SINGLE_PROVIDER_TIME_DEPARTURE" } : row));
+  const artifact = build({ stopTimes: marked });
+  const pack = expandExternalStopTimes(written(artifact).fixture, { readBytes: () => artifact.bytes }).packs[0];
+  const rows = byId(pack.transitStopTimes, stopKey);
+  assert.equal(rows.get("t-1:1").timeSource, "SINGLE_PROVIDER_TIME_DEPARTURE");
+  assert.equal(Object.hasOwn(rows.get("t-1:2"), "timeSource"), false);
+  assert.deepEqual(rows, byId(marked, stopKey));
+  assert.throws(() => build({ stopTimes: STOPS.map((row) => ({ ...row, timeSource: "" })) }), /STOP_TIME_SHAPE/u);
 });

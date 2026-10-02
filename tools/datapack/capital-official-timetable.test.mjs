@@ -119,6 +119,7 @@ test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이
     [{ sourceSnapshotId: report.source.snapshotId, stopTimeProvenance: "TRIP_INHERITED", tripCount: report.summary.admittedTripCount, stopTimeCount: report.summary.admittedStopTimeCount }]);
   for (const line of report.lines) {
     assert.deepEqual(capital[0].byLine[line.lineId], { tripCount: line.admittedTripCount, stopTimeCount: line.admittedStopTimeCount }, line.lineId);
+    assert.deepEqual(Object.keys(line.singleProviderTimeStopCount).sort(), ["intermediate", "origin", "terminal"], line.lineId);
   }
   assert.equal(committed.packs[0].transitTrips.some(({ sourceId }) => sourceId === report.source.sourceId), false, "capital trips live in the external file");
   const pack = expandExternalStopTimes(committed, { repositoryRoot: root }).packs[0];
@@ -128,5 +129,11 @@ test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이
   assert.equal(capitalTrips.length, capitalTripIds.size, "short trip ids must not collide");
   assert.ok(capitalTrips.every(({ id }) => /^kc-[a-z0-9]+-[wshe]-[0-9a-f]{12}$/u.test(id)), "short trip id format");
   assert.equal(new Set(capitalTrips.map(({ providerRecordHash }) => providerRecordHash)).size, capitalTrips.length, "each trip keeps its source row hash");
-  assert.equal(pack.transitStopTimes.filter(({ tripId }) => capitalTripIds.has(tripId)).length, report.summary.admittedStopTimeCount);
+  const capitalStops = pack.transitStopTimes.filter(({ tripId }) => capitalTripIds.has(tripId));
+  assert.equal(capitalStops.length, report.summary.admittedStopTimeCount);
+  // #910 F4: 단일 제공 시각 정차는 timeSource로 표기되고, 보고서 노선별 건수와 같다.
+  const singleTime = capitalStops.filter(({ timeSource }) => timeSource !== "PROVIDER_ARRIVAL_AND_DEPARTURE").length;
+  assert.equal(singleTime, report.lines.reduce((total, { singleProviderTimeStopCount: c }) => total + c.origin + c.intermediate + c.terminal, 0));
+  assert.ok(capitalStops.every(({ timeSource, arrivalSeconds, departureSeconds }) => ["PROVIDER_ARRIVAL_AND_DEPARTURE", "SINGLE_PROVIDER_TIME_ARRIVAL", "SINGLE_PROVIDER_TIME_DEPARTURE"].includes(timeSource)
+    && (timeSource === "PROVIDER_ARRIVAL_AND_DEPARTURE" || arrivalSeconds === departureSeconds)));
 });

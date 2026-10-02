@@ -78,7 +78,7 @@ export function buildCapitalOfficialTimetable({ pack, snapshot, inventorySource,
     },
     contract: {
       stopOrder: "원천 역명 칸이 명시한 정차 순서(001..N 순번 또는 역 코드 토큰 순서)를 그대로 쓴다.",
-      stopTime: "도착·출발 중 원천 값이 하나뿐인 정차는 그 값을 두 칸에 쓴다. 기점 도착·종점 출발 00:00은 원천 자리표시라 미제공으로 본다.",
+      stopTime: "도착·출발 중 원천 값이 하나뿐인 정차는 그 값을 정차 시각(도착 = 출발)으로 쓰고 stop_time.timeSource에 SINGLE_PROVIDER_TIME_ARRIVAL/DEPARTURE로 표기한다(QA 결정 2026-10-03). 노선별 건수는 lines[].singleProviderTimeStopCount. 둘 다 없으면 격리한다. 기점 도착·종점 출발 00:00은 원천 자리표시라 미제공으로 본다.",
       serviceDay: "04시 전 시각(24시 미만 표기)은 전날 운행일의 심야 시각이다(+24h).",
       quarantine: `시각 역전·문법 오류·일반열차 비인접 정차 행은 적재하지 않는다. 노선별 상한 ${CAPITAL_TIMETABLE_MAX_QUARANTINE_RATIO}(고정 집합 제외), 초과 시 실패.`,
     },

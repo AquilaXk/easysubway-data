@@ -66,6 +66,31 @@ test("trip_id는 짧고 결정적이며 원천 provider key마다 다르다", ()
   assert.deepEqual(first.transitTrips.map(({ providerRecordHash }) => providerRecordHash).sort(), manyWeekdayAndWeekend().map(({ sourceRowSha256 }) => sourceRowSha256).sort());
 });
 
+test("원천이 한쪽 시각만 준 정차는 그 값을 정차 시각으로 쓰고 timeSource로 표기하며, 노선별 건수를 남긴다(#910 F4)", () => {
+  const oneSided = { ...trip(500, ["A역명", "B역명", "C역명"]) };
+  oneSided.stops = [
+    { stationName: "A역명", arrivalSeconds: null, departureSeconds: 21_600 },
+    { stationName: "B역명", arrivalSeconds: null, departureSeconds: 21_720 },
+    { stationName: "C역명", arrivalSeconds: 21_840, departureSeconds: null },
+  ];
+  const result = materializeOfficialLineTimetables(args({ provider: provider([...manyWeekdayAndWeekend(), oneSided]) }));
+  const tripId = result.transitTrips.find(({ providerRecordHash }) => providerRecordHash === oneSided.sourceRowSha256).id;
+  const rows = result.transitStopTimes.filter((row) => row.tripId === tripId);
+  assert.deepEqual(rows.map(({ arrivalSeconds, departureSeconds, timeSource }) => [arrivalSeconds, departureSeconds, timeSource]), [
+    [21_600, 21_600, "SINGLE_PROVIDER_TIME_DEPARTURE"],
+    [21_720, 21_720, "SINGLE_PROVIDER_TIME_DEPARTURE"],
+    [21_840, 21_840, "SINGLE_PROVIDER_TIME_ARRIVAL"],
+  ]);
+  const both = result.transitStopTimes.find((row) => row.tripId !== tripId && row.stopSequence === 2);
+  assert.equal(both.timeSource, "PROVIDER_ARRIVAL_AND_DEPARTURE");
+  // 기본 trip 31개는 기점 출발만(31), 이 trip은 기점·중간·종점이 각각 하나씩 단일 시각이다.
+  assert.deepEqual(result.lineSummaries[0].singleProviderTimeStopCount, { origin: 32, intermediate: 1, terminal: 1 });
+  // 원천이 두 시각을 모두 주지 않은 정차는 적재하지 않고 실패한다.
+  const empty = { ...trip(501, ["A역명", "B역명"]) };
+  empty.stops = [{ stationName: "A역명", arrivalSeconds: null, departureSeconds: 21_600 }, { stationName: "B역명", arrivalSeconds: null, departureSeconds: null }];
+  assert.throws(() => materializeOfficialLineTimetables(args({ provider: provider([...manyWeekdayAndWeekend(), empty]) })), /OFFICIAL_LINE_TIMETABLE_STOP_WITHOUT_TIME/u);
+});
+
 test("평일 공휴일은 평일 운행에서 빼고 주말·공휴일 운행에 더한다", () => {
   const result = materializeOfficialLineTimetables(args({ provider: provider(manyWeekdayAndWeekend()) }));
   const dates = result.serviceCalendarDates.map(({ serviceId, date, exceptionType }) => `${serviceId}|${date}|${exceptionType}`);

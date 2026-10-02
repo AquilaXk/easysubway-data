@@ -202,6 +202,7 @@ function summarizeLines({ provider, lineBindings, admitted, quarantine, maxQuara
       sourceTripCount,
       admittedTripCount: lineAdmitted.length,
       admittedStopTimeCount: lineAdmitted.reduce((total, { stationIds }) => total + stationIds.length, 0),
+      singleProviderTimeStopCount: singleTimeStopCounts(lineAdmitted),
       tripsByServiceDayKind: Object.fromEntries(Object.entries(tripsByKind).sort(([left], [right]) => codepointCompare(left, right))),
       quarantinedTripCount: lineQuarantine.length,
       quarantineRatio: Number(quarantineRatio.toFixed(4)),
@@ -286,6 +287,9 @@ function buildTables({ provider, lineBindings, admitted, serviceIdPrefix, tripId
       ...provenance(trip.sourceRowSha256),
     });
     trip.stops.forEach((stop, index) => {
+      // 원천이 이 정차에 시각 하나만 준 경우 그 값을 정차 시각(도착 = 출발)으로 쓰고, timeSource로 어느 쪽인지 표기한다
+      // (QA 결정 2026-10-03: 단일 시각 정차 허용, 숨기지 않고 표기). 둘 다 없으면 provider 단계에서 이미 격리된다.
+      const timeSource = stopTimeSource(stop);
       const arrivalSeconds = stop.arrivalSeconds ?? stop.departureSeconds;
       const departureSeconds = stop.departureSeconds ?? stop.arrivalSeconds;
       transitStopTimes.push({
@@ -297,6 +301,7 @@ function buildTables({ provider, lineBindings, admitted, serviceIdPrefix, tripId
         departureSeconds,
         pickupType: 0,
         dropOffType: 0,
+        timeSource,
       });
     });
   }
@@ -322,6 +327,34 @@ function buildTables({ provider, lineBindings, admitted, serviceIdPrefix, tripId
     }
   }
   return { transitRoutes, transitTrips, transitStopTimes, serviceCalendars, serviceCalendarDates };
+}
+
+export const STOP_TIME_SOURCE = Object.freeze({
+  ARRIVAL_AND_DEPARTURE: "PROVIDER_ARRIVAL_AND_DEPARTURE",
+  ARRIVAL_ONLY: "SINGLE_PROVIDER_TIME_ARRIVAL",
+  DEPARTURE_ONLY: "SINGLE_PROVIDER_TIME_DEPARTURE",
+});
+
+function stopTimeSource(stop) {
+  const hasArrival = Number.isSafeInteger(stop.arrivalSeconds);
+  const hasDeparture = Number.isSafeInteger(stop.departureSeconds);
+  if (hasArrival && hasDeparture) return STOP_TIME_SOURCE.ARRIVAL_AND_DEPARTURE;
+  if (hasArrival) return STOP_TIME_SOURCE.ARRIVAL_ONLY;
+  if (hasDeparture) return STOP_TIME_SOURCE.DEPARTURE_ONLY;
+  fail("STOP_WITHOUT_TIME");
+}
+
+function singleTimeStopCounts(lineAdmitted) {
+  const counts = { origin: 0, intermediate: 0, terminal: 0 };
+  for (const { trip } of lineAdmitted) {
+    trip.stops.forEach((stop, index) => {
+      if (stopTimeSource(stop) === STOP_TIME_SOURCE.ARRIVAL_AND_DEPARTURE) return;
+      if (index === 0) counts.origin += 1;
+      else if (index === trip.stops.length - 1) counts.terminal += 1;
+      else counts.intermediate += 1;
+    });
+  }
+  return counts;
 }
 
 function compareQuarantine(left, right) {

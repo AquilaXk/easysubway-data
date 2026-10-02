@@ -8,7 +8,7 @@ import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 // #899: 공식 원천 시간표(trip·stop_time)를 커밋된 전국 팩 JSON 밖의 결정적 gzip 파일로 둔다.
 // 팩 JSON이 GitHub 파일 한도(100MB) 안에서 여유를 갖게 하고, 원천 단위로 같은 provenance를 행마다 복제하지 않는다.
 //
-// 파일(gzip 전 JSON): { schemaVersion: 2, artifactKind, tripColumns, stopTimeColumns,
+// 파일(gzip 전 JSON): { schemaVersion: 3, artifactKind, tripColumns, stopTimeColumns,
 //   sections: [{ header: { sourceId, sourceSnapshotId, evidenceHash, provenanceKind, derivationKind, updatedAt },
 //                stopTimeProvenance: "TRIP_INHERITED" | "ROW_COPY", trips: [[...]], stopTimes: [[...]] }] }
 // - trip은 헤더(원천 공통 provenance)와 trip별 providerRecordHash로 원래 객체를 그대로 복원한다.
@@ -24,7 +24,10 @@ export const EXTERNAL_STOP_TIMES_KEY = "externalTransitStopTimes";
 const ARTIFACT_KIND = "datapack-official-timetable";
 const HEADER_FIELDS = Object.freeze(["sourceId", "sourceSnapshotId", "evidenceHash", "provenanceKind", "derivationKind", "updatedAt"]);
 const TRIP_COLUMNS = Object.freeze(["id", "routeId", "serviceId", "tripHeadsign", "directionId", "servicePattern", "serviceClass", "serviceDayStartSeconds", "providerRecordHash"]);
-const STOP_TIME_COLUMNS = Object.freeze(["tripId", "stopSequence", "stationId", "lineId", "arrivalSeconds", "departureSeconds", "pickupType", "dropOffType"]);
+const STOP_TIME_COLUMNS = Object.freeze(["tripId", "stopSequence", "stationId", "lineId", "arrivalSeconds", "departureSeconds", "pickupType", "dropOffType", "timeSource"]);
+// timeSource는 선택 열이다: 원천이 정차별 시각 출처를 표기한 행만 값이 있고(예: 단일 제공 시각), 없는 행은 null로 두고 펼칠 때 키를 만들지 않는다.
+const OPTIONAL_STOP_TIME_COLUMN = "timeSource";
+const REQUIRED_STOP_TIME_COLUMNS = Object.freeze(STOP_TIME_COLUMNS.filter((column) => column !== OPTIONAL_STOP_TIME_COLUMN));
 const ROW_PROVENANCE_FIELDS = Object.freeze([...HEADER_FIELDS, "providerRecordHash"]);
 const CONTENT_KEYS = Object.freeze(["schemaVersion", "artifactKind", "tripColumns", "stopTimeColumns", "sections"]);
 const SECTION_KEYS = Object.freeze(["header", "stopTimeProvenance", "trips", "stopTimes"]);
@@ -81,11 +84,11 @@ export function buildExternalStopTimesArtifact({ trips, stopTimes, sourceIds }) 
         trips: [...section.trips].sort((left, right) => codepointCompare(left.id, right.id)).map((trip) => TRIP_COLUMNS.map((column) => trip[column])),
         stopTimes: [...section.stopTimes]
           .sort((left, right) => codepointCompare(left.tripId, right.tripId) || left.stopSequence - right.stopSequence)
-          .map((row) => STOP_TIME_COLUMNS.map((column) => row[column])),
+          .map((row) => STOP_TIME_COLUMNS.map((column) => row[column] ?? null)),
       };
     });
   const content = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     artifactKind: ARTIFACT_KIND,
     tripColumns: [...TRIP_COLUMNS],
     stopTimeColumns: [...STOP_TIME_COLUMNS],
@@ -108,8 +111,10 @@ function assertTripShape(trip, header) {
 }
 
 function stopTimeProvenanceKind(row, trip) {
-  if (sameKeys(row, STOP_TIME_COLUMNS)) return STOP_TIME_PROVENANCE.TRIP_INHERITED;
-  if (sameKeys(row, [...STOP_TIME_COLUMNS, ...ROW_PROVENANCE_FIELDS])
+  const { [OPTIONAL_STOP_TIME_COLUMN]: timeSource, ...base } = row;
+  if (timeSource !== undefined && (typeof timeSource !== "string" || timeSource.length === 0)) fail("STOP_TIME_SHAPE", `${row.tripId}:${row.stopSequence}`);
+  if (sameKeys(base, REQUIRED_STOP_TIME_COLUMNS)) return STOP_TIME_PROVENANCE.TRIP_INHERITED;
+  if (sameKeys(base, [...REQUIRED_STOP_TIME_COLUMNS, ...ROW_PROVENANCE_FIELDS])
     && ROW_PROVENANCE_FIELDS.every((field) => row[field] === trip[field])) return STOP_TIME_PROVENANCE.ROW_COPY;
   fail("STOP_TIME_SHAPE", `${row.tripId}:${row.stopSequence}`);
 }
@@ -172,7 +177,7 @@ function readBoundTimetable(binding, pack, readBytes) {
   if (sha256(bytes) !== binding.sha256) fail("SHA256_MISMATCH", binding.path);
   let content;
   try { content = JSON.parse(gunzipSync(bytes).toString("utf8")); } catch { fail("CONTENT", binding.path); }
-  if (!sameKeys(content ?? {}, CONTENT_KEYS) || content.schemaVersion !== 2 || content.artifactKind !== ARTIFACT_KIND
+  if (!sameKeys(content ?? {}, CONTENT_KEYS) || content.schemaVersion !== 3 || content.artifactKind !== ARTIFACT_KIND
     || JSON.stringify(content.tripColumns) !== JSON.stringify(TRIP_COLUMNS)
     || JSON.stringify(content.stopTimeColumns) !== JSON.stringify(STOP_TIME_COLUMNS) || !Array.isArray(content.sections)) {
     fail("CONTENT", binding.path);
@@ -203,7 +208,9 @@ function readBoundTimetable(binding, pack, readBytes) {
     }
     const withStops = new Set();
     for (const values of section.stopTimes) {
-      const row = Object.fromEntries(STOP_TIME_COLUMNS.map((column, index) => [column, values[index]]));
+      const row = Object.fromEntries(STOP_TIME_COLUMNS.map((column, index) => [column, values[index]])
+        .filter(([column, value]) => column !== OPTIONAL_STOP_TIME_COLUMN || value !== null));
+      if (row[OPTIONAL_STOP_TIME_COLUMN] !== undefined && (typeof row[OPTIONAL_STOP_TIME_COLUMN] !== "string" || row[OPTIONAL_STOP_TIME_COLUMN].length === 0)) fail("ROW_SHAPE", row.tripId);
       const trip = sectionTrips.get(row.tripId);
       if (!trip) fail("ORPHAN_STOP_TIME", row.tripId);
       const key = `${row.tripId}\u0000${row.stopSequence}`;
