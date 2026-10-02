@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const SOURCE_ID = "gwangju-transportation-route-topology";
 export const GWANGJU_ROUTE_TOPOLOGY_ENDPOINT =
   "https://www.grtc.co.kr/subway/openapi/json/stationTimeInfomation";
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 
 export async function collectGwangjuRouteTopology({
   fetchImpl = fetch,
@@ -99,7 +99,7 @@ export async function collectGwangjuRouteTopology({
     endpoint: GWANGJU_ROUTE_TOPOLOGY_ENDPOINT,
     documentationUrl: "https://www.grtc.co.kr/subway/contents/apiRunInfo",
     capturedAt: capturedAt.toISOString(),
-    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
+    freshUntil: topologySnapshotFreshUntil(capturedAt),
     credentialRequired: false,
     requestCount: scope.length,
     stationCount: scope.length,

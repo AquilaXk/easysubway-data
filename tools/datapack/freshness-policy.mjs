@@ -1,5 +1,10 @@
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import {
+  isLegacyTopologyBasis,
+  LEGACY_TOPOLOGY_REVERIFICATION_CADENCE,
+  ROUTE_GRAPH_TOPOLOGY_CLASS_ID,
+} from "./lib/topology-freshness-cutover.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
@@ -87,7 +92,10 @@ export function deriveFreshnessExpiresAt({
     throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: basisAt exceeds clock skew");
   }
 
-  const cadence = sourceClass.reverificationCadence ?? sourceClass.maximumReverificationCadence;
+  // 컷오버 이전에 수집한 topology는 당시 정책(P1D) 창을 그대로 유지한다(lib/topology-freshness-cutover.mjs).
+  const cadence = sourceClass.id === ROUTE_GRAPH_TOPOLOGY_CLASS_ID && isLegacyTopologyBasis(basisMillis)
+    ? LEGACY_TOPOLOGY_REVERIFICATION_CADENCE
+    : sourceClass.reverificationCadence ?? sourceClass.maximumReverificationCadence;
   let derivedMillis = addCadence(basisMillis, cadence);
   if (providerValidUntil != null) {
     derivedMillis = Math.min(derivedMillis, requiredUtcInstant(providerValidUntil, "providerValidUntil"));

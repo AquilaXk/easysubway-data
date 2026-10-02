@@ -25,6 +25,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const SOURCE_ID = "incheon-transit-station-info";
 const ARTIFACT_KIND = "incheon-station-info-snapshot";
@@ -33,7 +34,6 @@ const DETAIL_URL = `https://www.data.go.kr/data/${DATASET_ID}/fileData.do`;
 const OPERATOR_ID = "incheon-transit";
 const OPERATOR_NAME = "인천교통공사";
 const REGION = "수도권";
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
@@ -455,7 +455,7 @@ export function collectIncheonStationInfo({ csvBytes, now = new Date() } = {}) {
     datasetId: DATASET_ID,
     endpoint: DETAIL_URL,
     capturedAt: capturedAt.toISOString(),
-    freshUntil: new Date(capturedAt.getTime() + FRESHNESS_MILLIS).toISOString(),
+    freshUntil: topologySnapshotFreshUntil(capturedAt),
     observedDataUpdatedAt: parsed.observedDataUpdatedAt,
     official: true,
     fixture: false,
@@ -530,7 +530,7 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
     || Number.isNaN(Date.parse(snapshot.capturedAt))
     || Number.isNaN(Date.parse(snapshot.freshUntil))
     || dataDateStartUtc(snapshot.observedDataUpdatedAt) > Date.parse(snapshot.capturedAt)
-    || Date.parse(snapshot.freshUntil) !== Date.parse(snapshot.capturedAt) + FRESHNESS_MILLIS) {
+    || Date.parse(snapshot.freshUntil) !== Date.parse(topologySnapshotFreshUntil(snapshot.capturedAt))) {
     throw new Error("invalid Incheon station info snapshot");
   }
   const membershipKeys = new Set();
