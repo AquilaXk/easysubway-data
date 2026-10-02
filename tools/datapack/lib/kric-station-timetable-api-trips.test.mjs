@@ -83,6 +83,14 @@ test("중간역 시각 누락(통과 표기)·끝점 null 패턴 위반·동시�
     /LOCAL_QUARANTINE_RATIO_EXCEEDED: line-api 3\/14/u);
 });
 
+test("중간역 출발이 도착보다 이르면(음수 정차) quarantine한다", () => {
+  const good = Array.from({ length: 30 }, (_, index) => LOCAL(`D${index}`, "8", String(5 + Math.floor(index / 6)).padStart(2, "0")));
+  const negative = ["N1", "8", [["T01", null, "07:00:00"], ["T02", "07:02:30", "07:02:00"], ["T03", "07:05:00", null]]];
+  const result = buildApiStationTimetableTrips({ responses: responses([...good, LOCAL("H4", "9"), negative]), bindings: [BINDING] });
+  assert.deepEqual(result.quarantine.map(({ providerTripKey, reason }) => [providerTripKey, reason]), [["T1|N1|8", "DWELL_NEGATIVE"]]);
+  assert.equal(result.trips.some(({ providerTripKey }) => providerTripKey === "T1|N1|8"), false);
+});
+
 test("역 응답이 빠지거나 오류 코드이거나 행이 요청과 다르면 명시적으로 실패한다", () => {
   assert.throws(() => buildApiStationTimetableTrips({ responses: responses([LOCAL("X5", "8"), LOCAL("X6", "9")], { omit: ["T02|8"] }), bindings: [BINDING] }), /STATION_RESPONSE_MISSING: line-api T02 dayCd=8/u);
   const errored = responses([LOCAL("X5", "8"), LOCAL("X6", "9")]);
