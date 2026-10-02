@@ -54,11 +54,15 @@ test("snapshot은 대상 노선 행만 원문 그대로 담고 자기 해시로 
 
 test("snapshot은 관측 시각·수집 파일명과 무관하다: 같은 원본을 다른 시각에 관측해도 바이트가 같다(#870)", () => {
   const observed = observation();
-  const first = projectKricCapitalTimetableSnapshot(observed);
   const later = projectKricCapitalTimetableSnapshot({ ...observed, observedAt: "2026-10-09T15:57:05.773Z", rawFile: "kric-nationwide-timetable-file-later.xlsx" });
-  assert.equal(JSON.stringify(first), JSON.stringify(later));
-  assert.equal(Object.hasOwn(first, "observedAt"), false);
-  assert.equal(Object.hasOwn(first, "rawFile"), false);
+  // 독립 기대값: snapshot 필드는 원본 내용에서만 나오고, 관측 시각·수집 파일명 필드는 없다.
+  assert.deepEqual(Object.keys(later), ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawByteLength", "rawSha256",
+    "observationRecordsSha256", "routes", "recordCount", "recordsSha256", "records"]);
+  assert.equal(later.rawSha256, observed.rawSha256);
+  assert.equal(later.observationRecordsSha256, observed.recordsSha256);
+  assert.equal(later.recordsSha256, sha(`${JSON.stringify(later.records)}\n`));
+  assert.equal(later.snapshotId, `kric-nationwide-timetable-file-capital-${later.recordsSha256}`);
+  const first = later;
   assert.throws(() => validateKricCapitalTimetableSnapshot({ ...first, observedAt: "2026-10-02T15:57:05.773Z" }), /KRIC_CAPITAL_TIMETABLE_SNAPSHOT/u);
 });
 
