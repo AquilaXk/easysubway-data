@@ -141,6 +141,8 @@ test("#866 PR-C 검사기는 삭제 대상 참조를 실제로 잡는다", () =>
     "tools/datapack/build-current-capital-facility-source-admission.mjs",
     "tools/datapack/collect-kric-exit-path-provider-snapshot.mjs",
     "tools/datapack/plan-kric-exit-path-collection.mjs",
+    // 전국 경로의 서울 환승 증거 재결속 명령(#866). live chain 재결속을 대체하며 삭제 대상이 아니다.
+    "tools/datapack/rebind-current-seoul-transfer-source-admission.mjs",
   ]) {
     assert.doesNotMatch(kept, pattern, kept);
   }
