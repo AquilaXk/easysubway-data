@@ -427,3 +427,74 @@ test("CLI는 일반 실행과 alert-only의 manifest 누락을 구분한다", ()
   assert.notEqual(alertOnly.status, 0);
   assert.match(alertOnly.stderr, /--current-manifest is required with --alert-only/);
 });
+
+test("CLI는 실행을 허가하지 않은 결정의 사유와 sequence를 stderr에 출력한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "datapack-release-decision-"));
+  const candidatePath = path.join(dir, "candidate.json");
+  const currentPath = path.join(dir, "current.json");
+  const buildSpecPath = path.join(dir, "build-spec.json");
+  const requestPath = path.join(dir, "request.json");
+  const outputPath = path.join(dir, "decision.json");
+  const changedPack = { ...manifest().packs[0], sha256: hash("f") };
+  await Promise.all([
+    writeFile(candidatePath, JSON.stringify(manifest({ releaseSequence: 123, packs: [changedPack] }))),
+    writeFile(currentPath, JSON.stringify(manifest({ releaseSequence: 123 }))),
+    writeFile(buildSpecPath, JSON.stringify(buildSpec())),
+  ]);
+  const buildSpecBytes = await readFile(buildSpecPath);
+  const { createHash } = await import("node:crypto");
+  await writeFile(requestPath, JSON.stringify(approval(createHash("sha256").update(buildSpecBytes).digest("hex"))));
+
+  const result = spawnSync(process.execPath, [
+    "tools/datapack/decide-datapack-release.mjs",
+    "--candidate-manifest", candidatePath,
+    "--current-manifest", currentPath,
+    "--build-spec", buildSpecPath,
+    "--release-request", requestPath,
+    "--strict-validation-status", "PASS",
+    "--evaluation-at", evaluationAt,
+    "--output", outputPath,
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(await readFile(outputPath, "utf8")).outcome, "FAILED");
+  assert.match(result.stderr, /outcome=FAILED/);
+  assert.match(result.stderr, /reasonCodes=PUBLISH_SEQUENCE_NOT_INCREASING/);
+  assert.match(result.stderr, /candidateReleaseSequence=123/);
+  assert.match(result.stderr, /currentReleaseSequence=123/);
+});
+
+test("CLI는 실행을 허가한 결정에서는 stderr에 사유를 출력하지 않는다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "datapack-release-decision-"));
+  const candidatePath = path.join(dir, "candidate.json");
+  const currentPath = path.join(dir, "current.json");
+  const buildSpecPath = path.join(dir, "build-spec.json");
+  const requestPath = path.join(dir, "request.json");
+  const outputPath = path.join(dir, "decision.json");
+  const changedPack = { ...manifest().packs[0], sha256: hash("f") };
+  await Promise.all([
+    writeFile(candidatePath, JSON.stringify(manifest({ releaseSequence: 124, packs: [changedPack] }))),
+    writeFile(currentPath, JSON.stringify(manifest({ releaseSequence: 123 }))),
+    writeFile(buildSpecPath, JSON.stringify(buildSpec())),
+  ]);
+  const buildSpecBytes = await readFile(buildSpecPath);
+  const { createHash } = await import("node:crypto");
+  await writeFile(requestPath, JSON.stringify(approval(createHash("sha256").update(buildSpecBytes).digest("hex"))));
+
+  const result = spawnSync(process.execPath, [
+    "tools/datapack/decide-datapack-release.mjs",
+    "--candidate-manifest", candidatePath,
+    "--current-manifest", currentPath,
+    "--build-spec", buildSpecPath,
+    "--release-request", requestPath,
+    "--strict-validation-status", "PASS",
+    "--evaluation-at", evaluationAt,
+    "--output", outputPath,
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(await readFile(outputPath, "utf8"));
+  assert.equal(decision.outcome, "PUBLISH_REQUIRED");
+  assert.equal(decision.productionWriteAllowed, true);
+  assert.equal(result.stderr, "");
+});

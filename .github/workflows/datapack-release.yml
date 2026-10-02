@@ -1296,7 +1296,7 @@ jobs:
           const executable = decision.outcome === "NO_CHANGE_VALID"
             || (decision.outcome === "PUBLISH_REQUIRED" && decision.productionWriteAllowed === true);
           if (!executable) {
-            throw new Error(`production decision did not authorize executable run: ${decision.outcome}`);
+            throw new Error(`production decision did not authorize executable run: ${decision.outcome} reasonCodes=${decision.reasonCodes.join(",") || "NONE"}`);
           }
           NODE
           fi

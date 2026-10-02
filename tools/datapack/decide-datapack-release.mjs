@@ -310,6 +310,18 @@ async function main(argv) {
   const outputPath = requiredArg(args, "output");
   await mkdir(path.dirname(path.resolve(outputPath)), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(decision, null, 2)}\n`);
+  const executable = decision.outcome === "NO_CHANGE_VALID"
+    || (decision.outcome === "PUBLISH_REQUIRED" && decision.productionWriteAllowed === true);
+  if (!executable) {
+    console.error([
+      "datapack release decision did not authorize execution:",
+      `outcome=${decision.outcome}`,
+      `productionWriteAllowed=${decision.productionWriteAllowed}`,
+      `reasonCodes=${decision.reasonCodes.join(",") || "NONE"}`,
+      `candidateReleaseSequence=${candidateManifest.releaseSequence}`,
+      `currentReleaseSequence=${currentManifest == null ? "none" : currentManifest.releaseSequence}`,
+    ].join(" "));
+  }
   const githubOutput = args.get("github-output");
   if (githubOutput) {
     await appendFile(githubOutput, [

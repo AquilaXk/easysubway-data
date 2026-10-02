@@ -899,6 +899,7 @@ test("production publish는 canonical decision의 write 허용 뒤에만 실행�
   assert.ok(publishStep, "production publish 스텝을 찾지 못함");
   assert.match(publishStep, /steps\.release-decision\.outputs\.productionWriteAllowed == 'true'/);
   assert.match(yml, /production decision did not authorize executable run/);
+  assert.match(yml, /production decision did not authorize executable run: \$\{decision\.outcome\} reasonCodes=\$\{decision\.reasonCodes\.join\(","\) \|\| "NONE"\}/);
   assert.match(yml, /decision\.outcome === "NO_CHANGE_VALID"/);
   assert.match(yml, /decision\.outcome === "PUBLISH_REQUIRED" && decision\.productionWriteAllowed === true/);
 });
