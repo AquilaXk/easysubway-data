@@ -13,7 +13,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 
 import { responsesFromCollection } from "./collect-kric-station-timetables.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
-import { KRIC_API_STATION_TIMETABLE_BINDINGS, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
+import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY } from "./lib/kric-station-row-timetable-trips.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { createSourceRegistrationTransaction, SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
@@ -54,7 +54,7 @@ async function externalFile(file, code, root) {
   return { absolute: resolved, bytes: await readFile(resolved) };
 }
 
-export async function buildKricStationTimetableRegistrationOutputs({ repositoryRoot = ROOT, sourceInputPath, now = new Date() } = {}) {
+export async function buildKricStationTimetableRegistrationOutputs({ repositoryRoot = ROOT, sourceInputPath, now = new Date(), expected = KRIC_API_EXPECTED_OBSERVATION } = {}) {
   const root = path.resolve(repositoryRoot);
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) fail("TIME");
   const currentBytes = await Promise.all(OUTPUTS.map((relative) => readFile(path.join(root, relative))));
@@ -71,6 +71,8 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
   const artifact = parse(collectionFile.bytes, "COLLECTION");
   const responses = responsesFromCollection(artifact);
   const reconstruction = buildApiStationTimetableTrips({ responses });
+  // 수집기와 같은 고정 기대값을 다시 확인한다(제공처 변경은 기대값 갱신 PR 없이 등록되지 않는다).
+  assertExpectedApiObservation(reconstruction, { expected });
   if (!isDeepStrictEqual(artifact.lines, KRIC_API_STATION_TIMETABLE_BINDINGS.map(({ mreaWideCd, lnCd, lineId, stations }) => ({ mreaWideCd, lnCd, lineId,
     stations: stations.map(([railOprIsttCd, stinCd, stinNm]) => ({ railOprIsttCd, stinCd, stinNm })) })))) fail("COLLECTION_LINES");
   const rawSha256 = sha(collectionFile.bytes);
@@ -212,13 +214,13 @@ async function writeDerivedSnapshot(file, bytes) {
 }
 
 export async function registerKricStationTimetables({
-  repositoryRoot = ROOT, sourceInputPath, expectedHeadSha, now = new Date(),
+  repositoryRoot = ROOT, sourceInputPath, expectedHeadSha, now = new Date(), expected = KRIC_API_EXPECTED_OBSERVATION,
   gitRunner = async (args, settings) => (await promisify(execFile)("git", args, settings)).stdout,
 } = {}) {
   const root = path.resolve(repositoryRoot);
   if (!/^[a-f0-9]{40}$/u.test(expectedHeadSha ?? "") || String(await gitRunner(["rev-parse", "HEAD"], { cwd: root })).trim() !== expectedHeadSha) fail("HEAD_MISMATCH");
   await transaction.recover({ repositoryRoot: root });
-  const { snapshot, outputs } = await buildKricStationTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath, now });
+  const { snapshot, outputs } = await buildKricStationTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath, now, expected });
   await writeDerivedSnapshot(path.join(root, snapshot.relative), snapshot.bytes);
   return transaction.commit({ repositoryRoot: root, outputs });
 }

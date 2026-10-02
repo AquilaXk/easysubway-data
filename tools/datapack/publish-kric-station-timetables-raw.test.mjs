@@ -6,9 +6,9 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { collectKricStationTimetables } from "./collect-kric-station-timetables.mjs";
-import { KRIC_API_STATION_TIMETABLE_BINDINGS } from "./lib/kric-station-timetable-api-trips.mjs";
 import { publishKricStationTimetablesRaw } from "./publish-kric-station-timetables-raw.mjs";
 import { STATION_LINES_SOURCE_ID } from "./register-kric-station-timetables.mjs";
+import { syntheticKricStationFetch } from "./test-fixtures/kric-station-timetable-synthetic.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const OCI_ENV = Object.freeze({
@@ -16,24 +16,11 @@ const OCI_ENV = Object.freeze({
 });
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
 
-function fakeFetch() {
-  return async (url) => {
-    const p = Object.fromEntries(new URL(url).searchParams);
-    const binding = KRIC_API_STATION_TIMETABLE_BINDINGS.find(({ lnCd }) => lnCd === p.lnCd);
-    const index = binding.stations.findIndex(([, stinCd]) => stinCd === p.stinCd);
-    const last = binding.stations.length - 1;
-    const clock = (minute) => `06${String(minute).padStart(2, "0")}00`;
-    const rows = p.dayCd === "7" ? [] : [{ railOprIsttCd: p.railOprIsttCd, trnNo: `Z${p.dayCd}`, dayCd: p.dayCd, dayNm: "x", stinCd: p.stinCd, lnCd: p.lnCd,
-      arvTm: index === 0 ? null : clock(index * 2), dptTm: index === last ? null : clock(index * 2 + 1) }];
-    return new Response(JSON.stringify({ header: { resultCode: p.dayCd === "7" ? "03" : "00" }, body: rows }), { status: 200 });
-  };
-}
-
 async function fixture(t, mutate = (value) => value) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-station-raw-publish-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   let tick = Date.parse("2026-10-03T03:00:00.000Z");
-  const artifact = mutate(await collectKricStationTimetables({ serviceKey: "fixture-service-key-ZZ9", fetchImpl: fakeFetch(), now: () => new Date(tick += 1000) }));
+  const artifact = mutate(await collectKricStationTimetables({ serviceKey: "fixture-service-key-ZZ9", fetchImpl: syntheticKricStationFetch(), now: () => new Date(tick += 1000) }));
   const bytes = Buffer.from(`${JSON.stringify(artifact, null, 2)}\n`);
   const inputPath = path.join(root, "collection.json");
   await writeFile(inputPath, bytes);

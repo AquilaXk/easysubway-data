@@ -11,6 +11,7 @@ import { collectKricStationTimetables } from "./collect-kric-station-timetables.
 import { KRIC_API_STATION_TIMETABLE_BINDINGS } from "./lib/kric-station-timetable-api-trips.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY } from "./lib/kric-station-row-timetable-trips.mjs";
 import { STATION_LINES_SOURCE_ID, registerKricStationTimetables } from "./register-kric-station-timetables.mjs";
+import { syntheticExpectedObservation, syntheticKricStationFetch } from "./test-fixtures/kric-station-timetable-synthetic.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 
@@ -27,21 +28,7 @@ const INPUTS = [...OUTPUTS, "tools/datapack/source-candidates.json", "release/pr
 const COLLECTED_START = Date.parse("2026-10-03T03:00:00.000Z");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const gitRunner = async (args) => (args[0] === "rev-parse" ? `${HEAD}\n` : "");
-
-// 바인딩된 노선마다 평일·휴일 한 편씩, 바인딩 역 순서대로 1분 간격으로 정차하는 합성 응답.
-function fakeFetch() {
-  return async (url) => {
-    const p = Object.fromEntries(new URL(url).searchParams);
-    const binding = KRIC_API_STATION_TIMETABLE_BINDINGS.find(({ lnCd }) => lnCd === p.lnCd);
-    const index = binding.stations.findIndex(([, stinCd]) => stinCd === p.stinCd);
-    const last = binding.stations.length - 1;
-    const clock = (minute) => `06${String(minute).padStart(2, "0")}00`;
-    const rows = p.dayCd === "7" ? [] : [{ railOprIsttCd: p.railOprIsttCd, trnNo: `Z${p.dayCd}`, dayCd: p.dayCd, dayNm: "x", stinCd: p.stinCd, lnCd: p.lnCd,
-      arvTm: index === 0 ? null : clock(index * 2), dptTm: index === last ? null : clock(index * 2 + 1) }];
-    const resultCode = p.dayCd === "7" ? "03" : "00";
-    return new Response(JSON.stringify({ header: { resultCode }, body: rows }), { status: 200 });
-  };
-}
+const EXPECTED = syntheticExpectedObservation();
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-station-register-repo-"));
@@ -52,7 +39,7 @@ async function fixture(t) {
     await cp(path.join(REPOSITORY_ROOT, relative), path.join(root, relative));
   }
   let tick = COLLECTED_START;
-  const artifact = await collectKricStationTimetables({ serviceKey: "test-key", fetchImpl: fakeFetch(), now: () => new Date(tick += 1000) });
+  const artifact = await collectKricStationTimetables({ serviceKey: "test-key", fetchImpl: syntheticKricStationFetch(), now: () => new Date(tick += 1000) });
   const bytes = Buffer.from(`${JSON.stringify(artifact, null, 2)}\n`);
   const rawSha256 = sha(bytes);
   const date = artifact.capturedAt.slice(0, 10).replaceAll("-", "");
@@ -93,7 +80,7 @@ const snapshotOf = async (root) => Object.fromEntries(await Promise.all(INPUTS.m
 test("첫 등록은 새 sourceId 원장 행·inventory·정책 항목·파생 스냅샷을 만들고 4호선 pilot 행은 그대로 둔다", async (t) => {
   const { root, files, receipt, review, rawSha256, governanceEntry, now } = await fixture(t);
   const before = await snapshotOf(root);
-  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now });
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
 
   const ledger = JSON.parse(await readFile(path.join(root, OUTPUTS[1]), "utf8"));
   const previousLedger = JSON.parse(before[OUTPUTS[1]]);
@@ -106,7 +93,7 @@ test("첫 등록은 새 sourceId 원장 행·inventory·정책 항목·파생 �
   assert.equal(row.previousSnapshotId, null);
   assert.equal(row.rawSha256, rawSha256);
   assert.equal(row.rawObjectUri, receipt.rawObjectUri);
-  assert.equal(row.coverageCount, 10);
+  assert.equal(row.coverageCount, 12);
   assert.equal(row.rowCount, 70 * 2);
   assert.equal(row.freshnessExpiresAt, new Date(Date.parse(receipt.collectedAt) + 30 * 24 * 60 * 60 * 1_000).toISOString());
   assert.equal(row.rawRetentionExpiresAt, receipt.rawRetentionExpiresAt);
@@ -129,22 +116,22 @@ test("첫 등록은 새 sourceId 원장 행·inventory·정책 항목·파생 �
   assert.equal(source.admissionEvidence.adminReviewRecordHash, sha(await readFile(files.reviewAdmissionPath)));
   assert.equal(source.admissionEvidence.catalogProviderId, "provider:kric-subway-timetable");
   const evidence = source.scheduleAdmissionEvidence;
-  assert.equal(evidence.tripCount, 10);
+  assert.equal(evidence.tripCount, 12);
   const snapshot = JSON.parse(await readFile(path.join(root, evidence.snapshotPath), "utf8"));
   assert.equal(snapshot.snapshotId, receipt.snapshotId);
   assert.equal(sha(JSON.stringify(snapshot.trips)), evidence.tripsSha256);
   assert.equal(snapshot.serviceDayPolicy, HOLIDAY_INCLUDES_SATURDAY_POLICY);
   assert.deepEqual(snapshot.lines.map(({ lnCd, lineId, stationCodes, rowCountByDayCd, tripCount }) => [lnCd, lineId, stationCodes.length, rowCountByDayCd, tripCount]),
-    KRIC_API_STATION_TIMETABLE_BINDINGS.map(({ lnCd, lineId, stations }) => [lnCd, lineId, stations.length, { 7: 0, 8: stations.length, 9: stations.length }, 2]));
+    KRIC_API_STATION_TIMETABLE_BINDINGS.map(({ lnCd, lineId, stations, segments }) => [lnCd, lineId, stations.length, { 7: 0, 8: stations.length, 9: stations.length }, segments.length * 2]));
 });
 
 test("다른 약관(termsHash·데이터셋)·미승인 검토·receipt 불일치·수집 결손·HEAD 불일치는 쓰기 전에 거부한다", async (t) => {
   const { root, files, input, review, receipt, artifact, now } = await fixture(t);
   const before = await snapshotOf(root);
-  const register = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now });
+  const register = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
   const writeInput = (value) => writeFile(files.sourceInputPath, `${JSON.stringify(value, null, 2)}\n`);
 
-  await assert.rejects(registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: "f".repeat(40), gitRunner, now }), /HEAD_MISMATCH/u);
+  await assert.rejects(registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: "f".repeat(40), gitRunner, now, expected: EXPECTED }), /HEAD_MISMATCH/u);
   for (const licenseChange of [{ termsHash: "0".repeat(64) }, { reviewedDatasetUrl: "https://data.kric.go.kr/rips/M_01_02/detail.do?id=999" }]) {
     await writeInput({ ...input, governanceEntry: { ...input.governanceEntry, licenseReview: { ...input.governanceEntry.licenseReview, ...licenseChange } } });
     await assert.rejects(register(), /GOVERNANCE_TERMS_MISMATCH/u);
@@ -165,7 +152,7 @@ test("다른 약관(termsHash·데이터셋)·미승인 검토·receipt 불일�
 
 test("등록 결과는 scope 필수 원천에 새 id를 함께 올릴 때 inventory·정책·admission 검증기를 통과하고, 빠뜨리면 실패한다", async (t) => {
   const { root, files, now } = await fixture(t);
-  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now });
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
   const scopePath = path.join(root, "release/product-gates/production-datapack-scope.json");
   const validate = () => promisify(execFile)(process.execPath, [path.join(REPOSITORY_ROOT, "tools/datapack/validate-source-inventory.mjs"),
     "--inventory", path.join(root, OUTPUTS[0]), "--candidates", path.join(root, "tools/datapack/source-candidates.json"), "--scope", scopePath,
