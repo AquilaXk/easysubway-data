@@ -535,15 +535,16 @@ test("접근성 coverage는 같은 운영기관의 scope 밖 지역 station-line
   });
 });
 
-test("#873 청구 범위에 환승역이 없으면 역 단위 ENTRY/EXIT 증거 누락은 발행 차단이 아니고 TRANSFER 분모는 0이다", async (context) => {
+test("명시된 접근성 coverage scope의 역-노선이 RIDE 그래프에서 사라지면 거부한다(#873: ENTRY coverage 대신 RIDE 존재성)", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-accessibility-scope-gap-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const [baseFixture, snapshot, inventory, canonicalStationMappings] = await inputs();
   const pack = baseFixture.packs[0];
   // #873(QA 방향 전환): 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나므로 역 단위 ENTRY/EXIT coverage는 발행 차단
   // 조건이 아니다. 예전에는 상록수 역-노선의 증거·간선을 지우면 "verified ENTRY coverage gap"으로 거부했다.
-  // 이 지역 팩의 청구 범위에는 환승역이 없어 TRANSFER 분모가 0이다. TRANSFER coverage 차단은 datapack-tools의
-  // current production 환승 간선 누락 테스트가 고정한다.
+  // 이제는 청구 범위의 모든 역-노선이 경로 간선 끝점으로 존재해야 한다는 규칙이 같은 경우를 거부한다.
+  // 이 지역 팩은 legacy(비전국) 팩이라 2026-06 pilot의 ENTRY/EXIT 끝점도 인정한다(PR-C에서 제거). 상록수의 간선을 모두 지우면
+  // 상록수 4호선은 어떤 간선 끝점도 아니다. 사당 4호선은 pilot ENTRY/EXIT로 남는다.
   pack.stationFacilityEvidence = pack.stationFacilityEvidence
     .filter(({ stationId }) => stationId !== "station-sangnoksu");
   pack.networkEdges = pack.networkEdges.filter(({ fromNodeId, toNodeId }) =>
@@ -569,7 +570,7 @@ test("#873 청구 범위에 환승역이 없으면 역 단위 ENTRY/EXIT 증거 
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
   });
   await materializeRegionalProductionCandidate({ outputDir: packOutput, privateKey });
-  const { stdout } = await execFileAsync(process.execPath, [
+  await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
@@ -577,12 +578,8 @@ test("#873 청구 범위에 환승역이 없으면 역 단위 ENTRY/EXIT 증거 
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
-  });
-  const report = JSON.parse(stdout.trim().split("\n").at(-1));
-  assert.equal(report.type, "datapack_verified_edge_coverage");
-  assert.equal(Object.hasOwn(report, "entry"), false);
-  assert.equal(Object.hasOwn(report, "exit"), false);
-  assert.deepEqual(report.transfer, { denominator: 0, verified: 0, missingCount: 0, ratio: 1 });
+  }), (error) => /claimed station-line has no route edge endpoint: 1 \(station-sangnoksu:seoul-4\)/.test(error.stderr ?? "")
+    && !/ENTRY|EXIT|coverage gap/.test(error.stderr ?? ""));
 });
 
 test("접근성 source가 있는 production pack은 접근성 coverage metadata 삭제를 거부한다", async (context) => {

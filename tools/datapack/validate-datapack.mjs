@@ -20,7 +20,10 @@ import {
   officialOdFareAdmissionsBySource,
   officialOdFareQuoteSetHash,
 } from "./lib/official-od-fare-evidence.mjs";
-import { canonicalCurrentReleaseCandidateAccessibilityAuthorityJson } from "./build-current-release-candidate-accessibility-input.mjs";
+import {
+  canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
+  isNationwideCandidateId,
+} from "./build-current-release-candidate-accessibility-input.mjs";
 const facilityEvidenceProvenanceColumns = [
   "source_id",
   "source_snapshot_id",
@@ -1542,8 +1545,8 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
   );
   const edgeRows = database
     .prepare(`
-      SELECT id, from_node_id, to_node_id, edge_type, duration_seconds, distance_meters, stair_access_state,
-             accessibility_status, reliability_score, source_id,
+      SELECT id, from_node_id, to_node_id, edge_type, service_class, service_pattern, duration_seconds,
+             distance_meters, stair_access_state, accessibility_status, reliability_score, source_id,
              source_snapshot_id, provider_record_hash, provenance_kind,
              verification_status, last_verified_at, evidence_hash
       FROM network_edges
@@ -1551,7 +1554,7 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
     `)
     .all();
   const accessibilityEvidence = productionAccessibilityEvidence(database, pack);
-  const { coverage, requiredPairs } = productionVerifiedCoverage(database, edgeRows, accessibilityEvidence);
+  const { coverage, requiredPairs, claimedStationLineRows } = productionVerifiedCoverage(database, edgeRows, accessibilityEvidence);
   const unverifiedAccessibilityCoverageEdges = edgeRows
     .filter(isUnverifiedAccessibilityCoverageEdge)
     .map((edge) => edge.id);
@@ -1569,6 +1572,14 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
   }
 
   // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 coverage 분모가 아니다.
+  // 전국 여부는 RC authority와 같은 공용 판정 함수로 정한다(F2). 후보 provenance가 없으면 legacy 검증이다.
+  assertClaimedStationLinesHaveRouteEndpoints({
+    pack,
+    stationLineRows: claimedStationLineRows,
+    edgeRows,
+    nationwide: isNationwideCandidateId(serverRouteCoverageEvidence?.provenance?.candidateId),
+  });
+
   const report = {
     type: "datapack_verified_edge_coverage",
     pack: `${pack.id}@${pack.version}`,
@@ -1956,7 +1967,35 @@ function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
       transfer: coverageItem(requiredPairs.transfer, verifiedPairs.transfer),
     },
     requiredPairs,
+    claimedStationLineRows,
   };
+}
+
+// #873 리뷰 F1: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 예전에는 역 단위 ENTRY coverage가 청구 범위
+// 역-노선의 존재도 함께 확인했다. 이제 청구 범위의 모든 역-노선은 경로 간선 끝점(승강장 노드)으로 존재해야 한다.
+// - 전국 팩: RIDE·환승 간선 끝점만 인정한다. ENTRY/EXIT로만 존재하는 역-노선은 실패한다.
+// - legacy(비전국) 팩: 2026-06 pilot처럼 ENTRY/EXIT만 있는 역-노선도 인정한다. 이 legacy 허용은 PR-C(#866)에서 제거한다.
+// authority로 인정할 수 있는 coverage gap이 아니므로 인정 경로 전에 명시적으로 실패한다.
+export function assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows, nationwide }) {
+  if (typeof nationwide !== "boolean") throw new Error("claimed station-line presence nationwide flag is required");
+  const endpointNodes = new Set();
+  for (const edge of edgeRows) {
+    const edgeType = normalizedEdgeType(edge.edge_type);
+    const legacyAccess = !nationwide && (edgeType === "ENTRY" || edgeType === "EXIT");
+    if (edgeType !== "RIDE" && !isNetworkTransferEdgeType(edgeType) && !legacyAccess) continue;
+    for (const nodeId of [edge.from_node_id, edge.to_node_id]) {
+      const node = stationLineNodeFromEdgeEndpoint(nodeId, edge);
+      if (node !== null) endpointNodes.add(node);
+    }
+  }
+  const missing = [...new Set(stationLineRows.map((row) => stationLineNodeId(row.station_id, row.line_id)))]
+    .filter((node) => !endpointNodes.has(node))
+    .sort();
+  if (missing.length > 0) {
+    throw new Error(
+      `${pack.id}@${pack.version} claimed station-line has no route edge endpoint: ${missing.length} (${missing.slice(0, 20).join(", ")}${missing.length > 20 ? ", ..." : ""})`,
+    );
+  }
 }
 
 function accessibilityCoverageScopes(database, sourceById) {

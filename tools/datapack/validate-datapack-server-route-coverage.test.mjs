@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import {
+  assertClaimedStationLinesHaveRouteEndpoints,
   assertServerRouteCoverageConsumed,
   isAuthorizedServerRouteCoverageGap,
   parseArgs,
@@ -150,6 +151,56 @@ test("legacy(수도권) authority는 ENTRY·EXIT가 둘 다 있거나 둘 다 �
     reseal(report);
     assert.throws(() => parseServerRouteCoverageEvidence(Buffer.from(canonicalJson(report))), /shape mismatch|denominator/, removed);
   }
+});
+
+// #873 리뷰 F1: ENTRY coverage가 함께 확인하던 청구 역-노선 존재성을 승강장 기준으로 옮긴다.
+// 전국 팩은 RIDE·환승 간선 끝점만 인정하고, legacy(비전국) 팩만 ENTRY/EXIT 끝점도 인정한다(PR-C에서 제거).
+function presenceRows() {
+  const pack = { id: "nationwide", version: "1" };
+  const stationLineRows = [
+    { station_id: "station-a", line_id: "line-1" },
+    { station_id: "station-a", line_id: "line-2" },
+    { station_id: "station-b", line_id: "line-1" },
+  ];
+  const edgeRows = [
+    { edge_type: "RIDE", from_node_id: "station-a:line-1", to_node_id: "station-b:line-1", service_class: "SUBWAY", service_pattern: "LOCAL" },
+    { edge_type: "IN_STATION_TRANSFER", from_node_id: "station-a:line-1", to_node_id: "station-a:line-2", service_class: "SUBWAY", service_pattern: "" },
+  ];
+  return { pack, stationLineRows, edgeRows };
+}
+
+test("#873 F1 전국 팩은 청구 역-노선이 RIDE·환승 간선 끝점이면 통과하고 아니면 실패한다", () => {
+  const { pack, stationLineRows, edgeRows } = presenceRows();
+  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows, nationwide: true }));
+  // RIDE를 빼면 station-b:line-1은 어떤 간선 끝점도 아니다.
+  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({
+    pack, stationLineRows, edgeRows: edgeRows.filter(({ edge_type: type }) => type !== "RIDE"), nationwide: true,
+  }), /claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
+  // ITX 급행 노드(:EXPRESS)는 ITX RIDE일 때만 그 승강장 노드로 인정한다.
+  const itxOnly = [{ edge_type: "RIDE", from_node_id: "station-a:line-1:EXPRESS", to_node_id: "station-b:line-1:EXPRESS", service_class: "ITX_CHEONGCHUN", service_pattern: "EXPRESS" }, edgeRows[1]];
+  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: itxOnly, nationwide: true }));
+  const fakeItx = [{ ...itxOnly[0], service_class: "SUBWAY", service_pattern: "LOCAL" }, edgeRows[1]];
+  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: fakeItx, nationwide: true }),
+    /claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
+});
+
+test("#873 F1 전국 팩에서 ENTRY/EXIT로만 존재하는 청구 역-노선은 실패하고, legacy 팩만 인정한다", () => {
+  const { pack, stationLineRows, edgeRows } = presenceRows();
+  const accessOnly = [
+    edgeRows[1],
+    { edge_type: "ENTRY", from_node_id: "station-b", to_node_id: "station-b:line-1", service_class: "SUBWAY", service_pattern: "" },
+    { edge_type: "EXIT", from_node_id: "station-b:line-1", to_node_id: "station-b", service_class: "SUBWAY", service_pattern: "" },
+  ];
+  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows: accessOnly, nationwide: true }),
+    /claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
+  assert.doesNotThrow(() => assertClaimedStationLinesHaveRouteEndpoints({
+    pack: { id: "capital", version: "1" }, stationLineRows, edgeRows: accessOnly, nationwide: false,
+  }));
+  // legacy 팩도 어떤 간선 끝점도 아니면 실패한다.
+  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({
+    pack: { id: "capital", version: "1" }, stationLineRows, edgeRows: [edgeRows[1]], nationwide: false,
+  }), /capital@1 claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
+  assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows }), /nationwide flag is required/);
 });
 
 test("server route coverage evidence는 provenance와 --require-production이 함께여야 하고 한 번만 소비된다", () => {
