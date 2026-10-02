@@ -1181,3 +1181,37 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
     );
   }
 });
+
+test("required PR CI는 release와 같은 인자로 고정 Hub 계약 기준 source inventory를 검증한다", () => {
+  // #876: release만 Hub 번들 신선도 정책으로 governance 결속을 판정해, data 사본에만 등록된 원천이
+  // main release에서야 SOURCE_FRESHNESS_POLICY_MISSING으로 드러났다. required CI가 같은 판정을 먼저 한다.
+  const ciYml = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const stepOf = (text, name) => text.match(
+    new RegExp(`- name: ${name}[\\s\\S]*?(?=\\n\\s+- name:|\\n\\s{2}[a-z_]+:\\n|$)`),
+  )?.[0];
+  const inventoryCommand = (step) => step?.match(
+    /node tools\/datapack\/validate-source-inventory\.mjs(?:[^\n]*\\\n)*[^\n]*/,
+  )?.[0].replace(/\\\n/g, " ").replace(/\s+/g, " ").trim();
+  const envValue = (text, name) => text.match(new RegExp(`\\n\\s+${name}: ([^\\n]+)`))?.[1];
+
+  const releaseStep = stepOf(yml, "Data Pack Release / Validate source inventory");
+  const ciStep = stepOf(ciYml, "Validate source inventory against pinned Hub contracts");
+  assert.ok(releaseStep, "release source inventory 스텝을 찾지 못함");
+  assert.ok(ciStep, "required CI의 고정 Hub 계약 source inventory 스텝을 찾지 못함");
+  assert.ok(inventoryCommand(releaseStep), "release validate-source-inventory 명령을 찾지 못함");
+  assert.equal(inventoryCommand(ciStep), inventoryCommand(releaseStep));
+  for (const name of ["EASYSUBWAY_DATAPACK_FRESHNESS_POLICY", "EASYSUBWAY_DATAPACK_SCOPE_POLICY"]) {
+    assert.ok(envValue(yml, name), `release ${name}를 찾지 못함`);
+    assert.equal(envValue(ciStep, name), envValue(yml, name), `${name}가 release와 다름`);
+  }
+  assert.ok(
+    ciStep.indexOf("node tools/datapack/stage-contracts.mjs") >= 0
+      && ciStep.indexOf("node tools/datapack/stage-contracts.mjs")
+        < ciStep.indexOf("node tools/datapack/validate-source-inventory.mjs"),
+    "CI 스텝은 고정 Hub 계약을 stage한 뒤 검증해야 함",
+  );
+  const job = ciYml.match(/\n  contracts_mobile_v19:\n[\s\S]*?(?=\n  [a-z_0-9]+:\n)/)?.[0];
+  assert.ok(job?.includes("- name: Validate source inventory against pinned Hub contracts"),
+    "검증 스텝은 required 집계가 요구하는 contracts_mobile_v19 job 안에 있어야 함");
+  assert.match(ciYml, /needs: \[contracts_mobile_v19,/);
+});
