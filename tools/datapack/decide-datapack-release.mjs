@@ -310,9 +310,10 @@ async function main(argv) {
   const outputPath = requiredArg(args, "output");
   await mkdir(path.dirname(path.resolve(outputPath)), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(decision, null, 2)}\n`);
-  const executable = decision.outcome === "NO_CHANGE_VALID"
-    || (decision.outcome === "PUBLISH_REQUIRED" && decision.productionWriteAllowed === true);
-  if (!executable) {
+  const blocked = decision.outcome === "FAILED"
+    || decision.outcome === "CHANGE_BLOCKED"
+    || (decision.outcome === "PUBLISH_REQUIRED" && decision.productionWriteAllowed !== true);
+  if (blocked) {
     console.error([
       "datapack release decision did not authorize execution:",
       `outcome=${decision.outcome}`,
