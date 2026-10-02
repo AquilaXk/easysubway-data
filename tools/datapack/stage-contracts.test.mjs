@@ -53,6 +53,7 @@ const resources = {
       { id: "route_map_positions", sourceIds: routeMapPositionSourceIds, reverificationCadence: "P90D", offlinePackEligible: true },
       { id: "route_map_asset_historical", sourceIds: historicalRouteMapSourceIds, reverificationCadence: "P1Y", offlinePackEligible: false },
       { id: "annual_official_file", sourceIds: annualOfficialFileSourceIds },
+      { id: "route_graph_topology", reverificationCadence: "P7D" },
     ],
   })}\n`,
   "datapack/source-governance-policy.json": `${JSON.stringify({
@@ -220,6 +221,23 @@ test("고정된 hub bundle만 build/contracts에 원문 그대로 stage한다", 
     await assert.rejects(
       stageContracts({ root, fetchBundle: async () => missingRouteMapPositionBytes }),
       /production requiredSourceIds/,
+    );
+
+    // 수집기·등록기의 topology 창(lib 컷오버 이후 P7D)과 release가 쓰는 고정 Hub 정책이 갈라지면 stage 단계에서 막는다.
+    const legacyTopologyResources = structuredClone(resources);
+    const legacyTopologyFreshness = JSON.parse(legacyTopologyResources["datapack/datapack-freshness-sla.json"]);
+    legacyTopologyFreshness.sourceClasses.find(({ id }) => id === "route_graph_topology").reverificationCadence = "P1D";
+    legacyTopologyResources["datapack/datapack-freshness-sla.json"] = `${JSON.stringify(legacyTopologyFreshness)}\n`;
+    const legacyTopologyBytes = Buffer.from(`${JSON.stringify({
+      schemaVersion: 1,
+      bundleVersion: "1.0.0",
+      resources: legacyTopologyResources,
+    }, null, 2)}\n`);
+    lock.sha256 = createHash("sha256").update(legacyTopologyBytes).digest("hex");
+    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await assert.rejects(
+      stageContracts({ root, fetchBundle: async () => legacyTopologyBytes }),
+      /route_graph_topology reverificationCadence/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

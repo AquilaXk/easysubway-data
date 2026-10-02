@@ -235,6 +235,30 @@ test("대전 topology admission은 capturedAt에서 24시간을 넘겨 연장한
   }), /freshness contract is invalid/);
 });
 
+test("대전 topology evidence는 컷오버(2026-10-03T00:00Z) 이후 관측분에 P7D, 이전 관측분에 P1D 창만 허용한다", async () => {
+  const [baseFixture, snapshot, inventory, canonicalStationMappings] = await inputs();
+  const day = 86_400_000;
+  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
+  const materializeAt = (observedMillis, windowMillis) => {
+    const observedAt = new Date(observedMillis).toISOString();
+    const shifted = structuredClone(inventory);
+    const evidence = shifted.sources.find(({ id }) => id === snapshot.sourceId).topologyAdmissionEvidence;
+    evidence.capturedAt = observedAt;
+    evidence.freshUntil = new Date(observedMillis + windowMillis).toISOString();
+    return materializeDaejeonRouteTopology({
+      baseFixture,
+      snapshot: { ...snapshot, observedAt },
+      inventory: shifted,
+      canonicalStationMappings,
+      now: new Date(observedMillis),
+    });
+  };
+  assert.doesNotThrow(() => materializeAt(cutover, 7 * day));
+  assert.throws(() => materializeAt(cutover, day), /freshness contract is invalid/);
+  assert.doesNotThrow(() => materializeAt(cutover - 1, day));
+  assert.throws(() => materializeAt(cutover - 1, 7 * day), /freshness contract is invalid/);
+});
+
 test("대전 membership admission은 source scope와 두 공식 evidence의 결속 변조를 거부한다", async () => {
   const [baseFixture, snapshot, inventory, canonicalStationMappings] = await inputs();
   const mutations = [

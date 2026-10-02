@@ -99,3 +99,23 @@ test("현재 topology admission과 snapshot은 동일한 검토 시각·만료 �
     new Date(admission.reviewedAt),
   ), /topology admission freshness contract is invalid/);
 });
+
+test("current topology admission은 컷오버 이후 수집분에 P7D, 이전 수집분에 P1D 창만 정확히 허용한다", () => {
+  const day = 86_400_000;
+  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
+  const admit = (capturedMillis, windowMillis, nowMillis) => {
+    const capturedAt = new Date(capturedMillis).toISOString();
+    const freshUntil = new Date(capturedMillis + windowMillis).toISOString();
+    return assertCurrentTopologyAdmissionFreshness(
+      { reviewedAt: capturedAt, freshUntil },
+      { capturedAt, freshUntil },
+      new Date(nowMillis ?? capturedMillis),
+    );
+  };
+
+  assert.equal(admit(cutover, 7 * day, cutover + 7 * day - 1), cutover + 7 * day - 1);
+  assert.throws(() => admit(cutover, 7 * day, cutover + 7 * day), /stale or future-dated/);
+  assert.throws(() => admit(cutover, day), /topology admission freshness contract is invalid/);
+  assert.doesNotThrow(() => admit(cutover - 1, day));
+  assert.throws(() => admit(cutover - 1, 7 * day), /topology admission freshness contract is invalid/);
+});

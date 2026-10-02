@@ -434,6 +434,15 @@ test("local CLI 기본 실행은 tracked baseline을 건드리지 않고 고정 
   }
 });
 
+test("수도권 topology는 컷오버(2026-10-03T00:00Z) 이후 수집분에 P7D, 이전 수집분에 P1D freshUntil을 기록한다", async () => {
+  const day = 86_400_000;
+  const cutover = Date.parse("2026-10-03T00:00:00.000Z");
+  const current = await collectCapitalRouteTopology({ now: new Date(cutover) });
+  assert.equal(current.freshUntil, new Date(cutover + 7 * day).toISOString());
+  const legacy = await collectCapitalRouteTopology({ now: new Date(cutover - 1) });
+  assert.equal(legacy.freshUntil, new Date(cutover - 1 + day).toISOString());
+});
+
 test("data.go.kr 상세 페이지는 단일 canonical FILE download만 허용한다", () => {
   const detail = "https://www.data.go.kr/data/15122916/fileData.do";
   const resolved = resolveDataGoDownloadUrl(`
