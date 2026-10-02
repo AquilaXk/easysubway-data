@@ -594,6 +594,7 @@
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":2528},
     {"path":"tools/datapack/rebind-capital-route-map-admissions.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":625},
     {"path":"tools/datapack/rebind-current-candidate-source-snapshots.test.mjs","semanticOwner":"data329","classes":["required-pr"],"durationMs":82584},
+    {"path":"tools/datapack/rebind-current-seoul-transfer-source-admission.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":8},
     {"path":"tools/datapack/build-busan-transfer-metrics.test.mjs","semanticOwner":"data872","classes":["required-pr"],"durationMs":3000},
     {"path":"tools/datapack/collect-seoul-metro-transfer-car-door-duration.test.mjs","semanticOwner":"data876","classes":["required-pr"],"durationMs":200},
