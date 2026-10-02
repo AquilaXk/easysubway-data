@@ -77,8 +77,8 @@ export function assertNationwideCandidateInputBytes({ binding, buildSpec, statio
       throw new Error(`${label} candidate identity mismatch`);
     }
     // #873: 전국 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 받지 않는다.
-    if (field === "routeEdgeInput" && (!Array.isArray(value.routeEdges)
-      || value.routeEdges.some((edge) => edge?.edgeType === "ENTRY" || edge?.edgeType === "EXIT"))) {
+    if (field === "routeEdgeInput" && Array.isArray(value?.routeEdges)
+      && value.routeEdges.some((edge) => edge?.edgeType === "ENTRY" || edge?.edgeType === "EXIT")) {
       throw new Error(`${label} must not contain ENTRY/EXIT edges`);
     }
   }
