@@ -368,6 +368,7 @@ test("materialized production SQLite와 field provenance만 대전 1호선 membe
     "--manifest", manifestPath,
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
@@ -472,6 +473,7 @@ test("부산과 대전 topology를 하나의 nationwide production pack으로 �
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
@@ -529,6 +531,7 @@ test("접근성 coverage는 같은 운영기관의 scope 밖 지역 station-line
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
@@ -575,6 +578,7 @@ test("명시된 접근성 coverage scope의 역-노선이 RIDE 그래프에서 �
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
@@ -617,6 +621,7 @@ test("접근성 source가 있는 production pack은 접근성 coverage metadata 
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },

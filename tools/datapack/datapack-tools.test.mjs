@@ -2580,6 +2580,7 @@ test("데이터팩 생성기는 일반 fixture 입력으로 production channel�
         "--manifest", path.join(workspace, "validation-output/current.json"),
         "--root", path.join(workspace, "validation-output"),
         "--require-production",
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
       ], { cwd: root, env: productionEnv }),
       /production artifactKind/,
     );
@@ -2717,6 +2718,7 @@ test("데이터팩 검증기는 원격 publish 전 fixture pack을 거부한다"
         "--root",
         outputDir,
         "--require-production",
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -13400,6 +13402,7 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
         "--root",
         packOutputDir,
         "--require-production",
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
       ],
       { cwd: root, env: productionEnv },
     ),

@@ -1215,3 +1215,16 @@ test("required PR CI는 release와 같은 인자로 고정 Hub 계약 기준 sou
     "검증 스텝은 required 집계가 요구하는 contracts_mobile_v19 job 안에 있어야 함");
   assert.match(ciYml, /needs: \[contracts_mobile_v19,/);
 });
+
+// #873 메인 결정 (a): legacy fixture 팩 검증 플래그는 발행 경로가 쓸 수 없다. PR-C(#866)에서 플래그와 함께 제거한다.
+test("#873 어떤 workflow도 --legacy-fixture-production을 쓰지 않는다", async () => {
+  const { readdir, readFile: readText } = await import("node:fs/promises");
+  const workflowDir = new URL("../../.github/workflows/", import.meta.url);
+  const files = (await readdir(workflowDir)).filter((name) => /\.ya?ml$/u.test(name));
+  assert.ok(files.length > 0);
+  for (const name of files) {
+    const text = await readText(new URL(name, workflowDir), "utf8");
+    assert.equal(text.includes("--legacy-fixture-production"), false, name);
+    assert.equal(text.includes("legacy-fixture-production"), false, name);
+  }
+});

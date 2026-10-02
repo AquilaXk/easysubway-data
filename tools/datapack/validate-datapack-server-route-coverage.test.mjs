@@ -10,6 +10,7 @@ import {
   parseArgs,
   parseServerRouteCoverageProvenance,
   parseServerRouteCoverageEvidence,
+  resolveRoutePresenceScope,
 } from "./validate-datapack.mjs";
 
 // #866 PR-B: 인정 경로는 capital@1·213·30·456 상수가 아니라 pack의 비RIDE 간선에서 분모를 유도한다.
@@ -201,6 +202,32 @@ test("#873 F1 전국 팩에서 ENTRY/EXIT로만 존재하는 청구 역-노선�
     pack: { id: "capital", version: "1" }, stationLineRows, edgeRows: [edgeRows[1]], nationwide: false,
   }), /capital@1 claimed station-line has no route edge endpoint: 1 \(station-b:line-1\)/);
   assert.throws(() => assertClaimedStationLinesHaveRouteEndpoints({ pack, stationLineRows, edgeRows }), /nationwide flag is required/);
+});
+
+// #873 리뷰 후속(메인 결정 (a)): provenance가 빠졌다고 legacy(약한 경로)로 내려가지 않는다.
+// legacy 판정은 provenance 후보 id가 legacy이거나, fixture 빌드 legacy 팩에 --legacy-fixture-production을 명시한 경우뿐이다.
+test("#873 --require-production은 provenance 또는 명시 legacy 플래그 없이 실패한다", () => {
+  const legacyProvenance = { candidateId: "capital-pilot-candidate-20260816" };
+  const nationwideProvenance = { candidateId: "nationwide-candidate-20261001-seq123" };
+  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: nationwideProvenance, legacyFixtureProduction: false, nationwideArtifact: true }), { nationwide: true });
+  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: legacyProvenance, legacyFixtureProduction: false, nationwideArtifact: false }), { nationwide: false });
+  assert.deepEqual(resolveRoutePresenceScope({ requireProduction: true, provenance: null, legacyFixtureProduction: true, nationwideArtifact: false }), { nationwide: false });
+  // 플래그 없음 + provenance 없음 + --require-production
+  assert.throws(() => resolveRoutePresenceScope({ requireProduction: true, provenance: null, legacyFixtureProduction: false, nationwideArtifact: false }),
+    /--require-production requires server route coverage provenance/);
+  // 플래그 + provenance
+  assert.throws(() => resolveRoutePresenceScope({ requireProduction: true, provenance: legacyProvenance, legacyFixtureProduction: true, nationwideArtifact: false }),
+    /--legacy-fixture-production cannot be combined with server route coverage provenance/);
+  // 플래그 + 전국 후보 팩
+  assert.throws(() => resolveRoutePresenceScope({ requireProduction: true, provenance: null, legacyFixtureProduction: true, nationwideArtifact: true }),
+    /--legacy-fixture-production cannot validate a nationwide candidate artifact/);
+  // --require-production이 아니면 출시 게이트 판정이 없다.
+  assert.equal(resolveRoutePresenceScope({ requireProduction: false, provenance: null, legacyFixtureProduction: false, nationwideArtifact: false }), null);
+  // 인자 조합: 플래그는 --require-production이 필요하고 evidence·provenance와 함께 쓸 수 없다.
+  assert.equal(parseArgs(["--manifest", "m.json", "--root", "out", "--require-production", "--legacy-fixture-production"])["legacy-fixture-production"], true);
+  assert.throws(() => parseArgs(["--manifest", "m.json", "--root", "out", "--legacy-fixture-production"]), /--legacy-fixture-production requires --require-production/);
+  assert.throws(() => parseArgs(["--manifest", "m.json", "--root", "out", "--require-production", "--legacy-fixture-production",
+    "--server-route-coverage-evidence", "a.json", "--server-route-coverage-provenance", "p.json"]), /--legacy-fixture-production cannot be combined with server route coverage provenance/);
 });
 
 test("server route coverage evidence는 provenance와 --require-production이 함께여야 하고 한 번만 소비된다", () => {

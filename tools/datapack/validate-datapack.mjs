@@ -96,6 +96,7 @@ async function main() {
       consumptionCount: 0,
     }
     : null;
+  const legacyFixtureProduction = args["legacy-fixture-production"] === true;
   const releasesTarget = args["releases-target"] === true;
   const maxPublicCatalogUserVersion = optionalPositiveIntegerArgument(
     args["max-public-catalog-user-version"],
@@ -106,6 +107,12 @@ async function main() {
     await readFile(path.join(import.meta.dirname, "official-od-fare-admission.json"), "utf8"),
   ));
   validateManifest(manifest, { requireProduction, releasesTarget });
+  const routePresence = resolveRoutePresenceScope({
+    requireProduction,
+    provenance: serverRouteCoverageEvidence?.provenance ?? null,
+    legacyFixtureProduction,
+    nationwideArtifact: legacyFixtureProduction && await isNationwideCandidateArtifact(manifest, root),
+  });
 
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-validate-"));
   try {
@@ -115,6 +122,7 @@ async function main() {
         maxPublicCatalogUserVersion,
         officialOdFareAdmission: officialOdFareAdmissions,
         serverRouteCoverageEvidence,
+        routePresence,
       });
     }
     assertServerRouteCoverageConsumed(serverRouteCoverageEvidence);
@@ -133,6 +141,7 @@ async function validatePack(
     maxPublicCatalogUserVersion = null,
     officialOdFareAdmission = null,
     serverRouteCoverageEvidence = null,
+    routePresence = null,
   } = {},
 ) {
   const compressedPath = localPackPathForUrl(root, pack);
@@ -172,6 +181,7 @@ async function validatePack(
     maxPublicCatalogUserVersion,
     officialOdFareAdmission,
     serverRouteCoverageEvidence,
+    routePresence,
   });
 }
 
@@ -190,6 +200,7 @@ function validateSqlite(
     maxPublicCatalogUserVersion = null,
     officialOdFareAdmission = null,
     serverRouteCoverageEvidence = null,
+    routePresence = null,
   },
 ) {
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
@@ -239,7 +250,7 @@ function validateSqlite(
     validateOfficialOdFareQuotes(database, pack, officialOdFareAdmission);
     validateStationPathways(database, pack);
     validateStationCarDoorHints(database, pack);
-    const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack, serverRouteCoverageEvidence);
+    const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack, serverRouteCoverageEvidence, routePresence);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionStationPathwayEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
@@ -1517,7 +1528,7 @@ function validateNetworkEdgeFacilityReferences(database, pack) {
   }
 }
 
-function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCoverageEvidence = null) {
+function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCoverageEvidence = null, routePresence = null) {
   if (pack.artifactKind !== "production" || !hasTable(database, "network_edges")) {
     return null;
   }
@@ -1572,13 +1583,16 @@ function validateProductionNetworkEdgeProvenance(database, pack, serverRouteCove
   }
 
   // #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 역 단위 ENTRY/EXIT 간선은 coverage 분모가 아니다.
-  // 전국 여부는 RC authority와 같은 공용 판정 함수로 정한다(F2). 후보 provenance가 없으면 legacy 검증이다.
-  assertClaimedStationLinesHaveRouteEndpoints({
-    pack,
-    stationLineRows: claimedStationLineRows,
-    edgeRows,
-    nationwide: isNationwideCandidateId(serverRouteCoverageEvidence?.provenance?.candidateId),
-  });
+  // 청구 역-노선 존재성은 출시 게이트다. 전국 여부는 resolveRoutePresenceScope가 provenance 후보 id(F2 공용 함수) 또는
+  // 명시한 legacy 플래그로만 정한다. --require-production이 아닌 검증은 이 게이트를 판정하지 않는다(routePresence null).
+  if (routePresence !== null) {
+    assertClaimedStationLinesHaveRouteEndpoints({
+      pack,
+      stationLineRows: claimedStationLineRows,
+      edgeRows,
+      nationwide: routePresence.nationwide,
+    });
+  }
 
   const report = {
     type: "datapack_verified_edge_coverage",
@@ -1969,6 +1983,49 @@ function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
     requiredPairs,
     claimedStationLineRows,
   };
+}
+
+// #873 리뷰 후속(메인 결정 (a)): 청구 역-노선 존재성 게이트의 전국/legacy 판정.
+// - --require-production이면 server route coverage provenance(후보 id → isNationwideCandidateId) 또는
+//   --legacy-fixture-production(fixture 빌드 legacy 팩 전용) 중 정확히 하나가 있어야 한다. 입력이 빠졌다고 legacy로 내려가지 않는다.
+// - --legacy-fixture-production은 전국 후보 팩(팩 id nationwide 또는 후보 provenance가 전국 후보)에 쓸 수 없다.
+// - --require-production이 아니면 출시 게이트를 판정하지 않는다(null).
+// --legacy-fixture-production은 PR-C(#866)에서 제거한다. 발행 workflow는 이 플래그를 쓸 수 없다(workflow 계약 테스트).
+export function resolveRoutePresenceScope({ requireProduction, provenance, legacyFixtureProduction, nationwideArtifact }) {
+  if (legacyFixtureProduction && provenance) {
+    throw new Error("--legacy-fixture-production cannot be combined with server route coverage provenance");
+  }
+  if (!requireProduction) {
+    if (legacyFixtureProduction) throw new Error("--legacy-fixture-production requires --require-production");
+    return null;
+  }
+  if (provenance) return { nationwide: isNationwideCandidateId(provenance.candidateId) };
+  if (!legacyFixtureProduction) {
+    throw new Error("--require-production requires server route coverage provenance (legacy fixture packs: --legacy-fixture-production)");
+  }
+  if (nationwideArtifact !== false) {
+    throw new Error("--legacy-fixture-production cannot validate a nationwide candidate artifact");
+  }
+  return { nationwide: false };
+}
+
+// 플래그로 검증하려는 산출물이 전국 후보인지 확인한다. 팩 id nationwide이거나, 산출물 provenance의 후보 id가 전국 후보다.
+async function isNationwideCandidateArtifact(manifest, root) {
+  if ((manifest.packs ?? []).some(({ id }) => id === "nationwide") || manifest.activePack?.id === "nationwide") return true;
+  let provenanceBytes;
+  try {
+    provenanceBytes = await readFile(path.join(root, "current.provenance.json"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+  let provenance;
+  try {
+    provenance = JSON.parse(provenanceBytes.toString("utf8"));
+  } catch {
+    throw new Error("datapack provenance must be valid JSON");
+  }
+  return isNationwideCandidateId(provenance?.candidateBuild?.candidateId);
 }
 
 // #873 리뷰 F1: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. 예전에는 역 단위 ENTRY coverage가 청구 범위
@@ -2642,6 +2699,11 @@ export function parseArgs(argv) {
       args["releases-target"] = true;
       continue;
     }
+    // legacy fixture 빌드 production 팩 전용(#873 메인 결정 (a)). PR-C(#866)에서 제거한다.
+    if (key === "--legacy-fixture-production") {
+      args["legacy-fixture-production"] = true;
+      continue;
+    }
     const value = argv[index + 1];
     if (!key?.startsWith("--") || value === undefined) {
       throw new Error(`invalid argument: ${key ?? ""}`);
@@ -2653,6 +2715,10 @@ export function parseArgs(argv) {
   const provenance = args["server-route-coverage-provenance"];
   if ((evidence || provenance) && (!evidence || !provenance || args["require-production"] !== true)) {
     throw new Error("server route coverage evidence and provenance require --require-production");
+  }
+  if (args["legacy-fixture-production"] === true) {
+    if (evidence || provenance) throw new Error("--legacy-fixture-production cannot be combined with server route coverage provenance");
+    if (args["require-production"] !== true) throw new Error("--legacy-fixture-production requires --require-production");
   }
   return args;
 }
