@@ -146,12 +146,21 @@ test("원천 후보 계약 파일의 다른 항목만 바뀌었으면 그 파일
   const expected = deriveSeoulTransferFixtureEvidence({ ...fixture, canonicalPackBytes: nextPackBytes, sourceCandidatesBytes: nextCandidatesBytes });
   assert.ok((await readFile(path.join(root, PATHS.metrics))).equals(expected.metricsBytes));
 
-  // 환승 원천 endpoint 자체가 바뀌면 잠긴 관측(manifest sha)과 맞지 않아 쓰지 않고 실패한다.
+  // 환승 원천 endpoint가 바뀌면 쓰지 않고 실패한다.
   const before = await snapshot(root, outputPaths(fixture));
-  candidates.candidates.find(({ id }) => id === SEOUL_TRANSFER_SOURCE_ID).requestUrl = "https://api.odcloud.kr/api/15044419/v1/uddi:changed";
-  await writeFile(candidatesPath, `${JSON.stringify(candidates, null, 2)}\n`);
   await rewriteSeoulTransferFixtureCanonicalPack(root, (pack) => { pack.manifest.keyId = "fixture-key-rotated-again"; });
+  const transferCandidate = candidates.candidates.find(({ id }) => id === SEOUL_TRANSFER_SOURCE_ID);
+  // (1) 세 endpoint 필드가 서로 어긋나면 계약 검사가 막는다.
+  transferCandidate.requestUrl = "https://api.odcloud.kr/api/15044419/v1/uddi:changed";
+  await writeFile(candidatesPath, `${JSON.stringify(candidates, null, 2)}\n`);
   await assert.rejects(rebindCurrentSeoulTransferSourceAdmission({ repositoryRoot: root, env, now: NOW, client: lockedRawClient(fixture.rawBytes) }), /tracked Seoul transfer endpoint contract mismatch/);
+  // (2) #893 F2: 세 필드를 일관되게 바꾸면 계약 검사는 통과하지만, 잠긴 receipt의 manifest sha(endpointSha256 포함)가 막는다.
+  const changedEndpoint = "https://api.odcloud.kr/api/15044419/v1/uddi:00000000-0000-0000-0000-000000000000";
+  transferCandidate.requestUrl = changedEndpoint;
+  transferCandidate.operation.endpoint = changedEndpoint;
+  transferCandidate.evidence.endpoint = changedEndpoint;
+  await writeFile(candidatesPath, `${JSON.stringify(candidates, null, 2)}\n`);
+  await assert.rejects(rebindCurrentSeoulTransferSourceAdmission({ repositoryRoot: root, env, now: NOW, client: lockedRawClient(fixture.rawBytes) }), /transfer reconstruction receipt identity mismatch/);
   for (const [relative, bytes] of before) assert.ok((await readFile(path.join(root, relative))).equals(bytes), relative);
 });
 
