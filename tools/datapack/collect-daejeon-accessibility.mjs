@@ -88,7 +88,8 @@ export function parseDaejeonAccessibilityCsv({
       stationCode: mapping.stationNumber,
       stationName: mapping.stationName,
       lineId: LINE_ID,
-      wheelchair_lift: 0,
+      // 원천 파일에 휠체어리프트 열이 없다. 0을 지어내지 않고 미관측(null)으로 남긴다.
+      wheelchair_lift: null,
       elevator,
       escalator,
     };

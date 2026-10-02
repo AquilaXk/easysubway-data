@@ -1561,7 +1561,7 @@
           "productionUseAllowed": true,
           "coverageStatus": "DAEJEON_LINE_1_OFFICIAL_FACILITY_COUNTS",
           "updateFrequency": "daily admission refresh",
-          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 휠체어리프트 공식 FILE 소스는 없어 count=0으로 기록한다"
+          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 휠체어리프트는 공식 FILE 소스에 열이 없어 미관측(null)으로 두고 시설·부재 claim을 만들지 않는다(실제 원천 확보는 #895)"
         }
       },
       "accessibilityAdmissionEvidence": {
@@ -1712,7 +1712,7 @@
       "sourceSystem": "공공데이터포털 파일데이터",
       "datasetUrl": "https://www.data.go.kr/data/15041385/fileData.do",
       "datasetKind": "official-file-data",
-      "coverage": "광주교통공사 1호선 20개 역 엘리베이터·에스컬레이터 설치 대수(휠체어리프트 공식 소스 없음→0, CSV 미게재 역은 count=0)",
+      "coverage": "광주교통공사 1호선 20개 역 엘리베이터·에스컬레이터 설치 대수(휠체어리프트는 공식 소스에 없어 미관측, CSV 미게재 역·유형은 미관측)",
       "coverageScope": {
         "regionIds": [
           "gwangju"
@@ -1770,7 +1770,7 @@
           "productionUseAllowed": true,
           "coverageStatus": "GWANGJU_LINE_1_OFFICIAL_FACILITY_COUNTS",
           "updateFrequency": "daily admission refresh",
-          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 휠체어리프트 공식 FILE 소스는 없어 count=0으로 기록한다. CSV에 없는 역(녹동 elev/esc, 쌍촌·운천 esc)은 공식 미게재로 count=0이다"
+          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 휠체어리프트는 공식 FILE 소스에 열이 없어 미관측(null)으로 두고 시설·부재 claim을 만들지 않는다(실제 원천 확보는 #895). CSV에 없는 역·유형(녹동 elev/esc, 쌍촌·운천 esc)은 공식 미게재로 미관측(null)이다"
         }
       },
       "accessibilityAdmissionEvidence": {

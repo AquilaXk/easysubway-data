@@ -157,14 +157,11 @@ export function parseBusanAccessibilityResponse({ bytes, station } = {}) {
   const values = Object.fromEntries(RESPONSE_FIELDS.map((field) => [field, scalar(body, field)]));
   const missing = RESPONSE_FIELDS.filter((field) => values[field] == null);
   if (missing.length > 0) throw new Error(`Busan accessibility schema mismatch: fields=${missing.join(",")}`);
-  // 공식 API는 시설 없음 역에서 count 필드를 빈 문자열로 내려준다(2026-07-24 114역 실측: 9역).
-  // 태그 자체 누락(null)과 구분하고, 빈 문자열만 0으로 정규화한다.
-  for (const field of COUNT_FIELDS) {
-    if (values[field] === "") values[field] = "0";
-  }
+  // 공식 API는 일부 역에서 count 필드를 빈 문자열로 내려준다. 빈 값은 0이 아니라 미관측(null)이다.
+  // 원문에 명시적으로 적힌 숫자만 count로 쓴다(QA 승인 2026-10-02, Fallback 금지).
   const invalid = [];
   for (const field of COUNT_FIELDS) {
-    if (!/^\d{1,4}$/.test(values[field])) invalid.push(field);
+    if (values[field] !== "" && !/^\d{1,4}$/.test(values[field])) invalid.push(field);
   }
   if (values.sname.trim() === "" || values.sname.length > 100) invalid.push("sname");
   if (values.toilet_gubun.trim() === "" || values.toilet_gubun.length > 20) invalid.push("toilet_gubun");
@@ -175,10 +172,47 @@ export function parseBusanAccessibilityResponse({ bytes, station } = {}) {
       stationCode: station.stationCode,
       stationName: values.sname,
       lineId: station.lineId,
-      ...Object.fromEntries(COUNT_FIELDS.map((field) => [field, Number(values[field])])),
+      ...Object.fromEntries(COUNT_FIELDS.map((field) => [
+        field,
+        values[field] === "" ? null : Number(values[field]),
+      ])),
       toilet_gubun: values.toilet_gubun,
     },
   };
+}
+
+/**
+ * 잠긴 snapshot의 보존 원문을 다시 파싱해 원문에 명시된 count만 돌려준다.
+ * 빈 필드는 null(미관측)이며, 이전 수집기가 빈 필드를 0으로 저장한 row만 그 차이를 허용한다.
+ */
+export function observedBusanAccessibilityRows(snapshot) {
+  const rows = snapshot?.rows;
+  const rawResponses = snapshot?.rawResponses;
+  if (!Array.isArray(rows) || !Array.isArray(rawResponses) || rawResponses.length !== rows.length
+    || snapshot.rawSha256 !== sha256(JSON.stringify(rawResponses.map(({ stationCode, rawSha256 }) => ({
+      stationCode,
+      rawSha256,
+    }))))) {
+    throw new Error("Busan accessibility retained raw responses are required");
+  }
+  const retainedByCode = new Map(rawResponses.map((response) => [response.stationCode, response]));
+  if (retainedByCode.size !== rawResponses.length) {
+    throw new Error("Busan accessibility retained raw responses are duplicated");
+  }
+  return rows.map((row) => {
+    const retained = retainedByCode.get(row.stationCode);
+    const bytes = Buffer.from(retained?.bytesBase64 ?? "", "base64");
+    if (!retained || sha256(bytes) !== retained.rawSha256) {
+      throw new Error(`Busan accessibility retained raw response mismatch: ${row.stationCode}`);
+    }
+    const { row: observed } = parseBusanAccessibilityResponse({ bytes, station: row });
+    for (const field of COUNT_FIELDS) {
+      if (row[field] !== observed[field] && !(observed[field] === null && row[field] === 0)) {
+        throw new Error(`Busan accessibility retained raw count mismatch: ${row.stationCode}:${field}`);
+      }
+    }
+    return observed;
+  });
 }
 
 function validateScope(scope) {

@@ -29,14 +29,9 @@ const FACILITY_TYPES = Object.freeze([
     labelKo: "에스컬레이터",
     countOf: (row) => row.escalator,
   },
-  {
-    type: "WHEELCHAIR_LIFT",
-    field: "wheelchair_lift",
-    slug: "wheelchair-lift",
-    labelKo: "휠체어리프트",
-    countOf: (row) => row.wheelchair_lift,
-  },
 ]);
+// 광주 원천(엘리베이터·에스컬레이터 CSV)에는 휠체어리프트 열이 없다. 이전 수집기가 지어낸 wheelchair_lift 0은
+// 관측값이 아니므로 부재 claim·"미설치" 시설 행을 만들지 않는다(QA 승인 2026-10-02, Fallback 금지).
 
 export function materializeGwangjuAccessibility({
   baseFixture,
@@ -211,6 +206,12 @@ function validateSnapshot(snapshot) {
   return snapshot.rows;
 }
 
+// 등록 도구(register-regional-accessibility.mjs)의 facilityCount와 같은 규칙: 정수 값이 저장된 셀 수.
+function registeredFacilityCellCount(rows) {
+  return rows.reduce((total, row) => total + ["elevator", "escalator", "wheelchair_lift"]
+    .filter((field) => Number.isInteger(row[field])).length, 0);
+}
+
 function observedFacilityCount(rows) {
   return rows.reduce((sum, row) => sum + FACILITY_TYPES.filter((type) => type.countOf(row) !== null).length, 0);
 }
@@ -229,7 +230,7 @@ function requiredSource(inventory, snapshot, topologySnapshot) {
     || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`
     || evidence.capturedAt !== snapshot.capturedAt || evidence.freshUntil !== snapshot.freshUntil
     || evidence.stationCount !== snapshot.stationCount || evidence.rowCount !== snapshot.rowCount
-    || evidence.facilityCount !== observedFacilityCount(snapshot.rows)
+    || evidence.facilityCount !== registeredFacilityCellCount(snapshot.rows)
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
     || evidence.topologySnapshotId !== snapshot.topologyLineages[0].snapshotId

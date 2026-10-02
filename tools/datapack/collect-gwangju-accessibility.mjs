@@ -71,7 +71,8 @@ export function parseGwangjuAccessibilityCsv({
     stationCode: station.stationCode,
     stationName: station.stationName,
     lineId,
-    wheelchair_lift: 0,
+    // 원천 CSV에 휠체어리프트 열이 없다. 0을 지어내지 않고 미관측(null)으로 남긴다.
+    wheelchair_lift: null,
     elevator: elevatorCounts.get(station.stationCode) ?? null,
     escalator: escalatorCounts.get(station.stationCode) ?? null,
   })).sort((left, right) => left.stationCode.localeCompare(right.stationCode, "en"));

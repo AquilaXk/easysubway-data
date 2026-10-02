@@ -1050,3 +1050,441 @@ function hash(value) {
 function hashBytes(value) {
   return createHash("sha256").update(value).digest("hex");
 }
+
+test("지역 접근성 원천은 잠긴 snapshot policy·원문 row에 결속되면 GO다", () => {
+  const input = regionalBusanInput();
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("부산 원문 빈 count 필드는 미관측이라 NOT_EXISTS claim을 결속하지 못한다", () => {
+  const input = regionalBusanInput({ wheelchairRaw: "" });
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.provenance, [
+    "bundled-nationwide:station-busan-100|line-busan-1|WHEELCHAIR_LIFT|STATION_FACILITY_EVIDENCE:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+});
+
+test("원천에 열이 없는 대전·광주 휠체어리프트 claim은 결속되지 않는다", () => {
+  for (const region of ["daejeon", "gwangju"]) {
+    const input = regionalCountInput(region);
+    const report = buildAccessibilitySourceCoverageReport(input);
+    assert.equal(report.decision, "GO", region);
+
+    input.artifacts[0].claims.push(regionalCountClaim(input, region, "WHEELCHAIR_LIFT", 0, "NOT_EXISTS"));
+    const blocked = buildAccessibilitySourceCoverageReport(input);
+    assert.equal(blocked.decision, "NO_GO", region);
+    assert.ok(blocked.violations.provenance.some((value) =>
+      value.includes("|WHEELCHAIR_LIFT|") && value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")), region);
+  }
+});
+
+test("대구 명시적 0은 EXPLICIT_ZERO 부재 claim으로 결속된다", () => {
+  const input = regionalCountInput("daegu");
+  input.artifacts[0].claims.push(regionalCountClaim(input, "daegu", "WHEELCHAIR_LIFT", 0, "NOT_EXISTS"));
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.deepEqual(report.violations, emptyViolations());
+  assert.equal(report.decision, "GO");
+});
+
+test("지역 원천 license hash가 잠긴 policy 검토 hash와 다르면 NO_GO다", () => {
+  const input = regionalBusanInput();
+  input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = hash("stale-license");
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.license, ["busan-transportation-accessibility:LICENSE_EVIDENCE_MISMATCH"]);
+});
+
+test("지역 원천 row가 rowsSha256과 다르면 snapshot identity와 claim 결속이 모두 실패한다", () => {
+  const input = regionalBusanInput();
+  input.snapshots[0].rows[0].el_i = 9;
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.deepEqual(report.violations.snapshot, ["busan-transportation-accessibility:SNAPSHOT_IDENTITY_MISMATCH"]);
+  assert.ok(report.violations.provenance.every((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")));
+});
+
+test("지역 원천 snapshot 파일은 내용 hash와 관측일로 snapshot id를 유도한다", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "easysubway-regional-accessibility-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const { snapshots: [snapshot] } = regionalCountInput("daegu");
+  const { snapshotId: _snapshotId, snapshotPath: _snapshotPath, snapshotFileSha256: _fileSha256, ...fileJson } = snapshot;
+  const bytes = `${JSON.stringify(fileJson, null, 2)}\n`;
+  const derivedId = `daegu-transportation-accessibility-${hash(JSON.stringify(fileJson))}-20260728`;
+  await writeFile(path.join(repositoryRoot, "regional.json"), bytes);
+
+  const [loaded] = await loadAccessibilityAdmissionSnapshots({
+    sources: [{
+      id: "daegu-transportation-accessibility",
+      accessibilityAdmissionEvidence: { snapshotId: derivedId, snapshotPath: "regional.json" },
+    }],
+    referencedSourceIds: new Set(["daegu-transportation-accessibility"]),
+    repositoryRoot,
+  });
+
+  assert.equal(loaded.snapshotId, derivedId);
+  assert.equal(loaded.snapshotFileSha256, hashBytes(bytes));
+});
+
+const REGIONAL_COUNT_KINDS = Object.freeze({
+  daegu: { lineId: "line-daegu-1", row: { wheelchair_lift: 0, elevator: 4, escalator: 16 } },
+  daejeon: { lineId: "line-daejeon-1", row: { wheelchair_lift: 0, elevator: 4, escalator: 2 } },
+  gwangju: { lineId: "line-gwangju-1", row: { wheelchair_lift: 0, elevator: 2, escalator: 3 } },
+});
+
+function regionalSourceInput({ region, snapshotFields, rows, claims }) {
+  const sourceId = `${region}-transportation-accessibility`;
+  const capturedAt = "2026-07-27T23:00:00.000Z";
+  const freshUntil = "2026-07-28T23:00:00.000Z";
+  const rowsSha256 = hash(JSON.stringify(rows));
+  const fileJson = {
+    schemaVersion: 1,
+    artifactKind: `${region}-accessibility-snapshot`,
+    sourceId,
+    capturedAt,
+    freshUntil,
+    stationCount: rows.length,
+    rowCount: rows.length,
+    ...snapshotFields,
+    rowsSha256,
+    rows,
+  };
+  const snapshotId = `${sourceId}-${hash(JSON.stringify(fileJson))}-20260728`;
+  const snapshotPath = `tools/datapack/sources/${snapshotId}.json`;
+  const licenseEvidenceHash = hash(`${region}-license`);
+  return {
+    evaluatedAt: EVALUATED_AT,
+    artifacts: [{
+      artifactId: "bundled-nationwide",
+      sqliteSha256: hash("sqlite-nationwide"),
+      searchableStationIds: [`station-${region}-100`],
+      claims: claims({ sourceId, snapshotId, rowsSha256 }),
+    }],
+    inventory: {
+      sources: [{
+        id: sourceId,
+        productionUseAllowed: true,
+        license: { redistributionAllowed: true, attribution: "공식 제공기관" },
+        admissionEvidence: { licenseEvidenceHash },
+        capabilities: { facility: { status: "SUPPORTED", productionUseAllowed: true } },
+        accessibilityAdmissionEvidence: {
+          issue: 1,
+          materializer: `tools/datapack/materialize-${region}-accessibility.mjs`,
+          verificationTest: `tools/datapack/materialize-${region}-accessibility.test.mjs`,
+          snapshotId,
+          snapshotPath,
+          capturedAt,
+          freshUntil,
+          stationCount: rows.length,
+          rowCount: rows.length,
+          rawSha256: fileJson.rawSha256,
+          rowsSha256,
+        },
+      }],
+    },
+    snapshots: [{
+      ...structuredClone(fileJson),
+      snapshotId,
+      snapshotPath,
+      snapshotFileSha256: hash(`${snapshotId}-file`),
+    }],
+    sourceSnapshotPolicies: [{
+      sourceId,
+      snapshotId,
+      capturedAt,
+      rawSha256: fileJson.rawSha256,
+      contentSha256: rowsSha256,
+      snapshotStatus: "LOCKED",
+      fetchStatus: "SUCCESS",
+      schemaStatus: "PASS",
+      licenseStatus: "PASS",
+      redistributionAllowed: true,
+      credentialRedacted: true,
+      admissionEvidence: { licenseEvidenceHash },
+      freshnessExpiresAt: "2026-10-26T23:00:00.000Z",
+    }],
+  };
+}
+
+function regionalCountInput(region) {
+  const { lineId, row } = REGIONAL_COUNT_KINDS[region];
+  const rows = [{ stationCode: "100", stationName: "역", lineId, ...row }];
+  return regionalSourceInput({
+    region,
+    snapshotFields: { rawSha256: hash(`${region}-raw`) },
+    rows,
+    claims: ({ sourceId, snapshotId, rowsSha256 }) => ["ELEVATOR", "ESCALATOR"].flatMap((facilityType) => {
+      const count = facilityType === "ELEVATOR" ? row.elevator : row.escalator;
+      const base = regionalCountHash({ region, row: rows[0], facilityType, count });
+      return [{
+        stationId: `station-${region}-100`, stationName: "역", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE",
+        evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId, providerRecordHash: base, evidenceHash: rowsSha256,
+      }, {
+        claimId: `facility-${region}-100-${facilityType}`, stationId: `station-${region}-100`, stationName: "역", lineId: "", facilityType,
+        domain: "FACILITY", evidenceKind: "EXISTS", sourceId, sourceSnapshotId: snapshotId,
+        providerRecordHash: base, evidenceHash: rowsSha256,
+      }];
+    }),
+  });
+}
+
+function regionalCountClaim(input, region, facilityType, count, evidenceKind) {
+  const snapshot = input.snapshots[0];
+  return {
+    stationId: `station-${region}-100`,
+    stationName: snapshot.rows[0].stationName,
+    lineId: snapshot.rows[0].lineId,
+    facilityType,
+    domain: "STATION_FACILITY_EVIDENCE",
+    evidenceKind,
+    sourceId: snapshot.sourceId,
+    sourceSnapshotId: snapshot.snapshotId,
+    providerRecordHash: regionalCountHash({ region, row: snapshot.rows[0], facilityType, count }),
+    evidenceHash: snapshot.rowsSha256,
+  };
+}
+
+function regionalCountHash({ row, facilityType, count }) {
+  return hash(JSON.stringify({
+    stationCode: row.stationCode,
+    lineId: row.lineId,
+    type: facilityType,
+    count,
+    elevator: row.elevator,
+    escalator: row.escalator,
+    wheelchair_lift: row.wheelchair_lift,
+  }));
+}
+
+function regionalBusanInput({ wheelchairRaw = "0" } = {}) {
+  const lineId = "line-busan-1";
+  const values = {
+    sname: "동매", wl_i: wheelchairRaw, wl_o: wheelchairRaw, el_i: "2", el_o: "1", es: "0", blindroad: "1",
+    ourbridge: "0", helptake: "0", toilet: "2", toilet_gubun: "분리",
+  };
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>00</resultCode></header><body><item>${
+    Object.entries(values).map(([name, value]) => `<${name}>${value}</${name}>`).join("")
+  }</item></body></response>`;
+  const bytes = Buffer.from(xml);
+  const rawResponses = [{ stationCode: "100", rawSha256: hashBytes(bytes), bytesBase64: bytes.toString("base64") }];
+  // 잠긴 기존 snapshot은 빈 필드를 0으로 저장했다. 원문이 그 0의 근거인지 원문으로 다시 판정해야 한다.
+  const rows = [{
+    stationCode: "100", stationName: "동매", lineId,
+    wl_i: 0, wl_o: 0, el_i: 2, el_o: 1, es: 0, blindroad: 1, ourbridge: 0, helptake: 0, toilet: 2,
+    toilet_gubun: "분리",
+  }];
+  const busanHash = (facilityType, count) => hash(JSON.stringify({
+    stationCode: "100", lineId, type: facilityType, count,
+    wl_i: rows[0].wl_i, wl_o: rows[0].wl_o, el_i: rows[0].el_i, el_o: rows[0].el_o, es: rows[0].es,
+  }));
+  return regionalSourceInput({
+    region: "busan",
+    snapshotFields: {
+      rawSha256: hash(JSON.stringify(rawResponses.map(({ stationCode, rawSha256 }) => ({ stationCode, rawSha256 })))),
+      rawResponses,
+    },
+    rows,
+    claims: ({ sourceId, snapshotId, rowsSha256 }) => [
+      ["ELEVATOR", 3, "EXISTS"],
+      ["ESCALATOR", 0, "NOT_EXISTS"],
+      ["WHEELCHAIR_LIFT", 0, "NOT_EXISTS"],
+    ].map(([facilityType, count, evidenceKind]) => ({
+      stationId: "station-busan-100", stationName: "동매", lineId, facilityType, domain: "STATION_FACILITY_EVIDENCE", evidenceKind,
+      sourceId, sourceSnapshotId: snapshotId, providerRecordHash: busanHash(facilityType, count), evidenceHash: rowsSha256,
+    })),
+  });
+}
+
+test("지역 claim은 원천 row의 역 이름에 결속되어 다른 역 stationId로 옮길 수 없다(F1)", () => {
+  const input = regionalCountInput("daegu");
+  assert.equal(buildAccessibilitySourceCoverageReport(input).decision, "GO");
+
+  // loader는 stationId에서 정본 역 이름을 붙인다. 다른 역으로 옮기면 그 역의 이름이 따라온다.
+  const moved = regionalCountInput("daegu");
+  for (const claim of moved.artifacts[0].claims) Object.assign(claim, { stationId: "station-daegu-200", stationName: "다른역" });
+  const movedReport = buildAccessibilitySourceCoverageReport(moved);
+  assert.equal(movedReport.decision, "NO_GO");
+  assert.equal(movedReport.violations.provenance.length, moved.artifacts[0].claims.length);
+  assert.ok(movedReport.violations.provenance.every((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")));
+
+  // 정본 이름을 알 수 없는 claim도 결속하지 않는다.
+  const unnamed = regionalCountInput("daegu");
+  delete unnamed.artifacts[0].claims[0].stationName;
+  assert.equal(buildAccessibilitySourceCoverageReport(unnamed).decision, "NO_GO");
+
+  // 원천 이름의 괄호 부기·별칭은 후보 생성과 같은 규칙으로만 맞춘다.
+  const annotated = regionalCountInput("daegu");
+  annotated.snapshots[0].rows[0].stationName = "역(대학교)";
+  annotated.snapshots[0].rowsSha256 = hash(JSON.stringify(annotated.snapshots[0].rows));
+  annotated.inventory.sources[0].accessibilityAdmissionEvidence.rowsSha256 = annotated.snapshots[0].rowsSha256;
+  annotated.sourceSnapshotPolicies[0].contentSha256 = annotated.snapshots[0].rowsSha256;
+  for (const claim of annotated.artifacts[0].claims) claim.evidenceHash = annotated.snapshots[0].rowsSha256;
+  assert.equal(buildAccessibilitySourceCoverageReport(annotated).decision, "GO");
+});
+
+test("지역 FACILITY claim은 설치 상태가 원천 count와 맞을 때만 결속된다(F2)", () => {
+  const input = regionalCountInput("daegu");
+  const zeroLift = regionalCountClaim(input, "daegu", "WHEELCHAIR_LIFT", 0, "NOT_EXISTS");
+  const facility = { ...zeroLift, claimId: "facility-daegu-100-WHEELCHAIR_LIFT", lineId: "", domain: "FACILITY" };
+
+  // count 0 row 위의 FACILITY 존재 주장은 지어낸 존재다.
+  const fabricated = structuredClone(input);
+  fabricated.artifacts[0].claims.push({ ...facility, evidenceKind: "EXISTS" });
+  const fabricatedReport = buildAccessibilitySourceCoverageReport(fabricated);
+  assert.equal(fabricatedReport.decision, "NO_GO");
+  assert.deepEqual(fabricatedReport.violations.provenance, [
+    "bundled-nationwide:station-daegu-100||WHEELCHAIR_LIFT|FACILITY:CLAIM_SNAPSHOT_BINDING_MISMATCH",
+  ]);
+
+  // 명시적 0의 미설치 시설 행은 부재로 결속된다.
+  const notInstalled = structuredClone(input);
+  notInstalled.artifacts[0].claims.push({ ...facility, evidenceKind: "NOT_EXISTS" });
+  assert.deepEqual(buildAccessibilitySourceCoverageReport(notInstalled).violations, emptyViolations());
+
+  // count가 양수인 row 위의 미설치 주장도 결속되지 않는다.
+  const hidden = structuredClone(input);
+  const elevator = hidden.artifacts[0].claims.find(({ domain, facilityType }) => domain === "FACILITY" && facilityType === "ELEVATOR");
+  elevator.evidenceKind = "NOT_EXISTS";
+  assert.equal(buildAccessibilitySourceCoverageReport(hidden).decision, "NO_GO");
+});
+
+test("facility 행의 설치 상태가 FACILITY claim의 evidenceKind가 된다(F2)", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-facility-installation-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "pack.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(`
+    CREATE TABLE stations (id TEXT, name_ko TEXT);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    CREATE TABLE facilities (id TEXT, station_id TEXT, type TEXT, source_id TEXT, source_snapshot_id TEXT,
+      provider_record_hash TEXT, evidence_hash TEXT, installation_status TEXT);
+    INSERT INTO stations VALUES ('station-a', '역');
+    INSERT INTO station_lines VALUES ('station-a', 'line-a');
+    INSERT INTO facilities VALUES ('f-installed', 'station-a', 'ELEVATOR', 's', 'snap', 'h1', 'e1', 'INSTALLED');
+    INSERT INTO facilities VALUES ('f-absent', 'station-a', 'WHEELCHAIR_LIFT', 's', 'snap', 'h2', 'e2', 'NOT_INSTALLED');
+  `);
+  database.close();
+  const bytes = await readFile(sqlitePath);
+  await mkdir(path.join(directory, "catalog"), { recursive: true });
+  const gzipBytes = gzipSync(bytes);
+  await writeFile(path.join(directory, "catalog", "pack.sqlite.gz"), gzipBytes);
+  const manifest = { packs: [{
+    id: "pack-a", url: "https://example.invalid/catalog/pack.sqlite.gz", sha256: hashBytes(gzipBytes), sqliteSha256: hashBytes(bytes),
+  }] };
+  const artifacts = await loadSelectableAccessibilityArtifacts({
+    manifest, manifestRoot: directory, bundledIndex: { packs: [] }, bundledRoot: directory,
+  }).catch((error) => error);
+  if (artifacts instanceof Error) throw artifacts;
+  const facilityClaims = artifacts.flatMap(({ claims }) => claims).filter(({ domain }) => domain === "FACILITY");
+  assert.deepEqual(facilityClaims.map(({ claimId, evidenceKind }) => [claimId, evidenceKind]), [
+    ["f-installed", "EXISTS"],
+    ["f-absent", "NOT_EXISTS"],
+  ]);
+});
+
+// 리뷰 F3: 지역 원천 검증의 각 조건은 다른 조건이 모두 맞을 때 단독으로 깨져도 정확히 한 위반을 낸다.
+for (const [name, mutate, partition, code] of [
+  ["license hash 형식", (input) => {
+    input.inventory.sources[0].admissionEvidence.licenseEvidenceHash = "not-a-hash";
+    input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = "not-a-hash";
+  }, "license", "LICENSE_EVIDENCE_MISMATCH"],
+  ["policy license hash", (input) => {
+    input.sourceSnapshotPolicies[0].admissionEvidence.licenseEvidenceHash = hash("other-license");
+  }, "license", "LICENSE_EVIDENCE_MISMATCH"],
+  ["시설 capability 상태", (input) => {
+    input.inventory.sources[0].capabilities.facility.status = "CANDIDATE";
+  }, "provenance", "ACCESSIBILITY_ADMISSION_NOT_APPROVED"],
+  ["시설 capability 운영 허용", (input) => {
+    input.inventory.sources[0].capabilities.facility.productionUseAllowed = false;
+  }, "provenance", "ACCESSIBILITY_ADMISSION_NOT_APPROVED"],
+  ["capturedAt 형식", (input) => {
+    for (const target of [input.snapshots[0], input.inventory.sources[0].accessibilityAdmissionEvidence, input.sourceSnapshotPolicies[0]]) {
+      target.capturedAt = "not-a-time";
+    }
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ["freshUntil 형식", (input) => {
+    input.snapshots[0].freshUntil = "not-a-time";
+    input.inventory.sources[0].accessibilityAdmissionEvidence.freshUntil = "not-a-time";
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ["미래 capturedAt", (input) => {
+    for (const target of [input.snapshots[0], input.inventory.sources[0].accessibilityAdmissionEvidence, input.sourceSnapshotPolicies[0]]) {
+      target.capturedAt = "2026-07-28T00:00:00.001Z";
+    }
+  }, "freshness", "SNAPSHOT_TIME_INVALID"],
+  ...["snapshotPath", "capturedAt", "freshUntil", "rawSha256", "rowsSha256", "stationCount", "rowCount"].map((key) => [
+    `inventory ${key}`,
+    (input) => {
+      const evidence = input.inventory.sources[0].accessibilityAdmissionEvidence;
+      evidence[key] = typeof evidence[key] === "number" ? evidence[key] + 1 : `${evidence[key]}-x`;
+      if (key === "capturedAt") evidence[key] = "2026-07-27T22:00:00.000Z";
+      if (key === "freshUntil") evidence[key] = "2026-07-28T22:00:00.000Z";
+      if (key === "rawSha256" || key === "rowsSha256") evidence[key] = hash(`other-${key}`);
+    },
+    "snapshot",
+    "SNAPSHOT_IDENTITY_MISMATCH",
+  ]),
+  ["rawSha256 형식", (input) => {
+    input.snapshots[0].rawSha256 = "raw";
+    input.inventory.sources[0].accessibilityAdmissionEvidence.rawSha256 = "raw";
+    input.sourceSnapshotPolicies[0].rawSha256 = "raw";
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy capturedAt", (input) => {
+    input.sourceSnapshotPolicies[0].capturedAt = "2026-07-27T22:00:00.000Z";
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy rawSha256", (input) => {
+    input.sourceSnapshotPolicies[0].rawSha256 = hash("other-raw");
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ["policy contentSha256", (input) => {
+    input.sourceSnapshotPolicies[0].contentSha256 = hash("other-content");
+  }, "snapshot", "SNAPSHOT_IDENTITY_MISMATCH"],
+  ...["snapshotStatus", "fetchStatus", "schemaStatus", "licenseStatus"].map((key) => [
+    `policy ${key}`, (input) => { input.sourceSnapshotPolicies[0][key] = "PENDING"; }, "snapshot", "SNAPSHOT_POLICY_MISMATCH",
+  ]),
+  ...["redistributionAllowed", "credentialRedacted"].map((key) => [
+    `policy ${key}`, (input) => { input.sourceSnapshotPolicies[0][key] = false; }, "snapshot", "SNAPSHOT_POLICY_MISMATCH",
+  ]),
+  ["policy freshnessExpiresAt 형식", (input) => {
+    input.sourceSnapshotPolicies[0].freshnessExpiresAt = "not-a-time";
+  }, "freshness", "SNAPSHOT_STALE"],
+  ["policy 만료", (input) => {
+    input.sourceSnapshotPolicies[0].freshnessExpiresAt = EVALUATED_AT;
+  }, "freshness", "SNAPSHOT_STALE"],
+]) {
+  test(`지역 원천 ${name}만 깨지면 ${code} 하나만 낸다(F3)`, () => {
+    const input = regionalCountInput("daegu");
+    mutate(input);
+
+    const report = buildAccessibilitySourceCoverageReport(input);
+
+    assert.equal(report.decision, "NO_GO");
+    assert.deepEqual(report.violations[partition], [`daegu-transportation-accessibility:${code}`]);
+    for (const other of Object.keys(emptyViolations()).filter((key) => key !== partition && key !== "provenance")) {
+      assert.deepEqual(report.violations[other], [], `${other} must stay empty`);
+    }
+  });
+}
+
+test("rowsSha256과 다른 지역 row는 hash 밖 필드만 바뀌어도 claim을 결속하지 못한다(F3)", () => {
+  const input = regionalCountInput("daegu");
+  // provider record hash에 들어가지 않는 역 이름만 바꾸고 claim도 그 이름으로 맞춘다. rowsSha256은 그대로다.
+  input.snapshots[0].rows[0].stationName = "바뀐역";
+  for (const claim of input.artifacts[0].claims) claim.stationName = "바뀐역";
+
+  const report = buildAccessibilitySourceCoverageReport(input);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.equal(report.violations.provenance.filter((value) => value.endsWith("CLAIM_SNAPSHOT_BINDING_MISMATCH")).length,
+    input.artifacts[0].claims.length);
+});

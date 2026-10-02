@@ -13,6 +13,8 @@ import {
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
+import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
+import { cleanRegionalStationName, regionalProviderStationNameKey } from "./lib/regional-station-name.mjs";
 import { normalizeMolitProviderLineName } from "./lib/molit-svg-provider-identity.mjs";
 
 const VIOLATION_KEYS = Object.freeze([
@@ -28,6 +30,35 @@ const ABSENCE_EVIDENCE_MODES = new Set([
   "EXPLICIT_ZERO",
   "EXHAUSTIVE_LIST",
   "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED",
+]);
+// 지역 공식 접근성 원천(register-regional-accessibility.mjs)의 snapshot 종류별 claim 재계산 규칙.
+// facilityTypes는 원천이 실제로 제공하는 count 열만 담는다. 대전·광주 원천에는 휠체어리프트 열이 없다.
+// absenceEvidenceMode는 원문에 명시된 0만 부재로 인정할 때의 모드이며, claim마다 원문 값을 다시 확인한다.
+const REGIONAL_ACCESSIBILITY_SNAPSHOTS = new Map([
+  ["busan-accessibility-snapshot", {
+    sourceId: "busan-transportation-accessibility",
+    facilityTypes: { ELEVATOR: ["el_i", "el_o"], ESCALATOR: ["es"], WHEELCHAIR_LIFT: ["wl_i", "wl_o"] },
+    recordFields: ["wl_i", "wl_o", "el_i", "el_o", "es"],
+    absenceEvidenceMode: "EXPLICIT_ZERO",
+  }],
+  ["daegu-accessibility-snapshot", {
+    sourceId: "daegu-transportation-accessibility",
+    facilityTypes: { ELEVATOR: ["elevator"], ESCALATOR: ["escalator"], WHEELCHAIR_LIFT: ["wheelchair_lift"] },
+    recordFields: ["elevator", "escalator", "wheelchair_lift"],
+    absenceEvidenceMode: "EXPLICIT_ZERO",
+  }],
+  ["daejeon-accessibility-snapshot", {
+    sourceId: "daejeon-transportation-accessibility",
+    facilityTypes: { ELEVATOR: ["elevator"], ESCALATOR: ["escalator"] },
+    recordFields: ["elevator", "escalator", "wheelchair_lift"],
+    absenceEvidenceMode: null,
+  }],
+  ["gwangju-accessibility-snapshot", {
+    sourceId: "gwangju-transportation-accessibility",
+    facilityTypes: { ELEVATOR: ["elevator"], ESCALATOR: ["escalator"] },
+    recordFields: ["elevator", "escalator", "wheelchair_lift"],
+    absenceEvidenceMode: null,
+  }],
 ]);
 const COVERAGE_REGION_IDS = Object.freeze({
   "수도권": "capital",
@@ -241,10 +272,7 @@ function sourceCoversStationDomain(source, stationLine, domain, snapshot) {
     TRANSFER: "indoor_movement_paths",
   }[domain];
   const scope = source?.coverageScope;
-  const absenceEvidenceMode = source?.registrationEvidence
-    ? snapshot?.absenceEvidenceMode
-    : source?.accessibilityAdmissionEvidence?.absenceEvidenceMode;
-  return ABSENCE_EVIDENCE_MODES.has(absenceEvidenceMode)
+  return ABSENCE_EVIDENCE_MODES.has(absenceEvidenceModeFor(source, snapshot))
     && scope?.regionIds?.includes(stationLine.regionId)
     && scope?.operatorIds?.includes(stationLine.operatorId)
     && (!scope.lineIds || scope.lineIds.includes(stationLine.lineId))
@@ -551,8 +579,15 @@ export async function loadAccessibilityAdmissionSnapshots({ sources, referencedS
     if (!reference) return { sourceId: source.id };
     const bytes = await readFile(path.resolve(repositoryRoot, reference.snapshotPath));
     const snapshot = JSON.parse(bytes);
+    // 지역 원천 snapshot 파일에는 id가 없다. 등록 도구와 같은 규칙(내용 hash + 관측일)으로 유도해야
+    // inventory·policy의 snapshot id가 이 파일 내용에 결속된다.
+    const regionalSnapshotId = snapshot.snapshotId === undefined
+      && REGIONAL_ACCESSIBILITY_SNAPSHOTS.has(snapshot.artifactKind)
+      ? `${snapshot.sourceId}-${digest(JSON.stringify(snapshot))}-${compactSeoulDate(snapshot.capturedAt)}`
+      : undefined;
     return {
       ...snapshot,
+      ...(regionalSnapshotId ? { snapshotId: regionalSnapshotId } : {}),
       sourceId: snapshot.sourceId,
       snapshotPath: reference.snapshotPath,
       snapshotFileSha256: digest(bytes),
@@ -691,11 +726,15 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           evidenceHash: row.evidence_hash,
         }))
       : [];
+    // 미설치(NOT_INSTALLED) 시설 행은 존재 주장이 아니라 부재 주장이다. 설치 상태 열이 있으면 그대로 claim에 옮긴다.
+    const facilityInstallationColumn = tableHasColumns(database, "facilities", ["installation_status"])
+      ? "installation_status"
+      : "NULL";
     const facilityClaims = tableExists(database, "facilities")
       ? database.prepare(tableHasColumns(database, "facilities", ["source_id", "source_snapshot_id", "provider_record_hash", "evidence_hash"])
         ? `
           SELECT id, station_id, type, source_id, source_snapshot_id,
-                 provider_record_hash, evidence_hash
+                 provider_record_hash, evidence_hash, ${facilityInstallationColumn} AS installation_status
           FROM facilities
           ORDER BY station_id, type, id
         `
@@ -707,7 +746,7 @@ function readAccessibilityArtifact(sqlitePath, artifactId, sqliteSha256) {
           lineId: "",
           facilityType: row.type,
           domain: "FACILITY",
-          evidenceKind: "EXISTS",
+          evidenceKind: row.installation_status === "NOT_INSTALLED" ? "NOT_EXISTS" : "EXISTS",
           sourceId: row.source_id,
           sourceSnapshotId: row.source_snapshot_id,
           providerRecordHash: row.provider_record_hash,
@@ -910,6 +949,11 @@ function validateSource(source, snapshotsByIdentity, policiesByIdentity, evaluat
     violations.snapshot.push(`${source.id}:SNAPSHOT_IDENTITY_MISSING`);
     return;
   }
+  const regionalSnapshot = snapshotsByIdentity.get(`${source.id}\0${evidence?.snapshotId}`);
+  if (evidence && regionalAccessibilitySnapshot(regionalSnapshot)) {
+    validateRegionalSource(source, regionalSnapshot, policiesByIdentity, evaluatedMillis, violations);
+    return;
+  }
   if (evidence && (!sha256(evidence.licenseEvidenceHash)
     || evidence.licenseEvidenceHash !== source.admissionEvidence?.licenseEvidenceHash)) {
     violations.license.push(`${source.id}:LICENSE_EVIDENCE_MISMATCH`);
@@ -1013,9 +1057,7 @@ function validateClaim(artifact, claim, sources, snapshotsByIdentity, violations
     valid = false;
   }
   if (claim.evidenceKind === "NOT_EXISTS"
-    && !ABSENCE_EVIDENCE_MODES.has(source?.registrationEvidence
-      ? snapshotForClaim(snapshotsByIdentity, claim)?.absenceEvidenceMode
-      : evidence?.absenceEvidenceMode)) {
+    && !ABSENCE_EVIDENCE_MODES.has(absenceEvidenceModeFor(source, snapshotForClaim(snapshotsByIdentity, claim)))) {
     violations.absenceEvidence.push(`${claimId}:ABSENCE_EVIDENCE_MISSING`);
     valid = false;
   }
@@ -1028,6 +1070,7 @@ function snapshotForClaim(snapshotsByIdentity, claim) {
 
 function claimMatchesSnapshot(snapshot, claim) {
   if (!snapshot) return false;
+  if (regionalAccessibilitySnapshot(snapshot)) return regionalClaimMatchesSnapshot(snapshot, claim);
   if (Array.isArray(snapshot.claimBindings)) {
     return snapshot.claimBindings.some((binding) => [
       "stationId", "lineId", "facilityType", "providerRecordHash", "evidenceHash",
@@ -1085,6 +1128,117 @@ function claimMatchesSnapshot(snapshot, claim) {
     return expectedEvidenceHash === claim.evidenceHash;
   }
   return false;
+}
+
+function absenceEvidenceModeFor(source, snapshot) {
+  if (source?.registrationEvidence) return snapshot?.absenceEvidenceMode;
+  const regional = regionalAccessibilitySnapshot(snapshot);
+  return regional ? regional.absenceEvidenceMode : source?.accessibilityAdmissionEvidence?.absenceEvidenceMode;
+}
+
+function regionalAccessibilitySnapshot(snapshot) {
+  const regional = REGIONAL_ACCESSIBILITY_SNAPSHOTS.get(snapshot?.artifactKind);
+  return regional && regional.sourceId === snapshot.sourceId ? regional : undefined;
+}
+
+// 지역 원천은 승인 판정을 잠긴 snapshot policy(LICENSE PASS·LOCKED)와 inventory 시설 capability에 둔다.
+// 원천 snapshot에는 별도 관측 시각이 없어 수집 시각(capturedAt)이 관측 시각이다.
+function validateRegionalSource(source, snapshot, policiesByIdentity, evaluatedMillis, violations) {
+  const evidence = source.accessibilityAdmissionEvidence;
+  const policy = policiesByIdentity.get(`${source.id}\0${evidence.snapshotId}`);
+  const licenseEvidenceHash = source.admissionEvidence?.licenseEvidenceHash;
+  if (!sha256(licenseEvidenceHash) || policy?.admissionEvidence?.licenseEvidenceHash !== licenseEvidenceHash) {
+    violations.license.push(`${source.id}:LICENSE_EVIDENCE_MISMATCH`);
+  }
+  if (source.capabilities?.facility?.status !== "SUPPORTED"
+    || source.capabilities.facility.productionUseAllowed !== true) {
+    violations.provenance.push(`${source.id}:ACCESSIBILITY_ADMISSION_NOT_APPROVED`);
+  }
+  const capturedMillis = Date.parse(snapshot.capturedAt);
+  if (!Number.isFinite(capturedMillis)
+    || !Number.isFinite(Date.parse(snapshot.freshUntil))
+    || capturedMillis > evaluatedMillis) {
+    violations.freshness.push(`${source.id}:SNAPSHOT_TIME_INVALID`);
+  }
+  if (["snapshotPath", "capturedAt", "freshUntil", "rawSha256", "rowsSha256", "stationCount", "rowCount"]
+    .some((key) => snapshot[key] !== evidence[key])
+    || !sha256(evidence.rawSha256)
+    || !Array.isArray(snapshot.rows)
+    || digest(JSON.stringify(snapshot.rows)) !== evidence.rowsSha256
+    || policy?.capturedAt !== evidence.capturedAt
+    || policy?.rawSha256 !== evidence.rawSha256
+    || policy?.contentSha256 !== evidence.rowsSha256) {
+    violations.snapshot.push(`${source.id}:SNAPSHOT_IDENTITY_MISMATCH`);
+  }
+  if (!policy
+    || policy.snapshotStatus !== "LOCKED"
+    || policy.fetchStatus !== "SUCCESS"
+    || policy.schemaStatus !== "PASS"
+    || policy.licenseStatus !== "PASS"
+    || policy.redistributionAllowed !== true
+    || policy.credentialRedacted !== true) {
+    violations.snapshot.push(`${source.id}:SNAPSHOT_POLICY_MISMATCH`);
+  } else if (!Number.isFinite(Date.parse(policy.freshnessExpiresAt))
+    || evaluatedMillis >= Date.parse(policy.freshnessExpiresAt)) {
+    violations.freshness.push(`${source.id}:SNAPSHOT_STALE`);
+  }
+}
+
+const observedRegionalRowsCache = new WeakMap();
+
+function observedRegionalRows(snapshot) {
+  if (!observedRegionalRowsCache.has(snapshot)) {
+    let observed = null;
+    if (Array.isArray(snapshot.rows) && digest(JSON.stringify(snapshot.rows)) === snapshot.rowsSha256) {
+      try {
+        observed = snapshot.artifactKind === "busan-accessibility-snapshot"
+          ? observedBusanAccessibilityRows(snapshot)
+          : snapshot.rows;
+      } catch {
+        observed = null;
+      }
+    }
+    observedRegionalRowsCache.set(snapshot, observed);
+  }
+  return observedRegionalRowsCache.get(snapshot);
+}
+
+// claim의 provider record hash를 원천 row에서 다시 계산한다. 원문에 count가 명시되지 않은(null) 시설은
+// 어떤 claim도 결속하지 못하고, 부재(NOT_EXISTS)는 명시적 0에서만 성립한다.
+function regionalClaimMatchesSnapshot(snapshot, claim) {
+  const regional = regionalAccessibilitySnapshot(snapshot);
+  const fields = Object.hasOwn(regional.facilityTypes, claim.facilityType)
+    ? regional.facilityTypes[claim.facilityType]
+    : undefined;
+  const observedRows = observedRegionalRows(snapshot);
+  if (!fields || !observedRows || claim.evidenceHash !== snapshot.rowsSha256) return false;
+  // claim의 정본 역(loader가 stationId에서 붙인 이름)이 원천 row의 역과 같아야 한다. 후보 생성과 같은 규칙이다.
+  const claimStationName = cleanRegionalStationName(claim.stationName);
+  if (!claimStationName) return false;
+  return snapshot.rows.some((row, index) => {
+    if (claim.lineId && row.lineId !== claim.lineId) return false;
+    if (regionalProviderStationNameKey(row.stationName) !== claimStationName) return false;
+    const counts = fields.map((field) => observedRows[index][field]);
+    if (counts.some((count) => !Number.isInteger(count) || count < 0)) return false;
+    const count = counts.reduce((total, value) => total + value, 0);
+    const providerRecordHash = digest(JSON.stringify({
+      stationCode: row.stationCode,
+      lineId: row.lineId,
+      type: claim.facilityType,
+      count,
+      ...Object.fromEntries(regional.recordFields.map((field) => [field, row[field]])),
+    }));
+    if (providerRecordHash !== claim.providerRecordHash) return false;
+    // 존재는 관측 count ≥ 1, 부재는 원문에 명시된 0에서만 결속한다(FACILITY·evidence 공통).
+    return claim.evidenceKind === (count > 0 ? "EXISTS" : "NOT_EXISTS");
+  });
+}
+
+function compactSeoulDate(value) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }
 
 function normalizeStationName(value) {

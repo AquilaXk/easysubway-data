@@ -54,8 +54,9 @@ test("선택된 topology 변경을 파생하고 미관측 시설을 부재로 �
   const terminal = snapshot.rows.find(({ stationCode }) => stationCode === "synthetic-terminal");
   assert.equal(terminal.elevator, null);
   assert.equal(terminal.escalator, null);
-  assert.equal(terminal.wheelchair_lift, 0);
-  assert.ok(snapshot.rows.every(({ wheelchair_lift }) => wheelchair_lift === 0));
+  // 원천 CSV에 휠체어리프트 열이 없으므로 0을 지어내지 않고 미관측(null)으로 남긴다.
+  assert.equal(terminal.wheelchair_lift, null);
+  assert.ok(snapshot.rows.every(({ wheelchair_lift }) => wheelchair_lift === null));
   assert.throws(() => collectGwangjuAccessibility({
     ...inputs, topologySnapshot, now: new Date(topologySnapshot.capturedAt),
   }), /topology/);
@@ -126,7 +127,7 @@ test("광주 accessibility collector는 엘리베이터·에스컬레이터 CSV�
     row.lineId === LINE_ID
       && (row.elevator == null || Number.isInteger(row.elevator) && row.elevator >= 0)
       && (row.escalator == null || Number.isInteger(row.escalator) && row.escalator >= 0)
-      && row.wheelchair_lift === 0
+      && row.wheelchair_lift === null
   )), true);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.elevator, 0), 62);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.escalator, 0), 99);

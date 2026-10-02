@@ -45,7 +45,7 @@ async function inputs() {
       topologyNow,
       timetableNow: routeMapNow,
     }),
-    readJson("tools/datapack/sources/busan-transportation-accessibility-20260724.json"),
+    readJson("tools/datapack/sources/busan-transportation-accessibility-3854af12545fc002afaae3204784bf5e9a786a328223c531702b635cf9c47a78-20260909.json"),
   ]);
   const { busanTimetableFixture: timetableFixture, busanTopology: topologySnapshot, inventory } = regional;
   const admission = inventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence;
@@ -112,7 +112,7 @@ test("부산 접근성은 canonical edge ID를 보존하고 공식 edge 증거 �
   assert.throws(() => materializeBusanAccessibility(options), /topology lineage mismatch/);
 });
 
-test("부산 공식 114역 편의시설을 facility·evidence 342건으로 materialize한다", async () => {
+test("부산 공식 114역 편의시설 중 원문에 count가 명시된 336건만 facility·evidence로 materialize한다", async () => {
   const { timetableFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeBusanAccessibility({
     baseFixture: timetableFixture,
@@ -125,11 +125,12 @@ test("부산 공식 114역 편의시설을 facility·evidence 342건으로 mater
   const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
 
-  assert.equal(facilities.length, 342);
-  assert.equal(evidence.length, 342);
-  assert.equal(new Set(facilities.map(({ id }) => id)).size, 342);
+  // 원문에서 wl_i·wl_o가 빈 값인 6역(95~100)은 휠체어리프트 미관측이다(0으로 간주하지 않는다).
+  assert.equal(facilities.length, 336);
+  assert.equal(evidence.length, 336);
+  assert.equal(new Set(facilities.map(({ id }) => id)).size, 336);
   assert.equal(new Set(evidence.map(({ stationId, lineId, facilityType }) =>
-    `${stationId}:${lineId}:${facilityType}`)).size, 342);
+    `${stationId}:${lineId}:${facilityType}`)).size, 336);
   assert.deepEqual([...new Set(facilities.map(({ type }) => type))].sort(), [
     "ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT",
   ]);
@@ -148,10 +149,10 @@ test("부산 공식 114역 편의시설을 facility·evidence 342건으로 mater
       && strictRouteEligible === false
   )));
 
-  // wl=0 역도 wheelchair_lift NOT_EXISTS를 남겨 4개 노선 field provenance를 확보한다.
+  // 원문에 명시적 0이 적힌 역만 wheelchair_lift NOT_EXISTS를 남긴다.
   const wheelchair = evidence.filter(({ facilityType }) => facilityType === "WHEELCHAIR_LIFT");
-  assert.equal(wheelchair.length, 114);
-  assert.equal(wheelchair.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 111);
+  assert.equal(wheelchair.length, 108);
+  assert.equal(wheelchair.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 105);
   assert.equal(wheelchair.filter(({ evidenceKind }) => evidenceKind === "EXISTS").length, 3);
   assert.deepEqual(
     [...new Set(wheelchair.map(({ lineId }) => lineId))].sort(),
@@ -167,8 +168,12 @@ test("부산 공식 114역 편의시설을 facility·evidence 342건으로 mater
         && facilityType === "WHEELCHAIR_LIFT").evidenceKind,
     "EXISTS",
   );
-  const station100 = facilities.find(({ id }) => id === "facility-busan-100-wheelchair-lift");
-  assert.equal(station100.installationStatus, "NOT_INSTALLED");
+  for (const code of ["95", "96", "97", "98", "99", "100"]) {
+    assert.equal(facilities.some(({ id }) => id === `facility-busan-${code}-wheelchair-lift`), false, code);
+    assert.equal(facilities.some(({ id }) => id === `facility-busan-${code}-elevator`), true, code);
+  }
+  const explicitZero = facilities.find(({ id }) => id === "facility-busan-101-wheelchair-lift");
+  assert.equal(explicitZero.installationStatus, "NOT_INSTALLED");
 
   assert.equal(source.license, "공공누리 제1유형");
   assert.deepEqual(source.coverageScope.lineIds, accessibilitySnapshot.lineIds);
@@ -177,8 +182,8 @@ test("부산 공식 114역 편의시설을 facility·evidence 342건으로 mater
   assert.match(pack.id, /^nationwide-busan-accessibility-[a-f0-9]{64}$/);
   assert.equal(typeof materializedBusanAccessibilityPackContentHash(pack, pack.version), "string");
   assert.match(materializedBusanAccessibilityPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
-  assert.equal(pack.version, "20260724");
-  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260724" });
+  assert.equal(pack.version, "20260909");
+  assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260909" });
 });
 
 test("부산 accessibility admission은 freshness·hash·scope·중복을 fail closed한다", async () => {
@@ -293,9 +298,9 @@ test("materialized SQLite와 provenance가 부산 accessibility_facilities 4건�
   ).replace(/\.gz$/, "");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM facilities WHERE source_id = ?")
-    .get(SOURCE_ID).count, 342);
+    .get(SOURCE_ID).count, 336);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_facility_evidence WHERE source_id = ?")
-    .get(SOURCE_ID).count, 342);
+    .get(SOURCE_ID).count, 336);
   assert.equal(database.prepare(`
     SELECT COUNT(DISTINCT facility_type) AS count
     FROM station_facility_evidence

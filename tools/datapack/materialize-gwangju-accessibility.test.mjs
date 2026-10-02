@@ -59,13 +59,15 @@ test("schema2 미관측 시설은 materialized 부재 evidence가 되지 않는�
   const facilities = pack.facilities.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const expected = accessibilitySnapshot.rows.reduce((sum, row) => sum
-    + [row.elevator, row.escalator, row.wheelchair_lift].filter((count) => count !== null).length, 0);
+    + [row.elevator, row.escalator].filter((count) => count !== null).length, 0);
   assert.equal(facilities.length, expected);
   assert.equal(evidence.length, expected);
-  assert.ok(facilities.filter(({ type }) => type === "WHEELCHAIR_LIFT")
-    .every(({ installationStatus }) => installationStatus === "NOT_INSTALLED"));
-  assert.ok(facilities.filter(({ type }) => type !== "WHEELCHAIR_LIFT")
-    .every(({ installationStatus }) => installationStatus !== "NOT_INSTALLED"));
+  // 광주 원천(엘리베이터·에스컬레이터 CSV)에는 휠체어리프트 열이 없다. 수집기도 0을 지어내지 않는다.
+  assert.ok(accessibilitySnapshot.rows.every(({ wheelchair_lift }) => wheelchair_lift === null));
+  assert.equal(evidence.filter(({ facilityType }) => facilityType === "WHEELCHAIR_LIFT").length, 0);
+  assert.equal(evidence.filter(({ evidenceKind }) => evidenceKind === "NOT_EXISTS").length, 0);
+  assert.ok(facilities.every(({ installationStatus }) => installationStatus !== "NOT_INSTALLED"));
+  assert.ok(facilities.every(({ name, description }) => !`${name}${description}`.includes("휠체어리프트")));
   assert.ok(evidence.every(({ operationalStatus, strictRouteEligible }) =>
     operationalStatus === "UNKNOWN" && strictRouteEligible === false));
   const elevatorBytes = await readFile(path.join(root, "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041385.csv"));
@@ -129,22 +131,19 @@ test("광주 공식 관측 시설만 facility·evidence로 materialize한다", a
   const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
 
   const expectedCount = accessibilitySnapshot.rows.reduce((sum, row) => sum
-    + [row.elevator, row.escalator, row.wheelchair_lift].filter((count) => count !== null).length, 0);
+    + [row.elevator, row.escalator].filter((count) => count !== null).length, 0);
   assert.equal(facilities.length, expectedCount);
   assert.equal(evidence.length, expectedCount);
   assert.equal(new Set(facilities.map(({ id }) => id)).size, expectedCount);
   assert.equal(new Set(evidence.map(({ stationId, lineId, facilityType }) =>
     `${stationId}:${lineId}:${facilityType}`)).size, expectedCount);
   assert.deepEqual([...new Set(facilities.map(({ type }) => type))].sort(), [
-    "ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT",
+    "ELEVATOR", "ESCALATOR",
   ]);
   assert.equal(new Set(facilities.map(({ lineId }) => lineId)).size, 1);
   assert.deepEqual([...new Set(facilities.map(({ lineId }) => lineId))], [LINE_ID]);
-  assert.equal(facilities.filter(({ type }) => type === "WHEELCHAIR_LIFT").length, 20);
-  assert.ok(facilities.filter(({ type }) => type === "WHEELCHAIR_LIFT")
-    .every(({ installationStatus }) => installationStatus === "NOT_INSTALLED"));
-  assert.ok(facilities.filter(({ type }) => type !== "WHEELCHAIR_LIFT")
-    .every(({ installationStatus }) => installationStatus !== "NOT_INSTALLED"));
+  assert.equal(facilities.filter(({ type }) => type === "WHEELCHAIR_LIFT").length, 0);
+  assert.ok(facilities.every(({ installationStatus }) => installationStatus !== "NOT_INSTALLED"));
   assert.ok(facilities.every(({ status, statusMeaning, provenanceKind, derivationKind, operationalStatus }) => (
     status === "UNKNOWN"
       && statusMeaning === "STATIC_LOCATION"
@@ -259,7 +258,7 @@ test("광주 accessibility admission은 freshness·hash·scope·중복을 fail c
   }), /already exists/);
 });
 
-test("materialized SQLite와 provenance는 광주 시설 필드를 SUPPORTED로 검증한다", async (context) => {
+test("materialized SQLite와 provenance는 광주 휠체어리프트 미제공을 wheelchair_lift gap으로 드러낸다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-gwangju-accessibility-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -293,7 +292,7 @@ test("materialized SQLite와 provenance는 광주 시설 필드를 SUPPORTED로 
   ).replace(/\.gz$/, "");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   const expectedCount = accessibilitySnapshot.rows.reduce((sum, row) => sum
-    + [row.elevator, row.escalator, row.wheelchair_lift].filter((count) => count !== null).length, 0);
+    + [row.elevator, row.escalator].filter((count) => count !== null).length, 0);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM facilities WHERE source_id = ?")
     .get(SOURCE_ID).count, expectedCount);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_facility_evidence WHERE source_id = ?")
@@ -302,14 +301,17 @@ test("materialized SQLite와 provenance는 광주 시설 필드를 SUPPORTED로 
     SELECT COUNT(DISTINCT facility_type) AS count
     FROM station_facility_evidence
     WHERE source_id = ?
-  `).get(SOURCE_ID).count, 3);
+  `).get(SOURCE_ID).count, 2);
   database.close();
 
   const provenance = JSON.parse(await readFile(path.join(packOutput, "current.provenance.json"), "utf8"));
   const facilityRecords = provenance.packs.flatMap(({ records }) => records).filter(
     ({ sourceId, entityType }) => sourceId === SOURCE_ID && entityType === "facility",
   );
-  for (const field of ACCESSIBILITY_FIELDS) {
+  // 원천이 휠체어리프트를 공표하지 않으므로 wheelchair_lift 필드 provenance가 없다. 이 공백은 지어낸 0으로
+  // 메우지 않고 LAUNCH_REQUIRED gap(MISSING)으로 드러낸다(QA 결정 2026-10-02).
+  assert.equal(facilityRecords.filter((record) => record.field === "wheelchair_lift").length, 0);
+  for (const field of ACCESSIBILITY_FIELDS.filter((name) => name !== "wheelchair_lift")) {
     const fieldRecords = facilityRecords.filter((record) => record.field === field);
     assert.ok(fieldRecords.length > 0, `provenance missing field: ${field}`);
     assert.deepEqual(
@@ -341,8 +343,8 @@ test("materialized SQLite와 provenance는 광주 시설 필드를 SUPPORTED로 
       && sourceDomain === "accessibility_facilities",
   );
   assert.equal(accessibilityRequirements.length, 1);
-  assert.equal(accessibilityRequirements[0].status, "SUPPORTED");
-  assert.deepEqual(accessibilityRequirements[0].missingFields, []);
+  assert.equal(accessibilityRequirements[0].status, "MISSING");
+  assert.deepEqual(accessibilityRequirements[0].missingFields, ["wheelchair_lift"]);
   assert.deepEqual(
     accessibilityRequirements.map(({ lineId }) => lineId),
     [LINE_ID],

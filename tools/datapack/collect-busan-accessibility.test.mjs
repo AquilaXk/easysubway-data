@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { collectBusanAccessibility, replayBusanAccessibility } from "./collect-busan-accessibility.mjs";
+import {
+  collectBusanAccessibility,
+  observedBusanAccessibilityRows,
+  replayBusanAccessibility,
+} from "./collect-busan-accessibility.mjs";
 
 const topology = JSON.parse(await readFile(
   new URL("./sources/busan-transportation-route-topology-20260720.json", import.meta.url),
@@ -93,7 +97,7 @@ test("부산 accessibility collector는 누락·음수 시설 값을 fail closed
   }), /fields=toilet/);
 });
 
-test("부산 accessibility collector는 빈 count 필드를 0으로 정규화한다", async () => {
+test("부산 accessibility collector는 빈 count 필드를 0이 아닌 미관측(null)으로 남긴다", async () => {
   const snapshot = await collectBusanAccessibility({
     serviceKey: "key",
     stationScopes: topology.scope,
@@ -106,11 +110,36 @@ test("부산 accessibility collector는 빈 count 필드를 0으로 정규화한
       helptake: "",
     }),
   });
-  assert.equal(snapshot.rows[0].wl_i, 0);
-  assert.equal(snapshot.rows[0].wl_o, 0);
-  assert.equal(snapshot.rows[0].ourbridge, 0);
-  assert.equal(snapshot.rows[0].helptake, 0);
+  assert.equal(snapshot.rows[0].wl_i, null);
+  assert.equal(snapshot.rows[0].wl_o, null);
+  assert.equal(snapshot.rows[0].ourbridge, null);
+  assert.equal(snapshot.rows[0].helptake, null);
   assert.equal(snapshot.rows[0].el_i, 2);
+  assert.equal(snapshot.rows[0].es, 3);
+});
+
+test("부산 보존 원문 재판정은 명시적 0과 빈 필드를 구분하고 저장 row 변조를 거부한다", async () => {
+  const snapshot = await collectBusanAccessibility({
+    serviceKey: "key",
+    stationScopes: topology.scope,
+    now: new Date("2026-07-24T00:00:00.000Z"),
+    fetchImpl: async () => response("다대포해수욕장", { ...FIELDS, wl_i: "", wl_o: "" }),
+  });
+  const observed = observedBusanAccessibilityRows(snapshot);
+  assert.equal(observed[0].wl_i, null);
+  assert.equal(observed[0].el_i, 2);
+
+  // 이전 수집기는 빈 필드를 0으로 저장했다. 원문이 빈 값이면 그 0은 관측값이 아니다.
+  const legacy = structuredClone(snapshot);
+  legacy.rows = legacy.rows.map((row) => ({ ...row, wl_i: 0, wl_o: 0 }));
+  assert.equal(observedBusanAccessibilityRows(legacy)[0].wl_i, null);
+
+  const tampered = structuredClone(snapshot);
+  tampered.rows[0].el_i = 0;
+  assert.throws(() => observedBusanAccessibilityRows(tampered), /retained raw count mismatch/);
+  const missingRaw = structuredClone(snapshot);
+  delete missingRaw.rawResponses;
+  assert.throws(() => observedBusanAccessibilityRows(missingRaw), /retained raw responses are required/);
 });
 
 test("부산 accessibility collector는 credential 없는 provider·transport 진단만 남긴다", async () => {
