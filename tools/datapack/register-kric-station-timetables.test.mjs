@@ -163,3 +163,21 @@ test("등록 결과는 scope 필수 원천에 새 id를 함께 올릴 때 invent
   await writeFile(scopePath, `${JSON.stringify(scope, null, 2)}\n`);
   await validate();
 });
+
+test("수집본의 노선 목록·역 집합이 고정 바인딩과 다르면 COLLECTION_LINES로 거부한다", async (t) => {
+  const { root, files, artifact, now } = await fixture(t);
+  const before = await snapshotOf(root);
+  const register = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  for (const mutate of [
+    (value) => { value.lines[0].stations[0].stinNm = "다른역"; },
+    (value) => { value.lines[1].stations.pop(); },
+    (value) => { value.lines[2].lineId = "line-other"; },
+    (value) => { value.lines.pop(); },
+  ]) {
+    const changed = structuredClone(artifact);
+    mutate(changed);
+    await writeFile(files.collectionPath, `${JSON.stringify(changed, null, 2)}\n`);
+    await assert.rejects(register(), /KRIC_STATION_REGISTRATION_COLLECTION_LINES/u);
+  }
+  assert.deepEqual(await snapshotOf(root), before);
+});
