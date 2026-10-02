@@ -368,6 +368,7 @@ test("materialized production SQLite와 field provenance만 대전 1호선 membe
     "--manifest", manifestPath,
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
@@ -472,6 +473,7 @@ test("부산과 대전 topology를 하나의 nationwide production pack으로 �
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
@@ -529,17 +531,23 @@ test("접근성 coverage는 같은 운영기관의 scope 밖 지역 station-line
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
   });
 });
 
-test("명시된 접근성 coverage scope의 station-line evidence 누락을 거부한다", async (context) => {
+test("명시된 접근성 coverage scope의 역-노선이 RIDE 그래프에서 사라지면 거부한다(#873: ENTRY coverage 대신 RIDE 존재성)", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-accessibility-scope-gap-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const [baseFixture, snapshot, inventory, canonicalStationMappings] = await inputs();
   const pack = baseFixture.packs[0];
+  // #873(QA 방향 전환): 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나므로 역 단위 ENTRY/EXIT coverage는 발행 차단
+  // 조건이 아니다. 예전에는 상록수 역-노선의 증거·간선을 지우면 "verified ENTRY coverage gap"으로 거부했다.
+  // 이제는 청구 범위의 모든 역-노선이 경로 간선 끝점으로 존재해야 한다는 규칙이 같은 경우를 거부한다.
+  // 이 지역 팩은 legacy(비전국) 팩이라 2026-06 pilot의 ENTRY/EXIT 끝점도 인정한다(PR-C에서 제거). 상록수의 간선을 모두 지우면
+  // 상록수 4호선은 어떤 간선 끝점도 아니다. 사당 4호선은 pilot ENTRY/EXIT로 남는다.
   pack.stationFacilityEvidence = pack.stationFacilityEvidence
     .filter(({ stationId }) => stationId !== "station-sangnoksu");
   pack.networkEdges = pack.networkEdges.filter(({ fromNodeId, toNodeId }) =>
@@ -570,10 +578,12 @@ test("명시된 접근성 coverage scope의 station-line evidence 누락을 거�
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },
-  }), /verified ENTRY coverage gap/);
+  }), (error) => /claimed station-line has no route edge endpoint: 1 \(station-sangnoksu:seoul-4\)/.test(error.stderr ?? "")
+    && !/ENTRY|EXIT|coverage gap/.test(error.stderr ?? ""));
 });
 
 test("접근성 source가 있는 production pack은 접근성 coverage metadata 삭제를 거부한다", async (context) => {
@@ -611,6 +621,7 @@ test("접근성 source가 있는 production pack은 접근성 coverage metadata 
     "--manifest", path.join(packOutput, "current.json"),
     "--root", packOutput,
     "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },

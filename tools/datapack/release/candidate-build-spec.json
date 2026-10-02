@@ -4,7 +4,7 @@
   "candidateId": "nationwide-candidate-20261001-seq123",
   "publishedAt": "2026-10-01T23:36:22.000Z",
   "releaseSequence": 123,
-  "builderGitSha": "c77c5286cee22da74c1689956d97fea79e2f168c",
+  "builderGitSha": "7e4770db748c8bb0e252588f70f57560fd044ca2",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
   "fixtureSha256": "bbada957b589c56f10b7748ef8be1134b582d6e30506c585d76e21b592f5b9a6",
@@ -627,7 +627,7 @@
   "sourceInventorySha256": "356186877215a68d3164101260434cebacd427fc2b061057801a26d596aa9706",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
-    "sha256": "af5b202334213b9b0013fa059b97477625029581a6f2df771dd32476e006373c"
+    "sha256": "19e2fc4810a23cf7ed07eaf9cad70493fcd66b074363befca646220d6038ad05"
   },
   "productionScopePolicy": {
     "path": "tools/datapack/nationwide-coverage-targets.json",

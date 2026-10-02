@@ -99,17 +99,6 @@ function materialization(lines = stationLines()) {
   });
 }
 
-function emptyMaterialization() {
-  return materializeStationLineAccessibility({
-    candidate: materializationCandidate({
-      stationSetSha256: createHash("sha256").update("[]").digest("hex"),
-    }),
-    observedAt: NOW,
-    stationLines: [],
-    evidenceRows: [],
-  });
-}
-
 function edge(value) {
   const withoutHash = {
     edgeId: value.edgeId,
@@ -242,6 +231,87 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
   assert.equal(first.results.find(({ edgeId }) => edgeId === "ride-a-b").materializationCells.length, 0);
 });
 
+// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝난다. ENTRY/EXIT 간선이 없으면 FACILITY·EXIT cell은
+// 어떤 간선도 요구하지 않는다. materialization 분모·station set은 route stationLines 전체와 정확히 같아야 한다(리뷰 F3).
+function platformRouteEdges() {
+  return [
+    edge({ edgeId: "ride-a-b", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL" }),
+    edge({ edgeId: "transfer-a", edgeType: "IN_STATION_TRANSFER", fromNodeId: "station-a:line-1", toNodeId: "station-a:line-2", durationSeconds: 90, distanceMeters: 100 }),
+  ];
+}
+
+test("승강장 기준 입력은 FACILITY UNKNOWN·STALE과 EXIT MISSING이 있어도 환승 끝점 TRANSFER만 닫히면 eligible이다", () => {
+  const routeEdges = platformRouteEdges();
+  const value = input({ routeEdges });
+  // 환승이 쓰지 않는 cell은 닫혀 있지 않다(FACILITY UNKNOWN·STALE, EXIT MISSING).
+  assert.ok(value.materialization.stateSummary.UNKNOWN > 0);
+  assert.ok(value.materialization.stateSummary.MISSING > 0);
+  assert.ok(value.materialization.stateSummary.STALE > 0);
+  const result = evaluateRouteAccessibilityEdges(value, policyForEdges(routeEdges));
+  assert.equal(result.eligible, true);
+  assert.deepEqual(result.results.map(({ edgeId, state }) => ({ edgeId, state })), [
+    { edgeId: "ride-a-b", state: "PASS" },
+    { edgeId: "transfer-a", state: "NOT_APPLICABLE" },
+  ]);
+  assert.deepEqual(
+    result.results.flatMap(({ materializationCells }) => materializationCells.map(({ stationId, lineId, domain }) => `${stationId}:${lineId}:${domain}`)),
+    ["station-a:line-1:TRANSFER", "station-a:line-2:TRANSFER"],
+  );
+});
+
+test("승강장 기준 입력도 환승 끝점 TRANSFER cell이 UNKNOWN이면 ineligible이다", () => {
+  const routeEdges = platformRouteEdges();
+  const lines = stationLines();
+  const unresolved = materializeStationLineAccessibility({
+    candidate: materializationCandidate(),
+    observedAt: NOW,
+    stationLines: lines.map(({ lineSequence: _lineSequence, ...line }) => line),
+    evidenceRows: [
+      evidence({ domain: "TRANSFER" }),
+      evidence({ stationId: "station-a", lineId: "line-2", operatorId: "operator-2", domain: "TRANSFER", state: "UNKNOWN", evidenceKind: "PROVIDER_NO_DATA", evidenceReason: "provider no data" }),
+    ],
+  });
+  const result = evaluateRouteAccessibilityEdges(input({ routeEdges, materialization: unresolved }), policyForEdges(routeEdges));
+  assert.equal(result.eligible, false);
+  assert.equal(result.results.find(({ edgeId }) => edgeId === "transfer-a").state, "UNKNOWN");
+  assert.equal(result.stateSummary.UNKNOWN, 1);
+});
+
+test("#873 F3 승강장 기준 입력의 materialization은 route stationLines와 station set·분모가 정확히 같아야 한다", () => {
+  const routeEdges = platformRouteEdges();
+  const fixturePolicy = policyForEdges(routeEdges);
+  assert.doesNotThrow(() => evaluateRouteAccessibilityEdges(input({ routeEdges }), fixturePolicy));
+  // station set 결속: materialization 식별 해시가 route stationLines의 역 집합과 다르면 실패한다(자기 행 기준으로는 맞아도).
+  const extraLine = { stationId: "station-d", lineId: "line-4", operatorId: "operator-4", lineSequence: 1 };
+  const drifted = materialization();
+  const driftedHash = createHash("sha256").update(JSON.stringify(["station-a", "station-b", "station-c", "station-d"])).digest("hex");
+  drifted.candidate.stationSetSha256 = driftedHash;
+  drifted.rows = drifted.rows.map((row) => ({ ...row, stationSetSha256: driftedHash }));
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({
+    routeEdges, materialization: rebindMaterialization(drifted),
+  }), fixturePolicy), /materialization scoped station set identity mismatch/);
+  // 분모·식별 결속: station-c:line-3을 뺀 materialization을 자기 행과 일관된 station set 해시로 만들면, 자기 행 기준
+  // 검사로는 통과하지만 route stationLines(a·b·c)와 어긋나므로 실패해야 한다. 간선은 station-c를 요구하지 않는다.
+  const partialHash = createHash("sha256").update(JSON.stringify(["station-a", "station-b"])).digest("hex");
+  const partial = materializeStationLineAccessibility({
+    candidate: materializationCandidate({ stationSetSha256: partialHash }),
+    observedAt: NOW,
+    stationLines: stationLines()
+      .filter(({ stationId }) => stationId !== "station-c")
+      .map(({ lineSequence: _lineSequence, ...line }) => line),
+    evidenceRows: [
+      evidence({ stationSetSha256: partialHash, domain: "TRANSFER" }),
+      evidence({ stationSetSha256: partialHash, stationId: "station-a", lineId: "line-2", operatorId: "operator-2", domain: "TRANSFER" }),
+    ],
+  });
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges, materialization: partial }), fixturePolicy),
+    /materialization policy target denominator mismatch/);
+  // route에 없는 station-line을 materialization에 더해도 실패한다.
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({
+    routeEdges, materialization: materialization([...stationLines(), extraLine]),
+  }), fixturePolicy), /unmapped materialization row/);
+});
+
 test("exact terminal FACILITY cell은 availability claim 없이 dependent edge를 BLOCKED로 만든다", () => {
   const { value, policy: fixturePolicy } = terminalScenario();
   const result = evaluateRouteAccessibilityEdges(value, fixturePolicy);
@@ -297,9 +367,10 @@ test("stale terminal carrier는 schema-valid unresolved STALE로 남는다", () 
 });
 
 test("SUBWAY LOCAL과 policy-bound ITX EXPRESS RIDE invariant를 exact하게 강제한다", () => {
+  // #873 F3: ENTRY/EXIT 없는 입력은 route stationLines 전체가 materialization돼야 하므로 기본 materialization을 쓴다.
   const local = routeEdges().find(({ edgeId }) => edgeId === "ride-a-b");
   const localPolicy = policyForEdges([local]);
-  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: [local], materialization: emptyMaterialization() }), localPolicy).results[0].state, "PASS");
+  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: [local] }), localPolicy).results[0].state, "PASS");
   assert.throws(
     () => evaluateRouteAccessibilityEdges(input({ routeEdges: [local] }), policy),
     /SUBWAY LOCAL edge set identity mismatch/,
@@ -308,13 +379,13 @@ test("SUBWAY LOCAL과 policy-bound ITX EXPRESS RIDE invariant를 exact하게 강
   const nonAdjacent = edge({ edgeId: "ride-a-c", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-c:line-3", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL" });
   assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [nonAdjacent] }), localPolicy), /SUBWAY LOCAL edge set identity mismatch/);
   const tooFast = edge({ edgeId: "ride-fast", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1", durationSeconds: 1, distanceMeters: 1000, servicePattern: "LOCAL" });
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [tooFast], materialization: emptyMaterialization() }), policyForEdges([tooFast])), /RIDE speed is outside policy bounds/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [tooFast] }), policyForEdges([tooFast])), /RIDE speed is outside policy bounds/);
 
   const itxEdges = [
     edge({ edgeId: "itx-1", edgeType: "RIDE", fromNodeId: "station-a:line-1:EXPRESS", toNodeId: "station-b:line-1:EXPRESS", durationSeconds: 120, distanceMeters: 1000, servicePattern: "EXPRESS", serviceClass: "ITX_CHEONGCHUN" }),
   ];
   const fixturePolicy = policyForEdges(itxEdges);
-  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: itxEdges, materialization: emptyMaterialization() }), fixturePolicy).results[0].state, "PASS");
+  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: itxEdges }), fixturePolicy).results[0].state, "PASS");
   assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [edge({ ...itxEdges[0], edgeId: "itx-tampered" })] }), fixturePolicy), /ITX EXPRESS edge set identity mismatch/);
 
   const crossStationTransfer = edge({
@@ -389,6 +460,13 @@ test("identity·closed schema·digest·endpoint·denominator 오류를 fail clos
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     stationLines: [...stationLines(), extraLine],
     materialization: materialization([...stationLines(), extraLine]),
+  }), unitPolicy), /materialization policy target denominator mismatch/);
+  // 간선이 요구하는 station-line(entry-c → station-c:line-3)이 materialization에 없으면 분모 불일치다.
+  const withoutTarget = materialization();
+  for (const row of withoutTarget.rows.filter(({ stationId }) => stationId === "station-c")) withoutTarget.stateSummary[row.state] -= 1;
+  withoutTarget.rows = withoutTarget.rows.filter(({ stationId }) => stationId !== "station-c");
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({
+    materialization: rebindMaterialization(withoutTarget),
   }), unitPolicy), /materialization policy target denominator mismatch/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     routeEdges: [{ ...routeEdges()[0], edgeSha256: "0".repeat(64) }],

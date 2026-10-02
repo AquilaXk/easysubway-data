@@ -221,6 +221,7 @@ test("production SQLite·field provenance가 대전 schedule requirement와 런�
   const manifest = await readJsonAbsolute(manifestPath);
   await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs", "--manifest", manifestPath, "--root", packOutput, "--require-production",
+    "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: publicKey },

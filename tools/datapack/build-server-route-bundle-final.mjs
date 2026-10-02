@@ -28,6 +28,7 @@ import {
   canonicalRideEdgeSetSha256,
   canonicalRouteEdgeEvaluationJson,
   evaluateRouteAccessibilityEdges,
+  routeRequiredCellStateSummary,
 } from "./evaluate-route-accessibility-edges.mjs";
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import {
@@ -221,7 +222,8 @@ export async function buildServerRouteBundleFinalEvidence(input) {
     gates: {
       sourceFreshness: { state: sourceFreshness.state, evidenceSha256: sha256(sourceFreshnessBytes) },
       stationLineAccessibility: {
-        state: stationLineGateState(materialization.stateSummary),
+        // #873: 평가가 요구한 cell(환승 끝점 TRANSFER 등)만 닫혀 있어야 한다. 근거 파일은 materialization 전체다.
+        state: stationLineGateState(routeRequiredCellStateSummary(evaluation)),
         evidenceSha256: sha256(materializationBytes),
       },
       routeEdgeEvaluation: {
@@ -616,7 +618,7 @@ async function assertEmbeddedEvidence(input) {
     if (orphanFacilities.length > 0) {
       throw new Error(`station_elevator_path_facility contains orphan facility_id: ${orphanFacilities.map((row) => row.facility_id).join(", ")}`);
     }
-    // #827: 무단차 요구 행은 번들 경로·시설 묶음과 route edge의 역 ENTRY/EXIT edge로 다시 만든 결과와 정확히 같아야 한다.
+    // #827: 무단차 요구 행은 번들 경로·시설 묶음과 route edge의 승강장 노드(#873)로 다시 만든 결과와 정확히 같아야 한다.
     assertEmbeddedTable(database, "transition_facility_requirement", [
       { name: "transition_key", type: "TEXT", notnull: 1, pk: 1 },
       { name: "path_id", type: "TEXT", notnull: 1, pk: 2 },

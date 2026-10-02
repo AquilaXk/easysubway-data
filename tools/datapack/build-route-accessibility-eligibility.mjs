@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { buildServerRouteBundleFinalEvidence } from "./build-server-route-bundle-final.mjs";
+import { routeRequiredCellStateSummary } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
@@ -69,9 +70,12 @@ export async function buildRouteAccessibilityEligibility(input) {
 }
 
 export function deriveAccessibilityEligibility({ final, station, route, stationEvidenceBytes, routeEvidenceBytes }) {
+  // #873: station-line blocker는 평가가 실제로 요구한 cell(환승 끝점 TRANSFER 등)만 본다.
+  // 보고서의 stationLineAccessibility.stateSummary는 식별 결속용으로 materialization 전체를 그대로 담는다.
+  const required = routeRequiredCellStateSummary(route);
   const blockers = [
       ...OWNER_GATES.filter((gate) => final.gates[gate].state !== "PASS").map((gate) => `${gate}:${final.gates[gate].state}`),
-      ...STATION_UNRESOLVED.filter((state) => station.stateSummary[state] !== 0).map((state) => `stationLineAccessibility:${state}`),
+      ...STATION_UNRESOLVED.filter((state) => (required[state] ?? 0) > 0).map((state) => `stationLineAccessibility:${state}`),
       ...ROUTE_UNRESOLVED.filter((state) => route.stateSummary[state] !== 0).map((state) => `routeEdgeEvaluation:${state}`),
       ...(route.eligible ? [] : ["routeEdgeEvaluation:INELIGIBLE"]),
     ].sort(bytewise);

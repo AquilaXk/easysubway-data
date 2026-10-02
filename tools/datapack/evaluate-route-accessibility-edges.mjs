@@ -22,8 +22,12 @@ const TERMINAL_MATERIALIZATION_ROW_KEYS = [...MATERIALIZATION_ROW_KEYS, "termina
 const MATERIALIZATION_STATES = [
   "VERIFIED_PRESENT", "VERIFIED_ABSENT", "NOT_APPLICABLE", "UNKNOWN", "MISSING", "STALE",
 ];
+// station-line materialization 계약의 domain이다. EXIT domain은 전국 입력에서 증거 행이 없어 MISSING으로 남지만
+// 어떤 경로 간선도 요구하지 않는다(#873). 수도권 live chain(legacy) 정리는 PR-C(#866)에서 한다.
 const DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
 const RESULT_STATES = ["PASS", "BLOCKED", "NOT_APPLICABLE", "UNKNOWN", "MISSING", "STALE", "NOT_EVALUATED"];
+// ENTRY/EXIT 매핑은 수도권 live chain(legacy)이 커밋한 평가를 재현하려고 남긴다. 전국 입력에는 ENTRY/EXIT 간선이 없다(#873).
+// PR-C(#866)에서 live chain과 함께 제거한다.
 const POLICY_EDGE_TYPES = [
   "ENTRY", "EXIT", "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER", "LEGACY_TRANSFER",
   "WALKWAY", "ELEVATOR", "RAMP", "STAIR", "ESCALATOR", "FACILITY_CONNECTOR", "RIDE",
@@ -69,6 +73,29 @@ export function evaluateRouteAccessibilityEdges(input, policy) {
     && stateSummary.NOT_EVALUATED === 0;
   const payload = canonicalObject({ candidate, evaluationAt, denominator, results, stateSummary, eligible });
   return canonicalObject({ ...payload, evaluationDigest: sha256(canonicalJson(payload)) });
+}
+
+// #873: 경로 게이트는 평가가 실제로 요구한 materialization cell만 본다. 같은 cell은 한 번만 센다.
+// 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나므로 어떤 간선도 요구하지 않는 cell(예: FACILITY·EXIT)은 게이트에 들어가지 않는다.
+export function routeRequiredCellStateSummary(evaluation) {
+  if (!Array.isArray(evaluation?.results)) throw new Error("route edge evaluation results are required");
+  const cells = new Map();
+  for (const result of evaluation.results) {
+    if (!Array.isArray(result?.materializationCells)) {
+      throw new Error("route edge evaluation materialization cells are required");
+    }
+    for (const cell of result.materializationCells) {
+      if (typeof cell?.effectiveState !== "string" || cell.effectiveState === "") {
+        throw new Error("route edge evaluation cell state is required");
+      }
+      const key = materializationCellKey(cell);
+      if (cells.has(key) && cells.get(key) !== cell.effectiveState) throw new Error("route edge evaluation cell state mismatch");
+      cells.set(key, cell.effectiveState);
+    }
+  }
+  const summary = {};
+  for (const state of cells.values()) summary[state] = (summary[state] ?? 0) + 1;
+  return canonicalObject(summary);
 }
 
 export function canonicalRouteEdgeEvaluationJson(result) {
@@ -242,11 +269,17 @@ function validateMaterialization(value, candidate, stationLineIndex, evaluationA
       targets.set(stationLineKey(target), target);
     }
   }
-  const targetRows = [...targets.values()];
-  const scopedHash = sha256(canonicalJson([...new Set(targetRows.map(({ stationId }) => stationId))].sort(compareBytes)));
-  if (value.candidate.stationSetSha256 !== scopedHash) throw new Error("materialization scoped station set identity mismatch");
+  // #873 리뷰 F3: materialization 분모와 station set 식별은 route 입력에서 유도한 기대 집합과 정확히 같아야 한다.
+  // - 승강장 기준 입력(ENTRY/EXIT 없음): 경로는 승강장에서 시작해 승강장에서 끝나므로 기대 집합은 route stationLines 전체다.
+  //   간선이 요구하는 cell(환승 끝점)은 그 부분집합이고, 어느 cell을 요구하는지는 evaluateEdge가 정한다.
+  // - legacy 입력(수도권 live chain, ENTRY/EXIT 있음): 기대 집합은 간선 대상 station-line이다(#873 이전 규칙).
+  //   이 legacy 분기는 PR-C(#866)에서 live chain과 함께 제거한다.
+  const legacyAccessShape = edges.some(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT");
+  const targetRows = legacyAccessShape ? [...targets.values()] : stationLineIndex.rows;
   const expected = new Set(targetRows.flatMap((line) => DOMAINS.map((domain) => materializationCellKey({ ...line, domain }))));
   if (keys.size !== expected.size || [...expected].some((key) => !keys.has(key))) throw new Error("materialization policy target denominator mismatch");
+  const scopedHash = sha256(canonicalJson([...new Set(targetRows.map(({ stationId }) => stationId))].sort(compareBytes)));
+  if (value.candidate.stationSetSha256 !== scopedHash) throw new Error("materialization scoped station set identity mismatch");
   const summary = Object.fromEntries([...MATERIALIZATION_STATES, ...(rows.some(({ state }) => state === "UNVERIFIED_EVIDENCE_BLOCKED") ? ["UNVERIFIED_EVIDENCE_BLOCKED"] : [])].map((state) => [state, 0]));
   for (const row of rows) summary[row.state] += 1;
   if (canonicalJson(summary) !== canonicalJson(value.stateSummary)) throw new Error("materialization state summary mismatch");

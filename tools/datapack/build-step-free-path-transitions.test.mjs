@@ -15,12 +15,11 @@ import {
   validateTransitionFacilityRequirements,
 } from "./build-step-free-path-transitions.mjs";
 
-// #827 QA 결정(2026-09-30): 요구는 기존 역 단위 ENTRY/EXIT edge에 붙이고, 행은
-// (transition_key, path_id, direction_next_station_id, group_kind, facility_id)이다. 기대값은 손으로 쓴다.
-const ENTRY_A = "edge-entry-station-a-line-4";
-const EXIT_A = "edge-exit-station-a-line-4";
-const ENTRY_B = "edge-entry-station-b-line-4";
-const EXIT_B = "edge-exit-station-b-line-4";
+// #827 QA 결정(2026-09-30): 행은 (transition_key, path_id, direction_next_station_id, group_kind, facility_id)이다.
+// #873: 경로는 승강장(역-노선)에서 시작해 승강장에서 끝나므로 transition_key는 승강장 노드(stationId:lineId)다.
+// 예전에는 역 단위 ENTRY·EXIT edge 두 개에 같은 행을 붙였다. 기대값은 손으로 쓴다.
+const PLATFORM_A = "station-a:line-4";
+const PLATFORM_B = "station-b:line-4";
 const P_UP = "kric-mv:S1:4:448:447:1";
 const P_DOWN = "kric-mv:S1:4:448:449:1";
 const E1 = "smrt-elev:0448:4:1번 출입구";
@@ -29,11 +28,8 @@ const W1 = "smrt-elev:0448:4:하행역 방면9-1";
 const W2 = "smrt-elev:0448:4:하행역 방면10-4";
 
 const ROUTE_EDGES = [
-  { edgeId: ENTRY_A, edgeType: "ENTRY", fromNodeId: "station-a", toNodeId: "station-a:line-4" },
-  { edgeId: EXIT_A, edgeType: "EXIT", fromNodeId: "station-a:line-4", toNodeId: "station-a" },
-  { edgeId: ENTRY_B, edgeType: "ENTRY", fromNodeId: "station-b", toNodeId: "station-b:line-4" },
-  { edgeId: EXIT_B, edgeType: "EXIT", fromNodeId: "station-b:line-4", toNodeId: "station-b" },
   { edgeId: "edge-ride-station-a-station-b-line-4", edgeType: "RIDE", fromNodeId: "station-a:line-4", toNodeId: "station-b:line-4" },
+  { edgeId: "edge-ride-station-b-station-a-line-4", edgeType: "RIDE", fromNodeId: "station-b:line-4", toNodeId: "station-a:line-4" },
 ];
 
 function pathRows(pathId, stationId, nextStationId, exitNo, platformDirection, steps = 2) {
@@ -75,7 +71,7 @@ const TWO_DIRECTION_ROWS_FOR = (transitionKey) => [
   { transition_key: transitionKey, path_id: P_DOWN, direction_next_station_id: "station-down", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: W1 },
 ];
 
-test("#866 커버리지 CLI는 전국 후보 route-edge 입력을 읽고 전환 키는 그 입력의 역 ENTRY/EXIT edge id다", async () => {
+test("#866 커버리지 CLI는 전국 후보 route-edge 입력을 읽고 전환 키는 그 입력의 승강장 노드다(#873)", async () => {
   const repositoryRoot = path.resolve(import.meta.dirname, "../..");
   const nationwideInput = "tools/datapack/release/nationwide-route-edge-input.json";
   assert.equal(CURRENT_ROUTE_EDGE_INPUT_PATH, nationwideInput);
@@ -88,21 +84,18 @@ test("#866 커버리지 CLI는 전국 후보 route-edge 입력을 읽고 전환 
     path: nationwideInput,
     sha256: createHash("sha256").update(inputBytes).digest("hex"),
   });
-  // 전국 입력의 역 ENTRY/EXIT edge id는 "entry-station-…"/"exit-station-…" 형식이다(수도권 입력의 "edge-" 접두어 없음).
-  const stationEdges = new Map(JSON.parse(inputBytes).routeEdges
-    .filter(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT")
-    .map((edge) => [edge.edgeId, edge]));
+  const routeEdges = JSON.parse(inputBytes).routeEdges;
+  const routeNodes = new Set(routeEdges.flatMap(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId]));
   const transitionKeys = report.byStationLine.flatMap(({ stationId, lineId, transitionKeys: keys }) =>
     keys.map((key) => ({ key, stationId, lineId })));
   assert.equal(new Set(transitionKeys.map(({ key }) => key)).size, report.summary.transitionCount);
   assert.ok(report.summary.transitionCount > 0);
   for (const { key, stationId, lineId } of transitionKeys) {
-    const edge = stationEdges.get(key);
-    assert.ok(edge, `transition key is not a nationwide station edge: ${key}`);
-    assert.match(key, new RegExp(`^${edge.edgeType.toLowerCase()}-${stationId}-${lineId}$`));
-    const [stationNode, stationLineNode] = edge.edgeType === "ENTRY" ? [edge.fromNodeId, edge.toNodeId] : [edge.toNodeId, edge.fromNodeId];
-    assert.deepEqual([stationNode, stationLineNode], [stationId, `${stationId}:${lineId}`]);
+    // 역-노선마다 전환 키는 하나이고, 그 키는 route edge 끝점인 승강장 노드다.
+    assert.equal(key, `${stationId}:${lineId}`);
+    assert.ok(routeNodes.has(key), `transition key is not a nationwide route node: ${key}`);
   }
+  assert.equal(report.byStationLine.filter(({ transitionKeys: keys }) => keys.length > 1).length, 0);
 });
 
 test("group_kind는 #834 EXIT/DIRECTION 묶음을 EXIT_ELEVATORS/PLATFORM_DIRECTION_ELEVATORS로 옮긴다", () => {
@@ -112,11 +105,11 @@ test("group_kind는 #834 EXIT/DIRECTION 묶음을 EXIT_ELEVATORS/PLATFORM_DIRECT
   });
 });
 
-test("(1) 두 방향 각각 경로 1개면 기존 역 ENTRY·EXIT edge에 같은 요구 행이 붙고, 한 방향 승강장 엘리베이터가 모두 불가면 전환이 막힌다", () => {
+test("(1) 두 방향 각각 경로 1개면 승강장 노드에 요구 행이 붙고, 한 방향 승강장 엘리베이터가 모두 불가면 전환이 막힌다", () => {
   const rows = buildTransitionFacilityRequirements(twoDirectionInput());
-  assert.deepEqual(rows, [...TWO_DIRECTION_ROWS_FOR(ENTRY_A), ...TWO_DIRECTION_ROWS_FOR(EXIT_A)]);
+  assert.deepEqual(rows, TWO_DIRECTION_ROWS_FOR(PLATFORM_A));
 
-  const entryRows = rows.filter(({ transition_key: key }) => key === ENTRY_A);
+  const entryRows = rows.filter(({ transition_key: key }) => key === PLATFORM_A);
   const down = new Set([W1, W2]);
   assert.deepEqual(evaluateStepFreeTransition(entryRows, (id) => !down.has(id)), {
     passable: false,
@@ -143,7 +136,7 @@ test("(1) 두 방향 각각 경로 1개면 기존 역 ENTRY·EXIT edge에 같은
   });
   // 요구 행이 없는 전환은 무단차 요구가 없다(방향 0개).
   assert.deepEqual(evaluateStepFreeTransition([], () => false), { passable: true, directions: [] });
-  assert.throws(() => evaluateStepFreeTransition(rows, () => true), /single transition_key/);
+  assert.throws(() => evaluateStepFreeTransition([...rows, { ...rows[0], transition_key: PLATFORM_B }], () => true), /single transition_key/);
 });
 
 test("같은 방향에 공식 경로가 여러 개면 하나라도 통과하면 그 방향은 통과한다", () => {
@@ -156,10 +149,10 @@ test("같은 방향에 공식 경로가 여러 개면 하나라도 통과하면 
     { path_id: P_UP_2, group_kind: "DIRECTION", facility_id: U1 },
   );
   input.facilityIds.push(E2);
-  const entryRows = buildTransitionFacilityRequirements(input).filter(({ transition_key: key }) => key === ENTRY_A);
+  const entryRows = buildTransitionFacilityRequirements(input).filter(({ transition_key: key }) => key === PLATFORM_A);
   assert.deepEqual(entryRows.filter(({ path_id: pathId }) => pathId === P_UP_2), [
-    { transition_key: ENTRY_A, path_id: P_UP_2, direction_next_station_id: "station-up", group_kind: "EXIT_ELEVATORS", facility_id: E2 },
-    { transition_key: ENTRY_A, path_id: P_UP_2, direction_next_station_id: "station-up", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: U1 },
+    { transition_key: PLATFORM_A, path_id: P_UP_2, direction_next_station_id: "station-up", group_kind: "EXIT_ELEVATORS", facility_id: E2 },
+    { transition_key: PLATFORM_A, path_id: P_UP_2, direction_next_station_id: "station-up", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: U1 },
   ]);
   assert.deepEqual(evaluateStepFreeTransition(entryRows, (id) => id !== E1), {
     passable: false,
@@ -184,7 +177,7 @@ test("(2) 시설 연결이 불완전한 경로는 요구 행을 만들지 않는
     { path_id: P_EXIT_ONLY, group_kind: "EXIT", facility_id: E1 },
     { path_id: P_DIRECTION_ONLY, group_kind: "DIRECTION", facility_id: W1 },
   );
-  assert.deepEqual(buildTransitionFacilityRequirements(input), [...TWO_DIRECTION_ROWS_FOR(ENTRY_A), ...TWO_DIRECTION_ROWS_FOR(EXIT_A)]);
+  assert.deepEqual(buildTransitionFacilityRequirements(input), TWO_DIRECTION_ROWS_FOR(PLATFORM_A));
 
   // 완전한 경로가 하나도 없으면 요구 행도 없다.
   assert.deepEqual(buildTransitionFacilityRequirements({
@@ -195,7 +188,7 @@ test("(2) 시설 연결이 불완전한 경로는 요구 행을 만들지 않는
   }), []);
 });
 
-test("(4) 고아 facility_id·path_id·transition_key와 역 edge 누락은 실패한다", () => {
+test("(4) 고아 facility_id·path_id·transition_key와 승강장 노드 누락은 실패한다", () => {
   const withGhostFacility = twoDirectionInput();
   withGhostFacility.pathFacilities.push({ path_id: P_UP, group_kind: "DIRECTION", facility_id: "smrt-elev:ghost" });
   assert.throws(() => buildTransitionFacilityRequirements(withGhostFacility), /orphan facility_id: smrt-elev:ghost/);
@@ -208,13 +201,13 @@ test("(4) 고아 facility_id·path_id·transition_key와 역 edge 누락은 실�
   withBadGroup.pathFacilities.push({ path_id: P_UP, group_kind: "PLATFORM", facility_id: E1 });
   assert.throws(() => buildTransitionFacilityRequirements(withBadGroup), /group_kind is invalid: PLATFORM/);
 
-  const withoutEntry = twoDirectionInput();
-  withoutEntry.routeEdges = ROUTE_EDGES.filter(({ edgeId }) => edgeId !== ENTRY_A);
-  assert.throws(() => buildTransitionFacilityRequirements(withoutEntry), /station ENTRY edge is missing: station-a\/line-4/);
-
-  const withDuplicateExit = twoDirectionInput();
-  withDuplicateExit.routeEdges = [...ROUTE_EDGES, { edgeId: "edge-exit-station-a-line-4-alt", edgeType: "EXIT", fromNodeId: "station-a:line-4", toNodeId: "station-a" }];
-  assert.throws(() => buildTransitionFacilityRequirements(withDuplicateExit), /station EXIT edge is ambiguous: station-a\/line-4/);
+  // 그 역-노선의 승강장 노드가 route edge 끝점에 없으면 요구 행을 만들 수 없다. ITX 접미 노드는 승강장 노드가 아니다.
+  const withoutPlatformNode = twoDirectionInput();
+  withoutPlatformNode.routeEdges = [
+    { edgeId: "edge-ride-station-b-station-c-line-4", edgeType: "RIDE", fromNodeId: "station-b:line-4", toNodeId: "station-c:line-4" },
+    { edgeId: "edge-itx-station-a", edgeType: "RIDE", fromNodeId: "station-a:line-4:EXPRESS", toNodeId: "station-b:line-4:EXPRESS" },
+  ];
+  assert.throws(() => buildTransitionFacilityRequirements(withoutPlatformNode), /station-line route node is missing: station-a\/line-4/);
 
   const withInconsistentPath = twoDirectionInput();
   withInconsistentPath.paths[1] = { ...withInconsistentPath.paths[1], next_station_id: "station-down" };
@@ -225,10 +218,17 @@ test("(4) 고아 facility_id·path_id·transition_key와 역 edge 누락은 실�
   const validate = (mutated) => validateTransitionFacilityRequirements({ ...input, requirements: mutated });
   assert.doesNotThrow(() => validate(requirements));
   const first = requirements[0];
-  assert.throws(() => validate([...requirements, { ...first, transition_key: "edge-entry-ghost" }]), /orphan transition_key: edge-entry-ghost/);
-  // 다른 역의 실제 ENTRY edge나 RIDE edge도 그 경로의 역 전환이 아니므로 고아다.
-  assert.throws(() => validate([...requirements, { ...first, transition_key: ENTRY_B }]), /orphan transition_key: edge-entry-station-b-line-4/);
+  assert.throws(() => validate([...requirements, { ...first, transition_key: "station-ghost:line-4" }]), /orphan transition_key: station-ghost:line-4/);
+  // 다른 역의 실제 승강장 노드, 예전 ENTRY edge id, RIDE edge id는 그 경로의 승강장 노드가 아니므로 고아다.
+  assert.throws(() => validate([...requirements, { ...first, transition_key: PLATFORM_B }]), /orphan transition_key: station-b:line-4/);
+  assert.throws(() => validate([...requirements, { ...first, transition_key: "edge-entry-station-a-line-4" }]), /orphan transition_key: edge-entry-station-a-line-4/);
   assert.throws(() => validate([...requirements, { ...first, transition_key: "edge-ride-station-a-station-b-line-4" }]), /orphan transition_key: edge-ride-station-a-station-b-line-4/);
+  // 경로의 승강장 노드라도 route edge 끝점에 없으면 고아다.
+  assert.throws(() => validateTransitionFacilityRequirements({
+    ...input,
+    routeEdges: [{ edgeId: "edge-ride-station-b-station-c-line-4", edgeType: "RIDE", fromNodeId: "station-b:line-4", toNodeId: "station-c:line-4" }],
+    requirements,
+  }), /orphan transition_key: station-a:line-4/);
   assert.throws(() => validate([...requirements, { ...first, facility_id: "smrt-elev:ghost" }]), /orphan facility_id: smrt-elev:ghost/);
   assert.throws(() => validate([...requirements, { ...first, path_id: "kric-mv:ghost" }]), /orphan path_id: kric-mv:ghost/);
   assert.throws(() => validate([...requirements.slice(1), { ...first, direction_next_station_id: "station-down" }]), /direction_next_station_id mismatch: kric-mv:S1:4:448:447:1/);
@@ -249,13 +249,13 @@ test("(5) facilities 테이블이 없거나 비어 있으면 실패한다", () =
 
 test("(6) 입력 순서를 바꿔도 요구 행은 바이트 동일하다", () => {
   const input = twoDirectionInput();
-  const expected = JSON.stringify([...TWO_DIRECTION_ROWS_FOR(ENTRY_A), ...TWO_DIRECTION_ROWS_FOR(EXIT_A)]);
+  const expected = JSON.stringify(TWO_DIRECTION_ROWS_FOR(PLATFORM_A));
   assert.equal(JSON.stringify(buildTransitionFacilityRequirements(input)), expected);
   const permuted = {
     paths: [...input.paths].reverse(),
     pathFacilities: [input.pathFacilities[3], input.pathFacilities[0], input.pathFacilities[4], input.pathFacilities[2], input.pathFacilities[1]],
     facilityIds: [...input.facilityIds].reverse(),
-    routeEdges: [ROUTE_EDGES[4], ROUTE_EDGES[1], ROUTE_EDGES[3], ROUTE_EDGES[0], ROUTE_EDGES[2]],
+    routeEdges: [ROUTE_EDGES[1], ROUTE_EDGES[0]],
   };
   assert.equal(JSON.stringify(buildTransitionFacilityRequirements(permuted)), expected);
 });
@@ -268,8 +268,7 @@ test("커버리지 리포트는 역·노선별 방향 근거, 근거 없는 방�
   const base = twoDirectionInput();
   const routeEdges = [
     ...ROUTE_EDGES,
-    { edgeId: "edge-entry-station-c-line-4", edgeType: "ENTRY", fromNodeId: "station-c", toNodeId: "station-c:line-4" },
-    { edgeId: "edge-exit-station-c-line-4", edgeType: "EXIT", fromNodeId: "station-c:line-4", toNodeId: "station-c" },
+    { edgeId: "edge-ride-station-b-station-c-line-4", edgeType: "RIDE", fromNodeId: "station-b:line-4", toNodeId: "station-c:line-4" },
   ];
   const stationElevatorPaths = {
     facilities: [...base.facilityIds, E3, X1].map((id) => ({ id })),
@@ -312,8 +311,8 @@ test("커버리지 리포트는 역·노선별 방향 근거, 근거 없는 방�
     {
       stationId: "station-a",
       lineId: "line-4",
-      transitionKeys: [ENTRY_A, EXIT_A],
-      requirementRowCount: 10,
+      transitionKeys: [PLATFORM_A],
+      requirementRowCount: 5,
       requiredFacilityCount: 4,
       directions: [
         { nextStationId: "station-down", status: "REQUIRED", completePathCount: 1, incompletePathCount: 0, excludedPathCount: 0, providerNoPathQueryCount: 0 },
@@ -326,8 +325,8 @@ test("커버리지 리포트는 역·노선별 방향 근거, 근거 없는 방�
     {
       stationId: "station-b",
       lineId: "line-4",
-      transitionKeys: [ENTRY_B, EXIT_B],
-      requirementRowCount: 4,
+      transitionKeys: [PLATFORM_B],
+      requirementRowCount: 2,
       requiredFacilityCount: 2,
       directions: [
         { nextStationId: "station-a", status: "REQUIRED", completePathCount: 1, incompletePathCount: 0, excludedPathCount: 0, providerNoPathQueryCount: 0 },
@@ -355,8 +354,8 @@ test("커버리지 리포트는 역·노선별 방향 근거, 근거 없는 방�
   assert.deepEqual(report.summary, {
     stationLineCount: 3,
     stationLinesWithRequirement: 2,
-    transitionCount: 4,
-    requirementRowCount: 14,
+    transitionCount: 2,
+    requirementRowCount: 7,
     requiredFacilityCount: 6,
     directionCount: 6,
     directionsByStatus: { LINKAGE_INCOMPLETE: 1, PATHS_EXCLUDED: 1, PROVIDER_NO_PATH: 1, REQUIRED: 3 },

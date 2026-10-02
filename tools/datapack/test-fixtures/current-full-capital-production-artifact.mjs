@@ -451,13 +451,21 @@ export async function materializeCurrentFanInCandidateArtifact({
   repositoryRoot, stationLineOutput, routeEdgeOutput, fixtureOutput, authorityOutput,
 }) {
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const [buildSpecBytes, sourceFixtureBytes, stationLineInputBytes, routeBytes, transferMetricsBytes] = await Promise.all([
+  const [buildSpecBytes, sourceFixtureBytes, stationLineInputBytes, liveChainRouteBytes, transferMetricsBytes] = await Promise.all([
     readFile(path.join(repositoryRoot, buildSpecPath)),
     readFile(path.join(repositoryRoot, "tools/datapack/release/capital-production-canonical-pack.json")),
     readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/station-line-input.json")),
     readFile(path.join(repositoryRoot, "tools/datapack/release/current-capital-accessibility-full/route-edge-input.json")),
     readFile(path.join(repositoryRoot, "tools/datapack/release/current-transfer-topology-metrics.json")),
   ]);
+  // #873: committed build spec은 전국 후보이고 전국 authority는 역 단위 ENTRY/EXIT 간선을 거부한다(승강장 기준).
+  // 수도권 live chain(legacy) route 입력에서 ENTRY/EXIT만 빼서 승강장 기준 입력으로 투영한다. 다른 간선·바이트 순서는 그대로다.
+  // 이 투영과 legacy 입력 생성은 PR-C(#866)에서 live chain과 함께 제거한다.
+  const liveChainRoute = JSON.parse(liveChainRouteBytes);
+  const routeBytes = Buffer.from(canonicalCurrentCapitalRouteEdgeInputJson({
+    ...liveChainRoute,
+    routeEdges: liveChainRoute.routeEdges.filter(({ edgeType }) => edgeType !== "ENTRY" && edgeType !== "EXIT"),
+  }));
   const buildSpec = JSON.parse(buildSpecBytes);
   const sourceFixture = JSON.parse(sourceFixtureBytes);
   const projectedFixture = await projectCandidateFixtureForAccessibilityAuthority({ buildSpec, sourceFixture, repositoryRoot });

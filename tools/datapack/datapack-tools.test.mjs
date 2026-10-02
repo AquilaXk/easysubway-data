@@ -358,6 +358,14 @@ function materializeCurrentAvailableEntryEvidence(database, pack, {
       : domains.includes("station_line_membership") && !domains.includes("accessibility_facilities");
     });
   assert.ok(source, "current production artifact requires the selected source domain");
+  // #873: 전국 승강장 기준 팩에는 역 단위 ENTRY/EXIT 간선이 없다. validate-datapack에 남아 있는 legacy ENTRY/EXIT
+  // 검증 규칙(PR-C(#866)에서 정리)을 확인하려고 exact UNKNOWN legacy ENTRY 간선 하나를 넣은 뒤 같은 변조를 한다.
+  const legacyLine = database.prepare("SELECT station_id, line_id FROM station_lines ORDER BY station_id, line_id LIMIT 1").get();
+  assert.ok(legacyLine, "current production artifact requires one station-line");
+  database.prepare(`
+    INSERT INTO network_edges (id, from_node_id, to_node_id, edge_type)
+    VALUES (?, ?, ?, 'ENTRY')
+  `).run(`entry-${legacyLine.station_id}-${legacyLine.line_id}`, legacyLine.station_id, `${legacyLine.station_id}:${legacyLine.line_id}`);
   const edge = database.prepare(`
     SELECT id, to_node_id
     FROM network_edges
@@ -2572,6 +2580,7 @@ test("데이터팩 생성기는 일반 fixture 입력으로 production channel�
         "--manifest", path.join(workspace, "validation-output/current.json"),
         "--root", path.join(workspace, "validation-output"),
         "--require-production",
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
       ], { cwd: root, env: productionEnv }),
       /production artifactKind/,
     );
@@ -2709,6 +2718,7 @@ test("데이터팩 검증기는 원격 publish 전 fixture pack을 거부한다"
         "--root",
         outputDir,
         "--require-production",
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
       ],
       { cwd: root, env: productionEnv },
     ),
@@ -4550,10 +4560,27 @@ test("데이터팩 검증기는 production verified edge coverage report를 출�
   );
   const report = JSON.parse(stdout.trim().split("\n").at(-1));
   assert.equal(report.type, "datapack_verified_edge_coverage");
-  assert.equal(report.entry.missingCount, 213);
-  assert.equal(report.exit.missingCount, 213);
+  // #873: 역 단위 ENTRY/EXIT는 coverage 분모가 아니다. 환승 coverage만 보고한다.
+  assert.equal(Object.hasOwn(report, "entry"), false);
+  assert.equal(Object.hasOwn(report, "exit"), false);
   assert.equal(report.transfer.missingCount, 30);
-  assert.equal(report.generatedConnectorGapCount, 456);
+  assert.equal(report.generatedConnectorGapCount, 30);
+});
+
+test("#873 데이터팩 검증기는 current production 팩에서 환승 간선이 authority와 어긋나면 TRANSFER coverage gap으로 거부한다", async (context) => {
+  const artifact = await buildCurrentFullCapitalProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
+    const result = database.prepare(`
+      DELETE FROM network_edges
+      WHERE id = (SELECT id FROM network_edges WHERE edge_type = 'IN_STATION_TRANSFER' ORDER BY id LIMIT 1)
+    `).run();
+    assert.equal(result.changes, 1, "current production artifact requires one IN_STATION_TRANSFER edge");
+    pack.regionalQualityMetrics.edgeCount -= 1;
+  });
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/validate-datapack.mjs",
+    ...currentProductionValidationArgs(artifact),
+  ], { cwd: root, env: productionEnv }), /verified TRANSFER coverage gap: 30\/30/);
 });
 
 test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에서 제외한다", async (context) => {
@@ -4563,8 +4590,6 @@ test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에
     ...currentProductionValidationArgs(artifact),
   ], { cwd: root, env: productionEnv });
   const report = JSON.parse(stdout.trim().split("\n").at(-1));
-  assert.equal(report.entry.missingCount, 213);
-  assert.equal(report.exit.missingCount, 213);
   assert.equal(report.transfer.missingCount, 30);
   assert.deepEqual(report.unverifiedAccessibilityCoverageEdges, []);
 });
@@ -4696,14 +4721,15 @@ test("데이터팩 검증기는 검증된 상태 accessibility edge의 미검증
           verification_status = 'PENDING_ADMIN_REVIEW', source_id = ?, source_snapshot_id = ?,
           provider_record_hash = ?, provenance_kind = 'OFFICIAL_SOURCE',
           last_verified_at = 1781568000, evidence_hash = ?
-      WHERE id = (SELECT id FROM network_edges WHERE edge_type = 'ENTRY' ORDER BY id LIMIT 1)
+      WHERE id = (SELECT id FROM network_edges WHERE edge_type = 'IN_STATION_TRANSFER' ORDER BY id LIMIT 1)
     `).run(
       source.id,
       "test-production-entry-snapshot",
       sha256("test-production-entry-provider"),
       sha256("test-production-entry-evidence"),
     );
-    assert.equal(result.changes, 1, "current production artifact requires one ENTRY edge");
+    // #873: 전국 승강장 기준 팩에는 ENTRY가 없으므로 같은 접근성 간선 규칙을 역 안 환승 간선으로 확인한다.
+    assert.equal(result.changes, 1, "current production artifact requires one IN_STATION_TRANSFER edge");
     pack.regionalQualityMetrics.unknownAccessibilityRatio = 0.9996;
   });
 
@@ -4757,13 +4783,14 @@ test("데이터팩 검증기는 exact UNKNOWN edge만 provenance 예외로 허�
       SET source_id = ?
       WHERE id = (
         SELECT id FROM network_edges
-        WHERE edge_type = 'ENTRY' AND source_id = '' AND source_snapshot_id = ''
+        WHERE edge_type = 'IN_STATION_TRANSFER' AND source_id = '' AND source_snapshot_id = ''
           AND provider_record_hash = '' AND provenance_kind = 'UNKNOWN'
           AND verification_status = 'UNKNOWN' AND evidence_hash = ''
         ORDER BY id LIMIT 1
       )
     `).run(sourceId);
-    assert.equal(result.changes, 1, "current production artifact requires one exact UNKNOWN entry edge");
+    // #873: 전국 승강장 기준 팩에는 ENTRY가 없으므로 exact UNKNOWN 예외를 역 안 환승 간선으로 확인한다.
+    assert.equal(result.changes, 1, "current production artifact requires one exact UNKNOWN transfer edge");
   });
   await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
@@ -13375,6 +13402,7 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
         "--root",
         packOutputDir,
         "--require-production",
+        "--legacy-fixture-production", // #873: fixture 빌드 legacy 팩(후보 provenance 없음). PR-C(#866)에서 제거
       ],
       { cwd: root, env: productionEnv },
     ),
