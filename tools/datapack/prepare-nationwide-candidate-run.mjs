@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
 import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
 import { buildNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
@@ -570,6 +571,46 @@ export function gwangjuFacilityState({ elevator, wheelchair_lift: wheelchairLift
   return "VERIFIED_ABSENT";
 }
 
+const REGIONAL_FACILITY_TYPES = Object.freeze({
+  ELEVATOR: { slug: "elevator", labelKo: "엘리베이터" },
+  ESCALATOR: { slug: "escalator", labelKo: "에스컬레이터" },
+  WHEELCHAIR_LIFT: { slug: "wheelchair-lift", labelKo: "휠체어리프트" },
+});
+
+function observedSum(...values) {
+  return values.some((value) => value === null || value === undefined)
+    ? null
+    : values.reduce((total, value) => total + value, 0);
+}
+
+// 지역 접근성 원천이 공표한 시설 종류별 count. null은 미관측(부산 원문 빈 필드)이며 0으로 바꾸지 않는다.
+// 대전·광주 원천(엘리베이터·에스컬레이터 파일)에는 휠체어리프트 열이 없으므로 그 종류를 만들지 않는다.
+// 이전 수집기가 저장한 wheelchair_lift 0은 관측값이 아니다(QA 승인 2026-10-02, Fallback 금지).
+export function regionalFacilityTypeCounts(region, row) {
+  const counts = region === "busan"
+    ? [
+      ["ELEVATOR", observedSum(row.el_i, row.el_o)],
+      ["ESCALATOR", observedSum(row.es)],
+      ["WHEELCHAIR_LIFT", observedSum(row.wl_i, row.wl_o)],
+    ]
+    : [
+      ["ELEVATOR", observedSum(row.elevator)],
+      ["ESCALATOR", observedSum(row.escalator)],
+      ...(region === "daegu" ? [["WHEELCHAIR_LIFT", observedSum(row.wheelchair_lift)]] : []),
+    ];
+  return counts.map(([type, count]) => ({ type, count, ...REGIONAL_FACILITY_TYPES[type] }));
+}
+
+// 부산 FACILITY 판정도 광주와 같은 규칙: 관측된 양수가 있으면 존재, 미관측이 남아 있으면 UNKNOWN, 전부 0일 때만 부재.
+export function busanFacilityState(observedRow) {
+  const counts = Object.fromEntries(regionalFacilityTypeCounts("busan", observedRow).map(({ type, count }) => [type, count]));
+  return gwangjuFacilityState({
+    elevator: counts.ELEVATOR,
+    wheelchair_lift: counts.WHEELCHAIR_LIFT,
+    escalator: counts.ESCALATOR,
+  });
+}
+
 export async function prepareNationwideCandidate({
   repositoryRoot = root,
   releaseSequence = 122,
@@ -1011,17 +1052,15 @@ export async function prepareNationwideCandidate({
 
   const regionalFacilities = [];
   const regionalEvidence = [];
+  const busanObservedRows = observedBusanAccessibilityRows(busanAccessibility);
 
-  // 1. Busan
-  for (const row of busanAccessibility.rows) {
+  // 1. Busan — count는 잠긴 snapshot의 보존 원문에 명시된 값만 쓴다(빈 필드는 미관측).
+  for (const [rowIndex, row] of busanAccessibility.rows.entries()) {
     const stationId = findRegionalStationId(row.lineId, row.stationName);
     const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = [
-      { type: "ELEVATOR", count: row.el_i + row.el_o, slug: "elevator", labelKo: "엘리베이터" },
-      { type: "ESCALATOR", count: row.es, slug: "escalator", labelKo: "에스컬레이터" },
-      { type: "WHEELCHAIR_LIFT", count: row.wl_i + row.wl_o, slug: "wheelchair-lift", labelKo: "휠체어리프트" },
-    ];
+    const types = regionalFacilityTypeCounts("busan", busanObservedRows[rowIndex]);
     for (const t of types) {
+      if (t.count === null) continue;
       const exists = t.count > 0;
       const providerRecordHash = sha256(JSON.stringify({
         stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
@@ -1082,12 +1121,9 @@ export async function prepareNationwideCandidate({
   for (const row of daeguAccessibility.rows) {
     const stationId = findRegionalStationId(row.lineId, row.stationName);
     const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = [
-      { type: "ELEVATOR", count: row.elevator, slug: "elevator", labelKo: "엘리베이터" },
-      { type: "ESCALATOR", count: row.escalator, slug: "escalator", labelKo: "에스컬레이터" },
-      { type: "WHEELCHAIR_LIFT", count: row.wheelchair_lift, slug: "wheelchair-lift", labelKo: "휠체어리프트" },
-    ];
+    const types = regionalFacilityTypeCounts("daegu", row);
     for (const t of types) {
+      if (t.count === null) continue;
       const exists = t.count > 0;
       const providerRecordHash = sha256(JSON.stringify({
         stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
@@ -1148,12 +1184,9 @@ export async function prepareNationwideCandidate({
   for (const row of daejeonAccessibility.rows) {
     const stationId = findRegionalStationId(row.lineId, row.stationName);
     const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = [
-      { type: "ELEVATOR", count: row.elevator, slug: "elevator", labelKo: "엘리베이터" },
-      { type: "ESCALATOR", count: row.escalator, slug: "escalator", labelKo: "에스컬레이터" },
-      { type: "WHEELCHAIR_LIFT", count: row.wheelchair_lift, slug: "wheelchair-lift", labelKo: "휠체어리프트" },
-    ];
+    const types = regionalFacilityTypeCounts("daejeon", row);
     for (const t of types) {
+      if (t.count === null) continue;
       const exists = t.count > 0;
       const providerRecordHash = sha256(JSON.stringify({
         stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
@@ -1214,17 +1247,13 @@ export async function prepareNationwideCandidate({
   for (const row of gwangjuAccessibility.rows) {
     const stationId = findRegionalStationId(row.lineId, row.stationName);
     const stationName = finalPack.stations.find((s) => s.id === stationId)?.nameKo ?? row.stationName;
-    const types = [
-      { type: "ELEVATOR", count: row.elevator, slug: "elevator", labelKo: "엘리베이터" },
-      { type: "ESCALATOR", count: row.escalator, slug: "escalator", labelKo: "에스컬레이터" },
-      { type: "WHEELCHAIR_LIFT", count: row.wheelchair_lift ?? 0, slug: "wheelchair-lift", labelKo: "휠체어리프트" },
-    ];
+    const types = regionalFacilityTypeCounts("gwangju", row);
     for (const t of types) {
-      if (t.count == null) continue;
+      if (t.count === null) continue;
       const exists = t.count > 0;
       const providerRecordHash = sha256(JSON.stringify({
         stationCode: row.stationCode, lineId: row.lineId, type: t.type, count: t.count,
-        elevator: row.elevator, escalator: row.escalator, wheelchair_lift: row.wheelchair_lift ?? 0,
+        elevator: row.elevator, escalator: row.escalator, wheelchair_lift: row.wheelchair_lift,
       }));
       const id = `facility-gwangju-${row.stationCode}-${t.slug}`;
       regionalFacilities.push({
@@ -1697,6 +1726,7 @@ export async function prepareNationwideCandidate({
   const { rawSha: gwangjuRawSha, licenseId: gwangjuLicenseId, capturedAt: gwangjuCapturedAt, freshUntil: gwangjuFreshUntil } = gwangju;
 
   const busanMap = new Map(busanAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
+  const busanObservedByCode = new Map(observedBusanAccessibilityRows(busanAccessibility).map((r) => [r.stationCode, r]));
   const daeguMap = new Map(daeguAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
   const daejeonMap = new Map(daejeonAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
   const gwangjuMap = new Map(gwangjuAccessibility.rows.map((r) => [`${findRegionalStationId(r.lineId, r.stationName)}\0${r.lineId}`, r]));
@@ -1759,27 +1789,51 @@ export async function prepareNationwideCandidate({
       }
     } else if (busanMap.has(key)) {
       const r = busanMap.get(key);
-      const hasFac = (r.el_i + r.el_o) > 0 || (r.wl_i + r.wl_o) > 0 || r.es > 0;
-      evidenceRows.push({
-        ...stationLineCandidate,
-        stationId,
-        lineId,
-        operatorId,
-        domain: "FACILITY",
-        state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
-        sourceId: "busan-transportation-accessibility",
-        sourceSnapshotId: busanSnapshotId,
-        evidenceRawSha256: busanRawSha,
-        providerRecordHash: sha256(canonicalJson(r)),
-        capturedAt: busanCapturedAt,
-        freshUntil: busanFreshUntil,
-        provenanceId: busanRawSha,
-        licenseId: busanLicenseId,
-        mappingContractVersion: "station-line-v1",
-        materializerVersion: "1",
-        evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
-        evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
-      });
+      const facilityState = busanFacilityState(busanObservedByCode.get(r.stationCode));
+      if (facilityState === "UNKNOWN") {
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "FACILITY",
+          state: "UNKNOWN",
+          sourceId: "busan-transportation-accessibility",
+          sourceSnapshotId: busanSnapshotId,
+          evidenceRawSha256: busanRawSha,
+          providerRecordHash: sha256(canonicalJson({ stationId, lineId, domain: "FACILITY", state: "UNKNOWN" })),
+          capturedAt: busanCapturedAt,
+          freshUntil: busanFreshUntil,
+          provenanceId: busanRawSha,
+          licenseId: busanLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: "PROVIDER_NO_DATA",
+          evidenceReason: "UNVERIFIED_PROVIDER_EVIDENCE_BLOCKED",
+        });
+      } else {
+        const hasFac = facilityState === "VERIFIED_PRESENT";
+        evidenceRows.push({
+          ...stationLineCandidate,
+          stationId,
+          lineId,
+          operatorId,
+          domain: "FACILITY",
+          state: hasFac ? "VERIFIED_PRESENT" : "VERIFIED_ABSENT",
+          sourceId: "busan-transportation-accessibility",
+          sourceSnapshotId: busanSnapshotId,
+          evidenceRawSha256: busanRawSha,
+          providerRecordHash: sha256(canonicalJson(r)),
+          capturedAt: busanCapturedAt,
+          freshUntil: busanFreshUntil,
+          provenanceId: busanRawSha,
+          licenseId: busanLicenseId,
+          mappingContractVersion: "station-line-v1",
+          materializerVersion: "1",
+          evidenceKind: hasFac ? "OBSERVED" : "EXPLICIT_ZERO",
+          evidenceReason: hasFac ? "OFFICIAL_FACILITY_OBSERVED" : "OFFICIAL_FACILITY_ZERO_RECORD",
+        });
+      }
     } else if (daeguMap.has(key)) {
       const r = daeguMap.get(key);
       const hasFac = (r.elevator > 0) || (r.wheelchair_lift > 0) || (r.escalator > 0);

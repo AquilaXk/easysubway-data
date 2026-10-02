@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
-import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
@@ -1492,4 +1492,28 @@ test("#872 전국 후보는 미검증 역 밖 환승을 route-edge 입력·팩�
       assert.notEqual(transferCells.get(node), "NOT_APPLICABLE", `${link.id} endpoint ${node} must stay unavailable, not NOT_APPLICABLE`);
     }
   }
+});
+
+test("지역 시설 종류 count는 원천이 공표한 값만 쓰고 미관측·미제공 종류를 0으로 만들지 않는다", () => {
+  const busanRow = { wl_i: null, wl_o: null, el_i: 2, el_o: 8, es: 0 };
+  assert.deepEqual(regionalFacilityTypeCounts("busan", busanRow).map(({ type, count }) => [type, count]), [
+    ["ELEVATOR", 10], ["ESCALATOR", 0], ["WHEELCHAIR_LIFT", null],
+  ]);
+  assert.deepEqual(regionalFacilityTypeCounts("busan", { ...busanRow, wl_i: 0, wl_o: 1 })
+    .find(({ type }) => type === "WHEELCHAIR_LIFT").count, 1);
+  assert.deepEqual(regionalFacilityTypeCounts("daegu", { elevator: 4, escalator: 16, wheelchair_lift: 0 })
+    .map(({ type, count }) => [type, count]), [["ELEVATOR", 4], ["ESCALATOR", 16], ["WHEELCHAIR_LIFT", 0]]);
+  // 대전·광주 원천에는 휠체어리프트 열이 없다. 이전 수집기가 저장한 0도 관측값이 아니다.
+  for (const region of ["daejeon", "gwangju"]) {
+    for (const wheelchairLift of [0, null]) {
+      assert.deepEqual(regionalFacilityTypeCounts(region, { elevator: 2, escalator: null, wheelchair_lift: wheelchairLift })
+        .map(({ type, count }) => [type, count]), [["ELEVATOR", 2], ["ESCALATOR", null]], `${region}:${wheelchairLift}`);
+    }
+  }
+});
+
+test("부산 FACILITY 판정은 원문 빈 필드를 미관측으로 보고 0으로 단정하지 않는다", () => {
+  assert.equal(busanFacilityState({ wl_i: null, wl_o: null, el_i: 0, el_o: 0, es: 0 }), "UNKNOWN");
+  assert.equal(busanFacilityState({ wl_i: 0, wl_o: 0, el_i: 0, el_o: 0, es: 0 }), "VERIFIED_ABSENT");
+  assert.equal(busanFacilityState({ wl_i: null, wl_o: null, el_i: 2, el_o: 0, es: 0 }), "VERIFIED_PRESENT");
 });
