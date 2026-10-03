@@ -22,6 +22,7 @@ import {
   projectKricCapitalTimetableSnapshot,
 } from "./lib/kric-capital-timetable-records.mjs";
 import { CAPITAL_TIMETABLE_EVIDENCE_KEY, CAPITAL_TIMETABLE_SOURCE_ID, validateReverificationHistory } from "./lib/capital-official-timetable.mjs";
+import { KORAIL_TIMETABLE_EVIDENCE_KEY, projectKricKorailTimetableSnapshot } from "./lib/kric-korail-timetable.mjs";
 import { RAW_PUBLICATION_MODE } from "./lib/same-raw-reverification.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -65,6 +66,54 @@ export async function buildKricCapitalTimetableRegistration({ workbookPath, rece
     },
   };
   return { snapshot, snapshotPath, evidenceTemplate, observedAt: observation.observedAt, previousEvidence: sources[0][CAPITAL_TIMETABLE_EVIDENCE_KEY] ?? null };
+}
+
+/**
+ * #903: 같은 관측에서 코레일 역별 행 노선(서해·경춘·수인분당·경의중앙·경강·동해) projection을 만든다.
+ * 재구성·적재 검증은 수도권과 같이 후보 생성(prepare)에서 한다. 파일을 쓰지 않는다.
+ */
+export function buildKricKorailTimetableRegistration({ observation, inventory, targets }) {
+  const snapshot = projectKricKorailTimetableSnapshot(observation);
+  const lineIds = [...new Set(snapshot.routes.map(({ lineId }) => lineId))].sort(codepointCompare);
+  const scopes = (targets.activeLineScopes ?? []).filter((scope) => lineIds.includes(scope.lineId));
+  for (const lineId of lineIds) {
+    if (!scopes.some((scope) => scope.lineId === lineId)) throw new Error(`korail timetable line is not an active line scope: ${lineId}`);
+  }
+  const sources = inventory.sources.filter(({ id }) => id === CAPITAL_TIMETABLE_SOURCE_ID);
+  if (sources.length !== 1) throw new Error(`inventory source missing or ambiguous: ${CAPITAL_TIMETABLE_SOURCE_ID}`);
+  const routeLine = new Map(snapshot.routes.map(({ routeNumber, lineId }) => [routeNumber, lineId]));
+  const dates = new Map();
+  for (const { routeNumber, dataReferenceDate } of snapshot.records) {
+    const lineId = routeLine.get(routeNumber);
+    const serial = Number(dataReferenceDate.value);
+    if (dataReferenceDate.cellType !== "n" || !Number.isSafeInteger(serial)) fail("KORAIL_REFERENCE_DATE");
+    const set = dates.get(lineId) ?? new Set();
+    set.add(new Date(Date.UTC(1899, 11, 30) + serial * 86_400_000).toISOString().slice(0, 10));
+    dates.set(lineId, set);
+  }
+  const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  const evidenceTemplate = {
+    issue: 903,
+    materializer: "tools/datapack/lib/kric-korail-timetable.mjs",
+    verificationTest: "tools/datapack/lib/kric-korail-timetable.test.mjs",
+    snapshotId: snapshot.snapshotId,
+    snapshotPath,
+    rawByteLength: snapshot.rawByteLength,
+    rawSha256: snapshot.rawSha256,
+    observationRecordsSha256: snapshot.observationRecordsSha256,
+    recordsSha256: snapshot.recordsSha256,
+    recordCount: snapshot.recordCount,
+    routes: snapshot.routes,
+    dataReferenceDateByLine: Object.fromEntries([...dates].map(([lineId, set]) => [lineId, [...set].sort(codepointCompare)])
+      .sort(([left], [right]) => codepointCompare(left, right))),
+    coverageScope: {
+      regionIds: [...new Set(scopes.map(({ regionId }) => regionId))].sort(codepointCompare),
+      operatorIds: [...new Set(scopes.map(({ operatorId }) => operatorId))].sort(codepointCompare),
+      lineIds,
+      sourceDomains: ["schedule_timetable"],
+    },
+  };
+  return { snapshot, snapshotPath, evidenceTemplate, previousEvidence: sources[0][KORAIL_TIMETABLE_EVIDENCE_KEY] ?? null };
 }
 
 /**
@@ -127,25 +176,40 @@ export async function registerKricCapitalTimetable({
   await writeFile(path.join(operationDirectory, "receipt.json"), receiptBytes, { flag: "wx" });
   const inventory = JSON.parse(await readFile(path.join(repositoryRoot, INVENTORY_PATH), "utf8"));
   const targets = JSON.parse(await readFile(path.join(repositoryRoot, TARGETS_PATH), "utf8"));
+  // 수도권·코레일 projection은 같은 관측(한 번 파싱)에서 만든다.
+  const observation = await observe({ inputFile: outputFile, receipt });
   const { snapshot, snapshotPath, evidenceTemplate, observedAt, previousEvidence } = await buildKricCapitalTimetableRegistration({
-    workbookPath: outputFile, receipt, inventory, targets, observe,
+    workbookPath: outputFile, receipt, inventory, targets, observe: async () => observation,
   });
+  const korail = buildKricKorailTimetableRegistration({ observation, inventory, targets });
   if (observedAt !== receipt.capturedAt) fail("OBSERVATION");
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const existingSnapshotBytes = await readFile(path.join(repositoryRoot, snapshotPath)).catch((error) => {
     if (error?.code === "ENOENT") return null;
     throw error;
   });
+  const registrationObservation = { observedAt, collectionReceiptSha256: createHash("sha256").update(receiptBytes).digest("hex") };
+  const now = clock();
   const plan = planKricCapitalTimetableRegistration({
-    previousEvidence, snapshot, snapshotBytes, existingSnapshotBytes,
-    observation: { observedAt, collectionReceiptSha256: createHash("sha256").update(receiptBytes).digest("hex") },
-    evidenceTemplate, now: clock(),
+    previousEvidence, snapshot, snapshotBytes, existingSnapshotBytes, observation: registrationObservation, evidenceTemplate, now,
+  });
+  const korailBytes = Buffer.from(`${JSON.stringify(korail.snapshot)}\n`);
+  const existingKorailBytes = await readFile(path.join(repositoryRoot, korail.snapshotPath)).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  const korailPlan = planKricCapitalTimetableRegistration({
+    previousEvidence: korail.previousEvidence, snapshot: korail.snapshot, snapshotBytes: korailBytes, existingSnapshotBytes: existingKorailBytes,
+    observation: registrationObservation, evidenceTemplate: korail.evidenceTemplate, now,
   });
   if (plan.writeSnapshot) await writeFile(path.join(repositoryRoot, snapshotPath), snapshotBytes, { flag: "wx" });
+  if (korailPlan.writeSnapshot) await writeFile(path.join(repositoryRoot, korail.snapshotPath), korailBytes, { flag: "wx" });
   const source = inventory.sources.find(({ id }) => id === CAPITAL_TIMETABLE_SOURCE_ID);
   source[CAPITAL_TIMETABLE_EVIDENCE_KEY] = plan.evidence;
+  source[KORAIL_TIMETABLE_EVIDENCE_KEY] = korailPlan.evidence;
   await writeFile(path.join(repositoryRoot, INVENTORY_PATH), jsonBytes(inventory));
-  return { snapshotPath, mode: plan.mode, evidence: plan.evidence };
+  return { snapshotPath, mode: plan.mode, evidence: plan.evidence,
+    korail: { snapshotPath: korail.snapshotPath, mode: korailPlan.mode, evidence: korailPlan.evidence } };
 }
 
 export function parseRegisterKricCapitalTimetableArgs(argv) {
@@ -157,7 +221,8 @@ export function parseRegisterKricCapitalTimetableArgs(argv) {
 
 if (isMainModule(import.meta.url)) {
   try {
-    const { snapshotPath, mode, evidence } = await registerKricCapitalTimetable(parseRegisterKricCapitalTimetableArgs(process.argv.slice(2)));
+    const { snapshotPath, mode, evidence, korail } = await registerKricCapitalTimetable(parseRegisterKricCapitalTimetableArgs(process.argv.slice(2)));
+    process.stdout.write(`${JSON.stringify({ korail: { snapshotPath: korail.snapshotPath, mode: korail.mode, snapshotId: korail.evidence.snapshotId, recordCount: korail.evidence.recordCount, reverificationCount: korail.evidence.reverifications.length } })}\n`);
     process.stdout.write(`${JSON.stringify({ snapshotPath, mode, snapshotId: evidence.snapshotId, recordCount: evidence.recordCount, observedAt: evidence.observedAt, reverificationCount: evidence.reverifications.length })}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);

@@ -121,6 +121,7 @@ export function buildKorailStationRowTrips({ records, bindings = KORAIL_STATION_
   const quarantine = [];
   const expressRows = new Map(bindings.map(({ lineId }) => [lineId, []]));
   const expressTrips = new Map(bindings.map(({ lineId }) => [lineId, 0]));
+  const expressTripRows = [];
   for (const { entry, key, rows } of groups.values()) {
     const ordered = [...rows].sort((left, right) => left.sourceRowNumber - right.sourceRowNumber);
     if (ordered.some((row) => row.serviceType !== ordered[0].serviceType)) {
@@ -130,6 +131,7 @@ export function buildKorailStationRowTrips({ records, bindings = KORAIL_STATION_
     if (ordered[0].serviceType === "급행") {
       expressRows.get(entry.lineId).push(...ordered);
       expressTrips.set(entry.lineId, expressTrips.get(entry.lineId) + 1);
+      expressTripRows.push(quarantined(entry, key, ordered, EXPRESS_STOP_PATTERN_UNRESOLVED));
       continue;
     }
     const outcome = reconstructTrip(entry, key, ordered);
@@ -159,7 +161,8 @@ export function buildKorailStationRowTrips({ records, bindings = KORAIL_STATION_
       expressRows: express.length, expressTrips: expressTrips.get(entry.lineId), expressReason: EXPRESS_STOP_PATTERN_UNRESOLVED };
   }
   const order = (left, right) => codepointCompare(left.lineId, right.lineId) || codepointCompare(left.providerTripKey, right.providerTripKey);
-  return { trips: trips.sort(order), quarantine: quarantine.sort(order), expressQuarantine, summary };
+  return { trips: trips.sort(order), quarantine: quarantine.sort(order), expressQuarantine,
+    expressTrips: expressTripRows.sort(order), summary };
 }
 
 function quarantined(entry, providerTripKey, rows, reason) {

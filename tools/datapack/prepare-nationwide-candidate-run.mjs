@@ -48,12 +48,30 @@ import {
   buildCapitalOfficialTimetable,
   removeLine4PilotTimetable,
 } from "./lib/capital-official-timetable.mjs";
+import {
+  KORAIL_TIMETABLE_EVIDENCE_KEY,
+  KORAIL_TIMETABLE_SERVICE_ID_PREFIX,
+  KORAIL_TIMETABLE_TRIP_ID_PREFIX,
+  kricKorailOfficialTimetable,
+} from "./lib/kric-korail-timetable.mjs";
+import {
+  STATION_LINES_SERVICE_ID_PREFIX,
+  STATION_LINES_TIMETABLE_SOURCE_ID,
+  STATION_LINES_TRIP_ID_PREFIX,
+  kricStationLinesOfficialTimetable,
+} from "./lib/kric-station-lines-timetable.mjs";
+import { materializeOfficialLineTimetables } from "./lib/official-line-timetable.mjs";
+import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
 
 export { CAPITAL_TIMETABLE_REPORT_PATH, OFFICIAL_STOP_TIMES_PATH };
 // 팩 JSON 밖 결정적 gzip 파일로 싣는 공식 원천 시간표. trip이 원천 공통 provenance와 행 hash를 가진 원천만 둔다.
 const EXTERNAL_TIMETABLE_SOURCE_IDS = Object.freeze([
-  CAPITAL_TIMETABLE_SOURCE_ID, "incheon-line1-train-timetable", "incheon-line2-train-timetable",
+  CAPITAL_TIMETABLE_SOURCE_ID, "incheon-line1-train-timetable", "incheon-line2-train-timetable", STATION_LINES_TIMETABLE_SOURCE_ID,
 ]);
+// #903: 코레일 6개 노선·역별 API 5개 노선의 노선별 적재 요약과 격리 행.
+export const OFFICIAL_LINE_TIMETABLE_REPORT_PATH = "tools/datapack/release/nationwide-official-line-timetable-report.json";
+// 공용 적재기 운행 달력과 격리 상한(수도권과 같은 값).
+const OFFICIAL_LINE_CALENDAR = Object.freeze({ startDate: "20260101", endDate: "20261231", maxQuarantineRatio: 0.05 });
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -154,6 +172,10 @@ const ADMISSION_EVIDENCE_INPUTS = Object.freeze({
   incheonLine1: ["incheon-line1-train-timetable", "scheduleAdmissionEvidence"],
   incheonLine2: ["incheon-line2-train-timetable", "scheduleAdmissionEvidence"],
 });
+const CONTENT_BOUND_INPUT_SOURCE_IDS = Object.freeze({
+  daegyeongTimetable: "korail-metropolitan-planned-timetable",
+  stationLinesTimetable: STATION_LINES_TIMETABLE_SOURCE_ID,
+});
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
 function exactInventorySource(sourceInventory, sourceId) {
@@ -248,12 +270,13 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
   }
   // #899: 수도권 공식 시간표(KRIC 전체_도시철도운행정보 projection)도 원장 행이 없다. inventory admission evidence가
   // 가리키는 snapshot을 쓰고, 신선도는 원천 정책 클래스(official_static_timetable_confirmation, observedAt)로 유도한다.
-  {
+  // #903: 같은 원천·같은 수집의 코레일 6개 노선 projection(korailScheduleAdmissionEvidence)도 같은 규칙으로 고른다.
+  for (const [key, evidenceKey] of [["capitalTimetable", CAPITAL_TIMETABLE_EVIDENCE_KEY], ["korailTimetable", KORAIL_TIMETABLE_EVIDENCE_KEY]]) {
     const sourceId = CAPITAL_TIMETABLE_SOURCE_ID;
-    const evidence = exactInventorySource(sourceInventory, sourceId)[CAPITAL_TIMETABLE_EVIDENCE_KEY];
+    const evidence = exactInventorySource(sourceInventory, sourceId)[evidenceKey];
     const snapshotId = evidence?.snapshotId;
     if (typeof snapshotId !== "string" || snapshotId.length === 0) {
-      throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId} ${CAPITAL_TIMETABLE_EVIDENCE_KEY}`);
+      throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId} ${evidenceKey}`);
     }
     const { snapshotPath, rawSha256 } = exactSnapshotEvidence(sourceId, snapshotId, [evidence]);
     const observedAt = requiredInstant(evidence.observedAt, `${sourceId} observedAt`);
@@ -266,10 +289,33 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
     if (Date.parse(freshnessExpiresAt) <= evaluatedAt) {
       throw new Error(`nationwide candidate input is expired for ${sourceId}`);
     }
-    selected.capitalTimetable = {
+    selected[key] = {
       sourceId, snapshotId, path: snapshotPath, freshnessExpiresAt,
       bytes: await boundInputSnapshot({ sourceId, snapshotId, snapshotPath, rawSha256, ledgerHead: null, readSourceBytes }),
     };
+  }
+  // #903: 대경선 계획 시각표·KRIC 역별 시간표 파생 스냅샷은 원장 head·fan-in으로 고르고, 스냅샷 내용 해시를
+  // 원장 행·inventory evidence와 대조한다(두 스냅샷은 원본 sha를 최상위가 아닌 raw 블록에 둔다).
+  for (const [key, sourceId] of Object.entries(CONTENT_BOUND_INPUT_SOURCE_IDS)) {
+    const head = terminalHead(sourceId, sourceSnapshots);
+    const fanInRows = fanIn.selectedSources.filter((row) => row?.sourceId === sourceId);
+    if (fanInRows.length !== 1 || fanInRows[0].snapshotId !== head.snapshotId) {
+      throw new Error(`nationwide candidate input fan-in selection does not match ledger head for ${sourceId}`);
+    }
+    const freshnessExpiresAt = fanInRows[0].freshnessExpiresAt;
+    if (!(Date.parse(freshnessExpiresAt) > evaluatedAt)) throw new Error(`nationwide candidate input is expired for ${sourceId}`);
+    const evidence = exactInventorySource(sourceInventory, sourceId).scheduleAdmissionEvidence;
+    const snapshotPath = `tools/datapack/sources/${head.snapshotId}.json`;
+    if (evidence?.snapshotId !== head.snapshotId || evidence.snapshotPath !== snapshotPath || evidence.contentSha256 !== head.contentSha256) {
+      throw new Error(`nationwide candidate input admission evidence does not match ledger head for ${sourceId}`);
+    }
+    const bytes = await readSourceBytes(snapshotPath);
+    let snapshot;
+    try { snapshot = JSON.parse(bytes); } catch { throw new Error(`nationwide candidate input is invalid JSON for ${sourceId}`); }
+    if (snapshot?.sourceId !== sourceId || snapshot.snapshotId !== head.snapshotId || snapshot.contentSha256 !== head.contentSha256) {
+      throw new Error(`nationwide candidate input content binding mismatch for ${sourceId}`);
+    }
+    selected[key] = { sourceId, snapshotId: head.snapshotId, path: snapshotPath, freshnessExpiresAt, bytes: Buffer.from(bytes) };
   }
   return selected;
 }
@@ -753,6 +799,9 @@ export async function prepareNationwideCandidate({
   const daejeonTimetable = inputJson("daejeonTimetable");
   const gwangjuTimetable = JSON.parse(gwangjuTimetableBytes);
   const capitalTimetable = inputJson("capitalTimetable");
+  const korailTimetable = inputJson("korailTimetable");
+  const daegyeongTimetable = inputJson("daegyeongTimetable");
+  const stationLinesTimetable = inputJson("stationLinesTimetable");
 
   const molitTransferUncompressed = gunzipSync(molitTransferGzipBytes);
   const molitTransferText = new TextDecoder("euc-kr").decode(molitTransferUncompressed);
@@ -1087,6 +1136,58 @@ export async function prepareNationwideCandidate({
     throw new Error(`nationwide candidate pack source already exists: ${CAPITAL_TIMETABLE_SOURCE_ID}`);
   }
   finalPack.sourceInventory.push(capitalSchedule.packSource);
+
+  // #903: 코레일 6개 노선(파일 900 역별 행 재구성)과 KRIC 역별 API 5개 노선을 같은 공용 적재기로 싣는다.
+  // 역 미매칭·노선 trip 0·운행일 종류 누락·격리 상한 초과·급행 고정 집합 불일치는 실패한다.
+  const kricSource = exactInventorySource(sourceInventory, CAPITAL_TIMETABLE_SOURCE_ID);
+  const korailEvidence = kricSource[KORAIL_TIMETABLE_EVIDENCE_KEY];
+  const korailInput = kricKorailOfficialTimetable(korailTimetable, { observedAt: korailEvidence.observedAt });
+  const stationLinesSource = exactInventorySource(sourceInventory, STATION_LINES_TIMETABLE_SOURCE_ID);
+  const stationLinesInput = kricStationLinesOfficialTimetable(stationLinesTimetable, stationLinesSource.scheduleAdmissionEvidence);
+  const officialLineResults = [
+    ["korail", korailInput, KORAIL_TIMETABLE_SERVICE_ID_PREFIX, KORAIL_TIMETABLE_TRIP_ID_PREFIX],
+    ["stationLines", stationLinesInput, STATION_LINES_SERVICE_ID_PREFIX, STATION_LINES_TRIP_ID_PREFIX],
+  ].map(([name, { provider, lineBindings }, serviceIdPrefix, tripIdPrefix]) => {
+    const { quarantine, lineSummaries, ...tables } = materializeOfficialLineTimetables({
+      pack: finalPack, provider, lineBindings, serviceIdPrefix, tripIdPrefix, holidayDates: HOLIDAYS_2026, ...OFFICIAL_LINE_CALENDAR,
+    });
+    for (const [table, rows] of Object.entries(tables)) finalPack[table] = [...finalPack[table], ...rows];
+    return { name, provider, quarantine, lineSummaries };
+  });
+  // 코레일 projection은 수도권과 같은 원천·같은 관측이다: 팩 원천 항목 하나에 노선 범위를 합친다.
+  if (korailEvidence.observedAt !== capitalSchedule.packSource.updatedAt) {
+    throw new Error("nationwide candidate korail timetable observation differs from the capital observation of the same source");
+  }
+  for (const field of ["regionIds", "operatorIds", "lineIds"]) {
+    capitalSchedule.packSource.coverageScope[field] = [...new Set([...capitalSchedule.packSource.coverageScope[field], ...korailEvidence.coverageScope[field]])]
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  }
+  if (finalPack.sourceInventory.some(({ id }) => id === STATION_LINES_TIMETABLE_SOURCE_ID)) {
+    throw new Error(`nationwide candidate pack source already exists: ${STATION_LINES_TIMETABLE_SOURCE_ID}`);
+  }
+  finalPack.sourceInventory.push({
+    id: STATION_LINES_TIMETABLE_SOURCE_ID, owner: stationLinesSource.owner, url: stationLinesSource.datasetUrl,
+    license: stationLinesSource.license.name, licenseStatus: "redistributable", redistributionAllowed: true,
+    updateFrequency: stationLinesSource.updateFrequency, updatedAt: stationLinesTimetable.collectedAt,
+    fields: ["service_calendar", "trip", "stop_time"], coverageScope: structuredClone(stationLinesSource.coverageScope),
+  });
+  const officialLineTimetableReport = {
+    schemaVersion: 1,
+    artifactKind: "datapack-official-line-timetable-report",
+    issue: "https://github.com/AquilaXk/easysubway-data/issues/903",
+    sources: officialLineResults.map(({ name, provider, quarantine, lineSummaries }) => ({
+      name, sourceId: provider.sourceId, snapshotId: provider.sourceSnapshotId, rawSha256: provider.rawSha256,
+      recordsSha256: provider.recordsSha256, observedAt: provider.observedAt, lines: lineSummaries,
+      summary: { lineCount: lineSummaries.length, admittedTripCount: lineSummaries.reduce((sum, line) => sum + line.admittedTripCount, 0),
+        quarantinedCount: quarantine.length },
+      rows: quarantine,
+    })),
+  };
+
+  // #903: 대경선(코레일 광역전철 계획 시각표)을 승인 snapshot 그대로 싣는다(부모 topology·원장 결속은 materializer가 검증).
+  Object.assign(finalPack, materializeKorailTimetable({
+    pack: finalPack, snapshot: daegyeongTimetable, inventory: sourceInventory, ledger: snapshots, now: new Date(fanIn.evaluatedAt),
+  }));
 
   function findRegionalStationId(lineId, rawName) {
     const name = regionalProviderStationNameKey(rawName);
@@ -1441,6 +1542,7 @@ export async function prepareNationwideCandidate({
   if (writeFiles) {
     await writeFile(path.join(repositoryRoot, REGIONAL_TIMETABLE_QUARANTINE_PATH), jsonBytes(regionalTimetableQuarantine));
     await writeFile(path.join(repositoryRoot, CAPITAL_TIMETABLE_REPORT_PATH), jsonBytes(capitalSchedule.report));
+    await writeFile(path.join(repositoryRoot, OFFICIAL_LINE_TIMETABLE_REPORT_PATH), jsonBytes(officialLineTimetableReport));
   }
 
   // Expand nationwide station_car_door_hints with KRIC elevator platform door positions

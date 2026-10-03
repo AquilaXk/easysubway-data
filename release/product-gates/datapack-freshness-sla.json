@@ -66,7 +66,8 @@
       "id": "planned_timetable",
       "sourceIds": [
         "korail-metropolitan-planned-timetable",
-        "kric-subway-timetable"
+        "kric-subway-timetable",
+        "kric-subway-timetable-station-lines"
       ],
       "examples": [
         "service calendar",
