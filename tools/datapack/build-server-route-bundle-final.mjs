@@ -279,7 +279,8 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   return final;
 }
 
-async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
+// 발행 단계 FINAL 종료. 테스트가 발행 전 검사와 별개로 이 단계의 가드를 직접 겨누도록 export한다(#916 리뷰 F1).
+export async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
   if (prePublicationFinal.result !== "NO_GO"
     || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
       "promotionAuthorization:UNAVAILABLE",

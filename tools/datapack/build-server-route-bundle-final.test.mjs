@@ -11,6 +11,7 @@ import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import {
   E_SERVER_BUNDLE_DECOMPRESSED_BUDGET,
   buildServerRouteBundleFinalEvidence,
+  closeReleaseFinal,
 } from "./build-server-route-bundle-final.mjs";
 import {
   buildRouteAccessibilityEligibility,
@@ -427,6 +428,22 @@ test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes 
     /publication receipt object inventory mismatch/,
   );
   await assert.rejects(() => readFile(output), /ENOENT/);
+});
+
+// #916 리뷰 F1: 발행 단계(closeReleaseFinal)의 cutoff 가드는 발행 전 검사와 독립적으로 거부해야 한다.
+// 발행 전 검사를 우회한 FINAL이 들어와도 release evidence를 읽기 전에 막는다.
+test("발행 단계 FINAL closure는 발행 전 검사와 별개로 bundle보다 이른 source cutoff를 거부한다", async () => {
+  const prePublicationFinal = {
+    result: "NO_GO",
+    blockers: ["promotionAuthorization:UNAVAILABLE", "publication:UNAVAILABLE"],
+    candidate: { freshUntil: "2026-10-10T09:11:32.831+09:00" },
+  };
+  const freshness = (freshnessExpiresAt) => ({ state: "PASS", evidence: { validation: { results: [{ freshnessExpiresAt }] } } });
+  await assert.rejects(() => closeReleaseFinal(prePublicationFinal, {}, [], freshness("2026-10-10T00:05:31.571Z")),
+    /source freshness cutoff must cover candidate freshUntil/);
+  // cutoff가 bundle 이후면 이 가드를 지나 release evidence 검사로 넘어간다.
+  await assert.rejects(() => closeReleaseFinal(prePublicationFinal, {}, [], freshness("2026-10-10T00:11:32.831Z")),
+    /release evidence keys/);
 });
 
 // #913 후속: RC(발행 전 FINAL)도 발행 경로와 같은 원천 신선도 cutoff 검사를 같은 입력으로 돌린다.
