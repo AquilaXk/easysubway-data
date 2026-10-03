@@ -740,11 +740,17 @@ async function loadBuildInput(
   // 대상은 발행 범위인 전국 후보의 production 팩이다. 수도권 pilot 범위(capital_pilot_android_v1) 팩의 4호선 pilot trip은
   // 원천 표기가 없어 이 계산에 넣을 수 없고, 그 범위와 fixture 팩, 검증 전용 빌드(dev 채널 출력)는 발행 대상이 아니다.
   const productionPacks = (sourceFixture.packs ?? []).filter(({ artifactKind }) => artifactKind === "production");
-  if (buildSpec.productionScopeId !== "nationwide_routing_android_v1" || productionPacks.length === 0
-    || validationOnlyProductionFixture) {
+  const skipReason = timetableFreshnessSkipReason({
+    productionScopeId: buildSpec.productionScopeId, productionPacks, validationOnly: validationOnlyProductionFixture,
+  });
+  if (skipReason !== null) {
     return {
       fixture,
-      candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence, overrideBinding, validationNow),
+      candidateBuild: {
+        ...candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence, overrideBinding, validationNow),
+        // 리뷰 F2: 시간표 신선도를 의도적으로 계산하지 않은 사유를 남긴다.
+        artifactFreshness: { timetableFreshness: "SKIPPED", skipReason, freshUntil: artifactFreshUntil },
+      },
       artifactFreshUntil,
       outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
       validationOnlyProductionFixture,
@@ -2124,9 +2130,18 @@ export function productionTimetableFreshness({ packs, sourceSnapshots, inventory
       throw new Error(`TIMETABLE_FRESHNESS_EXPIRED: ${entry.sourceId} ${entry.sourceSnapshotId} ${entry.freshnessExpiresAt}`);
     }
   }
-  const freshUntil = sources.length === 0 ? null
-    : new Date(Math.min(...sources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)))).toISOString();
+  // 리뷰 F2: 전국 production 팩에서 시간표 원천이 하나도 없으면 만료를 계산할 수 없으므로 실패한다.
+  if (sources.length === 0) throw new Error("TIMETABLE_FRESHNESS_UNRESOLVED: no timetable sources");
+  const freshUntil = new Date(Math.min(...sources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)))).toISOString();
   return { freshUntil, sources };
+}
+
+/** 시간표 신선도를 계산하지 않는 범위와 사유. 발행 가능한 전국 production 빌드만 계산한다(null). */
+export function timetableFreshnessSkipReason({ productionScopeId, productionPacks, validationOnly }) {
+  if (productionScopeId !== "nationwide_routing_android_v1") return "NOT_NATIONWIDE_SCOPE";
+  if (!Array.isArray(productionPacks) || productionPacks.length === 0) return "NO_PRODUCTION_PACK";
+  if (validationOnly === true) return "VALIDATION_ONLY_BUILD";
+  return null;
 }
 
 /** 네트워크(topology·ITX·접근성) 창과 시간표 창 중 이른 쪽을 팩 만료로 하고, 결정한 쪽을 남긴다. */

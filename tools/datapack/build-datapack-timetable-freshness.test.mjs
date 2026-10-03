@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { candidateArtifactFreshness, productionTimetableFreshness } from "./build-datapack.mjs";
+import { candidateArtifactFreshness, productionTimetableFreshness, timetableFreshnessSkipReason } from "./build-datapack.mjs";
 
 // #913: 팩 expiresAt·서버 번들 freshUntil은 topology·접근성 창뿐 아니라 시간표 원천의 신선도 만료까지 반영해야 한다.
 const NOW = new Date("2026-10-03T01:00:00.000Z");
@@ -64,4 +64,18 @@ test("팩 만료는 네트워크(topology·ITX·접근성) 창과 시간표 창 
   assert.equal(earlierNetwork.freshUntil, "2026-10-07T00:00:00.000Z");
   assert.deepEqual(earlierNetwork.decidedBy, [{ kind: "network" }]);
   assert.equal(earlierNetwork.timetableSources.length, 5);
+});
+
+// #913 리뷰 F2: 전국 production 팩에서 시간표 원천이 하나도 없으면 계산 불가로 실패한다. 의도적으로 건너뛰는 경우는 사유를 남긴다.
+test("전국 production 팩인데 시간표 원천이 0개면 실패한다", () => {
+  assert.throws(() => productionTimetableFreshness({ packs: [{ transitTrips: [] }], sourceSnapshots: [], inventory: { sources: [] },
+    freshnessPolicy: policy, evaluationAt: "2026-10-03T00:40:43.059Z", now: NOW }), /TIMETABLE_FRESHNESS_UNRESOLVED: no timetable sources/u);
+});
+
+test("시간표 신선도를 건너뛰는 범위는 사유로 구분하고 전국 발행 빌드만 계산한다", () => {
+  const production = [{ artifactKind: "production" }];
+  assert.equal(timetableFreshnessSkipReason({ productionScopeId: "nationwide_routing_android_v1", productionPacks: production, validationOnly: false }), null);
+  assert.equal(timetableFreshnessSkipReason({ productionScopeId: "capital_pilot_android_v1", productionPacks: production, validationOnly: false }), "NOT_NATIONWIDE_SCOPE");
+  assert.equal(timetableFreshnessSkipReason({ productionScopeId: "nationwide_routing_android_v1", productionPacks: [], validationOnly: false }), "NO_PRODUCTION_PACK");
+  assert.equal(timetableFreshnessSkipReason({ productionScopeId: "nationwide_routing_android_v1", productionPacks: production, validationOnly: true }), "VALIDATION_ONLY_BUILD");
 });
