@@ -283,7 +283,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
 
   // Authentic routes across all nationwide operational scopes
   // #899: 4호선 2정차 pilot(route-seoul-4-up/down)은 KRIC 공식 수도권 시간표 13개 노선으로 교체됐다.
-  assert.strictEqual(pack.transitRoutes.length, 26);
+  // #903: 코레일 6개 노선(kric-korail)·KRIC 역별 5개 노선(kric-station)·대경선 상·하행 2개 route를 더한다.
+  assert.strictEqual(pack.transitRoutes.length, 39);
   const routeIds = new Set(pack.transitRoutes.map((r) => r.id));
   assert.ok(!routeIds.has("route-seoul-4-up"));
   assert.ok(!routeIds.has("route-seoul-4-down"));
@@ -303,6 +304,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(routeIds.has("route-daegu-line-3"));
   assert.ok(routeIds.has("route-daejeon-line-1"));
   assert.ok(routeIds.has("route-gwangju-line-1"));
+  for (const routeKey of ["i41ws", "i41k2", "i28k1", "i4108", "i41k5", "i26k6"]) assert.ok(routeIds.has(`route-kric-korail-${routeKey}`), routeKey);
+  for (const routeKey of ["a", "e1", "u1", "g1", "b1"]) assert.ok(routeIds.has(`route-kric-station-${routeKey}`), routeKey);
 
   // #903: 노선도의 전 노선이 출시 범위다(QA 결정 2026-10-03). 팩의 모든 노선에 공식 시간표 trip이 1건 이상 있어야 한다.
   const routeLine = new Map(pack.transitRoutes.map(({ id, lineId }) => [id, lineId]));
@@ -315,10 +318,12 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // #855: 대전·광주 추정 종착역 정차 898개와 원천 정차 하나뿐인 녹동 출발 38개(격리 증거)가 빠진다.
   // #899: 4호선 pilot trip 466·정차 932·달력 2·달력 예외 28을 빼고 수도권 공식 trip 11,426·정차 319,526·
   // 달력 4·달력 예외 56을 더한다.
-  assert.strictEqual(pack.transitTrips.length, 19973, "Pack must contain exactly 19,973 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 561983, "Pack must contain exactly 561,983 authentic stop times");
-  assert.strictEqual(pack.serviceCalendars.length, 24);
-  assert.strictEqual(pack.serviceCalendarDates.length, 132);
+  // #903: 코레일 6개 노선 trip 2,117·정차 57,689, KRIC 역별 5개 노선 trip 3,956·정차 50,754,
+  // 대경선 trip 194·정차 1,488, 달력 6·달력 예외 68을 더한다(기존 노선 건수는 그대로다).
+  assert.strictEqual(pack.transitTrips.length, 26240, "Pack must contain exactly 26,240 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 671914, "Pack must contain exactly 671,914 authentic stop times");
+  assert.strictEqual(pack.serviceCalendars.length, 30);
+  assert.strictEqual(pack.serviceCalendarDates.length, 200);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
@@ -481,9 +486,13 @@ const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
   daeguTimetable3: "daegu-line3-train-timetable-beb4ff8616336afea038efb54a47610a232dd890eba37c01ba82bf9f433e1085",
   daejeonTimetable: "daejeon-train-timetable-20261002",
   capitalTimetable: "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
+  // #903: 코레일 6개 노선 projection, 대경선 계획 시각표, KRIC 역별 시간표 5개 노선
+  korailTimetable: "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+  daegyeongTimetable: "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+  stationLinesTimetable: "kric-subway-timetable-station-lines-20261003",
 });
 
-test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 14개를 고른다", async () => {
+test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 17개를 고른다", async () => {
   const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputsWithinIncheonWindow());
   assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
   for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
