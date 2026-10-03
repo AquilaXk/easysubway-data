@@ -28,7 +28,13 @@ test("보관본 관측에서 계약 노선 행만 원문 그대로 골라 결정
   assert.equal(snapshot.retainedSnapshotId, RETAINED.snapshotId);
   assert.equal(snapshot.observedAt, RETAINED.observedAt);
   assert.match(snapshot.snapshotId, /^kric-nationwide-timetable-file-gwangju-[a-f0-9]{64}$/u);
-  assert.deepEqual(projectRetainedGwangjuRecords({ retained: retained(), retainedEvidence: RETAINED, observationRawObjectSha256: "b".repeat(64) }), snapshot);
+  // 스냅샷 식별자는 projection 본문의 독립 계산 해시와 같아야 한다(입력 순서와 무관한 결정적 바이트).
+  const { snapshotId, contentSha256, ...body } = snapshot;
+  const canonical = (value) => Array.isArray(value) ? `[${value.map(canonical).join(",")}]`
+    : value && typeof value === "object" ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`
+      : JSON.stringify(value);
+  assert.equal(contentSha256, sha(canonical(body)));
+  assert.equal(snapshotId, `kric-nationwide-timetable-file-gwangju-${contentSha256}`);
   assert.throws(() => projectRetainedGwangjuRecords({ retained: { ...retained(), routeNumber: "S9999" }, retainedEvidence: RETAINED, observationRawObjectSha256: "b".repeat(64) }),
     /RETAINED_GWANGJU_PROJECTION_ROUTE_EMPTY/u);
 });
