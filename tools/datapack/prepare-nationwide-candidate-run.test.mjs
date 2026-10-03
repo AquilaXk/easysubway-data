@@ -313,6 +313,23 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   const linesWithTrips = new Set(pack.transitTrips.map(({ routeId }) => routeLine.get(routeId)));
   assert.deepEqual(pack.lines.map(({ id }) => id).filter((lineId) => !linesWithTrips.has(lineId)).sort(), [], "every pack line must have at least one trip");
 
+  // #903 리뷰 F1: prepare가 쓴 노선 보고서에서 급행 고정 집합(경춘 5·수인분당 22·경의중앙 28 trip)이 노선별로 적용됐는지 본다.
+  // 고정 집합이 binding에 붙지 않으면 상한 5% 안의 노선(경춘·수인분당)은 미고정 격리로 조용히 통과하므로 여기서 막는다.
+  const lineReport = JSON.parse(await readFile(path.join(root, "tools/datapack/release/nationwide-official-line-timetable-report.json"), "utf8"));
+  const korailReport = lineReport.sources.find(({ name }) => name === "korail");
+  const expressNote = "급행 정차·통과 구분 불가, #902에서 보강";
+  const pinned = (rowCount, rowSetSha256) => ({ reason: "EXPRESS_STOP_PATTERN_UNRESOLVED", rowCount, rowSetSha256, note: expressNote });
+  assert.deepEqual(Object.fromEntries(korailReport.lines.map(({ routeKey, pinnedQuarantine }) => [routeKey, pinnedQuarantine])), {
+    I41WS: null,
+    I41K2: pinned(5, "5934643bec13e0cd32aeb7c2ce8300478699abaa6a55da1fd49960a0da0b30a3"),
+    I28K1: pinned(22, "e21e4cd62f74db32c0fa2b01813fe18f671d08ffc2cba86c2eb3c3e88f5e9f79"),
+    I4108: pinned(28, "f4efb4e31fc9ebb2cb7c3e0ef14292b52ca8addbde5589ca99e5fc5d2755dee9"),
+    I41K5: null,
+    I26K6: null,
+  });
+  const stationLinesReport = lineReport.sources.find(({ sourceId }) => sourceId === "kric-subway-timetable-station-lines");
+  assert.deepEqual(stationLinesReport.lines.map(({ pinnedQuarantine }) => pinnedQuarantine), [null, null, null, null, null]);
+
   // Zero synthetic trips manufactured by interval loop
   const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
   assert.strictEqual(syntheticTrips.length, 0, "Pack must contain 0 synthetic trips");

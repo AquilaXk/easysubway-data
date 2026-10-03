@@ -79,3 +79,18 @@ test("급행 고정 집합은 실측(원천 sha256 218f76dd…) 경춘 5·수인
     I4108: [28, "f4efb4e31fc9ebb2cb7c3e0ef14292b52ca8addbde5589ca99e5fc5d2755dee9"],
   });
 });
+
+test("기본 경로는 경춘·수인분당·경의중앙 binding에 급행 고정 집합을 붙이고 나머지 노선에는 붙이지 않는다", () => {
+  // 재구성 단계의 급행 행 집합 검사(expressQuarantine)는 합성 입력에 맞추고, 적재기 고정 집합(allowance)은 기본값을 쓴다.
+  const bindings = KORAIL_STATION_ROW_BINDINGS.map((entry) => ({ ...entry, expressQuarantine: { rowCount: 0, rowSetSha256: sha("[]") } }));
+  const { lineBindings } = kricKorailOfficialTimetable(projectKricKorailTimetableSnapshot(observation()), { observedAt: "2026-10-03T00:00:00.000Z", bindings });
+  const note = "급행 정차·통과 구분 불가, #902에서 보강";
+  assert.deepEqual(Object.fromEntries(lineBindings.map(({ routeKey, quarantineAllowance }) => [routeKey, quarantineAllowance ?? null])), {
+    I41WS: null,
+    I41K2: { reason: "EXPRESS_STOP_PATTERN_UNRESOLVED", rowCount: 5, rowSetSha256: "5934643bec13e0cd32aeb7c2ce8300478699abaa6a55da1fd49960a0da0b30a3", note },
+    I28K1: { reason: "EXPRESS_STOP_PATTERN_UNRESOLVED", rowCount: 22, rowSetSha256: "e21e4cd62f74db32c0fa2b01813fe18f671d08ffc2cba86c2eb3c3e88f5e9f79", note },
+    I4108: { reason: "EXPRESS_STOP_PATTERN_UNRESOLVED", rowCount: 28, rowSetSha256: "f4efb4e31fc9ebb2cb7c3e0ef14292b52ca8addbde5589ca99e5fc5d2755dee9", note },
+    I41K5: null,
+    I26K6: null,
+  });
+});
