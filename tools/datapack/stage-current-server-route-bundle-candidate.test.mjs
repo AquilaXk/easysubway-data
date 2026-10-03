@@ -181,51 +181,36 @@ test("current manifest expiry가 build publishedAt과 같으면 prepare 전에 f
   await assert.rejects(() => lstat(path.join(output, "server-route-bundle")), /ENOENT/);
 });
 
-test("prepared FINAL candidate freshUntil이 verified current manifest expiry와 다르면 publish하지 않는다", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-prepared-expiry-"));
+// prepare 결과가 거부되면 stage output을 하나도 만들지 않아야 한다.
+async function assertPreparedRejectedWithoutOutput(t, prefix, prepare, pattern) {
+  const root = await mkdtemp(path.join(os.tmpdir(), prefix));
   t.after(() => rm(root, { recursive: true, force: true }));
   const input = await fixture(root);
   const output = path.join(root, "candidate");
   await mkdir(output);
   await assert.rejects(
     () => stageCurrentServerRouteBundleCandidate({
-      ...input,
-      repositoryGitSha: "b".repeat(40),
-      keyId: "production-v1",
-      output,
-      stages: { prepare: async ({ output: prepared }) => writePreparedOutputs(prepared, {
-        ...BUNDLE_CANDIDATE,
-        freshUntil: "2026-08-15T12:47:36.000+09:00",
-      }) },
+      ...input, repositoryGitSha: "b".repeat(40), keyId: "production-v1", output, stages: { prepare },
     }),
-    /prepared route evidence freshUntil mismatch/,
+    pattern,
   );
   for (const name of ["server-route-bundle", "server-route-bundle-evidence", "server-route-bundle-inputs"]) {
     await assert.rejects(() => lstat(path.join(output, name)), /ENOENT/);
   }
+}
+
+test("prepared FINAL candidate freshUntil이 verified current manifest expiry와 다르면 publish하지 않는다", async (t) => {
+  await assertPreparedRejectedWithoutOutput(t, "route-candidate-prepared-expiry-",
+    async ({ output: prepared }) => writePreparedOutputs(prepared, { ...BUNDLE_CANDIDATE, freshUntil: "2026-08-15T12:47:36.000+09:00" }),
+    /prepared route evidence freshUntil mismatch/);
 });
 
 // #916 리뷰 F3: RC는 발행 전 FINAL이 발행 단계와 같은 조건(원천 신선도 PASS, 미가용 blocker 두 개만)일 때만 stage한다.
 // 원천 신선도가 STALE이면 RC에서 실패해야 production-publish에서야 드러나는 경로 차이가 없다.
 test("발행 전 FINAL의 원천 신선도가 PASS가 아니거나 발행 불가 blocker가 있으면 stage하지 않는다", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-stale-freshness-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const input = await fixture(root);
-  const output = path.join(root, "candidate");
-  await mkdir(output);
-  await assert.rejects(
-    () => stageCurrentServerRouteBundleCandidate({
-      ...input,
-      repositoryGitSha: "b".repeat(40),
-      keyId: "production-v1",
-      output,
-      stages: { prepare: async ({ output: prepared }) => writePreparedOutputs(prepared, BUNDLE_CANDIDATE, { sourceFreshness: "STALE" }) },
-    }),
-    /prepared FINAL is not release eligible: sourceFreshness:STALE/,
-  );
-  for (const name of ["server-route-bundle", "server-route-bundle-evidence", "server-route-bundle-inputs"]) {
-    await assert.rejects(() => lstat(path.join(output, name)), /ENOENT/);
-  }
+  await assertPreparedRejectedWithoutOutput(t, "route-candidate-stale-freshness-",
+    async ({ output: prepared }) => writePreparedOutputs(prepared, BUNDLE_CANDIDATE, { sourceFreshness: "STALE" }),
+    /prepared FINAL is not release eligible: sourceFreshness:STALE/);
 });
 
 test("prepare 동안 원본 canonical input이 교체돼도 최초 검증 bytes만 stage한다", async (t) => {
