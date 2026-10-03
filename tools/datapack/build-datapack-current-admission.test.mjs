@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
+import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
 import {
   admittedIncheonTopologyEvidence,
@@ -311,16 +312,26 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(manifest.releaseSequence, buildSpec.releaseSequence);
   assert.equal(provenance.candidateBuild.publishedAt, buildSpec.publishedAt);
   assert.equal(provenance.candidateBuild.releaseSequence, buildSpec.releaseSequence);
-  // #913 리뷰 F1: 전국 발행 빌드의 팩 만료는 시간표 원천 만료까지 반영한다. 커밋된 후보는 시간표 원천(수도권·코레일
-  // projection)이 network 창(topology·ITX·접근성)보다 먼저 만료되므로 manifest expiresAt과 결정 원천이 그 원천을 따라야 한다.
+  // #913 리뷰 F1·후속: 전국 발행 빌드의 팩 만료는 network 창, 시간표 원천, spec 인용 원천 전체(서버 번들 FINAL cutoff와 같은 계산)의
+  // 최솟값이다. FINAL cutoff보다 늦은 팩 만료는 발행 단계에서 실패하므로(seq126) 여기서 같은 입력으로 맞춘다.
   const artifactFreshness = provenance.candidateBuild.artifactFreshness;
   const timetableExpiries = artifactFreshness.timetableSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt));
-  assert.ok(Math.min(...timetableExpiries) < Date.parse(artifactFreshness.networkFreshUntil));
+  const finalCutoff = validateSourceSnapshotFreshness({
+    buildSpec,
+    snapshots,
+    policy: JSON.parse(await readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8")),
+    evaluationAt: buildSpec.publishedAt,
+    governancePolicy: JSON.parse(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8")),
+    inventory: JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8")),
+    governancePolicySha256: sha256(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"))),
+    governancePolicyBytes: await readFile(path.join(root, "tools/datapack/source-governance-policy.json")),
+  }).results.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt));
+  const expected = Math.min(Date.parse(artifactFreshness.networkFreshUntil), ...timetableExpiries, ...finalCutoff);
   assert.equal(manifest.expiresAt, artifactFreshness.freshUntil);
-  assert.equal(Date.parse(manifest.expiresAt), Math.min(...timetableExpiries));
-  assert.deepEqual(artifactFreshness.decidedBy, artifactFreshness.timetableSources
-    .filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === Date.parse(manifest.expiresAt))
-    .map(({ sourceId, sourceSnapshotId }) => ({ kind: "timetable", sourceId, sourceSnapshotId })));
+  assert.equal(Date.parse(manifest.expiresAt), expected);
+  assert.ok(Date.parse(manifest.expiresAt) <= Math.min(...finalCutoff), "팩 만료는 서버 번들 FINAL 원천 cutoff를 넘지 않는다");
+  assert.equal(artifactFreshness.citedSourceFreshUntil, new Date(Math.min(...finalCutoff)).toISOString());
+  assert.ok(artifactFreshness.decidedBy.length > 0);
   // 검증 전용 빌드(dev 채널)는 시간표 신선도를 계산하지 않고 사유를 남긴다.
   assert.deepEqual(validationOnlyProvenance.candidateBuild.artifactFreshness,
     { timetableFreshness: "SKIPPED", skipReason: "VALIDATION_ONLY_BUILD", freshUntil: validationOnlyManifest.expiresAt });

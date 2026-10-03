@@ -72,6 +72,7 @@ import { bindStationContacts, loadStationContactInputs } from "./build-station-c
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -756,15 +757,29 @@ async function loadBuildInput(
       validationOnlyProductionFixture,
     };
   }
-  const [{ value: timetableInventory }, freshnessPolicyBytes] = await Promise.all([
+  const [{ value: timetableInventory }, freshnessPolicyBytes, ledgerBytes, governancePolicyBytes] = await Promise.all([
     readPinnedBuildJson(buildSpec.networkEdgeEvidence?.sourceInventory, "buildSpec.networkEdgeEvidence.sourceInventory", undefined, repositoryRoot),
     readFile(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json")),
   ]);
   if (sha256(Buffer.from(JSON.stringify(timetableInventory))) !== buildSpec.sourceInventorySha256) {
     throw new Error("candidate timetable freshness inventory does not match buildSpec.sourceInventorySha256");
   }
+  // #913 후속: 서버 번들 FINAL과 같은 입력·같은 계산으로 spec 인용 원천 전체의 정책 신선도를 구한다.
+  const citedSourceFreshness = validateSourceSnapshotFreshness({
+    buildSpec,
+    snapshots: JSON.parse(ledgerBytes),
+    policy: JSON.parse(freshnessPolicyBytes),
+    evaluationAt: requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt"),
+    governancePolicy: JSON.parse(governancePolicyBytes),
+    inventory: timetableInventory,
+    governancePolicySha256: sha256(governancePolicyBytes),
+    governancePolicyBytes,
+  });
   const artifactFreshness = candidateArtifactFreshness({
     networkFreshUntil: artifactFreshUntil,
+    citedSources: citedSourceFreshness.results,
     timetable: productionTimetableFreshness({
       packs: productionPacks,
       sourceSnapshots: buildSpec.sourceSnapshots,
@@ -2145,19 +2160,30 @@ export function timetableFreshnessSkipReason({ productionScopeId, productionPack
 }
 
 /** 네트워크(topology·ITX·접근성) 창과 시간표 창 중 이른 쪽을 팩 만료로 하고, 결정한 쪽을 남긴다. */
-export function candidateArtifactFreshness({ networkFreshUntil, timetable }) {
+// 네트워크(topology·ITX·접근성) 창, 시간표 창, spec이 인용한 모든 원천의 정책 신선도(citedSources) 중 가장 이른 쪽을 팩 만료로 한다.
+// #913 후속: citedSources는 서버 번들 FINAL의 원천 신선도 cutoff와 같은 계산(validateSourceSnapshotFreshness 결과)이다.
+// 이 집합을 빼면 팩·번들 freshUntil이 인용 원천보다 늦어져 FINAL이 발행 단계에서 실패한다(seq126).
+export function candidateArtifactFreshness({ networkFreshUntil, timetable, citedSources }) {
   const network = Date.parse(networkFreshUntil);
   if (!Number.isFinite(network)) throw new Error("candidate network freshUntil is invalid");
+  if (!Array.isArray(citedSources) || citedSources.length === 0
+    || citedSources.some(({ status, freshnessExpiresAt }) => status !== "FRESH" || !Number.isFinite(Date.parse(freshnessExpiresAt)))) {
+    throw new Error("CITED_SOURCE_FRESHNESS_UNRESOLVED");
+  }
+  const citedMillis = Math.min(...citedSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
   const timetableMillis = timetable?.freshUntil == null ? Number.POSITIVE_INFINITY : Date.parse(timetable.freshUntil);
-  const freshMillis = Math.min(network, timetableMillis);
+  const freshMillis = Math.min(network, timetableMillis, citedMillis);
   const decidedBy = [
     ...(network === freshMillis ? [{ kind: "network" }] : []),
     ...(timetable?.sources ?? []).filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === freshMillis)
       .map(({ sourceId, sourceSnapshotId }) => ({ kind: "timetable", sourceId, sourceSnapshotId })),
+    ...citedSources.filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === freshMillis)
+      .map(({ snapshotId, sourceClassId }) => ({ kind: "cited-source", sourceSnapshotId: snapshotId, sourceClassId })),
   ];
   return {
     freshUntil: new Date(freshMillis).toISOString(),
     networkFreshUntil: new Date(network).toISOString(),
+    citedSourceFreshUntil: new Date(citedMillis).toISOString(),
     decidedBy,
     timetableSources: structuredClone(timetable?.sources ?? []),
   };
