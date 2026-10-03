@@ -311,16 +311,22 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(manifest.releaseSequence, buildSpec.releaseSequence);
   assert.equal(provenance.candidateBuild.publishedAt, buildSpec.publishedAt);
   assert.equal(provenance.candidateBuild.releaseSequence, buildSpec.releaseSequence);
-  // #913 리뷰 F1: 전국 발행 빌드의 팩 만료는 시간표 원천 만료까지 반영한다. 커밋된 후보는 시간표 원천(수도권·코레일
-  // projection)이 network 창(topology·ITX·접근성)보다 먼저 만료되므로 manifest expiresAt과 결정 원천이 그 원천을 따라야 한다.
+  // #913 후속·#916 리뷰 F2: 전국 발행 빌드의 팩 만료는 network 창, 시간표 원천, spec 인용 원천 전체의 최솟값이다.
+  // 기대값은 production 계산을 다시 부르지 않고 커밋된 spec 원천 행에서 직접 고른다.
+  // 커밋된 seq126 후보에서는 대경선 topology 첨부 원천(korail-metropolitan-timetable-file)이 가장 이르다(2026-10-10T00:05:31.571Z).
   const artifactFreshness = provenance.candidateBuild.artifactFreshness;
-  const timetableExpiries = artifactFreshness.timetableSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt));
-  assert.ok(Math.min(...timetableExpiries) < Date.parse(artifactFreshness.networkFreshUntil));
-  assert.equal(manifest.expiresAt, artifactFreshness.freshUntil);
-  assert.equal(Date.parse(manifest.expiresAt), Math.min(...timetableExpiries));
-  assert.deepEqual(artifactFreshness.decidedBy, artifactFreshness.timetableSources
-    .filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === Date.parse(manifest.expiresAt))
-    .map(({ sourceId, sourceSnapshotId }) => ({ kind: "timetable", sourceId, sourceSnapshotId })));
+  const earliestCited = [...buildSpec.sourceSnapshots]
+    .sort((left, right) => Date.parse(left.freshnessExpiresAt) - Date.parse(right.freshnessExpiresAt))[0];
+  assert.equal(earliestCited.sourceId, "korail-metropolitan-timetable-file");
+  assert.equal(earliestCited.freshnessExpiresAt, "2026-10-10T00:05:31.571Z");
+  assert.equal(manifest.expiresAt, "2026-10-10T00:05:31.571Z");
+  assert.equal(artifactFreshness.freshUntil, "2026-10-10T00:05:31.571Z");
+  assert.equal(artifactFreshness.citedSourceFreshUntil, "2026-10-10T00:05:31.571Z");
+  assert.deepEqual(artifactFreshness.decidedBy, [
+    { kind: "cited-source", sourceSnapshotId: earliestCited.snapshotId, sourceClassId: "route_graph_topology" },
+  ]);
+  assert.ok(Date.parse(manifest.expiresAt) < Date.parse(artifactFreshness.networkFreshUntil));
+  assert.ok(artifactFreshness.timetableSources.every(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) > Date.parse(manifest.expiresAt)));
   // 검증 전용 빌드(dev 채널)는 시간표 신선도를 계산하지 않고 사유를 남긴다.
   assert.deepEqual(validationOnlyProvenance.candidateBuild.artifactFreshness,
     { timetableFreshness: "SKIPPED", skipReason: "VALIDATION_ONLY_BUILD", freshUntil: validationOnlyManifest.expiresAt });

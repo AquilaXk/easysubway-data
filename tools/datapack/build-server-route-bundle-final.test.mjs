@@ -11,6 +11,7 @@ import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import {
   E_SERVER_BUNDLE_DECOMPRESSED_BUDGET,
   buildServerRouteBundleFinalEvidence,
+  closeReleaseFinal,
 } from "./build-server-route-bundle-final.mjs";
 import {
   buildRouteAccessibilityEligibility,
@@ -429,6 +430,45 @@ test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes 
   await assert.rejects(() => readFile(output), /ENOENT/);
 });
 
+// #916 리뷰 F1: 발행 단계(closeReleaseFinal)의 cutoff 가드는 발행 전 검사와 독립적으로 거부해야 한다.
+// 발행 전 검사를 우회한 FINAL이 들어와도 release evidence를 읽기 전에 막는다.
+test("발행 단계 FINAL closure는 발행 전 검사와 별개로 bundle보다 이른 source cutoff를 거부한다", async () => {
+  const prePublicationFinal = {
+    result: "NO_GO",
+    blockers: ["promotionAuthorization:UNAVAILABLE", "publication:UNAVAILABLE"],
+    candidate: { freshUntil: "2026-10-10T09:11:32.831+09:00" },
+  };
+  const freshness = (freshnessExpiresAt) => ({ state: "PASS", evidence: { validation: { results: [{ freshnessExpiresAt }] } } });
+  await assert.rejects(() => closeReleaseFinal(prePublicationFinal, {}, [], freshness("2026-10-10T00:05:31.571Z")),
+    /source freshness cutoff must cover candidate freshUntil/);
+  // cutoff가 bundle 이후면 이 가드를 지나 release evidence 검사로 넘어간다.
+  await assert.rejects(() => closeReleaseFinal(prePublicationFinal, {}, [], freshness("2026-10-10T00:11:32.831Z")),
+    /release evidence keys/);
+});
+
+// #913 후속: RC(발행 전 FINAL)도 발행 경로와 같은 원천 신선도 cutoff 검사를 같은 입력으로 돌린다.
+// seq126에서 RC는 통과하고 production-publish의 release FINAL에서만 실패했다(경로 차이).
+test("발행 전 FINAL도 bundle보다 이른 source freshness cutoff를 거부한다", async (t) => {
+  installSigningEnvironment(t);
+  const sourceWindow = await selectedSourceWindow();
+  const candidateFreshUntil = kstInstant(Date.parse(sourceWindow.freshUntil) + 1);
+  const fixture = await createFixture(t, {
+    evaluationAt: sourceWindow.evaluationAt,
+    freshUntil: candidateFreshUntil,
+    configureBuildSpec: (spec) => {
+      spec.productionScopeId = "nationwide_routing_android_v1";
+      spec.candidateId = "nationwide-candidate-20260909";
+    },
+  });
+  const signedRoot = path.join(fixture.temp, "signed-prepublication-cutoff");
+  await signServerRouteBundle({ input: fixture.artifactRoot, output: signedRoot });
+  fixture.artifactRoot = signedRoot;
+  const fixtureWindow = await selectedSourceWindow(fixture.repositoryRoot);
+  const output = path.join(fixture.temp, "prepublication-cutoff");
+  await assert.rejects(() => build(fixture, output, fixtureWindow.evaluationAt), /source freshness cutoff must cover candidate freshUntil/);
+  await assert.rejects(() => readFile(output), /ENOENT/);
+});
+
 // #913: nationwide도 예외 없이 거부한다. 예외(#761)가 있으면 원천이 만료된 시간표를 번들이 계속 서빙해도 FINAL이 통과한다.
 test("FINAL closure는 bundle보다 이른 source freshness cutoff를 scope와 상관없이 거부한다", async (t) => {
   installSigningEnvironment(t);
@@ -438,45 +478,18 @@ test("FINAL closure는 bundle보다 이른 source freshness cutoff를 scope와 �
   assert.ok(Date.parse(sourceWindow.evaluationAt) < sourceExpiry && sourceExpiry < Date.parse(candidateFreshUntil));
 
   for (const scenario of [
-    {
-      scopeId: "capital_routing_android_v1",
-      candidateId: "capital-candidate-20260909",
-      expectedResult: "REJECT",
-      outputPath: "release-rejected-source-cutoff",
-    },
-    {
-      scopeId: "nationwide_routing_android_v1",
-      candidateId: "nationwide-candidate-20260909",
-      expectedResult: "REJECT",
-      outputPath: "release-rejected-nationwide-source-cutoff",
-    },
+    { scopeId: "capital_routing_android_v1", candidateId: "capital-candidate-20260909" },
+    { scopeId: "nationwide_routing_android_v1", candidateId: "nationwide-candidate-20260909" },
   ]) {
-    const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
+    // #913 후속: 발행 전 FINAL(RC)에서 먼저 거부되므로 release evidence를 만들 수 없다(발행 단계까지 가지 않는다).
+    await assert.rejects(prepareSignedReleaseFixture(t, {
       evaluationAt: sourceWindow.evaluationAt,
       freshUntil: candidateFreshUntil,
       configureBuildSpec: (spec) => {
         spec.productionScopeId = scenario.scopeId;
         spec.candidateId = scenario.candidateId;
       },
-    });
-    const fixtureWindow = await selectedSourceWindow(fixture.repositoryRoot);
-    assert.ok(Date.parse(fixtureWindow.evaluationAt) < Date.parse(fixtureWindow.freshUntil)
-      && Date.parse(fixtureWindow.freshUntil) < Date.parse(candidateFreshUntil));
-    const output = path.join(fixture.temp, scenario.outputPath);
-    if (scenario.expectedResult === "REJECT") {
-      await assert.rejects(
-        () => build(fixture, output, fixtureWindow.evaluationAt, releaseEvidence, {
-          clock: () => Date.parse(fixtureWindow.evaluationAt),
-        }),
-        /source freshness cutoff must cover candidate freshUntil/,
-      );
-      await assert.rejects(() => readFile(output), /ENOENT/);
-    } else {
-      const final = await build(fixture, output, fixtureWindow.evaluationAt, releaseEvidence, {
-        clock: () => Date.parse(fixtureWindow.evaluationAt),
-      });
-      assert.equal(final.result, scenario.expectedResult);
-    }
+    }), /source freshness cutoff must cover candidate freshUntil/, scenario.scopeId);
   }
 });
 

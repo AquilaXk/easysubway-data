@@ -160,6 +160,9 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   const maxTotalDecompressedBytes = input.maxTotalDecompressedBytes ?? fixed.buildContract.value.maxTotalDecompressedBytes;
   const artifact = await inspectArtifact(artifactRoot, fixed, maxTotalDecompressedBytes);
   const sourceFreshness = evaluateSourceFreshness({ fixed, artifact, evaluationAt });
+  // #913 후속: 발행 전 FINAL(RC)도 발행 경로와 같은 입력으로 원천 신선도 cutoff를 검사한다.
+  // seq126은 RC에서 이 검사를 건너뛰어 production-publish에서야 실패했다.
+  if (sourceFreshness.state === "PASS") assertSourceFreshnessCoversCandidate(sourceFreshness, artifact.manifest.freshUntil);
   const stationLineInput = validateStationLineInput(input.stationLineInput, artifact, candidateId);
   const materialization = materializeStationLineAccessibility({
     ...stationLineInput,
@@ -276,7 +279,8 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   return final;
 }
 
-async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
+// 발행 단계 FINAL 종료. 테스트가 발행 전 검사와 별개로 이 단계의 가드를 직접 겨누도록 export한다(#916 리뷰 F1).
+export async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
   if (prePublicationFinal.result !== "NO_GO"
     || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
       "promotionAuthorization:UNAVAILABLE",

@@ -251,6 +251,14 @@ async function validatedEvidence(prepared, candidate, freshUntil) {
   }
   const { eligibilitySha256, ...eligibilityPayload } = eligibility.value;
   const finalValue = validateServerRouteBundleFinal(final.value);
+  // #916 리뷰 F3: 발행 단계(closeReleaseFinal)와 같은 조건으로 확인한다. 원천 신선도 STALE 등 발행 불가 blocker가 있으면
+  // RC에서 실패시켜 production-publish에서야 드러나는 경로 차이를 없앤다.
+  const releaseBlockers = ["promotionAuthorization:UNAVAILABLE", "publication:UNAVAILABLE"];
+  const ineligible = (finalValue.blockers ?? []).filter((blocker) => !releaseBlockers.includes(blocker));
+  if (finalValue.result !== "NO_GO" || ineligible.length > 0
+    || canonicalJson(finalValue.blockers) !== canonicalJson(releaseBlockers)) {
+    throw new Error(`prepared FINAL is not release eligible: ${ineligible.join(",") || finalValue.result}`);
+  }
   for (const [index, [, gate]] of BOUND_SUPPORT.entries()) {
     const bytes = support[index];
     if (finalValue.gates[gate].state !== "PASS" || finalValue.gates[gate].evidenceSha256 !== sha256(bytes)) {

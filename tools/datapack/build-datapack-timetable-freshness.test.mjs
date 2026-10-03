@@ -57,10 +57,11 @@ test("trip이 가리키는 시간표 원천의 만료를 계산할 수 없거나
 
 test("팩 만료는 네트워크(topology·ITX·접근성) 창과 시간표 창 중 이른 쪽이고 결정한 원천을 남긴다", () => {
   const timetable = productionTimetableFreshness({ packs, sourceSnapshots, inventory, freshnessPolicy: policy, evaluationAt: "2026-10-03T00:40:43.059Z", now: NOW });
-  const earlierTimetable = candidateArtifactFreshness({ networkFreshUntil: "2026-10-10T00:31:56.311Z", timetable });
+  const laterCited = [{ snapshotId: "late", sourceClassId: "route_graph_topology", status: "FRESH", freshnessExpiresAt: "2026-12-31T00:00:00.000Z" }];
+  const earlierTimetable = candidateArtifactFreshness({ networkFreshUntil: "2026-10-10T00:31:56.311Z", timetable, citedSources: laterCited });
   assert.equal(earlierTimetable.freshUntil, "2026-10-08T04:19:25.298Z");
   assert.deepEqual(earlierTimetable.decidedBy, [{ kind: "timetable", sourceId: "kric-file", sourceSnapshotId: "kric-retained" }]);
-  const earlierNetwork = candidateArtifactFreshness({ networkFreshUntil: "2026-10-07T00:00:00.000Z", timetable });
+  const earlierNetwork = candidateArtifactFreshness({ networkFreshUntil: "2026-10-07T00:00:00.000Z", timetable, citedSources: laterCited });
   assert.equal(earlierNetwork.freshUntil, "2026-10-07T00:00:00.000Z");
   assert.deepEqual(earlierNetwork.decidedBy, [{ kind: "network" }]);
   assert.equal(earlierNetwork.timetableSources.length, 5);
@@ -78,4 +79,21 @@ test("시간표 신선도를 건너뛰는 범위는 사유로 구분하고 전�
   assert.equal(timetableFreshnessSkipReason({ productionScopeId: "capital_pilot_android_v1", productionPacks: production, validationOnly: false }), "NOT_NATIONWIDE_SCOPE");
   assert.equal(timetableFreshnessSkipReason({ productionScopeId: "nationwide_routing_android_v1", productionPacks: [], validationOnly: false }), "NO_PRODUCTION_PACK");
   assert.equal(timetableFreshnessSkipReason({ productionScopeId: "nationwide_routing_android_v1", productionPacks: production, validationOnly: true }), "VALIDATION_ONLY_BUILD");
+});
+
+// #913 후속(seq126 production-publish 실패): 서버 번들 FINAL은 spec이 인용한 모든 원천의 정책 신선도(validateSourceSnapshotFreshness)를
+// cutoff로 본다. 팩 만료도 같은 원천 집합을 포함해야 FINAL과 어긋나지 않는다(예: 대경선 topology 첨부 원천 10-10T00:05:31Z).
+test("팩 만료는 spec 인용 원천 전체의 정책 신선도도 포함하고 그 원천이 더 이르면 결정 원천으로 남는다", () => {
+  const timetable = productionTimetableFreshness({ packs, sourceSnapshots, inventory, freshnessPolicy: policy, evaluationAt: "2026-10-03T00:40:43.059Z", now: NOW });
+  const cited = [
+    { snapshotId: "korail-attachment-1", sourceClassId: "route_graph_topology", status: "FRESH", freshnessExpiresAt: "2026-10-08T00:05:31.571Z" },
+    { snapshotId: "topology-1", sourceClassId: "route_graph_topology", status: "FRESH", freshnessExpiresAt: "2026-10-10T00:31:56.311Z" },
+  ];
+  const result = candidateArtifactFreshness({ networkFreshUntil: "2026-10-10T00:31:56.311Z", timetable, citedSources: cited });
+  assert.equal(result.freshUntil, "2026-10-08T00:05:31.571Z");
+  assert.deepEqual(result.decidedBy, [{ kind: "cited-source", sourceSnapshotId: "korail-attachment-1", sourceClassId: "route_graph_topology" }]);
+  assert.equal(result.citedSourceFreshUntil, "2026-10-08T00:05:31.571Z");
+  assert.throws(() => candidateArtifactFreshness({ networkFreshUntil: "2026-10-10T00:31:56.311Z", timetable, citedSources: [] }), /CITED_SOURCE_FRESHNESS_UNRESOLVED/u);
+  assert.throws(() => candidateArtifactFreshness({ networkFreshUntil: "2026-10-10T00:31:56.311Z", timetable,
+    citedSources: [{ ...cited[0], status: "STALE" }] }), /CITED_SOURCE_FRESHNESS_UNRESOLVED/u);
 });
