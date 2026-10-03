@@ -8751,6 +8751,267 @@
       "admissionEvidence": {
         "licenseEvidenceHash": "0b76feaf745458345d9efb46e346d85abf4b71b71ec61f5f62825422645084a4"
       },
+      "capitalScheduleAdmissionEvidence": {
+        "issue": 899,
+        "materializer": "tools/datapack/lib/capital-official-timetable.mjs",
+        "verificationTest": "tools/datapack/capital-official-timetable.test.mjs",
+        "snapshotId": "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
+        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00.json",
+        "rawByteLength": 17949564,
+        "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+        "observationRecordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
+        "recordsSha256": "dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
+        "recordCount": 11922,
+        "routes": [
+          {
+            "routeNumber": "S1101",
+            "routeName": "서울 도시철도 1호선",
+            "lineId": "line-472a81add377"
+          },
+          {
+            "routeNumber": "S1102",
+            "routeName": "서울 도시철도 2호선",
+            "lineId": "seoul-2"
+          },
+          {
+            "routeNumber": "S1103",
+            "routeName": "서울 도시철도 3호선",
+            "lineId": "line-41a8c75ec9d8"
+          },
+          {
+            "routeNumber": "S1104",
+            "routeName": "서울 도시철도 4호선",
+            "lineId": "seoul-4"
+          },
+          {
+            "routeNumber": "S1105",
+            "routeName": "서울 도시철도 5호선",
+            "lineId": "line-80fc4d5350d4"
+          },
+          {
+            "routeNumber": "S1106",
+            "routeName": "서울 도시철도 6호선",
+            "lineId": "line-3f41718e0833"
+          },
+          {
+            "routeNumber": "S1107",
+            "routeName": "서울 도시철도 7호선",
+            "lineId": "line-15b3b8a93259"
+          },
+          {
+            "routeNumber": "S1108",
+            "routeName": "서울 도시철도 8호선",
+            "lineId": "line-2b2d9eaa53d0"
+          },
+          {
+            "routeNumber": "S1109",
+            "routeName": "서울 도시철도 9호선",
+            "lineId": "line-f0e747248a31"
+          },
+          {
+            "routeNumber": "I11D1",
+            "routeName": "신분당선",
+            "lineId": "shinbundang"
+          },
+          {
+            "routeNumber": "L11UI",
+            "routeName": "수도권 경량도시철도 우이신설선",
+            "lineId": "line-30886152e4f8"
+          },
+          {
+            "routeNumber": "L11SL",
+            "routeName": "수도권 경량도시철도 신림선",
+            "lineId": "line-aefa08ccc0a9"
+          },
+          {
+            "routeNumber": "I28A1",
+            "routeName": "인천국제공항선",
+            "lineId": "line-e9e9a5b520a4"
+          }
+        ],
+        "dataReferenceDateByLine": {
+          "line-15b3b8a93259": [
+            "2025-12-31"
+          ],
+          "line-2b2d9eaa53d0": [
+            "2025-12-31"
+          ],
+          "line-30886152e4f8": [
+            "2022-05-30"
+          ],
+          "line-3f41718e0833": [
+            "2025-12-31"
+          ],
+          "line-41a8c75ec9d8": [
+            "2025-12-31"
+          ],
+          "line-472a81add377": [
+            "2025-12-31"
+          ],
+          "line-80fc4d5350d4": [
+            "2025-12-31"
+          ],
+          "line-aefa08ccc0a9": [
+            "2025-09-23"
+          ],
+          "line-e9e9a5b520a4": [
+            "2025-12-31"
+          ],
+          "line-f0e747248a31": [
+            "2026-02-28"
+          ],
+          "seoul-2": [
+            "2025-12-31"
+          ],
+          "seoul-4": [
+            "2025-12-31"
+          ],
+          "shinbundang": [
+            "2026-06-18"
+          ]
+        },
+        "coverageScope": {
+          "regionIds": [
+            "capital"
+          ],
+          "operatorIds": [
+            "incheon-transit",
+            "korail",
+            "operator-07a9e77a02b6",
+            "operator-10d7cf275a80",
+            "operator-28e01fb8509d",
+            "operator-3c623bf1a427",
+            "operator-8134e61f8dbd",
+            "operator-936e454d0bfb",
+            "operator-c361f9fc17e9",
+            "seoul-metro"
+          ],
+          "lineIds": [
+            "line-15b3b8a93259",
+            "line-2b2d9eaa53d0",
+            "line-30886152e4f8",
+            "line-3f41718e0833",
+            "line-41a8c75ec9d8",
+            "line-472a81add377",
+            "line-80fc4d5350d4",
+            "line-aefa08ccc0a9",
+            "line-e9e9a5b520a4",
+            "line-f0e747248a31",
+            "seoul-2",
+            "seoul-4",
+            "shinbundang"
+          ],
+          "sourceDomains": [
+            "schedule_timetable"
+          ]
+        },
+        "observedAt": "2026-10-03T00:11:32.831Z",
+        "reverifications": [
+          {
+            "observedAt": "2026-10-02T15:57:05.773Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "f8994ba5965b1ad03869a4a7da242e573097efda8f119f17ea5d09d47a56adcc"
+          },
+          {
+            "observedAt": "2026-10-03T00:11:32.831Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "5d9e70f3944dd9e02ba7197af57a5b8a2a4be5e2f136c56e2fde4693e967c90b"
+          }
+        ]
+      },
+      "korailScheduleAdmissionEvidence": {
+        "issue": 903,
+        "materializer": "tools/datapack/lib/kric-korail-timetable.mjs",
+        "verificationTest": "tools/datapack/lib/kric-korail-timetable.test.mjs",
+        "snapshotId": "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de.json",
+        "rawByteLength": 17949564,
+        "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+        "observationRecordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
+        "recordsSha256": "c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+        "recordCount": 59346,
+        "routes": [
+          {
+            "routeNumber": "I41WS",
+            "routeName": "서해선",
+            "lineId": "line-051552e50435"
+          },
+          {
+            "routeNumber": "I41K2",
+            "routeName": "경춘선",
+            "lineId": "line-54a7b980b7c3"
+          },
+          {
+            "routeNumber": "I28K1",
+            "routeName": "수인분당선",
+            "lineId": "line-558d0bd8312d"
+          },
+          {
+            "routeNumber": "I4108",
+            "routeName": "경의중앙선",
+            "lineId": "line-6e39be0cb6e2"
+          },
+          {
+            "routeNumber": "I41K5",
+            "routeName": "경강선",
+            "lineId": "line-e4939a4b4713"
+          },
+          {
+            "routeNumber": "I26K6",
+            "routeName": "동해선",
+            "lineId": "line-f52eb59d8497"
+          }
+        ],
+        "dataReferenceDateByLine": {
+          "line-051552e50435": [
+            "2026-05-31"
+          ],
+          "line-54a7b980b7c3": [
+            "2026-05-31"
+          ],
+          "line-558d0bd8312d": [
+            "2026-05-31"
+          ],
+          "line-6e39be0cb6e2": [
+            "2026-05-31"
+          ],
+          "line-e4939a4b4713": [
+            "2026-05-31"
+          ],
+          "line-f52eb59d8497": [
+            "2026-05-31"
+          ]
+        },
+        "coverageScope": {
+          "regionIds": [
+            "busan",
+            "capital"
+          ],
+          "operatorIds": [
+            "korail",
+            "operator-38450e138464"
+          ],
+          "lineIds": [
+            "line-051552e50435",
+            "line-54a7b980b7c3",
+            "line-558d0bd8312d",
+            "line-6e39be0cb6e2",
+            "line-e4939a4b4713",
+            "line-f52eb59d8497"
+          ],
+          "sourceDomains": [
+            "schedule_timetable"
+          ]
+        },
+        "observedAt": "2026-10-03T00:11:32.831Z",
+        "reverifications": [
+          {
+            "observedAt": "2026-10-03T00:11:32.831Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "5d9e70f3944dd9e02ba7197af57a5b8a2a4be5e2f136c56e2fde4693e967c90b"
+          }
+        ]
+      },
       "retainedGwangjuProjectionEvidence": {
         "snapshotId": "kric-nationwide-timetable-file-gwangju-5c275eb62b43a2f9eb89655fe5202612281b2f527863378a241df67b613c6593",
         "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-5c275eb62b43a2f9eb89655fe5202612281b2f527863378a241df67b613c6593.json",
