@@ -7,7 +7,6 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
-import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
 import {
   admittedIncheonTopologyEvidence,
@@ -312,26 +311,22 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(manifest.releaseSequence, buildSpec.releaseSequence);
   assert.equal(provenance.candidateBuild.publishedAt, buildSpec.publishedAt);
   assert.equal(provenance.candidateBuild.releaseSequence, buildSpec.releaseSequence);
-  // #913 리뷰 F1·후속: 전국 발행 빌드의 팩 만료는 network 창, 시간표 원천, spec 인용 원천 전체(서버 번들 FINAL cutoff와 같은 계산)의
-  // 최솟값이다. FINAL cutoff보다 늦은 팩 만료는 발행 단계에서 실패하므로(seq126) 여기서 같은 입력으로 맞춘다.
+  // #913 후속·#916 리뷰 F2: 전국 발행 빌드의 팩 만료는 network 창, 시간표 원천, spec 인용 원천 전체의 최솟값이다.
+  // 기대값은 production 계산을 다시 부르지 않고 커밋된 spec 원천 행에서 직접 고른다.
+  // 커밋된 seq126 후보에서는 대경선 topology 첨부 원천(korail-metropolitan-timetable-file)이 가장 이르다(2026-10-10T00:05:31.571Z).
   const artifactFreshness = provenance.candidateBuild.artifactFreshness;
-  const timetableExpiries = artifactFreshness.timetableSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt));
-  const finalCutoff = validateSourceSnapshotFreshness({
-    buildSpec,
-    snapshots,
-    policy: JSON.parse(await readFile(path.join(root, "release/product-gates/datapack-freshness-sla.json"), "utf8")),
-    evaluationAt: buildSpec.publishedAt,
-    governancePolicy: JSON.parse(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"), "utf8")),
-    inventory: JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8")),
-    governancePolicySha256: sha256(await readFile(path.join(root, "tools/datapack/source-governance-policy.json"))),
-    governancePolicyBytes: await readFile(path.join(root, "tools/datapack/source-governance-policy.json")),
-  }).results.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt));
-  const expected = Math.min(Date.parse(artifactFreshness.networkFreshUntil), ...timetableExpiries, ...finalCutoff);
-  assert.equal(manifest.expiresAt, artifactFreshness.freshUntil);
-  assert.equal(Date.parse(manifest.expiresAt), expected);
-  assert.ok(Date.parse(manifest.expiresAt) <= Math.min(...finalCutoff), "팩 만료는 서버 번들 FINAL 원천 cutoff를 넘지 않는다");
-  assert.equal(artifactFreshness.citedSourceFreshUntil, new Date(Math.min(...finalCutoff)).toISOString());
-  assert.ok(artifactFreshness.decidedBy.length > 0);
+  const earliestCited = [...buildSpec.sourceSnapshots]
+    .sort((left, right) => Date.parse(left.freshnessExpiresAt) - Date.parse(right.freshnessExpiresAt))[0];
+  assert.equal(earliestCited.sourceId, "korail-metropolitan-timetable-file");
+  assert.equal(earliestCited.freshnessExpiresAt, "2026-10-10T00:05:31.571Z");
+  assert.equal(manifest.expiresAt, "2026-10-10T00:05:31.571Z");
+  assert.equal(artifactFreshness.freshUntil, "2026-10-10T00:05:31.571Z");
+  assert.equal(artifactFreshness.citedSourceFreshUntil, "2026-10-10T00:05:31.571Z");
+  assert.deepEqual(artifactFreshness.decidedBy, [
+    { kind: "cited-source", sourceSnapshotId: earliestCited.snapshotId, sourceClassId: "route_graph_topology" },
+  ]);
+  assert.ok(Date.parse(manifest.expiresAt) < Date.parse(artifactFreshness.networkFreshUntil));
+  assert.ok(artifactFreshness.timetableSources.every(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) > Date.parse(manifest.expiresAt)));
   // 검증 전용 빌드(dev 채널)는 시간표 신선도를 계산하지 않고 사유를 남긴다.
   assert.deepEqual(validationOnlyProvenance.candidateBuild.artifactFreshness,
     { timetableFreshness: "SKIPPED", skipReason: "VALIDATION_ONLY_BUILD", freshUntil: validationOnlyManifest.expiresAt });
