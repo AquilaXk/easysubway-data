@@ -15,7 +15,7 @@
       },
       "tally": {
         "path": "tools/datapack/reports/nationwide-coverage-tally.json",
-        "sha256": "ec59bd620ac189e14a0194516a08b6fc1df05a151514d8d72ecded5a034cb7e5"
+        "sha256": "5dacb9428eb6277ae6ae768c646267a0eb96697262f3cf0cb76e49b01b515126"
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
@@ -31,21 +31,21 @@
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "fcc1e11c0e843e25845afccb11c52c25e5453070b4c8e2a5c6f11ad0612ea28a",
-        "fanInSha256": "4974f17b3388ca5f5bb6e654377e2ebfab04237e50e5f81141e178f7de9a36dc",
+        "sha256": "8d73595b21a9afc660c25887c40261dc02c641a07ffcbfa431959c4d19069e68",
+        "fanInSha256": "ceebde5c2b30919ab4e9b9e9b2e8dda682cf2539c9546a8562eefa5862e588fb",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
         "sourceSetSha256": "3d4d2067e4802fb313bfbf54d0241598d26e866201dd60ff936607ed31a2b73f",
-        "regionalMatrixSha256": "ec59bd620ac189e14a0194516a08b6fc1df05a151514d8d72ecded5a034cb7e5"
+        "regionalMatrixSha256": "5dacb9428eb6277ae6ae768c646267a0eb96697262f3cf0cb76e49b01b515126"
       }
     }
   },
   "summary": {
     "launchRequired": {
       "totalCount": 270,
-      "inventoryAdmittedCount": 81,
+      "inventoryAdmittedCount": 87,
       "explicitlyUnsupportedWithEvidenceCount": 4,
-      "missingCount": 185,
-      "terminalCount": 85
+      "missingCount": 179,
+      "terminalCount": 91
     },
     "enhancement": {
       "totalCount": 45,
@@ -4360,55 +4360,130 @@
       "sourceDomain": "schedule_timetable",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ]
       },
       "childOwner": {
         "issue": 454,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 454,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "kric-subway-timetable-station-lines",
+            "provider": "국가철도공단",
+            "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+            "sourceSystem": "KRIC 철도산업정보센터 OpenAPI"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 1유형",
+                "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "observedDataUpdatedAt": "2026-10-03",
+              "retrievedAt": "2026-10-03",
+              "admissionEvidence": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
+                }
+              ],
+              "currentHead": {
+                "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                "freshnessExpiresAt": "2026-11-02T00:13:14.392Z"
+              }
+            }
+          ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "issue": 903,
+                  "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
+                  "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261003.json",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z",
+                  "lineIds": [
+                    "line-8604048b6430",
+                    "line-828f04afc588",
+                    "line-62096860ab09",
+                    "line-5500c1600f71",
+                    "line-e4cce88f0d7f"
+                  ],
+                  "tripCount": 3956,
+                  "stopTimeCount": 50754,
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "tripsSha256": "a12bc99d63b13f084a8579f34b6f7819250b93d2735f0550728fd86ce5d22536",
+                  "contentSha256": "8e10d373da061479606f386cbcffae84fdc38958e1d73dffe518a963e5cb1bdf"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "candidateId": "kric-subway-timetable-station-lines",
+                  "sourceId": "kric-subway-timetable-station-lines",
+                  "catalogProviderId": "provider:kric-subway-timetable",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "decision": "APPROVED",
+                  "approvedBy": "data-release-authority",
+                  "approvedAt": "2026-10-03T00:13:35.177Z",
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+                  "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+                  "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "snapshotId": "kric-subway-timetable-station-lines-20261003",
+              "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261003/3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -13181,55 +13256,130 @@
       "sourceDomain": "schedule_timetable",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ]
       },
       "childOwner": {
         "issue": 454,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 454,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "kric-subway-timetable-station-lines",
+            "provider": "국가철도공단",
+            "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+            "sourceSystem": "KRIC 철도산업정보센터 OpenAPI"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 1유형",
+                "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "observedDataUpdatedAt": "2026-10-03",
+              "retrievedAt": "2026-10-03",
+              "admissionEvidence": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
+                }
+              ],
+              "currentHead": {
+                "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                "freshnessExpiresAt": "2026-11-02T00:13:14.392Z"
+              }
+            }
+          ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "issue": 903,
+                  "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
+                  "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261003.json",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z",
+                  "lineIds": [
+                    "line-8604048b6430",
+                    "line-828f04afc588",
+                    "line-62096860ab09",
+                    "line-5500c1600f71",
+                    "line-e4cce88f0d7f"
+                  ],
+                  "tripCount": 3956,
+                  "stopTimeCount": 50754,
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "tripsSha256": "a12bc99d63b13f084a8579f34b6f7819250b93d2735f0550728fd86ce5d22536",
+                  "contentSha256": "8e10d373da061479606f386cbcffae84fdc38958e1d73dffe518a963e5cb1bdf"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "candidateId": "kric-subway-timetable-station-lines",
+                  "sourceId": "kric-subway-timetable-station-lines",
+                  "catalogProviderId": "provider:kric-subway-timetable",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "decision": "APPROVED",
+                  "approvedBy": "data-release-authority",
+                  "approvedAt": "2026-10-03T00:13:35.177Z",
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+                  "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+                  "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "snapshotId": "kric-subway-timetable-station-lines-20261003",
+              "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261003/3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -13750,55 +13900,130 @@
       "sourceDomain": "schedule_timetable",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ]
       },
       "childOwner": {
         "issue": 454,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 454,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "kric-subway-timetable-station-lines",
+            "provider": "국가철도공단",
+            "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+            "sourceSystem": "KRIC 철도산업정보센터 OpenAPI"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 1유형",
+                "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "observedDataUpdatedAt": "2026-10-03",
+              "retrievedAt": "2026-10-03",
+              "admissionEvidence": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
+                }
+              ],
+              "currentHead": {
+                "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                "freshnessExpiresAt": "2026-11-02T00:13:14.392Z"
+              }
+            }
+          ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "issue": 903,
+                  "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
+                  "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261003.json",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z",
+                  "lineIds": [
+                    "line-8604048b6430",
+                    "line-828f04afc588",
+                    "line-62096860ab09",
+                    "line-5500c1600f71",
+                    "line-e4cce88f0d7f"
+                  ],
+                  "tripCount": 3956,
+                  "stopTimeCount": 50754,
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "tripsSha256": "a12bc99d63b13f084a8579f34b6f7819250b93d2735f0550728fd86ce5d22536",
+                  "contentSha256": "8e10d373da061479606f386cbcffae84fdc38958e1d73dffe518a963e5cb1bdf"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "candidateId": "kric-subway-timetable-station-lines",
+                  "sourceId": "kric-subway-timetable-station-lines",
+                  "catalogProviderId": "provider:kric-subway-timetable",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "decision": "APPROVED",
+                  "approvedBy": "data-release-authority",
+                  "approvedAt": "2026-10-03T00:13:35.177Z",
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+                  "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+                  "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "snapshotId": "kric-subway-timetable-station-lines-20261003",
+              "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261003/3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -15457,55 +15682,130 @@
       "sourceDomain": "schedule_timetable",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ]
       },
       "childOwner": {
         "issue": 454,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 454,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "kric-subway-timetable-station-lines",
+            "provider": "국가철도공단",
+            "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+            "sourceSystem": "KRIC 철도산업정보센터 OpenAPI"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 1유형",
+                "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "observedDataUpdatedAt": "2026-10-03",
+              "retrievedAt": "2026-10-03",
+              "admissionEvidence": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
+                }
+              ],
+              "currentHead": {
+                "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                "freshnessExpiresAt": "2026-11-02T00:13:14.392Z"
+              }
+            }
+          ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "issue": 903,
+                  "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
+                  "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261003.json",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z",
+                  "lineIds": [
+                    "line-8604048b6430",
+                    "line-828f04afc588",
+                    "line-62096860ab09",
+                    "line-5500c1600f71",
+                    "line-e4cce88f0d7f"
+                  ],
+                  "tripCount": 3956,
+                  "stopTimeCount": 50754,
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "tripsSha256": "a12bc99d63b13f084a8579f34b6f7819250b93d2735f0550728fd86ce5d22536",
+                  "contentSha256": "8e10d373da061479606f386cbcffae84fdc38958e1d73dffe518a963e5cb1bdf"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "candidateId": "kric-subway-timetable-station-lines",
+                  "sourceId": "kric-subway-timetable-station-lines",
+                  "catalogProviderId": "provider:kric-subway-timetable",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "decision": "APPROVED",
+                  "approvedBy": "data-release-authority",
+                  "approvedAt": "2026-10-03T00:13:35.177Z",
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+                  "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+                  "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "snapshotId": "kric-subway-timetable-station-lines-20261003",
+              "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261003/3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -17197,55 +17497,130 @@
       "sourceDomain": "schedule_timetable",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ]
       },
       "childOwner": {
         "issue": 454,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 454,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "kric-subway-timetable-station-lines",
+            "provider": "국가철도공단",
+            "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+            "sourceSystem": "KRIC 철도산업정보센터 OpenAPI"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 1유형",
+                "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "observedDataUpdatedAt": "2026-10-03",
+              "retrievedAt": "2026-10-03",
+              "admissionEvidence": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
+                }
+              ],
+              "currentHead": {
+                "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                "freshnessExpiresAt": "2026-11-02T00:13:14.392Z"
+              }
+            }
+          ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "issue": 903,
+                  "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
+                  "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261003.json",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z",
+                  "lineIds": [
+                    "line-8604048b6430",
+                    "line-828f04afc588",
+                    "line-62096860ab09",
+                    "line-5500c1600f71",
+                    "line-e4cce88f0d7f"
+                  ],
+                  "tripCount": 3956,
+                  "stopTimeCount": 50754,
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "tripsSha256": "a12bc99d63b13f084a8579f34b6f7819250b93d2735f0550728fd86ce5d22536",
+                  "contentSha256": "8e10d373da061479606f386cbcffae84fdc38958e1d73dffe518a963e5cb1bdf"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "candidateId": "kric-subway-timetable-station-lines",
+                  "sourceId": "kric-subway-timetable-station-lines",
+                  "catalogProviderId": "provider:kric-subway-timetable",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "decision": "APPROVED",
+                  "approvedBy": "data-release-authority",
+                  "approvedAt": "2026-10-03T00:13:35.177Z",
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+                  "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+                  "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "snapshotId": "kric-subway-timetable-station-lines-20261003",
+              "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261003/3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
@@ -17766,55 +18141,130 @@
       "sourceDomain": "schedule_timetable",
       "releaseTier": "LAUNCH_REQUIRED",
       "disposition": {
-        "status": "MISSING",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "status": "INVENTORY_ADMITTED",
+        "missingKind": null,
         "resolutionReviewStatus": null,
-        "admittedSourceIds": []
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ]
       },
       "childOwner": {
         "issue": 454,
         "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
       },
       "officialSourceFamily": {
-        "state": "PENDING",
-        "reason": "CONTRACT_GAP",
-        "owner": {
-          "issue": 454,
-          "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-        }
+        "state": "EVIDENCED",
+        "refs": [
+          {
+            "sourceId": "kric-subway-timetable-station-lines",
+            "provider": "국가철도공단",
+            "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+            "sourceSystem": "KRIC 철도산업정보센터 OpenAPI"
+          }
+        ]
       },
       "lineage": {
         "licenseLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "license": {
+                "type": "KOGL-1",
+                "name": "공공누리 1유형",
+                "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+                "commercialUseAllowed": true,
+                "derivativeWorkAllowed": true,
+                "redistributionAllowed": true,
+                "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2"
+              },
+              "licenseReview": null
+            }
+          ]
         },
         "freshnessLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "observedDataUpdatedAt": "2026-10-03",
+              "retrievedAt": "2026-10-03",
+              "admissionEvidence": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
+                }
+              ],
+              "currentHead": {
+                "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                "freshnessExpiresAt": "2026-11-02T00:13:14.392Z"
+              }
+            }
+          ]
         },
         "admissionLineage": {
-          "state": "PENDING",
-          "reason": "PRODUCTION_ADMISSION_REQUIRED",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "productionUseAllowed": true,
+              "admissions": [
+                {
+                  "kind": "scheduleAdmissionEvidence",
+                  "issue": 903,
+                  "materializer": "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
+                  "verificationTest": "tools/datapack/register-kric-station-timetables.test.mjs",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "snapshotPath": "tools/datapack/sources/kric-subway-timetable-station-lines-20261003.json",
+                  "capturedAt": "2026-10-03T00:12:04.162Z",
+                  "freshUntil": "2026-11-02T00:13:14.392Z",
+                  "lineIds": [
+                    "line-8604048b6430",
+                    "line-828f04afc588",
+                    "line-62096860ab09",
+                    "line-5500c1600f71",
+                    "line-e4cce88f0d7f"
+                  ],
+                  "tripCount": 3956,
+                  "stopTimeCount": 50754,
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "tripsSha256": "a12bc99d63b13f084a8579f34b6f7819250b93d2735f0550728fd86ce5d22536",
+                  "contentSha256": "8e10d373da061479606f386cbcffae84fdc38958e1d73dffe518a963e5cb1bdf"
+                },
+                {
+                  "kind": "admissionEvidence",
+                  "candidateId": "kric-subway-timetable-station-lines",
+                  "sourceId": "kric-subway-timetable-station-lines",
+                  "catalogProviderId": "provider:kric-subway-timetable",
+                  "snapshotId": "kric-subway-timetable-station-lines-20261003",
+                  "decision": "APPROVED",
+                  "approvedBy": "data-release-authority",
+                  "approvedAt": "2026-10-03T00:13:35.177Z",
+                  "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+                  "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+                  "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+                  "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2"
+                }
+              ]
+            }
+          ]
         },
         "artifactLineage": {
-          "state": "PENDING",
-          "reason": "CONTRACT_GAP",
-          "owner": {
-            "issue": 454,
-            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/454"
-          }
+          "state": "EVIDENCED",
+          "refs": [
+            {
+              "sourceId": "kric-subway-timetable-station-lines",
+              "snapshotId": "kric-subway-timetable-station-lines-20261003",
+              "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261003/3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9.json"
+            }
+          ]
         },
         "runtimeLineage": {
           "state": "PENDING",
