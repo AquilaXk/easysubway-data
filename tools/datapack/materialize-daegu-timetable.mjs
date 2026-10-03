@@ -9,6 +9,7 @@ import { DAEGU_LINES, daeguSourceSnapshotIdentity, normalizedStationName } from 
 import { parseMolitDaeguStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { topologySnapshotFreshnessMillis as topologyWindowMillis } from "./lib/topology-freshness-cutover.mjs";
 
 const ISSUE = 2407;
 const MATERIALIZER = "tools/datapack/materialize-daegu-timetable.mjs";
@@ -400,13 +401,14 @@ function requiredSources(inventory, config, topology, timetable, mappings) {
     || new Date(membershipVerifiedAt).toISOString() !== membershipEvidence.verifiedAt) {
     throw new Error(`${membershipId} membership evidence is invalid`);
   }
-  for (const [label, capturedAt, freshUntil] of [
-    [topologyId, topologyEvidence.capturedAt, topologyEvidence.freshUntil],
-    [timetableId, scheduleEvidence.capturedAt, scheduleEvidence.freshUntil],
+  // #904: topology 창은 수집 시각이 컷오버 전이면 P1D, 후면 P7D다. 시각표 수집 창(+1D)은 그대로다.
+  for (const [label, capturedAt, freshUntil, windowMillis] of [
+    [topologyId, topologyEvidence.capturedAt, topologyEvidence.freshUntil, topologyWindowMillis],
+    [timetableId, scheduleEvidence.capturedAt, scheduleEvidence.freshUntil, () => FRESHNESS_MILLIS],
   ]) {
     const captured = Date.parse(capturedAt);
     const fresh = Date.parse(freshUntil);
-    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS) {
+    if (!Number.isFinite(captured) || fresh !== captured + windowMillis(captured)) {
       throw new Error(`${label} evidence freshness relationship is invalid`);
     }
   }

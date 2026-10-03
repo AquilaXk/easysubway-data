@@ -225,6 +225,28 @@ test("대구 materializer는 clock-independent membership provenance를 보존�
   }));
 });
 
+// #904 컷오버(2026-10-03T00:00:00.000Z) 이후 수집한 topology는 P7D 창이다. 시각표(수집 창 +1D)는 그대로다.
+test("대구 topology evidence 창은 수집 시각 기준 컷오버 규칙(전 P1D, 후 P7D)으로만 통과한다", async () => {
+  const values = await inputs({ materialize: false });
+  const DAY_MS = 24 * 60 * 60 * 1_000;
+  const withTopologyWindow = (capturedAt, days) => {
+    const topologySnapshots = Object.fromEntries(Object.entries(values.topologySnapshots).map(([line, snapshot]) => [line, {
+      ...structuredClone(snapshot), capturedAt, freshUntil: new Date(Date.parse(capturedAt) + days * DAY_MS).toISOString(),
+    }]));
+    const inventory = projectHistoricalDaeguMaterializeInventory({
+      inventory: values.inventory, topologySnapshots, timetableSnapshots: values.timetableSnapshots, mappings: values.mappings,
+    });
+    return () => materializeDaeguTimetable({
+      baseFixture: values.baseFixture, topologySnapshots, timetableSnapshots: values.timetableSnapshots,
+      inventory, canonicalStationMappings: values.mappings, now,
+    });
+  };
+  assert.doesNotThrow(withTopologyWindow("2026-10-03T00:35:58.730Z", 7));
+  assert.throws(withTopologyWindow("2026-10-03T00:35:58.730Z", 1), /route-topology evidence freshness relationship is invalid/);
+  assert.throws(withTopologyWindow("2026-10-02T06:07:41.735Z", 7), /route-topology evidence freshness relationship is invalid/);
+  assert.doesNotThrow(withTopologyWindow("2026-10-02T06:07:41.735Z", 1));
+});
+
 test("대구 시각표 snapshot의 trips 변조(tripsSha256 불일치)는 fail-closed된다", async () => {
   const values = await inputs({ materialize: false });
   const timetable = structuredClone(values.timetableSnapshots[1]);

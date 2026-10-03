@@ -12,18 +12,22 @@ export async function readRetainedGwangjuTimetableRefreshDecision({
   repositoryRoot = path.resolve(import.meta.dirname, "../.."), now = new Date(),
 } = {}) {
   const readJson = async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8"));
-  const [inventory, snapshots, candidates] = await Promise.all([
+  const [inventory, snapshots, candidates, freshnessPolicy] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     readJson("tools/datapack/release/source-snapshots.json"),
     readJson("tools/datapack/source-candidates.json"),
+    readJson("release/product-gates/datapack-freshness-sla.json"),
   ]);
   const candidate = exactlyOne(candidates.candidates, ({ id }) => id === SOURCE_ID, "SOURCE_CANDIDATE");
-  return decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, now });
+  return decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, freshnessPolicy, now });
 }
 
 // 등록된 head와 발행 경로가 공유하는 정책으로 갱신 시점을 계산한다.
-export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, now = new Date() } = {}) {
+// #903: 만료 뒤가 아니라 SLA monitoring.alertBeforePackExpiry(수도권 topology 갱신 판정과 같은 기준) 창이 시작될 때부터 DUE다.
+// 만료 시각 자체는 바꾸지 않는다(연장 없음). 창 안에서 새로 수집해 등록해야 만료 전에 head가 이어진다.
+export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, freshnessPolicy, now = new Date() } = {}) {
   const nowMillis = requiredDate(now, "NOW");
+  const alertBeforeExpiryMillis = alertWindowMillis(freshnessPolicy?.monitoring?.alertBeforePackExpiry);
   const policy = requireRetainedTimetableConfirmationPolicy(candidate);
   const source = exactlyOne(inventory?.sources, (entry) => entry?.id === SOURCE_ID, "INVENTORY_SOURCE");
   const lineage = validateLineage(snapshots);
@@ -43,9 +47,10 @@ export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, ca
   if (head.freshnessExpiresAt !== freshnessExpiresAt || head.freshUntil !== freshnessExpiresAt) {
     fail("FRESHNESS_EXPIRES_AT");
   }
+  const refreshDueAt = new Date(requiredUtc(freshnessExpiresAt, "FRESHNESS_EXPIRES_AT") - alertBeforeExpiryMillis).toISOString();
   return {
-    state: nowMillis < requiredUtc(freshnessExpiresAt, "FRESHNESS_EXPIRES_AT") ? "CURRENT" : "DUE",
-    sourceId: SOURCE_ID, snapshotId: head.snapshotId, observedAt: head.observedAt, freshnessExpiresAt,
+    state: nowMillis < Date.parse(refreshDueAt) ? "CURRENT" : "DUE",
+    sourceId: SOURCE_ID, snapshotId: head.snapshotId, observedAt: head.observedAt, freshnessExpiresAt, refreshDueAt,
   };
 }
 
@@ -53,6 +58,15 @@ function exactlyOne(items, predicate, code) {
   const matches = Array.isArray(items) ? items.filter((item) => predicate(item)) : [];
   if (matches.length !== 1) fail(code);
   return matches[0];
+}
+
+// SLA 경보 창은 시·분·초 ISO 8601 기간(PT6H 등)만 받는다. 0이거나 다른 형식이면 판정하지 않는다.
+function alertWindowMillis(value) {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/u.exec(typeof value === "string" ? value : "");
+  if (!match || match.slice(1).every((part) => part === undefined)) fail("ALERT_BEFORE_EXPIRY");
+  const millis = (Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)) * 1000;
+  if (millis < 1) fail("ALERT_BEFORE_EXPIRY");
+  return millis;
 }
 
 function requiredDate(value, code) {

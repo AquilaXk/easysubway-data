@@ -12,6 +12,10 @@ const EXPIRY = "2026-09-14T10:50:18.169Z";
 const rawSha256 = "a".repeat(64);
 const observationIdentitySha256 = "b".repeat(64);
 const snapshotId = `${SOURCE_ID}-${observationIdentitySha256}`;
+// SLA monitoring.alertBeforePackExpiry(수도권 topology 갱신 판정과 같은 기준)
+const ALERT_BEFORE_EXPIRY_MS = 6 * 60 * 60 * 1_000;
+const REFRESH_DUE_AT = new Date(Date.parse(EXPIRY) - ALERT_BEFORE_EXPIRY_MS).toISOString();
+const freshnessPolicy = (alertBeforePackExpiry = "PT6H") => ({ monitoring: { alertBeforePackExpiry } });
 
 function candidate(cadence = "P7D") {
   return {
@@ -40,7 +44,7 @@ function snapshot(overrides = {}) {
 
 function inputs({ head = snapshot(), source = {} } = {}) {
   return {
-    candidate: candidate(), snapshots: [head],
+    candidate: candidate(), snapshots: [head], freshnessPolicy: freshnessPolicy(),
     inventory: { sources: [{ id: SOURCE_ID, retainedScheduleAdmissionEvidence: {
       snapshotId, rawSha256, observationIdentitySha256, observedAt: OBSERVED_AT,
     }, ...source }] },
@@ -59,8 +63,10 @@ test("repository decision reads the admitted head and rejects duplicate source p
   await writeJson("tools/datapack/source-inventory.json", value.inventory);
   await writeJson("tools/datapack/release/source-snapshots.json", value.snapshots);
   await writeJson("tools/datapack/source-candidates.json", { candidates: [value.candidate] });
-  const result = await readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(EXPIRY) });
+  await writeJson("release/product-gates/datapack-freshness-sla.json", value.freshnessPolicy);
+  const result = await readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(REFRESH_DUE_AT) });
   assert.equal(result.state, "DUE");
+  assert.equal(result.refreshDueAt, REFRESH_DUE_AT);
   assert.equal(result.snapshotId, snapshotId);
   await writeJson("tools/datapack/source-candidates.json", { candidates: [value.candidate, value.candidate] });
   await assert.rejects(readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(EXPIRY) }),
@@ -69,7 +75,22 @@ test("repository decision reads the admitted head and rejects duplicate source p
 
 test("retained Gwangju timetable은 genuine head가 아직 만료 전이면 CURRENT다", () => {
   const result = decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date("2026-09-10T00:00:00.000Z") });
-  assert.deepEqual(result, { state: "CURRENT", sourceId: SOURCE_ID, snapshotId, observedAt: OBSERVED_AT, freshnessExpiresAt: EXPIRY });
+  assert.deepEqual(result, { state: "CURRENT", sourceId: SOURCE_ID, snapshotId, observedAt: OBSERVED_AT,
+    freshnessExpiresAt: EXPIRY, refreshDueAt: REFRESH_DUE_AT });
+});
+
+test("retained Gwangju timetable은 만료 전 SLA 경보 창(PT6H) 시작부터 DUE다", () => {
+  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date(Date.parse(REFRESH_DUE_AT) - 1) }).state, "CURRENT");
+  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date(REFRESH_DUE_AT) }).state, "DUE");
+  const wider = { ...inputs(), freshnessPolicy: freshnessPolicy("PT24H") };
+  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...wider, now: new Date(Date.parse(EXPIRY) - 24 * 60 * 60 * 1_000) }).state, "DUE");
+});
+
+test("SLA 경보 창이 없거나 형식이 틀리면 판정하지 않는다", () => {
+  for (const policy of [{}, { monitoring: {} }, freshnessPolicy("P1D"), freshnessPolicy("PT0H"), freshnessPolicy("6h")]) {
+    assert.throws(() => decideRetainedGwangjuTimetableRefresh({ ...inputs(), freshnessPolicy: policy, now: new Date(EXPIRY) }),
+      /RETAINED_GWANGJU_TIMETABLE_REFRESH_ALERT_BEFORE_EXPIRY/);
+  }
 });
 
 test("retained Gwangju timetable은 만료 경계에서 DUE다", () => {
@@ -82,9 +103,9 @@ test("provider validity caps the admitted confirmation window", () => {
   const value = inputs({ head: snapshot({ serviceEffectiveUntil: cutoff,
     freshnessExpiresAt: cutoff, freshUntil: cutoff }) });
   assert.equal(decideRetainedGwangjuTimetableRefresh({ ...value,
-    now: new Date(Date.parse(cutoff) - 1) }).state, "CURRENT");
+    now: new Date(Date.parse(cutoff) - ALERT_BEFORE_EXPIRY_MS - 1) }).state, "CURRENT");
   assert.equal(decideRetainedGwangjuTimetableRefresh({ ...value,
-    now: new Date(cutoff) }).state, "DUE");
+    now: new Date(Date.parse(cutoff) - ALERT_BEFORE_EXPIRY_MS) }).state, "DUE");
   value.snapshots[0].freshUntil = EXPIRY;
   assert.throws(() => decideRetainedGwangjuTimetableRefresh({ ...value,
     now: new Date(cutoff) }), /FRESHNESS_EXPIRES_AT/);
