@@ -39,7 +39,9 @@ test("관측에서 코레일 6개 노선 행만 원문 그대로 골라 결정�
   assert.deepEqual(snapshot.records.map(({ sourceRowNumber }) => sourceRowNumber), [...snapshot.records.map(({ sourceRowNumber }) => sourceRowNumber)].sort((a, b) => a - b));
   assert.deepEqual(snapshot.records[0].arrivalTime, { cellType: "n", value: clock("06:00") });
   assert.match(snapshot.snapshotId, /^kric-nationwide-timetable-file-korail-[a-f0-9]{64}$/u);
-  assert.deepEqual(projectKricKorailTimetableSnapshot(structuredClone(observed)), snapshot);
+  // 관측 행은 역순으로 들어오고(observation()이 reverse), snapshot은 원천 행 번호 순이다. 해시는 독립 계산과 같아야 한다.
+  assert.equal(snapshot.recordsSha256, sha(`${JSON.stringify(snapshot.records)}\n`));
+  assert.equal(snapshot.snapshotId, `kric-nationwide-timetable-file-korail-${sha(`${JSON.stringify(snapshot.records)}\n`)}`);
   validateKricKorailTimetableSnapshot(snapshot);
   assert.throws(() => validateKricKorailTimetableSnapshot({ ...snapshot, records: snapshot.records.slice(1) }), /SNAPSHOT_HASH/u);
   const missing = observation();

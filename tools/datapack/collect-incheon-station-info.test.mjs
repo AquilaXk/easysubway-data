@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+
 import {
   collectIncheonStationInfo,
   currentIncheonStationCodeDerivations,
@@ -449,7 +451,8 @@ test("current Incheon public attachment는 bounded download와 strict EUC-KR dec
   assert.equal(snapshot.capturedAt, currentSnapshot.capturedAt);
   assert.equal(
     snapshot.freshUntil,
-    new Date(Date.parse(currentSnapshot.capturedAt) + 24 * 60 * 60 * 1_000).toISOString(),
+    // #904: 현행 snapshot의 수집 시각 기준 창(컷오버 전 P1D, 후 P7D)
+    topologySnapshotFreshUntil(currentSnapshot.capturedAt),
   );
   assert.equal(decodeIncheonStationInfoCsv(Buffer.from([0xb0, 0xa1])), "가");
 
