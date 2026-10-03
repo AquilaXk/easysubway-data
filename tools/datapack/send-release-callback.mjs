@@ -56,6 +56,7 @@ async function sendAttempt(endpoint, token, payloadBytes, fetchImpl) {
     return {
       state: response.ok ? "DELIVERED" : retryable(response.status) ? "RETRY" : "STOP",
       httpClass: httpClass(response.status),
+      httpStatus: response.status,
     };
   } catch {
     return { state: "RETRY", httpClass: "NETWORK" };
@@ -115,6 +116,7 @@ export async function sendReleaseCallback({
     artifact.attempts.push({
       attempt: index + 1,
       httpClass: attempt.httpClass,
+      ...(attempt.httpStatus === undefined ? {} : { httpStatus: attempt.httpStatus }),
       ...(attempt.state === "RETRY" && index < retryDelaysSeconds.length
         ? { nextRetrySeconds: retryDelaysSeconds[index] }
         : {}),

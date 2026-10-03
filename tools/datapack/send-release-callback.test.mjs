@@ -63,6 +63,9 @@ test("500 뒤 재시도해 전달하고 artifact에서 secret을 제거한다", 
     assert.equal(artifact.attempts.length, 2);
     assert.deepEqual(slept, [60]);
     assert.equal(artifact.attempts[0].httpClass, "5XX");
+    assert.equal(artifact.attempts[0].httpStatus, 500);
+    assert.equal(artifact.attempts[1].httpClass, "2XX");
+    assert.equal(artifact.attempts[1].httpStatus, 200);
     assert.equal(
       artifact.payloadSha256,
       createHash("sha256").update(canonicalCallbackMessage(payload)).digest("hex"),
@@ -81,7 +84,31 @@ test("400은 재시도하지 않고 reconciliation 대상으로 남긴다", asyn
     assert.equal(artifact.state, "RECONCILIATION_REQUIRED");
     assert.equal(artifact.attempts.length, 1);
     assert.equal(artifact.attempts[0].httpClass, "4XX");
+    assert.equal(artifact.attempts[0].httpStatus, 400);
   });
+});
+
+test("delivery 증거는 같은 4XX 안에서도 404·403·409를 정확한 HTTP 상태 코드로 구분해 기록한다", async () => {
+  for (const status of [404, 403, 409]) {
+    await withServer((_request, response) => response.writeHead(status).end(), async (endpoint) => {
+      const artifact = await sendReleaseCallback({ payload, endpoint, token, sleep: async () => {} });
+      assert.equal(artifact.state, "RECONCILIATION_REQUIRED");
+      assert.deepEqual(artifact.attempts, [{ attempt: 1, httpClass: "4XX", httpStatus: status }]);
+    });
+  }
+});
+
+test("응답을 받지 못한 network 실패는 추정 상태 코드 없이 NETWORK로만 기록한다", async () => {
+  const artifact = await sendReleaseCallback({
+    payload,
+    endpoint: "http://127.0.0.1:9/callback",
+    token,
+    retryDelaysSeconds: [],
+    sleep: async () => {},
+    fetchImpl: async () => { throw new TypeError("fetch failed"); },
+  });
+  assert.equal(artifact.state, "RECONCILIATION_REQUIRED");
+  assert.deepEqual(artifact.attempts, [{ attempt: 1, httpClass: "NETWORK" }]);
 });
 
 test("Bearer 전송 전 non-loopback HTTP endpoint를 거부한다", async () => {
