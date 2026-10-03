@@ -340,7 +340,8 @@ export function buildPurgePlan({
     throw new Error("RAW_RETENTION_OVERDUE: ledger evaluatedAt mismatch");
   }
   const snapshotIds = new Set();
-  const objectKeys = new Set();
+  // #870: 같은 원본 재확인 행은 기존 원본 객체를 공유한다. 같은 object key는 같은 원본 hash일 때만 허용한다.
+  const objectRawSha256 = new Map();
   const policies = policyBindings(policyFiles);
   const snapshotEvidence = snapshotBindings(snapshots, sourceAuthority);
   const plan = ledger.entries.map((entry) => {
@@ -356,8 +357,10 @@ export function buildPurgePlan({
       throw new Error("RAW_RETENTION_OVERDUE: raw hash");
     }
     const objectKey = validatedObjectKey(entry.objectKey);
-    if (objectKeys.has(objectKey)) throw new Error("RAW_RETENTION_OVERDUE: duplicate object key");
-    objectKeys.add(objectKey);
+    if (objectRawSha256.has(objectKey) && objectRawSha256.get(objectKey) !== entry.rawSha256) {
+      throw new Error("RAW_RETENTION_OVERDUE: conflicting object key");
+    }
+    objectRawSha256.set(objectKey, entry.rawSha256);
     const evidence = snapshotEvidence.get(snapshotId);
     if (evidence == null
       || evidence.sourceId !== sourceId
@@ -401,6 +404,7 @@ export function buildPurgePlan({
       sourceId,
       snapshotId,
       rawSha256: entry.rawSha256,
+      objectKey,
       objectUrl: objectUrl(baseUrl, objectKey),
       protectedBy,
       legalHold: holdValid ? sanitizedLegalHold(entry.legalHold) : null,
@@ -410,9 +414,26 @@ export function buildPurgePlan({
   if (snapshotIds.size !== snapshotEvidence.size) {
     throw new Error("RAW_RETENTION_OVERDUE: ledger snapshot set mismatch");
   }
+  // 공유 객체는 참조하는 entry 중 하나라도 보호되면 보호, 하나라도 만료 전이면(가장 늦은 만료 전) 보존한다.
+  const sharedDisposition = new Map();
+  for (const item of plan) {
+    const current = sharedDisposition.get(item.objectKey);
+    sharedDisposition.set(item.objectKey, strongerDisposition(current, item.disposition));
+  }
+  for (const item of plan) {
+    const shared = sharedDisposition.get(item.objectKey);
+    if (shared !== item.disposition && item.disposition === "DELETE") item.disposition = shared;
+    delete item.objectKey;
+  }
   return plan.sort((left, right) => (
     codepointCompare(left.sourceId, right.sourceId) || codepointCompare(left.snapshotId, right.snapshotId)
   ));
+}
+
+const DISPOSITION_STRENGTH = Object.freeze({ DELETE: 0, NOT_EXPIRED: 1, PROTECTED: 2 });
+function strongerDisposition(current, next) {
+  if (current == null) return next;
+  return DISPOSITION_STRENGTH[next] > DISPOSITION_STRENGTH[current] ? next : current;
 }
 
 function snapshotBindings(snapshots, expectedSourceAuthority) {

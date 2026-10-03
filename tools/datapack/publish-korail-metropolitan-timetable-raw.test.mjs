@@ -109,3 +109,57 @@ function clientFor(calls, objects = new Map(), corruptRead = false) {
 }
 
 function hash(value) { return createHash("sha256").update(value).digest("hex"); }
+
+// #870: 원장 head와 원본 sha가 같은 재수집은 원본을 다시 게시하지 않고, head가 가리키는 기존 객체를 읽어 확인한다.
+function headFor(value, overrides = {}) {
+  const key = `source-raw/korail-metropolitan-timetable-file/20391230/${value.sha256}.xlsx`;
+  return { key, head: { sourceId: "korail-metropolitan-timetable-file", snapshotId: "korail-metropolitan-timetable-file-previous",
+    rawSha256: value.sha256, rawObjectSha256: value.sha256, byteSize: value.raw.length,
+    rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${key}`, ...overrides } };
+}
+
+test("same raw as the ledger head is re-verified against the existing object without a PUT", async (t) => {
+  const value = await fixture(t), calls = [];
+  const { key, head } = headFor(value);
+  const client = clientFor(calls, new Map([[key, value.raw]]));
+  const receipt = await publishKorailTimetableRaw({ ...value, previousHead: head, env: ENV, client, clock: () => NOW });
+  assert.deepEqual(calls.map(({ type, key: called }) => [type, called]), [["get", key]]);
+  assert.equal(receipt.artifactKind, "korail-metropolitan-timetable-raw-reverification-receipt");
+  assert.equal(receipt.rawObjectUri, head.rawObjectUri);
+  assert.equal(receipt.reusedFromSnapshotId, head.snapshotId);
+  assert.equal(receipt.rawObjectSha256, value.sha256);
+  assert.equal(receipt.byteSize, value.raw.length);
+  assert.equal(receipt.verifiedAt, NOW.toISOString());
+  assert.equal(receipt.snapshotId, value.preparation.snapshot.snapshotId);
+  assert.equal(receipt.rawRetentionExpiresAt, value.preparation.rawRetentionExpiresAt);
+  assert.equal(Object.hasOwn(receipt, "storedAt"), false);
+  assert.deepEqual(JSON.parse(await readFile(path.join(value.operationDirectory, "receipt.json"), "utf8")), receipt);
+});
+
+test("a different raw than the ledger head still publishes a new object", async (t) => {
+  const value = await fixture(t), calls = [];
+  const { head } = headFor(value, { rawSha256: hash("older"), rawObjectSha256: hash("older") });
+  const receipt = await publishKorailTimetableRaw({ ...value, previousHead: head, env: ENV, client: clientFor(calls), clock: () => NOW });
+  assert.deepEqual(calls.map(({ type }) => type), ["put", "get"]);
+  assert.equal(receipt.artifactKind, "korail-metropolitan-timetable-raw-receipt");
+});
+
+test("re-verification fails closed when the existing head object is missing or drifted, without PUT or receipt", async (t) => {
+  for (const [label, objects] of [["missing", () => new Map()], ["drift", (key, raw) => new Map([[key, Buffer.concat([raw, Buffer.from("x")])]])]]) {
+    const value = await fixture(t), calls = [];
+    const { key, head } = headFor(value);
+    const stored = objects(key, value.raw);
+    const client = preauthenticatedObjectStorageClient(ENV.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL, {
+      includeErrorBody: false,
+      requestImpl: async ({ method, url }) => {
+        const called = url.pathname.split("/o/")[1];
+        calls.push({ type: method.toLowerCase(), key: called });
+        if (!stored.has(called)) return { statusCode: 404, headers: {}, body: Buffer.alloc(0) };
+        return { statusCode: 200, headers: {}, body: stored.get(called) };
+      },
+    });
+    await assert.rejects(publishKorailTimetableRaw({ ...value, previousHead: head, env: ENV, client, clock: () => NOW }), /KORAIL_RAW_REVERIFY/, label);
+    assert.deepEqual(calls.map(({ type }) => type), ["get"], label);
+    await assert.rejects(readFile(path.join(value.operationDirectory, "receipt.json")), label);
+  }
+});

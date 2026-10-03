@@ -8757,8 +8757,6 @@
         "verificationTest": "tools/datapack/capital-official-timetable.test.mjs",
         "snapshotId": "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
         "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00.json",
-        "observedAt": "2026-10-02T15:57:05.773Z",
-        "rawFile": "kric-nationwide-timetable-file-20261003.xlsx",
         "rawByteLength": 17949564,
         "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
         "observationRecordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
@@ -8906,7 +8904,15 @@
           "sourceDomains": [
             "schedule_timetable"
           ]
-        }
+        },
+        "observedAt": "2026-10-02T15:57:05.773Z",
+        "reverifications": [
+          {
+            "observedAt": "2026-10-02T15:57:05.773Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "f8994ba5965b1ad03869a4a7da242e573097efda8f119f17ea5d09d47a56adcc"
+          }
+        ]
       }
     },
     {

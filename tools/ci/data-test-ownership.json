@@ -264,6 +264,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/846",
       "title": "[Fix] 원천 인벤토리 변경 뒤 fan-in·소유권 원장 고정값 재생성과 드리프트 검사"
     },
+    "data870": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/870",
+      "title": "[Refactor] 데이터 파이프라인 운영 방식 전환: 자동 갱신·개발/발행 게이트 분리·생성 산출물 축소"
+    },
     "data862": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/862",
       "title": "[Fix] 전국 후보 기준으로 데이터 릴리스 파이프라인 복구(상위 이슈)"
@@ -574,6 +578,9 @@
     {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":81},
     {"path":"tools/datapack/collect-korail-metropolitan-timetable-file.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":36},
     {"path":"tools/datapack/publish-korail-metropolitan-timetable-raw.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":33},
+    {"path":"tools/datapack/lib/same-raw-reverification.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/datapack/lib/capital-official-timetable.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/datapack/register-kric-capital-timetable.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/register-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":2},
     {"path":"tools/datapack/materialize-korail-route-topology.test.mjs","semanticOwner":"data457","classes":["required-pr"],"durationMs":9},
     {"path":"tools/datapack/register-korail-timetable.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":504},

@@ -37,8 +37,9 @@ function observation(extra = []) {
     rawSha256: "c".repeat(64), rowCount: records.length, records, recordsSha256: "d".repeat(64),
   };
 }
-const tripsOf = (snapshot, routeNumber) => kricCapitalOfficialTimetable(snapshot).provider.trips.filter((trip) => trip.routeKey === routeNumber);
-const quarantineOf = (snapshot, routeNumber) => kricCapitalOfficialTimetable(snapshot).provider.quarantine.filter((entry) => entry.routeKey === routeNumber);
+const OBSERVED_AT = "2026-10-02T15:57:05.773Z";
+const tripsOf = (snapshot, routeNumber) => kricCapitalOfficialTimetable(snapshot, { observedAt: OBSERVED_AT }).provider.trips.filter((trip) => trip.routeKey === routeNumber);
+const quarantineOf = (snapshot, routeNumber) => kricCapitalOfficialTimetable(snapshot, { observedAt: OBSERVED_AT }).provider.quarantine.filter((entry) => entry.routeKey === routeNumber);
 
 test("snapshot은 대상 노선 행만 원문 그대로 담고 자기 해시로 식별된다", () => {
   const snapshot = projectKricCapitalTimetableSnapshot(observation());
@@ -49,6 +50,20 @@ test("snapshot은 대상 노선 행만 원문 그대로 담고 자기 해시로 
   const tampered = structuredClone(snapshot);
   tampered.records[0].departureTime = "001-05:31+002-00:00";
   assert.throws(() => validateKricCapitalTimetableSnapshot(tampered), /SNAPSHOT_HASH/u);
+});
+
+test("snapshot은 관측 시각·수집 파일명과 무관하다: 같은 원본을 다른 시각에 관측해도 바이트가 같다(#870)", () => {
+  const observed = observation();
+  const later = projectKricCapitalTimetableSnapshot({ ...observed, observedAt: "2026-10-09T15:57:05.773Z", rawFile: "kric-nationwide-timetable-file-later.xlsx" });
+  // 독립 기대값: snapshot 필드는 원본 내용에서만 나오고, 관측 시각·수집 파일명 필드는 없다.
+  assert.deepEqual(Object.keys(later), ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawByteLength", "rawSha256",
+    "observationRecordsSha256", "routes", "recordCount", "recordsSha256", "records"]);
+  assert.equal(later.rawSha256, observed.rawSha256);
+  assert.equal(later.observationRecordsSha256, observed.recordsSha256);
+  assert.equal(later.recordsSha256, sha(`${JSON.stringify(later.records)}\n`));
+  assert.equal(later.snapshotId, `kric-nationwide-timetable-file-capital-${later.recordsSha256}`);
+  const first = later;
+  assert.throws(() => validateKricCapitalTimetableSnapshot({ ...first, observedAt: "2026-10-02T15:57:05.773Z" }), /KRIC_CAPITAL_TIMETABLE_SNAPSHOT/u);
 });
 
 test("대상 노선 행이 관측에 없으면 snapshot을 만들지 않는다", () => {
@@ -98,15 +113,15 @@ test("노선별 요일구분·운행유형 표기가 표에 없으면 추정하�
   const unknownDay = projectKricCapitalTimetableSnapshot(observation([record("S1102", "서울 도시철도 2호선", {
     names: "001-가+002-나", arrivals: "001-00:00+002-05:32", departures: "001-05:30+002-00:00", day: "명절",
   })]));
-  assert.throws(() => kricCapitalOfficialTimetable(unknownDay), /SERVICE_DAY_UNKNOWN: S1102 명절/u);
+  assert.throws(() => kricCapitalOfficialTimetable(unknownDay, { observedAt: OBSERVED_AT }), /SERVICE_DAY_UNKNOWN: S1102 명절/u);
   const unknownType = projectKricCapitalTimetableSnapshot(observation([record("S1102", "서울 도시철도 2호선", {
     names: "001-가+002-나", arrivals: "001-00:00+002-05:32", departures: "001-05:30+002-00:00", type: "특급",
   })]));
-  assert.throws(() => kricCapitalOfficialTimetable(unknownType), /SERVICE_TYPE_UNKNOWN: S1102 특급/u);
+  assert.throws(() => kricCapitalOfficialTimetable(unknownType, { observedAt: OBSERVED_AT }), /SERVICE_TYPE_UNKNOWN: S1102 특급/u);
 });
 
 test("1호선 binding만 원천 손상 행 집합을 고정 허용치로 가진다", () => {
-  const { lineBindings } = kricCapitalOfficialTimetable(projectKricCapitalTimetableSnapshot(observation()));
+  const { lineBindings } = kricCapitalOfficialTimetable(projectKricCapitalTimetableSnapshot(observation()), { observedAt: OBSERVED_AT });
   const pinned = lineBindings.filter((binding) => binding.quarantineAllowance);
   assert.deepEqual(pinned.map(({ routeKey }) => routeKey), ["S1101"]);
   assert.deepEqual([pinned[0].quarantineAllowance.reason, pinned[0].quarantineAllowance.rowCount], ["TIME_NOT_MONOTONIC", 453]);

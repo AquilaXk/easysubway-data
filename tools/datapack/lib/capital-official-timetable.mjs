@@ -41,18 +41,46 @@ export function removeLine4PilotTimetable(pack) {
   };
 }
 
+const REVERIFICATION_KEYS = Object.freeze(["observedAt", "rawSha256", "collectionReceiptSha256"]);
+const fail = (code) => { throw new Error(`CAPITAL_TIMETABLE_${code}`); };
+const utcInstant = (value) => typeof value === "string" && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+
+/**
+ * #870: snapshot은 관측 시각과 무관하다. 신선도 기준 관측 시각은 evidence.reverifications(append-only)의
+ * 마지막 항목이고 evidence.observedAt과 같아야 한다. 이력은 관측 시각 오름차순이고 마지막 항목은 현재 원본이다.
+ */
+export function resolveCapitalTimetableObservation({ evidence, snapshot }) {
+  if (evidence?.snapshotId !== snapshot?.snapshotId || evidence.rawSha256 !== snapshot.rawSha256
+    || evidence.recordsSha256 !== snapshot.recordsSha256) fail("SNAPSHOT");
+  validateReverificationHistory(evidence.reverifications);
+  const last = evidence.reverifications.at(-1);
+  if (last.rawSha256 !== evidence.rawSha256) fail("REVERIFICATIONS");
+  if (!utcInstant(evidence.observedAt) || evidence.observedAt !== last.observedAt) fail("OBSERVATION");
+  return evidence.observedAt;
+}
+
+export function validateReverificationHistory(history) {
+  if (!Array.isArray(history) || history.length === 0) fail("REVERIFICATIONS");
+  let previous = -Infinity;
+  for (const entry of history) {
+    if (!entry || JSON.stringify(Object.keys(entry)) !== JSON.stringify(REVERIFICATION_KEYS) || !utcInstant(entry.observedAt)
+      || !/^[a-f0-9]{64}$/u.test(entry.rawSha256 ?? "") || !/^[a-f0-9]{64}$/u.test(entry.collectionReceiptSha256 ?? "")
+      || Date.parse(entry.observedAt) <= previous) fail("REVERIFICATIONS");
+    previous = Date.parse(entry.observedAt);
+  }
+}
+
 /**
  * 수도권 공식 시간표를 팩 표에 붙일 행으로 만든다.
  * @returns {{ tables: object, report: object, packSource: object }}
  */
 export function buildCapitalOfficialTimetable({ pack, snapshot, inventorySource, holidayDates }) {
   const evidence = inventorySource?.[CAPITAL_TIMETABLE_EVIDENCE_KEY];
-  if (inventorySource?.id !== CAPITAL_TIMETABLE_SOURCE_ID || evidence?.snapshotId !== snapshot?.snapshotId
-    || evidence.rawSha256 !== snapshot.rawSha256 || evidence.recordsSha256 !== snapshot.recordsSha256
-    || evidence.observedAt !== snapshot.observedAt) {
+  if (inventorySource?.id !== CAPITAL_TIMETABLE_SOURCE_ID) {
     throw new Error("capital timetable: inventory admission evidence does not match the snapshot");
   }
-  const { provider, lineBindings } = kricCapitalOfficialTimetable(snapshot);
+  const observedAt = resolveCapitalTimetableObservation({ evidence, snapshot });
+  const { provider, lineBindings } = kricCapitalOfficialTimetable(snapshot, { observedAt });
   const result = materializeOfficialLineTimetables({
     pack,
     provider,
@@ -103,7 +131,7 @@ export function buildCapitalOfficialTimetable({ pack, snapshot, inventorySource,
     licenseStatus: "redistributable",
     redistributionAllowed: true,
     updateFrequency: inventorySource.updateFrequency,
-    updatedAt: snapshot.observedAt,
+    updatedAt: observedAt,
     fields: ["service_calendar", "trip", "stop_time"],
     coverageScope: structuredClone(scope),
   };

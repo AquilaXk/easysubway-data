@@ -7,6 +7,7 @@ import { validateKorailTimetableFileReceipt } from "./collect-korail-metropolita
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
 import { preauthenticatedObjectStorageClient } from "./publish-object-storage.mjs";
+import { RAW_PUBLICATION_MODE, planRawObjectPublication, verifyReusedRawObject } from "./lib/same-raw-reverification.mjs";
 
 const SOURCE_ID = "korail-metropolitan-timetable-file";
 const CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -14,7 +15,7 @@ const PAR_PATH = /^\/p\/[^/]+\/n\/([^/]+)\/b\/([^/]+)\/o\/?$/u;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export async function publishKorailTimetableRaw({ preparation, collectionDirectory, operationDirectory,
-  env = process.env, client = null, clock = () => new Date() } = {}) {
+  previousHead = null, env = process.env, client = null, clock = () => new Date() } = {}) {
   const collection = absoluteDirectory(collectionDirectory, "COLLECTION");
   const operation = absoluteDirectory(operationDirectory, "OPERATION");
   const prepared = validatePreparation(preparation);
@@ -32,10 +33,35 @@ export async function publishKorailTimetableRaw({ preparation, collectionDirecto
   try { requireOciParBaseUrl(env); parBaseUrl = new URL(env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL.trim()); } catch { fail("OCI_ENV"); }
   const [, namespace, bucket] = PAR_PATH.exec(parBaseUrl.pathname) ?? [];
   if (!namespace || !bucket) fail("OCI_ENV");
-  const key = `source-raw/${SOURCE_ID}/${prepared.snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${rawSha256}.xlsx`;
-  const step = { sha256: rawSha256, sizeBytes: rawBytes.length, contentType: CONTENT_TYPE };
   const storage = client ?? preauthenticatedObjectStorageClient(parBaseUrl, { includeErrorBody: false });
   if (!storage || typeof storage.putObjectIfAbsent !== "function" || typeof storage.verifyObject !== "function") fail("OCI_ENV");
+  // #870: 원장 head와 원본 sha가 같으면 다시 게시하지 않고 head가 가리키는 기존 객체를 읽어 확인한다.
+  let plan;
+  try { plan = planRawObjectPublication({ head: previousHead, rawSha256, byteSize: rawBytes.length }); } catch { fail("REVERIFY_HEAD"); }
+  if (plan.mode === RAW_PUBLICATION_MODE.REVERIFY_EXISTING) {
+    try { await verifyReusedRawObject({ plan, storage, namespace, bucket, contentType: CONTENT_TYPE }); } catch { fail("REVERIFY_OBJECT"); }
+    const verifiedAt = instant(clock(), "CLOCK");
+    assertCurrent(prepared, verifiedAt);
+    const reverification = {
+      schemaVersion: 1,
+      artifactKind: "korail-metropolitan-timetable-raw-reverification-receipt",
+      sourceId: SOURCE_ID,
+      snapshotId: prepared.snapshot.snapshotId,
+      contentSha256: prepared.snapshot.contentSha256,
+      collectionReceiptSha256: source.collectionReceiptSha256,
+      capturedAt: prepared.snapshot.capturedAt,
+      rawObjectUri: plan.rawObjectUri,
+      rawObjectSha256: rawSha256,
+      byteSize: rawBytes.length,
+      verifiedAt,
+      reusedFromSnapshotId: plan.reusedFromSnapshotId,
+      rawRetentionExpiresAt: prepared.rawRetentionExpiresAt,
+    };
+    try { await writeFile(path.join(operation, "receipt.json"), JSON.stringify(reverification), { flag: "wx", mode: 0o600 }); } catch { fail("RECEIPT"); }
+    return reverification;
+  }
+  const key = `source-raw/${SOURCE_ID}/${prepared.snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${rawSha256}.xlsx`;
+  const step = { sha256: rawSha256, sizeBytes: rawBytes.length, contentType: CONTENT_TYPE };
   let created;
   try { created = await storage.putObjectIfAbsent(key, rawBytes, step); } catch { fail("PUT"); }
   if (created !== true) fail("EXISTS");

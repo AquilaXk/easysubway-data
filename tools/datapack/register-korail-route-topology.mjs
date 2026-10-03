@@ -12,6 +12,7 @@ import { terminalHead } from "./build-current-five-region-source-fan-in.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { publishKorailTimetableRaw } from "./publish-korail-metropolitan-timetable-raw.mjs";
 import { assertSelectedHeadPreflight } from "./publish-seoul-transfer-raw.mjs";
+import { appendLedgerRow, assertReverificationReceiptMatchesHead } from "./lib/same-raw-reverification.mjs";
 
 const SOURCE_ID = "korail-metropolitan-timetable-file";
 const OUTPUTS = SOURCE_REGISTRATION_OUTPUTS;
@@ -30,7 +31,7 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
   const rawReceiptPath = absolute(receiptPath, "RECEIPT");
   const rawReceiptBytes = await readFile(rawReceiptPath);
   const snapshot = preparation.snapshot;
-  const rawReceipt = validateRawReceipt(parse(rawReceiptBytes, "RAW_RECEIPT"), preparation, collectionReceiptBytes, rawSha256, rawBytes.length, now);
+  const rawReceipt = validateRawReceipt(parse(rawReceiptBytes, "RAW_RECEIPT"), preparation, collectionReceiptBytes, rawSha256, rawBytes.length, now, previousHead);
   if (snapshot.snapshotId !== `${SOURCE_ID}-${snapshot.contentSha256}` || (ledger ?? []).some((entry) => entry?.snapshotId === snapshot.snapshotId)) fail("SNAPSHOT_COLLISION");
   const snapshotRelative = `tools/datapack/sources/${snapshot.snapshotId}.json`, snapshotBytes = json(snapshot);
   await writeDerivedSnapshot(path.join(root, snapshotRelative), snapshotBytes);
@@ -81,6 +82,8 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
     snapshotStatus: "LOCKED", schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS",
     redistributionAllowed: true, credentialRedacted: true,
     admissionEvidence: { licenseEvidenceHash: preparation.licenseEvidenceSha256 },
+    // #870: 같은 원본 재확인은 원본을 다시 게시하지 않고 head 객체를 참조한다(어느 행의 객체인지 남긴다).
+    ...(rawReceipt.reusedFromSnapshotId ? { rawObjectReusedFromSnapshotId: rawReceipt.reusedFromSnapshotId } : {}),
   };
   // #862: 후속 등록은 같은 source 행에서 관측 시각·topology admission만 바꾼다(첫 등록은 추가).
   if (previousHead) ledgerRow.diffSummary = buildSnapshotDiff(previousHead, ledgerRow);
@@ -89,7 +92,8 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
   const nextInventory = previousSource
     ? { ...inventory, sources: inventory.sources.map((entry) => (entry?.id === SOURCE_ID ? nextSource : entry)) }
     : { ...inventory, sources: [...inventory.sources, inventorySource] };
-  const nextLedger = [...ledger, ledgerRow];
+  let nextLedger;
+  try { nextLedger = appendLedgerRow(ledger, ledgerRow); } catch { fail("LEDGER_APPEND"); }
   validateSourceGovernancePolicy({ policy: preparation.projectedGovernancePolicy, inventory: nextInventory, freshnessPolicy: preparation.projectedFreshnessPolicy });
   const inputs = [inputPath, rawReceiptPath, sourceInput.stationLineObservationPath, sourceInput.stationLineReceiptPath, sourceInput.canonicalCatalogPath, path.join(sourceInput.collectionDirectory, "receipt.json"), path.join(sourceInput.collectionDirectory, "timetable.xlsx")].map((absolute, index) => ({ absolute, bytes: [inputBytes, rawReceiptBytes, membershipBytes, membershipReceiptBytes, catalogBytes, collectionReceiptBytes, rawBytes][index] }));
   inputs.push({ absolute: path.join(root, "tools/datapack/source-candidates.json"), bytes: candidatesBytes },
@@ -154,7 +158,11 @@ export async function registerKorailRouteTopology(options = {}) {
   return commitKorailTopologyRegistrationOutputs({ repositoryRoot: options.repositoryRoot, outputs });
 }
 
-function validateRawReceipt(value, preparation, collectionReceiptBytes, rawSha256, byteSize, now) {
+// #870: 재확인 영수증은 원본을 다시 게시하지 않고 원장 head 객체를 읽어 확인한 기록이다. head 객체를 정확히 가리켜야 한다.
+function validateRawReceipt(value, preparation, collectionReceiptBytes, rawSha256, byteSize, now, previousHead = null) {
+  if (value?.artifactKind === "korail-metropolitan-timetable-raw-reverification-receipt") {
+    return validateRawReverificationReceipt(value, preparation, collectionReceiptBytes, rawSha256, byteSize, now, previousHead);
+  }
   const snapshot = preparation.snapshot, key = `source-raw/${SOURCE_ID}/${snapshot.capturedAt.slice(0, 10).replaceAll("-", "")}/${rawSha256}.xlsx`, uri = `oci://axvym6vk8g7i/easysubway-datapacks/${key}`;
   const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "contentSha256", "collectionReceiptSha256", "capturedAt", "rawObjectUri", "rawObjectSha256", "byteSize", "storedAt", "rawRetentionExpiresAt"];
   if (!same(Object.keys(value).sort(utf16Compare), keys.toSorted(utf16Compare)) || value.schemaVersion !== 1
@@ -166,6 +174,19 @@ function validateRawReceipt(value, preparation, collectionReceiptBytes, rawSha25
     || Date.parse(value.storedAt) < Date.parse(snapshot.capturedAt) || Date.parse(value.storedAt) > now.valueOf()
     || now.valueOf() >= Date.parse(snapshot.freshUntil) || now.valueOf() >= Date.parse(value.rawRetentionExpiresAt)
     || value.rawRetentionExpiresAt !== preparation.rawRetentionExpiresAt) fail("RAW_RECEIPT");
+  return value;
+}
+function validateRawReverificationReceipt(value, preparation, collectionReceiptBytes, rawSha256, byteSize, now, previousHead) {
+  const snapshot = preparation.snapshot;
+  const keys = ["schemaVersion", "artifactKind", "sourceId", "snapshotId", "contentSha256", "collectionReceiptSha256", "capturedAt", "rawObjectUri", "rawObjectSha256", "byteSize", "verifiedAt", "reusedFromSnapshotId", "rawRetentionExpiresAt"];
+  if (!same(Object.keys(value).sort(utf16Compare), keys.toSorted(utf16Compare)) || value.schemaVersion !== 1
+    || value.sourceId !== SOURCE_ID || value.snapshotId !== snapshot.snapshotId || value.contentSha256 !== snapshot.contentSha256
+    || value.collectionReceiptSha256 !== sha(collectionReceiptBytes) || value.capturedAt !== snapshot.capturedAt
+    || !utc(value.verifiedAt) || !utc(value.rawRetentionExpiresAt)
+    || Date.parse(value.verifiedAt) < Date.parse(snapshot.capturedAt) || Date.parse(value.verifiedAt) > now.valueOf()
+    || now.valueOf() >= Date.parse(snapshot.freshUntil) || now.valueOf() >= Date.parse(value.rawRetentionExpiresAt)
+    || value.rawRetentionExpiresAt !== preparation.rawRetentionExpiresAt) fail("RAW_RECEIPT");
+  try { assertReverificationReceiptMatchesHead({ receipt: value, head: previousHead, rawSha256, byteSize }); } catch { fail("RAW_RECEIPT"); }
   return value;
 }
 async function writeDerivedSnapshot(file, bytes) { await mkdir(path.dirname(file), { recursive: true }); try { await writeFile(file, bytes, { flag: "wx", mode: 0o600 }); } catch (error) { if (error?.code !== "EEXIST" || !(await readFile(file)).equals(bytes)) fail("SNAPSHOT"); } }
@@ -211,7 +232,7 @@ export async function publishAndRegisterKorailRouteTopology({ repositoryRoot, so
   await assertSelectedHeadPreflight({ repositoryRoot: root, expectedMainSha, expectedHeadSha, ...(gitRunner ? { gitRunner } : {}) });
   await recoverKorailRouteTopologyRegistration({ repositoryRoot: root });
   const context = await prepareKorailTopologyRegistration({ repositoryRoot: root, sourceInputPath, now });
-  await publishKorailTimetableRaw({ preparation: context.preparation, collectionDirectory: context.sourceInput.collectionDirectory, operationDirectory, env, client });
+  await publishKorailTimetableRaw({ preparation: context.preparation, collectionDirectory: context.sourceInput.collectionDirectory, operationDirectory, previousHead: context.previousHead, env, client });
   const outputs = await buildKorailTopologyRegistrationOutputs({ repositoryRoot: root, sourceInputPath, receiptPath: path.join(operationDirectory, "receipt.json"), now: new Date() });
   return commitKorailTopologyRegistrationOutputs({ repositoryRoot: root, outputs });
 }
