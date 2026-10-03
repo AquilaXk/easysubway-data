@@ -14,7 +14,7 @@ test("KASI calendar는 유효한 year·months에서 malformed credential을 requ
 });
 
 const holidayXml = (items, totalCount = items.length) => `<?xml version="1.0" encoding="UTF-8"?>
-<response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items>${items.map(({ date, holiday }) => `<item><locdate>${date}</locdate><isHoliday>${holiday}</isHoliday></item>`).join("")}</items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>${totalCount}</totalCount></body></response>`;
+<response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items>${items.map(({ date, holiday, name }) => `<item>${name === undefined ? "" : `<dateName>${name}</dateName>`}<locdate>${date}</locdate><isHoliday>${holiday}</isHoliday></item>`).join("")}</items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>${totalCount}</totalCount></body></response>`;
 
 test("KASI window collects the exact cross-year months, stops before a manifest, and rejects invalid windows", async context => {
   const root = await mkdtemp(path.join(tmpdir(), "kasi-window-test-"));
@@ -64,13 +64,25 @@ test("retained KASI month binds original bytes and reuses complete month validat
   const sha256 = createHash("sha256").update(raw).digest("hex");
   const input = { raw, sha256, year: 2040, month: 1 };
   assert.deepEqual(parseRetainedKasiHolidayMonth(input), {
-    year: 2040, month: 1, rawSha256: sha256, rawByteLength: raw.length, holidayDates: ["20400102"],
+    year: 2040, month: 1, rawSha256: sha256, rawByteLength: raw.length, holidayDates: ["20400102"], festivalDates: [],
   });
   assert.throws(() => parseRetainedKasiHolidayMonth({ ...input, sha256: "0".repeat(64) }), /digest/);
   assert.throws(() => parseRetainedKasiHolidayMonth({ ...input, month: 2 }), /month coverage/);
   const incomplete = Buffer.from(holidayXml([], 1));
   assert.throws(() => parseRetainedKasiHolidayMonth({ ...input, raw: incomplete,
     sha256: createHash("sha256").update(incomplete).digest("hex") }), /month coverage/);
+});
+
+test("retained KASI month는 설날·추석 이름의 공휴일을 명절 날짜로 따로 돌려준다(대체공휴일은 명절이 아니다, #913)", () => {
+  const raw = Buffer.from(holidayXml([
+    { date: "20400924", holiday: "Y", name: "추석" }, { date: "20400925", holiday: "Y", name: "추석" },
+    { date: "20400926", holiday: "Y", name: "추석" }, { date: "20400928", holiday: "Y", name: "대체공휴일(추석)" },
+    { date: "20400903", holiday: "Y", name: "개천절" },
+  ]));
+  const sha256 = createHash("sha256").update(raw).digest("hex");
+  const parsed = parseRetainedKasiHolidayMonth({ raw, sha256, year: 2040, month: 9 });
+  assert.deepEqual(parsed.holidayDates, ["20400903", "20400924", "20400925", "20400926", "20400928"]);
+  assert.deepEqual(parsed.festivalDates, ["20400924", "20400925", "20400926"]);
 });
 
 test("KASI observation retains reusable monthly XML without an extra request", async () => {

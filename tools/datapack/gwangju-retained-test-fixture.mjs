@@ -63,6 +63,7 @@ export function createRetainedGwangjuTestInput({
     calendar: {
       startDate: `${calendarYear}0101`, endDate: `${calendarYear}1231`,
       publicHolidayDates: [],
+      festivalDates: [],
     },
   };
   const summary = projectRetainedGwangjuTimetable({

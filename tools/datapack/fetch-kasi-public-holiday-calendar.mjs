@@ -93,7 +93,8 @@ export function parseRetainedKasiHolidayMonth({ raw, sha256, year, month }) {
   if (createHash("sha256").update(raw).digest("hex") !== sha256) throw new Error("retained KASI digest mismatch");
   const xml = new TextDecoder("utf-8", { fatal: true }).decode(raw);
   const dates = parseMonth(xml, { year, month });
-  return { year, month, rawSha256: sha256, rawByteLength: raw.byteLength, holidayDates: [...dates].sort(utf16Compare) };
+  return { year, month, rawSha256: sha256, rawByteLength: raw.byteLength, holidayDates: [...dates].sort(utf16Compare),
+    festivalDates: [...festivalDatesOf(xml, dates)].sort(utf16Compare) };
 }
 
 export async function fetchKasiPublicHolidayCalendar(input = {}) {
@@ -264,6 +265,19 @@ function safeFamilyAttemptCount(value) {
 function isNativeAbortError(error) {
   const details = transportDetails(error);
   return details !== null && (details.name === "AbortError" || details.code === "ABORT_ERR");
+}
+
+// #913: 설·추석 명절 기간. KASI 특일 이름이 정확히 "설날"·"추석"인 공휴일만 명절이다(대체공휴일은 휴일).
+const FESTIVAL_DATE_NAMES = Object.freeze(["설날", "추석"]);
+function festivalDatesOf(xml, holidays) {
+  const festivals = new Set();
+  for (const [, item] of xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
+    const names = [...item.matchAll(/<dateName\b[^>]*>([\s\S]*?)<\/dateName>/gi)].map((match) => match[1].trim());
+    if (names.length > 1) throw new Error("KASI public holiday response schema is invalid");
+    const locdate = scalar(item, "locdate");
+    if (names.length === 1 && FESTIVAL_DATE_NAMES.includes(names[0]) && holidays.has(locdate)) festivals.add(locdate);
+  }
+  return festivals;
 }
 
 function parseMonth(xml, { year, month }) {

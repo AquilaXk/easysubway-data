@@ -33,7 +33,7 @@ export function prepareRetainedGwangjuContract({
     freshnessExpiresAt: prepared.freshnessExpiresAt });
   const serviceIds = Object.fromEntries(SERVICE_LABELS.map((label) => [label, `service-${routeNumber}-${label}`]));
   buildRetainedGwangjuServiceCalendars({ ...calendar, serviceIds,
-    publicHolidayDates: new Set(calendar.publicHolidayDates) });
+    publicHolidayDates: new Set(calendar.publicHolidayDates), festivalDates: new Set(calendar.festivalDates) });
 
   const projection = projectRetainedGwangjuTimetable({
     observation, receipt, routeNumber, stationBindings,
@@ -68,7 +68,9 @@ function prepareCalendar({ holidayCalendar, observedAt, freshnessExpiresAt }) {
   }
   return {
     calendar: { startDate, endDate,
-      publicHolidayDates: [...new Set(months.flatMap(({ holidayDates }) => holidayDates))].sort(utf16Compare) },
+      publicHolidayDates: [...new Set(months.flatMap(({ holidayDates }) => holidayDates))].sort(utf16Compare),
+      // #913: 설·추석 명절(KASI 이름). 명절 시각표는 이 날짜에만 운행한다.
+      festivalDates: [...new Set(months.flatMap(({ festivalDates }) => festivalDates))].sort(utf16Compare) },
     holidayCalendarEvidence: { manifestSha256: holidayCalendar.manifestSha256, months },
   };
 }

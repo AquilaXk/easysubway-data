@@ -51,31 +51,45 @@ test("MOLIT Gwangju topology binding preserves canonical IDs with variable topol
   assert.throws(() => parseMolitGwangjuStationMappings(csv, { scope: [{ stationName: "녹동", stationCode: "join-4" }, ...topologySnapshot.scope.slice(1)] }), /duplicate/i);
 });
 
-test("retained Gwangju calendars apply owner weekend selection without duplicate native services", () => {
-  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20400105", endDate: "20400110", serviceIds: retainedServices,
-    publicHolidayDates: new Set(["20400104", "20400105", "20400108", "20400109", "20400111"]) });
+// #913(QA 정책 2026-10-03): 토요일 시간표를 따로 주는 기관은 토요일 데이터를 쓴다. 공식 원천의 서비스 구분을 그대로 쓴다.
+// 월~금 평일, 토 토요일, 일·공휴일·대체공휴일 휴일, 설·추석 명절. 토요일이 공휴일이면 휴일, 명절과 휴일이 겹치면 명절이다.
+function activeServiceOn(result, date) {
   const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  // 합성 달력: 평일 공휴일, 보통 평일, 토/일요일, 대체공휴일 순으로 실제 활성 서비스를 평가한다.
-  for (const [date, expected] of [["20400105", "special"], ["20400106", "weekday"],
-    ["20400107", "special"], ["20400108", "special"], ["20400109", "special"], ["20400110", "weekday"]]) {
-    const day = new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T00:00:00Z`).getUTCDay();
-    const active = new Set(result.serviceCalendars.filter(row => row[weekdays[day]]).map(row => row.serviceId));
-    for (const row of result.serviceCalendarDates.filter(row => row.date === date)) {
-      if (row.exceptionType === 1) active.add(row.serviceId);
-      else active.delete(row.serviceId);
-    }
-    assert.deepEqual([...active], [expected], date);
+  const day = new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T00:00:00Z`).getUTCDay();
+  const active = new Set(result.serviceCalendars.filter((row) => row[weekdays[day]] && row.startDate <= date && date <= row.endDate).map((row) => row.serviceId));
+  for (const row of result.serviceCalendarDates.filter((row) => row.date === date)) {
+    if (row.exceptionType === 1) active.add(row.serviceId);
+    else active.delete(row.serviceId);
   }
-  assert.deepEqual(result.serviceCalendars.map(row => row.serviceId), Object.values(retainedServices));
-  assert.deepEqual(result.serviceCalendarDates, [
-    { serviceId: "weekday", date: "20400105", exceptionType: 2 }, { serviceId: "special", date: "20400105", exceptionType: 1 },
-    { serviceId: "weekday", date: "20400109", exceptionType: 2 }, { serviceId: "special", date: "20400109", exceptionType: 1 },
-  ]);
+  return [...active];
+}
+
+test("광주 보관본 달력은 평일·토요일·휴일(일·공휴일·대체공휴일)을 원천 서비스 구분대로 고른다(#913)", () => {
+  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20261001", endDate: "20261011", serviceIds: retainedServices,
+    publicHolidayDates: new Set(["20261003", "20261005", "20261009"]), festivalDates: new Set() });
+  for (const [date, expected] of [
+    ["20261001", "weekday"], ["20261002", "weekday"], ["20261003", "holiday"], ["20261004", "holiday"], ["20261005", "holiday"],
+    ["20261006", "weekday"], ["20261009", "holiday"], ["20261010", "saturday"], ["20261011", "holiday"],
+  ]) assert.deepEqual(activeServiceOn(result, date), [expected], date);
+  // 창 안에 명절이 없으면 명절 서비스는 운행일이 없다: 달력에 싣지 않고 비활성 서비스로 돌려준다.
+  assert.deepEqual(result.serviceCalendars.map((row) => row.serviceId), ["weekday", "saturday", "holiday"]);
+  assert.deepEqual(result.inactiveServiceIds, ["special"]);
+});
+
+test("광주 보관본 달력은 설·추석 명절이 휴일·토요일보다 우선하고 운행일 없는 서비스를 남기지 않는다(#913)", () => {
+  const result = buildRetainedGwangjuServiceCalendars({ startDate: "20260921", endDate: "20260927", serviceIds: retainedServices,
+    publicHolidayDates: new Set(["20260924", "20260925", "20260926"]), festivalDates: new Set(["20260924", "20260925", "20260926"]) });
+  for (const [date, expected] of [
+    ["20260921", "weekday"], ["20260923", "weekday"], ["20260924", "special"], ["20260925", "special"], ["20260926", "special"], ["20260927", "holiday"],
+  ]) assert.deepEqual(activeServiceOn(result, date), [expected], date);
+  assert.deepEqual(result.inactiveServiceIds, ["saturday"]);
+  assert.throws(() => buildRetainedGwangjuServiceCalendars({ startDate: "20260921", endDate: "20260927", serviceIds: retainedServices,
+    publicHolidayDates: new Set(), festivalDates: new Set(["20260924"]) }), /calendar input/);
 });
 
 test("retained Gwangju calendars reject missing sets, invalid dates, and duplicate service identities", () => {
-  const valid = { startDate: "20400101", endDate: "20400102", serviceIds: retainedServices, publicHolidayDates: new Set() };
-  for (const input of [{ ...valid, publicHolidayDates: [] }, { ...valid, publicHolidayDates: undefined },
+  const valid = { startDate: "20400101", endDate: "20400102", serviceIds: retainedServices, publicHolidayDates: new Set(), festivalDates: new Set() };
+  for (const input of [{ ...valid, publicHolidayDates: [] }, { ...valid, publicHolidayDates: undefined }, { ...valid, festivalDates: undefined },
     { ...valid, publicHolidayDates: new Set(["20400230"]) },
     { ...valid, serviceIds: { ...retainedServices, "명절": "holiday" } }]) {
     assert.throws(() => buildRetainedGwangjuServiceCalendars(input), /calendar input/);

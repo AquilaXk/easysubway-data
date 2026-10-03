@@ -1588,6 +1588,11 @@ export async function prepareNationwideCandidate({
       originStationName: identity.originStationName, destinationStationName: identity.destinationStationName,
       sourceRowNumbers: records.map(({ sourceRowNumber }) => sourceRowNumber), reason,
     })),
+    // 계약 달력 창 안에 운행일이 없는 서비스(예: 명절 기간이 없는 창의 명절 시각표)의 trip은 운행하지 않으므로 싣지 않는다.
+    ...gwangjuSchedule.inactiveServiceTrips.map(({ id, serviceId, trainNo }) => ({
+      sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: gwangjuTimetable.retainedSnapshotId,
+      tripId: id, serviceId, trainNumber: trainNo, reason: "SERVICE_NOT_ACTIVE_IN_WINDOW",
+    })),
   ];
   const timetableQuarantineByReason = {};
   for (const { reason } of timetableQuarantine) {

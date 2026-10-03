@@ -97,3 +97,51 @@ test("DUE refresh orders retained artifacts and stops before registration after 
   }), /holiday failure/);
   assert.deepEqual(failedEvents, ["collect", "kasi"]);
 });
+
+// #913: 계약 개정(예: 운행일 달력 규칙 정정)은 정해진 갱신 시점이 아니어도 보관본을 다시 등록해야 한다.
+// 계약이 실제로 바뀐 경우에만 게시·등록하고, 같은 계약이면 게시 전에 멈춘다.
+test("계약 개정 trigger는 CURRENT여도 수집하고, 새 계약이 등록된 계약과 다를 때만 게시·등록한다", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "retained-revision-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const run = async (operation, contractJson, events) => runRetainedGwangjuTimetableRefresh({
+    repositoryRoot: root, operationRoot: path.join(root, operation), env, trigger: "CONTRACT_REVISION",
+    clock: () => new Date("2041-01-01T00:00:00.000Z"),
+    boundaries: {
+      readDecision: async () => current,
+      readAdmittedContractSha256: async () => "c4c9a5bf3ff0b9f2dbc5d0f0e4fbd9c6de1fe2b1c5f0e1ed58b4d0ad8b7e2fe4",
+      preflightDue: async () => preflight,
+      collectKric: async ({ outputFile }) => { events.push("collect"); await writeFile(outputFile, "raw");
+        return { capturedAt: "2040-12-31T00:00:00.000Z", rawFile: path.basename(outputFile), byteLength: 3, sha256: "a".repeat(64) }; },
+      buildObservation: async () => ({ observedAt: "2040-12-31T00:00:00.000Z" }),
+      preparePublication: () => ({ freshnessExpiresAt: "2041-01-08T00:00:00.000Z" }),
+      collectKasi: async () => {},
+      prepareContract: async ({ outputPath }) => { events.push("contract"); await writeFile(outputPath, contractJson); },
+      publish: async () => { events.push("publish"); },
+      register: async () => { events.push("register"); },
+    },
+  });
+  const changed = [];
+  assert.equal((await run("changed", "{\"calendar\":{\"festivalDates\":[]}}\n", changed)).state, "REGISTERED");
+  assert.deepEqual(changed, ["collect", "contract", "publish", "register"]);
+  const same = [];
+  // 등록된 계약 sha와 같은 계약: canonicalJson({}) 의 sha를 등록 값으로 둔다.
+  const { createHash } = await import("node:crypto");
+  const sameSha = createHash("sha256").update("{}").digest("hex");
+  await assert.rejects(runRetainedGwangjuTimetableRefresh({
+    repositoryRoot: root, operationRoot: path.join(root, "same"), env, trigger: "CONTRACT_REVISION",
+    clock: () => new Date("2041-01-01T00:00:00.000Z"),
+    boundaries: {
+      readDecision: async () => current, readAdmittedContractSha256: async () => sameSha, preflightDue: async () => preflight,
+      collectKric: async ({ outputFile }) => { same.push("collect"); await writeFile(outputFile, "raw");
+        return { capturedAt: "2040-12-31T00:00:00.000Z", rawFile: path.basename(outputFile), byteLength: 3, sha256: "a".repeat(64) }; },
+      buildObservation: async () => ({ observedAt: "2040-12-31T00:00:00.000Z" }),
+      preparePublication: () => ({ freshnessExpiresAt: "2041-01-08T00:00:00.000Z" }),
+      collectKasi: async () => {},
+      prepareContract: async ({ outputPath }) => { same.push("contract"); await writeFile(outputPath, "{}\n"); },
+      publish: async () => { same.push("publish"); }, register: async () => { same.push("register"); },
+    },
+  }), /contract revision trigger requires a changed retained contract/);
+  assert.deepEqual(same, ["collect", "contract"]);
+  await assert.rejects(runRetainedGwangjuTimetableRefresh({ repositoryRoot: root, operationRoot: path.join(root, "bad"), env, trigger: "SOMETIME",
+    boundaries: { readDecision: async () => current } }), /trigger is invalid/);
+});

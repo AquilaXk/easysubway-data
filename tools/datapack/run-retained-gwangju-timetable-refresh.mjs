@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -14,23 +15,32 @@ import { prepareRetainedKricTimetablePublication, requireRetainedTimetableConfir
 import { publishRetainedKricTimetable } from "./publish-retained-kric-timetable.mjs";
 import { registerRetainedKricTimetable, verifiedGovernanceEntry } from "./register-retained-kric-timetable.mjs";
 import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
+const TRIGGERS = Object.freeze(["DUE", "CONTRACT_REVISION"]);
+
 /**
  * 승인된 head가 갱신 시점에 도달했을 때만 한 번 실행한다.
  * CURRENT는 디렉터리 생성·자격 증명 조회·외부 호출 전에 종료한다.
+ * #913: trigger CONTRACT_REVISION(계약 개정, 예: 운행일 달력 규칙 정정)은 CURRENT여도 수집하되,
+ * 새로 만든 계약이 등록된 계약(retainedContractSha256)과 다를 때만 게시·등록한다.
  */
 export async function runRetainedGwangjuTimetableRefresh({
-  repositoryRoot = ROOT, operationRoot, env = process.env, clock = () => new Date(), boundaries = {},
+  repositoryRoot = ROOT, operationRoot, env = process.env, clock = () => new Date(), boundaries = {}, trigger = "DUE",
 } = {}) {
+  if (!TRIGGERS.includes(trigger)) throw new Error("retained Gwangju refresh trigger is invalid");
   const root = requiredAbsolute(repositoryRoot, "repositoryRoot");
   const now = requiredClock(clock);
   const readDecision = boundaries.readDecision ?? readRetainedGwangjuTimetableRefreshDecision;
   const decision = await readDecision({ repositoryRoot: root, now });
-  if (decision?.state === "CURRENT") return decision;
-  if (decision?.state !== "DUE") throw new Error("retained Gwangju refresh decision is invalid");
+  if (decision?.state === "CURRENT" && trigger === "DUE") return decision;
+  if (decision?.state !== "DUE" && decision?.state !== "CURRENT") throw new Error("retained Gwangju refresh decision is invalid");
+  const admittedContractSha256 = trigger === "CONTRACT_REVISION"
+    ? await (boundaries.readAdmittedContractSha256 ?? readAdmittedContractSha256)({ repositoryRoot: root })
+    : null;
 
   const operation = requiredAbsolute(operationRoot, "operationRoot");
   const preflightDue = boundaries.preflightDue ?? defaultPreflightDue;
@@ -74,6 +84,12 @@ export async function runRetainedGwangjuTimetableRefresh({
     observationPath, receiptPath: collectionReceiptPath, holidayDirectory, providerValidUntil: null,
   });
   await prepareContract({ repositoryRoot: root, inputPath: preparationInputPath, outputPath: retainedContractPath, now: requiredClock(clock) });
+  if (trigger === "CONTRACT_REVISION") {
+    const contract = JSON.parse(await (boundaries.readFile ?? readFile)(retainedContractPath, "utf8"));
+    if (createHash("sha256").update(canonicalJson(contract)).digest("hex") === admittedContractSha256) {
+      throw new Error("contract revision trigger requires a changed retained contract");
+    }
+  }
   await publish({
     inputPath: observationPath, receiptPath: publicationReceiptPath, receipt,
     routeNumber: preflight.routePolicy.routeNumber, candidate: preflight.candidate,
@@ -86,6 +102,13 @@ export async function runRetainedGwangjuTimetableRefresh({
   });
   await register({ repositoryRoot: root, sourceInputPath: registrationInputPath, env, now: requiredClock(clock) });
   return { state: "REGISTERED", sourceId: SOURCE_ID, operationRoot: operation, freshnessExpiresAt: publicationPlan.freshnessExpiresAt };
+}
+
+async function readAdmittedContractSha256({ repositoryRoot }) {
+  const inventory = await readJson(repositoryRoot, "tools/datapack/source-inventory.json");
+  const sha = exactlyOne(inventory.sources, ({ id }) => id === SOURCE_ID).retainedScheduleAdmissionEvidence?.retainedContractSha256;
+  if (!/^[a-f0-9]{64}$/u.test(sha ?? "")) throw new Error("retained Gwangju admitted contract identity is invalid");
+  return sha;
 }
 
 async function defaultPreflightDue({ repositoryRoot, now, boundaries }) {
@@ -131,10 +154,11 @@ function requiredClock(clock) {
 }
 
 function parseArgs(argv) {
-  if (argv.length !== 2 || argv[0] !== "--operation-root" || !path.isAbsolute(argv[1])) {
-    throw new Error("usage: --operation-root <absolute-directory>");
+  const revision = argv.length === 4 && argv[2] === "--trigger" && argv[3] === "contract-revision";
+  if ((argv.length !== 2 && !revision) || argv[0] !== "--operation-root" || !path.isAbsolute(argv[1])) {
+    throw new Error("usage: --operation-root <absolute-directory> [--trigger contract-revision]");
   }
-  return { operationRoot: argv[1] };
+  return { operationRoot: argv[1], trigger: revision ? "CONTRACT_REVISION" : "DUE" };
 }
 
 if (isMainModule(import.meta.url)) {

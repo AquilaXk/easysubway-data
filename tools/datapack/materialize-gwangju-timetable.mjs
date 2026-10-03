@@ -58,12 +58,11 @@ export function materializeGwangjuTimetable({
     routeBindings: retainedTimetable.routeBindings, serviceIds: retainedTimetable.serviceIds,
     servicePatterns: retainedTimetable.servicePatterns, serviceDayStartSeconds: retainedTimetable.serviceDayStartSeconds,
     provenance: scheduleProvenance });
-  const calendars = buildRetainedGwangjuServiceCalendars({ ...retainedTimetable.calendar,
-    serviceIds: retainedTimetable.serviceIds,
-    publicHolidayDates: new Set(retainedTimetable.calendar.publicHolidayDates) });
+  const calendars = buildRetainedGwangjuServiceCalendars(retainedCalendarInput(retainedTimetable));
+  const active = activeRetainedTables(tables, calendars.inactiveServiceIds);
   addRetainedRoutes(pack, retainedTimetable.routeBindings, scheduleProvenance);
-  pack.transitTrips.push(...tables.transitTrips);
-  pack.transitStopTimes.push(...tables.transitStopTimes);
+  pack.transitTrips.push(...active.transitTrips);
+  pack.transitStopTimes.push(...active.transitStopTimes);
   pack.serviceCalendars.push(...calendars.serviceCalendars.map((row) => withProvenance(row, scheduleProvenance)));
   pack.serviceCalendarDates.push(...calendars.serviceCalendarDates.map((row) => withProvenance(row, scheduleProvenance, "GENERATED")));
 
@@ -122,52 +121,98 @@ export function buildRetainedGwangjuScheduleTables({ records, contract, retained
   const tables = buildRetainedGwangjuTransitTables({ projection, lineId: LINE_ID, routeBindings: contract.routeBindings,
     serviceIds: contract.serviceIds, servicePatterns: contract.servicePatterns, serviceDayStartSeconds: contract.serviceDayStartSeconds,
     provenance });
-  const calendars = buildRetainedGwangjuServiceCalendars({ ...contract.calendar, serviceIds: contract.serviceIds,
-    publicHolidayDates: new Set(contract.calendar.publicHolidayDates) });
+  const calendars = buildRetainedGwangjuServiceCalendars(retainedCalendarInput(contract));
+  const active = activeRetainedTables(tables, calendars.inactiveServiceIds);
   const routePack = { transitRoutes: [] };
   addRetainedRoutes(routePack, contract.routeBindings, provenance);
   return {
     transitRoutes: routePack.transitRoutes,
-    transitTrips: tables.transitTrips,
-    transitStopTimes: tables.transitStopTimes,
+    transitTrips: active.transitTrips,
+    transitStopTimes: active.transitStopTimes,
+    inactiveServiceTrips: active.inactiveTrips,
     serviceCalendars: calendars.serviceCalendars.map((row) => withProvenance(row, provenance)),
     serviceCalendarDates: calendars.serviceCalendarDates.map((row) => withProvenance(row, provenance, "GENERATED")),
     nonRoutableGroups: projection.nonRoutableGroups,
   };
 }
 
+// #913(QA 정책 2026-10-03): 토요일 시간표를 따로 주는 기관은 토요일 데이터를 쓴다. 공식 원천의 서비스 구분을 그대로 쓴다.
+// 월~금 평일, 토 토요일, 일·공휴일·대체공휴일 휴일, 설·추석(KASI 이름) 명절. 토요일 공휴일은 휴일, 명절이 휴일보다 우선이다.
+// 창 안에 운행일이 없는 서비스는 달력에 싣지 않고 inactiveServiceIds로 돌려준다(그 서비스의 trip은 호출자가 싣지 않는다).
 export function buildRetainedGwangjuServiceCalendars({
-  startDate, endDate, serviceIds, publicHolidayDates,
+  startDate, endDate, serviceIds, publicHolidayDates, festivalDates,
 }) {
-  validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates });
-  const baseByDay = ["명절", "평일", "평일", "평일", "평일", "평일", "명절"];
-  // 승인된 주말 선택 규칙이다. 서로 다른 원문 서비스 ID는 보존하되 중복 활성화하지 않는다.
-  const serviceCalendars = [
-    calendar(serviceIds["평일"], startDate, endDate, [true, true, true, true, true, false, false]),
-    calendar(serviceIds["토요일"], startDate, endDate, [false, false, false, false, false, false, false]),
-    calendar(serviceIds["휴일"], startDate, endDate, [false, false, false, false, false, false, false]),
-    calendar(serviceIds["명절"], startDate, endDate, [false, false, false, false, false, true, true]),
-  ];
+  validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates, festivalDates });
+  const baseByDay = ["휴일", "평일", "평일", "평일", "평일", "평일", "토요일"];
+  const flags = {
+    "평일": [true, true, true, true, true, false, false],
+    "토요일": [false, false, false, false, false, true, false],
+    "휴일": [false, false, false, false, false, false, true],
+    "명절": [false, false, false, false, false, false, false],
+  };
   const serviceCalendarDates = [];
-  for (const date of [...publicHolidayDates].sort(utf16Compare)) {
-    if (date < startDate || date > endDate) continue;
+  const activeLabels = new Set();
+  for (const date of datesBetween(startDate, endDate)) {
     const ordinary = baseByDay[utcDay(date)];
-    const selected = "명절";
+    const selected = festivalDates.has(date) ? "명절" : publicHolidayDates.has(date) ? "휴일" : ordinary;
+    activeLabels.add(selected);
     if (ordinary !== selected) {
       serviceCalendarDates.push({ serviceId: serviceIds[ordinary], date, exceptionType: 2 });
       serviceCalendarDates.push({ serviceId: serviceIds[selected], date, exceptionType: 1 });
     }
   }
-  return { serviceCalendars, serviceCalendarDates };
+  const labels = ["평일", "토요일", "휴일", "명절"];
+  const serviceCalendars = labels.filter((label) => activeLabels.has(label))
+    .map((label) => calendar(serviceIds[label], startDate, endDate, flags[label]));
+  // 운행일이 없는 서비스의 제외(exceptionType 2) 행은 의미가 없으므로 남기지 않는다.
+  const activeServiceIds = new Set(serviceCalendars.map(({ serviceId }) => serviceId));
+  return {
+    serviceCalendars,
+    serviceCalendarDates: serviceCalendarDates.filter(({ serviceId }) => activeServiceIds.has(serviceId)),
+    inactiveServiceIds: labels.filter((label) => !activeLabels.has(label)).map((label) => serviceIds[label]),
+  };
 }
 
-function validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates }) {
+// 계약 달력(공휴일·명절 날짜 배열)을 달력 생성 입력으로 바꾼다. 명절 날짜가 없는 이전 계약은 실패한다.
+function retainedCalendarInput({ calendar, serviceIds }) {
+  if (!Array.isArray(calendar?.publicHolidayDates) || !Array.isArray(calendar.festivalDates)) {
+    throw new Error("retained Gwangju service calendar input is invalid");
+  }
+  return { startDate: calendar.startDate, endDate: calendar.endDate, serviceIds,
+    publicHolidayDates: new Set(calendar.publicHolidayDates), festivalDates: new Set(calendar.festivalDates) };
+}
+
+// 창 안에 운행일이 없는 서비스의 trip·stop_time은 싣지 않는다(운행하지 않는다).
+function activeRetainedTables(tables, inactiveServiceIds) {
+  const inactive = new Set(inactiveServiceIds);
+  const inactiveTrips = tables.transitTrips.filter(({ serviceId }) => inactive.has(serviceId));
+  const inactiveTripIds = new Set(inactiveTrips.map(({ id }) => id));
+  return {
+    transitTrips: tables.transitTrips.filter(({ id }) => !inactiveTripIds.has(id)),
+    transitStopTimes: tables.transitStopTimes.filter(({ tripId }) => !inactiveTripIds.has(tripId)),
+    inactiveTrips,
+  };
+}
+
+function datesBetween(startDate, endDate) {
+  const dates = [];
+  for (let time = Date.parse(`${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}T00:00:00Z`);
+    ; time += 86_400_000) {
+    const date = new Date(time).toISOString().slice(0, 10).replaceAll("-", "");
+    if (date > endDate) break;
+    dates.push(date);
+  }
+  return dates;
+}
+
+function validateCalendarInput({ startDate, endDate, serviceIds, publicHolidayDates, festivalDates }) {
   if (!validDate(startDate) || !validDate(endDate) || startDate > endDate
-    || !(publicHolidayDates instanceof Set)
+    || !(publicHolidayDates instanceof Set) || !(festivalDates instanceof Set)
     || !serviceIds || JSON.stringify(Object.keys(serviceIds).sort(utf16Compare)) !== JSON.stringify(["평일", "토요일", "휴일", "명절"].sort(utf16Compare))
     || Object.values(serviceIds).some((value) => typeof value !== "string" || value.trim() === "")
     || new Set(Object.values(serviceIds)).size !== 4
-    || [...publicHolidayDates].some((date) => !validDate(date))) {
+    || [...publicHolidayDates].some((date) => !validDate(date))
+    || [...festivalDates].some((date) => !validDate(date) || !publicHolidayDates.has(date))) {
     throw new Error("retained Gwangju service calendar input is invalid");
   }
 }
@@ -541,17 +586,14 @@ export function validateRetainedGwangjuSource({
     servicePatterns: retainedTimetable.servicePatterns,
     serviceDayStartSeconds: retainedTimetable.serviceDayStartSeconds, provenance,
   });
-  buildRetainedGwangjuServiceCalendars({
-    ...retainedTimetable.calendar, serviceIds: retainedTimetable.serviceIds,
-    publicHolidayDates: new Set(retainedTimetable.calendar.publicHolidayDates),
-  });
+  buildRetainedGwangjuServiceCalendars(retainedCalendarInput(retainedTimetable));
   return { ...retained, tables };
 }
 
 function validateRetainedTimetable(value, topologySnapshot, canonicalStationMappings) {
   if (!value || typeof value !== "object" || !value.observation || !value.receipt
     || !Array.isArray(value.stationBindings) || !Array.isArray(value.excludedEndpointLabels)
-    || !Array.isArray(value.calendar?.publicHolidayDates)) {
+    || !Array.isArray(value.calendar?.publicHolidayDates) || !Array.isArray(value.calendar?.festivalDates)) {
     throw new Error("retained Gwangju timetable input is invalid");
   }
   const stationIdsByCode = new Map(canonicalStationMappings?.map((row) => [row.stationNumber, row.stationId]));
