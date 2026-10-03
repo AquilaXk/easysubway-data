@@ -704,6 +704,20 @@ test("광주 보관본 projection이 없거나 현재 보관본 head·계약과 
   head.retainedTimetableInputs = structuredClone(head.retainedTimetableInputs);
   head.retainedTimetableInputs.contract.serviceDayStartSeconds += 1;
   await assert.rejects(resolveNationwideCandidateInputSnapshots(contract), /retained Gwangju contract does not match the admitted head/);
+
+  // 리뷰 F3: snapshot과 inventory evidence를 함께 바꿔 내부 해시를 맞춰도 원장 head 관측 sha와 다르면 실패한다.
+  const forged = await committedSelectionInputsWithinIncheonWindow();
+  const forgedEvidence = kric(forged).retainedGwangjuProjectionEvidence;
+  const original = JSON.parse(await forged.readSourceBytes(forgedEvidence.snapshotPath));
+  const { snapshotId: _id, contentSha256: _content, ...body } = original;
+  body.observationRawObjectSha256 = "f".repeat(64);
+  const contentSha256 = createHash("sha256").update(canonicalJson(body)).digest("hex");
+  const forgedSnapshot = { snapshotId: `kric-nationwide-timetable-file-gwangju-${contentSha256}`, contentSha256, ...body };
+  Object.assign(forgedEvidence, { snapshotId: forgedSnapshot.snapshotId, snapshotPath: `tools/datapack/sources/${forgedSnapshot.snapshotId}.json`,
+    contentSha256, observationRawObjectSha256: body.observationRawObjectSha256 });
+  const readCommitted = forged.readSourceBytes;
+  forged.readSourceBytes = async (relative) => (relative === forgedEvidence.snapshotPath ? Buffer.from(JSON.stringify(forgedSnapshot)) : readCommitted(relative));
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(forged), /RETAINED_GWANGJU_PROJECTION_LEDGER/);
 });
 
 test("prepare-nationwide-candidate-run은 원장 head로 고르는 입력 경로를 하드코딩하지 않는다", async () => {

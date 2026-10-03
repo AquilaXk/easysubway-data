@@ -62,8 +62,12 @@ export function retainedGwangjuProjectionEvidence(snapshot) {
   };
 }
 
-/** projection 자기 결속, inventory evidence 결속, 현재 보관본 head 결속을 모두 확인한다. */
-export function validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence }) {
+/**
+ * projection 자기 결속, inventory evidence 결속, 현재 보관본 head 결속을 모두 확인한다.
+ * 리뷰 F3: projection이 가리키는 관측 객체 sha를 원장 head 행(rawObjectSha256)과 대조한다. evidence와 snapshot만으로는
+ * 같은 저장소 안의 값이라 함께 바꿀 수 있다. 원장 head는 append-only 원장과 OCI 영수증에 결속된 값이다.
+ */
+export function validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence, retainedHead }) {
   const { snapshotId, contentSha256, ...value } = snapshot ?? {};
   if (value.schemaVersion !== 1 || value.artifactKind !== RETAINED_GWANGJU_PROJECTION_KIND
     || value.sourceId !== RETAINED_GWANGJU_PROJECTION_SOURCE_ID || !Array.isArray(value.records)
@@ -73,5 +77,7 @@ export function validateRetainedGwangjuProjection({ snapshot, evidence, retained
   if (canonicalJson(evidence ?? null) !== canonicalJson(retainedGwangjuProjectionEvidence(snapshot))) fail("EVIDENCE");
   if (value.retainedSnapshotId !== retainedEvidence?.snapshotId || value.observedAt !== retainedEvidence.observedAt
     || value.observationRecordsSha256 !== retainedEvidence.recordsSha256) fail("STALE", value.retainedSnapshotId);
+  if (retainedHead?.snapshotId !== value.retainedSnapshotId || !SHA256.test(retainedHead.rawObjectSha256 ?? "")
+    || value.observationRawObjectSha256 !== retainedHead.rawObjectSha256) fail("LEDGER", value.retainedSnapshotId);
   return snapshot;
 }

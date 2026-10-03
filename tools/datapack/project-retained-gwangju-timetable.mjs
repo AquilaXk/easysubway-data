@@ -38,7 +38,9 @@ export async function projectRetainedGwangjuTimetable({ repositoryRoot = ROOT, o
     retained, retainedEvidence, observationRawObjectSha256: createHash("sha256").update(observationBytes).digest("hex"),
   });
   const evidence = retainedGwangjuProjectionEvidence(snapshot);
-  validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence });
+  const retainedHead = ledger.find(({ sourceId, snapshotId }) => sourceId === RETAINED_GWANGJU_PROJECTION_SOURCE_ID
+    && snapshotId === retainedEvidence.snapshotId);
+  validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence, retainedHead });
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
   const target = path.join(repositoryRoot, evidence.snapshotPath);
   const existing = await readFile(target).catch((error) => (error?.code === "ENOENT" ? null : Promise.reject(error)));

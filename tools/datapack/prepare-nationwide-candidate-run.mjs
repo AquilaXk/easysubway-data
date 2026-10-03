@@ -346,7 +346,7 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
     const bytes = await readSourceBytes(evidence.snapshotPath);
     let snapshot;
     try { snapshot = JSON.parse(bytes); } catch { throw new Error(`nationwide candidate input is invalid JSON for ${sourceId} retained Gwangju`); }
-    validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence });
+    validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence, retainedHead: head });
     const contract = head.retainedTimetableInputs?.contract;
     if (!contract || createHash("sha256").update(canonicalJson(contract)).digest("hex") !== retainedEvidence.retainedContractSha256) {
       throw new Error(`nationwide candidate retained Gwangju contract does not match the admitted head for ${sourceId}`);
