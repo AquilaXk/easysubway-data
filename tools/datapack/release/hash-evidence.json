@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "6d0cf6fab0f3f8819f575d58d16bca674c5d3cd7",
+  "builderGitSha": "0d960af06397f17d3d2775ce7c1f07ff49998a91",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "3ce728bde4d2b2f87bbafb29e6b2c180e48861135d7415612ac04ac555e24338"
+    "value": "f6392a4b71851980d735f0ae9b8ff50fcc5e06223bff6ead76cb4699cee2e407"
   },
   "sourceInventorySha256": {
-    "value": "24ed57944f5d814d0082aa21c75f186f50696050255cf7fa4e8f103a7059efc4"
+    "value": "2ef88b394c10014d04ac2335c30859bef8b21d22b44c8ab334cfb7480b637e7a"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "aa4138f0897fe3a60b6c3b051d2d3bb71a246fc8f475c51f822d548d395e38cf"
+    "sha256": "9eed61cb9c6419303487c9e495b98818bcc3ccf357067f992886c5292aa4f4ab"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261002-seq125"
+      "value": "nationwide-candidate-20261003-seq125"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261002-seq125"
+      "value": "release-request-nationwide-candidate-20261003-seq125"
     }
   },
   "perSourceEvidence": [
@@ -106,18 +106,6 @@
       "rawSha256": "6e6060813eb9d029d5ffc0259a59553b37bfbd902fe1e03ff8246da3453bc29b",
       "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
       "perSourceSnapshotSetHash": "43e3b3330a325a2c2aaceab784b35db60d9e4e646778386dbd02c138f158f9c8"
-    },
-    {
-      "sourceId": "korail-metropolitan-planned-timetable",
-      "snapshotId": "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
-      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "3f9e7bb3f3f57def782f6125fe92587b431ce56d2df0b091f85766f6e4063c05"
-        }
-      ],
-      "perSourceSnapshotSetHash": "b4754d69ebe8819e1cd8a06bfd1820e1e2c9d9f1345c683947011e2bb5819f8c"
     },
     {
       "sourceId": "capital-route-topology",
@@ -319,23 +307,42 @@
       "perSourceSnapshotSetHash": "80964ed83662d5016d8420810d0d40ec0f1cc2f0f3e2b60beb5025e67d1f79eb"
     },
     {
-      "sourceId": "korail-metropolitan-timetable-file",
-      "snapshotId": "korail-metropolitan-timetable-file-5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663",
-      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "63c57a08b8e8344c9836984b70268675b9d01ec4d90bd338eecfb62264ceed93"
-        }
-      ],
-      "perSourceSnapshotSetHash": "0dce0bf1c58d79eaff444e2cf243dfe91f80e108a590df30840dd1417e79d6bb"
-    },
-    {
       "sourceId": "kric-station-convenience-standard",
       "snapshotId": "kric-station-convenience-standard-20261002T061440559Z",
       "rawSha256": "5a217b23e155f1254ce6d438cc3390b4b1412a362ce4f46e77a3fcbe091fd767",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
       "perSourceSnapshotSetHash": "a01f7b1b292a94d0281e6f820495aa1431e6f59c56e4ce39d0982f10eece55af"
+    },
+    {
+      "sourceId": "korail-metropolitan-timetable-file",
+      "snapshotId": "korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "6db9882ed3ba9b80edef3e514ed5d75bc8a14bf81c2608ba0e17397dfc7541bd"
+        }
+      ],
+      "perSourceSnapshotSetHash": "530fe3f6a629b8b6f95c3d85b504d26e1b209bd3158d2eed6d6bd9868df528f6"
+    },
+    {
+      "sourceId": "korail-metropolitan-planned-timetable",
+      "snapshotId": "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "2fea8c7c970c7a70d11a05039087fd75dbcaf2614d7e6aa7bcc645b59bf6f455"
+        }
+      ],
+      "perSourceSnapshotSetHash": "d76df641918ab0cc4813e90665b221997d3c1061d7bdf0bcc3d0397f6e3b2d0b"
+    },
+    {
+      "sourceId": "kric-subway-timetable-station-lines",
+      "snapshotId": "kric-subway-timetable-station-lines-20261003",
+      "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+      "perSourceSnapshotSetHash": "160e4f02778a184dbb062f6f16d46d4d987e4d420f02884fa6ce0db37bd9ccc6"
     }
   ],
   "officialOdFareEvidence": {

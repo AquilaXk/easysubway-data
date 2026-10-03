@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "ce7722d6335f08b08edb2e99fbc88bcb17670e9e6e3c7bc14e81a64c385ff737"
+        "sha256": "7a0b9602d3cb3d8b2c5aa306b473c6286b035a87411c6213ee1fd1f403354abb"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,14 +27,14 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "9fadd0284ed7d5756606bfc9334b5c5d5ffdbd2efb86333bc1a6d971f51ef9f0"
+        "sha256": "219088825bdf38fc484c017576a4ddc1a89027f70d59498a2cad6470d2180235"
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "b8883e0b83bcca9f4ebfee2e928064e71436e1119425472243de7948969436a5",
-        "fanInSha256": "82ef8131e273f538dc37683154f654eef237e8dea0f86574dac0110475852047",
+        "sha256": "fcc1e11c0e843e25845afccb11c52c25e5453070b4c8e2a5c6f11ad0612ea28a",
+        "fanInSha256": "4974f17b3388ca5f5bb6e654377e2ebfab04237e50e5f81141e178f7de9a36dc",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
-        "sourceSetSha256": "9e4876f896dbb255d0906debaba51b828fbbc80fb51e49eba86e523798687df0",
+        "sourceSetSha256": "3d4d2067e4802fb313bfbf54d0241598d26e866201dd60ff936607ed31a2b73f",
         "regionalMatrixSha256": "ec59bd620ac189e14a0194516a08b6fc1df05a151514d8d72ecded5a034cb7e5"
       }
     }
@@ -28417,12 +28417,12 @@
             {
               "sourceId": "korail-metropolitan-timetable-file",
               "observedDataUpdatedAt": "2026-09-07",
-              "retrievedAt": "2026-10-02",
+              "retrievedAt": "2026-10-03",
               "admissionEvidence": [
                 {
                   "kind": "topologyAdmissionEvidence",
-                  "capturedAt": "2026-10-02T06:12:52.107Z",
-                  "freshUntil": "2026-10-03T06:12:52.107Z"
+                  "capturedAt": "2026-10-03T00:05:31.571Z",
+                  "freshUntil": "2026-10-10T00:05:31.571Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -28431,8 +28431,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "korail-metropolitan-timetable-file-5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663",
-                "freshnessExpiresAt": "2026-10-03T06:12:52.107Z"
+                "snapshotId": "korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
+                "freshnessExpiresAt": "2026-10-10T00:05:31.571Z"
               }
             }
           ]
@@ -28449,15 +28449,15 @@
                   "issue": 457,
                   "materializer": "tools/datapack/materialize-korail-route-topology.mjs",
                   "verificationTest": "tools/datapack/materialize-korail-route-topology.test.mjs",
-                  "snapshotId": "korail-metropolitan-timetable-file-5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663",
-                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663.json",
-                  "capturedAt": "2026-10-02T06:12:52.107Z",
-                  "freshUntil": "2026-10-03T06:12:52.107Z",
+                  "snapshotId": "korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
+                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76.json",
+                  "capturedAt": "2026-10-03T00:05:31.571Z",
+                  "freshUntil": "2026-10-10T00:05:31.571Z",
                   "stationCount": 8,
                   "edgeCount": 14,
                   "excludedTransferCount": 0,
                   "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-                  "contentSha256": "5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663"
+                  "contentSha256": "a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -28472,9 +28472,9 @@
           "refs": [
             {
               "sourceId": "korail-metropolitan-timetable-file",
-              "snapshotId": "korail-metropolitan-timetable-file-5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663",
+              "snapshotId": "korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
               "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261002/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261003/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx"
             }
           ]
         },
@@ -28610,13 +28610,13 @@
           "refs": [
             {
               "sourceId": "korail-metropolitan-planned-timetable",
-              "observedDataUpdatedAt": "2026-10-01",
-              "retrievedAt": "2026-10-01",
+              "observedDataUpdatedAt": "2026-10-03",
+              "retrievedAt": "2026-10-03",
               "admissionEvidence": [
                 {
                   "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-01T04:42:23.685Z",
-                  "freshUntil": "2026-10-31T04:42:23.685Z"
+                  "capturedAt": "2026-10-03T00:05:31.571Z",
+                  "freshUntil": "2026-11-02T00:05:31.571Z"
                 },
                 {
                   "kind": "admissionEvidence",
@@ -28625,8 +28625,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
-                "freshnessExpiresAt": "2026-10-31T04:42:23.685Z"
+                "snapshotId": "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+                "freshnessExpiresAt": "2026-11-02T00:05:31.571Z"
               }
             }
           ]
@@ -28643,20 +28643,20 @@
                   "issue": 454,
                   "materializer": "tools/datapack/materialize-korail-timetable.mjs",
                   "verificationTest": "tools/datapack/materialize-korail-timetable.test.mjs",
-                  "snapshotId": "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
-                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40.json",
-                  "capturedAt": "2026-10-01T04:42:23.685Z",
-                  "freshUntil": "2026-10-31T04:42:23.685Z",
+                  "snapshotId": "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+                  "snapshotPath": "tools/datapack/sources/korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0.json",
+                  "capturedAt": "2026-10-03T00:05:31.571Z",
+                  "freshUntil": "2026-11-02T00:05:31.571Z",
                   "rowCount": 1488,
                   "departureCount": 1488,
                   "tripCount": 194,
                   "stopTimeCount": 1488,
                   "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-                  "rowsSha256": "92cc912efaa31c2fe58c98459876375466798412ec69200bbc78eb9302db8c0e",
+                  "rowsSha256": "c4c4e575ad9830657b319e924d317484841efaa2f4fa717ee64d18b7d1502ad9",
                   "topologySourceId": "korail-metropolitan-timetable-file",
-                  "topologySnapshotId": "korail-metropolitan-timetable-file-7a34f3e534ef449dce947fbcd5e2022888b2c69922972c32e47ec8e729caad75",
-                  "topologyContentSha256": "7a34f3e534ef449dce947fbcd5e2022888b2c69922972c32e47ec8e729caad75",
-                  "contentSha256": "cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
+                  "topologySnapshotId": "korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
+                  "topologyContentSha256": "a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
+                  "contentSha256": "6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
                   "tripsSha256": "71f33d17e7fe784af33d5e1cda18840b02993c03d9bded7bfef5c2dcb3d8adfe"
                 },
                 {
@@ -28673,9 +28673,9 @@
           "refs": [
             {
               "sourceId": "korail-metropolitan-planned-timetable",
-              "snapshotId": "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
+              "snapshotId": "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
               "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261001/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261003/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx"
             }
           ]
         },
@@ -30301,6 +30301,11 @@
                   "kind": "capitalScheduleAdmissionEvidence",
                   "capturedAt": null,
                   "freshUntil": null
+                },
+                {
+                  "kind": "korailScheduleAdmissionEvidence",
+                  "capturedAt": null,
+                  "freshUntil": null
                 }
               ],
               "currentHead": {
@@ -30489,12 +30494,111 @@
                       "schedule_timetable"
                     ]
                   },
-                  "observedAt": "2026-10-02T15:57:05.773Z",
+                  "observedAt": "2026-10-03T00:11:32.831Z",
                   "reverifications": [
                     {
                       "observedAt": "2026-10-02T15:57:05.773Z",
                       "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
                       "collectionReceiptSha256": "f8994ba5965b1ad03869a4a7da242e573097efda8f119f17ea5d09d47a56adcc"
+                    },
+                    {
+                      "observedAt": "2026-10-03T00:11:32.831Z",
+                      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+                      "collectionReceiptSha256": "5d9e70f3944dd9e02ba7197af57a5b8a2a4be5e2f136c56e2fde4693e967c90b"
+                    }
+                  ]
+                },
+                {
+                  "kind": "korailScheduleAdmissionEvidence",
+                  "issue": 903,
+                  "materializer": "tools/datapack/lib/kric-korail-timetable.mjs",
+                  "verificationTest": "tools/datapack/lib/kric-korail-timetable.test.mjs",
+                  "snapshotId": "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+                  "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de.json",
+                  "rawByteLength": 17949564,
+                  "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+                  "observationRecordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
+                  "recordsSha256": "c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+                  "recordCount": 59346,
+                  "routes": [
+                    {
+                      "routeNumber": "I41WS",
+                      "routeName": "서해선",
+                      "lineId": "line-051552e50435"
+                    },
+                    {
+                      "routeNumber": "I41K2",
+                      "routeName": "경춘선",
+                      "lineId": "line-54a7b980b7c3"
+                    },
+                    {
+                      "routeNumber": "I28K1",
+                      "routeName": "수인분당선",
+                      "lineId": "line-558d0bd8312d"
+                    },
+                    {
+                      "routeNumber": "I4108",
+                      "routeName": "경의중앙선",
+                      "lineId": "line-6e39be0cb6e2"
+                    },
+                    {
+                      "routeNumber": "I41K5",
+                      "routeName": "경강선",
+                      "lineId": "line-e4939a4b4713"
+                    },
+                    {
+                      "routeNumber": "I26K6",
+                      "routeName": "동해선",
+                      "lineId": "line-f52eb59d8497"
+                    }
+                  ],
+                  "dataReferenceDateByLine": {
+                    "line-051552e50435": [
+                      "2026-05-31"
+                    ],
+                    "line-54a7b980b7c3": [
+                      "2026-05-31"
+                    ],
+                    "line-558d0bd8312d": [
+                      "2026-05-31"
+                    ],
+                    "line-6e39be0cb6e2": [
+                      "2026-05-31"
+                    ],
+                    "line-e4939a4b4713": [
+                      "2026-05-31"
+                    ],
+                    "line-f52eb59d8497": [
+                      "2026-05-31"
+                    ]
+                  },
+                  "coverageScope": {
+                    "regionIds": [
+                      "busan",
+                      "capital"
+                    ],
+                    "operatorIds": [
+                      "korail",
+                      "operator-38450e138464"
+                    ],
+                    "lineIds": [
+                      "line-051552e50435",
+                      "line-54a7b980b7c3",
+                      "line-558d0bd8312d",
+                      "line-6e39be0cb6e2",
+                      "line-e4939a4b4713",
+                      "line-f52eb59d8497"
+                    ],
+                    "sourceDomains": [
+                      "schedule_timetable"
+                    ]
+                  },
+                  "observedAt": "2026-10-03T00:11:32.831Z",
+                  "reverifications": [
+                    {
+                      "observedAt": "2026-10-03T00:11:32.831Z",
+                      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+                      "collectionReceiptSha256": "5d9e70f3944dd9e02ba7197af57a5b8a2a4be5e2f136c56e2fde4693e967c90b"
                     }
                   ]
                 }

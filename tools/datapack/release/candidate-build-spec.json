@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261002-seq125",
-  "publishedAt": "2026-10-02T22:25:42.708Z",
+  "candidateId": "nationwide-candidate-20261003-seq125",
+  "publishedAt": "2026-10-03T00:17:16.988Z",
   "releaseSequence": 125,
-  "builderGitSha": "6d0cf6fab0f3f8819f575d58d16bca674c5d3cd7",
+  "builderGitSha": "0d960af06397f17d3d2775ce7c1f07ff49998a91",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "aa4138f0897fe3a60b6c3b051d2d3bb71a246fc8f475c51f822d548d395e38cf",
+  "fixtureSha256": "9eed61cb9c6419303487c9e495b98818bcc3ccf357067f992886c5292aa4f4ab",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -31,6 +31,7 @@
     "kric-nationwide-timetable-file",
     "kric-station-convenience-standard",
     "kric-subway-timetable",
+    "kric-subway-timetable-station-lines",
     "molit-urban-rail-full-route",
     "seoul-metro-accessibility",
     "seoul-metro-route-map-positions",
@@ -46,7 +47,6 @@
     "molit-urban-rail-full-route-current-20261001T041912582Z",
     "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
     "seoulmetro-station-line-info-revalidated-20261001",
-    "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
     "capital-route-topology-20261002T060336888Z",
     "gwangju-transportation-route-topology-528d330cc1036455828ce58cdf805439f4d580af00cf97f9ea71fed3cc21eae9",
     "busan-transportation-route-topology-662a3e850ed6ac7ea0001a26d40e07c1b9196cc0dbea5e15d8148d61e9af9d89",
@@ -64,8 +64,10 @@
     "busan-transportation-timetable-20261002",
     "daejeon-train-timetable-20261002",
     "seoul-metro-accessibility-20261002T061120173Z",
-    "korail-metropolitan-timetable-file-5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663",
-    "kric-station-convenience-standard-20261002T061440559Z"
+    "kric-station-convenience-standard-20261002T061440559Z",
+    "korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
+    "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+    "kric-subway-timetable-station-lines-20261003"
   ],
   "sourceSnapshots": [
     {
@@ -191,28 +193,6 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
       "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d"
-    },
-    {
-      "snapshotId": "korail-metropolitan-planned-timetable-cad9a56917e980863925b5395c6c0ee79c753edaca9307beeb5e197a913e6d40",
-      "sourceId": "korail-metropolitan-planned-timetable",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261001/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
-      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-      "redactedRequestFingerprint": "2e224c0c55f1fc1f2d0b9c3df5e6d123c3634358cb2d5726b3b684890eb47ef7",
-      "schemaFingerprint": "7efdcf5965f67c84e84957995f359bbcf6f390a7f407e7581ad31d8a08ecef72",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-31T04:42:23.685Z",
-      "rawRetentionExpiresAt": "2026-12-30T04:42:23.685Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
-      "admissionRecordSha256s": [
-        {
-          "kind": "scheduleAdmissionEvidence",
-          "sha256": "3f9e7bb3f3f57def782f6125fe92587b431ce56d2df0b091f85766f6e4063c05"
-        }
-      ]
     },
     {
       "snapshotId": "capital-route-topology-20261002T060336888Z",
@@ -584,28 +564,6 @@
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
     },
     {
-      "snapshotId": "korail-metropolitan-timetable-file-5d68004fc4bd97a89399f692cbc5de7e7dca71b715d8c242da914b12111b1663",
-      "sourceId": "korail-metropolitan-timetable-file",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261002/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
-      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-      "redactedRequestFingerprint": "5a1b7a80110e4729400959211151473a70be6cc685ce883d3d5d734cb874bd84",
-      "schemaFingerprint": "c23122e2baffd9af79c9256707208d649fc39e0bb1f6eafd2edb46ffc8793c2a",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-03T06:12:52.107Z",
-      "rawRetentionExpiresAt": "2026-12-31T06:12:52.107Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "676cb23100221e1e2f97e03203af4efada8312b72e79c1987e7536eddff831e0",
-      "admissionRecordSha256s": [
-        {
-          "kind": "topologyAdmissionEvidence",
-          "sha256": "63c57a08b8e8344c9836984b70268675b9d01ec4d90bd338eecfb62264ceed93"
-        }
-      ]
-    },
-    {
       "snapshotId": "kric-station-convenience-standard-20261002T061440559Z",
       "sourceId": "kric-station-convenience-standard",
       "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20261002/5a217b23e155f1254ce6d438cc3390b4b1412a362ce4f46e77a3fcbe091fd767.json",
@@ -621,13 +579,74 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "676cb23100221e1e2f97e03203af4efada8312b72e79c1987e7536eddff831e0",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
+    },
+    {
+      "snapshotId": "korail-metropolitan-timetable-file-a2fee5ced5a3ee44be84f87cd69752842c8ec127ee184d8cf537c59648916a76",
+      "sourceId": "korail-metropolitan-timetable-file",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261003/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "redactedRequestFingerprint": "5a1b7a80110e4729400959211151473a70be6cc685ce883d3d5d734cb874bd84",
+      "schemaFingerprint": "c23122e2baffd9af79c9256707208d649fc39e0bb1f6eafd2edb46ffc8793c2a",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-10-10T00:05:31.571Z",
+      "rawRetentionExpiresAt": "2027-01-01T00:05:31.571Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "676cb23100221e1e2f97e03203af4efada8312b72e79c1987e7536eddff831e0",
+      "admissionRecordSha256s": [
+        {
+          "kind": "topologyAdmissionEvidence",
+          "sha256": "6db9882ed3ba9b80edef3e514ed5d75bc8a14bf81c2608ba0e17397dfc7541bd"
+        }
+      ]
+    },
+    {
+      "snapshotId": "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+      "sourceId": "korail-metropolitan-planned-timetable",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/korail-metropolitan-timetable-file/20261003/c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e.xlsx",
+      "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
+      "redactedRequestFingerprint": "2edb71252224651635edad2c8ebb89ab56c4c3783896fff0d82b5c806c74a28a",
+      "schemaFingerprint": "7efdcf5965f67c84e84957995f359bbcf6f390a7f407e7581ad31d8a08ecef72",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-11-02T00:05:31.571Z",
+      "rawRetentionExpiresAt": "2027-01-01T00:05:31.571Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "676cb23100221e1e2f97e03203af4efada8312b72e79c1987e7536eddff831e0",
+      "admissionRecordSha256s": [
+        {
+          "kind": "scheduleAdmissionEvidence",
+          "sha256": "2fea8c7c970c7a70d11a05039087fd75dbcaf2614d7e6aa7bcc645b59bf6f455"
+        }
+      ]
+    },
+    {
+      "snapshotId": "kric-subway-timetable-station-lines-20261003",
+      "sourceId": "kric-subway-timetable-station-lines",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-subway-timetable-station-lines/20261003/3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9.json",
+      "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+      "redactedRequestFingerprint": "cfc0f47794fc9149cc6735d27d0572d3e026186527cf9bfe712990255a1aba18",
+      "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-11-02T00:13:14.392Z",
+      "rawRetentionExpiresAt": "2027-01-01T00:13:14.392Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215"
     }
   ],
-  "sourceSnapshotSetHash": "3ce728bde4d2b2f87bbafb29e6b2c180e48861135d7415612ac04ac555e24338",
-  "sourceInventorySha256": "24ed57944f5d814d0082aa21c75f186f50696050255cf7fa4e8f103a7059efc4",
+  "sourceSnapshotSetHash": "f6392a4b71851980d735f0ae9b8ff50fcc5e06223bff6ead76cb4699cee2e407",
+  "sourceInventorySha256": "2ef88b394c10014d04ac2335c30859bef8b21d22b44c8ab334cfb7480b637e7a",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
-    "sha256": "19e2fc4810a23cf7ed07eaf9cad70493fcd66b074363befca646220d6038ad05"
+    "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
   },
   "productionScopePolicy": {
     "path": "tools/datapack/nationwide-coverage-targets.json",
@@ -678,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "ce7722d6335f08b08edb2e99fbc88bcb17670e9e6e3c7bc14e81a64c385ff737"
+      "sha256": "7a0b9602d3cb3d8b2c5aa306b473c6286b035a87411c6213ee1fd1f403354abb"
     }
   },
   "officialOdFareEvidence": {
