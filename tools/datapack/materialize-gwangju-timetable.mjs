@@ -96,6 +96,46 @@ export function materializeGwangjuTimetable({
   return fixture;
 }
 
+/**
+ * #913: 전국 후보 조립용. 커밋된 보관본 projection 행과 원장 head 계약으로 광주 1호선 route·trip·stop_time·달력을 만든다.
+ * 행 투영·운행일 달력·provenance 규칙은 materializeGwangjuTimetable과 같은 함수를 쓴다.
+ */
+export function buildRetainedGwangjuScheduleTables({ records, contract, retainedEvidence, topologySnapshot, packStationIds }) {
+  validateTopologySnapshot(topologySnapshot);
+  if (!Array.isArray(records) || !contract || !Array.isArray(contract.stationBindings) || !(packStationIds instanceof Set)
+    || typeof retainedEvidence?.snapshotId !== "string" || typeof retainedEvidence.observedAt !== "string") {
+    throw new Error("retained Gwangju schedule input is invalid");
+  }
+  const boundStationIds = new Set(contract.stationBindings.map(({ stationId }) => stationId));
+  if (boundStationIds.size !== packStationIds.size || [...boundStationIds].some((stationId) => !packStationIds.has(stationId))) {
+    throw new Error("retained Gwangju station bindings do not match the pack Gwangju stations");
+  }
+  const directedEdges = topologySnapshot.edges.map(({ fromStationCode, toStationCode }) => ({ fromStationCode, toStationCode }));
+  routeBindingsByEndpoint(contract.routeBindings, new Set(directedEdges.map(({ fromStationCode, toStationCode }) => `${fromStationCode}:${toStationCode}`)));
+  const projection = {
+    source: { observedAt: retainedEvidence.observedAt, recordsSha256: retainedEvidence.recordsSha256 },
+    ...projectRetainedGwangjuTrips({ records, stationBindings: contract.stationBindings, directedEdges,
+      excludedEndpointLabels: contract.excludedEndpointLabels }),
+  };
+  const provenance = provenanceForRetainedSchedule({ retainedScheduleAdmissionEvidence: retainedEvidence }, projection,
+    retainedEvidence.retainedContractSha256);
+  const tables = buildRetainedGwangjuTransitTables({ projection, lineId: LINE_ID, routeBindings: contract.routeBindings,
+    serviceIds: contract.serviceIds, servicePatterns: contract.servicePatterns, serviceDayStartSeconds: contract.serviceDayStartSeconds,
+    provenance });
+  const calendars = buildRetainedGwangjuServiceCalendars({ ...contract.calendar, serviceIds: contract.serviceIds,
+    publicHolidayDates: new Set(contract.calendar.publicHolidayDates) });
+  const routePack = { transitRoutes: [] };
+  addRetainedRoutes(routePack, contract.routeBindings, provenance);
+  return {
+    transitRoutes: routePack.transitRoutes,
+    transitTrips: tables.transitTrips,
+    transitStopTimes: tables.transitStopTimes,
+    serviceCalendars: calendars.serviceCalendars.map((row) => withProvenance(row, provenance)),
+    serviceCalendarDates: calendars.serviceCalendarDates.map((row) => withProvenance(row, provenance, "GENERATED")),
+    nonRoutableGroups: projection.nonRoutableGroups,
+  };
+}
+
 export function buildRetainedGwangjuServiceCalendars({
   startDate, endDate, serviceIds, publicHolidayDates,
 }) {

@@ -155,3 +155,19 @@ test("정차 시각 출처(timeSource)는 있는 행만 그대로 실려 펼칠 
   assert.deepEqual(rows, byId(marked, stopKey));
   assert.throws(() => build({ stopTimes: STOPS.map((row) => ({ ...row, timeSource: "" })) }), /STOP_TIME_SHAPE/u);
 });
+
+test("대상 원천이어도 명시한 snapshot의 trip·stop_time은 팩에 남긴다(#913 광주 보관본: 열차 번호 등 다른 trip 형태)", () => {
+  const keptHeader = { ...HEADER, sourceSnapshotId: "official-source-retained" };
+  const kept = { ...trip("k-1", keptHeader), trainNo: "1001" };
+  const keptStops = [{ ...stop("k-1", 1, "s-a"), ...keptHeader, providerRecordHash: "k-1-1" }, { ...stop("k-1", 2, "s-b"), ...keptHeader, providerRecordHash: "k-1-2" }];
+  assert.throws(() => build({ trips: [...TRIPS, kept], stopTimes: [...STOPS, ...keptStops] }), /EXTERNAL_STOP_TIMES_TRIP_SHAPE: k-1/u);
+  const artifact = build({ trips: [...TRIPS, kept], stopTimes: [...STOPS, ...keptStops], inlineSourceSnapshotIds: ["official-source-retained"] });
+  assert.deepEqual(artifact.inlineTrips.map(({ id }) => id).sort(), ["inline-1", "k-1"]);
+  assert.deepEqual(artifact.inlineStopTimes.filter(({ tripId }) => tripId === "k-1").length, 2);
+  const { fixture, readBytes } = written(artifact);
+  const expanded = expandExternalStopTimes(fixture, { readBytes });
+  assert.equal(expanded.packs[0].transitTrips.filter(({ id }) => id === "k-1").length, 1);
+  // 남긴 snapshot에 속하지 않은 대상 원천 stop_time은 여전히 고아로 실패한다.
+  assert.throws(() => build({ trips: [...TRIPS, kept], stopTimes: [...STOPS, ...keptStops, { ...stop("missing", 1, "s-a"), ...HEADER }], inlineSourceSnapshotIds: ["official-source-retained"] }),
+    /ORPHAN_STOP_TIME/u);
+});

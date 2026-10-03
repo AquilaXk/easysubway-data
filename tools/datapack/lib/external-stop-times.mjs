@@ -41,14 +41,18 @@ const sameKeys = (object, keys) => Object.keys(object).length === keys.length &&
  * 팩에서 지정한 원천의 trip·stop_time을 떼어 결정적 gzip 바이트와 결속을 만든다. 같은 입력이면 같은 바이트다.
  * @returns {{ bytes: Buffer, binding: object, inlineTrips: object[], inlineStopTimes: object[] }}
  */
-export function buildExternalStopTimesArtifact({ trips, stopTimes, sourceIds }) {
+// inlineSourceSnapshotIds: 대상 원천이어도 팩에 그대로 남길 snapshot(#913 광주 보관본: 열차 번호를 가진 다른 trip 형태).
+export function buildExternalStopTimesArtifact({ trips, stopTimes, sourceIds, inlineSourceSnapshotIds = [] }) {
   if (!Array.isArray(sourceIds) || sourceIds.length === 0 || new Set(sourceIds).size !== sourceIds.length) fail("SOURCE_IDS");
+  if (!Array.isArray(inlineSourceSnapshotIds) || inlineSourceSnapshotIds.some((id) => typeof id !== "string" || id.length === 0)) fail("INLINE_SNAPSHOT_IDS");
+  const keptInline = new Set(inlineSourceSnapshotIds);
   const external = new Set(sourceIds);
+  const isExternal = (row) => external.has(row.sourceId) && !keptInline.has(row.sourceSnapshotId);
   const sectionsByKey = new Map();
   const tripSection = new Map();
   const inlineTrips = [];
   for (const trip of trips) {
-    if (!external.has(trip.sourceId)) { inlineTrips.push(trip); continue; }
+    if (!isExternal(trip)) { inlineTrips.push(trip); continue; }
     const key = `${trip.sourceId}\u0000${trip.sourceSnapshotId}`;
     if (!sectionsByKey.has(key)) sectionsByKey.set(key, { header: tripHeader(trip), trips: [], stopTimes: [], rowProvenance: new Set() });
     const section = sectionsByKey.get(key);
@@ -64,7 +68,7 @@ export function buildExternalStopTimesArtifact({ trips, stopTimes, sourceIds }) 
   for (const row of stopTimes) {
     const owner = tripSection.get(row.tripId);
     if (!owner) {
-      if (external.has(row.sourceId)) fail("ORPHAN_STOP_TIME", row.tripId);
+      if (isExternal(row)) fail("ORPHAN_STOP_TIME", row.tripId);
       inlineStopTimes.push(row);
       continue;
     }
