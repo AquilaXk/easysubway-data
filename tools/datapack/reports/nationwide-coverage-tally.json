@@ -1075,7 +1075,7 @@
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
       "retrievedAt": "2026-06-22",
-      "sha256": "2a0969f83734809e6429037a09f8398af89f158d92f956eeec4c9761bab34b30"
+      "sha256": "436ec57921776b678b0b4476045b57cee650b482957764339b828ab8e14f0c69"
     },
     "resolutions": {
       "entryCount": 4,
@@ -1159,17 +1159,17 @@
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 12,
-        "inventoryAdmittedRatio": 0.2667,
+        "inventoryAdmittedCount": 18,
+        "inventoryAdmittedRatio": 0.4,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 0,
-          "NO_ADMITTED_SOURCE": 33
+          "NO_ADMITTED_SOURCE": 27
         },
-        "missingCount": 33,
+        "missingCount": 27,
         "sourceDomain": "schedule_timetable",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 12,
-        "terminalRatio": 0.2667,
+        "terminalCount": 18,
+        "terminalRatio": 0.4,
         "totalCount": 45
       },
       {
@@ -1193,33 +1193,33 @@
       {
         "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
         "explicitlyUnsupportedWithEvidenceCount": 1,
-        "inventoryAdmittedCount": 16,
-        "inventoryAdmittedRatio": 0.4444,
+        "inventoryAdmittedCount": 17,
+        "inventoryAdmittedRatio": 0.4722,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 0,
-          "NO_ADMITTED_SOURCE": 19
+          "NO_ADMITTED_SOURCE": 18
         },
-        "missingCount": 19,
+        "missingCount": 18,
         "regionId": "busan",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 17,
-        "terminalRatio": 0.4722,
+        "terminalCount": 18,
+        "terminalRatio": 0.5,
         "totalCount": 36
       },
       {
         "earliestResolutionNextReviewAt": null,
         "explicitlyUnsupportedWithEvidenceCount": 0,
-        "inventoryAdmittedCount": 38,
-        "inventoryAdmittedRatio": 0.1919,
+        "inventoryAdmittedCount": 43,
+        "inventoryAdmittedRatio": 0.2172,
         "missingByKind": {
           "DUAL_OPERATOR_UNMATCHED": 9,
-          "NO_ADMITTED_SOURCE": 151
+          "NO_ADMITTED_SOURCE": 146
         },
-        "missingCount": 160,
+        "missingCount": 155,
         "regionId": "capital",
         "supportStartedResolutionCount": 0,
-        "terminalCount": 38,
-        "terminalRatio": 0.1919,
+        "terminalCount": 43,
+        "terminalRatio": 0.2172,
         "totalCount": 198
       },
       {
@@ -1273,13 +1273,13 @@
     ],
     "earliestResolutionNextReviewAt": "2026-10-23T09:12:39.105Z",
     "explicitlyUnsupportedWithEvidenceCount": 4,
-    "inventoryAdmittedCount": 81,
-    "inventoryAdmittedRatio": 0.3,
+    "inventoryAdmittedCount": 87,
+    "inventoryAdmittedRatio": 0.3222,
     "missingByKind": {
       "DUAL_OPERATOR_UNMATCHED": 9,
-      "NO_ADMITTED_SOURCE": 176
+      "NO_ADMITTED_SOURCE": 170
     },
-    "missingCount": 185,
+    "missingCount": 179,
     "requirements": [
       {
         "admissionRatio": 1,
@@ -1993,13 +1993,15 @@
         ]
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 1,
+        "admittedFieldCount": 3,
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-e4cce88f0d7f",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "operator-72566d06475a",
         "regionId": "busan",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -2007,12 +2009,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "schedule_timetable",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "service_calendar",
-          "trip",
-          "stop_time"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0.6667,
@@ -3938,13 +3936,15 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 1,
+        "admittedFieldCount": 3,
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-62096860ab09",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "operator-29e323a78a93",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -3952,12 +3952,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "schedule_timetable",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "service_calendar",
-          "trip",
-          "stop_time"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0.6667,
@@ -4067,13 +4063,15 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 1,
+        "admittedFieldCount": 3,
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-5500c1600f71",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "operator-2e23276dfa94",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -4081,12 +4079,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "schedule_timetable",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "service_calendar",
-          "trip",
-          "stop_time"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0.6667,
@@ -4454,13 +4448,15 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 1,
+        "admittedFieldCount": 3,
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-8604048b6430",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "operator-5ca780d7dee1",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -4468,12 +4464,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "schedule_timetable",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "service_calendar",
-          "trip",
-          "stop_time"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0.6667,
@@ -4842,13 +4834,15 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 1,
+        "admittedFieldCount": 3,
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-8604048b6430",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "operator-9e999d4aa596",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -4856,12 +4850,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "schedule_timetable",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "service_calendar",
-          "trip",
-          "stop_time"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0.6667,
@@ -4971,13 +4961,15 @@
         "unadmittedFields": []
       },
       {
-        "admissionRatio": 0,
-        "admittedFieldCount": 0,
-        "admittedSourceIds": [],
+        "admissionRatio": 1,
+        "admittedFieldCount": 3,
+        "admittedSourceIds": [
+          "kric-subway-timetable-station-lines"
+        ],
         "blockingThreshold": 1,
         "dualOperator": null,
         "lineId": "line-828f04afc588",
-        "missingKind": "NO_ADMITTED_SOURCE",
+        "missingKind": null,
         "operatorId": "operator-b2d80436b438",
         "regionId": "capital",
         "releaseTier": "LAUNCH_REQUIRED",
@@ -4985,12 +4977,8 @@
         "resolution": null,
         "resolutionReviewStatus": null,
         "sourceDomain": "schedule_timetable",
-        "status": "MISSING",
-        "unadmittedFields": [
-          "service_calendar",
-          "trip",
-          "stop_time"
-        ]
+        "status": "INVENTORY_ADMITTED",
+        "unadmittedFields": []
       },
       {
         "admissionRatio": 0.6667,
@@ -7104,8 +7092,8 @@
       }
     ],
     "supportStartedResolutionCount": 0,
-    "terminalCount": 85,
-    "terminalRatio": 0.3148,
+    "terminalCount": 91,
+    "terminalRatio": 0.337,
     "totalCount": 270
   },
   "parentIssue": 2138,
