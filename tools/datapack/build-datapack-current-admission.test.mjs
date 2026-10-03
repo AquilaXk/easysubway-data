@@ -311,6 +311,34 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(manifest.releaseSequence, buildSpec.releaseSequence);
   assert.equal(provenance.candidateBuild.publishedAt, buildSpec.publishedAt);
   assert.equal(provenance.candidateBuild.releaseSequence, buildSpec.releaseSequence);
+  // #913 리뷰 F1: 전국 발행 빌드의 팩 만료는 시간표 원천 만료까지 반영한다. 커밋된 후보는 시간표 원천(수도권·코레일
+  // projection)이 network 창(topology·ITX·접근성)보다 먼저 만료되므로 manifest expiresAt과 결정 원천이 그 원천을 따라야 한다.
+  const artifactFreshness = provenance.candidateBuild.artifactFreshness;
+  const timetableExpiries = artifactFreshness.timetableSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt));
+  assert.ok(Math.min(...timetableExpiries) < Date.parse(artifactFreshness.networkFreshUntil));
+  assert.equal(manifest.expiresAt, artifactFreshness.freshUntil);
+  assert.equal(Date.parse(manifest.expiresAt), Math.min(...timetableExpiries));
+  assert.deepEqual(artifactFreshness.decidedBy, artifactFreshness.timetableSources
+    .filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === Date.parse(manifest.expiresAt))
+    .map(({ sourceId, sourceSnapshotId }) => ({ kind: "timetable", sourceId, sourceSnapshotId })));
+  // 검증 전용 빌드(dev 채널)는 시간표 신선도를 계산하지 않고 사유를 남긴다.
+  assert.deepEqual(validationOnlyProvenance.candidateBuild.artifactFreshness,
+    { timetableFreshness: "SKIPPED", skipReason: "VALIDATION_ONLY_BUILD", freshUntil: validationOnlyManifest.expiresAt });
+  // spec이 결속한 inventory와 다른 sha면 빌드가 실패한다.
+  const mismatchedSpecPath = path.join(directory, "inventory-mismatch-build-spec.json");
+  await writeFile(mismatchedSpecPath, `${JSON.stringify({ ...buildSpec, sourceInventorySha256: "0".repeat(64) }, null, 2)}\n`);
+  await assert.rejects(withEnvironment({
+    EASYSUBWAY_DATAPACK_BUILD_NOW: firstBuildNow,
+    EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
+    EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+  }, () => buildDatapackMain([
+    "--build-spec", mismatchedSpecPath,
+    "--candidate-fixture-override", candidateFixture,
+    "--server-route-coverage-authority", routeCoverageAuthority,
+    "--current-capital-station-line-input", candidateStationLine,
+    "--current-capital-route-edge-input", candidateRouteEdge,
+    "--output", path.join(directory, "inventory-mismatch"),
+  ], { repositoryRoot: root })), /sourceInventorySha256|source inventory semantic hash mismatch/);
   for (const key of ["manifest", "provenance", "sqlite", "gzip"]) {
     assert.deepEqual(first[key], second[key], `${key} bytes drifted`);
   }

@@ -122,7 +122,9 @@ test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이
     assert.deepEqual(capital[0].byLine[line.lineId], { tripCount: line.admittedTripCount, stopTimeCount: line.admittedStopTimeCount }, line.lineId);
     assert.deepEqual(Object.keys(line.singleProviderTimeStopCount).sort(), ["intermediate", "origin", "terminal"], line.lineId);
   }
-  assert.equal(committed.packs[0].transitTrips.some(({ sourceId }) => sourceId === report.source.sourceId), false, "capital trips live in the external file");
+  // #913: 같은 원천의 광주 보관본 trip은 다른 trip 형태라 팩에 남는다. 수도권 projection snapshot의 trip만 외부 파일에 있다.
+  assert.equal(committed.packs[0].transitTrips.some(({ sourceId, sourceSnapshotId }) => sourceId === report.source.sourceId
+    && sourceSnapshotId === report.source.snapshotId), false, "capital trips live in the external file");
   const pack = expandExternalStopTimes(committed, { repositoryRoot: root }).packs[0];
   const capitalTrips = pack.transitTrips.filter(({ sourceId, sourceSnapshotId }) => sourceId === report.source.sourceId && sourceSnapshotId === report.source.snapshotId);
   const capitalTripIds = new Set(capitalTrips.map(({ id }) => id));

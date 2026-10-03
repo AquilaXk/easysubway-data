@@ -33,14 +33,15 @@ function nonBooleanFlags(calendars) {
   return offenders;
 }
 
-test("지역 시간표 통합은 16개 serviceCalendars의 요일 값을 boolean으로 쓴다", () => {
+test("지역 시간표 통합은 14개 serviceCalendars의 요일 값을 boolean으로 쓴다(광주 시간표 입력이 없으면 광주 달력을 만들지 않는다, #913)", () => {
   const integrated = integrateRegionalTimetables({
     finalPack: { stations: [], stationLines: [], serviceCalendars: [] },
   });
   const days = (calendar) => WEEKDAYS.filter((day) => calendar[day] === true);
   const byServiceId = new Map(integrated.serviceCalendars.map((calendar) => [calendar.serviceId, calendar]));
 
-  assert.equal(integrated.serviceCalendars.length, 16);
+  assert.equal(integrated.serviceCalendars.length, 14);
+  assert.equal(integrated.serviceCalendars.some(({ serviceId }) => serviceId.startsWith("gwangju-")), false);
   assert.deepEqual(nonBooleanFlags(integrated.serviceCalendars), []);
 
   const weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"];
@@ -50,7 +51,6 @@ test("지역 시간표 통합은 16개 serviceCalendars의 요일 값을 boolean
     "daegu-line2-weekday-2026",
     "daegu-line3-weekday-2026",
     "daejeon-weekday-2026",
-    "gwangju-weekday-2026",
   ]) {
     assert.deepEqual(days(byServiceId.get(serviceId)), weekdays, serviceId);
   }
@@ -70,7 +70,7 @@ test("지역 시간표 통합은 16개 serviceCalendars의 요일 값을 boolean
   ]) {
     assert.deepEqual(days(byServiceId.get(serviceId)), ["sunday"], serviceId);
   }
-  for (const serviceId of ["daejeon-holiday-2026", "gwangju-holiday-2026"]) {
+  for (const serviceId of ["daejeon-holiday-2026"]) {
     assert.deepEqual(days(byServiceId.get(serviceId)), ["saturday", "sunday"], serviceId);
   }
 });

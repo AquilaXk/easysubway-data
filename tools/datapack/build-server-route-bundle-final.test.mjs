@@ -429,7 +429,8 @@ test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes 
   await assert.rejects(() => readFile(output), /ENOENT/);
 });
 
-test("FINAL closure는 bundle보다 이른 source freshness cutoff를 non-nationwide scope에서 거부하고 nationwide는 허용한다", async (t) => {
+// #913: nationwide도 예외 없이 거부한다. 예외(#761)가 있으면 원천이 만료된 시간표를 번들이 계속 서빙해도 FINAL이 통과한다.
+test("FINAL closure는 bundle보다 이른 source freshness cutoff를 scope와 상관없이 거부한다", async (t) => {
   installSigningEnvironment(t);
   const sourceWindow = await selectedSourceWindow();
   const sourceExpiry = Date.parse(sourceWindow.freshUntil);
@@ -446,8 +447,8 @@ test("FINAL closure는 bundle보다 이른 source freshness cutoff를 non-nation
     {
       scopeId: "nationwide_routing_android_v1",
       candidateId: "nationwide-candidate-20260909",
-      expectedResult: "GO",
-      outputPath: "release-admitted-nationwide-source-cutoff",
+      expectedResult: "REJECT",
+      outputPath: "release-rejected-nationwide-source-cutoff",
     },
   ]) {
     const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {

@@ -98,7 +98,7 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   };
   const nextInventory = state.kind === "initial"
     ? { ...inventory, sources: [...inventory.sources.filter((entry) => entry?.id !== SUPERSEDED_SOURCE_ID), inventorySource] }
-    : { ...inventory, sources: inventory.sources.map((entry) => entry?.id === SOURCE_ID ? inventorySource : entry) };
+    : { ...inventory, sources: inventory.sources.map((entry) => entry?.id === SOURCE_ID ? withForeignEvidence(entry, inventorySource) : entry) };
   const semantic = validateRetainedGwangjuSource({
     retainedTimetable, topologySnapshot, canonicalStationMappings: mappings, source: inventorySource,
   });
@@ -141,6 +141,12 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   return OUTPUTS.map((relative, index) => ({ relative, prestateBytes: [inventoryBytes, ledgerBytes, governanceBytes, freshnessBytes][index], bytes: values[index], inputs }));
 }
 
+// #913: 같은 원천의 다른 등록기 evidence(수도권·코레일 projection, 광주 projection)는 보관본 갱신이 지우지 않는다.
+const FOREIGN_EVIDENCE_KEYS = Object.freeze(["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence", "retainedGwangjuProjectionEvidence"]);
+function withForeignEvidence(previous, next) {
+  const kept = Object.fromEntries(FOREIGN_EVIDENCE_KEYS.filter((key) => previous[key] !== undefined).map((key) => [key, structuredClone(previous[key])]));
+  return { ...next, ...kept };
+}
 function unsupported(coverageStatus) { return { status: "UNSUPPORTED", productionUseAllowed: false, liveEtaEligible: false, rateLimitStatus: "NOT_APPLICABLE", updateFrequency: "not applicable", coverageStatus, unsupportedNotes: "Official static timetable does not provide this capability." }; }
 function registrationState({ inventory, ledger, governance, freshness, candidate }) {
   if (![inventory.sources, ledger, governance.sources, freshness.sourceClasses].every(Array.isArray)) fail("REGISTRATION_STATE");

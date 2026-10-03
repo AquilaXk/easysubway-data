@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261003-seq125",
-  "publishedAt": "2026-10-03T00:40:43.059Z",
-  "releaseSequence": 125,
-  "builderGitSha": "956fea6f49151808764311b7dc376e7c3417f9fd",
+  "candidateId": "nationwide-candidate-20261003-seq126",
+  "publishedAt": "2026-10-03T05:27:51.411Z",
+  "releaseSequence": 126,
+  "builderGitSha": "1bb4e87633029538228197775dc119ece7163c85",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "895d12300a301919901b420f0a61c78c11c29b766ef62a3abadfe622c8954678",
+  "fixtureSha256": "0ef093f6dc27ee9d97508238f4df0a6fa9518e948710157690d090183026635b",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -45,7 +45,6 @@
     "kric-subway-timetable-line4-pilot-20261001",
     "seoul-metro-route-map-positions-current-20261001T041912582Z",
     "molit-urban-rail-full-route-current-20261001T041912582Z",
-    "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
     "seoulmetro-station-line-info-revalidated-20261001",
     "busan-transportation-accessibility-ba05d3ff5501f5e47c0d0398fd03f084a74aede650465895503057881dd27a3e-20261002",
     "daegu-transportation-accessibility-02226d92d934146e631e719848a902d1c9f496589b5370c92fbde41d1181a96b-20261002",
@@ -67,7 +66,8 @@
     "daegu-line3-route-topology-d2a19f6c7a808f8b0655abfa032d722236205faf2a8969edf791e0d657d38f1a",
     "daegu-line3-train-timetable-02a350d9094e4c611abf9665383787c64517868aa3945599874792a8c10131dd",
     "daejeon-transportation-accessibility-80c1158b5dc3ac3d81af436bc0cbc077d237c7c96c0059df08d5d08d7e6e6719-20261003",
-    "gwangju-transportation-accessibility-7e35e2c4b50653c612f2aed521daca5ac510d016b362a44a280b5e3bb1d1453c-20261003"
+    "gwangju-transportation-accessibility-7e35e2c4b50653c612f2aed521daca5ac510d016b362a44a280b5e3bb1d1453c-20261003",
+    "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4"
   ],
   "sourceSnapshots": [
     {
@@ -154,28 +154,6 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
       "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395"
-    },
-    {
-      "snapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
-      "sourceId": "kric-nationwide-timetable-file",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/sources/kric-nationwide-timetable-file/d13df755c99f1b612975bc24e47adecf4128185be79b684053dd57196b5453ae/observation.json",
-      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "redactedRequestFingerprint": "d677d6f7bba03cd4b8be0b553eceb249252c082c9b3c6e390e9f35d209e6bcfe",
-      "schemaFingerprint": "6b3d4bb90d1c0160da3ef1bef74d0ffc26870da92e93bce5e764223f4a1cca85",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-08T04:19:25.298Z",
-      "rawRetentionExpiresAt": "2026-12-30T04:19:25.298Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "9810ed25349b407e81973fd5a69749bce292834c94061630790db937f571c330",
-      "admissionRecordSha256s": [
-        {
-          "kind": "retainedScheduleAdmissionEvidence",
-          "sha256": "eff47944c3544385154499231e08a0e89d734e97b6b3169b0554f7ea86999f2d"
-        }
-      ]
     },
     {
       "snapshotId": "seoulmetro-station-line-info-revalidated-20261001",
@@ -640,10 +618,32 @@
           "sha256": "2c0323d00035a4a00fc458420d87d421e395ecb4ca31654fa4f708095f6b7450"
         }
       ]
+    },
+    {
+      "snapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "sourceId": "kric-nationwide-timetable-file",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/sources/kric-nationwide-timetable-file/3e81adef2f844d33a2997cede395c88b0d7e47f89611ea430b1b11966fb91d4c/observation.json",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "redactedRequestFingerprint": "d677d6f7bba03cd4b8be0b553eceb249252c082c9b3c6e390e9f35d209e6bcfe",
+      "schemaFingerprint": "6b3d4bb90d1c0160da3ef1bef74d0ffc26870da92e93bce5e764223f4a1cca85",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-10-10T02:51:29.225Z",
+      "rawRetentionExpiresAt": "2027-01-01T02:51:29.225Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "f1726f94e34ff85dbff2a1225693e987d913147c02d0b73b9f2253ff705535d2"
+        }
+      ]
     }
   ],
-  "sourceSnapshotSetHash": "b13d702903df4be2ae087ba2c684861adc82cd6a07c447524882aacd849b2aaf",
-  "sourceInventorySha256": "ecb369487de3fafd80daa32f393836b676e20fb652a9422e0a7ed1e60b7a91fd",
+  "sourceSnapshotSetHash": "e32e8632272934f1aa4b70b17780fca1885b3e4bffcb7b61fd99ebc7b63c6b64",
+  "sourceInventorySha256": "8557b90ecf664be4a0c2bc8258e5c06c552a56a197e414f78d6a87c2d322985a",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -697,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "ca9e1064d5608516982d1af008329586d8450ed398f65a73a2cb3443fc794b79"
+      "sha256": "c6b47041fabc3459809ccf4ab8fc070a539122d083db6568ba0c91c7a3976c7e"
     }
   },
   "officialOdFareEvidence": {

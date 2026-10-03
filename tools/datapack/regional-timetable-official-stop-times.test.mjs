@@ -287,11 +287,11 @@ test("실제 대전·광주 공식 원천으로 통합한 모든 정차 시각�
   for (const context of checked) assertUnusedSourceQuarantined({ ...context, quarantine });
 });
 
-test("커밋된 전국 정본 팩의 대전·광주 정차 시각은 원천 값이고 격리 증거 파일과 맞는다", async () => {
+test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 격리 증거 파일과 맞는다", async () => {
   const pack = activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"));
+  // #913: 광주는 cyberstation이 아니라 KRIC 보관본에서 만든다(아래 별도 테스트).
   const regions = [
     [DAEJEON, daejeonSourceTimes(readJson(DAEJEON.timetablePath))],
-    [GWANGJU, gwangjuSourceTimes(readJson(GWANGJU.timetablePath))],
   ];
   const checked = regions.map(([region, sourceTimes]) => ({
     region,
@@ -313,5 +313,37 @@ test("커밋된 전국 정본 팩의 대전·광주 정차 시각은 원천 값�
     assert.equal(source.admittedStopTimeCount, regionStops.length);
     assert.equal(source.admittedStopTimeCount + source.quarantinedCount, totalSourceDepartures(sourceTimes));
     assertUnusedSourceQuarantined({ ...context, quarantine: evidence.rows });
+  }
+});
+
+test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 projection 행의 도착·출발 값이다(#913)", async () => {
+  const pack = activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"));
+  const inventory = readJson("tools/datapack/source-inventory.json");
+  const ledger = readJson("tools/datapack/release/source-snapshots.json");
+  const source = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  const projection = readJson(source.retainedGwangjuProjectionEvidence.snapshotPath);
+  const head = ledger.find(({ snapshotId }) => snapshotId === source.retainedScheduleAdmissionEvidence.snapshotId);
+  const contract = head.retainedTimetableInputs.contract;
+  const weekdayTypeByServiceId = new Map(Object.entries(contract.serviceIds).map(([weekdayType, serviceId]) => [serviceId, weekdayType]));
+  const labelByStationId = new Map(contract.stationBindings.map(({ stationId, sourceLabel }) => [stationId, sourceLabel]));
+  const seconds = (value) => { const [h, m, s] = value.split(":").map(Number); return h * 3600 + m * 60 + s; };
+  const official = new Set(projection.records.flatMap((record) => [record.arrivalTime, record.departureTime]
+    .filter((cell) => /^\d{2}:\d{2}:\d{2}$/u.test(cell?.value ?? ""))
+    // 자정 뒤 정차는 운행일 기준으로 86,400초를 더한 값일 수 있다.
+    .flatMap((cell) => [0, 86_400].map((offset) => `${record.trainNumber}|${record.weekdayType}|${record.stationName}|${seconds(cell.value) + offset}`))));
+  const trips = new Map(pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-"))
+    .map((trip) => [trip.id, trip]));
+  assert.ok(trips.size > 0);
+  const stops = pack.transitStopTimes.filter(({ tripId }) => trips.has(tripId));
+  assert.ok(stops.length > 0);
+  for (const stop of stops) {
+    const trip = trips.get(stop.tripId);
+    assert.equal(trip.sourceSnapshotId, source.retainedScheduleAdmissionEvidence.snapshotId);
+    const weekdayType = weekdayTypeByServiceId.get(trip.serviceId);
+    const label = labelByStationId.get(stop.stationId);
+    for (const value of [stop.arrivalSeconds, stop.departureSeconds]) {
+      assert.ok(official.has(`${trip.trainNo}|${weekdayType}|${label}|${value}`),
+        `광주 정차 ${trip.trainNo} ${weekdayType} ${label} ${value}초는 보관본 원천 행 값이어야 한다`);
+    }
   }
 });

@@ -285,7 +285,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // Authentic routes across all nationwide operational scopes
   // #899: 4호선 2정차 pilot(route-seoul-4-up/down)은 KRIC 공식 수도권 시간표 13개 노선으로 교체됐다.
   // #903: 코레일 6개 노선(kric-korail)·KRIC 역별 5개 노선(kric-station)·대경선 상·하행 2개 route를 더한다.
-  assert.strictEqual(pack.transitRoutes.length, 39);
+  // #913: 광주 cyberstation route 1개 대신 KRIC 보관본 계약 route 4개(녹동↔평동 정·역방향, 중간 회차 포함)를 싣는다.
+  assert.strictEqual(pack.transitRoutes.length, 42);
   const routeIds = new Set(pack.transitRoutes.map((r) => r.id));
   assert.ok(!routeIds.has("route-seoul-4-up"));
   assert.ok(!routeIds.has("route-seoul-4-down"));
@@ -304,7 +305,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(routeIds.has("route-daegu-line-2"));
   assert.ok(routeIds.has("route-daegu-line-3"));
   assert.ok(routeIds.has("route-daejeon-line-1"));
-  assert.ok(routeIds.has("route-gwangju-line-1"));
+  assert.equal(routeIds.has("route-gwangju-line-1"), false);
+  assert.equal(pack.transitRoutes.filter(({ id }) => id.startsWith("route-S2901-")).length, 4);
   for (const routeKey of ["i41ws", "i41k2", "i28k1", "i4108", "i41k5", "i26k6"]) assert.ok(routeIds.has(`route-kric-korail-${routeKey}`), routeKey);
   for (const routeKey of ["a", "e1", "u1", "g1", "b1"]) assert.ok(routeIds.has(`route-kric-station-${routeKey}`), routeKey);
 
@@ -312,6 +314,35 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   const routeLine = new Map(pack.transitRoutes.map(({ id, lineId }) => [id, lineId]));
   const linesWithTrips = new Set(pack.transitTrips.map(({ routeId }) => routeLine.get(routeId)));
   assert.deepEqual(pack.lines.map(({ id }) => id).filter((lineId) => !linesWithTrips.has(lineId)).sort(), [], "every pack line must have at least one trip");
+
+  // #913: 광주 1호선 시간표는 원천 만료(2026-07-21)가 지난 cyberstation snapshot이 아니라, 원장 head가 결속한
+  // KRIC 보관본(kric-nationwide-timetable-file, retainedScheduleAdmissionEvidence)에서 나와야 한다.
+  const inventoryForGwangju = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const retainedSnapshotId = inventoryForGwangju.sources.find(({ id }) => id === "kric-nationwide-timetable-file")
+    .retainedScheduleAdmissionEvidence.snapshotId;
+  const gwangjuRouteIds = new Set(pack.transitRoutes.filter(({ lineId }) => lineId === "line-e57a361e8892").map(({ id }) => id));
+  const gwangjuTrips = pack.transitTrips.filter(({ routeId }) => gwangjuRouteIds.has(routeId));
+  assert.ok(gwangjuTrips.length > 0);
+  assert.deepEqual([...new Set(gwangjuTrips.map(({ sourceId, sourceSnapshotId }) => `${sourceId}|${sourceSnapshotId}`))],
+    [`kric-nationwide-timetable-file|${retainedSnapshotId}`]);
+  // 원천 서비스 구분대로 운행한다(QA 정책 2026-10-03): 평일·토요일·휴일 trip이 모두 실리고, 운행일 없는 서비스는 남지 않는다.
+  const weekdayFlags = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const activeServiceIds = new Set([
+    ...pack.serviceCalendars.filter((calendar) => weekdayFlags.some((day) => calendar[day] === true)).map(({ serviceId }) => serviceId),
+    ...pack.serviceCalendarDates.filter(({ exceptionType }) => exceptionType === 1).map(({ serviceId }) => serviceId),
+  ]);
+  assert.deepEqual(pack.serviceCalendars.filter(({ serviceId }) => !activeServiceIds.has(serviceId)).map(({ serviceId }) => serviceId), []);
+  const gwangjuTripsByService = Object.fromEntries([...new Set(gwangjuTrips.map(({ serviceId }) => serviceId))].sort()
+    .map((serviceId) => [serviceId, gwangjuTrips.filter((trip) => trip.serviceId === serviceId).length]));
+  assert.deepEqual(gwangjuTripsByService, { "service-S2901-토요일": 207, "service-S2901-평일": 240, "service-S2901-휴일": 203 });
+  const kricPackSource = pack.sourceInventory.filter(({ id }) => id === "kric-nationwide-timetable-file");
+  assert.equal(kricPackSource.length, 1);
+  assert.ok(kricPackSource[0].coverageScope.lineIds.includes("line-e57a361e8892"), "KRIC 팩 원천 범위에 광주 1호선이 있어야 한다");
+  assert.ok(kricPackSource[0].coverageScope.regionIds.includes("gwangju"));
+  const cyberstation = "gwangju-transportation-cyberstation-timetable";
+  for (const table of ["sourceInventory", "transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
+    assert.equal(pack[table].filter((row) => row.sourceId === cyberstation || row.id === cyberstation).length, 0, `${table} must not cite ${cyberstation}`);
+  }
 
   // #903 리뷰 F1: prepare가 쓴 노선 보고서에서 급행 고정 집합(경춘 5·수인분당 22·경의중앙 28 trip)이 노선별로 적용됐는지 본다.
   // 고정 집합이 binding에 붙지 않으면 상한 5% 안의 노선(경춘·수인분당)은 미고정 격리로 조용히 통과하므로 여기서 막는다.
@@ -338,10 +369,13 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // 달력 4·달력 예외 56을 더한다.
   // #903: 코레일 6개 노선 trip 2,117·정차 57,689, KRIC 역별 5개 노선 trip 3,956·정차 50,754,
   // 대경선 trip 194·정차 1,488, 달력 6·달력 예외 68을 더한다(기존 노선 건수는 그대로다).
-  assert.strictEqual(pack.transitTrips.length, 26240, "Pack must contain exactly 26,240 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 671914, "Pack must contain exactly 671,914 authentic stop times");
-  assert.strictEqual(pack.serviceCalendars.length, 30);
-  assert.strictEqual(pack.serviceCalendarDates.length, 200);
+  // #913: 광주 cyberstation 400 trip·7,187 정차 대신 KRIC 보관본 650 trip·12,429 정차.
+  // 계약 창(20261003~20261010)에서 평일 240·토요일 207·휴일 203 trip이 운행하고, 명절 162 trip은 창 안 운행일이 없어 싣지 않는다.
+  // 달력은 cyberstation 2개 대신 평일·토요일·휴일 3개, 예외 6행(10-03 토→휴일, 10-05·10-09 평일→휴일)이다.
+  assert.strictEqual(pack.transitTrips.length, 26490, "Pack must contain exactly 26,490 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 677156, "Pack must contain exactly 677,156 authentic stop times");
+  assert.strictEqual(pack.serviceCalendars.length, 31);
+  assert.strictEqual(pack.serviceCalendarDates.length, 206);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
@@ -508,9 +542,11 @@ const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
   korailTimetable: "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
   daegyeongTimetable: "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
   stationLinesTimetable: "kric-subway-timetable-station-lines-20261003",
+  // #913: 광주 1호선은 KRIC 보관본 head(10-03 계약 개정 재등록)의 계약 노선 projection이다.
+  gwangjuTimetable: "kric-nationwide-timetable-file-gwangju-5c275eb62b43a2f9eb89655fe5202612281b2f527863378a241df67b613c6593",
 });
 
-test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 17개를 고른다", async () => {
+test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 18개를 고른다", async () => {
   const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputsWithinIncheonWindow());
   assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
   for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
@@ -651,6 +687,37 @@ test("인천 입력은 inventory admission evidence가 없거나 원본 바이�
     return Buffer.from(JSON.stringify({ ...JSON.parse(bytes), rawSha256: "0".repeat(64) }));
   };
   await assert.rejects(resolveNationwideCandidateInputSnapshots(tampered), /raw binding mismatch for incheon-line2-train-timetable/);
+});
+
+test("광주 보관본 projection이 없거나 현재 보관본 head·계약과 다르면 후보 입력 선택이 실패한다(#913)", async () => {
+  const kric = (inputs) => inputs.sourceInventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  const missing = await committedSelectionInputsWithinIncheonWindow();
+  delete kric(missing).retainedGwangjuProjectionEvidence;
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(missing), /snapshot path missing or ambiguous for kric-nationwide-timetable-file retainedGwangjuProjectionEvidence/);
+
+  const stale = await committedSelectionInputsWithinIncheonWindow();
+  kric(stale).retainedGwangjuProjectionEvidence.retainedSnapshotId = "kric-nationwide-timetable-file-older";
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(stale), /RETAINED_GWANGJU_PROJECTION_EVIDENCE/);
+
+  const contract = await committedSelectionInputsWithinIncheonWindow();
+  const head = contract.sourceSnapshots.find(({ snapshotId }) => snapshotId === kric(contract).retainedScheduleAdmissionEvidence.snapshotId);
+  head.retainedTimetableInputs = structuredClone(head.retainedTimetableInputs);
+  head.retainedTimetableInputs.contract.serviceDayStartSeconds += 1;
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(contract), /retained Gwangju contract does not match the admitted head/);
+
+  // 리뷰 F3: snapshot과 inventory evidence를 함께 바꿔 내부 해시를 맞춰도 원장 head 관측 sha와 다르면 실패한다.
+  const forged = await committedSelectionInputsWithinIncheonWindow();
+  const forgedEvidence = kric(forged).retainedGwangjuProjectionEvidence;
+  const original = JSON.parse(await forged.readSourceBytes(forgedEvidence.snapshotPath));
+  const { snapshotId: _id, contentSha256: _content, ...body } = original;
+  body.observationRawObjectSha256 = "f".repeat(64);
+  const contentSha256 = createHash("sha256").update(canonicalJson(body)).digest("hex");
+  const forgedSnapshot = { snapshotId: `kric-nationwide-timetable-file-gwangju-${contentSha256}`, contentSha256, ...body };
+  Object.assign(forgedEvidence, { snapshotId: forgedSnapshot.snapshotId, snapshotPath: `tools/datapack/sources/${forgedSnapshot.snapshotId}.json`,
+    contentSha256, observationRawObjectSha256: body.observationRawObjectSha256 });
+  const readCommitted = forged.readSourceBytes;
+  forged.readSourceBytes = async (relative) => (relative === forgedEvidence.snapshotPath ? Buffer.from(JSON.stringify(forgedSnapshot)) : readCommitted(relative));
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(forged), /RETAINED_GWANGJU_PROJECTION_LEDGER/);
 });
 
 test("prepare-nationwide-candidate-run은 원장 head로 고르는 입력 경로를 하드코딩하지 않는다", async () => {

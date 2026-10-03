@@ -263,3 +263,24 @@ async function replaceWithSuccessor(fixture) {
 // 실제 등록 이력에서 테스트 대상만 제외해 재구성한다. 다른 source가 추가돼도 날짜나 SHA를 갱신하지 않는다.
 async function readJson(file) { return JSON.parse(await readFile(file, "utf8")); }
 async function outputBytes(repositoryRoot) { return Promise.all(outputs.map((relative) => readFile(path.join(repositoryRoot, relative)))); }
+
+// #913: 같은 원천(kric-nationwide-timetable-file)의 수도권·코레일 projection evidence와 광주 projection evidence는
+// 다른 등록기가 소유한다. 보관본 갱신은 자기 evidence만 바꾸고 이 키들을 지우면 안 된다.
+test("보관본 갱신 등록은 같은 원천의 다른 등록기 evidence(수도권·코레일·광주 projection)를 보존한다", async (context) => {
+  const fixture = await registrationFixture(context);
+  await commitRetainedKricTimetableRegistrationOutputs({ repositoryRoot: fixture.repositoryRoot,
+    outputs: await buildRetainedKricTimetableRegistrationOutputs(fixture) });
+  const inventoryPath = path.join(fixture.repositoryRoot, outputs[0]);
+  const inventory = await readJson(inventoryPath);
+  const foreign = {
+    capitalScheduleAdmissionEvidence: { snapshotId: "capital-projection", observedAt: "2040-12-01T00:00:00.000Z" },
+    korailScheduleAdmissionEvidence: { snapshotId: "korail-projection", observedAt: "2040-12-01T00:00:00.000Z" },
+    retainedGwangjuProjectionEvidence: { snapshotId: "gwangju-projection", retainedSnapshotId: "old" },
+  };
+  Object.assign(inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file"), structuredClone(foreign));
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await replaceWithSuccessor(fixture);
+  const successor = await buildRetainedKricTimetableRegistrationOutputs(fixture);
+  const source = JSON.parse(successor[0].bytes).sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  for (const [key, value] of Object.entries(foreign)) assert.deepEqual(source[key], value, key);
+});

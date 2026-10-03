@@ -62,6 +62,12 @@ import {
 } from "./lib/kric-station-lines-timetable.mjs";
 import { materializeOfficialLineTimetables } from "./lib/official-line-timetable.mjs";
 import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
+import { buildRetainedGwangjuScheduleTables } from "./materialize-gwangju-timetable.mjs";
+import {
+  RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY,
+  RETAINED_GWANGJU_PROJECTION_SOURCE_ID,
+  validateRetainedGwangjuProjection,
+} from "./lib/kric-retained-gwangju-projection.mjs";
 
 export { CAPITAL_TIMETABLE_REPORT_PATH, OFFICIAL_STOP_TIMES_PATH };
 // 팩 JSON 밖 결정적 gzip 파일로 싣는 공식 원천 시간표. trip이 원천 공통 provenance와 행 hash를 가진 원천만 둔다.
@@ -316,6 +322,39 @@ export async function resolveNationwideCandidateInputSnapshots({ sourceInventory
       throw new Error(`nationwide candidate input content binding mismatch for ${sourceId}`);
     }
     selected[key] = { sourceId, snapshotId: head.snapshotId, path: snapshotPath, freshnessExpiresAt, bytes: Buffer.from(bytes) };
+  }
+  // #913: 광주 1호선 시간표는 원장 head(fan-in 선택)가 결속한 KRIC 보관본의 계약 노선 projection이다.
+  // 신선도는 보관본 head의 정책 신선도(fan-in 행)다. projection이 현재 head에서 만든 것이 아니면 실패한다.
+  {
+    const sourceId = RETAINED_GWANGJU_PROJECTION_SOURCE_ID;
+    const head = terminalHead(sourceId, sourceSnapshots);
+    const fanInRows = fanIn.selectedSources.filter((row) => row?.sourceId === sourceId);
+    if (fanInRows.length !== 1 || fanInRows[0].snapshotId !== head.snapshotId) {
+      throw new Error(`nationwide candidate input fan-in selection does not match ledger head for ${sourceId}`);
+    }
+    const freshnessExpiresAt = fanInRows[0].freshnessExpiresAt;
+    if (!(Date.parse(freshnessExpiresAt) > evaluatedAt)) throw new Error(`nationwide candidate input is expired for ${sourceId} retained Gwangju`);
+    const source = exactInventorySource(sourceInventory, sourceId);
+    const retainedEvidence = source.retainedScheduleAdmissionEvidence;
+    if (retainedEvidence?.snapshotId !== head.snapshotId) {
+      throw new Error(`nationwide candidate input admission evidence does not match ledger head for ${sourceId} retained Gwangju`);
+    }
+    const evidence = source[RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY];
+    if (typeof evidence?.snapshotPath !== "string" || evidence.snapshotPath !== `tools/datapack/sources/${evidence.snapshotId}.json`) {
+      throw new Error(`nationwide candidate input snapshot path missing or ambiguous for ${sourceId} ${RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY}`);
+    }
+    const bytes = await readSourceBytes(evidence.snapshotPath);
+    let snapshot;
+    try { snapshot = JSON.parse(bytes); } catch { throw new Error(`nationwide candidate input is invalid JSON for ${sourceId} retained Gwangju`); }
+    validateRetainedGwangjuProjection({ snapshot, evidence, retainedEvidence, retainedHead: head });
+    const contract = head.retainedTimetableInputs?.contract;
+    if (!contract || createHash("sha256").update(canonicalJson(contract)).digest("hex") !== retainedEvidence.retainedContractSha256) {
+      throw new Error(`nationwide candidate retained Gwangju contract does not match the admitted head for ${sourceId}`);
+    }
+    selected.gwangjuTimetable = {
+      sourceId, snapshotId: evidence.snapshotId, path: evidence.snapshotPath, freshnessExpiresAt, bytes: Buffer.from(bytes),
+      retainedSnapshotId: head.snapshotId, contract, retainedEvidence,
+    };
   }
   return selected;
 }
@@ -731,7 +770,7 @@ export async function prepareNationwideCandidate({
 
   const [
     targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes, sourceInventoryBytes,
-    transferMetricsBytes, gwangjuTimetableBytes, freshnessPolicyBytes,
+    transferMetricsBytes, freshnessPolicyBytes,
   ] = await Promise.all([
     read("tools/datapack/nationwide-coverage-targets.json"),
     read("tools/datapack/release/current-five-region-source-fan-in.json"),
@@ -740,8 +779,6 @@ export async function prepareNationwideCandidate({
     read("tools/datapack/fixtures/admin-review-overrides.json"),
     read("tools/datapack/source-inventory.json"),
     read("tools/datapack/release/current-transfer-topology-metrics.json"),
-    // 광주 cyberstation 시간표는 inventory·원장 행이 없다. KRIC 열차별 원천 전환(#861)에서 바꾼다.
-    read("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     read("release/product-gates/datapack-freshness-sla.json"),
   ]);
 
@@ -797,7 +834,9 @@ export async function prepareNationwideCandidate({
   const daeguTimetable2 = inputJson("daeguTimetable2");
   const daeguTimetable3 = inputJson("daeguTimetable3");
   const daejeonTimetable = inputJson("daejeonTimetable");
-  const gwangjuTimetable = JSON.parse(gwangjuTimetableBytes);
+  // #913: 광주 1호선 시간표는 KRIC 보관본 projection(원장 head 결속)이다. 원천 만료가 지난 cyberstation snapshot은 쓰지 않는다.
+  const gwangjuTimetable = inputSnapshots.gwangjuTimetable;
+  const gwangjuRetainedRecords = JSON.parse(gwangjuTimetable.bytes).records;
   const capitalTimetable = inputJson("capitalTimetable");
   const korailTimetable = inputJson("korailTimetable");
   const daegyeongTimetable = inputJson("daegyeongTimetable");
@@ -1497,7 +1536,7 @@ export async function prepareNationwideCandidate({
     daeguAccessibility,
     daejeonTimetable,
     daejeonAccessibility,
-    gwangjuTimetable,
+    gwangjuTimetable: null,
     gwangjuAccessibility,
   });
 
@@ -1507,9 +1546,54 @@ export async function prepareNationwideCandidate({
   finalPack.serviceCalendars = regionalSchedule.serviceCalendars;
   finalPack.serviceCalendarDates = regionalSchedule.serviceCalendarDates;
 
+  // #913: 광주 1호선 route·trip·stop_time·달력은 KRIC 보관본 계약(원장 head)과 projection 행으로 만든다.
+  const gwangjuTopologyEvidence = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology").topologyAdmissionEvidence;
+  const gwangjuTopologyHead = fanInHead(fanIn, "gwangju-transportation-route-topology");
+  if (gwangjuTopologyEvidence?.snapshotId !== gwangjuTopologyHead.snapshotId
+    || gwangjuTopologyEvidence.snapshotPath !== `tools/datapack/sources/${gwangjuTopologyHead.snapshotId}.json`) {
+    throw new Error("nationwide candidate Gwangju topology evidence does not match the fan-in head");
+  }
+  const gwangjuTopologySnapshot = JSON.parse(await read(gwangjuTopologyEvidence.snapshotPath));
+  if (gwangjuTopologySnapshot.contentSha256 !== gwangjuTopologyHead.contentSha256) {
+    throw new Error("nationwide candidate Gwangju topology snapshot does not match the fan-in head");
+  }
+  const gwangjuSchedule = buildRetainedGwangjuScheduleTables({
+    records: gwangjuRetainedRecords,
+    contract: gwangjuTimetable.contract,
+    retainedEvidence: gwangjuTimetable.retainedEvidence,
+    topologySnapshot: gwangjuTopologySnapshot,
+    packStationIds: new Set(finalPack.stationLines.filter(({ lineId }) => lineId === "line-e57a361e8892").map(({ stationId }) => stationId)),
+  });
+  for (const table of ["transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
+    finalPack[table] = [...finalPack[table], ...gwangjuSchedule[table]];
+  }
+  // 광주 보관본은 수도권·코레일과 같은 원천(kric-nationwide-timetable-file)이다: 팩 원천 항목 하나에 광주 노선 범위를 합친다.
+  const gwangjuTopologySource = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology");
+  const kricPackSources = finalPack.sourceInventory.filter(({ id }) => id === RETAINED_GWANGJU_PROJECTION_SOURCE_ID);
+  if (kricPackSources.length !== 1) throw new Error("nationwide candidate KRIC timetable pack source is missing or ambiguous");
+  for (const field of ["regionIds", "operatorIds", "lineIds"]) {
+    if (!Array.isArray(gwangjuTopologySource.coverageScope?.[field])) throw new Error(`nationwide candidate Gwangju coverage ${field} is missing`);
+    kricPackSources[0].coverageScope[field] = [...new Set([...kricPackSources[0].coverageScope[field],
+      ...gwangjuTopologySource.coverageScope[field]])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  }
+
   // #855: 대전·광주 원천은 역별 시각 하나만 준다. 원천 정차 2개 이상으로 열차를 만들 수 없는
   // 원천 시각은 팩에 싣지 않고 사유·식별자·개수를 격리 증거로 남긴다.
-  const timetableQuarantine = regionalSchedule.regionalTimetableQuarantine;
+  const timetableQuarantine = [
+    ...regionalSchedule.regionalTimetableQuarantine,
+    // #913: 보관본 열차 묶음 중 승객 정차가 2개 미만인 묶음(차량기지 출입 등)은 trip으로 만들지 않고 여기 남긴다.
+    ...gwangjuSchedule.nonRoutableGroups.map(({ identity, records, reason }) => ({
+      sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: gwangjuTimetable.retainedSnapshotId,
+      trainNumber: identity.trainNumber, weekdayType: identity.weekdayType,
+      originStationName: identity.originStationName, destinationStationName: identity.destinationStationName,
+      sourceRowNumbers: records.map(({ sourceRowNumber }) => sourceRowNumber), reason,
+    })),
+    // 계약 달력 창 안에 운행일이 없는 서비스(예: 명절 기간이 없는 창의 명절 시각표)의 trip은 운행하지 않으므로 싣지 않는다.
+    ...gwangjuSchedule.inactiveServiceTrips.map(({ id, serviceId, trainNo }) => ({
+      sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: gwangjuTimetable.retainedSnapshotId,
+      tripId: id, serviceId, trainNumber: trainNo, reason: "SERVICE_NOT_ACTIVE_IN_WINDOW",
+    })),
+  ];
   const timetableQuarantineByReason = {};
   for (const { reason } of timetableQuarantine) {
     timetableQuarantineByReason[reason] = (timetableQuarantineByReason[reason] ?? 0) + 1;
@@ -1527,10 +1611,12 @@ export async function prepareNationwideCandidate({
     },
     sources: [
       { sourceId: "daejeon-train-timetable", rawSha256: daejeonTimetable.rawSha256 },
-      { sourceId: "gwangju-transportation-cyberstation-timetable", rawSha256: gwangjuTimetable.rawSha256 },
+      { sourceId: RETAINED_GWANGJU_PROJECTION_SOURCE_ID, sourceSnapshotId: gwangjuTimetable.retainedSnapshotId,
+        rawSha256: gwangjuTimetable.retainedEvidence.rawSha256 },
     ].map((source) => ({
       ...source,
-      admittedStopTimeCount: finalPack.transitStopTimes.filter(({ sourceId }) => sourceId === source.sourceId).length,
+      admittedStopTimeCount: finalPack.transitStopTimes.filter(({ sourceId, sourceSnapshotId }) => sourceId === source.sourceId
+        && (source.sourceSnapshotId === undefined || sourceSnapshotId === source.sourceSnapshotId)).length,
       quarantinedCount: timetableQuarantine.filter(({ sourceId }) => sourceId === source.sourceId).length,
     })),
     summary: {
@@ -1717,24 +1803,6 @@ export async function prepareNationwideCandidate({
     transferPackSource.coverageScope.sourceDomains = [...new Set([...transferPackSource.coverageScope.sourceDomains, ...transferDomains])];
   }
 
-  if (!finalPack.sourceInventory.some((s) => s.id === "gwangju-transportation-cyberstation-timetable")) {
-    finalPack.sourceInventory.push({
-      id: "gwangju-transportation-cyberstation-timetable",
-      owner: "광주교통공사",
-      url: gwangjuTimetable.detailUrl ?? "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
-      license: "공공데이터포털 이용허락범위 제한 없음",
-      licenseStatus: "redistributable",
-      redistributionAllowed: true,
-      updateFrequency: "daily admission refresh",
-      updatedAt: gwangjuTimetable.capturedAt,
-      fields: [...(gwangjuTimetable.fieldsProvided ?? ["service_calendar", "trip", "stop_time"])],
-      coverageScope: {
-        regionIds: ["gwangju"],
-        operatorIds: ["gwangju-metropolitan-rapid-transit"],
-        sourceDomains: ["schedule_timetable"],
-      },
-    });
-  }
 
   const defaultPlatformMap = buildNationwidePlatformInfoMap(finalPack);
   finalPack.stationLines = finalPack.stationLines.map((sl) => {
@@ -1792,6 +1860,8 @@ export async function prepareNationwideCandidate({
     trips: finalPack.transitTrips,
     stopTimes: finalPack.transitStopTimes,
     sourceIds: EXTERNAL_TIMETABLE_SOURCE_IDS,
+    // #913: 광주 보관본 trip은 열차 번호를 가진 다른 trip 형태라 외부 파일로 떼지 않고 팩에 둔다.
+    inlineSourceSnapshotIds: [gwangjuTimetable.retainedSnapshotId],
   });
   const writtenFixture = {
     ...materializedFixture,

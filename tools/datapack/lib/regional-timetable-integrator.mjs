@@ -413,7 +413,8 @@ export function integrateRegionalTimetables({
   // 4. Gwangju Metropolitan Rapid Transit (Line 1)
   // =========================================================================
   const gwangjuLineId = "line-e57a361e8892";
-  routes.push({
+  // #913: 전국 후보는 광주 시간표를 KRIC 보관본으로 만든다(gwangjuTimetable 없음). 그때는 route·달력도 만들지 않는다.
+  if (gwangjuTimetable) routes.push({
     id: "route-gwangju-line-1",
     agencyId: "gwangju-metropolitan-rapid-transit",
     routeShortName: "광주 1호선",
@@ -424,7 +425,7 @@ export function integrateRegionalTimetables({
     lineId: gwangjuLineId,
   });
 
-  calendars.push(
+  if (gwangjuTimetable) calendars.push(
     { serviceId: "gwangju-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
     { serviceId: "gwangju-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231" }
   );

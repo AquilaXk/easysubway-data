@@ -246,7 +246,6 @@ export async function buildServerRouteBundleFinalEvidence(input) {
       input.releaseEvidence,
       artifact.publicationObjects,
       sourceFreshness,
-      fixed.buildSpec.value,
     );
   if (release !== null && eligibility.file !== null) release.files.push(eligibility.file);
   const final = release?.final ?? prePublicationFinal;
@@ -277,7 +276,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   return final;
 }
 
-async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness, buildSpec) {
+async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
   if (prePublicationFinal.result !== "NO_GO"
     || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
       "promotionAuthorization:UNAVAILABLE",
@@ -285,7 +284,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicati
     ])) {
     throw new Error("pre-publication FINAL is not release eligible");
   }
-  assertSourceFreshnessCoversCandidate(sourceFreshness, prePublicationFinal.candidate.freshUntil, buildSpec);
+  assertSourceFreshnessCoversCandidate(sourceFreshness, prePublicationFinal.candidate.freshUntil);
   assertKeys(releaseEvidence, RELEASE_EVIDENCE_KEYS, "release evidence keys");
   const paths = Object.fromEntries(RELEASE_EVIDENCE_KEYS
     .filter((key) => key.endsWith("Path"))
@@ -366,20 +365,18 @@ function assertReceiptCandidate(prePublicationFinal, receipt, publicationObjects
   }
 }
 
-function assertSourceFreshnessCoversCandidate(sourceFreshness, freshUntil, buildSpec) {
+function assertSourceFreshnessCoversCandidate(sourceFreshness, freshUntil) {
   const results = sourceFreshness?.evidence?.validation?.results;
   if (sourceFreshness?.state !== "PASS" || !Array.isArray(results) || results.length === 0) {
     throw new Error("source freshness cutoff evidence is unavailable");
   }
   const candidateCutoff = Date.parse(freshUntil);
   if (!Number.isFinite(candidateCutoff)) throw new Error("candidate freshUntil is invalid");
-  const isNationwide = buildSpec?.productionScopeId === "nationwide_routing_android_v1"
-    || buildSpec?.candidateId?.startsWith("nationwide-candidate");
-  if (!isNationwide) {
-    for (const result of results) {
-      if (requiredUtcInstant(result.freshnessExpiresAt, "source freshness cutoff") < candidateCutoff) {
-        throw new Error("source freshness cutoff must cover candidate freshUntil");
-      }
+  // #913: nationwide 예외(#761)를 없앤다. 번들 freshUntil이 이제 시간표 원천 만료까지 반영하므로(build-datapack),
+  // 인용 원천 중 하나라도 번들보다 먼저 만료되면 원천이 만료된 데이터를 서빙하게 된다.
+  for (const result of results) {
+    if (requiredUtcInstant(result.freshnessExpiresAt, "source freshness cutoff") < candidateCutoff) {
+      throw new Error("source freshness cutoff must cover candidate freshUntil");
     }
   }
 }

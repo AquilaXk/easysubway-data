@@ -295,6 +295,10 @@
     "data899": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/899",
       "title": "[Fix] 수도권 지하철 공식 시간표를 전국 데이터팩에 적재"
+    },
+    "data913": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/913",
+      "title": "[Fix] 데이터팩·서버 번들 만료 시각에 시간표 원천 신선도 반영"
     }
   },
   "workflows": {
@@ -411,6 +415,7 @@
     {"path":"tools/datapack/build-current-transfer-topology-metrics.test.mjs","semanticOwner":"data339","classes":["required-pr"],"durationMs":153},
     {"path":"tools/datapack/build-data-component-manifest.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":660},
     {"path":"tools/datapack/build-datapack-accessibility-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":4},
+    {"path":"tools/datapack/build-datapack-timetable-freshness.test.mjs","semanticOwner":"data913","classes":["required-pr"],"durationMs":10},
     {"path":"tools/datapack/build-datapack-candidate-fixture-override.test.mjs","semanticOwner":"data396","classes":["required-pr"],"durationMs":1743},
     {"path":"tools/datapack/build-datapack-candidate-tuple.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":692},
     {"path":"tools/datapack/build-candidate-oci-artifact-descriptor.test.mjs","semanticOwner":"data529","classes":["required-pr"],"durationMs":62},
@@ -531,6 +536,7 @@
     {"path":"tools/datapack/lib/kric-station-timetable-api-trips.test.mjs","semanticOwner":"data903","classes":["required-pr"],"durationMs":40},
     {"path":"tools/datapack/lib/kric-korail-timetable.test.mjs","semanticOwner":"data903","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/lib/kric-station-lines-timetable.test.mjs","semanticOwner":"data903","classes":["required-pr"],"durationMs":60},
+    {"path":"tools/datapack/lib/kric-retained-gwangju-projection.test.mjs","semanticOwner":"data913","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/lib/map-catalog-oci-publisher.test.mjs","semanticOwner":"data535","classes":["required-pr"],"durationMs":7},
     {"path":"tools/datapack/lib/molit-svg-provider-identity.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":2},
     {"path":"tools/datapack/lib/nationwide-platform-resolver.test.mjs","semanticOwner":"data813","classes":["required-pr"],"durationMs":1},
