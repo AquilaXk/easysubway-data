@@ -114,7 +114,8 @@ test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이
   const binding = committed.packs[0][EXTERNAL_STOP_TIMES_KEY];
   assert.ok((await stat(path.join(root, binding.path))).size < EXTERNAL_FILE_MAX_BYTES, "external timetable file size");
   const report = JSON.parse(await readFile(path.join(root, CAPITAL_REPORT), "utf8"));
-  const capital = binding.sections.filter(({ sourceId }) => sourceId === report.source.sourceId);
+  // #903: 같은 원천(kric-nationwide-timetable-file)에 코레일 projection 섹션이 함께 있다. 수도권 snapshot 섹션만 고른다.
+  const capital = binding.sections.filter(({ sourceId, sourceSnapshotId }) => sourceId === report.source.sourceId && sourceSnapshotId === report.source.snapshotId);
   assert.deepEqual(capital.map(({ sourceSnapshotId, stopTimeProvenance, tripCount, stopTimeCount }) => ({ sourceSnapshotId, stopTimeProvenance, tripCount, stopTimeCount })),
     [{ sourceSnapshotId: report.source.snapshotId, stopTimeProvenance: "TRIP_INHERITED", tripCount: report.summary.admittedTripCount, stopTimeCount: report.summary.admittedStopTimeCount }]);
   for (const line of report.lines) {
@@ -123,7 +124,7 @@ test("#899 커밋된 전국 팩·외부 시간표 파일은 크기 상한 안이
   }
   assert.equal(committed.packs[0].transitTrips.some(({ sourceId }) => sourceId === report.source.sourceId), false, "capital trips live in the external file");
   const pack = expandExternalStopTimes(committed, { repositoryRoot: root }).packs[0];
-  const capitalTrips = pack.transitTrips.filter(({ sourceId }) => sourceId === report.source.sourceId);
+  const capitalTrips = pack.transitTrips.filter(({ sourceId, sourceSnapshotId }) => sourceId === report.source.sourceId && sourceSnapshotId === report.source.snapshotId);
   const capitalTripIds = new Set(capitalTrips.map(({ id }) => id));
   assert.equal(capitalTripIds.size, report.summary.admittedTripCount);
   assert.equal(capitalTrips.length, capitalTripIds.size, "short trip ids must not collide");

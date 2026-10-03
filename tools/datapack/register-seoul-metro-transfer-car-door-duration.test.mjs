@@ -62,7 +62,11 @@ test("원문 snapshot을 한 번 발행하고 inventory admission·원장 행·g
   const read = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
   const inventory = await read("tools/datapack/source-inventory.json");
   const source = inventory.sources.find(({ id }) => id === SOURCE_ID);
-  assert.equal(inventory.sources.at(-1).id, SOURCE_ID, "새 원천은 inventory 끝에 하나만 붙는다");
+  // 이미 등록된 원천은 제자리에서 바뀌고, 처음이면 끝에 붙는다. 어느 쪽이든 하나만 있다(#903: 다른 원천이 뒤에 붙을 수 있다).
+  const before = (JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-inventory.json"), "utf8"))).sources.map(({ id }) => id);
+  assert.equal(inventory.sources.filter(({ id }) => id === SOURCE_ID).length, 1, "원천 항목은 하나만 있다");
+  assert.equal(inventory.sources.findIndex(({ id }) => id === SOURCE_ID), before.includes(SOURCE_ID) ? before.indexOf(SOURCE_ID) : before.length,
+    "기존 원천은 제자리, 새 원천은 끝");
   assert.equal(source.requiredForProductionPack, false, "후보 선택 집합 밖 원천이다");
   assert.equal(source.admissionEvidence.snapshotId, snapshotId);
   assert.equal(source.admissionEvidence.decision, "APPROVED");
@@ -81,8 +85,15 @@ test("원문 snapshot을 한 번 발행하고 inventory admission·원장 행·g
   assert.equal(validateLineage(ledger).headsBySource[SOURCE_ID], snapshotId);
 
   const governance = await read("tools/datapack/source-governance-policy.json");
-  assert.equal(governance.sources.at(-1).sourceId, SOURCE_ID);
-  assert.deepEqual(governance.registrationLineage.addedSourceIds, [SOURCE_ID]);
+  // #903: 다른 원천이 뒤에 붙을 수 있다. 항목은 하나이고 기존이면 제자리, 처음이면 끝이다.
+  const governanceBeforePolicy = JSON.parse(await readFile(path.join(ROOT, "tools/datapack/source-governance-policy.json"), "utf8"));
+  const governanceBefore = governanceBeforePolicy.sources.map(({ sourceId }) => sourceId);
+  assert.equal(governance.sources.filter(({ sourceId }) => sourceId === SOURCE_ID).length, 1);
+  assert.equal(governance.sources.findIndex(({ sourceId }) => sourceId === SOURCE_ID),
+    governanceBefore.includes(SOURCE_ID) ? governanceBefore.indexOf(SOURCE_ID) : governanceBefore.length);
+  // 처음 등록이면 이번 append 이력이 이 원천이고, 이미 있으면 governance를 다시 쓰지 않아 이력도 그대로다.
+  assert.deepEqual(governance.registrationLineage, governanceBefore.includes(SOURCE_ID)
+    ? governanceBeforePolicy.registrationLineage : { ...governance.registrationLineage, addedSourceIds: [SOURCE_ID] });
   const freshness = await read("release/product-gates/datapack-freshness-sla.json");
   assert.ok(freshness.sourceClasses.find(({ id }) => id === "annual_official_file").sourceIds.includes(SOURCE_ID));
 });

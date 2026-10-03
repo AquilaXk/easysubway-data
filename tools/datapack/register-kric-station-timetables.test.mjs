@@ -37,7 +37,31 @@ async function fixture(t) {
     await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
     await cp(path.join(REPOSITORY_ROOT, relative), path.join(root, relative));
   }
+  await withoutRegisteredStationLines(root);
   return { root, ...(await inputSet(t, root, COLLECTED_START)) };
+}
+
+// 저장소에는 이미 이 원천이 등록돼 있다(#903 데이터). 테스트 사본은 등록 전 상태로 되돌려 첫 등록부터 시험한다.
+async function withoutRegisteredStationLines(root) {
+  const edit = async (relative, change) => {
+    const file = path.join(root, relative);
+    const value = JSON.parse(await readFile(file, "utf8"));
+    await writeFile(file, `${JSON.stringify(change(value) ?? value, null, 2)}\n`);
+  };
+  await edit(OUTPUTS[0], (inventory) => { inventory.sources = inventory.sources.filter(({ id }) => id !== STATION_LINES_SOURCE_ID); });
+  await edit(OUTPUTS[1], (ledger) => ledger.filter(({ sourceId }) => sourceId !== STATION_LINES_SOURCE_ID));
+  await edit(OUTPUTS[2], (governance) => {
+    if (!governance.sources.some(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID)) return;
+    if (JSON.stringify(governance.registrationLineage.addedSourceIds) !== JSON.stringify([STATION_LINES_SOURCE_ID])) throw new Error("unexpected governance lineage");
+    governance.sources = governance.sources.filter(({ sourceId }) => sourceId !== STATION_LINES_SOURCE_ID);
+    governance.registrationLineage = governance.registrationLineage.predecessorLineage;
+  });
+  await edit(OUTPUTS[3], (freshness) => {
+    for (const sourceClass of freshness.sourceClasses) sourceClass.sourceIds = sourceClass.sourceIds.filter((id) => id !== STATION_LINES_SOURCE_ID);
+  });
+  await edit("release/product-gates/production-datapack-scope.json", (scope) => {
+    scope.productionSourceSet.requiredSourceIds = scope.productionSourceSet.requiredSourceIds.filter((id) => id !== STATION_LINES_SOURCE_ID);
+  });
 }
 
 // 같은 저장소에 대해 collectedStart 시각의 수집본·receipt·admission·입력 파일 한 벌을 만든다.
