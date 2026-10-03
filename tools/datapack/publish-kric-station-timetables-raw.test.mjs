@@ -49,7 +49,8 @@ test("역별 수집본을 새 sourceId 경로에 content-addressed로 게시하�
   assert.equal(receipt.rawObjectUri, `oci://axvym6vk8g7i/easysubway-datapacks/${key}`);
   const governance = JSON.parse(await readFile(path.join(REPOSITORY_ROOT, "tools/datapack/source-governance-policy.json"), "utf8"));
   const terms = governance.sources.find(({ sourceId }) => sourceId === "kric-subway-timetable");
-  const projected = { ...governance, sources: [...governance.sources, { ...terms, sourceId: STATION_LINES_SOURCE_ID }] };
+  const registered = governance.sources.some(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID);
+  const projected = registered ? governance : { ...governance, sources: [...governance.sources, { ...terms, sourceId: STATION_LINES_SOURCE_ID }] };
   assert.equal(receipt.rawRetentionExpiresAt, deriveRawRetentionExpiresAt({ policy: projected, sourceId: STATION_LINES_SOURCE_ID, retrievedAt: values.artifact.collectedAt }));
   assert.deepEqual(JSON.parse(await readFile(values.receiptPath, "utf8")), receipt);
 });

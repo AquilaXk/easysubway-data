@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,6 +12,7 @@ import {
   registerKricCapitalTimetable,
 } from "./register-kric-capital-timetable.mjs";
 import { KRIC_CAPITAL_ROUTE_PROFILES } from "./lib/kric-capital-timetable-records.mjs";
+import { KORAIL_STATION_ROW_BINDINGS } from "./lib/kric-station-row-timetable-trips.mjs";
 import { RAW_PUBLICATION_MODE } from "./lib/same-raw-reverification.mjs";
 
 // #870: 같은 원본(raw sha256)을 다시 수집하면 snapshot 파일을 새로 만들지 않고 재확인 이력만 append한다.
@@ -121,7 +122,10 @@ test("등록기는 같은 실행에서 원본을 직접 수집한 관측만 등�
     await mkdir(path.join(root, "tools/datapack/sources"), { recursive: true });
     const lineIds = [...new Set(KRIC_CAPITAL_ROUTE_PROFILES.map(({ lineId }) => lineId))];
     await writeFile(path.join(root, "tools/datapack/source-inventory.json"), `${JSON.stringify({ sources: [{ id: "kric-nationwide-timetable-file" }] }, null, 2)}\n`);
-    await writeFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), JSON.stringify({ activeLineScopes: lineIds.map((lineId) => ({ regionId: "capital", operatorId: "op", lineId })) }));
+    await writeFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), JSON.stringify({ activeLineScopes: [
+      ...lineIds.map((lineId) => ({ regionId: "capital", operatorId: "op", lineId })),
+      ...KORAIL_STATION_ROW_BINDINGS.map(({ lineId }) => ({ regionId: lineId === "line-f52eb59d8497" ? "busan" : "capital", operatorId: "korail", lineId })),
+    ] }));
     const operationDirectory = path.join(root, "operation");
     await mkdir(operationDirectory);
     const collectedAt = new Date("2026-10-09T15:00:00.000Z");
@@ -140,6 +144,17 @@ test("등록기는 같은 실행에서 원본을 직접 수집한 관측만 등�
     assert.equal(path.dirname(observed[0].inputFile), operationDirectory);
     assert.equal(result.evidence.observedAt, collectedAt.toISOString());
     assert.equal(result.evidence.reverifications.length, 1);
+    // #903: 같은 관측에서 코레일 projection snapshot·evidence를 함께 만든다(관측 시각·재확인 이력이 같다).
+    assert.equal(observed.length, 1);
+    assert.match(result.korail.evidence.snapshotId, /^kric-nationwide-timetable-file-korail-[a-f0-9]{64}$/u);
+    assert.deepEqual(result.korail.evidence.reverifications, result.evidence.reverifications);
+    assert.equal(result.korail.evidence.recordCount, KORAIL_STATION_ROW_BINDINGS.length);
+    assert.deepEqual(result.korail.evidence.coverageScope, { regionIds: ["busan", "capital"], operatorIds: ["korail"],
+      lineIds: KORAIL_STATION_ROW_BINDINGS.map(({ lineId }) => lineId).sort(), sourceDomains: ["schedule_timetable"] });
+    assert.deepEqual(Object.values(result.korail.evidence.dataReferenceDateByLine), KORAIL_STATION_ROW_BINDINGS.map(() => ["2026-05-31"]));
+    const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+    assert.deepEqual(inventory.sources[0].korailScheduleAdmissionEvidence, result.korail.evidence);
+    await readFile(path.join(root, result.korail.snapshotPath));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -184,6 +199,14 @@ function syntheticObservation(receipt) {
       dataReferenceDate: { value: "46022", cellType: "n" }, sourceRowNumber: rowNumber, sourceRowSha256: createHash("sha256").update(`row-${rowNumber}`).digest("hex"),
     };
   });
+  for (const { routeNumber, routeName } of KORAIL_STATION_ROW_BINDINGS) {
+    rowNumber += 1;
+    records.push({
+      trainNumber: "K1", routeNumber, routeName, originStationName: "가", destinationStationName: "가", serviceType: "일반", weekdayType: "평일",
+      stationName: "가", arrivalTime: { value: "0.25", cellType: "n" }, departureTime: { value: "0.25", cellType: "n" },
+      dataReferenceDate: { value: "46173", cellType: "n" }, sourceRowNumber: rowNumber, sourceRowSha256: createHash("sha256").update(`row-${rowNumber}`).digest("hex"),
+    });
+  }
   return { schemaVersion: 1, artifactKind: "kric-nationwide-timetable-observation", sourceId: "kric-nationwide-timetable-file",
     observedAt: receipt.capturedAt, rawFile: receipt.rawFile, rawByteLength: receipt.byteLength, rawSha256: receipt.sha256,
     rowCount: records.length, records, recordsSha256: "d".repeat(64) };

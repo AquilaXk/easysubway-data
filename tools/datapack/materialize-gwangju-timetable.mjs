@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { topologySnapshotFreshnessMillis } from "./lib/topology-freshness-cutover.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
@@ -18,7 +19,6 @@ export const GWANGJU_LINES = Object.freeze([
   Object.freeze({ lineNumber: 1, lineId: LINE_ID }),
 ]);
 const PACK_ID = "nationwide-gwangju-schedule";
-const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 
 export function materializeGwangjuTimetable({
   baseFixture,
@@ -595,7 +595,8 @@ function requiredSources(inventory, retained, topologySnapshot, mappings) {
   ]) {
     const captured = Date.parse(capturedAt);
     const fresh = Date.parse(freshUntil);
-    if (!Number.isFinite(captured) || fresh !== captured + FRESHNESS_MILLIS) {
+    // #904: topology evidence 창은 수집 시각이 컷오버 전이면 P1D, 후면 P7D다.
+    if (!Number.isFinite(captured) || fresh !== captured + topologySnapshotFreshnessMillis(captured)) {
       throw new Error(`${label} evidence freshness relationship is invalid`);
     }
   }

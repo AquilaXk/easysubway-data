@@ -29,6 +29,7 @@ import { materializeDaejeonRouteMapPositions } from "./materialize-daejeon-route
 import { materializeSeoul9Phase1RouteMapPositions } from "./materialize-seoul9-phase1-route-map-positions.mjs";
 import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import { daeguMembershipSnapshotIdentity } from "./materialize-daegu-timetable.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
@@ -277,9 +278,8 @@ export function projectRegionalFixtureSourceBindings({
       snapshotId,
       snapshotPath: fixtureSnapshotPath(snapshotId),
       capturedAt: daejeonTopology.observedAt,
-      freshUntil: new Date(Date.parse(daejeonTopology.observedAt)
-        + Date.parse(topology.topologyAdmissionEvidence.freshUntil)
-        - Date.parse(topology.topologyAdmissionEvidence.capturedAt)).toISOString(),
+      // #904: topology 창은 수집 시각이 컷오버 전이면 P1D, 후면 P7D다. 커밋된 evidence 창을 옮겨 쓰면 기준 시각이 달라질 때 어긋난다.
+      freshUntil: topologySnapshotFreshUntil(daejeonTopology.observedAt),
       stationCount: daejeonTopology.stationNumbers.length,
       edgeCount: daejeonTopology.rowCount,
       excludedTransferCount: daejeonTopology.excludedTransferCount,

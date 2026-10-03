@@ -1,0 +1,920 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "datapack-official-line-timetable-report",
+  "issue": "https://github.com/AquilaXk/easysubway-data/issues/903",
+  "sources": [
+    {
+      "name": "korail",
+      "sourceId": "kric-nationwide-timetable-file",
+      "snapshotId": "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "recordsSha256": "c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+      "observedAt": "2026-10-03T00:11:32.831Z",
+      "lines": [
+        {
+          "lineId": "line-051552e50435",
+          "routeKey": "I41WS",
+          "routeName": "서해선",
+          "sourceTripCount": 320,
+          "admittedTripCount": 320,
+          "admittedStopTimeCount": 5936,
+          "singleProviderTimeStopCount": {
+            "origin": 0,
+            "intermediate": 0,
+            "terminal": 0
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 172,
+            "WEEKEND_HOLIDAY": 148
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": [
+            "2026-05-31"
+          ]
+        },
+        {
+          "lineId": "line-54a7b980b7c3",
+          "routeKey": "I41K2",
+          "routeName": "경춘선",
+          "sourceTripCount": 216,
+          "admittedTripCount": 211,
+          "admittedStopTimeCount": 4201,
+          "singleProviderTimeStopCount": {
+            "origin": 0,
+            "intermediate": 0,
+            "terminal": 0
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 124,
+            "WEEKEND_HOLIDAY": 87
+          },
+          "quarantinedTripCount": 5,
+          "quarantineRatio": 0.0231,
+          "quarantineByReason": {
+            "EXPRESS_STOP_PATTERN_UNRESOLVED": 5
+          },
+          "pinnedQuarantine": {
+            "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED",
+            "rowCount": 5,
+            "rowSetSha256": "5934643bec13e0cd32aeb7c2ce8300478699abaa6a55da1fd49960a0da0b30a3",
+            "note": "급행 정차·통과 구분 불가, #902에서 보강"
+          },
+          "dataReferenceDates": [
+            "2026-05-31"
+          ]
+        },
+        {
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "routeName": "수인분당선",
+          "sourceTripCount": 779,
+          "admittedTripCount": 757,
+          "admittedStopTimeCount": 25065,
+          "singleProviderTimeStopCount": {
+            "origin": 0,
+            "intermediate": 0,
+            "terminal": 0
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 415,
+            "WEEKEND_HOLIDAY": 342
+          },
+          "quarantinedTripCount": 22,
+          "quarantineRatio": 0.0282,
+          "quarantineByReason": {
+            "EXPRESS_STOP_PATTERN_UNRESOLVED": 22
+          },
+          "pinnedQuarantine": {
+            "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED",
+            "rowCount": 22,
+            "rowSetSha256": "e21e4cd62f74db32c0fa2b01813fe18f671d08ffc2cba86c2eb3c3e88f5e9f79",
+            "note": "급행 정차·통과 구분 불가, #902에서 보강"
+          },
+          "dataReferenceDates": [
+            "2026-05-31"
+          ]
+        },
+        {
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "routeName": "경의중앙선",
+          "sourceTripCount": 438,
+          "admittedTripCount": 410,
+          "admittedStopTimeCount": 15580,
+          "singleProviderTimeStopCount": {
+            "origin": 0,
+            "intermediate": 0,
+            "terminal": 0
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 217,
+            "WEEKEND_HOLIDAY": 193
+          },
+          "quarantinedTripCount": 28,
+          "quarantineRatio": 0.0639,
+          "quarantineByReason": {
+            "EXPRESS_STOP_PATTERN_UNRESOLVED": 28
+          },
+          "pinnedQuarantine": {
+            "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED",
+            "rowCount": 28,
+            "rowSetSha256": "f4efb4e31fc9ebb2cb7c3e0ef14292b52ca8addbde5589ca99e5fc5d2755dee9",
+            "note": "급행 정차·통과 구분 불가, #902에서 보강"
+          },
+          "dataReferenceDates": [
+            "2026-05-31"
+          ]
+        },
+        {
+          "lineId": "line-e4939a4b4713",
+          "routeKey": "I41K5",
+          "routeName": "경강선",
+          "sourceTripCount": 221,
+          "admittedTripCount": 221,
+          "admittedStopTimeCount": 2565,
+          "singleProviderTimeStopCount": {
+            "origin": 0,
+            "intermediate": 0,
+            "terminal": 0
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 124,
+            "WEEKEND_HOLIDAY": 97
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": [
+            "2026-05-31"
+          ]
+        },
+        {
+          "lineId": "line-f52eb59d8497",
+          "routeKey": "I26K6",
+          "routeName": "동해선",
+          "sourceTripCount": 198,
+          "admittedTripCount": 198,
+          "admittedStopTimeCount": 4342,
+          "singleProviderTimeStopCount": {
+            "origin": 0,
+            "intermediate": 0,
+            "terminal": 0
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 105,
+            "WEEKEND_HOLIDAY": 93
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": [
+            "2026-05-31"
+          ]
+        }
+      ],
+      "summary": {
+        "lineCount": 6,
+        "admittedTripCount": 2117,
+        "quarantinedCount": 55
+      },
+      "rows": [
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-54a7b980b7c3",
+          "routeKey": "I41K2",
+          "trainNumber": "K8405",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 84413,
+          "sourceRowSha256": "1eec4fceb8c17eab8be6fa9e574878a7c215420ffe5dab5449f003a939b3cfb4",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-54a7b980b7c3",
+          "routeKey": "I41K2",
+          "trainNumber": "K8402",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 84341,
+          "sourceRowSha256": "384581b33ba520cdd0b5924f8b94f19d213da24dfa8a5909d4a713656f8008b8",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-54a7b980b7c3",
+          "routeKey": "I41K2",
+          "trainNumber": "K8404",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 84389,
+          "sourceRowSha256": "aed4f79741fda16f7d376274bf2ef89c8366b6694c88013ccbeb6b6907fbaa47",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-54a7b980b7c3",
+          "routeKey": "I41K2",
+          "trainNumber": "K8401",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 84317,
+          "sourceRowSha256": "f1cde51f9afd84b03fc3b4dce683a0fc16d0aeb1f00f7811ed7cf1fffec7bbc9",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-54a7b980b7c3",
+          "routeKey": "I41K2",
+          "trainNumber": "K8403",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 84365,
+          "sourceRowSha256": "f85d83050f01e236b73e2b65130a5e75a35abdd97e7472cb46415dc1d875f32c",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6406",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204822,
+          "sourceRowSha256": "0334f971da246c0ad0febcf76a3f567c7eafbb0ae2e9ee8773dfbe0ceff645ea",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6401",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204637,
+          "sourceRowSha256": "11d9ee4765c01f7843572f39e99f3f9cc549cbcd864a8fd24f273f12b9774538",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6407",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204859,
+          "sourceRowSha256": "1527d6273811d606ba65321639de49ede9b8f91fceb02abb0f62bd71ce0340e0",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6804",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211929,
+          "sourceRowSha256": "25da432aebe61f1f0a6456db9eb8ca2d03a38032a953666254de04679853083c",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6408",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204896,
+          "sourceRowSha256": "27f1591c690a4458230d50846311dbe10732d76b2dbba41e8925f95346409d72",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6410",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204970,
+          "sourceRowSha256": "2ad5b97010032a7e2e8aa498d0d7664ccfa2009a9e4e8a778852fd36c3c89a9e",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6411",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 205008,
+          "sourceRowSha256": "5376780687f171ef168208f8a7b4da643588cdf53811f716cb5dc1eec0d58ea4",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6806",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211957,
+          "sourceRowSha256": "5b2f0f08569a190581fbc01790cc47c0253c7d08865801356f657046060a494c",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6404",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204748,
+          "sourceRowSha256": "5c8fd89fc9ceebdb0cc173df40b1dcc4ed8976d3cabf0751d64934aed236cefa",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6808",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211971,
+          "sourceRowSha256": "706c7c15c2fe65a76932f20e94200e519b7598635143384ab1b3fce0655d66fa",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6805",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211943,
+          "sourceRowSha256": "7a4887914e3c801e09d574789dadc16eff9735027adc0adea4f0cf5b9f0cbf85",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6414",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 205120,
+          "sourceRowSha256": "a06c3d1a6f113c9ebce00a70fbf44519fb3cf8b2e81d1255b4b3124cb5714873",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6412",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 205045,
+          "sourceRowSha256": "a6ea091ffe5b3a3f9f905d8c0c0c52d139e5cfffa4f887c6325b8838a18618d1",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6413",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 205082,
+          "sourceRowSha256": "b41bed886babfc7821f5733673e2ee39c03660e0ed3143314ecd8a6945ac3871",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6409",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204933,
+          "sourceRowSha256": "b46d0abe75e3757327aa7579b70584871cc115adcf70a4df2ca575b66491fa36",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6803",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211915,
+          "sourceRowSha256": "c9531dab6f8591cc1f2c897023be20660ea054285402e34f776950bce7201580",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6810",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211985,
+          "sourceRowSha256": "cf9e8946b41d814bdb563695b08ef93ee38f1607f5e1d77d50758936285dd5c4",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6403",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204711,
+          "sourceRowSha256": "ecc3d7029a79da65dc37c4da324a9b664aa59324fbd5567574023798e9673836",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6802",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211901,
+          "sourceRowSha256": "f110ba68651c6dfa835454f73822cc8bab5062721d5d58ceb612945dc7c9c7a8",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6402",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204674,
+          "sourceRowSha256": "f2d6fb5cde721bed2200d79b9faf64605d198799adb09a4a8c84e3e29a3dbcc9",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6801",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 211887,
+          "sourceRowSha256": "f49656461d178e9a377f17ffbce6c073003858d549199432a05c99656d2932a2",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-558d0bd8312d",
+          "routeKey": "I28K1",
+          "trainNumber": "K6405",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 204785,
+          "sourceRowSha256": "f724184dfc4f66066056a2e0ab73b94931bc99ff98060031f427d498df177dcd",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5702",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38027,
+          "sourceRowSha256": "033d7d13ecc5adfeeebc07efa2ca8751acb2fc3f0e3ae3b4539a6a11d959f438",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5703",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38079,
+          "sourceRowSha256": "09c9768ebb914b424398b67ac3bbc136d7b8e6d4dab53b49749400fa9127c5dd",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5851",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38372,
+          "sourceRowSha256": "108ad67ca1d3f5762cb1b15a90a25c53c2c278ba8ba7f94d2051e3ce8e05a7db",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2509",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30377,
+          "sourceRowSha256": "23a0da03bdf238abe91ec50969ec50a563e00476f176785071d227f2be78c74e",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2507",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30333,
+          "sourceRowSha256": "36bac824f08dc239054a7e52fb178210e262c05e3ede76b37b7eccfa5dbf6cda",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2502",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30223,
+          "sourceRowSha256": "4308a2f7ffe59078309237e84aa5518257a25a733643d6b16c0a2dd0c75f741b",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5708",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38331,
+          "sourceRowSha256": "49247fa574a9775ebd300978bcf80ad992debd370cbd76e40d208bb525daf72f",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5854",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38502,
+          "sourceRowSha256": "4af08b78ab86faa501bf3c91f71045ec7c83584feb05a22443ad8b811e38b3ec",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2506",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30311,
+          "sourceRowSha256": "4c7032e9efc75ddf0e4fe58f475ad3d74889511d4865bcf6a872f6b083d97782",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2505",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30289,
+          "sourceRowSha256": "4f3727e97ae14ba743858f7e6dbe89db429de21c77e21fa4ea0fab921ce3ba68",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2503",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30245,
+          "sourceRowSha256": "605ceb0b8ba2768f491115af41f461712b5439099e7e79871a74a4465f4ec252",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2510",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30399,
+          "sourceRowSha256": "65e9179605ea42ec1028f198f008069a24df349773088730f7ca7abc2dcd7c0d",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5706",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38226,
+          "sourceRowSha256": "6f1765220e596df820447d7d39a6312adf28b07b4a6571177e79bf380fa6de39",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2516",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30531,
+          "sourceRowSha256": "727490e3a1fc3d12d76595959d4f8f73fc3054d31941bfa2de9f1aa220fc2e78",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2512",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30443,
+          "sourceRowSha256": "7dfefd139449fa3bf34bf5a9fbc9da77b922f7f6736789fe50a65becd8cf1fc6",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2514",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30487,
+          "sourceRowSha256": "8dd90734aa45a823c09f5ebc2b5b59002f3f15eb4f8e7611a020edf06dc771f9",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5705",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38174,
+          "sourceRowSha256": "a4231ef721c2ccc7e13177aa24a73a3233ca45057ded21e11a3cdaed026cdcbf",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2508",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30355,
+          "sourceRowSha256": "a58baefb227ef41c590b14f86ad3f1781de7526c7d01ebf1d4f5ff810351123a",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5701",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 37984,
+          "sourceRowSha256": "a7df9f30335c3069995f005228772b60011e6df1ce8f815fe50ff8fc55db1019",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2515",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30509,
+          "sourceRowSha256": "aa3bfb0ad73fcb885b5a47f3c8e2065d4280160bb8cdf3669c8a3b6c596386e2",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2501",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30201,
+          "sourceRowSha256": "abeef78454a4a17ceae7f22a66e3afaabc1d5a0990cf45537a143647f8ba44cd",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5704",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38122,
+          "sourceRowSha256": "b1908238dfc061eeeeeab87f5f8e04a14a4f45f8503017e599aa812aa572a44f",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2511",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30421,
+          "sourceRowSha256": "c6f3ecb932fba08da8b042769cba05503b7d548bb4d16a754a9b85c6053b23d1",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2504",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30267,
+          "sourceRowSha256": "cb9bdb5918fbe0d748fb56516b858b330d10dc3ff52511375f726fce6ebc59bf",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K2513",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 30465,
+          "sourceRowSha256": "dc5552385b7460cdf53e8188e473da5875607848e66109e1764ffa22aea4384d",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5707",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38279,
+          "sourceRowSha256": "e641b75f3fa12b2a2b29e2c07af60dd0b5a39169cc57020117cc9139887de038",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5853",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38450,
+          "sourceRowSha256": "e8cf1e3e823d23f61a492412b28abc9f5f3718a179928e119b5133f322134103",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        },
+        {
+          "sourceId": "kric-nationwide-timetable-file",
+          "lineId": "line-6e39be0cb6e2",
+          "routeKey": "I4108",
+          "trainNumber": "K5852",
+          "serviceDayKind": "WEEKDAY",
+          "sourceDayKey": "평일",
+          "sourceRowNumber": 38415,
+          "sourceRowSha256": "f6a52ff14377b7e22b3144075a53e8530eb8eb49510e61227f5423ea2fd81500",
+          "reason": "EXPRESS_STOP_PATTERN_UNRESOLVED"
+        }
+      ]
+    },
+    {
+      "name": "stationLines",
+      "sourceId": "kric-subway-timetable-station-lines",
+      "snapshotId": "kric-subway-timetable-station-lines-20261003",
+      "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
+      "recordsSha256": "8e10d373da061479606f386cbcffae84fdc38958e1d73dffe518a963e5cb1bdf",
+      "observedAt": "2026-10-03T00:13:14.392Z",
+      "lines": [
+        {
+          "lineId": "line-8604048b6430",
+          "routeKey": "A",
+          "routeName": "GTX-A",
+          "sourceTripCount": 804,
+          "admittedTripCount": 804,
+          "admittedStopTimeCount": 3780,
+          "singleProviderTimeStopCount": {
+            "origin": 804,
+            "intermediate": 0,
+            "terminal": 804
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 402,
+            "WEEKEND_HOLIDAY": 402
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": []
+        },
+        {
+          "lineId": "line-828f04afc588",
+          "routeKey": "E1",
+          "routeName": "에버라인",
+          "sourceTripCount": 746,
+          "admittedTripCount": 746,
+          "admittedStopTimeCount": 11134,
+          "singleProviderTimeStopCount": {
+            "origin": 746,
+            "intermediate": 0,
+            "terminal": 746
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 412,
+            "WEEKEND_HOLIDAY": 334
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": []
+        },
+        {
+          "lineId": "line-62096860ab09",
+          "routeKey": "U1",
+          "routeName": "의정부경전철",
+          "sourceTripCount": 794,
+          "admittedTripCount": 794,
+          "admittedStopTimeCount": 11910,
+          "singleProviderTimeStopCount": {
+            "origin": 794,
+            "intermediate": 0,
+            "terminal": 794
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 440,
+            "WEEKEND_HOLIDAY": 354
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": []
+        },
+        {
+          "lineId": "line-5500c1600f71",
+          "routeKey": "G1",
+          "routeName": "김포골드라인",
+          "sourceTripCount": 854,
+          "admittedTripCount": 854,
+          "admittedStopTimeCount": 8012,
+          "singleProviderTimeStopCount": {
+            "origin": 854,
+            "intermediate": 0,
+            "terminal": 854
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 506,
+            "WEEKEND_HOLIDAY": 348
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": []
+        },
+        {
+          "lineId": "line-e4cce88f0d7f",
+          "routeKey": "B1",
+          "routeName": "부산김해경전철",
+          "sourceTripCount": 758,
+          "admittedTripCount": 758,
+          "admittedStopTimeCount": 15918,
+          "singleProviderTimeStopCount": {
+            "origin": 758,
+            "intermediate": 0,
+            "terminal": 758
+          },
+          "tripsByServiceDayKind": {
+            "WEEKDAY": 394,
+            "WEEKEND_HOLIDAY": 364
+          },
+          "quarantinedTripCount": 0,
+          "quarantineRatio": 0,
+          "quarantineByReason": {},
+          "pinnedQuarantine": null,
+          "dataReferenceDates": []
+        }
+      ],
+      "summary": {
+        "lineCount": 5,
+        "admittedTripCount": 3956,
+        "quarantinedCount": 0
+      },
+      "rows": []
+    }
+  ]
+}

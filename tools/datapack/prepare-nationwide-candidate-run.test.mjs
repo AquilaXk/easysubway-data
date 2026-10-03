@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
@@ -283,7 +284,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
 
   // Authentic routes across all nationwide operational scopes
   // #899: 4호선 2정차 pilot(route-seoul-4-up/down)은 KRIC 공식 수도권 시간표 13개 노선으로 교체됐다.
-  assert.strictEqual(pack.transitRoutes.length, 26);
+  // #903: 코레일 6개 노선(kric-korail)·KRIC 역별 5개 노선(kric-station)·대경선 상·하행 2개 route를 더한다.
+  assert.strictEqual(pack.transitRoutes.length, 39);
   const routeIds = new Set(pack.transitRoutes.map((r) => r.id));
   assert.ok(!routeIds.has("route-seoul-4-up"));
   assert.ok(!routeIds.has("route-seoul-4-down"));
@@ -303,6 +305,30 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(routeIds.has("route-daegu-line-3"));
   assert.ok(routeIds.has("route-daejeon-line-1"));
   assert.ok(routeIds.has("route-gwangju-line-1"));
+  for (const routeKey of ["i41ws", "i41k2", "i28k1", "i4108", "i41k5", "i26k6"]) assert.ok(routeIds.has(`route-kric-korail-${routeKey}`), routeKey);
+  for (const routeKey of ["a", "e1", "u1", "g1", "b1"]) assert.ok(routeIds.has(`route-kric-station-${routeKey}`), routeKey);
+
+  // #903: 노선도의 전 노선이 출시 범위다(QA 결정 2026-10-03). 팩의 모든 노선에 공식 시간표 trip이 1건 이상 있어야 한다.
+  const routeLine = new Map(pack.transitRoutes.map(({ id, lineId }) => [id, lineId]));
+  const linesWithTrips = new Set(pack.transitTrips.map(({ routeId }) => routeLine.get(routeId)));
+  assert.deepEqual(pack.lines.map(({ id }) => id).filter((lineId) => !linesWithTrips.has(lineId)).sort(), [], "every pack line must have at least one trip");
+
+  // #903 리뷰 F1: prepare가 쓴 노선 보고서에서 급행 고정 집합(경춘 5·수인분당 22·경의중앙 28 trip)이 노선별로 적용됐는지 본다.
+  // 고정 집합이 binding에 붙지 않으면 상한 5% 안의 노선(경춘·수인분당)은 미고정 격리로 조용히 통과하므로 여기서 막는다.
+  const lineReport = JSON.parse(await readFile(path.join(root, "tools/datapack/release/nationwide-official-line-timetable-report.json"), "utf8"));
+  const korailReport = lineReport.sources.find(({ name }) => name === "korail");
+  const expressNote = "급행 정차·통과 구분 불가, #902에서 보강";
+  const pinned = (rowCount, rowSetSha256) => ({ reason: "EXPRESS_STOP_PATTERN_UNRESOLVED", rowCount, rowSetSha256, note: expressNote });
+  assert.deepEqual(Object.fromEntries(korailReport.lines.map(({ routeKey, pinnedQuarantine }) => [routeKey, pinnedQuarantine])), {
+    I41WS: null,
+    I41K2: pinned(5, "5934643bec13e0cd32aeb7c2ce8300478699abaa6a55da1fd49960a0da0b30a3"),
+    I28K1: pinned(22, "e21e4cd62f74db32c0fa2b01813fe18f671d08ffc2cba86c2eb3c3e88f5e9f79"),
+    I4108: pinned(28, "f4efb4e31fc9ebb2cb7c3e0ef14292b52ca8addbde5589ca99e5fc5d2755dee9"),
+    I41K5: null,
+    I26K6: null,
+  });
+  const stationLinesReport = lineReport.sources.find(({ sourceId }) => sourceId === "kric-subway-timetable-station-lines");
+  assert.deepEqual(stationLinesReport.lines.map(({ pinnedQuarantine }) => pinnedQuarantine), [null, null, null, null, null]);
 
   // Zero synthetic trips manufactured by interval loop
   const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
@@ -310,10 +336,12 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // #855: 대전·광주 추정 종착역 정차 898개와 원천 정차 하나뿐인 녹동 출발 38개(격리 증거)가 빠진다.
   // #899: 4호선 pilot trip 466·정차 932·달력 2·달력 예외 28을 빼고 수도권 공식 trip 11,426·정차 319,526·
   // 달력 4·달력 예외 56을 더한다.
-  assert.strictEqual(pack.transitTrips.length, 19973, "Pack must contain exactly 19,973 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 561983, "Pack must contain exactly 561,983 authentic stop times");
-  assert.strictEqual(pack.serviceCalendars.length, 24);
-  assert.strictEqual(pack.serviceCalendarDates.length, 132);
+  // #903: 코레일 6개 노선 trip 2,117·정차 57,689, KRIC 역별 5개 노선 trip 3,956·정차 50,754,
+  // 대경선 trip 194·정차 1,488, 달력 6·달력 예외 68을 더한다(기존 노선 건수는 그대로다).
+  assert.strictEqual(pack.transitTrips.length, 26240, "Pack must contain exactly 26,240 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 671914, "Pack must contain exactly 671,914 authentic stop times");
+  assert.strictEqual(pack.serviceCalendars.length, 30);
+  assert.strictEqual(pack.serviceCalendarDates.length, 200);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
@@ -460,25 +488,29 @@ async function committedSelectionInputsWithinIncheonWindow() {
   return committedSelectionInputs();
 }
 
-// 2026-10-02 공식 도구로 등록한 원장 head(커밋된 후보 seq123이 고른 입력)다.
+// 2026-10-02·10-03 공식 도구로 등록한 원장 head(커밋된 후보 seq125가 고른 입력)다.
 const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
-  incheonTopology: "incheon-transit-station-info-20261002",
-  incheonLine1: "incheon-line1-train-timetable-20261002",
-  incheonLine2: "incheon-line2-train-timetable-20261002",
+  incheonTopology: "incheon-transit-station-info-20261003",
+  incheonLine1: "incheon-line1-train-timetable-20261003",
+  incheonLine2: "incheon-line2-train-timetable-20261003",
   busanAccessibility: "busan-transportation-accessibility-ba05d3ff5501f5e47c0d0398fd03f084a74aede650465895503057881dd27a3e-20261002",
   daeguAccessibility: "daegu-transportation-accessibility-02226d92d934146e631e719848a902d1c9f496589b5370c92fbde41d1181a96b-20261002",
-  daejeonAccessibility: "daejeon-transportation-accessibility-412f4d377c4554f0df19969faaae6652bb607f261c8b62673dc86a5e2849b231-20261002",
-  gwangjuAccessibility: "gwangju-transportation-accessibility-d63a869d119e4811857e2d87bf37279e012cac9282b633509845e43ea6d030dd-20261002",
+  daejeonAccessibility: "daejeon-transportation-accessibility-80c1158b5dc3ac3d81af436bc0cbc077d237c7c96c0059df08d5d08d7e6e6719-20261003",
+  gwangjuAccessibility: "gwangju-transportation-accessibility-7e35e2c4b50653c612f2aed521daca5ac510d016b362a44a280b5e3bb1d1453c-20261003",
   kricConvenience: "kric-station-convenience-standard-20261002T061440559Z",
   busanTimetable: "busan-transportation-timetable-20261002",
-  daeguTimetable1: "daegu-line1-train-timetable-2104d5539dea326b42dd7da308abd1634740a27711047284f2580d96642cc92c",
-  daeguTimetable2: "daegu-line2-train-timetable-353999c055eaae2d77e602901c15a2354ed3220ccd1b1327498fe6c1cf9976d7",
-  daeguTimetable3: "daegu-line3-train-timetable-beb4ff8616336afea038efb54a47610a232dd890eba37c01ba82bf9f433e1085",
+  daeguTimetable1: "daegu-line1-train-timetable-46f7c9183289603244607f8521c525932cee0739ec4a62f55c19bef7f305a811",
+  daeguTimetable2: "daegu-line2-train-timetable-97b8dbc28f6e2a09be95850a4fc37785ddfc44536fe469b2574377a8df799bd9",
+  daeguTimetable3: "daegu-line3-train-timetable-02a350d9094e4c611abf9665383787c64517868aa3945599874792a8c10131dd",
   daejeonTimetable: "daejeon-train-timetable-20261002",
   capitalTimetable: "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
+  // #903: 코레일 6개 노선 projection, 대경선 계획 시각표, KRIC 역별 시간표 5개 노선
+  korailTimetable: "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+  daegyeongTimetable: "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+  stationLinesTimetable: "kric-subway-timetable-station-lines-20261003",
 });
 
-test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 14개를 고른다", async () => {
+test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 17개를 고른다", async () => {
   const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputsWithinIncheonWindow());
   assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
   for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
@@ -537,19 +569,18 @@ test("후보 입력 head가 없거나 모호하거나 만료됐거나 fan-in과 
 });
 
 test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 이전이면 만료로 실패한다(#862 3c)", async () => {
-  // station-info(route_graph_topology, P1D)는 수집 1일 뒤 만료다.
+  // station-info(route_graph_topology)는 수집 시각 기준 창(#904: 컷오버 전 P1D, 후 P7D) 끝에서 만료다.
   const topology = await committedSelectionInputs();
   const topologyCapturedAt = topology.sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence.capturedAt;
-  topology.fanIn.evaluatedAt = new Date(Date.parse(topologyCapturedAt) + 24 * 60 * 60 * 1_000).toISOString();
+  topology.fanIn.evaluatedAt = topologySnapshotFreshUntil(topologyCapturedAt);
   await assert.rejects(resolveNationwideCandidateInputSnapshots(topology),
     /nationwide candidate input is expired for incheon-transit-station-info/);
 
   // 시간표(incheon_timetable_observation, capturedAt·P30D)는 수집 30일 뒤 만료다.
+  // 후보 시계는 그대로 두고 line1 수집 시각만 30일 전으로 옮긴다. 시계를 옮기면 다른 입력이 먼저 만료될 수 있다.
   const timetable = await committedSelectionInputs();
-  const capturedAt = timetable.sourceInventory.sources.find(({ id }) => id === "incheon-line1-train-timetable").scheduleAdmissionEvidence.capturedAt;
-  timetable.fanIn.evaluatedAt = new Date(Date.parse(capturedAt) + 30 * 24 * 60 * 60 * 1_000).toISOString();
-  timetable.sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info").topologyAdmissionEvidence.capturedAt
-    = new Date(Date.parse(timetable.fanIn.evaluatedAt) - 60_000).toISOString();
+  timetable.sourceInventory.sources.find(({ id }) => id === "incheon-line1-train-timetable").scheduleAdmissionEvidence.capturedAt
+    = new Date(Date.parse(timetable.fanIn.evaluatedAt) - 30 * 24 * 60 * 60 * 1_000).toISOString();
   await assert.rejects(resolveNationwideCandidateInputSnapshots(timetable), /nationwide candidate input is expired for incheon-line1-train-timetable/);
 
   // 후보 시계보다 늦은 수집은 미래 관측으로 실패한다.
