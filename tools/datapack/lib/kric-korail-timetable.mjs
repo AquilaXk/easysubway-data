@@ -27,6 +27,8 @@ export const KORAIL_EXPRESS_ALLOWANCE = Object.freeze({
 });
 
 const SERVICE_DAY_KIND = Object.freeze({ WEEKDAY: "WEEKDAY", SATURDAY_SUNDAY_HOLIDAY: "WEEKEND_HOLIDAY" });
+// 격리 행은 원천 요일구분 칸으로 운행일을 정한다. 평일·휴일(토·일·공휴일, QA 확정 정책)만 받고 그 밖의 값은 실패한다.
+const SERVICE_DAY_KIND_BY_WEEKDAY_TYPE = Object.freeze({ "평일": "WEEKDAY", "휴일": "WEEKEND_HOLIDAY" });
 const SNAPSHOT_KEYS = Object.freeze([
   "schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawByteLength", "rawSha256", "observationRecordsSha256",
   "routes", "recordCount", "recordsSha256", "records",
@@ -123,7 +125,8 @@ export function kricKorailOfficialTimetable(snapshot, { observedAt, allowance = 
   const quarantine = [...result.quarantine, ...result.expressTrips].map((row) => {
     const [, trainNumber, weekdayType] = row.providerTripKey.split("|");
     return { sourceId: KORAIL_TIMETABLE_SOURCE_ID, lineId: row.lineId, routeKey: routeKeyOf.get(row.lineId), trainNumber,
-      serviceDayKind: weekdayType === "평일" ? "WEEKDAY" : "WEEKEND_HOLIDAY", sourceDayKey: weekdayType,
+      serviceDayKind: Object.hasOwn(SERVICE_DAY_KIND_BY_WEEKDAY_TYPE, weekdayType) ? SERVICE_DAY_KIND_BY_WEEKDAY_TYPE[weekdayType] : fail("SERVICE_DAY", row.providerTripKey),
+      sourceDayKey: weekdayType,
       sourceRowNumber: row.sourceRowNumbers[0], sourceRowSha256: row.sourceRowSha256, reason: row.reason };
   });
   const lineBindings = bindings.map((entry) => {

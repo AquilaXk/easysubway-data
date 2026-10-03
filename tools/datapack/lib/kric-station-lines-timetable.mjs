@@ -13,6 +13,8 @@ export const STATION_LINES_SERVICE_ID_PREFIX = "kric-station";
 export const STATION_LINES_TRIP_ID_PREFIX = "ks";
 const ROUTE_NAMES = Object.freeze({ A: "GTX-A", E1: "에버라인", U1: "의정부경전철", G1: "김포골드라인", B1: "부산김해경전철" });
 const SERVICE_DAY_KIND = Object.freeze({ WEEKDAY: "WEEKDAY", SATURDAY_SUNDAY_HOLIDAY: "WEEKEND_HOLIDAY" });
+// 격리 행은 providerTripKey의 KRIC dayCd로 운행일을 정한다. 8=평일, 9=휴일(토·일·공휴일, QA 확정 정책). 그 밖의 값은 실패한다.
+const SERVICE_DAY_KIND_BY_DAY_CD = Object.freeze({ 8: "WEEKDAY", 9: "WEEKEND_HOLIDAY" });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`KRIC_STATION_LINES_TIMETABLE_${code}${detail ? `: ${detail}` : ""}`); };
 
@@ -37,11 +39,14 @@ export function kricStationLinesOfficialTimetable(snapshot, evidence, { bindings
     sourceDayKey: trip.provenance.dayCd, servicePattern: trip.servicePattern, headsign: trip.headsign,
     sourceRowSha256: trip.sourceRowSha256, stops: trip.stops,
   }));
-  const quarantine = snapshot.quarantine.map((row) => ({
-    sourceId: STATION_LINES_TIMETABLE_SOURCE_ID, lineId: row.lineId, routeKey: lnCdOf.get(row.lineId), trainNumber: row.providerTripKey.split("|")[1],
-    serviceDayKind: row.providerTripKey.split("|")[2] === "8" ? "WEEKDAY" : "WEEKEND_HOLIDAY", sourceDayKey: row.providerTripKey.split("|")[2],
-    sourceRowNumber: null, sourceRowSha256: sha256(JSON.stringify(row)), reason: row.reason,
-  }));
+  const quarantine = snapshot.quarantine.map((row) => {
+    const [, trainNumber, dayCd] = row.providerTripKey.split("|");
+    return {
+      sourceId: STATION_LINES_TIMETABLE_SOURCE_ID, lineId: row.lineId, routeKey: lnCdOf.get(row.lineId), trainNumber,
+      serviceDayKind: Object.hasOwn(SERVICE_DAY_KIND_BY_DAY_CD, dayCd) ? SERVICE_DAY_KIND_BY_DAY_CD[dayCd] : fail("SERVICE_DAY", row.providerTripKey),
+      sourceDayKey: dayCd, sourceRowNumber: null, sourceRowSha256: sha256(JSON.stringify(row)), reason: row.reason,
+    };
+  });
   const lineBindings = bindings.map((entry) => ({
     lineId: entry.lineId, routeKey: entry.lnCd, routeName: ROUTE_NAMES[entry.lnCd] ?? fail("ROUTE_NAME", entry.lnCd),
     stationAliases: Object.fromEntries(Object.entries(entry.stationAliases).map(([source, nameKo]) => [source, { nameKo, reason: entry.aliasEvidence[source] }])),

@@ -94,3 +94,10 @@ test("기본 경로는 경춘·수인분당·경의중앙 binding에 급행 고�
     I26K6: null,
   });
 });
+
+test("요일구분은 평일·휴일만 받고 그 밖의 값은 격리 행으로 넘기지 않고 실패한다", () => {
+  const bindings = KORAIL_STATION_ROW_BINDINGS.map((entry) => ({ ...entry, expressQuarantine: { rowCount: 0, rowSetSha256: sha("[]") } }));
+  const saturday = trip("I41WS", "I41WS-9", "토요일", [["가역", "09:00"], ["나역", "09:03"]]);
+  assert.throws(() => kricKorailOfficialTimetable(projectKricKorailTimetableSnapshot(observation(saturday)), { observedAt: "2026-10-03T00:00:00.000Z", bindings }),
+    /UNSUPPORTED_WEEKDAY_TYPE: 토요일|KRIC_KORAIL_TIMETABLE_SERVICE_DAY/u);
+});
