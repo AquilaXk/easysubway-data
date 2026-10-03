@@ -325,6 +325,10 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(gwangjuTrips.length > 0);
   assert.deepEqual([...new Set(gwangjuTrips.map(({ sourceId, sourceSnapshotId }) => `${sourceId}|${sourceSnapshotId}`))],
     [`kric-nationwide-timetable-file|${retainedSnapshotId}`]);
+  const kricPackSource = pack.sourceInventory.filter(({ id }) => id === "kric-nationwide-timetable-file");
+  assert.equal(kricPackSource.length, 1);
+  assert.ok(kricPackSource[0].coverageScope.lineIds.includes("line-e57a361e8892"), "KRIC 팩 원천 범위에 광주 1호선이 있어야 한다");
+  assert.ok(kricPackSource[0].coverageScope.regionIds.includes("gwangju"));
   const cyberstation = "gwangju-transportation-cyberstation-timetable";
   for (const table of ["sourceInventory", "transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
     assert.equal(pack[table].filter((row) => row.sourceId === cyberstation || row.id === cyberstation).length, 0, `${table} must not cite ${cyberstation}`);

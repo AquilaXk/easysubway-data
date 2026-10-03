@@ -1567,10 +1567,14 @@ export async function prepareNationwideCandidate({
   for (const table of ["transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
     finalPack[table] = [...finalPack[table], ...gwangjuSchedule[table]];
   }
+  // 광주 보관본은 수도권·코레일과 같은 원천(kric-nationwide-timetable-file)이다: 팩 원천 항목 하나에 광주 노선 범위를 합친다.
   const gwangjuTopologySource = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology");
+  const kricPackSources = finalPack.sourceInventory.filter(({ id }) => id === RETAINED_GWANGJU_PROJECTION_SOURCE_ID);
+  if (kricPackSources.length !== 1) throw new Error("nationwide candidate KRIC timetable pack source is missing or ambiguous");
   for (const field of ["regionIds", "operatorIds", "lineIds"]) {
-    capitalSchedule.packSource.coverageScope[field] = [...new Set([...capitalSchedule.packSource.coverageScope[field],
-      ...(gwangjuTopologySource.coverageScope?.[field] ?? [])])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    if (!Array.isArray(gwangjuTopologySource.coverageScope?.[field])) throw new Error(`nationwide candidate Gwangju coverage ${field} is missing`);
+    kricPackSources[0].coverageScope[field] = [...new Set([...kricPackSources[0].coverageScope[field],
+      ...gwangjuTopologySource.coverageScope[field]])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   }
 
   // #855: 대전·광주 원천은 역별 시각 하나만 준다. 원천 정차 2개 이상으로 열차를 만들 수 없는
