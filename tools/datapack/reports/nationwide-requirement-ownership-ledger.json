@@ -31,8 +31,8 @@
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "8ba26a2f0fae820c75dc56c301367a1c59bd500cb8b52beacf512a312c31058b",
-        "fanInSha256": "f17a65d14e0244e64c1908664a65c626ab3e0489b31a3e7488f9cb3ab19c40a1",
+        "sha256": "58e83715d7e5c25ab07574240e2912bd26a7c4e900d7c22c696bb5a68719d6a8",
+        "fanInSha256": "22414eae222fa537cfe5d1080dc030ba4aa6e150d8a18a8a609587bb6f14eda6",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
         "sourceSetSha256": "8961419efe8f56579b6616c676a715630ebde05ec7d28fb94d9bb33969f4246a",
         "regionalMatrixSha256": "5dacb9428eb6277ae6ae768c646267a0eb96697262f3cf0cb76e49b01b515126"
