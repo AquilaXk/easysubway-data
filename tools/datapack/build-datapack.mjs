@@ -740,7 +740,9 @@ async function loadBuildInput(
     readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
     readFile(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json")),
   ]);
-  if (sha256(inventoryBytes) !== buildSpec.sourceInventorySha256) {
+  // spec sourceInventorySha256은 inventory를 읽은 값의 compact JSON sha다(build-server-route-bundle-final과 같은 규칙).
+  const timetableInventory = JSON.parse(inventoryBytes);
+  if (sha256(Buffer.from(JSON.stringify(timetableInventory))) !== buildSpec.sourceInventorySha256) {
     throw new Error("candidate timetable freshness inventory does not match buildSpec.sourceInventorySha256");
   }
   const artifactFreshness = candidateArtifactFreshness({
@@ -748,7 +750,7 @@ async function loadBuildInput(
     timetable: productionTimetableFreshness({
       packs: sourceFixture.packs ?? [],
       sourceSnapshots: buildSpec.sourceSnapshots,
-      inventory: JSON.parse(inventoryBytes),
+      inventory: timetableInventory,
       freshnessPolicy: JSON.parse(freshnessPolicyBytes),
       evaluationAt: requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt"),
       now: validationNow,
