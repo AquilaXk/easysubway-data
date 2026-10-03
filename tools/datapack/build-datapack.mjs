@@ -71,6 +71,7 @@ import {
 import { bindStationContacts, loadStationContactInputs } from "./build-station-contacts.mjs";
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -734,15 +735,38 @@ async function loadBuildInput(
       Date.parse(accessibilityFreshUntil),
     )).toISOString();
   }
+  // #913: 시간표 원천 신선도를 팩 만료에 반영한다. inventory는 spec이 결속한 바이트(sourceInventorySha256)여야 한다.
+  const [inventoryBytes, freshnessPolicyBytes] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
+    readFile(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json")),
+  ]);
+  if (sha256(inventoryBytes) !== buildSpec.sourceInventorySha256) {
+    throw new Error("candidate timetable freshness inventory does not match buildSpec.sourceInventorySha256");
+  }
+  const artifactFreshness = candidateArtifactFreshness({
+    networkFreshUntil: artifactFreshUntil,
+    timetable: productionTimetableFreshness({
+      packs: sourceFixture.packs ?? [],
+      sourceSnapshots: buildSpec.sourceSnapshots,
+      inventory: JSON.parse(inventoryBytes),
+      freshnessPolicy: JSON.parse(freshnessPolicyBytes),
+      evaluationAt: requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt"),
+      now: validationNow,
+    }),
+  });
+  artifactFreshUntil = artifactFreshness.freshUntil;
   return {
     fixture,
-    candidateBuild: candidateBuildProvenance(
-      buildSpec,
-      sha256(buildSpecBytes),
-      officialOdFareEvidence,
-      overrideBinding,
-      validationNow,
-    ),
+    candidateBuild: {
+      ...candidateBuildProvenance(
+        buildSpec,
+        sha256(buildSpecBytes),
+        officialOdFareEvidence,
+        overrideBinding,
+        validationNow,
+      ),
+      artifactFreshness,
+    },
     artifactFreshUntil,
     outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
     validationOnlyProductionFixture,
@@ -2026,6 +2050,88 @@ function isReviewedAccessibilityEdge(edge, pack) {
     && edge.evidenceHash === sha256(JSON.stringify({
       edgeId: edge.id, sourceSnapshotId: edge.sourceSnapshotId, providerRecordHash: edge.providerRecordHash,
     }));
+}
+
+// #913: 시간표 원천의 신선도. 팩 expiresAt·서버 번들 freshUntil에 함께 반영한다.
+// - spec이 인용한 시간표 정책 클래스 원장 행(KRIC 보관본·계획 시각표·station-lines·지역 시간표)
+// - trip이 가리키는 원천 snapshot 중 원장 행이 없는 것(수도권·코레일 projection, 인천)은 inventory evidence의 수집 시각에
+//   정책 클래스를 적용해 유도한다.
+// trip이 가리키는 원천의 만료를 어느 쪽으로도 계산할 수 없거나 이미 만료됐으면 실패한다.
+export const TIMETABLE_SOURCE_CLASS_IDS = Object.freeze([
+  "official_static_timetable_confirmation", "planned_timetable",
+  "busan_timetable_observation", "daegu_timetable_observation", "daejeon_timetable_observation", "incheon_timetable_observation",
+]);
+const TIMETABLE_EVIDENCE_KEYS = Object.freeze(["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence", "scheduleAdmissionEvidence"]);
+
+export function productionTimetableFreshness({ packs, sourceSnapshots, inventory, freshnessPolicy, evaluationAt, now }) {
+  if (!Array.isArray(packs) || !Array.isArray(sourceSnapshots) || !Array.isArray(inventory?.sources)
+    || !Array.isArray(freshnessPolicy?.sourceClasses) || !(now instanceof Date) || Number.isNaN(now.valueOf())) {
+    throw new Error("TIMETABLE_FRESHNESS_INPUT");
+  }
+  const classOf = new Map(freshnessPolicy.sourceClasses.flatMap((sourceClass) => (sourceClass.sourceIds ?? []).map((sourceId) => [sourceId, sourceClass])));
+  const isTimetable = (sourceId) => TIMETABLE_SOURCE_CLASS_IDS.includes(classOf.get(sourceId)?.id);
+  const entries = new Map();
+  const add = (entry) => {
+    if (!Number.isFinite(Date.parse(entry.freshnessExpiresAt)) || new Date(entry.freshnessExpiresAt).toISOString() !== entry.freshnessExpiresAt) {
+      throw new Error(`TIMETABLE_FRESHNESS_UNRESOLVED: ${entry.sourceId} ${entry.sourceSnapshotId}`);
+    }
+    entries.set(`${entry.sourceId}\u0000${entry.sourceSnapshotId}`, entry);
+  };
+  const specRows = sourceSnapshots.filter(({ sourceId }) => isTimetable(sourceId));
+  for (const row of specRows) {
+    add({ sourceId: row.sourceId, sourceSnapshotId: row.snapshotId, freshnessExpiresAt: row.freshnessExpiresAt, basis: "buildSpec.sourceSnapshots" });
+  }
+  const tripSources = new Map();
+  for (const trip of packs.flatMap((pack) => pack.transitTrips ?? [])) {
+    tripSources.set(`${trip.sourceId}\u0000${trip.sourceSnapshotId ?? ""}`, { sourceId: trip.sourceId, sourceSnapshotId: trip.sourceSnapshotId });
+  }
+  for (const { sourceId, sourceSnapshotId } of tripSources.values()) {
+    const spec = specRows.filter((row) => row.sourceId === sourceId && (sourceSnapshotId === undefined || row.snapshotId === sourceSnapshotId));
+    if (spec.length === 1) continue;
+    const source = inventory.sources.find(({ id }) => id === sourceId);
+    const sourceClass = classOf.get(sourceId);
+    const evidences = TIMETABLE_EVIDENCE_KEYS.map((key) => [key, source?.[key]])
+      .filter(([, evidence]) => evidence && sourceSnapshotId !== undefined && evidence.snapshotId === sourceSnapshotId);
+    if (!isTimetable(sourceId) || evidences.length !== 1 || typeof evidences[0][1][sourceClass.basisField] !== "string") {
+      throw new Error(`TIMETABLE_FRESHNESS_UNRESOLVED: ${sourceId}${sourceSnapshotId === undefined ? "" : ` ${sourceSnapshotId}`}`);
+    }
+    const [key, evidence] = evidences[0];
+    add({
+      sourceId, sourceSnapshotId,
+      freshnessExpiresAt: deriveFreshnessExpiresAt({ policy: freshnessPolicy, sourceClassId: sourceClass.id,
+        basisAt: evidence[sourceClass.basisField], evaluationAt }),
+      basis: `inventory.${key}`,
+    });
+  }
+  const sources = [...entries.values()].sort((left, right) => (left.sourceId < right.sourceId ? -1 : left.sourceId > right.sourceId ? 1
+    : left.sourceSnapshotId < right.sourceSnapshotId ? -1 : left.sourceSnapshotId > right.sourceSnapshotId ? 1 : 0));
+  for (const entry of sources) {
+    if (Date.parse(entry.freshnessExpiresAt) <= now.valueOf()) {
+      throw new Error(`TIMETABLE_FRESHNESS_EXPIRED: ${entry.sourceId} ${entry.sourceSnapshotId} ${entry.freshnessExpiresAt}`);
+    }
+  }
+  const freshUntil = sources.length === 0 ? null
+    : new Date(Math.min(...sources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)))).toISOString();
+  return { freshUntil, sources };
+}
+
+/** 네트워크(topology·ITX·접근성) 창과 시간표 창 중 이른 쪽을 팩 만료로 하고, 결정한 쪽을 남긴다. */
+export function candidateArtifactFreshness({ networkFreshUntil, timetable }) {
+  const network = Date.parse(networkFreshUntil);
+  if (!Number.isFinite(network)) throw new Error("candidate network freshUntil is invalid");
+  const timetableMillis = timetable?.freshUntil == null ? Number.POSITIVE_INFINITY : Date.parse(timetable.freshUntil);
+  const freshMillis = Math.min(network, timetableMillis);
+  const decidedBy = [
+    ...(network === freshMillis ? [{ kind: "network" }] : []),
+    ...(timetable?.sources ?? []).filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === freshMillis)
+      .map(({ sourceId, sourceSnapshotId }) => ({ kind: "timetable", sourceId, sourceSnapshotId })),
+  ];
+  return {
+    freshUntil: new Date(freshMillis).toISOString(),
+    networkFreshUntil: new Date(network).toISOString(),
+    decidedBy,
+    timetableSources: structuredClone(timetable?.sources ?? []),
+  };
 }
 
 export function productionAccessibilityFreshUntil(
