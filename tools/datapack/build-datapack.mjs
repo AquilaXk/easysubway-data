@@ -735,13 +735,23 @@ async function loadBuildInput(
       Date.parse(accessibilityFreshUntil),
     )).toISOString();
   }
-  // #913: 시간표 원천 신선도를 팩 만료에 반영한다. inventory는 spec이 결속한 바이트(sourceInventorySha256)여야 한다.
-  const [inventoryBytes, freshnessPolicyBytes] = await Promise.all([
-    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
+  // #913: 시간표 원천 신선도를 팩 만료에 반영한다. inventory는 network edge 증거와 같은 결속 입력
+  // (buildSpec.networkEdgeEvidence.sourceInventory, 바이트 sha 고정)이고 spec sourceInventorySha256과 같아야 한다.
+  // 대상은 발행 범위인 전국 후보다. 수도권 pilot 범위(capital_pilot_android_v1) 팩의 4호선 pilot trip은 원천 표기가 없어
+  // 이 계산에 넣을 수 없고, 그 범위는 발행 대상이 아니다.
+  if (buildSpec.productionScopeId !== "nationwide_routing_android_v1") {
+    return {
+      fixture,
+      candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence, overrideBinding, validationNow),
+      artifactFreshUntil,
+      outputArtifactKind: validationOnlyProductionFixture ? "fixture" : null,
+      validationOnlyProductionFixture,
+    };
+  }
+  const [{ value: timetableInventory }, freshnessPolicyBytes] = await Promise.all([
+    readPinnedBuildJson(buildSpec.networkEdgeEvidence?.sourceInventory, "buildSpec.networkEdgeEvidence.sourceInventory", undefined, repositoryRoot),
     readFile(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json")),
   ]);
-  // spec sourceInventorySha256은 inventory를 읽은 값의 compact JSON sha다(build-server-route-bundle-final과 같은 규칙).
-  const timetableInventory = JSON.parse(inventoryBytes);
   if (sha256(Buffer.from(JSON.stringify(timetableInventory))) !== buildSpec.sourceInventorySha256) {
     throw new Error("candidate timetable freshness inventory does not match buildSpec.sourceInventorySha256");
   }
