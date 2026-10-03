@@ -77,6 +77,7 @@ test("registration preserves the provider cutoff for the refresh consumer", asyn
   assert.equal(decideRetainedGwangjuTimetableRefresh({
     inventory: JSON.parse(registered[0].bytes), snapshots,
     candidate: candidates.candidates.find(({ id }) => id === "kric-nationwide-timetable-file"),
+    freshnessPolicy: await readJson(path.join(fixture.repositoryRoot, "release/product-gates/datapack-freshness-sla.json")),
     now: new Date(input.providerValidUntil),
   }).state, "DUE");
 });
