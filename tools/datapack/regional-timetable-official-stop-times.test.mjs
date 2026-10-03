@@ -329,7 +329,8 @@ test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 proj
   const seconds = (value) => { const [h, m, s] = value.split(":").map(Number); return h * 3600 + m * 60 + s; };
   const official = new Set(projection.records.flatMap((record) => [record.arrivalTime, record.departureTime]
     .filter((cell) => /^\d{2}:\d{2}:\d{2}$/u.test(cell?.value ?? ""))
-    .map((cell) => `${record.trainNumber}|${record.weekdayType}|${record.stationName}|${seconds(cell.value)}`)));
+    // 자정 뒤 정차는 운행일 기준으로 86,400초를 더한 값일 수 있다.
+    .flatMap((cell) => [0, 86_400].map((offset) => `${record.trainNumber}|${record.weekdayType}|${record.stationName}|${seconds(cell.value) + offset}`))));
   const trips = new Map(pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-"))
     .map((trip) => [trip.id, trip]));
   assert.ok(trips.size > 0);
@@ -341,8 +342,7 @@ test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 proj
     const weekdayType = weekdayTypeByServiceId.get(trip.serviceId);
     const label = labelByStationId.get(stop.stationId);
     for (const value of [stop.arrivalSeconds, stop.departureSeconds]) {
-      const daySeconds = value % 86_400;
-      assert.ok(official.has(`${trip.trainNo}|${weekdayType}|${label}|${daySeconds}`),
+      assert.ok(official.has(`${trip.trainNo}|${weekdayType}|${label}|${value}`),
         `광주 정차 ${trip.trainNo} ${weekdayType} ${label} ${value}초는 보관본 원천 행 값이어야 한다`);
     }
   }

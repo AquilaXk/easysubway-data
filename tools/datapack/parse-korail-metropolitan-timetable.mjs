@@ -136,7 +136,7 @@ export async function buildRetainedKorailTimetable({ holidayDirectory, startDate
 /** 원문 관측은 불변으로 두고 기존 provider-neutral 코어에 calendar·trip 행을 연결한다. */
 export function buildKorailTimetableTables({ observation, startDate, endDate, holidayMonths, serviceIds, routeIds }) {
   const { months, publicHolidayDates } = retainedHolidayMonths({ holidayMonths, startDate, endDate });
-  const holidayCalendarSources = months.map(({ holidayDates, ...identity }) => identity)
+  const holidayCalendarSources = months.map(({ holidayDates, festivalDates, ...identity }) => identity)
     .sort((a, b) => a.year - b.year || a.month - b.month);
   const calendars = buildKorailServiceCalendars({ startDate, endDate, publicHolidayDates, serviceIds });
   const lineId = observation.selection.lineId;
