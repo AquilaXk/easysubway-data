@@ -530,8 +530,8 @@ const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
   korailTimetable: "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
   daegyeongTimetable: "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
   stationLinesTimetable: "kric-subway-timetable-station-lines-20261003",
-  // #913: 광주 1호선은 KRIC 보관본 head(10-01)의 계약 노선 projection이다.
-  gwangjuTimetable: "kric-nationwide-timetable-file-gwangju-05fef174f91e353084db60141baf22a40f156c53e1dfadc4d841bd11ef800ae8",
+  // #913: 광주 1호선은 KRIC 보관본 head(10-03 계약 개정 재등록)의 계약 노선 projection이다.
+  gwangjuTimetable: "kric-nationwide-timetable-file-gwangju-5c275eb62b43a2f9eb89655fe5202612281b2f527863378a241df67b613c6593",
 });
 
 test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 18개를 고른다", async () => {
