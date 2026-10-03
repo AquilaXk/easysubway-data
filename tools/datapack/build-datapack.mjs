@@ -737,9 +737,11 @@ async function loadBuildInput(
   }
   // #913: 시간표 원천 신선도를 팩 만료에 반영한다. inventory는 network edge 증거와 같은 결속 입력
   // (buildSpec.networkEdgeEvidence.sourceInventory, 바이트 sha 고정)이고 spec sourceInventorySha256과 같아야 한다.
-  // 대상은 발행 범위인 전국 후보다. 수도권 pilot 범위(capital_pilot_android_v1) 팩의 4호선 pilot trip은 원천 표기가 없어
-  // 이 계산에 넣을 수 없고, 그 범위는 발행 대상이 아니다.
-  if (buildSpec.productionScopeId !== "nationwide_routing_android_v1") {
+  // 대상은 발행 범위인 전국 후보의 production 팩이다. 수도권 pilot 범위(capital_pilot_android_v1) 팩의 4호선 pilot trip은
+  // 원천 표기가 없어 이 계산에 넣을 수 없고, 그 범위와 fixture 팩, 검증 전용 빌드(dev 채널 출력)는 발행 대상이 아니다.
+  const productionPacks = (sourceFixture.packs ?? []).filter(({ artifactKind }) => artifactKind === "production");
+  if (buildSpec.productionScopeId !== "nationwide_routing_android_v1" || productionPacks.length === 0
+    || validationOnlyProductionFixture) {
     return {
       fixture,
       candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence, overrideBinding, validationNow),
@@ -758,7 +760,7 @@ async function loadBuildInput(
   const artifactFreshness = candidateArtifactFreshness({
     networkFreshUntil: artifactFreshUntil,
     timetable: productionTimetableFreshness({
-      packs: sourceFixture.packs ?? [],
+      packs: productionPacks,
       sourceSnapshots: buildSpec.sourceSnapshots,
       inventory: timetableInventory,
       freshnessPolicy: JSON.parse(freshnessPolicyBytes),
