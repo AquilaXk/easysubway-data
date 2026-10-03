@@ -304,6 +304,11 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(routeIds.has("route-daejeon-line-1"));
   assert.ok(routeIds.has("route-gwangju-line-1"));
 
+  // #903: 노선도의 전 노선이 출시 범위다(QA 결정 2026-10-03). 팩의 모든 노선에 공식 시간표 trip이 1건 이상 있어야 한다.
+  const routeLine = new Map(pack.transitRoutes.map(({ id, lineId }) => [id, lineId]));
+  const linesWithTrips = new Set(pack.transitTrips.map(({ routeId }) => routeLine.get(routeId)));
+  assert.deepEqual(pack.lines.map(({ id }) => id).filter((lineId) => !linesWithTrips.has(lineId)).sort(), [], "every pack line must have at least one trip");
+
   // Zero synthetic trips manufactured by interval loop
   const syntheticTrips = pack.transitTrips.filter((t) => /trip-.*-(wd|hd)-\d+/.test(t.id));
   assert.strictEqual(syntheticTrips.length, 0, "Pack must contain 0 synthetic trips");
