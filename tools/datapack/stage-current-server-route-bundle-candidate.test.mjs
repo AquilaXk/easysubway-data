@@ -205,6 +205,29 @@ test("prepared FINAL candidate freshUntil이 verified current manifest expiry와
   }
 });
 
+// #916 리뷰 F3: RC는 발행 전 FINAL이 발행 단계와 같은 조건(원천 신선도 PASS, 미가용 blocker 두 개만)일 때만 stage한다.
+// 원천 신선도가 STALE이면 RC에서 실패해야 production-publish에서야 드러나는 경로 차이가 없다.
+test("발행 전 FINAL의 원천 신선도가 PASS가 아니거나 발행 불가 blocker가 있으면 stage하지 않는다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-stale-freshness-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const input = await fixture(root);
+  const output = path.join(root, "candidate");
+  await mkdir(output);
+  await assert.rejects(
+    () => stageCurrentServerRouteBundleCandidate({
+      ...input,
+      repositoryGitSha: "b".repeat(40),
+      keyId: "production-v1",
+      output,
+      stages: { prepare: async ({ output: prepared }) => writePreparedOutputs(prepared, BUNDLE_CANDIDATE, { sourceFreshness: "STALE" }) },
+    }),
+    /prepared FINAL is not release eligible: sourceFreshness:STALE/,
+  );
+  for (const name of ["server-route-bundle", "server-route-bundle-evidence", "server-route-bundle-inputs"]) {
+    await assert.rejects(() => lstat(path.join(output, name)), /ENOENT/);
+  }
+});
+
 test("prepare 동안 원본 canonical input이 교체돼도 최초 검증 bytes만 stage한다", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "route-candidate-input-snapshot-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -543,7 +566,7 @@ async function inventory(root) {
   return entries.sort();
 }
 
-async function writePreparedOutputs(prepared, candidate = BUNDLE_CANDIDATE) {
+async function writePreparedOutputs(prepared, candidate = BUNDLE_CANDIDATE, gateStates = {}) {
   const signed = path.join(prepared, "signed-server-route-bundle");
   await mkdir(path.join(signed, "payload"), { recursive: true });
   await Promise.all(SIGNED_PATHS.map(async (relative) => writeFile(path.join(signed, relative), relative)));
@@ -562,7 +585,7 @@ async function writePreparedOutputs(prepared, candidate = BUNDLE_CANDIDATE) {
   const boundSupport = Object.fromEntries(BOUND_SUPPORT.map(([file, gate]) => [gate, canonicalJson({ artifactKind: gate })]));
   await Promise.all(BOUND_SUPPORT.map(([file, gate]) => writeFile(path.join(prepared, "bound", file), boundSupport[gate])));
   const gates = Object.fromEntries([
-    ...BOUND_SUPPORT.map(([, gate]) => [gate, { state: "PASS", evidenceSha256: sha256(Buffer.from(boundSupport[gate])) }]),
+    ...BOUND_SUPPORT.map(([, gate]) => [gate, { state: gateStates[gate] ?? "PASS", evidenceSha256: sha256(Buffer.from(boundSupport[gate])) }]),
     ["signature", { state: "PASS", evidenceSha256: "4".repeat(64) }],
   ]);
   gates.routeAccessibilityEligibility = { state: "PASS", evidenceSha256: sha256(Buffer.from(eligibility)) };
