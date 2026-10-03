@@ -8905,12 +8905,110 @@
             "schedule_timetable"
           ]
         },
-        "observedAt": "2026-10-02T15:57:05.773Z",
+        "observedAt": "2026-10-03T00:11:32.831Z",
         "reverifications": [
           {
             "observedAt": "2026-10-02T15:57:05.773Z",
             "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
             "collectionReceiptSha256": "f8994ba5965b1ad03869a4a7da242e573097efda8f119f17ea5d09d47a56adcc"
+          },
+          {
+            "observedAt": "2026-10-03T00:11:32.831Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "5d9e70f3944dd9e02ba7197af57a5b8a2a4be5e2f136c56e2fde4693e967c90b"
+          }
+        ]
+      },
+      "korailScheduleAdmissionEvidence": {
+        "issue": 903,
+        "materializer": "tools/datapack/lib/kric-korail-timetable.mjs",
+        "verificationTest": "tools/datapack/lib/kric-korail-timetable.test.mjs",
+        "snapshotId": "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+        "snapshotPath": "tools/datapack/sources/kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de.json",
+        "rawByteLength": 17949564,
+        "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+        "observationRecordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
+        "recordsSha256": "c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
+        "recordCount": 59346,
+        "routes": [
+          {
+            "routeNumber": "I41WS",
+            "routeName": "서해선",
+            "lineId": "line-051552e50435"
+          },
+          {
+            "routeNumber": "I41K2",
+            "routeName": "경춘선",
+            "lineId": "line-54a7b980b7c3"
+          },
+          {
+            "routeNumber": "I28K1",
+            "routeName": "수인분당선",
+            "lineId": "line-558d0bd8312d"
+          },
+          {
+            "routeNumber": "I4108",
+            "routeName": "경의중앙선",
+            "lineId": "line-6e39be0cb6e2"
+          },
+          {
+            "routeNumber": "I41K5",
+            "routeName": "경강선",
+            "lineId": "line-e4939a4b4713"
+          },
+          {
+            "routeNumber": "I26K6",
+            "routeName": "동해선",
+            "lineId": "line-f52eb59d8497"
+          }
+        ],
+        "dataReferenceDateByLine": {
+          "line-051552e50435": [
+            "2026-05-31"
+          ],
+          "line-54a7b980b7c3": [
+            "2026-05-31"
+          ],
+          "line-558d0bd8312d": [
+            "2026-05-31"
+          ],
+          "line-6e39be0cb6e2": [
+            "2026-05-31"
+          ],
+          "line-e4939a4b4713": [
+            "2026-05-31"
+          ],
+          "line-f52eb59d8497": [
+            "2026-05-31"
+          ]
+        },
+        "coverageScope": {
+          "regionIds": [
+            "busan",
+            "capital"
+          ],
+          "operatorIds": [
+            "korail",
+            "operator-38450e138464"
+          ],
+          "lineIds": [
+            "line-051552e50435",
+            "line-54a7b980b7c3",
+            "line-558d0bd8312d",
+            "line-6e39be0cb6e2",
+            "line-e4939a4b4713",
+            "line-f52eb59d8497"
+          ],
+          "sourceDomains": [
+            "schedule_timetable"
+          ]
+        },
+        "observedAt": "2026-10-03T00:11:32.831Z",
+        "reverifications": [
+          {
+            "observedAt": "2026-10-03T00:11:32.831Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "5d9e70f3944dd9e02ba7197af57a5b8a2a4be5e2f136c56e2fde4693e967c90b"
           }
         ]
       }
