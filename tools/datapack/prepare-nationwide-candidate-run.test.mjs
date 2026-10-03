@@ -369,11 +369,13 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // 달력 4·달력 예외 56을 더한다.
   // #903: 코레일 6개 노선 trip 2,117·정차 57,689, KRIC 역별 5개 노선 trip 3,956·정차 50,754,
   // 대경선 trip 194·정차 1,488, 달력 6·달력 예외 68을 더한다(기존 노선 건수는 그대로다).
-  // #913: 광주 cyberstation 400 trip·7,187 정차 대신 KRIC 보관본 812 trip·15,537 정차(계약 운행일 4종, 달력 4·예외 2).
-  assert.strictEqual(pack.transitTrips.length, 26652, "Pack must contain exactly 26,652 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 680264, "Pack must contain exactly 680,264 authentic stop times");
-  assert.strictEqual(pack.serviceCalendars.length, 32);
-  assert.strictEqual(pack.serviceCalendarDates.length, 202);
+  // #913: 광주 cyberstation 400 trip·7,187 정차 대신 KRIC 보관본 650 trip·12,429 정차.
+  // 계약 창(20261003~20261010)에서 평일 240·토요일 207·휴일 203 trip이 운행하고, 명절 162 trip은 창 안 운행일이 없어 싣지 않는다.
+  // 달력은 cyberstation 2개 대신 평일·토요일·휴일 3개, 예외 6행(10-03 토→휴일, 10-05·10-09 평일→휴일)이다.
+  assert.strictEqual(pack.transitTrips.length, 26490, "Pack must contain exactly 26,490 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 677156, "Pack must contain exactly 677,156 authentic stop times");
+  assert.strictEqual(pack.serviceCalendars.length, 31);
+  assert.strictEqual(pack.serviceCalendarDates.length, 206);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
