@@ -18,22 +18,23 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "admittedStopTimeCount": 15537,
-      "quarantinedCount": 161
+      "admittedStopTimeCount": 12429,
+      "quarantinedCount": 323
     }
   ],
   "summary": {
-    "quarantinedCount": 161,
+    "quarantinedCount": 323,
     "byReason": {
-      "PASSENGER_STOP_COUNT_LT_2": 161
+      "PASSENGER_STOP_COUNT_LT_2": 161,
+      "SERVICE_NOT_ACTIVE_IN_WINDOW": 162
     }
   },
   "rows": [
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1123",
       "weekdayType": "휴일",
       "originStationName": "평동",
@@ -45,7 +46,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1171",
       "weekdayType": "휴일",
       "originStationName": "평동",
@@ -57,7 +58,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1181",
       "weekdayType": "휴일",
       "originStationName": "평동",
@@ -69,7 +70,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1901",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -82,7 +83,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1902",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -95,7 +96,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1903",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -108,7 +109,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1904",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -121,7 +122,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1905",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -134,7 +135,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1906",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -147,7 +148,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1907",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -160,7 +161,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1908",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -173,7 +174,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1909",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -186,7 +187,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1910",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -199,7 +200,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1911",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -212,7 +213,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1912",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -225,7 +226,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1913",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -238,7 +239,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1914",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -251,7 +252,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1915",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -264,7 +265,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1916",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -277,7 +278,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1917",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -290,7 +291,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1918",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -303,7 +304,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1919",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -316,7 +317,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1920",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -329,7 +330,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1921",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -342,7 +343,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1922",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -355,7 +356,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1923",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -368,7 +369,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1924",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -381,7 +382,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1925",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -394,7 +395,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1926",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -407,7 +408,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1927",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -420,7 +421,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1928",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -433,7 +434,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1929",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -446,7 +447,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1930",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -459,7 +460,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1931",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -472,7 +473,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1932",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -485,7 +486,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1933",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -498,7 +499,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1934",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -511,7 +512,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1935",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -524,7 +525,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1936",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -537,7 +538,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1937",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -550,7 +551,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1938",
       "weekdayType": "휴일",
       "originStationName": "소태",
@@ -563,7 +564,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1939",
       "weekdayType": "휴일",
       "originStationName": "기지사업소",
@@ -576,7 +577,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1141",
       "weekdayType": "명절",
       "originStationName": "평동",
@@ -588,7 +589,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1157",
       "weekdayType": "명절",
       "originStationName": "평동",
@@ -600,7 +601,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1159",
       "weekdayType": "명절",
       "originStationName": "평동",
@@ -612,7 +613,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1901",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -625,7 +626,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1902",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -638,7 +639,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1903",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -651,7 +652,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1904",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -664,7 +665,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1905",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -677,7 +678,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1906",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -690,7 +691,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1907",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -703,7 +704,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1908",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -716,7 +717,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1909",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -729,7 +730,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1910",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -742,7 +743,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1911",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -755,7 +756,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1912",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -768,7 +769,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1913",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -781,7 +782,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1914",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -794,7 +795,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1915",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -807,7 +808,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1916",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -820,7 +821,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1917",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -833,7 +834,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1918",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -846,7 +847,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1919",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -859,7 +860,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1920",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -872,7 +873,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1921",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -885,7 +886,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1922",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -898,7 +899,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1923",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -911,7 +912,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1924",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -924,7 +925,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1925",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -937,7 +938,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1926",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -950,7 +951,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1927",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -963,7 +964,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1928",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -976,7 +977,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1929",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -989,7 +990,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1930",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -1002,7 +1003,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1931",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -1015,7 +1016,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1932",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -1028,7 +1029,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1933",
       "weekdayType": "명절",
       "originStationName": "기지사업소",
@@ -1041,7 +1042,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1934",
       "weekdayType": "명절",
       "originStationName": "소태",
@@ -1054,7 +1055,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1901",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1067,7 +1068,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1902",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1080,7 +1081,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1903",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1093,7 +1094,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1904",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1106,7 +1107,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1905",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1119,7 +1120,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1906",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1132,7 +1133,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1907",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1145,7 +1146,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1908",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1158,7 +1159,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1909",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1171,7 +1172,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1910",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1184,7 +1185,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1911",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1197,7 +1198,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1912",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1210,7 +1211,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1913",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1223,7 +1224,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1914",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1236,7 +1237,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1915",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1249,7 +1250,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1916",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1262,7 +1263,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1917",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1275,7 +1276,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1918",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1288,7 +1289,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1919",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1301,7 +1302,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1920",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1314,7 +1315,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1921",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1327,7 +1328,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1922",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1340,7 +1341,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1923",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1353,7 +1354,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1924",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1366,7 +1367,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1925",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1379,7 +1380,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1926",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1392,7 +1393,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1927",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1405,7 +1406,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1928",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1418,7 +1419,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1929",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1431,7 +1432,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1930",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1444,7 +1445,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1931",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1457,7 +1458,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1932",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1470,7 +1471,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1933",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1483,7 +1484,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1934",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1496,7 +1497,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1935",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1509,7 +1510,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1936",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1522,7 +1523,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1937",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1535,7 +1536,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1938",
       "weekdayType": "토요일",
       "originStationName": "소태",
@@ -1548,7 +1549,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1939",
       "weekdayType": "토요일",
       "originStationName": "기지사업소",
@@ -1561,7 +1562,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1901",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1574,7 +1575,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1902",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1587,7 +1588,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1903",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1600,7 +1601,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1904",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1613,7 +1614,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1905",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1626,7 +1627,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1906",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1639,7 +1640,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1907",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1652,7 +1653,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1908",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1665,7 +1666,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1909",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1678,7 +1679,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1910",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1691,7 +1692,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1911",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1704,7 +1705,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1912",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1717,7 +1718,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1913",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1730,7 +1731,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1914",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1743,7 +1744,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1915",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1756,7 +1757,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1916",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1769,7 +1770,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1917",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1782,7 +1783,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1918",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1795,7 +1796,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1919",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1808,7 +1809,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1920",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1821,7 +1822,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1921",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1834,7 +1835,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1922",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1847,7 +1848,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1923",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1860,7 +1861,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1924",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1873,7 +1874,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1925",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1886,7 +1887,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1926",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1899,7 +1900,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1927",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1912,7 +1913,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1928",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1925,7 +1926,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1929",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1938,7 +1939,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1930",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1951,7 +1952,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1931",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1964,7 +1965,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1932",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -1977,7 +1978,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1933",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -1990,7 +1991,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1934",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -2003,7 +2004,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1935",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -2016,7 +2017,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1936",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -2029,7 +2030,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1937",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -2042,7 +2043,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1938",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -2055,7 +2056,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1939",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -2068,7 +2069,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1940",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -2081,7 +2082,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1941",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -2094,7 +2095,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1942",
       "weekdayType": "평일",
       "originStationName": "소태",
@@ -2107,7 +2108,7 @@
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
-      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
       "trainNumber": "1943",
       "weekdayType": "평일",
       "originStationName": "기지사업소",
@@ -2117,6 +2118,1302 @@
         102160
       ],
       "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-94f4523e1493c953e77c89a4a373a21d7b86aea6b7b11b70f8130973c8f17ecc",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1001",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a5aec215870ff1aae51c74a3d6db47118b328fd22425c282c9e3894e77bcb382",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1002",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-f17c40b8c5930b21f9e55dca72759cd70d688e7d6bef37749b252120453aa7c6",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1003",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-0eda0b1770aa4cb248efc7b9b5efd2b2734ef9db49e9ef6ed7d7323f74c4c8b7",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1004",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-6d595c20e4e17200528fcaa3cbc45bd65780e9503f712ed1679acf8c02e0d421",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1005",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-3499eebab41c76c812e840dade745f6686e5a1559e7b2f42b1dd8b541444128d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1006",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-b4260a5885d7a75da61c011cf7d29d410eea89b1bf37505e295e59826f7851df",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1007",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-dce443033fb7c59ffb8c1c11eea32dc8b161b11b28f25dda543ac99eb85de5f2",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1008",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-31b0ab0a2b4e968145b8488a9a530c8ca023618621f0302a3834766b2e82e6bb",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1009",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5d24b155e72e5e3a0ecf0a8ba26e5667dee0f17ef7ea695711820caa9bde77fc",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1010",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fc27464094675cd851472158fc6204c40ba2c96edb2d77aa8fa8a7afd85f1eb6",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1011",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-dd48b3b8b9ce3b7fdb0b60418dfbfaa525428348af658853975dcb5ce67051ba",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1012",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-365f56369858c833aae8d085a96c0622e3a4feec8a4ac9fa6d4077d4ce3668de",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1013",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-7ccfc7a37e8b124d3f481d4f3ea78afc345bdd3cb5f2455c4ebd9492959300cf",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1014",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-9c176be5ddd472cbe58b9ee4e96e530ed1ccb078dbc5a89064398d2393817f1e",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1015",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-80967375b1f2b3fcd983edab088d3ff982f708021cea91c543a53925af1ed101",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1016",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-2c9d99a4a3524c615de51c218a3d9858c5ea4b9d8fdf08653313a29dc947edde",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1017",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-667655a27530d70ce7b9ef2f81d67624dabc8344a2d7e43c9bd16e0d6af58d61",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1018",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-03de46f63938d919be4a22c1ca6b84c50c149dc57c626704bf0141944202668c",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1019",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-c1ab34c1ea2ff08a81639c2abea89026f08758c6ff97e727f65c9f3adc62c9c3",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1020",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-7bc62909354366052a40715508a9c40962fea397c6de5641862c6e66ab6e2ac6",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1021",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a64676b0e8ecdd6f9db66368e796ac090c848102f62c9531c19bb7400b973745",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1022",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-55f3ac545c82d6cabb8c8bce8003ad0ecc4dc54e492efb6fa5ddbc2a860be8d1",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1023",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-365dda823d42571a85729a4b4f4c44cc95262f30eb9a82fc33e220c15a353a0d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1024",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fd38e573035cdfa956f8b7fae5132f1df61b7954dbc378ec29a8c31be1b6a7ac",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1025",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-116910a48a541b1a7baf0da6f0c1b9d6630263801c1d881c5c67d2b6c089d8c8",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1026",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-ab51bb6a0ce5cd020e6700dd6a3e5844dedfd82f768bab7dfcbb2def569c0ba1",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1027",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-65c9e5a1c0fb644b07cf1637b862d2a4fed02886350947f0fa5f083d8b48a745",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1028",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-62006803b29b80745f8c5e0fe2a4208094b05fd989d9c92d503b30afab02b8dc",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1029",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-681893be47367db93fc51b72c173566f0695d69426409c32db9f7eb8550cdf72",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1030",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-583a2e10ba2659bb3538f79d843512770044e14f2793888fca62b135b945988b",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1031",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-f876caa6ac922c3f2664d98f7446da69922374098ee181209a5d8d6a15a91eee",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1032",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-d8695fbf9874e37666d81e7e85903be1025c2643f973c86b47c13b667e1678cd",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1033",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-520c03feebc20a0254d42f078390c2e19c23ca49e5a0217ac5a7a93e39bf73cd",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1034",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-1db196c59d1baa02bbb5bf1805fe65fbec4ae1d6bed5e332d918a35fef663fe2",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1035",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-6e2032339a1ee2b7dec407fe9fc20717de604a610726de6dca16cd5b8edf852e",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1036",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-89cf9f71e12d27f478306a54e46aa8c2de13c2c254cc3d4cdef2c5f78c88b367",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1037",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-58d8c9c3d37d7f00b2fb20f599f28b67c1fb5623809ddb6868e93cce99c90744",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1038",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-1c05840e21b788de42aa3a3d5fa5fb02ccb847e7427f6e3f2233d9b19a2687df",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1039",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-03adb1bb8d214577059ce8ac3d135769f9e6de9b5ade111f7d6e5d51595a01fe",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1040",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-734609421cdca2ee37b650b800b280d44413be4b1b2e81cd4790b2aceee85c5c",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1041",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-63ba51a6051ecd4d6f6f1bdba985de94c37fc0dfaec3baa11617a2e2f22b6ac1",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1042",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-c96c068b5ddc33335fe657b21feeae0ddf01f41b556fdcf7e7a1811f8098532a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1043",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-7eb2650ff350131adf876918071a70c45f0efab8de790cc49952a4c5842bf283",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1044",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fce23bb01852063bd9d0dc6b56f6710a0eb2da5be11b1723d46a1d6b1ea4c01b",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1045",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-6cfc1bb868c5e27cf4955b508b033840eb06a06578464a3dd6192a45750e118a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1046",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a88d5d54962ca051dfd0d72b5bc8d2041b665a3b77ce47f653fd195fb81e56ef",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1047",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-ac09a389ac01e863f770c6a621a0c0494acb1c92b2f1dd80e7d746e756a75e1a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1048",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-58913ed36c642c5b651cb29c704187686b51596cc48a8d7f68cb1deab822c79b",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1049",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-710aed25a1878ce1822474ed6f92b98d0ab143a1e65dae548d9c692e1190e076",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1050",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-4b8c0d1d1def5caf1fffa9deca61362c7046f94cece0d6ddd6083c597eb1dc35",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1051",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-d1f0aa682c148b6e658c140e9e8b618628ac0043842e45a4a59417c876c61c77",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1052",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-0f0d02dab6c3ee27706f97c54998f13327ccb192a16b14398f5725c08f6aed5b",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1053",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-bd4bafbab262100eed97fc58fc869b3f5243a5b230b818bc7d623c59e2076e00",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1054",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-570c8c903b085a741e3819ef2869a8d4d6df337e2523ce8533ee973ff6581faf",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1055",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-32bef490d335e9a874eeb42bf433fa76dbf1439574bd1368182c43b53ef2cef3",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1056",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-d802bd2cd2f9b4bc425b0507a1c7459783b8366a5934cde4bf235a4693e97011",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1057",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-c864fd82d7832fa8da37cc20367a43770843b1e779995abbb0b51591f38eb819",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1058",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-ebadb9712d389d8a5967a553bbe6cf4f2380d6cfad78547c93a4f8e4f122b197",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1059",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-ba4c42514b84fc534250071cbf485b67ef1ed2344c22f92e8dc102647b86a5c8",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1060",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-12459509aa406709192fb08d8f407c7ad459c1a58096f93075efd139bc59bcb2",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1061",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-7d73d45510401be25bcb93509890845b67c7d19a871a0154a0c3738c7287e2d0",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1062",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-eb8a2b95753fd3135ac2737f00d462650198fe50df3050a3f0c37d8f4be66d03",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1063",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-601d6c64792dca17e443252667ea768aca89c0c130b1b9bc989d8462fd110885",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1064",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-784fe34d3fb0a4d22488c13cd59e5f39394d31d23a42f26a44b081450e5b9a6d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1065",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5937f42bd19306c22120465720d09d35eb06f4818fadd9eac848d7e0306f70bd",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1066",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-19e944f956abae16754f6c8b830a04853048bf3b9a48063cf0fee1603ca2bb20",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1067",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a340104fbe6888a238cb1327e5262485380ad770ab77cafb33682e8e3e7fbb51",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1068",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-68fe51e36146138a3ededa762bf6d2977e08c6382a3dc2604de4f4296eddd9fb",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1069",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-29bb84ef3579b329f3aa74ec37fde7375d9831a5d87c652d0c0b8957e935465d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1070",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-92bf2d14060d11ddb713d4aa7686ca012cb220dd2b86d5c7ea11c4368d3ef2f2",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1071",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-9c58de8226bbee0ae23bb974cb6a9c57aa19029604ad5235f2bd7c7893529e9d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1072",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-bbdd7d0679889decf82e0cea12e3141c976cb7790a783ae915dfe7449426a5dd",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1073",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fa2ed6b621b2ba0ae9d0fc0a937080e96890454fd029eef4cac23c455491ede5",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1074",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-39f908660b04bf31760cdc976aad39587284841641c66426a072436039c96008",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1075",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-777a4154fe5a161773cf2d4be80805b6524a6d4dea2852620dd58cef8034a6d0",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1076",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-cf76b897e549c8744de48d64e23dd4a320e3c896a6a96f82dc73071003d7ba3b",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1077",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-80ff34de01d09146e07102de4bd2f14548d0fb46be1c2a36900ad618876f112a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1078",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5d56e0d5fae28bd95c3253dcc225bf429891e619e94ae463db05fa5d2dad9854",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1079",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-0712d8a3898b5b166074c409eaf7af1dbe9bb06da4c648536320fae46e4691d1",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1080",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-72abd849e3db54c2ce35a6d7547c0f384382f326e1cfd94540a22c5a38e4f18d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1081",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-edad183e391bce34f8d3e3c7a52ac93ef23d4b290d79e04137e7a02e228bb532",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1082",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-554524c5581163cb077ed81800dac327d36280b7c8ec3a65dac9c28a0842743f",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1083",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-22b0ce9895f27c41907a8e87dd0858d3d9bc166e1744eae199aa40547074ce44",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1084",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-f6f522f3c26ea560c476b745b9c8d01068c590a64eb16d98cfd0f965a48401ef",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1085",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-ebf29b935b0c058ec064d33da40505b606630fd7ef33df58ace883307513d98f",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1086",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5fd8ca5527efbdd00f94455b14c22e16f402747570b4bb783dbf688318289037",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1087",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-ad210e093478628c2fdd0387fdba9a6319916852dc2e7e13e0f80a6884ddaa3c",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1088",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fcb676a24c9e3a13ee557d9aa907b4ea2408a57821071dfaf63a0d7eeb865ac5",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1089",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-ca10acac80d4acbc40d356c081af4961616f2e76618fac8363ef9f1ad7910198",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1090",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-d1b1e29476fb6a12e972223ab0d32fb2f625953a1cd90a623a81c33085c0fa17",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1091",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-e715b83e1b1e5d63f9ff390b1c99084615593a224a6e9d0ce2423458690c6218",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1092",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a0bd2058fab5b3b4891cb27301c8d4d2bbfb3216affdc38edf82953f4a9eea8e",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1093",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-c0c795fd9edaed7dc8dcd008bda57f4d484a891fcf4fa6d71c324a1ea398981f",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1094",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5ba23c2fa8b4c9823f5b42cccb2300c90a75aaac460f2deda48a75e2ff71415d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1095",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-76b7e471e7660224283fe307c7702f3d326f6c6af6ad5cbb20cf7ac0dfa8dc5c",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1096",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-4a9b66be54a33a9866df2bf76b32e97437b2abaf077d58b3e6c883842fbfea6a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1097",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fcd6c228135c4098faed78ef9cc540f1e346ae309b8d51f7800d5398ea862d2a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1098",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-4f2c0ac8eb90594f2837d43eb4fdc0223da7f0ea28dae34e16be6e63eadf3332",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1099",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-11ee5707c356020066fee0a835953700ac733c50661dd69c931648864215cf4b",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1100",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-669d0445bd544d1dab742e22993e2707d77d214e00cb2555364dffd4a328ce08",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1101",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-b1e93287dfd546eb2eac080c08fdb28a41e9cfb00882c959f2d152b00716c738",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1102",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-915a35d69e80fa5f2805ac250a797a82ceffc0aec58d6f371090e9e41fb529a2",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1103",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-319fcdf672460559efda2195d13c9935c5a778be29772cfb2dddeb9de83f1060",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1104",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-9d6132cfcbb5bbeddaa4be972647b5eb19096ea31d505d1ad7f1f4c69754acc8",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1105",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-10c4bc301c2e0bd8b98b060ff63990e63b37ebfcf9150a7ecf121cf80cca725a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1106",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-43ed79b69dadc268bcf3f8e643010abeb1b4032ed1c8f6904eaee04fb765c073",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1107",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-708f6cd970a757a4e83855075d9f23cd6cd176e379333cf53ce2170b40099f4d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1108",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-10c1b80f0fe2741ee5603154090856e10a422e0457335cc1e8682e7ad820a549",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1109",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-499075814cac22c4482a1c85756825a4e54c9f6adc9af437475163e90d75983a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1110",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-75dd7d8fa2a0507418cb65c49eb547ef3497555af2c00337a98d73370b8952a2",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1111",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a4725cf6a60c4c3df63e8a03c531124428fc2250aec98bcf73e9e59433660f5c",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1112",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-20bcd0d67f84c50e90eacdab7642f3b6135e65e1ea9465500c459f916b96c430",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1113",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5b45e5e7b15a4e0e2905ecabf1cbd996285faefbfb2da4f9fe8cbce23a2c9955",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1114",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-4eee5f1dfe602c617b3f9edfe77ebb044fba3f22085b063cfeddd5e701986f73",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1115",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-9e6fc031ce021208002cdd9c4d159cf07ea88540452d528a323ac4a1989ecfa5",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1116",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-8b9d5f26db0fa95f68fd236090557d9549e6e4adf616ef96d05595e8c0feb41f",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1117",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-d41c42c81ef8d5f51abb2322cba4153300b1feb35599661c7bfda1af229cf162",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1118",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-b89a5c13d75e70cbf9a0616af436891d21ea194a0241cbde1bf6413ebd2d62e1",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1119",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-3a5fe49bbc710af030b39488d1c1741c3c93baa0eeed1ba3674fbf560b0c1263",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1120",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-16687ddb4e832a19d9430b466acdf4b37d8cbb2e9bf336a77d37e2aa256f9b41",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1121",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-21a5a6fcd788b9ea2636eaf564be61525531ecf4524172a14138b9565baebc17",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1122",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-8472a889a4ec4f2362f09ef7d03ca817b2724b0f68d50b92f1b4054ab99ced69",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1123",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-9043dc30eb6862853c3ec211a137e2b19f24de6ca0398c2598cb054bf14f248a",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1124",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-07f339adfb9d47ea4f59eca571b0fbd1afd0312324e7c40a12aad09dc2abf29d",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1125",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-4c313eaf3928f4ca95fd08798337a6c3278cd9f3ea3b9cc569ab1ca4631b33e6",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1126",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a3c4bd0e6d1b0d6b732b9bf5751bdfdb38471c9a66a212bc42868c7360b79fbc",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1127",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-d82583c56083884a4bc33cfffb2937ea79f3aace2cd2d13a9bcb4d6bb4f79023",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1128",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-425146172f0a4099d2d6905308ac2f2f9f997f4377f7dfcf46c31d4f16eedccd",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1129",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-135a6d12df2e7f3737fbf48b20cf5288bd3404b7e03d09db69b59849110cf04c",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1130",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-74589ecfc3bf6dc8ea6bf03a1c29a1dd09adb07456563739f7a31452cf1c1f8b",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1131",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-8ba2b7e4536496bfe889888185991ef2b7332ba9b72b08975496c8bcf9bdb3cb",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1132",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-cfed13556a40abc861119a4c902f6d324157a279e03fc7e2185c288e07aa46cb",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1133",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fc60699aa135a7799504dff6d0495424a04393167b705bfb8d3f34ad405e2130",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1134",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fea7514ac7629ab58a29645e5b10c337a48db4271aeaef839e34b1d0d397c374",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1135",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-786e37d6e6a6ab6a94aa32ca4d376e8927e07f5c6a43800235a2990779b64a34",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1136",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-515e9186d7fc21b4642384baeca549f2e639f63db4af76051a6e473322719770",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1137",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-82d475645ae2bc5a7cd6ea2ee82c1de14c2e6e04caf6bbe03c503e80aa070294",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1138",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-30e228cbc6259ac8c33a1059cb475f8ca94f1e5aeaaf7592468e186945d62af4",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1139",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-f222785cc2fa25383c4db193f05d3e51f48e539b753676a9e5bcee519af166fe",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1140",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-3bd7b728108488c9497578acdc6c7f908e55b683ce83ac45c3ae7cde6201cea8",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1141",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-22d5ec731c7b575b877fafe5b9d25b77201d5412e8da0479c39336768654e224",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1142",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-7b5952859e01b7dba2d759b9fe5dd0db8a6a0e3150abf128096956e27ec463da",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1143",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-67de7580ad78443cac2c3eb857f9794649091232c98aa15e02038a94b762f761",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1144",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-9fad3835c05fc501793931ba77e1efacb27e7fcc0de0c9eba4b2be1c72ff13dd",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1145",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-d2143541b7b50447d50e1a35b7f8aca2f2c87d4f2d63d693b6ac5092247b8d21",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1146",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-a1aebf6c861d7a01ab3f018e4ef8b94ec033714dc4b4a600a79e01edfd448646",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1147",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-eecc73197b81370bf5b5179e4aa5498cb7b727ee3883ca0a32889c57251efb05",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1148",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-2d090941cc796e16f277f6efdbc2e809835ff101434a4cfbf96927a46affff75",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1149",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-4ef71237f4170bdc717d2b14a79e7468ae6e439d194b0c8f0d433961ce6233a9",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1150",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-f04a31827b8e819947737ff5d098f7877133757e2ba1dd8fd0da9a09d1db06ea",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1151",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-fbf35ef68ea06e93d4c863b3e42433b77b2c3d80cee838b0e622f1777cda4d43",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1152",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-6d89b8bd0752617a52e858979485aa828a9645fbdb0f90ee047a5d9b5dba3c77",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1153",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-1bc2fb73629a2e9a36bff62a205e15204d8bad261ec365a669d25a3b2a2cc8f8",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1154",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-3d943756cafdc47aaebfb02bfbcbfc4d1a214595aef7b401156f9ccb7b93e347",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1155",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-e1a62e7844615daf7cbb2bf457aeac0e9bc3a08f6c20e8f02e48ee3ea55fb2a5",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1156",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5384949cacaf6360eb28e0e10c2d375332d67a6878be7adad2cd012291418b42",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1157",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-30f44c31c23144e8415fb90623766094328c44a58b294cf59680a3a8ba577619",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1158",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-914a27181c049959721a34cd5714b1f9d8c23533e076fe4cae6d98f0b605c6df",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1159",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-1f4cf2cf8022ccc29db4b10c056c913a50a47d843ab4eb34c9f16bf7471bb1ad",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1160",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-29e5aa463ea11063f1ca9f597feade07e21f71671e5c936b09c26f5ed0685dfd",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1161",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-376cbdae18b52cb9731090146d1b9fa2083371b40573f1f4951fe3d0e031d4d4",
+      "tripId": "trip-gwangju-5f58d11ee5cfe5048912ec3adb0ecbd6626eee33f14eb659d29f3b34a1c8c0e2",
+      "serviceId": "service-S2901-명절",
+      "trainNumber": "1162",
+      "reason": "SERVICE_NOT_ACTIVE_IN_WINDOW"
     }
   ]
 }
