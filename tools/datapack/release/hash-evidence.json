@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "956fea6f49151808764311b7dc376e7c3417f9fd",
+  "builderGitSha": "ca01df7ee841750daecfb9969ae3cc6c669cf402",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -34,11 +34,11 @@
     "value": "b13d702903df4be2ae087ba2c684861adc82cd6a07c447524882aacd849b2aaf"
   },
   "sourceInventorySha256": {
-    "value": "ecb369487de3fafd80daa32f393836b676e20fb652a9422e0a7ed1e60b7a91fd"
+    "value": "bcdf5ae2e05ee2b72e46f7579e9042495165075fa29e81f307cbc44400c12834"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "895d12300a301919901b420f0a61c78c11c29b766ef62a3abadfe622c8954678"
+    "sha256": "ebf2dcff50695b84c78eab9e9b82c784a0e99ec7514890b3cf3fcd74fe0f4e61"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261003-seq125"
+      "value": "nationwide-candidate-20261003-seq126"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261003-seq125"
+      "value": "release-request-nationwide-candidate-20261003-seq126"
     }
   },
   "perSourceEvidence": [

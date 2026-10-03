@@ -17,398 +17,2106 @@
       "quarantinedCount": 0
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "rawSha256": "852b75f79ca7cccf8dfefc65ee4fe226f833e6cd2e52f5e721efdfac2efdc31a",
-      "admittedStopTimeCount": 7187,
-      "quarantinedCount": 38
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "admittedStopTimeCount": 15537,
+      "quarantinedCount": 161
     }
   ],
   "summary": {
-    "quarantinedCount": 38,
+    "quarantinedCount": 161,
     "byReason": {
-      "FEWER_THAN_TWO_SOURCE_STOPS": 38
+      "PASSENGER_STOP_COUNT_LT_2": 161
     }
   },
   "rows": [
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 22440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1123",
+      "weekdayType": "휴일",
+      "originStationName": "평동",
+      "destinationStationName": "녹동",
+      "sourceRowNumbers": [
+        88642
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 23640,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1171",
+      "weekdayType": "휴일",
+      "originStationName": "평동",
+      "destinationStationName": "녹동",
+      "sourceRowNumbers": [
+        89564
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 30060,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1181",
+      "weekdayType": "휴일",
+      "originStationName": "평동",
+      "destinationStationName": "녹동",
+      "sourceRowNumbers": [
+        89756
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 31440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1901",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90161,
+        90162
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 33240,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1902",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90163,
+        90164
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 36840,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1903",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90165,
+        90166
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 40440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1904",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90167,
+        90168
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 44040,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1905",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90169,
+        90170
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 47640,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1906",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90171,
+        90172
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 51240,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1907",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90173,
+        90174
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 54840,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1908",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90175,
+        90176
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 58440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1909",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90177,
+        90178
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 62040,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1910",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90179,
+        90180
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 64140,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1911",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90181,
+        90182
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 66240,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1912",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90183,
+        90184
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 68340,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1913",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90185,
+        90186
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 70020,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1914",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90187,
+        90188
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 71640,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1915",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90189,
+        90190
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 73440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1916",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90191,
+        90192
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 77040,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1917",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90193,
+        90194
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-weekday-2026",
-      "sourceDayKey": "WEEK",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 80220,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1918",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90195,
+        90196
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 26280,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1919",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90197,
+        90198
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 29640,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1920",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90199,
+        90200
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 31440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1921",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90201,
+        90202
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 33240,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1922",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90203,
+        90204
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 36840,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1923",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90205,
+        90206
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 40440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1924",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90207,
+        90208
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 44040,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1925",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90209,
+        90210
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 47640,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1926",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90211,
+        90212
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 51240,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1927",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90213,
+        90214
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 54840,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1928",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90215,
+        90216
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 58440,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1929",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90217,
+        90218
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 62040,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1930",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90219,
+        90220
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 63840,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1931",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90221,
+        90222
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 65640,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1932",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90223,
+        90224
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 69240,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1933",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90225,
+        90226
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 72840,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1934",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90227,
+        90228
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     },
     {
-      "sourceId": "gwangju-transportation-cyberstation-timetable",
-      "serviceId": "gwangju-holiday-2026",
-      "sourceDayKey": "DAYOFF",
-      "sourceDirection": "pd",
-      "stationCode": "100",
-      "stationId": "station-73a324a117ea",
-      "departureSeconds": 78120,
-      "reason": "FEWER_THAN_TWO_SOURCE_STOPS"
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1935",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90229,
+        90230
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1936",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90231,
+        90232
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1937",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90233,
+        90234
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1938",
+      "weekdayType": "휴일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        90235,
+        90236
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1939",
+      "weekdayType": "휴일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        90237,
+        90238
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1141",
+      "weekdayType": "명절",
+      "originStationName": "평동",
+      "destinationStationName": "녹동",
+      "sourceRowNumbers": [
+        92950
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1157",
+      "weekdayType": "명절",
+      "originStationName": "평동",
+      "destinationStationName": "녹동",
+      "sourceRowNumbers": [
+        93257
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1159",
+      "weekdayType": "명절",
+      "originStationName": "평동",
+      "destinationStationName": "녹동",
+      "sourceRowNumbers": [
+        93296
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1901",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93355,
+        93356
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1902",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93357,
+        93358
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1903",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93359,
+        93360
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1904",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93361,
+        93362
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1905",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93363,
+        93364
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1906",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93365,
+        93366
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1907",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93367,
+        93368
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1908",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93369,
+        93370
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1909",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93371,
+        93372
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1910",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93373,
+        93374
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1911",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93375,
+        93376
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1912",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93377,
+        93378
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1913",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93379,
+        93380
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1914",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93381,
+        93382
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1915",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93383,
+        93384
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1916",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93385,
+        93386
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1917",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93387,
+        93388
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1918",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93389,
+        93390
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1919",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93391,
+        93392
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1920",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93393,
+        93394
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1921",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93395,
+        93396
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1922",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93397,
+        93398
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1923",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93399,
+        93400
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1924",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93401,
+        93402
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1925",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93403,
+        93404
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1926",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93405,
+        93406
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1927",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93407,
+        93408
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1928",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93409,
+        93410
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1929",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93411,
+        93412
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1930",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93413,
+        93414
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1931",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93415,
+        93416
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1932",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93417,
+        93418
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1933",
+      "weekdayType": "명절",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        93419,
+        93420
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1934",
+      "weekdayType": "명절",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        93421,
+        93422
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1901",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97380,
+        97381
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1902",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97382,
+        97383
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1903",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97384,
+        97385
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1904",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97386,
+        97387
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1905",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97388,
+        97389
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1906",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97390,
+        97391
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1907",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97392,
+        97393
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1908",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97394,
+        97395
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1909",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97396,
+        97397
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1910",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97398,
+        97399
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1911",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97400,
+        97401
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1912",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97402,
+        97403
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1913",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97404,
+        97405
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1914",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97406,
+        97407
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1915",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97408,
+        97409
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1916",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97410,
+        97411
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1917",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97412,
+        97413
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1918",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97414,
+        97415
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1919",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97416,
+        97417
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1920",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97418,
+        97419
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1921",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97420,
+        97421
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1922",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97422,
+        97423
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1923",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97424,
+        97425
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1924",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97426,
+        97427
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1925",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97428,
+        97429
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1926",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97430,
+        97431
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1927",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97432,
+        97433
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1928",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97434,
+        97435
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1929",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97436,
+        97437
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1930",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97438,
+        97439
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1931",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97440,
+        97441
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1932",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97442,
+        97443
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1933",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97444,
+        97445
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1934",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97446,
+        97447
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1935",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97448,
+        97449
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1936",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97450,
+        97451
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1937",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97452,
+        97453
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1938",
+      "weekdayType": "토요일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        97454,
+        97455
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1939",
+      "weekdayType": "토요일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        97456,
+        97457
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1901",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102075,
+        102076
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1902",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102077,
+        102078
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1903",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102079,
+        102080
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1904",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102081,
+        102082
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1905",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102083,
+        102084
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1906",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102085,
+        102086
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1907",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102087,
+        102088
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1908",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102089,
+        102090
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1909",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102091,
+        102092
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1910",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102093,
+        102094
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1911",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102095,
+        102096
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1912",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102097,
+        102098
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1913",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102099,
+        102100
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1914",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102101,
+        102102
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1915",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102103,
+        102104
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1916",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102105,
+        102106
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1917",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102107,
+        102108
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1918",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102109,
+        102110
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1919",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102111,
+        102112
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1920",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102113,
+        102114
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1921",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102115,
+        102116
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1922",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102117,
+        102118
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1923",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102119,
+        102120
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1924",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102121,
+        102122
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1925",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102123,
+        102124
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1926",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102125,
+        102126
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1927",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102127,
+        102128
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1928",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102129,
+        102130
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1929",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102131,
+        102132
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1930",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102133,
+        102134
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1931",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102135,
+        102136
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1932",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102137,
+        102138
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1933",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102139,
+        102140
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1934",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102141,
+        102142
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1935",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102143,
+        102144
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1936",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102145,
+        102146
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1937",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102147,
+        102148
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1938",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102149,
+        102150
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1939",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102151,
+        102152
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1940",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102153,
+        102154
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1941",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102155,
+        102156
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1942",
+      "weekdayType": "평일",
+      "originStationName": "소태",
+      "destinationStationName": "기지사업소",
+      "sourceRowNumbers": [
+        102157,
+        102158
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "sourceSnapshotId": "kric-nationwide-timetable-file-82ada0ddfb9cc713e9f3bf130e4b8ffa1810a9596bd3bc8804f002d476ae6cc6",
+      "trainNumber": "1943",
+      "weekdayType": "평일",
+      "originStationName": "기지사업소",
+      "destinationStationName": "소태",
+      "sourceRowNumbers": [
+        102159,
+        102160
+      ],
+      "reason": "PASSENGER_STOP_COUNT_LT_2"
     }
   ]
 }
