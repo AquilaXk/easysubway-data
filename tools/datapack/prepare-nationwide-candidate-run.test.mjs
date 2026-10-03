@@ -325,6 +325,16 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.ok(gwangjuTrips.length > 0);
   assert.deepEqual([...new Set(gwangjuTrips.map(({ sourceId, sourceSnapshotId }) => `${sourceId}|${sourceSnapshotId}`))],
     [`kric-nationwide-timetable-file|${retainedSnapshotId}`]);
+  // 원천 서비스 구분대로 운행한다(QA 정책 2026-10-03): 평일·토요일·휴일 trip이 모두 실리고, 운행일 없는 서비스는 남지 않는다.
+  const weekdayFlags = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const activeServiceIds = new Set([
+    ...pack.serviceCalendars.filter((calendar) => weekdayFlags.some((day) => calendar[day] === true)).map(({ serviceId }) => serviceId),
+    ...pack.serviceCalendarDates.filter(({ exceptionType }) => exceptionType === 1).map(({ serviceId }) => serviceId),
+  ]);
+  assert.deepEqual(pack.serviceCalendars.filter(({ serviceId }) => !activeServiceIds.has(serviceId)).map(({ serviceId }) => serviceId), []);
+  const gwangjuTripsByService = Object.fromEntries([...new Set(gwangjuTrips.map(({ serviceId }) => serviceId))].sort()
+    .map((serviceId) => [serviceId, gwangjuTrips.filter((trip) => trip.serviceId === serviceId).length]));
+  assert.deepEqual(gwangjuTripsByService, { "service-S2901-토요일": 207, "service-S2901-평일": 240, "service-S2901-휴일": 203 });
   const kricPackSource = pack.sourceInventory.filter(({ id }) => id === "kric-nationwide-timetable-file");
   assert.equal(kricPackSource.length, 1);
   assert.ok(kricPackSource[0].coverageScope.lineIds.includes("line-e57a361e8892"), "KRIC 팩 원천 범위에 광주 1호선이 있어야 한다");
