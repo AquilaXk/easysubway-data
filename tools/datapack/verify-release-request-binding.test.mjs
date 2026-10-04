@@ -236,7 +236,7 @@ test("#929 D3 정기 역할 release request는 그 후보를 만든 정기 run(g
     .some((violation) => /gateRun headSha/u.test(violation) && /builderGitSha/u.test(violation)));
   assert.ok(releaseRequestBindingViolations(boundPair({ request: scheduled })).some((violation) => /gateRun is required/u.test(violation)));
   assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "workflow_dispatch" } } }))
-    .some((violation) => /only for schedule or chain events/u.test(violation)));
+    .some((violation) => /only for the schedule event/u.test(violation)));
   assert.ok(releaseRequestBindingViolations(boundPair({ request: { gateRun } }))
     .some((violation) => /person roles require workflow_dispatch/u.test(violation)));
 });

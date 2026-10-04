@@ -30,7 +30,7 @@
     "approvalId": { "type": "string", "minLength": 1 },
     "targetChannel": { "enum": ["dev", "staging", "production"] },
     "gateRun": {
-      "description": "#929 D3: 이 후보를 만든 CI run. 정기 전용 역할(datapack-scheduled-refresh·datapack-release-gates)이면 필수이고 event는 schedule 또는 workflow_run이다.",
+      "description": "#929 D3: 이 후보를 만든 CI run. 정기 전용 역할(datapack-scheduled-refresh·datapack-release-gates)이면 필수이고 event는 schedule이다.",
       "type": "object",
       "additionalProperties": false,
       "required": ["repository", "workflowPath", "runId", "runAttempt", "event", "headSha"],

@@ -426,7 +426,10 @@ const GATE_RUN = Object.freeze({
 });
 
 test("#929 D3 a scheduled run derives the fixed roles and the next sequence and takes no person input", () => {
-  for (const event of ["schedule", "workflow_run"]) {
+  assert.throws(() => planNationwideCandidateRefresh({
+    releaseSequence: "", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event: "workflow_run",
+  }), /CANDIDATE_REFRESH_EVENT/u);
+  for (const event of ["schedule"]) {
     assert.deepEqual(planNationwideCandidateRefresh({
       releaseSequence: "", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event,
     }), {
@@ -446,7 +449,7 @@ test("#929 D3 a person dispatch cannot use the scheduled roles, and other events
   assert.throws(() => planNationwideCandidateRefresh({
     releaseSequence: "127", requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates",
     committedBuildSpec: committedSpec, now, event: "workflow_dispatch",
-  }), /CANDIDATE_REFRESH_ROLE_EVENT[\s\S]*only for schedule or chain events/u);
+  }), /CANDIDATE_REFRESH_ROLE_EVENT[\s\S]*only for the schedule event/u);
   assert.throws(() => planNationwideCandidateRefresh({
     releaseSequence: "127", requestedBy: "data-operator-lead", approvedBy: "datapack-release-gates",
     committedBuildSpec: committedSpec, now, event: "workflow_dispatch",

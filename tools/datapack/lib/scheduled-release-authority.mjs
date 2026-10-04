@@ -4,13 +4,13 @@
 // 정기 실행은 사람 승인 없이 후보를 만들므로, 그 사실을 숨기지 않는 고정 라벨 두 개를 쓴다.
 // - requestedBy: datapack-scheduled-refresh  (요청 주체 = 정기 후보 갱신 workflow)
 // - approvedBy:  datapack-release-gates      (승인 근거 = 그 run이 통과한 게이트들)
-// 이 라벨은 schedule·체인(workflow_run) 이벤트에서만 쓸 수 있고, release request에는 그 후보를 만든 run(gateRun)을
+// 이 라벨은 schedule 이벤트에서만 쓸 수 있고(후보 갱신 workflow에는 다른 자동 트리거가 없다), release request에는 그 후보를 만든 run(gateRun)을
 // 반드시 결속한다. RC chain은 GitHub run 기록과 gateRun을 대조한 뒤에만 RC를 dispatch한다.
 export const SCHEDULED_RELEASE_ROLES = Object.freeze({
   requestedBy: "datapack-scheduled-refresh",
   approvedBy: "datapack-release-gates",
 });
-export const SCHEDULED_ROLE_EVENTS = Object.freeze(["schedule", "workflow_run"]);
+export const SCHEDULED_ROLE_EVENTS = Object.freeze(["schedule"]);
 export const PERSON_ROLE_EVENT = "workflow_dispatch";
 export const GATE_RUN_REPOSITORY = "AquilaXk/easysubway-data";
 export const GATE_RUN_WORKFLOW_PATH = ".github/workflows/nationwide-candidate-refresh.yml";
@@ -33,7 +33,7 @@ export function releaseRoleEventViolations({ requestedBy, approvedBy, event }) {
   if (scheduled) {
     return SCHEDULED_ROLE_EVENTS.includes(event)
       ? []
-      : [`scheduled roles are allowed only for schedule or chain events (event: ${String(event)})`];
+      : [`scheduled roles are allowed only for the schedule event (event: ${String(event)})`];
   }
   // 사람 역할: 로컬 실행(event 없음)과 사람 dispatch만 받는다.
   return event === undefined || event === null || event === PERSON_ROLE_EVENT

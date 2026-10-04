@@ -5,6 +5,7 @@ import {
   GATE_RUN_REPOSITORY,
   GATE_RUN_WORKFLOW_PATH,
   SCHEDULED_RELEASE_ROLES,
+  SCHEDULED_ROLE_EVENTS,
   gateRunFromEnvironment,
   gateRunRecordViolations,
   releaseRoleEventViolations,
@@ -36,12 +37,13 @@ test("the scheduled roles are two distinct fixed labels that no person label can
   assert.ok(Object.isFrozen(SCHEDULED_RELEASE_ROLES));
 });
 
-test("scheduled roles are allowed only for schedule or chain events and only as the exact pair", () => {
+test("scheduled roles are allowed only for the schedule event and only as the exact pair", () => {
   const { requestedBy, approvedBy } = SCHEDULED_RELEASE_ROLES;
+  assert.deepEqual(SCHEDULED_ROLE_EVENTS, ["schedule"]);
   assert.deepEqual(releaseRoleEventViolations({ requestedBy, approvedBy, event: "schedule" }), []);
-  assert.deepEqual(releaseRoleEventViolations({ requestedBy, approvedBy, event: "workflow_run" }), []);
-  for (const event of ["workflow_dispatch", "push", "pull_request", undefined]) {
-    assert.match(releaseRoleEventViolations({ requestedBy, approvedBy, event }).join(";"), /only for schedule or chain events/u, String(event));
+  // #931 리뷰 F3: 후보 갱신 workflow에는 workflow_run 트리거가 없다. 만드는 쪽이 없는 이벤트는 받지 않는다.
+  for (const event of ["workflow_run", "workflow_dispatch", "push", "pull_request", undefined]) {
+    assert.match(releaseRoleEventViolations({ requestedBy, approvedBy, event }).join(";"), /only for the schedule event/u, String(event));
   }
   assert.match(releaseRoleEventViolations({ requestedBy, approvedBy: "data-release-authority", event: "schedule" }).join(";"),
     /exact pair/u);
@@ -49,7 +51,7 @@ test("scheduled roles are allowed only for schedule or chain events and only as 
     /exact pair/u);
 });
 
-test("person roles are refused on schedule or chain events", () => {
+test("person roles are refused on the schedule event and on any non-dispatch event", () => {
   assert.deepEqual(releaseRoleEventViolations({ requestedBy: "data-operator-lead", approvedBy: "data-release-authority", event: "workflow_dispatch" }), []);
   assert.deepEqual(releaseRoleEventViolations({ requestedBy: "data-operator-lead", approvedBy: "data-release-authority", event: undefined }), []);
   for (const event of ["schedule", "workflow_run"]) {
@@ -66,7 +68,7 @@ test("a scheduled release request must bind the exact gate run that produced it"
     [{ repository: "someone/else" }, /repository/u],
     [{ runId: "37200000001" }, /runId/u],
     [{ runAttempt: 0 }, /runAttempt/u],
-    [{ event: "workflow_dispatch" }, /only for schedule or chain events/u],
+    [{ event: "workflow_dispatch" }, /only for the schedule event/u],
     [{ headSha: "abc" }, /headSha/u],
     [{ extra: true }, /gateRun keys/u],
   ];
