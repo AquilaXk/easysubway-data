@@ -24,7 +24,6 @@ on:
         type: string
 
 permissions:
-  actions: write
   contents: write
   pull-requests: write
 
@@ -108,8 +107,18 @@ jobs:
           gh auth setup-git
           git push origin "${branch}"
           printf 'CANDIDATE_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+      - name: Mint App token for the candidate refresh pull request
+        id: app-token-pr
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
       - name: Create candidate refresh pull request
         env:
+          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
           REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
@@ -130,22 +139,16 @@ jobs:
             "" \
             "Refs #927" \
             "Refs #870")"
-          pr_url="$(gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}")"
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          pr_url="$(GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}")"
           printf 'CANDIDATE_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
-      - name: Run required CI on the candidate refresh head
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다. ci.yml은 이 경로를 위해 dispatch를 받는다.
-          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${CANDIDATE_BRANCH}"
       - name: Remove the candidate refresh branch after a later failure
         if: ${{ failure() && env.CANDIDATE_BRANCH != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # push 뒤 단계(PR 생성·CI dispatch)가 실패하면 남은 automation 브랜치와 CI 없는 PR을 정리한다. job은 실패로 남는다.
+          # push 뒤 단계(App 토큰 발급·PR 생성)가 실패하면 남은 automation 브랜치와 CI 없는 PR을 정리한다. job은 실패로 남는다.
           if [[ -n "${CANDIDATE_PR_URL:-}" ]]; then
             gh pr close "${CANDIDATE_PR_URL}" --repo "${GITHUB_REPOSITORY}" --delete-branch --comment "후보 갱신 run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}이 PR 생성 뒤 실패해 이 PR과 브랜치를 정리한다."
           else

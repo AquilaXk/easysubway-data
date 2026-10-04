@@ -37,7 +37,7 @@ function assertAppTokenStep(file, block) {
   assert.ok(block.includes(`uses: ${APP_TOKEN_ACTION}`), `${file}: pinned create-github-app-token`);
   assert.match(block, /\n          client-id: \$\{\{ secrets\.EASYSUBWAY_RELEASE_APP_CLIENT_ID \}\}\n/u, file);
   assert.match(block, /\n          private-key: \$\{\{ secrets\.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY \}\}\n/u, file);
-  assert.match(block, /\n          owner: AquilaXk\n          repositories: easysubway-data\n          permission-pull-requests: write\n/u, file);
+  assert.match(block, /\n          owner: AquilaXk\n          repositories: easysubway-data\n          permission-pull-requests: write(?:\n|$)/u, file);
   assert.doesNotMatch(block, /permission-(contents|actions|workflows|issues)/u, file);
 }
 

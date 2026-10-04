@@ -15,8 +15,7 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /cancel-in-progress: false/);
   assert.match(yml, /contents: write/);
   assert.match(yml, /pull-requests: write/);
-  // #939: 갱신 PR 브랜치로 ci.yml을 dispatch하므로 actions: write다(아티팩트 읽기 포함).
-  assert.match(yml, /actions: write/);
+  assert.match(yml, /actions: read/);
   assert.match(yml, /persist-credentials: false/);
   assert.match(yml, /fetch-depth: 0/);
   assert.match(yml, /node-version: "24\.19\.0"/);
@@ -76,8 +75,7 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /--draft/);
   assert.match(yml, /git commit -m "Refresh KRIC facility snapshot"[\s\S]*git push origin "\$\{KRIC_REFRESH_BRANCH\}"[\s\S]*gh pr create/);
   assert.match(yml, /Refs #629, #39, #29/);
-  // #939: 허용하는 dispatch는 갱신 PR 브랜치의 required CI(ci.yml) 하나뿐이다.
-  assert.doesNotMatch(yml.replace(/^\s*gh workflow run ci\.yml --repo "\$\{GITHUB_REPOSITORY\}" --ref "\$\{[A-Za-z_]+\}"$/gmu, ""), /aws|s3:|retry|automerge|git push origin main|gh workflow run/i);
+  assert.doesNotMatch(yml, /aws|s3:|retry|automerge|git push origin main|gh workflow run/i);
 });
 
 test("KRIC refresh workflow only uploads sanitized decision and operation evidence", () => {

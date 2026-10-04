@@ -16,7 +16,6 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
-      actions: write
       contents: write
       pull-requests: write
       issues: write
@@ -49,6 +48,26 @@ jobs:
             await appendFile(process.env.GITHUB_OUTPUT, "state=" + result.state + "\nbranch=" + (result.branch ?? "") + "\n");
           '
           printf 'RETAINED_GWANGJU_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
+      - name: Mint App token for the open refresh pull request
+        id: app-token-open
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Ensure required CI on the open refresh pull request
+        id: required-ci
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
+        run: |
+          set -euo pipefail
+          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다).
+          node tools/ci/refresh-pr-required-ci.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
       - name: Enforce open refresh pull request age limit
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
         env:
@@ -58,10 +77,21 @@ jobs:
           # #939: 열린 갱신 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
           open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow retained-gwangju-timetable-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow retained-gwangju-timetable-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+      - name: Mint App token for the refresh pull request
+        id: app-token-recover
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
       - name: Recover completed retained timetable claim
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
+          APP_PR_TOKEN: ${{ steps.app-token-recover.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -79,9 +109,8 @@ jobs:
           existing="${RETAINED_GWANGJU_STATE_ROOT}/recovery-prs.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
           EXISTING="${existing}" BRANCH="${branch}" node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { assertRetainedGwangjuRecoveryPullRequestAbsent } from "./tools/ci/retained-gwangju-refresh-delivery.mjs"; assertRetainedGwangjuRecoveryPullRequestAbsent({ repository: process.env.GITHUB_REPOSITORY, branch: process.env.BRANCH, pullRequests: JSON.parse(await readFile(process.env.EXISTING, "utf8")) });'
-          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh retained Gwangju timetable" --body "Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504"
-          # #939: GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다(action_required). 같은 브랜치로 required CI를 dispatch한다.
-          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${branch}"
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh retained Gwangju timetable" --body "Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504"
       - name: Create retained timetable claim before provider access
         if: ${{ steps.decision.outputs.state == 'DUE' }}
         env:
@@ -127,14 +156,24 @@ jobs:
           git diff --quiet "${RETAINED_GWANGJU_MAIN_SHA}" -- tools/datapack/source-governance-policy.json release/product-gates/datapack-freshness-sla.json || { echo "retained timetable changed governance or freshness policy" >&2; exit 1; }
           git commit -m "Refresh retained Gwangju timetable"
           git push origin "${RETAINED_GWANGJU_BRANCH}"
+      - name: Mint App token for the refresh pull request
+        id: app-token-pr
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
       - name: Create retained timetable draft pull request
         if: ${{ steps.decision.outputs.state == 'DUE' }}
         env:
+          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${RETAINED_GWANGJU_BRANCH}" --title "Refresh retained Gwangju timetable" --body $'Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504'
-          # #939: GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다(action_required). 같은 브랜치로 required CI를 dispatch한다.
-          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${RETAINED_GWANGJU_BRANCH}"
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${RETAINED_GWANGJU_BRANCH}" --title "Refresh retained Gwangju timetable" --body $'Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504'
       - name: Report refresh failure as an issue
         if: ${{ failure() }}
         env:

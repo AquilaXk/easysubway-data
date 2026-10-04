@@ -587,6 +587,7 @@
     {"path":"tools/ci/retained-gwangju-refresh-delivery.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":3},
     {"path":"tools/ci/report-refresh-failure.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/refresh-open-pr-age.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/refresh-pr-required-ci.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/refresh-workflow-pull-request-lifecycle.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1794},
     {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":85},

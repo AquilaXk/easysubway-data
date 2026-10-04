@@ -17,7 +17,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
-      actions: write
+      actions: read
       contents: write
       pull-requests: write
       issues: write
@@ -60,6 +60,26 @@ jobs:
           done < "${state_root}/claim-refs.txt"
           node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
           node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Mint App token for the open refresh pull request
+        id: app-token-open
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Ensure required CI on the open refresh pull request
+        id: required-ci
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
+        run: |
+          set -euo pipefail
+          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다).
+          node tools/ci/refresh-pr-required-ci.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
       - name: Enforce open refresh pull request age limit
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
         env:
@@ -69,7 +89,7 @@ jobs:
           # #939: 열린 갱신 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
           open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow current-capital-topology-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow current-capital-topology-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
       - name: Preflight immutable current topology identities
         id: preflight
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM' }}
@@ -80,9 +100,20 @@ jobs:
         env:
           PATHS: ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/existing-paths.txt
           ITX_REFRESH_REQUIRED: ${{ steps.decision.outputs.itx_refresh_required }}
+      - name: Mint App token for the refresh pull request
+        id: app-token-recover
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
       - name: Recover a completed claimed refresh
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
+          APP_PR_TOKEN: ${{ steps.app-token-recover.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -116,9 +147,8 @@ jobs:
           existing="${RUNNER_TEMP}/current-capital-topology-refresh/claim-prs.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
           [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "topology claim already has a pull request" >&2; exit 1; }
-          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
-          # #939: GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다(action_required). 같은 브랜치로 required CI를 dispatch한다.
-          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${branch}"
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
       - name: Create durable claim before provider access
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         env:
@@ -301,15 +331,25 @@ jobs:
           node tools/datapack/activate-current-source-set.mjs --topology-source-admission --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
           [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "topology activation changed an unsupported path" >&2; exit 1; }
           git push origin "${TOPOLOGY_BRANCH}"
+      - name: Mint App token for the refresh pull request
+        id: app-token-pr
+        if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
       - name: Create draft pull request
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
+          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
-          # #939: GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다(action_required). 같은 브랜치로 required CI를 dispatch한다.
-          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${TOPOLOGY_BRANCH}"
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
       - name: Upload sanitized decision metadata
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
