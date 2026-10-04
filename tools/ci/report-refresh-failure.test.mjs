@@ -232,7 +232,11 @@ test("every scheduled source refresh workflow reports its own failure as an issu
   ]);
   for (const file of Object.keys(REFRESH_WORKFLOWS)) {
     const yml = workflowText(file);
-    assert.match(yml, /\n  issues: write\n/u, `${file} needs issues: write`);
+    // F4: issues write는 workflow 전체가 아니라 갱신 job에만 준다.
+    assert.match(yml, /\npermissions: \{\}\n/u, `${file} must not grant permissions at workflow level`);
+    assert.doesNotMatch(yml, /\n  issues: write\n/u, `${file} must not grant issues: write at workflow level`);
+    assert.match(yml, /\n    permissions:\n(?:      [a-z-]+: (?:read|write)\n)*      issues: write\n/u, `${file} needs job-level issues: write`);
+    assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1, `${file} has exactly one job permission block`);
     const stepName = file === "kric-current-facility-refresh.yml"
       ? "KRIC current facility refresh / Report refresh failure as an issue"
       : "Report refresh failure as an issue";
