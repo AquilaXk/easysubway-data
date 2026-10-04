@@ -65,6 +65,14 @@ async function report(github, runId, now) {
   });
 }
 
+function botIssue(number, overrides = {}) {
+  const plan = planRefreshFailureReport({ repository, workflowFile, runId: String(number), openIssues: [], now: start });
+  return {
+    number, title: plan.title, body: plan.body, author: { login: "app/github-actions", is_bot: true },
+    createdAt: start.toISOString(), comments: [], state: "OPEN", ...overrides,
+  };
+}
+
 test("first failure of a refresh workflow opens one issue that names the failed run (#860·#870)", () => {
   const plan = planRefreshFailureReport({ repository, workflowFile, runId: "123", openIssues: [], now: start });
   assert.equal(plan.action, "create");
@@ -125,23 +133,33 @@ test("a two-hourly outage of three days posts one issue and one comment per day 
 });
 
 test("an open failure issue without the status block fails instead of guessing what was reported", () => {
-  const issue = {
-    number: 7, title: `[Fix] 원천 자동 갱신 실패: x (${workflowFile})`, body: refreshFailureMarker(workflowFile),
-    author: { login: "app/github-actions" }, createdAt: start.toISOString(), comments: [],
-  };
+  const issue = { ...botIssue(7), body: refreshFailureMarker(workflowFile) };
   assert.throws(() => planRefreshFailureReport({ repository, workflowFile, runId: "9", openIssues: [issue], now: start }),
     /REFRESH_FAILURE_REPORT_STATUS_BLOCK/u);
 });
 
-test("duplicate open failure issues for one workflow fail instead of choosing one", () => {
-  const issue = (number) => ({
-    number, title: `[Fix] 원천 자동 갱신 실패: x (${workflowFile})`, body: refreshFailureMarker(workflowFile),
-    author: { login: "app/github-actions" }, createdAt: start.toISOString(), comments: [],
-  });
-  assert.throws(
-    () => planRefreshFailureReport({ repository, workflowFile, runId: "125", openIssues: [issue(12), issue(13)], now: start }),
-    /REFRESH_FAILURE_REPORT_DUPLICATE_ISSUES/u,
-  );
+test("only bot-authored issues with the exact failure title count as the workflow failure issue (F2)", async () => {
+  const humanCopy = botIssue(5, { author: { login: "AquilaXk", is_bot: false } });
+  const otherTitle = botIssue(6, { title: "[Fix] 다른 제목" });
+  const github = fakeGitHub([humanCopy, otherTitle]);
+  const plan = await report(github, 7, start);
+  assert.equal(plan.action, "create");
+  const github2 = fakeGitHub([humanCopy, otherTitle, botIssue(8)]);
+  const plan2 = await report(github2, 9, new Date(start.getTime() + hours(2)));
+  assert.equal(plan2.action, "status");
+  assert.equal(plan2.issueNumber, 8);
+});
+
+test("duplicate bot failure issues keep reporting into the oldest one and then fail with recovery guidance (F2)", async () => {
+  const github = fakeGitHub([botIssue(13), botIssue(12)]);
+  await assert.rejects(report(github, 20, new Date(start.getTime() + COMMENT_INTERVAL_MS)),
+    (error) => /REFRESH_FAILURE_REPORT_DUPLICATE_ISSUES/u.test(error.message)
+      && error.message.includes("#12, #13") && /하나만 남기고 나머지를 닫/u.test(error.message));
+  const oldest = github.issues.find(({ number }) => number === 12);
+  assert.ok(oldest.body.includes(runUrl(20)), "the failure is still recorded");
+  assert.equal(oldest.comments.length, 1);
+  assert.match(oldest.comments[0].body, /#13/u);
+  assert.equal(github.issues.find(({ number }) => number === 13).comments.length, 0);
 });
 
 test("unknown workflow, repository, run identity, or clock is rejected before any GitHub call", async () => {

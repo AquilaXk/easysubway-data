@@ -22,9 +22,11 @@ const MAX_RECORDED_RUNS = 20;
 const STATUS_START = "<!-- refresh-failure-status:start -->";
 const STATUS_END = "<!-- refresh-failure-status:end -->";
 const COMMENT_MARKER = "<!-- easysubway-refresh-failure-comment -->";
+// gh JSON에서 GITHUB_TOKEN(github-actions[bot])이 만든 이슈의 작성자 login
+const BOT_LOGIN = "app/github-actions";
 
-function fail(code) {
-  throw new Error(`REFRESH_FAILURE_REPORT_${code}`);
+function fail(code, detail = "") {
+  throw new Error(detail ? `REFRESH_FAILURE_REPORT_${code}: ${detail}` : `REFRESH_FAILURE_REPORT_${code}`);
 }
 
 export function refreshFailureMarker(workflowFile) {
@@ -77,43 +79,50 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
   if (!Array.isArray(openIssues)) fail("ISSUES");
   const marker = refreshFailureMarker(input.workflowFile);
+  const label = REFRESH_WORKFLOWS[input.workflowFile];
+  const title = `[Fix] 원천 자동 갱신 실패: ${label} (${input.workflowFile})`;
+  // 이 도구(workflow 토큰)가 만든, 제목 규칙이 같은 이슈만 센다. 사람이 표지를 인용한 이슈는 무시한다.
   const matching = openIssues.filter((issue) => {
     if (!issue || typeof issue !== "object" || !Number.isSafeInteger(issue.number) || issue.number < 1
       || typeof (issue.body ?? "") !== "string") fail("ISSUES");
-    return (issue.body ?? "").includes(marker);
-  });
-  if (matching.length > 1) fail("DUPLICATE_ISSUES");
-  const label = REFRESH_WORKFLOWS[input.workflowFile];
+    return issue.author?.login === BOT_LOGIN && issue.title === title && (issue.body ?? "").includes(marker);
+  }).sort((left, right) => left.number - right.number);
+  // 중복이 생겨도 보고를 멈추지 않는다. 가장 오래된 이슈에 계속 기록하고, 실행 결과는 복구 안내와 함께 실패로 끝낸다.
+  const duplicateNumbers = matching.slice(1).map(({ number }) => number);
   const reportedAt = now.toISOString();
-  if (matching.length === 1) {
+  if (matching.length > 0) {
     const issue = matching[0];
     const status = readStatus(issue.body);
     const issueComments = comments(issue);
     if (status.runUrls.includes(input.runUrl) || issueComments.some(({ body }) => body.includes(input.runUrl))) {
-      return { action: "skip", issueNumber: issue.number };
+      return { action: "skip", issueNumber: issue.number, duplicateNumbers };
     }
     const issueBody = status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt));
     const lastNotice = Math.max(
       instant(issue.createdAt, "ISSUES"),
       ...issueComments.filter(({ body }) => body.includes(COMMENT_MARKER)).map(({ createdAt }) => instant(createdAt, "ISSUES")),
     );
-    if (now.getTime() - lastNotice < COMMENT_INTERVAL_MS) return { action: "status", issueNumber: issue.number, issueBody };
+    if (now.getTime() - lastNotice < COMMENT_INTERVAL_MS) return { action: "status", issueNumber: issue.number, issueBody, duplicateNumbers };
     return {
       action: "comment",
       issueNumber: issue.number,
       issueBody,
+      duplicateNumbers,
       body: [
         COMMENT_MARKER,
         `\`${input.workflowFile}\`가 다시 실패했다. 이전 데이터로 대체하지 않았다.`,
         "",
         `- 실패 run: ${input.runUrl}`,
         "- 같은 workflow의 실패는 하루에 한 번만 댓글로 알린다. 그 사이 실패 run은 이슈 본문 상태 블록에 쌓인다.",
+        ...(duplicateNumbers.length > 0
+          ? [`- 같은 workflow의 실패 이슈가 더 있다: ${duplicateNumbers.map((number) => `#${number}`).join(", ")}. 이 이슈만 남기고 닫아야 보고 단계가 성공한다.`]
+          : []),
       ].join("\n"),
     };
   }
   return {
     action: "create",
-    title: `[Fix] 원천 자동 갱신 실패: ${label} (${input.workflowFile})`,
+    title,
     body: [
       marker,
       "### 목표",
@@ -197,6 +206,10 @@ export async function reportRefreshFailure({ argv = process.argv.slice(2), runGh
   }
   if (plan.action === "comment" || plan.action === "status") {
     await runGh(["issue", "edit", String(plan.issueNumber), "--repo", input.repository, "--body-file", "-"], plan.issueBody);
+  }
+  if (plan.duplicateNumbers.length > 0) {
+    const numbers = [plan.issueNumber, ...plan.duplicateNumbers].map((number) => `#${number}`).join(", ");
+    fail("DUPLICATE_ISSUES", `${input.workflowFile}의 열린 실패 이슈가 여럿이다(${numbers}). 이번 실패는 #${plan.issueNumber}에 기록했다. #${plan.issueNumber} 하나만 남기고 나머지를 닫으면 다음 실패부터 정상 보고된다.`);
   }
   return plan;
 }
