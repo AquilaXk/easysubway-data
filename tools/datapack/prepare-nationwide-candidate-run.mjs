@@ -18,7 +18,7 @@ import {
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 import { HOLIDAYS_2026, materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";
-import { holidayCalendarViolations, integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, integrateRegionalTimetables, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { officialOdFareAdmissionsBySource, officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
@@ -1570,7 +1570,8 @@ export async function prepareNationwideCandidate({
     finalPack[table] = [...finalPack[table], ...gwangjuSchedule[table]];
   }
   // #919: 모든 기관 달력이 모인 뒤, 공휴일에 평일·토요일 달력이 운행하거나 휴일 달력이 없는 노선이 있으면 후보를 만들지 않는다.
-  const holidayCalendarRows = holidayCalendarViolations({ ...finalPack, holidayDates: HOLIDAYS_2026 });
+  // 리뷰 F2(#922): 통합기에 넘긴 목록이 아니라 보관된 KASI 원문에서 따로 도출한 집합과 비교한다.
+  const holidayCalendarRows = holidayCalendarViolations({ ...finalPack, holidayDates: retainedKasiHolidayDates() });
   if (holidayCalendarRows.length > 0) {
     const routes = [...new Set(holidayCalendarRows.map(({ routeId }) => routeId))];
     throw new Error(`nationwide candidate public-holiday calendar violations: ${holidayCalendarRows.length} rows on ${routes.length} routes (${routes.slice(0, 5).join(", ")})`);

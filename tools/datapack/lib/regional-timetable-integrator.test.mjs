@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { holidayCalendarViolations, holidayExceptionRows, integrateRegionalTimetables } from "./regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, holidayExceptionRows, integrateRegionalTimetables, retainedKasiHolidayDates } from "./regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "../materialize-incheon-timetable.mjs";
 import { checkNoSyntheticScheduleLoops } from "../../ci/guard-datapack-anti-cheat.mjs";
 
@@ -185,7 +185,10 @@ test("#919 부산·대구·대전 달력은 공휴일에 평일·토요일 달�
 
 test("#919 공휴일 목록이 없거나 형식이 틀리면 달력을 추정으로 채우지 않고 실패한다", () => {
   const finalPack = { stations: [], stationLines: [], serviceCalendars: [], serviceCalendarDates: [] };
-  for (const holidayDates of [undefined, [], ["2026-10-09"], ["20261309"], ["20261009", "20261009"], ["20251225"]]) {
+  // 리뷰 F2(#922): 형식이 맞아도 보관된 KASI 2026 원문 공휴일 전체와 정확히 같지 않으면(빠진 날·더한 날) 실패한다.
+  const truncated = HOLIDAYS_2026.filter((date) => date !== "20261009");
+  for (const holidayDates of [undefined, [], ["2026-10-09"], ["20261309"], ["20261009", "20261009"], ["20251225"],
+    ["20261009"], truncated, [...HOLIDAYS_2026, "20261230"]]) {
     assert.throws(() => integrateRegionalTimetables({ finalPack, holidayDates }), /REGIONAL_TIMETABLE_HOLIDAY_DATES_INVALID/u);
   }
 });
@@ -251,4 +254,8 @@ test("#922 공휴일 불변식은 창 밖 달력을 운행 중으로 보지 않�
     holidayDates: ["20251225", "20261009"],
   });
   assert.deepEqual(violations, []);
+});
+
+test("#922 보관된 KASI 2026 원문에서 도출한 공휴일 집합은 22일이고 전국 후보 목록과 같다", () => {
+  assert.deepEqual(retainedKasiHolidayDates(), [...HOLIDAYS_2026]);
 });

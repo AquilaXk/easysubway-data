@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 
+import { fileURLToPath } from "node:url";
+
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+import { readRetainedKasiHolidayDatesSync } from "../fetch-kasi-public-holiday-calendar.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -26,16 +29,25 @@ function validCalendarDate(date) {
   return Number.isFinite(parsed.valueOf()) && parsed.toISOString().slice(0, 10).replaceAll("-", "") === date;
 }
 
+// #919 리뷰 F2: 공휴일 판정의 독립 근거는 보관된 KASI 특일 정보 2026년 1~12월 원문이다(release/kasi-public-holiday-2026).
+const RETAINED_KASI_HOLIDAY_DIRECTORY = fileURLToPath(new URL("../release/kasi-public-holiday-2026/", import.meta.url));
+
+/** 보관된 KASI 원문에서 도출한 공휴일 집합(YYYYMMDD 정렬). 달력 창(2026)을 넘기려면 원문을 먼저 다시 보관해야 한다. */
+export function retainedKasiHolidayDates() {
+  return readRetainedKasiHolidayDatesSync(RETAINED_KASI_HOLIDAY_DIRECTORY);
+}
+
 /**
- * #919: 공휴일(KASI 특일 정보) 목록을 검증한다. 목록이 없거나 달력 연도(2026)를 하나도 덮지 않으면
- * 공휴일 예외를 추정으로 채우지 않고 실패한다.
+ * #919: 넘겨받은 공휴일 목록이 보관된 KASI 원문 공휴일 전체와 정확히 같아야 한다.
+ * 빠지거나 더한 날짜가 있으면 공휴일 예외를 추정으로 채우지 않고 실패한다.
  */
 function requiredHolidayDates(holidayDates) {
   const invalid = () => { throw new Error("REGIONAL_TIMETABLE_HOLIDAY_DATES_INVALID"); };
   if (!Array.isArray(holidayDates) || holidayDates.length === 0) invalid();
   if (holidayDates.some((date) => !validCalendarDate(date)) || new Set(holidayDates).size !== holidayDates.length) invalid();
-  if (!holidayDates.some((date) => date.startsWith("2026"))) invalid();
-  return [...holidayDates].sort(codepointCompare);
+  const sorted = [...holidayDates].sort(codepointCompare);
+  if (JSON.stringify(sorted) !== JSON.stringify(retainedKasiHolidayDates())) invalid();
+  return sorted;
 }
 
 /**

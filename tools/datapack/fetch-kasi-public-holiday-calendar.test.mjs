@@ -671,7 +671,7 @@ test("KASI 공휴일 달력은 totalCount=0의 empty/self-closing items만 유�
 test("#919 전국 후보 공휴일 목록(HOLIDAYS_2026)은 KASI 2026년 특일 정보 보관 원문의 공휴일과 같다", async () => {
   const { HOLIDAYS_2026 } = await import("./materialize-incheon-timetable.mjs");
   // 2026-10-04 실측: getRestDeInfo solYear=2026, solMonth=1~12 응답 원문(서비스 키는 응답에 없다).
-  const directory = path.join(import.meta.dirname, "fixtures/kasi-public-holiday-2026");
+  const directory = path.join(import.meta.dirname, "release/kasi-public-holiday-2026");
   const retained = await readKasiHolidayCalendarFiles(directory);
   assert.deepEqual(retained.months.map(({ year, month }) => `${year}-${month}`),
     Array.from({ length: 12 }, (_, index) => `2026-${index + 1}`));

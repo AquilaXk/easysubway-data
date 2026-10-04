@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { holidayCalendarViolations } from "./lib/regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
@@ -486,7 +486,8 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
 
   const pack = result.finalPack;
   // #919: 조립한 전국 팩은 KASI 공휴일마다 모든 노선에서 휴일(또는 명절) 달력만 운행한다.
-  assert.deepEqual(holidayCalendarViolations({ ...pack, holidayDates: HOLIDAYS_2026 }), []);
+  // 리뷰 F2(#922): 불변식은 통합기에 넘긴 목록이 아니라 보관된 KASI 원문에서 따로 도출한 집합과 비교한다.
+  assert.deepEqual(holidayCalendarViolations({ ...pack, holidayDates: retainedKasiHolidayDates() }), []);
   const targetLine = pack.stationLines.find(
     (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
   );
