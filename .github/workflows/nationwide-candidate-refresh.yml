@@ -1,0 +1,142 @@
+name: Nationwide Candidate Refresh
+
+# 전국 후보 갱신(#927, #870): 로컬에서 돌리던 refresh-nationwide-candidate를 CI에서 실행하고
+# 결과를 automation 브랜치의 draft PR로 올린다. 원천 수집·등록은 하지 않는다(저장소 파일만 읽는다).
+# 2인 역할 인자는 dispatch 입력으로만 받는다. 후보 시계는 실행 시각이다.
+on:
+  workflow_dispatch:
+    inputs:
+      releaseSequence:
+        description: 새 후보의 releaseSequence(커밋된 후보보다 커야 한다)
+        required: true
+        type: string
+      requestedBy:
+        description: 요청 역할(예 data-operator-lead)
+        required: true
+        type: string
+      approvedBy:
+        description: 승인 역할(요청 역할과 달라야 한다, 예 data-release-authority)
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nationwide-candidate-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Nationwide candidate refresh
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Validate candidate refresh inputs
+        id: plan
+        env:
+          RELEASE_SEQUENCE: ${{ inputs.releaseSequence }}
+          REQUESTED_BY: ${{ inputs.requestedBy }}
+          APPROVED_BY: ${{ inputs.approvedBy }}
+        run: |
+          set -euo pipefail
+          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --github-output "${GITHUB_OUTPUT}"
+      - name: Refresh nationwide candidate
+        env:
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
+          APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}"
+      - name: Verify candidate refresh output scope
+        run: |
+          set -euo pipefail
+          # 출력 목록은 후보 갱신 도구가 선언한 NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS뿐이다. 목록을 못 읽으면 여기서 실패한다.
+          output_list="$(node --input-type=module -e 'import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./tools/datapack/refresh-nationwide-candidate.mjs"; console.log(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.join("\n"));')"
+          outputs=()
+          while IFS= read -r output; do [[ -n "${output}" ]] && outputs+=("${output}"); done <<< "${output_list}"
+          [[ "${#outputs[@]}" -gt 0 ]] || { echo "candidate refresh output list is empty" >&2; exit 1; }
+          git add -- "${outputs[@]}"
+          unstaged="$(git diff --name-only)"
+          untracked="$(git ls-files --others --exclude-standard)"
+          [[ -z "${unstaged}" && -z "${untracked}" ]] || { echo "candidate refresh changed a path outside its outputs" >&2; exit 1; }
+          # git diff --quiet: 0 변화 없음, 1 변화 있음. 그 밖의 종료 코드는 오류로 실패한다.
+          set +e
+          git diff --cached --quiet
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0) echo "candidate refresh produced no change" >&2; exit 1 ;;
+            1) ;;
+            *) echo "candidate refresh staged diff check failed (git diff exit ${diff_status})" >&2; exit "${diff_status}" ;;
+          esac
+      - name: Commit and push candidate refresh branch
+        env:
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="automation/927-nationwide-candidate-refresh-${GITHUB_RUN_ID}"
+          git switch -c "${branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})"
+          gh auth setup-git
+          git push origin "${branch}"
+          printf 'CANDIDATE_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+      - name: Create candidate refresh pull request
+        env:
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
+          APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          body="$(printf '%s\n' \
+            "## Summary" \
+            "" \
+            "- CI가 \`refresh-nationwide-candidate.mjs\`로 전국 후보를 다시 만들었다." \
+            "- releaseSequence: ${RELEASE_SEQUENCE}" \
+            "- 후보 시계(evaluatedAt): ${EVALUATED_AT}" \
+            "- 요청 역할: ${REQUESTED_BY}, 승인 역할: ${APPROVED_BY}" \
+            "- 실행 run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "" \
+            "이 PR이 main에 들어오면 \`datapack-release-candidate-chain.yml\`이 release-candidate를 실행한다." \
+            "" \
+            "Refs #927" \
+            "Refs #870")"
+          pr_url="$(gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}")"
+          printf 'CANDIDATE_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
+      - name: Run required CI on the candidate refresh head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다. ci.yml은 이 경로를 위해 dispatch를 받는다.
+          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${CANDIDATE_BRANCH}"
+      - name: Remove the candidate refresh branch after a later failure
+        if: ${{ failure() && env.CANDIDATE_BRANCH != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # push 뒤 단계(PR 생성·CI dispatch)가 실패하면 남은 automation 브랜치와 CI 없는 PR을 정리한다. job은 실패로 남는다.
+          if [[ -n "${CANDIDATE_PR_URL:-}" ]]; then
+            gh pr close "${CANDIDATE_PR_URL}" --repo "${GITHUB_REPOSITORY}" --delete-branch --comment "후보 갱신 run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}이 PR 생성 뒤 실패해 이 PR과 브랜치를 정리한다."
+          else
+            git push origin --delete "${CANDIDATE_BRANCH}"
+          fi
