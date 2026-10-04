@@ -13,7 +13,7 @@ import {
   readBusanTransferMetricsInputs,
 } from "./build-busan-transfer-metrics.mjs";
 import { extractBusanTransferRows } from "./collect-busan-route-topology.mjs";
-import { candidatePinnedReader, candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

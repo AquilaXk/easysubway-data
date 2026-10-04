@@ -11,7 +11,7 @@ import {
   retainPreAuthorityRideEdges,
   syncCanonicalAccessibilityEvidence,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
-import { candidatePinnedReader, candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
