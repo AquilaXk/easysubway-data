@@ -43,10 +43,18 @@ export function openRefreshPullRequestLimitMs(policy) {
   return limit;
 }
 
+// 달력에 있는 UTC 시각만 받는다. 각 성분을 Date.UTC로 다시 만들어 같은 값인지 확인한다(2026-02-30 같은 값은 거부).
+const UTC_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/u;
 function instant(value) {
-  const millis = typeof value === "string" ? Date.parse(value) : Number.NaN;
-  if (!Number.isFinite(millis) || new Date(millis).toISOString() !== new Date(value).toISOString()
-    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(value)) fail("LIST_INVALID", `createdAt ${String(value)}`);
+  const match = typeof value === "string" ? UTC_INSTANT.exec(value) : null;
+  if (!match) fail("LIST_INVALID", `createdAt ${String(value)}`);
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  const millis = Date.UTC(year, month - 1, day, hour, minute, second, Number((match[7] ?? "0").padEnd(3, "0")));
+  const date = new Date(millis);
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day
+    || date.getUTCHours() !== hour || date.getUTCMinutes() !== minute || date.getUTCSeconds() !== second) {
+    fail("LIST_INVALID", `createdAt ${value}`);
+  }
   return millis;
 }
 

@@ -179,3 +179,16 @@ test("main 반영 판정은 origin의 main·claim 브랜치를 받아 merge-base
   ledger(origin, ["a", "b", "d"]);
   assert.deepEqual(inspectClaimReflection(branch, { cwd: clone }), { reflected: false, addedSnapshotIds: ["b", "d"], missingSnapshotIds: ["d"] });
 });
+
+// #947 리뷰 F5: createdAt은 달력에 있는 UTC 시각이어야 한다. 엔진이 넘겨 계산하는 날짜를 받지 않는다.
+test("열린 PR 생성 시각은 존재하지 않는 날짜·시각을 거부한다", () => {
+  const prefix = REFRESH_CLAIM_PREFIXES["current-capital-topology-refresh.yml"];
+  for (const createdAt of ["2026-02-30T00:00:00Z", "2026-02-29T00:00:00Z", "2026-13-01T00:00:00Z", "2026-10-04T24:00:00Z", "2026-10-04T12:60:00Z"]) {
+    assert.throws(() => evaluateOpenRefreshPullRequest({
+      pullRequests: [pr({ createdAt })], prefix, repository: REPOSITORY, policy: POLICY, now: NOW,
+    }), /REFRESH_OPEN_PR_LIST_INVALID: createdAt/, createdAt);
+  }
+  assert.equal(evaluateOpenRefreshPullRequest({
+    pullRequests: [pr({ createdAt: "2028-02-29T00:00:00Z" })], prefix, repository: REPOSITORY, policy: POLICY, now: new Date("2028-02-29T01:00:00Z"),
+  }).state, "WITHIN_LIMIT");
+});
