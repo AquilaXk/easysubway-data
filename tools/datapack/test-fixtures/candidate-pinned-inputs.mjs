@@ -24,12 +24,14 @@ export async function committedCandidateInputManifest(root = ROOT) {
 
 // 후보 입력은 고정 바이트로, 후보 산출물(갱신 도구가 한 번에 쓰는 NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS)은 커밋된 바이트로 읽는다.
 // 그 밖의 경로는 후보와 결속되지 않았으므로 CANDIDATE_INPUT_NOT_PINNED로 실패한다.
-export async function candidatePinnedReader({ root = ROOT, env = process.env, fetchImpl = fetch } = {}) {
+export async function candidatePinnedReader({ root = ROOT, env = process.env, fetchImpl = fetch, cacheDirectory } = {}) {
   const readLocal = (relative) => readFile(path.join(root, relative));
   const manifest = await committedCandidateInputManifest(root);
   const pinned = new Set(manifest.files.map(({ path: relative }) => relative));
   const outputs = new Set(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS);
-  const readPinned = createCandidateInputReader({ manifest, readLocal, baseUrl: env.EASYSUBWAY_DATA_PACK_BASE_URL, fetchImpl });
+  const readPinned = createCandidateInputReader({
+    manifest, readLocal, baseUrl: env.EASYSUBWAY_DATA_PACK_BASE_URL, fetchImpl, ...(cacheDirectory ? { cacheDirectory } : {}),
+  });
   return (relative) => (!pinned.has(relative) && outputs.has(relative) ? readLocal(relative) : readPinned(relative));
 }
 
@@ -44,10 +46,11 @@ export async function candidatePinnedJson(read, relative) {
  * 그 입력만 고정 바이트로 덮어쓴다. 도구 코드와 고정되지 않은 파일은 이 PR의 것을 그대로 쓴다.
  * cleanup()이나 프로세스 종료 때 임시 디렉터리를 지운다. 받기에 실패하면 작업 공간을 만들지 않고 실패한다.
  */
-export async function candidatePinnedWorkspace({ root = ROOT, env = process.env, fetchImpl = fetch } = {}) {
+export async function candidatePinnedWorkspace({ root = ROOT, env = process.env, fetchImpl = fetch, cacheDirectory } = {}) {
   const manifest = await committedCandidateInputManifest(root);
   const read = createCandidateInputReader({
     manifest, readLocal: (relative) => readFile(path.join(root, relative)), baseUrl: env.EASYSUBWAY_DATA_PACK_BASE_URL, fetchImpl,
+    ...(cacheDirectory ? { cacheDirectory } : {}),
   });
   const stale = [];
   for (const entry of manifest.files) {

@@ -1,4 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 // #942: 전국 후보가 만들어질 때 읽은 저장소 입력을 경로·sha256 매니페스트로 고정한다.
@@ -7,8 +9,16 @@ import path from "node:path";
 // RC·publish 게이트(deterministic-release)가 검사한다.
 export const CANDIDATE_INPUT_MANIFEST_PATH = "tools/datapack/release/nationwide-candidate-input-manifest.json";
 export const CANDIDATE_INPUT_OBJECT_PREFIX = "candidate-inputs/sha256/";
-// 공개 읽기 경로 받기 정책: 시도 3회, 시도마다 30초 제한, 시도 사이 1초·2초 대기. 모두 실패하면 명시적으로 실패한다.
-export const CANDIDATE_INPUT_FETCH_POLICY = Object.freeze({ attempts: 3, timeoutMs: 30_000, backoffMs: 1_000 });
+// 공개 읽기 경로 받기 정책: 시도 3회, 시도 사이 1초·2초 대기. 시도마다 제한 시간은 30초 + 최저 1MB/s로 그 크기를 받는 데
+// 걸리는 시간이다(고정 입력 합계 약 142MB, 가장 큰 34MB는 64초). 모두 실패하면 명시적으로 실패한다.
+export const CANDIDATE_INPUT_FETCH_POLICY = Object.freeze({ attempts: 3, baseTimeoutMs: 30_000, minBytesPerSecond: 1_000_000, backoffMs: 1_000 });
+// 받은 고정 바이트는 sha256 이름으로 디스크에 둔다. 같은 job의 여러 테스트 프로세스가 같은 객체를 다시 받지 않게 한다.
+// 쓰기 전과 읽을 때마다 sha256·크기를 확인하고, 다르면 지우고 다시 받는다.
+export const CANDIDATE_INPUT_CACHE_DIRECTORY = path.join(os.tmpdir(), "easysubway-candidate-inputs");
+
+export function candidateInputFetchTimeoutMs(byteSize, policy = CANDIDATE_INPUT_FETCH_POLICY) {
+  return policy.baseTimeoutMs + Math.ceil((byteSize / policy.minBytesPerSecond) * 1_000);
+}
 
 const MANIFEST_KEYS = [
   "schemaVersion", "artifactKind", "candidateId", "candidateBuildSpecSha256", "preparationSha256", "fanInSha256",
@@ -102,15 +112,34 @@ export function serializeCandidateInputManifest(manifest) {
 
 const sleep = (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds); });
 
+async function readCappedBody(response, entry) {
+  const declared = response.headers.get("content-length");
+  if (declared !== null && Number(declared) !== entry.byteSize) {
+    throw Object.assign(new Error(`CANDIDATE_INPUT_SIZE_MISMATCH: ${entry.path}`), { final: true });
+  }
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of response.body ?? []) {
+    total += chunk.length;
+    if (total > entry.byteSize) {
+      await response.body.cancel().catch(() => {});
+      throw Object.assign(new Error(`CANDIDATE_INPUT_SIZE_MISMATCH: ${entry.path}`), { final: true });
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
 async function fetchPinnedObject({ entry, baseUrl, fetchImpl, policy }) {
   const url = `${baseUrl.replace(/\/+$/u, "")}/${candidateInputObjectKey(entry.sha256)}`;
   for (let attempt = 1; attempt <= policy.attempts; attempt += 1) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error("CANDIDATE_INPUT_FETCH_TIMEOUT")), policy.timeoutMs);
+    const timer = setTimeout(() => controller.abort(new Error("CANDIDATE_INPUT_FETCH_TIMEOUT")),
+      candidateInputFetchTimeoutMs(entry.byteSize, policy));
     try {
       const response = await fetchImpl(url, { signal: controller.signal, redirect: "error" });
       if (response.ok) {
-        const bytes = Buffer.from(await response.arrayBuffer());
+        const bytes = await readCappedBody(response, entry);
         if (sha256(bytes) !== entry.sha256 || bytes.length !== entry.byteSize) {
           throw Object.assign(new Error(`CANDIDATE_INPUT_SHA_MISMATCH: ${entry.path}`), { final: true });
         }
@@ -126,12 +155,31 @@ async function fetchPinnedObject({ entry, baseUrl, fetchImpl, policy }) {
   throw new Error(`CANDIDATE_INPUT_FETCH_FAILED: ${entry.path}`);
 }
 
+async function readCachedObject(cacheDirectory, entry) {
+  const file = path.join(cacheDirectory, entry.sha256);
+  const bytes = await readFile(file).catch(() => null);
+  if (!bytes) return null;
+  if (bytes.length === entry.byteSize && sha256(bytes) === entry.sha256) return bytes;
+  await rm(file, { force: true });
+  return null;
+}
+
+async function writeCachedObject(cacheDirectory, entry, bytes) {
+  await mkdir(cacheDirectory, { recursive: true });
+  const temporary = path.join(cacheDirectory, `.${entry.sha256}.${randomUUID()}.tmp`);
+  await writeFile(temporary, bytes, { flag: "wx" });
+  await rename(temporary, path.join(cacheDirectory, entry.sha256));
+}
+
 /**
  * 후보가 고정한 입력만 읽는 reader. 작업 트리 바이트가 고정값과 같으면 그대로 쓰고, 다르면 공개 읽기 경로에서
  * 고정 sha256 객체를 받아 바이트를 확인한 뒤 쓴다. 고정되지 않은 경로, 공개 경로 미설정, 받기 실패, sha 불일치는
  * 모두 명시적으로 실패한다(작업 트리 값으로 대체하지 않는다).
  */
-export function createCandidateInputReader({ manifest, readLocal, baseUrl, fetchImpl = fetch, policy = CANDIDATE_INPUT_FETCH_POLICY }) {
+export function createCandidateInputReader({
+  manifest, readLocal, baseUrl, fetchImpl = fetch, policy = CANDIDATE_INPUT_FETCH_POLICY,
+  cacheDirectory = CANDIDATE_INPUT_CACHE_DIRECTORY,
+}) {
   const pinned = new Map(validateManifest(manifest).files.map((entry) => [entry.path, entry]));
   const resolved = new Map();
   return async (relative) => {
@@ -141,10 +189,14 @@ export function createCandidateInputReader({ manifest, readLocal, baseUrl, fetch
       resolved.set(relative, (async () => {
         const local = await readLocal(relative).then(toBuffer, () => null);
         if (local && local.length === entry.byteSize && sha256(local) === entry.sha256) return local;
+        const cached = await readCachedObject(cacheDirectory, entry);
+        if (cached) return cached;
         if (typeof baseUrl !== "string" || !/^https:\/\//u.test(baseUrl)) {
           throw new Error("CANDIDATE_INPUT_BASE_URL_REQUIRED: EASYSUBWAY_DATA_PACK_BASE_URL");
         }
-        return fetchPinnedObject({ entry, baseUrl, fetchImpl, policy });
+        const fetched = await fetchPinnedObject({ entry, baseUrl, fetchImpl, policy });
+        await writeCachedObject(cacheDirectory, entry, fetched);
+        return fetched;
       })());
       resolved.get(relative).catch(() => resolved.delete(relative));
     }

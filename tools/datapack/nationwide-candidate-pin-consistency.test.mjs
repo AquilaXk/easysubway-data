@@ -109,6 +109,7 @@ test("후보 재현 reader는 고정 입력·후보 산출물·미고정 경로�
   const read = await candidatePinnedReader({
     root: fakeRoot,
     env: { EASYSUBWAY_DATA_PACK_BASE_URL: "https://objects.example.test/o" },
+    cacheDirectory: path.join(fakeRoot, ".candidate-input-cache"),
     fetchImpl: async (url) => {
       requested.push(url);
       return new Response(pinnedInventory, { status: 200, headers: { "content-length": String(pinnedInventory.length) } });
@@ -133,6 +134,7 @@ test("고정 입력이 작업 트리와 다르면 작업 공간은 저장소를 
   const workspace = await candidatePinnedWorkspace({
     root: fakeRoot,
     env: { EASYSUBWAY_DATA_PACK_BASE_URL: "https://objects.example.test/o" },
+    cacheDirectory: path.join(fakeRoot, ".candidate-input-cache"),
     fetchImpl: async () => {
       fetched += 1;
       return new Response(pinnedInventory, { status: 200, headers: { "content-length": String(pinnedInventory.length) } });
@@ -163,6 +165,7 @@ test("고정 입력이 작업 트리와 다르면 작업 공간은 저장소를 
   await assert.rejects(candidatePinnedWorkspace({
     root: brokenRoot,
     env: { EASYSUBWAY_DATA_PACK_BASE_URL: "https://objects.example.test/o" },
+    cacheDirectory: path.join(brokenRoot, ".candidate-input-cache"),
     fetchImpl: async () => new Response("missing", { status: 404 }),
   }), /CANDIDATE_INPUT_FETCH_FAILED: tools\/datapack\/source-inventory.json/);
 });
