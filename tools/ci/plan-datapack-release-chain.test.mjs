@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -26,6 +27,35 @@ function stepBody(yml, name) {
   assert.notEqual(start, -1, `missing workflow step: ${name}`);
   const end = yml.indexOf("\n      - name: ", start + 1);
   return yml.slice(start, end === -1 ? yml.length : end);
+}
+
+// workflow run 블록을 그대로 꺼내 실제 bash로 실행한다(문자열 일치가 아니라 동작을 검증).
+function stepScript(yml, name) {
+  const body = stepBody(yml, name);
+  const marker = "\n        run: |\n";
+  const begin = body.indexOf(marker);
+  assert.notEqual(begin, -1, `step has no run block: ${name}`);
+  return body.slice(begin + marker.length).split("\n").map((line) => line.replace(/^ {10}/u, "")).join("\n");
+}
+
+function runStep(yml, name, { cwd, env = {} }) {
+  return spawnSync("/bin/bash", ["-e", "-c", stepScript(yml, name)], {
+    cwd, encoding: "utf8", env: { PATH: process.env.PATH, HOME: process.env.HOME, ...env },
+  });
+}
+
+function git(cwd, ...args) {
+  const result = spawnSync("/usr/bin/git", args, { cwd, encoding: "utf8" });
+  assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
+  return result.stdout.trim();
+}
+
+async function gitRepository() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "release-chain-git-"));
+  git(root, "init", "-q", "-b", "main");
+  git(root, "config", "user.name", "test");
+  git(root, "config", "user.email", "test@example.invalid");
+  return root;
 }
 
 async function releaseRepository(mutate = (files) => files) {
@@ -252,4 +282,39 @@ test("release candidate chain dispatches RC as workflow_dispatch when a candidat
   assert.match(dispatch, /steps\.supersede\.outputs\.current == 'true'/u);
   assert.match(dispatch, /gh workflow run datapack-release\.yml --repo "\$\{GITHUB_REPOSITORY\}" --ref main -f mode=release-candidate -f targetChannel=production -f modeArgs="\$\(cat "\$\{RUNNER_TEMP\}\/release-candidate-mode-args\.json"\)"/u);
   assert.doesNotMatch(yml, /production-publish|rollback|rollout-update|candidate-create|gh pr merge|continue-on-error/u);
+});
+
+test("candidate chain treats only git diff exit 1 as superseded and fails on any other git error (F1)", async () => {
+  const yml = workflowText("datapack-release-candidate-chain.yml");
+  const origin = await gitRepository();
+  const clone = path.join(origin, "clone");
+  try {
+    await mkdir(path.join(origin, "tools/datapack/release"), { recursive: true });
+    await writeFile(path.join(origin, RELEASE_CANDIDATE_PATHS.buildSpecPath), "{\"seq\":1}\n");
+    await writeFile(path.join(origin, RELEASE_CANDIDATE_PATHS.releaseRequestPath), "{}\n");
+    git(origin, "add", RELEASE_CANDIDATE_PATHS.buildSpecPath, RELEASE_CANDIDATE_PATHS.releaseRequestPath);
+    git(origin, "commit", "-q", "-m", "candidate");
+    const pushed = git(origin, "rev-parse", "HEAD");
+    git(path.dirname(clone), "clone", "-q", origin, clone);
+    const run = async (sha) => {
+      const output = path.join(clone, `github-output-${Math.random()}`);
+      await writeFile(output, "");
+      const result = runStep(yml, "Skip a candidate superseded on main", { cwd: clone, env: { GITHUB_SHA: sha, GITHUB_OUTPUT: output } });
+      return { ...result, output: await readFile(output, "utf8") };
+    };
+    const current = await run(pushed);
+    assert.equal(current.status, 0, current.stderr);
+    assert.equal(current.output, "current=true\n");
+    await writeFile(path.join(origin, RELEASE_CANDIDATE_PATHS.buildSpecPath), "{\"seq\":2}\n");
+    git(origin, "commit", "-q", "-am", "newer candidate");
+    const superseded = await run(pushed);
+    assert.equal(superseded.status, 0, superseded.stderr);
+    assert.equal(superseded.output, "current=false\n");
+    const broken = await run("0".repeat(40));
+    assert.notEqual(broken.status, 0);
+    assert.equal(broken.output, "");
+    assert.match(broken.stderr, /candidate supersede check failed/u);
+  } finally {
+    await rm(origin, { recursive: true, force: true });
+  }
 });

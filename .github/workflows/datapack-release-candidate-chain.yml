@@ -38,12 +38,22 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin main
           # RC는 dispatch 시점의 main에서 돈다. 그 사이 후보가 다시 바뀌었으면 새 push가 자기 RC를 dispatch한다.
-          if git diff --quiet "${GITHUB_SHA}" origin/main -- tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json; then
-            echo "current=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "::notice title=Release candidate chain::main의 후보가 ${GITHUB_SHA} 이후 다시 바뀌었다. 새 push의 실행이 RC를 dispatch한다."
-            echo "current=false" >> "${GITHUB_OUTPUT}"
-          fi
+          # git diff --quiet: 0 같음, 1 다름. 그 밖의 종료 코드(잘못된 ref 등)는 건너뛰지 않고 실패한다.
+          set +e
+          git diff --quiet "${GITHUB_SHA}" origin/main -- tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0) echo "current=true" >> "${GITHUB_OUTPUT}" ;;
+            1)
+              echo "::notice title=Release candidate chain::main의 후보가 ${GITHUB_SHA} 이후 다시 바뀌었다. 새 push의 실행이 RC를 dispatch한다."
+              echo "current=false" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "candidate supersede check failed (git diff exit ${diff_status})" >&2
+              exit "${diff_status}"
+              ;;
+          esac
       - name: Build release-candidate modeArgs from repository files
         if: ${{ steps.supersede.outputs.current == 'true' }}
         run: |
