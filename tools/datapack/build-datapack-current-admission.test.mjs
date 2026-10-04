@@ -329,7 +329,9 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     { kind: "cited-source", sourceSnapshotId: earliestCited.snapshotId, sourceClassId: "official_static_timetable_confirmation" },
   ]);
   assert.ok(Date.parse(manifest.expiresAt) < Date.parse(artifactFreshness.networkFreshUntil));
-  assert.ok(artifactFreshness.timetableSources.every(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) >= Date.parse(manifest.expiresAt)));
+  // 가장 이른 시간표 원천 만료가 팩 만료와 같다(시간표 창이 결정 원천 중 하나다).
+  const earliestTimetable = Math.min(...artifactFreshness.timetableSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.equal(new Date(earliestTimetable).toISOString(), manifest.expiresAt);
   // 검증 전용 빌드(dev 채널)는 시간표 신선도를 계산하지 않고 사유를 남긴다.
   assert.deepEqual(validationOnlyProvenance.candidateBuild.artifactFreshness,
     { timetableFreshness: "SKIPPED", skipReason: "VALIDATION_ONLY_BUILD", freshUntil: validationOnlyManifest.expiresAt });
