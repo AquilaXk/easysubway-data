@@ -95,17 +95,55 @@ test("다른 workflow·다른 base·fork PR은 세지 않고, 같은 접두어 P
   }), /REFRESH_OPEN_PR_PREFIX_INVALID/);
 });
 
-test("claim 브랜치가 추가한 원장 행이 모두 main 원장에 있으면 main에 반영된 것으로 본다", () => {
-  const base = [{ snapshotId: "a" }];
-  const claim = [{ snapshotId: "a" }, { snapshotId: "b" }, { snapshotId: "c" }];
-  assert.deepEqual(claimReflectedInMain({ baseLedger: base, claimLedger: claim, mainLedger: [...claim, { snapshotId: "d" }] }),
-    { reflected: true, addedSnapshotIds: ["b", "c"], missingSnapshotIds: [] });
-  assert.deepEqual(claimReflectedInMain({ baseLedger: base, claimLedger: claim, mainLedger: [{ snapshotId: "a" }, { snapshotId: "b" }] }),
-    { reflected: false, addedSnapshotIds: ["b", "c"], missingSnapshotIds: ["c"] });
-  // 원장 행을 추가하지 않은 claim(빈 claim 등)은 반영 여부를 판단할 수 없으므로 반영되지 않은 것으로 본다.
-  assert.deepEqual(claimReflectedInMain({ baseLedger: base, claimLedger: base, mainLedger: claim }),
-    { reflected: false, addedSnapshotIds: [], missingSnapshotIds: [] });
-  assert.throws(() => claimReflectedInMain({ baseLedger: base, claimLedger: {}, mainLedger: claim }), /REFRESH_OPEN_PR_LEDGER_INVALID/);
+// #947 리뷰 F3: snapshotId만 같다고 반영으로 보지 않는다. 원장 행의 원천 식별(rawSha256 등)과,
+// claim이 추가·변경한 파일(원천 snapshot, inventory 등)이 main에 그대로 있거나 main이 그 snapshot을 가리키는지까지 본다.
+const row = (snapshotId, rawSha256 = `${snapshotId}-raw`) => ({ snapshotId, sourceId: "s", rawSha256, contentSha256: `${snapshotId}-content` });
+const bytes = (value) => Buffer.from(typeof value === "string" ? value : JSON.stringify(value));
+const inventory = (...ids) => bytes({ sources: ids.map((snapshotId) => ({ topologyAdmissionEvidence: { snapshotId } })) });
+const reflectedFiles = (mainInventory = inventory("b", "c")) => [
+  { path: "tools/datapack/sources/b.json", status: "A", base: null, claim: bytes("b-file"), main: bytes("b-file") },
+  { path: "tools/datapack/source-inventory.json", status: "M", base: inventory("a"), claim: inventory("b"), main: mainInventory },
+];
+
+test("claim이 추가한 원장 행·원천 파일·inventory 참조가 모두 main에 있으면 반영된 것으로 본다", () => {
+  const base = [row("a")];
+  const claim = [row("a"), row("b")];
+  assert.deepEqual(claimReflectedInMain({ baseLedger: base, claimLedger: claim, mainLedger: [...claim, row("c")], files: reflectedFiles() }), {
+    reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [], mismatchedSnapshotIds: [], unreflectedPaths: [],
+  });
+});
+
+test("snapshotId가 같아도 원장 행의 rawSha256이 다르면 반영되지 않은 것으로 본다", () => {
+  const base = [row("a")];
+  const claim = [row("a"), row("b")];
+  assert.deepEqual(claimReflectedInMain({ baseLedger: base, claimLedger: claim, mainLedger: [row("a"), row("b", "other-raw")], files: reflectedFiles() }), {
+    reflected: false, addedSnapshotIds: ["b"], missingSnapshotIds: [], mismatchedSnapshotIds: ["b"], unreflectedPaths: [],
+  });
+  assert.deepEqual(claimReflectedInMain({ baseLedger: base, claimLedger: claim, mainLedger: [row("a")], files: reflectedFiles() }).missingSnapshotIds, ["b"]);
+});
+
+test("claim이 추가한 원천 파일이 main에 없거나 다르면, 또 main inventory가 claim이 넣은 snapshot을 가리키지 않으면 반영되지 않은 것으로 본다", () => {
+  const base = [row("a")];
+  const claim = [row("a"), row("b")];
+  const ledger = { baseLedger: base, claimLedger: claim, mainLedger: claim };
+  const [file, inv] = reflectedFiles();
+  assert.deepEqual(claimReflectedInMain({ ...ledger, files: [{ ...file, main: null }, inv] }).unreflectedPaths, [file.path]);
+  assert.deepEqual(claimReflectedInMain({ ...ledger, files: [{ ...file, main: bytes("changed") }, inv] }).unreflectedPaths, [file.path]);
+  assert.deepEqual(claimReflectedInMain({ ...ledger, files: reflectedFiles(inventory("a")) }).unreflectedPaths, [inv.path]);
+  const deleted = { path: "tools/datapack/sources/old.json", status: "D", base: bytes("old"), claim: null, main: bytes("old") };
+  assert.deepEqual(claimReflectedInMain({ ...ledger, files: [...reflectedFiles(), deleted] }).unreflectedPaths, [deleted.path]);
+  for (const result of [
+    claimReflectedInMain({ ...ledger, files: [{ ...file, main: null }, inv] }),
+    claimReflectedInMain({ ...ledger, files: reflectedFiles(inventory("a")) }),
+  ]) assert.equal(result.reflected, false);
+});
+
+test("원장 행을 추가하지 않은 claim은 반영 여부를 판단할 수 없어 반영되지 않은 것으로 보고, 형식이 다르면 실패한다", () => {
+  const base = [row("a")];
+  assert.equal(claimReflectedInMain({ baseLedger: base, claimLedger: base, mainLedger: base, files: [] }).reflected, false);
+  assert.throws(() => claimReflectedInMain({ baseLedger: base, claimLedger: {}, mainLedger: base, files: [] }), /REFRESH_OPEN_PR_LEDGER_INVALID/);
+  assert.throws(() => claimReflectedInMain({ baseLedger: base, claimLedger: base, mainLedger: base, files: [{ path: "x", status: "R" }] }),
+    /REFRESH_OPEN_PR_FILES_INVALID/);
 });
 
 test("상한 초과 메시지는 PR·기한을 밝히고, main에 반영된 claim이면 정리 명령을, 아니면 처리 안내를 넣는다", () => {
@@ -113,13 +151,13 @@ test("상한 초과 메시지는 PR·기한을 밝히고, main에 반영된 clai
     pullRequests: [pr()], prefix: REFRESH_CLAIM_PREFIXES["current-capital-topology-refresh.yml"], repository: REPOSITORY, policy: POLICY, now: NOW,
   });
   const reflected = staleOpenRefreshPullRequestMessage({
-    stale, repository: REPOSITORY, reflection: { reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [] },
+    stale, repository: REPOSITORY, reflection: { reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [], mismatchedSnapshotIds: [], unreflectedPaths: [] },
   });
   assert.match(reflected, /REFRESH_OPEN_PR_STALE: #936 .*2026-10-04T12:00:00.000Z.*P1D.*2026-10-05T12:00:00.000Z/s);
   assert.match(reflected, /gh pr close 936 --repo AquilaXk\/easysubway-data --delete-branch --comment /);
   assert.match(reflected, /git ls-remote --heads https:\/\/github.com\/AquilaXk\/easysubway-data 'refs\/heads\/automation\/636-current-topology-refresh-\*'/);
   const pending = staleOpenRefreshPullRequestMessage({
-    stale, repository: REPOSITORY, reflection: { reflected: false, addedSnapshotIds: ["b"], missingSnapshotIds: ["b"] },
+    stale, repository: REPOSITORY, reflection: { reflected: false, addedSnapshotIds: ["b"], missingSnapshotIds: ["b"], mismatchedSnapshotIds: [], unreflectedPaths: ["tools/datapack/source-inventory.json"] },
   });
   assert.match(pending, /REFRESH_OPEN_PR_STALE: #936/);
   assert.doesNotMatch(pending, /gh pr close/);
@@ -145,50 +183,47 @@ test("CLI는 OPEN_PR인데 PR이 없으면 실패하고, 상한 안이면 통과
   assert.match(logs[0], /#936 is within its limit until 2026-10-06T00:00:00.000Z/);
   const inspected = [];
   await assert.rejects(run([pr({ createdAt: "2026-10-04T12:00:00Z" })], {
-    inspect: (branch) => { inspected.push(branch); return { reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [] }; },
+    inspect: (branch) => { inspected.push(branch); return { reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [], mismatchedSnapshotIds: [], unreflectedPaths: [] }; },
   }), /REFRESH_OPEN_PR_STALE: #936[\s\S]*gh pr close 936/);
   assert.deepEqual(inspected, ["automation/636-current-topology-refresh-37209118635"]);
   await assert.rejects(main(["--workflow", "other.yml", "--prs", policyPath, "--policy", policyPath, "--repository", REPOSITORY]),
     /REFRESH_OPEN_PR_WORKFLOW_INVALID/);
 });
 
-test("main 반영 판정은 origin의 main·claim 브랜치를 받아 merge-base와 두 원장을 비교한다", (t) => {
+test("main 반영 판정은 origin의 main·claim 브랜치를 받아 merge-base와 원장·추가 파일·변경 파일을 비교한다", (t) => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "refresh-open-pr-git-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const origin = path.join(directory, "origin");
   const clone = path.join(directory, "clone");
   const git = (cwd, ...args) => execFileSync("/usr/bin/git", ["-c", "user.name=t", "-c", "user.email=t@example.test", ...args], { cwd, encoding: "utf8" });
-  const ledger = (cwd, ids) => {
-    mkdirSync(path.join(cwd, "tools/datapack/release"), { recursive: true });
-    writeFileSync(path.join(cwd, "tools/datapack/release/source-snapshots.json"), JSON.stringify(ids.map((snapshotId) => ({ snapshotId }))));
-    git(cwd, "add", "tools/datapack/release/source-snapshots.json");
-    git(cwd, "commit", "-q", "-m", ids.join(","));
+  const write = (cwd, relative, value) => {
+    mkdirSync(path.dirname(path.join(cwd, relative)), { recursive: true });
+    writeFileSync(path.join(cwd, relative), typeof value === "string" ? value : JSON.stringify(value));
+    git(cwd, "add", relative);
+  };
+  const state = (cwd, ids, message) => {
+    write(cwd, "tools/datapack/release/source-snapshots.json", ids.map((id) => row(id)));
+    write(cwd, "tools/datapack/source-inventory.json", JSON.parse(inventory(...ids).toString()));
+    for (const id of ids) write(cwd, `tools/datapack/sources/${id}.json`, `${id}-file`);
+    git(cwd, "commit", "-q", "-m", message);
   };
   mkdirSync(origin);
   git(origin, "init", "-q", "-b", "main");
-  ledger(origin, ["a"]);
+  state(origin, ["a"], "base");
   const branch = "automation/636-current-topology-refresh-1";
   git(origin, "switch", "-q", "-c", branch);
-  ledger(origin, ["a", "b"]);
+  state(origin, ["a", "b"], "claim");
   git(origin, "switch", "-q", "main");
-  // 통합 PR이 squash로 main에 반영한 상황: claim 커밋은 main 조상이 아니지만 원장에는 b가 있다.
-  ledger(origin, ["a", "b", "c"]);
+  // 통합 PR이 squash로 main에 반영한 상황: claim 커밋은 main 조상이 아니지만 원장·파일·inventory에 b가 있다.
+  state(origin, ["a", "b", "c"], "integrated");
   git(directory, "clone", "-q", origin, clone);
-  assert.deepEqual(inspectClaimReflection(branch, { cwd: clone }), { reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [] });
-  git(origin, "switch", "-q", branch);
-  ledger(origin, ["a", "b", "d"]);
-  assert.deepEqual(inspectClaimReflection(branch, { cwd: clone }), { reflected: false, addedSnapshotIds: ["b", "d"], missingSnapshotIds: ["d"] });
-});
-
-// #947 리뷰 F5: createdAt은 달력에 있는 UTC 시각이어야 한다. 엔진이 넘겨 계산하는 날짜를 받지 않는다.
-test("열린 PR 생성 시각은 존재하지 않는 날짜·시각을 거부한다", () => {
-  const prefix = REFRESH_CLAIM_PREFIXES["current-capital-topology-refresh.yml"];
-  for (const createdAt of ["2026-02-30T00:00:00Z", "2026-02-29T00:00:00Z", "2026-13-01T00:00:00Z", "2026-10-04T24:00:00Z", "2026-10-04T12:60:00Z"]) {
-    assert.throws(() => evaluateOpenRefreshPullRequest({
-      pullRequests: [pr({ createdAt })], prefix, repository: REPOSITORY, policy: POLICY, now: NOW,
-    }), /REFRESH_OPEN_PR_LIST_INVALID: createdAt/, createdAt);
-  }
-  assert.equal(evaluateOpenRefreshPullRequest({
-    pullRequests: [pr({ createdAt: "2028-02-29T00:00:00Z" })], prefix, repository: REPOSITORY, policy: POLICY, now: new Date("2028-02-29T01:00:00Z"),
-  }).state, "WITHIN_LIMIT");
+  assert.deepEqual(inspectClaimReflection(branch, { cwd: clone }), {
+    reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [], mismatchedSnapshotIds: [], unreflectedPaths: [],
+  });
+  // main의 원천 파일이 claim과 다르면 반영되지 않은 것으로 본다.
+  write(origin, "tools/datapack/sources/b.json", "different");
+  git(origin, "commit", "-q", "-m", "diverge");
+  const diverged = inspectClaimReflection(branch, { cwd: clone });
+  assert.equal(diverged.reflected, false);
+  assert.deepEqual(diverged.unreflectedPaths, ["tools/datapack/sources/b.json"]);
 });

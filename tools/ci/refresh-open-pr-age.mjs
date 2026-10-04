@@ -85,18 +85,51 @@ export function evaluateOpenRefreshPullRequest({ pullRequests, prefix, repositor
   };
 }
 
-function snapshotIds(ledger) {
+function ledgerRows(ledger) {
   if (!Array.isArray(ledger) || ledger.some((row) => typeof row?.snapshotId !== "string")) fail("LEDGER_INVALID");
-  return ledger.map(({ snapshotId }) => snapshotId);
+  return ledger;
 }
 
-/** claim 브랜치가 원장에 추가한 snapshot이 모두 main 원장에 있으면, 그 갱신은 다른 PR(통합 PR 등)로 main에 반영된 것이다. */
-export function claimReflectedInMain({ baseLedger, claimLedger, mainLedger }) {
-  const base = new Set(snapshotIds(baseLedger));
-  const main = new Set(snapshotIds(mainLedger));
-  const addedSnapshotIds = snapshotIds(claimLedger).filter((id) => !base.has(id));
-  const missingSnapshotIds = addedSnapshotIds.filter((id) => !main.has(id));
-  return { reflected: addedSnapshotIds.length > 0 && missingSnapshotIds.length === 0, addedSnapshotIds, missingSnapshotIds };
+// 원장 행의 원천 식별. claim 행에 있는 필드는 main 행에서도 같아야 한다(rebind가 바꾸는 결속 필드는 보지 않는다).
+const ROW_IDENTITY_FIELDS = Object.freeze(["sourceId", "rawSha256", "contentSha256", "rawObjectSha256", "capturedAt"]);
+const SNAPSHOT_REFERENCE = /"snapshotId"\s*:\s*"([^"]+)"/gu;
+const references = (buffer) => new Set([...buffer.toString("utf8").matchAll(SNAPSHOT_REFERENCE)].map(([, id]) => id));
+
+function fileReflected({ status, base, claim, main }) {
+  if (status === "A") return Buffer.isBuffer(claim) && Buffer.isBuffer(main) && claim.equals(main);
+  if (status === "D") return main === null;
+  // 변경 파일(inventory 등): claim이 새로 넣은 snapshot 참조를 main도 모두 가리켜야 한다.
+  if (!Buffer.isBuffer(claim) || !Buffer.isBuffer(base) || !Buffer.isBuffer(main)) return false;
+  const before = references(base);
+  const after = references(main);
+  return [...references(claim)].filter((id) => !before.has(id)).every((id) => after.has(id));
+}
+
+/**
+ * claim 브랜치의 갱신이 다른 PR(통합 PR 등)로 main에 반영됐는지 판정한다. 모두 만족할 때만 반영이다.
+ * - claim이 원장에 추가한 행이 하나 이상 있고, 각 행이 main 원장에 같은 원천 식별(rawSha256 등)로 있다.
+ * - claim이 추가한 파일은 main에 같은 바이트로 있고, 지운 파일은 main에도 없다.
+ * - claim이 바꾼 파일(inventory 등)에 새로 넣은 snapshot 참조를 main 파일도 모두 가리킨다.
+ */
+export function claimReflectedInMain({ baseLedger, claimLedger, mainLedger, files }) {
+  const base = new Set(ledgerRows(baseLedger).map(({ snapshotId }) => snapshotId));
+  const main = new Map(ledgerRows(mainLedger).map((row) => [row.snapshotId, row]));
+  const added = ledgerRows(claimLedger).filter(({ snapshotId }) => !base.has(snapshotId));
+  if (!Array.isArray(files) || files.some((file) => typeof file?.path !== "string" || !["A", "M", "D"].includes(file.status))) {
+    fail("FILES_INVALID");
+  }
+  const missingSnapshotIds = added.filter(({ snapshotId }) => !main.has(snapshotId)).map(({ snapshotId }) => snapshotId);
+  const mismatchedSnapshotIds = added.filter((row) => main.has(row.snapshotId)
+    && ROW_IDENTITY_FIELDS.some((field) => Object.hasOwn(row, field) && main.get(row.snapshotId)[field] !== row[field]))
+    .map(({ snapshotId }) => snapshotId);
+  const unreflectedPaths = files.filter((file) => !fileReflected(file)).map(({ path: relative }) => relative);
+  return {
+    reflected: added.length > 0 && missingSnapshotIds.length === 0 && mismatchedSnapshotIds.length === 0 && unreflectedPaths.length === 0,
+    addedSnapshotIds: added.map(({ snapshotId }) => snapshotId),
+    missingSnapshotIds,
+    mismatchedSnapshotIds,
+    unreflectedPaths,
+  };
 }
 
 export function staleOpenRefreshPullRequestMessage({ stale, repository, reflection }) {
@@ -115,23 +148,31 @@ export function staleOpenRefreshPullRequestMessage({ stale, repository, reflecti
     lines.push(
       reflection.addedSnapshotIds.length === 0
         ? "The claim branch registered no source snapshot, so whether main already has this refresh cannot be determined."
-        : `Snapshots not yet on main: ${reflection.missingSnapshotIds.join(", ")}.`,
+        : `Not yet on main — snapshots missing: ${reflection.missingSnapshotIds.join(", ") || "none"}; snapshots with different source identity: ${reflection.mismatchedSnapshotIds.join(", ") || "none"}; files: ${reflection.unreflectedPaths.join(", ") || "none"}.`,
       "Review and merge the pull request, or integrate it into another data pull request and then close it with --delete-branch.",
     );
   }
   return lines.join("\n");
 }
 
-/** origin의 main과 claim 브랜치를 받아, 둘의 merge-base(claim의 원본 main) 원장과 두 원장을 비교한다. */
+/** origin의 main과 claim 브랜치를 받아, 둘의 merge-base(claim의 원본 main)와 비교해 반영 여부를 판정한다. */
 export function inspectClaimReflection(branch, { cwd = process.cwd() } = {}) {
-  const git = (args) => execFileSync(GIT_EXECUTABLE, args, { cwd, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
-  const readLedgerAt = (ref) => JSON.parse(git(["show", `${ref}:${LEDGER_PATH}`]));
+  const git = (args, encoding = "utf8") => execFileSync(GIT_EXECUTABLE, args, { cwd, encoding, maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  const show = (ref, relative) => {
+    try { return git(["show", `${ref}:${relative}`], "buffer"); } catch { return null; }
+  };
   git(["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
-  const base = git(["merge-base", "origin/main", `origin/${branch}`]).trim();
+  const claimRef = `origin/${branch}`;
+  const base = git(["merge-base", "origin/main", claimRef]).trim();
+  const readLedger = (ref) => JSON.parse(show(ref, LEDGER_PATH)?.toString("utf8") ?? "null");
+  const files = git(["diff", "--no-renames", "--name-status", base, claimRef]).split("\n").filter(Boolean)
+    .map((line) => line.split("\t"))
+    .filter(([, relative]) => relative !== LEDGER_PATH)
+    .map(([status, relative]) => ({
+      path: relative, status, base: show(base, relative), claim: show(claimRef, relative), main: show("origin/main", relative),
+    }));
   return claimReflectedInMain({
-    baseLedger: readLedgerAt(base),
-    claimLedger: readLedgerAt(`origin/${branch}`),
-    mainLedger: readLedgerAt("origin/main"),
+    baseLedger: readLedger(base), claimLedger: readLedger(claimRef), mainLedger: readLedger("origin/main"), files,
   });
 }
 
