@@ -44,8 +44,10 @@ export function releaseRoleEventViolations({ requestedBy, approvedBy, event }) {
 export function gateRunViolations(gateRun) {
   if (!gateRun || typeof gateRun !== "object" || Array.isArray(gateRun)) return ["gateRun must be an object"];
   const violations = [];
-  const keys = Object.keys(gateRun).sort();
-  if (JSON.stringify(keys) !== JSON.stringify([...GATE_RUN_KEYS].sort())) violations.push(`gateRun keys must be ${GATE_RUN_KEYS.join(",")}`);
+  const keys = Object.keys(gateRun);
+  if (keys.length !== GATE_RUN_KEYS.length || !GATE_RUN_KEYS.every((key) => keys.includes(key))) {
+    violations.push(`gateRun keys must be ${GATE_RUN_KEYS.join(",")}`);
+  }
   if (gateRun.repository !== GATE_RUN_REPOSITORY) violations.push(`gateRun repository must be ${GATE_RUN_REPOSITORY}`);
   if (gateRun.workflowPath !== GATE_RUN_WORKFLOW_PATH) violations.push(`gateRun workflowPath must be ${GATE_RUN_WORKFLOW_PATH}`);
   if (!positiveInteger(gateRun.runId)) violations.push("gateRun runId must be a positive integer");
@@ -100,7 +102,7 @@ export function gateRunRecordViolations({ gateRun, run }) {
   expect("event", run?.event, gateRun?.event);
   expect("head_sha", run?.head_sha, gateRun?.headSha);
   expect("head_branch", run?.head_branch, "main");
-  expect("path", typeof run?.path === "string" ? run.path.replace(/@.*$/u, "") : run?.path, gateRun?.workflowPath);
+  expect("path", typeof run?.path === "string" ? run.path.split("@")[0] : run?.path, gateRun?.workflowPath);
   expect("repository", run?.repository?.full_name, gateRun?.repository);
   expect("conclusion", run?.conclusion, "success");
   return violations;

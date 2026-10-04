@@ -112,18 +112,18 @@ export function parseRefreshNationwideCandidateArgs(argv) {
   if (requestedBy.toLowerCase() === approvedBy.toLowerCase()) {
     throw new Error(`two-person rule violation: requester and approver must differ (${requestedBy})`);
   }
-  // #929 D3: 정기 역할은 그 후보를 만드는 CI run 기록(gate-run 파일) 없이는 쓸 수 없다.
-  if (requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy
-    && !Object.hasOwn(values, "gateRunPath")) {
-    throw new Error("scheduled roles require --gate-run");
-  }
-  if (Object.hasOwn(values, "gateRunPath") && !path.isAbsolute(values.gateRunPath)) {
-    throw new Error("--gate-run must be an absolute path");
-  }
+  assertGateRunArgument({ requestedBy, approvedBy, gateRunPath: values.gateRunPath });
   return {
     evaluatedAt: values.evaluatedAt, releaseSequence: Number(values.releaseSequence), requestedBy, approvedBy,
     ...(Object.hasOwn(values, "gateRunPath") ? { gateRunPath: values.gateRunPath } : {}),
   };
+}
+
+// #929 D3: 정기 역할은 그 후보를 만드는 CI run 기록(gate-run 파일) 없이는 쓸 수 없다.
+function assertGateRunArgument({ requestedBy, approvedBy, gateRunPath }) {
+  const scheduled = requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy;
+  if (scheduled && gateRunPath === undefined) throw new Error("scheduled roles require --gate-run");
+  if (gateRunPath !== undefined && !path.isAbsolute(gateRunPath)) throw new Error("--gate-run must be an absolute path");
 }
 
 export async function readNationwideCandidateRefreshState(repositoryRoot = ROOT) {
