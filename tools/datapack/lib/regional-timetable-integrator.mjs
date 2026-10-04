@@ -42,7 +42,7 @@ function requiredHolidayDates(holidayDates) {
  * #919: 휴일 = 토·일·공휴일(QA 2026-10-03). 공휴일에는 평일·토요일 달력을 빼고(2) 휴일 달력을 더한다(1).
  * 휴일 달력이 이미 그 요일에 운행하면(일요일, 대전·광주의 토요일) 예외 행을 만들지 않는다.
  */
-function holidayExceptionRows(calendars, holidayDates) {
+export function holidayExceptionRows(calendars, holidayDates) {
   const rows = [];
   for (const date of holidayDates) {
     const weekday = WEEKDAY_FIELDS[weekdayIndex(date)];

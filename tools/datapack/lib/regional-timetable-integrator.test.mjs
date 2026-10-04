@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { holidayCalendarViolations, integrateRegionalTimetables } from "./regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, holidayExceptionRows, integrateRegionalTimetables } from "./regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "../materialize-incheon-timetable.mjs";
 import { checkNoSyntheticScheduleLoops } from "../../ci/guard-datapack-anti-cheat.mjs";
 
@@ -222,4 +222,33 @@ test("#919 공휴일에 평일·토요일 달력이 운행하거나 휴일 달�
     { routeId: "route-ok", date: "20260925", serviceId: "ok-weekday", reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" },
     { routeId: "route-ok", date: "20260925", serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" },
   ]);
+});
+
+// 리뷰 F1(#922): 달력 창(startDate~endDate) 밖의 공휴일은 예외 행도, 운행 판정도 만들지 않는다.
+const windowCalendar = (serviceId, days, startDate, endDate) => ({ serviceId,
+  ...Object.fromEntries(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((day, index) => [day, days[index] === 1])),
+  startDate, endDate });
+
+test("#922 달력 창 밖 공휴일(2025-12-25·2027-01-01)에는 예외 행을 만들지 않는다", () => {
+  const rows = holidayExceptionRows([
+    { calendar: windowCalendar("weekday", [1, 1, 1, 1, 1, 0, 0], "20260101", "20261231"), holiday: false },
+    { calendar: windowCalendar("holiday", [0, 0, 0, 0, 0, 0, 1], "20260101", "20261231"), holiday: true },
+  ], ["20251225", "20261009", "20270101"]);
+  assert.deepEqual(rows, [
+    { serviceId: "weekday", date: "20261009", exceptionType: 2 },
+    { serviceId: "holiday", date: "20261009", exceptionType: 1 },
+  ]);
+});
+
+test("#922 공휴일 불변식은 창 밖 달력을 운행 중으로 보지 않고, 모든 달력 창 밖 날짜는 판정하지 않는다", () => {
+  const violations = holidayCalendarViolations({
+    serviceCalendars: [
+      windowCalendar("holiday-2026", [0, 0, 0, 0, 0, 0, 1], "20260101", "20261231"),
+      windowCalendar("weekday-2027", [1, 1, 1, 1, 1, 0, 0], "20270101", "20271231"),
+    ],
+    serviceCalendarDates: [{ serviceId: "holiday-2026", date: "20261009", exceptionType: 1 }],
+    transitTrips: [{ routeId: "route-x", serviceId: "holiday-2026" }, { routeId: "route-x", serviceId: "weekday-2027" }],
+    holidayDates: ["20251225", "20261009"],
+  });
+  assert.deepEqual(violations, []);
 });
