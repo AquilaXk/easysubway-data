@@ -64,6 +64,8 @@ async function releaseRepository(mutate = (files) => files, { candidateId = "nat
     candidateId,
     productionScopeId: "nationwide_routing_android_v1",
     releaseSequence,
+    publishedAt: "2026-10-04T22:23:31.456Z",
+    builderGitSha: "a".repeat(40),
     sourceSnapshotSetHash: "a".repeat(64),
     approvedAliasLedgerHash: "b".repeat(64),
   };
@@ -96,7 +98,7 @@ async function releaseRepository(mutate = (files) => files, { candidateId = "nat
 
 test("candidate refresh plan uses the run clock and explicit distinct roles (#927)", () => {
   assert.deepEqual(planNationwideCandidateRefresh({
-    releaseSequence: "127", requestedBy: "data-operator-lead", approvedBy: "data-release-authority", committedBuildSpec: committedSpec, now,
+    releaseSequence: "127", requestedBy: "data-operator-lead", approvedBy: "data-release-authority", committedBuildSpec: committedSpec, now, event: "workflow_dispatch",
   }), {
     evaluatedAt: "2026-10-04T04:31:38.280Z",
     releaseSequence: 127,
@@ -108,18 +110,18 @@ test("candidate refresh plan uses the run clock and explicit distinct roles (#92
 test("candidate refresh plan rejects a sequence that does not advance the committed candidate", () => {
   for (const releaseSequence of ["126", "125", "0", "-1", "127.0", "1e3", "", " 127"]) {
     assert.throws(() => planNationwideCandidateRefresh({
-      releaseSequence, requestedBy: "a", approvedBy: "b", committedBuildSpec: committedSpec, now,
+      releaseSequence, requestedBy: "a", approvedBy: "b", committedBuildSpec: committedSpec, now, event: "workflow_dispatch",
     }), /CANDIDATE_REFRESH_RELEASE_SEQUENCE/u, releaseSequence);
   }
 });
 
 test("candidate refresh plan keeps the two-person rule and rejects unsafe role tokens", () => {
   assert.throws(() => planNationwideCandidateRefresh({
-    releaseSequence: "127", requestedBy: "Data-Lead", approvedBy: "data-lead", committedBuildSpec: committedSpec, now,
+    releaseSequence: "127", requestedBy: "Data-Lead", approvedBy: "data-lead", committedBuildSpec: committedSpec, now, event: "workflow_dispatch",
   }), /CANDIDATE_REFRESH_TWO_PERSON_RULE/u);
   for (const role of ["", "a b", "a\nb", "$(id)", "-flag", "x".repeat(65)]) {
     assert.throws(() => planNationwideCandidateRefresh({
-      releaseSequence: "127", requestedBy: role, approvedBy: "data-release-authority", committedBuildSpec: committedSpec, now,
+      releaseSequence: "127", requestedBy: role, approvedBy: "data-release-authority", committedBuildSpec: committedSpec, now, event: "workflow_dispatch",
     }), /CANDIDATE_REFRESH_ROLE/u, JSON.stringify(role));
   }
 });
@@ -127,7 +129,7 @@ test("candidate refresh plan keeps the two-person rule and rejects unsafe role t
 test("candidate refresh plan only advances the nationwide candidate", () => {
   assert.throws(() => planNationwideCandidateRefresh({
     releaseSequence: "127", requestedBy: "a", approvedBy: "b",
-    committedBuildSpec: { ...committedSpec, productionScopeId: "capital_pilot_android_v1" }, now,
+    committedBuildSpec: { ...committedSpec, productionScopeId: "capital_pilot_android_v1" }, now, event: "workflow_dispatch",
   }), /CANDIDATE_REFRESH_SCOPE/u);
 });
 
@@ -195,7 +197,7 @@ test("CLI writes the candidate refresh plan to GitHub output and the modeArgs to
     const githubOutput = path.join(root, "github-output.txt");
     await runPlanDatapackReleaseChain({
       argv: ["candidate-refresh", "--release-sequence", "128", "--requested-by", "data-operator-lead",
-        "--approved-by", "data-release-authority", "--github-output", githubOutput],
+        "--approved-by", "data-release-authority", "--event", "workflow_dispatch", "--github-output", githubOutput],
       repositoryRoot: root,
       now: () => now,
     });
@@ -240,13 +242,15 @@ test("committed release candidate files produce the fixed RC modeArgs with a nat
 
 test("nationwide candidate refresh workflow runs in CI on main and opens one automation PR with required CI", () => {
   const yml = workflowText("nationwide-candidate-refresh.yml");
-  assert.match(yml, /^on:\n  workflow_dispatch:\n    inputs:\n/mu);
+  assert.match(yml, /\n  workflow_dispatch:\n    inputs:\n/u);
   for (const input of ["releaseSequence", "requestedBy", "approvedBy"]) {
     assert.match(yml, new RegExp(`\\n      ${input}:\\n[\\s\\S]*?required: true\\n        type: string\\n`, "u"));
   }
-  assert.doesNotMatch(yml, /\n  (schedule|push|pull_request):/u);
+  // #929 D3: 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_CANDIDATE_REFRESH가 true일 때만 돈다(QA 승인 뒤 메인이 켠다).
+  assert.match(yml, /^on:\n  schedule:\n    - cron: "[^"]+"\n  workflow_dispatch:\n/mu);
+  assert.doesNotMatch(yml, /\n  (push|pull_request|workflow_run):/u);
   assert.match(yml, /\npermissions:\n  actions: write\n  contents: write\n  pull-requests: write\n/u);
-  assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/u);
+  assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(github\.event_name != 'schedule' \|\| vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true'\) \}\}/u);
   assert.match(yml, /cancel-in-progress: false/u);
   assert.match(yml, /persist-credentials: false/u);
   // dispatch 입력은 env로만 run에 들어간다(셸 주입 차단).
@@ -255,9 +259,12 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
     assert.doesNotMatch(run, /\$\{\{\s*(inputs|github\.event\.inputs)\./u);
   }
   const plan = stepBody(yml, "Validate candidate refresh inputs");
-  assert.match(plan, /node tools\/ci\/plan-datapack-release-chain\.mjs candidate-refresh --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(plan, /node tools\/ci\/plan-datapack-release-chain\.mjs candidate-refresh --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}" --event "\$\{EVENT_NAME\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(plan, /EVENT_NAME: \$\{\{ github\.event_name \}\}/u);
+  const gate = stepBody(yml, "Record the candidate gate run");
+  assert.match(gate, /node tools\/ci\/plan-datapack-release-chain\.mjs gate-run --output "\$\{RUNNER_TEMP\}\/candidate-gate-run\.json"/u);
   const refresh = stepBody(yml, "Refresh nationwide candidate");
-  assert.match(refresh, /node tools\/datapack\/refresh-nationwide-candidate\.mjs --evaluated-at "\$\{EVALUATED_AT\}" --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}"/u);
+  assert.match(refresh, /node tools\/datapack\/refresh-nationwide-candidate\.mjs --evaluated-at "\$\{EVALUATED_AT\}" --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}" --gate-run "\$\{RUNNER_TEMP\}\/candidate-gate-run\.json"/u);
   assert.match(refresh, /EVALUATED_AT: \$\{\{ steps\.plan\.outputs\.evaluated_at \}\}/u);
   const scope = stepBody(yml, "Verify candidate refresh output scope");
   assert.match(scope, /NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS/u);
@@ -286,7 +293,8 @@ test("release candidate chain dispatches RC as workflow_dispatch when a candidat
   const supersede = stepBody(yml, "Skip a candidate superseded on main");
   assert.match(supersede, /git diff --quiet "\$\{GITHUB_SHA\}" origin\/main -- tools\/datapack\/release\/candidate-build-spec\.json tools\/datapack\/release\/release-request\.json/u);
   const plan = stepBody(yml, "Build release-candidate modeArgs from repository files");
-  assert.match(plan, /node tools\/ci\/plan-datapack-release-chain\.mjs release-candidate-mode-args --output "\$\{RUNNER_TEMP\}\/release-candidate-mode-args\.json"/u);
+  assert.match(plan, /args=\(release-candidate-mode-args --output "\$\{RUNNER_TEMP\}\/release-candidate-mode-args\.json"\)/u);
+  assert.match(plan, /node tools\/ci\/plan-datapack-release-chain\.mjs "\$\{args\[@\]\}"/u);
   assert.match(plan, /steps\.supersede\.outputs\.current == 'true'/u);
   const dispatch = stepBody(yml, "Dispatch release candidate");
   assert.match(dispatch, /steps\.supersede\.outputs\.current == 'true'/u);
@@ -411,4 +419,160 @@ test("candidate output scope guard runs for real: only declared outputs, somethi
   assert.match(unchanged.stderr, /candidate refresh produced no change/u);
   const missingModule = await scenario((root) => rm(path.join(root, "tools/datapack/refresh-nationwide-candidate.mjs")));
   assert.notEqual(missingModule.status, 0);
+});
+
+const GATE_RUN = Object.freeze({
+  repository: "AquilaXk/easysubway-data", workflowPath: ".github/workflows/nationwide-candidate-refresh.yml",
+  runId: 37200000001, runAttempt: 1, event: "schedule", headSha: "a".repeat(40),
+});
+
+test("#929 D3 a scheduled run derives the fixed roles and the next sequence and takes no person input", () => {
+  assert.throws(() => planNationwideCandidateRefresh({
+    releaseSequence: "", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event: "workflow_run",
+  }), /CANDIDATE_REFRESH_EVENT/u);
+  for (const event of ["schedule"]) {
+    assert.deepEqual(planNationwideCandidateRefresh({
+      releaseSequence: "", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event,
+    }), {
+      evaluatedAt: "2026-10-04T04:31:38.280Z", releaseSequence: 127,
+      requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates",
+    });
+    assert.throws(() => planNationwideCandidateRefresh({
+      releaseSequence: "127", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event,
+    }), /CANDIDATE_REFRESH_SCHEDULED_INPUT/u);
+    assert.throws(() => planNationwideCandidateRefresh({
+      releaseSequence: "", requestedBy: "data-operator-lead", approvedBy: "data-release-authority", committedBuildSpec: committedSpec, now, event,
+    }), /CANDIDATE_REFRESH_SCHEDULED_INPUT/u);
+  }
+});
+
+test("#929 D3 a person dispatch cannot use the scheduled roles, and other events are refused", () => {
+  assert.throws(() => planNationwideCandidateRefresh({
+    releaseSequence: "127", requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates",
+    committedBuildSpec: committedSpec, now, event: "workflow_dispatch",
+  }), /CANDIDATE_REFRESH_ROLE_EVENT[\s\S]*only for the schedule event/u);
+  assert.throws(() => planNationwideCandidateRefresh({
+    releaseSequence: "127", requestedBy: "data-operator-lead", approvedBy: "datapack-release-gates",
+    committedBuildSpec: committedSpec, now, event: "workflow_dispatch",
+  }), /CANDIDATE_REFRESH_ROLE_EVENT[\s\S]*exact pair/u);
+  for (const event of ["push", "pull_request", "", undefined]) {
+    assert.throws(() => planNationwideCandidateRefresh({
+      releaseSequence: "127", requestedBy: "a", approvedBy: "b", committedBuildSpec: committedSpec, now, event,
+    }), /CANDIDATE_REFRESH_EVENT/u, String(event));
+  }
+});
+
+test("#929 D3 the gate-run subcommand records only the refresh workflow run on main from the Actions environment", async () => {
+  const { root } = await releaseRepository();
+  try {
+    const output = path.join(root, "gate-run.json");
+    const env = {
+      GITHUB_REPOSITORY: GATE_RUN.repository,
+      GITHUB_WORKFLOW_REF: `${GATE_RUN.repository}/${GATE_RUN.workflowPath}@refs/heads/main`,
+      GITHUB_RUN_ID: String(GATE_RUN.runId), GITHUB_RUN_ATTEMPT: "1", GITHUB_EVENT_NAME: "schedule", GITHUB_SHA: GATE_RUN.headSha,
+    };
+    await runPlanDatapackReleaseChain({ argv: ["gate-run", "--output", output], repositoryRoot: root, env });
+    assert.deepEqual(JSON.parse(await readFile(output, "utf8")), GATE_RUN);
+    await assert.rejects(runPlanDatapackReleaseChain({
+      argv: ["gate-run", "--output", path.join(root, "other.json")], repositoryRoot: root,
+      env: { ...env, GITHUB_WORKFLOW_REF: `${GATE_RUN.repository}/${GATE_RUN.workflowPath}@refs/heads/feature` },
+    }), /SCHEDULED_AUTHORITY_GATE_RUN/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("#929 D3 a scheduled-role candidate is dispatched to RC only after its gate run record matches", async () => {
+  const scheduled = (files) => {
+    const request = JSON.parse(files[RELEASE_CANDIDATE_PATHS.releaseRequestPath]);
+    Object.assign(request, { requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates", gateRun: GATE_RUN });
+    return { ...files, [RELEASE_CANDIDATE_PATHS.releaseRequestPath]: Buffer.from(JSON.stringify(request)) };
+  };
+  const { root } = await releaseRepository(scheduled);
+  try {
+    const record = {
+      id: GATE_RUN.runId, run_attempt: 1, event: "schedule", head_sha: GATE_RUN.headSha, head_branch: "main",
+      path: `${GATE_RUN.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: GATE_RUN.repository },
+      head_repository: { full_name: GATE_RUN.repository }, run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
+    };
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, updated_at: "2026-10-04T22:23:20Z" } }),
+      /RELEASE_CANDIDATE_GATE_RUN[\s\S]*candidate clock/u);
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u);
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, conclusion: "failure" } }),
+      /RELEASE_CANDIDATE_GATE_RUN[\s\S]*conclusion/u);
+    assert.equal((await readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: record })).allowGaps, "false");
+    const recordPath = path.join(root, "record.json");
+    await writeFile(recordPath, JSON.stringify(record));
+    const output = path.join(root, "mode-args.json");
+    await runPlanDatapackReleaseChain({ argv: ["release-candidate-mode-args", "--output", output, "--gate-run-record", recordPath], repositoryRoot: root });
+    assert.equal(JSON.parse(await readFile(output, "utf8")).buildSpecPath, RELEASE_CANDIDATE_PATHS.buildSpecPath);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  const person = await releaseRepository();
+  try {
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: person.root, gateRunRecord: {} }),
+      /RELEASE_CANDIDATE_GATE_RUN[\s\S]*no gateRun/u);
+  } finally {
+    await rm(person.root, { recursive: true, force: true });
+  }
+});
+
+test("#929 D3 the RC chain fetches the gate run record only for a bound request and passes it to the planner", () => {
+  const yml = workflowText("datapack-release-candidate-chain.yml");
+  const fetch = stepBody(yml, "Fetch the candidate gate run record");
+  assert.match(fetch, /steps\.supersede\.outputs\.current == 'true'/u);
+  assert.match(fetch, /\[\[ "\$\{run_id\}" =~ \^\[1-9\]\[0-9\]\*\$ \]\]/u);
+  assert.match(fetch, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{run_id\}" > "\$\{RUNNER_TEMP\}\/candidate-gate-run-record\.json"/u);
+  const plan = stepBody(yml, "Build release-candidate modeArgs from repository files");
+  assert.match(plan, /--gate-run-record "\$\{GATE_RUN_RECORD\}"/u);
+  assert.ok(yml.indexOf("Fetch the candidate gate run record") < yml.indexOf("Build release-candidate modeArgs from repository files"));
+});
+
+test("#931 F1 the chain dispatches RC only for the verified commit and fails when the dispatched run built another commit", async () => {
+  const yml = workflowText("datapack-release-candidate-chain.yml");
+  const verified = "a".repeat(40);
+  const run = async ({ mainSha, runLine }) => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "rc-dispatch-"));
+    try {
+      const log = path.join(directory, "gh.log");
+      const output = path.join(directory, "github-output");
+      await writeFile(log, "");
+      await writeFile(output, "");
+      await writeFile(path.join(directory, "release-candidate-mode-args.json"), "{}\n");
+      await writeFile(path.join(directory, "gh"), [
+        "#!/bin/sh",
+        'case "$*" in',
+        '  *"git/ref/heads/main"*) echo "$MAIN_SHA" ;;',
+        '  "workflow run "*) echo "dispatch $*" >> "$LOG" ;;',
+        '  *"actions/workflows/datapack-release.yml/runs"*) echo "$RUN_LINE" ;;',
+        '  "run cancel "*) echo "cancel $3" >> "$LOG" ;;',
+        '  *) echo "unexpected gh $*" >&2; exit 9 ;;',
+        "esac",
+        "",
+      ].join("\n"));
+      spawnSync("/bin/chmod", ["755", path.join(directory, "gh")]);
+      const result = runStep(yml, "Dispatch release candidate", { cwd: directory, env: {
+        PATH: `${directory}:${process.env.PATH}`, GITHUB_SHA: verified, GITHUB_REPOSITORY: "AquilaXk/easysubway-data",
+        GH_TOKEN: "test", RUNNER_TEMP: directory, GITHUB_OUTPUT: output, MAIN_SHA: mainSha, RUN_LINE: runLine, LOG: log,
+      } });
+      return { ...result, log: await readFile(log, "utf8"), output: await readFile(output, "utf8") };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  };
+  const matched = await run({ mainSha: verified, runLine: `111 ${verified}` });
+  assert.equal(matched.status, 0, matched.stderr);
+  assert.match(matched.log, /^dispatch workflow run datapack-release\.yml/mu);
+  assert.doesNotMatch(matched.log, /cancel/u);
+  assert.equal(matched.output, "rc_run_id=111\n");
+  const moved = await run({ mainSha: "b".repeat(40), runLine: `111 ${verified}` });
+  assert.notEqual(moved.status, 0);
+  assert.match(moved.stderr, /main moved/u);
+  assert.equal(moved.log, "");
+  const otherCommit = await run({ mainSha: verified, runLine: `222 ${"c".repeat(40)}` });
+  assert.notEqual(otherCommit.status, 0);
+  assert.match(otherCommit.stderr, /not the verified/u);
+  assert.match(otherCommit.log, /^cancel 222$/mu);
+  assert.doesNotMatch(stepBody(yml, "Dispatch release candidate"), /\|\| true/u);
 });

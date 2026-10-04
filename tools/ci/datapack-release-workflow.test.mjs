@@ -564,7 +564,12 @@ test("production-publish는 pack 빌드 전에 release request ↔ build spec �
     /- name: Data Pack Release \/ Verify release request binding[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(verifyStep, "release request binding 검증 스텝을 찾지 못함");
-  assert.match(verifyStep, /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'production-publish' \}\}/);
+  // #931 F1: release request를 쓰는 RC도 같은 결속(정기 역할이면 GitHub run 기록 대조)을 거친다.
+  assert.match(verifyStep, /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'production-publish' \|\| \(steps\.release-mode\.outputs\.mode == 'release-candidate' && env\.EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH != ''\) \}\}/);
+  assert.match(verifyStep, /\[\[ "\$\{gate_run_id\}" =~ \^\[1-9\]\[0-9\]\*\$ \]\]/);
+  assert.match(verifyStep, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{gate_run_id\}" > "\$\{RUNNER_TEMP\}\/release-request-gate-run\.json"/);
+  assert.match(verifyStep, /gate_run_args=\(--gate-run-record "\$\{RUNNER_TEMP\}\/release-request-gate-run\.json"\)/);
+  assert.match(verifyStep, /"\$\{gate_run_args\[@\]\}"/);
   assert.match(verifyStep, /verify-release-request-binding\.mjs/);
   assert.match(verifyStep, /--build-spec "\$\{EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH\}"/);
   assert.match(verifyStep, /--release-request/);

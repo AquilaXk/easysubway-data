@@ -102,7 +102,7 @@ function deriveRoutingDenominator({ routeEdges, endpoints, unique }) {
 // 준비 scope는 교체할 출력이다. 이를 불변 외부 입력으로 다시 검사하면
 // 자기 자신의 첫 write를 drift로 오인하므로 출력 prestate CAS로 보호한다.
 export async function commitNationwideReleaseArtifacts({ repositoryRoot, productionScopeBytes,
-  materialization, releaseIdentity, builderIdentity, authority, failAfter = null,
+  materialization, releaseIdentity, builderIdentity, authority, gateRun, failAfter = null,
   preparationBindings = [], scopePrestateBytes } = {}) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !Buffer.isBuffer(productionScopeBytes)) {
     throw new Error("candidate commit requires an absolute root and prepared scope bytes");
@@ -112,7 +112,7 @@ export async function commitNationwideReleaseArtifacts({ repositoryRoot, product
   const inputs = await Promise.all(Object.entries(NATIONWIDE_CANDIDATE_INPUT_PATHS).map(async ([name, relative]) =>
     ({ name, relative, bytes: await readFile(path.join(repositoryRoot, relative)) })));
   const prepared = await buildNationwideReleaseArtifacts({ repositoryRoot, materialization,
-    releaseIdentity, builderIdentity, authority,
+    releaseIdentity, builderIdentity, authority, gateRun,
     inputBytes: { ...Object.fromEntries(inputs.map(({ name, bytes }) => [name, bytes])), productionScope: productionScopeBytes } });
   inputs.push(...preparationBindings);
   for (const binding of [prepared.fixtureBinding, prepared.overridesBinding]) {
@@ -138,7 +138,7 @@ export async function commitNationwideReleaseArtifacts({ repositoryRoot, product
 
 // 승인 사실은 입력으로만 받는다. 계산된 해시나 과거 후보의 승인으로 대체하지 않는다.
 // 네 결과를 먼저 준비하며, 실제 파일 교체는 호출자의 단일 transaction이 담당한다.
-export async function buildNationwideReleaseArtifacts({ authority, ...input } = {}) {
+export async function buildNationwideReleaseArtifacts({ authority, gateRun, ...input } = {}) {
   if (!authority || ["candidateId", "scopeId", "approvalId", "requestedBy", "approvedBy"]
     .some((key) => typeof authority[key] !== "string" || !authority[key].trim())
     || authority.requestedBy === authority.approvedBy
@@ -157,6 +157,8 @@ export async function buildNationwideReleaseArtifacts({ authority, ...input } = 
     approvedLedgerHash: candidate.approvedAliasLedgerHash,
     requestedBy: authority.requestedBy, approvedBy: authority.approvedBy,
     approvalId: authority.approvalId, targetChannel: "production",
+    // #929 D3: 후보를 만든 CI run. 정기 역할이면 필수이고 releaseRequestBindingViolations가 검사한다.
+    ...(gateRun === undefined ? {} : { gateRun }),
   };
   const violations = releaseRequestBindingViolations({ buildSpec: candidate,
     buildSpecSha256: sha256(candidateBytes), releaseRequest: request, expectedApprovalId: authority.approvalId });
@@ -313,7 +315,18 @@ function materializedPath(root, relative) {
 }
 
 export async function main(argv = process.argv.slice(2), { repositoryRoot = process.cwd() } = {}) {
-  if (argv.length !== 2 || argv[0] !== "--preparation") throw new Error("usage: --preparation <repository-relative JSON>");
+  const withGateRun = argv.length === 4 && argv[2] === "--gate-run";
+  if ((argv.length !== 2 && !withGateRun) || argv[0] !== "--preparation") {
+    throw new Error("usage: --preparation <repository-relative JSON> [--gate-run <absolute JSON outside the repository>]");
+  }
+  let gateRun;
+  if (withGateRun) {
+    const gateRunPath = argv[3];
+    if (!path.isAbsolute(gateRunPath) || path.resolve(gateRunPath).startsWith(`${path.resolve(repositoryRoot)}${path.sep}`)) {
+      throw new Error("--gate-run must be an absolute path outside the repository");
+    }
+    gateRun = JSON.parse(await readFile(gateRunPath, "utf8"));
+  }
   const bindings = [];
   const read = async (relative) => {
     const bytes = await readFile(materializedPath(repositoryRoot, relative));
@@ -350,7 +363,7 @@ export async function main(argv = process.argv.slice(2), { repositoryRoot = proc
   }
   return commitNationwideReleaseArtifacts({ repositoryRoot, productionScopeBytes: jsonBytes(scope),
     materialization: preparation.materialization, releaseIdentity: preparation.releaseIdentity,
-    builderIdentity: preparation.builderIdentity, authority: preparation.authority,
+    builderIdentity: preparation.builderIdentity, authority: preparation.authority, gateRun,
     preparationBindings: bindings, scopePrestateBytes });
 }
 
