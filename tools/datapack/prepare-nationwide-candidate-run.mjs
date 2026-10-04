@@ -18,7 +18,7 @@ import {
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 import { HOLIDAYS_2026, materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";
-import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, integrateRegionalTimetables, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { officialOdFareAdmissionsBySource, officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
@@ -1528,6 +1528,8 @@ export async function prepareNationwideCandidate({
   // Integrate Regional Timetables (Busan, Daegu, Daejeon, Gwangju)
   const regionalSchedule = integrateRegionalTimetables({
     finalPack,
+    // #919: 공휴일은 KASI 특일 정보 기준 목록(fetch-kasi 테스트가 2026년 원문과 같음을 고정)이다.
+    holidayDates: HOLIDAYS_2026,
     busanTimetable,
     busanAccessibility,
     daeguTimetable1,
@@ -1566,6 +1568,13 @@ export async function prepareNationwideCandidate({
   });
   for (const table of ["transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
     finalPack[table] = [...finalPack[table], ...gwangjuSchedule[table]];
+  }
+  // #919: 모든 기관 달력이 모인 뒤, 공휴일에 평일·토요일 달력이 운행하거나 휴일 달력이 없는 노선이 있으면 후보를 만들지 않는다.
+  // 리뷰 F2(#922): 통합기에 넘긴 목록이 아니라 보관된 KASI 원문에서 따로 도출한 집합과 비교한다.
+  const holidayCalendarRows = holidayCalendarViolations({ ...finalPack, holidayDates: retainedKasiHolidayDates() });
+  if (holidayCalendarRows.length > 0) {
+    const routes = [...new Set(holidayCalendarRows.map(({ routeId }) => routeId))];
+    throw new Error(`nationwide candidate public-holiday calendar violations: ${holidayCalendarRows.length} rows on ${routes.length} routes (${routes.slice(0, 5).join(", ")})`);
   }
   // 광주 보관본은 수도권·코레일과 같은 원천(kric-nationwide-timetable-file)이다: 팩 원천 항목 하나에 광주 노선 범위를 합친다.
   const gwangjuTopologySource = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology");

@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
 // #854 결함 1: build-datapack.mjs boolFlag는 serviceCalendars 요일 값을 boolean으로만 받는다.
 // 지역 시간표 통합(#814)이 0/1 숫자를 써서 release-candidate 빌드가
@@ -36,6 +37,7 @@ function nonBooleanFlags(calendars) {
 test("지역 시간표 통합은 14개 serviceCalendars의 요일 값을 boolean으로 쓴다(광주 시간표 입력이 없으면 광주 달력을 만들지 않는다, #913)", () => {
   const integrated = integrateRegionalTimetables({
     finalPack: { stations: [], stationLines: [], serviceCalendars: [] },
+    holidayDates: HOLIDAYS_2026,
   });
   const days = (calendar) => WEEKDAYS.filter((day) => calendar[day] === true);
   const byServiceId = new Map(integrated.serviceCalendars.map((calendar) => [calendar.serviceId, calendar]));

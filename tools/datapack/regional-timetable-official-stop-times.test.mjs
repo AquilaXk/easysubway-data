@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
 // #855: 대전·광주 시간표 통합(#814)이 공식 원천에 없는 도착 시각을 만들었다.
 // - 중간역 도착 = max(앞역 출발 + 30, 이 역 출발 - 20)
@@ -119,6 +120,7 @@ function integrateFromSources(finalPack) {
   const gwangju = loadRegion(GWANGJU);
   return integrateRegionalTimetables({
     finalPack,
+    holidayDates: HOLIDAYS_2026,
     daejeonTimetable: daejeon.timetable,
     daejeonAccessibility: daejeon.accessibility,
     gwangjuTimetable: gwangju.timetable,
@@ -165,7 +167,7 @@ test("대전: 원천 출발 시각 하나만 있는 역은 도착 = 출발 = 원
       { dayType: "0", drctType: "1", stNum: "110", tmZone: "10", tmList: "00" },
     ],
   };
-  const integrated = integrateRegionalTimetables({ finalPack, daejeonTimetable, daejeonAccessibility });
+  const integrated = integrateRegionalTimetables({ finalPack, holidayDates: HOLIDAYS_2026, daejeonTimetable, daejeonAccessibility });
   const stops = integrated.transitStopTimes.filter(({ sourceId }) => sourceId === DAEJEON.sourceId);
   const stationId = (code) => `st-${DAEJEON.lineId}-${DAEJEON_SYNTHETIC_STATIONS.findIndex(([c]) => c === code)}`;
 
@@ -209,7 +211,7 @@ test("광주: 원천 시각 하나만 있는 역은 도착 = 출발 = 원천 값
       { dayCode: "WEEK", direction: "pd", stationCode: "100", time: "0614" },
     ],
   };
-  const integrated = integrateRegionalTimetables({ finalPack, gwangjuTimetable, gwangjuAccessibility });
+  const integrated = integrateRegionalTimetables({ finalPack, holidayDates: HOLIDAYS_2026, gwangjuTimetable, gwangjuAccessibility });
   const stops = integrated.transitStopTimes.filter(({ sourceId }) => sourceId === GWANGJU.sourceId);
   const stationId = (code) => `st-${GWANGJU.lineId}-${GWANGJU_SYNTHETIC_STATIONS.findIndex(([c]) => c === code)}`;
 

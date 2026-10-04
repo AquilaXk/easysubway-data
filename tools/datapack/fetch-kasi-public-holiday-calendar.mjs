@@ -1,6 +1,7 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { request as httpsRequest } from "node:https";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
@@ -28,6 +29,23 @@ export async function readKasiHolidayCalendarFiles(directory) {
     months.push({ ...entry, raw });
   }
   return { manifestSha256: createHash("sha256").update(bytes).digest("hex"), months };
+}
+
+/**
+ * 보관된 KASI 원문(months.json + 월별 XML)에서 공휴일 날짜 집합을 동기로 읽는다(#919).
+ * 원문 해시·월 식별이 맞지 않으면 parseRetainedKasiHolidayMonth가 실패한다.
+ */
+export function readRetainedKasiHolidayDatesSync(directory) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory)) throw new Error("absolute calendar directory required");
+  const manifest = JSON.parse(readFileSync(path.join(directory, "months.json"), "utf8"));
+  if (manifest.schemaVersion !== 1 || manifest.sourceId !== "kasi-public-holiday-calendar"
+    || !Array.isArray(manifest.months) || manifest.months.length === 0) throw new Error("KASI manifest is invalid");
+  const dates = manifest.months.flatMap((entry) => {
+    const file = `${entry.year}-${String(entry.month).padStart(2, "0")}.xml`;
+    if (entry.file !== file) throw new Error("KASI manifest month is invalid");
+    return parseRetainedKasiHolidayMonth({ ...entry, raw: readFileSync(path.join(directory, file)) }).holidayDates;
+  });
+  return [...new Set(dates)].sort(utf16Compare);
 }
 
 /** 새 디렉터리만 예약한다. 실패한 수집에는 완료 manifest를 남기지 않는다. */
