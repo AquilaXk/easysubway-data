@@ -19,12 +19,20 @@ concurrency:
 jobs:
   compatibility:
     name: Dispatch hub data pack compatibility
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
+      # workflow_run은 기본 브랜치(main) 문맥에서 돈다. 검증 도구만 읽고 upstream run의 코드는 checkout하지 않는다.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
       - name: Identify the release-candidate run
         id: rc
         env:
@@ -32,22 +40,21 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "workflow_run id is invalid" >&2; exit 1; }
+          [[ "${RUN_HEAD_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo "workflow_run head_sha is invalid" >&2; exit 1; }
           # RC run만 easysubway-datapack-candidate-<run> artifact를 만든다(hub promotion이 받는 후보 artifact).
-          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=easysubway-datapack-candidate-${RUN_ID}&per_page=100" --jq '.total_count')"
-          case "${count}" in
-            0)
-              echo "rc=false" >> "${GITHUB_OUTPUT}"
-              echo "Data Pack Release run ${RUN_ID}에 RC 후보 artifact가 없어 hub 호환성 검증을 dispatch하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
-              ;;
-            1)
-              echo "rc=true" >> "${GITHUB_OUTPUT}"
-              echo "Data Pack Release run ${RUN_ID}은 RC 후보 artifact가 있어 hub 호환성 검증을 dispatch한다." >> "${GITHUB_STEP_SUMMARY}"
-              ;;
-            *)
-              echo "unexpected RC candidate artifact count for run ${RUN_ID}: ${count}" >&2
-              exit 1
-              ;;
-          esac
+          name="easysubway-datapack-candidate-${RUN_ID}"
+          response="${RUNNER_TEMP}/${name}.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${name}&per_page=100" > "${response}"
+          total="$(node -e 'const p = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); if (!Number.isSafeInteger(p.total_count)) process.exit(1); process.stdout.write(String(p.total_count));' "${response}")"
+          if [[ "${total}" == "0" ]]; then
+            echo "rc=false" >> "${GITHUB_OUTPUT}"
+            echo "Data Pack Release run ${RUN_ID}에 RC 후보 artifact가 없어 hub 호환성 검증을 dispatch하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          # publish 경로와 같은 검증기: 정확히 하나, 같은 run id·head sha, 만료되지 않음. 어긋나면 실패한다.
+          node tools/ci/require-workflow-artifact.mjs "${response}" "${name}" "${RUN_ID}" "${RUN_HEAD_SHA}"
+          echo "rc=true" >> "${GITHUB_OUTPUT}"
+          echo "Data Pack Release run ${RUN_ID}(head ${RUN_HEAD_SHA})은 RC 후보 artifact가 있어 hub 호환성 검증을 dispatch한다." >> "${GITHUB_STEP_SUMMARY}"
       - name: Require cross-repository dispatch app credentials
         if: ${{ steps.rc.outputs.rc == 'true' }}
         env:

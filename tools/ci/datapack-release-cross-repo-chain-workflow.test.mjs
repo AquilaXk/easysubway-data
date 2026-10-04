@@ -10,7 +10,10 @@ const yml = readFileSync(new URL("../../.github/workflows/datapack-release-cross
 
 const JOB_GUARD = "    if: ${{ "
   + "github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' "
-  + "&& github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}";
+  + "&& github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository "
+  + "&& github.event.workflow_run.path == '.github/workflows/datapack-release.yml' }}";
+
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 
 function stepBody(name) {
   const begin = yml.indexOf(`      - name: ${name}\n`);
@@ -42,7 +45,8 @@ async function runStep(name, env, ghScript = null) {
     }
     const result = spawnSync("/bin/bash", ["-e", "-c", stepScript(name)], {
       encoding: "utf8",
-      env: { PATH, HOME: process.env.HOME, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary, ...env },
+      cwd: ROOT,
+      env: { PATH, HOME: process.env.HOME, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary, RUNNER_TEMP: directory, ...env },
     });
     return { ...result, output: await readFile(output, "utf8"), summary: await readFile(summary, "utf8") };
   } finally {
@@ -82,25 +86,48 @@ test("the app token is scoped to dispatching workflows in the hub repository onl
   assert.doesNotMatch(yml, /production-publish|DEPLOY|datapack-promotion\.yml|continue-on-error/u);
 });
 
-test("only a run that produced exactly one RC candidate artifact is dispatched, with the decision in the run summary", async () => {
-  const env = { GITHUB_REPOSITORY: "AquilaXk/easysubway-data", RUN_ID: "37109648483", GH_TOKEN: "test" };
-  const candidate = await runStep("Identify the release-candidate run", env, 'echo "$@" > /dev/null; echo 1');
+test("only a run with exactly one unexpired RC candidate artifact of the same run and head commit is dispatched (F2)", async () => {
+  const runId = 37109648483;
+  const headSha = "a".repeat(40);
+  const env = { GITHUB_REPOSITORY: "AquilaXk/easysubway-data", RUN_ID: String(runId), RUN_HEAD_SHA: headSha, GH_TOKEN: "test" };
+  const artifact = (overrides = {}) => ({
+    id: 11269456267, name: `easysubway-datapack-candidate-${runId}`, expired: false,
+    workflow_run: { id: runId, head_sha: headSha }, ...overrides,
+  });
+  const gh = (payload) => `cat <<'JSON'\n${JSON.stringify(payload)}\nJSON`;
+  const candidate = await runStep("Identify the release-candidate run", env, gh({ total_count: 1, artifacts: [artifact()] }));
   assert.equal(candidate.status, 0, candidate.stderr);
   assert.equal(candidate.output, "rc=true\n");
   assert.match(candidate.summary, /37109648483/u);
-  const exploratory = await runStep("Identify the release-candidate run", env, "echo 0");
+  const exploratory = await runStep("Identify the release-candidate run", env, gh({ total_count: 0, artifacts: [] }));
   assert.equal(exploratory.status, 0, exploratory.stderr);
   assert.equal(exploratory.output, "rc=false\n");
   assert.match(exploratory.summary, /dispatch하지 않는다/u);
-  const ambiguous = await runStep("Identify the release-candidate run", env, "echo 2");
-  assert.notEqual(ambiguous.status, 0);
-  assert.equal(ambiguous.output, "");
+  for (const [label, payload] of [
+    ["expired", { total_count: 1, artifacts: [artifact({ expired: true })] }],
+    ["other head", { total_count: 1, artifacts: [artifact({ workflow_run: { id: runId, head_sha: "b".repeat(40) } })] }],
+    ["other run", { total_count: 1, artifacts: [artifact({ workflow_run: { id: 1, head_sha: headSha } })] }],
+    ["two artifacts", { total_count: 2, artifacts: [artifact(), artifact({ id: 2 })] }],
+    ["inconsistent", { total_count: "1", artifacts: [] }],
+  ]) {
+    const result = await runStep("Identify the release-candidate run", env, gh(payload));
+    assert.notEqual(result.status, 0, label);
+    assert.equal(result.output, "", label);
+  }
   const apiFailure = await runStep("Identify the release-candidate run", env, "echo boom >&2; exit 1");
   assert.notEqual(apiFailure.status, 0);
   assert.equal(apiFailure.output, "");
-  const badRunId = await runStep("Identify the release-candidate run", { ...env, RUN_ID: "1;rm" }, "echo 1");
+  const badRunId = await runStep("Identify the release-candidate run", { ...env, RUN_ID: "1;rm" }, gh({ total_count: 0, artifacts: [] }));
   assert.notEqual(badRunId.status, 0);
   assert.match(badRunId.stderr, /workflow_run id is invalid/u);
+  const badSha = await runStep("Identify the release-candidate run", { ...env, RUN_HEAD_SHA: "abc" }, gh({ total_count: 0, artifacts: [] }));
+  assert.notEqual(badSha.status, 0);
+  assert.match(badSha.stderr, /workflow_run head_sha is invalid/u);
+  const identify = stepBody("Identify the release-candidate run");
+  assert.match(identify, /node tools\/ci\/require-workflow-artifact\.mjs "\$\{response\}" "\$\{name\}" "\$\{RUN_ID\}" "\$\{RUN_HEAD_SHA\}"/u);
+  assert.match(yml, /RUN_HEAD_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/u);
+  assert.match(yml, /- uses: actions\/checkout@[0-9a-f]{40}\n        with:\n          persist-credentials: false\n/u);
+  assert.doesNotMatch(yml, /ref: \$\{\{ github\.event\.workflow_run/u);
 });
 
 test("missing app credentials fail before any token or dispatch step, naming the secrets", async () => {
