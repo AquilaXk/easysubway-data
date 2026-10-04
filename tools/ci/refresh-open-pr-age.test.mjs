@@ -157,7 +157,7 @@ test("main 반영 판정은 origin의 main·claim 브랜치를 받아 merge-base
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const origin = path.join(directory, "origin");
   const clone = path.join(directory, "clone");
-  const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.test", ...args], { cwd, encoding: "utf8" });
+  const git = (cwd, ...args) => execFileSync("/usr/bin/git", ["-c", "user.name=t", "-c", "user.email=t@example.test", ...args], { cwd, encoding: "utf8" });
   const ledger = (cwd, ids) => {
     mkdirSync(path.join(cwd, "tools/datapack/release"), { recursive: true });
     writeFileSync(path.join(cwd, "tools/datapack/release/source-snapshots.json"), JSON.stringify(ids.map((snapshotId) => ({ snapshotId }))));

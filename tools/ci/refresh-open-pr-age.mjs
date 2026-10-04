@@ -22,6 +22,8 @@ export const REFRESH_CLAIM_PREFIXES = Object.freeze({
   "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
 });
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
+// PATH 검색 없이 고정 경로의 git을 쓴다(data-test-discovery와 같은 기준). GitHub Ubuntu runner와 macOS 모두 이 경로다.
+const GIT_EXECUTABLE = "/usr/bin/git";
 const DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/u;
 
 function fail(code, detail = "") {
@@ -90,7 +92,7 @@ export function claimReflectedInMain({ baseLedger, claimLedger, mainLedger }) {
 }
 
 export function staleOpenRefreshPullRequestMessage({ stale, repository, reflection }) {
-  const prefix = stale.branch.replace(/[0-9]+$/u, "");
+  const prefix = stale.branch.slice(0, stale.branch.lastIndexOf("-") + 1);
   const lines = [
     `REFRESH_OPEN_PR_STALE: #${stale.number} (${stale.branch}) opened at ${stale.openedAt} exceeded the open refresh PR limit ${stale.limit} (deadline ${stale.deadline}).`,
     `The scheduled refresh stays paused while this pull request is open: ${stale.url}`,
@@ -114,7 +116,7 @@ export function staleOpenRefreshPullRequestMessage({ stale, repository, reflecti
 
 /** origin의 main과 claim 브랜치를 받아, 둘의 merge-base(claim의 원본 main) 원장과 두 원장을 비교한다. */
 export function inspectClaimReflection(branch, { cwd = process.cwd() } = {}) {
-  const git = (args) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  const git = (args) => execFileSync(GIT_EXECUTABLE, args, { cwd, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
   const readLedgerAt = (ref) => JSON.parse(git(["show", `${ref}:${LEDGER_PATH}`]));
   git(["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
   const base = git(["merge-base", "origin/main", `origin/${branch}`]).trim();
@@ -158,8 +160,10 @@ export async function main(argv, { now = new Date(), inspect = inspectClaimRefle
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).catch((error) => {
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
-  });
+  }
 }
