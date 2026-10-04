@@ -384,6 +384,7 @@ test("단계 어휘 표는 닫혀 있고 각 규칙의 예시는 그 규칙으�
   assert.deepEqual(classifyTransferStep("상봉방면 지상2층 엘리베이터").floors, ["2F"]);
   assert.equal(classifyTransferStep("에스컬레이터 탑승").kind, "ESCALATOR");
   assert.equal(classifyTransferStep("2번 출구로 이동").kind, "OUTSIDE");
+  assert.equal(classifyTransferStep("역사 바깥으로 이동").kind, "OUTSIDE");
   assert.equal(classifyTransferStep("엘리베이터 고장 시 직원 호출").kind, "UNAVAILABLE");
 });
 

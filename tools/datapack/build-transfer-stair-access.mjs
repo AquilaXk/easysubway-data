@@ -37,7 +37,7 @@ export const TRANSFER_STEP_VOCABULARY = Object.freeze([
   rule("STAIRS_KEYWORD", "STAIRS", "BLOCKING", /계단/u, ["계단으로 이동", "계단옆 엘리베이터 이용 후 지하2층 이동", "상봉방면 지하1층 계단"]),
   rule("ESCALATOR_KEYWORD", "ESCALATOR", "BLOCKING", /에스컬레이[터타]/u, ["에스컬레이터 탑승", "대합실 방향 에스컬레이터로 이동"]),
   rule("LIFT_KEYWORD", "LIFT", "BLOCKING", /리프트/u, ["대합실 방향 휠체어리프트 탑승", "6호선 월드컵경기장 방면 장애인용리프트 탑승"]),
-  rule("OUTSIDE_KEYWORD", "OUTSIDE", "BLOCKING", /출구|출입구|외부|인도|횡단보도|밖/u, [
+  rule("OUTSIDE_KEYWORD", "OUTSIDE", "BLOCKING", /출구|출입구|외부|인도|횡단보도|밖|바깥/u, [
     "13번 출구로 이동", "2호선 6번 출입구 옆 엘리베이터 이동", "1F 외부로 이동", "횡단보도이용", "개집표기 밖으로 이동", "세연정앞 인도",
   ]),
   rule("UNAVAILABLE_OR_ASSISTED_WORDING", "UNAVAILABLE", "BLOCKING", /고장|중지|미운영|공사|불가|중단|없음|없는|직원|호출|요청|동행/u, [
