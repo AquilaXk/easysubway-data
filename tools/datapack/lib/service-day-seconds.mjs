@@ -3,7 +3,9 @@
 // 근거(2026-10-04 실측)
 // - 인천 1·2호선 공식 FILE 8개는 00시대 시발 행을 모두 파일 끝(23시대 시발 뒤)에 두고, 02~04시 시각이 하나도 없다.
 // - KRIC 역별 API(GTX-A·의정부·에버라인·김포골드·부산김해)도 01~04시에 출발하는 열차가 없다.
-// normalize-kric-timetable.mjs와 같은 03:00 경계를 쓴다.
+// 데이터 쪽 운행일 경계는 이 상수 하나다(normalize-kric-timetable.mjs도 가져다 쓴다).
+// hub Journey 계약(journey-v3 serviceDayCutoff "03:00")과 backend ServiceDayResolver.CUTOFF_LOCAL_TIME과 같아야 한다.
+export const SERVICE_DAY_CUTOFF_LOCAL_TIME = "03:00";
 export const SERVICE_DAY_BOUNDARY_SECONDS = 3 * 3_600;
 const SECONDS_PER_DAY = 86_400;
 

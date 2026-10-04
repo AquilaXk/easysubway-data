@@ -50,3 +50,18 @@ test("자정 이후 시발 열차(인천 1호선 1305형)는 정차 시각 전�
   ]);
   assert.deepEqual(rows, before);
 });
+
+// 리뷰 F3(#921): 운행일 경계는 데이터 쪽에서 이 모듈 하나로만 정한다.
+// 다른 레포의 같은 값(읽기 전용 대조, 2026-10-04):
+// - hub contracts/api/journey-v3.openapi.yaml `serviceDayCutoff: enum ["03:00"]`
+// - backend ServiceDayResolver.CUTOFF_LOCAL_TIME(응답 serviceDayCutoff), mobile은 응답의 serviceDayCutoff를 읽는다.
+test("운행일 경계는 Journey 계약의 serviceDayCutoff \"03:00\"과 같고 KRIC 정규화도 같은 상수를 쓴다", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { SERVICE_DAY_CUTOFF_LOCAL_TIME } = await import("./service-day-seconds.mjs");
+  assert.equal(SERVICE_DAY_CUTOFF_LOCAL_TIME, "03:00");
+  const [hours, minutes] = SERVICE_DAY_CUTOFF_LOCAL_TIME.split(":").map(Number);
+  assert.equal(SERVICE_DAY_BOUNDARY_SECONDS, hours * 3_600 + minutes * 60);
+  const normalizer = await readFile(new URL("../normalize-kric-timetable.mjs", import.meta.url), "utf8");
+  assert.match(normalizer, /import \{ SERVICE_DAY_BOUNDARY_SECONDS \} from "\.\/lib\/service-day-seconds\.mjs";/u);
+  assert.doesNotMatch(normalizer, /3 \* 3600|10_?800/u);
+});
