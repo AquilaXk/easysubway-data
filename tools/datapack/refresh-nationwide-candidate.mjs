@@ -10,7 +10,8 @@
 //     --requested-by <요청자> --approved-by <승인자> [--gate-run <이 후보를 만드는 CI run 기록 JSON, 절대 경로>]
 //
 // 순서: 5권역 fan-in(--evaluated-at) → 소유권 원장 → prepare-nationwide-candidate-run → build-nationwide-candidate(spec·scope·request·hash)
-//       → route-edge 정책 sync(전국 route-edge 입력, #866) → 결속 검증.
+//       → route-edge 정책 sync(전국 route-edge 입력, #866) → 결속 검증
+//       → 후보 입력 매니페스트 기록·OCI 발행(#942, EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL 필요).
 // - 승인 역할은 명시 인자로만 받는다. 환경 변수나 이전 후보의 승인으로 채우지 않는다. 요청자와 승인자는 달라야 한다.
 // - 깨끗한 worktree에서만 실행한다. builder git SHA가 실제 코드를 가리켜야 하기 때문이다.
 // - 어느 단계든 실패하거나 결속 검증이 어긋나면 모든 출력을 실행 전 바이트로 되돌리고 실패로 끝낸다.
@@ -41,6 +42,7 @@ import {
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { CANDIDATE_RELEASE_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
+import { CANDIDATE_INPUT_MANIFEST_PATH } from "./lib/candidate-input-bundle.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -73,12 +75,15 @@ export const NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS = Object.freeze([
   OFFICIAL_STOP_TIMES_PATH,
   ...CANDIDATE_RELEASE_OUTPUTS,
   ROUTE_EDGE_POLICY_PATH,
+  CANDIDATE_INPUT_MANIFEST_PATH,
 ]);
 const PREPARATION_PATH = "tools/datapack/release/nationwide-candidate-preparation.json";
 const STEPS = Object.freeze([
   "five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build",
   "route edge policy sync",
 ]);
+// #942: 결속 검증을 통과한 후보만 입력 매니페스트를 기록하고, 그 바이트를 OCI 공개 읽기 경로에 올린다.
+const INPUT_STEPS = Object.freeze(["candidate input record", "candidate input publish"]);
 
 export function parseRefreshNationwideCandidateArgs(argv) {
   const flags = new Map([
@@ -262,6 +267,14 @@ export async function runNationwideCandidateRefreshStep({ name, repositoryRoot, 
     });
     return;
   }
+  if (name === "candidate input record") {
+    await runNodeScript(repositoryRoot, "record-nationwide-candidate-inputs.mjs", ["record"]);
+    return;
+  }
+  if (name === "candidate input publish") {
+    await runNodeScript(repositoryRoot, "record-nationwide-candidate-inputs.mjs", ["publish"]);
+    return;
+  }
   throw new Error(`unknown nationwide candidate refresh step: ${name}`);
 }
 
@@ -300,6 +313,10 @@ export async function refreshNationwideCandidate({
       ...(await readNationwideCandidateRefreshState(repository)), evaluatedAt, requestedBy, approvedBy, gateRun,
     });
     if (violations.length > 0) throw new Error(violations.join("; "));
+    for (const name of INPUT_STEPS) {
+      step = name;
+      await runStep({ name, repositoryRoot: repository, evaluatedAt, releaseSequence, requestedBy, approvedBy, gateRunPath });
+    }
   } catch (error) {
     for (const { relative, bytes } of prestate) {
       const target = path.join(repository, relative);

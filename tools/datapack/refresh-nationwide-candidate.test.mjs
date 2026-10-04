@@ -313,7 +313,7 @@ test("#866 전국 후보 갱신은 마지막 단계에서 route-edge 정책을 �
       if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
     },
   });
-  assert.deepEqual(steps, STEPS);
+  assert.deepEqual(steps, [...STEPS, ...INPUT_STEPS]);
   assert.ok(result.outputs.includes(ROUTE_EDGE_POLICY));
   assert.deepEqual(await readFile(path.join(repositoryRoot, ROUTE_EDGE_POLICY)), committedPolicy);
 });
