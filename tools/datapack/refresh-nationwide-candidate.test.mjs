@@ -160,6 +160,9 @@ const ROUTE_EDGE_POLICY = "release/product-gates/route-edge-evaluation-policy.js
 const NATIONWIDE_ROUTE_EDGE_INPUT = "tools/datapack/release/nationwide-route-edge-input.json";
 const ITX_CONTRACT = "tools/datapack/itx-cheongchun-coverage-contract.json";
 const STEPS = ["five-region fan-in", "ownership ledger", "nationwide candidate preparation", "nationwide candidate build", "route edge policy sync"];
+// #942: 결속 검증을 통과한 뒤에만 후보 입력 매니페스트를 기록하고 OCI에 올린다.
+const INPUT_STEPS = ["candidate input record", "candidate input publish"];
+const CANDIDATE_INPUT_MANIFEST = "tools/datapack/release/nationwide-candidate-input-manifest.json";
 
 async function copiedRepository(t) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-refresh-"));
@@ -233,6 +236,32 @@ test("전국 후보 갱신은 결속 검증이 실패해도 출력을 되돌리�
   NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.forEach((relative, index) => assert.deepEqual(after[index], before[index], relative));
 });
 
+test("#942 전국 후보 갱신은 결속 검증 뒤 입력 매니페스트를 기록하고 OCI에 올리며, 올리기가 실패하면 매니페스트까지 되돌린다", async (t) => {
+  assert.ok(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.includes(CANDIDATE_INPUT_MANIFEST));
+  const repositoryRoot = await copiedRepository(t);
+  const manifestPath = path.join(repositoryRoot, CANDIDATE_INPUT_MANIFEST);
+  const before = await readFile(manifestPath);
+  const fanIn = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json")));
+  const request = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/release-request.json")));
+  const buildSpec = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json")));
+  const steps = [];
+  await assert.rejects(refreshNationwideCandidate({
+    repositoryRoot,
+    evaluatedAt: fanIn.evaluatedAt,
+    releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy,
+    approvedBy: request.approvedBy,
+    assertCleanWorktree: async () => {},
+    runStep: async ({ name }) => {
+      steps.push(name);
+      if (name === "candidate input record") await writeFile(manifestPath, "recorded\n");
+      if (name === "candidate input publish") throw new Error("CANDIDATE_INPUT_OBJECT_MISMATCH: injected");
+    },
+  }), /전국 후보 갱신 실패 \(candidate input publish\): CANDIDATE_INPUT_OBJECT_MISMATCH: injected/);
+  assert.deepEqual(steps, [...STEPS, ...INPUT_STEPS]);
+  assert.deepEqual(await readFile(manifestPath), before);
+});
+
 test("#862 전국 후보 갱신은 spec·scope·request·hash를 build-nationwide-candidate 한 경로로만 만든다", async (t) => {
   assert.ok(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.includes("release/product-gates/production-datapack-scope.json"));
   const repositoryRoot = await copiedRepository(t);
@@ -249,7 +278,7 @@ test("#862 전국 후보 갱신은 spec·scope·request·hash를 build-nationwid
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => { steps.push(name); },
   }));
-  assert.deepEqual(steps, STEPS);
+  assert.deepEqual(steps, [...STEPS, ...INPUT_STEPS]);
   const prepare = await readFile(path.join(root, "tools/datapack/prepare-nationwide-candidate-run.mjs"), "utf8");
   for (const output of ["candidate-build-spec.json", "release-request.json", "hash-evidence.json"]) {
     assert.equal(prepare.includes(output), false, `prepare must not patch ${output}`);
