@@ -12,17 +12,21 @@ import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs
 import { holidayCalendarViolations, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, createCandidateInputReader, parseCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
+import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (val) => createHash("sha256").update(val).digest("hex");
+// #942: 후보 재현 검사는 커밋된 후보가 고정한 입력 바이트로 한다(원천만 등록한 PR에서도 같은 결과).
+const pinnedRead = await candidatePinnedReader();
 
 test("prepareNationwideCandidate enforces two-person rule strictly", async () => {
   // Missing requester
   await assert.rejects(
     async () => {
       await prepareNationwideCandidate({
+        readRepositoryFile: pinnedRead,
         requestedBy: "",
         approvedBy: "approver-id",
       });
@@ -34,6 +38,7 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
   await assert.rejects(
     async () => {
       await prepareNationwideCandidate({
+        readRepositoryFile: pinnedRead,
         requestedBy: "requester-id",
         approvedBy: "",
       });
@@ -45,6 +50,7 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
   await assert.rejects(
     async () => {
       await prepareNationwideCandidate({
+        readRepositoryFile: pinnedRead,
         requestedBy: "same-person",
         approvedBy: "same-person",
       });
@@ -55,6 +61,7 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
   await assert.rejects(
     async () => {
       await prepareNationwideCandidate({
+        readRepositoryFile: pinnedRead,
         requestedBy: "   same-person   ",
         approvedBy: "same-person",
       });
@@ -66,6 +73,7 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
   await assert.rejects(
     async () => {
       await prepareNationwideCandidate({
+        readRepositoryFile: pinnedRead,
         requestedBy: "aquila",
         approvedBy: "Aquila",
       });
@@ -76,6 +84,7 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
   await assert.rejects(
     async () => {
       await prepareNationwideCandidate({
+        readRepositoryFile: pinnedRead,
         requestedBy: "   AQUILA   ",
         approvedBy: "aquila",
       });
@@ -86,6 +95,7 @@ test("prepareNationwideCandidate enforces two-person rule strictly", async () =>
 
 test("nationwide candidate preparation records genuine non-literal hashes and fail-closed evidence", async () => {
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
@@ -140,7 +150,7 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
   );
   assert.strictEqual(unmappedFacility.length, 639, "Exactly 639 unmapped stations must have FACILITY_DATA_NOT_PROVIDED");
   // freshUntil은 fan-in이 고른 KRIC 편의시설 원장 head의 신선도 만료다(#862: 고정 날짜 대신 커밋된 fan-in에서 읽는다).
-  const committedFanIn = JSON.parse(await readFile(path.join(root, "tools/datapack/release/current-five-region-source-fan-in.json"), "utf8"));
+  const committedFanIn = JSON.parse((await pinnedRead("tools/datapack/release/current-five-region-source-fan-in.json")).toString("utf8"));
   const kricConvenienceHead = committedFanIn.selectedSources.find(({ sourceId }) => sourceId === "kric-station-convenience-standard");
   for (const r of unmappedFacility) {
     assert.strictEqual(r.freshUntil, kricConvenienceHead.freshnessExpiresAt, "Unmapped facility must have genuine KRIC convenience freshUntil");
@@ -180,6 +190,7 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
 
 test("nationwide route edge input rejects fake constants and unverified outdoor links", async () => {
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
@@ -241,6 +252,7 @@ test("prepareNationwideCandidate enforces fail-closed git provenance", async () 
     await assert.rejects(
       async () => {
         await prepareNationwideCandidate({
+          readRepositoryFile: pinnedRead,
           requestedBy: "operator-alice",
           approvedBy: "operator-bob",
         });
@@ -252,6 +264,7 @@ test("prepareNationwideCandidate enforces fail-closed git provenance", async () 
     await assert.rejects(
       async () => {
         await prepareNationwideCandidate({
+          readRepositoryFile: pinnedRead,
           requestedBy: "operator-alice",
           approvedBy: "operator-bob",
         });
@@ -266,6 +279,7 @@ test("prepareNationwideCandidate enforces fail-closed git provenance", async () 
 
 test("prepareNationwideCandidate dynamically generates authentic nationwide candidate without synthetic schedules", async () => {
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
@@ -321,7 +335,7 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
 
   // #913: 광주 1호선 시간표는 원천 만료(2026-07-21)가 지난 cyberstation snapshot이 아니라, 원장 head가 결속한
   // KRIC 보관본(kric-nationwide-timetable-file, retainedScheduleAdmissionEvidence)에서 나와야 한다.
-  const inventoryForGwangju = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const inventoryForGwangju = JSON.parse((await pinnedRead("tools/datapack/source-inventory.json")).toString("utf8"));
   const retainedSnapshotId = inventoryForGwangju.sources.find(({ id }) => id === "kric-nationwide-timetable-file")
     .retainedScheduleAdmissionEvidence.snapshotId;
   const gwangjuRouteIds = new Set(pack.transitRoutes.filter(({ lineId }) => lineId === "line-e57a361e8892").map(({ id }) => id));
@@ -482,6 +496,7 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
   const rawBefore = await readFile(path.join(root, "tools/datapack/release/nationwide-production-canonical-pack.json"), "utf8");
 
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     platformInfoMap: sampleMap,
@@ -518,14 +533,7 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
 
 // #862 결정 #15: 후보 입력 snapshot은 고정 경로가 아니라 원장 head(+ fan-in 선택)에서 고른다.
 async function committedSelectionInputs() {
-  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
-  return {
-    sourceInventory: await readJson("tools/datapack/source-inventory.json"),
-    sourceSnapshots: await readJson("tools/datapack/release/source-snapshots.json"),
-    fanIn: await readJson("tools/datapack/release/current-five-region-source-fan-in.json"),
-    freshnessPolicy: await readJson("release/product-gates/datapack-freshness-sla.json"),
-    readSourceBytes: (relative) => readFile(path.join(root, relative)),
-  };
+  return selectionInputsFrom(pinnedRead);
 }
 
 async function selectionInputsFrom(read) {
@@ -693,12 +701,12 @@ test("인천 입력은 정책 클래스로 유도한 신선도가 후보 시계 
 
 // #862: MOLIT 환승 이동 원천은 정책으로 유도한 freshUntil이 후보 시계 이전이면 만료로 실패한다.
 test("MOLIT 환승 이동 원천은 정책 신선도가 후보 시계 이전이면 만료로 실패한다(#862)", async () => {
-  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const readJson = async (relative) => JSON.parse((await pinnedRead(relative)).toString("utf8"));
   const sourceInventory = await readJson("tools/datapack/source-inventory.json");
   const freshnessPolicy = await readJson("release/product-gates/datapack-freshness-sla.json");
   const admission = sourceInventory.sources.find(({ id }) => id === "molit-railway-transfer-movement").rawSnapshotAdmission;
   const metadata = await readJson(admission.metadataPath);
-  const read = (relative) => readFile(path.join(root, relative));
+  const read = (relative) => pinnedRead(relative);
   const before = new Date(Date.parse(metadata.freshUntil) - 60_000).toISOString();
   const resolved = await resolveMolitTransferSnapshot({ sourceInventory, freshnessPolicy, evaluatedAt: before, read });
   assert.equal(resolved.metadata.snapshotId, admission.snapshotId);
@@ -831,12 +839,13 @@ test("#862 prepare는 신선도·식별자 상수와 날짜 fallback을 하드�
 });
 
 test("#862 prepare 증거 행·네트워크 증거·운임 증거는 fan-in head·inventory head·정책에서 유도된다", async () => {
-  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const readJson = async (relative) => JSON.parse((await pinnedRead(relative)).toString("utf8"));
   const fanIn = await readJson("tools/datapack/release/current-five-region-source-fan-in.json");
   const inventory = await readJson("tools/datapack/source-inventory.json");
   const policy = await readJson("release/product-gates/datapack-freshness-sla.json");
   const head = (sourceId) => fanIn.selectedSources.find((row) => row.sourceId === sourceId);
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead", approvedBy: "data-release-authority", releaseSequence: 122, writeFiles: false,
   });
 
@@ -884,16 +893,16 @@ test("#862 prepare 증거 행·네트워크 증거·운임 증거는 fan-in head
   assert.equal(reverification.candidate.contentSha256, capitalHead.contentSha256);
   assert.equal(edges.capitalTopology.snapshotId, reverification.baseline.snapshotId);
   for (const key of ["capitalTopology", "capitalTopologyCandidate", "capitalTopologyReverification", "itxCoverageContract"]) {
-    assert.equal(edges[key].sha256, sha256(await readFile(path.join(root, edges[key].path))), key);
+    assert.equal(edges[key].sha256, sha256(await pinnedRead(edges[key].path)), key);
   }
 
   const contract = await readJson("tools/datapack/itx-cheongchun-coverage-contract.json");
   const artifactStamp = contract.sourceTimetableArtifact.artifactId.replace("itx-cheongchun-source-timetable-", "");
   assert.equal(result.preparation.materialization.itxTopologyEvidencePath, `tools/datapack/itx-cheongchun-topology-evidence-${artifactStamp}.json`);
   assert.equal(result.preparation.materialization.itxTopologyEvidenceSha256,
-    sha256(await readFile(path.join(root, result.preparation.materialization.itxTopologyEvidencePath))));
+    sha256(await pinnedRead(result.preparation.materialization.itxTopologyEvidencePath)));
 
-  const admissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));
+  const admissionBytes = await pinnedRead("tools/datapack/official-od-fare-admission.json");
   const fareAdmission = JSON.parse(admissionBytes).admissions.find(({ sourceId }) => sourceId === "seoul-metro-official-od-fares");
   const fare = result.preparation.materialization.officialOdFareEvidence;
   assert.deepEqual(Object.keys(fare).sort(), ["admissionHash", "evidenceHash", "mappingLedgerHash", "quoteSetHash", "quotes", "snapshotId", "sourceId"]);
@@ -907,18 +916,19 @@ test("#862 prepare 증거 행·네트워크 증거·운임 증거는 fan-in head
 
 test("nationwide candidate preparation은 tracked ITX coverage contract와 승인 원천의 버전 topology 증거에 결속된다", async () => {
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
     writeFiles: false,
   });
   const contractPath = "tools/datapack/itx-cheongchun-coverage-contract.json";
-  const contractBytes = await readFile(path.join(root, contractPath));
+  const contractBytes = await pinnedRead(contractPath);
   const artifactId = JSON.parse(contractBytes).sourceTimetableArtifact.artifactId;
   const digits = /^itx-cheongchun-source-timetable-([0-9]{17})$/u.exec(artifactId)?.[1];
   assert.ok(digits, "tracked ITX source artifact id must be versioned");
   const evidencePath = `tools/datapack/itx-cheongchun-topology-evidence-${digits}.json`;
-  const evidenceBytes = await readFile(path.join(root, evidencePath));
+  const evidenceBytes = await pinnedRead(evidencePath);
   const { materialization } = result.preparation;
   assert.deepEqual(materialization.networkEdgeEvidence.itxCoverageContract, {
     path: contractPath,
@@ -931,7 +941,7 @@ test("nationwide candidate preparation은 tracked ITX coverage contract와 승�
 // #862: build spec은 prepare가 아니라 build-nationwide-candidate --preparation이 만든다(결정 C).
 // 커밋된 spec이 커밋된 preparation과 같은 ITX 결속을 쓰는지 본다.
 test("nationwide candidate build spec은 preparation과 같은 ITX coverage contract·topology 증거 결속을 쓴다", async () => {
-  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const readJson = async (relative) => JSON.parse((await pinnedRead(relative)).toString("utf8"));
   const { materialization } = await readJson("tools/datapack/release/nationwide-candidate-preparation.json");
   const buildSpec = await readJson("tools/datapack/release/candidate-build-spec.json");
   assert.deepEqual(
@@ -969,19 +979,20 @@ const MOLIT_ESTIMATE_STATION_IDS = ["station-dbfe9e072d98", "station-623ba7995f5
 
 async function preparedTransferEvidence() {
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
     writeFiles: false,
   });
   // #872 S3: 공식 환승 지표는 서울교통공사 지표와 부산교통공사 지표 두 원천이다. 방향마다 원천 id와 시간을 함께 들고 다닌다.
-  const seoulMetrics = JSON.parse(await readFile(path.join(root, TRANSFER_METRICS_PATH), "utf8")).metrics
+  const seoulMetrics = JSON.parse((await pinnedRead(TRANSFER_METRICS_PATH)).toString("utf8")).metrics
     .map((metric) => ({ ...metric, sourceId: SEOUL_TRANSFER_SOURCE_ID }));
-  const busanMetrics = JSON.parse(await readFile(path.join(root, BUSAN_TRANSFER_METRICS_PATH), "utf8")).metrics
+  const busanMetrics = JSON.parse((await pinnedRead(BUSAN_TRANSFER_METRICS_PATH)).toString("utf8")).metrics
     .map((metric) => ({ ...metric, sourceId: BUSAN_TRANSFER_SOURCE_ID, officialDurationSecondsReference: metric.officialDurationSeconds }));
   // #876(메인 결정 B): 실측 환승시간과 겹치는 서울 방향은 시간 = 실측, 거리 = 서울교통공사 공식 거리, 원천 = 실측 원천,
   // 레코드 hash = 두 원천 레코드 hash의 결속이다. 실측 원천만 있는 방향(거리 없음)은 후보에서 사용 불가다.
-  const measuredByDirection = new Map(JSON.parse(await readFile(path.join(root, MEASURED_METRICS_PATH), "utf8")).metrics
+  const measuredByDirection = new Map(JSON.parse((await pinnedRead(MEASURED_METRICS_PATH)).toString("utf8")).metrics
     .map((metric) => [`${metric.stationId}\0${metric.fromLineId}\0${metric.toLineId}`, metric]));
   const precedence = (metric) => {
     const timed = measuredByDirection.get(`${metric.stationId}\0${metric.fromLineId}\0${metric.toLineId}`);
@@ -1155,7 +1166,7 @@ test("#872 S1 route-edge input은 공식 지표가 없는 역내 환승을 0s/0m
 test("#872 S3 부산교통공사 공식 환승 행은 fan-in head에 결속된 OFFICIAL_SOURCE 경로 행·규칙·route edge가 된다", async () => {
   const { result, metrics, edgeDirection } = await preparedTransferEvidence();
   const pack = result.finalPack;
-  const fanIn = JSON.parse(await readFile(path.join(root, "tools/datapack/release/current-five-region-source-fan-in.json"), "utf8"));
+  const fanIn = JSON.parse((await pinnedRead("tools/datapack/release/current-five-region-source-fan-in.json")).toString("utf8"));
   const head = fanIn.selectedSources.find(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID);
   const busanMetrics = metrics.filter(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID);
   const seoulOfficial = metrics.filter(({ sourceId, metricProvenance }) => sourceId === SEOUL_TRANSFER_SOURCE_ID && metricProvenance === "OFFICIAL_SOURCE");
@@ -1204,7 +1215,7 @@ test("#872 S3 부산교통공사 공식 환승 행은 fan-in head에 결속된 O
   assert.equal(packSource.redistributionAllowed, true);
   // 리뷰 F3: 팩 원천 설명은 이 원천이 실제로 채우는 환승 표와 공식 환승 도메인을 담는다. 값은 inventory에서 유도한다:
   // 필드 = inventory fieldsProvided + 이 원천을 인용하는 팩 표, 도메인 = inventory 도메인 + 공식 환승 거리·시간 원천의 도메인.
-  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const inventory = JSON.parse((await pinnedRead("tools/datapack/source-inventory.json")).toString("utf8"));
   const busanInventory = inventory.sources.find(({ id }) => id === BUSAN_TRANSFER_SOURCE_ID);
   const seoulInventory = inventory.sources.find(({ id }) => id === SEOUL_TRANSFER_SOURCE_ID);
   assert.deepEqual(packSource.fields, [...busanInventory.fieldsProvided, "station_pathway_edges", "transfer_rules"]);
@@ -1217,10 +1228,10 @@ test("#872 S3 부산교통공사 공식 환승 행은 fan-in head에 결속된 O
 });
 
 test("#872 S3 생성기는 커밋된 부산 환승 지표가 fan-in head·재계산과 다르면 명시적으로 실패한다", async () => {
-  const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const readJson = async (relative) => JSON.parse((await pinnedRead(relative)).toString("utf8"));
   const fanIn = await readJson("tools/datapack/release/current-five-region-source-fan-in.json");
   const sourceInventory = await readJson("tools/datapack/source-inventory.json");
-  const read = (relative) => readFile(path.join(root, relative));
+  const read = (relative) => pinnedRead(relative);
   const resolved = await resolveBusanTransferMetrics({ fanIn, sourceInventory, read });
   assert.equal(resolved.metrics.length, 12);
   assert.equal(resolved.head.snapshotId, fanIn.selectedSources.find(({ sourceId }) => sourceId === BUSAN_TRANSFER_SOURCE_ID).snapshotId);
@@ -1404,7 +1415,7 @@ test("#876 #878 전국 후보는 겹치는 방향에 실측 시간·서울 거�
   assert.deepEqual([overlapping, timeOnly], [169, 94]);
   const measuredEdges = pack.stationPathwayEdges.filter(({ sourceId }) => sourceId === MEASURED_SOURCE_ID);
   assert.equal(measuredEdges.length, 124 + 93, "서울 OFFICIAL_SOURCE 거리와 겹치는 방향(124)과 유도 거리 방향(93)이 경로 행이 된다");
-  const head = JSON.parse(await readFile(path.join(root, "tools/datapack/release/source-snapshots.json"), "utf8")).filter(({ sourceId }) => sourceId === MEASURED_SOURCE_ID).at(-1);
+  const head = JSON.parse((await pinnedRead("tools/datapack/release/source-snapshots.json")).toString("utf8")).filter(({ sourceId }) => sourceId === MEASURED_SOURCE_ID).at(-1);
   for (const edge of measuredEdges) {
     assert.equal(edge.sourceSnapshotId, head.snapshotId);
     assert.equal(edge.lastVerifiedAt, head.capturedAt);
@@ -1420,12 +1431,13 @@ test("#876 #878 전국 후보는 겹치는 방향에 실측 시간·서울 거�
 // MOLIT 환승 이동 원천은 새로 닫는 근거로 쓰지 않는다(#872). 근거가 없는 칸은 UNKNOWN으로 남는다.
 test("#876 역내 환승 간선 양끝 TRANSFER 칸은 간선을 뒷받침하는 공식 원천(실측·부산) 레코드로 닫히고, MOLIT 근거는 늘지 않는다", async () => {
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
     writeFiles: false,
   });
-  const read = async (relativePath) => JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
+  const read = async (relativePath) => JSON.parse((await pinnedRead(relativePath)).toString("utf8"));
   const cells = new Map(result.stationLineInput.evidenceRows.filter(({ domain }) => domain === "TRANSFER")
     .map((row) => [`${row.stationId}:${row.lineId}`, row]));
   const transferEdges = result.routeInput.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER");
@@ -1549,7 +1561,7 @@ test("#879 F1 후보 시계가 인용 원문의 OCI 저장 시각보다 앞서�
 });
 
 test("#879 F1 실측 환승 원천은 원장 영수증 hash에 결속된 OCI 영수증의 storedAt 이후 시계에서만 쓴다", async () => {
-  const read = (relative) => readFile(path.join(root, relative));
+  const read = (relative) => pinnedRead(relative);
   const readJson = async (relative) => JSON.parse(await read(relative));
   const [sourceInventory, sourceSnapshots, freshnessPolicy] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"), readJson("tools/datapack/release/source-snapshots.json"), readJson("release/product-gates/datapack-freshness-sla.json"),
@@ -1655,6 +1667,7 @@ test("#872 역 밖 환승은 링크 자체의 공식 VERIFIED 근거가 있을 �
 
 test("#872 전국 후보는 미검증 역 밖 환승을 route-edge 입력·팩에서 빼고, 제외 사유 목록을 돌려주며, 고정 거리·시간을 남기지 않는다", async () => {
   const result = await prepareNationwideCandidate({
+    readRepositoryFile: pinnedRead,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
