@@ -956,3 +956,29 @@ test("CLI는 topology evidence 생략 옵션을 명시적으로 거부한다", a
     /invalid argument: --without-topology-evidence/,
   );
 });
+
+// AquilaXk/easysubway-backend#480 리뷰 F3: includesStairs=false는 계단 없음 근거가 아니다.
+// strict route 자격은 stairAccessState가 STEP_FREE로 확인된 edge에만 준다.
+test("접근성 edge의 strict route 자격은 includesStairs=false가 아니라 stairAccessState STEP_FREE에서만 나온다", async () => {
+  const value = await inputs();
+  const strictFlag = (stairAccessState) => {
+    const reviewedPack = JSON.parse(value.reviewedPackBytes);
+    const edge = reviewedPack.packs[0].networkEdges[0];
+    Object.assign(edge, {
+      accessibilityStatus: "AVAILABLE", verificationStatus: "VERIFIED", provenanceKind: "OFFICIAL_SOURCE",
+      includesStairs: false, stairAccessState,
+    });
+    const { sql } = buildServerTimetableSnapshot({ ...value, reviewedPackBytes: Buffer.from(JSON.stringify(reviewedPack)), buildNow });
+    const row = sql.split("\n").find((line) => line.startsWith("INSERT INTO route_edge_evidence ") && line.includes(`'route-evidence-${edge.id}'`));
+    assert.ok(row, `route edge evidence row for ${edge.id}`);
+    return row;
+  };
+  const eligible = (row) => {
+    const match = /'[a-f0-9]{64}', (TRUE|FALSE), /u.exec(row);
+    assert.ok(match, row);
+    return match[1];
+  };
+  assert.equal(eligible(strictFlag("UNKNOWN")), "FALSE");
+  assert.equal(eligible(strictFlag("STAIR_ONLY")), "FALSE");
+  assert.equal(eligible(strictFlag("STEP_FREE")), "TRUE");
+});
