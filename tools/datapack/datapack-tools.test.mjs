@@ -47,6 +47,7 @@ import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-m
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
+import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
 stageLocalMobileFixture({ repositoryRoot: root });
 const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
 const TEST_ACCESSIBILITY_SNAPSHOT_ID = "test-only-capital-accessibility-fixture-20260809";
@@ -258,12 +259,20 @@ const currentProductionBuildEnv = {
 // 팩은 테스트마다 새로 빌드한다(각 테스트가 자기 출력만 변조한다).
 let currentReleaseCandidateArtifactPromise = null;
 
+// #942: 커밋된 후보의 production 빌드 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천만 등록한 PR에서도 같은 결과).
+let candidateRootPromise;
+function currentCandidateRoot() {
+  candidateRootPromise ??= candidatePinnedWorkspace().then(({ root: candidateRoot }) => candidateRoot);
+  return candidateRootPromise;
+}
+
 async function currentReleaseCandidateArtifact() {
   currentReleaseCandidateArtifactPromise ??= (async () => {
+    const candidateRoot = await currentCandidateRoot();
     const directory = await mkdtemp(path.join(tmpdir(), "easysubway-current-rc-artifact-"));
     process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
     const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-    const buildSpec = JSON.parse(await readFile(path.join(root, buildSpecPath), "utf8"));
+    const buildSpec = JSON.parse(await readFile(path.join(candidateRoot, buildSpecPath), "utf8"));
     const files = {
       stationLine: path.join(directory, "candidate-station-line-input.json"),
       routeEdge: path.join(directory, "candidate-route-edge-input.json"),
@@ -277,7 +286,7 @@ async function currentReleaseCandidateArtifact() {
       "--route-edge-output", files.routeEdge,
       "--fixture-output", files.fixture,
       "--authority-output", files.authority,
-    ], { repositoryRoot: root });
+    ], { repositoryRoot: candidateRoot });
     return { buildSpec, buildSpecPath, files };
   })();
   return currentReleaseCandidateArtifactPromise;
@@ -287,6 +296,7 @@ async function buildCurrentProductionArtifact(context, { buildEnv = {} } = {}) {
   const outputRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-output-"));
   context.after(() => rm(outputRoot, { recursive: true, force: true }));
   const { buildSpec, buildSpecPath, files } = await currentReleaseCandidateArtifact();
+  const candidateRoot = await currentCandidateRoot();
   const output = path.join(outputRoot, "pack");
   await runDatapackInRepository({
     argv: [
@@ -297,7 +307,7 @@ async function buildCurrentProductionArtifact(context, { buildEnv = {} } = {}) {
       "--current-capital-route-edge-input", files.routeEdge,
       "--output", output,
     ],
-    repositoryRoot: root,
+    repositoryRoot: candidateRoot,
     env: {
       ...currentProductionBuildEnv,
       ...buildEnv,
@@ -306,7 +316,7 @@ async function buildCurrentProductionArtifact(context, { buildEnv = {} } = {}) {
   });
   const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
   assert.deepEqual(manifest.packs.map(({ artifactKind }) => artifactKind), ["production"]);
-  return { output, repositoryRoot: root, routeCoverageAuthority: files.authority };
+  return { output, repositoryRoot: candidateRoot, routeCoverageAuthority: files.authority };
 }
 
 function currentProductionValidationArgs({ output, routeCoverageAuthority }) {
