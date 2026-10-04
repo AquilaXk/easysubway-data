@@ -5,10 +5,7 @@ on:
     - cron: "47 */2 * * *"
   workflow_dispatch:
 
-permissions:
-  actions: read
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: current-capital-topology-refresh-${{ github.workflow }}-${{ github.ref }}
@@ -19,6 +16,11 @@ jobs:
     name: Current topology refresh
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+      issues: write
     environment: itx-current-collection
     timeout-minutes: 45
     steps:
@@ -312,3 +314,8 @@ jobs:
             ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/itx-completeness.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
