@@ -240,3 +240,43 @@ test("#929 D3 정기 역할 release request는 그 후보를 만든 정기 run(g
   assert.ok(releaseRequestBindingViolations(boundPair({ request: { gateRun } }))
     .some((violation) => /person roles require workflow_dispatch/u.test(violation)));
 });
+
+test("#931 F1 CLI는 gateRun을 결속한 request를 GitHub run 기록과 대조해야만 통과시킨다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "release-request-gate-run-"));
+  const spec = buildSpec({ builderGitSha: "a".repeat(40), publishedAt: "2026-10-04T22:23:31.456Z" });
+  const specBytes = JSON.stringify(spec);
+  const gateRun = {
+    repository: GATE_RUN_REPOSITORY, workflowPath: GATE_RUN_WORKFLOW_PATH,
+    runId: 37200000001, runAttempt: 1, event: "schedule", headSha: "a".repeat(40),
+  };
+  const record = {
+    id: 37200000001, run_attempt: 1, event: "schedule", head_sha: "a".repeat(40), head_branch: "main",
+    path: `${GATE_RUN_WORKFLOW_PATH}@refs/heads/main`, conclusion: "success",
+    repository: { full_name: GATE_RUN_REPOSITORY }, head_repository: { full_name: GATE_RUN_REPOSITORY },
+    run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
+  };
+  const buildSpecPath = path.join(dir, "candidate-build-spec.json");
+  const requestPath = path.join(dir, "release-request.json");
+  const recordPath = path.join(dir, "gate-run-record.json");
+  const staleRecordPath = path.join(dir, "stale-gate-run-record.json");
+  await writeFile(buildSpecPath, specBytes);
+  await writeFile(requestPath, JSON.stringify(releaseRequest(sha256(specBytes), {
+    requestedBy: SCHEDULED_RELEASE_ROLES.requestedBy, approvedBy: SCHEDULED_RELEASE_ROLES.approvedBy, gateRun,
+  })));
+  await writeFile(recordPath, JSON.stringify(record));
+  await writeFile(staleRecordPath, JSON.stringify({ ...record, run_started_at: "2026-09-27T22:23:10Z", updated_at: "2026-09-27T22:41:02Z" }));
+
+  const unverified = runCli(buildSpecPath, requestPath);
+  assert.notEqual(unverified.status, 0);
+  assert.match(unverified.stderr, /gate run record is required/);
+  const verified = runCli(buildSpecPath, requestPath, ["--gate-run-record", recordPath]);
+  assert.equal(verified.status, 0, verified.stderr);
+  const replayed = runCli(buildSpecPath, requestPath, ["--gate-run-record", staleRecordPath]);
+  assert.notEqual(replayed.status, 0);
+  assert.match(replayed.stderr, /candidate clock/);
+
+  const person = await writePair();
+  const personWithRecord = runCli(person.buildSpecPath, person.requestPath, ["--gate-run-record", recordPath]);
+  assert.notEqual(personWithRecord.status, 0);
+  assert.match(personWithRecord.stderr, /no gateRun/);
+});
