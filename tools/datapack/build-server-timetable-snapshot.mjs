@@ -394,7 +394,9 @@ function routeEdgeEvidenceInsert(edge, endpoint) {
   const strictEligible = edge.accessibilityStatus === "AVAILABLE"
     && edge.verificationStatus === "VERIFIED"
     && ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_VERIFIED"].includes(edge.provenanceKind)
-    && edge.includesStairs === false;
+    // AquilaXk/easysubway-backend#480: includesStairs=false는 기본값일 수 있어 계단 없음 근거가 아니다. STEP_FREE만 인정한다.
+    && edge.includesStairs === false
+    && edge.stairAccessState === "STEP_FREE";
   const verificationStatus = edge.verificationStatus === "NOT_VERIFIED" ? "UNKNOWN" : edge.verificationStatus;
   return "INSERT INTO route_edge_evidence (id, station_id, line_id, edge_id, edge_type, source_id, source_snapshot_id, provenance_kind, verification_status, last_verified_at, evidence_hash, strict_route_eligible, blocker_reason, created_at) VALUES ("
     + `${sqlText(`route-evidence-${edge.id}`, "route evidence id")}, ${sqlText(endpoint.stationId, "route evidence station")}, `
