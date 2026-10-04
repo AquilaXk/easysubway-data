@@ -1,0 +1,112 @@
+name: Nationwide Candidate Refresh
+
+# 전국 후보 갱신(#927, #870): 로컬에서 돌리던 refresh-nationwide-candidate를 CI에서 실행하고
+# 결과를 automation 브랜치의 draft PR로 올린다. 원천 수집·등록은 하지 않는다(저장소 파일만 읽는다).
+# 2인 역할 인자는 dispatch 입력으로만 받는다. 후보 시계는 실행 시각이다.
+on:
+  workflow_dispatch:
+    inputs:
+      releaseSequence:
+        description: 새 후보의 releaseSequence(커밋된 후보보다 커야 한다)
+        required: true
+        type: string
+      requestedBy:
+        description: 요청 역할(예 data-operator-lead)
+        required: true
+        type: string
+      approvedBy:
+        description: 승인 역할(요청 역할과 달라야 한다, 예 data-release-authority)
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nationwide-candidate-refresh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Nationwide candidate refresh
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Validate candidate refresh inputs
+        id: plan
+        env:
+          RELEASE_SEQUENCE: ${{ inputs.releaseSequence }}
+          REQUESTED_BY: ${{ inputs.requestedBy }}
+          APPROVED_BY: ${{ inputs.approvedBy }}
+        run: |
+          set -euo pipefail
+          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --github-output "${GITHUB_OUTPUT}"
+      - name: Refresh nationwide candidate
+        env:
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
+          APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}"
+      - name: Commit refreshed candidate outputs
+        env:
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t outputs < <(node --input-type=module -e 'import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./tools/datapack/refresh-nationwide-candidate.mjs"; console.log(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.join("\n"));')
+          [[ "${#outputs[@]}" -gt 0 ]] || { echo "candidate refresh output list is empty" >&2; exit 1; }
+          git add -- "${outputs[@]}"
+          [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "candidate refresh changed a path outside its outputs" >&2; exit 1; }
+          git diff --cached --quiet && { echo "candidate refresh produced no change" >&2; exit 1; }
+          branch="automation/927-nationwide-candidate-refresh-${GITHUB_RUN_ID}"
+          git switch -c "${branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})"
+          gh auth setup-git
+          git push origin "${branch}"
+          printf 'CANDIDATE_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+      - name: Create candidate refresh pull request
+        env:
+          EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
+          RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
+          REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
+          APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          body="$(printf '%s\n' \
+            "## Summary" \
+            "" \
+            "- CI가 \`refresh-nationwide-candidate.mjs\`로 전국 후보를 다시 만들었다." \
+            "- releaseSequence: ${RELEASE_SEQUENCE}" \
+            "- 후보 시계(evaluatedAt): ${EVALUATED_AT}" \
+            "- 요청 역할: ${REQUESTED_BY}, 승인 역할: ${APPROVED_BY}" \
+            "- 실행 run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "" \
+            "이 PR이 main에 들어오면 \`datapack-release-candidate-chain.yml\`이 release-candidate를 실행한다." \
+            "" \
+            "Refs #927" \
+            "Refs #870")"
+          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}"
+      - name: Run required CI on the candidate refresh head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다. ci.yml은 이 경로를 위해 dispatch를 받는다.
+          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${CANDIDATE_BRANCH}"
