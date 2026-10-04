@@ -181,3 +181,27 @@ test("#920 기본 고정 근거는 1호선 주말 512·514 행을 같은 시각 
     assert.match(evidence, /subwayTimetable/u);
   }
 });
+
+// 리뷰 F1(#924): 규칙은 행 해시와 열차 번호가 함께 맞을 때만 적용된다. 어느 한쪽만 맞거나
+// 노선·요일구분이 다르면 중복을 버리지 않고 실패한다.
+test("#920 행 해시만 맞거나 열차 번호만 맞거나 노선·요일구분이 다른 규칙은 중복을 격리하지 않고 실패한다", () => {
+  const rows = duplicateRows();
+  const snapshot = projectKricCapitalTimetableSnapshot(observation(rows));
+  const rule = (overrides) => [{
+    routeNumber: "S1101", weekdayType: "토요일+공휴일",
+    keep: { trainNumber: "506", sourceRowSha256: rows[0].sourceRowSha256 },
+    drop: { trainNumber: "512", sourceRowSha256: rows[1].sourceRowSha256 },
+    evidence: "테스트 근거", ...overrides,
+  }];
+  const unresolved = /KRIC_CAPITAL_TIMETABLE_DUPLICATE_TRIP_UNRESOLVED: S1101 토요일\+공휴일 506,512/u;
+  for (const resolutions of [
+    rule({ drop: { trainNumber: "999", sourceRowSha256: rows[1].sourceRowSha256 } }),
+    rule({ drop: { trainNumber: "512", sourceRowSha256: "f".repeat(64) } }),
+    rule({ keep: { trainNumber: "999", sourceRowSha256: rows[0].sourceRowSha256 } }),
+    rule({ keep: { trainNumber: "506", sourceRowSha256: "f".repeat(64) } }),
+    rule({ routeNumber: "S1102" }),
+    rule({ weekdayType: "평일" }),
+  ]) {
+    assert.throws(() => kricCapitalOfficialTimetable(snapshot, { observedAt: OBSERVED_AT, duplicateResolutions: resolutions }), unresolved);
+  }
+});
