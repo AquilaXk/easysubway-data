@@ -1501,6 +1501,64 @@ test("데이터팩 검증기는 trip별 stop_time 시간이 역행하면 거부�
   );
 });
 
+// #918: 원천이 00:00~02:59로 적은 시각은 전날 운행일의 24시 이후 초로 SQLite에 싣는다(인천만이 아니라 모든 기관).
+async function buildFixtureWithStopTimes(name, times) {
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-service-day-${name}-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const rows = fixture.packs[0].transitStopTimes
+    .filter(({ tripId }) => tripId === "trip-seoul-4-local-0805")
+    .sort((left, right) => left.stopSequence - right.stopSequence);
+  assert.equal(rows.length, times.length);
+  rows.forEach((row, index) => Object.assign(row, times[index]));
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+    { cwd: root, env: productionEnv },
+  );
+  return outputDir;
+}
+
+test("#918 수도권 4호선 trip의 00시대 정차도 데이터팩 SQLite에는 86400초 이상으로 싣고 검증을 통과한다", async (context) => {
+  const outputDir = await buildFixtureWithStopTimes("after-midnight", [
+    { arrivalSeconds: 600, departureSeconds: 600 },
+    { arrivalSeconds: 1_320, departureSeconds: 1_440 },
+  ]);
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
+  try {
+    assert.deepEqual(database.prepare(`
+      SELECT stop_sequence, arrival_seconds, departure_seconds FROM transit_stop_times
+      WHERE trip_id = 'trip-seoul-4-local-0805' ORDER BY stop_sequence
+    `).all().map((row) => ({ ...row })), [
+      { stop_sequence: 1, arrival_seconds: 87_000, departure_seconds: 87_000 },
+      { stop_sequence: 2, arrival_seconds: 87_720, departure_seconds: 87_840 },
+    ]);
+  } finally {
+    database.close();
+  }
+  await execFileAsync(process.execPath, [
+    "tools/datapack/validate-datapack.mjs", "--manifest", path.join(outputDir, "current.json"), "--root", outputDir,
+  ], { cwd: root, env: productionEnv });
+});
+
+test("#918 운행일 경계(03:00)를 가로지르는 trip은 변환 뒤 시각이 역행해 검증기가 거부한다", async (context) => {
+  const outputDir = await buildFixtureWithStopTimes("straddle", [
+    { arrivalSeconds: 10_500, departureSeconds: 10_500 },
+    { arrivalSeconds: 11_100, departureSeconds: 11_220 },
+  ]);
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-datapack.mjs", "--manifest", path.join(outputDir, "current.json"), "--root", outputDir,
+    ], { cwd: root, env: productionEnv }),
+    /transit_stop_times must be monotonic: trip-seoul-4-local-0805/,
+  );
+});
+
 test("원격 데이터팩 검증 wrapper는 manifest와 pack을 내려받아 기존 validator를 실행한다", async () => {
   const packOutputDir = path.join(tmpdir(), `easysubway-remote-datapack-source-${Date.now()}`);
   const downloadDir = path.join(tmpdir(), `easysubway-remote-datapack-download-${Date.now()}`);
