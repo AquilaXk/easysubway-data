@@ -66,3 +66,19 @@ test("OPEN_PR 판단 뒤 열린 갱신 PR 상한 검사를 실행하고, 실패 
     assert.equal(ifCondition(all[report].block), "${{ failure() }}", file);
   }
 });
+
+// #947 리뷰 F1: actions: write로는 어떤 workflow든 dispatch할 수 있다. 갱신 workflow 4종 모두에서
+// dispatch는 갱신 PR 브랜치의 ci.yml뿐이고, 정해진 횟수만 있는지 고정한다.
+export const EXPECTED_CI_DISPATCHES = 2;
+
+test("갱신 workflow 4종의 workflow dispatch는 모두 ci.yml이고 정해진 횟수뿐이다", () => {
+  for (const file of WORKFLOWS) {
+    const yml = workflowText(file);
+    const dispatches = [...yml.matchAll(/gh workflow run[^\n]*/gu)].map(([line]) => line);
+    assert.equal(dispatches.length, EXPECTED_CI_DISPATCHES, `${file}: ${dispatches.join(" | ")}`);
+    for (const line of dispatches) {
+      assert.match(line, /^gh workflow run ci\.yml --repo "\$\{GITHUB_REPOSITORY\}" --ref "\$\{[A-Za-z_]+\}"$/u, `${file}: ${line}`);
+    }
+    assert.doesNotMatch(yml, /\/actions\/workflows\/[^\n]*\/dispatches|repository_dispatch|gh api[^\n]*dispatches/u, file);
+  }
+});
