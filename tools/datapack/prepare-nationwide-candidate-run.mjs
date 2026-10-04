@@ -61,6 +61,7 @@ import {
   kricStationLinesOfficialTimetable,
 } from "./lib/kric-station-lines-timetable.mjs";
 import { materializeOfficialLineTimetables } from "./lib/official-line-timetable.mjs";
+import { holidayCalendarViolations } from "./lib/regional-timetable-integrator.mjs";
 import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
 import { buildRetainedGwangjuScheduleTables } from "./materialize-gwangju-timetable.mjs";
 import {
@@ -1528,6 +1529,8 @@ export async function prepareNationwideCandidate({
   // Integrate Regional Timetables (Busan, Daegu, Daejeon, Gwangju)
   const regionalSchedule = integrateRegionalTimetables({
     finalPack,
+    // #919: 공휴일은 KASI 특일 정보 기준 목록(fetch-kasi 테스트가 2026년 원문과 같음을 고정)이다.
+    holidayDates: HOLIDAYS_2026,
     busanTimetable,
     busanAccessibility,
     daeguTimetable1,
@@ -1566,6 +1569,12 @@ export async function prepareNationwideCandidate({
   });
   for (const table of ["transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
     finalPack[table] = [...finalPack[table], ...gwangjuSchedule[table]];
+  }
+  // #919: 모든 기관 달력이 모인 뒤, 공휴일에 평일·토요일 달력이 운행하거나 휴일 달력이 없는 노선이 있으면 후보를 만들지 않는다.
+  const holidayCalendarRows = holidayCalendarViolations({ ...finalPack, holidayDates: HOLIDAYS_2026 });
+  if (holidayCalendarRows.length > 0) {
+    const routes = [...new Set(holidayCalendarRows.map(({ routeId }) => routeId))];
+    throw new Error(`nationwide candidate public-holiday calendar violations: ${holidayCalendarRows.length} rows on ${routes.length} routes (${routes.slice(0, 5).join(", ")})`);
   }
   // 광주 보관본은 수도권·코레일과 같은 원천(kric-nationwide-timetable-file)이다: 팩 원천 항목 하나에 광주 노선 범위를 합친다.
   const gwangjuTopologySource = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology");

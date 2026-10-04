@@ -4,7 +4,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { integrateRegionalTimetables } from "./regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, integrateRegionalTimetables } from "./regional-timetable-integrator.mjs";
+import { HOLIDAYS_2026 } from "../materialize-incheon-timetable.mjs";
 import { checkNoSyntheticScheduleLoops } from "../../ci/guard-datapack-anti-cheat.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -46,6 +47,7 @@ test("integrateRegionalTimetables integrates all 4 regional authorities with aut
 
   const integrated = integrateRegionalTimetables({
     finalPack: initialPack,
+    holidayDates: HOLIDAYS_2026,
     busanTimetable,
     busanAccessibility,
     daeguTimetable1,
@@ -146,4 +148,78 @@ test("integrateRegionalTimetables integrates all 4 regional authorities with aut
       }
     }
   }
+});
+
+// #919: 공휴일은 KASI 특일 정보 기준(HOLIDAYS_2026, fetch-kasi 테스트가 원문과 같음을 고정한다).
+// 휴일 = 토·일·공휴일. 토요일 시간표가 있는 부산·대구는 토요일 공휴일에 휴일 시간표를 쓰고,
+// 토요일 시간표가 없는 대전은 휴일 달력이 토요일을 이미 포함한다. 세 기관 원천에는 명절 시간표가 없다(휴일 시간표).
+test("#919 부산·대구·대전 달력은 공휴일에 평일·토요일 달력을 빼고(2) 휴일 달력을 더한다(1)", async () => {
+  const integrated = integrateRegionalTimetables({
+    finalPack: { stations: [], stationLines: [], serviceCalendars: [], serviceCalendarDates: [] },
+    holidayDates: HOLIDAYS_2026,
+  });
+  const rows = integrated.serviceCalendarDates;
+  const on = (date) => rows.filter((row) => row.date === date)
+    .map(({ serviceId, exceptionType }) => `${serviceId}:${exceptionType}`).sort();
+  const lines = (pattern) => ["daegu-line1", "daegu-line2", "daegu-line3"].map((prefix) => pattern.replace("daegu", prefix));
+  // 2026-10-09(금, 한글날)
+  assert.deepEqual(on("20261009"), [
+    "busan-holiday-2026:1", "busan-weekday-2026:2",
+    ...lines("daegu-holiday-2026:1"), ...lines("daegu-weekday-2026:2"),
+    "daejeon-holiday-2026:1", "daejeon-weekday-2026:2",
+  ].sort());
+  // 2026-10-03(토, 개천절): 토요일 시간표가 있는 기관만 토요일→휴일. 대전 휴일 달력은 토요일에 이미 운행한다.
+  assert.deepEqual(on("20261003"), [
+    "busan-holiday-2026:1", "busan-saturday-2026:2",
+    ...lines("daegu-holiday-2026:1"), ...lines("daegu-saturday-2026:2"),
+  ].sort());
+  // 2026-03-01(일, 삼일절): 일요일은 이미 휴일 달력이다.
+  assert.deepEqual(on("20260301"), []);
+  // 기관별 행 수: 부산·대구 노선당 평일 공휴일 16 + 토요일 공휴일 4 + 휴일 추가 20, 대전 평일 16 + 휴일 16
+  const count = (prefix) => rows.filter(({ serviceId }) => serviceId.startsWith(prefix)).length;
+  assert.deepEqual([count("busan-"), count("daegu-line1-"), count("daegu-line2-"), count("daegu-line3-"), count("daejeon-")],
+    [40, 40, 40, 40, 32]);
+  assert.equal(rows.length, 192);
+  assert.ok(rows.every((row) => Object.keys(row).sort().join() === "date,exceptionType,serviceId"));
+});
+
+test("#919 공휴일 목록이 없거나 형식이 틀리면 달력을 추정으로 채우지 않고 실패한다", () => {
+  const finalPack = { stations: [], stationLines: [], serviceCalendars: [], serviceCalendarDates: [] };
+  for (const holidayDates of [undefined, [], ["2026-10-09"], ["20261309"], ["20261009", "20261009"], ["20251225"]]) {
+    assert.throws(() => integrateRegionalTimetables({ finalPack, holidayDates }), /REGIONAL_TIMETABLE_HOLIDAY_DATES_INVALID/u);
+  }
+});
+
+test("#919 공휴일에 평일·토요일 달력이 운행하거나 휴일 달력이 하나도 운행하지 않는 노선을 찾는다", () => {
+  const calendar = (serviceId, days) => ({ serviceId, ...Object.fromEntries(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    .map((day, index) => [day, days[index] === 1])), startDate: "20260101", endDate: "20261231" });
+  const serviceCalendars = [
+    calendar("ok-weekday", [1, 1, 1, 1, 1, 0, 0]), calendar("ok-holiday", [0, 0, 0, 0, 0, 1, 1]),
+    calendar("bad-weekday", [1, 1, 1, 1, 1, 0, 0]), calendar("bad-saturday", [0, 0, 0, 0, 0, 1, 0]), calendar("bad-holiday", [0, 0, 0, 0, 0, 0, 1]),
+    calendar("festival", [0, 0, 0, 0, 0, 0, 0]), calendar("festival-holiday", [0, 0, 0, 0, 0, 0, 1]),
+    calendar("saturday-only", [0, 0, 0, 0, 0, 1, 0]),
+  ];
+  const serviceCalendarDates = [
+    { serviceId: "ok-weekday", date: "20261009", exceptionType: 2 }, { serviceId: "ok-holiday", date: "20261009", exceptionType: 1 },
+    { serviceId: "festival", date: "20260925", exceptionType: 1 }, { serviceId: "festival-holiday", date: "20260925", exceptionType: 2 },
+    { serviceId: "festival-holiday", date: "20261003", exceptionType: 1 }, { serviceId: "saturday-only", date: "20261003", exceptionType: 2 }, { serviceId: "festival-holiday", date: "20261009", exceptionType: 1 },
+  ];
+  const transitTrips = [
+    { routeId: "route-ok", serviceId: "ok-weekday" }, { routeId: "route-ok", serviceId: "ok-holiday" },
+    { routeId: "route-bad", serviceId: "bad-weekday" }, { routeId: "route-bad", serviceId: "bad-saturday" }, { routeId: "route-bad", serviceId: "bad-holiday" },
+    { routeId: "route-festival", serviceId: "festival" }, { routeId: "route-festival", serviceId: "festival-holiday" },
+    // 토요일 열차만 있는 운행 패턴 노선(광주 보관본 등)은 공휴일에 운행하지 않는 것이 맞다.
+    { routeId: "route-saturday-pattern", serviceId: "saturday-only" },
+  ];
+  const violations = holidayCalendarViolations({ serviceCalendars, serviceCalendarDates, transitTrips, holidayDates: ["20260925", "20261003", "20261009"] });
+  assert.deepEqual(violations, [
+    { routeId: "route-bad", date: "20260925", serviceId: "bad-weekday", reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" },
+    { routeId: "route-bad", date: "20260925", serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" },
+    { routeId: "route-bad", date: "20261003", serviceId: "bad-saturday", reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" },
+    { routeId: "route-bad", date: "20261003", serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" },
+    { routeId: "route-bad", date: "20261009", serviceId: "bad-weekday", reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" },
+    { routeId: "route-bad", date: "20261009", serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" },
+    { routeId: "route-ok", date: "20260925", serviceId: "ok-weekday", reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" },
+    { routeId: "route-ok", date: "20260925", serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" },
+  ]);
 });

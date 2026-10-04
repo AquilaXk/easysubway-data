@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
 // 생성 도구의 계약 검사·증거 경로. 각 테스트가 따로 RED/GREEN을 보이도록 동적으로 읽는다.
 async function carDoorContract() {
@@ -50,6 +51,7 @@ test("지역 시간표 통합은 정차 시각을 stationId·lineId·arrivalSeco
         { stationId: "station-b", lineId },
       ],
     },
+    holidayDates: HOLIDAYS_2026,
     daeguAccessibility: {
       rows: [
         { stationCode: "101", stationName: "가역", lineId },

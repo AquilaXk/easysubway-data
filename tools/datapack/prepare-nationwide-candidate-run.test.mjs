@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+import { holidayCalendarViolations } from "./lib/regional-timetable-integrator.mjs";
+import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
@@ -375,7 +377,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.strictEqual(pack.transitTrips.length, 26490, "Pack must contain exactly 26,490 authentic trips");
   assert.strictEqual(pack.transitStopTimes.length, 677156, "Pack must contain exactly 677,156 authentic stop times");
   assert.strictEqual(pack.serviceCalendars.length, 31);
-  assert.strictEqual(pack.serviceCalendarDates.length, 206);
+  // #919: 부산 40·대구 노선별 40(×3)·대전 32, 모두 192행의 KASI 공휴일 예외를 더한다.
+  assert.strictEqual(pack.serviceCalendarDates.length, 398);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
@@ -482,6 +485,8 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
   });
 
   const pack = result.finalPack;
+  // #919: 조립한 전국 팩은 KASI 공휴일마다 모든 노선에서 휴일(또는 명절) 달력만 운행한다.
+  assert.deepEqual(holidayCalendarViolations({ ...pack, holidayDates: HOLIDAYS_2026 }), []);
   const targetLine = pack.stationLines.find(
     (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
   );

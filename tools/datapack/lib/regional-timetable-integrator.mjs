@@ -10,8 +10,96 @@ const sha256 = (value) => createHash("sha256").update(value).digest("hex");
  * 4. Gwangju Metropolitan Rapid Transit (Line 1)
  */
 
+const WEEKDAY_FIELDS = Object.freeze(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]);
+const YYYYMMDD = /^\d{8}$/u;
+
+function weekdayIndex(date) {
+  // 월=0 … 일=6
+  return (new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}T00:00:00Z`).getUTCDay() + 6) % 7;
+}
+
+function validCalendarDate(date) {
+  if (typeof date !== "string" || !YYYYMMDD.test(date)) return false;
+  const parsed = new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}T00:00:00Z`);
+  return Number.isFinite(parsed.valueOf()) && parsed.toISOString().slice(0, 10).replaceAll("-", "") === date;
+}
+
+/**
+ * #919: 공휴일(KASI 특일 정보) 목록을 검증한다. 목록이 없거나 달력 연도(2026)를 하나도 덮지 않으면
+ * 공휴일 예외를 추정으로 채우지 않고 실패한다.
+ */
+function requiredHolidayDates(holidayDates) {
+  const invalid = () => { throw new Error("REGIONAL_TIMETABLE_HOLIDAY_DATES_INVALID"); };
+  if (!Array.isArray(holidayDates) || holidayDates.length === 0) invalid();
+  if (holidayDates.some((date) => !validCalendarDate(date)) || new Set(holidayDates).size !== holidayDates.length) invalid();
+  if (!holidayDates.some((date) => date.startsWith("2026"))) invalid();
+  return [...holidayDates].sort();
+}
+
+/**
+ * #919: 휴일 = 토·일·공휴일(QA 2026-10-03). 공휴일에는 평일·토요일 달력을 빼고(2) 휴일 달력을 더한다(1).
+ * 휴일 달력이 이미 그 요일에 운행하면(일요일, 대전·광주의 토요일) 예외 행을 만들지 않는다.
+ */
+function holidayExceptionRows(calendars, holidayDates) {
+  const rows = [];
+  for (const date of holidayDates) {
+    const weekday = WEEKDAY_FIELDS[weekdayIndex(date)];
+    for (const { calendar, holiday } of calendars) {
+      if (date < calendar.startDate || date > calendar.endDate) continue;
+      if (!holiday && calendar[weekday]) rows.push({ serviceId: calendar.serviceId, date, exceptionType: 2 });
+      if (holiday && !calendar[weekday]) rows.push({ serviceId: calendar.serviceId, date, exceptionType: 1 });
+    }
+  }
+  return rows;
+}
+
+function calendarActiveOn(calendar, exceptions, date) {
+  if (date < calendar.startDate || date > calendar.endDate) return false;
+  const exception = exceptions.get(`${calendar.serviceId}\u0000${date}`);
+  if (exception === 1) return true;
+  if (exception === 2) return false;
+  return calendar[WEEKDAY_FIELDS[weekdayIndex(date)]] === true;
+}
+
+/**
+ * #919 불변식(모든 기관): 공휴일에 평일·토요일 달력(일요일 미운행, 월~토 중 하루 이상 운행)이 운행하거나,
+ * 휴일·명절 달력을 가진 노선의 달력 창 안인데 그 달력이 하나도 운행하지 않으면 위반이다.
+ * 명절 달력(요일 운행 없음, 날짜 예외로만 운행)은 공휴일에 운행해도 된다.
+ */
+export function holidayCalendarViolations({ serviceCalendars, serviceCalendarDates, transitTrips, holidayDates }) {
+  const calendars = new Map(serviceCalendars.map((calendar) => [calendar.serviceId, calendar]));
+  const exceptions = new Map(serviceCalendarDates.map(({ serviceId, date, exceptionType }) => [`${serviceId}\u0000${date}`, exceptionType]));
+  const servicesByRoute = new Map();
+  for (const { routeId, serviceId } of transitTrips) {
+    if (!servicesByRoute.has(routeId)) servicesByRoute.set(routeId, new Set());
+    servicesByRoute.get(routeId).add(serviceId);
+  }
+  const regular = (calendar) => calendar.sunday !== true && WEEKDAY_FIELDS.slice(0, 6).some((field) => calendar[field] === true);
+  const violations = [];
+  for (const routeId of [...servicesByRoute.keys()].sort()) {
+    const routeCalendars = [...servicesByRoute.get(routeId)].sort().map((serviceId) => {
+      const calendar = calendars.get(serviceId);
+      if (!calendar) throw new Error(`holiday calendar check: trip service calendar is missing: ${serviceId}`);
+      return calendar;
+    });
+    for (const date of [...holidayDates].sort()) {
+      if (!routeCalendars.some(({ startDate, endDate }) => startDate <= date && date <= endDate)) continue;
+      const active = routeCalendars.filter((calendar) => calendarActiveOn(calendar, exceptions, date));
+      for (const calendar of active.filter(regular)) {
+        violations.push({ routeId, date, serviceId: calendar.serviceId, reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" });
+      }
+      // 휴일·명절 달력이 아예 없는 노선(평일·토요일 운행 패턴만 있는 노선)은 공휴일에 운행하지 않는 것이 맞다.
+      if (routeCalendars.some((calendar) => !regular(calendar)) && !active.some((calendar) => !regular(calendar))) {
+        violations.push({ routeId, date, serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" });
+      }
+    }
+  }
+  return violations;
+}
+
 export function integrateRegionalTimetables({
   finalPack,
+  holidayDates,
   busanTimetable,
   busanAccessibility,
   daeguTimetable1,
@@ -26,8 +114,17 @@ export function integrateRegionalTimetables({
   const routes = [...(finalPack.transitRoutes ?? [])];
   const trips = [...(finalPack.transitTrips ?? [])];
   const stopTimes = [...(finalPack.transitStopTimes ?? [])];
+  const holidays = requiredHolidayDates(holidayDates);
   const calendars = [...(finalPack.serviceCalendars ?? [])];
   const calendarDates = [...(finalPack.serviceCalendarDates ?? [])];
+  // #919: 이 통합기가 만든 달력과 그 역할(휴일 달력 여부). 공휴일 예외 행은 마지막에 한 번에 만든다.
+  const regionalCalendars = [];
+  const addCalendars = (...entries) => {
+    for (const { holiday, ...calendar } of entries) {
+      calendars.push(calendar);
+      regionalCalendars.push({ calendar, holiday });
+    }
+  };
   // #855: 원천 정차 2개 이상으로 열차를 만들 수 없는 대전·광주 원천 시각. 추정 정차를 붙이지 않고 증거로 남긴다.
   const regionalTimetableQuarantine = [];
 
@@ -124,10 +221,10 @@ export function integrateRegionalTimetables({
     });
   }
 
-  calendars.push(
-    { serviceId: "busan-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "busan-saturday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "busan-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, startDate: "20260101", endDate: "20261231" }
+  addCalendars(
+    { serviceId: "busan-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
+    { serviceId: "busan-saturday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
+    { serviceId: "busan-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, startDate: "20260101", endDate: "20261231", holiday: true }
   );
 
   const busanResolvers = {};
@@ -218,10 +315,10 @@ export function integrateRegionalTimetables({
       lineId: cfg.lineId,
     });
 
-    calendars.push(
-      { serviceId: `daegu-line${cfg.num}-weekday-2026`, monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
-      { serviceId: `daegu-line${cfg.num}-saturday-2026`, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false, startDate: "20260101", endDate: "20261231" },
-      { serviceId: `daegu-line${cfg.num}-holiday-2026`, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, startDate: "20260101", endDate: "20261231" }
+    addCalendars(
+      { serviceId: `daegu-line${cfg.num}-weekday-2026`, monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
+      { serviceId: `daegu-line${cfg.num}-saturday-2026`, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
+      { serviceId: `daegu-line${cfg.num}-holiday-2026`, monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true, startDate: "20260101", endDate: "20261231", holiday: true }
     );
 
     const resolver = makeStationResolver(cfg.lineId, daeguAccessibility?.rows);
@@ -283,9 +380,9 @@ export function integrateRegionalTimetables({
     lineId: daejeonLineId,
   });
 
-  calendars.push(
-    { serviceId: "daejeon-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "daejeon-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231" }
+  addCalendars(
+    { serviceId: "daejeon-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
+    { serviceId: "daejeon-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231", holiday: true }
   );
 
   const daejeonResolver = makeStationResolver(daejeonLineId, daejeonAccessibility?.rows);
@@ -425,9 +522,9 @@ export function integrateRegionalTimetables({
     lineId: gwangjuLineId,
   });
 
-  if (gwangjuTimetable) calendars.push(
-    { serviceId: "gwangju-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231" },
-    { serviceId: "gwangju-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231" }
+  if (gwangjuTimetable) addCalendars(
+    { serviceId: "gwangju-weekday-2026", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, startDate: "20260101", endDate: "20261231", holiday: false },
+    { serviceId: "gwangju-holiday-2026", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, startDate: "20260101", endDate: "20261231", holiday: true }
   );
 
   const gwangjuResolver = makeStationResolver(gwangjuLineId, gwangjuAccessibility?.rows);
@@ -551,6 +648,10 @@ export function integrateRegionalTimetables({
       }
     }
   }
+
+  // #919: 세 기관 원천의 운행일 구분은 평일·토요일·휴일(부산 day 1·2·3, 대구 WEEK·SAT·HOLI)과 평일·휴일(대전 dayType 0·1)뿐이다.
+  // 명절 시간표가 없으므로 설·추석도 휴일 시간표로 운행한다(추정 시간표를 만들지 않는다).
+  calendarDates.push(...holidayExceptionRows(regionalCalendars, holidays));
 
   return {
     transitRoutes: routes,
