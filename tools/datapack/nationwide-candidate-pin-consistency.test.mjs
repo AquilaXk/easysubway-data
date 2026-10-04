@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -26,7 +26,8 @@ const FAN_IN_INPUT_PATHS = Object.freeze({
 
 const manifest = await committedCandidateInputManifest(root);
 const pinnedRead = await candidatePinnedReader({ root });
-const readCommitted = (relative) => readFile(path.join(root, relative));
+// 후보 산출물은 커밋된 바이트(HEAD)로 읽는다. 같은 checkout에서 함께 도는 prepare 테스트가 산출물 파일을 다시 써도 영향받지 않는다.
+const readCommitted = async (relative) => execFileSync("git", ["show", `HEAD:${relative}`], { cwd: root, maxBuffer: 256 * 1024 * 1024 });
 
 test("후보 입력 매니페스트는 커밋된 후보 spec·preparation·fan-in 바이트와 후보 id에 결속된다", async () => {
   const [specBytes, preparationBytes, fanInBytes] = await Promise.all([BUILD_SPEC_PATH, PREPARATION_PATH, FAN_IN_PATH].map(readCommitted));
