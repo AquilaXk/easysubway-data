@@ -11,6 +11,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 import { holidayCalendarViolations, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
+import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, createCandidateInputReader, parseCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
 
@@ -526,6 +527,57 @@ async function committedSelectionInputs() {
     readSourceBytes: (relative) => readFile(path.join(root, relative)),
   };
 }
+
+async function selectionInputsFrom(read) {
+  const readJson = async (relative) => JSON.parse(await read(relative));
+  return {
+    sourceInventory: await readJson("tools/datapack/source-inventory.json"),
+    sourceSnapshots: await readJson("tools/datapack/release/source-snapshots.json"),
+    fanIn: await readJson("tools/datapack/release/current-five-region-source-fan-in.json"),
+    freshnessPolicy: await readJson("release/product-gates/datapack-freshness-sla.json"),
+    readSourceBytes: read,
+  };
+}
+
+// #942: 원천 등록 PR은 후보를 다시 만들지 않는다. 그 PR에서도 커밋된 후보는 자기가 고정한 입력으로 재현돼야 하고,
+// 후보가 현재 head를 가리키는지(currency)는 RC·publish 게이트가 따로 실패로 드러낸다.
+test("#942 원천만 새 head로 등록한 PR에서도 후보 입력 선택은 후보가 고정한 입력으로 재현되고 currency 검사만 실패한다", async () => {
+  const manifest = parseCandidateInputManifest(await readFile(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH)));
+  const ledgerPath = "tools/datapack/release/source-snapshots.json";
+  const pinnedLedger = await readFile(path.join(root, ledgerPath));
+  const ledger = JSON.parse(pinnedLedger);
+  const head = ledger.filter(({ sourceId }) => sourceId === "busan-transportation-timetable").at(-1);
+  assert.ok(head);
+  const advancedLedger = Buffer.from(`${JSON.stringify([
+    ...ledger,
+    { ...head, snapshotId: `${head.snapshotId}-next`, previousSnapshotId: head.snapshotId },
+  ], null, 2)}\n`);
+  const readLocal = (relative) => (relative === ledgerPath ? Promise.resolve(advancedLedger) : readFile(path.join(root, relative)));
+  // 작업 트리를 그대로 읽으면 새 head 때문에 후보 입력 선택이 실패한다(현재 PR CI가 막히는 원인).
+  await assert.rejects(resolveNationwideCandidateInputSnapshots(await selectionInputsFrom(readLocal)),
+    /fan-in selection does not match ledger head for busan-transportation-timetable/);
+  const fetched = [];
+  const read = createCandidateInputReader({
+    manifest,
+    readLocal,
+    baseUrl: "https://objects.example.test/o",
+    fetchImpl: async (url) => {
+      fetched.push(url);
+      return url.endsWith(`/candidate-inputs/sha256/${sha256(pinnedLedger)}`)
+        ? new Response(pinnedLedger, { status: 200 })
+        : new Response("missing", { status: 404 });
+    },
+  });
+  const selected = await resolveNationwideCandidateInputSnapshots(await selectionInputsFrom(read));
+  assert.equal(Object.keys(selected).length, 18);
+  for (const { path: selectedPath, bytes } of Object.values(selected)) {
+    const pinned = manifest.files.find((entry) => entry.path === selectedPath);
+    assert.ok(pinned, selectedPath);
+    assert.equal(sha256(bytes), pinned.sha256, selectedPath);
+  }
+  assert.deepEqual(fetched, [`https://objects.example.test/o/candidate-inputs/sha256/${sha256(pinnedLedger)}`]);
+  await assert.rejects(assertCandidateInputsCurrent({ manifest, readLocal }), /CANDIDATE_INPUT_STALE: tools\/datapack\/release\/source-snapshots.json/);
+});
 
 // 커밋된 후보(2026-10-01 재생성)의 시계는 인천 station-info(route_graph_topology, P1D) 창 안이다.
 // 선택 규칙만 보는 테스트는 커밋된 시계를 그대로 쓴다.
