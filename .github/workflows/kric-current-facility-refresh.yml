@@ -9,6 +9,7 @@ permissions:
   actions: read
   contents: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: kric-current-facility-refresh-${{ github.workflow }}-${{ github.ref }}
@@ -407,3 +408,8 @@ jobs:
             ${{ runner.temp }}/kric-current-facility-refresh/${{ github.run_id }}/raw-receipt.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: KRIC current facility refresh / Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

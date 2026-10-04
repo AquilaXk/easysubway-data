@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: seoul-current-accessibility-refresh-${{ github.workflow }}-${{ github.ref }}
@@ -129,3 +130,8 @@ jobs:
           path: ${{ runner.temp }}/seoul-current-accessibility-refresh/decision.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

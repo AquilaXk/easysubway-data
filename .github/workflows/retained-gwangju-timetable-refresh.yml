@@ -3,10 +3,12 @@ name: Retained Gwangju Timetable Refresh
 on:
   schedule:
     - cron: "43 */2 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: retained-gwangju-timetable-refresh-${{ github.workflow }}-${{ github.ref }}
@@ -117,3 +119,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${RETAINED_GWANGJU_BRANCH}" --title "Refresh retained Gwangju timetable" --body $'Refresh the due retained Gwangju timetable through the current official-source operation.\n\nRefs #504'
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
