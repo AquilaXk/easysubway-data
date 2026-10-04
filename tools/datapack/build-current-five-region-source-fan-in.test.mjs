@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 import {
+  assertFanInSourceFreshnessPolicy,
   buildCurrentFiveRegionSourceFanIn,
   canonicalCurrentFiveRegionSourceFanInJson,
   validateCurrentFiveRegionSourceFanIn,
@@ -211,10 +212,15 @@ test("native schedule admission binds a production materialization approval with
   badDigest.inputBytes.inventory = bytes(badDigest.inventory);
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(badDigest), /admission.*digest/);
 
+  // #929 D1: 등록 evidence freshUntil(수집 +1일)은 창을 줄이지 않는다. 창은 원장 정책 신선도에서 끝난다.
+  const shortEvidenceWindow = copy();
+  shortEvidenceWindow.inventory.sources[0].scheduleAdmissionEvidence.freshUntil = EVALUATED_AT;
+  shortEvidenceWindow.inputBytes.inventory = bytes(shortEvidenceWindow.inventory);
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(shortEvidenceWindow));
   const stale = copy();
-  stale.inventory.sources[0].scheduleAdmissionEvidence.freshUntil = EVALUATED_AT;
-  stale.inputBytes.inventory = bytes(stale.inventory);
-  assert.throws(() => buildCurrentFiveRegionSourceFanIn(stale), /admission.*freshness/);
+  stale.sourceSnapshots[0].freshnessExpiresAt = EVALUATED_AT;
+  stale.inputBytes.sourceSnapshots = bytes(stale.sourceSnapshots);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(stale), /snapshot freshness mismatch/);
 
   const byteDrift = copy();
   byteDrift.inventory.sources[0].scheduleAdmissionEvidence.tripCount = 2;
@@ -418,10 +424,15 @@ test("#687 fails closed on ambiguous, non-OCI, stale, or unbound source heads", 
   noAffirmativeAdmission.inputBytes.inventory = bytes(noAffirmativeAdmission.inventory);
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(noAffirmativeAdmission), /admission.*approval/);
 
+  // #929 D1: 등록 evidence freshUntil이 지나도 원장 정책 신선도 안이면 통과하고, 원장 신선도가 지나면 실패한다.
+  const shortEvidenceWindow = fixture();
+  shortEvidenceWindow.inventory.sources[0].admissionEvidence.freshUntil = EVALUATED_AT;
+  shortEvidenceWindow.inputBytes.inventory = bytes(shortEvidenceWindow.inventory);
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(shortEvidenceWindow));
   const staleAdmission = fixture();
-  staleAdmission.inventory.sources[0].admissionEvidence.freshUntil = EVALUATED_AT;
-  staleAdmission.inputBytes.inventory = bytes(staleAdmission.inventory);
-  assert.throws(() => buildCurrentFiveRegionSourceFanIn(staleAdmission), /admission.*freshness/);
+  staleAdmission.sourceSnapshots[0].freshnessExpiresAt = EVALUATED_AT;
+  staleAdmission.inputBytes.sourceSnapshots = bytes(staleAdmission.sourceSnapshots);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(staleAdmission), /snapshot freshness mismatch/);
 
   const futureAdmission = fixture();
   futureAdmission.inventory.sources[0].admissionEvidence.capturedAt = "2026-09-03T00:00:00.001Z";
@@ -454,8 +465,11 @@ test("#687 CLI creates one canonical output and never overwrites it", async () =
     paths[name] = inputPath;
   }
   const output = path.join(temporary, "fan-in.json");
+  const policyPath = path.join(temporary, "freshness-policy.json");
+  await writeFile(policyPath, bytes(policyFor(buildCurrentFiveRegionSourceFanIn(input))));
   const args = [
     path.join(ROOT, "tools/datapack/build-current-five-region-source-fan-in.mjs"),
+    "--freshness-policy", policyPath,
     "--targets", paths.targets,
     "--tally", paths.tally,
     "--ownership", paths.ownership,
@@ -542,7 +556,10 @@ test("#862 provider validity cannot extend a head beyond its ledger freshness", 
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(input), /snapshot freshness mismatch for kric-subway-timetable/);
 });
 
-test("#862 an expired admission window fails for every source, without per-source exemptions", () => {
+// #929 D1(QA 결정 2026-10-04): 등록 확인 창의 끝은 원천별 정책 신선도(원장 head freshnessExpiresAt)다.
+// 이 테스트는 #862에서 "등록 evidence freshUntil(수집 +1일)이 지나면 실패"를 고정했다. 그 P1D 창이 접근성(P90D)·
+// 지역 시간표(P30D) 원천까지 하루마다 후보를 막아 QA가 정책 기간으로 바꿨으므로, 같은 입력이 이제 통과해야 한다.
+test("#929 D1 an expired registration +1 day window no longer blocks a head inside its policy freshness", () => {
   for (const sourceId of [
     "capital-route-topology", "korail-metropolitan-timetable-file",
     "kric-station-convenience-standard", "seoul-metro-accessibility",
@@ -552,6 +569,70 @@ test("#862 an expired admission window fails for every source, without per-sourc
       freshnessExpiresAt: "2026-12-01T00:00:00.000Z",
       admissionFreshUntil: "2026-10-01T00:00:00.000Z",
     });
-    assert.throws(() => buildCurrentFiveRegionSourceFanIn(input), new RegExp(`admission freshness mismatch for ${sourceId}`));
+    const fanIn = buildCurrentFiveRegionSourceFanIn(input);
+    assert.equal(fanIn.selectedSources[0].sourceId, sourceId);
+    assert.equal(fanIn.selectedSources[0].freshnessExpiresAt, "2026-12-01T00:00:00.000Z");
   }
+});
+
+test("#929 D1 the admission window still ends exactly at the policy freshness", () => {
+  const atExpiry = registeredHeadFixture("seoul-metro-accessibility", {
+    evaluatedAt: "2026-12-01T00:00:00.000Z",
+    freshnessExpiresAt: "2026-12-01T00:00:00.000Z",
+    admissionFreshUntil: "2027-01-01T00:00:00.000Z",
+  });
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(atExpiry), /freshness mismatch for seoul-metro-accessibility/);
+  const futureObservation = registeredHeadFixture("seoul-metro-accessibility", {
+    evaluatedAt: "2026-09-29T00:00:00.000Z",
+    freshnessExpiresAt: "2026-12-01T00:00:00.000Z",
+  });
+  futureObservation.sourceSnapshots[1].retrievedAt = "2026-09-28T00:00:00.000Z";
+  futureObservation.inputBytes.sourceSnapshots = bytes(futureObservation.sourceSnapshots);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(futureObservation), /admission future observation mismatch for seoul-metro-accessibility/);
+});
+
+function policyFor(fanIn, extraClasses = []) {
+  return {
+    sourceClasses: [
+      { id: "fixture_class", sourceIds: fanIn.selectedSources.map(({ sourceId }) => sourceId) },
+      ...extraClasses,
+    ],
+  };
+}
+
+test("#929 D1 every selected source must have exactly one freshness policy class", () => {
+  const fanIn = buildCurrentFiveRegionSourceFanIn(fixture());
+  const sourceId = fanIn.selectedSources[0].sourceId;
+  assert.doesNotThrow(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: policyFor(fanIn) }));
+  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: { sourceClasses: [] } }),
+    new RegExp(`fan-in freshness policy missing for ${sourceId}`));
+  assert.throws(() => assertFanInSourceFreshnessPolicy({
+    fanIn, freshnessPolicy: policyFor(fanIn, [{ id: "other", sourceIds: [sourceId] }]),
+  }), new RegExp(`fan-in freshness policy ambiguous for ${sourceId}`));
+  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: {} }), /fan-in freshness policy shape mismatch/);
+});
+
+test("#929 D1 the fan-in CLI refuses to write without a policy class for every selected source", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "five-region-source-fan-in-policy-"));
+  const input = fixture();
+  const paths = {};
+  for (const [name, value] of Object.entries(input.inputBytes)) {
+    paths[name] = path.join(temporary, `${name}.json`);
+    await writeFile(paths[name], value);
+  }
+  const policyPath = path.join(temporary, "freshness-policy.json");
+  await writeFile(policyPath, bytes({ sourceClasses: [] }));
+  const output = path.join(temporary, "fan-in.json");
+  const base = [
+    path.join(ROOT, "tools/datapack/build-current-five-region-source-fan-in.mjs"),
+    "--targets", paths.targets, "--tally", paths.tally, "--ownership", paths.ownership,
+    "--inventory", paths.inventory, "--source-snapshots", paths.sourceSnapshots,
+    "--evaluated-at", EVALUATED_AT, "--output", output,
+  ];
+  const withoutPolicy = spawnSync(process.execPath, base, { encoding: "utf8" });
+  assert.notEqual(withoutPolicy.status, 0);
+  const missingClass = spawnSync(process.execPath, [...base, "--freshness-policy", policyPath], { encoding: "utf8" });
+  assert.notEqual(missingClass.status, 0);
+  assert.match(missingClass.stderr, /fan-in freshness policy missing for/);
+  await assert.rejects(stat(output), { code: "ENOENT" });
 });

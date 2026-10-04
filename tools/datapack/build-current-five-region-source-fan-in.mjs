@@ -202,7 +202,9 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     const observedAt = typeof rawObservedAt === "string" && !isNaN(Date.parse(rawObservedAt))
       ? new Date(Date.parse(rawObservedAt)).toISOString()
       : rawObservedAt;
-    const rawFreshUntil = evidence.freshUntil ?? snapshot.freshnessExpiresAt;
+    // #929 D1(QA 결정 2026-10-04): 등록 확인 창의 끝은 원천별 정책 신선도(원장 head freshnessExpiresAt)다.
+    // 등록 evidence의 freshUntil(등록기가 수집 +1일로 쓰던 값)은 창을 줄이지 않는다.
+    const rawFreshUntil = snapshot.freshnessExpiresAt;
     const freshUntil = typeof rawFreshUntil === "string" && !isNaN(Date.parse(rawFreshUntil))
       ? new Date(Date.parse(rawFreshUntil)).toISOString()
       : rawFreshUntil;
@@ -487,6 +489,19 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
   });
 }
 
+// #929 D1: fan-in이 고른 원천은 신선도 정책 클래스가 정확히 하나여야 한다. 없거나 둘 이상이면 정책 기간을 정할 수 없다.
+export function assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy }) {
+  if (!Array.isArray(freshnessPolicy?.sourceClasses)
+    || freshnessPolicy.sourceClasses.some((entry) => !Array.isArray(entry?.sourceIds))) {
+    throw new Error("fan-in freshness policy shape mismatch");
+  }
+  for (const { sourceId } of fanIn?.selectedSources ?? []) {
+    const classes = freshnessPolicy.sourceClasses.filter(({ sourceIds }) => sourceIds.includes(sourceId));
+    if (classes.length === 0) throw new Error(`fan-in freshness policy missing for ${sourceId}`);
+    if (classes.length > 1) throw new Error(`fan-in freshness policy ambiguous for ${sourceId}`);
+  }
+}
+
 export function canonicalCurrentFiveRegionSourceFanInJson(value) {
   return canonical(value);
 }
@@ -586,7 +601,7 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
 }
 
 function argumentsFrom(argv) {
-  const names = ["targets", "tally", "ownership", "inventory", "source-snapshots", "evaluated-at", "output"];
+  const names = ["targets", "tally", "ownership", "inventory", "source-snapshots", "freshness-policy", "evaluated-at", "output"];
   if (argv.length !== names.length * 2) throw new Error("five-region fan-in arguments mismatch");
   const result = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -620,6 +635,8 @@ async function main() {
     evaluatedAt: args["evaluated-at"],
   };
   const fanIn = buildCurrentFiveRegionSourceFanIn(input);
+  const freshnessPolicy = JSON.parse(await readFile(path.resolve(args["freshness-policy"]), "utf8"));
+  assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy });
   await writeFile(path.resolve(args.output), `${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`, {
     flag: "wx",
     mode: 0o600,
