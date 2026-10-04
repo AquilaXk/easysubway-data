@@ -229,7 +229,11 @@ test("#929 D3 정기 역할 release request는 그 후보를 만든 정기 run(g
     runId: 37200000001, runAttempt: 1, event: "schedule", headSha: "a".repeat(40),
   };
   const scheduled = { requestedBy: SCHEDULED_RELEASE_ROLES.requestedBy, approvedBy: SCHEDULED_RELEASE_ROLES.approvedBy };
-  assert.deepEqual(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun } })), []);
+  const spec = { builderGitSha: "a".repeat(40) };
+  assert.deepEqual(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun }, spec })), []);
+  // gateRun은 후보를 빌드한 커밋과 같은 커밋의 run이어야 한다(다른 run 기록을 가져다 붙이는 것을 막는다).
+  assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun }, spec: { builderGitSha: "b".repeat(40) } }))
+    .some((violation) => /gateRun headSha/u.test(violation) && /builderGitSha/u.test(violation)));
   assert.ok(releaseRequestBindingViolations(boundPair({ request: scheduled })).some((violation) => /gateRun is required/u.test(violation)));
   assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "workflow_dispatch" } } }))
     .some((violation) => /only for schedule or chain events/u.test(violation)));

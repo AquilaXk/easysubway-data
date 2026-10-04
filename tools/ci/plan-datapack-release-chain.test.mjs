@@ -64,6 +64,7 @@ async function releaseRepository(mutate = (files) => files, { candidateId = "nat
     candidateId,
     productionScopeId: "nationwide_routing_android_v1",
     releaseSequence,
+    builderGitSha: "a".repeat(40),
     sourceSnapshotSetHash: "a".repeat(64),
     approvedAliasLedgerHash: "b".repeat(64),
   };

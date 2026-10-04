@@ -64,6 +64,10 @@ export function releaseRequestBindingViolations({
     releaseRequest.approvedLedgerHash, buildSpec.approvedAliasLedgerHash);
   // #929 D3: 정기 역할은 그 후보를 만든 정기·체인 run(gateRun) 결속이 있어야 한다. 사람 역할에 정기 run을 붙일 수도 없다.
   violations.push(...scheduledAuthorityViolations(releaseRequest));
+  // gateRun은 이 후보를 빌드한 커밋의 run이어야 한다. 다른 run 기록을 가져다 붙인 request를 막는다.
+  if (releaseRequest.gateRun !== undefined && releaseRequest.gateRun?.headSha !== buildSpec.builderGitSha) {
+    violations.push(`release request gateRun headSha mismatch with build spec builderGitSha (gateRun: ${describe(releaseRequest.gateRun?.headSha)}, builderGitSha: ${describe(buildSpec.builderGitSha)})`);
+  }
   return violations;
 }
 
