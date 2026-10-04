@@ -336,7 +336,7 @@
         "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs"
       ],
       "profileInvocations": [
-        "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 4"
+        "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2"
       ]
     },
     "deterministic-release": {

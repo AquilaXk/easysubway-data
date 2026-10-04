@@ -197,7 +197,14 @@ test("CI는 current v19 contract 검증 뒤 fixture identity가 변경되지 않
 test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const runner = namedWorkflowStep(ci, "Verify and run current Mobile v19 owned required tests");
-  assert.match(runner, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 4/);
+  // #934: 러너(16GB)에서 병렬 4는 node 합계 RSS가 12~13.5GB까지 올라 OOM 종료(exit 143)가 반복됐다. 병렬도만 2로 낮춘다.
+  assert.match(runner, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 2/);
+  assert.deepEqual(ownership.workflows["required-pr"].profileInvocations,
+    ["node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2"]);
+  // 실행 중 메모리 사용을 같은 step 로그에 남긴다(러너가 종료돼도 직전 관측이 남도록 주기 출력).
+  assert.match(runner, /free -m/);
+  assert.match(runner, /mobile-v19 memory/);
+  assert.doesNotMatch(runner, /continue-on-error|^\s*if:/m);
   assertWorkflowStepOrder(ci, [
     "Verify current Mobile v19 ITX topology evidence",
     "Verify and run current Mobile v19 owned required tests",
@@ -225,8 +232,8 @@ test("CI는 구형 v18 migration 또는 station-catalog bootstrap을 실행하�
 const shardIds = ["contracts_shard_1", "contracts_shard_2", "contracts_shard_3", "contracts_shard_4"];
 const contractJobIds = ["contracts_mobile_v19", ...shardIds];
 
-function assertPinnedFixtureJob(job) {
-  assert.match(job, /^    timeout-minutes: 30$/m);
+function assertPinnedFixtureJob(job, timeoutMinutes = 30) {
+  assert.match(job, new RegExp(`^    timeout-minutes: ${timeoutMinutes}$`, "m"));
   assert.doesNotMatch(job, /\n    needs:/);
   const repository = namedWorkflowStep(job, "Checkout repository");
   const fixture = namedWorkflowStep(job, "Checkout pinned Mobile fixture");
@@ -284,7 +291,8 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   // mobile-v19 profile도 pinned fixture를 stage한 독립 job이다.
   const mobile = namedJob(ci, "contracts_mobile_v19");
   assert.match(mobile, /^    name: Data contracts \(mobile-v19\)$/m);
-  assertPinnedFixtureJob(mobile);
+  // #934: 병렬 2로 낮춘 실측(로컬 4→2 실행시간 1.26배, CI 4-worker 최대 18m51s)에 여유를 둔 40분이다.
+  assertPinnedFixtureJob(mobile, 40);
   // #866 PR-C: 수도권 live chain 전용 job은 없다. 집계 job의 needs는 실제 Data contracts 하위 job 전체와 정확히 같다.
   const jobIds = [...ci.matchAll(/^  ([a-z0-9_]+):$/gmu)].map(([, id]) => id);
   assert.deepEqual(jobIds.filter((id) => id.startsWith("contracts_")).sort(), [...contractJobIds].sort());

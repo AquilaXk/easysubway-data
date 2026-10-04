@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   # 소유 required-pr 테스트는 갈래를 나눠 동시에 돈다. mobile-v19 profile과 기본 profile 4 shard다.
-  # 각 job 안에서도 러너 4 vCPU만큼 test 프로세스를 병렬로 돌리고, 오래 걸리는 파일은 top-level
+  # 각 job 안에서도 러너 4 vCPU만큼 test 프로세스를 병렬로 돌리고(mobile-v19 job은 메모리 한도 때문에 2, #934), 오래 걸리는 파일은 top-level
   # test 이름으로 나눈다(data-test-discovery가 실행된 이름 집합을 정적 목록과 대조해 누락·중복이면
   # 실패한다). 테스트를 빼거나 건너뛰지 않는다.
   contracts_mobile_v19:
@@ -25,7 +25,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -85,7 +85,23 @@ jobs:
           git diff --exit-code -- tools/datapack/itx-cheongchun-topology-evidence.json
 
       - name: Verify and run current Mobile v19 owned required tests
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #934: 병렬 4에서는 node 합계 RSS가 러너 메모리(16GB) 근처까지 올라 OOM 종료(exit 143)가 반복됐다.
+          # 병렬도만 2로 낮추고(실행 테스트 집합은 discovery가 그대로 대조한다) 메모리 사용을 같은 로그에 남긴다.
+          (
+            peak=0
+            while true; do
+              used="$(free -m | awk '/^Mem:/ {print $3}')"
+              if (( used > peak )); then peak="${used}"; fi
+              echo "mobile-v19 memory used=${used}MB peak=${peak}MB"
+              sleep 30
+            done
+          ) &
+          monitor=$!
+          trap 'kill "${monitor}" 2>/dev/null || true; free -m' EXIT
+          node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2
 
       - name: Re-verify current Mobile fixture for owned tests
         shell: bash
