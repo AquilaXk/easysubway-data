@@ -528,3 +528,51 @@ test("#929 D3 the RC chain fetches the gate run record only for a bound request 
   assert.match(plan, /--gate-run-record "\$\{GATE_RUN_RECORD\}"/u);
   assert.ok(yml.indexOf("Fetch the candidate gate run record") < yml.indexOf("Build release-candidate modeArgs from repository files"));
 });
+
+test("#931 F1 the chain dispatches RC only for the verified commit and fails when the dispatched run built another commit", async () => {
+  const yml = workflowText("datapack-release-candidate-chain.yml");
+  const verified = "a".repeat(40);
+  const run = async ({ mainSha, runLine }) => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "rc-dispatch-"));
+    try {
+      const log = path.join(directory, "gh.log");
+      const output = path.join(directory, "github-output");
+      await writeFile(log, "");
+      await writeFile(output, "");
+      await writeFile(path.join(directory, "release-candidate-mode-args.json"), "{}\n");
+      await writeFile(path.join(directory, "gh"), [
+        "#!/bin/sh",
+        'case "$*" in',
+        '  *"git/ref/heads/main"*) echo "$MAIN_SHA" ;;',
+        '  "workflow run "*) echo "dispatch $*" >> "$LOG" ;;',
+        '  *"actions/workflows/datapack-release.yml/runs"*) echo "$RUN_LINE" ;;',
+        '  "run cancel "*) echo "cancel $3" >> "$LOG" ;;',
+        '  *) echo "unexpected gh $*" >&2; exit 9 ;;',
+        "esac",
+        "",
+      ].join("\n"));
+      spawnSync("/bin/chmod", ["755", path.join(directory, "gh")]);
+      const result = runStep(yml, "Dispatch release candidate", { cwd: directory, env: {
+        PATH: `${directory}:${process.env.PATH}`, GITHUB_SHA: verified, GITHUB_REPOSITORY: "AquilaXk/easysubway-data",
+        GH_TOKEN: "test", RUNNER_TEMP: directory, GITHUB_OUTPUT: output, MAIN_SHA: mainSha, RUN_LINE: runLine, LOG: log,
+      } });
+      return { ...result, log: await readFile(log, "utf8"), output: await readFile(output, "utf8") };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  };
+  const matched = await run({ mainSha: verified, runLine: `111 ${verified}` });
+  assert.equal(matched.status, 0, matched.stderr);
+  assert.match(matched.log, /^dispatch workflow run datapack-release\.yml/mu);
+  assert.doesNotMatch(matched.log, /cancel/u);
+  assert.equal(matched.output, "rc_run_id=111\n");
+  const moved = await run({ mainSha: "b".repeat(40), runLine: `111 ${verified}` });
+  assert.notEqual(moved.status, 0);
+  assert.match(moved.stderr, /main moved/u);
+  assert.equal(moved.log, "");
+  const otherCommit = await run({ mainSha: verified, runLine: `222 ${"c".repeat(40)}` });
+  assert.notEqual(otherCommit.status, 0);
+  assert.match(otherCommit.stderr, /not the verified/u);
+  assert.match(otherCommit.log, /^cancel 222$/mu);
+  assert.doesNotMatch(stepBody(yml, "Dispatch release candidate"), /\|\| true/u);
+});

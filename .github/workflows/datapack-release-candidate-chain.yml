@@ -87,4 +87,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # #931 F1: workflow_dispatch는 브랜치로만 실행할 수 있다. 검증한 커밋(GITHUB_SHA)이 아직 main일 때만 dispatch하고,
+          # dispatch된 RC run의 head_sha가 그 커밋인지 다시 확인한다. 다르면 그 run을 취소하고 실패한다.
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "${main_sha}" != "${GITHUB_SHA}" ]]; then
+            echo "main moved from the verified ${GITHUB_SHA} to ${main_sha}; RC is not dispatched for an unverified commit" >&2
+            exit 1
+          fi
+          dispatched_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           gh workflow run datapack-release.yml --repo "${GITHUB_REPOSITORY}" --ref main -f mode=release-candidate -f targetChannel=production -f modeArgs="$(cat "${RUNNER_TEMP}/release-candidate-mode-args.json")"
+          run_line=""
+          for _ in $(seq 1 20); do
+            run_line="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/datapack-release.yml/runs" -f event=workflow_dispatch -f branch=main -f "created=>=${dispatched_after}" -f per_page=20 --jq '[.workflow_runs[] | select(.triggering_actor.login == "github-actions[bot]")] | sort_by(.created_at) | if length > 0 then "\(.[0].id) \(.[0].head_sha)" else "" end')"
+            [[ -n "${run_line}" ]] && break
+            sleep 6
+          done
+          [[ -n "${run_line}" ]] || { echo "the dispatched RC run was not found" >&2; exit 1; }
+          read -r rc_run_id rc_run_sha <<< "${run_line}"
+          if [[ "${rc_run_sha}" != "${GITHUB_SHA}" ]]; then
+            gh run cancel "${rc_run_id}" --repo "${GITHUB_REPOSITORY}"
+            echo "dispatched RC run ${rc_run_id} built ${rc_run_sha}, not the verified ${GITHUB_SHA}; the run was cancelled" >&2
+            exit 1
+          fi
+          echo "rc_run_id=${rc_run_id}" >> "${GITHUB_OUTPUT}"
