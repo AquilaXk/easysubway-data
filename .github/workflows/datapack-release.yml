@@ -581,8 +581,10 @@ jobs:
       # MATERIAL_CHANGE_UNAPPROVED만 남는다. 이 스텝은 어긋난 필드를 지목하고 즉시 종료한다.
       # 결속 검증을 모든 PR(repository-contract)이 아니라 이 release 경로에만 두는 근거는
       # tools/datapack/verify-release-request-binding.mjs 상단 주석 참조.
+      # #931 F1: release request를 쓰는 RC도 같은 결속을 거친다. request가 gateRun(정기 전용 역할의 근거 run)을
+      # 결속했으면 GitHub run 기록을 받아 대조해야만 통과한다(run id·attempt·event·커밋·main·경로·저장소·성공·후보 시계 창).
       - name: Data Pack Release / Verify release request binding
-        if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' || (steps.release-mode.outputs.mode == 'release-candidate' && env.EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH != '') }}
         run: |
           set -euo pipefail
           release_request_path="${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}"
@@ -598,10 +600,18 @@ jobs:
             echo "production-publish requires a release request id" >&2
             exit 1
           fi
+          gate_run_args=()
+          gate_run_id="$(node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(r.gateRun === undefined ? "" : String(r.gateRun?.runId));' "${release_request_path}")"
+          if [[ -n "${gate_run_id}" ]]; then
+            [[ "${gate_run_id}" =~ ^[1-9][0-9]*$ ]] || { echo "release request gateRun runId is invalid" >&2; exit 1; }
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${gate_run_id}" > "${RUNNER_TEMP}/release-request-gate-run.json"
+            gate_run_args=(--gate-run-record "${RUNNER_TEMP}/release-request-gate-run.json")
+          fi
           node tools/datapack/verify-release-request-binding.mjs \
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
             --release-request "${release_request_path}" \
-            --expected-approval-id "${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID}"
+            --expected-approval-id "${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID}" \
+            "${gate_run_args[@]}"
 
       - name: Data Pack Release / Validate production candidate and promotion runs
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}

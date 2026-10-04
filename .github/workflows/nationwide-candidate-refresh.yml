@@ -2,8 +2,12 @@ name: Nationwide Candidate Refresh
 
 # 전국 후보 갱신(#927, #870): 로컬에서 돌리던 refresh-nationwide-candidate를 CI에서 실행하고
 # 결과를 automation 브랜치의 draft PR로 올린다. 원천 수집·등록은 하지 않는다(저장소 파일만 읽는다).
-# 2인 역할 인자는 dispatch 입력으로만 받는다. 후보 시계는 실행 시각이다.
+# 사람 dispatch는 2인 역할을 입력으로만 받는다. 정기 실행(#929 D3)은 정기 전용 고정 역할과 다음 sequence를 쓰고,
+# 저장소 변수 DATAPACK_SCHEDULED_CANDIDATE_REFRESH가 true일 때만 돈다. 후보 시계는 실행 시각이고,
+# release request에는 이 run 기록(gateRun)을 결속한다.
 on:
+  schedule:
+    - cron: "23 22 * * *"
   workflow_dispatch:
     inputs:
       releaseSequence:
@@ -31,7 +35,7 @@ concurrency:
 jobs:
   refresh:
     name: Nationwide candidate refresh
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -48,9 +52,14 @@ jobs:
           RELEASE_SEQUENCE: ${{ inputs.releaseSequence }}
           REQUESTED_BY: ${{ inputs.requestedBy }}
           APPROVED_BY: ${{ inputs.approvedBy }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --event "${EVENT_NAME}" --github-output "${GITHUB_OUTPUT}"
+      - name: Record the candidate gate run
+        run: |
+          set -euo pipefail
+          node tools/ci/plan-datapack-release-chain.mjs gate-run --output "${RUNNER_TEMP}/candidate-gate-run.json"
       - name: Refresh nationwide candidate
         env:
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
@@ -59,7 +68,7 @@ jobs:
           APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
         run: |
           set -euo pipefail
-          node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}"
+          node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --gate-run "${RUNNER_TEMP}/candidate-gate-run.json"
       - name: Verify candidate refresh output scope
         run: |
           set -euo pipefail

@@ -7,7 +7,7 @@
 // 사용:
 //   node tools/datapack/refresh-nationwide-candidate.mjs \
 //     --evaluated-at <후보 시계, ISO-8601 UTC ms> --release-sequence <양의 정수> \
-//     --requested-by <요청자> --approved-by <승인자>
+//     --requested-by <요청자> --approved-by <승인자> [--gate-run <이 후보를 만드는 CI run 기록 JSON, 절대 경로>]
 //
 // 순서: 5권역 fan-in(--evaluated-at) → 소유권 원장 → prepare-nationwide-candidate-run → build-nationwide-candidate(spec·scope·request·hash)
 //       → route-edge 정책 sync(전국 route-edge 입력, #866) → 결속 검증.
@@ -40,6 +40,7 @@ import {
 } from "./sync-current-route-edge-policy.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { CANDIDATE_RELEASE_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -86,10 +87,11 @@ export function parseRefreshNationwideCandidateArgs(argv) {
     ["--requested-by", "requestedBy"],
     ["--approved-by", "approvedBy"],
   ]);
+  const optional = new Map([["--gate-run", "gateRunPath"]]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
-    const key = flags.get(flag);
+    const key = flags.get(flag) ?? optional.get(flag);
     if (!key) throw new Error(`unknown nationwide candidate refresh argument: ${flag ?? ""}`);
     if (Object.hasOwn(values, key)) throw new Error(`duplicate nationwide candidate refresh argument: ${flag}`);
     const value = argv[index + 1];
@@ -111,7 +113,18 @@ export function parseRefreshNationwideCandidateArgs(argv) {
   if (requestedBy.toLowerCase() === approvedBy.toLowerCase()) {
     throw new Error(`two-person rule violation: requester and approver must differ (${requestedBy})`);
   }
-  return { evaluatedAt: values.evaluatedAt, releaseSequence: Number(values.releaseSequence), requestedBy, approvedBy };
+  assertGateRunArgument({ requestedBy, approvedBy, gateRunPath: values.gateRunPath });
+  return {
+    evaluatedAt: values.evaluatedAt, releaseSequence: Number(values.releaseSequence), requestedBy, approvedBy,
+    ...(Object.hasOwn(values, "gateRunPath") ? { gateRunPath: values.gateRunPath } : {}),
+  };
+}
+
+// #929 D3: 정기 역할은 그 후보를 만드는 CI run 기록(gate-run 파일) 없이는 쓸 수 없다.
+function assertGateRunArgument({ requestedBy, approvedBy, gateRunPath }) {
+  const scheduled = requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy;
+  if (scheduled && gateRunPath === undefined) throw new Error("scheduled roles require --gate-run");
+  if (gateRunPath !== undefined && !path.isAbsolute(gateRunPath)) throw new Error("--gate-run must be an absolute path");
 }
 
 export async function readNationwideCandidateRefreshState(repositoryRoot = ROOT) {
@@ -146,7 +159,7 @@ export async function readNationwideCandidateRefreshState(repositoryRoot = ROOT)
 // 생성된 후보가 이번 fan-in head·시계·전국 팩·2인 승인에 결속됐는지 본다. 어긋남 목록을 돌려준다.
 export function nationwideCandidateRefreshViolations({
   evaluatedAt, requestedBy, approvedBy, fanIn, sourceSnapshots, buildSpec, buildSpecBytes,
-  releaseRequest, hashEvidence, fixtureSha256, ledgerHashes,
+  releaseRequest, hashEvidence, fixtureSha256, ledgerHashes, gateRun,
 }) {
   const violations = [];
   const mismatch = (label, actual, expected, names = ["actual", "expected"]) => {
@@ -180,6 +193,8 @@ export function nationwideCandidateRefreshViolations({
   }));
   mismatch("requestedBy", releaseRequest?.requestedBy, requestedBy, ["release request", "requested"]);
   mismatch("approvedBy", releaseRequest?.approvedBy, approvedBy, ["release request", "requested"]);
+  // #929 D3: release request의 gateRun은 이번 갱신 run 기록과 정확히 같아야 한다(둘 다 없으면 같다).
+  mismatch("gateRun", JSON.stringify(releaseRequest?.gateRun ?? null), JSON.stringify(gateRun ?? null), ["release request", "run"]);
   return violations;
 }
 
@@ -198,7 +213,7 @@ async function runNodeScript(repositoryRoot, script, args) {
   }
 }
 
-export async function runNationwideCandidateRefreshStep({ name, repositoryRoot, evaluatedAt, releaseSequence, requestedBy, approvedBy }) {
+export async function runNationwideCandidateRefreshStep({ name, repositoryRoot, evaluatedAt, releaseSequence, requestedBy, approvedBy, gateRunPath }) {
   if (name === "five-region fan-in") {
     const temporary = await mkdtemp(path.join(os.tmpdir(), "nationwide-fan-in-"));
     try {
@@ -231,7 +246,9 @@ export async function runNationwideCandidateRefreshStep({ name, repositoryRoot, 
   }
   if (name === "nationwide candidate build") {
     // spec·scope·request·hash evidence는 이 단일 생성기가 fan-in head 기준으로 전부 다시 계산한다.
-    await runNodeScript(repositoryRoot, "build-nationwide-candidate.mjs", ["--preparation", PREPARATION_PATH]);
+    await runNodeScript(repositoryRoot, "build-nationwide-candidate.mjs", [
+      "--preparation", PREPARATION_PATH, ...(gateRunPath === undefined ? [] : ["--gate-run", gateRunPath]),
+    ]);
     return;
   }
   if (name === "route edge policy sync") {
@@ -263,22 +280,24 @@ export async function refreshNationwideCandidate({
   releaseSequence,
   requestedBy,
   approvedBy,
+  gateRunPath,
   runStep = runNationwideCandidateRefreshStep,
   assertCleanWorktree = assertGitCleanWorktree,
 } = {}) {
   const repository = path.resolve(repositoryRoot);
   await assertCleanWorktree(repository);
+  const gateRun = gateRunPath === undefined ? undefined : JSON.parse(await readFile(gateRunPath, "utf8"));
   const prestate = await Promise.all(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.map(async (relative) =>
     ({ relative, bytes: await readOptional(path.join(repository, relative)) })));
   let step = "five-region fan-in";
   try {
     for (const name of STEPS) {
       step = name;
-      await runStep({ name, repositoryRoot: repository, evaluatedAt, releaseSequence, requestedBy, approvedBy });
+      await runStep({ name, repositoryRoot: repository, evaluatedAt, releaseSequence, requestedBy, approvedBy, gateRunPath });
     }
     step = "binding verification";
     const violations = nationwideCandidateRefreshViolations({
-      ...(await readNationwideCandidateRefreshState(repository)), evaluatedAt, requestedBy, approvedBy,
+      ...(await readNationwideCandidateRefreshState(repository)), evaluatedAt, requestedBy, approvedBy, gateRun,
     });
     if (violations.length > 0) throw new Error(violations.join("; "));
   } catch (error) {

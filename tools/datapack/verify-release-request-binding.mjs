@@ -18,6 +18,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
+import { gateRunRecordViolations, scheduledAuthorityViolations } from "./lib/scheduled-release-authority.mjs";
 
 // decide-datapack-release.mjs의 validApproval()과 같은 술어를 검사한다.
 // 여기서 통과하고 거기서 막히는 경우가 없도록 항목을 일치시킨다.
@@ -61,6 +62,12 @@ export function releaseRequestBindingViolations({
     releaseRequest.sourceSnapshotSetHash, buildSpec.sourceSnapshotSetHash);
   pushMismatch(violations, "approvedLedgerHash",
     releaseRequest.approvedLedgerHash, buildSpec.approvedAliasLedgerHash);
+  // #929 D3: 정기 역할은 그 후보를 만든 정기·체인 run(gateRun) 결속이 있어야 한다. 사람 역할에 정기 run을 붙일 수도 없다.
+  violations.push(...scheduledAuthorityViolations(releaseRequest));
+  // gateRun은 이 후보를 빌드한 커밋의 run이어야 한다. 다른 run 기록을 가져다 붙인 request를 막는다.
+  if (releaseRequest.gateRun !== undefined && releaseRequest.gateRun?.headSha !== buildSpec.builderGitSha) {
+    violations.push(`release request gateRun headSha mismatch with build spec builderGitSha (gateRun: ${describe(releaseRequest.gateRun?.headSha)}, builderGitSha: ${describe(buildSpec.builderGitSha)})`);
+  }
   return violations;
 }
 
@@ -93,6 +100,18 @@ async function main(argv) {
     buildSpec, buildSpecSha256, releaseRequest,
     expectedApprovalId: args.get("expected-approval-id") ?? null,
   });
+  // #931 F1: gateRun을 결속한 request는 release 경로(RC·production-publish)에서 GitHub run 기록과 대조해야만 통과한다.
+  const recordPath = args.get("gate-run-record");
+  if (releaseRequest?.gateRun !== undefined) {
+    if (recordPath === undefined) {
+      violations.push("gate run record is required for a release request with gateRun (--gate-run-record)");
+    } else {
+      const run = JSON.parse(await readFile(path.resolve(recordPath), "utf8"));
+      violations.push(...gateRunRecordViolations({ gateRun: releaseRequest.gateRun, run, candidateClock: buildSpec.publishedAt }));
+    }
+  } else if (recordPath !== undefined) {
+    violations.push("a gate run record was given for a release request with no gateRun");
+  }
   if (violations.length > 0) {
     throw new Error([
       "release request가 현행 build spec에 결속돼 있지 않다 — release를 진행할 수 없다.",
