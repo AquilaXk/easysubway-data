@@ -134,7 +134,6 @@ export async function emitArtifactComponents(input) {
   const stationPlatformGaps = await loadStationPlatformGapInputs({ repositoryRoot: root });
   // #925: 운영 빌드 경로에서 커밋된 MOLIT 환승 이동경로 스냅샷을 승인·hash·신선도로 검증해 읽는다. 어긋나면 실패한다.
   const transferStairAccess = await loadTransferStairAccessInputs({ repositoryRoot: root, evaluationAt: ids.builtAt });
-  if (Date.parse(ids.freshUntil) > Date.parse(transferStairAccess.freshUntil)) throw new Error("--fresh-until exceeds transfer stair source freshness");
 
   return serializeArtifactComponents({
     output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
@@ -153,6 +152,8 @@ export async function serializeArtifactComponents({
   requireStationElevatorPaths(stationElevatorPaths);
   requireStationPlatformGaps(stationPlatformGaps);
   requireTransferStairAccess(transferStairAccess);
+  // #925: 번들 freshUntil은 환승 계단 판정 원천(MOLIT) 신선도를 넘을 수 없다.
+  if (Date.parse(ids.freshUntil) > Date.parse(transferStairAccess.freshUntil)) throw new Error("--fresh-until exceeds transfer stair source freshness");
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
   const snapshot = path.join(temp, ".source.sqlite");
   let sourceDb;
@@ -436,7 +437,8 @@ export function insertTransferStairEvidence(target, evidenceRows, stepFreeEdgeId
 }
 
 function requireTransferStairAccess(value) {
-  if (!value || typeof value !== "object" || !value.snapshot || !Array.isArray(value.snapshot.rows) || !value.providerCodeCatalog) {
+  if (!value || typeof value !== "object" || !value.snapshot || !Array.isArray(value.snapshot.rows) || !value.providerCodeCatalog
+    || !Number.isFinite(Date.parse(value.freshUntil))) {
     throw new Error("transfer stair access input is required");
   }
 }
