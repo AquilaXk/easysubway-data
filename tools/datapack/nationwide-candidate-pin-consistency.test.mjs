@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { buildCurrentFiveRegionSourceFanIn } from "./build-current-five-region-source-fan-in.mjs";
+import { CANDIDATE_INPUT_MANIFEST_PATH, buildCandidateInputManifest, serializeCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
 import { candidatePinnedReader, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 // #942: PR CI(required-pr)는 커밋된 전국 후보의 내부 pin 일관성만 검사한다.
@@ -74,4 +77,48 @@ test("(d) candidate-build-spec의 inventory 결속은 후보가 고정한 invent
   assert.equal(spec.sourceInventorySha256, sha256(JSON.stringify(JSON.parse(inventoryBytes))));
   assert.equal(spec.networkEdgeEvidence.sourceInventory.path, "tools/datapack/source-inventory.json");
   assert.equal(spec.networkEdgeEvidence.sourceInventory.sha256, sha256(inventoryBytes));
+});
+
+// #942 리뷰 F1: 후보 재현 reader는 세 경로를 구분한다. 고정 입력은 고정 바이트, 후보 산출물은 커밋된 바이트,
+// 그 밖의 경로는 작업 트리로 대체하지 않고 CANDIDATE_INPUT_NOT_PINNED로 실패한다.
+async function fakeCandidateRoot(t, { localInventory }) {
+  const fakeRoot = await mkdtemp(path.join(os.tmpdir(), "easysubway-candidate-pinned-reader-"));
+  t.after(() => rm(fakeRoot, { recursive: true, force: true }));
+  const pinnedInventory = Buffer.from("{\"pinned\":true}\n");
+  const write = async (relative, bytes) => {
+    await mkdir(path.dirname(path.join(fakeRoot, relative)), { recursive: true });
+    await writeFile(path.join(fakeRoot, relative), bytes);
+  };
+  await write("tools/datapack/source-inventory.json", localInventory ?? pinnedInventory);
+  await write(BUILD_SPEC_PATH, Buffer.from("{\"candidateId\":\"fake\"}\n"));
+  await write("tools/datapack/unpinned-input.json", Buffer.from("{\"unpinned\":true}\n"));
+  await write(CANDIDATE_INPUT_MANIFEST_PATH, serializeCandidateInputManifest(buildCandidateInputManifest({
+    candidateId: "fake",
+    candidateBuildSpecSha256: "a".repeat(64),
+    preparationSha256: "b".repeat(64),
+    fanInSha256: "c".repeat(64),
+    entries: [{ path: "tools/datapack/source-inventory.json", sha256: sha256(pinnedInventory), byteSize: pinnedInventory.length }],
+  })));
+  return { fakeRoot, pinnedInventory };
+}
+
+test("후보 재현 reader는 고정 입력·후보 산출물·미고정 경로를 각각 다르게 다룬다", async (t) => {
+  const localInventory = Buffer.from("{\"registered\":\"later\"}\n");
+  const { fakeRoot, pinnedInventory } = await fakeCandidateRoot(t, { localInventory });
+  const requested = [];
+  const read = await candidatePinnedReader({
+    root: fakeRoot,
+    env: { EASYSUBWAY_DATA_PACK_BASE_URL: "https://objects.example.test/o" },
+    fetchImpl: async (url) => {
+      requested.push(url);
+      return new Response(pinnedInventory, { status: 200, headers: { "content-length": String(pinnedInventory.length) } });
+    },
+  });
+  // 고정 입력: 작업 트리가 달라도 고정 바이트를 받는다.
+  assert.deepEqual(await read("tools/datapack/source-inventory.json"), pinnedInventory);
+  assert.deepEqual(requested, [`https://objects.example.test/o/candidate-inputs/sha256/${sha256(pinnedInventory)}`]);
+  // 후보 산출물: 커밋된(작업 트리) 바이트를 그대로 읽는다.
+  assert.deepEqual(await read(BUILD_SPEC_PATH), Buffer.from("{\"candidateId\":\"fake\"}\n"));
+  // 미고정·비산출물 경로: 작업 트리에 파일이 있어도 읽지 않고 실패한다.
+  await assert.rejects(read("tools/datapack/unpinned-input.json"), /CANDIDATE_INPUT_NOT_PINNED: tools\/datapack\/unpinned-input.json/);
 });
