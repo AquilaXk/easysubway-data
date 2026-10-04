@@ -227,3 +227,18 @@ test("main 반영 판정은 origin의 main·claim 브랜치를 받아 merge-base
   assert.equal(diverged.reflected, false);
   assert.deepEqual(diverged.unreflectedPaths, ["tools/datapack/sources/b.json"]);
 });
+
+// #947 리뷰 F2: 상한 초과 메시지에 열린 PR의 required CI 상태도 밝힌다.
+test("CLI는 --ci-state를 받아 상한 초과 메시지에 required CI 상태를 넣고, 모르는 상태는 거부한다", async (t) => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "refresh-open-pr-age-ci-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const policyPath = path.join(directory, "policy.json");
+  const prsPath = path.join(directory, "prs.json");
+  writeFileSync(policyPath, JSON.stringify(POLICY));
+  writeFileSync(prsPath, JSON.stringify([pr()]));
+  const args = (state) => ["--workflow", "current-capital-topology-refresh.yml", "--prs", prsPath, "--policy", policyPath, "--repository", REPOSITORY, "--ci-state", state];
+  const inspect = () => ({ reflected: false, addedSnapshotIds: ["b"], missingSnapshotIds: ["b"], mismatchedSnapshotIds: [], unreflectedPaths: [] });
+  await assert.rejects(main(args("REOPENED"), { now: NOW, inspect }), /Required CI \(pull_request\) on the head: REOPENED/);
+  await assert.rejects(main(args("ATTACHED"), { now: NOW, inspect }), /Required CI \(pull_request\) on the head: ATTACHED/);
+  await assert.rejects(main(args("UNKNOWN"), { now: NOW, inspect }), /REFRESH_OPEN_PR_CLI/);
+});
