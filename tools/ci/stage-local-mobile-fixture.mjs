@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
-export const PINNED_MOBILE_REVISION = "f21e653dacb418fad743962b50ddd0ac9c812062";
-export const EXPECTED_CAPITAL_GZIP_SHA256 = "1e4dd98f1013bea99f5cc376ad625e30edf5d81eb1bf136b922e7f674064c16e";
+export const PINNED_MOBILE_REVISION = "4d419569a914883bd98f4f5cfd4e1d6d217c8f66";
+export const EXPECTED_CAPITAL_GZIP_SHA256 = "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208";
 
 function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");

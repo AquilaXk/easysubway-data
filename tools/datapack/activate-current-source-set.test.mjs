@@ -850,11 +850,11 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     readFile(path.join(root, reference.completenessEvidencePath)),
     readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
   ]);
-  const buildNow = "2026-09-30T16:38:54.027Z";
+  const buildNow = "2026-10-04T15:15:19.525Z";
   const topologyEvidencePath = deriveApprovedItxTopologyEvidencePath(reference);
   assert.equal(
     topologyEvidencePath,
-    "tools/datapack/itx-cheongchun-topology-evidence-20260930163854026.json",
+    "tools/datapack/itx-cheongchun-topology-evidence-20261004151519524.json",
   );
   assert.throws(() => deriveApprovedItxTopologyEvidencePath({
     artifactId: "itx-cheongchun-source-timetable-invalid",
@@ -2253,45 +2253,53 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
   const currentItxTopologyEvidenceBytes = await readFile(path.join(root, currentItxTopologyEvidencePath));
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-42b5805f3b5a"), false);
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
-  const staleIncheon = JSON.parse(incheonBytes);
-  const buildNow = new Date(Date.parse(currentTopology.capturedAt) + 1_000).toISOString();
-  assert.ok(Date.parse(buildNow) < Date.parse(currentTopology.freshUntil));
-  staleIncheon.capturedAt = new Date(Date.parse(buildNow) - 24 * 60 * 60 * 1_000).toISOString();
-  staleIncheon.freshUntil = buildNow;
-  const staleIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${staleIncheon.capturedAt.slice(0, 10).replaceAll("-", "")}.json`;
-  const staleIncheonBytes = Buffer.from(`${JSON.stringify(staleIncheon)}\n`);
   const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
   const layoutTopologySnapshotBytesById = await collectLayoutTopologySnapshotBytes(sourceInventory);
-  assert.throws(() => buildCurrentTopologyRefreshPrimaryOutputs({
-    baseSpec,
-    builderGitSha: "a".repeat(40),
-    sourceInventory,
-    currentTopology,
-    currentTopologyBytes,
-    currentTopologyPath,
-    currentIncheonTopology: staleIncheon,
-    currentIncheonTopologyBytes: staleIncheonBytes,
-    currentIncheonTopologyPath: staleIncheonTopologyPath,
-    currentIncheonAccessibility: JSON.parse(currentIncheonAccessibilityBytes),
-    currentIncheonAccessibilityBytes,
-    currentIncheonAccessibilityPath: incheonAccessibilityPath,
-    currentIncheonTimetables: { 1: JSON.parse(line1TimetableBytes), 2: JSON.parse(line2TimetableBytes) },
-    currentIncheonTimetableBytes: { 1: line1TimetableBytes, 2: line2TimetableBytes },
-    currentIncheonTimetablePaths: {
-      1: "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
-      2: "tools/datapack/sources/incheon-line2-train-timetable-20260828.json",
-    },
-    currentItxTopologyEvidencePath,
-    currentItxTopologyEvidenceBytes,
-    baselineTopology,
-    baselineTopologyBytes,
-    canonical,
-    productionInput,
-    productionScopePolicyBytes,
-    buildNow,
-    snapshotBytesByPath: positionSnapshotBytes,
-    layoutTopologySnapshotBytesById,
-  }), /current Incheon topology snapshot is stale/);
+  // #938: 수집 시각이 컷오버(2026-10-03T00:00Z) 전이면 P1D, 뒤면 P7D 창이다. 기대 freshUntil은 리터럴로 고정한다.
+  // P7D 경계 사례는 빌드 시각을 freshUntil과 같게 두어, 창 끝 시각에 정확히 만료로 판정되는지 본다.
+  const legacyBuildNow = new Date(Date.parse(currentTopology.capturedAt) + 1_000).toISOString();
+  const staleCases = [
+    { name: "legacy P1D", capturedAt: "2026-10-02T00:00:00.000Z", freshUntil: "2026-10-03T00:00:00.000Z", buildNow: legacyBuildNow },
+    { name: "post-cutover P7D boundary", capturedAt: "2026-10-03T00:00:00.000Z", freshUntil: "2026-10-10T00:00:00.000Z", buildNow: "2026-10-10T00:00:00.000Z" },
+  ];
+  for (const { name, capturedAt, freshUntil, buildNow } of staleCases) {
+    assert.ok(Date.parse(buildNow) >= Date.parse(currentTopology.capturedAt), name);
+    assert.ok(Date.parse(buildNow) < Date.parse(currentTopology.freshUntil), name);
+    assert.ok(Date.parse(freshUntil) <= Date.parse(buildNow), name);
+    const staleIncheon = { ...JSON.parse(incheonBytes), capturedAt, freshUntil };
+    const staleIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${capturedAt.slice(0, 10).replaceAll("-", "")}.json`;
+    const staleIncheonBytes = Buffer.from(`${JSON.stringify(staleIncheon)}\n`);
+    assert.throws(() => buildCurrentTopologyRefreshPrimaryOutputs({
+      baseSpec,
+      builderGitSha: "a".repeat(40),
+      sourceInventory,
+      currentTopology,
+      currentTopologyBytes,
+      currentTopologyPath,
+      currentIncheonTopology: staleIncheon,
+      currentIncheonTopologyBytes: staleIncheonBytes,
+      currentIncheonTopologyPath: staleIncheonTopologyPath,
+      currentIncheonAccessibility: JSON.parse(currentIncheonAccessibilityBytes),
+      currentIncheonAccessibilityBytes,
+      currentIncheonAccessibilityPath: incheonAccessibilityPath,
+      currentIncheonTimetables: { 1: JSON.parse(line1TimetableBytes), 2: JSON.parse(line2TimetableBytes) },
+      currentIncheonTimetableBytes: { 1: line1TimetableBytes, 2: line2TimetableBytes },
+      currentIncheonTimetablePaths: {
+        1: "tools/datapack/sources/incheon-line1-train-timetable-20260828.json",
+        2: "tools/datapack/sources/incheon-line2-train-timetable-20260828.json",
+      },
+      currentItxTopologyEvidencePath,
+      currentItxTopologyEvidenceBytes,
+      baselineTopology,
+      baselineTopologyBytes,
+      canonical,
+      productionInput,
+      productionScopePolicyBytes,
+      buildNow,
+      snapshotBytesByPath: positionSnapshotBytes,
+      layoutTopologySnapshotBytesById,
+    }), /current Incheon topology snapshot is stale/, name);
+  }
 });
 
 test("current capital topology는 canonical fixture의 admitted capital directions만 교체한다", async () => {

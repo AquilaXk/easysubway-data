@@ -68,6 +68,14 @@ const ADMITTED_TOPOLOGY_INPUTS = new Map([
       byteSize: 388623,
     },
   ],
+  [
+    "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189",
+    {
+      gzipSha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
+      sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
+      byteSize: 388623,
+    },
+  ],
 ]);
 const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS = `
   service_class TEXT NOT NULL PRIMARY KEY,
