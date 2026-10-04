@@ -1545,6 +1545,53 @@ test("#918 수도권 4호선 trip의 00시대 정차도 데이터팩 SQLite에�
   ], { cwd: root, env: productionEnv });
 });
 
+// #918 불변식: 컴파일된 SQLite에 03:00(운행일 경계) 전 정차 시각이 남으면 어느 기관이든 팩을 거부한다.
+// 빌드는 이미 변환하므로, 다른 기록 경로를 흉내 내 SQLite를 직접 0시대로 되돌린다(4호선, 인천 아님).
+test("#918 데이터팩 검증기는 운행일 경계(03:00) 전 정차 시각이 남은 비인천 trip을 거부한다", async (context) => {
+  const output = await buildFixtureWithStopTimes("pre-boundary", [
+    { arrivalSeconds: 600, departureSeconds: 600 },
+    { arrivalSeconds: 1_320, departureSeconds: 1_440 },
+  ]);
+  context.after(() => rm(output, { recursive: true, force: true }));
+  const manifestPath = path.join(output, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const sqlitePath = path.join(output, "catalog", "capital-v1.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  try {
+    const update = database.prepare(`
+      UPDATE transit_stop_times
+      SET arrival_seconds = arrival_seconds - 86400, departure_seconds = departure_seconds - 86400
+      WHERE trip_id = 'trip-seoul-4-local-0805'
+    `).run();
+    assert.equal(update.changes, 2);
+  } finally {
+    database.close();
+  }
+  const sqliteBytes = await readFile(sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes);
+  await writeFile(`${sqlitePath}.gz`, gzipBytes);
+  const pack = manifest.packs[0];
+  Object.assign(pack, { sizeBytes: gzipBytes.length, sha256: sha256(gzipBytes), sqliteSha256: sha256(sqliteBytes) });
+  // fixture 팩 서명은 payload의 sha256이다(production 팩만 RSA 서명).
+  const fixturePayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+  pack.signature.value = sha256(Buffer.from(fixturePayload));
+  pack.representativeRouteRegressionSignature.value = sha256(Buffer.from(
+    `${fixturePayload}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`));
+  const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(manifestPath, manifestBytes);
+  const provenancePath = path.join(output, "current.provenance.json");
+  const provenance = JSON.parse(await readFile(provenancePath, "utf8"));
+  provenance.manifestSha256 = sha256(manifestBytes);
+  provenance.packs.find(({ id }) => id === pack.id).sqliteSha256 = pack.sqliteSha256;
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-datapack.mjs", "--manifest", path.join(output, "current.json"), "--root", output,
+    ], { cwd: root, env: productionEnv }),
+    /transit_stop_times must not precede the 03:00 service-day boundary: trip-seoul-4-local-0805/,
+  );
+});
+
 test("#918 운행일 경계(03:00)를 가로지르는 trip은 변환 뒤 시각이 역행해 검증기가 거부한다", async (context) => {
   const outputDir = await buildFixtureWithStopTimes("straddle", [
     { arrivalSeconds: 10_500, departureSeconds: 10_500 },
@@ -4554,34 +4601,6 @@ test("데이터팩 검증기는 현장·운영기관 확인 시설 AVAILABLE 근
       packOutputDir,
     ],
     { cwd: root, env: productionEnv },
-  );
-});
-
-// #918 불변식: 컴파일된 SQLite에 03:00(운행일 경계) 전 정차 시각이 남으면 어느 기관이든 팩을 거부한다.
-test("#918 데이터팩 검증기는 운행일 경계(03:00) 전 정차 시각이 남은 비인천 trip을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
-  await mutateCurrentProductionSqlite(artifact, ({ database }) => {
-    const trip = database.prepare(`
-      SELECT trip_id FROM transit_stop_times
-      WHERE trip_id NOT LIKE 'trip-incheon-%'
-      GROUP BY trip_id HAVING MIN(arrival_seconds) >= 86400
-      ORDER BY trip_id LIMIT 1
-    `).get();
-    assert.ok(trip, "current production artifact requires one non-Incheon after-midnight trip");
-    const update = database.prepare(`
-      UPDATE transit_stop_times
-      SET arrival_seconds = arrival_seconds - 86400, departure_seconds = departure_seconds - 86400
-      WHERE trip_id = ?
-    `).run(trip.trip_id);
-    assert.ok(update.changes >= 2);
-  });
-  await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      ["tools/datapack/validate-datapack.mjs", ...currentProductionValidationArgs(artifact)],
-      { cwd: root, env: productionEnv },
-    ),
-    /transit_stop_times must not precede the 03:00 service-day boundary/,
   );
 });
 
