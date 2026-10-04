@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+// #939·#947 리뷰 F2: 열린 갱신 PR(OPEN_PR)의 head에 required CI(pull_request 이벤트의 ci.yml)가 붙어 있게 한다.
+// - GITHUB_TOKEN으로 연 예전 PR은 pull_request CI가 action_required로 멈춰 있다. workflow_dispatch CI는 PR required check로
+//   인정되지 않는다(#948 실험). 그래서 CI가 없으면 그 PR만 App(easysubway-release-chain) 토큰으로 닫았다 다시 연다.
+//   reopened 이벤트가 App 행위자로 발생해 pull_request CI가 다시 실행된다.
+// - 이미 붙었거나(rollup에 Data contracts) 같은 head의 pull_request CI가 진행 중이면 아무것도 쓰지 않는다(멱등).
+// - 읽기는 GITHUB_TOKEN, 닫기·다시 열기만 App 토큰으로 한다. 실패하면 job을 실패시킨다.
+//
+// 사용: node tools/ci/refresh-pr-required-ci.mjs --workflow <file> --repository <owner/repo> [--github-output <path>]
+//   환경: GH_TOKEN(읽기), APP_PR_TOKEN(App 설치 토큰, pull_requests: write)
+import { execFile } from "node:child_process";
+import { appendFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
+
+import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
+
+const REQUIRED_CONTEXT = "Data contracts";
+const ACTIVE_RUN_STATUSES = new Set(["queued", "in_progress", "waiting", "requested", "pending"]);
+const SHA = /^[0-9a-f]{40}$/u;
+const REOPEN_COMMENT = "열린 갱신 PR head에 required CI(pull_request)가 없어 App으로 다시 열어 CI를 실행한다(#939).";
+
+function fail(code, detail = "") {
+  throw new Error(detail ? `REFRESH_PR_CI_${code}: ${detail}` : `REFRESH_PR_CI_${code}`);
+}
+
+export function requiredCiState({ headSha, rollupContexts, ciRuns }) {
+  if (!SHA.test(headSha ?? "") || !Array.isArray(rollupContexts) || !Array.isArray(ciRuns)) fail("INPUT_INVALID");
+  if (rollupContexts.some((item) => (item?.name ?? item?.context) === REQUIRED_CONTEXT)) return "ATTACHED";
+  const pending = ciRuns.some((run) => run?.event === "pull_request" && run.headSha === headSha && ACTIVE_RUN_STATUSES.has(run.status));
+  return pending ? "PENDING" : "MISSING";
+}
+
+const execFileAsync = promisify(execFile);
+// PATH 검색 없이 GitHub Ubuntu runner의 고정 경로 gh를 쓴다. 이 CLI는 갱신 workflow에서만 실행한다.
+const GH_EXECUTABLE = "/usr/bin/gh";
+async function defaultGh(args, { token }) {
+  const { stdout } = await execFileAsync(GH_EXECUTABLE, args, { env: { ...process.env, GH_TOKEN: token }, maxBuffer: 64 * 1024 * 1024 });
+  return stdout;
+}
+
+export async function ensureRefreshPullRequestRequiredCi({ workflow, repository, readToken, appToken, gh = defaultGh }) {
+  const prefix = REFRESH_CLAIM_PREFIXES[workflow];
+  if (!prefix) fail("WORKFLOW_INVALID", String(workflow));
+  const read = async (args) => JSON.parse(await gh(args, { token: readToken }));
+  const owned = (await read(["pr", "list", "--repo", repository, "--state", "open", "--base", "main", "--limit", "1000",
+    "--json", "number,url,headRefName,headRefOid,baseRefName,isCrossRepository"]))
+    .filter((item) => typeof item?.headRefName === "string" && item.headRefName.startsWith(prefix)
+      && item.baseRefName === "main" && item.isCrossRepository === false);
+  if (owned.length === 0) fail("PR_MISSING", `no open ${prefix}* pull request`);
+  if (owned.length > 1) fail("PR_DUPLICATE", owned.map(({ number }) => `#${number}`).join(", "));
+  const [pr] = owned;
+  const { statusCheckRollup } = await read(["pr", "view", String(pr.number), "--repo", repository, "--json", "statusCheckRollup"]);
+  const ciRuns = await read(["run", "list", "--repo", repository, "--workflow", "ci.yml", "--branch", pr.headRefName,
+    "--event", "pull_request", "--limit", "100", "--json", "event,headSha,status,conclusion"]);
+  const state = requiredCiState({ headSha: pr.headRefOid, rollupContexts: statusCheckRollup ?? [], ciRuns });
+  if (state !== "MISSING") return { state, number: pr.number, headSha: pr.headRefOid };
+  if (typeof appToken !== "string" || appToken.length === 0) fail("APP_TOKEN_REQUIRED");
+  await gh(["pr", "close", String(pr.number), "--repo", repository, "--comment", REOPEN_COMMENT], { token: appToken });
+  await gh(["pr", "reopen", String(pr.number), "--repo", repository], { token: appToken });
+  return { state: "REOPENED", number: pr.number, headSha: pr.headRefOid };
+}
+
+function parseArgs(argv) {
+  const keys = new Map([["--workflow", "workflow"], ["--repository", "repository"], ["--github-output", "githubOutput"]]);
+  const values = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const key = keys.get(argv[index]);
+    if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("CLI");
+    values[key] = argv[index + 1];
+  }
+  if (!values.workflow || !values.repository) fail("CLI");
+  return values;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    const { workflow, repository, githubOutput } = parseArgs(process.argv.slice(2));
+    const result = await ensureRefreshPullRequestRequiredCi({
+      workflow, repository, readToken: process.env.GH_TOKEN, appToken: process.env.APP_PR_TOKEN,
+    });
+    console.log(`open refresh pull request #${result.number} required CI: ${result.state}`);
+    if (githubOutput) await appendFile(githubOutput, `state=${result.state}\n`);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  }
+}

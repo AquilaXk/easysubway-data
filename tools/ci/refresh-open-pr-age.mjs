@@ -22,6 +22,8 @@ export const REFRESH_CLAIM_PREFIXES = Object.freeze({
   "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
 });
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
+// refresh-pr-required-ci가 돌려주는 열린 PR의 required CI 상태
+const CI_STATES = Object.freeze(["ATTACHED", "PENDING", "REOPENED"]);
 // PATH 검색 없이 고정 경로의 git을 쓴다(data-test-discovery와 같은 기준). GitHub Ubuntu runner와 macOS 모두 이 경로다.
 const GIT_EXECUTABLE = "/usr/bin/git";
 const DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/u;
@@ -177,19 +179,20 @@ export function inspectClaimReflection(branch, { cwd = process.cwd() } = {}) {
 }
 
 function parseArgs(argv) {
-  const keys = new Map([["--workflow", "workflow"], ["--prs", "prs"], ["--policy", "policy"], ["--repository", "repository"]]);
+  const keys = new Map([["--workflow", "workflow"], ["--prs", "prs"], ["--policy", "policy"], ["--repository", "repository"], ["--ci-state", "ciState"]]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const key = keys.get(argv[index]);
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("CLI");
     values[key] = argv[index + 1];
   }
-  if (Object.keys(values).length !== keys.size) fail("CLI");
+  if (!["workflow", "prs", "policy", "repository"].every((key) => Object.hasOwn(values, key))) fail("CLI");
+  if (values.ciState !== undefined && !CI_STATES.includes(values.ciState)) fail("CLI", `--ci-state ${values.ciState}`);
   return values;
 }
 
 export async function main(argv, { now = new Date(), inspect = inspectClaimReflection, log = console.log } = {}) {
-  const { workflow, prs, policy, repository } = parseArgs(argv);
+  const { workflow, prs, policy, repository, ciState } = parseArgs(argv);
   const prefix = REFRESH_CLAIM_PREFIXES[workflow];
   if (!prefix) fail("WORKFLOW_INVALID", workflow);
   const result = evaluateOpenRefreshPullRequest({
@@ -205,7 +208,8 @@ export async function main(argv, { now = new Date(), inspect = inspectClaimRefle
     log(`open refresh pull request #${result.number} is within its limit until ${result.deadline}`);
     return result;
   }
-  throw new Error(staleOpenRefreshPullRequestMessage({ stale: result, repository, reflection: inspect(result.branch) }));
+  const message = staleOpenRefreshPullRequestMessage({ stale: result, repository, reflection: inspect(result.branch) });
+  throw new Error(ciState ? `${message}\nRequired CI (pull_request) on the head: ${ciState}` : message);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
