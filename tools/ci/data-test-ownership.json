@@ -368,6 +368,7 @@
     {"path":"tools/ci/automerge-queue.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7877},
     {"path":"tools/ci/capital-live-chain-removal.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/ci/current-capital-topology-refresh-workflow.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":4},
+    {"path":"tools/ci/datapack-release-cross-repo-chain-workflow.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/data-test-discovery.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":31},
     {"path":"tools/ci/decide-current-capital-topology-refresh.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":178},
     {"path":"tools/ci/decide-current-kric-facility-refresh.test.mjs","semanticOwner":"data629","classes":["required-pr"],"durationMs":35},

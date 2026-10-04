@@ -1,0 +1,82 @@
+name: Data Pack Release Cross-Repository Chain
+
+# release-candidate(RC)가 성공하면 hub 호환성 검증(release-artifacts.yml)을 dispatch한다(#932, #870).
+# GITHUB_TOKEN은 다른 저장소 workflow를 dispatch할 수 없으므로 레포 간 실행 권한 GitHub App(QA 승인 2026-10-04)의
+# 토큰을 쓴다. 토큰은 hub 저장소 한 곳, actions write 권한으로만 발급한다. App 자격 증명이 없으면 실패한다.
+on:
+  workflow_run:
+    workflows: ["Data Pack Release"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: datapack-release-cross-repo-chain-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  compatibility:
+    name: Dispatch hub data pack compatibility
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - name: Identify the release-candidate run
+        id: rc
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "${RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "workflow_run id is invalid" >&2; exit 1; }
+          # RC run만 easysubway-datapack-candidate-<run> artifact를 만든다(hub promotion이 받는 후보 artifact).
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=easysubway-datapack-candidate-${RUN_ID}&per_page=100" --jq '.total_count')"
+          case "${count}" in
+            0)
+              echo "rc=false" >> "${GITHUB_OUTPUT}"
+              echo "Data Pack Release run ${RUN_ID}에 RC 후보 artifact가 없어 hub 호환성 검증을 dispatch하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
+              ;;
+            1)
+              echo "rc=true" >> "${GITHUB_OUTPUT}"
+              echo "Data Pack Release run ${RUN_ID}은 RC 후보 artifact가 있어 hub 호환성 검증을 dispatch한다." >> "${GITHUB_STEP_SUMMARY}"
+              ;;
+            *)
+              echo "unexpected RC candidate artifact count for run ${RUN_ID}: ${count}" >&2
+              exit 1
+              ;;
+          esac
+      - name: Require cross-repository dispatch app credentials
+        if: ${{ steps.rc.outputs.rc == 'true' }}
+        env:
+          APP_CLIENT_ID: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${APP_CLIENT_ID:-}" ]] || missing+=(EASYSUBWAY_RELEASE_APP_CLIENT_ID)
+          [[ -n "${APP_PRIVATE_KEY:-}" ]] || missing+=(EASYSUBWAY_RELEASE_APP_PRIVATE_KEY)
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "cross-repository dispatch app credentials are missing: ${missing[*]}" >&2
+            exit 1
+          fi
+      - name: Create the hub dispatch token
+        id: app-token
+        if: ${{ steps.rc.outputs.rc == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway
+          permission-actions: write
+      - name: Dispatch hub data pack compatibility
+        if: ${{ steps.rc.outputs.rc == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run release-artifacts.yml --repo AquilaXk/easysubway --ref main -f android_rc_signing_mode=ci-self-signed -f datapack_candidate_run_id="${RUN_ID}"
+          echo "hub release-artifacts.yml을 datapack_candidate_run_id=${RUN_ID}로 dispatch했다." >> "${GITHUB_STEP_SUMMARY}"
