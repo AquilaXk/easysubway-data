@@ -931,8 +931,8 @@ test("현재 Korail 계획 시간표 재확인 행은 재확인 규칙으로 다
   const result = validateSourceSnapshotFreshness(input);
   const korail = result.results.find(({ snapshotId }) => snapshotId.startsWith(`${KORAIL_PLANNED}-`));
   assert.equal(korail.status, "FRESH");
-  // #903: 2026-10-03 topology 재확인 등록에 다시 결속한 대경선 계획 시각표 head(재확인 시각 + P30D).
-  assert.equal(korail.freshnessExpiresAt, "2026-11-02T00:05:31.571Z");
+  // #938: 2026-10-04 topology 재확인 등록에 다시 결속한 대경선 계획 시각표 head(재확인 시각 + P30D).
+  assert.equal(korail.freshnessExpiresAt, "2026-11-03T14:37:43.177Z");
 });
 
 test("계획 시간표 재확인 행은 이전 head와 원본 sha가 다르면 거부한다(#867 F2)", async () => {

@@ -380,7 +380,8 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   assert.strictEqual(pack.transitStopTimes.length, 677120, "Pack must contain exactly 677,120 authentic stop times");
   assert.strictEqual(pack.serviceCalendars.length, 31);
   // #919: 부산 40·대구 노선별 40(×3)·대전 32, 모두 192행의 KASI 공휴일 예외를 더한다.
-  assert.strictEqual(pack.serviceCalendarDates.length, 398);
+  // #938: 광주 보관본 계약 창이 20261004~20261011로 옮겨 10-03(토→휴일) 예외 2행이 창 밖으로 빠진다.
+  assert.strictEqual(pack.serviceCalendarDates.length, 396);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
@@ -532,28 +533,28 @@ async function committedSelectionInputsWithinIncheonWindow() {
   return committedSelectionInputs();
 }
 
-// 2026-10-02·10-03 공식 도구로 등록한 원장 head(커밋된 후보 seq125가 고른 입력)다.
+// 2026-10-02~10-04 공식 도구로 등록한 원장 head(커밋된 후보 seq127이 고른 입력)다.
 const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
-  incheonTopology: "incheon-transit-station-info-20261003",
-  incheonLine1: "incheon-line1-train-timetable-20261003",
-  incheonLine2: "incheon-line2-train-timetable-20261003",
+  incheonTopology: "incheon-transit-station-info-20261004",
+  incheonLine1: "incheon-line1-train-timetable-20261004",
+  incheonLine2: "incheon-line2-train-timetable-20261004",
   busanAccessibility: "busan-transportation-accessibility-ba05d3ff5501f5e47c0d0398fd03f084a74aede650465895503057881dd27a3e-20261002",
   daeguAccessibility: "daegu-transportation-accessibility-02226d92d934146e631e719848a902d1c9f496589b5370c92fbde41d1181a96b-20261002",
-  daejeonAccessibility: "daejeon-transportation-accessibility-80c1158b5dc3ac3d81af436bc0cbc077d237c7c96c0059df08d5d08d7e6e6719-20261003",
-  gwangjuAccessibility: "gwangju-transportation-accessibility-7e35e2c4b50653c612f2aed521daca5ac510d016b362a44a280b5e3bb1d1453c-20261003",
+  daejeonAccessibility: "daejeon-transportation-accessibility-d98d666db2d2063dd68988e4ad11ebb1be4ced17d19a48b683c3858688a34437-20261004",
+  gwangjuAccessibility: "gwangju-transportation-accessibility-4829ee925cf0ce25b9722fbcd796860e9d0f6faedfd3321a608101694f0e62d9-20261004",
   kricConvenience: "kric-station-convenience-standard-20261002T061440559Z",
   busanTimetable: "busan-transportation-timetable-20261002",
-  daeguTimetable1: "daegu-line1-train-timetable-46f7c9183289603244607f8521c525932cee0739ec4a62f55c19bef7f305a811",
-  daeguTimetable2: "daegu-line2-train-timetable-97b8dbc28f6e2a09be95850a4fc37785ddfc44536fe469b2574377a8df799bd9",
-  daeguTimetable3: "daegu-line3-train-timetable-02a350d9094e4c611abf9665383787c64517868aa3945599874792a8c10131dd",
+  daeguTimetable1: "daegu-line1-train-timetable-6952374ef058e8ed0c8342876e2ec6b3e1e6bc3beeadff1a3a9467832d3b64a0",
+  daeguTimetable2: "daegu-line2-train-timetable-bb3721d5437d2dd5b9ad47e566c9d7a885b9759f5e34705c96e57e9559a34fb3",
+  daeguTimetable3: "daegu-line3-train-timetable-a7699a0f475287855232b209030bc8351eee8b509676b66fac7133cb640f234d",
   daejeonTimetable: "daejeon-train-timetable-20261002",
   capitalTimetable: "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
   // #903: 코레일 6개 노선 projection, 대경선 계획 시각표, KRIC 역별 시간표 5개 노선
   korailTimetable: "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
-  daegyeongTimetable: "korail-metropolitan-planned-timetable-6983a7fd6779618348e9d1f83c70213a9b92f7505ed0b46de967c3348ae631c0",
+  daegyeongTimetable: "korail-metropolitan-planned-timetable-3de56c1f76773e2d225d0df68c53bff456e422fdb0d88b7166ec9b38c2f124d8",
   stationLinesTimetable: "kric-subway-timetable-station-lines-20261003",
   // #913: 광주 1호선은 KRIC 보관본 head(10-03 계약 개정 재등록)의 계약 노선 projection이다.
-  gwangjuTimetable: "kric-nationwide-timetable-file-gwangju-5c275eb62b43a2f9eb89655fe5202612281b2f527863378a241df67b613c6593",
+  gwangjuTimetable: "kric-nationwide-timetable-file-gwangju-30500edc56be2343aa1cea0084cc273ccceaef74c755ad738b3fc1ef4a3e91e7",
 });
 
 test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 18개를 고른다", async () => {
