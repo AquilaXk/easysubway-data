@@ -5,9 +5,7 @@ on:
     - cron: "31 */2 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: seoul-current-accessibility-refresh-${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +15,10 @@ jobs:
   refresh:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     environment: datapack-release-check
     timeout-minutes: 45
     steps:
@@ -129,3 +131,8 @@ jobs:
           path: ${{ runner.temp }}/seoul-current-accessibility-refresh/decision.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

@@ -576,6 +576,7 @@
     {"path":"tools/ci/decide-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":15},
     {"path":"tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":18},
     {"path":"tools/ci/retained-gwangju-refresh-delivery.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":3},
+    {"path":"tools/ci/report-refresh-failure.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":40},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1794},
     {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":85},
     {"path":"tools/datapack/register-regional-accessibility.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":71},
