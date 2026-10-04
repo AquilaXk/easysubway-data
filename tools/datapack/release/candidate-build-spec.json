@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "nationwide-candidate-20261004-seq127",
-  "publishedAt": "2026-10-04T14:47:24.546Z",
+  "publishedAt": "2026-10-04T14:58:01.635Z",
   "releaseSequence": 127,
-  "builderGitSha": "c36cbc4bd4e8248f27fd2c3056147c628fe74501",
+  "builderGitSha": "beaf2e14b4a9e7eff53bcc0146e8a77f4a3f370a",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
   "fixtureSha256": "07c4d02055825a2e2e8ddb0cb3c91c0503253cb304a510c123e21755e9175820",
@@ -642,8 +642,8 @@
       ]
     }
   ],
-  "sourceSnapshotSetHash": "eb99679a501042c123e7175303201103a0733b11c6e1f2d85fef895cfda2a7f0",
-  "sourceInventorySha256": "d80621138f8358ef3c31e2b9eb9d3d8629904876fe215ded2d08d017968d71d5",
+  "sourceSnapshotSetHash": "6f42e652efb614b80cfcd700b3382ad7efed14983ab06fb15b5124009a98883a",
+  "sourceInventorySha256": "1add050e8b14ae06167bdc56899c80065bb4023c08867b3e80300dc51490d655",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -697,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "d355bdcb9354085041ee6b6680d4908e555ed0af2c95c3797d8c64b0d0c8f508"
+      "sha256": "9e2fa664e1597fff392c73d44ebd703523b74d25299c383b06cb67f9a9ebbc86"
     }
   },
   "officialOdFareEvidence": {
