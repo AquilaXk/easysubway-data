@@ -63,6 +63,7 @@ import {
 import { materializeOfficialLineTimetables } from "./lib/official-line-timetable.mjs";
 import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
 import { buildRetainedGwangjuScheduleTables } from "./materialize-gwangju-timetable.mjs";
+import { duplicateDepartureGroups } from "./lib/timetable-duplicate-departures.mjs";
 import {
   RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY,
   RETAINED_GWANGJU_PROJECTION_SOURCE_ID,
@@ -1584,6 +1585,13 @@ export async function prepareNationwideCandidate({
     if (!Array.isArray(gwangjuTopologySource.coverageScope?.[field])) throw new Error(`nationwide candidate Gwangju coverage ${field} is missing`);
     kricPackSources[0].coverageScope[field] = [...new Set([...kricPackSources[0].coverageScope[field],
       ...gwangjuTopologySource.coverageScope[field]])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  }
+
+  // #920: 모든 시간표 원천을 합친 뒤 같은 달력에서 (노선, 역, 출발 시각, 다음 역, 종착역)이 같은 trip이 있으면 후보를 만들지 않는다.
+  const duplicateDepartures = duplicateDepartureGroups(finalPack);
+  if (duplicateDepartures.length > 0) {
+    const tripIds = [...new Set(duplicateDepartures.flatMap(({ tripIds: ids }) => ids))];
+    throw new Error(`nationwide candidate has duplicate trip departures: ${duplicateDepartures.length} groups (${tripIds.slice(0, 6).join(", ")})`);
   }
 
   // #855: 대전·광주 원천은 역별 시각 하나만 준다. 원천 정차 2개 이상으로 열차를 만들 수 없는

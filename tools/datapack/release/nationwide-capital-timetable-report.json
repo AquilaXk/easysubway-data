@@ -21,20 +21,21 @@
       "routeKey": "S1101",
       "routeName": "서울 도시철도 1호선",
       "sourceTripCount": 1576,
-      "admittedTripCount": 1123,
-      "admittedStopTimeCount": 46332,
+      "admittedTripCount": 1121,
+      "admittedStopTimeCount": 46296,
       "singleProviderTimeStopCount": {
-        "origin": 1123,
+        "origin": 1121,
         "intermediate": 0,
-        "terminal": 1123
+        "terminal": 1121
       },
       "tripsByServiceDayKind": {
         "WEEKDAY": 581,
-        "WEEKEND_HOLIDAY": 542
+        "WEEKEND_HOLIDAY": 540
       },
-      "quarantinedTripCount": 453,
-      "quarantineRatio": 0.2874,
+      "quarantinedTripCount": 455,
+      "quarantineRatio": 0.2887,
       "quarantineByReason": {
+        "DUPLICATE_SERVICE_ROW": 2,
         "TIME_NOT_MONOTONIC": 453
       },
       "pinnedQuarantine": {
@@ -349,9 +350,9 @@
   ],
   "summary": {
     "lineCount": 13,
-    "admittedTripCount": 11426,
-    "admittedStopTimeCount": 319526,
-    "quarantinedCount": 496
+    "admittedTripCount": 11424,
+    "admittedStopTimeCount": 319490,
+    "quarantinedCount": 498
   },
   "rows": [
     {
@@ -716,6 +717,17 @@
       "sourceRowNumber": 120712,
       "sourceRowSha256": "0f033c9caf156a0a52a47dda95ad725865f5659b418955a857e135192ae44d5a",
       "reason": "TIME_NOT_MONOTONIC"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "lineId": "line-472a81add377",
+      "routeKey": "S1101",
+      "trainNumber": "512",
+      "serviceDayKind": "WEEKEND_HOLIDAY",
+      "sourceDayKey": "토요일+공휴일",
+      "sourceRowNumber": 121241,
+      "sourceRowSha256": "0f5059b6234f528a14307d5ebc47adaeea3f661df2fcb8969e89a41a29479532",
+      "reason": "DUPLICATE_SERVICE_ROW"
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
@@ -1332,6 +1344,17 @@
       "sourceRowNumber": 120282,
       "sourceRowSha256": "2f5f29fb9ed29b8e7c8779c9a7fedf33f9daeeb6b6594a285cbaa9d4144cfad8",
       "reason": "TIME_NOT_MONOTONIC"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "lineId": "line-472a81add377",
+      "routeKey": "S1101",
+      "trainNumber": "514",
+      "serviceDayKind": "WEEKEND_HOLIDAY",
+      "sourceDayKey": "토요일+공휴일",
+      "sourceRowNumber": 121245,
+      "sourceRowSha256": "317ea0f477d22d75ab7f1d7a2bc06018267d80c5a5db9e789fe0772c0fe5a214",
+      "reason": "DUPLICATE_SERVICE_ROW"
     },
     {
       "sourceId": "kric-nationwide-timetable-file",

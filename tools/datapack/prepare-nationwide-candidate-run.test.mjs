@@ -6,6 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
+import { duplicateDepartureGroups } from "./lib/timetable-duplicate-departures.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 import { holidayCalendarViolations, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
@@ -374,8 +375,9 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // #913: 광주 cyberstation 400 trip·7,187 정차 대신 KRIC 보관본 650 trip·12,429 정차.
   // 계약 창(20261003~20261010)에서 평일 240·토요일 207·휴일 203 trip이 운행하고, 명절 162 trip은 창 안 운행일이 없어 싣지 않는다.
   // 달력은 cyberstation 2개 대신 평일·토요일·휴일 3개, 예외 6행(10-03 토→휴일, 10-05·10-09 평일→휴일)이다.
-  assert.strictEqual(pack.transitTrips.length, 26490, "Pack must contain exactly 26,490 authentic trips");
-  assert.strictEqual(pack.transitStopTimes.length, 677156, "Pack must contain exactly 677,156 authentic stop times");
+  // #920: 1호선 주말 원천 중복 행 2개(512·514, 각 18정차)를 격리한다.
+  assert.strictEqual(pack.transitTrips.length, 26488, "Pack must contain exactly 26,488 authentic trips");
+  assert.strictEqual(pack.transitStopTimes.length, 677120, "Pack must contain exactly 677,120 authentic stop times");
   assert.strictEqual(pack.serviceCalendars.length, 31);
   // #919: 부산 40·대구 노선별 40(×3)·대전 32, 모두 192행의 KASI 공휴일 예외를 더한다.
   assert.strictEqual(pack.serviceCalendarDates.length, 398);
@@ -488,6 +490,8 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
   // #919: 조립한 전국 팩은 KASI 공휴일마다 모든 노선에서 휴일(또는 명절) 달력만 운행한다.
   // 리뷰 F2(#922): 불변식은 통합기에 넘긴 목록이 아니라 보관된 KASI 원문에서 따로 도출한 집합과 비교한다.
   assert.deepEqual(holidayCalendarViolations({ ...pack, holidayDates: retainedKasiHolidayDates() }), []);
+  // #920: 조립한 전국 팩에는 같은 달력·노선·역·출발 시각·다음 역·종착역 trip 묶음이 없다(1호선 주말 512·514 중복 행 제외).
+  assert.deepEqual(duplicateDepartureGroups(pack), []);
   const targetLine = pack.stationLines.find(
     (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
   );
