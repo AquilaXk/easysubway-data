@@ -248,16 +248,6 @@ test("인천 1·2호선 공식 timetable을 1414 trip·40898 stop_time·WEEK/HOL
 
   const maxArrival = Math.max(...stopTimes.map(({ arrivalSeconds }) => arrivalSeconds));
   assert.ok(maxArrival > 86_400, `expected a post-midnight trip, got max ${maxArrival}`);
-
-  // #918: 공식 FILE은 자정 이후 막차를 00시대로 적고 파일 끝에 둔다(02~04시 시각 없음).
-  // 운행일 경계(03:00) 앞 시각은 전날 운행일의 심야 시각이므로 86400초 이상으로 싣는다.
-  assert.deepEqual(stopTimes.filter(({ arrivalSeconds, departureSeconds }) =>
-    arrivalSeconds < 10_800 || departureSeconds < 10_800), []);
-  const bakchon = (tripId) => stopTimes.find((row) => row.tripId === tripId && row.stationId === "station-f497b2d7043f");
-  assert.deepEqual(
-    ["1301", "1303", "1305", "1307", "1309"].map((trainNo) => bakchon(`trip-incheon-1-dn-week-${trainNo}`).departureSeconds),
-    [86_430, 87_120, 87_810, 88_530, 89_070],
-  );
 });
 
 test("인천 timetable materializer는 snapshot·inventory·freshness·topology lineage 변조를 fail-closed한다", async () => {
@@ -445,6 +435,20 @@ test("materialized SQLite와 provenance가 인천 schedule_timetable 2건을 SUP
     "incheon-line2-holiday-2026": 372,
     "incheon-line2-weekday-2026": 468,
   });
+  // #918: 공식 FILE은 자정 이후 막차를 00시대로 적고 파일 끝에 둔다(02~04시 시각 없음).
+  // 데이터팩 SQLite에는 운행일 경계(03:00) 앞 시각을 전날 운행일의 24시 이후 초로 싣는다.
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM transit_stop_times
+    WHERE trip_id LIKE 'trip-incheon-%' AND (arrival_seconds < 10800 OR departure_seconds < 10800)
+  `).get().count, 0);
+  assert.deepEqual(database.prepare(`
+    SELECT trip_id AS tripId, departure_seconds AS departureSeconds FROM transit_stop_times
+    WHERE station_id = 'station-f497b2d7043f' AND trip_id IN (
+      'trip-incheon-1-dn-week-1301', 'trip-incheon-1-dn-week-1303', 'trip-incheon-1-dn-week-1305',
+      'trip-incheon-1-dn-week-1307', 'trip-incheon-1-dn-week-1309')
+    ORDER BY trip_id
+  `).all().map(({ tripId, departureSeconds }) => [tripId.slice(-4), departureSeconds]),
+  [["1301", 86_430], ["1303", 87_120], ["1305", 87_810], ["1307", 88_530], ["1309", 89_070]]);
   database.close();
 
   await execFileAsync(process.execPath, [

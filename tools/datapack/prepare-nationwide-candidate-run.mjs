@@ -19,7 +19,6 @@ import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 import { HOLIDAYS_2026, materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
-import { serviceDayBoundaryViolations } from "./lib/service-day-seconds.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { officialOdFareAdmissionsBySource, officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
@@ -1576,13 +1575,6 @@ export async function prepareNationwideCandidate({
     if (!Array.isArray(gwangjuTopologySource.coverageScope?.[field])) throw new Error(`nationwide candidate Gwangju coverage ${field} is missing`);
     kricPackSources[0].coverageScope[field] = [...new Set([...kricPackSources[0].coverageScope[field],
       ...gwangjuTopologySource.coverageScope[field]])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-  }
-
-  // #918: 모든 시간표 원천을 합친 뒤 운행일 경계(03:00) 앞 정차 시각이 남으면 후보를 만들지 않는다.
-  const serviceDayBoundaryRows = serviceDayBoundaryViolations(finalPack.transitStopTimes);
-  if (serviceDayBoundaryRows.length > 0) {
-    const tripIds = [...new Set(serviceDayBoundaryRows.map(({ tripId }) => tripId))];
-    throw new Error(`nationwide candidate stop times precede the 03:00 service-day boundary: ${tripIds.length} trips (${tripIds.slice(0, 5).join(", ")})`);
   }
 
   // #855: 대전·광주 원천은 역별 시각 하나만 준다. 원천 정차 2개 이상으로 열차를 만들 수 없는

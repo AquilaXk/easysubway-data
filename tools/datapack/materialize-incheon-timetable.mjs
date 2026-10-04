@@ -13,7 +13,6 @@ import { isDeepStrictEqual } from "node:util";
 
 import { INCHEON_TIMETABLE_LINES } from "./collect-incheon-timetable.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
-import { serviceDaySeconds } from "./lib/service-day-seconds.mjs";
 
 const ISSUE = 2488;
 const MATERIALIZER = "tools/datapack/materialize-incheon-timetable.mjs";
@@ -413,9 +412,8 @@ function addRoutesAndTrips(pack, line, stationIdByLineCode) {
         stopSequence: index + 1,
         stationId,
         lineId: config.lineId,
-        // #918: 공식 FILE이 00시대로 적은 자정 이후 시각은 전날 운행일의 심야 시각이다(운행일 경계 03:00).
-        arrivalSeconds: serviceDaySeconds(stop.a),
-        departureSeconds: serviceDaySeconds(stop.d),
+        arrivalSeconds: stop.a,
+        departureSeconds: stop.d,
         pickupType: index === trip.stops.length - 1 ? 1 : 0,
         dropOffType: index === 0 ? 1 : 0,
       }, tripProvenance));

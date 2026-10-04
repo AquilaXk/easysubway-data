@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { KRIC_API_STATION_TIMETABLE_BINDINGS } from "./kric-station-timetable-api-trips.mjs";
 import { canonicalJson } from "./manifest-validation.mjs";
-import { serviceDaySeconds } from "./service-day-seconds.mjs";
 
 // #903: kric-subway-timetable-station-lines 등록기가 커밋한 파생 스냅샷(역별 KRIC API 재구성 trip)을
 // 공용 적재기(materializeOfficialLineTimetables) 입력으로 바꾼다. 스냅샷 내용 해시를 다시 확인하고 trip은 바꾸지 않는다.
@@ -38,12 +37,7 @@ export function kricStationLinesOfficialTimetable(snapshot, evidence, { bindings
     lineId: trip.lineId, routeKey: lnCdOf.get(trip.lineId) ?? fail("LINE", trip.lineId), providerTripKey: trip.providerTripKey,
     trainNumber: trip.provenance.trainNumber, serviceDayKind: SERVICE_DAY_KIND[trip.serviceDayKind] ?? fail("SERVICE_DAY", trip.providerTripKey),
     sourceDayKey: trip.provenance.dayCd, servicePattern: trip.servicePattern, headsign: trip.headsign,
-    sourceRowSha256: trip.sourceRowSha256,
-    // #918: KRIC 응답(HHMMSS)이 00시대로 적은 자정 이후 시발 열차 시각은 전날 운행일의 심야 시각이다(운행일 경계 03:00).
-    // 스냅샷 trip은 바꾸지 않고 적재 입력에서만 운행일 초로 표현한다.
-    stops: trip.stops.map(({ stationName, arrivalSeconds, departureSeconds }) => ({
-      stationName, arrivalSeconds: serviceDaySeconds(arrivalSeconds), departureSeconds: serviceDaySeconds(departureSeconds),
-    })),
+    sourceRowSha256: trip.sourceRowSha256, stops: trip.stops,
   }));
   const quarantine = snapshot.quarantine.map((row) => {
     const [, trainNumber, dayCd] = row.providerTripKey.split("|");

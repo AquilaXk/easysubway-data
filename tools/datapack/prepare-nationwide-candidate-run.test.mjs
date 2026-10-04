@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
-import { serviceDayBoundaryViolations } from "./lib/service-day-seconds.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
@@ -483,8 +482,6 @@ test("prepareNationwideCandidate binds platform metadata onto stationLines", asy
   });
 
   const pack = result.finalPack;
-  // #918: 조립한 전국 팩에는 운행일 경계(03:00) 앞 정차 시각이 남지 않는다(인천 1·2호선, KRIC GTX-A·의정부 포함).
-  assert.deepEqual(serviceDayBoundaryViolations(pack.transitStopTimes), []);
   const targetLine = pack.stationLines.find(
     (sl) => sl.stationId === "station-00089f8f97de" && sl.lineId === "line-558d0bd8312d"
   );

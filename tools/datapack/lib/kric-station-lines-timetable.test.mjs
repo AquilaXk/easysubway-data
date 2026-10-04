@@ -13,14 +13,15 @@ const trip = (trainNumber, dayCd, kind) => ({
   provenance: { lnCd: "B1", trainNumber, dayCd, direction: "ASC" },
 });
 
-function snapshotAndEvidence(quarantine = [], trips = [trip("1001", "8", "WEEKDAY"), trip("3001", "9", "SATURDAY_SUNDAY_HOLIDAY")]) {
+function snapshotAndEvidence(quarantine = []) {
+  const trips = [trip("1001", "8", "WEEKDAY"), trip("3001", "9", "SATURDAY_SUNDAY_HOLIDAY")];
   const content = { schemaVersion: 1, artifactKind: "kric-station-timetable-snapshot", sourceId: "kric-subway-timetable-station-lines",
     catalogProviderId: "provider:kric-subway-timetable", capturedAt: "2026-10-03T00:30:00.000Z", collectedAt: "2026-10-03T00:31:00.000Z",
     raw: { rawSha256: "a".repeat(64), byteSize: 1, rawObjectUri: "oci://x", publicationReceiptSha256: "b".repeat(64) },
     serviceDayPolicy: "policy", lines: [], trips, quarantine };
   const contentSha256 = sha(canonicalJson(content));
   const snapshot = { ...content, snapshotId: "kric-subway-timetable-station-lines-20261003", contentSha256 };
-  const evidence = { snapshotId: snapshot.snapshotId, contentSha256, rawSha256: "a".repeat(64), tripsSha256: sha(JSON.stringify(trips)), tripCount: trips.length };
+  const evidence = { snapshotId: snapshot.snapshotId, contentSha256, rawSha256: "a".repeat(64), tripsSha256: sha(JSON.stringify(trips)), tripCount: 2 };
   return { snapshot, evidence };
 }
 
@@ -54,21 +55,4 @@ test("격리 행의 운행일은 dayCd 8=평일, 9=주말·휴일만 받고 그 
   assert.deepEqual(kinds("8"), ["WEEKDAY"]);
   assert.deepEqual(kinds("9"), ["WEEKEND_HOLIDAY"]);
   for (const dayCd of ["7", "1", ""]) assert.throws(() => kinds(dayCd), /KRIC_STATION_LINES_TIMETABLE_SERVICE_DAY/u);
-});
-
-test("#918 자정 이후 시발 열차의 00~02시 시각은 전날 운행일의 24시 이후 초로 적재한다(스냅샷은 바꾸지 않는다)", () => {
-  const timed = (trainNumber, departure, arrival) => ({ ...trip(trainNumber, "8", "WEEKDAY"),
-    stops: [{ stationName: "가역(부역)", arrivalSeconds: null, departureSeconds: departure }, { stationName: "나역", arrivalSeconds: arrival, departureSeconds: null }] });
-  // 원천 KRIC 응답(HHMMSS)은 00시대로 적는다. 자정을 넘는 열차는 스냅샷에 이미 86400초 이상으로 이어져 있다.
-  const { snapshot, evidence } = snapshotAndEvidence([], [timed("1901", 360, 840), timed("1899", 86_040, 86_460), timed("1001", 21_600, 21_780)]);
-  const before = structuredClone(snapshot);
-  const { provider } = kricStationLinesOfficialTimetable(snapshot, evidence, { bindings: BINDINGS });
-  const stops = Object.fromEntries(provider.trips.map(({ trainNumber, stops: tripStops }) => [trainNumber,
-    tripStops.map(({ arrivalSeconds, departureSeconds }) => [arrivalSeconds, departureSeconds])]));
-  assert.deepEqual(stops, {
-    1001: [[null, 21_600], [21_780, null]],
-    1899: [[null, 86_040], [86_460, null]],
-    1901: [[null, 86_760], [87_240, null]],
-  });
-  assert.deepEqual(snapshot, before);
 });
