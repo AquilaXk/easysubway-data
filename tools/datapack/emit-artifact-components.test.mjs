@@ -24,7 +24,7 @@ import {
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./current-capital-station-line-contract.mjs";
-import { emitArtifactComponents, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
+import { emitArtifactComponents, nationwideTopologyEdgeStairColumns, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -964,3 +964,28 @@ async function writeStationPlatformGapFixtureInputs(fixtureRoot) {
   await writeFile(candidatesPath, JSON.stringify(candidates, null, 2));
   return loadStationPlatformGapInputs({ repositoryRoot: fixtureRoot });
 }
+
+// AquilaXk/easysubway-backend#480: 계단 정보가 없는 동선을 includes_stairs=0으로 "계단 없음"이라 주장하지 않는다.
+// SQLite 계약(catalog-schema.sql network_edges.includes_stairs INTEGER NOT NULL, 모바일 Drift bool)은 null을 담을 수 없다.
+// 그래서 stair_access_state(STEP_FREE·STAIR_ONLY·UNKNOWN)를 기준값으로 삼는다.
+// includes_stairs는 "확인된 계단(STAIR_ONLY)"일 때만 1이다. 계단 없음은 STEP_FREE로만 표현한다.
+test("서버 번들 network_edges의 계단 칸은 stair_access_state에서만 유도하고 미확인은 UNKNOWN으로 드러낸다", () => {
+  const columns = (edge) => nationwideTopologyEdgeStairColumns({ edgeId: "edge-x", ...edge });
+  // 원천에 계단 정보가 없는 전국 route-edge 입력 행(현재 환승 309개·RIDE 2182개 전부)
+  assert.deepEqual(columns({}), { includesStairs: 0, stairAccessState: "UNKNOWN" });
+  assert.deepEqual(columns({ stairAccessState: "STAIR_ONLY" }), { includesStairs: 1, stairAccessState: "STAIR_ONLY" });
+  assert.deepEqual(columns({ stairAccessState: "STEP_FREE" }), { includesStairs: 0, stairAccessState: "STEP_FREE" });
+  assert.deepEqual(columns({ includesStairs: true }), { includesStairs: 1, stairAccessState: "STAIR_ONLY" });
+  // includesStairs=false는 계단 없음 근거가 아니다. 상태가 없으면 UNKNOWN으로 남긴다.
+  assert.deepEqual(columns({ includesStairs: false }), { includesStairs: 0, stairAccessState: "UNKNOWN" });
+  // 계단 여부와 상태가 서로 어긋나거나 상태 값이 계약 밖이면 번들을 만들지 않는다.
+  for (const edge of [
+    { includesStairs: true, stairAccessState: "UNKNOWN" },
+    { includesStairs: true, stairAccessState: "STEP_FREE" },
+    { includesStairs: false, stairAccessState: "STAIR_ONLY" },
+    { stairAccessState: "NO_STAIRS" },
+    { includesStairs: "false" },
+  ]) {
+    assert.throws(() => columns(edge), /network edge stair state is invalid: edge-x/u);
+  }
+});

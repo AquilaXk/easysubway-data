@@ -315,6 +315,20 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
 }
 
+// AquilaXk/easysubway-backend#480: stair_access_state가 계단 정보의 기준값이다(STEP_FREE·STAIR_ONLY·UNKNOWN).
+// includes_stairs는 NOT NULL 계약이라 미확인을 담지 못하므로 "확인된 계단(STAIR_ONLY)"일 때만 1로 둔다.
+// includes_stairs=0은 계단 없음이 아니다. 계단 없음은 STEP_FREE로만 표현하고, 계단 정보가 없으면 UNKNOWN으로 남긴다.
+const STAIR_ACCESS_STATES = new Set(["STEP_FREE", "STAIR_ONLY", "UNKNOWN"]);
+export function nationwideTopologyEdgeStairColumns(edge) {
+  const declared = edge.includesStairs;
+  const stairAccessState = edge.stairAccessState ?? (declared === true ? "STAIR_ONLY" : "UNKNOWN");
+  if (!STAIR_ACCESS_STATES.has(stairAccessState) || (declared !== undefined && typeof declared !== "boolean")
+    || (declared === true && stairAccessState !== "STAIR_ONLY") || (declared === false && stairAccessState === "STAIR_ONLY")) {
+    throw new Error(`network edge stair state is invalid: ${edge.edgeId}`);
+  }
+  return { includesStairs: stairAccessState === "STAIR_ONLY" ? 1 : 0, stairAccessState };
+}
+
 function populateNationwideTopologyEdges(target, routeEdges) {
   target.exec("DELETE FROM network_edges");
   const insert = target.prepare(`
@@ -329,6 +343,7 @@ function populateNationwideTopologyEdges(target, routeEdges) {
   target.exec("BEGIN");
   try {
     for (const edge of routeEdges) {
+      const stair = nationwideTopologyEdgeStairColumns(edge);
       insert.run(
         edge.edgeId,
         edge.fromNodeId,
@@ -338,8 +353,8 @@ function populateNationwideTopologyEdges(target, routeEdges) {
         edge.edgeType,
         edge.servicePattern ?? "",
         edge.serviceClass ?? "SUBWAY",
-        edge.includesStairs ? 1 : 0,
-        edge.stairAccessState ?? "UNKNOWN",
+        stair.includesStairs,
+        stair.stairAccessState,
         edge.accessibilityStatus ?? "UNKNOWN",
         edge.reliabilityScore ?? 100,
         edge.sourceId ?? "",
