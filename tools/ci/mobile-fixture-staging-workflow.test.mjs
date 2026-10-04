@@ -205,6 +205,14 @@ test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한�
   assert.match(runner, /free -m/);
   assert.match(runner, /mobile-v19 memory/);
   assert.doesNotMatch(runner, /continue-on-error|^\s*if:/m);
+  // 관측 루프가 테스트 실패를 가리면 안 된다: 첫 줄 fail-fast, EXIT trap이 관측 루프를 끄고,
+  // node 실행 줄은 종료 코드를 바꾸는 꼬리(`|| true`, `|| :`, `;` 등) 없이 그 줄로 끝난다.
+  assert.match(runner, /\n        run: \|\n          set -euo pipefail\n/);
+  assert.match(runner, /^          trap '[^'\n]*\bkill "\$\{monitor\}"[^'\n]*' EXIT$/m);
+  assert.match(
+    runner,
+    /^          node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 2$/m,
+  );
   assertWorkflowStepOrder(ci, [
     "Verify current Mobile v19 ITX topology evidence",
     "Verify and run current Mobile v19 owned required tests",
