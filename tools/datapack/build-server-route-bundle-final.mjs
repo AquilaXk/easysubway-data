@@ -658,6 +658,22 @@ async function assertEmbeddedEvidence(input) {
         throw new Error(`station_platform_gaps contains orphan station-line: ${orphanPlatformGaps.map((row) => `${row.station_id}/${row.line_id}`).join(", ")}`);
       }
     }
+    // #925: 환승 계단 근거 행은 route-edge 입력의 역 안 환승 간선만 가리킨다(emit 단계가 topology STEP_FREE 집합과 같음을 검사한다).
+    assertEmbeddedTable(database, "transfer_stair_access_evidence", [
+      { name: "edge_id", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "from_direction_station_id", type: "TEXT", notnull: 1, pk: 2 },
+      { name: "to_direction_station_id", type: "TEXT", notnull: 1, pk: 3 },
+      { name: "path_sha256", type: "TEXT", notnull: 1, pk: 4 },
+      { name: "source_snapshot_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "duration_basis", type: "TEXT", notnull: 1, pk: 0 },
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
+    const inStationTransferEdgeIds = new Set(input.routeEdges
+      .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map(({ edgeId }) => edgeId));
+    const orphanTransferStairEdges = database.prepare("SELECT DISTINCT edge_id FROM transfer_stair_access_evidence ORDER BY edge_id").all()
+      .map((row) => row.edge_id).filter((edgeId) => !inStationTransferEdgeIds.has(edgeId));
+    if (orphanTransferStairEdges.length > 0) {
+      throw new Error(`transfer_stair_access_evidence contains edge_id outside in-station transfer route edges: ${orphanTransferStairEdges.join(", ")}`);
+    }
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest

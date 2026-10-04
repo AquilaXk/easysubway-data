@@ -22,6 +22,11 @@ import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-fres
 import { FACILITY_SOURCE_ID, loadStationElevatorPathInputs } from "./build-station-elevator-paths.mjs";
 import { buildTransitionFacilityRequirements, readBundledStepFreeInputs } from "./build-step-free-path-transitions.mjs";
 import { bindStationPlatformGaps, loadStationPlatformGapInputs } from "./build-station-platform-gaps.mjs";
+import {
+  deriveTransferStairAccess,
+  loadTransferStairAccessInputs,
+  transferStairCatalogFromSqlite,
+} from "./build-transfer-stair-access.mjs";
 
 const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id", "evaluation-at", "station-line-input", "route-edge-input"]);
 const COMPONENTS = {
@@ -57,6 +62,8 @@ export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
   station_elevator_path_facility: "CREATE TABLE station_elevator_path_facility (path_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT','DIRECTION')), facility_id TEXT NOT NULL, PRIMARY KEY (path_id, group_kind, facility_id))",
   station_platform_gaps: "CREATE TABLE station_platform_gaps (id TEXT PRIMARY KEY, station_id TEXT NOT NULL, line_id TEXT NOT NULL, direction TEXT CHECK(direction IN ('UP','DOWN')), platform_position TEXT NOT NULL, car_number INTEGER, door_number INTEGER, gap_grade TEXT NOT NULL CHECK(gap_grade IN ('NARROW','NORMAL','WIDE')), height_diff_grade TEXT NOT NULL CHECK(height_diff_grade IN ('LOW','NORMAL','HIGH')), curved INTEGER NOT NULL CHECK(curved IN (0,1)), source_snapshot_id TEXT NOT NULL)",
   transition_facility_requirement: "CREATE TABLE transition_facility_requirement (transition_key TEXT NOT NULL, path_id TEXT NOT NULL, direction_next_station_id TEXT NOT NULL, group_kind TEXT NOT NULL CHECK(group_kind IN ('EXIT_ELEVATORS','PLATFORM_DIRECTION_ELEVATORS')), facility_id TEXT NOT NULL, PRIMARY KEY (transition_key, path_id, group_kind, facility_id))",
+  // #925: 역 안 환승 간선 STEP_FREE 판정 근거(간선 x 방면 조합 x 계단 없는 공식 경로 원문 hash). 시간은 일반 환승 간선 값이다(D1).
+  transfer_stair_access_evidence: "CREATE TABLE transfer_stair_access_evidence (edge_id TEXT NOT NULL, from_direction_station_id TEXT NOT NULL, to_direction_station_id TEXT NOT NULL, path_sha256 TEXT NOT NULL CHECK(length(path_sha256)=64 AND path_sha256 NOT GLOB '*[^0-9a-f]*'), source_snapshot_id TEXT NOT NULL, duration_basis TEXT NOT NULL CHECK(duration_basis='GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH'), PRIMARY KEY (edge_id, from_direction_station_id, to_direction_station_id, path_sha256))",
 });
 const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
   "candidateId", "stationSetSha256", "sourceSetSha256", "policyVersion", "evaluatorVersion",
@@ -125,11 +132,14 @@ export async function emitArtifactComponents(input) {
   const stationElevatorPaths = await loadStationElevatorPathInputs({ repositoryRoot: root });
   // #837: 운영 빌드 경로에서 커밋된 원천 스냅샷과 역코드 membership으로 승강장 연단 간격 등급 행을 만든다. 입력이 없으면 실패한다.
   const stationPlatformGaps = await loadStationPlatformGapInputs({ repositoryRoot: root });
+  // #925: 운영 빌드 경로에서 커밋된 MOLIT 환승 이동경로 스냅샷을 승인·hash·신선도로 검증해 읽는다. 어긋나면 실패한다.
+  const transferStairAccess = await loadTransferStairAccessInputs({ repositoryRoot: root, evaluationAt: ids.builtAt });
+  if (Date.parse(ids.freshUntil) > Date.parse(transferStairAccess.freshUntil)) throw new Error("--fresh-until exceeds transfer stair source freshness");
 
   return serializeArtifactComponents({
     output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
     layout, buildContract, mapAssets, evaluationAt, stationLineInput: input.stationLineInput,
-    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy, stationElevatorPaths, stationPlatformGaps,
+    routeEdgeInput: input.routeEdgeInput, routeEdgePolicy, stationElevatorPaths, stationPlatformGaps, transferStairAccess,
     skipSourceProjection: input.skipSourceProjection ?? false,
   });
 }
@@ -138,10 +148,11 @@ export async function emitArtifactComponents(input) {
 export async function serializeArtifactComponents({
   output, sourceBytes, sourceSchema, sourceSchemaBytes, ids, buildSpec, buildSpecBytes,
   layout, buildContract, mapAssets, evaluationAt, stationLineInput, routeEdgeInput, routeEdgePolicy,
-  stationElevatorPaths, stationPlatformGaps, skipSourceProjection = false,
+  stationElevatorPaths, stationPlatformGaps, transferStairAccess, skipSourceProjection = false,
 } = {}) {
   requireStationElevatorPaths(stationElevatorPaths);
   requireStationPlatformGaps(stationPlatformGaps);
+  requireTransferStairAccess(transferStairAccess);
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
   const snapshot = path.join(temp, ".source.sqlite");
   let sourceDb;
@@ -162,6 +173,7 @@ export async function serializeArtifactComponents({
       skipSourceProjection,
       stationElevatorPaths,
       stationPlatformGaps,
+      transferStairAccess,
     });
     sourceDb.close(); sourceDb = undefined;
     await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
@@ -268,6 +280,14 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
     skipSourceProjection: true,
   });
   const provisionalBlockedEdgeIds = blockedEdgeIds(provisionalEvidence.evaluation);
+  // #925: route-edge 입력의 역 안 환승 간선을 커밋된 MOLIT 스냅샷으로 판정한다. STEP_FREE만 topology에 싣고 근거는 accessibility에 둔다.
+  const transferStair = deriveTransferStairAccess({
+    ...evidenceInput.transferStairAccess,
+    catalog: transferStairCatalogFromSqlite(source),
+    routeEdges: evidenceInput.routeEdgeInput.routeEdges,
+  });
+  const transferStepFreeEdgeIds = transferStair.edges.filter(({ state }) => state === "STEP_FREE").map(({ edgeId }) => edgeId);
+  let projectedTransferStepFreeEdgeIds;
   let generatedEvidence;
   for (const [name, owned] of Object.entries(COMPONENTS)) {
     const componentPath = path.join(artifact, `.${name}.sqlite`); const target = new DatabaseSync(componentPath); sqliteProfile(target);
@@ -281,6 +301,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
         populateNationwideTopologyEdges(target, evidenceInput.routeEdgeInput.routeEdges);
       }
       projectBlockedTopologyEdges(target, provisionalBlockedEdgeIds);
+      projectedTransferStepFreeEdgeIds = projectTransferStairAccess(target, transferStepFreeEdgeIds);
     }
     if (name === "accessibility") {
       generatedEvidence = buildGeneratedEvidence({
@@ -298,6 +319,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
       insertStationElevatorRows(target, evidenceInput.stationElevatorPaths);
       insertStationPlatformGapRows(target, source, evidenceInput.stationPlatformGaps);
       insertTransitionFacilityRequirements(target, evidenceInput.routeEdgeInput.routeEdges);
+      insertTransferStairEvidence(target, transferStair.evidenceRows, projectedTransferStepFreeEdgeIds);
     }
     target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
     validateComponent(target, name, layout.serverRouteBundle);
@@ -363,6 +385,59 @@ export function populateNationwideTopologyEdges(target, routeEdges) {
   } catch (error) {
     target.exec("ROLLBACK");
     throw error;
+  }
+}
+
+// #925: 공식 근거로 STEP_FREE가 된 역 안 환승 간선만 topology network_edges에 싣는다(계단 칸은 #923 공용 규칙).
+// 간선이 없거나, 역 안 환승이 아니거나, 이미 다른 계단 상태를 가진 간선이면 덮지 않고 실패한다.
+// 반환값은 투영 뒤 network_edges에서 STEP_FREE인 역 안 환승 간선 전체다(근거 표와 맞춰 본다).
+export function projectTransferStairAccess(target, edgeIds) {
+  const select = target.prepare("SELECT edge_type AS edgeType, includes_stairs AS includesStairs, stair_access_state AS stairAccessState FROM network_edges WHERE id = ?");
+  const update = target.prepare("UPDATE network_edges SET includes_stairs = ?, stair_access_state = ? WHERE id = ?");
+  for (const edgeId of edgeIds) {
+    const row = select.get(edgeId);
+    if (!row) throw new Error(`transfer stair evidence edge is missing from network_edges: ${edgeId}`);
+    if (row.edgeType !== "IN_STATION_TRANSFER") throw new Error(`transfer stair edge is not an in-station transfer: ${edgeId}`);
+    if (row.stairAccessState !== "UNKNOWN" || row.includesStairs !== 0) throw new Error(`transfer stair state conflicts with network_edges: ${edgeId}`);
+  }
+  target.exec("BEGIN");
+  try {
+    for (const edgeId of edgeIds) {
+      const stair = networkEdgeStairColumns({ stairAccessState: "STEP_FREE" }, edgeId);
+      update.run(stair.includesStairs, stair.stairAccessState, edgeId);
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+  return target.prepare("SELECT id FROM network_edges WHERE edge_type = 'IN_STATION_TRANSFER' AND stair_access_state = 'STEP_FREE' ORDER BY id COLLATE BINARY")
+    .all().map(({ id }) => id);
+}
+
+// #925: 근거 표의 간선 집합은 topology에서 STEP_FREE인 역 안 환승 간선 집합과 정확히 같아야 한다(고아 근거·근거 없는 STEP_FREE 금지).
+export function insertTransferStairEvidence(target, evidenceRows, stepFreeEdgeIds) {
+  if (!Array.isArray(evidenceRows) || !Array.isArray(stepFreeEdgeIds)) throw new Error("transfer stair evidence input is required");
+  const evidenceEdgeIds = [...new Set(evidenceRows.map(({ edgeId }) => edgeId))].sort(bytes);
+  if (canonicalJson(evidenceEdgeIds) !== canonicalJson([...stepFreeEdgeIds].sort(bytes))) {
+    throw new Error("transfer stair evidence and network_edges STEP_FREE edges mismatch");
+  }
+  const insert = target.prepare("INSERT INTO transfer_stair_access_evidence(edge_id,from_direction_station_id,to_direction_station_id,path_sha256,source_snapshot_id,duration_basis) VALUES(?,?,?,?,?,?)");
+  target.exec("BEGIN");
+  try {
+    for (const row of evidenceRows) {
+      insert.run(row.edgeId, row.fromDirectionStationId, row.toDirectionStationId, row.pathSha256, row.sourceSnapshotId, row.durationBasis);
+    }
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function requireTransferStairAccess(value) {
+  if (!value || typeof value !== "object" || !value.snapshot || !Array.isArray(value.snapshot.rows) || !value.providerCodeCatalog) {
+    throw new Error("transfer stair access input is required");
   }
 }
 
