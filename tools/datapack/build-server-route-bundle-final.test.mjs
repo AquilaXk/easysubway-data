@@ -302,6 +302,10 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["missing-station-elevator-path-table", "DROP TABLE station_elevator_path", /embedded station_elevator_path schema mismatch/],
     ["missing-station-elevator-path-facility-table", "DROP TABLE station_elevator_path_facility", /embedded station_elevator_path_facility schema mismatch/],
     ["missing-station-platform-gaps-table", "DROP TABLE station_platform_gaps", /embedded station_platform_gaps schema mismatch/],
+    // #925: 환승 계단 근거 표는 정확한 DDL이어야 하고, 근거 간선은 route-edge 입력의 역 안 환승 간선이어야 한다.
+    ["missing-transfer-stair-evidence-table", "DROP TABLE transfer_stair_access_evidence", /embedded transfer_stair_access_evidence schema mismatch/],
+    ["orphan-transfer-stair-edge", `INSERT INTO transfer_stair_access_evidence VALUES('transfer-ghost','station-a','station-b','${"a".repeat(64)}','molit-railway-transfer-movement-20260811','GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH')`, /transfer_stair_access_evidence contains edge_id outside in-station transfer route edges: transfer-ghost/],
+    ["ride-edge-transfer-stair-evidence", `INSERT INTO transfer_stair_access_evidence VALUES('ride-0000','station-a','station-b','${"a".repeat(64)}','molit-railway-transfer-movement-20260811','GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH')`, /transfer_stair_access_evidence contains edge_id outside in-station transfer route edges: ride-0000/],
     ["orphan-path-id", "INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan path_id: kric-mv:S1:2:201:202:1/],
     ["orphan-facility-id", "INSERT INTO station_elevator_path VALUES('kric-mv:S1:2:201:202:1','s1','l1','s2','9','나역',1,'1) 이동'); INSERT INTO station_elevator_path_facility VALUES('kric-mv:S1:2:201:202:1','EXIT','smrt-elev:0201:2:9번 출입구')", /station_elevator_path_facility contains orphan facility_id: smrt-elev:0201:2:9번 출입구/],
     ["missing-facilities-table", "DROP TABLE facilities", /facilities table is missing/],

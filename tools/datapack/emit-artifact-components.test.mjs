@@ -24,7 +24,8 @@ import {
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./current-capital-station-line-contract.mjs";
-import { emitArtifactComponents, nationwideTopologyEdgeStairColumns, populateNationwideTopologyEdges, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
+import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL, emitArtifactComponents, insertTransferStairEvidence, nationwideTopologyEdgeStairColumns, populateNationwideTopologyEdges, projectTransferStairAccess, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
+import { loadTransferStairAccessInputs } from "./build-transfer-stair-access.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -234,6 +235,26 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await cp("tools/datapack/source-candidates.json", path.join(fixtureRoot, "tools/datapack/source-candidates.json"));
   const stationElevatorPaths = await writeStationElevatorFixtureInputs(fixtureRoot, temp);
   const stationPlatformGaps = await writeStationPlatformGapFixtureInputs(fixtureRoot);
+  // #925: 운영 빌드 경로는 커밋된 MOLIT 환승 이동경로 스냅샷·KRIC 코드 카탈로그로 환승 계단 상태를 판정한다.
+  for (const relative of [
+    "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz",
+    "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",
+    "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+  ]) await cp(relative, path.join(fixtureRoot, relative));
+  // 합성 fixture inventory는 고정 원천 집합만 담으므로, 운영 inventory의 MOLIT 잠금 행을 그대로 옮기고 build spec의 inventory hash를 다시 묶는다.
+  {
+    const inventoryPath = path.join(fixtureRoot, "tools/datapack/source-inventory.json");
+    const fixtureInventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+    const molitSource = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8")).sources
+      .find(({ id }) => id === "molit-railway-transfer-movement");
+    fixtureInventory.sources = [...fixtureInventory.sources.filter(({ id }) => id !== molitSource.id), molitSource];
+    await writeFile(inventoryPath, `${JSON.stringify(fixtureInventory, null, 2)}\n`);
+    const fixtureSpecPath = path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json");
+    const fixtureSpec = JSON.parse(await readFile(fixtureSpecPath, "utf8"));
+    fixtureSpec.sourceInventorySha256 = hash(Buffer.from(JSON.stringify(fixtureInventory)));
+    await writeFile(fixtureSpecPath, `${JSON.stringify(fixtureSpec, null, 2)}\n`);
+  }
+  const transferStairAccess = await loadTransferStairAccessInputs({ repositoryRoot: fixtureRoot, evaluationAt: CURRENT_EVALUATION_AT });
   // emit 입력 결속은 current.json이 선택한 active pack을 따른다(#866 PR-B).
   const current = { activePack: { id: "capital", version: "1" }, packs: [{ id: "capital", version: "1", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: CURRENT_SOURCE_EXPIRES_AT };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
@@ -274,7 +295,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       releaseSequence: 1, activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL,
       builtAt: CURRENT_EVALUATION_AT, keyId: "test-key" },
     evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput,
-    routeEdgePolicy: routePolicy, stationElevatorPaths, stationPlatformGaps, ...values,
+    routeEdgePolicy: routePolicy, stationElevatorPaths, stationPlatformGaps, transferStairAccess, ...values,
   });
   const selectedSources = new Set(buildSpec.sourceSnapshots.map(({ sourceId }) => sourceId));
   const governance = JSON.parse(await readFile(path.join(fixtureRoot, "tools/datapack/source-governance-policy.json")));
@@ -332,6 +353,15 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await assert.rejects(() => releaseRun("missing-platform-gap-manifest"), /platform gap inputs is missing/);
   assert.equal(await exists(path.join(temp, "missing-platform-gap-manifest")), false);
   await writeFile(platformGapInputsPath, platformGapInputs);
+  // #925: 환승 계단 판정 입력이 없거나 MOLIT 스냅샷이 없으면 건너뛰지 않고 빌드를 실패시킨다.
+  await assert.rejects(() => run("missing-transfer-stair-input", { transferStairAccess: undefined }), /transfer stair access input is required/);
+  assert.equal(await exists(path.join(temp, "missing-transfer-stair-input")), false);
+  const molitGzipPath = path.join(fixtureRoot, "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz");
+  const molitGzip = await readFile(molitGzipPath);
+  await rm(molitGzipPath);
+  await assert.rejects(() => releaseRun("missing-molit-transfer-snapshot"), /ENOENT[^\n]*molit-railway-transfer-movement-20260811\.csv\.gz/);
+  assert.equal(await exists(path.join(temp, "missing-molit-transfer-snapshot")), false);
+  await writeFile(molitGzipPath, molitGzip);
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
   assert.deepEqual(paths, ["map-pack/manifest.json", "map-pack/payload/interchange-layout.json", "map-pack/payload/line-styles.json", "map-pack/payload/metropolitan.svg", "map-pack/payload/stations-layout.json", "server-route-bundle/compatibility.json", "server-route-bundle/manifest.signing-input.json", "server-route-bundle/payload/accessibility.sqlite.zst", "server-route-bundle/payload/fare.sqlite.zst", "server-route-bundle/payload/timetable.sqlite.zst", "server-route-bundle/payload/topology.sqlite.zst", "server-route-bundle/provenance.json", "station-catalog-pack/manifest.json", "station-catalog-pack/payload/catalog.sqlite"]);
@@ -547,6 +577,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
         { transition_key: "s1:l1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
         { transition_key: "s1:l1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
       ]);
+      // #925: 근거 표는 항상 있고, fixture에는 역 안 환승 간선이 없어 STEP_FREE 근거 행도 없다.
+      assert.equal(componentDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='transfer_stair_access_evidence'").get().sql,
+        GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
+      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM transfer_stair_access_evidence").get().count, 0);
       // #837: 운영 빌드 경로가 역코드 membership으로 결속한 승강장 연단 간격 등급 행을 적재한다(결속 실패 행은 제외).
       assert.deepEqual(componentDb.prepare("SELECT * FROM station_platform_gaps ORDER BY id").all().map((row) => ({ ...row })), [
         {
@@ -1019,5 +1053,56 @@ test("서버 번들 topology network_edges 행은 stair_access_state 기준 계�
       /network edge stair state is invalid: edge-bad/u);
   } finally {
     database.close();
+  }
+});
+
+// #925: 공식 근거로 판정한 STEP_FREE는 번들 topology의 역 안 환승 간선에만 싣고, 근거 표와 간선 상태가 정확히 맞아야 한다.
+test("#925 환승 계단 판정은 역 안 환승 간선에만 STEP_FREE로 투영되고 근거 표와 어긋나면 빌드가 실패한다", async () => {
+  const schema = await readFile(path.join(import.meta.dirname, "schema/catalog-schema.sql"), "utf8");
+  const ddl = /CREATE TABLE network_edges \([\s\S]*?\n\);/u.exec(schema)?.[0];
+  assert.ok(ddl, "catalog-schema network_edges DDL");
+  const edge = (edgeId, edgeType, stair = {}) => ({
+    edgeId, fromNodeId: `${edgeId}-a:line-x`, toNodeId: `${edgeId}-a:line-y`, durationSeconds: 60, distanceMeters: 80, edgeType, ...stair,
+  });
+  const topology = new DatabaseSync(":memory:");
+  const accessibility = new DatabaseSync(":memory:");
+  try {
+    topology.exec(ddl);
+    populateNationwideTopologyEdges(topology, [
+      edge("transfer-a", "IN_STATION_TRANSFER"),
+      edge("transfer-b", "IN_STATION_TRANSFER"),
+      edge("transfer-stair", "IN_STATION_TRANSFER", { stairAccessState: "STAIR_ONLY" }),
+      edge("ride-x", "RIDE"),
+    ]);
+    assert.throws(() => projectTransferStairAccess(topology, ["transfer-ghost"]), /transfer stair evidence edge is missing from network_edges: transfer-ghost/);
+    assert.throws(() => projectTransferStairAccess(topology, ["ride-x"]), /transfer stair edge is not an in-station transfer: ride-x/);
+    assert.throws(() => projectTransferStairAccess(topology, ["transfer-stair"]), /transfer stair state conflicts with network_edges: transfer-stair/);
+    assert.deepEqual(projectTransferStairAccess(topology, ["transfer-a"]), ["transfer-a"]);
+    assert.deepEqual(topology.prepare("SELECT id, includes_stairs, stair_access_state FROM network_edges ORDER BY id").all().map((row) => ({ ...row })), [
+      { id: "ride-x", includes_stairs: 0, stair_access_state: "UNKNOWN" },
+      { id: "transfer-a", includes_stairs: 0, stair_access_state: "STEP_FREE" },
+      { id: "transfer-b", includes_stairs: 0, stair_access_state: "UNKNOWN" },
+      { id: "transfer-stair", includes_stairs: 1, stair_access_state: "STAIR_ONLY" },
+    ]);
+
+    accessibility.exec(GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
+    const row = (edgeId, fromDirectionStationId, toDirectionStationId) => ({
+      edgeId, fromDirectionStationId, toDirectionStationId, pathSha256: "a".repeat(64),
+      sourceSnapshotId: "molit-railway-transfer-movement-20260811", durationBasis: "GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH",
+    });
+    const rows = [row("transfer-a", "s1", "s3"), row("transfer-a", "s1", "s4"), row("transfer-a", "s2", "s3"), row("transfer-a", "s2", "s4")];
+    assert.throws(() => insertTransferStairEvidence(accessibility, [...rows, row("transfer-b", "s1", "s3")], ["transfer-a"]),
+      /transfer stair evidence and network_edges STEP_FREE edges mismatch/);
+    assert.throws(() => insertTransferStairEvidence(accessibility, [], ["transfer-a"]),
+      /transfer stair evidence and network_edges STEP_FREE edges mismatch/);
+    assert.equal(accessibility.prepare("SELECT count(*) AS count FROM transfer_stair_access_evidence").get().count, 0);
+    insertTransferStairEvidence(accessibility, rows, ["transfer-a"]);
+    assert.equal(accessibility.prepare("SELECT count(*) AS count FROM transfer_stair_access_evidence").get().count, 4);
+    // D1: 계단 없는 경로의 시간은 따로 검증되지 않았다는 근거 값만 허용한다.
+    assert.throws(() => accessibility.prepare("INSERT INTO transfer_stair_access_evidence VALUES(?,?,?,?,?,?)")
+      .run("transfer-a", "s9", "s9", "b".repeat(64), "molit-railway-transfer-movement-20260811", "VERIFIED_STEP_FREE_DURATION"), /CHECK constraint failed/);
+  } finally {
+    topology.close();
+    accessibility.close();
   }
 });
