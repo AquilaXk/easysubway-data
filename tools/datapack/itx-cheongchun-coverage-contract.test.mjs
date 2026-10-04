@@ -199,10 +199,10 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(reference.promotion, {
     mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
-    previousArtifactSha256: "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260830151508786.json",
-    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5921050992",
-    approvedArtifactSha256: "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
+    previousArtifactSha256: "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260930163854026.json",
+    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5981684543",
+    approvedArtifactSha256: "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189",
   });
 
   const previousBytes = await readFile(new URL(`../../${reference.promotion.previousArtifactPath}`, import.meta.url));

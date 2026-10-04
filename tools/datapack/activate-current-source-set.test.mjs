@@ -851,11 +851,11 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     readFile(path.join(root, reference.completenessEvidencePath)),
     readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
   ]);
-  const buildNow = "2026-09-30T16:38:54.027Z";
+  const buildNow = "2026-10-04T15:15:19.525Z";
   const topologyEvidencePath = deriveApprovedItxTopologyEvidencePath(reference);
   assert.equal(
     topologyEvidencePath,
-    "tools/datapack/itx-cheongchun-topology-evidence-20260930163854026.json",
+    "tools/datapack/itx-cheongchun-topology-evidence-20261004151519524.json",
   );
   assert.throws(() => deriveApprovedItxTopologyEvidencePath({
     artifactId: "itx-cheongchun-source-timetable-invalid",
