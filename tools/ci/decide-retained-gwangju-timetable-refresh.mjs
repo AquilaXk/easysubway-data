@@ -6,6 +6,7 @@ import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { requireRetainedTimetableConfirmationPolicy } from "../datapack/prepare-retained-kric-timetable-publication.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
+const DAILY_REVERIFICATION_MILLIS = 24 * 60 * 60 * 1000;
 
 // Workflow와 controller는 동일한 current 입력을 읽고, 운영 시각은 호출 시 한 번 캡처한다.
 export async function readRetainedGwangjuTimetableRefreshDecision({
@@ -24,6 +25,7 @@ export async function readRetainedGwangjuTimetableRefreshDecision({
 
 // 등록된 head와 발행 경로가 공유하는 정책으로 갱신 시점을 계산한다.
 // #903: 만료 뒤가 아니라 SLA monitoring.alertBeforePackExpiry(수도권 topology 갱신 판정과 같은 기준) 창이 시작될 때부터 DUE다.
+// #929 D2: 그보다 먼저, 관측 후 하루가 지나면 DUE다(일일 재확인).
 // 만료 시각 자체는 바꾸지 않는다(연장 없음). 창 안에서 새로 수집해 등록해야 만료 전에 head가 이어진다.
 export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, candidate, freshnessPolicy, now = new Date() } = {}) {
   const nowMillis = requiredDate(now, "NOW");
@@ -47,7 +49,12 @@ export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, ca
   if (head.freshnessExpiresAt !== freshnessExpiresAt || head.freshUntil !== freshnessExpiresAt) {
     fail("FRESHNESS_EXPIRES_AT");
   }
-  const refreshDueAt = new Date(requiredUtc(freshnessExpiresAt, "FRESHNESS_EXPIRES_AT") - alertBeforeExpiryMillis).toISOString();
+  // #929 D2(QA 결정 2026-10-04): 관측 후 P1D가 지나면 매일 재확인한다. 만료 경보 창이 그보다 먼저 오면 그 시각이 우선이다.
+  // 만료 시각(freshnessExpiresAt) 계산은 바꾸지 않는다.
+  const refreshDueAt = new Date(Math.min(
+    observedMillis + DAILY_REVERIFICATION_MILLIS,
+    requiredUtc(freshnessExpiresAt, "FRESHNESS_EXPIRES_AT") - alertBeforeExpiryMillis,
+  )).toISOString();
   return {
     state: nowMillis < Date.parse(refreshDueAt) ? "CURRENT" : "DUE",
     sourceId: SOURCE_ID, snapshotId: head.snapshotId, observedAt: head.observedAt, freshnessExpiresAt, refreshDueAt,

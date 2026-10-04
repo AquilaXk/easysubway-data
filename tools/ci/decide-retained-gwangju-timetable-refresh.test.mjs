@@ -15,6 +15,8 @@ const snapshotId = `${SOURCE_ID}-${observationIdentitySha256}`;
 // SLA monitoring.alertBeforePackExpiry(수도권 topology 갱신 판정과 같은 기준)
 const ALERT_BEFORE_EXPIRY_MS = 6 * 60 * 60 * 1_000;
 const REFRESH_DUE_AT = new Date(Date.parse(EXPIRY) - ALERT_BEFORE_EXPIRY_MS).toISOString();
+// #929 D2(QA 결정 2026-10-04): 관측 후 P1D가 지나면 매일 재확인한다.
+const DAILY_DUE_AT = new Date(Date.parse(OBSERVED_AT) + 24 * 60 * 60 * 1_000).toISOString();
 const freshnessPolicy = (alertBeforePackExpiry = "PT6H") => ({ monitoring: { alertBeforePackExpiry } });
 
 function candidate(cadence = "P7D") {
@@ -64,26 +66,40 @@ test("repository decision reads the admitted head and rejects duplicate source p
   await writeJson("tools/datapack/release/source-snapshots.json", value.snapshots);
   await writeJson("tools/datapack/source-candidates.json", { candidates: [value.candidate] });
   await writeJson("release/product-gates/datapack-freshness-sla.json", value.freshnessPolicy);
-  const result = await readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(REFRESH_DUE_AT) });
+  const result = await readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(DAILY_DUE_AT) });
   assert.equal(result.state, "DUE");
-  assert.equal(result.refreshDueAt, REFRESH_DUE_AT);
+  assert.equal(result.refreshDueAt, DAILY_DUE_AT);
   assert.equal(result.snapshotId, snapshotId);
   await writeJson("tools/datapack/source-candidates.json", { candidates: [value.candidate, value.candidate] });
   await assert.rejects(readRetainedGwangjuTimetableRefreshDecision({ repositoryRoot, now: new Date(EXPIRY) }),
     /RETAINED_GWANGJU_TIMETABLE_REFRESH_SOURCE_CANDIDATE/);
 });
 
-test("retained Gwangju timetable은 genuine head가 아직 만료 전이면 CURRENT다", () => {
-  const result = decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date("2026-09-10T00:00:00.000Z") });
+test("retained Gwangju timetable은 관측 후 하루가 지나기 전에는 CURRENT다", () => {
+  // #929 D2 전에는 만료 6시간 전(REFRESH_DUE_AT)까지 CURRENT였다. 매일 재확인으로 바뀌어 기준 시각을 관측 다음 날로 옮긴다.
+  const result = decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date("2026-09-08T00:00:00.000Z") });
   assert.deepEqual(result, { state: "CURRENT", sourceId: SOURCE_ID, snapshotId, observedAt: OBSERVED_AT,
-    freshnessExpiresAt: EXPIRY, refreshDueAt: REFRESH_DUE_AT });
+    freshnessExpiresAt: EXPIRY, refreshDueAt: DAILY_DUE_AT });
 });
 
-test("retained Gwangju timetable은 만료 전 SLA 경보 창(PT6H) 시작부터 DUE다", () => {
-  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date(Date.parse(REFRESH_DUE_AT) - 1) }).state, "CURRENT");
-  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date(REFRESH_DUE_AT) }).state, "DUE");
-  const wider = { ...inputs(), freshnessPolicy: freshnessPolicy("PT24H") };
-  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...wider, now: new Date(Date.parse(EXPIRY) - 24 * 60 * 60 * 1_000) }).state, "DUE");
+test("#929 D2 retained Gwangju timetable은 관측 후 P1D부터 DUE이고 만료 계산은 그대로다", () => {
+  const before = decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date(Date.parse(DAILY_DUE_AT) - 1) });
+  assert.equal(before.state, "CURRENT");
+  const due = decideRetainedGwangjuTimetableRefresh({ ...inputs(), now: new Date(DAILY_DUE_AT) });
+  assert.equal(due.state, "DUE");
+  assert.equal(due.refreshDueAt, DAILY_DUE_AT);
+  assert.equal(due.freshnessExpiresAt, EXPIRY);
+  assert.ok(Date.parse(DAILY_DUE_AT) < Date.parse(REFRESH_DUE_AT));
+});
+
+test("retained Gwangju timetable은 만료 전 SLA 경보 창(PT6H)이 하루보다 먼저 오면 그때부터 DUE다", () => {
+  const cutoff = new Date(Date.parse(OBSERVED_AT) + 12 * 60 * 60 * 1_000).toISOString();
+  const value = inputs({ head: snapshot({ serviceEffectiveUntil: cutoff, freshnessExpiresAt: cutoff, freshUntil: cutoff }) });
+  const alertDueAt = new Date(Date.parse(cutoff) - ALERT_BEFORE_EXPIRY_MS).toISOString();
+  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...value, now: new Date(Date.parse(alertDueAt) - 1) }).state, "CURRENT");
+  const due = decideRetainedGwangjuTimetableRefresh({ ...value, now: new Date(alertDueAt) });
+  assert.equal(due.state, "DUE");
+  assert.equal(due.refreshDueAt, alertDueAt);
 });
 
 test("SLA 경보 창이 없거나 형식이 틀리면 판정하지 않는다", () => {
