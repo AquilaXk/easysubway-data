@@ -4,6 +4,7 @@
 // - 같은 workflow의 열린 실패 이슈가 둘 이상이면 하나를 고르지 않고 실패한다.
 // - 이 보고는 실패를 덮지 않는다. 갱신 job은 이미 실패했고, 이 단계는 실패를 사람이 보게 할 뿐이다.
 import { spawn } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export const REFRESH_WORKFLOWS = Object.freeze({
@@ -14,7 +15,7 @@ export const REFRESH_WORKFLOWS = Object.freeze({
 });
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
-const RUN_ID = /^[1-9][0-9]{0,19}$/u;
+const RUN_ID = /^[1-9]\d{0,19}$/u;
 
 function fail(code) {
   throw new Error(`REFRESH_FAILURE_REPORT_${code}`);
@@ -88,9 +89,18 @@ function parseArgs(argv) {
   return values;
 }
 
+// PATH 조회 없이 고정 경로로 gh를 찾는다(PATH 오염 차단, tools/route-map/svg-crop/render-svg.mjs와 같은 방식).
+function resolveGh() {
+  for (const candidate of ["/usr/bin/gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"]) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+  }
+  return fail("GH_EXECUTABLE");
+}
+
 function defaultRunGh(args, input = null) {
+  const gh = resolveGh();
   return new Promise((resolve, reject) => {
-    const child = spawn("gh", args, { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(gh, args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
