@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -197,12 +199,78 @@ test("CI는 current v19 contract 검증 뒤 fixture identity가 변경되지 않
 test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const runner = namedWorkflowStep(ci, "Verify and run current Mobile v19 owned required tests");
-  assert.match(runner, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 4/);
+  // #934: 러너(16GB)에서 병렬 4는 node 합계 RSS가 12~13.5GB까지 올라 OOM 종료(exit 143)가 반복됐다. 병렬도만 2로 낮춘다.
+  assert.match(runner, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 2/);
+  assert.deepEqual(ownership.workflows["required-pr"].profileInvocations,
+    ["node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2"]);
+  // 실행 중 메모리 사용을 같은 step 로그에 남긴다(러너가 종료돼도 직전 관측이 남도록 주기 출력).
+  assert.match(runner, /free -m/);
+  assert.match(runner, /mobile-v19 memory/);
+  assert.doesNotMatch(runner, /continue-on-error|^\s*if:/m);
+  // 관측 루프가 테스트 실패를 가리면 안 된다: 첫 줄 fail-fast, EXIT trap이 관측 루프를 끄고,
+  // node 실행 줄은 종료 코드를 바꾸는 꼬리(`|| true`, `|| :`, `;` 등) 없이 그 줄로 끝난다.
+  assert.match(runner, /\n        run: \|\n          set -euo pipefail\n/);
+  assert.match(runner, /^          trap '[^'\n]*\bkill "\$\{monitor\}"[^'\n]*' EXIT$/m);
+  assert.match(
+    runner,
+    /^          node tools\/ci\/data-test-discovery\.mjs run --class required-pr --profile mobile-v19 --max-workers 2$/m,
+  );
   assertWorkflowStepOrder(ci, [
     "Verify current Mobile v19 ITX topology evidence",
     "Verify and run current Mobile v19 owned required tests",
     "Re-verify current Mobile fixture for owned tests",
   ]);
+});
+
+const mobileV19Invocation =
+  "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2";
+
+function mobileV19RunScript() {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const step = namedWorkflowStep(ci, "Verify and run current Mobile v19 owned required tests");
+  const body = step.split("\n        run: |\n")[1];
+  assert.ok(body, "mobile-v19 runner step의 run 블록을 찾지 못함");
+  return body
+    .split("\n")
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n");
+}
+
+// 관측 step을 실제 bash로 돌린다. free는 러너 출력 형식의 stub, node 실행은 대역 명령으로 바꾼다.
+// 새 프로세스 그룹에서 실행해, 끝난 뒤 그 그룹에 남은 프로세스(관측 루프·sleep)가 없는지 본다.
+async function runMobileV19Step(replacement) {
+  const script = mobileV19RunScript();
+  assert.equal(script.split(mobileV19Invocation).length, 2, "node 실행 줄은 정확히 한 번 있어야 함");
+  const stubbed = `free() { echo "Mem: 15989 1329 11224"; }\n${script.replace(mobileV19Invocation, replacement)}`;
+  const child = spawn("bash", ["-c", stubbed], { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  const [code] = await once(child, "exit");
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const leftovers = execFileSync("ps", ["-axo", "pgid=,pid=,command="], { encoding: "utf8" })
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([pgid, pid]) => Number(pgid) === child.pid && Number(pid) !== child.pid)
+    .map((fields) => fields.slice(2).join(" "));
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    // 남은 프로세스가 없으면 그룹이 이미 사라졌다.
+  }
+  return { code, stdout, leftovers };
+}
+
+test("mobile-v19 관측 step은 node 종료 코드를 그대로 내고 관측 프로세스를 남기지 않는다", async () => {
+  const failing = await runMobileV19Step("sleep 1; (exit 7)");
+  assert.equal(failing.code, 7, "node 실패 종료 코드가 관측 루프·trap에 가려지면 안 됨");
+  assert.deepEqual(failing.leftovers, [], "step이 끝난 뒤 관측 루프나 그 sleep 자식이 남으면 안 됨");
+  assert.match(failing.stdout, /^mobile-v19 memory used=1329MB sampled peak=1329MB$/m);
+
+  const passing = await runMobileV19Step("sleep 1");
+  assert.equal(passing.code, 0);
+  assert.deepEqual(passing.leftovers, []);
 });
 
 test("CI는 direct current v19 검증 안에서 deployed verifier 회귀를 실행한다", () => {
@@ -225,8 +293,8 @@ test("CI는 구형 v18 migration 또는 station-catalog bootstrap을 실행하�
 const shardIds = ["contracts_shard_1", "contracts_shard_2", "contracts_shard_3", "contracts_shard_4"];
 const contractJobIds = ["contracts_mobile_v19", ...shardIds];
 
-function assertPinnedFixtureJob(job) {
-  assert.match(job, /^    timeout-minutes: 30$/m);
+function assertPinnedFixtureJob(job, timeoutMinutes = 30) {
+  assert.match(job, new RegExp(`^    timeout-minutes: ${timeoutMinutes}$`, "m"));
   assert.doesNotMatch(job, /\n    needs:/);
   const repository = namedWorkflowStep(job, "Checkout repository");
   const fixture = namedWorkflowStep(job, "Checkout pinned Mobile fixture");
@@ -284,7 +352,8 @@ test("CI는 browser-dependent required tests 전에 pinned Chrome runtime을 제
   // mobile-v19 profile도 pinned fixture를 stage한 독립 job이다.
   const mobile = namedJob(ci, "contracts_mobile_v19");
   assert.match(mobile, /^    name: Data contracts \(mobile-v19\)$/m);
-  assertPinnedFixtureJob(mobile);
+  // #934: 병렬 2로 낮춘 실측(로컬 4→2 실행시간 1.26배, CI 4-worker 최대 18m51s)에 여유를 둔 40분이다.
+  assertPinnedFixtureJob(mobile, 40);
   // #866 PR-C: 수도권 live chain 전용 job은 없다. 집계 job의 needs는 실제 Data contracts 하위 job 전체와 정확히 같다.
   const jobIds = [...ci.matchAll(/^  ([a-z0-9_]+):$/gmu)].map(([, id]) => id);
   assert.deepEqual(jobIds.filter((id) => id.startsWith("contracts_")).sort(), [...contractJobIds].sort());
