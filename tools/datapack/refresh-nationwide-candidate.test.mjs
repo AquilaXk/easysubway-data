@@ -67,6 +67,30 @@ test("전국 후보 갱신은 시계·sequence·2인 승인 역할을 모두 명
   assert.throws(() => parseRefreshNationwideCandidateArgs([...VALID_ARGS, "--approved-by", "other"]), /duplicate/);
 });
 
+test("#929 D3 정기 역할 갱신은 그 run의 gate-run 파일 없이는 시작하지 않는다", () => {
+  const scheduled = [
+    "--evaluated-at", "2026-10-01T00:00:00.000Z", "--release-sequence", "123",
+    "--requested-by", "datapack-scheduled-refresh", "--approved-by", "datapack-release-gates",
+  ];
+  assert.throws(() => parseRefreshNationwideCandidateArgs(scheduled), /scheduled roles require --gate-run/);
+  assert.deepEqual(parseRefreshNationwideCandidateArgs([...scheduled, "--gate-run", "/tmp/gate-run.json"]), {
+    evaluatedAt: "2026-10-01T00:00:00.000Z", releaseSequence: 123,
+    requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates", gateRunPath: "/tmp/gate-run.json",
+  });
+  assert.throws(() => parseRefreshNationwideCandidateArgs([...scheduled, "--gate-run", "relative.json"]), /--gate-run must be an absolute path/);
+});
+
+test("#929 D3 결속 검증은 release request의 gateRun이 이번 run과 다르면 실패한다", async () => {
+  const state = await readNationwideCandidateRefreshState(root);
+  const gateRun = { repository: "AquilaXk/easysubway-data", workflowPath: ".github/workflows/nationwide-candidate-refresh.yml",
+    runId: 1, runAttempt: 1, event: "workflow_dispatch", headSha: "a".repeat(40) };
+  const base = { ...state, evaluatedAt: state.fanIn.evaluatedAt,
+    requestedBy: state.releaseRequest.requestedBy, approvedBy: state.releaseRequest.approvedBy };
+  assert.ok(nationwideCandidateRefreshViolations({ ...base, gateRun }).some((violation) => /gateRun mismatch/.test(violation)));
+  const bound = { ...base, releaseRequest: { ...state.releaseRequest, gateRun } };
+  assert.ok(nationwideCandidateRefreshViolations(bound).some((violation) => /gateRun mismatch/.test(violation)));
+});
+
 test("현재 커밋 후보는 refresh-nationwide-candidate로 재생성돼 결속 검증을 통과한다(#862)", async () => {
   const state = await readNationwideCandidateRefreshState(root);
   const violations = nationwideCandidateRefreshViolations({

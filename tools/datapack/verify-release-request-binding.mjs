@@ -18,6 +18,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
+import { scheduledAuthorityViolations } from "./lib/scheduled-release-authority.mjs";
 
 // decide-datapack-release.mjs의 validApproval()과 같은 술어를 검사한다.
 // 여기서 통과하고 거기서 막히는 경우가 없도록 항목을 일치시킨다.
@@ -61,6 +62,8 @@ export function releaseRequestBindingViolations({
     releaseRequest.sourceSnapshotSetHash, buildSpec.sourceSnapshotSetHash);
   pushMismatch(violations, "approvedLedgerHash",
     releaseRequest.approvedLedgerHash, buildSpec.approvedAliasLedgerHash);
+  // #929 D3: 정기 역할은 그 후보를 만든 정기·체인 run(gateRun) 결속이 있어야 한다. 사람 역할에 정기 run을 붙일 수도 없다.
+  violations.push(...scheduledAuthorityViolations(releaseRequest));
   return violations;
 }
 

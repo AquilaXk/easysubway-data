@@ -54,11 +54,33 @@ jobs:
               exit "${diff_status}"
               ;;
           esac
-      - name: Build release-candidate modeArgs from repository files
+      - name: Fetch the candidate gate run record
+        id: gate-run
         if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node tools/ci/plan-datapack-release-chain.mjs release-candidate-mode-args --output "${RUNNER_TEMP}/release-candidate-mode-args.json"
+          # #929 D3: release request가 결속한 후보 생성 run의 GitHub 기록을 가져온다. 결속이 없으면(사람 역할) 가져오지 않는다.
+          run_id="$(node --input-type=module -e 'import { readFileSync } from "node:fs"; const request = JSON.parse(readFileSync("tools/datapack/release/release-request.json", "utf8")); process.stdout.write(request.gateRun === undefined ? "" : String(request.gateRun.runId));')"
+          if [[ -z "${run_id}" ]]; then
+            echo "record=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || { echo "release request gateRun runId is invalid" >&2; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > "${RUNNER_TEMP}/candidate-gate-run-record.json"
+          echo "record=${RUNNER_TEMP}/candidate-gate-run-record.json" >> "${GITHUB_OUTPUT}"
+      - name: Build release-candidate modeArgs from repository files
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GATE_RUN_RECORD: ${{ steps.gate-run.outputs.record }}
+        run: |
+          set -euo pipefail
+          args=(release-candidate-mode-args --output "${RUNNER_TEMP}/release-candidate-mode-args.json")
+          if [[ -n "${GATE_RUN_RECORD}" ]]; then
+            args+=(--gate-run-record "${GATE_RUN_RECORD}")
+          fi
+          node tools/ci/plan-datapack-release-chain.mjs "${args[@]}"
       - name: Dispatch release candidate
         if: ${{ steps.supersede.outputs.current == 'true' }}
         env:

@@ -455,6 +455,21 @@ test("nationwide release preparation binds recorded authority to exact candidate
   }
 });
 
+test("#929 D3 a scheduled-role candidate binds the producing gate run into the release request", async (context) => {
+  const input = await inputs(context);
+  const authority = { candidateId: input.releaseIdentity.candidateId,
+    scopeId: JSON.parse(input.inputBytes.productionScope).routingLaunchScope.id,
+    approvalId: "fixture-release-approval", requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates" };
+  const gateRun = { repository: "AquilaXk/easysubway-data", workflowPath: ".github/workflows/nationwide-candidate-refresh.yml",
+    runId: 37200000001, runAttempt: 1, event: "schedule", headSha: "a".repeat(40) };
+  const result = await buildNationwideReleaseArtifacts({ ...input, authority, gateRun });
+  assert.deepEqual(JSON.parse(result.requestBytes).gateRun, gateRun);
+  await assert.rejects(buildNationwideReleaseArtifacts({ ...input, authority }), /gateRun is required/u);
+  const person = { ...authority, requestedBy: "fixture-requester", approvedBy: "fixture-owner" };
+  assert.equal(Object.hasOwn(JSON.parse((await buildNationwideReleaseArtifacts({ ...input, authority: person })).requestBytes), "gateRun"), false);
+  await assert.rejects(buildNationwideReleaseArtifacts({ ...input, authority: person, gateRun }), /person roles require workflow_dispatch/u);
+});
+
 test("nationwide candidate derives hashes from the prepared pack, not a previous spec", async (context) => {
   const input = await inputs(context);
   const beforeBytes = await readFile(path.join(input.repositoryRoot, "pack.json"));

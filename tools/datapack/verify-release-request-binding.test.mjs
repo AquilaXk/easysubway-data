@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { evaluateReleaseDecision } from "./decide-datapack-release.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
+import { GATE_RUN_REPOSITORY, GATE_RUN_WORKFLOW_PATH, SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
 
 const hash = (value) => value.repeat(64);
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -221,3 +222,17 @@ function manifest(releaseSequence) {
     }],
   };
 }
+
+test("#929 D3 정기 역할 release request는 그 후보를 만든 정기 run(gateRun) 없이는 결속되지 않는다", () => {
+  const gateRun = {
+    repository: GATE_RUN_REPOSITORY, workflowPath: GATE_RUN_WORKFLOW_PATH,
+    runId: 37200000001, runAttempt: 1, event: "schedule", headSha: "a".repeat(40),
+  };
+  const scheduled = { requestedBy: SCHEDULED_RELEASE_ROLES.requestedBy, approvedBy: SCHEDULED_RELEASE_ROLES.approvedBy };
+  assert.deepEqual(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun } })), []);
+  assert.ok(releaseRequestBindingViolations(boundPair({ request: scheduled })).some((violation) => /gateRun is required/u.test(violation)));
+  assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "workflow_dispatch" } } }))
+    .some((violation) => /only for schedule or chain events/u.test(violation)));
+  assert.ok(releaseRequestBindingViolations(boundPair({ request: { gateRun } }))
+    .some((violation) => /person roles require workflow_dispatch/u.test(violation)));
+});
