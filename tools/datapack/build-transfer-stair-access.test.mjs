@@ -19,6 +19,8 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 // 매핑 표는 커밋된 KRIC 코드 카탈로그 노선만 가리킨다. fixture도 같은 카탈로그를 쓴다.
 const PROVIDER_CODE_CATALOG = JSON.parse(await readFile("tools/datapack/sources/kric-provider-code-catalog-20260228.json", "utf8"));
 const SNAPSHOT_ID = "molit-railway-transfer-movement-20260811";
+// 어휘 표 예시가 쓰는 역 이름. 운영 판정에서는 번들 정본 역 이름이 이 자리에 들어간다.
+const EXAMPLE_STATION_NAMES = Object.freeze(["방배", "서강대", "총신대입구", "월드컵경기장", "사평", "상봉", "연신내", "효창공원앞"]);
 
 function sadangCatalog({ extraStations = [], extraStationLines = [] } = {}) {
   return {
@@ -93,7 +95,7 @@ const ELEVATOR_STEPS = Object.freeze([
   "대합실 방향 엘리베이터 탑승",
   "(B1) 대합실로 이동",
   "승강장 방향 엘리베이터 탑승",
-  "(B3) 다음 노선 승강장으로 이동",
+  "(B3) 승강장으로 이동",
 ]);
 
 function sadangRows({ steps = () => ELEVATOR_STEPS, skip = () => false } = {}) {
@@ -368,7 +370,7 @@ test("단계 어휘 표는 닫혀 있고 각 규칙의 예시는 그 규칙으�
   for (const rule of TRANSFER_STEP_VOCABULARY) {
     assert.ok(rule.examples.length > 0, rule.id);
     for (const example of rule.examples) {
-      const classified = classifyTransferStep(example);
+      const classified = classifyTransferStep(example, { stationNames: EXAMPLE_STATION_NAMES });
       assert.equal(classified.ruleId, rule.id, `${rule.id}: ${example}`);
       assert.equal(classified.kind, rule.kind, `${rule.id}: ${example}`);
     }
@@ -436,7 +438,7 @@ test("승강장 위치 표기(9호선형 '사평 방면 승강장')는 경로의
     if (last) return { ...row, MV_CONT_DTL: `${row.CHTN_MV_TP_ORDR}) ${row.CHTN_MV_CONT} 승강장` };
     return row;
   });
-  assert.equal(classifyTransferStep("1) 방배 방면 승강장").kind, "PLATFORM_ENDPOINT");
+  assert.equal(classifyTransferStep("1) 방배 방면 승강장", { stationNames: ["방배"] }).kind, "PLATFORM_ENDPOINT");
   const result = derive({ rows });
   assert.equal(edgeState(result, EDGE_2_4).state, "STEP_FREE");
   assert.equal(edgeState(result, EDGE_4_2).state, "STEP_FREE");
@@ -444,4 +446,33 @@ test("승강장 위치 표기(9호선형 '사평 방면 승강장')는 경로의
   const middle = derive({ rows: sadangRows({ steps: () => [...ELEVATOR_STEPS.slice(0, 2), "환승 방면 승강장", ...ELEVATOR_STEPS.slice(2)] }) });
   assert.equal(edgeState(middle, EDGE_2_4).state, "UNKNOWN");
   assert.ok(edgeState(middle, EDGE_2_4).combos.every(({ blockingReasons }) => blockingReasons.includes("STEP_WORDING_UNRECOGNIZED")));
+});
+
+// #944 리뷰 F1: 계단 없음 규칙은 닫힌 어휘다. 문구의 모든 낱말이 허용 목록(장소·관계어·노선 표기·번들 역 이름·층·칸)에 있고
+// 문구 전체가 규칙 형식과 정확히 맞을 때만 인정한다. 금지 키워드는 사유를 붙이는 보조 장치다.
+test("F1 금지 키워드를 비껴간 오타·띄어쓰기·영어·부정·미설치 문구는 어휘 밖(UNRECOGNIZED)이다", () => {
+  const context = { stationNames: ["방배", "총신대입구"] };
+  for (const probe of [
+    "에스카레이터 이용 후 대합실로 이동",
+    "에스컬 레이터 이용 후 대합실로 이동",
+    "stairs 이용 후 대합실로 이동",
+    "엘리베이터 이용 안하고 대합실로 이동",
+    "엘리베이터 미설치 구간 대합실로 이동",
+    "어딘가 대합실로 이동",
+    "가상역명 방면 엘리베이터 탑승",
+    "에스카레이터 앞 표 내는 곳 통과",
+    "무빙 엘리베이터",
+  ]) {
+    const classified = classifyTransferStep(probe, context);
+    assert.equal(classified.kind, "UNRECOGNIZED", probe);
+    assert.equal(classified.effect, "BLOCKING", probe);
+    const result = derive({ rows: sadangRows({
+      steps: ({ line }) => (line === "2호선" ? ["대합실 방향 엘리베이터 탑승", `(B1) ${probe}`, "승강장 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"] : ELEVATOR_STEPS),
+    }) });
+    assert.equal(edgeState(result, EDGE_2_4).state, "UNKNOWN", probe);
+    assert.ok(edgeState(result, EDGE_2_4).combos.every(({ blockingReasons }) => blockingReasons.includes("STEP_WORDING_UNRECOGNIZED")), probe);
+  }
+  // 번들 역 이름은 판정 문맥으로만 허용된다. 같은 문구도 역 이름이 없으면 어휘 밖이다.
+  assert.equal(classifyTransferStep("4호선 총신대입구 방면 승강장으로 이동", context).kind, "LEVEL_MOVE");
+  assert.equal(classifyTransferStep("4호선 총신대입구 방면 승강장으로 이동").kind, "UNRECOGNIZED");
 });

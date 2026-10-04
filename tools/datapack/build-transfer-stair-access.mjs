@@ -28,38 +28,56 @@ const PROVIDER_CODE_CATALOG_PATH = "tools/datapack/sources/kric-provider-code-ca
 const FRESHNESS_POLICY_PATH = "release/product-gates/datapack-freshness-sla.json";
 const ADMITTED_STATUS = "official_snapshot_admitted";
 
-// 원천 단계 문구 어휘 표. 앞 번호("3) ")·층 표기("(B2)")·"(휠체어칸)"을 걷어 낸 문구에 위에서부터 적용하고 처음 맞는 규칙을 쓴다.
-// 막는 규칙(BLOCKING)은 문구 어디에 나와도 걸리고, 계단 없음 규칙(STEP_FREE)은 문구 전체가 형식에 맞아야 한다.
-// 어느 규칙에도 맞지 않으면 UNRECOGNIZED이고 계단 없음 근거가 아니다.
-const ELEVATOR = "(?:엘리베이터|엘레베이터)";
-const PLACE = "(?:환승 ?대합실|대합실|승강장|환승 ?통로|연결 ?통로|환승홀|맞이방|통로|지하 ?\\d+층|지상 ?\\d+층|\\d+층)";
+// 원천 단계 문구 어휘 표. 앞 번호("3) ")·층 표기("(B2)")·휠체어칸 표기를 걷어 낸 문구에 위에서부터 적용하고 처음 맞는 규칙을 쓴다.
+// - 막는 규칙(BLOCKING)은 문구 어디에 키워드가 나와도 걸린다. 사유를 붙이는 보조 장치다.
+// - 계단 없음 규칙(STEP_FREE)은 닫힌 어휘다. 문구를 띄어쓰기 단위 낱말로 나눠, 끝부분이 규칙의 핵심 낱말과 정확히 같고
+//   나머지 낱말이 모두 한정어 허용 목록(장소·관계어·층·칸, 고정 노선 표기, 번들 정본 역 이름)에 있을 때만 맞는다.
+// - 어느 규칙에도 맞지 않으면 UNRECOGNIZED이고 계단 없음 근거가 아니다(#944 리뷰 F1).
+const ELEVATOR_WORDS = Object.freeze(["엘리베이터", "엘레베이터"]);
+const PLACE_ROOT = "(?:환승대합실|대합실|승강장|환승통로|연결통로|환승홀|맞이방|통로)";
+const QUALIFIER_WORDS = new Set([
+  "환승대합실", "대합실", "승강장", "환승통로", "연결통로", "환승홀", "맞이방", "통로", "환승", "지하", "지상",
+  "방면", "방향", "내", "근처", "맞은편", "앞", "옆", ...ELEVATOR_WORDS,
+]);
+const FLOOR_WORD = /^(?:지하|지상)?\d+층$/u;
+const CAR_WORD = /^\d+번칸$/u;
+const DESTINATION_WORD = new RegExp(`^(?:${PLACE_ROOT}|(?:지하|지상)?\\d+층)(?:으로|로|에서)?$`, "u");
+const ELEVATOR_MOVE_CONNECTORS = Object.freeze([[], ["이용하여"], ["이용해"], ["이용", "후"], ["이용후"], ["탑승", "후"], ["하차", "후"]]);
+const FARE_GATE_PHRASES = Object.freeze([["표", "내는", "곳"], ["표", "내는곳"], ["개집표기"], ["개표구"], ["환승", "게이트"], ["환승게이트"], ["게이트"]]);
 export const TRANSFER_STEP_VOCABULARY = Object.freeze([
-  rule("STAIRS_KEYWORD", "STAIRS", "BLOCKING", /계단/u, ["계단으로 이동", "계단옆 엘리베이터 이용 후 지하2층 이동", "상봉방면 지하1층 계단"]),
-  rule("ESCALATOR_KEYWORD", "ESCALATOR", "BLOCKING", /에스컬레이[터타]/u, ["에스컬레이터 탑승", "대합실 방향 에스컬레이터로 이동"]),
-  rule("LIFT_KEYWORD", "LIFT", "BLOCKING", /리프트/u, ["대합실 방향 휠체어리프트 탑승", "6호선 월드컵경기장 방면 장애인용리프트 탑승"]),
-  rule("OUTSIDE_KEYWORD", "OUTSIDE", "BLOCKING", /출구|출입구|외부|인도|횡단보도|밖|바깥/u, [
+  blocking("STAIRS_KEYWORD", "STAIRS", /계단/u, ["계단으로 이동", "계단옆 엘리베이터 이용 후 지하2층 이동", "상봉방면 지하1층 계단"]),
+  blocking("ESCALATOR_KEYWORD", "ESCALATOR", /에스컬레이[터타]/u, ["에스컬레이터 탑승", "대합실 방향 에스컬레이터로 이동"]),
+  blocking("LIFT_KEYWORD", "LIFT", /리프트/u, ["대합실 방향 휠체어리프트 탑승", "6호선 월드컵경기장 방면 장애인용리프트 탑승"]),
+  blocking("OUTSIDE_KEYWORD", "OUTSIDE", /출구|출입구|외부|인도|횡단보도|밖|바깥/u, [
     "13번 출구로 이동", "2호선 6번 출입구 옆 엘리베이터 이동", "1F 외부로 이동", "횡단보도이용", "개집표기 밖으로 이동", "세연정앞 인도",
   ]),
-  rule("UNAVAILABLE_OR_ASSISTED_WORDING", "UNAVAILABLE", "BLOCKING", /고장|중지|미운영|공사|불가|중단|없음|없는|직원|호출|요청|동행/u, [
+  blocking("UNAVAILABLE_OR_ASSISTED_WORDING", "UNAVAILABLE", /고장|중지|미운영|공사|불가|중단|없음|없는|직원|호출|요청|동행/u, [
     "엘리베이터 고장 시 직원 호출", "장애인 게이트에서 콜 버튼 눌러 4호선 환승을 위한 게이트 통과 요청",
   ]),
-  rule("ALIGHT_AT_PLATFORM", "ALIGHT", "STEP_FREE", /^[^()]*?승강장(?:에서)? ?하차$/u, ["2호선 방배 방면 승강장 하차", "경의중앙선 서강대 방면 승강장 하차"]),
-  rule("ELEVATOR_RIDE", "ELEVATOR", "STEP_FREE", new RegExp(`^[^()]*?${ELEVATOR}(?:를|로)? ?(?:탑승|이용|하차|승차)$`, "u"), [
+  stepFree("ALIGHT_AT_PLATFORM", "ALIGHT", (tokens, context) => endsWithAny(tokens, context, [["승강장", "하차"], ["승강장에서", "하차"]]), [
+    "2호선 방배 방면 승강장 하차", "경의중앙선 서강대 방면 승강장 하차",
+  ]),
+  stepFree("ELEVATOR_RIDE", "ELEVATOR", (tokens, context) => endsWithAny(tokens, context, ELEVATOR_WORDS.flatMap((word) => [
+    ...["탑승", "이용", "승차", "하차"].map((verb) => [word, verb]), [`${word}를`, "이용"],
+  ])), [
     "대합실 방향 엘리베이터 탑승", "승강장 내 엘리베이터 탑승", "엘리베이터 하차", "3번칸 근처 엘리베이터 이용", "맞은편 엘리베이터 승차", "4호선 승강장 엘레베이터 탑승",
   ]),
-  rule("ELEVATOR_AT_PLACE", "ELEVATOR", "STEP_FREE", new RegExp(`^[^()]*?${ELEVATOR}$`, "u"), [
+  stepFree("ELEVATOR_AT_PLACE", "ELEVATOR", (tokens, context) => endsWithAny(tokens, context, ELEVATOR_WORDS.map((word) => [word])), [
     "환승 지하1층 엘리베이터", "상봉방면 지상2층 엘리베이터", "상봉방면 지상1층 승강장 엘리베이터",
   ]),
-  rule("ELEVATOR_MOVE", "ELEVATOR", "STEP_FREE", new RegExp(`^[^()]*?${ELEVATOR}[^()]*이동$`, "u"), [
-    "엘리베이터 2층으로 이동", "승강장 엘리베이터를 이용하여 지하3층 환승홀로 이동", "신분당선 방면 엘리베이터로 이동", "엘리베이터 하차 후 공항철도선으로 이동",
+  stepFree("ELEVATOR_MOVE", "ELEVATOR", matchesElevatorMove, [
+    "엘리베이터 2층으로 이동", "승강장 엘리베이터를 이용하여 지하3층 환승홀로 이동", "신분당선 방면 엘리베이터로 이동", "엘리베이터 이용 후 지하2층 대합실로 이동",
   ]),
   // 승하차 지점 표기("사평 방면 승강장"): 경로의 처음·끝 단계에서만 인정한다(evaluatePathSteps).
-  rule("PLATFORM_ENDPOINT", "PLATFORM_ENDPOINT", "STEP_FREE", /^[^()]*?방면 ?승강장$/u, ["사평 방면 승강장", "상봉방면 승강장", "GTX-A 연신내 방면 승강장"]),
-  rule("BOARD", "BOARD", "STEP_FREE", /^(?:[^()]*?승강장 ?)?승차$/u, ["승차", "6호선 승강장 승차"]),
-  rule("FARE_GATE_PASS", "FARE_GATE", "STEP_FREE", /^[^()]*?(?:표 ?내는 ?곳|개집표기|개표구|환승 ?게이트|게이트) ?통과$/u, [
+  stepFree("PLATFORM_ENDPOINT", "PLATFORM_ENDPOINT", (tokens, context) => tokens.length >= 2 && tokens.at(-1) === "승강장"
+    && tokens.at(-2).endsWith("방면") && qualifiers(tokens.slice(0, -1), context), ["사평 방면 승강장", "상봉방면 승강장", "GTX-A 연신내 방면 승강장"]),
+  stepFree("BOARD", "BOARD", (tokens, context) => (tokens.length === 1 && tokens[0] === "승차")
+    || endsWithAny(tokens, context, [["승강장", "승차"]]), ["승차", "6호선 승강장 승차"]),
+  stepFree("FARE_GATE_PASS", "FARE_GATE", (tokens, context) => endsWithAny(tokens, context, FARE_GATE_PHRASES.map((phrase) => [...phrase, "통과"])), [
     "표 내는 곳 통과", "표 내는곳 통과", "개집표기 통과", "환승 게이트 통과", "1호선 방향 환승게이트 통과", "엘리베이터 앞 표 내는 곳 통과",
   ]),
-  rule("LEVEL_MOVE_TO_PLACE", "LEVEL_MOVE", "STEP_FREE", new RegExp(`^[^()]*?${PLACE}(?:으로|로|에서)? ?(?:이동|이용)$`, "u"), [
+  stepFree("LEVEL_MOVE_TO_PLACE", "LEVEL_MOVE", (tokens, context) => tokens.length >= 2 && ["이동", "이용"].includes(tokens.at(-1))
+    && DESTINATION_WORD.test(tokens.at(-2)) && qualifiers(tokens.slice(0, -2), context), [
     "대합실로 이동", "환승통로로 이동", "4호선 총신대입구 방면 승강장으로 이동", "지하 2층으로 이동", "환승통로 이용", "승강장 이동", "지하1층 이동",
   ]),
 ]);
@@ -108,8 +126,13 @@ export const TRANSFER_STAIR_LINE_TABLE = Object.freeze([
   line("광주 1호선", [["GJ", "1"]], ["1호선"]),
 ]);
 
-export function classifyTransferStep(detail) {
+const DIRECTION_LINE_TOKENS = new Set(TRANSFER_STAIR_LINE_TABLE.flatMap(({ directionTokens }) => directionTokens));
+
+// context.stationNames: 한정어로 허용할 번들 정본 역 이름(이름, "이름(부명)"). 없으면 역 이름이 든 문구는 어휘 밖이다.
+export function classifyTransferStep(detail, context = {}) {
   if (typeof detail !== "string") throw new Error("transfer step detail must be a string");
+  const stationNames = context.stationNames instanceof Set ? context.stationNames : new Set(context.stationNames ?? []);
+  const vocabularyContext = { stationNames, lineTokens: DIRECTION_LINE_TOKENS };
   const withoutNumber = detail.replace(STEP_PREFIX, "");
   const floors = [...withoutNumber.matchAll(FLOOR_TOKEN)].map((match) => floorOf(match));
   const text = withoutNumber
@@ -117,8 +140,10 @@ export function classifyTransferStep(detail) {
     .replace(/\([\d\s/-]*휠체어칸\)/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
+  const tokens = text === "" ? [] : text.split(" ");
   for (const entry of TRANSFER_STEP_VOCABULARY) {
-    if (entry.pattern.test(text)) return { ruleId: entry.id, kind: entry.kind, effect: entry.effect, floors };
+    const matched = entry.effect === "BLOCKING" ? entry.pattern.test(text) : entry.match(tokens, vocabularyContext);
+    if (matched) return { ruleId: entry.id, kind: entry.kind, effect: entry.effect, floors };
   }
   return { ruleId: null, kind: "UNRECOGNIZED", effect: "BLOCKING", floors };
 }
@@ -139,6 +164,7 @@ export function deriveTransferStairAccess({ snapshot, providerCodeCatalog, catal
   }
   const tableLines = resolveTableLines(catalog.lines);
   const neighbors = localNeighbors(routeEdges);
+  const stepContext = { stationNames: new Set(catalog.stations.flatMap((station) => [station.nameKo, ...subNamed(station)])) };
 
   const excludedPaths = [];
   const exclude = (pathEntry, reason) => excludedPaths.push({
@@ -175,7 +201,7 @@ export function deriveTransferStairAccess({ snapshot, providerCodeCatalog, catal
       exclude(entry, resolved.reason);
       continue;
     }
-    mappedPaths.push({ ...resolved, pathSha256: entry.pathSha256, ...evaluatePathSteps(entry.rows) });
+    mappedPaths.push({ ...resolved, pathSha256: entry.pathSha256, ...evaluatePathSteps(entry.rows, stepContext) });
   }
 
   const edges = [];
@@ -275,8 +301,52 @@ export function transferStairCatalogFromSqlite(database) {
   };
 }
 
-function rule(id, kind, effect, pattern, examples) {
-  return Object.freeze({ id, kind, effect, pattern, examples: Object.freeze(examples) });
+function blocking(id, kind, pattern, examples) {
+  return Object.freeze({ id, kind, effect: "BLOCKING", pattern, examples: Object.freeze(examples) });
+}
+
+function stepFree(id, kind, match, examples) {
+  return Object.freeze({ id, kind, effect: "STEP_FREE", match, examples: Object.freeze(examples) });
+}
+
+// 한정어 허용 목록: 장소·관계어·층·칸 낱말, 고정 노선 표기, 번들 정본 역 이름, 그리고 그 뒤에 "방면"·"방향"을 붙여 쓴 낱말.
+function isQualifier(token, context) {
+  if (QUALIFIER_WORDS.has(token) || FLOOR_WORD.test(token) || CAR_WORD.test(token)
+    || context.lineTokens.has(token) || context.stationNames.has(token)) {
+    return true;
+  }
+  return ["방면", "방향"].some((suffix) => {
+    if (!token.endsWith(suffix) || token.length === suffix.length) return false;
+    const stem = token.slice(0, -suffix.length);
+    return QUALIFIER_WORDS.has(stem) || context.lineTokens.has(stem) || context.stationNames.has(stem);
+  });
+}
+
+function qualifiers(tokens, context) {
+  return tokens.every((token) => isQualifier(token, context));
+}
+
+function endsWithAny(tokens, context, cores) {
+  return cores.some((core) => tokens.length >= core.length
+    && core.every((word, index) => tokens[tokens.length - core.length + index] === word)
+    && qualifiers(tokens.slice(0, tokens.length - core.length), context));
+}
+
+// "<한정어> 엘리베이터[로|를] [이용 후|이용하여|...] <한정어> [목적지] 이동"
+function matchesElevatorMove(tokens, context) {
+  if (tokens.length < 2 || tokens.at(-1) !== "이동") return false;
+  const body = tokens.slice(0, -1);
+  return body.some((token, index) => {
+    if (!ELEVATOR_WORDS.some((word) => [word, `${word}로`, `${word}를`].includes(token))) return false;
+    if (!qualifiers(body.slice(0, index), context)) return false;
+    const rest = body.slice(index + 1);
+    return ELEVATOR_MOVE_CONNECTORS.some((connector) => {
+      if (!connector.every((word, offset) => rest[offset] === word)) return false;
+      const tail = rest.slice(connector.length);
+      if (tail.length === 0) return true;
+      return qualifiers(tail.slice(0, -1), context) && (isQualifier(tail.at(-1), context) || DESTINATION_WORD.test(tail.at(-1)));
+    });
+  });
 }
 
 function line(lineName, providerLines, directionTokens) {
@@ -456,12 +526,12 @@ function normalizeStationName(value) {
 }
 
 // 경로 단계 판정: 막는 단계·어휘 밖 문구·승강 설비 없는 층 변화가 하나도 없을 때만 계단 없는 경로다.
-function evaluatePathSteps(rows) {
+function evaluatePathSteps(rows, context) {
   const reasons = new Set();
   let floor = null;
   let levelDeviceSinceFloor = false;
   for (const [index, row] of rows.entries()) {
-    const step = classifyTransferStep(row.MV_CONT_DTL);
+    const step = classifyTransferStep(row.MV_CONT_DTL, context);
     if (step.effect === "BLOCKING") reasons.add(step.kind === "UNRECOGNIZED" ? "STEP_WORDING_UNRECOGNIZED" : step.kind);
     if (step.kind === "PLATFORM_ENDPOINT" && index !== 0 && index !== rows.length - 1) reasons.add("STEP_WORDING_UNRECOGNIZED");
     const levelDevice = LEVEL_DEVICE_KINDS.has(step.kind);
