@@ -200,6 +200,11 @@ test("route service evidence tables는 server timetable component의 exact refer
     table: "station_platform_gaps",
     columns: ["id", "station_id", "line_id", "direction", "platform_position", "car_number", "door_number", "gap_grade", "height_diff_grade", "curved", "source_snapshot_id"],
   });
+  // #925: 역 안 환승 간선 STEP_FREE 판정 근거 표.
+  assert.deepEqual(components.accessibility.transferStairAccessEvidence, {
+    table: "transfer_stair_access_evidence",
+    columns: ["edge_id", "from_direction_station_id", "to_direction_station_id", "path_sha256", "source_snapshot_id", "duration_basis"],
+  });
   assert.deepEqual(components.fare.ownedTables, [
     "fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes",
   ]);

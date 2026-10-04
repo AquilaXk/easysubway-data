@@ -24,7 +24,8 @@ import {
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./current-capital-station-line-contract.mjs";
-import { emitArtifactComponents, nationwideTopologyEdgeStairColumns, populateNationwideTopologyEdges, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
+import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL, emitArtifactComponents, insertTransferStairEvidence, nationwideTopologyEdgeStairColumns, populateNationwideTopologyEdges, projectTransferStairAccess, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
+import { loadTransferStairAccessInputs } from "./build-transfer-stair-access.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -234,6 +235,26 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await cp("tools/datapack/source-candidates.json", path.join(fixtureRoot, "tools/datapack/source-candidates.json"));
   const stationElevatorPaths = await writeStationElevatorFixtureInputs(fixtureRoot, temp);
   const stationPlatformGaps = await writeStationPlatformGapFixtureInputs(fixtureRoot);
+  // #925: 운영 빌드 경로는 커밋된 MOLIT 환승 이동경로 스냅샷·KRIC 코드 카탈로그로 환승 계단 상태를 판정한다.
+  for (const relative of [
+    "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz",
+    "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",
+    "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+  ]) await cp(relative, path.join(fixtureRoot, relative));
+  // 합성 fixture inventory는 고정 원천 집합만 담으므로, 운영 inventory의 MOLIT 잠금 행을 그대로 옮기고 build spec의 inventory hash를 다시 묶는다.
+  {
+    const inventoryPath = path.join(fixtureRoot, "tools/datapack/source-inventory.json");
+    const fixtureInventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+    const molitSource = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8")).sources
+      .find(({ id }) => id === "molit-railway-transfer-movement");
+    fixtureInventory.sources = [...fixtureInventory.sources.filter(({ id }) => id !== molitSource.id), molitSource];
+    await writeFile(inventoryPath, `${JSON.stringify(fixtureInventory, null, 2)}\n`);
+    const fixtureSpecPath = path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json");
+    const fixtureSpec = JSON.parse(await readFile(fixtureSpecPath, "utf8"));
+    fixtureSpec.sourceInventorySha256 = hash(Buffer.from(JSON.stringify(fixtureInventory)));
+    await writeFile(fixtureSpecPath, `${JSON.stringify(fixtureSpec, null, 2)}\n`);
+  }
+  const transferStairAccess = await loadTransferStairAccessInputs({ repositoryRoot: fixtureRoot, evaluationAt: CURRENT_EVALUATION_AT });
   // emit 입력 결속은 current.json이 선택한 active pack을 따른다(#866 PR-B).
   const current = { activePack: { id: "capital", version: "1" }, packs: [{ id: "capital", version: "1", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: CURRENT_SOURCE_EXPIRES_AT };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
@@ -274,7 +295,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       releaseSequence: 1, activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL,
       builtAt: CURRENT_EVALUATION_AT, keyId: "test-key" },
     evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput,
-    routeEdgePolicy: routePolicy, stationElevatorPaths, stationPlatformGaps, ...values,
+    routeEdgePolicy: routePolicy, stationElevatorPaths, stationPlatformGaps, transferStairAccess, ...values,
   });
   const selectedSources = new Set(buildSpec.sourceSnapshots.map(({ sourceId }) => sourceId));
   const governance = JSON.parse(await readFile(path.join(fixtureRoot, "tools/datapack/source-governance-policy.json")));
@@ -332,6 +353,15 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await assert.rejects(() => releaseRun("missing-platform-gap-manifest"), /platform gap inputs is missing/);
   assert.equal(await exists(path.join(temp, "missing-platform-gap-manifest")), false);
   await writeFile(platformGapInputsPath, platformGapInputs);
+  // #925: 환승 계단 판정 입력이 없거나 MOLIT 스냅샷이 없으면 건너뛰지 않고 빌드를 실패시킨다.
+  await assert.rejects(() => run("missing-transfer-stair-input", { transferStairAccess: undefined }), /transfer stair access input is required/);
+  assert.equal(await exists(path.join(temp, "missing-transfer-stair-input")), false);
+  const molitGzipPath = path.join(fixtureRoot, "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz");
+  const molitGzip = await readFile(molitGzipPath);
+  await rm(molitGzipPath);
+  await assert.rejects(() => releaseRun("missing-molit-transfer-snapshot"), /ENOENT[^\n]*molit-railway-transfer-movement-20260811\.csv\.gz/);
+  assert.equal(await exists(path.join(temp, "missing-molit-transfer-snapshot")), false);
+  await writeFile(molitGzipPath, molitGzip);
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
   assert.deepEqual(paths, ["map-pack/manifest.json", "map-pack/payload/interchange-layout.json", "map-pack/payload/line-styles.json", "map-pack/payload/metropolitan.svg", "map-pack/payload/stations-layout.json", "server-route-bundle/compatibility.json", "server-route-bundle/manifest.signing-input.json", "server-route-bundle/payload/accessibility.sqlite.zst", "server-route-bundle/payload/fare.sqlite.zst", "server-route-bundle/payload/timetable.sqlite.zst", "server-route-bundle/payload/topology.sqlite.zst", "server-route-bundle/provenance.json", "station-catalog-pack/manifest.json", "station-catalog-pack/payload/catalog.sqlite"]);
@@ -406,6 +436,103 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   assert.equal(await exists(path.join(temp, "route-edge-source-subset")), false);
   applySourceSql("DELETE FROM network_edges WHERE id='ride-s2-s1'");
   await writeBindings(temp, source, current, spec);
+
+  // #944 리뷰 F3: 역 안 환승 간선이 있는 번들을 운영 직렬화 경로(skipSourceProjection=true, release staging과 같음)로 만들어
+  // derive → topology 투영 → 근거 표 적재가 실제 STEP_FREE로 이어지는지 본다. 원천은 손으로 적은 사당형 MOLIT 행이다.
+  {
+    applySourceSql("INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('t-2','seoul-metro','수도권 2호선','Line 2','#00aa00'),('t-4','seoul-metro','수도권 4호선','Line 4','#0000aa'); INSERT INTO stations(id,name_ko,name_en,name_sub,normalized_name,region) VALUES('t-sadang','사당','Sadang','','사당','수도권'),('t-bangbae','방배','Bangbae','','방배','수도권'),('t-nakseongdae','낙성대','Nakseongdae','','낙성대','수도권'),('t-chongshin','총신대입구','Chongshin','이수','총신대입구','수도권'),('t-namtaeryeong','남태령','Namtaeryeong','','남태령','수도권'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('t-bangbae','t-2',1),('t-sadang','t-2',2),('t-nakseongdae','t-2',3),('t-chongshin','t-4',1),('t-sadang','t-4',2),('t-namtaeryeong','t-4',3)");
+    await writeBindings(temp, source, current, spec);
+    const transferStationLines = [
+      ["t-bangbae", "t-2", 1], ["t-sadang", "t-2", 2], ["t-nakseongdae", "t-2", 3],
+      ["t-chongshin", "t-4", 1], ["t-sadang", "t-4", 2], ["t-namtaeryeong", "t-4", 3],
+    ];
+    const stationSetSha256 = hash(Buffer.from(canonicalJson(["s1", "s2", "station-b35616704ce3", ...new Set(transferStationLines.map(([stationId]) => stationId))].sort())));
+    const template = stationLineInput.evidenceRows.filter(({ stationId }) => stationId === "s1");
+    const transferStationLineInput = {
+      candidate: { ...stationLineInput.candidate, stationSetSha256 },
+      stationLines: [...stationLineInput.stationLines, ...transferStationLines.map(([stationId, lineId]) => ({ stationId, lineId, operatorId: "seoul-metro" }))],
+      evidenceRows: [
+        ...stationLineInput.evidenceRows.map((row) => resealTerminalEvidence({ ...row, stationSetSha256 })),
+        ...transferStationLines.flatMap(([stationId, lineId]) => template.map((row) => ({ ...row, stationSetSha256, stationId, lineId, operatorId: "seoul-metro" }))),
+      ],
+    };
+    const ride = (from, to, lineId) => ({ edgeId: `ride-${from}-${to}`, edgeType: "RIDE", fromNodeId: `${from}:${lineId}`, toNodeId: `${to}:${lineId}`, durationSeconds: 90, distanceMeters: 900, servicePattern: "LOCAL", serviceClass: "SUBWAY" });
+    const transferEdge = (fromLineId, toLineId) => ({ edgeId: `transfer-t-sadang-${fromLineId}-${toLineId}`, edgeType: "IN_STATION_TRANSFER", fromNodeId: `t-sadang:${fromLineId}`, toNodeId: `t-sadang:${toLineId}`, durationSeconds: 120, distanceMeters: 150, servicePattern: "", serviceClass: "SUBWAY" });
+    const addedEdges = [
+      ride("t-bangbae", "t-sadang", "t-2"), ride("t-sadang", "t-bangbae", "t-2"), ride("t-sadang", "t-nakseongdae", "t-2"), ride("t-nakseongdae", "t-sadang", "t-2"),
+      ride("t-chongshin", "t-sadang", "t-4"), ride("t-sadang", "t-chongshin", "t-4"), ride("t-sadang", "t-namtaeryeong", "t-4"), ride("t-namtaeryeong", "t-sadang", "t-4"),
+      transferEdge("t-2", "t-4"), transferEdge("t-4", "t-2"),
+    ].map((edge) => ({ ...edge, edgeSha256: routeEdgeSha256(edge) }));
+    const transferRouteEdgeInput = {
+      candidate: { ...routeEdgeInput.candidate, stationSetSha256 },
+      stationLines: [...routeEdgeInput.stationLines, ...transferStationLines.map(([stationId, lineId, lineSequence]) => ({ stationId, lineId, operatorId: "seoul-metro", lineSequence }))],
+      routeEdges: [...routeEdgeInput.routeEdges, ...addedEdges],
+    };
+    const transferPolicy = structuredClone(routePolicy);
+    transferPolicy.rideInvariant.subwayLocal.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
+      transferRouteEdgeInput.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"),
+    );
+    // 2호선 방배·낙성대 x 4호선 총신대입구·남태령, 두 방향 모두 층마다 엘리베이터가 있는 공식 경로 문구.
+    const molitRows = [];
+    for (const [line, fromDirections, toLine, toDirections] of [
+      ["2호선", ["방배", "낙성대"], "4호선", ["총신대입구", "남태령"]],
+      ["4호선", ["총신대입구", "남태령"], "2호선", ["방배", "낙성대"]],
+    ]) {
+      for (const fromDirection of fromDirections) {
+        for (const toDirection of toDirections) {
+          const details = [`(B2) ${line} ${fromDirection} 방면 승강장 하차`, "대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동",
+            `${toLine} 승강장 방향 엘리베이터 탑승`, `(B3) ${toLine} ${toDirection} 방면 승강장으로 이동`, "승차 (휠체어칸)"];
+          details.forEach((detail, index) => molitRows.push({
+            RAIL_OPR_ISTT_CD: "S1(서울교통공사)", LN_NM: line, STIN_NM: "사당", CHTN_MV_TP_ORDR: String(index + 1),
+            MV_CONT_DTL: `${index + 1}) ${detail}`,
+            CHTN_MV_CONT: index === 0 ? `${line} ${fromDirection} 방면` : index === details.length - 1 ? `${toLine} ${toDirection} 방면` : "",
+          }));
+        }
+      }
+    }
+    const transferInputs = {
+      stationLineInput: transferStationLineInput, routeEdgeInput: transferRouteEdgeInput, routeEdgePolicy: transferPolicy, skipSourceProjection: true,
+      transferStairAccess: { ...transferStairAccess, snapshot: { ...transferStairAccess.snapshot, rows: molitRows } },
+    };
+    await run("transfer-stair-step-free", transferInputs);
+    const decompressed = async (name) => {
+      const target = path.join(temp, `transfer-stair-${name}.sqlite`);
+      await writeFile(target, zstdDecompressSync(await readFile(path.join(temp, "transfer-stair-step-free/server-route-bundle/payload", `${name}.sqlite.zst`))));
+      return new DatabaseSync(target, { readOnly: true });
+    };
+    const transferTopology = await decompressed("topology");
+    assert.deepEqual(transferTopology.prepare("SELECT id, includes_stairs, stair_access_state FROM network_edges WHERE edge_type='IN_STATION_TRANSFER' ORDER BY id").all().map((row) => ({ ...row })), [
+      { id: "transfer-t-sadang-t-2-t-4", includes_stairs: 0, stair_access_state: "STEP_FREE" },
+      { id: "transfer-t-sadang-t-4-t-2", includes_stairs: 0, stair_access_state: "STEP_FREE" },
+    ]);
+    assert.equal(transferTopology.prepare("SELECT count(*) AS count FROM network_edges WHERE edge_type='RIDE' AND stair_access_state<>'UNKNOWN'").get().count, 0);
+    transferTopology.close();
+    const transferAccessibility = await decompressed("accessibility");
+    const evidence = transferAccessibility.prepare("SELECT edge_id, from_direction_station_id, to_direction_station_id, source_snapshot_id, duration_basis FROM transfer_stair_access_evidence ORDER BY edge_id, from_direction_station_id, to_direction_station_id").all().map((row) => ({ ...row }));
+    transferAccessibility.close();
+    const expectedEvidence = (edgeId, pairs) => pairs.map(([from, to]) => ({ edge_id: edgeId, from_direction_station_id: from, to_direction_station_id: to, source_snapshot_id: "molit-railway-transfer-movement-20260811", duration_basis: "GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH" }));
+    assert.deepEqual(evidence, [
+      ...expectedEvidence("transfer-t-sadang-t-2-t-4", [["t-bangbae", "t-chongshin"], ["t-bangbae", "t-namtaeryeong"], ["t-nakseongdae", "t-chongshin"], ["t-nakseongdae", "t-namtaeryeong"]]),
+      ...expectedEvidence("transfer-t-sadang-t-4-t-2", [["t-chongshin", "t-bangbae"], ["t-chongshin", "t-nakseongdae"], ["t-namtaeryeong", "t-bangbae"], ["t-namtaeryeong", "t-nakseongdae"]]),
+    ]);
+    // 한 조합의 원천 경로가 없으면 그 간선은 UNKNOWN이고 근거 행도 없다.
+    await run("transfer-stair-combo-missing", { ...transferInputs, transferStairAccess: { ...transferInputs.transferStairAccess,
+      snapshot: { ...transferInputs.transferStairAccess.snapshot, rows: molitRows.slice(6) } } });
+    await writeFile(path.join(temp, "missing-topology.sqlite"), zstdDecompressSync(await readFile(path.join(temp, "transfer-stair-combo-missing/server-route-bundle/payload/topology.sqlite.zst"))));
+    const partial = new DatabaseSync(path.join(temp, "missing-topology.sqlite"), { readOnly: true });
+    assert.deepEqual(partial.prepare("SELECT id, stair_access_state FROM network_edges WHERE edge_type='IN_STATION_TRANSFER' ORDER BY id").all().map((row) => ({ ...row })), [
+      { id: "transfer-t-sadang-t-2-t-4", stair_access_state: "UNKNOWN" },
+      { id: "transfer-t-sadang-t-4-t-2", stair_access_state: "STEP_FREE" },
+    ]);
+    partial.close();
+    applySourceSql("DELETE FROM station_lines WHERE line_id IN ('t-2','t-4'); DELETE FROM stations WHERE id LIKE 't-%'; DELETE FROM lines WHERE id IN ('t-2','t-4')");
+    await writeBindings(temp, source, current, spec);
+  }
+  // #944 리뷰 F3: 번들 freshUntil은 MOLIT 원천 신선도를 넘을 수 없다.
+  await assert.rejects(() => run("transfer-stair-freshness-exceeded", {
+    transferStairAccess: { ...transferStairAccess, freshUntil: new Date(Date.parse(CURRENT_FRESH_UNTIL) - 1_000).toISOString() },
+  }), /--fresh-until exceeds transfer stair source freshness/);
+  assert.equal(await exists(path.join(temp, "transfer-stair-freshness-exceeded")), false);
 
   const stationLineInputPath = path.join(temp, "station-line-input.json");
   const routeEdgeInputPath = path.join(temp, "route-edge-input.json");
@@ -547,6 +674,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
         { transition_key: "s1:l1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "EXIT_ELEVATORS", facility_id: "smrt-elev:0201:2:1번 출입구" },
         { transition_key: "s1:l1", path_id: "kric-mv:S1:2:201:202:1", direction_next_station_id: "s2", group_kind: "PLATFORM_DIRECTION_ELEVATORS", facility_id: "smrt-elev:0201:2:나역 방면2-3" },
       ]);
+      // #925: 근거 표는 항상 있고, fixture에는 역 안 환승 간선이 없어 STEP_FREE 근거 행도 없다.
+      assert.equal(componentDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='transfer_stair_access_evidence'").get().sql,
+        GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
+      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM transfer_stair_access_evidence").get().count, 0);
       // #837: 운영 빌드 경로가 역코드 membership으로 결속한 승강장 연단 간격 등급 행을 적재한다(결속 실패 행은 제외).
       assert.deepEqual(componentDb.prepare("SELECT * FROM station_platform_gaps ORDER BY id").all().map((row) => ({ ...row })), [
         {
@@ -1019,5 +1150,56 @@ test("서버 번들 topology network_edges 행은 stair_access_state 기준 계�
       /network edge stair state is invalid: edge-bad/u);
   } finally {
     database.close();
+  }
+});
+
+// #925: 공식 근거로 판정한 STEP_FREE는 번들 topology의 역 안 환승 간선에만 싣고, 근거 표와 간선 상태가 정확히 맞아야 한다.
+test("#925 환승 계단 판정은 역 안 환승 간선에만 STEP_FREE로 투영되고 근거 표와 어긋나면 빌드가 실패한다", async () => {
+  const schema = await readFile(path.join(import.meta.dirname, "schema/catalog-schema.sql"), "utf8");
+  const ddl = /CREATE TABLE network_edges \([\s\S]*?\n\);/u.exec(schema)?.[0];
+  assert.ok(ddl, "catalog-schema network_edges DDL");
+  const edge = (edgeId, edgeType, stair = {}) => ({
+    edgeId, fromNodeId: `${edgeId}-a:line-x`, toNodeId: `${edgeId}-a:line-y`, durationSeconds: 60, distanceMeters: 80, edgeType, ...stair,
+  });
+  const topology = new DatabaseSync(":memory:");
+  const accessibility = new DatabaseSync(":memory:");
+  try {
+    topology.exec(ddl);
+    populateNationwideTopologyEdges(topology, [
+      edge("transfer-a", "IN_STATION_TRANSFER"),
+      edge("transfer-b", "IN_STATION_TRANSFER"),
+      edge("transfer-stair", "IN_STATION_TRANSFER", { stairAccessState: "STAIR_ONLY" }),
+      edge("ride-x", "RIDE"),
+    ]);
+    assert.throws(() => projectTransferStairAccess(topology, ["transfer-ghost"]), /transfer stair evidence edge is missing from network_edges: transfer-ghost/);
+    assert.throws(() => projectTransferStairAccess(topology, ["ride-x"]), /transfer stair edge is not an in-station transfer: ride-x/);
+    assert.throws(() => projectTransferStairAccess(topology, ["transfer-stair"]), /transfer stair state conflicts with network_edges: transfer-stair/);
+    assert.deepEqual(projectTransferStairAccess(topology, ["transfer-a"]), ["transfer-a"]);
+    assert.deepEqual(topology.prepare("SELECT id, includes_stairs, stair_access_state FROM network_edges ORDER BY id").all().map((row) => ({ ...row })), [
+      { id: "ride-x", includes_stairs: 0, stair_access_state: "UNKNOWN" },
+      { id: "transfer-a", includes_stairs: 0, stair_access_state: "STEP_FREE" },
+      { id: "transfer-b", includes_stairs: 0, stair_access_state: "UNKNOWN" },
+      { id: "transfer-stair", includes_stairs: 1, stair_access_state: "STAIR_ONLY" },
+    ]);
+
+    accessibility.exec(GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
+    const row = (edgeId, fromDirectionStationId, toDirectionStationId) => ({
+      edgeId, fromDirectionStationId, toDirectionStationId, pathSha256: "a".repeat(64),
+      sourceSnapshotId: "molit-railway-transfer-movement-20260811", durationBasis: "GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH",
+    });
+    const rows = [row("transfer-a", "s1", "s3"), row("transfer-a", "s1", "s4"), row("transfer-a", "s2", "s3"), row("transfer-a", "s2", "s4")];
+    assert.throws(() => insertTransferStairEvidence(accessibility, [...rows, row("transfer-b", "s1", "s3")], ["transfer-a"]),
+      /transfer stair evidence and network_edges STEP_FREE edges mismatch/);
+    assert.throws(() => insertTransferStairEvidence(accessibility, [], ["transfer-a"]),
+      /transfer stair evidence and network_edges STEP_FREE edges mismatch/);
+    assert.equal(accessibility.prepare("SELECT count(*) AS count FROM transfer_stair_access_evidence").get().count, 0);
+    insertTransferStairEvidence(accessibility, rows, ["transfer-a"]);
+    assert.equal(accessibility.prepare("SELECT count(*) AS count FROM transfer_stair_access_evidence").get().count, 4);
+    // D1: 계단 없는 경로의 시간은 따로 검증되지 않았다는 근거 값만 허용한다.
+    assert.throws(() => accessibility.prepare("INSERT INTO transfer_stair_access_evidence VALUES(?,?,?,?,?,?)")
+      .run("transfer-a", "s9", "s9", "b".repeat(64), "molit-railway-transfer-movement-20260811", "VERIFIED_STEP_FREE_DURATION"), /CHECK constraint failed/);
+  } finally {
+    topology.close();
+    accessibility.close();
   }
 });

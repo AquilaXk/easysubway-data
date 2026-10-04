@@ -186,6 +186,8 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   const evaluationBytes = Buffer.from(canonicalRouteEdgeEvaluationJson(evaluation));
   await assertEmbeddedEvidence({
     accessibilityPayloadBytes: artifact.accessibilityPayloadBytes,
+    topologyPayloadBytes: artifact.topologyPayloadBytes,
+    transferStairSnapshotId: admittedTransferStairSnapshotId(fixed.sourceInventory.value),
     routeEdges: routeEdgeInput.routeEdges,
     evaluation,
     evaluationBytes,
@@ -539,6 +541,7 @@ async function inspectArtifact(artifactRoot, fixed, maxTotalDecompressedBytes = 
     componentInventorySha256,
     publicationObjects,
     accessibilityPayloadBytes: payloadBytes[COMPONENTS.indexOf("accessibility")],
+    topologyPayloadBytes: payloadBytes[COMPONENTS.indexOf("topology")],
     decompressedBudget,
     evidence: canonicalObject({
       schemaVersion: 1,
@@ -658,6 +661,38 @@ async function assertEmbeddedEvidence(input) {
         throw new Error(`station_platform_gaps contains orphan station-line: ${orphanPlatformGaps.map((row) => `${row.station_id}/${row.line_id}`).join(", ")}`);
       }
     }
+    // #925: 환승 계단 근거 행은 route-edge 입력의 역 안 환승 간선만 가리킨다(emit 단계가 topology STEP_FREE 집합과 같음을 검사한다).
+    assertEmbeddedTable(database, "transfer_stair_access_evidence", [
+      { name: "edge_id", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "from_direction_station_id", type: "TEXT", notnull: 1, pk: 2 },
+      { name: "to_direction_station_id", type: "TEXT", notnull: 1, pk: 3 },
+      { name: "path_sha256", type: "TEXT", notnull: 1, pk: 4 },
+      { name: "source_snapshot_id", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "duration_basis", type: "TEXT", notnull: 1, pk: 0 },
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.transfer_stair_access_evidence);
+    const foreignSnapshotIds = database.prepare("SELECT DISTINCT source_snapshot_id FROM transfer_stair_access_evidence WHERE source_snapshot_id <> ? ORDER BY source_snapshot_id")
+      .all(input.transferStairSnapshotId).map((row) => row.source_snapshot_id);
+    if (foreignSnapshotIds.length > 0) {
+      throw new Error(`transfer_stair_access_evidence source_snapshot_id does not match the admitted MOLIT snapshot: ${foreignSnapshotIds.join(", ")}`);
+    }
+    const inStationTransferEdgeIds = new Set(input.routeEdges
+      .filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map(({ edgeId }) => edgeId));
+    const evidenceEdgeIds = database.prepare("SELECT DISTINCT edge_id FROM transfer_stair_access_evidence ORDER BY edge_id").all()
+      .map((row) => row.edge_id);
+    const orphanTransferStairEdges = evidenceEdgeIds.filter((edgeId) => !inStationTransferEdgeIds.has(edgeId));
+    if (orphanTransferStairEdges.length > 0) {
+      throw new Error(`transfer_stair_access_evidence contains edge_id outside in-station transfer route edges: ${orphanTransferStairEdges.join(", ")}`);
+    }
+    // #944 F4: topology의 STEP_FREE 역 안 환승 간선 집합은 근거 간선 집합과 정확히 같고, STEP_FREE 간선에는 계단이 없다.
+    const topology = await readEmbeddedTopologyStairEdges(input.topologyPayloadBytes, temporary);
+    const stairedStepFree = topology.filter(({ stairAccessState, includesStairs }) => stairAccessState === "STEP_FREE" && includesStairs !== 0)
+      .map(({ id }) => id);
+    if (stairedStepFree.length > 0) throw new Error(`network_edges STEP_FREE edge includes stairs: ${stairedStepFree.join(", ")}`);
+    const stepFreeTransfers = topology.filter(({ edgeType, stairAccessState }) => edgeType === "IN_STATION_TRANSFER" && stairAccessState === "STEP_FREE")
+      .map(({ id }) => id).sort(bytewise);
+    if (canonicalJson(stepFreeTransfers) !== canonicalJson([...evidenceEdgeIds].sort(bytewise))) {
+      throw new Error("transfer_stair_access_evidence does not match network_edges STEP_FREE in-station transfers");
+    }
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest
@@ -675,6 +710,38 @@ async function assertEmbeddedEvidence(input) {
     database?.close();
     await rm(temporary, { recursive: true, force: true });
   }
+}
+
+// #944 F4: topology component에서 network_edges 계단 칸만 읽는다. 표가 없으면 실패한다.
+async function readEmbeddedTopologyStairEdges(topologyPayloadBytes, temporary) {
+  let sqliteBytes;
+  try {
+    sqliteBytes = zstdDecompressSync(topologyPayloadBytes);
+  } catch {
+    throw new Error("embedded topology component is not valid Zstd");
+  }
+  const sqlitePath = path.join(temporary, "topology.sqlite");
+  await writeFile(sqlitePath, sqliteBytes, { flag: "wx" });
+  const database = new DatabaseSync(sqlitePath, { open: true, readOnly: true });
+  try {
+    if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='network_edges'").get()) {
+      throw new Error("embedded topology network_edges is missing");
+    }
+    return database.prepare("SELECT id, edge_type AS edgeType, includes_stairs AS includesStairs, stair_access_state AS stairAccessState FROM network_edges ORDER BY id")
+      .all().map((row) => ({ ...row }));
+  } finally {
+    database.close();
+  }
+}
+
+// #925: 환승 계단 근거의 기준 원천은 source inventory가 잠근 MOLIT 환승 이동경로 스냅샷이다.
+function admittedTransferStairSnapshotId(sourceInventory) {
+  const matches = (sourceInventory?.sources ?? []).filter(({ id }) => id === "molit-railway-transfer-movement");
+  const admission = matches[0]?.rawSnapshotAdmission;
+  if (matches.length !== 1 || admission?.status !== "LOCKED" || typeof admission.snapshotId !== "string" || admission.snapshotId === "") {
+    throw new Error("source inventory MOLIT transfer snapshot admission is missing");
+  }
+  return admission.snapshotId;
 }
 
 function assertEmbeddedTable(database, table, expected, expectedDdl) {
