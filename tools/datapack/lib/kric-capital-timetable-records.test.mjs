@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
+  KRIC_CAPITAL_DUPLICATE_ROW_RESOLUTIONS,
   KRIC_CAPITAL_ROUTE_PROFILES,
   kricCapitalOfficialTimetable,
   projectKricCapitalTimetableSnapshot,
@@ -126,4 +127,57 @@ test("1호선 binding만 원천 손상 행 집합을 고정 허용치로 가진�
   assert.deepEqual(pinned.map(({ routeKey }) => routeKey), ["S1101"]);
   assert.deepEqual([pinned[0].quarantineAllowance.reason, pinned[0].quarantineAllowance.rowCount], ["TIME_NOT_MONOTONIC", 453]);
   assert.match(pinned[0].quarantineAllowance.note, /#902/u);
+});
+
+// #920: 같은 노선·요일구분에서 정차·도착·출발 칸이 모두 같은 원천 행은 한 열차의 중복 기재다(한 선로에서 두 열차가 같은 초에
+// 같은 역을 같은 다음 역으로 출발할 수 없다). 어느 행을 남길지는 공식 근거로 고정한 규칙이 있을 때만 정하고, 없으면 실패한다.
+const duplicateRows = () => {
+  const late = { names: "001-서동탄+002-병점+003-구로", arrivals: "001-00:00+002-23:19+003-24:09", departures: "001-23:14+002-23:21+003-00:00", day: "토요일+공휴일" };
+  return [
+    record("S1101", "서울 도시철도 1호선", { ...late, train: "506" }),
+    record("S1101", "서울 도시철도 1호선", { ...late, train: "512" }),
+  ];
+};
+
+test("#920 같은 요일구분의 내용 중복 행은 고정 근거가 가리키는 행만 남기고 나머지를 DUPLICATE_SERVICE_ROW로 격리한다", () => {
+  const rows = duplicateRows();
+  const snapshot = projectKricCapitalTimetableSnapshot(observation(rows));
+  const resolutions = [{
+    routeNumber: "S1101", weekdayType: "토요일+공휴일",
+    keep: { trainNumber: "506", sourceRowSha256: rows[0].sourceRowSha256 },
+    drop: { trainNumber: "512", sourceRowSha256: rows[1].sourceRowSha256 },
+    evidence: "테스트 근거",
+  }];
+  const { provider } = kricCapitalOfficialTimetable(snapshot, { observedAt: OBSERVED_AT, duplicateResolutions: resolutions });
+  const weekend = provider.trips.filter((trip) => trip.routeKey === "S1101" && trip.sourceDayKey === "토요일+공휴일");
+  assert.deepEqual(weekend.map(({ trainNumber }) => trainNumber), ["506"]);
+  assert.deepEqual(provider.quarantine.filter(({ routeKey }) => routeKey === "S1101")
+    .map(({ trainNumber, reason, sourceRowSha256 }) => [trainNumber, reason, sourceRowSha256]),
+  [["512", "DUPLICATE_SERVICE_ROW", rows[1].sourceRowSha256]]);
+});
+
+test("#920 고정 근거가 없는 내용 중복 행은 임의로 버리지 않고 실패한다", () => {
+  const snapshot = projectKricCapitalTimetableSnapshot(observation(duplicateRows()));
+  assert.throws(() => kricCapitalOfficialTimetable(snapshot, { observedAt: OBSERVED_AT, duplicateResolutions: [] }),
+    /KRIC_CAPITAL_TIMETABLE_DUPLICATE_TRIP_UNRESOLVED: S1101 토요일\+공휴일 506,512/u);
+  // 시각이 하나라도 다르면 중복이 아니다.
+  const [first, second] = duplicateRows();
+  second.departureTime = cell("001-23:15+002-23:22+003-00:00");
+  second.arrivalTime = cell("001-00:00+002-23:20+003-24:10");
+  const distinct = kricCapitalOfficialTimetable(projectKricCapitalTimetableSnapshot(observation([first, second])),
+    { observedAt: OBSERVED_AT, duplicateResolutions: [] });
+  assert.equal(distinct.provider.trips.filter((trip) => trip.routeKey === "S1101" && trip.sourceDayKey === "토요일+공휴일").length, 2);
+});
+
+test("#920 기본 고정 근거는 1호선 주말 512·514 행을 같은 시각 506·508 행의 중복으로 KRIC 역별 API 실측과 함께 남긴다", () => {
+  assert.deepEqual(KRIC_CAPITAL_DUPLICATE_ROW_RESOLUTIONS.map(({ routeNumber, weekdayType, keep, drop }) =>
+    [routeNumber, weekdayType, keep.trainNumber, drop.trainNumber]), [
+    ["S1101", "토요일+공휴일", "506", "512"],
+    ["S1101", "토요일+공휴일", "508", "514"],
+  ]);
+  for (const { keep, drop, evidence } of KRIC_CAPITAL_DUPLICATE_ROW_RESOLUTIONS) {
+    assert.match(keep.sourceRowSha256, /^[a-f0-9]{64}$/u);
+    assert.match(drop.sourceRowSha256, /^[a-f0-9]{64}$/u);
+    assert.match(evidence, /subwayTimetable/u);
+  }
 });
