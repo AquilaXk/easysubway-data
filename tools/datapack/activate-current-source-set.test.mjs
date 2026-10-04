@@ -43,6 +43,7 @@ import {
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { capitalRouteTopologySnapshotIdMatchesCapturedAt, capitalRouteTopologySnapshotVersion, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -2256,8 +2257,10 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
   const staleIncheon = JSON.parse(incheonBytes);
   const buildNow = new Date(Date.parse(currentTopology.capturedAt) + 1_000).toISOString();
   assert.ok(Date.parse(buildNow) < Date.parse(currentTopology.freshUntil));
-  staleIncheon.capturedAt = new Date(Date.parse(buildNow) - 24 * 60 * 60 * 1_000).toISOString();
-  staleIncheon.freshUntil = buildNow;
+  // #938: 수집 시각에 따라 P1D(컷오버 전)·P7D(컷오버 뒤) 창이 정해진다. 7일 전 수집분은 어느 규칙이든 빌드 시각에 만료다.
+  staleIncheon.capturedAt = new Date(Date.parse(buildNow) - 7 * 24 * 60 * 60 * 1_000).toISOString();
+  staleIncheon.freshUntil = topologySnapshotFreshUntil(staleIncheon.capturedAt);
+  assert.ok(Date.parse(staleIncheon.freshUntil) <= Date.parse(buildNow));
   const staleIncheonTopologyPath = `tools/datapack/sources/incheon-transit-station-info-${staleIncheon.capturedAt.slice(0, 10).replaceAll("-", "")}.json`;
   const staleIncheonBytes = Buffer.from(`${JSON.stringify(staleIncheon)}\n`);
   const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
