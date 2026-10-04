@@ -308,6 +308,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/918",
       "title": "[Fix] 인천 1·2호선 자정 이후 열차가 86400초 이상과 0시대 값으로 섞여 표현되는지 원천·컴파일러 확인"
     },
+    "data939": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/939",
+      "title": "[Fix] 정기 원천 갱신이 오래 열린 갱신 PR 때문에 아무 신호 없이 멈추는 문제(OPEN_PR 무기한 no-op)"
+    },
     "data942": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/942",
       "title": "[Fix] PR CI가 커밋된 전국 후보 pin과 현재 원장 head의 일치를 요구해 원천 갱신 PR이 통과하지 못하는 문제"
@@ -583,6 +587,9 @@
     {"path":"tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":18},
     {"path":"tools/ci/retained-gwangju-refresh-delivery.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":3},
     {"path":"tools/ci/report-refresh-failure.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/refresh-open-pr-age.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/refresh-pr-required-ci.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/ci/refresh-workflow-pull-request-lifecycle.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1794},
     {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":85},
     {"path":"tools/datapack/register-regional-accessibility.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":71},

@@ -46,9 +46,50 @@ jobs:
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${prs}"
           git ls-remote --heads origin "refs/heads/automation/639-seoul-accessibility-refresh-*" > "${claims}"
           node tools/ci/decide-current-seoul-accessibility-refresh.mjs --inventory tools/datapack/source-inventory.json --policy release/product-gates/datapack-freshness-sla.json --prs "${prs}" --claims "${claims}" --repository "${GITHUB_REPOSITORY}" --output "${SEOUL_REFRESH_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Mint App token for the open refresh pull request
+        id: app-token-open
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Ensure required CI on the open refresh pull request
+        id: required-ci
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
+        run: |
+          set -euo pipefail
+          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다).
+          node tools/ci/refresh-pr-required-ci.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
+      - name: Enforce open refresh pull request age limit
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #939: 열린 갱신 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
+          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow seoul-current-accessibility-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+      - name: Mint App token for the refresh pull request
+        id: app-token-recover
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
       - name: Recover completed claimed refresh
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
+          APP_PR_TOKEN: ${{ steps.app-token-recover.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -66,7 +107,8 @@ jobs:
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev '^(tools/datapack/sources/seoul-metro-accessibility-[^/]+\.json|tools/datapack/source-inventory\.json|tools/datapack/release/source-snapshots\.json|tools/datapack/inputs/capital-pilot-production-source-input\.json)$' || true)"
           [[ -z "${unexpected}" ]] && [[ "$(wc -l <<< "${changed}" | tr -d ' ')" == "4" ]] || { echo "Seoul refresh claim changed an unsupported path" >&2; exit 1; }
           existing="${RUNNER_TEMP}/seoul-current-accessibility-refresh/claim-prs.json"; gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"; [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "Seoul refresh claim already has a pull request" >&2; exit 1; }
-          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh Seoul accessibility snapshot" --body "Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639"
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh Seoul accessibility snapshot" --body "Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639"
       - name: Create durable claim
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
@@ -117,12 +159,24 @@ jobs:
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev '^(tools/datapack/sources/seoul-metro-accessibility-[^/]+\.json|tools/datapack/source-inventory\.json|tools/datapack/release/source-snapshots\.json|tools/datapack/inputs/capital-pilot-production-source-input\.json)$' || true)"
           [[ -z "${unexpected}" ]] && [[ "$(wc -l <<< "${changed}" | tr -d ' ')" == "4" ]] || { echo "Seoul refresh changed an unsupported path" >&2; exit 1; }
           git diff --cached --quiet && exit 1; git commit -m "Refresh Seoul accessibility snapshot"; git push origin "${SEOUL_REFRESH_BRANCH}"
+      - name: Mint App token for the refresh pull request
+        id: app-token-pr
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
       - name: Create draft pull request
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
+          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${SEOUL_REFRESH_BRANCH}" --title "Refresh Seoul accessibility snapshot" --body $'Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639'
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${SEOUL_REFRESH_BRANCH}" --title "Refresh Seoul accessibility snapshot" --body $'Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639'
       - name: Upload sanitized evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

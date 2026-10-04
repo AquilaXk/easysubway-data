@@ -249,7 +249,8 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   // #929 D3: 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_CANDIDATE_REFRESH가 true일 때만 돈다(QA 승인 뒤 메인이 켠다).
   assert.match(yml, /^on:\n  schedule:\n    - cron: "[^"]+"\n  workflow_dispatch:\n/mu);
   assert.doesNotMatch(yml, /\n  (push|pull_request|workflow_run):/u);
-  assert.match(yml, /\npermissions:\n  actions: write\n  contents: write\n  pull-requests: write\n/u);
+  // #939: 후보 갱신 PR은 App 토큰으로 열고 CI를 dispatch하지 않는다. 그래서 actions 권한이 없다.
+  assert.match(yml, /\npermissions:\n  contents: write\n  pull-requests: write\n/u);
   assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(github\.event_name != 'schedule' \|\| vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true'\) \}\}/u);
   assert.match(yml, /cancel-in-progress: false/u);
   assert.match(yml, /persist-credentials: false/u);
@@ -276,13 +277,15 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   for (const body of [scope, commit]) assert.doesNotMatch(body, /git add (-A|--all|\.)(\s|$)/u);
   assert.doesNotMatch(commit, /git add/u);
   const pr = stepBody(yml, "Create candidate refresh pull request");
-  assert.match(pr, /gh pr create --repo "\$\{GITHUB_REPOSITORY\}" --draft --base main --head "\$\{CANDIDATE_BRANCH\}"/u);
-  const ci = stepBody(yml, "Run required CI on the candidate refresh head");
-  assert.match(ci, /gh workflow run ci\.yml --repo "\$\{GITHUB_REPOSITORY\}" --ref "\$\{CANDIDATE_BRANCH\}"/u);
+  // #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(#948 실험: dispatch CI는 인정되지 않음).
+  assert.match(pr, /GH_TOKEN="\$\{APP_PR_TOKEN\}" gh pr create --repo "\$\{GITHUB_REPOSITORY\}" --draft --base main --head "\$\{CANDIDATE_BRANCH\}"/u);
+  assert.match(pr, /APP_PR_TOKEN: \$\{\{ steps\.app-token-pr\.outputs\.token \}\}/u);
+  assert.doesNotMatch(yml, /gh workflow run|Run required CI on the candidate refresh head/u);
   assert.ok(yml.indexOf("Validate candidate refresh inputs") < yml.indexOf("Refresh nationwide candidate"));
   assert.ok(yml.indexOf("Refresh nationwide candidate") < yml.indexOf("Verify candidate refresh output scope"));
   assert.ok(yml.indexOf("Verify candidate refresh output scope") < yml.indexOf("Commit and push candidate refresh branch"));
-  assert.ok(yml.indexOf("Create candidate refresh pull request") < yml.indexOf("Run required CI on the candidate refresh head"));
+  assert.ok(yml.indexOf("Commit and push candidate refresh branch") < yml.indexOf("Mint App token for the candidate refresh pull request"));
+  assert.ok(yml.indexOf("Mint App token for the candidate refresh pull request") < yml.indexOf("Create candidate refresh pull request"));
   assert.doesNotMatch(yml, /gh pr merge|automerge|git push origin main|production-publish|datapack-release\.yml/u);
 });
 
@@ -346,7 +349,7 @@ test("a failure after the automation branch is pushed closes its PR and deletes 
   assert.equal(yml.trimEnd().endsWith(cleanup.trimEnd()), true, "cleanup runs after every other step");
   const pr = stepBody(yml, "Create candidate refresh pull request");
   assert.match(pr, /printf 'CANDIDATE_PR_URL=%s\\n' "\$\{pr_url\}" >> "\$\{GITHUB_ENV\}"/u);
-  assert.match(stepBody(yml, "Run required CI on the candidate refresh head"), /set -euo pipefail/u);
+  assert.match(pr, /set -euo pipefail/u);
 
   const origin = await gitRepository();
   const clone = path.join(origin, "clone");
