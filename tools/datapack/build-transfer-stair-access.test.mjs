@@ -432,16 +432,20 @@ test("커밋된 MOLIT 스냅샷을 inventory 승인·hash·신선도로 검증�
 
 test("승강장 위치 표기(9호선형 '사평 방면 승강장')는 경로의 처음·끝에서만 승하차 지점으로 인정한다", () => {
   const ninthStyle = (combo) => ["엘리베이터 이용", "지하 1층으로 이동", `${combo.toLine} ${combo.toDirection} 방면 엘리베이터 이용`, "지하 3층으로 이동"];
-  const rows = sadangRows({ steps: ninthStyle }).map((row, index, all) => {
+  const ninthRows = (arrivalLabel) => sadangRows({ steps: ninthStyle }).map((row, index, all) => {
     const last = index === all.length - 1 || all[index + 1].CHTN_MV_TP_ORDR === "1";
     if (row.CHTN_MV_TP_ORDR === "1") return { ...row, MV_CONT_DTL: `1) ${row.CHTN_MV_CONT.split(" ").slice(1).join(" ")} 승강장` };
-    if (last) return { ...row, MV_CONT_DTL: `${row.CHTN_MV_TP_ORDR}) ${row.CHTN_MV_CONT} 승강장` };
+    if (last) return { ...row, MV_CONT_DTL: `${row.CHTN_MV_TP_ORDR}) ${arrivalLabel}${row.CHTN_MV_CONT} 승강장` };
     return row;
   });
   assert.equal(classifyTransferStep("1) 방배 방면 승강장", { stationNames: ["방배"] }).kind, "PLATFORM_ENDPOINT");
-  const result = derive({ rows });
+  const result = derive({ rows: ninthRows("(B3) ") });
   assert.equal(edgeState(result, EDGE_2_4).state, "STEP_FREE");
   assert.equal(edgeState(result, EDGE_4_2).state, "STEP_FREE");
+  // #944 F2: 도착 승강장에 층 표기가 없으면 마지막 이동 뒤 층을 판단할 수 없다.
+  const unlabeledArrival = derive({ rows: ninthRows("") });
+  assert.equal(edgeState(unlabeledArrival, EDGE_2_4).state, "UNKNOWN");
+  assert.ok(edgeState(unlabeledArrival, EDGE_2_4).combos.every(({ blockingReasons }) => blockingReasons.includes("FLOOR_UNDETERMINED")));
   // 경로 중간의 승강장 위치 표기는 승하차 지점이 아니므로 어휘 밖 문구로 다룬다.
   const middle = derive({ rows: sadangRows({ steps: () => [...ELEVATOR_STEPS.slice(0, 2), "환승 방면 승강장", ...ELEVATOR_STEPS.slice(2)] }) });
   assert.equal(edgeState(middle, EDGE_2_4).state, "UNKNOWN");
@@ -475,4 +479,42 @@ test("F1 금지 키워드를 비껴간 오타·띄어쓰기·영어·부정·미
   // 번들 역 이름은 판정 문맥으로만 허용된다. 같은 문구도 역 이름이 없으면 어휘 밖이다.
   assert.equal(classifyTransferStep("4호선 총신대입구 방면 승강장으로 이동", context).kind, "LEVEL_MOVE");
   assert.equal(classifyTransferStep("4호선 총신대입구 방면 승강장으로 이동").kind, "UNRECOGNIZED");
+});
+
+// #944 리뷰 F2: 승강 설비 한 번은 층 변화 한 번만 덮는다. 층 표기가 없는 이동·승강장 도착은 층을 판단할 수 없으므로
+// 같은 경로의 승강 설비가 덮지 않으면 근거가 아니다(FLOOR_UNDETERMINED).
+test("F2 층 표기가 붙은 승강 설비 단계 뒤 두 번째 층 변화는 새 승강 설비 없이는 근거가 아니다", () => {
+  const verdict = (steps) => {
+    const result = derive({ rows: sadangRows({ steps: ({ line }) => (line === "2호선" ? steps : ELEVATOR_STEPS) }) });
+    const edge = edgeState(result, EDGE_2_4);
+    return { state: edge.state, reasons: [...new Set(edge.combos.flatMap(({ blockingReasons }) => blockingReasons))].sort() };
+  };
+  // 엘리베이터 탑승(B2)·하차(B1) 한 번 뒤에 B3로 또 바뀐다.
+  assert.deepEqual(verdict(["(B2) 대합실 방향 엘리베이터 탑승", "(B1) 엘리베이터 하차", "(B3) 승강장으로 이동"]),
+    { state: "UNKNOWN", reasons: ["FLOOR_CHANGE_WITHOUT_LIFT"] });
+  // 층 표기 없는 엘리베이터 한 번 뒤에 층이 두 번 바뀐다(층 표기 없는 단계 뒤 초기화가 지워지면 통과해 버리는 경우).
+  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동", "(B3) 승강장으로 이동"]),
+    { state: "UNKNOWN", reasons: ["FLOOR_CHANGE_WITHOUT_LIFT"] });
+  // 탑승 층 표기가 지금 층과 다르면 엘리베이터에 타기 전에 이미 층이 바뀐 것이다.
+  assert.deepEqual(verdict(["(B1) 대합실 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"]),
+    { state: "UNKNOWN", reasons: ["FLOOR_CHANGE_WITHOUT_LIFT"] });
+  // 승강 설비 없이 층 표기 없는 장소 이동만 이어지면 층을 판단할 수 없다.
+  assert.deepEqual(verdict(["대합실로 이동", "승강장으로 이동"]), { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] });
+  // 층 표기 없는 승강장 도착도 층 추적 대상이다.
+  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동", "승강장으로 이동"]),
+    { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] });
+  // 층 표기 없는 위치가 두 번 이어지면 엘리베이터 한 번으로는 둘 다 덮지 못한다.
+  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "대합실로 이동", "승강장으로 이동"]),
+    { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] });
+  // 탑승 층 표기는 타기 전 위치다. B2에서 B1 탑승까지는 승강 설비가 없다.
+  assert.deepEqual(verdict(["(B1) 대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동"]),
+    { state: "UNKNOWN", reasons: ["FLOOR_CHANGE_WITHOUT_LIFT"] });
+  // 층이 바뀔 때마다 승강 설비가 있으면 근거다. 층 표기 없는 엘리베이터 이동의 도착 층은 다음 층 표기다.
+  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동", "승강장 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"]),
+    { state: "STEP_FREE", reasons: [] });
+  assert.deepEqual(verdict(["(B2) 대합실 방향 엘리베이터 탑승", "(B1) 엘리베이터 하차", "승강장 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"]),
+    { state: "STEP_FREE", reasons: [] });
+  assert.deepEqual(verdict(["승강장 방향 엘리베이터로 이동", "(B3) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
+  // 같은 층 평면 환승은 양 끝 층 표기가 같을 때만 근거다.
+  assert.deepEqual(verdict(["(B2) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
 });

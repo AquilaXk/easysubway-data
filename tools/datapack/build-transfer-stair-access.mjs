@@ -58,9 +58,12 @@ export const TRANSFER_STEP_VOCABULARY = Object.freeze([
     "2호선 방배 방면 승강장 하차", "경의중앙선 서강대 방면 승강장 하차",
   ]),
   stepFree("ELEVATOR_RIDE", "ELEVATOR", (tokens, context) => endsWithAny(tokens, context, ELEVATOR_WORDS.flatMap((word) => [
-    ...["탑승", "이용", "승차", "하차"].map((verb) => [word, verb]), [`${word}를`, "이용"],
+    ...["탑승", "이용", "승차"].map((verb) => [word, verb]), [`${word}를`, "이용"],
   ])), [
-    "대합실 방향 엘리베이터 탑승", "승강장 내 엘리베이터 탑승", "엘리베이터 하차", "3번칸 근처 엘리베이터 이용", "맞은편 엘리베이터 승차", "4호선 승강장 엘레베이터 탑승",
+    "대합실 방향 엘리베이터 탑승", "승강장 내 엘리베이터 탑승", "3번칸 근처 엘리베이터 이용", "맞은편 엘리베이터 승차", "4호선 승강장 엘레베이터 탑승",
+  ]),
+  stepFree("ELEVATOR_EXIT", "ELEVATOR", (tokens, context) => endsWithAny(tokens, context, ELEVATOR_WORDS.map((word) => [word, "하차"])), [
+    "엘리베이터 하차", "연결통로 엘리베이터 하차",
   ]),
   stepFree("ELEVATOR_AT_PLACE", "ELEVATOR", (tokens, context) => endsWithAny(tokens, context, ELEVATOR_WORDS.map((word) => [word])), [
     "환승 지하1층 엘리베이터", "상봉방면 지상2층 엘리베이터", "상봉방면 지상1층 승강장 엘리베이터",
@@ -82,6 +85,10 @@ export const TRANSFER_STEP_VOCABULARY = Object.freeze([
   ]),
 ]);
 const LEVEL_DEVICE_KINDS = new Set(["ELEVATOR", "LIFT", "ESCALATOR", "STAIRS"]);
+// 층 표기가 없으면 층을 알 수 없는 위치가 되는 단계와, 층 표기가 내리는 층인 승강 설비 규칙.
+const POSITION_KINDS = new Set(["ALIGHT", "LEVEL_MOVE", "PLATFORM_ENDPOINT"]);
+const DESTINATION_LABEL_RULES = new Set(["ELEVATOR_EXIT", "ELEVATOR_MOVE"]);
+const UNKNOWN_FLOOR = "?";
 const STEP_PREFIX = /^\s*(\d+)\)\s*/u;
 const FLOOR_TOKEN = /\((B\d+|BM|\d+F|F\d+)\)|(지하|지상)? ?(\d+)층/gu;
 
@@ -525,21 +532,44 @@ function normalizeStationName(value) {
   return String(value ?? "").normalize("NFKC").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
-// 경로 단계 판정: 막는 단계·어휘 밖 문구·승강 설비 없는 층 변화가 하나도 없을 때만 계단 없는 경로다.
+// 경로 단계 판정: 막는 단계·어휘 밖 문구·층 판단 실패가 하나도 없을 때만 계단 없는 경로다(#944 리뷰 F2).
+// - 승강 설비 단계 한 번은 그 뒤 층 변화 한 번만 덮는다. 층이 바뀌면 덮개를 쓴다.
+// - 엘리베이터 탑승·위치 단계의 층 표기는 타는 층이라 덮개보다 먼저 보고, 하차·이동 단계의 층 표기는 내리는 층이라 덮개 뒤에 본다.
+// - 하차·장소 이동·승강장 도착 단계에 층 표기가 없으면 층을 알 수 없는 위치로 본다. 그 앞뒤로 층이 바뀌었을 수 있으므로
+//   덮개가 있어야 하고, 없으면 FLOOR_UNDETERMINED다.
 function evaluatePathSteps(rows, context) {
   const reasons = new Set();
+  let started = false;
   let floor = null;
-  let levelDeviceSinceFloor = false;
+  let covered = false;
+  const observe = (observed) => {
+    if (!started) {
+      started = true;
+      floor = observed;
+      return;
+    }
+    if (observed === UNKNOWN_FLOOR || floor === UNKNOWN_FLOOR) {
+      if (covered) covered = false;
+      else reasons.add("FLOOR_UNDETERMINED");
+    } else if (observed !== floor) {
+      if (covered) covered = false;
+      else reasons.add("FLOOR_CHANGE_WITHOUT_LIFT");
+    }
+    floor = observed;
+  };
   for (const [index, row] of rows.entries()) {
     const step = classifyTransferStep(row.MV_CONT_DTL, context);
     if (step.effect === "BLOCKING") reasons.add(step.kind === "UNRECOGNIZED" ? "STEP_WORDING_UNRECOGNIZED" : step.kind);
     if (step.kind === "PLATFORM_ENDPOINT" && index !== 0 && index !== rows.length - 1) reasons.add("STEP_WORDING_UNRECOGNIZED");
-    const levelDevice = LEVEL_DEVICE_KINDS.has(step.kind);
-    if (levelDevice) levelDeviceSinceFloor = true;
-    for (const observed of step.floors) {
-      if (floor !== null && observed !== floor && !levelDeviceSinceFloor) reasons.add("FLOOR_CHANGE_WITHOUT_LIFT");
-      floor = observed;
-      if (!levelDevice) levelDeviceSinceFloor = false;
+    const observations = step.floors.length > 0 ? step.floors : (POSITION_KINDS.has(step.kind) ? [UNKNOWN_FLOOR] : []);
+    if (!LEVEL_DEVICE_KINDS.has(step.kind)) {
+      observations.forEach(observe);
+    } else if (DESTINATION_LABEL_RULES.has(step.ruleId)) {
+      covered = true;
+      observations.forEach(observe);
+    } else {
+      observations.forEach(observe);
+      covered = true;
     }
   }
   return { stepFree: reasons.size === 0, blockingReasons: [...reasons].sort(codepointCompare) };
