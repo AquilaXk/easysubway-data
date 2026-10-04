@@ -64,6 +64,7 @@ async function releaseRepository(mutate = (files) => files, { candidateId = "nat
     candidateId,
     productionScopeId: "nationwide_routing_android_v1",
     releaseSequence,
+    publishedAt: "2026-10-04T22:23:31.456Z",
     builderGitSha: "a".repeat(40),
     sourceSnapshotSetHash: "a".repeat(64),
     approvedAliasLedgerHash: "b".repeat(64),
@@ -492,7 +493,10 @@ test("#929 D3 a scheduled-role candidate is dispatched to RC only after its gate
     const record = {
       id: GATE_RUN.runId, run_attempt: 1, event: "schedule", head_sha: GATE_RUN.headSha, head_branch: "main",
       path: `${GATE_RUN.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: GATE_RUN.repository },
+      head_repository: { full_name: GATE_RUN.repository }, run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
     };
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, updated_at: "2026-10-04T22:23:20Z" } }),
+      /RELEASE_CANDIDATE_GATE_RUN[\s\S]*candidate clock/u);
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u);
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, conclusion: "failure" } }),
       /RELEASE_CANDIDATE_GATE_RUN[\s\S]*conclusion/u);

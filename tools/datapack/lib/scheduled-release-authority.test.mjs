@@ -110,15 +110,38 @@ test("the recorded gate run must match the GitHub run record and have succeeded 
   const run = {
     id: 37200000001, run_attempt: 1, event: "schedule", head_sha: headSha, head_branch: "main",
     path: `${GATE_RUN_WORKFLOW_PATH}@refs/heads/main`, conclusion: "success", status: "completed",
-    repository: { full_name: GATE_RUN_REPOSITORY },
+    repository: { full_name: GATE_RUN_REPOSITORY }, head_repository: { full_name: GATE_RUN_REPOSITORY },
+    run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
   };
-  assert.deepEqual(gateRunRecordViolations({ gateRun: scheduledRun(), run }), []);
+  const candidateClock = "2026-10-04T22:23:31.456Z";
+  assert.deepEqual(gateRunRecordViolations({ gateRun: scheduledRun(), run, candidateClock }), []);
   for (const [override, expected] of [
     [{ id: 1 }, /id/u], [{ run_attempt: 2 }, /run_attempt/u], [{ event: "workflow_dispatch" }, /event/u],
     [{ head_sha: "b".repeat(40) }, /head_sha/u], [{ head_branch: "feature" }, /head_branch/u],
     [{ path: ".github/workflows/other.yml@refs/heads/main" }, /path/u], [{ conclusion: "failure" }, /conclusion/u],
     [{ repository: { full_name: "fork/easysubway-data" } }, /repository/u],
   ]) {
-    assert.match(gateRunRecordViolations({ gateRun: scheduledRun(), run: { ...run, ...override } }).join(";"), expected, JSON.stringify(override));
+    assert.match(gateRunRecordViolations({ gateRun: scheduledRun(), run: { ...run, ...override }, candidateClock }).join(";"), expected, JSON.stringify(override));
   }
+});
+
+test("#931 F2 an old successful run cannot be replayed for a different candidate", () => {
+  const run = {
+    id: 37200000001, run_attempt: 1, event: "schedule", head_sha: headSha, head_branch: "main",
+    path: `${GATE_RUN_WORKFLOW_PATH}@refs/heads/main`, conclusion: "success",
+    repository: { full_name: GATE_RUN_REPOSITORY }, head_repository: { full_name: GATE_RUN_REPOSITORY },
+    run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
+  };
+  // 후보 시계(candidate publishedAt)는 그 run이 실행되는 동안 정해진다. 다른 시각의 후보에 같은 run을 붙이면 실패한다.
+  for (const candidateClock of ["2026-10-04T22:23:09.999Z", "2026-10-04T22:41:02.001Z", "2026-10-11T22:23:31.000Z", undefined, "not a time"]) {
+    assert.match(gateRunRecordViolations({ gateRun: scheduledRun(), run, candidateClock }).join(";"), /candidate clock/u, String(candidateClock));
+  }
+  assert.deepEqual(gateRunRecordViolations({ gateRun: scheduledRun(), run, candidateClock: "2026-10-04T22:23:10.000Z" }), []);
+  assert.deepEqual(gateRunRecordViolations({ gateRun: scheduledRun(), run, candidateClock: "2026-10-04T22:41:02.000Z" }), []);
+  for (const head_repository of [{ full_name: "fork/easysubway-data" }, undefined]) {
+    assert.match(gateRunRecordViolations({ gateRun: scheduledRun(), run: { ...run, head_repository }, candidateClock: "2026-10-04T22:30:00.000Z" }).join(";"),
+      /head_repository/u);
+  }
+  assert.match(gateRunRecordViolations({ gateRun: scheduledRun(), run: { ...run, run_started_at: undefined }, candidateClock: "2026-10-04T22:30:00.000Z" }).join(";"),
+    /run window/u);
 });

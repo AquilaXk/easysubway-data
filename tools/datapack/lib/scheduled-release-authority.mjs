@@ -92,7 +92,9 @@ export function gateRunFromEnvironment(env = process.env) {
 }
 
 // GitHub run 기록(GET /repos/{repo}/actions/runs/{id})과 gateRun을 대조한다. main에서 성공한 그 run이어야 한다.
-export function gateRunRecordViolations({ gateRun, run }) {
+// #931 F2(replay 차단): 후보 시계(build spec publishedAt)는 그 run이 실행되는 동안(run_started_at~updated_at) 정해진다.
+// 지난 성공 run 기록을 다른 후보에 붙이면 후보 시계가 그 창 밖이라 실패한다. head_repository도 같은 저장소여야 한다.
+export function gateRunRecordViolations({ gateRun, run, candidateClock }) {
   const violations = [];
   const expect = (label, actual, expected) => {
     if (actual !== expected) violations.push(`gate run ${label} mismatch (record: ${String(actual)}, request: ${String(expected)})`);
@@ -104,6 +106,18 @@ export function gateRunRecordViolations({ gateRun, run }) {
   expect("head_branch", run?.head_branch, "main");
   expect("path", typeof run?.path === "string" ? run.path.split("@")[0] : run?.path, gateRun?.workflowPath);
   expect("repository", run?.repository?.full_name, gateRun?.repository);
+  expect("head_repository", run?.head_repository?.full_name, gateRun?.repository);
   expect("conclusion", run?.conclusion, "success");
+  const startedAt = typeof run?.run_started_at === "string" ? Date.parse(run.run_started_at) : Number.NaN;
+  const updatedAt = typeof run?.updated_at === "string" ? Date.parse(run.updated_at) : Number.NaN;
+  const clock = typeof candidateClock === "string" && Number.isFinite(Date.parse(candidateClock))
+    && new Date(Date.parse(candidateClock)).toISOString() === candidateClock ? Date.parse(candidateClock) : Number.NaN;
+  if (!Number.isFinite(startedAt) || !Number.isFinite(updatedAt) || startedAt > updatedAt) {
+    violations.push("gate run window (run_started_at, updated_at) is missing or invalid");
+  } else if (!Number.isFinite(clock)) {
+    violations.push(`candidate clock is invalid (${String(candidateClock)})`);
+  } else if (clock < startedAt || clock > updatedAt) {
+    violations.push(`candidate clock ${candidateClock} is outside the gate run window ${run.run_started_at}..${run.updated_at}`);
+  }
   return violations;
 }

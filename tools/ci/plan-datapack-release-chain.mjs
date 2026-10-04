@@ -2,7 +2,7 @@
 // 데이터팩 발행 체인의 CI 입력을 저장소 파일에서 정한다(#927, #870).
 // - candidate-refresh: 전국 후보 갱신 workflow의 dispatch 입력을 검증하고 후보 시계(실행 시각)를 정한다.
 //   사람 dispatch(workflow_dispatch)는 2인 역할을 입력으로만 받는다. 이전 후보나 환경 변수에서 채우지 않는다.
-//   정기·체인 이벤트(#929 D3)는 사람 입력 없이 정기 전용 고정 역할과 커밋된 후보 다음 sequence를 쓴다.
+//   정기 이벤트(schedule, #929 D3)는 사람 입력 없이 정기 전용 고정 역할과 커밋된 후보 다음 sequence를 쓴다.
 // - gate-run: 후보를 만드는 이 run의 기록(release request gateRun)을 Actions 기본 환경 변수로 만든다.
 // - release-candidate-mode-args: main에 들어온 후보로 RC를 dispatch할 modeArgs를 만든다.
 //   release request가 build spec에 결속되지 않았거나 RC 증거 파일이 없으면 dispatch 전에 실패한다.
@@ -47,7 +47,7 @@ export function planNationwideCandidateRefresh({ releaseSequence, requestedBy, a
   if (!Number.isSafeInteger(committed) || committed < 1) fail("CANDIDATE_REFRESH_RELEASE_SEQUENCE", "committed sequence is invalid");
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CANDIDATE_REFRESH_CLOCK");
   if (SCHEDULED_ROLE_EVENTS.includes(event)) {
-    // 정기·체인 실행은 사람 입력을 받지 않는다. 입력이 섞이면 누가 무엇을 정했는지 흐려지므로 실패한다.
+    // 정기 실행은 사람 입력을 받지 않는다. 입력이 섞이면 누가 무엇을 정했는지 흐려지므로 실패한다.
     if ([releaseSequence, requestedBy, approvedBy].some((value) => value !== undefined && value !== "")) {
       fail("CANDIDATE_REFRESH_SCHEDULED_INPUT", `${event} run takes no release sequence or role input`);
     }
@@ -86,7 +86,9 @@ export async function readReleaseCandidateModeArgs({ repositoryRoot = ROOT, gate
   // #929 D3: gateRun을 결속한 후보는 GitHub run 기록과 대조해 main에서 성공한 그 run일 때만 RC로 보낸다.
   if (releaseRequest.gateRun !== undefined) {
     if (gateRunRecord === undefined) fail("RELEASE_CANDIDATE_GATE_RUN", "record is required for a request with gateRun");
-    const recordViolations = gateRunRecordViolations({ gateRun: releaseRequest.gateRun, run: gateRunRecord });
+    const recordViolations = gateRunRecordViolations({
+      gateRun: releaseRequest.gateRun, run: gateRunRecord, candidateClock: buildSpec.publishedAt,
+    });
     if (recordViolations.length > 0) fail("RELEASE_CANDIDATE_GATE_RUN", recordViolations.join("; "));
   } else if (gateRunRecord !== undefined) {
     fail("RELEASE_CANDIDATE_GATE_RUN", "a record was given for a request with no gateRun");
