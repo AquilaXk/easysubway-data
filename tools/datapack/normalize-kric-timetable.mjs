@@ -6,7 +6,8 @@
 //   - stinCd/lnCd/railOprIsttCd는 canonical stationId/lineId로 매핑(context 제공).
 //   - dayCd(8/7/9)는 그대로 전달 — serviceId 매핑은 적재 시 context.serviceIdByDayCd가 담당.
 
-const SERVICE_DAY_CUTOFF_SECONDS = 3 * 3600;
+import { SERVICE_DAY_BOUNDARY_SECONDS } from "./lib/service-day-seconds.mjs";
+
 const DAY_SECONDS = 24 * 3600;
 
 export function normalizeKricSubwayTimetable(kricRows, context) {
@@ -81,7 +82,7 @@ function parseKricTime(value) {
   // KRIC은 심야(자정 넘김) 열차 시각을 24:00~이 아니라 실제 시계(00:xx)로 반환한다. 지하철 서비스데이는
   // ~03시에 끊기고(planner cutoff 동일) 03~05시 운행이 없으므로, 3시 미만 시각은 전 서비스데이 심야분(+24h)이다.
   // 이 정규화가 없으면 23:59 도착→00:00 출발 같은 자정 넘김에서 도착>출발이 된다.
-  return raw < SERVICE_DAY_CUTOFF_SECONDS ? raw + DAY_SECONDS : raw;
+  return raw < SERVICE_DAY_BOUNDARY_SECONDS ? raw + DAY_SECONDS : raw;
 }
 
 function requireMapping(lookup, key, label) {
