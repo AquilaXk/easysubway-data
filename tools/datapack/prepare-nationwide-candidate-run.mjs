@@ -18,7 +18,7 @@ import {
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 import { HOLIDAYS_2026, materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";
-import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, integrateRegionalTimetables, retainedKasiHolidayDates } from "./lib/regional-timetable-integrator.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { officialOdFareAdmissionsBySource, officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
@@ -63,6 +63,7 @@ import {
 import { materializeOfficialLineTimetables } from "./lib/official-line-timetable.mjs";
 import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
 import { buildRetainedGwangjuScheduleTables } from "./materialize-gwangju-timetable.mjs";
+import { duplicateDepartureGroups } from "./lib/timetable-duplicate-departures.mjs";
 import {
   RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY,
   RETAINED_GWANGJU_PROJECTION_SOURCE_ID,
@@ -1528,6 +1529,8 @@ export async function prepareNationwideCandidate({
   // Integrate Regional Timetables (Busan, Daegu, Daejeon, Gwangju)
   const regionalSchedule = integrateRegionalTimetables({
     finalPack,
+    // #919: 공휴일은 KASI 특일 정보 기준 목록(fetch-kasi 테스트가 2026년 원문과 같음을 고정)이다.
+    holidayDates: HOLIDAYS_2026,
     busanTimetable,
     busanAccessibility,
     daeguTimetable1,
@@ -1567,6 +1570,13 @@ export async function prepareNationwideCandidate({
   for (const table of ["transitRoutes", "transitTrips", "transitStopTimes", "serviceCalendars", "serviceCalendarDates"]) {
     finalPack[table] = [...finalPack[table], ...gwangjuSchedule[table]];
   }
+  // #919: 모든 기관 달력이 모인 뒤, 공휴일에 평일·토요일 달력이 운행하거나 휴일 달력이 없는 노선이 있으면 후보를 만들지 않는다.
+  // 리뷰 F2(#922): 통합기에 넘긴 목록이 아니라 보관된 KASI 원문에서 따로 도출한 집합과 비교한다.
+  const holidayCalendarRows = holidayCalendarViolations({ ...finalPack, holidayDates: retainedKasiHolidayDates() });
+  if (holidayCalendarRows.length > 0) {
+    const routes = [...new Set(holidayCalendarRows.map(({ routeId }) => routeId))];
+    throw new Error(`nationwide candidate public-holiday calendar violations: ${holidayCalendarRows.length} rows on ${routes.length} routes (${routes.slice(0, 5).join(", ")})`);
+  }
   // 광주 보관본은 수도권·코레일과 같은 원천(kric-nationwide-timetable-file)이다: 팩 원천 항목 하나에 광주 노선 범위를 합친다.
   const gwangjuTopologySource = exactInventorySource(sourceInventory, "gwangju-transportation-route-topology");
   const kricPackSources = finalPack.sourceInventory.filter(({ id }) => id === RETAINED_GWANGJU_PROJECTION_SOURCE_ID);
@@ -1575,6 +1585,13 @@ export async function prepareNationwideCandidate({
     if (!Array.isArray(gwangjuTopologySource.coverageScope?.[field])) throw new Error(`nationwide candidate Gwangju coverage ${field} is missing`);
     kricPackSources[0].coverageScope[field] = [...new Set([...kricPackSources[0].coverageScope[field],
       ...gwangjuTopologySource.coverageScope[field]])].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  }
+
+  // #920: 모든 시간표 원천을 합친 뒤 같은 달력에서 (노선, 역, 출발 시각, 다음 역, 종착역)이 같은 trip이 있으면 후보를 만들지 않는다.
+  const duplicateDepartures = duplicateDepartureGroups(finalPack);
+  if (duplicateDepartures.length > 0) {
+    const tripIds = [...new Set(duplicateDepartures.flatMap(({ tripIds: ids }) => ids))];
+    throw new Error(`nationwide candidate has duplicate trip departures: ${duplicateDepartures.length} groups (${tripIds.slice(0, 6).join(", ")})`);
   }
 
   // #855: 대전·광주 원천은 역별 시각 하나만 준다. 원천 정차 2개 이상으로 열차를 만들 수 없는

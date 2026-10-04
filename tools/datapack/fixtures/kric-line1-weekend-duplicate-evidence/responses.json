@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "kric-subway-timetable",
+  "catalogProviderId": "provider:kric-subway-timetable",
+  "purpose": "#920 1호선 주말 중복 행 판정 근거(서비스 키 제외)",
+  "responses": [
+    {
+      "file": "P157-1-dayCd7.json",
+      "stationName": "서동탄",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P157-1",
+        "dayCd": "7"
+      },
+      "httpStatus": 200,
+      "sha256": "826aedce696396835866fce27ff5f4770ef2a24e9aab1247556a7952972cde14",
+      "retrievedAt": "2026-10-04T04:19:32.370Z"
+    },
+    {
+      "file": "P157-1-dayCd8.json",
+      "stationName": "서동탄",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P157-1",
+        "dayCd": "8"
+      },
+      "httpStatus": 200,
+      "sha256": "ab14faa817ba97bf1ec077370861e4c869cbeb8e8534c11b1bd292a4f4e3f40f",
+      "retrievedAt": "2026-10-04T04:19:33.549Z"
+    },
+    {
+      "file": "P157-1-dayCd9.json",
+      "stationName": "서동탄",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P157-1",
+        "dayCd": "9"
+      },
+      "httpStatus": 200,
+      "sha256": "19cd91c015c3688b9608c066ccdacf4804b4981d4246ddd0b053f997bca80326",
+      "retrievedAt": "2026-10-04T04:19:33.815Z"
+    },
+    {
+      "file": "P155-dayCd7.json",
+      "stationName": "수원",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P155",
+        "dayCd": "7"
+      },
+      "httpStatus": 200,
+      "sha256": "826aedce696396835866fce27ff5f4770ef2a24e9aab1247556a7952972cde14",
+      "retrievedAt": "2026-10-04T04:19:34.042Z"
+    },
+    {
+      "file": "P155-dayCd8.json",
+      "stationName": "수원",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P155",
+        "dayCd": "8"
+      },
+      "httpStatus": 200,
+      "sha256": "abf54c0335c6b78ad7f943f572a6e899c922ff0c3dbd847bc67cbe5f0330ffda",
+      "retrievedAt": "2026-10-04T04:19:34.344Z"
+    },
+    {
+      "file": "P155-dayCd9.json",
+      "stationName": "수원",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P155",
+        "dayCd": "9"
+      },
+      "httpStatus": 200,
+      "sha256": "449ea0fff0290f34d803c34b8bd3759538994bd9362d691e531800572ee4f71f",
+      "retrievedAt": "2026-10-04T04:19:34.646Z"
+    },
+    {
+      "file": "P149-dayCd7.json",
+      "stationName": "금정",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P149",
+        "dayCd": "7"
+      },
+      "httpStatus": 200,
+      "sha256": "826aedce696396835866fce27ff5f4770ef2a24e9aab1247556a7952972cde14",
+      "retrievedAt": "2026-10-04T04:19:34.876Z"
+    },
+    {
+      "file": "P149-dayCd8.json",
+      "stationName": "금정",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P149",
+        "dayCd": "8"
+      },
+      "httpStatus": 200,
+      "sha256": "67f75521fb3a407391fe5797865a2db2ca0ff07b136ed9d9b27b0dd26f1e0ab1",
+      "retrievedAt": "2026-10-04T04:19:35.177Z"
+    },
+    {
+      "file": "P149-dayCd9.json",
+      "stationName": "금정",
+      "request": {
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "format": "json",
+        "railOprIsttCd": "KR",
+        "lnCd": "1",
+        "stinCd": "P149",
+        "dayCd": "9"
+      },
+      "httpStatus": 200,
+      "sha256": "668af38a38021dbe9b21002a06219150cefb4507e550062f0da691127be47a2b",
+      "retrievedAt": "2026-10-04T04:19:35.475Z"
+    }
+  ]
+}

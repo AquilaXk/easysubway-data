@@ -292,6 +292,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/903",
       "title": "[Feat] 코레일 단독 노선 등 시간표 미지원 노선의 공식 시간표 적재"
     },
+    "data920": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/920",
+      "title": "[Fix] 1호선 주말·휴일 시간표에 종착까지 같은 복제 trip 34묶음이 있어 역 시간표가 503이 되는 문제"
+    },
     "data899": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/899",
       "title": "[Fix] 수도권 지하철 공식 시간표를 전국 데이터팩에 적재"
@@ -336,7 +340,7 @@
         "node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs"
       ],
       "profileInvocations": [
-        "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 4"
+        "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2"
       ]
     },
     "deterministic-release": {
@@ -466,6 +470,7 @@
     {"path":"tools/datapack/capital-official-timetable.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":15000},
     {"path":"tools/datapack/lib/official-line-timetable.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/lib/kric-capital-timetable-records.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/lib/timetable-duplicate-departures.test.mjs","semanticOwner":"data920","classes":["required-pr"],"durationMs":10},
     {"path":"tools/datapack/lib/external-stop-times.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":9},
     {"path":"tools/datapack/check-manifest-acceptance-floor.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":133},
@@ -639,6 +644,7 @@
     {"path":"tools/datapack/build-seoul-measured-transfer-metrics.test.mjs","semanticOwner":"data876","classes":["required-pr"],"durationMs":3000},
     {"path":"tools/datapack/register-seoul-metro-transfer-car-door-duration.test.mjs","semanticOwner":"data876","classes":["required-pr"],"durationMs":2000},
     {"path":"tools/datapack/refresh-nationwide-candidate.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":2100},
+    {"path":"tools/ci/plan-datapack-release-chain.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":17},
     {"path":"tools/datapack/register-current-seoul-accessibility-snapshot.test.mjs","semanticOwner":"data446","classes":["required-pr"],"durationMs":2898},
     {"path":"tools/datapack/register-current-seoul-transfer-source.test.mjs","semanticOwner":"data350","classes":["required-pr"],"durationMs":15752},

@@ -75,6 +75,29 @@ export const KRIC_CAPITAL_ROUTE_PROFILES = Object.freeze([
   }),
 ]);
 
+// #920: 같은 노선·요일구분 안에서 정차·도착·출발 칸이 모두 같은 원천 행은 한 열차의 중복 기재다.
+// 한 선로에서 두 열차가 같은 초에 같은 역을 같은 다음 역으로 출발할 수 없기 때문이다.
+// 어느 행이 실제 열차인지는 공식 근거로 확인한 경우에만 여기 고정한다. 고정하지 않은 중복은 적재를 실패시킨다.
+// 남길 행과 뺄 행은 원천 행 해시(sourceRowSha256)로 묶는다. 원천 행이 바뀌면 규칙이 적용되지 않아 중복이 다시 실패로 드러난다.
+const SEODONGTAN_WEEKEND_EVIDENCE = "KRIC OpenAPI trainUseInfo/subwayTimetable(카탈로그 provider:kric-subway-timetable) "
+  + "2026-10-04 실측, railOprIsttCd=KR·lnCd=1. 서동탄(P157-1)·수원(P155)·금정(P149)에서 dayCd=9(휴일) 23:14·23:34 서동탄 출발 "
+  + "열차는 K506·K508뿐이고, dayCd=8(평일)의 같은 시각 열차가 K512·K514다. dayCd=7(토)은 '데이터 없음'(03)이라 휴일 시간표가 "
+  + "토요일에도 운행한다. 원천 파일의 '토요일+공휴일' 512·514 행은 평일 행과 같은 열차를 휴일에 한 번 더 적은 것이다.";
+export const KRIC_CAPITAL_DUPLICATE_ROW_RESOLUTIONS = Object.freeze([
+  Object.freeze({
+    routeNumber: "S1101", weekdayType: "토요일+공휴일",
+    keep: Object.freeze({ trainNumber: "506", sourceRowSha256: "ef710da95c25cd1fd6ffd85106188e4c8d51f854b19e6f79c694557d82044c41" }),
+    drop: Object.freeze({ trainNumber: "512", sourceRowSha256: "0f5059b6234f528a14307d5ebc47adaeea3f661df2fcb8969e89a41a29479532" }),
+    evidence: SEODONGTAN_WEEKEND_EVIDENCE,
+  }),
+  Object.freeze({
+    routeNumber: "S1101", weekdayType: "토요일+공휴일",
+    keep: Object.freeze({ trainNumber: "508", sourceRowSha256: "7fde1eb750ceb8e68b6af743a403ce0d759624cb413d12011e6cb126c432ea4b" }),
+    drop: Object.freeze({ trainNumber: "514", sourceRowSha256: "317ea0f477d22d75ab7f1d7a2bc06018267d80c5a5db9e789fe0772c0fe5a214" }),
+    evidence: SEODONGTAN_WEEKEND_EVIDENCE,
+  }),
+]);
+
 function profile(routeNumber, routeName, lineId, serviceDays, grammars, stationAliases, stopKeys = STOP_KEYS.SEQUENCE, quarantineAllowance = null) {
   return Object.freeze({
     routeNumber, routeName, lineId, serviceDays, stopKeys, grammars: Object.freeze([...grammars]),
@@ -190,7 +213,7 @@ export function validateKricCapitalTimetableSnapshot(snapshot) {
  * snapshot 행을 정규화 trip으로 바꾼다. 문법·시각 검증에 실패한 행은 trip을 만들지 않고 quarantine에 남긴다.
  * 반환: { provider, lineBindings }. provider/lineBindings는 materializeOfficialLineTimetables 입력이다.
  */
-export function kricCapitalOfficialTimetable(snapshot, { observedAt } = {}) {
+export function kricCapitalOfficialTimetable(snapshot, { observedAt, duplicateResolutions = KRIC_CAPITAL_DUPLICATE_ROW_RESOLUTIONS } = {}) {
   validateKricCapitalTimetableSnapshot(snapshot);
   // #870: 관측 시각은 snapshot이 아니라 호출자(inventory evidence의 최신 재확인)가 준다.
   if (typeof observedAt !== "string" || !Number.isFinite(Date.parse(observedAt)) || new Date(observedAt).toISOString() !== observedAt) fail("OBSERVED_AT");
@@ -227,7 +250,16 @@ export function kricCapitalOfficialTimetable(snapshot, { observedAt } = {}) {
       stops: parsed.stops,
     });
   }
-  trips.sort((left, right) => codepointCompare(left.providerTripKey, right.providerTripKey));
+  const duplicateRows = duplicateServiceRows(trips, duplicateResolutions);
+  const admittedTrips = trips.filter((trip) => !duplicateRows.has(trip));
+  for (const trip of duplicateRows) {
+    quarantine.push({
+      sourceId: KRIC_CAPITAL_TIMETABLE_SOURCE_ID, lineId: trip.lineId, routeKey: trip.routeKey, trainNumber: trip.trainNumber,
+      serviceDayKind: trip.serviceDayKind, sourceDayKey: trip.sourceDayKey, sourceRowNumber: trip.sourceRowNumber,
+      sourceRowSha256: trip.sourceRowSha256, reason: "DUPLICATE_SERVICE_ROW",
+    });
+  }
+  admittedTrips.sort((left, right) => codepointCompare(left.providerTripKey, right.providerTripKey));
   return {
     provider: {
       sourceId: KRIC_CAPITAL_TIMETABLE_SOURCE_ID,
@@ -238,7 +270,7 @@ export function kricCapitalOfficialTimetable(snapshot, { observedAt } = {}) {
       dataReferenceDateByLine: Object.fromEntries([...dataReferenceDates]
         .map(([lineId, dates]) => [lineId, [...dates].sort(codepointCompare)])
         .sort(([left], [right]) => codepointCompare(left, right))),
-      trips,
+      trips: admittedTrips,
       quarantine,
     },
     lineBindings: KRIC_CAPITAL_ROUTE_PROFILES.map((entry) => ({
@@ -249,6 +281,31 @@ export function kricCapitalOfficialTimetable(snapshot, { observedAt } = {}) {
       ...(entry.quarantineAllowance ? { quarantineAllowance: entry.quarantineAllowance } : {}),
     })),
   };
+}
+
+// #920: 내용이 같은 원천 행 묶음마다 고정 규칙이 가리키는 행만 남긴다. 남길 행이 정확히 하나가 아니면 실패한다.
+function duplicateServiceRows(trips, resolutions) {
+  const groups = new Map();
+  for (const trip of trips) {
+    const key = JSON.stringify([trip.routeKey, trip.sourceDayKey, trip.servicePattern, trip.stops]);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(trip);
+  }
+  const dropped = new Set();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const member = (row) => group.some(({ sourceRowSha256, trainNumber }) =>
+      sourceRowSha256 === row.sourceRowSha256 && trainNumber === row.trainNumber);
+    const rules = resolutions.filter(({ routeNumber, weekdayType, keep, drop }) => routeNumber === group[0].routeKey
+      && weekdayType === group[0].sourceDayKey && member(keep) && member(drop));
+    const drops = new Set(rules.map(({ drop }) => drop.sourceRowSha256));
+    const kept = group.filter(({ sourceRowSha256 }) => !drops.has(sourceRowSha256));
+    if (kept.length !== 1 || rules.some(({ keep }) => keep.sourceRowSha256 !== kept[0].sourceRowSha256)) {
+      fail("DUPLICATE_TRIP_UNRESOLVED", `${group[0].routeKey} ${group[0].sourceDayKey} ${group.map(({ trainNumber }) => trainNumber).sort(codepointCompare).join(",")}`);
+    }
+    for (const trip of group) if (drops.has(trip.sourceRowSha256)) dropped.add(trip);
+  }
+  return dropped;
 }
 
 function quarantineRow(record, entry, serviceDayKind, reason) {

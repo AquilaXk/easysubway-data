@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "kasi-public-holiday-calendar",
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "sha256": "0aacb406735f1be45032cab3c5c4aca4e395c5295609ec9fed28cc8f527a4fea",
+      "retrievedAt": "2026-10-03T23:38:31.237Z",
+      "file": "2026-01.xml"
+    },
+    {
+      "year": 2026,
+      "month": 2,
+      "sha256": "ccbc7c307c89f055141506c6e2d381bc5a66665f9828eca9efa0a80eeeb7dab8",
+      "retrievedAt": "2026-10-03T23:38:31.262Z",
+      "file": "2026-02.xml"
+    },
+    {
+      "year": 2026,
+      "month": 3,
+      "sha256": "b795994322d34a04a73086294e147d1ac75c6fa27eb5227cfdb16737724ad686",
+      "retrievedAt": "2026-10-03T23:38:31.287Z",
+      "file": "2026-03.xml"
+    },
+    {
+      "year": 2026,
+      "month": 4,
+      "sha256": "384cf56e190fbe9ec36f6587e87a06842e3ebed3d7342580738e094bb2d068e6",
+      "retrievedAt": "2026-10-03T23:38:31.313Z",
+      "file": "2026-04.xml"
+    },
+    {
+      "year": 2026,
+      "month": 5,
+      "sha256": "3af6ff1237d227078888a2d7faf03d2bfd5cca32ac29e428eddb7d58eea9ea78",
+      "retrievedAt": "2026-10-03T23:38:31.336Z",
+      "file": "2026-05.xml"
+    },
+    {
+      "year": 2026,
+      "month": 6,
+      "sha256": "3cd85620bc4c59ba09058ac7135e0cf670fa65ab24061a679dd426ea5437588d",
+      "retrievedAt": "2026-10-03T23:38:31.359Z",
+      "file": "2026-06.xml"
+    },
+    {
+      "year": 2026,
+      "month": 7,
+      "sha256": "279dfebf571856b4c814b15d3f76b92c5cf5e888bedc8f2e63b8cf2e83135ac6",
+      "retrievedAt": "2026-10-03T23:38:31.384Z",
+      "file": "2026-07.xml"
+    },
+    {
+      "year": 2026,
+      "month": 8,
+      "sha256": "710bd3287d2dcbf45f734d008e90bbd56256ec4e770ec3c322c4bee08c7a81fc",
+      "retrievedAt": "2026-10-03T23:38:31.407Z",
+      "file": "2026-08.xml"
+    },
+    {
+      "year": 2026,
+      "month": 9,
+      "sha256": "89411ef2964127d8ac109202e29607a03bd9c7befa85feaa681da220e15b1ce5",
+      "retrievedAt": "2026-10-03T23:38:31.430Z",
+      "file": "2026-09.xml"
+    },
+    {
+      "year": 2026,
+      "month": 10,
+      "sha256": "c32e9b42870c8386c76d2f2ae8369a6fe2218dd7e726b490d8f661d4dd37fe81",
+      "retrievedAt": "2026-10-03T23:38:31.453Z",
+      "file": "2026-10.xml"
+    },
+    {
+      "year": 2026,
+      "month": 11,
+      "sha256": "384cf56e190fbe9ec36f6587e87a06842e3ebed3d7342580738e094bb2d068e6",
+      "retrievedAt": "2026-10-03T23:38:31.477Z",
+      "file": "2026-11.xml"
+    },
+    {
+      "year": 2026,
+      "month": 12,
+      "sha256": "bb8ac38055710a0b638a6ea37b17c24bd30891ebf53d00668abf07539ac659e8",
+      "retrievedAt": "2026-10-03T23:38:31.501Z",
+      "file": "2026-12.xml"
+    }
+  ]
+}
