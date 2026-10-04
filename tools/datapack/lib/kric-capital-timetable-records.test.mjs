@@ -205,3 +205,33 @@ test("#920 행 해시만 맞거나 열차 번호만 맞거나 노선·요일구�
     assert.throws(() => kricCapitalOfficialTimetable(snapshot, { observedAt: OBSERVED_AT, duplicateResolutions: resolutions }), unresolved);
   }
 });
+
+// 리뷰 F2(#924): 남길 행의 근거인 KRIC 역별 API 응답(서비스 키 제외, 2026-10-04 수집)을 보관하고 그 원문으로 판정을 확인한다.
+test("#920 보관된 KRIC 역별 API 응답에서 휴일 23:14·23:34 서동탄 출발은 506·508뿐이고 512·514는 평일 열차다", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const path = (await import("node:path")).default;
+  const directory = path.join(import.meta.dirname, "../fixtures/kric-line1-weekend-duplicate-evidence");
+  const manifest = JSON.parse(await readFile(path.join(directory, "responses.json"), "utf8"));
+  const responses = new Map();
+  for (const entry of manifest.responses) {
+    const bytes = await readFile(path.join(directory, entry.file));
+    assert.equal(sha(bytes), entry.sha256, entry.file);
+    assert.doesNotMatch(bytes.toString("utf8"), /serviceKey/iu);
+    responses.set(`${entry.request.stinCd}|${entry.request.dayCd}`, JSON.parse(bytes));
+  }
+  const trains = (stinCd, dayCd, field, times) => (responses.get(`${stinCd}|${dayCd}`).body ?? [])
+    .filter((row) => times.includes(row[field])).map(({ trnNo }) => trnNo).sort();
+  // 서동탄(P157-1) 시발 23:14·23:34
+  assert.deepEqual(trains("P157-1", "9", "dptTm", ["231400", "233400"]), ["K506", "K508"]);
+  assert.deepEqual(trains("P157-1", "8", "dptTm", ["231400", "233400"]), ["K512", "K514"]);
+  // 같은 열차의 수원(P155)·금정(P149) 출발
+  assert.deepEqual(trains("P155", "9", "dptTm", ["232900", "234900"]), ["K506", "K508"]);
+  assert.deepEqual(trains("P155", "8", "dptTm", ["232900", "234900"]), ["K512", "K514"]);
+  assert.deepEqual(trains("P149", "9", "dptTm", ["234630", "000630"]), ["K506", "K508"]);
+  assert.deepEqual(trains("P149", "8", "dptTm", ["234630", "000630"]), ["K512", "K514"]);
+  // 토요일(dayCd 7)은 '데이터 없음'이라 휴일 시간표가 토요일에도 운행한다.
+  for (const stinCd of ["P157-1", "P155", "P149"]) assert.equal(responses.get(`${stinCd}|7`).header.resultCode, "03");
+  // 고정 규칙은 이 원문과 같은 선택(506·508 유지, 512·514 제외)이다.
+  assert.deepEqual(KRIC_CAPITAL_DUPLICATE_ROW_RESOLUTIONS.map(({ keep, drop }) => [keep.trainNumber, drop.trainNumber]),
+    [["506", "512"], ["508", "514"]]);
+});
