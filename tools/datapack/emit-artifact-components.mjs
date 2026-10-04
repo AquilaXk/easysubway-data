@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { constants, zstdCompressSync } from "node:zlib";
 
+import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
 import { canonicalJson, selectEffectiveDataPack, validateArtifactComponentManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
@@ -315,7 +316,12 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
 }
 
-function populateNationwideTopologyEdges(target, routeEdges) {
+// AquilaXk/easysubway-backend#480: 계단 칸 규칙은 lib/network-edge-stair-columns.mjs(모바일 팩 build-datapack과 공용)다.
+export function nationwideTopologyEdgeStairColumns(edge) {
+  return networkEdgeStairColumns(edge, edge.edgeId);
+}
+
+export function populateNationwideTopologyEdges(target, routeEdges) {
   target.exec("DELETE FROM network_edges");
   const insert = target.prepare(`
     INSERT INTO network_edges (
@@ -329,6 +335,7 @@ function populateNationwideTopologyEdges(target, routeEdges) {
   target.exec("BEGIN");
   try {
     for (const edge of routeEdges) {
+      const stair = nationwideTopologyEdgeStairColumns(edge);
       insert.run(
         edge.edgeId,
         edge.fromNodeId,
@@ -338,8 +345,8 @@ function populateNationwideTopologyEdges(target, routeEdges) {
         edge.edgeType,
         edge.servicePattern ?? "",
         edge.serviceClass ?? "SUBWAY",
-        edge.includesStairs ? 1 : 0,
-        edge.stairAccessState ?? "UNKNOWN",
+        stair.includesStairs,
+        stair.stairAccessState,
         edge.accessibilityStatus ?? "UNKNOWN",
         edge.reliabilityScore ?? 100,
         edge.sourceId ?? "",

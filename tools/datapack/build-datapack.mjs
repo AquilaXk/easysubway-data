@@ -72,6 +72,7 @@ import { bindStationContacts, loadStationContactInputs } from "./build-station-c
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { serviceDayStopTimes } from "./lib/service-day-seconds.mjs";
+import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
@@ -4577,7 +4578,8 @@ export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissio
         ],
         networkEdges,
         (row) => {
-          const stairAccessState = row.stairAccessState ?? (row.includesStairs ? "STAIR_ONLY" : "UNKNOWN");
+          // AquilaXk/easysubway-backend#480: 서버 번들과 같은 계단 칸 규칙(상태 기준, 어긋나면 거부).
+          const { includesStairs, stairAccessState } = networkEdgeStairColumns(row, row.id);
           const accessibilityStatus = normalizedAccessibilityStatus(
             row.accessibilityStatus,
             "networkEdges.accessibilityStatus",
@@ -4592,7 +4594,7 @@ export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissio
             row.edgeType ?? "WALKWAY",
             row.servicePattern ?? "",
             row.serviceClass ?? "SUBWAY",
-            stairAccessState === "STAIR_ONLY" ? 1 : 0,
+            includesStairs,
             stairAccessState,
             accessibilityStatus,
             row.reliabilityScore ?? 100,
