@@ -24,6 +24,7 @@ import {
   canonicalCurrentReleaseCandidateAccessibilityAuthorityJson,
   isNationwideCandidateId,
 } from "./build-current-release-candidate-accessibility-input.mjs";
+import { SERVICE_DAY_BOUNDARY_SECONDS } from "./lib/service-day-seconds.mjs";
 const facilityEvidenceProvenanceColumns = [
   "source_id",
   "source_snapshot_id",
@@ -493,6 +494,10 @@ function validateTransitSchedule(database, pack) {
       }
       if (stopTime.arrival_seconds < previousDeparture) {
         throw new Error(`${pack.id}@${pack.version} transit_stop_times must be monotonic: ${trip.id}`);
+      }
+      // #918: 03:00(운행일 경계) 전 시각은 전날 운행일의 24시 이후 초로 실어야 한다. 0시대 값이 남으면 기관과 상관없이 거부한다.
+      if (stopTime.arrival_seconds < SERVICE_DAY_BOUNDARY_SECONDS || stopTime.departure_seconds < SERVICE_DAY_BOUNDARY_SECONDS) {
+        throw new Error(`${pack.id}@${pack.version} transit_stop_times must not precede the 03:00 service-day boundary: ${trip.id}`);
       }
       if (stopTime.line_id !== route.line_id) {
         throw new Error(`${pack.id}@${pack.version} transit_stop_times line_id must match route line_id: ${trip.id}`);

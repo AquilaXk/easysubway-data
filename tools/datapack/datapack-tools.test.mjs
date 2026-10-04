@@ -4499,6 +4499,34 @@ test("데이터팩 검증기는 현장·운영기관 확인 시설 AVAILABLE 근
   );
 });
 
+// #918 불변식: 컴파일된 SQLite에 03:00(운행일 경계) 전 정차 시각이 남으면 어느 기관이든 팩을 거부한다.
+test("#918 데이터팩 검증기는 운행일 경계(03:00) 전 정차 시각이 남은 비인천 trip을 거부한다", async (context) => {
+  const artifact = await buildCurrentProductionArtifact(context);
+  await mutateCurrentProductionSqlite(artifact, ({ database }) => {
+    const trip = database.prepare(`
+      SELECT trip_id FROM transit_stop_times
+      WHERE trip_id NOT LIKE 'trip-incheon-%'
+      GROUP BY trip_id HAVING MIN(arrival_seconds) >= 86400
+      ORDER BY trip_id LIMIT 1
+    `).get();
+    assert.ok(trip, "current production artifact requires one non-Incheon after-midnight trip");
+    const update = database.prepare(`
+      UPDATE transit_stop_times
+      SET arrival_seconds = arrival_seconds - 86400, departure_seconds = departure_seconds - 86400
+      WHERE trip_id = ?
+    `).run(trip.trip_id);
+    assert.ok(update.changes >= 2);
+  });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/validate-datapack.mjs", ...currentProductionValidationArgs(artifact)],
+      { cwd: root, env: productionEnv },
+    ),
+    /transit_stop_times must not precede the 03:00 service-day boundary/,
+  );
+});
+
 test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE을 거부한다", async (context) => {
   const artifact = await buildCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database }) => {
