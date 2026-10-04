@@ -8,7 +8,8 @@ import test from "node:test";
 
 import { buildCurrentFiveRegionSourceFanIn } from "./build-current-five-region-source-fan-in.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH, buildCandidateInputManifest, serializeCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
-import { candidatePinnedReader, candidatePinnedWorkspace, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { CANDIDATE_OUTPUT_PATHS, candidatePinnedReader, candidatePinnedWorkspace, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./refresh-nationwide-candidate.mjs";
 
 // #942: PR CI(required-pr)는 커밋된 전국 후보의 내부 pin 일관성만 검사한다.
 // 후보가 읽은 입력은 매니페스트가 sha256으로 고정하고, 그 바이트로 fan-in·spec 결속을 다시 계산한다.
@@ -168,4 +169,14 @@ test("고정 입력이 작업 트리와 다르면 작업 공간은 저장소를 
     cacheDirectory: path.join(brokenRoot, ".candidate-input-cache"),
     fetchImpl: async () => new Response("missing", { status: 404 }),
   }), /CANDIDATE_INPUT_FETCH_FAILED: tools\/datapack\/source-inventory.json/);
+});
+
+// #943 리뷰 F6: 작업 트리에서 읽어도 되는 후보 산출물 목록은 helper가 명시적으로 고정하고, 갱신 도구의 출력 목록과 같은지 여기서 확인한다.
+// 갱신 도구 출력에 입력 파일이 끼어들면 이 테스트가 먼저 실패한다.
+test("후보 재현 reader의 로컬 읽기 허용 목록은 갱신 도구 출력 목록과 같고, 고정 입력과는 fan-in만 겹친다", () => {
+  assert.deepEqual([...CANDIDATE_OUTPUT_PATHS].sort(), [...NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS].sort());
+  const outputs = new Set(CANDIDATE_OUTPUT_PATHS);
+  // fan-in은 후보 산출물이면서 prepare가 읽는 입력이다. 고정 입력이 우선하고, 그 sha는 매니페스트 fanInSha256과 같다.
+  assert.deepEqual(manifest.files.filter(({ path: relative }) => outputs.has(relative)).map(({ path: relative }) => relative), [FAN_IN_PATH]);
+  assert.equal(manifest.files.find(({ path: relative }) => relative === FAN_IN_PATH).sha256, manifest.fanInSha256);
 });

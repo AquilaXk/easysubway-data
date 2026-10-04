@@ -9,7 +9,6 @@ import {
   createCandidateInputReader,
   parseCandidateInputManifest,
 } from "../lib/candidate-input-bundle.mjs";
-import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "../refresh-nationwide-candidate.mjs";
 
 // #942: PR CI의 후보 재현 검사는 작업 트리 대신 커밋된 후보가 고정한 입력 바이트를 읽는다.
 // 작업 트리 바이트가 고정값과 같으면 그대로 쓰고, 다르면(원천 등록만 한 PR) 공개 읽기 경로
@@ -22,13 +21,36 @@ export async function committedCandidateInputManifest(root = ROOT) {
   return parseCandidateInputManifest(await readFile(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH)));
 }
 
-// 후보 입력은 고정 바이트로, 후보 산출물(갱신 도구가 한 번에 쓰는 NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS)은 커밋된 바이트로 읽는다.
+// 작업 트리에서 그대로 읽어도 되는 후보 산출물이다. 전국 후보 갱신 도구가 한 번에 다시 쓰는 출력이라 커밋된 후보와 함께 움직인다.
+// production 상수를 import하지 않고 여기 고정한다. 갱신 도구 출력 목록(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS)과 같은지는
+// nationwide-candidate-pin-consistency.test.mjs가 확인한다.
+export const CANDIDATE_OUTPUT_PATHS = Object.freeze([
+  "release/product-gates/production-datapack-scope.json",
+  "release/product-gates/route-edge-evaluation-policy.json",
+  "tools/datapack/release/candidate-build-spec.json",
+  "tools/datapack/release/current-five-region-source-fan-in.json",
+  "tools/datapack/release/hash-evidence.json",
+  "tools/datapack/release/nationwide-candidate-input-manifest.json",
+  "tools/datapack/release/nationwide-candidate-preparation.json",
+  "tools/datapack/release/nationwide-capital-timetable-report.json",
+  "tools/datapack/release/nationwide-car-door-hint-quarantine.json",
+  "tools/datapack/release/nationwide-official-line-timetable-report.json",
+  "tools/datapack/release/nationwide-official-stop-times.json.gz",
+  "tools/datapack/release/nationwide-production-canonical-pack.json",
+  "tools/datapack/release/nationwide-regional-timetable-quarantine.json",
+  "tools/datapack/release/nationwide-route-edge-input.json",
+  "tools/datapack/release/nationwide-station-line-input.json",
+  "tools/datapack/release/release-request.json",
+  "tools/datapack/reports/nationwide-requirement-ownership-ledger.json",
+]);
+
+// 후보 입력은 고정 바이트로, 후보 산출물(CANDIDATE_OUTPUT_PATHS)은 커밋된 바이트로 읽는다.
 // 그 밖의 경로는 후보와 결속되지 않았으므로 CANDIDATE_INPUT_NOT_PINNED로 실패한다.
 export async function candidatePinnedReader({ root = ROOT, env = process.env, fetchImpl = fetch, cacheDirectory } = {}) {
   const readLocal = (relative) => readFile(path.join(root, relative));
   const manifest = await committedCandidateInputManifest(root);
   const pinned = new Set(manifest.files.map(({ path: relative }) => relative));
-  const outputs = new Set(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS);
+  const outputs = new Set(CANDIDATE_OUTPUT_PATHS);
   const readPinned = createCandidateInputReader({
     manifest, readLocal, baseUrl: env.EASYSUBWAY_DATA_PACK_BASE_URL, fetchImpl, ...(cacheDirectory ? { cacheDirectory } : {}),
   });
