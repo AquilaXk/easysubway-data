@@ -318,3 +318,46 @@ test("candidate chain treats only git diff exit 1 as superseded and fails on any
     await rm(origin, { recursive: true, force: true });
   }
 });
+
+test("a failure after the automation branch is pushed closes its PR and deletes the branch (F2)", async () => {
+  const yml = workflowText("nationwide-candidate-refresh.yml");
+  const cleanup = stepBody(yml, "Remove the candidate refresh branch after a later failure");
+  assert.match(cleanup, /\n        if: \$\{\{ failure\(\) && env\.CANDIDATE_BRANCH != '' \}\}\n/u);
+  assert.equal(yml.trimEnd().endsWith(cleanup.trimEnd()), true, "cleanup runs after every other step");
+  const pr = stepBody(yml, "Create candidate refresh pull request");
+  assert.match(pr, /printf 'CANDIDATE_PR_URL=%s\\n' "\$\{pr_url\}" >> "\$\{GITHUB_ENV\}"/u);
+  assert.match(stepBody(yml, "Run required CI on the candidate refresh head"), /set -euo pipefail/u);
+
+  const origin = await gitRepository();
+  const clone = path.join(origin, "clone");
+  const bin = path.join(origin, "bin");
+  try {
+    await writeFile(path.join(origin, "README"), "x\n");
+    git(origin, "add", "README");
+    git(origin, "commit", "-q", "-m", "base");
+    git(origin, "branch", "automation/927-nationwide-candidate-refresh-1");
+    git(origin, "branch", "automation/927-nationwide-candidate-refresh-2");
+    git(path.dirname(clone), "clone", "-q", origin, clone);
+    await mkdir(bin);
+    const ghLog = path.join(origin, "gh.log");
+    await writeFile(path.join(bin, "gh"), `#!/bin/sh\necho "$@" >> "${ghLog}"\nif [ "$1 $2" = "pr close" ]; then git push origin --delete automation/927-nationwide-candidate-refresh-2 >/dev/null 2>&1; fi\n`);
+    spawnSync("/bin/chmod", ["755", path.join(bin, "gh")]);
+    const env = (extra) => ({ PATH: `${bin}:${process.env.PATH}`, GH_TOKEN: "test", GITHUB_REPOSITORY: "AquilaXk/easysubway-data", GITHUB_SERVER_URL: "https://github.com", GITHUB_RUN_ID: "42", ...extra });
+    // PR 전에 실패: 브랜치만 지운다.
+    const noPr = spawnSync("/bin/bash", ["-e", "-c", stepScript(yml, "Remove the candidate refresh branch after a later failure")], {
+      cwd: clone, encoding: "utf8", env: env({ CANDIDATE_BRANCH: "automation/927-nationwide-candidate-refresh-1", CANDIDATE_PR_URL: "" }),
+    });
+    assert.equal(noPr.status, 0, noPr.stderr);
+    assert.equal(git(origin, "branch", "--list", "automation/927-nationwide-candidate-refresh-1"), "");
+    // PR 뒤에 실패(예: CI dispatch 실패): PR을 닫으며 브랜치를 지운다.
+    const prUrl = "https://github.com/AquilaXk/easysubway-data/pull/9999";
+    const withPr = spawnSync("/bin/bash", ["-e", "-c", stepScript(yml, "Remove the candidate refresh branch after a later failure")], {
+      cwd: clone, encoding: "utf8", env: env({ CANDIDATE_BRANCH: "automation/927-nationwide-candidate-refresh-2", CANDIDATE_PR_URL: prUrl }),
+    });
+    assert.equal(withPr.status, 0, withPr.stderr);
+    assert.match(await readFile(ghLog, "utf8"), new RegExp(`^pr close ${prUrl} --repo AquilaXk/easysubway-data --delete-branch --comment `, "mu"));
+    assert.equal(git(origin, "branch", "--list", "automation/927-nationwide-candidate-refresh-2"), "");
+  } finally {
+    await rm(origin, { recursive: true, force: true });
+  }
+});

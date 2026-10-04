@@ -102,7 +102,8 @@ jobs:
             "" \
             "Refs #927" \
             "Refs #870")"
-          gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}"
+          pr_url="$(gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}")"
+          printf 'CANDIDATE_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
       - name: Run required CI on the candidate refresh head
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,3 +111,15 @@ jobs:
           set -euo pipefail
           # GITHUB_TOKEN으로 만든 PR에는 pull_request CI가 붙지 않는다. ci.yml은 이 경로를 위해 dispatch를 받는다.
           gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${CANDIDATE_BRANCH}"
+      - name: Remove the candidate refresh branch after a later failure
+        if: ${{ failure() && env.CANDIDATE_BRANCH != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # push 뒤 단계(PR 생성·CI dispatch)가 실패하면 남은 automation 브랜치와 CI 없는 PR을 정리한다. job은 실패로 남는다.
+          if [[ -n "${CANDIDATE_PR_URL:-}" ]]; then
+            gh pr close "${CANDIDATE_PR_URL}" --repo "${GITHUB_REPOSITORY}" --delete-branch --comment "후보 갱신 run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}이 PR 생성 뒤 실패해 이 PR과 브랜치를 정리한다."
+          else
+            git push origin --delete "${CANDIDATE_BRANCH}"
+          fi
