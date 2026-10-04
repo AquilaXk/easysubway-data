@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   COMMENT_INTERVAL_MS,
+  GH_CANDIDATES,
   REFRESH_WORKFLOWS,
+  defaultRunGh,
   planRefreshFailureReport,
   refreshFailureMarker,
   reportRefreshFailure,
+  resolveGh,
 } from "./report-refresh-failure.mjs";
 
 const repository = "AquilaXk/easysubway-data";
@@ -245,4 +251,34 @@ test("retained Gwangju timetable refresh can be dispatched once for the #860 ver
   const yml = workflowText("retained-gwangju-timetable-refresh.yml");
   assert.match(yml, /^on:\n  schedule:\n    - cron: "43 \*\/2 \* \* \*"\n  workflow_dispatch:\n/mu);
   assert.doesNotMatch(yml, /workflow_dispatch:\n    inputs:/u);
+});
+
+test("gh is resolved only from fixed paths, in order, and a missing gh fails with GH_EXECUTABLE (F3)", () => {
+  assert.deepEqual(GH_CANDIDATES, ["/usr/bin/gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"]);
+  const checked = [];
+  const found = resolveGh({ isFile: (candidate) => { checked.push(candidate); return candidate === "/opt/homebrew/bin/gh"; } });
+  assert.equal(found, "/opt/homebrew/bin/gh");
+  assert.deepEqual(checked, ["/usr/bin/gh", "/opt/homebrew/bin/gh"]);
+  assert.equal(resolveGh({ isFile: () => true }), "/usr/bin/gh");
+  assert.throws(() => resolveGh({ isFile: () => false }), /REFRESH_FAILURE_REPORT_GH_EXECUTABLE/u);
+});
+
+test("the default gh runner passes args and stdin to the resolved executable and surfaces its failure (F3)", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fake-gh-"));
+  try {
+    const executable = path.join(directory, "gh");
+    await writeFile(executable, [
+      "#!/bin/sh",
+      "input=$(cat)",
+      "if [ \"$1\" = \"fail\" ]; then echo \"first line\" >&2; echo \"HTTP 403: denied\" >&2; exit 4; fi",
+      "printf \"%s|%s|%s\" \"$1\" \"$2\" \"$input\"",
+      "",
+    ].join("\n"));
+    await chmod(executable, 0o755);
+    const resolve = () => executable;
+    assert.equal(await defaultRunGh(["issue", "list"], "stdin body", { resolve }), "issue|list|stdin body");
+    await assert.rejects(defaultRunGh(["fail", "now"], null, { resolve }), /gh fail now failed: HTTP 403: denied/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

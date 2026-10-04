@@ -159,15 +159,18 @@ function parseArgs(argv) {
 }
 
 // PATH 조회 없이 고정 경로로 gh를 찾는다(PATH 오염 차단, tools/route-map/svg-crop/render-svg.mjs와 같은 방식).
-function resolveGh() {
-  for (const candidate of ["/usr/bin/gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+export const GH_CANDIDATES = Object.freeze(["/usr/bin/gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"]);
+const isRegularFile = (candidate) => existsSync(candidate) && statSync(candidate).isFile();
+
+export function resolveGh({ isFile = isRegularFile } = {}) {
+  for (const candidate of GH_CANDIDATES) {
+    if (isFile(candidate)) return candidate;
   }
   return fail("GH_EXECUTABLE");
 }
 
-function defaultRunGh(args, input = null) {
-  const gh = resolveGh();
+export function defaultRunGh(args, input = null, { resolve: resolveExecutable = resolveGh } = {}) {
+  const gh = resolveExecutable();
   return new Promise((resolve, reject) => {
     const child = spawn(gh, args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
