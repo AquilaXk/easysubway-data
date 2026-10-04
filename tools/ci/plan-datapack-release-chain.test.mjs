@@ -266,6 +266,8 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   const refresh = stepBody(yml, "Refresh nationwide candidate");
   assert.match(refresh, /node tools\/datapack\/refresh-nationwide-candidate\.mjs --evaluated-at "\$\{EVALUATED_AT\}" --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}" --gate-run "\$\{RUNNER_TEMP\}\/candidate-gate-run\.json"/u);
   assert.match(refresh, /EVALUATED_AT: \$\{\{ steps\.plan\.outputs\.evaluated_at \}\}/u);
+  // #942: 후보 입력 매니페스트 바이트를 OCI에 올리는 PAR은 시크릿에서만 받는다.
+  assert.match(refresh, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}/u);
   const scope = stepBody(yml, "Verify candidate refresh output scope");
   assert.match(scope, /NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS/u);
   assert.match(scope, /git add -- "\$\{outputs\[@\]\}"/u);

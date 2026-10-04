@@ -66,6 +66,8 @@ jobs:
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
           REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
           APPROVED_BY: ${{ steps.plan.outputs.approved_by }}
+          # #942: 후보 입력 매니페스트의 바이트를 OCI candidate-inputs/sha256/에 올린다.
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
           node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --gate-run "${RUNNER_TEMP}/candidate-gate-run.json"

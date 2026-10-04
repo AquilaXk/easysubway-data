@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { EXTERNAL_STOP_TIMES_KEY, expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { prepareNationwideCandidate } from "./prepare-nationwide-candidate-run.mjs";
+import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const COMMITTED_PACK = "tools/datapack/release/nationwide-production-canonical-pack.json";
@@ -33,13 +34,15 @@ const CAPITAL_LINES = Object.freeze([
 const CANARY = Object.freeze({ originStationId: "station-6a5e08288b46", destinationStationId: "station-gangnam" });
 
 let prepared;
+// #942: 후보 팩 재현은 후보가 고정한 입력으로 한다(원천만 등록한 PR에서도 같은 팩).
 async function nationwidePack() {
-  prepared ??= prepareNationwideCandidate({
+  prepared ??= candidatePinnedReader().then((readRepositoryFile) => prepareNationwideCandidate({
+    readRepositoryFile,
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 125,
     writeFiles: false,
-  });
+  }));
   return (await prepared).finalPack;
 }
 

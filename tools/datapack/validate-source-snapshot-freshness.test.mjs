@@ -22,6 +22,7 @@ import {
   nextSyntheticCurrentStaticNetworkNow,
 } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
+import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
@@ -896,8 +897,11 @@ test("credentialRedacted가 생략된 snapshot도 canonical build provenance에�
 // #867 리뷰 F2: 정책에 unchangedReverificationBasisField가 있는 클래스(계획 시간표)는 범용 연장 분기로 통과하지 않는다.
 // 게이트가 재확인 규칙(이전 head와 같은 원본 sha, 유효 종료일 미경과, 재확인 시각 + 상한)을 직접 다시 계산한다.
 const KORAIL_PLANNED = "korail-metropolitan-planned-timetable";
+// #942: 커밋된 후보의 재확인 행 검사는 후보가 고정한 원장·inventory·정책 바이트로 한다(원천만 등록한 PR에서도 같은 결과).
+const pinnedRead = await candidatePinnedReader();
+
 async function currentGateInput(mutate = () => {}) {
-  const read = (relative) => readFile(path.join(root, relative));
+  const read = pinnedRead;
   const [buildSpecBytes, ledgerBytes, policyBytes, governanceBytes, inventoryBytes] = await Promise.all([
     read("tools/datapack/release/candidate-build-spec.json"),
     read("tools/datapack/release/source-snapshots.json"),
@@ -931,8 +935,10 @@ test("현재 Korail 계획 시간표 재확인 행은 재확인 규칙으로 다
   const result = validateSourceSnapshotFreshness(input);
   const korail = result.results.find(({ snapshotId }) => snapshotId.startsWith(`${KORAIL_PLANNED}-`));
   assert.equal(korail.status, "FRESH");
-  // #938: 2026-10-04 topology 재확인 등록에 다시 결속한 대경선 계획 시각표 head(재확인 시각 + P30D).
-  assert.equal(korail.freshnessExpiresAt, "2026-11-03T14:37:43.177Z");
+  // 대경선 계획 시각표 head(재확인 시각 + P30D)의 만료는 커밋된 후보 spec이 결속한 값과 같아야 한다.
+  const specRow = input.buildSpec.sourceSnapshots.find(({ sourceId }) => sourceId === KORAIL_PLANNED);
+  assert.equal(korail.snapshotId, specRow.snapshotId);
+  assert.equal(korail.freshnessExpiresAt, specRow.freshnessExpiresAt);
 });
 
 test("계획 시간표 재확인 행은 이전 head와 원본 sha가 다르면 거부한다(#867 F2)", async () => {
