@@ -40,8 +40,9 @@ export async function candidatePinnedJson(read, relative) {
 /**
  * 하위 프로세스로 도구를 실행하는 후보 재현 테스트용 작업 공간.
  * 고정 입력이 모두 작업 트리와 같으면 저장소 루트를 그대로 쓴다(일반 PR).
- * 다르면(원천만 등록한 PR) 저장소를 임시 디렉터리에 복사하고, 다른 고정 입력만 고정 바이트로 덮어쓴다.
- * 도구 코드와 고정되지 않은 파일은 이 PR의 것을 그대로 쓴다. 프로세스가 끝나면 임시 디렉터리를 지운다.
+ * 다르면(원천만 등록한 PR) 다른 고정 입력의 바이트를 먼저 받아 확인한 뒤, 저장소를 임시 디렉터리에 복사하고
+ * 그 입력만 고정 바이트로 덮어쓴다. 도구 코드와 고정되지 않은 파일은 이 PR의 것을 그대로 쓴다.
+ * cleanup()이나 프로세스 종료 때 임시 디렉터리를 지운다. 받기에 실패하면 작업 공간을 만들지 않고 실패한다.
  */
 export async function candidatePinnedWorkspace({ root = ROOT, env = process.env, fetchImpl = fetch } = {}) {
   const manifest = await committedCandidateInputManifest(root);
@@ -53,14 +54,21 @@ export async function candidatePinnedWorkspace({ root = ROOT, env = process.env,
     const local = await readFile(path.join(root, entry.path)).catch(() => null);
     if (!local || createHash("sha256").update(local).digest("hex") !== entry.sha256) stale.push(entry);
   }
-  if (stale.length === 0) return { root, stalePaths: [] };
+  if (stale.length === 0) return { root, stalePaths: [], cleanup: async () => {} };
+  const pinnedBytes = new Map();
+  for (const entry of stale) pinnedBytes.set(entry.path, await read(entry.path));
   const workspace = await mkdtemp(path.join(os.tmpdir(), "easysubway-candidate-pinned-"));
-  process.once("exit", () => rmSync(workspace, { recursive: true, force: true }));
+  const remove = () => rmSync(workspace, { recursive: true, force: true });
+  process.once("exit", remove);
   const excluded = new Set([".git", "node_modules", ".external"]);
   await cp(root, workspace, {
     recursive: true,
     filter: (source) => !excluded.has(path.relative(root, source).split(path.sep)[0]),
   });
-  for (const entry of stale) await writeFile(path.join(workspace, entry.path), await read(entry.path));
-  return { root: workspace, stalePaths: stale.map(({ path: relative }) => relative) };
+  for (const [relative, bytes] of pinnedBytes) await writeFile(path.join(workspace, relative), bytes);
+  return {
+    root: workspace,
+    stalePaths: stale.map(({ path: relative }) => relative),
+    cleanup: async () => { process.removeListener("exit", remove); remove(); },
+  };
 }

@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile as readFileBytes, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { buildCurrentFiveRegionSourceFanIn } from "./build-current-five-region-source-fan-in.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH, buildCandidateInputManifest, serializeCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
-import { candidatePinnedReader, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidatePinnedReader, candidatePinnedWorkspace, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 // #942: PR CI(required-pr)는 커밋된 전국 후보의 내부 pin 일관성만 검사한다.
 // 후보가 읽은 입력은 매니페스트가 sha256으로 고정하고, 그 바이트로 fan-in·spec 결속을 다시 계산한다.
@@ -121,4 +121,48 @@ test("후보 재현 reader는 고정 입력·후보 산출물·미고정 경로�
   assert.deepEqual(await read(BUILD_SPEC_PATH), Buffer.from("{\"candidateId\":\"fake\"}\n"));
   // 미고정·비산출물 경로: 작업 트리에 파일이 있어도 읽지 않고 실패한다.
   await assert.rejects(read("tools/datapack/unpinned-input.json"), /CANDIDATE_INPUT_NOT_PINNED: tools\/datapack\/unpinned-input.json/);
+});
+
+// #942 리뷰 F2: 원천만 등록한 PR에서만 도는 작업 공간 분기(복사 → 받기 → 덮어쓰기 → 정리)를 CI에서 실제로 실행한다.
+test("고정 입력이 작업 트리와 다르면 작업 공간은 저장소를 복사하고 그 입력만 고정 바이트로 덮어쓴 뒤 정리된다", async (t) => {
+  const changed = Buffer.from("{\"registered\":\"later\"}\n");
+  const { fakeRoot, pinnedInventory } = await fakeCandidateRoot(t, { localInventory: changed });
+  await mkdir(path.join(fakeRoot, ".git"));
+  await writeFile(path.join(fakeRoot, ".git", "HEAD"), "ref: refs/heads/main\n");
+  let fetched = 0;
+  const workspace = await candidatePinnedWorkspace({
+    root: fakeRoot,
+    env: { EASYSUBWAY_DATA_PACK_BASE_URL: "https://objects.example.test/o" },
+    fetchImpl: async () => {
+      fetched += 1;
+      return new Response(pinnedInventory, { status: 200, headers: { "content-length": String(pinnedInventory.length) } });
+    },
+  });
+  t.after(() => workspace.cleanup());
+  assert.notEqual(workspace.root, fakeRoot);
+  assert.deepEqual(workspace.stalePaths, ["tools/datapack/source-inventory.json"]);
+  assert.equal(fetched, 1);
+  assert.deepEqual(await readFileBytes(path.join(workspace.root, "tools/datapack/source-inventory.json")), pinnedInventory);
+  assert.deepEqual(await readFileBytes(path.join(workspace.root, "tools/datapack/unpinned-input.json")), Buffer.from("{\"unpinned\":true}\n"));
+  await assert.rejects(stat(path.join(workspace.root, ".git")), { code: "ENOENT" });
+  // 원래 작업 트리는 바뀌지 않는다.
+  assert.deepEqual(await readFileBytes(path.join(fakeRoot, "tools/datapack/source-inventory.json")), changed);
+  await workspace.cleanup();
+  await assert.rejects(stat(workspace.root), { code: "ENOENT" });
+
+  // 고정 입력이 모두 같으면 저장소 루트를 그대로 쓰고, 정리는 아무것도 지우지 않는다.
+  const { fakeRoot: currentRoot } = await fakeCandidateRoot(t, {});
+  const current = await candidatePinnedWorkspace({ root: currentRoot, env: {}, fetchImpl: async () => assert.fail("no fetch") });
+  assert.equal(current.root, currentRoot);
+  assert.deepEqual(current.stalePaths, []);
+  await current.cleanup();
+  assert.ok((await stat(currentRoot)).isDirectory());
+
+  // 받지 못하면 작업 공간을 만들지 않고 실패한다.
+  const { fakeRoot: brokenRoot } = await fakeCandidateRoot(t, { localInventory: changed });
+  await assert.rejects(candidatePinnedWorkspace({
+    root: brokenRoot,
+    env: { EASYSUBWAY_DATA_PACK_BASE_URL: "https://objects.example.test/o" },
+    fetchImpl: async () => new Response("missing", { status: 404 }),
+  }), /CANDIDATE_INPUT_FETCH_FAILED: tools\/datapack\/source-inventory.json/);
 });
