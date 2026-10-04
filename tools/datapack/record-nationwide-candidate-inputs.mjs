@@ -33,6 +33,7 @@ export const ADDITIONAL_PINNED_INPUT_PATHS = Object.freeze([
   "tools/datapack/nationwide-coverage-targets.json",
   "tools/datapack/release/nationwide-requirement-ownership.json",
   "tools/datapack/reports/nationwide-coverage-tally.json",
+  "tools/datapack/source-governance-policy.json",
 ]);
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");

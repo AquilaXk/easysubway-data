@@ -83,6 +83,11 @@
       "byteSize": 222667
     },
     {
+      "path": "tools/datapack/source-governance-policy.json",
+      "sha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+      "byteSize": 59134
+    },
+    {
       "path": "tools/datapack/source-inventory.json",
       "sha256": "f1abff63ff1a1fae7f31361efc93aebd1ef421d6673d96e97dbe1d73a518142b",
       "byteSize": 416894
