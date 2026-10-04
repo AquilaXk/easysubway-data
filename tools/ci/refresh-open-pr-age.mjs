@@ -112,16 +112,11 @@ export function staleOpenRefreshPullRequestMessage({ stale, repository, reflecti
   return lines.join("\n");
 }
 
-function git(args) {
-  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
-}
-
-function readLedgerAt(ref) {
-  return JSON.parse(git(["show", `${ref}:${LEDGER_PATH}`]));
-}
-
-export function inspectClaimReflection(branch) {
-  git(["fetch", "--no-tags", "origin", `refs/heads/main:refs/remotes/origin/main`, `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+/** origin의 main과 claim 브랜치를 받아, 둘의 merge-base(claim의 원본 main) 원장과 두 원장을 비교한다. */
+export function inspectClaimReflection(branch, { cwd = process.cwd() } = {}) {
+  const git = (args) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  const readLedgerAt = (ref) => JSON.parse(git(["show", `${ref}:${LEDGER_PATH}`]));
+  git(["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
   const base = git(["merge-base", "origin/main", `origin/${branch}`]).trim();
   return claimReflectedInMain({
     baseLedger: readLedgerAt(base),

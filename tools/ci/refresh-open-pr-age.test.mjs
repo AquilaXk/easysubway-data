@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +9,7 @@ import {
   REFRESH_CLAIM_PREFIXES,
   claimReflectedInMain,
   evaluateOpenRefreshPullRequest,
+  inspectClaimReflection,
   isoDurationMs,
   main,
   openRefreshPullRequestLimitMs,
@@ -148,4 +150,32 @@ test("CLI는 OPEN_PR인데 PR이 없으면 실패하고, 상한 안이면 통과
   assert.deepEqual(inspected, ["automation/636-current-topology-refresh-37209118635"]);
   await assert.rejects(main(["--workflow", "other.yml", "--prs", policyPath, "--policy", policyPath, "--repository", REPOSITORY]),
     /REFRESH_OPEN_PR_WORKFLOW_INVALID/);
+});
+
+test("main 반영 판정은 origin의 main·claim 브랜치를 받아 merge-base와 두 원장을 비교한다", (t) => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "refresh-open-pr-git-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const origin = path.join(directory, "origin");
+  const clone = path.join(directory, "clone");
+  const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.test", ...args], { cwd, encoding: "utf8" });
+  const ledger = (cwd, ids) => {
+    mkdirSync(path.join(cwd, "tools/datapack/release"), { recursive: true });
+    writeFileSync(path.join(cwd, "tools/datapack/release/source-snapshots.json"), JSON.stringify(ids.map((snapshotId) => ({ snapshotId }))));
+    git(cwd, "add", "tools/datapack/release/source-snapshots.json");
+    git(cwd, "commit", "-q", "-m", ids.join(","));
+  };
+  mkdirSync(origin);
+  git(origin, "init", "-q", "-b", "main");
+  ledger(origin, ["a"]);
+  const branch = "automation/636-current-topology-refresh-1";
+  git(origin, "switch", "-q", "-c", branch);
+  ledger(origin, ["a", "b"]);
+  git(origin, "switch", "-q", "main");
+  // 통합 PR이 squash로 main에 반영한 상황: claim 커밋은 main 조상이 아니지만 원장에는 b가 있다.
+  ledger(origin, ["a", "b", "c"]);
+  git(directory, "clone", "-q", origin, clone);
+  assert.deepEqual(inspectClaimReflection(branch, { cwd: clone }), { reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [] });
+  git(origin, "switch", "-q", branch);
+  ledger(origin, ["a", "b", "d"]);
+  assert.deepEqual(inspectClaimReflection(branch, { cwd: clone }), { reflected: false, addedSnapshotIds: ["b", "d"], missingSnapshotIds: ["d"] });
 });
