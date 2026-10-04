@@ -119,11 +119,11 @@
   },
   "releaseIdentity": {
     "candidateId": "nationwide-candidate-20261004-seq127",
-    "publishedAt": "2026-10-04T14:58:01.635Z",
+    "publishedAt": "2026-10-04T15:05:26.704Z",
     "releaseSequence": 127
   },
   "builderIdentity": {
-    "gitSha": "beaf2e14b4a9e7eff53bcc0146e8a77f4a3f370a",
+    "gitSha": "376fd29c1870f930b948f83ed2d512601dc5b37f",
     "version": "build-datapack.mjs@26"
   },
   "authority": {

@@ -7,7 +7,7 @@
     "snapshotId": "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
     "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
     "recordsSha256": "dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
-    "observedAt": "2026-10-03T00:11:32.831Z"
+    "observedAt": "2026-10-04T15:04:55.935Z"
   },
   "contract": {
     "stopOrder": "원천 역명 칸이 명시한 정차 순서(001..N 순번 또는 역 코드 토큰 순서)를 그대로 쓴다.",

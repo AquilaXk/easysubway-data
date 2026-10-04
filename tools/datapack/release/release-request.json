@@ -3,7 +3,7 @@
   "artifactKind": "datapack-release-request",
   "candidateId": "nationwide-candidate-20261004-seq127",
   "scopeId": "nationwide_routing_android_v1",
-  "buildSpecSha256": "af17c1832e9961adf37bacc5fc16848e270127f16ae9f8dcab8606f47c0adb56",
+  "buildSpecSha256": "ce8eea4119fc073eb88acf6c5b1c9862689a52f1efee2e694710dd20b2f30b42",
   "sourceSnapshotSetHash": "6f42e652efb614b80cfcd700b3382ad7efed14983ab06fb15b5124009a98883a",
   "approvedLedgerHash": "4e297100e843ff403f6a07adaadfec05a0afe507c9869307f8dcf9c14e869cb4",
   "requestedBy": "data-operator-lead",
