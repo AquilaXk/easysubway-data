@@ -58,12 +58,12 @@ async function gitRepository() {
   return root;
 }
 
-async function releaseRepository(mutate = (files) => files) {
+async function releaseRepository(mutate = (files) => files, { candidateId = "nationwide-candidate-20261004-seq127", releaseSequence = 127 } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "release-chain-"));
   const spec = {
-    candidateId: "nationwide-candidate-20261004-seq127",
+    candidateId,
     productionScopeId: "nationwide_routing_android_v1",
-    releaseSequence: 127,
+    releaseSequence,
     sourceSnapshotSetHash: "a".repeat(64),
     approvedAliasLedgerHash: "b".repeat(64),
   };
@@ -218,15 +218,24 @@ test("CLI writes the candidate refresh plan to GitHub output and the modeArgs to
   }
 });
 
-test("committed release candidate files produce the modeArgs of the last manual RC dispatch (run 37109648483)", async () => {
+// 마지막 수동 RC run 37109648483의 "Parse modeArgs" 로그에 찍힌 MODE_ARGS_INPUT 원문(2026-10-03T08:26:36Z).
+const RUN_37109648483_MODE_ARGS = '{"buildSpecPath":"tools/datapack/release/candidate-build-spec.json","releaseRequestId":"release-request-nationwide-candidate-20261003-seq126","releaseRequestPath":"tools/datapack/release/release-request.json","androidEvidencePath":"tools/datapack/release/android-evidence-summary.json","strictRouteRegressionPath":"tools/datapack/release/strict-route-regression-report.json","allowGaps":"false","sourceGovernanceEvaluationAt":""}';
+
+test("the seq126 candidate produces exactly the modeArgs of the manual RC run 37109648483 (F3)", async () => {
+  const { root } = await releaseRepository(undefined, { candidateId: "nationwide-candidate-20261003-seq126", releaseSequence: 126 });
+  try {
+    assert.equal(JSON.stringify(await readReleaseCandidateModeArgs({ repositoryRoot: root })), RUN_37109648483_MODE_ARGS);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("committed release candidate files produce the fixed RC modeArgs with a nationwide approval id (F3)", async () => {
   const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
-  const request = JSON.parse(await readFile(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.releaseRequestPath), "utf8"));
-  const modeArgs = await readReleaseCandidateModeArgs({ repositoryRoot });
-  assert.equal(modeArgs.releaseRequestId, request.approvalId);
-  assert.deepEqual(Object.keys(modeArgs), [
-    "buildSpecPath", "releaseRequestId", "releaseRequestPath", "androidEvidencePath",
-    "strictRouteRegressionPath", "allowGaps", "sourceGovernanceEvaluationAt",
-  ]);
+  const { releaseRequestId, ...fixed } = await readReleaseCandidateModeArgs({ repositoryRoot });
+  assert.match(releaseRequestId, /^release-request-nationwide-candidate-\d{8}-seq[1-9]\d*$/u);
+  const { releaseRequestId: _manual, ...manualFixed } = JSON.parse(RUN_37109648483_MODE_ARGS);
+  assert.deepEqual(fixed, manualFixed);
 });
 
 test("nationwide candidate refresh workflow runs in CI on main and opens one automation PR with required CI", () => {
