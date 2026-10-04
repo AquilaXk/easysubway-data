@@ -13,7 +13,8 @@ import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "../refresh-nationwide-cand
 
 // #942: PR CI의 후보 재현 검사는 작업 트리 대신 커밋된 후보가 고정한 입력 바이트를 읽는다.
 // 작업 트리 바이트가 고정값과 같으면 그대로 쓰고, 다르면(원천 등록만 한 PR) 공개 읽기 경로
-// EASYSUBWAY_DATA_PACK_BASE_URL(CI는 vars.EASYSUBWAY_DATA_PACK_BASE_URL)에서 고정 sha256 객체를 받아 확인한다.
+// EASYSUBWAY_DATA_PACK_BASE_URL에서 고정 sha256 객체를 받아 확인한다. CI는 같은 버킷 공개 경로인
+// vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL(서버 경로 번들용 변수, 용도 공유)을 이 이름으로 넘긴다.
 // 받지 못하거나 sha가 다르면 테스트가 실패한다(건너뛰지 않는다).
 const ROOT = path.resolve(import.meta.dirname, "../../..");
 
