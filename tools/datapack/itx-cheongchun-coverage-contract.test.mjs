@@ -226,16 +226,17 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.deepEqual(completeness.selectedServiceDates, artifact.selectedServiceDates);
   assert.equal(artifact.artifactId, reference.artifactId);
   assert.equal(artifact.artifactKind, "itx-cheongchun-source-timetable");
-  assert.equal(artifact.promotionStatus, "CHANGE_REVIEW_REQUIRED");
-  assert.equal(artifact.snapshotDiff.status, "CHANGE_REVIEW_REQUIRED");
+  // #938: 2026-10-04 수집분은 직전 승인 원천(11ba30b4) 대비 모든 집합 변화가 0이라 SUPPORTED다(QA 승인 #636 issuecomment-5981684543).
+  assert.equal(artifact.promotionStatus, "SUPPORTED");
+  assert.equal(artifact.snapshotDiff.status, "SUPPORTED");
   assert.equal(artifact.snapshotDiff.previousArtifactSha256, reference.promotion.previousArtifactSha256);
   const diffByDay = new Map(artifact.snapshotDiff.serviceDays.map((day) => [day.dayCd, day]));
   const expectedDayCds = Object.keys(artifact.selectedServiceDates).sort();
   assert.deepEqual(artifact.normalizedSnapshotSets.map(({ dayCd }) => dayCd).sort(), expectedDayCds);
   assert.deepEqual([...diffByDay.keys()].sort(), expectedDayCds);
   const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
-  // QA 승인 체크포인트(#848): 평일(8)만 정차 순서·시각 튜플이 바뀌어 차단됐고, 토·일은 변화가 없다.
-  const expectedBlockedByDay = { "7": false, "8": true, "9": false };
+  // QA 승인 체크포인트(#938): 평일(8)·토(7)·일(9) 모두 변화가 없어 차단되지 않았다.
+  const expectedBlockedByDay = { "7": false, "8": false, "9": false };
   for (const { dayCd, sets } of artifact.normalizedSnapshotSets) {
     const diff = diffByDay.get(dayCd);
     assert.equal(diff.blocked, expectedBlockedByDay[dayCd]);
@@ -249,7 +250,7 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20261001", "7": "20261010", "9": "20261004" });
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20261006", "7": "20261010", "9": "20261011" });
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
