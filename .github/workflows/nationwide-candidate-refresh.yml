@@ -60,18 +60,35 @@ jobs:
         run: |
           set -euo pipefail
           node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}"
-      - name: Commit refreshed candidate outputs
+      - name: Verify candidate refresh output scope
+        run: |
+          set -euo pipefail
+          # 출력 목록은 후보 갱신 도구가 선언한 NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS뿐이다. 목록을 못 읽으면 여기서 실패한다.
+          output_list="$(node --input-type=module -e 'import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./tools/datapack/refresh-nationwide-candidate.mjs"; console.log(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.join("\n"));')"
+          outputs=()
+          while IFS= read -r output; do [[ -n "${output}" ]] && outputs+=("${output}"); done <<< "${output_list}"
+          [[ "${#outputs[@]}" -gt 0 ]] || { echo "candidate refresh output list is empty" >&2; exit 1; }
+          git add -- "${outputs[@]}"
+          unstaged="$(git diff --name-only)"
+          untracked="$(git ls-files --others --exclude-standard)"
+          [[ -z "${unstaged}" && -z "${untracked}" ]] || { echo "candidate refresh changed a path outside its outputs" >&2; exit 1; }
+          # git diff --quiet: 0 변화 없음, 1 변화 있음. 그 밖의 종료 코드는 오류로 실패한다.
+          set +e
+          git diff --cached --quiet
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0) echo "candidate refresh produced no change" >&2; exit 1 ;;
+            1) ;;
+            *) echo "candidate refresh staged diff check failed (git diff exit ${diff_status})" >&2; exit "${diff_status}" ;;
+          esac
+      - name: Commit and push candidate refresh branch
         env:
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mapfile -t outputs < <(node --input-type=module -e 'import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./tools/datapack/refresh-nationwide-candidate.mjs"; console.log(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.join("\n"));')
-          [[ "${#outputs[@]}" -gt 0 ]] || { echo "candidate refresh output list is empty" >&2; exit 1; }
-          git add -- "${outputs[@]}"
-          [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "candidate refresh changed a path outside its outputs" >&2; exit 1; }
-          git diff --cached --quiet && { echo "candidate refresh produced no change" >&2; exit 1; }
           branch="automation/927-nationwide-candidate-refresh-${GITHUB_RUN_ID}"
           git switch -c "${branch}"
           git config user.name "github-actions[bot]"

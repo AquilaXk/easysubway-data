@@ -259,19 +259,20 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   const refresh = stepBody(yml, "Refresh nationwide candidate");
   assert.match(refresh, /node tools\/datapack\/refresh-nationwide-candidate\.mjs --evaluated-at "\$\{EVALUATED_AT\}" --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}"/u);
   assert.match(refresh, /EVALUATED_AT: \$\{\{ steps\.plan\.outputs\.evaluated_at \}\}/u);
-  const commit = stepBody(yml, "Commit refreshed candidate outputs");
-  assert.match(commit, /NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS/u);
-  assert.match(commit, /git add -- "\$\{outputs\[@\]\}"/u);
-  assert.match(commit, /candidate refresh changed a path outside its outputs/u);
-  assert.match(commit, /candidate refresh produced no change/u);
+  const scope = stepBody(yml, "Verify candidate refresh output scope");
+  assert.match(scope, /NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS/u);
+  assert.match(scope, /git add -- "\$\{outputs\[@\]\}"/u);
+  const commit = stepBody(yml, "Commit and push candidate refresh branch");
   assert.match(commit, /automation\/927-nationwide-candidate-refresh-\$\{GITHUB_RUN_ID\}/u);
-  assert.doesNotMatch(commit, /git add (-A|--all|\.)(\s|$)/u);
+  for (const body of [scope, commit]) assert.doesNotMatch(body, /git add (-A|--all|\.)(\s|$)/u);
+  assert.doesNotMatch(commit, /git add/u);
   const pr = stepBody(yml, "Create candidate refresh pull request");
   assert.match(pr, /gh pr create --repo "\$\{GITHUB_REPOSITORY\}" --draft --base main --head "\$\{CANDIDATE_BRANCH\}"/u);
   const ci = stepBody(yml, "Run required CI on the candidate refresh head");
   assert.match(ci, /gh workflow run ci\.yml --repo "\$\{GITHUB_REPOSITORY\}" --ref "\$\{CANDIDATE_BRANCH\}"/u);
   assert.ok(yml.indexOf("Validate candidate refresh inputs") < yml.indexOf("Refresh nationwide candidate"));
-  assert.ok(yml.indexOf("Refresh nationwide candidate") < yml.indexOf("Commit refreshed candidate outputs"));
+  assert.ok(yml.indexOf("Refresh nationwide candidate") < yml.indexOf("Verify candidate refresh output scope"));
+  assert.ok(yml.indexOf("Verify candidate refresh output scope") < yml.indexOf("Commit and push candidate refresh branch"));
   assert.ok(yml.indexOf("Create candidate refresh pull request") < yml.indexOf("Run required CI on the candidate refresh head"));
   assert.doesNotMatch(yml, /gh pr merge|automerge|git push origin main|production-publish|datapack-release\.yml/u);
 });
@@ -369,4 +370,45 @@ test("a failure after the automation branch is pushed closes its PR and deletes 
   } finally {
     await rm(origin, { recursive: true, force: true });
   }
+});
+
+test("candidate output scope guard runs for real: only declared outputs, something changed, git errors fail (F4)", async () => {
+  const yml = workflowText("nationwide-candidate-refresh.yml");
+  const scenario = async (mutate) => {
+    const root = await gitRepository();
+    try {
+      await mkdir(path.join(root, "tools/datapack"), { recursive: true });
+      await mkdir(path.join(root, "out"));
+      await writeFile(path.join(root, "tools/datapack/refresh-nationwide-candidate.mjs"),
+        'export const NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS = Object.freeze(["out/a.json", "out/b.json"]);\n');
+      for (const name of ["out/a.json", "out/b.json", "other.json"]) await writeFile(path.join(root, name), "{}\n");
+      git(root, "add", ".");
+      git(root, "commit", "-q", "-m", "base");
+      await mutate(root);
+      const result = runStep(yml, "Verify candidate refresh output scope", { cwd: root });
+      return { ...result, staged: git(root, "diff", "--cached", "--name-only") };
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+  const ok = await scenario((root) => writeFile(path.join(root, "out/a.json"), "{\"changed\":true}\n"));
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(ok.staged, "out/a.json");
+  const extraTracked = await scenario(async (root) => {
+    await writeFile(path.join(root, "out/a.json"), "{\"changed\":true}\n");
+    await writeFile(path.join(root, "other.json"), "{\"changed\":true}\n");
+  });
+  assert.notEqual(extraTracked.status, 0);
+  assert.match(extraTracked.stderr, /candidate refresh changed a path outside its outputs/u);
+  const untracked = await scenario(async (root) => {
+    await writeFile(path.join(root, "out/a.json"), "{\"changed\":true}\n");
+    await writeFile(path.join(root, "stray.json"), "{}\n");
+  });
+  assert.notEqual(untracked.status, 0);
+  assert.match(untracked.stderr, /candidate refresh changed a path outside its outputs/u);
+  const unchanged = await scenario(async () => {});
+  assert.notEqual(unchanged.status, 0);
+  assert.match(unchanged.stderr, /candidate refresh produced no change/u);
+  const missingModule = await scenario((root) => rm(path.join(root, "tools/datapack/refresh-nationwide-candidate.mjs")));
+  assert.notEqual(missingModule.status, 0);
 });
