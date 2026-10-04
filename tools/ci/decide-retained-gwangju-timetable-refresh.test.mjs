@@ -4,7 +4,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { decideRetainedGwangjuTimetableRefresh, readRetainedGwangjuTimetableRefreshDecision } from "./decide-retained-gwangju-timetable-refresh.mjs";
+import {
+  RETAINED_GWANGJU_DAILY_REVERIFICATION_PERIOD,
+  decideRetainedGwangjuTimetableRefresh,
+  readRetainedGwangjuTimetableRefreshDecision,
+} from "./decide-retained-gwangju-timetable-refresh.mjs";
+import { readFileSync } from "node:fs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const OBSERVED_AT = "2026-09-07T10:50:18.169Z";
@@ -158,4 +163,22 @@ test("inventory evidence mismatch와 future observation을 거부한다", () => 
     () => decideRetainedGwangjuTimetableRefresh({ ...future, now: new Date("2026-09-10T00:00:00.000Z") }),
     /RETAINED_GWANGJU_TIMETABLE_REFRESH_FUTURE_OBSERVATION/,
   );
+});
+
+// #930 리뷰 F2: 일일 재확인 주기(P1D)는 정책 클래스 cadence(P7D, 만료 기준)와 일부러 다르다.
+// QA 결정 D2(a)(2026-10-04): 만료는 그대로 두고 재확인만 매일 한다. 두 값이 조용히 엇갈리지 않게 관계를 고정한다.
+test("#930 F2 daily reverification is a named P1D period shorter than the admitted confirmation cadence", () => {
+  assert.equal(RETAINED_GWANGJU_DAILY_REVERIFICATION_PERIOD, "P1D");
+  const candidates = JSON.parse(readFileSync(new URL("../datapack/source-candidates.json", import.meta.url), "utf8"));
+  const confirmation = candidates.candidates.find(({ id }) => id === SOURCE_ID).confirmationPolicy;
+  assert.equal(confirmation.id, "official_static_timetable_confirmation");
+  const days = (period) => Number(/^P([1-9][0-9]*)D$/u.exec(period)?.[1]);
+  assert.ok(days(RETAINED_GWANGJU_DAILY_REVERIFICATION_PERIOD) < days(confirmation.reverificationCadence),
+    `daily reverification must come before the ${confirmation.reverificationCadence} expiry`);
+  // 정책 cadence가 바뀌어도 일일 재확인 시각은 관측 + P1D 그대로다(만료 계산과 독립).
+  const value = inputs();
+  value.candidate = candidate("P14D");
+  value.snapshots[0].freshnessExpiresAt = "2026-09-21T10:50:18.169Z";
+  value.snapshots[0].freshUntil = "2026-09-21T10:50:18.169Z";
+  assert.equal(decideRetainedGwangjuTimetableRefresh({ ...value, now: new Date("2026-09-07T12:00:00.000Z") }).refreshDueAt, DAILY_DUE_AT);
 });

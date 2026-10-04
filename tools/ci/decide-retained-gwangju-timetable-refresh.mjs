@@ -1,12 +1,15 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { deriveFreshnessExpiresAt } from "../datapack/freshness-policy.mjs";
+import { addCadence, deriveFreshnessExpiresAt } from "../datapack/freshness-policy.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { requireRetainedTimetableConfirmationPolicy } from "../datapack/prepare-retained-kric-timetable-publication.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
-const DAILY_REVERIFICATION_MILLIS = 24 * 60 * 60 * 1000;
+// #929 D2 / #930 F2: 일일 재확인 주기. QA 결정 D2(a)(2026-10-04)로 관측 후 P1D가 지나면 재확인한다.
+// 정책 클래스 cadence(official_static_timetable_confirmation P7D)는 만료(freshnessExpiresAt)를 정하는 값이고 그대로 둔다.
+// 이 값은 만료가 아니라 재확인 시작 시각이므로 cadence보다 짧아야 한다(계약 테스트로 고정).
+export const RETAINED_GWANGJU_DAILY_REVERIFICATION_PERIOD = "P1D";
 
 // Workflow와 controller는 동일한 current 입력을 읽고, 운영 시각은 호출 시 한 번 캡처한다.
 export async function readRetainedGwangjuTimetableRefreshDecision({
@@ -52,7 +55,7 @@ export function decideRetainedGwangjuTimetableRefresh({ inventory, snapshots, ca
   // #929 D2(QA 결정 2026-10-04): 관측 후 P1D가 지나면 매일 재확인한다. 만료 경보 창이 그보다 먼저 오면 그 시각이 우선이다.
   // 만료 시각(freshnessExpiresAt) 계산은 바꾸지 않는다.
   const refreshDueAt = new Date(Math.min(
-    observedMillis + DAILY_REVERIFICATION_MILLIS,
+    addCadence(observedMillis, RETAINED_GWANGJU_DAILY_REVERIFICATION_PERIOD),
     requiredUtc(freshnessExpiresAt, "FRESHNESS_EXPIRES_AT") - alertBeforeExpiryMillis,
   )).toISOString();
   return {
