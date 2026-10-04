@@ -1,0 +1,68 @@
+name: Data Pack Release Candidate Chain
+
+# 후보 spec 또는 release request가 main에 들어오면 release-candidate(RC)를 실행한다(#927, #870).
+# hub promotion은 후보 run의 event가 workflow_dispatch여야 받으므로 push에서 직접 RC를 돌리지 않고 dispatch한다.
+# modeArgs는 저장소 파일에서만 만든다. release request가 spec에 결속되지 않으면 dispatch하지 않고 실패한다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/datapack/release/candidate-build-spec.json
+      - tools/datapack/release/release-request.json
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: datapack-release-candidate-chain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Release candidate chain
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Skip a candidate superseded on main
+        id: supersede
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          # RC는 dispatch 시점의 main에서 돈다. 그 사이 후보가 다시 바뀌었으면 새 push가 자기 RC를 dispatch한다.
+          # git diff --quiet: 0 같음, 1 다름. 그 밖의 종료 코드(잘못된 ref 등)는 건너뛰지 않고 실패한다.
+          set +e
+          git diff --quiet "${GITHUB_SHA}" origin/main -- tools/datapack/release/candidate-build-spec.json tools/datapack/release/release-request.json
+          diff_status=$?
+          set -e
+          case "${diff_status}" in
+            0) echo "current=true" >> "${GITHUB_OUTPUT}" ;;
+            1)
+              echo "::notice title=Release candidate chain::main의 후보가 ${GITHUB_SHA} 이후 다시 바뀌었다. 새 push의 실행이 RC를 dispatch한다."
+              echo "current=false" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "candidate supersede check failed (git diff exit ${diff_status})" >&2
+              exit "${diff_status}"
+              ;;
+          esac
+      - name: Build release-candidate modeArgs from repository files
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        run: |
+          set -euo pipefail
+          node tools/ci/plan-datapack-release-chain.mjs release-candidate-mode-args --output "${RUNNER_TEMP}/release-candidate-mode-args.json"
+      - name: Dispatch release candidate
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run datapack-release.yml --repo "${GITHUB_REPOSITORY}" --ref main -f mode=release-candidate -f targetChannel=production -f modeArgs="$(cat "${RUNNER_TEMP}/release-candidate-mode-args.json")"
