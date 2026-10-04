@@ -248,6 +248,16 @@ test("인천 1·2호선 공식 timetable을 1414 trip·40898 stop_time·WEEK/HOL
 
   const maxArrival = Math.max(...stopTimes.map(({ arrivalSeconds }) => arrivalSeconds));
   assert.ok(maxArrival > 86_400, `expected a post-midnight trip, got max ${maxArrival}`);
+
+  // #918: 공식 FILE은 자정 이후 막차를 00시대로 적고 파일 끝에 둔다(02~04시 시각 없음).
+  // 운행일 경계(03:00) 앞 시각은 전날 운행일의 심야 시각이므로 86400초 이상으로 싣는다.
+  assert.deepEqual(stopTimes.filter(({ arrivalSeconds, departureSeconds }) =>
+    arrivalSeconds < 10_800 || departureSeconds < 10_800), []);
+  const bakchon = (tripId) => stopTimes.find((row) => row.tripId === tripId && row.stationId === "station-f497b2d7043f");
+  assert.deepEqual(
+    ["1301", "1303", "1305", "1307", "1309"].map((trainNo) => bakchon(`trip-incheon-1-dn-week-${trainNo}`).departureSeconds),
+    [86_430, 87_120, 87_810, 88_530, 89_070],
+  );
 });
 
 test("인천 timetable materializer는 snapshot·inventory·freshness·topology lineage 변조를 fail-closed한다", async () => {
