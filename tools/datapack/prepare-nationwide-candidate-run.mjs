@@ -18,7 +18,7 @@ import {
 import { outOfStationTransferNetworkEdges } from "./build-datapack.mjs";
 import { HOLIDAYS_2026, materializeIncheonTimetable } from "./materialize-incheon-timetable.mjs";
 import { buildNationwidePlatformInfoMap } from "./lib/nationwide-platform-resolver.mjs";
-import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { holidayCalendarViolations, integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { officialOdFareAdmissionsBySource, officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
@@ -61,7 +61,6 @@ import {
   kricStationLinesOfficialTimetable,
 } from "./lib/kric-station-lines-timetable.mjs";
 import { materializeOfficialLineTimetables } from "./lib/official-line-timetable.mjs";
-import { holidayCalendarViolations } from "./lib/regional-timetable-integrator.mjs";
 import { materializeKorailTimetable } from "./materialize-korail-timetable.mjs";
 import { buildRetainedGwangjuScheduleTables } from "./materialize-gwangju-timetable.mjs";
 import {

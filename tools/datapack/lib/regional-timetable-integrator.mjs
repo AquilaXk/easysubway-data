@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /**
@@ -33,7 +35,7 @@ function requiredHolidayDates(holidayDates) {
   if (!Array.isArray(holidayDates) || holidayDates.length === 0) invalid();
   if (holidayDates.some((date) => !validCalendarDate(date)) || new Set(holidayDates).size !== holidayDates.length) invalid();
   if (!holidayDates.some((date) => date.startsWith("2026"))) invalid();
-  return [...holidayDates].sort();
+  return [...holidayDates].sort(codepointCompare);
 }
 
 /**
@@ -74,25 +76,28 @@ export function holidayCalendarViolations({ serviceCalendars, serviceCalendarDat
     if (!servicesByRoute.has(routeId)) servicesByRoute.set(routeId, new Set());
     servicesByRoute.get(routeId).add(serviceId);
   }
-  const regular = (calendar) => calendar.sunday !== true && WEEKDAY_FIELDS.slice(0, 6).some((field) => calendar[field] === true);
-  const violations = [];
-  for (const routeId of [...servicesByRoute.keys()].sort()) {
-    const routeCalendars = [...servicesByRoute.get(routeId)].sort().map((serviceId) => {
+  const dates = [...holidayDates].sort(codepointCompare);
+  return [...servicesByRoute.keys()].sort(codepointCompare).flatMap((routeId) => {
+    const routeCalendars = [...servicesByRoute.get(routeId)].sort(codepointCompare).map((serviceId) => {
       const calendar = calendars.get(serviceId);
       if (!calendar) throw new Error(`holiday calendar check: trip service calendar is missing: ${serviceId}`);
       return calendar;
     });
-    for (const date of [...holidayDates].sort()) {
-      if (!routeCalendars.some(({ startDate, endDate }) => startDate <= date && date <= endDate)) continue;
-      const active = routeCalendars.filter((calendar) => calendarActiveOn(calendar, exceptions, date));
-      for (const calendar of active.filter(regular)) {
-        violations.push({ routeId, date, serviceId: calendar.serviceId, reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" });
-      }
-      // 휴일·명절 달력이 아예 없는 노선(평일·토요일 운행 패턴만 있는 노선)은 공휴일에 운행하지 않는 것이 맞다.
-      if (routeCalendars.some((calendar) => !regular(calendar)) && !active.some((calendar) => !regular(calendar))) {
-        violations.push({ routeId, date, serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" });
-      }
-    }
+    return dates.flatMap((date) => routeHolidayViolations(routeId, routeCalendars, exceptions, date));
+  });
+}
+
+const regularCalendar = (calendar) => calendar.sunday !== true && WEEKDAY_FIELDS.slice(0, 6).some((field) => calendar[field] === true);
+
+function routeHolidayViolations(routeId, routeCalendars, exceptions, date) {
+  if (!routeCalendars.some(({ startDate, endDate }) => startDate <= date && date <= endDate)) return [];
+  const active = routeCalendars.filter((calendar) => calendarActiveOn(calendar, exceptions, date));
+  const violations = active.filter(regularCalendar)
+    .map(({ serviceId }) => ({ routeId, date, serviceId, reason: "REGULAR_SERVICE_ACTIVE_ON_HOLIDAY" }));
+  // 휴일·명절 달력이 아예 없는 노선(평일·토요일 운행 패턴만 있는 노선)은 공휴일에 운행하지 않는 것이 맞다.
+  const hasHolidayCalendar = routeCalendars.some((calendar) => !regularCalendar(calendar));
+  if (hasHolidayCalendar && !active.some((calendar) => !regularCalendar(calendar))) {
+    violations.push({ routeId, date, serviceId: null, reason: "NO_HOLIDAY_SERVICE_ACTIVE" });
   }
   return violations;
 }
