@@ -6741,8 +6741,17 @@ test("데이터팩 생성기는 stairAccessState 계단 전용 값을 legacy fla
   await mkdir(outputDir, { recursive: true });
 
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  // 리뷰 F2(#923): 서버 번들과 같은 규칙. 계단 여부가 상태와 어긋나면 빌드를 거부하고, 맞으면 상태에서 flag를 유도한다.
   fixture.packs[0].networkEdges[0].stairAccessState = "STAIR_ONLY";
   fixture.packs[0].networkEdges[0].includesStairs = false;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir], { cwd: root }),
+    /network edge stair state is invalid: edge-sangnoksu-sadang-seoul-4/,
+  );
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  fixture.packs[0].networkEdges[0].includesStairs = true;
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await execFileAsync(
@@ -6784,8 +6793,17 @@ test("데이터팩 생성기는 stairAccessState 계단 없음 값을 legacy fla
   await mkdir(outputDir, { recursive: true });
 
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  // 리뷰 F2(#923): 서버 번들과 같은 규칙. 계단 여부가 상태와 어긋나면 빌드를 거부하고, 맞으면 상태에서 flag를 유도한다.
   fixture.packs[0].networkEdges[0].stairAccessState = "STEP_FREE";
   fixture.packs[0].networkEdges[0].includesStairs = true;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir], { cwd: root }),
+    /network edge stair state is invalid: edge-sangnoksu-sadang-seoul-4/,
+  );
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  fixture.packs[0].networkEdges[0].includesStairs = false;
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await execFileAsync(

@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { constants, zstdCompressSync } from "node:zlib";
 
+import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
 import { canonicalJson, selectEffectiveDataPack, validateArtifactComponentManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
@@ -315,18 +316,9 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
 }
 
-// AquilaXk/easysubway-backend#480: stair_access_state가 계단 정보의 기준값이다(STEP_FREE·STAIR_ONLY·UNKNOWN).
-// includes_stairs는 NOT NULL 계약이라 미확인을 담지 못하므로 "확인된 계단(STAIR_ONLY)"일 때만 1로 둔다.
-// includes_stairs=0은 계단 없음이 아니다. 계단 없음은 STEP_FREE로만 표현하고, 계단 정보가 없으면 UNKNOWN으로 남긴다.
-const STAIR_ACCESS_STATES = new Set(["STEP_FREE", "STAIR_ONLY", "UNKNOWN"]);
+// AquilaXk/easysubway-backend#480: 계단 칸 규칙은 lib/network-edge-stair-columns.mjs(모바일 팩 build-datapack과 공용)다.
 export function nationwideTopologyEdgeStairColumns(edge) {
-  const declared = edge.includesStairs;
-  const stairAccessState = edge.stairAccessState ?? (declared === true ? "STAIR_ONLY" : "UNKNOWN");
-  if (!STAIR_ACCESS_STATES.has(stairAccessState) || (declared !== undefined && typeof declared !== "boolean")
-    || (declared === true && stairAccessState !== "STAIR_ONLY") || (declared === false && stairAccessState === "STAIR_ONLY")) {
-    throw new Error(`network edge stair state is invalid: ${edge.edgeId}`);
-  }
-  return { includesStairs: stairAccessState === "STAIR_ONLY" ? 1 : 0, stairAccessState };
+  return networkEdgeStairColumns(edge, edge.edgeId);
 }
 
 export function populateNationwideTopologyEdges(target, routeEdges) {
