@@ -512,11 +512,12 @@ export function assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourc
     const bases = [head[sourceClass.basisField], sourceClass.unchangedReverificationBasisField
       ? head[sourceClass.unchangedReverificationBasisField] : undefined].filter((value) => typeof value === "string");
     if (bases.length === 0) throw new Error(`fan-in freshness policy basis missing for ${sourceId}`);
-    const basisAt = bases.reduce((latest, value) => (Date.parse(value) > Date.parse(latest) ? value : latest));
+    const basisAt = bases.reduce((latest, value) => (Date.parse(value) > Date.parse(latest) ? value : latest), bases[0]);
     const ceiling = deriveFreshnessExpiresAt({
       policy: freshnessPolicy, sourceClassId: sourceClass.id, basisAt, evaluationAt: fanIn.evaluatedAt,
     });
-    if (!(Date.parse(head.freshnessExpiresAt) <= Date.parse(ceiling))) {
+    const storedMillis = Date.parse(head.freshnessExpiresAt);
+    if (!Number.isFinite(storedMillis) || storedMillis > Date.parse(ceiling)) {
       throw new Error(`fan-in freshness exceeds policy for ${sourceId}: ${head.freshnessExpiresAt} > ${ceiling}`);
     }
   }
