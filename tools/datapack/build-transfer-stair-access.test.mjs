@@ -518,3 +518,25 @@ test("F2 층 표기가 붙은 승강 설비 단계 뒤 두 번째 층 변화는 
   // 같은 층 평면 환승은 양 끝 층 표기가 같을 때만 근거다.
   assert.deepEqual(verdict(["(B2) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
 });
+
+// #944 QA 결정(F1 후속): 추정 없이 되살릴 수 있는 표기만 허용한다.
+// - 여러 노선을 함께 적은 표기는 구분자(/ · ㆍ ,)로 나눈 각 노선이 고정 노선 표기와 정확히 같을 때만 한정어다.
+// - 띄어 쓴 역 이름은 공백만 지웠을 때 번들 정본 역 이름과 정확히 같을 때만 한정어다(유사도 매칭 없음).
+test("F1 후속 여러 노선 함께 적기와 띄어 쓴 역 이름은 정확히 일치할 때만 한정어로 인정하고 반례는 어휘 밖이다", () => {
+  const context = { stationNames: ["을지로3가", "총신대입구"] };
+  const kind = (text) => classifyTransferStep(text, context).kind;
+  assert.equal(kind("3호선/서해선/경의중앙선 연결통로로 이동"), "LEVEL_MOVE");
+  assert.equal(kind("5호선·6호선 방향 환승통로로 이동"), "LEVEL_MOVE");
+  assert.equal(kind("(B4) 3호선 을지로 3가 방면 승강장 하차"), "ALIGHT");
+  assert.equal(kind("을지로 3가 방면 승강장"), "PLATFORM_ENDPOINT");
+  // 반례: 고정 노선 표기가 아닌 조각, 빈 조각, 공백 외 차이, 이름 일부만 일치
+  assert.equal(kind("5  6호선 방향 환승통로로 이동"), "UNRECOGNIZED");
+  assert.equal(kind("5·6호선 방향 환승통로로 이동"), "UNRECOGNIZED");
+  assert.equal(kind("3호선/공항선 연결통로로 이동"), "UNRECOGNIZED");
+  assert.equal(kind("3호선/ 연결통로로 이동"), "UNRECOGNIZED");
+  assert.equal(kind("(B4) 3호선 을지로 4가 방면 승강장 하차"), "UNRECOGNIZED");
+  assert.equal(kind("(B4) 3호선 을지로 방면 승강장 하차"), "UNRECOGNIZED");
+  assert.equal(kind("(B4) 3호선 을지로 3가역 방면 승강장 하차"), "UNRECOGNIZED");
+  assert.equal(kind("(B4) 3호선 총신대 입구역 방면 승강장 하차"), "UNRECOGNIZED");
+  assert.equal(classifyTransferStep("(B4) 3호선 을지로 3가 방면 승강장 하차").kind, "UNRECOGNIZED");
+});

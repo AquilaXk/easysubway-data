@@ -41,6 +41,8 @@ const QUALIFIER_WORDS = new Set([
 ]);
 const FLOOR_WORD = /^(?:지하|지상)?\d+층$/u;
 const CAR_WORD = /^\d+번칸$/u;
+const LINE_LIST_SEPARATOR = /[/·ㆍ,]/u;
+const MAX_SPACED_NAME_TOKENS = 4;
 const DESTINATION_WORD = new RegExp(`^(?:${PLACE_ROOT}|(?:지하|지상)?\\d+층)(?:으로|로|에서)?$`, "u");
 const ELEVATOR_MOVE_CONNECTORS = Object.freeze([[], ["이용하여"], ["이용해"], ["이용", "후"], ["이용후"], ["탑승", "후"], ["하차", "후"]]);
 const FARE_GATE_PHRASES = Object.freeze([["표", "내는", "곳"], ["표", "내는곳"], ["개집표기"], ["개표구"], ["환승", "게이트"], ["환승게이트"], ["게이트"]]);
@@ -317,20 +319,37 @@ function stepFree(id, kind, match, examples) {
 }
 
 // 한정어 허용 목록: 장소·관계어·층·칸 낱말, 고정 노선 표기, 번들 정본 역 이름, 그리고 그 뒤에 "방면"·"방향"을 붙여 쓴 낱말.
+// 여러 노선을 함께 적은 낱말("3호선/서해선")은 구분자로 나눈 조각이 모두 고정 노선 표기와 정확히 같을 때만 허용한다.
 function isQualifier(token, context) {
   if (QUALIFIER_WORDS.has(token) || FLOOR_WORD.test(token) || CAR_WORD.test(token)
-    || context.lineTokens.has(token) || context.stationNames.has(token)) {
+    || context.lineTokens.has(token) || context.stationNames.has(token) || isLineList(token, context)) {
     return true;
   }
   return ["방면", "방향"].some((suffix) => {
     if (!token.endsWith(suffix) || token.length === suffix.length) return false;
     const stem = token.slice(0, -suffix.length);
-    return QUALIFIER_WORDS.has(stem) || context.lineTokens.has(stem) || context.stationNames.has(stem);
+    return QUALIFIER_WORDS.has(stem) || context.lineTokens.has(stem) || context.stationNames.has(stem) || isLineList(stem, context);
   });
 }
 
+function isLineList(token, context) {
+  const parts = token.split(LINE_LIST_SEPARATOR);
+  return parts.length > 1 && parts.every((part) => context.lineTokens.has(part));
+}
+
+// 낱말 열 전체가 한정어인지 본다. 띄어 쓴 역 이름("을지로 3가")은 이어진 낱말의 공백만 지운 결과가
+// 번들 정본 역 이름과 정확히 같을 때만 한 한정어로 묶는다(유사도 매칭 없음).
 function qualifiers(tokens, context) {
-  return tokens.every((token) => isQualifier(token, context));
+  const reachable = new Array(tokens.length + 1).fill(false);
+  reachable[0] = true;
+  for (let start = 0; start < tokens.length; start += 1) {
+    if (!reachable[start]) continue;
+    if (isQualifier(tokens[start], context)) reachable[start + 1] = true;
+    for (let end = start + 2; end <= Math.min(tokens.length, start + MAX_SPACED_NAME_TOKENS); end += 1) {
+      if (context.stationNames.has(tokens.slice(start, end).join(""))) reachable[end] = true;
+    }
+  }
+  return reachable[tokens.length];
 }
 
 function endsWithAny(tokens, context, cores) {
