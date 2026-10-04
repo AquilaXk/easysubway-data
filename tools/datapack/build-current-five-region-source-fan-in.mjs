@@ -4,6 +4,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+
 export const CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH =
   "tools/datapack/release/current-five-region-source-fan-in.json";
 export const NATIVE_ADMISSION_KINDS = Object.freeze([
@@ -490,15 +492,33 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
 }
 
 // #929 D1: fan-in이 고른 원천은 신선도 정책 클래스가 정확히 하나여야 한다. 없거나 둘 이상이면 정책 기간을 정할 수 없다.
-export function assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy }) {
+// #930 F1: 등록 창의 끝(원장 head freshnessExpiresAt)은 "등록 기준 시각 + 정책 기간"을 넘을 수 없다.
+//   기준 시각은 클래스 basisField 값이고, 동일 원본 재확인 클래스는 재확인 시각이 더 늦으면 그 시각이다.
+//   상한은 발행 FINAL과 같은 deriveFreshnessExpiresAt으로 구한다(제공처 유효 종료일은 상한을 낮추기만 하므로 넣지 않는다).
+export function assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourceSnapshots }) {
   if (!Array.isArray(freshnessPolicy?.sourceClasses)
     || freshnessPolicy.sourceClasses.some((entry) => !Array.isArray(entry?.sourceIds))) {
     throw new Error("fan-in freshness policy shape mismatch");
   }
-  for (const { sourceId } of fanIn?.selectedSources ?? []) {
+  if (!Array.isArray(sourceSnapshots)) throw new Error("fan-in freshness policy needs the source snapshot ledger");
+  for (const { sourceId, snapshotId } of fanIn?.selectedSources ?? []) {
     const classes = freshnessPolicy.sourceClasses.filter(({ sourceIds }) => sourceIds.includes(sourceId));
     if (classes.length === 0) throw new Error(`fan-in freshness policy missing for ${sourceId}`);
     if (classes.length > 1) throw new Error(`fan-in freshness policy ambiguous for ${sourceId}`);
+    const [sourceClass] = classes;
+    const heads = sourceSnapshots.filter((row) => row?.snapshotId === snapshotId && row.sourceId === sourceId);
+    if (heads.length !== 1) throw new Error(`fan-in freshness policy head mismatch for ${sourceId}`);
+    const [head] = heads;
+    const bases = [head[sourceClass.basisField], sourceClass.unchangedReverificationBasisField
+      ? head[sourceClass.unchangedReverificationBasisField] : undefined].filter((value) => typeof value === "string");
+    if (bases.length === 0) throw new Error(`fan-in freshness policy basis missing for ${sourceId}`);
+    const basisAt = bases.reduce((latest, value) => (Date.parse(value) > Date.parse(latest) ? value : latest));
+    const ceiling = deriveFreshnessExpiresAt({
+      policy: freshnessPolicy, sourceClassId: sourceClass.id, basisAt, evaluationAt: fanIn.evaluatedAt,
+    });
+    if (!(Date.parse(head.freshnessExpiresAt) <= Date.parse(ceiling))) {
+      throw new Error(`fan-in freshness exceeds policy for ${sourceId}: ${head.freshnessExpiresAt} > ${ceiling}`);
+    }
   }
 }
 
@@ -636,7 +656,7 @@ async function main() {
   };
   const fanIn = buildCurrentFiveRegionSourceFanIn(input);
   const freshnessPolicy = JSON.parse(await readFile(path.resolve(args["freshness-policy"]), "utf8"));
-  assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy });
+  assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourceSnapshots: input.sourceSnapshots });
   await writeFile(path.resolve(args.output), `${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`, {
     flag: "wx",
     mode: 0o600,

@@ -594,22 +594,41 @@ test("#929 D1 the admission window still ends exactly at the policy freshness", 
 function policyFor(fanIn, extraClasses = []) {
   return {
     sourceClasses: [
-      { id: "fixture_class", sourceIds: fanIn.selectedSources.map(({ sourceId }) => sourceId) },
+      // fixture 원장 head는 retrievedAt 2026-09-02 + P2D = 2026-09-04가 정책 상한이다.
+      { id: "fixture_class", sourceIds: fanIn.selectedSources.map(({ sourceId }) => sourceId), basisField: "retrievedAt", reverificationCadence: "P2D" },
       ...extraClasses,
     ],
   };
 }
 
 test("#929 D1 every selected source must have exactly one freshness policy class", () => {
-  const fanIn = buildCurrentFiveRegionSourceFanIn(fixture());
+  const input = fixture();
+  const fanIn = buildCurrentFiveRegionSourceFanIn(input);
   const sourceId = fanIn.selectedSources[0].sourceId;
-  assert.doesNotThrow(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: policyFor(fanIn) }));
-  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: { sourceClasses: [] } }),
+  const { sourceSnapshots } = input;
+  assert.doesNotThrow(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: policyFor(fanIn), sourceSnapshots }));
+  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: { sourceClasses: [] }, sourceSnapshots }),
     new RegExp(`fan-in freshness policy missing for ${sourceId}`));
   assert.throws(() => assertFanInSourceFreshnessPolicy({
-    fanIn, freshnessPolicy: policyFor(fanIn, [{ id: "other", sourceIds: [sourceId] }]),
+    fanIn, freshnessPolicy: policyFor(fanIn, [{ id: "other", sourceIds: [sourceId] }]), sourceSnapshots,
   }), new RegExp(`fan-in freshness policy ambiguous for ${sourceId}`));
-  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: {} }), /fan-in freshness policy shape mismatch/);
+  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: {}, sourceSnapshots }), /fan-in freshness policy shape mismatch/);
+});
+
+// #930 리뷰 F1: 창의 끝으로 쓰는 원장 freshnessExpiresAt이 "등록 기준 시각 + 정책 기간"을 넘으면 창이 부풀려진 것이다.
+test("#930 F1 a ledger freshness beyond the policy-derived ceiling fails the fan-in policy check", () => {
+  const input = fixture();
+  input.sourceSnapshots[0].freshnessExpiresAt = "2026-09-04T00:00:00.001Z";
+  input.inputBytes.sourceSnapshots = bytes(input.sourceSnapshots);
+  const fanIn = buildCurrentFiveRegionSourceFanIn(input);
+  const sourceId = fanIn.selectedSources[0].sourceId;
+  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy: policyFor(fanIn), sourceSnapshots: input.sourceSnapshots }),
+    new RegExp(`fan-in freshness exceeds policy for ${sourceId}: 2026-09-04T00:00:00\\.001Z > 2026-09-04T00:00:00\\.000Z`));
+  const exact = fixture();
+  const exactFanIn = buildCurrentFiveRegionSourceFanIn(exact);
+  assert.doesNotThrow(() => assertFanInSourceFreshnessPolicy({ fanIn: exactFanIn, freshnessPolicy: policyFor(exactFanIn), sourceSnapshots: exact.sourceSnapshots }));
+  assert.throws(() => assertFanInSourceFreshnessPolicy({ fanIn: exactFanIn, freshnessPolicy: policyFor(exactFanIn) }),
+    /fan-in freshness policy needs the source snapshot ledger/);
 });
 
 test("#929 D1 the fan-in CLI refuses to write without a policy class for every selected source", async () => {
