@@ -71,6 +71,7 @@ import {
 import { bindStationContacts, loadStationContactInputs } from "./build-station-contacts.mjs";
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
+import { serviceDayStopTimes } from "./lib/service-day-seconds.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
@@ -4323,7 +4324,9 @@ export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissio
           "pickup_type",
           "drop_off_type",
         ],
-        pack.transitStopTimes ?? [],
+        // #918: 원천이 00:00~02:59로 적은 자정 이후 시각은 전날 운행일의 24시 이후 초로 싣는다(운행일 경계 03:00).
+        // 바꾼 뒤 trip 안 시각이 줄어들면(경계를 가로지르는 열차) validate-datapack의 순서 검사가 팩을 거부한다.
+        serviceDayStopTimes(pack.transitStopTimes ?? []),
         (row) => [
           requiredString(row.tripId, "transitStopTimes.tripId"),
           requiredPositiveInteger(row.stopSequence, "transitStopTimes.stopSequence"),
