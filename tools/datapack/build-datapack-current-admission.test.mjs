@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
+import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 import {
   admittedIncheonTopologyEvidence,
@@ -154,10 +155,12 @@ function networkEdgeEvidenceFixture() {
 // #866 PR-C: 수도권 live chain 합성 저장소 대신 커밋된 전국 후보와 release workflow의 RC 경로
 // (build-current-release-candidate-accessibility-input → build-datapack override·authority)로 같은 불변식을 고정한다.
 test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
+  // #942: 후보 빌드 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천만 등록한 PR에서도 같은 결과).
+  const { root: candidateRoot } = await candidatePinnedWorkspace();
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-release-identity-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
-  const buildSpecBytes = await readFile(path.join(root, buildSpecPath));
+  const buildSpecBytes = await readFile(path.join(candidateRoot, buildSpecPath));
   const buildSpec = JSON.parse(buildSpecBytes);
   const topologyAdmission = buildSpec.networkEdgeEvidence.capitalTopologyAdmission;
   const firstBuildAt = Math.max(
@@ -185,7 +188,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     "--route-edge-output", candidateRouteEdge,
     "--fixture-output", candidateFixture,
     "--authority-output", routeCoverageAuthority,
-  ], { repositoryRoot: root });
+  ], { repositoryRoot: candidateRoot });
   const directOutput = path.join(directory, "direct-build");
   await assert.rejects(
     withEnvironment({
@@ -195,19 +198,19 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     }, () => buildDatapackMain([
       "--build-spec", buildSpecPath,
       "--output", directOutput,
-    ], { repositoryRoot: root })),
+    ], { repositoryRoot: candidateRoot })),
     /production accessibility evidence mismatch/,
   );
   await assert.rejects(readFile(path.join(directOutput, "current.json")), /ENOENT/);
   const validationOnlyFixturePath = path.join(directory, "validation-only-source-fixture.json");
   const validationOnlyBuildSpecPath = path.join(directory, "validation-only-build-spec.json");
   // #899: 정본 팩이 sha로 결속한 외부 공식 시간표를 펼친 fixture가 release 경로의 원본이다.
-  const sourceFixture = expandExternalStopTimes(JSON.parse(await readFile(path.join(root, buildSpec.fixturePath))), { repositoryRoot: root });
+  const sourceFixture = expandExternalStopTimes(JSON.parse(await readFile(path.join(candidateRoot, buildSpec.fixturePath))), { repositoryRoot: candidateRoot });
   const activePackId = sourceFixture.manifest.activePack.id;
   const validationOnlyFixture = await projectCandidateFixtureForAccessibilityAuthority({
     buildSpec,
     sourceFixture,
-    repositoryRoot: root,
+    repositoryRoot: candidateRoot,
   });
   const sourcePack = retainPreAuthorityRideEdges(sourceFixture, "validation-only source").packs
     .find(({ id }) => id === activePackId);
@@ -236,7 +239,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   }, () => buildDatapackMain([
     "--build-spec", validationOnlyBuildSpecPath,
     "--output", validationOnlyOutput,
-  ], { repositoryRoot: root }));
+  ], { repositoryRoot: candidateRoot }));
   const validationOnlyManifest = JSON.parse(await readFile(
     path.join(validationOnlyOutput, "current.json"),
     "utf8",
@@ -268,7 +271,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       "--current-capital-station-line-input", candidateStationLine,
       "--current-capital-route-edge-input", candidateRouteEdge,
       "--output", output,
-    ], { repositoryRoot: root }));
+    ], { repositoryRoot: candidateRoot }));
     return {
       manifest: await readFile(path.join(output, "current.json")),
       provenance: await readFile(path.join(output, "current.provenance.json")),
@@ -290,7 +293,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
       "--current-capital-station-line-input", candidateStationLine,
       "--current-capital-route-edge-input", candidateRouteEdge,
       "--output", path.join(directory, "validation-only-replay-blocked"),
-    ], { repositoryRoot: root })),
+    ], { repositoryRoot: candidateRoot })),
     /build-spec validation-only requires a production source fixture without accessibility authority replay/,
   );
 
@@ -299,7 +302,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const manifest = JSON.parse(first.manifest);
   const provenance = JSON.parse(first.provenance);
   const snapshots = await readFile(
-    path.join(root, "tools/datapack/release/source-snapshots.json"),
+    path.join(candidateRoot, "tools/datapack/release/source-snapshots.json"),
     "utf8",
   ).then(JSON.parse);
   const selectedIds = new Set(buildSpec.sourceSnapshotIds);
@@ -349,7 +352,7 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     "--current-capital-station-line-input", candidateStationLine,
     "--current-capital-route-edge-input", candidateRouteEdge,
     "--output", path.join(directory, "inventory-mismatch"),
-  ], { repositoryRoot: root })), /sourceInventorySha256|source inventory semantic hash mismatch/);
+  ], { repositoryRoot: candidateRoot })), /sourceInventorySha256|source inventory semantic hash mismatch/);
   for (const key of ["manifest", "provenance", "sqlite", "gzip"]) {
     assert.deepEqual(first[key], second[key], `${key} bytes drifted`);
   }

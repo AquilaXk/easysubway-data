@@ -21,6 +21,7 @@ import {
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStaticNetworkNow } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { candidatePinnedReader, candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -428,8 +429,8 @@ test("current candidate selects scope-bound registered canonical provenance head
 test("current candidate release snapshots accept the committed nationwide candidate order", async () => {
   // 커밋된 전국 후보 spec·scope·inventory·원장·capital canonical pack을 그대로 쓴다.
   // 전국 후보에서 TRANSFER는 마지막 원천이 아니다.
-  const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
-  const read = (relative) => readFile(path.join(repositoryRoot, relative));
+  // #942: 후보가 고정한 원장·inventory·canonical pack 바이트로 읽는다(원천만 등록한 PR에서도 같은 결과).
+  const read = await candidatePinnedReader();
   const [candidateBytes, snapshotsBytes, canonicalBytes, productionScopeBytes, sourceInventoryBytes] = await Promise.all([
     read("tools/datapack/release/candidate-build-spec.json"),
     read("tools/datapack/release/source-snapshots.json"),

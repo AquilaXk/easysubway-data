@@ -11,6 +11,7 @@ import {
   retainPreAuthorityRideEdges,
   syncCanonicalAccessibilityEvidence,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import { candidatePinnedReader, candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
@@ -28,6 +29,8 @@ function sha256(bytes) {
 // sha로 결속한 전국 입력을 그대로 쓴다. 수도권 live chain 재생성(213 역-노선)을 거치지 않는다.
 // 실데이터가 authority(D1: 환승 양끝 TRANSFER cell 닫힘)를 만족하지 못하면 이 테스트는 명시적으로 실패한다.
 test("committed build spec으로 release-candidate accessibility input을 만들면 preparation이 결속한 전국 입력과 바이트가 같다", async () => {
+  // #942: 후보 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천만 등록한 PR에서도 같은 결과).
+  const { root: candidateRoot } = await candidatePinnedWorkspace();
   const buildSpec = readRepoJson(BUILD_SPEC);
   const preparation = readRepoJson(PREPARATION);
   const tmpDir = await mkdtemp(resolve(tmpdir(), "rc-accessibility-input-"));
@@ -45,7 +48,7 @@ test("committed build spec으로 release-candidate accessibility input을 만들
       "--route-edge-output", outputs.routeEdge,
       "--fixture-output", outputs.fixture,
       "--authority-output", outputs.authority,
-    ], { repositoryRoot: root });
+    ], { repositoryRoot: candidateRoot });
 
     const [stationLineBytes, routeEdgeBytes] = await Promise.all([
       readFile(outputs.stationLine),

@@ -10,6 +10,7 @@ import test from "node:test";
 import { gunzipSync } from "node:zlib";
 import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 import { verifyProductionPackArtifactIntegrity } from "./verify-production-pack-artifact-identity.mjs";
+import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -385,18 +386,21 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
 });
 
 test("unchanged candidate는 현재 source inventory 결속을 그대로 검증한다", async () => {
+  // #942: 후보 빌드는 후보가 고정한 입력 바이트를 담은 작업 공간에서 실행한다(원천만 등록한 PR에서도 같은 결과).
+  const { root: candidateRoot } = await candidatePinnedWorkspace();
+  const fromCandidate = (relative) => path.join(candidateRoot, relative);
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-current-source-inventory-binding-"));
   try {
-    const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-    const productionScopePolicyBytes = await readFile(spec.productionScopePolicy.path);
+    const spec = JSON.parse(await readFile(fromCandidate("tools/datapack/release/candidate-build-spec.json"), "utf8"));
+    const productionScopePolicyBytes = await readFile(fromCandidate(spec.productionScopePolicy.path));
     const productionScopePolicyBound = spec.productionScopePolicy.sha256
       === sha256(productionScopePolicyBytes);
-    const inventoryBytes = await readFile(spec.networkEdgeEvidence.sourceInventory.path);
+    const inventoryBytes = await readFile(fromCandidate(spec.networkEdgeEvidence.sourceInventory.path));
     const rawInventoryBound = spec.networkEdgeEvidence.sourceInventory.sha256 === sha256(inventoryBytes);
     const semanticInventoryBound = spec.sourceInventorySha256
       === sha256(Buffer.from(JSON.stringify(JSON.parse(inventoryBytes))));
     const specPath = path.join(workspace, "unchanged-candidate-build-spec.json");
-    await copyFile("tools/datapack/release/candidate-build-spec.json", specPath);
+    await copyFile(fromCandidate("tools/datapack/release/candidate-build-spec.json"), specPath);
 
     let failure;
     try {
@@ -404,7 +408,7 @@ test("unchanged candidate는 현재 source inventory 결속을 그대로 검증�
         "tools/datapack/build-datapack.mjs",
         "--build-spec", specPath,
         "--output", path.join(workspace, "output"),
-      ], { cwd: root, env });
+      ], { cwd: candidateRoot, env });
     } catch (error) {
       failure = error;
     }

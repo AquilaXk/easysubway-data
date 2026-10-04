@@ -13,6 +13,7 @@ import {
   readBusanTransferMetricsInputs,
 } from "./build-busan-transfer-metrics.mjs";
 import { extractBusanTransferRows } from "./collect-busan-route-topology.mjs";
+import { candidatePinnedReader, candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -41,8 +42,11 @@ const EXPECTED_EXCLUDED = [
   ["227", "901", "0", "300"], ["306", "803", "3", "300"], ["317", "907", "0", "240"],
 ];
 
+// #942: 커밋된 부산 환승 지표 재현은 후보가 고정한 입력으로 한다(원천만 등록한 PR에서도 같은 결과).
+const pinnedRead = await candidatePinnedReader();
+
 async function committedInputs() {
-  return readBusanTransferMetricsInputs({ repositoryRoot: root });
+  return readBusanTransferMetricsInputs({ read: pinnedRead });
 }
 
 function contextFor(inputs) {
@@ -99,7 +103,7 @@ test("#872 S3 부산 환승 지표는 100m·분 단위 반올림 운영 기준�
 
 test("#872 S3 커밋된 부산 환승 지표 산출물은 커밋된 입력으로 다시 만든 결과와 바이트가 같다", async () => {
   const inputs = await committedInputs();
-  const committed = await readFile(path.join(root, BUSAN_TRANSFER_METRICS_PATH));
+  const committed = await pinnedRead(BUSAN_TRANSFER_METRICS_PATH);
   const rebuilt = Buffer.from(canonicalBusanTransferMetricsJson(buildBusanTransferMetrics(inputs)));
   assert.equal(rebuilt.equals(committed), true);
   const parsed = JSON.parse(committed);

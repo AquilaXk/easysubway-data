@@ -552,7 +552,8 @@ async function selectionInputsFrom(read) {
 test("#942 원천만 새 head로 등록한 PR에서도 후보 입력 선택은 후보가 고정한 입력으로 재현되고 currency 검사만 실패한다", async () => {
   const manifest = parseCandidateInputManifest(await readFile(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH)));
   const ledgerPath = "tools/datapack/release/source-snapshots.json";
-  const pinnedLedger = await readFile(path.join(root, ledgerPath));
+  // 후보 시점 바이트에서 출발해, 원장만 새 head로 바뀐 PR을 흉내 낸다(이 PR이 실제로 원천을 등록했어도 결과가 같다).
+  const pinnedLedger = await pinnedRead(ledgerPath);
   const ledger = JSON.parse(pinnedLedger);
   const head = ledger.filter(({ sourceId }) => sourceId === "busan-transportation-timetable").at(-1);
   assert.ok(head);
@@ -560,7 +561,7 @@ test("#942 원천만 새 head로 등록한 PR에서도 후보 입력 선택은 �
     ...ledger,
     { ...head, snapshotId: `${head.snapshotId}-next`, previousSnapshotId: head.snapshotId },
   ], null, 2)}\n`);
-  const readLocal = (relative) => (relative === ledgerPath ? Promise.resolve(advancedLedger) : readFile(path.join(root, relative)));
+  const readLocal = (relative) => (relative === ledgerPath ? Promise.resolve(advancedLedger) : pinnedRead(relative));
   // 작업 트리를 그대로 읽으면 새 head 때문에 후보 입력 선택이 실패한다(현재 PR CI가 막히는 원인).
   await assert.rejects(resolveNationwideCandidateInputSnapshots(await selectionInputsFrom(readLocal)),
     /fan-in selection does not match ledger head for busan-transportation-timetable/);
