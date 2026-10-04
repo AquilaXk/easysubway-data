@@ -8,6 +8,10 @@ import test from "node:test";
 
 const yml = readFileSync(new URL("../../.github/workflows/datapack-release-cross-repo-chain.yml", import.meta.url), "utf8");
 
+const JOB_GUARD = "    if: ${{ "
+  + "github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' "
+  + "&& github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}";
+
 function stepBody(name) {
   const begin = yml.indexOf(`      - name: ${name}\n`);
   assert.notEqual(begin, -1, `missing workflow step: ${name}`);
@@ -50,12 +54,9 @@ test("the chain reacts only to a successful main workflow_dispatch Data Pack Rel
   assert.match(yml, /^on:\n  workflow_run:\n    workflows: \["Data Pack Release"\]\n    types: \[completed\]\n/mu);
   assert.doesNotMatch(yml, /\n  (schedule|push|pull_request|workflow_dispatch):/u);
   assert.match(yml, /\npermissions:\n  actions: read\n  contents: read\n/u);
-  for (const condition of [
-    "github.event.workflow_run.conclusion == 'success'",
-    "github.event.workflow_run.event == 'workflow_dispatch'",
-    "github.event.workflow_run.head_branch == 'main'",
-    "github.event.workflow_run.head_repository.full_name == github.repository",
-  ]) assert.ok(yml.includes(condition), condition);
+  // App 토큰 경로 앞의 유일한 장벽이므로 guard 전체를 정확히 고정한다(&&를 ||로 바꾸는 변이가 잡혀야 한다).
+  const guards = yml.split("\n").filter((line) => line.startsWith("    if: "));
+  assert.deepEqual(guards, [JOB_GUARD]);
 });
 
 test("the app token is scoped to dispatching workflows in the hub repository only", () => {
