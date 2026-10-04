@@ -3,6 +3,7 @@ name: Data Pack Release Cross-Repository Chain
 # release-candidate(RC)가 성공하면 hub 호환성 검증(release-artifacts.yml)을 dispatch한다(#932, #870).
 # GITHUB_TOKEN은 다른 저장소 workflow를 dispatch할 수 없으므로 레포 간 실행 권한 GitHub App(QA 승인 2026-10-04)의
 # 토큰을 쓴다. 토큰은 hub 저장소 한 곳, actions write 권한으로만 발급한다. App 자격 증명이 없으면 실패한다.
+# 기본은 꺼짐이다. 저장소 변수 DATAPACK_CROSS_REPO_CHAIN_ENABLED가 true일 때만 job이 실행된다(App 등록·QA 승인 뒤 메인 세션이 켠다).
 on:
   workflow_run:
     workflows: ["Data Pack Release"]
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   compatibility:
     name: Dispatch hub data pack compatibility
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' }}
+    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

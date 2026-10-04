@@ -8,7 +8,9 @@ import test from "node:test";
 
 const yml = readFileSync(new URL("../../.github/workflows/datapack-release-cross-repo-chain.yml", import.meta.url), "utf8");
 
+// F3: 기본은 꺼짐이다. 메인 세션이 App 등록 뒤 QA 승인을 받아 저장소 변수를 'true'로 켤 때만 job이 실행된다.
 const JOB_GUARD = "    if: ${{ "
+  + "vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && "
   + "github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' "
   + "&& github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository "
   + "&& github.event.workflow_run.path == '.github/workflows/datapack-release.yml' }}";
