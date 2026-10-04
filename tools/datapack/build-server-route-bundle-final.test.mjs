@@ -328,6 +328,30 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
   }
 });
 
+// #944 리뷰 F4: FINAL은 topology network_edges도 읽어 근거 간선 집합과 STEP_FREE 역 안 환승 집합이 정확히 같은지,
+// STEP_FREE 간선에 계단이 없는지, 근거 행의 snapshotId가 inventory가 잠근 MOLIT 스냅샷인지 검사한다.
+test("F4 FINAL은 환승 계단 근거 표와 topology STEP_FREE 간선·MOLIT snapshotId를 대조해 어긋나면 fail closed한다", async (t) => {
+  const molitRow = (edgeId, snapshotId) => `INSERT INTO transfer_stair_access_evidence VALUES('${edgeId}','station-a','station-b','${"a".repeat(64)}','${snapshotId}','GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH')`;
+  for (const [name, mutate, pattern] of [
+    ["topology-step-free-without-evidence", (fixture) => mutateTopologyPayload(fixture, "INSERT INTO network_edges VALUES('transfer-x','IN_STATION_TRANSFER',0,'STEP_FREE')"),
+      /transfer_stair_access_evidence does not match network_edges STEP_FREE in-station transfers/],
+    ["step-free-edge-with-stairs", (fixture) => mutateTopologyPayload(fixture, "INSERT INTO network_edges VALUES('transfer-y','IN_STATION_TRANSFER',1,'STEP_FREE')"),
+      /network_edges STEP_FREE edge includes stairs: transfer-y/],
+    ["missing-topology-network-edges", (fixture) => mutateTopologyPayload(fixture, "DROP TABLE network_edges"),
+      /embedded topology network_edges is missing/],
+    ["evidence-snapshot-mismatch", (fixture) => mutateAccessibilityPayload(fixture, molitRow("transfer-ghost", "molit-railway-transfer-movement-20250811")),
+      /transfer_stair_access_evidence source_snapshot_id does not match the admitted MOLIT snapshot: molit-railway-transfer-movement-20250811/],
+  ]) {
+    await t.test(name, async () => {
+      const fixture = await createFixture(t);
+      await mutate(fixture);
+      const output = path.join(fixture.temp, `rejected-${name}`);
+      await assert.rejects(() => build(fixture, output, FRESH_AT), pattern);
+      await assert.rejects(() => readFile(output), /ENOENT/);
+    });
+  }
+});
+
 test("current-key signed manifest는 signature gate만 닫고 publication·parity NO_GO를 유지한다", async (t) => {
   const fixture = await createFixture(t);
   installSigningEnvironment(t);
@@ -863,7 +887,7 @@ test("server route bundle decompressed budget records accurate component bytes a
   const accessibilityBytes = zstdDecompressSync(await readFile(path.join(fixture.artifactRoot, "payload/accessibility.sqlite.zst"))).length;
   const fareBytes = 12; // "fare payload"
   const timetableBytes = 17; // "timetable payload"
-  const topologyBytes = 16; // "topology payload"
+  const topologyBytes = zstdDecompressSync(await readFile(path.join(fixture.artifactRoot, "payload/topology.sqlite.zst"))).length;
   const exactTotal = accessibilityBytes + fareBytes + timetableBytes + topologyBytes;
 
   await buildServerRouteBundleFinalEvidence({
@@ -883,7 +907,7 @@ test("server route bundle decompressed budget records accurate component bytes a
       accessibility: accessibilityBytes,
       fare: 12,
       timetable: 17,
-      topology: 16,
+      topology: topologyBytes,
     },
     totalBytes: exactTotal,
     maxTotalBytes: exactTotal,
@@ -907,7 +931,7 @@ async function createFixture(t, options = {}) {
   }
   const artifactRoot = path.join(temp, "server-route-bundle");
   const buildContract = await readJson(path.join(repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
-  const topologyBytes = zstdCompressSync(Buffer.from("topology payload"), {
+  const topologyBytes = zstdCompressSync(await fixtureTopologySqliteBytes(), {
     params: {
       [constants.ZSTD_c_compressionLevel]: buildContract.compressionProfile.compressionLevel,
       [constants.ZSTD_c_checksumFlag]: buildContract.compressionProfile.checksumFlag,
@@ -1056,7 +1080,7 @@ async function createArtifact(
     accessibility: compress(await readFile(accessibilitySqlite)),
     fare: compress(Buffer.from("fare payload")),
     timetable: compress(Buffer.from("timetable payload")),
-    topology: compress(Buffer.from("topology payload")),
+    topology: compress(await fixtureTopologySqliteBytes()),
   };
   await mkdir(path.join(artifactRoot, "payload"), { recursive: true });
   for (const [name, bytes] of Object.entries(payloads)) {
@@ -1139,6 +1163,38 @@ async function rebindPayloadManifest(artifactRoot) {
   }
   manifest.payloadSha256 = sha256(Buffer.from(canonicalJson(entries.sort((left, right) => bytewise(left.path, right.path)))));
   await writeCanonical(manifestPath, manifest);
+}
+
+// #944 F4: FINAL이 topology network_edges를 읽으므로 fixture topology도 실제 SQLite다(역 안 환승 STEP_FREE 없음).
+async function fixtureTopologySqliteBytes() {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "server-route-final-topology-"));
+  try {
+    const file = path.join(directory, "topology.sqlite");
+    const database = new DatabaseSync(file);
+    database.exec("CREATE TABLE network_edges (id TEXT PRIMARY KEY, edge_type TEXT NOT NULL, includes_stairs INTEGER NOT NULL, stair_access_state TEXT NOT NULL); INSERT INTO network_edges VALUES('ride-0000','RIDE',0,'UNKNOWN'); PRAGMA user_version=19; VACUUM");
+    database.close();
+    return await readFile(file);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function mutateTopologyPayload(fixture, sql) {
+  const topologyPath = path.join(fixture.artifactRoot, "payload/topology.sqlite.zst");
+  const sqlitePath = path.join(fixture.temp, "mutated-topology.sqlite");
+  await writeFile(sqlitePath, zstdDecompressSync(await readFile(topologyPath)));
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(sql);
+  database.close();
+  const buildContract = await readJson(path.join(fixture.repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
+  await writeFile(topologyPath, zstdCompressSync(await readFile(sqlitePath), {
+    params: {
+      [constants.ZSTD_c_compressionLevel]: buildContract.compressionProfile.compressionLevel,
+      [constants.ZSTD_c_checksumFlag]: buildContract.compressionProfile.checksumFlag,
+    },
+  }));
+  await rebindPayloadManifest(fixture.artifactRoot);
+  fixture.routeEdgeInput.candidate.topologySha256 = sha256(await readFile(topologyPath));
 }
 
 async function mutateAccessibilityPayload(fixture, sql) {
