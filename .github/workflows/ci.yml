@@ -90,17 +90,21 @@ jobs:
           set -euo pipefail
           # #934: 병렬 4에서는 node 합계 RSS가 러너 메모리(16GB) 근처까지 올라 OOM 종료(exit 143)가 반복됐다.
           # 병렬도만 2로 낮추고(실행 테스트 집합은 discovery가 그대로 대조한다) 메모리 사용을 같은 로그에 남긴다.
+          # 최대값은 30초 간격 표본의 최대(sampled peak)라 짧은 순간 최대는 놓칠 수 있다.
+          # 관측 루프는 TERM을 받으면 자기 자식(대기 중인 sleep)을 모두 끄고 끝난다.
           (
+            trap 'kill $(jobs -p) 2>/dev/null || true; exit 0' TERM
             peak=0
             while true; do
               used="$(free -m | awk '/^Mem:/ {print $3}')"
               if (( used > peak )); then peak="${used}"; fi
-              echo "mobile-v19 memory used=${used}MB peak=${peak}MB"
-              sleep 30
+              echo "mobile-v19 memory used=${used}MB sampled peak=${peak}MB"
+              sleep 30 &
+              wait "$!"
             done
           ) &
           monitor=$!
-          trap 'kill "${monitor}" 2>/dev/null || true; free -m' EXIT
+          trap 'kill "${monitor}" 2>/dev/null || true; wait "${monitor}" 2>/dev/null || true; free -m' EXIT
           node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2
 
       - name: Re-verify current Mobile fixture for owned tests

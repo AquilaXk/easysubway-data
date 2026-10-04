@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -218,6 +220,57 @@ test("CI는 migration 없이 current v19 profile 소유 테스트를 실행한�
     "Verify and run current Mobile v19 owned required tests",
     "Re-verify current Mobile fixture for owned tests",
   ]);
+});
+
+const mobileV19Invocation =
+  "node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 2";
+
+function mobileV19RunScript() {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const step = namedWorkflowStep(ci, "Verify and run current Mobile v19 owned required tests");
+  const body = step.split("\n        run: |\n")[1];
+  assert.ok(body, "mobile-v19 runner step의 run 블록을 찾지 못함");
+  return body
+    .split("\n")
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n");
+}
+
+// 관측 step을 실제 bash로 돌린다. free는 러너 출력 형식의 stub, node 실행은 대역 명령으로 바꾼다.
+// 새 프로세스 그룹에서 실행해, 끝난 뒤 그 그룹에 남은 프로세스(관측 루프·sleep)가 없는지 본다.
+async function runMobileV19Step(replacement) {
+  const script = mobileV19RunScript();
+  assert.equal(script.split(mobileV19Invocation).length, 2, "node 실행 줄은 정확히 한 번 있어야 함");
+  const stubbed = `free() { echo "Mem: 15989 1329 11224"; }\n${script.replace(mobileV19Invocation, replacement)}`;
+  const child = spawn("bash", ["-c", stubbed], { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  const [code] = await once(child, "exit");
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const leftovers = execFileSync("ps", ["-axo", "pgid=,pid=,command="], { encoding: "utf8" })
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([pgid, pid]) => Number(pgid) === child.pid && Number(pid) !== child.pid)
+    .map((fields) => fields.slice(2).join(" "));
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    // 남은 프로세스가 없으면 그룹이 이미 사라졌다.
+  }
+  return { code, stdout, leftovers };
+}
+
+test("mobile-v19 관측 step은 node 종료 코드를 그대로 내고 관측 프로세스를 남기지 않는다", async () => {
+  const failing = await runMobileV19Step("sleep 1; (exit 7)");
+  assert.equal(failing.code, 7, "node 실패 종료 코드가 관측 루프·trap에 가려지면 안 됨");
+  assert.deepEqual(failing.leftovers, [], "step이 끝난 뒤 관측 루프나 그 sleep 자식이 남으면 안 됨");
+  assert.match(failing.stdout, /^mobile-v19 memory used=1329MB sampled peak=1329MB$/m);
+
+  const passing = await runMobileV19Step("sleep 1");
+  assert.equal(passing.code, 0);
+  assert.deepEqual(passing.leftovers, []);
 });
 
 test("CI는 direct current v19 검증 안에서 deployed verifier 회귀를 실행한다", () => {
