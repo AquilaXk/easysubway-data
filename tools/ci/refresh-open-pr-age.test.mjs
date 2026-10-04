@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -6,6 +9,7 @@ import {
   claimReflectedInMain,
   evaluateOpenRefreshPullRequest,
   isoDurationMs,
+  main,
   openRefreshPullRequestLimitMs,
   staleOpenRefreshPullRequestMessage,
 } from "./refresh-open-pr-age.mjs";
@@ -118,4 +122,30 @@ test("상한 초과 메시지는 PR·기한을 밝히고, main에 반영된 clai
   assert.match(pending, /REFRESH_OPEN_PR_STALE: #936/);
   assert.doesNotMatch(pending, /gh pr close/);
   assert.match(pending, /https:\/\/github.com\/AquilaXk\/easysubway-data\/pull\/936/);
+});
+
+test("CLI는 OPEN_PR인데 PR이 없으면 실패하고, 상한 안이면 통과하며, 상한을 넘기면 main 반영 판정을 넣어 실패한다", async (t) => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "refresh-open-pr-age-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const policyPath = path.join(directory, "policy.json");
+  writeFileSync(policyPath, JSON.stringify(POLICY));
+  const run = (pullRequests, options) => {
+    const prsPath = path.join(directory, `prs-${Math.random()}.json`);
+    writeFileSync(prsPath, JSON.stringify(pullRequests));
+    return main(["--workflow", "current-capital-topology-refresh.yml", "--prs", prsPath, "--policy", policyPath, "--repository", REPOSITORY],
+      { now: NOW, ...options });
+  };
+  // gh pr list의 createdAt은 밀리초 없는 UTC 시각이다.
+  await assert.rejects(run([]), /REFRESH_OPEN_PR_MISSING/);
+  const logs = [];
+  const within = await run([pr({ createdAt: "2026-10-05T00:00:00Z" })], { log: (line) => logs.push(line), inspect: () => assert.fail("no inspect") });
+  assert.equal(within.state, "WITHIN_LIMIT");
+  assert.match(logs[0], /#936 is within its limit until 2026-10-06T00:00:00.000Z/);
+  const inspected = [];
+  await assert.rejects(run([pr({ createdAt: "2026-10-04T12:00:00Z" })], {
+    inspect: (branch) => { inspected.push(branch); return { reflected: true, addedSnapshotIds: ["b"], missingSnapshotIds: [] }; },
+  }), /REFRESH_OPEN_PR_STALE: #936[\s\S]*gh pr close 936/);
+  assert.deepEqual(inspected, ["automation/636-current-topology-refresh-37209118635"]);
+  await assert.rejects(main(["--workflow", "other.yml", "--prs", policyPath, "--policy", policyPath, "--repository", REPOSITORY]),
+    /REFRESH_OPEN_PR_WORKFLOW_INVALID/);
 });
