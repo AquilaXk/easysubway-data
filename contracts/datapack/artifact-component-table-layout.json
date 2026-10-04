@@ -127,6 +127,10 @@
           "table": "station_platform_gaps",
           "columns": ["id", "station_id", "line_id", "direction", "platform_position", "car_number", "door_number", "gap_grade", "height_diff_grade", "curved", "source_snapshot_id"]
         },
+        "transferStairAccessEvidence": {
+          "table": "transfer_stair_access_evidence",
+          "columns": ["edge_id", "from_direction_station_id", "to_direction_station_id", "path_sha256", "source_snapshot_id", "duration_basis"]
+        },
         "ownedTableColumns": "exact-source-schema",
         "foreignKeys": "within-component-only",
         "componentReferences": "declared-non-null-references-must-resolve-within-component"
