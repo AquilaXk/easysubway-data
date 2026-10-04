@@ -6,6 +6,12 @@ import { resolve } from "node:path";
 import {
   buildCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
+import { assertCandidateInputsCurrent } from "./lib/candidate-input-bundle.mjs";
+import { committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
+
+// #942: 이 파일은 currency 검사다. 커밋된 전국 후보가 지금 작업 트리의 원천 head를 가리키는지 본다.
+// 원천만 등록한 PR에서는 실패하는 것이 맞으므로 required-pr이 아니라 deterministic-release class로 RC·publish에서 실행한다.
+// 후보 내부 pin 일관성은 nationwide-candidate-pin-consistency.test.mjs(required-pr)가 후보가 고정한 입력으로 검사한다.
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 
@@ -64,27 +70,6 @@ test("(b) 현재 입력으로 buildCurrentFiveRegionSourceFanIn을 돌린 결과
   );
 });
 
-test("(c) 원장이 가진 fan-in 해시가 현재 fan-in 파일과 같다", () => {
-  const fanInPath = resolve(root, "tools/datapack/release/current-five-region-source-fan-in.json");
-  const fanInBytes = readFileSync(fanInPath);
-  const fanIn = JSON.parse(fanInBytes.toString("utf8"));
-  const actualRawSha256 = sha256Bytes(fanInBytes);
-
-  const ledgerPath = resolve(root, "tools/datapack/reports/nationwide-requirement-ownership-ledger.json");
-  const ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
-
-  assert.equal(
-    ledger.provenance.inputs.fanIn.sha256,
-    actualRawSha256,
-    "원장의 fan-in raw sha256이 현재 fan-in 파일의 sha256과 같아야 한다",
-  );
-  assert.equal(
-    ledger.provenance.inputs.fanIn.fanInSha256,
-    fanIn.fanInSha256,
-    "원장의 fan-in fanInSha256이 현재 fan-in의 fanInSha256과 같아야 한다",
-  );
-});
-
 test("(d) candidate-build-spec.json의 sourceInventorySha256이 sha256(JSON.stringify(inventory))와 같다", () => {
   const inventoryPath = resolve(root, "tools/datapack/source-inventory.json");
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
@@ -98,4 +83,11 @@ test("(d) candidate-build-spec.json의 sourceInventorySha256이 sha256(JSON.stri
     expectedHash,
     "candidate-build-spec.json의 sourceInventorySha256이 source-inventory.json의 JSON.stringify sha256과 같아야 한다",
   );
+});
+
+test("(e) 후보 입력 매니페스트가 고정한 입력은 모두 지금 작업 트리 바이트와 같다", async () => {
+  await assertCandidateInputsCurrent({
+    manifest: await committedCandidateInputManifest(root),
+    readLocal: async (relative) => readFileSync(resolve(root, relative)),
+  });
 });

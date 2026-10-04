@@ -26,6 +26,10 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -75,6 +79,12 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
 
       - name: Verify current Mobile v19 ITX topology evidence
         shell: bash
@@ -162,6 +172,10 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -211,6 +225,12 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
 
       - name: Set up Chrome for browser-dependent required tests
         id: setup-chrome
@@ -231,6 +251,10 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -280,6 +304,12 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
 
       - name: Set up Chrome for browser-dependent required tests
         id: setup-chrome
@@ -300,6 +330,10 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -349,6 +383,12 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
 
       - name: Set up Chrome for browser-dependent required tests
         id: setup-chrome
@@ -369,6 +409,10 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # #942: 후보 재현 테스트가 고정 입력을 받는 공개 읽기 경로다(시크릿 아님). 앱 데이터팩 공개 base URL과 같은 버킷 공개 경로라
+      # 서버 경로 번들용으로 등록된 vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL을 함께 쓴다(용도 공유, 새 설정 없음).
+      EASYSUBWAY_DATA_PACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -418,6 +462,12 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+
+      - name: Require public candidate input base URL
+        run: |
+          set -euo pipefail
+          # #942: 값이 없으면 고정 입력을 받을 수 없으므로 테스트 전에 실패한다(건너뛰지 않는다).
+          [[ "${EASYSUBWAY_DATA_PACK_BASE_URL:-}" =~ ^https://[^[:space:]]+$ ]] || { echo "vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL must be set to the public data pack bucket base URL" >&2; exit 1; }
 
       - name: Set up Chrome for browser-dependent required tests
         id: setup-chrome

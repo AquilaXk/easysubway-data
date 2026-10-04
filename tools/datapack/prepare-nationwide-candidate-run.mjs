@@ -749,6 +749,8 @@ export async function prepareNationwideCandidate({
   approvedBy: approvedByOption = null,
   platformInfoMap = null,
   writeFiles = true,
+  // #942: 후보 입력 매니페스트를 기록하거나 후보가 고정한 입력으로 재현할 때 저장소 읽기를 바꿔 끼운다.
+  readRepositoryFile = null,
 } = {}) {
   const requestedBy = requestedByOption
     || process.env.DATAPACK_REQUESTED_BY
@@ -767,7 +769,7 @@ export async function prepareNationwideCandidate({
     throw new Error(`Two-person rule violation: requester and approver cannot be the same person (${requestedBy.trim()})`);
   }
 
-  const read = async (rel) => readFile(path.join(repositoryRoot, rel));
+  const read = readRepositoryFile ?? (async (rel) => readFile(path.join(repositoryRoot, rel)));
 
   const [
     targetsBytes, fanInBytes, snapshotsBytes, basePackBytes, overridesBytes, sourceInventoryBytes,
