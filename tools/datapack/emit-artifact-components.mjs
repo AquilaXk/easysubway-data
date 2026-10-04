@@ -329,7 +329,7 @@ export function nationwideTopologyEdgeStairColumns(edge) {
   return { includesStairs: stairAccessState === "STAIR_ONLY" ? 1 : 0, stairAccessState };
 }
 
-function populateNationwideTopologyEdges(target, routeEdges) {
+export function populateNationwideTopologyEdges(target, routeEdges) {
   target.exec("DELETE FROM network_edges");
   const insert = target.prepare(`
     INSERT INTO network_edges (

@@ -24,7 +24,7 @@ import {
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./current-capital-station-line-contract.mjs";
-import { emitArtifactComponents, nationwideTopologyEdgeStairColumns, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
+import { emitArtifactComponents, nationwideTopologyEdgeStairColumns, populateNationwideTopologyEdges, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -987,5 +987,37 @@ test("서버 번들 network_edges의 계단 칸은 stair_access_state에서만 �
     { includesStairs: "false" },
   ]) {
     assert.throws(() => columns(edge), /network edge stair state is invalid: edge-x/u);
+  }
+});
+
+// 리뷰 F1(#923): 계단 칸 규칙은 서버 번들 network_edges를 실제로 채우는 호출부를 통과해야 한다.
+test("서버 번들 topology network_edges 행은 stair_access_state 기준 계단 칸으로 기록되고 어긋난 입력은 거부된다", async () => {
+  const schema = await readFile(path.join(import.meta.dirname, "schema/catalog-schema.sql"), "utf8");
+  const ddl = /CREATE TABLE network_edges \([\s\S]*?\n\);/u.exec(schema)?.[0];
+  assert.ok(ddl, "catalog-schema network_edges DDL");
+  const edge = (edgeId, stair) => ({
+    edgeId, fromNodeId: `${edgeId}-a:line-x`, toNodeId: `${edgeId}-b:line-x`, durationSeconds: 60, distanceMeters: 80,
+    edgeType: "IN_STATION_TRANSFER", ...stair,
+  });
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec(ddl);
+    populateNationwideTopologyEdges(database, [
+      edge("edge-stair", { includesStairs: true, stairAccessState: "STAIR_ONLY" }),
+      edge("edge-step-free", { includesStairs: false, stairAccessState: "STEP_FREE" }),
+      edge("edge-unknown", { includesStairs: false }),
+      edge("edge-absent", {}),
+    ]);
+    assert.deepEqual(database.prepare("SELECT id, includes_stairs, stair_access_state FROM network_edges ORDER BY id").all()
+      .map((row) => ({ ...row })), [
+      { id: "edge-absent", includes_stairs: 0, stair_access_state: "UNKNOWN" },
+      { id: "edge-stair", includes_stairs: 1, stair_access_state: "STAIR_ONLY" },
+      { id: "edge-step-free", includes_stairs: 0, stair_access_state: "STEP_FREE" },
+      { id: "edge-unknown", includes_stairs: 0, stair_access_state: "UNKNOWN" },
+    ]);
+    assert.throws(() => populateNationwideTopologyEdges(database, [edge("edge-bad", { includesStairs: true, stairAccessState: "UNKNOWN" })]),
+      /network edge stair state is invalid: edge-bad/u);
+  } finally {
+    database.close();
   }
 });
