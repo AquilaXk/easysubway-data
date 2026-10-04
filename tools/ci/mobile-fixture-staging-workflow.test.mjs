@@ -479,3 +479,15 @@ test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture
     'cp -a "${source}" apps/mobile',
   ]);
 });
+
+test("#942 required CI 테스트 job은 후보 고정 입력 공개 읽기 경로를 vars에서 받고, 값이 없으면 테스트 전에 실패한다", () => {
+  const yml = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  for (const id of ["contracts_mobile_v19", "contracts_shard_1", "contracts_shard_2", "contracts_shard_3", "contracts_shard_4"]) {
+    const job = namedJob(yml, id);
+    assert.match(job, /\n    env:\n(?:      #[^\n]*\n)?      EASYSUBWAY_DATA_PACK_BASE_URL: \$\{\{ vars\.EASYSUBWAY_DATA_PACK_BASE_URL \}\}\n/u, id);
+    assert.doesNotMatch(job, /EASYSUBWAY_DATA_PACK_BASE_URL: \$\{\{ secrets\./u, id);
+    const guard = namedWorkflowStep(job, "Require public candidate input base URL");
+    assert.match(guard, /\[\[ "\$\{EASYSUBWAY_DATA_PACK_BASE_URL:-\}" =~ \^https:\/\/\[\^\[:space:\]\]\+\$ \]\] \|\| \{ [^}]*exit 1; \}/u, id);
+    assert.ok(job.indexOf("Require public candidate input base URL") < job.indexOf("data-test-discovery.mjs run --class required-pr"), id);
+  }
+});
