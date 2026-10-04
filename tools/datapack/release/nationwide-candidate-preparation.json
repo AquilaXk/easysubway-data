@@ -42,24 +42,24 @@
         "snapshotId": "capital-route-topology-20260724"
       },
       "capitalTopologyCandidate": {
-        "path": "tools/datapack/sources/capital-route-topology-20261003.json",
-        "sha256": "fee16fe141a12692120ca777b166ed721342dacca009b99f2c45770b3b81f46f",
-        "snapshotId": "capital-route-topology-20261003"
+        "path": "tools/datapack/sources/capital-route-topology-20261004.json",
+        "sha256": "579015c24b96798dfda8fb3c1e4db9b969d5f8532bb0b4d3ea2c1d5accbc1c86",
+        "snapshotId": "capital-route-topology-20261004"
       },
       "capitalTopologyReverification": {
-        "path": "tools/datapack/release/capital-topology-reverification-20261003.json",
-        "sha256": "976818a6d4495c4b43ef43ac25548aa48f19c21896e8b16974a2873f1b634fe1"
+        "path": "tools/datapack/release/capital-topology-reverification-20261004.json",
+        "sha256": "5a0318b8e7c3a403ce55b95e38b7037d575dc89770f0668dc856e4068b838105"
       },
       "capitalTopologyAdmission": {
         "schemaVersion": 1,
         "artifactKind": "capital-network-edge-admission",
         "issue": 2649,
         "status": "ADMITTED",
-        "snapshotId": "capital-route-topology-20261003",
+        "snapshotId": "capital-route-topology-20261004",
         "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-        "reviewedAt": "2026-10-03T00:31:56.311Z",
-        "reverifiedAt": "2026-10-03T00:31:56.311Z",
-        "freshUntil": "2026-10-10T00:31:56.311Z"
+        "reviewedAt": "2026-10-04T14:24:37.459Z",
+        "reverifiedAt": "2026-10-04T14:24:37.459Z",
+        "freshUntil": "2026-10-11T14:24:37.459Z"
       },
       "itxCoverageContract": {
         "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -67,14 +67,14 @@
       },
       "incheonTimetables": {
         "line1": {
-          "path": "tools/datapack/sources/incheon-line1-train-timetable-20261003.json",
-          "sha256": "89c240e898476beee9b3c0d8c073d6ca4da0be64db7642df3b8783b6ab25f766",
-          "snapshotId": "incheon-line1-train-timetable-20261003"
+          "path": "tools/datapack/sources/incheon-line1-train-timetable-20261004.json",
+          "sha256": "4bb7c45d1abbd14c2527c5fb59129b3a7b019118134894d5bfa0c209842fd567",
+          "snapshotId": "incheon-line1-train-timetable-20261004"
         },
         "line2": {
-          "path": "tools/datapack/sources/incheon-line2-train-timetable-20261003.json",
-          "sha256": "48c52b01641775728ab93ac7acc7c1da9ecbbafc643864d476cd2bf659072bc2",
-          "snapshotId": "incheon-line2-train-timetable-20261003"
+          "path": "tools/datapack/sources/incheon-line2-train-timetable-20261004.json",
+          "sha256": "33c3fc8d89e8a7abdc7b9e996e64b98d960b5269227cf1c1748bffd0261866ab",
+          "snapshotId": "incheon-line2-train-timetable-20261004"
         }
       }
     },
@@ -118,27 +118,27 @@
     "itxTopologyEvidenceSha256": "91436f7722d2faf8e8b17e91936fa044f5020c51c6dc1a79d8ff2930c33946ab"
   },
   "releaseIdentity": {
-    "candidateId": "nationwide-candidate-20261003-seq126",
-    "publishedAt": "2026-10-03T05:27:51.411Z",
-    "releaseSequence": 126
+    "candidateId": "nationwide-candidate-20261004-seq127",
+    "publishedAt": "2026-10-04T14:47:24.546Z",
+    "releaseSequence": 127
   },
   "builderIdentity": {
-    "gitSha": "0a0aa4ad66a0737fe3a7fa52d7823f2fa269ac01",
+    "gitSha": "c36cbc4bd4e8248f27fd2c3056147c628fe74501",
     "version": "build-datapack.mjs@26"
   },
   "authority": {
-    "candidateId": "nationwide-candidate-20261003-seq126",
+    "candidateId": "nationwide-candidate-20261004-seq127",
     "scopeId": "nationwide_routing_android_v1",
-    "approvalId": "release-request-nationwide-candidate-20261003-seq126",
+    "approvalId": "release-request-nationwide-candidate-20261004-seq127",
     "requestedBy": "data-operator-lead",
     "approvedBy": "data-release-authority"
   },
   "routeEdgeInput": {
     "path": "tools/datapack/release/nationwide-route-edge-input.json",
-    "sha256": "e95571ababc0e12f32665d3df8a22f2ec8ae40a1880bb12d47c9b72f545fdab8"
+    "sha256": "c69f9aba9e34bbbdee5b50572634250ea8bcec2791c543a5dbaf25da79ebbceb"
   },
   "stationLineInput": {
     "path": "tools/datapack/release/nationwide-station-line-input.json",
-    "sha256": "ca468126a687acfd69d995902b12fd19881529fc5a45917a0cc4b72e77e350a2"
+    "sha256": "cdcb48c8c66441927b0b631121eb90c62ca0d4cfe4a9be84a665335d2b28b5e6"
   }
 }
