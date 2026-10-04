@@ -4,7 +4,7 @@
   "candidateId": "nationwide-candidate-20261003-seq126",
   "publishedAt": "2026-10-03T05:27:51.411Z",
   "releaseSequence": 126,
-  "builderGitSha": "21a43f34a7b4b71d602c7503170c4b228c25a30d",
+  "builderGitSha": "61c7cb5bf493a0df7f7ec0be9e5285768219fef8",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
   "fixtureSha256": "68fcc6c1e63ec86ecdfd538be2cf3c4243be217888b954915c93ad11d349057a",
