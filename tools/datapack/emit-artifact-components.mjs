@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { constants, zstdCompressSync } from "node:zlib";
 
+import { deriveBundleEdgeProvenance } from "./lib/bundle-edge-provenance.mjs";
 import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
 import { canonicalJson, selectEffectiveDataPack, validateArtifactComponentManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
@@ -299,7 +300,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
     for (const table of owned) copyTable(source, target, table, undefined, present, selected, requiredKeys.get(table));
     if (name === "topology") {
       if (evidenceInput.skipSourceProjection && evidenceInput.routeEdgeInput?.routeEdges?.length) {
-        populateNationwideTopologyEdges(target, evidenceInput.routeEdgeInput.routeEdges);
+        populateNationwideTopologyEdges(target, sourceBackedRouteEdges(source, evidenceInput.routeEdgeInput.routeEdges));
       }
       projectBlockedTopologyEdges(target, provisionalBlockedEdgeIds);
       projectedTransferStepFreeEdgeIds = projectTransferStairAccess(target, transferStepFreeEdgeIds);
@@ -337,6 +338,32 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   const compatibility = { schemaVersion: 1, artifactKind: "server-route-bundle-compatibility", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, serviceTimezone: "Asia/Seoul", manifestVersion: 1, tableLayoutSchemaVersion: layout.schemaVersion, sourceSchemaPath: sourceSchema.path, sourceSqliteUserVersion: sourceSchema.sqliteUserVersion, sourceSchemaSha256: sourceSchema.sha256, schemaCompatibility: build.manifestLifecycle.schemaCompatibility, compressionProfile: build.compressionProfile, encoderRuntime: { node: process.versions.node, zstd: process.versions.zstd } };
   await json(path.join(artifact, "compatibility.json"), compatibility); manifest.compatibilitySha256 = sha(await readFile(path.join(artifact, "compatibility.json")));
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
+}
+
+// #951: route-edge 입력은 출처 칸이 없는 정본 입력이라, 원천 팩(source SQLite)이 간선 값을 실제로 뒷받침하는 간선에만 그 원천의 출처·검증 상태를 싣는다.
+// 규칙은 lib/bundle-edge-provenance.mjs(환승은 VERIFIED 규칙+공식 경로 행, RIDE는 원천 행)이고, 근거 없는 간선은 UNKNOWN으로 남는다.
+function sourceBackedRouteEdges(source, routeEdges) {
+  return deriveBundleEdgeProvenance({
+    routeEdges,
+    sourceEdges: source.prepare(`
+      SELECT id, from_node_id AS fromNodeId, to_node_id AS toNodeId, duration_seconds AS durationSeconds,
+             distance_meters AS distanceMeters, edge_type AS edgeType, service_pattern AS servicePattern,
+             service_class AS serviceClass, source_id AS sourceId, source_snapshot_id AS sourceSnapshotId,
+             provider_record_hash AS providerRecordHash, provenance_kind AS provenanceKind,
+             verification_status AS verificationStatus, last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+        FROM network_edges ORDER BY id COLLATE BINARY`).all().map((row) => ({ ...row })),
+    transferRules: source.prepare(`
+      SELECT id, from_station_id AS fromStationId, from_line_id AS fromLineId, to_station_id AS toStationId,
+             to_line_id AS toLineId, transfer_type AS transferType, min_transfer_seconds AS minTransferSeconds,
+             pathway_edge_id AS pathwayEdgeId, source_id AS sourceId, verification_status AS verificationStatus
+        FROM transfer_rules ORDER BY id COLLATE BINARY`).all().map((row) => ({ ...row })),
+    pathwayEdges: source.prepare(`
+      SELECT id, duration_seconds AS durationSeconds, distance_meters AS distanceMeters, source_id AS sourceId,
+             source_snapshot_id AS sourceSnapshotId, provider_record_hash AS providerRecordHash,
+             provenance_kind AS provenanceKind, verification_status AS verificationStatus,
+             last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+        FROM station_pathway_edges ORDER BY id COLLATE BINARY`).all().map((row) => ({ ...row })),
+  });
 }
 
 // AquilaXk/easysubway-backend#480: 계단 칸 규칙은 lib/network-edge-stair-columns.mjs(모바일 팩 build-datapack과 공용)다.

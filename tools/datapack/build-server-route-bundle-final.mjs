@@ -37,6 +37,7 @@ import {
   sortTransitionFacilityRequirements,
   validateTransitionFacilityRequirements,
 } from "./build-step-free-path-transitions.mjs";
+import { assertBundleEdgeProvenanceInvariants } from "./lib/bundle-edge-provenance.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validatePublicationReceipt } from "./publish-server-route-bundle.mjs";
@@ -684,7 +685,7 @@ async function assertEmbeddedEvidence(input) {
       throw new Error(`transfer_stair_access_evidence contains edge_id outside in-station transfer route edges: ${orphanTransferStairEdges.join(", ")}`);
     }
     // #944 F4: topology의 STEP_FREE 역 안 환승 간선 집합은 근거 간선 집합과 정확히 같고, STEP_FREE 간선에는 계단이 없다.
-    const topology = await readEmbeddedTopologyStairEdges(input.topologyPayloadBytes, temporary);
+    const { edges: topology, transferRules } = await readEmbeddedTopology(input.topologyPayloadBytes, temporary);
     const stairedStepFree = topology.filter(({ stairAccessState, includesStairs }) => stairAccessState === "STEP_FREE" && includesStairs !== 0)
       .map(({ id }) => id);
     if (stairedStepFree.length > 0) throw new Error(`network_edges STEP_FREE edge includes stairs: ${stairedStepFree.join(", ")}`);
@@ -693,6 +694,8 @@ async function assertEmbeddedEvidence(input) {
     if (canonicalJson(stepFreeTransfers) !== canonicalJson([...evidenceEdgeIds].sort(bytewise))) {
       throw new Error("transfer_stair_access_evidence does not match network_edges STEP_FREE in-station transfers");
     }
+    // #951: 간선 출처·검증 상태 칸은 원천 근거(원천 칸·transfer_rules)와 모순되지 않아야 한다.
+    assertBundleEdgeProvenanceInvariants({ edges: topology, transferRules });
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest
@@ -712,8 +715,8 @@ async function assertEmbeddedEvidence(input) {
   }
 }
 
-// #944 F4: topology component에서 network_edges 계단 칸만 읽는다. 표가 없으면 실패한다.
-async function readEmbeddedTopologyStairEdges(topologyPayloadBytes, temporary) {
+// #944 F4·#951: topology component에서 network_edges의 계단·출처 칸과 transfer_rules를 읽는다. 표가 없으면 실패한다.
+async function readEmbeddedTopology(topologyPayloadBytes, temporary) {
   let sqliteBytes;
   try {
     sqliteBytes = zstdDecompressSync(topologyPayloadBytes);
@@ -724,11 +727,21 @@ async function readEmbeddedTopologyStairEdges(topologyPayloadBytes, temporary) {
   await writeFile(sqlitePath, sqliteBytes, { flag: "wx" });
   const database = new DatabaseSync(sqlitePath, { open: true, readOnly: true });
   try {
-    if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='network_edges'").get()) {
-      throw new Error("embedded topology network_edges is missing");
+    for (const table of ["network_edges", "transfer_rules"]) {
+      if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) {
+        throw new Error(`embedded topology ${table} is missing`);
+      }
     }
-    return database.prepare("SELECT id, edge_type AS edgeType, includes_stairs AS includesStairs, stair_access_state AS stairAccessState FROM network_edges ORDER BY id")
-      .all().map((row) => ({ ...row }));
+    return {
+      edges: database.prepare(`SELECT id, edge_type AS edgeType, from_node_id AS fromNodeId, to_node_id AS toNodeId, duration_seconds AS durationSeconds,
+          includes_stairs AS includesStairs, stair_access_state AS stairAccessState, source_id AS sourceId, source_snapshot_id AS sourceSnapshotId,
+          provider_record_hash AS providerRecordHash, provenance_kind AS provenanceKind, verification_status AS verificationStatus,
+          last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
+        FROM network_edges ORDER BY id`).all().map((row) => ({ ...row })),
+      transferRules: database.prepare(`SELECT id, from_station_id AS fromStationId, from_line_id AS fromLineId, to_station_id AS toStationId,
+          to_line_id AS toLineId, min_transfer_seconds AS minTransferSeconds, source_id AS sourceId, verification_status AS verificationStatus
+        FROM transfer_rules ORDER BY id`).all().map((row) => ({ ...row })),
+    };
   } finally {
     database.close();
   }
