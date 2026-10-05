@@ -554,8 +554,10 @@ function normalizeStationName(value) {
 // 경로 단계 판정: 막는 단계·어휘 밖 문구·층 판단 실패가 하나도 없을 때만 계단 없는 경로다(#944 리뷰 F2).
 // - 승강 설비 단계 한 번은 그 뒤 층 변화 한 번만 덮는다. 층이 바뀌면 덮개를 쓴다.
 // - 엘리베이터 탑승·위치 단계의 층 표기는 타는 층이라 덮개보다 먼저 보고, 하차·이동 단계의 층 표기는 내리는 층이라 덮개 뒤에 본다.
-// - 하차·장소 이동·승강장 도착 단계에 층 표기가 없으면 층을 알 수 없는 위치로 본다. 그 앞뒤로 층이 바뀌었을 수 있으므로
-//   덮개가 있어야 하고, 없으면 FLOOR_UNDETERMINED다.
+// - 하차·장소 이동·승강장 도착 단계에 층 표기가 없으면 직전 단계의 층을 이어받는다(#946 QA 결정: 원천은 층이 바뀔 때만 층을 적는다).
+//   이어받을 층이 없으면(첫 단계, 층 표기 없이 승강 설비를 막 탄 뒤, 앞 단계도 층을 알 수 없음) 층을 알 수 없는 위치이고,
+//   그 앞뒤로 층이 바뀌었을 수 있으므로 덮개가 있어야 하며 없으면 FLOOR_UNDETERMINED다.
+// - 이어받은 층과 다른 층이 뒤에서 표기되면 덮개가 없는 한 FLOOR_CHANGE_WITHOUT_LIFT다. 계단·에스컬레이터·경사 등 층 변화 단계는 층 이어받기와 무관하게 막힌다.
 function evaluatePathSteps(rows, context) {
   const reasons = new Set();
   let started = false;
@@ -580,7 +582,10 @@ function evaluatePathSteps(rows, context) {
     const step = classifyTransferStep(row.MV_CONT_DTL, context);
     if (step.effect === "BLOCKING") reasons.add(step.kind === "UNRECOGNIZED" ? "STEP_WORDING_UNRECOGNIZED" : step.kind);
     if (step.kind === "PLATFORM_ENDPOINT" && index !== 0 && index !== rows.length - 1) reasons.add("STEP_WORDING_UNRECOGNIZED");
-    const observations = step.floors.length > 0 ? step.floors : (POSITION_KINDS.has(step.kind) ? [UNKNOWN_FLOOR] : []);
+    // #946 QA 결정: 원천은 층이 바뀔 때만 층을 적는다. 층 표기 없는 위치 단계는 직전 단계의 층을 이어받는다.
+    // 이어받을 층이 없으면(첫 단계, 승강 설비 직후 도착 층이 적히지 않음) 층을 알 수 없는 위치다.
+    const inheritedFloor = started && !covered && floor !== UNKNOWN_FLOOR ? floor : UNKNOWN_FLOOR;
+    const observations = step.floors.length > 0 ? step.floors : (POSITION_KINDS.has(step.kind) ? [inheritedFloor] : []);
     if (!LEVEL_DEVICE_KINDS.has(step.kind)) {
       observations.forEach(observe);
     } else if (DESTINATION_LABEL_RULES.has(step.ruleId)) {

@@ -442,10 +442,10 @@ test("승강장 위치 표기(9호선형 '사평 방면 승강장')는 경로의
   const result = derive({ rows: ninthRows("(B3) ") });
   assert.equal(edgeState(result, EDGE_2_4).state, "STEP_FREE");
   assert.equal(edgeState(result, EDGE_4_2).state, "STEP_FREE");
-  // #944 F2: 도착 승강장에 층 표기가 없으면 마지막 이동 뒤 층을 판단할 수 없다.
+  // #946: 도착 승강장에 층 표기가 없으면 직전 단계(지하 3층으로 이동)의 층을 이어받는다.
   const unlabeledArrival = derive({ rows: ninthRows("") });
-  assert.equal(edgeState(unlabeledArrival, EDGE_2_4).state, "UNKNOWN");
-  assert.ok(edgeState(unlabeledArrival, EDGE_2_4).combos.every(({ blockingReasons }) => blockingReasons.includes("FLOOR_UNDETERMINED")));
+  assert.equal(edgeState(unlabeledArrival, EDGE_2_4).state, "STEP_FREE");
+  assert.equal(edgeState(unlabeledArrival, EDGE_4_2).state, "STEP_FREE");
   // 경로 중간의 승강장 위치 표기는 승하차 지점이 아니므로 어휘 밖 문구로 다룬다.
   const middle = derive({ rows: sadangRows({ steps: () => [...ELEVATOR_STEPS.slice(0, 2), "환승 방면 승강장", ...ELEVATOR_STEPS.slice(2)] }) });
   assert.equal(edgeState(middle, EDGE_2_4).state, "UNKNOWN");
@@ -498,11 +498,10 @@ test("F2 층 표기가 붙은 승강 설비 단계 뒤 두 번째 층 변화는 
   // 탑승 층 표기가 지금 층과 다르면 엘리베이터에 타기 전에 이미 층이 바뀐 것이다.
   assert.deepEqual(verdict(["(B1) 대합실 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"]),
     { state: "UNKNOWN", reasons: ["FLOOR_CHANGE_WITHOUT_LIFT"] });
-  // 승강 설비 없이 층 표기 없는 장소 이동만 이어지면 층을 판단할 수 없다.
-  assert.deepEqual(verdict(["대합실로 이동", "승강장으로 이동"]), { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] });
-  // 층 표기 없는 승강장 도착도 층 추적 대상이다.
-  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동", "승강장으로 이동"]),
-    { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] });
+  // #946: 층 표기 없는 장소 이동은 직전 단계의 층을 이어받는다(출발 하차 단계가 B2였으므로 B2 평면 이동).
+  assert.deepEqual(verdict(["대합실로 이동", "승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
+  // 층 표기 없는 승강장 도착은 직전 단계(B1)의 층을 이어받는다.
+  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동", "승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
   // 층 표기 없는 위치가 두 번 이어지면 엘리베이터 한 번으로는 둘 다 덮지 못한다.
   assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "대합실로 이동", "승강장으로 이동"]),
     { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] });
@@ -517,6 +516,97 @@ test("F2 층 표기가 붙은 승강 설비 단계 뒤 두 번째 층 변화는 
   assert.deepEqual(verdict(["승강장 방향 엘리베이터로 이동", "(B3) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
   // 같은 층 평면 환승은 양 끝 층 표기가 같을 때만 근거다.
   assert.deepEqual(verdict(["(B2) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
+});
+
+// #946 QA 결정(2026-10-05): 원천은 층이 바뀔 때만 층을 적는다. 층 표기 없는 이동·승강장 단계는 직전 단계의 층을 이어받는다.
+// 9호선형 경로(층 표기 없는 "… 방면 승강장"으로 시작·끝)를 손으로 적은 단계로 만든다.
+function ninthRows(middle, { first = true, arrival = "" } = {}) {
+  const rows = sadangRows({ steps: ({ toLine, toDirection }) => middle({ toLine, toDirection }) });
+  return rows.map((row, index, all) => {
+    const last = index === all.length - 1 || all[index + 1].CHTN_MV_TP_ORDR === "1";
+    if (row.CHTN_MV_TP_ORDR === "1" && first) return { ...row, MV_CONT_DTL: `1) ${row.CHTN_MV_CONT.split(" ").slice(1).join(" ")} 승강장` };
+    if (last) return { ...row, MV_CONT_DTL: `${row.CHTN_MV_TP_ORDR}) ${arrival}${row.CHTN_MV_CONT} 승강장` };
+    return row;
+  });
+}
+
+function ninthVerdict(middle, options) {
+  const result = derive({ rows: ninthRows(middle, options) });
+  const edge = edgeState(result, EDGE_2_4);
+  return { state: edge.state, reasons: [...new Set(edge.combos.flatMap(({ blockingReasons }) => blockingReasons))].sort() };
+}
+
+test("#946 고속터미널 9→3형: 층 표기 없는 환승통로 이동과 도착 승강장은 직전 층(지하 2층·지하 3층)을 이어받아 STEP_FREE다", () => {
+  const ninthSteps = ({ toLine, toDirection }) => [
+    "엘리베이터 이용", "지하 2층으로 이동", "7호선 환승통로 이동",
+    `${toLine} ${toDirection} 방면 엘리베이터 이용`, "지하 3층으로 이동",
+  ];
+  const result = derive({ rows: ninthRows(ninthSteps) });
+  for (const edgeId of [EDGE_2_4, EDGE_4_2]) {
+    assert.equal(edgeState(result, edgeId).state, "STEP_FREE", edgeId);
+    assert.equal(edgeState(result, edgeId).reason, "ALL_DIRECTION_COMBOS_STEP_FREE", edgeId);
+  }
+  assert.equal(result.evidenceRows.length, 8);
+});
+
+test("#946 층 표기를 이어받아도 첫 단계에 층이 없으면 이어받을 기준이 없어 FLOOR_UNDETERMINED다", () => {
+  const unknownFloor = { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] };
+  // 첫 단계(승강장)에 층이 없고 그 뒤에도 층 표기 없는 이동만 이어진다. 이어받을 층이 없다.
+  assert.deepEqual(ninthVerdict(() => ["대합실로 이동", "승강장으로 이동"]), unknownFloor);
+  // 첫 단계에 층이 없고 엘리베이터 없이 첫 층 표기가 나오면 처음 층을 알 수 없다.
+  assert.deepEqual(ninthVerdict(() => ["지하 2층으로 이동", "환승통로 이동"]), unknownFloor);
+  // 같은 경로에서 첫 단계에 층 표기가 있으면(하차 단계 B2) 이어받아 근거가 된다.
+  assert.deepEqual(ninthVerdict(() => ["대합실로 이동", "승강장으로 이동"], { first: false }), { state: "STEP_FREE", reasons: [] });
+});
+
+test("#946 승강 설비 뒤 층 표기 없는 이동은 설비가 도착한 층을 알 수 없어 이어받지 않는다", () => {
+  const verdict = (steps) => {
+    const result = derive({ rows: sadangRows({ steps: ({ line }) => (line === "2호선" ? steps : ELEVATOR_STEPS) }) });
+    const edge = edgeState(result, EDGE_2_4);
+    return { state: edge.state, reasons: [...new Set(edge.combos.flatMap(({ blockingReasons }) => blockingReasons))].sort() };
+  };
+  // 출발 B2에서 엘리베이터를 탄 뒤 층 표기 없는 환승통로 이동: 도착 층이 적혀 있지 않으므로 출발 층(B2)을 이어받으면 안 된다.
+  // (이어받으면 뒤의 "(B2) 승강장" 표기와 우연히 맞아 STEP_FREE가 되어 버린다.)
+  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "환승통로로 이동", "(B2) 승강장으로 이동"]),
+    { state: "UNKNOWN", reasons: ["FLOOR_UNDETERMINED"] });
+  // 같은 경로에서 엘리베이터 도착 층이 적혀 있으면 그 층을 이어받는다.
+  assert.deepEqual(verdict(["대합실 방향 엘리베이터 탑승", "(B1) 대합실로 이동", "환승통로로 이동", "승강장 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"]),
+    { state: "STEP_FREE", reasons: [] });
+});
+
+test("#946 이어받은 층과 다른 층이 뒤에서 명시되는데 사이에 무단차 수단이 없으면 FLOOR_CHANGE_WITHOUT_LIFT다", () => {
+  const verdict = (steps) => {
+    const result = derive({ rows: sadangRows({ steps: ({ line }) => (line === "2호선" ? steps : ELEVATOR_STEPS) }) });
+    const edge = edgeState(result, EDGE_2_4);
+    return { state: edge.state, reasons: [...new Set(edge.combos.flatMap(({ blockingReasons }) => blockingReasons))].sort() };
+  };
+  // 출발 B2, 층 표기 없는 환승통로 이동(B2 이어받음), 엘리베이터 없이 B3 명시.
+  assert.deepEqual(verdict(["환승통로로 이동", "(B3) 승강장으로 이동"]), { state: "UNKNOWN", reasons: ["FLOOR_CHANGE_WITHOUT_LIFT"] });
+  // 이어받은 층과 같은 층을 뒤에서 명시하면 일관된 경로다.
+  assert.deepEqual(verdict(["환승통로로 이동", "(B2) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
+  assert.deepEqual(verdict(["(B2) 대합실로 이동", "환승통로로 이동", "(B2) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
+  // 사이에 엘리베이터가 있으면 층이 바뀌는 것이 설명된다.
+  assert.deepEqual(verdict(["환승통로로 이동", "승강장 방향 엘리베이터 탑승", "(B3) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
+});
+
+test("#946 계단·에스컬레이터·경사·오르막·내리막 단계가 있으면 층을 이어받아도 STEP_FREE가 아니다", () => {
+  const verdict = (steps) => {
+    const result = derive({ rows: sadangRows({ steps: ({ line }) => (line === "2호선" ? steps : ELEVATOR_STEPS) }) });
+    const edge = edgeState(result, EDGE_2_4);
+    return { state: edge.state, reasons: [...new Set(edge.combos.flatMap(({ blockingReasons }) => blockingReasons))].sort() };
+  };
+  const probes = [
+    ["계단으로 이동", "STAIRS"],
+    ["에스컬레이터로 이동", "ESCALATOR"],
+    ["경사로 이동", "STEP_WORDING_UNRECOGNIZED"],
+    ["오르막 이동", "STEP_WORDING_UNRECOGNIZED"],
+    ["내리막 이동", "STEP_WORDING_UNRECOGNIZED"],
+    ["경사 엘리베이터 탑승", "STEP_WORDING_UNRECOGNIZED"],
+  ];
+  for (const [probe, reason] of probes) {
+    // 앞뒤 단계는 층 표기가 없어 이어받기 대상이다. 문제 단계 하나만으로 UNKNOWN이어야 한다.
+    assert.deepEqual(verdict(["대합실로 이동", probe, "승강장으로 이동"]), { state: "UNKNOWN", reasons: [reason] }, probe);
+  }
 });
 
 // #944 QA 결정(F1 후속): 추정 없이 되살릴 수 있는 표기만 허용한다.
