@@ -357,7 +357,7 @@ test("#951 FINAL은 topology 간선 출처 칸과 transfer_rules가 모순되면
   const edge = (id, type, from, to, columns) => `INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,edge_type,includes_stairs,stair_access_state,source_id,source_snapshot_id,provider_record_hash,provenance_kind,verification_status,last_verified_at,evidence_hash) VALUES('${id}','${from}','${to}',120,'${type}',0,'UNKNOWN',${columns})`;
   const official = "'seoul-metro-transfer-car-door-duration','seoul-metro-transfer-car-door-duration-snap1','" + "a".repeat(64) + "','OFFICIAL_SOURCE','VERIFIED',1790872404,'" + "b".repeat(64) + "'";
   const unknown = "'','','','UNKNOWN','UNKNOWN',NULL,''";
-  const rule = (status, seconds = 120) => `INSERT INTO transfer_rules VALUES('rule-1','station-a','line-1','station-a','line-2',${seconds},'seoul-metro-transfer-car-door-duration','${status}')`;
+  const rule = (status, seconds = 120) => `INSERT INTO transfer_rules VALUES('rule-1','station-a','line-1','station-a','line-2','IN_STATION',${seconds},'seoul-metro-transfer-car-door-duration','${status}')`;
   const transfer = (columns) => edge("transfer-1", "IN_STATION_TRANSFER", "station-a:line-1", "station-a:line-2", columns);
   for (const [name, sql, pattern] of [
     ["unsupported-pair", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", "'x','y','" + "a".repeat(64) + "','OFFICIAL_SOURCE','UNKNOWN',1790872404,'" + "b".repeat(64) + "'"), /edge provenance pair is not supported: ride-1/],
@@ -1196,7 +1196,7 @@ async function rebindPayloadManifest(artifactRoot) {
 // #951: FINAL은 간선 출처 칸과 transfer_rules도 읽으므로 fixture topology도 그 칸을 가진다(원천 근거 없는 간선은 UNKNOWN 기본값).
 const TOPOLOGY_FIXTURE_DDL = [
   "CREATE TABLE network_edges (id TEXT PRIMARY KEY, from_node_id TEXT NOT NULL, to_node_id TEXT NOT NULL, duration_seconds INTEGER NOT NULL DEFAULT 0, edge_type TEXT NOT NULL, includes_stairs INTEGER NOT NULL, stair_access_state TEXT NOT NULL, source_id TEXT NOT NULL DEFAULT '', source_snapshot_id TEXT NOT NULL DEFAULT '', provider_record_hash TEXT NOT NULL DEFAULT '', provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN', verification_status TEXT NOT NULL DEFAULT 'UNKNOWN', last_verified_at INTEGER, evidence_hash TEXT NOT NULL DEFAULT '')",
-  "CREATE TABLE transfer_rules (id TEXT PRIMARY KEY, from_station_id TEXT NOT NULL, from_line_id TEXT NOT NULL, to_station_id TEXT NOT NULL, to_line_id TEXT NOT NULL, min_transfer_seconds INTEGER NOT NULL DEFAULT 0, source_id TEXT NOT NULL DEFAULT '', verification_status TEXT NOT NULL DEFAULT 'UNKNOWN')",
+  "CREATE TABLE transfer_rules (id TEXT PRIMARY KEY, from_station_id TEXT NOT NULL, from_line_id TEXT NOT NULL, to_station_id TEXT NOT NULL, to_line_id TEXT NOT NULL, transfer_type TEXT NOT NULL DEFAULT 'IN_STATION', min_transfer_seconds INTEGER NOT NULL DEFAULT 0, source_id TEXT NOT NULL DEFAULT '', verification_status TEXT NOT NULL DEFAULT 'UNKNOWN')",
 ].join("; ");
 
 // #944 F4: FINAL이 topology network_edges를 읽으므로 fixture topology도 실제 SQLite다(역 안 환승 STEP_FREE 없음).

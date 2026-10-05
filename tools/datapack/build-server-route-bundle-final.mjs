@@ -739,7 +739,7 @@ async function readEmbeddedTopology(topologyPayloadBytes, temporary) {
           last_verified_at AS lastVerifiedAt, evidence_hash AS evidenceHash
         FROM network_edges ORDER BY id`).all().map((row) => ({ ...row })),
       transferRules: database.prepare(`SELECT id, from_station_id AS fromStationId, from_line_id AS fromLineId, to_station_id AS toStationId,
-          to_line_id AS toLineId, min_transfer_seconds AS minTransferSeconds, source_id AS sourceId, verification_status AS verificationStatus
+          to_line_id AS toLineId, transfer_type AS transferType, min_transfer_seconds AS minTransferSeconds, source_id AS sourceId, verification_status AS verificationStatus
         FROM transfer_rules ORDER BY id`).all().map((row) => ({ ...row })),
     };
   } finally {

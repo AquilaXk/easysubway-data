@@ -17,7 +17,7 @@ export function deriveBundleEdgeProvenance({ routeEdges, sourceEdges, transferRu
   const sourceById = new Map(sourceEdges.map((row) => [row.id, row]));
   const pathwayById = new Map(pathwayEdges.map((row) => [row.id, row]));
   const rulesByDirection = new Map();
-  for (const row of transferRules) {
+  for (const row of inStationRules(transferRules)) {
     const key = directionKey(row.fromStationId, row.fromLineId, row.toStationId, row.toLineId);
     rulesByDirection.set(key, [...(rulesByDirection.get(key) ?? []), row]);
   }
@@ -69,8 +69,9 @@ function rideEvidence(edge, source) {
 // 번들(topology component)에 실린 간선 행의 불변식. 생성기 규칙을 다시 계산하지 않고, 행끼리 서로 모순이 없는지만 본다.
 // - 출처·검증 상태 쌍은 (UNKNOWN, UNKNOWN) 또는 (OFFICIAL_SOURCE, VERIFIED)뿐이다.
 // - VERIFIED 간선은 원천 칸이 모두 있고, UNKNOWN 간선은 원천 칸이 비어 있다.
-// - 역 안 환승 간선의 VERIFIED는 같은 방향 transfer_rules의 VERIFIED(같은 원천·같은 시간)와 일대일로 맞는다.
-export function assertBundleEdgeProvenanceInvariants({ edges, transferRules }) {
+// - 역 안 환승 간선의 VERIFIED는 같은 방향 IN_STATION transfer_rules의 VERIFIED(같은 원천·같은 시간)와 일대일로 맞는다.
+export function assertBundleEdgeProvenanceInvariants({ edges, transferRules: allRules }) {
+  const transferRules = inStationRules(allRules);
   const rulesByDirection = new Map();
   for (const rule of transferRules) {
     const key = directionKey(rule.fromStationId, rule.fromLineId, rule.toStationId, rule.toLineId);
@@ -120,6 +121,11 @@ export function summarizeBundleEdgeProvenance(rows) {
     return { edgeType, provenanceKind, verificationStatus, sourceId, count };
   }).sort((left, right) => compareBytes(JSON.stringify([left.edgeType, left.provenanceKind, left.verificationStatus, left.sourceId]),
     JSON.stringify([right.edgeType, right.provenanceKind, right.verificationStatus, right.sourceId])));
+}
+
+// 역 안 환승 간선과 짝인 규칙은 transferType이 IN_STATION인 것뿐이다. 역 밖 규칙은 이 PR의 근거 판정·불변식 범위 밖이다(#956 F4).
+function inStationRules(rules) {
+  return rules.filter(({ transferType }) => transferType === "IN_STATION");
 }
 
 function withEvidence(edge, evidence) {

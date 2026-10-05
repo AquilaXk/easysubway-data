@@ -92,6 +92,15 @@ test("VERIFIED 규칙인데 근거 행이 없거나 값·원천이 어긋나면 
   assert.throws(() => derive({ routeEdges: [transferEdge()], transferRules: [rule(), rule({ id: "rule-dup" })], pathwayEdges: [pathway()] }), /transfer edge matches more than one rule: transfer-s1-l1-l2/);
 });
 
+test("역 안 환승 간선은 transferType이 IN_STATION인 규칙과만 묶는다", () => {
+  const out = rule({ transferType: "OUT_OF_STATION" });
+  const [ignored] = derive({ routeEdges: [transferEdge()], transferRules: [out], pathwayEdges: [pathway()] });
+  assert.equal(ignored.provenanceKind ?? "UNKNOWN", "UNKNOWN");
+  // 같은 방향에 역 밖 규칙이 함께 있어도 역 안 규칙 하나만 있는 것으로 본다(중복 오류가 아니다).
+  const [edge] = derive({ routeEdges: [transferEdge()], transferRules: [out, { ...rule(), id: "rule-in" }], pathwayEdges: [pathway()] });
+  assert.equal(edge.verificationStatus, "VERIFIED");
+});
+
 test("원천에서 이미 공식 확인된 RIDE 간선만 그 출처를 싣고 같은 값일 때만 인정한다", () => {
   const [edge] = derive({ routeEdges: [rideEdge()], sourceEdges: [sourceRide()] });
   assert.equal(edge.provenanceKind, "OFFICIAL_SOURCE");
@@ -143,7 +152,7 @@ test("번들 불변식은 근거 없는 VERIFIED·원천 없는 출처·규칙�
     provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "VERIFIED", lastVerifiedAt: 1790872404, evidenceHash: HASH_B, ...overrides,
   });
   const unknown = (overrides = {}) => verified({ sourceId: "", sourceSnapshotId: "", providerRecordHash: "", provenanceKind: "UNKNOWN", verificationStatus: "UNKNOWN", lastVerifiedAt: null, evidenceHash: "", ...overrides });
-  const ruleRow = (overrides = {}) => ({ id: "rule-1", fromStationId: "s1", fromLineId: "l1", toStationId: "s1", toLineId: "l2", minTransferSeconds: 120, sourceId: "seoul-metro-transfer-car-door-duration", verificationStatus: "VERIFIED", ...overrides });
+  const ruleRow = (overrides = {}) => ({ id: "rule-1", transferType: "IN_STATION", fromStationId: "s1", fromLineId: "l1", toStationId: "s1", toLineId: "l2", minTransferSeconds: 120, sourceId: "seoul-metro-transfer-car-door-duration", verificationStatus: "VERIFIED", ...overrides });
   assert.doesNotThrow(() => assertBundleEdgeProvenanceInvariants({ edges: [verified()], transferRules: [ruleRow()] }));
   assert.doesNotThrow(() => assertBundleEdgeProvenanceInvariants({ edges: [unknown()], transferRules: [ruleRow({ sourceId: "x", verificationStatus: "UNVERIFIED" })] }));
   assert.doesNotThrow(() => assertBundleEdgeProvenanceInvariants({ edges: [unknown({ id: "edge-r", edgeType: "RIDE", fromNodeId: "s1:l1", toNodeId: "s2:l1" })], transferRules: [] }));
@@ -169,6 +178,10 @@ test("번들 불변식은 근거 없는 VERIFIED·원천 없는 출처·규칙�
   reject([verified()], [ruleRow({ sourceId: "other" })], /VERIFIED transfer edge source does not match rule: transfer-s1-l1-l2/);
   reject([verified()], [ruleRow({ minTransferSeconds: 90 })], /VERIFIED transfer edge duration does not match rule: transfer-s1-l1-l2/);
   reject([unknown()], [ruleRow()], /VERIFIED transfer rule has no VERIFIED edge: rule-1/);
+  // #956 F4: 규칙과 간선은 transferType까지 같아야 묶인다. 역 밖 규칙은 역 안 환승 간선과 짝이 아니고, 이 불변식의 범위 밖이다.
+  assert.doesNotThrow(() => assertBundleEdgeProvenanceInvariants({ edges: [unknown()], transferRules: [ruleRow({ transferType: "OUT_OF_STATION" })] }));
+  assert.doesNotThrow(() => assertBundleEdgeProvenanceInvariants({ edges: [verified()], transferRules: [ruleRow(), ruleRow({ id: "rule-out", transferType: "OUT_OF_STATION", verificationStatus: "UNVERIFIED" })] }));
+  reject([verified()], [ruleRow({ transferType: "OUT_OF_STATION" })], /VERIFIED transfer edge has no VERIFIED rule: transfer-s1-l1-l2/);
 });
 
 // 커밋된 후보 fixture의 값으로, 입력이 바뀌어도(원천 갱신 PR) 깨지지 않는 구조 불변식을 건다. 숫자는 fixture에서 유도한다.
