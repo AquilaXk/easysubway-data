@@ -38,6 +38,20 @@ const DEPLOYED_EVIDENCE_PATH = path.join(root, "tools/datapack/itx-cheongchun-to
 // 고정 입력이 작업 트리와 모두 같으면 저장소 루트를 그대로 쓴다. 프로세스당 한 번만 만든다.
 const { root: currentCandidateRoot, read: readCandidate } = candidateWorkspaceAccess();
 
+// 후보 작업 공간에서 build-datapack을 실행하고 pattern으로 거부되는지 확인한다. prefix는 한 테스트에서 여러 번 실행할 때 파일명을 나눈다.
+async function assertCandidateBuildRejected(workspace, spec, pattern, prefix = "candidate") {
+  const specPath = path.join(workspace, `${prefix}-build-spec.json`);
+  await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/build-datapack.mjs",
+    "--build-spec", specPath,
+    "--output", path.join(workspace, `${prefix}-output`),
+  ], {
+    cwd: await currentCandidateRoot(),
+    env,
+  }), pattern);
+}
+
 function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
   const snapshotId = spec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId;
   const source = inventory.sources.find(({ routeMapAdmissionEvidence }) =>
@@ -436,7 +450,6 @@ test("unchanged candidate는 현재 source inventory 결속을 그대로 검증�
 });
 
 test("capital topology reverification은 24시간을 넘는 freshness를 거부한다", async () => {
-  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-freshness-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
@@ -468,24 +481,13 @@ test("capital topology reverification은 24시간을 넘는 freshness를 거부�
       sha256: sha256(candidateBytes),
     };
     spec.networkEdgeEvidence.capitalTopologyAdmission.freshUntil = evidence.candidate.freshUntil;
-    const specPath = path.join(workspace, "candidate-build-spec.json");
-    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
-
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
-      "--build-spec", specPath,
-      "--output", path.join(workspace, "output"),
-    ], {
-      cwd: candidateRoot,
-      env,
-    }), /capital topology reverification freshness is invalid/);
+    await assertCandidateBuildRejected(workspace, spec, /capital topology reverification freshness is invalid/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("capital topology reverification은 candidate line identity repin 변조를 거부한다", async () => {
-  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-identity-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
@@ -502,24 +504,13 @@ test("capital topology reverification은 candidate line identity repin 변조를
       path: evidencePath,
       sha256: sha256(evidenceBytes),
     };
-    const specPath = path.join(workspace, "candidate-build-spec.json");
-    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
-
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
-      "--build-spec", specPath,
-      "--output", path.join(workspace, "output"),
-    ], {
-      cwd: candidateRoot,
-      env,
-    }), /capital topology reverification candidate snapshot mismatch/);
+    await assertCandidateBuildRejected(workspace, spec, /capital topology reverification candidate snapshot mismatch/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("capital topology reverification은 independently pinned candidate와 다른 self-attested repin을 거부한다", async () => {
-  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-candidate-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
@@ -550,24 +541,13 @@ test("capital topology reverification은 independently pinned candidate와 다�
       path: evidencePath,
       sha256: sha256(evidenceBytes),
     };
-    const specPath = path.join(workspace, "candidate-build-spec.json");
-    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
-
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
-      "--build-spec", specPath,
-      "--output", path.join(workspace, "output"),
-    ], {
-      cwd: candidateRoot,
-      env,
-    }), /capital topology reverification candidate snapshot mismatch/);
+    await assertCandidateBuildRejected(workspace, spec, /capital topology reverification candidate snapshot mismatch/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("capital topology reverification은 candidate line capture clock repin을 거부한다", async () => {
-  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-line-clock-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
@@ -584,24 +564,13 @@ test("capital topology reverification은 candidate line capture clock repin을 �
       path: candidatePath,
       sha256: sha256(candidateBytes),
     };
-    const specPath = path.join(workspace, "candidate-build-spec.json");
-    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
-
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
-      "--build-spec", specPath,
-      "--output", path.join(workspace, "output"),
-    ], {
-      cwd: candidateRoot,
-      env,
-    }), /capital topology reverification candidate snapshot mismatch/);
+    await assertCandidateBuildRejected(workspace, spec, /capital topology reverification candidate snapshot mismatch/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("capital topology reverification은 production eligibility repin을 거부한다", async () => {
-  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-eligibility-"));
   try {
     const mutations = [
@@ -627,17 +596,7 @@ test("capital topology reverification은 production eligibility repin을 거부�
         path: candidatePath,
         sha256: sha256(candidateBytes),
       };
-      const specPath = path.join(workspace, `${name}-build-spec.json`);
-      await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
-
-      await assert.rejects(execFileAsync(process.execPath, [
-        "tools/datapack/build-datapack.mjs",
-        "--build-spec", specPath,
-        "--output", path.join(workspace, `${name}-output`),
-      ], {
-        cwd: candidateRoot,
-        env,
-      }), /capital topology reverification candidate snapshot mismatch/);
+      await assertCandidateBuildRejected(workspace, spec, /capital topology reverification candidate snapshot mismatch/, name);
     }
   } finally {
     await rm(workspace, { recursive: true, force: true });
