@@ -14,6 +14,7 @@ import {
   readNationwideCandidateRefreshState,
   refreshNationwideCandidate,
   runNationwideCandidateRefreshStep,
+  runNodeScript,
 } from "./refresh-nationwide-candidate.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { rebindCurrentSeoulTransferSourceAdmission } from "./rebind-current-seoul-transfer-source-admission.mjs";
@@ -507,4 +508,107 @@ test("#866 일일 정본 팩 변경으로 풀린 서울 환승 증거 결속을 
   assert.deepEqual(await regenerate(), JSON.parse(await readFile(path.join(repositoryRoot, SEOUL_TRANSFER_REBIND_PATHS.applicability))));
   // 재결속은 후보 spec·request·hash를 쓰지 않는다. 그것들은 이 명령(refresh-nationwide-candidate)의 출력이다.
   assert.equal(result.targets.some((relative) => NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.includes(relative)), false);
+});
+
+test("#941 하위 CLI가 Error 전체(stack 포함)를 stderr에 써도 실패 메시지에 원인 메시지가 들어간다", async (t) => {
+  // prepare-nationwide-candidate-run CLI처럼 console.error(err)로 message + stack frame을 쓰고 비정상 종료하는 하위 CLI.
+  const scriptDirectory = await mkdtemp(path.join(os.tmpdir(), "refresh-941-"));
+  t.after(() => rm(scriptDirectory, { recursive: true, force: true }));
+  await writeFile(path.join(scriptDirectory, "failing-cli.mjs"), [
+    "async function prepareNationwideCandidate() {",
+    "  throw new Error('nationwide candidate Seoul measured transfer metrics differ from the rebuild');",
+    "}",
+    "prepareNationwideCandidate().catch((err) => { console.error(err); process.exit(1); });",
+  ].join("\n"));
+  await assert.rejects(
+    runNodeScript(scriptDirectory, "failing-cli.mjs", [], scriptDirectory),
+    { message: "Error: nationwide candidate Seoul measured transfer metrics differ from the rebuild" },
+  );
+});
+
+// #941: 실제 child process가 쓰는 stderr 모양별로 실패 메시지를 확인한다.
+async function runFailingCli(t, source, env = {}) {
+  const scriptDirectory = await mkdtemp(path.join(os.tmpdir(), "refresh-941-"));
+  t.after(() => rm(scriptDirectory, { recursive: true, force: true }));
+  await writeFile(path.join(scriptDirectory, "cli.mjs"), `${source}\nprocess.exit(1);\n`);
+  const saved = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  try {
+    return await runNodeScript(scriptDirectory, "cli.mjs", [], scriptDirectory).then(
+      () => assert.fail("하위 CLI 실패가 성공으로 끝났다"), (error) => error.message);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+}
+const noStackFrame = (message) => assert.doesNotMatch(message, /\bat\s+\S+.*:\d+:\d+|node:internal|Node\.js v\d/u);
+
+test("#941 오류 이름이 Error로 끝나지 않아도 원인이 남고 stack frame은 남지 않는다", async (t) => {
+  const message = await runFailingCli(t, "const e = new Error('retained projection is stale'); e.name = 'RetainedProjectionStale'; console.error(e);");
+  assert.match(message, /^RetainedProjectionStale: retained projection is stale$/u);
+  noStackFrame(message);
+});
+
+test("#941 own property가 붙은 오류도 닫는 중괄호 대신 원인을 보인다", async (t) => {
+  const message = await runFailingCli(t, "const e = new Error('ledger head mismatch'); e.name = 'LedgerHeadMismatch'; e.code = 'E_HEAD'; console.error(e);");
+  assert.match(message, /LedgerHeadMismatch: ledger head mismatch/u);
+  assert.match(message, /code: 'E_HEAD'/u);
+  assert.notEqual(message.trim(), "}");
+  noStackFrame(message);
+});
+
+test("#941 FORCE_COLOR=3으로 ANSI 이스케이프가 섞여도 원인이 남고 frame이 남지 않는다", async (t) => {
+  const message = await runFailingCli(t, "const e = new Error('colored cause'); e.name = 'Custom'; console.error(e);", { FORCE_COLOR: "3" });
+  assert.equal(message.includes("\u001b"), false);
+  assert.match(message, /Custom: colored cause/u);
+  noStackFrame(message);
+});
+
+test("#941 여러 줄 메시지의 모든 줄이 순서대로 남는다", async (t) => {
+  const message = await runFailingCli(t, "console.error(new Error('first line\\nsecond line'));");
+  assert.match(message, /^Error: first line \| second line$/u);
+});
+
+test("#941 AggregateError의 하위 오류가 보인다", async (t) => {
+  const message = await runFailingCli(t, "console.error(new AggregateError([new Error('sub one'), new Error('sub two')], 'many failed'));");
+  assert.match(message, /many failed/u);
+  assert.match(message, /sub one/u);
+  assert.match(message, /sub two/u);
+  noStackFrame(message);
+});
+
+test("#941 cause 체인의 root cause가 보인다", async (t) => {
+  const message = await runFailingCli(t, "console.error(new Error('outer step failed', { cause: new Error('root cause here') }));");
+  assert.match(message, /outer step failed/u);
+  assert.match(message, /root cause here/u);
+  noStackFrame(message);
+});
+
+test("#941 Error:가 없는 출력은 비어 있지 않은 줄을 순서대로 그대로 남긴다", async (t) => {
+  const message = await runFailingCli(t, "console.error('first line');\nconsole.error('RETAINED_GWANGJU_PROJECTION_STALE');");
+  assert.equal(message, "first line | RETAINED_GWANGJU_PROJECTION_STALE");
+});
+
+test("#941 stack frame만 있는 출력과 빈 stderr는 프로세스 오류 메시지를 쓴다", async (t) => {
+  const onlyFrames = await runFailingCli(t, "console.error('    at fake (file:///x.mjs:1:1)');");
+  assert.match(onlyFrames, /Command failed/u);
+  const silent = await runFailingCli(t, "");
+  assert.match(silent, /Command failed/u);
+});
+
+test("#941 실패 메시지의 serviceKey·apiKey·KEY 값은 가리고 길이는 끝 2000자로 제한한다", async (t) => {
+  const message = await runFailingCli(t, "console.error('GET https://api.example/x?serviceKey=SECRET1&apiKey=SECRET2&page=1 failed; SEOUL_OPENAPI_KEY=SECRET3 KEY=SECRET4');");
+  assert.doesNotMatch(message, /SECRET/u);
+  assert.match(message, /serviceKey=\*\*\*&apiKey=\*\*\*&page=1/u);
+  assert.match(message, /SEOUL_OPENAPI_KEY=\*\*\* KEY=\*\*\*/u);
+  const long = await runFailingCli(t, "console.error('HEAD' + 'x'.repeat(5000) + 'TAIL');");
+  assert.equal(long.length, 2000);
+  assert.ok(long.endsWith("TAIL"));
+});
+
+test("#941 처리되지 않은 예외가 남기는 Node 종료 배너는 실패 메시지에 들어가지 않는다", async (t) => {
+  const message = await runFailingCli(t, "throw new Error('uncaught cause');");
+  assert.match(message, /Error: uncaught cause/u);
+  noStackFrame(message);
 });

@@ -333,9 +333,9 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
 test("F4 FINAL은 환승 계단 근거 표와 topology STEP_FREE 간선·MOLIT snapshotId를 대조해 어긋나면 fail closed한다", async (t) => {
   const molitRow = (edgeId, snapshotId) => `INSERT INTO transfer_stair_access_evidence VALUES('${edgeId}','station-a','station-b','${"a".repeat(64)}','${snapshotId}','GENERAL_TRANSFER_EDGE_NOT_STEP_FREE_PATH')`;
   for (const [name, mutate, pattern] of [
-    ["topology-step-free-without-evidence", (fixture) => mutateTopologyPayload(fixture, "INSERT INTO network_edges VALUES('transfer-x','IN_STATION_TRANSFER',0,'STEP_FREE')"),
+    ["topology-step-free-without-evidence", (fixture) => mutateTopologyPayload(fixture, "INSERT INTO network_edges(id,from_node_id,to_node_id,edge_type,includes_stairs,stair_access_state) VALUES('transfer-x','station-a:line-1','station-a:line-2','IN_STATION_TRANSFER',0,'STEP_FREE')"),
       /transfer_stair_access_evidence does not match network_edges STEP_FREE in-station transfers/],
-    ["step-free-edge-with-stairs", (fixture) => mutateTopologyPayload(fixture, "INSERT INTO network_edges VALUES('transfer-y','IN_STATION_TRANSFER',1,'STEP_FREE')"),
+    ["step-free-edge-with-stairs", (fixture) => mutateTopologyPayload(fixture, "INSERT INTO network_edges(id,from_node_id,to_node_id,edge_type,includes_stairs,stair_access_state) VALUES('transfer-y','station-a:line-1','station-a:line-2','IN_STATION_TRANSFER',1,'STEP_FREE')"),
       /network_edges STEP_FREE edge includes stairs: transfer-y/],
     ["missing-topology-network-edges", (fixture) => mutateTopologyPayload(fixture, "DROP TABLE network_edges"),
       /embedded topology network_edges is missing/],
@@ -346,6 +346,34 @@ test("F4 FINAL은 환승 계단 근거 표와 topology STEP_FREE 간선·MOLIT s
       const fixture = await createFixture(t);
       await mutate(fixture);
       const output = path.join(fixture.temp, `rejected-${name}`);
+      await assert.rejects(() => build(fixture, output, FRESH_AT), pattern);
+      await assert.rejects(() => readFile(output), /ENOENT/);
+    });
+  }
+});
+
+// #951: FINAL은 topology 간선의 출처·검증 상태 칸이 서로 모순되면(근거 없는 VERIFIED, 원천이 새는 UNKNOWN, 규칙과 어긋난 환승) fail closed한다.
+test("#951 FINAL은 topology 간선 출처 칸과 transfer_rules가 모순되면 fail closed한다", async (t) => {
+  const edge = (id, type, from, to, columns) => `INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,edge_type,includes_stairs,stair_access_state,source_id,source_snapshot_id,provider_record_hash,provenance_kind,verification_status,last_verified_at,evidence_hash) VALUES('${id}','${from}','${to}',120,'${type}',0,'UNKNOWN',${columns})`;
+  const official = "'seoul-metro-transfer-car-door-duration','seoul-metro-transfer-car-door-duration-snap1','" + "a".repeat(64) + "','OFFICIAL_SOURCE','VERIFIED',1790872404,'" + "b".repeat(64) + "'";
+  const unknown = "'','','','UNKNOWN','UNKNOWN',NULL,''";
+  const rule = (status, seconds = 120) => `INSERT INTO transfer_rules VALUES('rule-1','station-a','line-1','station-a','line-2','IN_STATION',${seconds},'seoul-metro-transfer-car-door-duration','${status}')`;
+  const transfer = (columns) => edge("transfer-1", "IN_STATION_TRANSFER", "station-a:line-1", "station-a:line-2", columns);
+  for (const [name, sql, pattern] of [
+    ["unsupported-pair", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", "'x','y','" + "a".repeat(64) + "','OFFICIAL_SOURCE','UNKNOWN',1790872404,'" + "b".repeat(64) + "'"), /edge provenance pair is not supported: ride-1/],
+    ["verified-edge-malformed-hash", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", official.replace("'" + "a".repeat(64) + "'", "'not-a-hash'")), /VERIFIED edge evidence is incomplete: ride-1/],
+    ["verified-edge-snapshot-of-other-source", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", official.replace("'seoul-metro-transfer-car-door-duration-snap1'", "'capital-route-topology-20261004'")), /VERIFIED edge source snapshot does not belong to its source: ride-1/],
+    ["verified-edge-without-hash", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", official.replace("'" + "a".repeat(64) + "'", "''")), /VERIFIED edge evidence is incomplete: ride-1/],
+    ["unknown-edge-with-source", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", unknown.replace("'',", "'leaked-source',")), /UNKNOWN edge must not carry source evidence: ride-1/],
+    ["verified-transfer-without-rule", transfer(official), /VERIFIED transfer edge has no VERIFIED rule: transfer-1/],
+    ["verified-transfer-with-unverified-rule", `${transfer(official)}; ${rule("UNVERIFIED")}`, /VERIFIED transfer edge has no VERIFIED rule: transfer-1/],
+    ["verified-transfer-duration-mismatch", `${transfer(official)}; ${rule("VERIFIED", 90)}`, /VERIFIED transfer edge duration does not match rule: transfer-1/],
+    ["verified-rule-without-verified-edge", `${transfer(unknown)}; ${rule("VERIFIED")}`, /VERIFIED transfer rule has no VERIFIED edge: rule-1/],
+  ]) {
+    await t.test(name, async () => {
+      const fixture = await createFixture(t);
+      await mutateTopologyPayload(fixture, sql);
+      const output = path.join(fixture.temp, `provenance-${name}`);
       await assert.rejects(() => build(fixture, output, FRESH_AT), pattern);
       await assert.rejects(() => readFile(output), /ENOENT/);
     });
@@ -1165,13 +1193,20 @@ async function rebindPayloadManifest(artifactRoot) {
   await writeCanonical(manifestPath, manifest);
 }
 
+// #951: FINAL은 간선 출처 칸과 transfer_rules도 읽으므로 fixture topology도 그 칸을 가진다(원천 근거 없는 간선은 UNKNOWN 기본값).
+const TOPOLOGY_FIXTURE_DDL = [
+  "CREATE TABLE network_edges (id TEXT PRIMARY KEY, from_node_id TEXT NOT NULL, to_node_id TEXT NOT NULL, duration_seconds INTEGER NOT NULL DEFAULT 0, edge_type TEXT NOT NULL, includes_stairs INTEGER NOT NULL, stair_access_state TEXT NOT NULL, source_id TEXT NOT NULL DEFAULT '', source_snapshot_id TEXT NOT NULL DEFAULT '', provider_record_hash TEXT NOT NULL DEFAULT '', provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN', verification_status TEXT NOT NULL DEFAULT 'UNKNOWN', last_verified_at INTEGER, evidence_hash TEXT NOT NULL DEFAULT '')",
+  "CREATE TABLE transfer_rules (id TEXT PRIMARY KEY, from_station_id TEXT NOT NULL, from_line_id TEXT NOT NULL, to_station_id TEXT NOT NULL, to_line_id TEXT NOT NULL, transfer_type TEXT NOT NULL DEFAULT 'IN_STATION', min_transfer_seconds INTEGER NOT NULL DEFAULT 0, source_id TEXT NOT NULL DEFAULT '', verification_status TEXT NOT NULL DEFAULT 'UNKNOWN')",
+].join("; ");
+
 // #944 F4: FINAL이 topology network_edges를 읽으므로 fixture topology도 실제 SQLite다(역 안 환승 STEP_FREE 없음).
 async function fixtureTopologySqliteBytes() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "server-route-final-topology-"));
   try {
     const file = path.join(directory, "topology.sqlite");
     const database = new DatabaseSync(file);
-    database.exec("CREATE TABLE network_edges (id TEXT PRIMARY KEY, edge_type TEXT NOT NULL, includes_stairs INTEGER NOT NULL, stair_access_state TEXT NOT NULL); INSERT INTO network_edges VALUES('ride-0000','RIDE',0,'UNKNOWN'); PRAGMA user_version=19; VACUUM");
+    database.exec(TOPOLOGY_FIXTURE_DDL);
+    database.exec("INSERT INTO network_edges(id,from_node_id,to_node_id,edge_type,includes_stairs,stair_access_state) VALUES('ride-0000','station-a:line-1','station-b:line-1','RIDE',0,'UNKNOWN'); PRAGMA user_version=19; VACUUM");
     database.close();
     return await readFile(file);
   } finally {
