@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 
 import { buildApplicability, main } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { currentTransferLineIds } from "./build-current-transfer-topology-metrics.mjs";
+import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const execFileAsync = promisify(execFile);
 const [LINE_A, LINE_B, LINE_C] = currentTransferLineIds();
@@ -50,13 +51,16 @@ test("current canonical 213-cell transfer applicability matrix is closed and non
 
 test("tracked raw canonical pack binds its parsed object without requiring lexical key order", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "transfer-applicability-tracked-"));
-  const canonicalPath = fileURLToPath(new URL("./release/capital-production-canonical-pack.json", import.meta.url));
-  const metricsPath = fileURLToPath(new URL("./release/current-transfer-topology-metrics.json", import.meta.url));
+  // #954: 후보가 고정한 canonical pack과 지표 바이트로 검사한다. 원천 갱신 PR이 바꾼 작업 트리 pack은 쓰지 않는다.
+  const read = await candidatePinnedReader();
+  const canonicalPath = path.join(root, "capital-production-canonical-pack.json");
+  const metricsPath = path.join(root, "current-transfer-topology-metrics.json");
   const output = path.join(root, "applicability.json");
   const [canonicalPackBytes, metricsBytes] = await Promise.all([
-    readFile(canonicalPath),
-    readFile(metricsPath),
+    read("tools/datapack/release/capital-production-canonical-pack.json"),
+    read("tools/datapack/release/current-transfer-topology-metrics.json"),
   ]);
+  await Promise.all([writeFile(canonicalPath, canonicalPackBytes), writeFile(metricsPath, metricsBytes)]);
   const result = await main([
     "--canonical-pack", canonicalPath,
     "--transfer-topology-metrics", metricsPath,

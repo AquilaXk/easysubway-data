@@ -34,6 +34,17 @@ const DEPLOYED_ASSET_PATH = path.join(root, "apps/mobile/assets/datapacks/capita
 const DEPLOYED_INDEX_PATH = path.join(root, "apps/mobile/assets/datapacks/index.json");
 const DEPLOYED_EVIDENCE_PATH = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
 
+// #954: 후보 빌드 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천 갱신 PR이 바꾼 작업 트리와 섞지 않는다).
+// 고정 입력이 작업 트리와 모두 같으면 저장소 루트를 그대로 쓴다. 프로세스당 한 번만 만든다.
+let candidateRootPromise;
+function currentCandidateRoot() {
+  candidateRootPromise ??= candidatePinnedWorkspace().then(({ root: candidateRoot }) => candidateRoot);
+  return candidateRootPromise;
+}
+async function readCandidate(relativeOrAbsolute, encoding) {
+  return readFile(path.resolve(await currentCandidateRoot(), relativeOrAbsolute), encoding);
+}
+
 function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
   const snapshotId = spec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId;
   const source = inventory.sources.find(({ routeMapAdmissionEvidence }) =>
@@ -43,7 +54,7 @@ function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
 }
 
 async function loadFixtureBoundCandidate(workspace) {
-  const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const spec = JSON.parse(await readCandidate("tools/datapack/release/candidate-build-spec.json", "utf8"));
   if (spec.networkEdgeEvidence?.capitalTopologyAdmission?.reverifiedAt) {
     spec.publishedAt = candidateReplayAt;
   }
@@ -51,24 +62,24 @@ async function loadFixtureBoundCandidate(workspace) {
   delete spec.productionScope;
   spec.productionScopeId = "capital_pilot_android_v1";
   spec.fixturePath = "tools/datapack/release/capital-production-canonical-pack.json";
-  const capitalFixtureBytes = await readFile(spec.fixturePath);
+  const capitalFixtureBytes = await readCandidate(spec.fixturePath);
   spec.fixtureSha256 = sha256(capitalFixtureBytes);
   const capitalSnapshots = spec.sourceSnapshots.filter((s) => s.adminReviewRecordHash);
   spec.sourceSnapshots = capitalSnapshots;
   spec.sourceSnapshotIds = capitalSnapshots.map((s) => s.snapshotId);
   // 수도권 부분집합의 set hash는 추적 원장 행(build-datapack의 결속 정의)으로 다시 계산한다.
-  const ledger = JSON.parse(await readFile("tools/datapack/release/source-snapshots.json", "utf8"));
+  const ledger = JSON.parse(await readCandidate("tools/datapack/release/source-snapshots.json", "utf8"));
   spec.sourceSnapshotSetHash = sha256(Buffer.from(JSON.stringify(
     ledger.filter(({ snapshotId }) => spec.sourceSnapshotIds.includes(snapshotId)),
   )));
   const productionScopePolicyInput = spec.productionScopePolicy;
-  const productionScopePolicyBytes = await readFile(productionScopePolicyInput.path);
+  const productionScopePolicyBytes = await readCandidate(productionScopePolicyInput.path);
   spec.productionScopePolicy = {
     ...productionScopePolicyInput,
     sha256: sha256(productionScopePolicyBytes),
   };
   const inventoryInput = spec.networkEdgeEvidence.sourceInventory;
-  const inventoryBytes = await readFile(inventoryInput.path);
+  const inventoryBytes = await readCandidate(inventoryInput.path);
   spec.networkEdgeEvidence.sourceInventory = {
     ...inventoryInput,
     sha256: sha256(inventoryBytes),
@@ -387,7 +398,7 @@ test("deployed pack과 bundled asset/index의 artifact identity를 exact-match�
 
 test("unchanged candidate는 현재 source inventory 결속을 그대로 검증한다", async () => {
   // #942: 후보 빌드는 후보가 고정한 입력 바이트를 담은 작업 공간에서 실행한다(원천만 등록한 PR에서도 같은 결과).
-  const { root: candidateRoot } = await candidatePinnedWorkspace();
+  const candidateRoot = await currentCandidateRoot();
   const fromCandidate = (relative) => path.join(candidateRoot, relative);
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-current-source-inventory-binding-"));
   try {
@@ -432,17 +443,18 @@ test("unchanged candidate는 현재 source inventory 결속을 그대로 검증�
 });
 
 test("capital topology reverification은 24시간을 넘는 freshness를 거부한다", async () => {
+  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-freshness-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
-    const evidence = JSON.parse(await readFile(
+    const evidence = JSON.parse(await readCandidate(
       spec.networkEdgeEvidence.capitalTopologyReverification.path,
       "utf8",
     ));
     evidence.candidate.freshUntil = new Date(
       Date.parse(evidence.candidate.capturedAt) + 24 * 60 * 60 * 1000 + 1,
     ).toISOString();
-    const candidate = JSON.parse(await readFile(
+    const candidate = JSON.parse(await readCandidate(
       spec.networkEdgeEvidence.capitalTopologyCandidate.path,
       "utf8",
     ));
@@ -471,7 +483,7 @@ test("capital topology reverification은 24시간을 넘는 freshness를 거부�
       "--build-spec", specPath,
       "--output", path.join(workspace, "output"),
     ], {
-      cwd: root,
+      cwd: candidateRoot,
       env,
     }), /capital topology reverification freshness is invalid/);
   } finally {
@@ -480,10 +492,11 @@ test("capital topology reverification은 24시간을 넘는 freshness를 거부�
 });
 
 test("capital topology reverification은 candidate line identity repin 변조를 거부한다", async () => {
+  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-identity-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
-    const evidence = JSON.parse(await readFile(
+    const evidence = JSON.parse(await readCandidate(
       spec.networkEdgeEvidence.capitalTopologyReverification.path,
       "utf8",
     ));
@@ -504,7 +517,7 @@ test("capital topology reverification은 candidate line identity repin 변조를
       "--build-spec", specPath,
       "--output", path.join(workspace, "output"),
     ], {
-      cwd: root,
+      cwd: candidateRoot,
       env,
     }), /capital topology reverification candidate snapshot mismatch/);
   } finally {
@@ -513,13 +526,14 @@ test("capital topology reverification은 candidate line identity repin 변조를
 });
 
 test("capital topology reverification은 independently pinned candidate와 다른 self-attested repin을 거부한다", async () => {
+  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-candidate-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
     const candidatePath = spec.networkEdgeEvidence.capitalTopologyCandidate.path;
-    const candidateBytes = await readFile(candidatePath);
+    const candidateBytes = await readCandidate(candidatePath);
     const candidate = JSON.parse(candidateBytes);
-    const evidence = JSON.parse(await readFile(
+    const evidence = JSON.parse(await readCandidate(
       spec.networkEdgeEvidence.capitalTopologyReverification.path,
       "utf8",
     ));
@@ -551,7 +565,7 @@ test("capital topology reverification은 independently pinned candidate와 다�
       "--build-spec", specPath,
       "--output", path.join(workspace, "output"),
     ], {
-      cwd: root,
+      cwd: candidateRoot,
       env,
     }), /capital topology reverification candidate snapshot mismatch/);
   } finally {
@@ -560,10 +574,11 @@ test("capital topology reverification은 independently pinned candidate와 다�
 });
 
 test("capital topology reverification은 candidate line capture clock repin을 거부한다", async () => {
+  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-line-clock-"));
   try {
     const spec = await loadFixtureBoundCandidate(workspace);
-    const candidate = JSON.parse(await readFile(
+    const candidate = JSON.parse(await readCandidate(
       spec.networkEdgeEvidence.capitalTopologyCandidate.path,
       "utf8",
     ));
@@ -584,7 +599,7 @@ test("capital topology reverification은 candidate line capture clock repin을 �
       "--build-spec", specPath,
       "--output", path.join(workspace, "output"),
     ], {
-      cwd: root,
+      cwd: candidateRoot,
       env,
     }), /capital topology reverification candidate snapshot mismatch/);
   } finally {
@@ -593,6 +608,7 @@ test("capital topology reverification은 candidate line capture clock repin을 �
 });
 
 test("capital topology reverification은 production eligibility repin을 거부한다", async () => {
+  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-eligibility-"));
   try {
     const mutations = [
@@ -605,7 +621,7 @@ test("capital topology reverification은 production eligibility repin을 거부�
     ];
     for (const [name, mutate] of mutations) {
       const spec = await loadFixtureBoundCandidate(workspace);
-      const candidate = JSON.parse(await readFile(
+      const candidate = JSON.parse(await readCandidate(
         spec.networkEdgeEvidence.capitalTopologyCandidate.path,
         "utf8",
       ));
@@ -626,7 +642,7 @@ test("capital topology reverification은 production eligibility repin을 거부�
         "--build-spec", specPath,
         "--output", path.join(workspace, `${name}-output`),
       ], {
-        cwd: root,
+        cwd: candidateRoot,
         env,
       }), /capital topology reverification candidate snapshot mismatch/);
     }
@@ -636,9 +652,10 @@ test("capital topology reverification은 production eligibility repin을 거부�
 });
 
 test("unchanged capital topology reverification은 content review와 fresh review 시각을 분리한다", async () => {
+  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-review-clock-"));
   try {
-    const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+    const spec = JSON.parse(await readCandidate("tools/datapack/release/candidate-build-spec.json", "utf8"));
     spec.networkEdgeEvidence.capitalTopologyAdmission.reviewedAt = "2026-07-27T21:38:29.000Z";
     spec.networkEdgeEvidence.capitalTopologyAdmission.reverifiedAt = spec.publishedAt;
     const specPath = path.join(workspace, "candidate-build-spec.json");
@@ -650,7 +667,7 @@ test("unchanged capital topology reverification은 content review와 fresh revie
         "--build-spec", specPath,
         "--output", path.join(workspace, "output"),
       ], {
-        cwd: root,
+        cwd: candidateRoot,
         env,
       });
     } catch (error) {
@@ -665,15 +682,16 @@ test("unchanged capital topology reverification은 content review와 fresh revie
 });
 
 test("network edge evidence는 pinned bytes·freshness·fixture projection mismatch를 거부한다", async () => {
+  const candidateRoot = await currentCandidateRoot();
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-network-edge-evidence-"));
   const outputDir = path.join(workspace, "output");
   const spec = await loadFixtureBoundCandidate(workspace);
-  const inventory = JSON.parse(await readFile(spec.networkEdgeEvidence.sourceInventory.path, "utf8"));
+  const inventory = JSON.parse(await readCandidate(spec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentAccessibilityAdmissions = new Map(inventory.sources
     .filter(({ id }) => ["kric-station-convenience-standard", "seoul-metro-accessibility"].includes(id))
     .map(({ id, accessibilityAdmissionEvidence }) => [id, accessibilityAdmissionEvidence]));
   assert.equal(currentAccessibilityAdmissions.size, 2);
-  const currentAccessibilityFixture = JSON.parse(await readFile(spec.fixturePath, "utf8"));
+  const currentAccessibilityFixture = JSON.parse(await readCandidate(spec.fixturePath, "utf8"));
   for (const pack of currentAccessibilityFixture.packs.filter(({ artifactKind }) => artifactKind === "production")) {
     const kricTuplesByStationLine = new Map((pack.facilities ?? [])
       .filter(({ sourceId }) => sourceId === "kric-station-convenience-standard")
@@ -733,7 +751,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
   if (spec.fixtureSha256 !== undefined) spec.fixtureSha256 = sha256(currentAccessibilityFixtureBytes);
   const runRejectedBuild = async (candidate, pattern) => {
     if (candidate.fixturePath && candidate.fixtureSha256 !== undefined) {
-      candidate.fixtureSha256 = sha256(await readFile(candidate.fixturePath));
+      candidate.fixtureSha256 = sha256(await readCandidate(candidate.fixturePath));
     }
     const specPath = path.join(workspace, `spec-${Date.now()}.json`);
     await writeFile(specPath, `${JSON.stringify(candidate, null, 2)}\n`);
@@ -741,10 +759,10 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
       "tools/datapack/build-datapack.mjs",
       "--build-spec", specPath,
       "--output", outputDir,
-    ], { cwd: root, env }), pattern);
+    ], { cwd: candidateRoot, env }), pattern);
   };
   const runRejectedContractBuild = async (label, mutate, pattern) => {
-    const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
+    const contract = JSON.parse(await readCandidate("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
     mutate(contract);
     const bytes = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`);
     const contractPath = path.join(workspace, `${label}.json`);
@@ -754,9 +772,9 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     await runRejectedBuild(candidate, pattern);
   };
   const runRejectedCompletenessBuild = async (label, mutate, pattern) => {
-    const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
-    const source = JSON.parse(await readFile(contract.sourceTimetableArtifact.artifactPath, "utf8"));
-    const completeness = JSON.parse(await readFile(contract.sourceTimetableArtifact.completenessEvidencePath, "utf8"));
+    const contract = JSON.parse(await readCandidate("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
+    const source = JSON.parse(await readCandidate(contract.sourceTimetableArtifact.artifactPath, "utf8"));
+    const completeness = JSON.parse(await readCandidate(contract.sourceTimetableArtifact.completenessEvidencePath, "utf8"));
     mutate({ source, completeness, reference: contract.sourceTimetableArtifact });
     const { evidenceHash: ignored, ...withoutEvidenceHash } = completeness;
     completeness.evidenceHash = sha256(Buffer.from(JSON.stringify(withoutEvidenceHash)));
@@ -789,7 +807,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     tampered.networkEdgeEvidence.sourceInventory.sha256 = "f".repeat(64);
     await runRejectedBuild(tampered, /sourceInventory\.sha256 must match tracked input bytes/);
 
-    const overclaimedTopology = JSON.parse(await readFile(
+    const overclaimedTopology = JSON.parse(await readCandidate(
       "tools/datapack/sources/capital-route-topology-20260724.json",
       "utf8",
     ));
@@ -802,7 +820,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     overclaimed.networkEdgeEvidence.capitalTopology.sha256 = sha256(overclaimedTopologyBytes);
     await runRejectedBuild(overclaimed, /capital topology fieldsProvided is invalid/);
 
-    const ungovernedInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+    const ungovernedInventory = JSON.parse(await readCandidate("tools/datapack/source-inventory.json", "utf8"));
     ungovernedInventory.reviewProbe = true;
     const ungovernedBytes = Buffer.from(`${JSON.stringify(ungovernedInventory, null, 2)}\n`);
     const ungovernedPath = path.join(workspace, "ungoverned-source-inventory.json");
@@ -814,7 +832,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     };
     await runRejectedBuild(ungoverned, /network edge source inventory must match buildSpec.sourceInventorySha256/);
 
-    const staleInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+    const staleInventory = JSON.parse(await readCandidate("tools/datapack/source-inventory.json", "utf8"));
     currentCapitalRouteMapTopologyAdmission(staleInventory, spec).freshUntil =
       new Date(Date.parse(spec.publishedAt) - 1).toISOString();
     const staleBytes = Buffer.from(`${JSON.stringify(staleInventory, null, 2)}\n`);
@@ -825,7 +843,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     stale.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(staleInventory)));
     await runRejectedBuild(stale, /capital current topology admission is stale/);
 
-    const futureInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+    const futureInventory = JSON.parse(await readCandidate("tools/datapack/source-inventory.json", "utf8"));
     const futureReviewedAt = new Date(Date.parse(spec.publishedAt) + 1).toISOString();
     currentCapitalRouteMapTopologyAdmission(futureInventory, spec).reviewedAt = futureReviewedAt;
     const futureInventoryBytes = Buffer.from(`${JSON.stringify(futureInventory, null, 2)}\n`);
@@ -841,7 +859,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     futureInventorySpec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(futureInventory)));
     await runRejectedBuild(futureInventorySpec, /capital topology edge admission is future-dated/);
 
-    const earlyInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+    const earlyInventory = JSON.parse(await readCandidate("tools/datapack/source-inventory.json", "utf8"));
     currentCapitalRouteMapTopologyAdmission(earlyInventory, spec).freshUntil = new Date(
       Date.parse(spec.publishedAt) + 30 * 60 * 1000,
     ).toISOString();
@@ -858,7 +876,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
       "tools/datapack/build-datapack.mjs",
       "--build-spec", earlySpecPath,
       "--output", earlyOutputDir,
-    ], { cwd: root, env });
+    ], { cwd: candidateRoot, env });
     const earlyManifest = JSON.parse(await readFile(path.join(earlyOutputDir, "current.json"), "utf8"));
     assert.equal(earlyManifest.expiresAt, new Date(Date.parse(spec.publishedAt) + 30 * 60 * 1000).toISOString());
 
@@ -1030,7 +1048,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     missingInventory.fixturePath = missingInventoryPath;
     await runRejectedBuild(missingInventory, /network edge evidence requires pack.sourceInventory/);
 
-    const changedSource = JSON.parse(await readFile(
+    const changedSource = JSON.parse(await readCandidate(
       "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
       "utf8",
     ));
@@ -1040,7 +1058,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     const changedSourceBytes = Buffer.from(`${JSON.stringify(changedSource, null, 2)}\n`);
     const changedSourcePath = path.join(workspace, "changed-itx-source.json");
     await writeFile(changedSourcePath, changedSourceBytes);
-    const changedContract = JSON.parse(await readFile(
+    const changedContract = JSON.parse(await readCandidate(
       "tools/datapack/itx-cheongchun-coverage-contract.json",
       "utf8",
     ));
