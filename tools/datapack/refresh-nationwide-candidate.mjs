@@ -203,16 +203,21 @@ export function nationwideCandidateRefreshViolations({
   return violations;
 }
 
-// 하위 CLI는 출력 형식이 제각각이다(message만, 또는 console.error(err)의 message + stack frame).
-// stack frame과 Node 종료 배너를 걷어 낸 뒤 "Error: 원인" 줄을 원인으로 쓰고, 없으면 남은 마지막 줄을 그대로 남긴다.
+// 하위 CLI는 출력 형식이 제각각이다(message만, 또는 console.error(err)의 message + own property + cause + stack frame).
+// ANSI 이스케이프·stack frame·Node 종료 배너를 걷어 낸 뒤 남은 줄을 순서대로 ` | `로 잇는다.
+// 여러 줄 메시지·AggregateError 하위 오류·cause 체인이 모두 보이며, 남은 줄이 없으면 호출자가 프로세스 오류를 쓴다.
+const ANSI_ESCAPE = /\u001b\[[0-9;?]*[ -/]*[@-~]/gu;
 const STACK_FRAME_LINE = /^\s+at\s/u;
 const NODE_BANNER_LINE = /^Node\.js v\d/u;
-const ERROR_PREFIX = /^\w*Error: /u;
+const SECRET_QUERY_VALUE = /([\w-]*key)=([^&\s'"|]+)/giu;
+const FAILURE_DETAIL_MAX_LENGTH = 2000;
 function failureDetailFromStderr(stderr) {
-  const lines = String(stderr ?? "").split("\n").map((line) => line.trimEnd()).filter((line) => line.trim() !== "");
-  const meaningful = lines.filter((line) => !STACK_FRAME_LINE.test(line) && !NODE_BANNER_LINE.test(line));
-  const candidates = meaningful.length > 0 ? meaningful : lines;
-  return (candidates.find((line) => ERROR_PREFIX.test(line)) ?? candidates.at(-1))?.replace(ERROR_PREFIX, "").trim();
+  const detail = String(stderr ?? "").replace(ANSI_ESCAPE, "").split("\n")
+    .filter((line) => !STACK_FRAME_LINE.test(line) && !NODE_BANNER_LINE.test(line))
+    .map((line) => line.trim()).filter((line) => line !== "")
+    .join(" | ")
+    .replace(SECRET_QUERY_VALUE, "$1=***");
+  return detail.length > FAILURE_DETAIL_MAX_LENGTH ? detail.slice(-FAILURE_DETAIL_MAX_LENGTH) : detail;
 }
 
 export async function runNodeScript(repositoryRoot, script, args, scriptDirectory = TOOLS) {
