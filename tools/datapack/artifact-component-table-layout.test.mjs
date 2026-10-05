@@ -111,6 +111,22 @@ test("map and catalog projections keep only their owned table and field sets", (
   assert.deepEqual(contract.artifacts.stationCatalogPack.generatedTables, []);
 });
 
+// #957 F6: 앱이 환승 구간 응답에서 같은 키를 만들 수 있도록 키 규칙을 계약에 명문화한다.
+test("transfer_guide_steps 키 규칙은 앱이 경로 결과의 승차 구간에서 만드는 식별자로 고정된다", () => {
+  assert.deepEqual(contract.artifacts.stationCatalogPack.keyRules, {
+    transfer_guide_steps: {
+      station_id: "transfer leg fromStationId (in-station transfer: fromStationId equals toStationId)",
+      from_line_id: "previous ride leg lineId",
+      from_prev_station_id: "previous ride leg stops[stops.length - 2].stationId, the station passed just before alighting",
+      to_line_id: "next ride leg lineId",
+      to_next_station_id: "next ride leg stops[1].stationId, the station after boarding",
+      source_heading_semantics: "source 'X 방면' is the station the train heads to from that platform; to_next_station_id equals the last-step heading station, from_prev_station_id is the other LOCAL neighbor of the first-step heading station",
+      exclusion: "a sequence is not packed when the first-step line has other than exactly two LOCAL neighbors, or any identifier cannot be mapped exactly; exclusions are reported in current.provenance.json derivedTables.transfer_guide_steps",
+      lookup: "WHERE station_id=? AND from_line_id=? AND from_prev_station_id=? AND to_line_id=? AND to_next_station_id=? ORDER BY step_order; no row means no guide, never an estimate",
+    },
+  });
+});
+
 test("route service evidence tables는 server timetable component의 exact references와 ownership을 유지한다", () => {
   const components = contract.serverRouteBundle.components;
   assert.deepEqual(contract.serverRouteBundle.sourceSchema, {

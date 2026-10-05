@@ -443,6 +443,63 @@ test("후보 실측: 키마다 단계 배열이 원천 시퀀스의 이동내용
   assert.ok(trimmedSentences > 0);
 });
 
+// F6: 모든 키에서 방면 규칙 불변식을 실데이터로 단언한다. 이웃 역은 후보 팩의 완행 RIDE 간선에서 테스트가 따로 구한다.
+//  - 첫 단계 방면 역은 출발 노선의 완행 이웃이고 from_prev와 다르며, 이웃은 정확히 둘(prev와 방면 역)이다.
+//  - 마지막 단계 방면 역은 도착 노선의 완행 이웃이고 to_next와 같다.
+test("후보 실측: 모든 키에서 첫 단계 방면 역은 from_prev와 다른 완행 이웃이고 마지막 단계 방면 역이 to_next다", async () => {
+  const { inputs, pack, result } = await candidateRun;
+  const normalize = (name) => name.normalize("NFKC").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
+  const stations = new Map(pack.stations.map((station) => [station.id, station]));
+  const namesOf = (stationId) => {
+    const station = stations.get(stationId);
+    return new Set([station.nameKo, ...(station.nameSub ? [`${station.nameKo}(${station.nameSub})`] : [])].map(normalize));
+  };
+  const neighbors = new Map();
+  for (const edge of pack.networkEdges) {
+    if (edge.edgeType !== "RIDE" || edge.servicePattern !== "LOCAL") continue;
+    const [fromStation, fromLine] = edge.fromNodeId.split(":");
+    const [toStation, toLine] = edge.toNodeId.split(":");
+    if (fromLine !== toLine || fromStation === toStation) continue;
+    for (const [station, other] of [[fromStation, toStation], [toStation, fromStation]]) {
+      neighbors.set(`${station}\0${fromLine}`, new Set([...(neighbors.get(`${station}\0${fromLine}`) ?? []), other]));
+    }
+  }
+  const sourceSequences = [];
+  for (const row of inputs.snapshot.rows) {
+    if (row.CHTN_MV_TP_ORDR === "1" || sourceSequences.length === 0) sourceSequences.push({ station: row.STIN_NM, raw: [], first: row.CHTN_MV_CONT });
+    sourceSequences.at(-1).raw.push(row.MV_CONT_DTL);
+    sourceSequences.at(-1).last = row.CHTN_MV_CONT;
+  }
+  const headingName = (direction) => /^(\S+) (\S+) 방면$/u.exec(direction.trim())?.[2];
+  const neighborNamed = (stationId, lineId, name) => [...(neighbors.get(`${stationId}\0${lineId}`) ?? [])]
+    .filter((neighborId) => namesOf(neighborId).has(normalize(name)));
+  const keys = new Map();
+  for (const row of result.rows) {
+    const key = [row.stationId, row.fromLineId, row.fromPrevStationId, row.toLineId, row.toNextStationId].join("\0");
+    keys.set(key, [...(keys.get(key) ?? []), row]);
+  }
+  assert.ok(keys.size > 0);
+  for (const rows of keys.values()) {
+    const { stationId, fromLineId, fromPrevStationId, toLineId, toNextStationId } = rows[0];
+    const details = rows.map(({ detail }) => detail);
+    const fromNeighbors = neighbors.get(`${stationId}\0${fromLineId}`) ?? new Set();
+    assert.equal(fromNeighbors.size, 2, "출발 노선의 완행 이웃은 정확히 둘이다");
+    assert.ok(fromNeighbors.has(fromPrevStationId), "from_prev는 완행 이웃이다");
+    assert.ok((neighbors.get(`${stationId}\0${toLineId}`) ?? new Set()).has(toNextStationId), "to_next는 도착 노선의 완행 이웃이다");
+    const holds = sourceSequences.filter((sequence) => namesOf(stationId).has(normalize(sequence.station))
+      && sequence.raw.length === details.length && sequence.raw.every((raw, index) => raw.trim() === details[index]))
+      .some((sequence) => {
+        const heading = headingName(sequence.first);
+        const next = headingName(sequence.last);
+        if (!heading || !next) return false;
+        const headings = neighborNamed(stationId, fromLineId, heading);
+        return headings.length === 1 && headings[0] !== fromPrevStationId
+          && neighborNamed(stationId, toLineId, next).includes(toNextStationId);
+      });
+    assert.ok(holds, `방면 불변식 위반: ${JSON.stringify(rows[0])}`);
+  }
+});
+
 test("후보 실측: 고속터미널 9->3, 왕십리 2->5, 사당 2<->4 시퀀스가 원문 그대로 담긴다", async () => {
   const { pack, result } = await candidateRun;
   const names = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
