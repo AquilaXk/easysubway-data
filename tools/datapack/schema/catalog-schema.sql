@@ -82,7 +82,7 @@ CREATE TABLE transfer_guide_steps (
   to_line_id TEXT NOT NULL,
   to_next_station_id TEXT NOT NULL,
   step_order INTEGER NOT NULL CHECK (step_order >= 1),
-  detail TEXT NOT NULL CHECK (detail <> ''),
+  detail TEXT NOT NULL CHECK (length(detail) > 0),
   source_snapshot_id TEXT NOT NULL,
   PRIMARY KEY (station_id, from_line_id, from_prev_station_id, to_line_id, to_next_station_id, step_order),
   FOREIGN KEY (station_id) REFERENCES stations(id),
