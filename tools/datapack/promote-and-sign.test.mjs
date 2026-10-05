@@ -88,16 +88,18 @@ test("서명 키 환경변수가 공백뿐이어도 non-zero로 종료하고 산
   }
 });
 
-test("서명 키가 PEM으로 해석되지 않으면 non-zero로 종료하고 산출물을 쓰지 않는다", () => {
+test("서명 키가 PEM으로 해석되지 않으면 키 값을 노출하지 않고 non-zero로 종료하며 산출물을 쓰지 않는다", () => {
   const work = writeWorkdir();
   try {
     const beforeManifest = readFileSync(work.manifestPath, "utf8");
     const beforeProvenance = readFileSync(work.provenancePath, "utf8");
+    const garbage = "not-a-pem-SECRET-MARKER";
 
-    const result = runPromote(work.dir, { [PRIVATE_KEY_ENV]: "not-a-pem" });
+    const result = runPromote(work.dir, { [PRIVATE_KEY_ENV]: garbage });
 
     assert.notEqual(result.status, 0);
-    assert.notEqual(result.stderr.trim(), "");
+    assert.match(result.stderr, new RegExp(`${PRIVATE_KEY_ENV} is not a valid private key PEM`));
+    assert.doesNotMatch(result.stderr, /SECRET-MARKER/);
     assert.doesNotMatch(result.stdout, /Promoted and signed/);
     assert.equal(readFileSync(work.manifestPath, "utf8"), beforeManifest);
     assert.equal(readFileSync(work.provenancePath, "utf8"), beforeProvenance);
@@ -105,6 +107,31 @@ test("서명 키가 PEM으로 해석되지 않으면 non-zero로 종료하고 �
     rmSync(work.dir, { recursive: true, force: true });
   }
 });
+
+for (const [label, generate, keyType] of [
+  ["EC P-256", () => generateKeyPairSync("ec", { namedCurve: "prime256v1" }), "ec"],
+  ["Ed25519", () => generateKeyPairSync("ed25519"), "ed25519"],
+]) {
+  test(`RSA가 아닌 ${label} 서명 키는 서명 전에 non-zero로 종료하고 산출물을 쓰지 않는다`, () => {
+    const work = writeWorkdir();
+    try {
+      const beforeManifest = readFileSync(work.manifestPath, "utf8");
+      const beforeProvenance = readFileSync(work.provenancePath, "utf8");
+      const privateKeyPem = generate().privateKey.export({ type: "pkcs8", format: "pem" });
+
+      const result = runPromote(work.dir, { [PRIVATE_KEY_ENV]: privateKeyPem });
+
+      assert.notEqual(result.status, 0, `exit ${result.status}\n${result.stdout}`);
+      assert.match(result.stderr, new RegExp(`${PRIVATE_KEY_ENV} must be an RSA private key \\(got ${keyType}\\)`));
+      assert.doesNotMatch(result.stderr, /PRIVATE KEY/);
+      assert.doesNotMatch(result.stdout, /Promoted and signed/);
+      assert.equal(readFileSync(work.manifestPath, "utf8"), beforeManifest);
+      assert.equal(readFileSync(work.provenancePath, "utf8"), beforeProvenance);
+    } finally {
+      rmSync(work.dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test("주입한 서명 키로만 production manifest를 서명한다", () => {
   const work = writeWorkdir();

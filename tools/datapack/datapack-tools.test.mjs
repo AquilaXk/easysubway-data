@@ -1,5 +1,5 @@
 import { gzipSync, gunzipSync } from "node:zlib";
-import { createHash, createSign } from "node:crypto";
+import { createHash, createSign, generateKeyPairSync } from "node:crypto";
 import { rmSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
@@ -16626,6 +16626,31 @@ test("manifest-signing: signingPrivateKey는 env 미설정 시 throw, 설정 시
     assert.throws(() => signingPrivateKey(), /EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM/);
     process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = testPrivateKeyPem;
     assert.equal(signingPrivateKey(), testPrivateKeyPem.trim());
+  } finally {
+    if (savedKey !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = savedKey;
+    else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  }
+});
+
+test("manifest-signing: signingPrivateKey는 RSA가 아닌 키와 PEM이 아닌 값을 키 값 노출 없이 거부한다", async () => {
+  const { signingPrivateKey } = await import("./lib/manifest-signing.mjs");
+  const savedKey = process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  try {
+    for (const [namedCurveOrType, expectedType] of [["ec", "ec"], ["ed25519", "ed25519"]]) {
+      const { privateKey } = namedCurveOrType === "ec"
+        ? generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+        : generateKeyPairSync("ed25519");
+      process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = privateKey.export({ type: "pkcs8", format: "pem" });
+      assert.throws(
+        () => signingPrivateKey(),
+        (error) => error.message.includes(`must be an RSA private key (got ${expectedType})`) && !error.message.includes("PRIVATE KEY"),
+      );
+    }
+    process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = "not-a-pem-SECRET-MARKER";
+    assert.throws(
+      () => signingPrivateKey(),
+      (error) => error.message.includes("is not a valid private key PEM") && !error.message.includes("SECRET-MARKER"),
+    );
   } finally {
     if (savedKey !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = savedKey;
     else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
