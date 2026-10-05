@@ -69,6 +69,12 @@ import {
   validateProductionIncheonTimetableFixture,
 } from "./materialize-incheon-timetable.mjs";
 import { bindStationContacts, loadStationContactInputs } from "./build-station-contacts.mjs";
+import {
+  deriveTransferGuideSteps,
+  loadTransferGuideInputs,
+  transferGuideReport,
+  transferGuideSourceRow,
+} from "./build-transfer-guide-steps.mjs";
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { serviceDayStopTimes } from "./lib/service-day-seconds.mjs";
@@ -414,6 +420,20 @@ export async function main(
     if (artifactKind === "production" && pack.stationContacts == null) {
       const contactsInputs = await loadStationContactInputs({ repositoryRoot: root });
       pack.stationContacts = bindStationContacts({ ...contactsInputs, pack }).rows;
+    }
+    // #957: 국토교통부 환승 이동경로 단계 문장을 원문 그대로 싣는다. 매핑하지 못한 시퀀스는 빼고 provenance 보고에 개수와 목록으로 남긴다.
+    if (artifactKind === "production" && pack.transferGuideSteps == null) {
+      const guideInputs = await loadTransferGuideInputs({ repositoryRoot: root, evaluationAt: candidateBuildNow().toISOString() });
+      const guide = deriveTransferGuideSteps({
+        ...guideInputs,
+        catalog: { stations: pack.stations, lines: pack.lines, stationLines: pack.stationLines },
+        routeEdges: pack.networkEdges ?? [],
+      });
+      pack.transferGuideSteps = guide.rows;
+      pack.transferGuideSources = guide.rows.length === 0
+        ? []
+        : [transferGuideSourceRow({ result: guide, rawSha256: guideInputs.snapshot.rawSha256 })];
+      pack.transferGuideReport = transferGuideReport({ result: guide, rawSha256: guideInputs.snapshot.rawSha256 });
     }
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
     // requiredString은 non-empty 문자열을 강제하고, 검증·경로 파생·매니페스트는 모두 raw packUrl을
@@ -3601,6 +3621,8 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     artifactKind,
     sqliteSha256,
     normalizedSourceInventorySha256: sha256(Buffer.from(JSON.stringify(pack.sourceInventory ?? []))),
+    // #957: 원천 문장을 그대로 실은 파생 표의 원천 스냅샷 결속과 매핑 성공·실패 보고(개수와 제외 목록).
+    ...(pack.transferGuideReport ? { derivedTables: { transfer_guide_steps: pack.transferGuideReport } } : {}),
     records: records.sort((left, right) =>
       codepointCompare(`${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`, `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`),
     ),
@@ -4141,6 +4163,34 @@ export function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissio
           requiredString(row.phone, "stationContacts.phone"),
           requiredString(row.phoneRaw ?? row.phone_raw, "stationContacts.phoneRaw"),
           requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "stationContacts.sourceSnapshotId"),
+        ],
+      );
+      insertRows(
+        database,
+        "transfer_guide_sources",
+        ["source_snapshot_id", "dataset_label", "attribution", "raw_sha256"],
+        pack.transferGuideSources ?? [],
+        (row) => [
+          requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSources.sourceSnapshotId"),
+          requiredString(row.datasetLabel ?? row.dataset_label, "transferGuideSources.datasetLabel"),
+          requiredString(row.attribution, "transferGuideSources.attribution"),
+          requiredString(row.rawSha256 ?? row.raw_sha256, "transferGuideSources.rawSha256"),
+        ],
+      );
+      insertRows(
+        database,
+        "transfer_guide_steps",
+        ["station_id", "from_line_id", "from_prev_station_id", "to_line_id", "to_next_station_id", "step_order", "detail", "source_snapshot_id"],
+        pack.transferGuideSteps ?? [],
+        (row) => [
+          requiredString(row.stationId ?? row.station_id, "transferGuideSteps.stationId"),
+          requiredString(row.fromLineId ?? row.from_line_id, "transferGuideSteps.fromLineId"),
+          requiredString(row.fromPrevStationId ?? row.from_prev_station_id, "transferGuideSteps.fromPrevStationId"),
+          requiredString(row.toLineId ?? row.to_line_id, "transferGuideSteps.toLineId"),
+          requiredString(row.toNextStationId ?? row.to_next_station_id, "transferGuideSteps.toNextStationId"),
+          requiredInteger(row.stepOrder ?? row.step_order, "transferGuideSteps.stepOrder"),
+          requiredString(row.detail, "transferGuideSteps.detail"),
+          requiredString(row.sourceSnapshotId ?? row.source_snapshot_id, "transferGuideSteps.sourceSnapshotId"),
         ],
       );
       insertRows(
