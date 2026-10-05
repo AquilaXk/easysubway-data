@@ -3,6 +3,7 @@
 // - 역 안 환승 간선: 같은 방향의 transfer_rules가 VERIFIED이고, 규칙이 가리키는 station_pathway_edges 행이 공식 원천(OFFICIAL_SOURCE/VERIFIED)이며
 //   그 행의 시간·거리가 간선 값과 같을 때만 그 행의 원천 칸을 싣는다. 경로 행 없는 UNVERIFIED 규칙(역방향 유도값)과 규칙 없는 간선은 UNKNOWN이다.
 // - RIDE 간선: 원천 팩의 network_edges 행이 이미 OFFICIAL_SOURCE/VERIFIED이고 값이 같을 때만 그 칸을 싣는다. 원천 행이 UNKNOWN이거나 없으면 UNKNOWN이다.
+//   RIDE의 VERIFIED는 간선 존재(위상)의 근거이고 소요시간의 근거가 아니다(rideEvidence 주석).
 // - 근거가 있다고 주장하는데 값·원천이 어긋나면 UNKNOWN으로 낮추지 않고 실패한다(손상된 근거를 조용히 덮지 않는다).
 const OFFICIAL = Object.freeze({ provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "VERIFIED" });
 const EVIDENCE_COLUMNS = Object.freeze(["sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash"]);
@@ -49,6 +50,10 @@ function transferEvidence(edge, rulesByDirection, pathwayById) {
   return evidenceOf(pathway);
 }
 
+// 주의(#956 F3): RIDE 간선의 OFFICIAL_SOURCE/VERIFIED는 "두 역이 이 노선에서 이어진다"는 위상(간선 존재)의 공식 근거다.
+// 소요시간 근거가 아니다. 수도권 간선의 duration_seconds는 원천이 주지 않아 생성값(fieldProvenance GENERATED, 대부분 0초)이고,
+// 실제 승차 시간은 시간표 컴포넌트가 따로 가진다. 값 비교는 같은 팩에서 나온 두 행이 어긋나지 않았는지 보는 정합 검사일 뿐이며,
+// 소비자는 RIDE VERIFIED를 이동 시간의 검증으로 읽으면 안 된다. 역 안 환승의 VERIFIED는 시간·거리 값 자체의 공식 근거라 다르다.
 function rideEvidence(edge, source) {
   if (!source || (source.provenanceKind === "UNKNOWN" && source.verificationStatus === "UNKNOWN")) return null;
   if (source.provenanceKind !== OFFICIAL.provenanceKind || source.verificationStatus !== OFFICIAL.verificationStatus) {
