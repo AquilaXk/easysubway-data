@@ -47,7 +47,7 @@ import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-m
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
-import { candidatePinnedWorkspace, candidateWorkspacePath } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
 stageLocalMobileFixture({ repositoryRoot: root });
 const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
 const TEST_ACCESSIBILITY_SNAPSHOT_ID = "test-only-capital-accessibility-fixture-20260809";
@@ -260,16 +260,8 @@ const currentProductionBuildEnv = {
 let currentReleaseCandidateArtifactPromise = null;
 
 // #942: 커밋된 후보의 production 빌드 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천만 등록한 PR에서도 같은 결과).
-let candidateRootPromise;
-function currentCandidateRoot() {
-  candidateRootPromise ??= candidatePinnedWorkspace().then(({ root: candidateRoot }) => candidateRoot);
-  return candidateRootPromise;
-}
-
-// #954: 현재 ITX·Incheon 후보 빌드 입력은 후보가 고정한 바이트로 읽는다(원천 갱신 PR이 바꾼 작업 트리 inventory·canonical pack과 섞지 않는다).
-async function readCandidateFile(relative, encoding) {
-  return readFile(candidateWorkspacePath(await currentCandidateRoot(), relative), encoding);
-}
+// #954: 현재 ITX·Incheon 후보 빌드 입력도 같은 작업 공간에서 읽는다(원천 갱신 PR이 바꾼 작업 트리 inventory·canonical pack과 섞지 않는다).
+const { root: currentCandidateRoot, read: readCandidateFile } = candidateWorkspaceAccess();
 
 async function currentReleaseCandidateArtifact() {
   currentReleaseCandidateArtifactPromise ??= (async () => {

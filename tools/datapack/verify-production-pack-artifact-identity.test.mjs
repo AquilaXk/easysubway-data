@@ -10,7 +10,7 @@ import test from "node:test";
 import { gunzipSync } from "node:zlib";
 import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 import { verifyProductionPackArtifactIntegrity } from "./verify-production-pack-artifact-identity.mjs";
-import { candidatePinnedWorkspace, candidateWorkspacePath } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -36,14 +36,7 @@ const DEPLOYED_EVIDENCE_PATH = path.join(root, "tools/datapack/itx-cheongchun-to
 
 // #954: 후보 빌드 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천 갱신 PR이 바꾼 작업 트리와 섞지 않는다).
 // 고정 입력이 작업 트리와 모두 같으면 저장소 루트를 그대로 쓴다. 프로세스당 한 번만 만든다.
-let candidateRootPromise;
-function currentCandidateRoot() {
-  candidateRootPromise ??= candidatePinnedWorkspace().then(({ root: candidateRoot }) => candidateRoot);
-  return candidateRootPromise;
-}
-async function readCandidate(relative, encoding) {
-  return readFile(candidateWorkspacePath(await currentCandidateRoot(), relative), encoding);
-}
+const { root: currentCandidateRoot, read: readCandidate } = candidateWorkspaceAccess();
 
 function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
   const snapshotId = spec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId;

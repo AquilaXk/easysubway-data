@@ -109,3 +109,14 @@ export async function candidatePinnedWorkspace({ root = ROOT, env = process.env,
     cleanup: async () => { process.removeListener("exit", remove); remove(); },
   };
 }
+
+/**
+ * 테스트 파일이 프로세스당 한 번만 후보 작업 공간을 만들고 거기서 상대 경로로 읽게 한다(#954).
+ * root()는 작업 공간 루트, read(relative, encoding)는 작업 공간 안의 저장소 상대 경로를 읽는다.
+ */
+export function candidateWorkspaceAccess() {
+  let rootPromise;
+  const root = () => (rootPromise ??= candidatePinnedWorkspace().then(({ root: candidateRoot }) => candidateRoot));
+  const read = async (relative, encoding) => readFile(candidateWorkspacePath(await root(), relative), encoding);
+  return { root, read };
+}
