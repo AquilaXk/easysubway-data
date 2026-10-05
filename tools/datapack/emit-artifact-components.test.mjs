@@ -26,6 +26,7 @@ import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./current-capital-station-line-contract.mjs";
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL, emitArtifactComponents, insertTransferStairEvidence, nationwideTopologyEdgeStairColumns, populateNationwideTopologyEdges, projectTransferStairAccess, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
 import { loadTransferStairAccessInputs } from "./build-transfer-stair-access.mjs";
+import { summarizeBundleEdgeProvenance } from "./lib/bundle-edge-provenance.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -515,6 +516,41 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       ...expectedEvidence("transfer-t-sadang-t-2-t-4", [["t-bangbae", "t-chongshin"], ["t-bangbae", "t-namtaeryeong"], ["t-nakseongdae", "t-chongshin"], ["t-nakseongdae", "t-namtaeryeong"]]),
       ...expectedEvidence("transfer-t-sadang-t-4-t-2", [["t-chongshin", "t-bangbae"], ["t-chongshin", "t-nakseongdae"], ["t-namtaeryeong", "t-bangbae"], ["t-namtaeryeong", "t-nakseongdae"]]),
     ]);
+    // #951: 원천 팩에 공식 환승 경로 행·VERIFIED 규칙이 있는 방향만 번들 간선에 공식 출처가 실리고, 경로 행 없는 UNVERIFIED 규칙 방향과
+    // 원천이 UNKNOWN인 RIDE 간선은 UNKNOWN으로 남는다. 원천 근거가 있다고 하면서 값이 다르면 빌드가 실패한다.
+    {
+      const transferSource = "seoul-metro-transfer-car-door-duration";
+      const snapshot = "seoul-metro-transfer-car-door-duration-20261001T000000000Z";
+      applySourceSql(`INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('pn-t-2','t-sadang','t-2','PLATFORM','2호선 승강장'),('pn-t-4','t-sadang','t-4','PLATFORM','4호선 승강장');
+        INSERT INTO station_pathway_edges(id,from_node_id,to_node_id,edge_type,duration_seconds,distance_meters,source_id,source_snapshot_id,provider_record_hash,provenance_kind,verification_status,last_verified_at,evidence_hash) VALUES('pw-t-2-4','pn-t-2','pn-t-4','WALK',120,150,'${transferSource}','${snapshot}','${"a".repeat(64)}','OFFICIAL_SOURCE','VERIFIED',1790872404,'${"b".repeat(64)}');
+        INSERT INTO transfer_rules(id,from_station_id,from_line_id,to_station_id,to_line_id,transfer_type,min_transfer_seconds,pathway_edge_id,strict_step_free_pathway_edge_id,source_id,verification_status) VALUES('rule-t-2-4','t-sadang','t-2','t-sadang','t-4','IN_STATION',120,'pw-t-2-4',NULL,'${transferSource}','VERIFIED'),('rule-t-4-2','t-sadang','t-4','t-sadang','t-2','IN_STATION',120,NULL,NULL,'${transferSource}','UNVERIFIED');
+        INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class,source_id,source_snapshot_id,provider_record_hash,provenance_kind,verification_status,last_verified_at,evidence_hash) VALUES('ride-t-bangbae-t-sadang','t-bangbae:t-2','t-sadang:t-2',90,900,'RIDE','LOCAL','SUBWAY','capital-route-topology','capital-route-topology-20261004','${"c".repeat(64)}','OFFICIAL_SOURCE','VERIFIED',1791123877,'${"d".repeat(64)}')`);
+      await writeBindings(temp, source, current, spec);
+      await run("transfer-edge-provenance", transferInputs);
+      await writeFile(path.join(temp, "provenance-topology.sqlite"), zstdDecompressSync(await readFile(path.join(temp, "transfer-edge-provenance/server-route-bundle/payload/topology.sqlite.zst"))));
+      const provenanceTopology = new DatabaseSync(path.join(temp, "provenance-topology.sqlite"), { readOnly: true });
+      const edgeRows = provenanceTopology.prepare("SELECT id, edge_type, duration_seconds, distance_meters, source_id, source_snapshot_id, provider_record_hash, provenance_kind, verification_status, last_verified_at, evidence_hash FROM network_edges WHERE id IN ('transfer-t-sadang-t-2-t-4','transfer-t-sadang-t-4-t-2','ride-t-bangbae-t-sadang','ride-t-sadang-t-bangbae') ORDER BY id").all().map((row) => ({ ...row }));
+      assert.deepEqual(edgeRows, [
+        { id: "ride-t-bangbae-t-sadang", edge_type: "RIDE", duration_seconds: 90, distance_meters: 900, source_id: "capital-route-topology", source_snapshot_id: "capital-route-topology-20261004", provider_record_hash: "c".repeat(64), provenance_kind: "OFFICIAL_SOURCE", verification_status: "VERIFIED", last_verified_at: 1791123877, evidence_hash: "d".repeat(64) },
+        { id: "ride-t-sadang-t-bangbae", edge_type: "RIDE", duration_seconds: 90, distance_meters: 900, source_id: "", source_snapshot_id: "", provider_record_hash: "", provenance_kind: "UNKNOWN", verification_status: "UNKNOWN", last_verified_at: null, evidence_hash: "" },
+        { id: "transfer-t-sadang-t-2-t-4", edge_type: "IN_STATION_TRANSFER", duration_seconds: 120, distance_meters: 150, source_id: transferSource, source_snapshot_id: snapshot, provider_record_hash: "a".repeat(64), provenance_kind: "OFFICIAL_SOURCE", verification_status: "VERIFIED", last_verified_at: 1790872404, evidence_hash: "b".repeat(64) },
+        { id: "transfer-t-sadang-t-4-t-2", edge_type: "IN_STATION_TRANSFER", duration_seconds: 120, distance_meters: 150, source_id: "", source_snapshot_id: "", provider_record_hash: "", provenance_kind: "UNKNOWN", verification_status: "UNKNOWN", last_verified_at: null, evidence_hash: "" },
+      ]);
+      // 출처·상태별 집계 표: 공식 확인 2건(RIDE 1, 환승 1), UNKNOWN은 나머지 전부다. 값은 그대로 두고 출처 칸만 다르다.
+      const table = summarizeBundleEdgeProvenance(provenanceTopology.prepare("SELECT edge_type AS edgeType, provenance_kind AS provenanceKind, verification_status AS verificationStatus, source_id AS sourceId FROM network_edges").all().map((row) => ({ ...row })));
+      assert.deepEqual(table.filter(({ provenanceKind }) => provenanceKind === "OFFICIAL_SOURCE"), [
+        { edgeType: "IN_STATION_TRANSFER", provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "VERIFIED", sourceId: transferSource, count: 1 },
+        { edgeType: "RIDE", provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "VERIFIED", sourceId: "capital-route-topology", count: 1 },
+      ]);
+      assert.ok(table.filter(({ provenanceKind }) => provenanceKind === "UNKNOWN").every(({ verificationStatus, sourceId }) => verificationStatus === "UNKNOWN" && sourceId === ""));
+      provenanceTopology.close();
+      applySourceSql("UPDATE station_pathway_edges SET duration_seconds=121 WHERE id='pw-t-2-4'");
+      await writeBindings(temp, source, current, spec);
+      await assert.rejects(() => run("transfer-edge-provenance-mismatch", transferInputs), /transfer pathway edge value does not match route edge: transfer-t-sadang-t-2-t-4/);
+      assert.equal(await exists(path.join(temp, "transfer-edge-provenance-mismatch")), false);
+      applySourceSql("UPDATE station_pathway_edges SET duration_seconds=120 WHERE id='pw-t-2-4'");
+      await writeBindings(temp, source, current, spec);
+    }
     // 한 조합의 원천 경로가 없으면 그 간선은 UNKNOWN이고 근거 행도 없다.
     await run("transfer-stair-combo-missing", { ...transferInputs, transferStairAccess: { ...transferInputs.transferStairAccess,
       snapshot: { ...transferInputs.transferStairAccess.snapshot, rows: molitRows.slice(6) } } });
@@ -525,6 +561,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       { id: "transfer-t-sadang-t-4-t-2", stair_access_state: "STEP_FREE" },
     ]);
     partial.close();
+    applySourceSql("DELETE FROM network_edges WHERE id='ride-t-bangbae-t-sadang'; DELETE FROM transfer_rules WHERE id LIKE 'rule-t-%'; DELETE FROM station_pathway_edges WHERE id LIKE 'pw-t-%'; DELETE FROM station_pathway_nodes WHERE id LIKE 'pn-t-%'");
     applySourceSql("DELETE FROM station_lines WHERE line_id IN ('t-2','t-4'); DELETE FROM stations WHERE id LIKE 't-%'; DELETE FROM lines WHERE id IN ('t-2','t-4')");
     await writeBindings(temp, source, current, spec);
   }

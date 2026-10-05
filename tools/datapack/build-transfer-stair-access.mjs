@@ -87,10 +87,8 @@ export const TRANSFER_STEP_VOCABULARY = Object.freeze([
   ]),
 ]);
 const LEVEL_DEVICE_KINDS = new Set(["ELEVATOR", "LIFT", "ESCALATOR", "STAIRS"]);
-// 층 표기가 없으면 층을 알 수 없는 위치가 되는 단계와, 층 표기가 내리는 층인 승강 설비 규칙.
-const POSITION_KINDS = new Set(["ALIGHT", "LEVEL_MOVE", "PLATFORM_ENDPOINT"]);
+// 층 표기가 내리는 층인 승강 설비 규칙.
 const DESTINATION_LABEL_RULES = new Set(["ELEVATOR_EXIT", "ELEVATOR_MOVE"]);
-const UNKNOWN_FLOOR = "?";
 const STEP_PREFIX = /^\s*(\d+)\)\s*/u;
 const FLOOR_TOKEN = /\((B\d+|BM|\d+F|F\d+)\)|(지하|지상)? ?(\d+)층/gu;
 
@@ -551,43 +549,34 @@ function normalizeStationName(value) {
   return String(value ?? "").normalize("NFKC").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
-// 경로 단계 판정: 막는 단계·어휘 밖 문구·층 판단 실패가 하나도 없을 때만 계단 없는 경로다(#944 리뷰 F2).
+// 경로 단계 판정: 막는 단계·어휘 밖 문구·층 모순이 하나도 없을 때만 계단 없는 경로다(#944 리뷰 F2).
+// 계단 여부는 층 숫자가 아니라 층을 바꾸는 수단으로 판정하고, 층 번호는 모순 검사에만 쓴다(#946 메인 결정).
+// - 원천 문구는 층이 바뀔 때만 층을 적는다. 층 표기 없는 단계는 직전 층(승강 설비 뒤라면 설비 도착 층)에 그대로 있는 것으로 보고 층을 관찰하지 않는다.
+// - 첫 단계에 층이 없으면 이후 처음 나오는 명시 층이 시작 층이다. 승강 설비 뒤에는 처음 나오는 명시 층이 설비 도착 층이다.
 // - 승강 설비 단계 한 번은 그 뒤 층 변화 한 번만 덮는다. 층이 바뀌면 덮개를 쓴다.
 // - 엘리베이터 탑승·위치 단계의 층 표기는 타는 층이라 덮개보다 먼저 보고, 하차·이동 단계의 층 표기는 내리는 층이라 덮개 뒤에 본다.
-// - 하차·장소 이동·승강장 도착 단계에 층 표기가 없으면 층을 알 수 없는 위치로 본다. 그 앞뒤로 층이 바뀌었을 수 있으므로
-//   덮개가 있어야 하고, 없으면 FLOOR_UNDETERMINED다.
+// - 두 명시 층이 다른데 사이에 덮개가 없으면 FLOOR_CHANGE_WITHOUT_LIFT다. 계단·에스컬레이터·경사 등 층 변화 단계와 어휘 밖 문구는 층과 무관하게 막힌다.
 function evaluatePathSteps(rows, context) {
   const reasons = new Set();
-  let started = false;
   let floor = null;
   let covered = false;
   const observe = (observed) => {
-    if (!started) {
-      started = true;
-      floor = observed;
-      return;
-    }
-    if (observed === UNKNOWN_FLOOR || floor === UNKNOWN_FLOOR) {
-      if (covered) covered = false;
-      else reasons.add("FLOOR_UNDETERMINED");
-    } else if (observed !== floor) {
-      if (covered) covered = false;
-      else reasons.add("FLOOR_CHANGE_WITHOUT_LIFT");
-    }
+    if (floor !== null && observed !== floor && !covered) reasons.add("FLOOR_CHANGE_WITHOUT_LIFT");
+    // 승강 설비 뒤 처음 나오는 명시 층이 설비 도착 층이다. 같은 층이든 다른 층이든 덮개는 여기서 끝난다(#958 F1).
+    covered = false;
     floor = observed;
   };
   for (const [index, row] of rows.entries()) {
     const step = classifyTransferStep(row.MV_CONT_DTL, context);
     if (step.effect === "BLOCKING") reasons.add(step.kind === "UNRECOGNIZED" ? "STEP_WORDING_UNRECOGNIZED" : step.kind);
     if (step.kind === "PLATFORM_ENDPOINT" && index !== 0 && index !== rows.length - 1) reasons.add("STEP_WORDING_UNRECOGNIZED");
-    const observations = step.floors.length > 0 ? step.floors : (POSITION_KINDS.has(step.kind) ? [UNKNOWN_FLOOR] : []);
     if (!LEVEL_DEVICE_KINDS.has(step.kind)) {
-      observations.forEach(observe);
+      step.floors.forEach(observe);
     } else if (DESTINATION_LABEL_RULES.has(step.ruleId)) {
       covered = true;
-      observations.forEach(observe);
+      step.floors.forEach(observe);
     } else {
-      observations.forEach(observe);
+      step.floors.forEach(observe);
       covered = true;
     }
   }
