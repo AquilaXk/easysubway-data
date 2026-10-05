@@ -576,6 +576,27 @@ test("#946 승강 설비 뒤 층 표기 없는 단계는 설비 도착 층을 �
     { state: "UNKNOWN", reasons: ["STAIRS"] });
 });
 
+test("#946 리뷰 F1·F2 승강 설비는 뒤에 처음 나오는 명시 층에서 덮개를 항상 쓰고, 그다음 설비 없는 층 변화는 막는다", () => {
+  const verdict = (steps) => {
+    const rows = sadangRows({ steps: ({ line }) => (line === "2호선" ? steps : ELEVATOR_STEPS) });
+    const edge = edgeState(derive({ rows }), EDGE_2_4);
+    return { state: edge.state, reasons: [...new Set(edge.combos.flatMap(({ blockingReasons }) => blockingReasons))].sort() };
+  };
+  const changeWithoutLift = { state: "UNKNOWN", reasons: ["FLOOR_CHANGE_WITHOUT_LIFT"] };
+  // 리뷰 probe 1: 층 표기 없는 설비(앞에 명시 층 없음) 뒤 첫 명시 층 B2, 이어서 설비 없이 B1.
+  assert.deepEqual(ninthVerdict(() => ["엘리베이터 탑승", "(B2) 대합실로 이동", "(B1) 승강장으로 이동"]), changeWithoutLift);
+  // 같은 경로를 출발 층 B2가 적힌 하차 단계로 시작해도 같다(설비가 같은 층 B2에 도착).
+  assert.deepEqual(verdict(["엘리베이터 탑승", "(B2) 대합실로 이동", "(B1) 승강장으로 이동"]), changeWithoutLift);
+  // 리뷰 probe 2: 같은 층(B2)에 도착하는 설비 뒤 B3로 설비 없이 바뀐다.
+  assert.deepEqual(verdict(["엘리베이터 탑승", "(B2) 대합실로 이동", "(B3) 승강장으로 이동"]), changeWithoutLift);
+  // 첫 단계에 층이 없는 경로: 설비, 첫 명시 층(B2), 설비 없이 B1.
+  assert.deepEqual(ninthVerdict(() => ["엘리베이터 이용", "지하 2층으로 이동", "지하 1층으로 이동"]), changeWithoutLift);
+  // 도착 층 표기 있는 하차형 설비도 같다: 하차(B2)가 도착 층이고 그 뒤 층 변화는 새 설비가 필요하다.
+  assert.deepEqual(verdict(["승강장 방향 엘리베이터로 이동", "(B2) 엘리베이터 하차", "(B1) 승강장으로 이동"]), changeWithoutLift);
+  // 설비를 한 번 더 타면 다음 층 변화를 덮는다(정상 경로는 그대로 STEP_FREE).
+  assert.deepEqual(verdict(["엘리베이터 탑승", "(B2) 대합실로 이동", "엘리베이터 탑승", "(B1) 승강장으로 이동"]), { state: "STEP_FREE", reasons: [] });
+});
+
 test("#946 이어받은 층과 다른 층이 뒤에서 명시되는데 사이에 무단차 수단이 없으면 FLOOR_CHANGE_WITHOUT_LIFT다", () => {
   const verdict = (steps) => {
     const result = derive({ rows: sadangRows({ steps: ({ line }) => (line === "2호선" ? steps : ELEVATOR_STEPS) }) });

@@ -561,10 +561,9 @@ function evaluatePathSteps(rows, context) {
   let floor = null;
   let covered = false;
   const observe = (observed) => {
-    if (floor !== null && observed !== floor) {
-      if (covered) covered = false;
-      else reasons.add("FLOOR_CHANGE_WITHOUT_LIFT");
-    }
+    if (floor !== null && observed !== floor && !covered) reasons.add("FLOOR_CHANGE_WITHOUT_LIFT");
+    // 승강 설비 뒤 처음 나오는 명시 층이 설비 도착 층이다. 같은 층이든 다른 층이든 덮개는 여기서 끝난다(#958 F1).
+    covered = false;
     floor = observed;
   };
   for (const [index, row] of rows.entries()) {
