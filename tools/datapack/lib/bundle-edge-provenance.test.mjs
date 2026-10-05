@@ -99,11 +99,15 @@ test("원천에서 이미 공식 확인된 RIDE 간선만 그 출처를 싣고 �
   assert.equal(edge.sourceId, "capital-route-topology");
   assert.equal(edge.sourceSnapshotId, "capital-route-topology-20261004");
   assert.equal(edge.lastVerifiedAt, 1791123877);
-  for (const mismatch of [{ durationSeconds: 120 }, { distanceMeters: 5 }, { toNodeId: "s3:l1" }, { servicePattern: "EXPRESS" }, { serviceClass: "ITX_CHEONGCHUN" }, { edgeType: "WALKWAY" }]) {
+  for (const mismatch of [{ durationSeconds: 120 }, { distanceMeters: 5 }, { fromNodeId: "s3:l1" }, { toNodeId: "s3:l1" }, { servicePattern: "EXPRESS" }, { serviceClass: "ITX_CHEONGCHUN" }, { edgeType: "WALKWAY" }]) {
     assert.throws(() => derive({ routeEdges: [rideEdge()], sourceEdges: [sourceRide(mismatch)] }), /source network edge value does not match route edge: edge-l1-s1-s2/);
   }
   assert.throws(() => derive({ routeEdges: [rideEdge()], sourceEdges: [sourceRide({ provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "NOT_VERIFIED" })] }), /source network edge provenance is not supported: edge-l1-s1-s2/);
   assert.throws(() => derive({ routeEdges: [rideEdge()], sourceEdges: [sourceRide({ providerRecordHash: "" })] }), /source network edge evidence is incomplete: edge-l1-s1-s2/);
+  // 출처와 검증 상태가 섞인 원천 행은 UNKNOWN으로 조용히 낮추지 않고 실패한다(#956 F1).
+  for (const mixed of [{ provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "UNKNOWN" }, { provenanceKind: "UNKNOWN", verificationStatus: "VERIFIED" }]) {
+    assert.throws(() => derive({ routeEdges: [rideEdge()], sourceEdges: [sourceRide(mixed)] }), /source network edge provenance is not supported: edge-l1-s1-s2/);
+  }
 });
 
 test("원천 근거가 없는 RIDE 간선과 환승·RIDE 밖 간선은 UNKNOWN으로 남고 값은 그대로다", () => {
@@ -148,7 +152,10 @@ test("번들 불변식은 근거 없는 VERIFIED·원천 없는 출처·규칙�
   reject([verified({ verificationStatus: "UNKNOWN" })], [ruleRow()], /edge provenance pair is not supported: transfer-s1-l1-l2/);
   reject([verified({ providerRecordHash: "" })], [ruleRow()], /VERIFIED edge evidence is incomplete: transfer-s1-l1-l2/);
   reject([verified({ lastVerifiedAt: null })], [ruleRow()], /VERIFIED edge evidence is incomplete: transfer-s1-l1-l2/);
-  reject([unknown({ sourceId: "leaked-source" })], [ruleRow({ verificationStatus: "UNVERIFIED" })], /UNKNOWN edge must not carry source evidence: transfer-s1-l1-l2/);
+  // UNKNOWN 간선은 증거 칸이 하나라도 새면 거부한다(#956 F1): 칸마다 따로 확인한다.
+  for (const leak of [{ sourceId: "leaked-source" }, { sourceSnapshotId: "leaked-snapshot" }, { providerRecordHash: HASH_A }, { evidenceHash: HASH_B }, { lastVerifiedAt: 1790872404 }]) {
+    reject([unknown(leak)], [ruleRow({ verificationStatus: "UNVERIFIED" })], /UNKNOWN edge must not carry source evidence: transfer-s1-l1-l2/);
+  }
   reject([verified()], [], /VERIFIED transfer edge has no VERIFIED rule: transfer-s1-l1-l2/);
   reject([verified()], [ruleRow({ verificationStatus: "UNVERIFIED" })], /VERIFIED transfer edge has no VERIFIED rule: transfer-s1-l1-l2/);
   reject([verified()], [ruleRow({ sourceId: "other" })], /VERIFIED transfer edge source does not match rule: transfer-s1-l1-l2/);
