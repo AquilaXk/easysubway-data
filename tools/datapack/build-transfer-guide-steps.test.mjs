@@ -411,6 +411,38 @@ test("후보 실측: 담은 문장은 모두 원천 이동내용상세를 앞뒤
   }
 });
 
+// F5: 문장 단위 집합 포함이 아니라 시퀀스 단위로 비교한다. 키마다 단계 배열이 원천 시퀀스의 trim 결과와 순서까지 정확히 같아야 한다.
+// 원천 시퀀스는 테스트가 따로 묶는다(운영 코드의 묶기를 쓰지 않는다): 단계 번호 1이 새 시퀀스를 연다.
+test("후보 실측: 키마다 단계 배열이 원천 시퀀스의 이동내용상세를 trim한 결과와 순서까지 정확히 같다", async () => {
+  const { inputs, pack, result } = await candidateRun;
+  const sourceSequences = [];
+  for (const row of inputs.snapshot.rows) {
+    if (row.CHTN_MV_TP_ORDR === "1" || sourceSequences.length === 0) sourceSequences.push({ station: row.STIN_NM, raw: [] });
+    sourceSequences.at(-1).raw.push(row.MV_CONT_DTL);
+  }
+  const normalize = (name) => name.normalize("NFKC").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
+  const stations = new Map(pack.stations.map((station) => [station.id, station]));
+  const keys = new Map();
+  for (const row of result.rows) {
+    const key = [row.stationId, row.fromLineId, row.fromPrevStationId, row.toLineId, row.toNextStationId].join("\0");
+    keys.set(key, [...(keys.get(key) ?? []), row]);
+  }
+  assert.equal(keys.size, result.summary.mappedSequenceCount);
+  let trimmedSentences = 0;
+  for (const rows of keys.values()) {
+    assert.deepEqual(rows.map(({ stepOrder }) => stepOrder), rows.map((_, index) => index + 1));
+    const station = stations.get(rows[0].stationId);
+    const names = new Set([station.nameKo, ...(station.nameSub ? [`${station.nameKo}(${station.nameSub})`] : [])].map(normalize));
+    const details = rows.map(({ detail }) => detail);
+    const source = sourceSequences.find((sequence) => names.has(normalize(sequence.station))
+      && sequence.raw.length === details.length && sequence.raw.every((raw, index) => raw.trim() === details[index]));
+    assert.ok(source, `no source sequence equals ${JSON.stringify(details)}`);
+    trimmedSentences += source.raw.filter((raw, index) => raw !== details[index]).length;
+  }
+  // 앞뒤 공백이 있던 원천 문장이 실제로 있어 trim-only 규칙이 이 테스트에서 실행된다.
+  assert.ok(trimmedSentences > 0);
+});
+
 test("후보 실측: 고속터미널 9->3, 왕십리 2->5, 사당 2<->4 시퀀스가 원문 그대로 담긴다", async () => {
   const { pack, result } = await candidateRun;
   const names = new Map(pack.stations.map(({ id, nameKo }) => [id, nameKo]));
