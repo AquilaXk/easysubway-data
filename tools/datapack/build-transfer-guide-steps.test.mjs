@@ -250,6 +250,46 @@ test("RED11 입력 계약: 스냅샷 정체성·원천 id가 다르면 실패한
     /route edges are required/);
 });
 
+// 노선 토큰 가드(F1): 실데이터 사례를 fixture로 고정한다.
+// 4호선 고잔은 첫 단계 방면 표기가 수인분당선으로 나온다(후보 실측 FROM_LINE_MISMATCH 4건).
+const GOJAN_CATALOG = catalogOf({
+  stations: [["s-gojan", "고잔"], ["s-choji", "초지"], ["s-jungang", "중앙"]],
+  lines: [["l-4", "수도권 4호선"], ["l-su", "수도권 수인분당"]],
+  memberships: [["s-gojan", "l-4"], ["s-choji", "l-4"], ["s-jungang", "l-4"], ["s-gojan", "l-su"], ["s-choji", "l-su"], ["s-jungang", "l-su"]],
+});
+const GOJAN_EDGES = [
+  ...both("s-choji", "s-gojan", "l-4"), ...both("s-gojan", "s-jungang", "l-4"),
+  ...both("s-choji", "s-gojan", "l-su"), ...both("s-gojan", "s-jungang", "l-su"),
+];
+const KORAIL = "KR(한국철도공사)";
+
+test("RED12 첫 단계 방면 노선 표기가 행의 노선과 다르면 FROM_LINE_MISMATCH로 제외한다(4호선 고잔의 수인분당선 표기)", () => {
+  const rows = sourceRows({
+    operator: KORAIL, line: "4호선", station: "고잔", from: "수인분당선 중앙 방면", to: "4호선 중앙 방면",
+    details: ["1) 수인분당선 중앙 방면 승강장 하차", "2) 4호선 중앙 방면 승강장으로 이동", "3) 승차"],
+  });
+  const result = derive({ rows, catalog: GOJAN_CATALOG, routeEdges: GOJAN_EDGES });
+  assert.equal(result.rows.length, 0);
+  assert.deepEqual(result.summary.excludedByReason, { FROM_LINE_MISMATCH: 1 });
+  assert.deepEqual(result.excludedSequences.map(({ providerStationName, reason }) => `${providerStationName}:${reason}`), ["고잔:FROM_LINE_MISMATCH"]);
+});
+
+test("RED13 마지막 단계 방면 노선 표기가 출발 노선과 같거나 표에 없으면 TO_LINE_UNRESOLVED로 제외한다", () => {
+  const sameLine = sourceRows({
+    line: "2호선", station: "사당", from: "2호선 방배 방면", to: "2호선 낙성대 방면",
+    details: ["1) 2호선 방배 방면 승강장 하차", "2) 2호선 낙성대 방면 승강장으로 이동", "3) 승차"],
+  });
+  const unknownToken = sourceRows({
+    line: "2호선", station: "사당", from: "2호선 방배 방면", to: "없는선 총신대입구 방면",
+    details: ["1) 2호선 방배 방면 승강장 하차", "2) 없는선 총신대입구 방면 승강장으로 이동", "3) 승차"],
+  });
+  for (const rows of [sameLine, unknownToken]) {
+    const result = derive({ rows, catalog: SADANG_CATALOG, routeEdges: SADANG_EDGES });
+    assert.equal(result.rows.length, 0);
+    assert.deepEqual(result.summary.excludedByReason, { TO_LINE_UNRESOLVED: 1 });
+  }
+});
+
 // 후보 실데이터: #943 고정 입력 설계를 따른다. MOLIT 스냅샷은 후보가 고정한 바이트(작업 트리와 다르면 공개 경로에서 받아 sha 확인)로 읽고,
 // 전국 후보 팩은 커밋된 후보 산출물에서 읽는다.
 const EVALUATION_AT = "2026-10-06T00:00:00.000Z";
