@@ -6,6 +6,7 @@
 // - 근거가 있다고 주장하는데 값·원천이 어긋나면 UNKNOWN으로 낮추지 않고 실패한다(손상된 근거를 조용히 덮지 않는다).
 const OFFICIAL = Object.freeze({ provenanceKind: "OFFICIAL_SOURCE", verificationStatus: "VERIFIED" });
 const EVIDENCE_COLUMNS = Object.freeze(["sourceId", "sourceSnapshotId", "providerRecordHash", "evidenceHash"]);
+const SHA256_HEX = /^[0-9a-f]{64}$/u;
 const ROUTE_VALUE_COLUMNS = Object.freeze(["fromNodeId", "toNodeId", "durationSeconds", "distanceMeters", "edgeType", "servicePattern", "serviceClass"]);
 
 export function deriveBundleEdgeProvenance({ routeEdges, sourceEdges, transferRules, pathwayEdges }) {
@@ -78,8 +79,10 @@ export function assertBundleEdgeProvenanceInvariants({ edges, transferRules }) {
     if (unknown) {
       const hasEvidence = EVIDENCE_COLUMNS.some((column) => (edge[column] ?? "") !== "") || (edge.lastVerifiedAt ?? null) !== null;
       if (hasEvidence) throw new Error(`UNKNOWN edge must not carry source evidence: ${edge.id}`);
-    } else if (!completeEvidence(edge)) {
-      throw new Error(`VERIFIED edge evidence is incomplete: ${edge.id}`);
+    } else {
+      if (!completeEvidence(edge)) throw new Error(`VERIFIED edge evidence is incomplete: ${edge.id}`);
+      // 스냅샷 id는 그 간선의 원천 id로 시작한다(다른 원천의 스냅샷을 가리키는 근거를 거부한다).
+      if (!edge.sourceSnapshotId.startsWith(`${edge.sourceId}-`)) throw new Error(`VERIFIED edge source snapshot does not belong to its source: ${edge.id}`);
     }
     if (edge.edgeType !== "IN_STATION_TRANSFER") continue;
     const from = endpoint(edge.fromNodeId);
@@ -132,6 +135,7 @@ function evidenceOf(row) {
 
 function completeEvidence(row) {
   return EVIDENCE_COLUMNS.every((column) => typeof row[column] === "string" && row[column] !== "")
+    && SHA256_HEX.test(row.providerRecordHash) && SHA256_HEX.test(row.evidenceHash)
     && Number.isSafeInteger(row.lastVerifiedAt) && row.lastVerifiedAt > 0;
 }
 

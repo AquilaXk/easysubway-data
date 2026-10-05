@@ -355,12 +355,14 @@ test("F4 FINAL은 환승 계단 근거 표와 topology STEP_FREE 간선·MOLIT s
 // #951: FINAL은 topology 간선의 출처·검증 상태 칸이 서로 모순되면(근거 없는 VERIFIED, 원천이 새는 UNKNOWN, 규칙과 어긋난 환승) fail closed한다.
 test("#951 FINAL은 topology 간선 출처 칸과 transfer_rules가 모순되면 fail closed한다", async (t) => {
   const edge = (id, type, from, to, columns) => `INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,edge_type,includes_stairs,stair_access_state,source_id,source_snapshot_id,provider_record_hash,provenance_kind,verification_status,last_verified_at,evidence_hash) VALUES('${id}','${from}','${to}',120,'${type}',0,'UNKNOWN',${columns})`;
-  const official = "'seoul-metro-transfer-car-door-duration','snapshot-1','" + "a".repeat(64) + "','OFFICIAL_SOURCE','VERIFIED',1790872404,'" + "b".repeat(64) + "'";
+  const official = "'seoul-metro-transfer-car-door-duration','seoul-metro-transfer-car-door-duration-snap1','" + "a".repeat(64) + "','OFFICIAL_SOURCE','VERIFIED',1790872404,'" + "b".repeat(64) + "'";
   const unknown = "'','','','UNKNOWN','UNKNOWN',NULL,''";
   const rule = (status, seconds = 120) => `INSERT INTO transfer_rules VALUES('rule-1','station-a','line-1','station-a','line-2',${seconds},'seoul-metro-transfer-car-door-duration','${status}')`;
   const transfer = (columns) => edge("transfer-1", "IN_STATION_TRANSFER", "station-a:line-1", "station-a:line-2", columns);
   for (const [name, sql, pattern] of [
     ["unsupported-pair", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", "'x','y','" + "a".repeat(64) + "','OFFICIAL_SOURCE','UNKNOWN',1790872404,'" + "b".repeat(64) + "'"), /edge provenance pair is not supported: ride-1/],
+    ["verified-edge-malformed-hash", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", official.replace("'" + "a".repeat(64) + "'", "'not-a-hash'")), /VERIFIED edge evidence is incomplete: ride-1/],
+    ["verified-edge-snapshot-of-other-source", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", official.replace("'seoul-metro-transfer-car-door-duration-snap1'", "'capital-route-topology-20261004'")), /VERIFIED edge source snapshot does not belong to its source: ride-1/],
     ["verified-edge-without-hash", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", official.replace("'" + "a".repeat(64) + "'", "''")), /VERIFIED edge evidence is incomplete: ride-1/],
     ["unknown-edge-with-source", edge("ride-1", "RIDE", "station-a:line-1", "station-b:line-1", unknown.replace("'',", "'leaked-source',")), /UNKNOWN edge must not carry source evidence: ride-1/],
     ["verified-transfer-without-rule", transfer(official), /VERIFIED transfer edge has no VERIFIED rule: transfer-1/],

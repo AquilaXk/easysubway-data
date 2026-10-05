@@ -152,6 +152,14 @@ test("번들 불변식은 근거 없는 VERIFIED·원천 없는 출처·규칙�
   reject([verified({ verificationStatus: "UNKNOWN" })], [ruleRow()], /edge provenance pair is not supported: transfer-s1-l1-l2/);
   reject([verified({ providerRecordHash: "" })], [ruleRow()], /VERIFIED edge evidence is incomplete: transfer-s1-l1-l2/);
   reject([verified({ lastVerifiedAt: null })], [ruleRow()], /VERIFIED edge evidence is incomplete: transfer-s1-l1-l2/);
+  // #956 F2: 증거 hash는 64자 소문자 hex이고, 스냅샷 id는 그 간선의 원천 id로 시작하며, RIDE도 원천 id가 있어야 한다.
+  const rideVerified = (overrides = {}) => verified({ id: "edge-r", edgeType: "RIDE", fromNodeId: "s1:l1", toNodeId: "s2:l1", sourceId: "capital-route-topology", sourceSnapshotId: "capital-route-topology-20261004", ...overrides });
+  assert.doesNotThrow(() => assertBundleEdgeProvenanceInvariants({ edges: [rideVerified()], transferRules: [] }));
+  for (const bad of [{ providerRecordHash: "not-a-hash" }, { providerRecordHash: "A".repeat(64) }, { evidenceHash: "b".repeat(63) }, { evidenceHash: `${"b".repeat(63)}g` }]) {
+    reject([rideVerified(bad)], [], /VERIFIED edge evidence is incomplete: edge-r/);
+  }
+  reject([rideVerified({ sourceId: "" })], [], /VERIFIED edge evidence is incomplete: edge-r/);
+  reject([rideVerified({ sourceSnapshotId: "incheon-transit-station-info-20261004" })], [], /VERIFIED edge source snapshot does not belong to its source: edge-r/);
   // UNKNOWN 간선은 증거 칸이 하나라도 새면 거부한다(#956 F1): 칸마다 따로 확인한다.
   for (const leak of [{ sourceId: "leaked-source" }, { sourceSnapshotId: "leaked-snapshot" }, { providerRecordHash: HASH_A }, { evidenceHash: HASH_B }, { lastVerifiedAt: 1790872404 }]) {
     reject([unknown(leak)], [ruleRow({ verificationStatus: "UNVERIFIED" })], /UNKNOWN edge must not carry source evidence: transfer-s1-l1-l2/);
