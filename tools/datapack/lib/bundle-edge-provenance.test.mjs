@@ -223,6 +223,54 @@ test("커밋된 전국 후보의 역 안 환승 간선은 규칙이 VERIFIED인 
   assert.ok(summary.every(({ sourceId, provenanceKind, verificationStatus }) => sourceId === "" ? provenanceKind === "UNKNOWN" && verificationStatus === "UNKNOWN" : provenanceKind === "OFFICIAL_SOURCE" && verificationStatus === "VERIFIED"));
 });
 
+// #956 F5: RIDE도 커밋된 후보 fixture에서 CI가 재현한다. fixture 팩의 RIDE 행은 build-datapack의 수도권·ITX 근거 적용 전이라
+// 공식 확인 행이 인천 역 정보 것뿐이다. 수도권·ITX까지 더한 실후보 분할(1,602 / 580)은 후보 재현 단계에서 확인하고, 여기서는
+// "원천 행이 공식 확인인 RIDE만 그 출처를 싣고 나머지는 UNKNOWN"이라는 분할 규칙을 fixture 값으로 건다. 숫자는 fixture에서 유도한다.
+test("커밋된 전국 후보의 RIDE 간선은 원천 팩 행이 공식 확인인 것만 출처를 싣고 나머지는 UNKNOWN이다", async () => {
+  const preparation = JSON.parse(await readFile("tools/datapack/release/nationwide-candidate-preparation.json", "utf8"));
+  const [fixture, routeInput] = await Promise.all([
+    readFile(JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8")).fixturePath, "utf8").then(JSON.parse),
+    readFile(preparation.routeEdgeInput.path, "utf8").then(JSON.parse),
+  ]);
+  const pack = fixture.packs.find(({ id }) => id === fixture.manifest.activePack.id);
+  const rideEdges = routeInput.routeEdges.filter(({ edgeType }) => edgeType === "RIDE");
+  const sourceEdges = pack.networkEdges.filter(({ edgeType }) => edgeType === "RIDE").map((row) => ({
+    id: row.id, fromNodeId: row.fromNodeId, toNodeId: row.toNodeId, durationSeconds: row.durationSeconds ?? 0, distanceMeters: row.distanceMeters ?? 0,
+    edgeType: row.edgeType, servicePattern: row.servicePattern ?? "LOCAL", serviceClass: row.serviceClass ?? "SUBWAY",
+    sourceId: row.sourceId ?? "", sourceSnapshotId: row.sourceSnapshotId ?? "", providerRecordHash: row.providerRecordHash ?? "",
+    provenanceKind: row.provenanceKind ?? "UNKNOWN", verificationStatus: row.verificationStatus ?? "UNKNOWN",
+    lastVerifiedAt: row.lastVerifiedAt ? Math.floor(Date.parse(row.lastVerifiedAt) / 1000) : null, evidenceHash: row.evidenceHash ?? "",
+  }));
+  assert.equal(sourceEdges.length, rideEdges.length);
+  const official = new Map(sourceEdges.filter(({ verificationStatus }) => verificationStatus === "VERIFIED").map((row) => [row.id, row]));
+  assert.ok(official.size > 0 && official.size < rideEdges.length, "fixture must contain both official and unbacked RIDE rows");
+  const derived = deriveBundleEdgeProvenance({ routeEdges: rideEdges, sourceEdges, transferRules: [], pathwayEdges: [] });
+  assert.equal(derived.length, rideEdges.length);
+  for (const edge of derived) {
+    const source = official.get(edge.edgeId);
+    if (source) {
+      assert.equal(edge.provenanceKind, "OFFICIAL_SOURCE");
+      assert.equal(edge.verificationStatus, "VERIFIED");
+      assert.equal(edge.sourceId, source.sourceId);
+      assert.equal(edge.sourceSnapshotId, source.sourceSnapshotId);
+    } else {
+      assert.equal(edge.provenanceKind ?? "UNKNOWN", "UNKNOWN");
+      assert.equal(edge.sourceId ?? "", "");
+    }
+  }
+  const rows = derived.map((edge) => ({ edgeType: edge.edgeType, provenanceKind: edge.provenanceKind ?? "UNKNOWN", verificationStatus: edge.verificationStatus ?? "UNKNOWN", sourceId: edge.sourceId ?? "" }));
+  const summary = summarizeBundleEdgeProvenance(rows);
+  assert.equal(summary.filter(({ verificationStatus }) => verificationStatus === "VERIFIED").reduce((sum, { count }) => sum + count, 0), official.size);
+  assert.equal(summary.reduce((sum, { count }) => sum + count, 0), rideEdges.length);
+  // 번들 불변식(증거 칸 형식·스냅샷-원천 소속)도 fixture의 공식 확인 행이 그대로 통과한다.
+  assert.doesNotThrow(() => assertBundleEdgeProvenanceInvariants({
+    edges: derived.map((edge) => ({ id: edge.edgeId, edgeType: edge.edgeType, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId, durationSeconds: edge.durationSeconds,
+      sourceId: edge.sourceId ?? "", sourceSnapshotId: edge.sourceSnapshotId ?? "", providerRecordHash: edge.providerRecordHash ?? "", provenanceKind: edge.provenanceKind ?? "UNKNOWN",
+      verificationStatus: edge.verificationStatus ?? "UNKNOWN", lastVerifiedAt: edge.lastVerifiedAt ?? null, evidenceHash: edge.evidenceHash ?? "" })),
+    transferRules: [],
+  }));
+});
+
 test("번들 topology SQLite 행으로도 같은 불변식을 확인한다", () => {
   const db = new DatabaseSync(":memory:");
   try {
