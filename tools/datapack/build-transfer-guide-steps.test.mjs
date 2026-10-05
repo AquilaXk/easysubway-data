@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { buildSqlitePack } from "./build-datapack.mjs";
 import {
+  TRANSFER_GUIDE_PRODUCTION_USE_SCOPE,
   TRANSFER_GUIDE_SOURCE_ID,
   deriveTransferGuideSteps,
   loadTransferGuideInputs,
@@ -290,9 +291,80 @@ test("RED13 마지막 단계 방면 노선 표기가 출발 노선과 같거나 
   }
 });
 
+const EVALUATION_AT = "2026-10-06T00:00:00.000Z";
+
+// F4: 모바일 데이터팩에 싣는 원천은 QA 승인 기록(productionUseAdmission)이 있어야 한다. 기록이 없으면 소비자가 실패한다.
+const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
+const GUIDE_INPUT_FILES = [
+  "tools/datapack/source-inventory.json",
+  "tools/datapack/source-candidates.json",
+  "release/product-gates/datapack-freshness-sla.json",
+  "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+  "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz",
+  "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",
+];
+
+async function guideInputRoot(mutateCandidates) {
+  const root = await mkdtemp(path.join(tmpdir(), "transfer-guide-admission-"));
+  for (const relative of GUIDE_INPUT_FILES) {
+    await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    await cp(path.join(REPO_ROOT, relative), path.join(root, relative));
+  }
+  if (mutateCandidates) {
+    const candidatesPath = path.join(root, "tools/datapack/source-candidates.json");
+    const document = JSON.parse(await readFile(candidatesPath, "utf8"));
+    mutateCandidates(document.candidates.find(({ id }) => id === TRANSFER_GUIDE_SOURCE_ID));
+    await writeFile(candidatesPath, JSON.stringify(document));
+  }
+  return root;
+}
+
+test("RED14 MOLIT 후보에 환승 안내 단계의 QA 승인 기록이 있고 mobileEmbeddingAllowed는 그대로다", async () => {
+  const candidates = JSON.parse(await readFile(path.join(REPO_ROOT, "tools/datapack/source-candidates.json"), "utf8")).candidates
+    .filter(({ id }) => id === TRANSFER_GUIDE_SOURCE_ID);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].mobileEmbeddingAllowed, false);
+  const admission = candidates[0].evidence.productionUseAdmission;
+  assert.equal(admission.artifactKind, "source-production-use-admission");
+  assert.equal(admission.issue, 957);
+  assert.equal(admission.decisionRef, "https://github.com/AquilaXk/easysubway-data/issues/957");
+  assert.equal(admission.decision, "APPROVED");
+  assert.equal(admission.approvedBy, "QA");
+  assert.equal(admission.approvedAt, "2026-10-05");
+  assert.equal(admission.scope, "MOBILE_DATAPACK_TRANSFER_GUIDE_STEPS");
+  assert.equal(admission.scope, TRANSFER_GUIDE_PRODUCTION_USE_SCOPE);
+  assert.equal(admission.productionUseAllowed, true);
+  assert.equal(admission.consumer, "tools/datapack/build-transfer-guide-steps.mjs");
+  assert.match(admission.rationale, /국토부·KRIC 환승 단계 문장을 최대한 그대로 사용자에게 보여 준다/u);
+});
+
+test("RED15 승인 기록이 없거나 범위·소비자·결정이 다르면 입력 읽기가 실패한다", async () => {
+  const cases = {
+    "기록 없음": (candidate) => { delete candidate.evidence.productionUseAdmission; },
+    "결정이 APPROVED가 아님": (candidate) => { candidate.evidence.productionUseAdmission.decision = "PENDING"; },
+    "productionUseAllowed가 false": (candidate) => { candidate.evidence.productionUseAdmission.productionUseAllowed = false; },
+    "범위 불일치": (candidate) => { candidate.evidence.productionUseAdmission.scope = "SERVER_ROUTE_BUNDLE_STATION_ELEVATOR_PATH"; },
+    "소비자 불일치": (candidate) => { candidate.evidence.productionUseAdmission.consumer = "tools/datapack/build-station-contacts.mjs"; },
+  };
+  for (const [label, mutate] of Object.entries(cases)) {
+    const root = await guideInputRoot(mutate);
+    try {
+      await assert.rejects(loadTransferGuideInputs({ repositoryRoot: root, evaluationAt: EVALUATION_AT }), /source is not admitted for transfer guide steps: molit-railway-transfer-movement/u, label);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+  const root = await guideInputRoot();
+  try {
+    const inputs = await loadTransferGuideInputs({ repositoryRoot: root, evaluationAt: EVALUATION_AT });
+    assert.equal(inputs.snapshot.snapshotId, SNAPSHOT_ID);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 // 후보 실데이터: #943 고정 입력 설계를 따른다. MOLIT 스냅샷은 후보가 고정한 바이트(작업 트리와 다르면 공개 경로에서 받아 sha 확인)로 읽고,
 // 전국 후보 팩은 커밋된 후보 산출물에서 읽는다.
-const EVALUATION_AT = "2026-10-06T00:00:00.000Z";
 const candidateRun = (async () => {
   const workspace = await candidatePinnedWorkspace();
   try {

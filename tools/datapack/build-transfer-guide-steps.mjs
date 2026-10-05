@@ -21,14 +21,32 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 export const TRANSFER_GUIDE_SOURCE_ID = MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID;
 export const TRANSFER_GUIDE_DATASET_LABEL = "국토교통부 철도역 환승 이동경로";
+export const TRANSFER_GUIDE_PRODUCTION_USE_SCOPE = "MOBILE_DATAPACK_TRANSFER_GUIDE_STEPS";
+export const TRANSFER_GUIDE_CONSUMER = "tools/datapack/build-transfer-guide-steps.mjs";
 export const TRANSFER_GUIDE_ATTRIBUTION = "국토교통부 철도역 환승 이동경로(공공데이터포털 15130556)";
 const REQUIRED_LOCAL_NEIGHBORS = 2;
 const STEP_PREFIX = /^\s*(\d+)\)\s*/u;
 
 // 운영 빌드 입력: #944와 같은 검증(승인 상태·gzip hash·행 재현·신선도 정책)으로 잠긴 MOLIT 스냅샷을 읽는다.
+// 모바일 데이터팩에 싣는 원천이라 QA 승인 기록(productionUseAdmission)이 먼저 있어야 한다. 없으면 입력을 읽지 않고 실패한다.
 export async function loadTransferGuideInputs({ repositoryRoot, evaluationAt }) {
+  if (typeof repositoryRoot !== "string" || repositoryRoot === "") throw new Error("repository root is required");
+  const candidates = JSON.parse(await readFile(path.join(path.resolve(repositoryRoot), "tools/datapack/source-candidates.json"), "utf8"));
+  assertProductionUseAdmission(candidates, TRANSFER_GUIDE_SOURCE_ID);
   const { snapshot, providerCodeCatalog, freshUntil } = await loadTransferStairAccessInputs({ repositoryRoot, evaluationAt });
   return { snapshot, providerCodeCatalog, freshUntil };
+}
+
+function assertProductionUseAdmission(candidatesDocument, sourceId) {
+  const matches = (candidatesDocument?.candidates ?? []).filter(({ id }) => id === sourceId);
+  const admission = matches[0]?.evidence?.productionUseAdmission;
+  if (matches.length !== 1
+    || admission?.decision !== "APPROVED"
+    || admission.productionUseAllowed !== true
+    || admission.scope !== TRANSFER_GUIDE_PRODUCTION_USE_SCOPE
+    || admission.consumer !== TRANSFER_GUIDE_CONSUMER) {
+    throw new Error(`source is not admitted for transfer guide steps: ${sourceId}`);
+  }
 }
 
 export function deriveTransferGuideSteps({ snapshot, providerCodeCatalog, catalog, routeEdges }) {

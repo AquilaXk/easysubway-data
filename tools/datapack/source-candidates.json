@@ -8607,7 +8607,37 @@
         "licenseText": "이용허락범위 제한 없음",
         "currentDatasetVersion": "20260811",
         "currentRowCount": 8094,
-        "currentOperationVerifiedAt": "2026-10-01"
+        "currentOperationVerifiedAt": "2026-10-01",
+        "productionUseAdmission": {
+          "artifactKind": "source-production-use-admission",
+          "issue": 957,
+          "decisionRef": "https://github.com/AquilaXk/easysubway-data/issues/957",
+          "decision": "APPROVED",
+          "approvedBy": "QA",
+          "approvedAt": "2026-10-05",
+          "scope": "MOBILE_DATAPACK_TRANSFER_GUIDE_STEPS",
+          "productionUseAllowed": true,
+          "consumer": "tools/datapack/build-transfer-guide-steps.mjs",
+          "evidenceManifest": "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",
+          "rationale": "QA 지시(2026-10-05, 이슈 #957 배경): 국토부·KRIC 환승 단계 문장을 최대한 그대로 사용자에게 보여 준다. 앱이 덧붙이는 문구는 넣지 않고, 모든 기준은 실 사용 서비스다. 국토교통부 철도역 환승 이동경로(15130556)의 단계 문장(이동내용상세)을 앞뒤 공백 정리 외에 바꾸지 않고 모바일 데이터팩 transfer_guide_steps 표에 싣기 위해 운영 사용으로 승격한다. mobileEmbeddingAllowed는 false로 그대로 두고, 이 기록이 그 예외의 범위와 소비자를 한정한다.",
+          "relationToExistingSources": "#944 build-transfer-stair-access가 같은 스냅샷을 서버 번들의 계단 판정에만 쓴다. 이 기록은 모바일 데이터팩의 단계 문장 적재에만 적용한다. 역·노선·방면 매핑은 #944의 TRANSFER_STAIR_LINE_TABLE과 KRIC 코드 카탈로그만 쓰고, 내부 식별자로 매핑하지 못한 시퀀스는 싣지 않고 provenance 보고에 개수와 목록으로 남긴다. KRIC 환승 이동 상세(provider:kric-transfer-movement-detailed)는 이 기록의 범위 밖이다.",
+          "fieldMapping": {
+            "RAIL_OPR_ISTT_CD·LN_NM·STIN_NM": "transfer_guide_steps.station_id 및 from_line_id 매핑 키(운영기관·노선·역 정확 일치, 이름 유사도 매칭 없음)",
+            "CHTN_MV_CONT(첫 단계)": "transfer_guide_steps.from_prev_station_id (방면 역의 반대편 완행 이웃)",
+            "CHTN_MV_CONT(마지막 단계)": "transfer_guide_steps.to_line_id·to_next_station_id (방면 역)",
+            "CHTN_MV_TP_ORDR": "transfer_guide_steps.step_order",
+            "MV_CONT_DTL": "transfer_guide_steps.detail (앞뒤 공백 정리 외 변형 없음)"
+          },
+          "license": {
+            "usePermissionRange": "이용허락범위 제한 없음",
+            "attribution": "출처: 국토교통부 철도역 환승 이동경로(공공데이터포털 15130556)",
+            "attributionLocation": "모바일 데이터팩 transfer_guide_sources.attribution과 행의 source_snapshot_id, 이 admission 기록. 사용자 화면의 출처 표기 위치는 이 기록에서 정하지 않는다."
+          },
+          "quota": {
+            "selfImposedCallLimit": "NONE",
+            "collectionCadence": "커밋된 스냅샷(molit-railway-transfer-movement-20260811)을 읽는다. 갱신은 원천 갱신 절차를 따른다."
+          }
+        }
       },
       "rawSnapshotAdmission": { "snapshotId": "molit-railway-transfer-movement-20260811", "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json", "metadataFileSha256": "e59ad302178f583ca959be87f04dc387eb08f781bb5a0a24648549299883f150", "rawSha256": "8f9a448e1601bc49dd370de5af0d7ab8884d930131e05f8fc9773445bded16f8", "gzipSha256": "d509b22ec20e770e1e55853feae88721741a91a8d3ee85eaae27b44455ed3ef5", "rowCount": 8094, "status": "LOCKED" }
     },
