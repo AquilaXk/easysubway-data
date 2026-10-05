@@ -15,6 +15,7 @@ import {
   deriveSeoulMeasuredTransferMetrics,
   readStationCodeCatalogRows,
 } from "./build-seoul-measured-transfer-metrics.mjs";
+import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 // #876 표본: 15098252 원문 CP949 바이트에서 고른 13행(collect-seoul-metro-transfer-car-door-duration.test.mjs와 같은 표본).
@@ -133,8 +134,10 @@ test("한 방향이 두 번 결정되거나 행 번호가 중복되면 NO_GO다"
 });
 
 test("커밋된 실측 환승 지표는 inventory admission snapshot으로 다시 만든 결과와 바이트가 같다", async () => {
-  const inputsFromRepo = await readSeoulMeasuredTransferMetricsInputs({ repositoryRoot: root });
-  const committed = await readFile(path.join(root, SEOUL_MEASURED_TRANSFER_METRICS_PATH));
+  // #954: 후보가 고정한 입력과 그 입력에서 만든 커밋 지표를 비교한다. 원천 갱신 PR이 바꾼 작업 트리 입력과 비교하지 않는다.
+  const read = await candidatePinnedReader();
+  const inputsFromRepo = await readSeoulMeasuredTransferMetricsInputs({ read });
+  const committed = await read(SEOUL_MEASURED_TRANSFER_METRICS_PATH);
   assert.equal(Buffer.from(canonicalSeoulMeasuredTransferMetricsJson(buildSeoulMeasuredTransferMetrics(inputsFromRepo))).equals(committed), true);
   const artifact = JSON.parse(committed);
   // 2026-09-02 원천(1,024행): 매핑 1,017행 → 263방향·105역, 고정 제외 7행, 빈 시간 4행(모두 다른 행이 있는 방향), 사용 불가 방향 0.
