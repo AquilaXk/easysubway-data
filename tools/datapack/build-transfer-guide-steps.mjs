@@ -13,10 +13,17 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { partitionMolitTransferTuples } from "./build-accessibility-source-coverage-report.mjs";
-import { TRANSFER_STAIR_LINE_TABLE, loadTransferStairAccessInputs } from "./build-transfer-stair-access.mjs";
+import { loadTransferStairAccessInputs } from "./build-transfer-stair-access.mjs";
 import { MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID } from "./collect-molit-railway-transfer-movement.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import {
+  directionStation,
+  localNeighbors,
+  mapProviderTuples,
+  parseDirection,
+  resolveTableLines,
+  tupleKey,
+} from "./lib/transfer-direction.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 export const TRANSFER_GUIDE_SOURCE_ID = MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID;
@@ -171,40 +178,6 @@ function trimmed(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function resolveTableLines(lines) {
-  const resolved = [];
-  for (const entry of TRANSFER_STAIR_LINE_TABLE) {
-    const matches = lines.filter(({ nameKo }) => nameKo === entry.lineName);
-    if (matches.length > 1) throw new Error(`transfer guide line table name is ambiguous: ${entry.lineName}`);
-    if (matches.length === 1) resolved.push({ ...entry, lineId: matches[0].id });
-  }
-  return resolved;
-}
-
-function localNeighbors(routeEdges) {
-  const neighbors = new Map();
-  const add = (stationId, lineId, other) => {
-    const key = `${stationId}\0${lineId}`;
-    const set = neighbors.get(key) ?? new Set();
-    set.add(other);
-    neighbors.set(key, set);
-  };
-  for (const edge of routeEdges) {
-    if (edge.edgeType !== "RIDE" || edge.servicePattern !== "LOCAL") continue;
-    const from = splitNode(edge.fromNodeId);
-    const to = splitNode(edge.toNodeId);
-    if (!from || !to || from.lineId !== to.lineId || from.stationId === to.stationId) continue;
-    add(from.stationId, from.lineId, to.stationId);
-    add(to.stationId, to.lineId, from.stationId);
-  }
-  return neighbors;
-}
-
-function splitNode(nodeId) {
-  const parts = String(nodeId).split(":");
-  return parts.length === 2 && parts.every(Boolean) ? { stationId: parts[0], lineId: parts[1] } : null;
-}
-
 // 원천 행을 시퀀스(1단계부터 다음 1단계 전까지)로 묶는다. 한 시퀀스는 같은 운영기관·노선·역이고 단계 번호가 1..n이며 문장이 비지 않아야 한다.
 function groupSequences(rows) {
   const groups = [];
@@ -238,58 +211,6 @@ function groupSequences(rows) {
   });
 }
 
-function tupleKey(row) {
-  return `${row.RAIL_OPR_ISTT_CD}\0${row.LN_NM}\0${row.STIN_NM}`;
-}
-
-function subNamed(station) {
-  return typeof station.nameSub === "string" && station.nameSub !== "" ? [`${station.nameKo}(${station.nameSub})`] : [];
-}
-
-// 원천 (운영기관·노선·역) 묶음을 기존 partitionMolitTransferTuples로 정본 역-노선에 잇는다.
-function mapProviderTuples({ rows, providerCodeCatalog, catalog, stations, tableLines }) {
-  const stationLines = [];
-  for (const entry of tableLines) {
-    const catalogLines = entry.providerLines.map(({ railOprIsttCd, lnCd }) => {
-      const matches = providerCodeCatalog.providerLines.filter((providerLine) =>
-        providerLine.railOprIsttCd === railOprIsttCd && providerLine.lnCd === lnCd);
-      if (matches.length !== 1) throw new Error(`transfer guide line table provider line is not in the KRIC catalog: ${railOprIsttCd}/${lnCd}`);
-      return matches[0];
-    });
-    for (const { stationId, lineId } of catalog.stationLines.filter(({ lineId }) => lineId === entry.lineId)) {
-      const station = stations.get(stationId);
-      if (!station) throw new Error(`transfer guide station is missing: ${stationId}`);
-      for (const catalogLine of catalogLines) {
-        stationLines.push({
-          stationId,
-          stationName: station.nameKo,
-          stationAliases: subNamed(station),
-          lineId,
-          lineName: catalogLine.lineName,
-          operatorId: catalogLine.railOprIsttCd,
-          operatorName: catalogLine.operatorName,
-        });
-      }
-    }
-  }
-  const partition = partitionMolitTransferTuples({
-    artifacts: [{ artifactId: "transfer-guide-steps", stationLines }],
-    rows,
-    providerCodeCatalog,
-  });
-  const mapping = new Map();
-  const keyOf = (entry) => `${entry.providerOperatorCode}(${entry.providerOperatorName})\0${entry.providerLineName}\0${entry.providerStationName}`;
-  for (const entry of partition.joined) {
-    const [match] = entry.mappings;
-    mapping.set(keyOf(entry), { stationId: match.stationId, lineId: match.lineId });
-  }
-  for (const entry of [...partition.unmatched, ...partition.ambiguous]) mapping.set(keyOf(entry), { reason: entry.reason });
-  for (const row of rows) {
-    if (!mapping.has(tupleKey(row))) throw new Error("MOLIT transfer tuple partition is incomplete");
-  }
-  return mapping;
-}
-
 function resolveKey({ entry, mapping, stations, linesAtStation, tableLines, neighbors }) {
   const from = parseDirection(entry.rows[0].CHTN_MV_CONT);
   const to = parseDirection(entry.rows.at(-1).CHTN_MV_CONT);
@@ -302,8 +223,8 @@ function resolveKey({ entry, mapping, stations, linesAtStation, tableLines, neig
   if (fromLines.length !== 1 || fromLines[0] !== mapping.lineId) return { reason: "FROM_LINE_MISMATCH" };
   const toLines = linesForToken(to.lineToken);
   if (toLines.length !== 1 || toLines[0] === mapping.lineId) return { reason: "TO_LINE_UNRESOLVED" };
-  const fromHeading = neighborByName(mapping.stationId, mapping.lineId, from.stationName, stations, neighbors);
-  const toNext = neighborByName(mapping.stationId, toLines[0], to.stationName, stations, neighbors);
+  const fromHeading = directionStation(mapping.stationId, mapping.lineId, from.stationName, stations, neighbors);
+  const toNext = directionStation(mapping.stationId, toLines[0], to.stationName, stations, neighbors);
   if (!fromHeading || !toNext) return { reason: "DIRECTION_NAME_UNRESOLVED" };
   const fromNeighbors = [...(neighbors.get(`${mapping.stationId}\0${mapping.lineId}`) ?? [])];
   if (fromNeighbors.length !== REQUIRED_LOCAL_NEIGHBORS) return { reason: "FROM_ARRIVAL_AMBIGUOUS" };
@@ -315,25 +236,6 @@ function resolveKey({ entry, mapping, stations, linesAtStation, tableLines, neig
     toLineId: toLines[0],
     toNextStationId: toNext,
   };
-}
-
-function parseDirection(value) {
-  const match = /^(\S+) (\S+) 방면$/u.exec(trimmed(value));
-  return match ? { lineToken: match[1], stationName: match[2] } : null;
-}
-
-function neighborByName(stationId, lineId, name, stations, neighbors) {
-  const wanted = normalizeStationName(name);
-  const matches = [...(neighbors.get(`${stationId}\0${lineId}`) ?? [])].filter((neighborId) => {
-    const neighbor = stations.get(neighborId);
-    return neighbor && [neighbor.nameKo, ...subNamed(neighbor)].some((candidate) => normalizeStationName(candidate) === wanted);
-  });
-  return matches.length === 1 ? matches[0] : null;
-}
-
-// partitionMolitTransferTuples·#944와 같은 역명 정규화(NFKC, 끝의 "역", 문자·숫자 외 제거)다.
-function normalizeStationName(value) {
-  return String(value ?? "").normalize("NFKC").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function countBy(values, keyOf) {
