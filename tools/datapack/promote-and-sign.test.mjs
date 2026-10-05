@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -156,23 +156,65 @@ test("주입한 서명 키로만 production manifest를 서명한다", () => {
   }
 });
 
-function nonTestSourceFiles(directory) {
-  const files = [];
-  for (const entry of readdirSync(directory)) {
-    if (entry === "node_modules" || entry === "fixtures") continue;
-    const entryPath = path.join(directory, entry);
-    if (statSync(entryPath).isDirectory()) {
-      files.push(...nonTestSourceFiles(entryPath));
-    } else if (/\.(mjs|js|cjs)$/.test(entry) && !/\.test\.(mjs|js|cjs)$/.test(entry)) {
-      files.push(entryPath);
-    }
-  }
-  return files;
+const PRIVATE_KEY_LITERAL = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+
+// 비공개키 리터럴 가드에서 제외하는 파일. 경로마다 사유를 적고, 가드 테스트가 목록이 낡지 않았는지(여전히 추적되고
+// 실제로 리터럴을 담고 있는지) 함께 확인한다.
+const PRIVATE_KEY_LITERAL_ALLOWLIST = new Map([
+  ["tools/datapack/datapack-tools.test.mjs", "서명 라이브러리 테스트 전용 RSA fixture 키(운영 키와 무관, 지문 불일치)"],
+]);
+
+function findPrivateKeyLiterals(repoRoot, allowlist) {
+  const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, maxBuffer: 256 * 1024 * 1024 })
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean);
+  return tracked
+    .filter((relativePath) => !allowlist.has(relativePath))
+    .filter((relativePath) => PRIVATE_KEY_LITERAL.test(readFileSync(path.join(repoRoot, relativePath), "latin1")))
+    .sort();
 }
 
-test("tools 프로덕션 코드에는 비공개키 리터럴이 없다", () => {
-  const offenders = nonTestSourceFiles(toolsRoot).filter((file) =>
-    /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/.test(readFileSync(file, "utf8")),
-  );
-  assert.deepEqual(offenders.map((file) => path.relative(toolsRoot, file)), []);
+function temporaryGitRepo(files) {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "private-key-guard-"));
+  for (const [relativePath, content] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(repoRoot, relativePath)), { recursive: true });
+    writeFileSync(path.join(repoRoot, relativePath), content);
+  }
+  execFileSync("git", ["init", "-q"], { cwd: repoRoot });
+  execFileSync("git", ["add", "-A"], { cwd: repoRoot });
+  return repoRoot;
+}
+
+// 가드가 이 파일을 리터럴로 오탐하지 않도록 헤더를 조립한다.
+const pemHeader = `${"-----BEGIN "}${"PRIVATE KEY-----"}\nZmFrZQ==\n`;
+
+test("비공개키 리터럴 가드는 확장자와 무관하게 추적 파일 전체에서 리터럴을 찾는다", () => {
+  const repoRoot = temporaryGitRepo({
+    "tools/ci/zz.json": pemHeader,
+    "tools/ci/clean.json": "{}\n",
+    "docs/note.md": `예시\n${pemHeader}`,
+    "tools/datapack/ok.test.mjs": pemHeader,
+  });
+  try {
+    assert.deepEqual(findPrivateKeyLiterals(repoRoot, new Map([["tools/datapack/ok.test.mjs", "테스트 fixture"]])), [
+      "docs/note.md",
+      "tools/ci/zz.json",
+    ]);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("저장소 추적 파일에는 허용 목록 밖의 비공개키 리터럴이 없다", () => {
+  const repoRoot = path.resolve(toolsRoot, "..");
+  assert.deepEqual(findPrivateKeyLiterals(repoRoot, PRIVATE_KEY_LITERAL_ALLOWLIST), []);
+});
+
+test("비공개키 리터럴 허용 목록은 낡지 않았다", () => {
+  const repoRoot = path.resolve(toolsRoot, "..");
+  for (const [allowedPath, reason] of PRIVATE_KEY_LITERAL_ALLOWLIST) {
+    assert.notEqual(reason.trim(), "", `${allowedPath} 사유 필요`);
+    assert.match(readFileSync(path.join(repoRoot, allowedPath), "utf8"), PRIVATE_KEY_LITERAL, `${allowedPath}에 리터럴이 없으면 목록에서 제거`);
+  }
 });
