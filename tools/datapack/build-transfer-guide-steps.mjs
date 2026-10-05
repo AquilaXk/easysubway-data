@@ -8,7 +8,6 @@
 //     그래서 출발 쪽은 같은 노선 완행 이웃이 정확히 둘일 때만 방면 역의 반대편 이웃을 직전 역으로 바꾼다. 아니면 담지 않는다.
 // - 노선·방면 토큰 매핑은 #944 build-transfer-stair-access의 TRANSFER_STAIR_LINE_TABLE과 같은 표를 쓴다. 이름 유사도 매칭·추정 매핑은 하지 않는다.
 // - 매핑하지 못한 시퀀스는 팩에 담지 않고 사유와 목록으로 보고한다(excludedSequences).
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,8 +19,9 @@ import {
   directionStation,
   localNeighbors,
   mapProviderTuples,
-  parseDirection,
+  resolveDirectionLines,
   resolveTableLines,
+  sequenceSha256,
   tupleKey,
 } from "./lib/transfer-direction.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -199,32 +199,18 @@ function groupSequences(rows) {
       invalid,
       operatorCode: operator ? operator[1] : null,
       // #944 pathSha256과 같은 계산이라 두 표의 같은 시퀀스를 같은 hash로 이을 수 있다.
-      pathSha256: sha256(canonicalJson(group.map((row) => ({
-        RAIL_OPR_ISTT_CD: row.RAIL_OPR_ISTT_CD,
-        LN_NM: row.LN_NM,
-        STIN_NM: row.STIN_NM,
-        CHTN_MV_TP_ORDR: row.CHTN_MV_TP_ORDR,
-        MV_CONT_DTL: row.MV_CONT_DTL,
-        CHTN_MV_CONT: row.CHTN_MV_CONT,
-      })))),
+      pathSha256: sequenceSha256(group),
     };
   });
 }
 
 function resolveKey({ entry, mapping, stations, linesAtStation, tableLines, neighbors }) {
-  const from = parseDirection(entry.rows[0].CHTN_MV_CONT);
-  const to = parseDirection(entry.rows.at(-1).CHTN_MV_CONT);
-  if (!from || !to) return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
-  const stationLines = linesAtStation.get(mapping.stationId) ?? [];
-  const linesForToken = (token) => tableLines
-    .filter(({ directionTokens, lineId }) => directionTokens.includes(token) && stationLines.includes(lineId))
-    .map(({ lineId }) => lineId);
-  const fromLines = linesForToken(from.lineToken);
-  if (fromLines.length !== 1 || fromLines[0] !== mapping.lineId) return { reason: "FROM_LINE_MISMATCH" };
-  const toLines = linesForToken(to.lineToken);
-  if (toLines.length !== 1 || toLines[0] === mapping.lineId) return { reason: "TO_LINE_UNRESOLVED" };
+  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines });
+  if (lines.reason) return { reason: lines.reason };
+  const { from, to } = lines;
+  const toLineId = lines.toLineId;
   const fromHeading = directionStation(mapping.stationId, mapping.lineId, from.stationName, stations, neighbors);
-  const toNext = directionStation(mapping.stationId, toLines[0], to.stationName, stations, neighbors);
+  const toNext = directionStation(mapping.stationId, toLineId, to.stationName, stations, neighbors);
   if (!fromHeading || !toNext) return { reason: "DIRECTION_NAME_UNRESOLVED" };
   const fromNeighbors = [...(neighbors.get(`${mapping.stationId}\0${mapping.lineId}`) ?? [])];
   if (fromNeighbors.length !== REQUIRED_LOCAL_NEIGHBORS) return { reason: "FROM_ARRIVAL_AMBIGUOUS" };
@@ -233,7 +219,7 @@ function resolveKey({ entry, mapping, stations, linesAtStation, tableLines, neig
     stationId: mapping.stationId,
     fromLineId: mapping.lineId,
     fromPrevStationId: fromPrev,
-    toLineId: toLines[0],
+    toLineId,
     toNextStationId: toNext,
   };
 }
@@ -252,9 +238,6 @@ function compareFields(left, right, fields) {
   return 0;
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 // 보고 CLI: 후보 팩(canonical pack JSON)의 역·노선·완행 간선으로 매핑 성공·실패 수와 제외 목록을 JSON으로 출력한다.
 async function main(argv) {

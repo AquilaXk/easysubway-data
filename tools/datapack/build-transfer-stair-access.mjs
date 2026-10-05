@@ -5,7 +5,6 @@
 // - 단계 문구는 닫힌 어휘 표로만 판정한다. 표에 없는 문구, 방면 형식 불일치, 이름 해석 실패는 모두 UNKNOWN과 사유로 드러낸다.
 // - 이름 유사도 매칭, 다른 방면 경로로 대체, 문구로 시설 연결 추정은 하지 않는다.
 // - 환승 시간·거리는 기존 환승 간선 값을 그대로 쓴다(D1). 계단 없는 경로의 시간은 따로 검증되지 않았음을 근거 행에 남긴다.
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -19,14 +18,14 @@ import {
   molitRailwayTransferMovementEditionFromSnapshotId,
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { resolveMolitTransferSnapshot } from "./prepare-nationwide-candidate-run.mjs";
-import { canonicalJson } from "./lib/manifest-validation.mjs";
 import {
   TRANSFER_STAIR_LINE_TABLE,
   directionStation,
   localNeighbors,
   mapProviderTuples,
-  parseDirection,
+  resolveDirectionLines,
   resolveTableLines,
+  sequenceSha256,
   splitNode,
   subNamed,
   tupleKey,
@@ -369,38 +368,24 @@ function groupPaths(rows) {
       rows: group,
       invalid,
       operatorCode: operator ? operator[1] : null,
-      pathSha256: sha256(canonicalJson(group.map((row) => ({
-        RAIL_OPR_ISTT_CD: row.RAIL_OPR_ISTT_CD,
-        LN_NM: row.LN_NM,
-        STIN_NM: row.STIN_NM,
-        CHTN_MV_TP_ORDR: row.CHTN_MV_TP_ORDR,
-        MV_CONT_DTL: row.MV_CONT_DTL,
-        CHTN_MV_CONT: row.CHTN_MV_CONT,
-      })))),
+      pathSha256: sequenceSha256(group),
     };
   });
 }
 
 // 방면은 원천의 "<노선> <역> 방면" 표기에서만 읽는다. 역은 같은 노선 완행 인접 역 이름과 정확히 같아야 한다.
 function resolveDirections({ entry, mapping, stations, linesAtStation, tableLines, neighbors }) {
-  const from = parseDirection(entry.rows[0].CHTN_MV_CONT);
-  const to = parseDirection(entry.rows.at(-1).CHTN_MV_CONT);
-  if (!from || !to) return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
-  const stationLines = linesAtStation.get(mapping.stationId) ?? [];
-  const linesForToken = (token) => tableLines
-    .filter(({ directionTokens, lineId }) => directionTokens.includes(token) && stationLines.includes(lineId))
-    .map(({ lineId }) => lineId);
-  const fromLines = linesForToken(from.lineToken);
-  if (fromLines.length !== 1 || fromLines[0] !== mapping.lineId) return { reason: "FROM_LINE_MISMATCH" };
-  const toLines = linesForToken(to.lineToken);
-  if (toLines.length !== 1 || toLines[0] === mapping.lineId) return { reason: "TO_LINE_UNRESOLVED" };
+  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines });
+  if (lines.reason) return { reason: lines.reason };
+  const { from, to } = lines;
+  const toLineId = lines.toLineId;
   const fromDirection = directionStation(mapping.stationId, mapping.lineId, from.stationName, stations, neighbors);
-  const toDirection = directionStation(mapping.stationId, toLines[0], to.stationName, stations, neighbors);
+  const toDirection = directionStation(mapping.stationId, toLineId, to.stationName, stations, neighbors);
   if (!fromDirection || !toDirection) return { reason: "DIRECTION_NAME_UNRESOLVED" };
   return {
     stationId: mapping.stationId,
     fromLineId: mapping.lineId,
-    toLineId: toLines[0],
+    toLineId,
     fromDirectionStationId: fromDirection,
     toDirectionStationId: toDirection,
   };
@@ -507,9 +492,6 @@ async function readRepositoryFile(root, relative) {
   return readFile(path.join(root, relative));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 // 커버리지 리포트 CLI: 번들 원천 SQLite와 route-edge 입력으로 간선별 판정·제외 경로를 JSON으로 출력한다.
 async function main(argv) {

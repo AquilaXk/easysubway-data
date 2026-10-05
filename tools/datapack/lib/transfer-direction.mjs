@@ -1,6 +1,9 @@
 // 환승 방면 해석 공용 모듈(#957): #944 build-transfer-stair-access와 #957 build-transfer-guide-steps가 같은 규칙을 쓰도록 한 곳에 둔다.
 // 순수 이동이다. 노선명 매핑 표, 원천 (운영기관·노선·역) 묶음의 정본 역-노선 매핑, 완행 이웃 역, 방면 표기 해석을 담는다.
+import { createHash } from "node:crypto";
+
 import { partitionMolitTransferTuples } from "../build-accessibility-source-coverage-report.mjs";
+import { canonicalJson } from "./manifest-validation.mjs";
 
 // 고정 노선명 매핑 표: 번들 정본 노선 이름 -> KRIC 코드 카탈로그 노선(운영기관 코드·노선 코드)과 원천 방면 표기의 노선 이름.
 // 원천 노선은 이 표와 기존 partitionMolitTransferTuples(운영기관 코드·KRIC 카탈로그·정확한 역명)로만 정본 역-노선에 잇는다.
@@ -158,4 +161,33 @@ export function directionStation(stationId, lineId, name, stations, neighbors) {
 // partitionMolitTransferTuples와 같은 역명 정규화(NFKC, 끝의 "역", 문자·숫자 외 제거)다.
 export function normalizeStationName(value) {
   return String(value ?? "").normalize("NFKC").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+// 원천 시퀀스(1단계부터 마지막 단계까지의 행)의 hash다. #944 근거 표 path_sha256과 #957 보고가 같은 시퀀스를 같은 hash로 잇는다.
+export function sequenceSha256(rows) {
+  return createHash("sha256").update(canonicalJson(rows.map((row) => ({
+    RAIL_OPR_ISTT_CD: row.RAIL_OPR_ISTT_CD,
+    LN_NM: row.LN_NM,
+    STIN_NM: row.STIN_NM,
+    CHTN_MV_TP_ORDR: row.CHTN_MV_TP_ORDR,
+    MV_CONT_DTL: row.MV_CONT_DTL,
+    CHTN_MV_CONT: row.CHTN_MV_CONT,
+  })))).digest("hex");
+}
+
+// 시퀀스의 첫·마지막 단계 방면 표기를 노선 토큰 표로 해석한다. 출발 노선은 행의 노선과 같아야 하고, 도착 노선은 하나로 정해지며 출발 노선과 달라야 한다.
+// 성공하면 { from, to, toLineId }, 아니면 { reason }이다.
+export function resolveDirectionLines({ entry, mapping, linesAtStation, tableLines }) {
+  const from = parseDirection(entry.rows[0].CHTN_MV_CONT);
+  const to = parseDirection(entry.rows.at(-1).CHTN_MV_CONT);
+  if (!from || !to) return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
+  const stationLines = linesAtStation.get(mapping.stationId) ?? [];
+  const linesForToken = (token) => tableLines
+    .filter(({ directionTokens, lineId }) => directionTokens.includes(token) && stationLines.includes(lineId))
+    .map(({ lineId }) => lineId);
+  const fromLines = linesForToken(from.lineToken);
+  if (fromLines.length !== 1 || fromLines[0] !== mapping.lineId) return { reason: "FROM_LINE_MISMATCH" };
+  const toLines = linesForToken(to.lineToken);
+  if (toLines.length !== 1 || toLines[0] === mapping.lineId) return { reason: "TO_LINE_UNRESOLVED" };
+  return { from, to, toLineId: toLines[0] };
 }
