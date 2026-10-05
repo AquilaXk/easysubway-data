@@ -369,6 +369,23 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     assert.deepEqual(database.prepare(
       "SELECT DISTINCT line_id FROM route_map_positions WHERE source_id = ? ORDER BY line_id",
     ).all(PUBLIC_ROUTE_MAP_SOURCE_ID).map(({ line_id: lineId }) => lineId), [...PUBLIC_ROUTE_MAP_LINE_IDS].sort());
+    // #957: 후보 빌드가 환승 안내 두 표를 실제로 적재하고 provenance 보고와 같은 수·원천 hash로 결속한다.
+    const guideReport = provenance.packs.find(({ id }) => id === activePackId).derivedTables?.transfer_guide_steps;
+    assert.ok(guideReport, "provenance missing derivedTables.transfer_guide_steps");
+    const molitMetadata = JSON.parse(await readFile(
+      path.join(candidateRoot, "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json"),
+      "utf8",
+    ));
+    assert.equal(guideReport.sourceSnapshotId, molitMetadata.snapshotId);
+    assert.equal(guideReport.rawSha256, molitMetadata.rawSha256);
+    assert.equal(guideReport.sequenceCount, 1152);
+    assert.equal(guideReport.mappedSequenceCount + guideReport.duplicateSequenceCount + guideReport.excludedSequenceCount, guideReport.sequenceCount);
+    assert.equal(guideReport.excludedSequences.length, guideReport.excludedSequenceCount);
+    assert.ok(guideReport.rowCount > 0);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transfer_guide_steps").get().count, guideReport.rowCount);
+    assert.deepEqual(database.prepare("SELECT source_snapshot_id AS id, raw_sha256 AS sha FROM transfer_guide_sources").all().map((row) => ({ ...row })),
+      [{ id: molitMetadata.snapshotId, sha: molitMetadata.rawSha256 }]);
+    assert.deepEqual(database.prepare("SELECT DISTINCT source_snapshot_id AS id FROM transfer_guide_steps").all().map(({ id }) => id), [molitMetadata.snapshotId]);
   } finally {
     database.close();
   }
