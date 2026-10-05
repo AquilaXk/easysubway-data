@@ -47,7 +47,7 @@ import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-m
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
-import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidatePinnedWorkspace, candidateWorkspacePath } from "./test-fixtures/candidate-pinned-inputs.mjs";
 stageLocalMobileFixture({ repositoryRoot: root });
 const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
 const TEST_ACCESSIBILITY_SNAPSHOT_ID = "test-only-capital-accessibility-fixture-20260809";
@@ -267,8 +267,8 @@ function currentCandidateRoot() {
 }
 
 // #954: 현재 ITX·Incheon 후보 빌드 입력은 후보가 고정한 바이트로 읽는다(원천 갱신 PR이 바꾼 작업 트리 inventory·canonical pack과 섞지 않는다).
-async function readCandidateFile(relativeOrAbsolute, encoding) {
-  return readFile(path.resolve(await currentCandidateRoot(), relativeOrAbsolute), encoding);
+async function readCandidateFile(relative, encoding) {
+  return readFile(candidateWorkspacePath(await currentCandidateRoot(), relative), encoding);
 }
 
 async function currentReleaseCandidateArtifact() {

@@ -10,7 +10,7 @@ import test from "node:test";
 import { gunzipSync } from "node:zlib";
 import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 import { verifyProductionPackArtifactIntegrity } from "./verify-production-pack-artifact-identity.mjs";
-import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidatePinnedWorkspace, candidateWorkspacePath } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -41,8 +41,8 @@ function currentCandidateRoot() {
   candidateRootPromise ??= candidatePinnedWorkspace().then(({ root: candidateRoot }) => candidateRoot);
   return candidateRootPromise;
 }
-async function readCandidate(relativeOrAbsolute, encoding) {
-  return readFile(path.resolve(await currentCandidateRoot(), relativeOrAbsolute), encoding);
+async function readCandidate(relative, encoding) {
+  return readFile(candidateWorkspacePath(await currentCandidateRoot(), relative), encoding);
 }
 
 function currentCapitalRouteMapTopologyAdmission(inventory, spec) {
@@ -751,7 +751,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
   if (spec.fixtureSha256 !== undefined) spec.fixtureSha256 = sha256(currentAccessibilityFixtureBytes);
   const runRejectedBuild = async (candidate, pattern) => {
     if (candidate.fixturePath && candidate.fixtureSha256 !== undefined) {
-      candidate.fixtureSha256 = sha256(await readCandidate(candidate.fixturePath));
+      candidate.fixtureSha256 = sha256(await (path.isAbsolute(candidate.fixturePath) ? readFile(candidate.fixturePath) : readCandidate(candidate.fixturePath)));
     }
     const specPath = path.join(workspace, `spec-${Date.now()}.json`);
     await writeFile(specPath, `${JSON.stringify(candidate, null, 2)}\n`);

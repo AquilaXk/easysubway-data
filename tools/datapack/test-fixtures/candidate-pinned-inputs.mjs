@@ -57,6 +57,18 @@ export async function candidatePinnedReader({ root = ROOT, env = process.env, fe
   return (relative) => (!pinned.has(relative) && outputs.has(relative) ? readLocal(relative) : readPinned(relative));
 }
 
+/**
+ * 후보 작업 공간 안의 저장소 상대 경로만 절대 경로로 바꾼다. 절대 경로·상위 경로 인자는 작업 공간을 무시하고 작업 트리를
+ * 읽게 되므로 실패시킨다(#954 리뷰 F2). 테스트가 직접 쓴 임시 파일은 이 함수를 거치지 않고 읽는다.
+ */
+export function candidateWorkspacePath(candidateRoot, relative) {
+  if (typeof relative !== "string" || relative === "" || path.isAbsolute(relative) || relative.includes("\\")
+    || relative.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(`CANDIDATE_WORKSPACE_PATH_NOT_RELATIVE: ${String(relative)}`);
+  }
+  return path.join(candidateRoot, relative);
+}
+
 export async function candidatePinnedJson(read, relative) {
   return JSON.parse((await read(relative)).toString("utf8"));
 }
