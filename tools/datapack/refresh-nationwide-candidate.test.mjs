@@ -14,6 +14,7 @@ import {
   readNationwideCandidateRefreshState,
   refreshNationwideCandidate,
   runNationwideCandidateRefreshStep,
+  runNodeScript,
 } from "./refresh-nationwide-candidate.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { rebindCurrentSeoulTransferSourceAdmission } from "./rebind-current-seoul-transfer-source-admission.mjs";
@@ -507,4 +508,29 @@ test("#866 일일 정본 팩 변경으로 풀린 서울 환승 증거 결속을 
   assert.deepEqual(await regenerate(), JSON.parse(await readFile(path.join(repositoryRoot, SEOUL_TRANSFER_REBIND_PATHS.applicability))));
   // 재결속은 후보 spec·request·hash를 쓰지 않는다. 그것들은 이 명령(refresh-nationwide-candidate)의 출력이다.
   assert.equal(result.targets.some((relative) => NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS.includes(relative)), false);
+});
+
+test("#941 하위 CLI가 Error 전체(stack 포함)를 stderr에 써도 실패 메시지에 원인 메시지가 들어간다", async (t) => {
+  // prepare-nationwide-candidate-run CLI처럼 console.error(err)로 message + stack frame을 쓰고 비정상 종료하는 하위 CLI.
+  const scriptDirectory = await mkdtemp(path.join(os.tmpdir(), "refresh-941-"));
+  t.after(() => rm(scriptDirectory, { recursive: true, force: true }));
+  await writeFile(path.join(scriptDirectory, "failing-cli.mjs"), [
+    "async function prepareNationwideCandidate() {",
+    "  throw new Error('nationwide candidate Seoul measured transfer metrics differ from the rebuild');",
+    "}",
+    "prepareNationwideCandidate().catch((err) => { console.error(err); process.exit(1); });",
+  ].join("\n"));
+  await assert.rejects(
+    runNodeScript(scriptDirectory, "failing-cli.mjs", [], scriptDirectory),
+    { message: "nationwide candidate Seoul measured transfer metrics differ from the rebuild" },
+  );
+});
+
+test("#941 하위 CLI가 stack 없이 메시지만 써도 그 메시지를 그대로 쓰고, 출력이 비면 프로세스 오류를 쓴다", async (t) => {
+  const scriptDirectory = await mkdtemp(path.join(os.tmpdir(), "refresh-941-"));
+  t.after(() => rm(scriptDirectory, { recursive: true, force: true }));
+  await writeFile(path.join(scriptDirectory, "plain.mjs"), "console.error('first line');\nconsole.error('RETAINED_GWANGJU_PROJECTION_STALE');\nprocess.exit(1);\n");
+  await writeFile(path.join(scriptDirectory, "silent.mjs"), "process.exit(1);\n");
+  await assert.rejects(runNodeScript(scriptDirectory, "plain.mjs", [], scriptDirectory), { message: "RETAINED_GWANGJU_PROJECTION_STALE" });
+  await assert.rejects(runNodeScript(scriptDirectory, "silent.mjs", [], scriptDirectory), /Command failed/u);
 });

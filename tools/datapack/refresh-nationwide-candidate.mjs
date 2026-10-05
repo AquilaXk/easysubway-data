@@ -203,17 +203,29 @@ export function nationwideCandidateRefreshViolations({
   return violations;
 }
 
-async function runNodeScript(repositoryRoot, script, args) {
+// 하위 CLI는 출력 형식이 제각각이다(message만, 또는 console.error(err)의 message + stack frame).
+// stack frame과 Node 종료 배너를 걷어 낸 뒤 "Error: 원인" 줄을 원인으로 쓰고, 없으면 남은 마지막 줄을 그대로 남긴다.
+const STACK_FRAME_LINE = /^\s+at\s/u;
+const NODE_BANNER_LINE = /^Node\.js v\d/u;
+const ERROR_PREFIX = /^\w*Error: /u;
+function failureDetailFromStderr(stderr) {
+  const lines = String(stderr ?? "").split("\n").map((line) => line.trimEnd()).filter((line) => line.trim() !== "");
+  const meaningful = lines.filter((line) => !STACK_FRAME_LINE.test(line) && !NODE_BANNER_LINE.test(line));
+  const candidates = meaningful.length > 0 ? meaningful : lines;
+  return (candidates.find((line) => ERROR_PREFIX.test(line)) ?? candidates.at(-1))?.replace(ERROR_PREFIX, "").trim();
+}
+
+export async function runNodeScript(repositoryRoot, script, args, scriptDirectory = TOOLS) {
   const env = { ...process.env };
   // prepare는 승인 역할을 환경 변수에서도 읽는다. 명시 인자만 쓰도록 비운다.
   delete env.DATAPACK_REQUESTED_BY;
   delete env.DATAPACK_APPROVED_BY;
   try {
-    await execFileAsync(process.execPath, [path.join(TOOLS, script), ...args], {
+    await execFileAsync(process.execPath, [path.join(scriptDirectory, script), ...args], {
       cwd: repositoryRoot, env, maxBuffer: 256 * 1024 * 1024,
     });
   } catch (error) {
-    const detail = String(error.stderr ?? "").trim().split("\n").filter(Boolean).at(-1);
+    const detail = failureDetailFromStderr(error.stderr);
     throw new Error(detail || error.message);
   }
 }
