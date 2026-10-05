@@ -8,7 +8,7 @@ import test from "node:test";
 
 import { buildCurrentFiveRegionSourceFanIn } from "./build-current-five-region-source-fan-in.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH, buildCandidateInputManifest, serializeCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
-import { CANDIDATE_OUTPUT_PATHS, candidatePinnedReader, candidatePinnedWorkspace, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { CANDIDATE_OUTPUT_PATHS, candidatePinnedReader, candidatePinnedWorkspace, candidateWorkspacePath, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./refresh-nationwide-candidate.mjs";
 
 // #942: PR CI(required-pr)는 커밋된 전국 후보의 내부 pin 일관성만 검사한다.
@@ -179,4 +179,12 @@ test("후보 재현 reader의 로컬 읽기 허용 목록은 갱신 도구 출�
   // fan-in은 후보 산출물이면서 prepare가 읽는 입력이다. 고정 입력이 우선하고, 그 sha는 매니페스트 fanInSha256과 같다.
   assert.deepEqual(manifest.files.filter(({ path: relative }) => outputs.has(relative)).map(({ path: relative }) => relative), [FAN_IN_PATH]);
   assert.equal(manifest.files.find(({ path: relative }) => relative === FAN_IN_PATH).sha256, manifest.fanInSha256);
+});
+
+// #954 리뷰 F2: 절대·상위 경로 인자는 후보 작업 공간을 무시하고 작업 트리를 읽게 하므로 막는다.
+test("후보 작업 공간 경로 helper는 저장소 상대 경로만 받고 절대·상위·역슬래시 경로를 거부한다", () => {
+  assert.equal(candidateWorkspacePath("/candidate", "tools/datapack/source-inventory.json"), "/candidate/tools/datapack/source-inventory.json");
+  for (const bad of ["/abs/tools/datapack/source-inventory.json", "../outside.json", "tools/../outside.json", "tools//a.json", "./a.json", "tools\\a.json", "", undefined]) {
+    assert.throws(() => candidateWorkspacePath("/candidate", bad), /CANDIDATE_WORKSPACE_PATH_NOT_RELATIVE/, String(bad));
+  }
 });

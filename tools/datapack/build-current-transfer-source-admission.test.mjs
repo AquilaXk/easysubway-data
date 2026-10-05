@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import {
   validateProductionTransferArtifacts,
   validateTransferAdmissionEvidence,
@@ -51,16 +52,18 @@ test("active Seoul TRANSFER metrics와 applicability는 current pre-candidate co
 
 async function activeTransferInputs() {
   const readJson = async (relative) => JSON.parse(await readFile(new URL(relative, import.meta.url), "utf8"));
-  const [candidate, inventory, snapshots, canonicalPack, canonicalPackBytes, metrics, metricsBytes, applicability] = await Promise.all([
+  // #954: canonical pack과 그 pack에서 만든 지표는 후보가 고정한 바이트로 읽는다. 원천 갱신 PR이 바꾼 작업 트리 pack과 섞지 않는다.
+  const readPinned = await candidatePinnedReader();
+  const [candidate, inventory, snapshots, canonicalPackBytes, metricsBytes, applicability] = await Promise.all([
     readJson("./release/candidate-build-spec.json"),
     readJson("./source-inventory.json"),
     readJson("./release/source-snapshots.json"),
-    readJson("./release/capital-production-canonical-pack.json"),
-    readFile(new URL("./release/capital-production-canonical-pack.json", import.meta.url)),
-    readJson("./release/current-transfer-topology-metrics.json"),
-    readFile(new URL("./release/current-transfer-topology-metrics.json", import.meta.url)),
+    readPinned("tools/datapack/release/capital-production-canonical-pack.json"),
+    readPinned("tools/datapack/release/current-transfer-topology-metrics.json"),
     readJson("./release/current-capital-transfer-topology-applicability.json"),
   ]);
+  const canonicalPack = JSON.parse(canonicalPackBytes);
+  const metrics = JSON.parse(metricsBytes);
   const projection = candidate.sourceSnapshots?.find(({ sourceId }) => sourceId === TRANSFER_SOURCE_ID);
   const snapshot = snapshots.find(({ snapshotId }) => snapshotId === projection?.snapshotId);
   const source = inventory.sources?.find(({ id }) => id === TRANSFER_SOURCE_ID);

@@ -47,7 +47,7 @@ import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-m
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
-import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
 stageLocalMobileFixture({ repositoryRoot: root });
 const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
 const TEST_ACCESSIBILITY_SNAPSHOT_ID = "test-only-capital-accessibility-fixture-20260809";
@@ -260,11 +260,8 @@ const currentProductionBuildEnv = {
 let currentReleaseCandidateArtifactPromise = null;
 
 // #942: 커밋된 후보의 production 빌드 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천만 등록한 PR에서도 같은 결과).
-let candidateRootPromise;
-function currentCandidateRoot() {
-  candidateRootPromise ??= candidatePinnedWorkspace().then(({ root: candidateRoot }) => candidateRoot);
-  return candidateRootPromise;
-}
+// #954: 현재 ITX·Incheon 후보 빌드 입력도 같은 작업 공간에서 읽는다(원천 갱신 PR이 바꾼 작업 트리 inventory·canonical pack과 섞지 않는다).
+const { root: currentCandidateRoot, read: readCandidateFile } = candidateWorkspaceAccess();
 
 async function currentReleaseCandidateArtifact() {
   currentReleaseCandidateArtifactPromise ??= (async () => {
@@ -18259,13 +18256,13 @@ async function writeCurrentItxReleaseInputs(
   };
   const itxFixtureDirectory = path.join(repositoryRoot, "tools/datapack/fixtures/current-itx");
   await mkdir(itxFixtureDirectory, { recursive: true });
-  const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
+  const fixture = JSON.parse(await readCandidateFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
   for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
-  const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
+  const topologyEvidence = JSON.parse(await readCandidateFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
   const sourceArtifactId = topologyEvidence.sourceArtifact?.id;
   assert.match(sourceArtifactId, /^itx-cheongchun-source-timetable-[0-9]+$/u, "current ITX source artifact identity");
 
-  const completeness = JSON.parse(await readFile(
+  const completeness = JSON.parse(await readCandidateFile(
     `tools/datapack/sources/${sourceArtifactId}-completeness-evidence.json`,
     "utf8",
   ));
@@ -18277,7 +18274,7 @@ async function writeCurrentItxReleaseInputs(
   let completenessBytes = Buffer.from(`${JSON.stringify(completeness)}\n`);
   await writeFile(completenessPath, completenessBytes);
 
-  const source = JSON.parse(await readFile(
+  const source = JSON.parse(await readCandidateFile(
     `tools/datapack/sources/${sourceArtifactId}.json`,
     "utf8",
   ));
@@ -18295,7 +18292,7 @@ async function writeCurrentItxReleaseInputs(
   const currentAdmissionPath = path.join(workspace, "itx-current-admission.json");
   let currentAdmissionBytes;
 
-  const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
+  const contract = JSON.parse(await readCandidateFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
   const admission = contract.officialEvidence.korailCompletenessAdmission;
   delete admission.canonicalPackIdentity;
   admission.stationCatalogPackIdentity = structuredClone(currentIdentity);
@@ -18328,13 +18325,13 @@ async function writeCurrentItxReleaseInputs(
 
   const fixturePath = path.join(workspace, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
-  const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const buildSpec = JSON.parse(await readCandidateFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
   delete buildSpec.assemblySourceIds;
   delete buildSpec.productionScope;
   buildSpec.sourceSnapshots = (buildSpec.sourceSnapshots ?? []).filter((s) => s.adminReviewRecordHash);
   buildSpec.sourceSnapshotIds = buildSpec.sourceSnapshots.map((s) => s.snapshotId);
   buildSpec.sourceSnapshotSetHash = "a1638b3df8e92c59db8525b68d687580177345cc983a22645f60833f52322fb0";
-  const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
+  const sourceInventory = JSON.parse(await readCandidateFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const currentInventory = structuredClone(sourceInventory);
   const currentTopologySources = currentInventory.sources.filter(
     ({ id }) => id === "seoul-metro-route-map-positions",
@@ -18347,7 +18344,7 @@ async function writeCurrentItxReleaseInputs(
     currentTopologyAuthority ?? {};
   assert.ok(currentTopologySnapshotId != null, "fixture current topology admission is required");
   const baselineTopologyBinding = buildSpec.networkEdgeEvidence.capitalTopology;
-  const baselineTopologySourceBytes = await readFile(baselineTopologyBinding.path);
+  const baselineTopologySourceBytes = await readCandidateFile(baselineTopologyBinding.path);
   assert.equal(
     sha256(baselineTopologySourceBytes),
     baselineTopologyBinding.sha256,
@@ -18357,7 +18354,7 @@ async function writeCurrentItxReleaseInputs(
     JSON.parse(baselineTopologySourceBytes),
   );
   const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
-  const candidateTopologyBytes = await readFile(
+  const candidateTopologyBytes = await readCandidateFile(
     `tools/datapack/sources/${currentTopologySnapshotId}.json`,
   );
   const candidateTopology = JSON.parse(candidateTopologyBytes);
@@ -18411,7 +18408,7 @@ async function writeCurrentItxReleaseInputs(
     throw new Error("fixture registered Incheon accessibility identity is required");
   }
   const incheonAccessibilitySourcePath = `tools/datapack/sources/${incheonAccessibilityRegistration.snapshotId}.json`;
-  const incheonAccessibilitySourceBytes = await readFile(incheonAccessibilitySourcePath);
+  const incheonAccessibilitySourceBytes = await readCandidateFile(incheonAccessibilitySourcePath);
   assert.equal(
     sha256(incheonAccessibilitySourceBytes),
     incheonAccessibilityRegistration.snapshotFileSha256,
@@ -18603,7 +18600,7 @@ async function writeCurrentItxReleaseInputs(
       false,
       `fixture pinned Incheon ${lineId} timetable path segments`,
     );
-    const timetableBytes = await readFile(timetablePath);
+    const timetableBytes = await readCandidateFile(timetablePath);
     assert.equal(
       sha256(timetableBytes),
       timetableBinding.sha256,
@@ -18753,13 +18750,13 @@ function syntheticCurrentItxTopologyAdmission({ source, previousArtifactSha256, 
 
 async function writeTransitionFreeCandidateRoot(workspace) {
   const repositoryRoot = path.join(workspace, "transition-free-repository");
-  const currentBuildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const currentBuildSpec = JSON.parse(await readCandidateFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
   const sourceInventoryPath = currentBuildSpec.networkEdgeEvidence?.sourceInventory?.path;
   if (typeof sourceInventoryPath !== "string" || path.posix.isAbsolute(sourceInventoryPath)
     || sourceInventoryPath.includes("\\") || sourceInventoryPath.split("/").some((part) => part === "" || part === "." || part === "..")) {
     throw new Error("current candidate source inventory path mismatch");
   }
-  const sourceInventory = JSON.parse(await readFile(sourceInventoryPath, "utf8"));
+  const sourceInventory = JSON.parse(await readCandidateFile(sourceInventoryPath, "utf8"));
   const incheonSources = sourceInventory.sources?.filter(({ id }) => id === "incheon-transit-station-info") ?? [];
   if (incheonSources.length !== 1) throw new Error("current Incheon topology source mismatch");
   const { topologyAdmissionEvidence: topology, routeMapAdmissionEvidence: routeMap } = incheonSources[0];
@@ -18788,7 +18785,7 @@ async function writeTransitionFreeCandidateRoot(workspace) {
   for (const relativePath of requiredFiles) {
     const target = path.join(repositoryRoot, relativePath);
     await mkdir(path.dirname(target), { recursive: true });
-    await copyFile(path.join(root, relativePath), target);
+    await copyFile(path.join(await currentCandidateRoot(), relativePath), target);
   }
   const candidatePath = path.join(repositoryRoot, "tools/datapack/fixtures/candidate-build-spec.json");
   const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
@@ -18845,7 +18842,7 @@ async function bindCandidateAccessibilityContextToFixture({
     const sourceArtifactRelativePath = `tools/datapack/sources/${snapshotId}.json`;
     const sourceArtifactPath = path.join(repositoryRoot, sourceArtifactRelativePath);
     await mkdir(path.dirname(sourceArtifactPath), { recursive: true });
-    await copyFile(path.join(root, sourceArtifactRelativePath), sourceArtifactPath);
+    await copyFile(path.join(await currentCandidateRoot(), sourceArtifactRelativePath), sourceArtifactPath);
     const sourceArtifactBytes = await readFile(sourceArtifactPath);
     const sourceArtifact = JSON.parse(sourceArtifactBytes);
     assert.equal(sourceArtifact.sourceId, sourceId, `${sourceId} fixture source artifact identity`);
