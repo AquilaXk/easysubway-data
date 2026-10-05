@@ -470,6 +470,7 @@
     {"path":"tools/datapack/build-station-platform-gaps.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/build-step-free-path-transitions.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/build-transfer-stair-access.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":230},
+    {"path":"tools/datapack/lib/bundle-edge-provenance.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":250},
     {"path":"tools/datapack/build-transfer-topology-admission.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":36},
     {"path":"tools/datapack/bundle-component-contract.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":10},
     {"path":"tools/datapack/canonical-number-contract.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":4},
