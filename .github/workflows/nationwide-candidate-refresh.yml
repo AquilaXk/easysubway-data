@@ -60,7 +60,8 @@ jobs:
           mkdir -p "${decision_root}"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
           git ls-remote --heads origin "refs/heads/automation/927-nationwide-candidate-refresh-*" > "${decision_root}/branches.txt"
-          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --github-output "${GITHUB_OUTPUT}"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
+          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -85,16 +86,36 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          CI_STATE: ${{ steps.required-ci.outputs.state }}
         run: |
           set -euo pipefail
           # #939: 열린 후보 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
           open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow nationwide-candidate-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow nationwide-candidate-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${CI_STATE}"
       - name: Note candidate refresh waiting on a pending source pull request
         if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
+        env:
+          STALE_PATHS: ${{ steps.decision.outputs.stale_paths }}
+          BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
         run: |
-          echo "::notice title=Nationwide candidate refresh::candidate inputs changed (${{ steps.decision.outputs.stale_paths }}) but source-ledger automation pull request(s) ${{ steps.decision.outputs.blocked_by }} are still open; the candidate is refreshed after they merge."
+          echo "::notice title=Nationwide candidate refresh::candidate inputs changed (${STALE_PATHS}) but source-ledger automation pull request(s) ${BLOCKED_BY} are still open; the candidate is refreshed after they merge."
+      - name: Remove stale candidate refresh branches named by the decision
+        if: ${{ steps.decision.outputs.cleanup_branches != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_BRANCHES: ${{ steps.decision.outputs.cleanup_branches }}
+        run: |
+          set -euo pipefail
+          # 이전 실행이 남긴 후보 브랜치(PR 없음·닫힌 PR)는 사람이 지울 일이 아니다(이슈 #973). 판정이 알린 것만, 열린 PR이 없을 때만 지운다.
+          gh auth setup-git
+          IFS=',' read -r -a stale_branches <<< "${CLEANUP_BRANCHES}"
+          for stale_branch in "${stale_branches[@]}"; do
+            [[ "${stale_branch}" =~ ^automation/927-nationwide-candidate-refresh-[1-9][0-9]*$ ]] || { echo "stale candidate branch name is invalid" >&2; exit 1; }
+            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${stale_branch}" --json number --jq 'length')" == "0" ]] || { echo "stale candidate branch has an open pull request" >&2; exit 1; }
+            git push origin --delete "${stale_branch}"
+            echo "::notice title=Nationwide candidate refresh::removed stale candidate branch ${stale_branch}"
+          done
       - name: Validate candidate refresh inputs
         id: plan
         if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
@@ -146,8 +167,27 @@ jobs:
             1) ;;
             *) echo "candidate refresh staged diff check failed (git diff exit ${diff_status})" >&2; exit "${diff_status}" ;;
           esac
-      - name: Commit and push candidate refresh branch
+      - name: Recheck that no source-ledger automation is pending before pushing
+        id: recheck
         if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 후보 생성은 길다. 그 사이 원장을 쓰는 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 이 결과를 올리지 않고 다음 실행에 맡긴다(#974 리뷰 F2).
+          recheck_root="${RUNNER_TEMP}/nationwide-candidate-refresh-recheck/${GITHUB_RUN_ID}"
+          mkdir -p "${recheck_root}"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${recheck_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
+          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+      - name: Note candidate refresh superseded by pending source automation
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'false' }}
+        env:
+          BLOCKED_BY: ${{ steps.recheck.outputs.blocked_by }}
+        run: |
+          echo "::notice title=Nationwide candidate refresh::source-ledger automation (${BLOCKED_BY}) started while the candidate was being built; nothing was pushed and the next run decides again."
+      - name: Commit and push candidate refresh branch
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'true' }}
         env:
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
@@ -158,13 +198,15 @@ jobs:
           git switch -c "${branch}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf 'CANDIDATE_BASE_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
           git commit -m "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})"
+          printf 'CANDIDATE_HEAD_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
           gh auth setup-git
           git push origin "${branch}"
           printf 'CANDIDATE_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
       - name: Mint App token for the candidate refresh pull request
         id: app-token-pr
-        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'true' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
@@ -173,7 +215,7 @@ jobs:
           repositories: easysubway-data
           permission-pull-requests: write
       - name: Create candidate refresh pull request
-        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'true' }}
         env:
           APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           STALE_PATHS: ${{ steps.decision.outputs.stale_paths }}
@@ -185,6 +227,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${STALE_PATHS}" ]]; then reason="후보 입력 변경(${STALE_PATHS})"; else reason="사람 dispatch(명시 요청)"; fi
+          evidence_block="$(node tools/ci/automation-pr-evidence.mjs candidate-refresh-block --build-spec tools/datapack/release/candidate-build-spec.json --base-sha "${CANDIDATE_BASE_SHA}" --head-sha "${CANDIDATE_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
           body="$(printf '%s\n' \
             "## Summary" \
             "" \
@@ -198,12 +241,14 @@ jobs:
             "이 PR이 main에 들어오면 \`datapack-release-candidate-chain.yml\`이 release-candidate를 실행한다." \
             "" \
             "Refs #927" \
-            "Refs #870")"
+            "Refs #870" \
+            "" \
+            "${evidence_block}")"
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
           pr_url="$(GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}")"
           printf 'CANDIDATE_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
       - name: Remove the candidate refresh branch after a later failure
-        if: ${{ failure() && env.CANDIDATE_BRANCH != '' }}
+        if: ${{ (failure() || cancelled()) && env.CANDIDATE_BRANCH != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -215,7 +260,7 @@ jobs:
             git push origin --delete "${CANDIDATE_BRANCH}"
           fi
       - name: Report refresh failure as an issue
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node tools/ci/report-refresh-failure.mjs --workflow nationwide-candidate-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

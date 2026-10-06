@@ -347,7 +347,7 @@ test("candidate chain treats only git diff exit 1 as superseded and fails on any
 test("a failure after the automation branch is pushed closes its PR and deletes the branch (F2)", async () => {
   const yml = workflowText("nationwide-candidate-refresh.yml");
   const cleanup = stepBody(yml, "Remove the candidate refresh branch after a later failure");
-  assert.match(cleanup, /\n        if: \$\{\{ failure\(\) && env\.CANDIDATE_BRANCH != '' \}\}\n/u);
+  assert.match(cleanup, /\n        if: \$\{\{ \(failure\(\) \|\| cancelled\(\)\) && env\.CANDIDATE_BRANCH != '' \}\}\n/u);
   // #969: 실패 보고 step만 정리 뒤에 온다(정리가 실패해도 보고가 돈다).
   const report = stepBody(yml, "Report refresh failure as an issue");
   assert.equal(yml.trimEnd().endsWith(report.trimEnd()), true, "the failure report is the last step");

@@ -150,9 +150,11 @@ test("OPEN_PR이면 App 토큰 발급 → required CI 보장(close→reopen) →
     const ageBlock = all[age].block;
     assert.match(ageBlock, /GH_TOKEN: \$\{\{ github\.token \}\}/u, file);
     assert.match(ageBlock, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "\$\{open_prs\}"/u, file);
-    assert.match(ageBlock, new RegExp(`node tools/ci/refresh-open-pr-age\\.mjs --workflow ${file.replaceAll(".", "\\.")} --prs "\\$\\{open_prs\\}" --policy release/product-gates/datapack-freshness-sla\\.json --repository "\\$\\{GITHUB_REPOSITORY\\}" --ci-state "\\$\\{\\{ steps\\.required-ci\\.outputs\\.state \\}\\}"`, "u"), file);
+    // #972 리뷰 F4: 새 workflow는 step output을 env로 받아 셸 변수로 쓴다. 기존 갱신 4종은 이 PR의 범위 밖이라 그대로다.
+    const ciState = SINGLE_PR_PATH_WORKFLOWS.includes(file) ? '"\\$\\{CI_STATE\\}"' : '"\\$\\{\\{ steps\\.required-ci\\.outputs\\.state \\}\\}"';
+    assert.match(ageBlock, new RegExp(`node tools/ci/refresh-open-pr-age\\.mjs --workflow ${file.replaceAll(".", "\\.")} --prs "\\$\\{open_prs\\}" --policy release/product-gates/datapack-freshness-sla\\.json --repository "\\$\\{GITHUB_REPOSITORY\\}" --ci-state ${ciState}`, "u"), file);
     const report = find("Report refresh failure as an issue");
     assert.ok(report > age, file);
-    assert.equal(ifCondition(all[report].block), "${{ failure() }}", file);
+    assert.equal(ifCondition(all[report].block), [REGISTRATION_WORKFLOW, CANDIDATE_WORKFLOW].includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}", file);
   }
 });

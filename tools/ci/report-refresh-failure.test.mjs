@@ -244,7 +244,9 @@ test("every scheduled source refresh workflow reports its own failure as an issu
       ? "KRIC current facility refresh / Report refresh failure as an issue"
       : "Report refresh failure as an issue";
     const body = stepBody(yml, stepName);
-    assert.match(body, /\n        if: \$\{\{ failure\(\) \}\}\n/u, `${file} must report only on failure`);
+    // #972 리뷰: 등록 workflow는 취소·시간 초과로 끝난 실행도 보고한다(PR 없는 claim이 조용히 남지 않게).
+    const condition = ["current-capital-topology-registration.yml", "nationwide-candidate-refresh.yml"].includes(file) ? String.raw`failure\(\) \|\| cancelled\(\)` : String.raw`failure\(\)`;
+    assert.match(body, new RegExp(String.raw`\n        if: \$\{\{ ${condition} \}\}\n`, "u"), `${file} must report only on failure`);
     assert.match(body, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
     assert.ok(body.includes(
       `node tools/ci/report-refresh-failure.mjs --workflow ${file} --repository "\${GITHUB_REPOSITORY}" --run-id "\${GITHUB_RUN_ID}"`,
