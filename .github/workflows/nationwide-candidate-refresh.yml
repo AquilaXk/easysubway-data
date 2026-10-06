@@ -5,9 +5,11 @@ name: Nationwide Candidate Refresh
 # 사람 dispatch는 2인 역할을 입력으로만 받는다. 정기 실행(#929 D3)은 정기 전용 고정 역할과 다음 sequence를 쓰고,
 # 저장소 변수 DATAPACK_SCHEDULED_CANDIDATE_REFRESH가 true일 때만 돈다. 후보 시계는 실행 시각이고,
 # release request에는 이 run 기록(gateRun)을 결속한다.
+# #969: 정기 실행은 2시간마다 돌며, 후보가 읽은 입력 매니페스트가 지금 작업 트리와 다를 때(STALE)만 후보를 만든다. 같으면(CURRENT) 아무것도 하지 않는다.
+# 정기 역할이 schedule 이벤트 전용이라 push·workflow_run 트리거는 쓰지 않는다. 열린 후보 PR이 있으면 새로 만들지 않고, 원장을 쓰는 자동화 PR이 열려 있으면 기다린다.
 on:
   schedule:
-    - cron: "23 22 * * *"
+    - cron: "29 */2 * * *"
   workflow_dispatch:
     inputs:
       releaseSequence:
@@ -23,9 +25,7 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: nationwide-candidate-refresh-${{ github.workflow }}-${{ github.ref }}
@@ -36,6 +36,10 @@ jobs:
     name: Nationwide candidate refresh
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -45,8 +49,55 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Decide whether the nationwide candidate must be refreshed
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          decision_root="${RUNNER_TEMP}/nationwide-candidate-refresh-decision/${GITHUB_RUN_ID}"
+          mkdir -p "${decision_root}"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/927-nationwide-candidate-refresh-*" > "${decision_root}/branches.txt"
+          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --github-output "${GITHUB_OUTPUT}"
+      - name: Mint App token for the open refresh pull request
+        id: app-token-open
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Ensure required CI on the open refresh pull request
+        id: required-ci
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
+        run: |
+          set -euo pipefail
+          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다). #969: CI가 실패했으면 바로 실패한다.
+          node tools/ci/refresh-pr-required-ci.mjs --workflow nationwide-candidate-refresh.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
+      - name: Enforce open refresh pull request age limit
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #939: 열린 후보 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
+          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow nationwide-candidate-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+      - name: Note candidate refresh waiting on a pending source pull request
+        if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
+        run: |
+          echo "::notice title=Nationwide candidate refresh::candidate inputs changed (${{ steps.decision.outputs.stale_paths }}) but source-ledger automation pull request(s) ${{ steps.decision.outputs.blocked_by }} are still open; the candidate is refreshed after they merge."
       - name: Validate candidate refresh inputs
         id: plan
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         env:
           RELEASE_SEQUENCE: ${{ inputs.releaseSequence }}
           REQUESTED_BY: ${{ inputs.requestedBy }}
@@ -56,10 +107,12 @@ jobs:
           set -euo pipefail
           node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --event "${EVENT_NAME}" --github-output "${GITHUB_OUTPUT}"
       - name: Record the candidate gate run
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         run: |
           set -euo pipefail
           node tools/ci/plan-datapack-release-chain.mjs gate-run --output "${RUNNER_TEMP}/candidate-gate-run.json"
       - name: Refresh nationwide candidate
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         env:
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
@@ -71,6 +124,7 @@ jobs:
           set -euo pipefail
           node tools/datapack/refresh-nationwide-candidate.mjs --evaluated-at "${EVALUATED_AT}" --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --gate-run "${RUNNER_TEMP}/candidate-gate-run.json"
       - name: Verify candidate refresh output scope
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         run: |
           set -euo pipefail
           # 출력 목록은 후보 갱신 도구가 선언한 NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS뿐이다. 목록을 못 읽으면 여기서 실패한다.
@@ -93,6 +147,7 @@ jobs:
             *) echo "candidate refresh staged diff check failed (git diff exit ${diff_status})" >&2; exit "${diff_status}" ;;
           esac
       - name: Commit and push candidate refresh branch
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         env:
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
@@ -109,6 +164,7 @@ jobs:
           printf 'CANDIDATE_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
       - name: Mint App token for the candidate refresh pull request
         id: app-token-pr
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
@@ -117,8 +173,10 @@ jobs:
           repositories: easysubway-data
           permission-pull-requests: write
       - name: Create candidate refresh pull request
+        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         env:
           APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
+          STALE_PATHS: ${{ steps.decision.outputs.stale_paths }}
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
           REQUESTED_BY: ${{ steps.plan.outputs.requested_by }}
@@ -126,6 +184,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if [[ -n "${STALE_PATHS}" ]]; then reason="후보 입력 변경(${STALE_PATHS})"; else reason="사람 dispatch(명시 요청)"; fi
           body="$(printf '%s\n' \
             "## Summary" \
             "" \
@@ -133,6 +192,7 @@ jobs:
             "- releaseSequence: ${RELEASE_SEQUENCE}" \
             "- 후보 시계(evaluatedAt): ${EVALUATED_AT}" \
             "- 요청 역할: ${REQUESTED_BY}, 승인 역할: ${APPROVED_BY}" \
+            "- 시작 사유: ${reason}" \
             "- 실행 run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             "" \
             "이 PR이 main에 들어오면 \`datapack-release-candidate-chain.yml\`이 release-candidate를 실행한다." \
@@ -154,3 +214,8 @@ jobs:
           else
             git push origin --delete "${CANDIDATE_BRANCH}"
           fi
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow nationwide-candidate-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
