@@ -142,6 +142,9 @@ test("커밋은 허용된 네 경로만 명시적으로 스테이징하고 push�
   const body = block.indexOf('node tools/ci/automation-pr-evidence.mjs itx-promotion-body --receipt');
   const create = block.indexOf("gh pr create");
   assert.ok(add !== -1 && add < commit && commit < push && push < body && body < create, [add, commit, push, body, create].join(","));
+  // F6: 정리 step이 이 브랜치를 알 수 있도록 push보다 먼저 이름을 기록한다(취소가 둘 사이에 와도 원격 브랜치가 남지 않는다).
+  const record = block.indexOf("PROMOTION_BRANCH=%s");
+  assert.ok(record !== -1 && record < push, `PROMOTION_BRANCH is recorded at ${record}, push at ${push}`);
   assert.match(block, /--base-sha "\$\{base_sha\}" --head-sha "\$\(git rev-parse HEAD\)" --run-url "\$\{GITHUB_SERVER_URL\}\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{GITHUB_RUN_ID\}" --output "\$\{evidence_root\}\/body\.md"/u);
   assert.match(block, /--body-file "\$\{evidence_root\}\/body\.md"/u);
   assert.match(block, /branch="automation\/977-itx-promotion-\$\{GITHUB_RUN_ID\}"/u);

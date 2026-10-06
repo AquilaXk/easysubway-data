@@ -183,8 +183,9 @@ jobs:
           git switch -c "${branch}"
           git add "${paths[@]}"
           git commit -m "Promote ITX cheongchun source timetable ${artifact_id}"
-          git push origin "${branch}"
+          # 정리 step이 알 수 있도록 push보다 먼저 이름을 기록한다. 정리 step은 원격 브랜치가 없으면 조용히 끝난다.
           printf 'PROMOTION_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          git push origin "${branch}"
           evidence_root="$(mktemp -d "${RUNNER_TEMP}/itx-promotion-evidence.XXXXXX")"
           printf '%s\n' "${paths[@]}" > "${evidence_root}/paths.txt"
           node tools/ci/automation-pr-evidence.mjs itx-promotion-body --receipt "tools/datapack/sources/${artifact_id}-promotion-gate.json" --changed-paths "${evidence_root}/paths.txt" --base-sha "${base_sha}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${evidence_root}/body.md"
