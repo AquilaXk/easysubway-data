@@ -37,9 +37,9 @@ import { promisify } from "node:util";
 import { automationPrEvidencePayload, itxPromotionAllowedPaths, itxPromotionSourceRow, parseAutomationPrEvidence } from "./automation-pr-evidence.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
-import { isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
+import { SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
 import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
-import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { REVERIFICATION_RECIPES, inventoryChangeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
 import { ITX_PROMOTION_MODE_GATE_PASSED, itxPromotionReceiptPath, verifyItxGatePromotion } from "../datapack/lib/itx-promotion-authority.mjs";
 import { SCHEDULED_RELEASE_ROLES, gateRunViolations } from "../datapack/lib/scheduled-release-authority.mjs";
@@ -209,6 +209,12 @@ function pathViolation(evidence, files) {
     const claimed = sortCodepoint(new Set(evidence.steps.flatMap((step) => step.paths)));
     const outside = claimed.filter((entry) => !isSourceReverificationAllowedPath(entry) || entry === GOVERNANCE_PATH);
     if (outside.length > 0) return `원천 재확인이 자동 병합 대상으로 허용하지 않는 경로: ${outside.slice(0, 8).join(", ")}`;
+    // 파일 status(#987 N2): snapshot 파일은 새 파일(added)만, 원장·inventory는 제자리 수정(modified)만 허용한다. 이미 있는 snapshot의 수정·삭제·이름 변경은 불변 계약 위반이다.
+    for (const entry of files) {
+      const inPlace = SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS.includes(entry.filename);
+      const expected = inPlace ? "modified" : "added";
+      if (entry.status !== expected) return `${entry.filename}의 변경 종류(${String(entry.status)})가 ${expected}가 아니다${inPlace ? "" : " (기존 snapshot 파일은 불변이다)"}`;
+    }
     return sameJson(changed, claimed) ? null : describeSetDifference(changed, claimed);
   }
   // 후보 갱신: 증거가 주장한 경로가 후보 갱신 도구의 출력 목록 안이어야 하고 API diff가 그 경로와 정확히 같아야 한다(#986 F4).
@@ -390,8 +396,9 @@ export async function recomputeAutomationGates({
       const { sources: baseSources, ...baseTop } = base;
       const { sources: headSources, ...headTop } = head;
       if (!sameJson(baseTop, headTop)) throw new Error("inventory top-level fields changed");
-      const ids = (list) => sortCodepoint(list.map((entry) => entry?.id));
-      if (!sameJson(ids(baseSources), ids(headSources))) throw new Error("inventory source entries were added or removed");
+      // 항목 범위(#987 N1): 이 PR의 recipe가 소유하지 않은 항목은 깊은 비교로 같아야 하고, 소유 항목도 recipe가 명시한 갱신 필드만 바뀐다.
+      const outside = inventoryChangeViolations({ base, head, recipeIds: evidence.steps.map(({ id }) => id) });
+      if (outside.length > 0) throw new Error(`inventory changed outside the recipes' scope: ${outside.slice(0, 6).join(" | ")}`);
       const rows = [];
       for (const step of evidence.steps) {
         const due = REVERIFICATION_RECIPES.find(({ id }) => id === step.id)?.due;

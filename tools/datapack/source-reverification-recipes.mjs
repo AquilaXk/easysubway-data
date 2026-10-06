@@ -13,6 +13,15 @@ const DAEGU_LINES = Object.freeze([1, 2, 3]);
 const DAEGU_TOPOLOGY_SOURCE_IDS = Object.freeze(DAEGU_LINES.map((line) => `daegu-line${line}-route-topology`));
 const DAEGU_TIMETABLE_SOURCE_IDS = Object.freeze(DAEGU_LINES.map((line) => `daegu-line${line}-train-timetable`));
 
+// 재확인이 inventory 항목에서 바꾸는 필드(#987 N1). 정책성 필드(productionUseAllowed·requiredForProductionPack·license·datasetUrl·coverage 등)는 어떤 recipe도 바꾸지 않는다.
+// 실제 등록 도구가 바꾼 필드를 seq127(#940)의 recipe별 커밋(광주·부산·대전·대구·접근성·코레일·KRIC)에서 읽어 정했다.
+const TOPOLOGY_FIELDS = Object.freeze(["observedDataUpdatedAt", "retrievedAt", "topologyAdmissionEvidence", "membershipAdmissionEvidence"]);
+const SCHEDULE_FIELDS = Object.freeze(["observedDataUpdatedAt", "retrievedAt", "scheduleAdmissionEvidence"]);
+const ACCESSIBILITY_FIELDS = Object.freeze(["accessibilityAdmissionEvidence"]);
+const ROUTE_MAP_FIELDS = Object.freeze(["routeMapAdmissionEvidence"]);
+const MEMBERSHIP_FIELDS = Object.freeze(["membershipAdmissionEvidence"]);
+const changes = (map) => Object.freeze(Object.fromEntries(Object.entries(map).map(([sourceId, fields]) => [sourceId, Object.freeze([...fields])])));
+
 const ledgerHead = (...sourceIds) => Object.freeze({ kind: "ledger-head", sourceIds: Object.freeze(sourceIds) });
 
 export const REVERIFICATION_RECIPES = Object.freeze([
@@ -21,6 +30,7 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] KRIC 전국 시간표 수도권·코레일 projection을 원본 재수집으로 재확인",
     sourceIds: ["kric-nationwide-timetable-file"],
     dependsOn: [],
+    inventoryChanges: changes({ "kric-nationwide-timetable-file": ["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence"] }),
     // 원장 행이 아니라 inventory 증거(capital·korail projection)의 observedAt이 기준이다.
     due: Object.freeze({
       kind: "inventory-evidence", sourceId: "kric-nationwide-timetable-file", classId: "official_static_timetable_confirmation",
@@ -32,6 +42,7 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] 코레일 광역 시간표 topology를 같은 원본으로 재확인해 등록",
     sourceIds: ["korail-metropolitan-timetable-file"],
     dependsOn: [],
+    inventoryChanges: changes({ "korail-metropolitan-timetable-file": ["retrievedAt", "observedDataUpdatedAt", "topologyAdmissionEvidence"] }),
     due: ledgerHead("korail-metropolitan-timetable-file"),
   },
   {
@@ -39,6 +50,7 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] 코레일 계획 시각표를 재확인한 topology head에 다시 결속해 등록",
     sourceIds: ["korail-metropolitan-planned-timetable"],
     dependsOn: ["korail-topology"],
+    inventoryChanges: changes({ "korail-metropolitan-planned-timetable": SCHEDULE_FIELDS }),
     due: null,
   },
   {
@@ -46,6 +58,12 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] 광주 topology를 다시 수집해 등록",
     sourceIds: ["gwangju-transportation-route-topology"],
     dependsOn: [],
+    // 등록 도구가 의존 항목(접근성·노선도 위치·MOLIT 멤버십)과 광주 보관 시간표의 topology 결속도 함께 다시 맞춘다.
+    inventoryChanges: changes({
+      "gwangju-transportation-route-topology": TOPOLOGY_FIELDS, "gwangju-transportation-accessibility": ACCESSIBILITY_FIELDS,
+      "gwangju-transportation-route-map-positions": ROUTE_MAP_FIELDS, "molit-urban-rail-full-route-gwangju-membership": MEMBERSHIP_FIELDS,
+      "kric-nationwide-timetable-file": ["retainedScheduleAdmissionEvidence"],
+    }),
     due: ledgerHead("gwangju-transportation-route-topology"),
   },
   {
@@ -53,6 +71,7 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] 광주 접근성 시설을 새 topology head에 다시 결속해 등록",
     sourceIds: ["gwangju-transportation-accessibility"],
     dependsOn: ["gwangju-topology"],
+    inventoryChanges: changes({ "gwangju-transportation-accessibility": ACCESSIBILITY_FIELDS }),
     due: null,
   },
   {
@@ -60,6 +79,7 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] 부산 topology를 다시 수집해 등록",
     sourceIds: ["busan-transportation-route-topology"],
     dependsOn: [],
+    inventoryChanges: changes({ "busan-transportation-route-topology": TOPOLOGY_FIELDS }),
     due: ledgerHead("busan-transportation-route-topology"),
   },
   {
@@ -67,6 +87,10 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] 대전 topology를 다시 수집해 등록",
     sourceIds: ["daejeon-station-distance-fare"],
     dependsOn: [],
+    inventoryChanges: changes({
+      "daejeon-station-distance-fare": TOPOLOGY_FIELDS, "daejeon-train-timetable": ["scheduleAdmissionEvidence"], "daejeon-transportation-accessibility": ACCESSIBILITY_FIELDS,
+      "daejeon-transportation-route-map-positions": ROUTE_MAP_FIELDS, "molit-urban-rail-full-route-daejeon-membership": MEMBERSHIP_FIELDS,
+    }),
     due: ledgerHead("daejeon-station-distance-fare"),
   },
   {
@@ -74,6 +98,7 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     message: "[Data] 대전 접근성 시설을 새 topology head에 다시 결속해 등록",
     sourceIds: ["daejeon-transportation-accessibility"],
     dependsOn: ["daejeon-topology"],
+    inventoryChanges: changes({ "daejeon-transportation-accessibility": ACCESSIBILITY_FIELDS }),
     due: null,
   },
   {
@@ -82,6 +107,12 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     // 여섯 원천은 한 번에 등록한다(등록기가 여섯 개를 묶는다). 만료 기준은 P7D인 topology 셋이다.
     sourceIds: [...DAEGU_TOPOLOGY_SOURCE_IDS, ...DAEGU_TIMETABLE_SOURCE_IDS],
     dependsOn: [],
+    inventoryChanges: changes({
+      ...Object.fromEntries(DAEGU_TOPOLOGY_SOURCE_IDS.map((id) => [id, TOPOLOGY_FIELDS])),
+      ...Object.fromEntries(DAEGU_TIMETABLE_SOURCE_IDS.map((id) => [id, SCHEDULE_FIELDS])),
+      "daegu-transportation-route-map-positions": ROUTE_MAP_FIELDS,
+      ...Object.fromEntries(DAEGU_LINES.map((line) => [`molit-urban-rail-full-route-daegu-line${line}-membership`, MEMBERSHIP_FIELDS])),
+    }),
     due: ledgerHead(...DAEGU_TOPOLOGY_SOURCE_IDS),
   },
 ]);
@@ -120,4 +151,32 @@ export const P7D_SOURCE_COVERAGE = Object.freeze({
 export function p7dSourceIds(policy) {
   if (!Array.isArray(policy?.sourceClasses)) throw new Error("REVERIFICATION_POLICY_INVALID: sourceClasses");
   return policy.sourceClasses.filter((entry) => entry?.reverificationCadence === "P7D").flatMap((entry) => entry.sourceIds ?? []).sort();
+}
+
+/**
+ * 재확인 PR의 inventory 변화가 실행한 recipe의 소유 범위 안인지 본다(#987 N1).
+ * - recipe가 소유하지 않은 항목은 base와 head가 깊은 비교로 같아야 한다.
+ * - 소유 항목은 그 recipe가 명시한 갱신 필드만 바뀔 수 있다. 정책성 필드는 어떤 recipe도 명시하지 않으므로 고정이다.
+ * - 항목을 더하거나 지우는 것은 소유 여부와 상관없이 위반이다.
+ * @returns {string[]} 항목별 위반 사유(없으면 빈 배열)
+ */
+export function inventoryChangeViolations({ base, head, recipeIds }) {
+  const allowed = new Map();
+  for (const id of recipeIds) {
+    for (const [sourceId, fields] of Object.entries(recipeById(id).inventoryChanges)) allowed.set(sourceId, new Set([...(allowed.get(sourceId) ?? []), ...fields]));
+  }
+  const entries = (inventory) => new Map(inventory.sources.map((entry) => [entry?.id, entry]));
+  const before = entries(base);
+  const after = entries(head);
+  const violations = [];
+  for (const id of [...new Set([...before.keys(), ...after.keys()])].sort()) {
+    const [was, now] = [before.get(id), after.get(id)];
+    if (was === undefined || now === undefined) { violations.push(`${String(id)}: the inventory entry was ${was === undefined ? "added" : "removed"}`); continue; }
+    if (JSON.stringify(was) === JSON.stringify(now)) continue;
+    const fields = allowed.get(id);
+    if (!fields) { violations.push(`${id}: the entry changed but no recipe in this pull request owns it (not owned)`); continue; }
+    const outside = [...new Set([...Object.keys(was), ...Object.keys(now)])].filter((key) => JSON.stringify(was[key]) !== JSON.stringify(now[key]) && !fields.has(key));
+    if (outside.length > 0) violations.push(`${id}: fields outside the recipe's refresh set changed: ${outside.sort().join(", ")}`);
+  }
+  return violations;
 }

@@ -604,6 +604,16 @@ test("반증: 원천 재확인이 소유하지 않은 inventory 항목의 내용
   assert.ok((await gateCodes(revGate(quiet))).includes("INVENTORY_GATE"));
 });
 
+test("반증: 실제 inventory에서 무관한 항목(kric-station-elevator)의 productionUseAllowed·datasetUrl을 바꿔도 막는다", async () => {
+  const real = JSON.parse(await readFile(path.join(import.meta.dirname, "../datapack/source-inventory.json"), "utf8"));
+  const tampered = structuredClone(real);
+  const entry = tampered.sources.find(({ id }) => id === "kric-station-elevator");
+  entry.productionUseAllowed = !entry.productionUseAllowed;
+  entry.datasetUrl = "https://evil.test/elevator";
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: real, inventory: tampered }))).includes("INVENTORY_GATE"));
+  assert.ok(!(await gateCodes(gateInput("source-reverification", { inventoryBase: real, inventory: structuredClone(real) }))).includes("INVENTORY_GATE"));
+});
+
 test("반증: 원천 재확인이 소유한 항목의 정책성 필드(productionUseAllowed·requiredForProductionPack·license·datasetUrl·coverage)를 바꾸면 막는다", async () => {
   for (const [field, value] of [["productionUseAllowed", false], ["requiredForProductionPack", false], ["license", { type: "OTHER" }], ["datasetUrl", "https://evil.test"], ["coverage", "all lines"]]) {
     const tamper = (entry) => (entry.id === "gwangju-transportation-route-topology" ? { ...refreshed(entry), [field]: value } : refreshed(entry));
