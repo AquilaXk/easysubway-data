@@ -8,6 +8,9 @@ import { inflateRawSync } from "node:zlib";
 export const KRIC_NATIONWIDE_TIMETABLE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1";
 export const KRIC_CURRENT_STATION_LINE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1";
 export const DEFAULT_MAXIMUM_BYTES = 128 * 1024 * 1024;
+// #995: 연결·헤더 한도와 본문 수신 한도를 나눈다. 약 17.9MB 본문이 느린 서버에서 30초를 넘겨도 받을 수 있어야 한다.
+export const HEADER_TIMEOUT_MS = 30_000;
+export const BODY_TIMEOUT_MS = 5 * 60_000;
 
 const TIMETABLE_PROFILE = Object.freeze({
   receiptArtifactKind: "kric-nationwide-timetable-file-receipt",
@@ -53,39 +56,48 @@ export function parseKricCurrentStationLineWorkbook(bytes, { maximumInflatedByte
 
 export async function collectKricNationwideTimetableFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   return collectKricFile({
-    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish,
+    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
   });
 }
 
 export async function collectKricCurrentStationLineFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   return collectKricFile({
-    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish,
+    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
   });
 }
 
 async function collectKricFile({
-  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish,
+  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
 }) {
   const maximum = positiveSafeInteger(maximumBytes, "maximumBytes");
+  const headerTimeout = positiveSafeInteger(headerTimeoutMs, "headerTimeoutMs");
+  const bodyTimeout = positiveSafeInteger(bodyTimeoutMs, "bodyTimeoutMs");
   const output = requiredTaskOutputFile(outputFile, profile.outputPrefix);
   const parent = path.dirname(output);
   const parentIdentity = await assertRegularDirectory(parent, "output parent");
   await assertAbsent(output);
 
+  // 연결·헤더 한도는 응답 헤더가 오면 끝난다. 본문 수신은 별도 한도(readBoundedBody)를 받는다. 한 signal을 본문까지 붙이면 큰 파일이 중간에 끊긴다(#995).
+  const controller = new AbortController();
+  const headerTimer = setTimeout(() => controller.abort(), headerTimeout);
   let response;
   try {
     response = await fetchImpl(profile.url, {
-      method: "GET", redirect: "error", signal: AbortSignal.timeout(30_000), headers: { "accept-encoding": "identity" },
+      method: "GET", redirect: "error", signal: controller.signal, headers: { "accept-encoding": "identity" },
     });
   } catch {
-    fail("TRANSPORT");
+    fail(controller.signal.aborted ? "TIMEOUT" : "TRANSPORT");
+  } finally {
+    clearTimeout(headerTimer);
   }
   const declaredLength = validateResponse(response, maximum, profile.url);
-  const bytes = await readBoundedBody(response.body, maximum);
+  const bytes = await readBoundedBody(response.body, maximum, bodyTimeout);
   validateXlsxBytes(bytes, declaredLength);
 
   const receipt = Object.freeze({
@@ -122,14 +134,23 @@ function validateResponse(response, maximumBytes, expectedUrl) {
   return length;
 }
 
-async function readBoundedBody(body, maximumBytes) {
+async function readBoundedBody(body, maximumBytes, timeoutMs) {
   if (!body || typeof body.getReader !== "function") fail("BODY");
   const reader = body.getReader();
   const chunks = [];
   let total = 0;
+  // 본문 전체에 하나의 한도를 둔다. 시간 초과는 BODY와 구분해 원인을 드러낸다(504 run 37399282636).
+  let timer;
+  const expired = Symbol("body timeout");
+  const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve(expired), timeoutMs); });
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const next = await Promise.race([reader.read(), deadline]);
+      if (next === expired) {
+        reader.cancel().catch(() => {});
+        fail("TIMEOUT");
+      }
+      const { done, value } = next;
       if (done) return Buffer.concat(chunks, total);
       if (!(value instanceof Uint8Array)) fail("BODY");
       total += value.byteLength;
@@ -140,8 +161,10 @@ async function readBoundedBody(body, maximumBytes) {
       chunks.push(Buffer.from(value));
     }
   } catch (error) {
-    if (error?.message === "KRIC_TIMETABLE_FILE_BODY") throw error;
+    if (error?.message === "KRIC_TIMETABLE_FILE_BODY" || error?.message === "KRIC_TIMETABLE_FILE_TIMEOUT") throw error;
     fail("BODY");
+  } finally {
+    clearTimeout(timer);
   }
 }
 
