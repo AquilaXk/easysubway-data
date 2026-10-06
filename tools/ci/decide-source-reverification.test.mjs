@@ -148,9 +148,9 @@ test("끝난 run·기록 없는 run의 claim은 정리 대상으로 알리고 �
   for (const runs of [[run(77, "completed", "failure")], [run(77, "completed", "cancelled")], [run(77, "completed", "success")], []]) {
     assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs })), { state: "NOT_DUE", due: [], recipes: [], cleanupClaims: [claim] });
   }
-  const due = decideSourceReverification(input({ automationBranches: [claim], runs: [run(77, "completed", "failure")], ledger: ledgerAt(dueAgo(2 * DAY)) }));
-  assert.equal(due.state, "RUN");
-  assert.deepEqual(due.cleanupClaims, [claim]);
+  const restarted = decideSourceReverification(input({ automationBranches: [claim], runs: [run(77, "completed", "failure")], ledger: ledgerAt(dueAgo(2 * DAY)) }));
+  assert.equal(restarted.state, "RUN");
+  assert.deepEqual(restarted.cleanupClaims, [claim]);
 });
 
 test("병합된 PR의 남은 claim도 정리 대상이고, 다른 workflow의 run을 가리키는 claim은 이상이다", () => {
