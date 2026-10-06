@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { readdirSync } from "node:fs";
 
 import {
   DAEGU_LINES, daeguSourceSnapshotIdentity, decodeOfficialCsv, loadAdmittedDaeguTopologySnapshots, normalizedStationName, parseDaeguRouteTopology, parseDaeguTrainTimetable,
-  writeDaeguSourceSnapshot,
+  runDaeguSourceCollector, writeDaeguSourceSnapshot,
 } from "./collect-daegu-datapack-sources.mjs";
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 import { ledgerRow, prepareDaeguSourceRegistration } from "./register-daegu-datapack-sources.mjs";
 import {
   daeguDependentRebindOutputPlan,
@@ -392,4 +394,123 @@ test("시각표 CSV의 미인식 요일 접두 행은 개별 오류 없이 조�
   // 불일치해 collector 최종 count 검증이 fail-closed로 잡아낸다.
   assert.throws(() => parseDaeguTrainTimetable(upBytes, downBytes, FAKE_TIMETABLE_TOPOLOGY,
     { lineNumber: 1, capturedAt: CAPTURED_AT }), /timetable counts mismatch/);
+});
+
+// seq128 등록(2026-10-06) 시점의 content-addressed snapshot에 보관된 취득 원문을 포털 파일 응답으로 재생한다.
+const SEQ128_SNAPSHOT_PREFIXES = Object.freeze([
+  "daegu-line1-route-topology-6413bc9c", "daegu-line1-train-timetable-c38d7242",
+  "daegu-line2-route-topology-1e38f193", "daegu-line2-train-timetable-9e9293cd",
+  "daegu-line3-route-topology-5b95defb", "daegu-line3-train-timetable-ccb59b52",
+]);
+
+const retainedName = (linePrefix) => {
+  const prefix = SEQ128_SNAPSHOT_PREFIXES.find((candidate) => candidate.startsWith(linePrefix));
+  return `${readdirSync(path.join(root, "tools/datapack/sources")).find((name) => name.startsWith(prefix))}`;
+};
+
+async function retainedDaeguRawFiles() {
+  const names = await readdir(path.join(root, "tools/datapack/sources"));
+  const files = {};
+  for (const prefix of SEQ128_SNAPSHOT_PREFIXES) {
+    const matches = names.filter((name) => name.startsWith(prefix) && name.endsWith(".json"));
+    assert.equal(matches.length, 1, prefix);
+    for (const raw of (await readSnapshot(matches[0])).rawSources) {
+      files[raw.datasetId] = Buffer.from(raw.bytesBase64, "base64");
+    }
+  }
+  return files;
+}
+
+const provenanceOf = (datasetId, bytes) => ({
+  datasetId,
+  detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,
+  downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_${String(datasetId).padStart(15, "0")}&fileDetailSn=1&insertDataPrcus=N`,
+  rawSha256: sha256(bytes),
+});
+
+test("대구 collector --download는 9개 공식 FILE을 받아 topology·시각표 snapshot에 원본 sha provenance를 기록한다", async (t) => {
+  const files = await retainedDaeguRawFiles();
+  assert.equal(Object.keys(files).length, 9);
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-download-"));
+  t.after(() => rm(outputDirectory, { recursive: true, force: true }));
+  const calls = [];
+  const now = new Date("2026-10-06T03:00:00.000Z");
+  const outputs = await runDaeguSourceCollector(["--download", "--output-dir", outputDirectory], {
+    fetchImpl: createDataGoPortalFetch(files, { calls }), now: () => now,
+  });
+  assert.equal(outputs.length, 6);
+  assert.equal(calls.filter(({ url }) => new URL(url).pathname === "/cmm/cmm/fileDownload.do").length, 9);
+  for (const config of DAEGU_LINES) {
+    const topology = JSON.parse(await readFile(outputs.find((file) => file.includes(`daegu-line${config.lineNumber}-route-topology-`)), "utf8"));
+    const timetable = JSON.parse(await readFile(outputs.find((file) => file.includes(`daegu-line${config.lineNumber}-train-timetable-`)), "utf8"));
+    assert.equal(topology.capturedAt, now.toISOString());
+    assert.deepEqual(topology.downloadProvenance, [
+      provenanceOf(config.intervalDatasetId, files[config.intervalDatasetId]),
+    ]);
+    assert.equal(timetable.capturedAt, now.toISOString());
+    assert.deepEqual(timetable.downloadProvenance, [
+      provenanceOf(config.upDatasetId, files[config.upDatasetId]),
+      provenanceOf(config.downDatasetId, files[config.downDatasetId]),
+    ]);
+    // 받은 원문은 취득 시 고정한 원본과 sha가 같으므로 정규화 결과도 고정 snapshot과 같다.
+    const retained = await readSnapshot(retainedName(`daegu-line${config.lineNumber}-route-topology-`));
+    assert.equal(topology.rawSha256, retained.rawSha256);
+    assert.equal(topology.contentSha256, retained.contentSha256);
+    const retainedTimetable = await readSnapshot(retainedName(`daegu-line${config.lineNumber}-train-timetable-`));
+    assert.equal(timetable.contentSha256, retainedTimetable.contentSha256);
+    assert.equal(timetable.tripsSha256, retainedTimetable.tripsSha256);
+  }
+});
+
+test("대구 collector 파일 입력 모드 snapshot은 downloadProvenance를 기록하지 않는다", async () => {
+  const bytes = buildIntervalCsv(1);
+  const snapshot = parseDaeguRouteTopology(bytes, { lineNumber: 1, capturedAt: CAPTURED_AT });
+  assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), false);
+});
+
+test("대구 collector --download는 한 파일이라도 실패하면 아무 snapshot도 쓰지 않고 오류를 드러낸다", async (t) => {
+  const files = await retainedDaeguRawFiles();
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "daegu-download-fail-"));
+  t.after(() => rm(outputDirectory, { recursive: true, force: true }));
+  await assert.rejects(runDaeguSourceCollector(["--download", "--output-dir", outputDirectory], {
+    fetchImpl: createDataGoPortalFetch(files, { failFile: new Set(["15138734"]) }),
+  }), /15138734 file HTTP 503/);
+  const { 15065526: _omitted, ...withoutLine1Up } = files;
+  await assert.rejects(runDaeguSourceCollector(["--download", "--output-dir", outputDirectory], {
+    fetchImpl: createDataGoPortalFetch(withoutLine1Up),
+  }), /15065526 detail HTTP 404/);
+  assert.deepEqual(await readdir(outputDirectory), []);
+  for (const argv of [
+    ["--download", "--input-dir", outputDirectory, "--output-dir", outputDirectory],
+    ["--download", "--captured-at", "2026-10-06T00:00:00.000Z", "--output-dir", outputDirectory],
+    ["--download", "--download", "--output-dir", outputDirectory],
+    ["--download", "--output-dir", "relative"],
+    ["--download"],
+    ["--input-dir", outputDirectory, "--output-dir", outputDirectory],
+  ]) {
+    await assert.rejects(runDaeguSourceCollector(argv), /usage: collect-daegu-datapack-sources/);
+  }
+});
+
+test("대구 시각표·topology provenance는 원본 sha·순서·데이터셋이 다르면 거부한다", async () => {
+  const files = await retainedDaeguRawFiles();
+  const config = DAEGU_LINES[0];
+  const topology = parseDaeguRouteTopology(files[config.intervalDatasetId], { lineNumber: 1, capturedAt: CAPTURED_AT });
+  const good = [provenanceOf(config.intervalDatasetId, files[config.intervalDatasetId])];
+  assert.deepEqual(parseDaeguRouteTopology(files[config.intervalDatasetId], {
+    lineNumber: 1, capturedAt: CAPTURED_AT, downloadProvenance: good,
+  }).downloadProvenance, good);
+  assert.throws(() => parseDaeguRouteTopology(files[config.intervalDatasetId], {
+    lineNumber: 1, capturedAt: CAPTURED_AT, downloadProvenance: [{ ...good[0], rawSha256: "0".repeat(64) }],
+  }), /download provenance sha256 mismatch/);
+  const up = provenanceOf(config.upDatasetId, files[config.upDatasetId]);
+  const down = provenanceOf(config.downDatasetId, files[config.downDatasetId]);
+  const options = { lineNumber: 1, capturedAt: CAPTURED_AT };
+  const timetable = parseDaeguTrainTimetable(files[config.upDatasetId], files[config.downDatasetId], topology,
+    { ...options, downloadProvenance: [up, down] });
+  assert.deepEqual(timetable.downloadProvenance, [up, down]);
+  assert.throws(() => parseDaeguTrainTimetable(files[config.upDatasetId], files[config.downDatasetId], topology,
+    { ...options, downloadProvenance: [down, up] }), /download provenance is invalid/);
+  assert.throws(() => parseDaeguTrainTimetable(files[config.upDatasetId], files[config.downDatasetId], topology,
+    { ...options, downloadProvenance: [up] }), /download provenance is invalid/);
 });

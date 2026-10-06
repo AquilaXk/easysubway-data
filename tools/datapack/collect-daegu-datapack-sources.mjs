@@ -7,6 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+import { downloadDataGoFile, verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_PREFIX = Object.freeze({ "평일": "WEEK", "토요일": "SAT", "휴일": "HOLI" });
@@ -128,10 +129,15 @@ function validDate(now) {
 }
 
 // 역 구간정보 CSV → 노선 topology snapshot(정방향·역방향 인접 edge, 차량기지 격리)
-export function parseDaeguRouteTopology(intervalBytes, { lineNumber, capturedAt }) {
+export function parseDaeguRouteTopology(intervalBytes, { lineNumber, capturedAt, downloadProvenance }) {
   const config = DAEGU_LINES.find((line) => line.lineNumber === lineNumber);
   if (!config) throw new Error(`unknown Daegu line: ${lineNumber}`);
   const captured = validDate(capturedAt);
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, [config.intervalDatasetId], {
+      [config.intervalDatasetId]: intervalBytes,
+    });
   const rows = parseCsv(decodeOfficialCsv(intervalBytes)).slice(1);
   const depots = [];
   const revenue = [];
@@ -207,6 +213,7 @@ export function parseDaeguRouteTopology(intervalBytes, { lineNumber, capturedAt 
     rawSources: [retainedRawSource(config.intervalDatasetId, intervalBytes)],
     rawSha256,
     contentSha256: sha256(JSON.stringify({ scope, edges })),
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
   };
   return snapshot;
 }
@@ -283,10 +290,16 @@ function buildTimetableTrips(bytes, direction, lineNumber, seqByNorm) {
 }
 
 // 상선·하선 열차시각표 CSV → 노선 시각표 snapshot(열차별 trip·stop time)
-export function parseDaeguTrainTimetable(upBytes, downBytes, topologySnapshot, { lineNumber, capturedAt }) {
+export function parseDaeguTrainTimetable(upBytes, downBytes, topologySnapshot, { lineNumber, capturedAt, downloadProvenance }) {
   const config = DAEGU_LINES.find((line) => line.lineNumber === lineNumber);
   if (!config) throw new Error(`unknown Daegu line: ${lineNumber}`);
   const captured = validDate(capturedAt);
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, [config.upDatasetId, config.downDatasetId], {
+      [config.upDatasetId]: upBytes,
+      [config.downDatasetId]: downBytes,
+    });
   const seqByNorm = new Map(topologySnapshot.scope.map((station) => [
     normalizedStationName(station.stationName),
     { seq: station.sequence, stationCode: station.stationCode },
@@ -336,25 +349,36 @@ export function parseDaeguTrainTimetable(upBytes, downBytes, topologySnapshot, {
     rawDownSha256: down.rawSha256,
     rawSha256: sha256(Buffer.concat([Buffer.from(upBytes), Buffer.from(downBytes)])),
     contentSha256: sha256(JSON.stringify({ tripsSha256, stopTimeCount, stationCount: config.stationCount })),
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
   };
   return snapshot;
 }
 
+const USAGE = "usage: collect-daegu-datapack-sources.mjs "
+  + "(--input-dir <dir> --captured-at <iso> | --download) --output-dir <absolute-dir>";
+
 function parseArgs(argv) {
-  const args = {};
-  const allowed = new Set(["input-dir", "output-dir", "captured-at"]);
-  for (let index = 0; index < argv.length; index += 2) {
-    const name = argv[index]?.slice(2);
-    const value = argv[index + 1];
-    if (!argv[index]?.startsWith("--") || !allowed.has(name) || Object.hasOwn(args, name)
-      || typeof value !== "string" || value.length === 0) {
-      throw new Error("usage: collect-daegu-datapack-sources.mjs --input-dir <dir> --output-dir <dir> --captured-at <iso>");
+  const args = { download: false };
+  const seen = new Set();
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (seen.has(flag)) throw new Error(USAGE);
+    seen.add(flag);
+    if (flag === "--download") {
+      args.download = true;
+      continue;
     }
-    args[name] = value;
+    if (!["--input-dir", "--output-dir", "--captured-at"].includes(flag)) throw new Error(USAGE);
+    const value = argv[index + 1];
+    if (typeof value !== "string" || value.length === 0 || value.startsWith("--")) throw new Error(USAGE);
+    args[flag.slice(2)] = value;
+    index += 1;
   }
-  if (argv.length !== 6 || !args["input-dir"] || !args["output-dir"] || !args["captured-at"] || !path.isAbsolute(args["output-dir"])) {
-    throw new Error("usage: collect-daegu-datapack-sources.mjs --input-dir <dir> --output-dir <dir> --captured-at <iso>");
-  }
+  // 다운로드 capture 시각은 공식 FILE 본문을 받은 시각이므로 직접 지정할 수 없다.
+  const modeMismatch = args.download
+    ? Boolean(args["input-dir"] || args["captured-at"])
+    : !args["input-dir"] || !args["captured-at"];
+  if (modeMismatch || !args["output-dir"] || !path.isAbsolute(args["output-dir"])) throw new Error(USAGE);
   return args;
 }
 
@@ -398,17 +422,44 @@ export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
   return output;
 }
 
-export async function runDaeguSourceCollector(argv) {
+async function readLineRawFiles(config, args, fetchImpl) {
+  const datasetIds = [config.intervalDatasetId, config.upDatasetId, config.downDatasetId];
+  if (!args.download) {
+    const bytes = await Promise.all(datasetIds.map((datasetId) => readFile(path.join(args["input-dir"], `data-go-${datasetId}.csv`))));
+    return { bytesByDatasetId: Object.fromEntries(datasetIds.map((datasetId, index) => [datasetId, bytes[index]])) };
+  }
+  const bytesByDatasetId = {};
+  const provenanceByDatasetId = {};
+  for (const datasetId of datasetIds) {
+    const { bytes, detailUrl, downloadUrl, rawSha256 } = await downloadDataGoFile(fetchImpl, datasetId);
+    bytesByDatasetId[datasetId] = bytes;
+    provenanceByDatasetId[datasetId] = { datasetId, detailUrl, downloadUrl, rawSha256 };
+  }
+  return { bytesByDatasetId, provenanceByDatasetId };
+}
+
+export async function runDaeguSourceCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
   const args = parseArgs(argv);
+  // 선택한 노선의 공식 FILE이 모두 있어야 capture가 성립하므로 받기·파싱을 끝낸 뒤에만 쓴다.
+  const raws = [];
+  for (const config of DAEGU_LINES) raws.push(await readLineRawFiles(config, args, fetchImpl));
+  const capturedAt = args.download ? validDate(now()).toISOString() : args["captured-at"];
+  const prepared = DAEGU_LINES.map((config, index) => {
+    const { bytesByDatasetId, provenanceByDatasetId } = raws[index];
+    const provenance = (...datasetIds) => (provenanceByDatasetId
+      ? { downloadProvenance: datasetIds.map((datasetId) => provenanceByDatasetId[datasetId]) }
+      : {});
+    const topology = parseDaeguRouteTopology(bytesByDatasetId[config.intervalDatasetId], {
+      lineNumber: config.lineNumber, capturedAt, ...provenance(config.intervalDatasetId),
+    });
+    const timetable = parseDaeguTrainTimetable(
+      bytesByDatasetId[config.upDatasetId], bytesByDatasetId[config.downDatasetId], topology,
+      { lineNumber: config.lineNumber, capturedAt, ...provenance(config.upDatasetId, config.downDatasetId) },
+    );
+    return { config, topology, timetable };
+  });
   const outputs = [];
-  for (const config of DAEGU_LINES) {
-    const [intervalBytes, upBytes, downBytes] = await Promise.all([
-      readFile(path.join(args["input-dir"], `data-go-${config.intervalDatasetId}.csv`)),
-      readFile(path.join(args["input-dir"], `data-go-${config.upDatasetId}.csv`)),
-      readFile(path.join(args["input-dir"], `data-go-${config.downDatasetId}.csv`)),
-    ]);
-    const topology = parseDaeguRouteTopology(intervalBytes, { lineNumber: config.lineNumber, capturedAt: args["captured-at"] });
-    const timetable = parseDaeguTrainTimetable(upBytes, downBytes, topology, { lineNumber: config.lineNumber, capturedAt: args["captured-at"] });
+  for (const { config, topology, timetable } of prepared) {
     const topologyPath = await writeDaeguSourceSnapshot(args["output-dir"], topology);
     const timetablePath = await writeDaeguSourceSnapshot(args["output-dir"], timetable);
     outputs.push(topologyPath, timetablePath);

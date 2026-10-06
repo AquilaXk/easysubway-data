@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { projectRegionalFixtureSourceBindings } from "./materialize-test-fixture.mjs";
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 
 import {
   collectGwangjuAccessibility,
@@ -215,4 +217,92 @@ test("광주 accessibility collector CLI는 absolute output 경로를 강제한�
     "--output", "relative.json",
     "--captured-at", "2026-07-24T03:00:00.000Z",
   ]), /collector arguments mismatch/);
+});
+
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const provenanceOf = (datasetId, bytes) => ({
+  datasetId,
+  detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,
+  downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_0000000${datasetId}&fileDetailSn=1&insertDataPrcus=N`,
+  rawSha256: sha256(bytes),
+});
+
+test("광주 accessibility collector --download는 공식 FILE 두 개를 받아 원본 sha provenance와 함께 snapshot을 쓴다", async () => {
+  const [elevatorBytes, escalatorBytes] = await Promise.all([readFile(ELEVATOR_CSV), readFile(ESCALATOR_CSV)]);
+  const dir = await mkdtemp(path.join(tmpdir(), "gwangju-accessibility-download-"));
+  const cwd = process.cwd();
+  try {
+    // 광주 collector는 inventory의 상대 snapshotPath를 현재 작업 디렉터리 기준으로 읽는다.
+    process.chdir(root);
+    const output = path.join(dir, "gwangju-accessibility.json");
+    const now = new Date("2026-10-06T03:00:00.000Z");
+    const snapshot = await runGwangjuAccessibilityCollector([
+      "--download",
+      "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
+      "--output", output,
+    ], {
+      fetchImpl: createDataGoPortalFetch({ 15041385: elevatorBytes, 15041362: escalatorBytes }),
+      now: () => now,
+    });
+    assert.equal(snapshot.capturedAt, now.toISOString());
+    assert.deepEqual(snapshot.downloadProvenance, [
+      provenanceOf("15041385", elevatorBytes),
+      provenanceOf("15041362", escalatorBytes),
+    ]);
+    assert.equal(snapshot.elevatorRawSha256, sha256(elevatorBytes));
+    assert.equal(snapshot.escalatorRawSha256, sha256(escalatorBytes));
+    assert.deepEqual(JSON.parse(await readFile(output, "utf8")), JSON.parse(JSON.stringify(snapshot)));
+  } finally {
+    process.chdir(cwd);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("광주 accessibility collector 파일 입력 모드는 downloadProvenance를 기록하지 않는다", async () => {
+  const snapshot = collectGwangjuAccessibility({
+    ...await loadInputs(),
+    now: new Date("2026-07-24T03:00:00.000Z"),
+  });
+  assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), false);
+});
+
+test("광주 accessibility collector --download 실패·인자 오류·provenance 변조는 snapshot을 남기지 않는다", async () => {
+  const inputs = await loadInputs();
+  const files = { 15041385: inputs.elevatorBytes, 15041362: inputs.escalatorBytes };
+  const dir = await mkdtemp(path.join(tmpdir(), "gwangju-accessibility-download-fail-"));
+  const inventory = path.join(root, "tools/datapack/source-inventory.json");
+  const common = ["--inventory", inventory, "--output", path.join(dir, "out.json")];
+  try {
+    await assert.rejects(runGwangjuAccessibilityCollector(["--download", ...common], {
+      fetchImpl: createDataGoPortalFetch(files, { failFile: new Set(["15041385"]) }),
+    }), /15041385 file HTTP 503/);
+    await assert.rejects(runGwangjuAccessibilityCollector(["--download", ...common], {
+      fetchImpl: createDataGoPortalFetch({ 15041385: inputs.elevatorBytes }),
+    }), /15041362 detail HTTP 404/);
+    for (const extra of [
+      ["--elevator-input", ELEVATOR_CSV],
+      ["--escalator-input", ESCALATOR_CSV],
+      ["--captured-at", "2026-10-06T00:00:00.000Z"],
+      ["--download"],
+    ]) {
+      await assert.rejects(runGwangjuAccessibilityCollector(["--download", ...extra, ...common]),
+        /collector arguments mismatch/);
+    }
+    await assert.rejects(runGwangjuAccessibilityCollector(["--download", "--inventory", inventory, "--output", "relative.json"]),
+      /collector arguments mismatch/);
+    assert.deepEqual(await readdir(dir), []);
+    const good = [
+      provenanceOf("15041385", inputs.elevatorBytes),
+      provenanceOf("15041362", inputs.escalatorBytes),
+    ];
+    const now = new Date("2026-07-24T03:00:00.000Z");
+    assert.deepEqual(collectGwangjuAccessibility({ ...inputs, now, downloadProvenance: good }).downloadProvenance, good);
+    assert.throws(() => collectGwangjuAccessibility({ ...inputs, now, downloadProvenance: [good[1], good[0]] }),
+      /download provenance is invalid/);
+    assert.throws(() => collectGwangjuAccessibility({
+      ...inputs, now, downloadProvenance: [{ ...good[0], rawSha256: "0".repeat(64) }, good[1]],
+    }), /15041385 download provenance sha256 mismatch/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

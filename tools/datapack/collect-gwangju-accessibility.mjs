@@ -7,6 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { downloadDataGoFile, verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 
 const ELEVATOR_DATASET_ID = "15041385";
 const ESCALATOR_DATASET_ID = "15041362";
@@ -91,6 +92,7 @@ export function collectGwangjuAccessibility({
   topologySnapshot,
   topologySource,
   now,
+  downloadProvenance,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const rows = parseGwangjuAccessibilityCsv({
@@ -108,6 +110,12 @@ export function collectGwangjuAccessibility({
   }];
   const elevatorSha256 = sha256(Buffer.from(elevatorBytes));
   const escalatorSha256 = sha256(Buffer.from(escalatorBytes));
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, DATASET_IDS, {
+      [ELEVATOR_DATASET_ID]: elevatorBytes,
+      [ESCALATOR_DATASET_ID]: escalatorBytes,
+    });
   return {
     schemaVersion: 2,
     artifactKind: ARTIFACT_KIND,
@@ -152,6 +160,7 @@ export function collectGwangjuAccessibility({
     escalatorRawSha256: escalatorSha256,
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
   };
 }
 
@@ -283,24 +292,52 @@ function retainedRawSource(datasetId, bytes) {
 }
 
 function parseArgs(argv) {
-  const args = {};
-  const required = ["elevator-input", "escalator-input", "inventory", "output", "captured-at"];
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index]?.slice(2);
-    if (!argv[index]?.startsWith("--") || !required.includes(key) || Object.hasOwn(args, key) || !argv[index + 1]) throw new Error("Gwangju collector arguments mismatch");
+  const args = { download: false };
+  const valueFlags = ["elevator-input", "escalator-input", "inventory", "output", "captured-at"];
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === "--download") {
+      if (args.download) throw new Error("Gwangju collector arguments mismatch");
+      args.download = true;
+      continue;
+    }
+    const key = flag?.slice(2);
+    if (!flag?.startsWith("--") || !valueFlags.includes(key) || Object.hasOwn(args, key)
+      || !argv[index + 1] || argv[index + 1].startsWith("--")) {
+      throw new Error("Gwangju collector arguments mismatch");
+    }
     args[key] = argv[index + 1];
+    index += 1;
   }
-  if (required.some((key) => !args[key]) || !path.isAbsolute(args.output)) throw new Error("Gwangju collector arguments mismatch");
+  // 다운로드 capture 시각은 공식 FILE 본문을 받은 시각이므로 직접 지정할 수 없다.
+  const required = args.download ? ["inventory", "output"] : valueFlags;
+  const forbidden = args.download ? ["elevator-input", "escalator-input", "captured-at"] : [];
+  if (required.some((key) => !args[key]) || forbidden.some((key) => args[key] !== undefined)
+    || !path.isAbsolute(args.output)) {
+    throw new Error("Gwangju collector arguments mismatch");
+  }
   return args;
 }
 
-export async function runGwangjuAccessibilityCollector(argv) {
+export async function runGwangjuAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
   const args = parseArgs(argv);
-  const [elevatorBytes, escalatorBytes, inventory] = await Promise.all([
-    readFile(args["elevator-input"]),
-    readFile(args["escalator-input"]),
-    readFile(args.inventory, "utf8").then(JSON.parse),
-  ]);
+  const inventory = await readFile(args.inventory, "utf8").then(JSON.parse);
+  let elevatorBytes;
+  let escalatorBytes;
+  let downloadProvenance;
+  if (args.download) {
+    const downloads = [];
+    for (const datasetId of DATASET_IDS) downloads.push(await downloadDataGoFile(fetchImpl, datasetId));
+    [elevatorBytes, escalatorBytes] = downloads.map(({ bytes }) => bytes);
+    downloadProvenance = downloads.map(({ datasetId, detailUrl, downloadUrl, rawSha256 }) => (
+      { datasetId, detailUrl, downloadUrl, rawSha256 }
+    ));
+  } else {
+    [elevatorBytes, escalatorBytes] = await Promise.all([
+      readFile(args["elevator-input"]),
+      readFile(args["escalator-input"]),
+    ]);
+  }
   const selected = inventory.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
   if (selected.length !== 1) throw new Error("Gwangju topology source selection mismatch");
   const topologySource = selected[0];
@@ -312,7 +349,8 @@ export async function runGwangjuAccessibilityCollector(argv) {
     escalatorBytes,
     topologySnapshot,
     topologySource,
-    now: new Date(args["captured-at"]),
+    now: args.download ? validDate(now(), "now") : new Date(args["captured-at"]),
+    ...(downloadProvenance ? { downloadProvenance } : {}),
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
   console.log(`Gwangju accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);

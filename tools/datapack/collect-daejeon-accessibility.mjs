@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { downloadDataGoFile, verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 
 const ELEVATOR_DATASET_ID = "15041384";
 const ESCALATOR_DATASET_ID = "15041361";
@@ -113,6 +114,7 @@ export function collectDaejeonAccessibility({
   topologySource,
   canonicalStationMappings,
   now = new Date(),
+  downloadProvenance,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const topologyEvidence = validateTopologySourceBinding({ topologySnapshot, topologySource });
@@ -131,6 +133,12 @@ export function collectDaejeonAccessibility({
   }];
   const elevatorSha256 = sha256(Buffer.from(elevatorBytes));
   const escalatorSha256 = sha256(Buffer.from(escalatorBytes));
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, DATASET_IDS, {
+      [ELEVATOR_DATASET_ID]: elevatorBytes,
+      [ESCALATOR_DATASET_ID]: escalatorBytes,
+    });
   return {
     schemaVersion: 1,
     artifactKind: ARTIFACT_KIND,
@@ -175,6 +183,7 @@ export function collectDaejeonAccessibility({
     escalatorRawSha256: escalatorSha256,
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
   };
 }
 
@@ -328,30 +337,64 @@ function retainedRawSource(datasetId, bytes) {
   };
 }
 
+const USAGE = "usage: collect-daejeon-accessibility.mjs "
+  + "(--elevator-input <csv> --escalator-input <csv> [--captured-at <iso>] | --download) "
+  + "--topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json>";
+
 function parseArgs(argv) {
-  const args = {};
-  for (let index = 0; index < argv.length; index += 2) {
-    if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
+  const args = { download: false };
+  const seen = new Set();
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (seen.has(flag)) throw new Error(USAGE);
+    seen.add(flag);
+    if (flag === "--download") {
+      args.download = true;
+      continue;
     }
-    args[argv[index].slice(2)] = argv[index + 1];
+    if (!["--elevator-input", "--escalator-input", "--topology-snapshot", "--inventory",
+      "--molit-csv", "--output", "--captured-at"].includes(flag)) {
+      throw new Error(USAGE);
+    }
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) throw new Error(USAGE);
+    args[flag.slice(2)] = value;
+    index += 1;
   }
-  if (!args["elevator-input"] || !args["escalator-input"] || !args["topology-snapshot"]
-    || !args.inventory || !args["molit-csv"] || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
+  const hasFiles = Boolean(args["elevator-input"]) && Boolean(args["escalator-input"]);
+  const hasAnyFile = Boolean(args["elevator-input"]) || Boolean(args["escalator-input"]);
+  // 다운로드 capture 시각은 공식 FILE 본문을 받은 시각이므로 직접 지정할 수 없다.
+  const modeMismatch = args.download ? hasAnyFile || Boolean(args["captured-at"]) : !hasFiles;
+  if (modeMismatch || !args["topology-snapshot"] || !args.inventory || !args["molit-csv"]
+    || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error(USAGE);
   }
   return args;
 }
 
-export async function runDaejeonAccessibilityCollector(argv) {
+export async function runDaejeonAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
   const args = parseArgs(argv);
-  const [elevatorBytes, escalatorBytes, topologySnapshot, inventory, molitBytes] = await Promise.all([
-    readFile(args["elevator-input"]),
-    readFile(args["escalator-input"]),
+  const [topologySnapshot, inventory, molitBytes] = await Promise.all([
     readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
     readFile(args.inventory, "utf8").then(JSON.parse),
     readFile(args["molit-csv"]),
   ]);
+  let elevatorBytes;
+  let escalatorBytes;
+  let downloadProvenance;
+  if (args.download) {
+    const downloads = [];
+    for (const datasetId of DATASET_IDS) downloads.push(await downloadDataGoFile(fetchImpl, datasetId));
+    [elevatorBytes, escalatorBytes] = downloads.map(({ bytes }) => bytes);
+    downloadProvenance = downloads.map(({ datasetId, detailUrl, downloadUrl, rawSha256 }) => (
+      { datasetId, detailUrl, downloadUrl, rawSha256 }
+    ));
+  } else {
+    [elevatorBytes, escalatorBytes] = await Promise.all([
+      readFile(args["elevator-input"]),
+      readFile(args["escalator-input"]),
+    ]);
+  }
   const topologySource = selectTopologySource(inventory);
   assertTopologyInputPath(args, topologySource);
   const snapshot = collectDaejeonAccessibility({
@@ -360,7 +403,8 @@ export async function runDaejeonAccessibilityCollector(argv) {
     topologySnapshot,
     topologySource,
     canonicalStationMappings: parseMolitDaejeonStationMappings(molitBytes),
-    now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
+    now: args.download ? validDate(now(), "now") : args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
+    ...(downloadProvenance ? { downloadProvenance } : {}),
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
   console.log(`Daejeon accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
