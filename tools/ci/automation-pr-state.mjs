@@ -7,17 +7,21 @@ export function validRepository(value) {
   return typeof value === "string" && REPOSITORY.test(value);
 }
 
-/** git ls-remote --heads 출력에서 접두어 브랜치만 읽는다. 다른 형식이 섞이거나 중복이면 invalid()를 부른다. */
-export function parsePrefixedBranches(text, prefix, invalid) {
+/** git ls-remote --heads 출력에서 접두어 브랜치만 읽어 [{ sha, branch }]로 돌려준다. 다른 형식이 섞이거나 중복이면 invalid()를 부른다. */
+export function parsePrefixedRefs(text, prefix, invalid) {
   if (typeof text !== "string") invalid("listing is not text");
-  const pattern = new RegExp(`^[0-9a-f]{40}\\trefs/heads/(${prefix.replaceAll("/", "\\/")}[1-9][0-9]*)$`, "u");
-  const branches = text.split("\n").filter(Boolean).map((line) => {
+  const pattern = new RegExp(String.raw`^([0-9a-f]{40})\trefs/heads/(${prefix.replaceAll("/", String.raw`\/`)}[1-9]\d*)$`, "u");
+  const refs = text.split("\n").filter(Boolean).map((line) => {
     const match = pattern.exec(line);
     if (!match) invalid(line);
-    return match[1];
+    return { sha: match[1], branch: match[2] };
   });
-  if (new Set(branches).size !== branches.length) invalid("duplicate refs");
-  return branches;
+  if (new Set(refs.map(({ branch }) => branch)).size !== refs.length) invalid("duplicate refs");
+  return refs;
+}
+
+export function parsePrefixedBranches(text, prefix, invalid) {
+  return parsePrefixedRefs(text, prefix, invalid).map(({ branch }) => branch);
 }
 
 /** 이 workflow의 같은 저장소 PR을 브랜치별로 모은다. 상태가 잘못됐거나 브랜치가 겹치면 duplicate()를 부른다. */
