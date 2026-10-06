@@ -101,7 +101,7 @@ function scenario(stage = "registration") {
       base: { ref: "main", sha: BASE, repo: { full_name: REPOSITORY } },
     },
     commits: [commit("1".repeat(40)), commit(HEAD)],
-    files: paths.map((filename) => file(filename)),
+    files: paths.map((filename) => file(filename, filename === REVERIFICATION_SNAPSHOT ? { status: "added" } : {})),
     compare: { status: "ahead", ahead_by: 2, behind_by: 0, merge_base_commit: { sha: BASE } },
     checkRuns: [run("Data contracts", "success", { id: 10 }), run(AUTOMATION_PR_GATES_CONTEXT, "success", { id: 11 })],
     requiredContexts: [{ context: "Data contracts", integration_id: null }],
@@ -228,6 +228,21 @@ test("원천 재확인 단계: 증거의 경로 주장과 API diff가 정확히 
   withGovernance.ciEvidence = { ...withGovernance.ciEvidence, evidenceSha256: automationEvidenceDigest(withGovernance.pull.body) };
   withGovernance.files = [...withGovernance.files, file(governance)];
   assert.ok(codesOf(withGovernance).includes("PATHS"), "governance policy changes are not auto-mergeable");
+});
+
+// #987 N2: 재확인이 쓰는 snapshot 파일은 새 파일(added)이어야 한다. 이미 있는 snapshot의 수정·삭제·이름 변경은 불변 계약 위반이다.
+test("반증: 원천 재확인의 snapshot 경로는 API diff의 status가 added일 때만 허용하고 수정·삭제·이름 변경은 막는다", () => {
+  for (const status of ["modified", "removed", "renamed", "changed", "copied", "unchanged"]) {
+    const input = scenario("source-reverification");
+    input.files = input.files.map((entry) => (entry.filename === REVERIFICATION_SNAPSHOT ? { ...entry, status } : entry));
+    assert.ok(codesOf(input).includes("PATHS"), status);
+  }
+  // 원장·inventory는 제자리에서 바뀌는 파일이라 modified여야 한다(새 파일이나 삭제는 이상이다).
+  for (const status of ["added", "removed"]) {
+    const input = scenario("source-reverification");
+    input.files = input.files.map((entry) => (entry.filename === "tools/datapack/source-inventory.json" ? { ...entry, status } : entry));
+    assert.ok(codesOf(input).includes("PATHS"), `inventory ${status}`);
+  }
 });
 
 test("재결속 단계는 증거의 변경 단계 경로와 정확히 같아야 하고 각 경로는 그 단계가 허용한 경로여야 한다", () => {
@@ -533,10 +548,23 @@ test("반증: ITX 게이트가 실패하거나 승인 모드·다른 snapshot이
 // 원천 재확인 단계의 게이트: 원장 행은 원장 두 판본에서, 원장 행이 없는 KRIC projection 증거 행은 inventory 두 판본에서 다시 계산해 증거 블록과 같아야 한다.
 const KRIC_EVIDENCE = (overrides = {}) => ({ snapshotId: "kric-capital-1", rawSha256: "5".repeat(64), recordsSha256: "6".repeat(64), recordCount: 1000, routes: Array.from({ length: 10 }, (_, index) => ({ routeNumber: `R${index}` })), ...overrides });
 const kricInventory = (capital, korail) => ({ ...INVENTORY_BASE, sources: [...INVENTORY_BASE.sources, { id: "kric-nationwide-timetable-file", capitalScheduleAdmissionEvidence: capital, korailScheduleAdmissionEvidence: korail }] });
+const REV_OWNED = { productionUseAllowed: true, requiredForProductionPack: true, license: { type: "PUBLIC_DATA_FREE_USE" }, datasetUrl: "https://example.test/gwangju", coverage: "Gwangju line 1" };
+const REV_BASE = { schemaVersion: 1, region: "nationwide", sources: [
+  { id: "other-source", value: 1, productionUseAllowed: false },
+  { id: "gwangju-transportation-route-topology", ...REV_OWNED, retrievedAt: "2026-10-05", topologyAdmissionEvidence: { snapshotId: "a" } },
+  { id: "gwangju-transportation-accessibility", ...REV_OWNED, accessibilityAdmissionEvidence: { snapshotId: "a" } },
+] };
+const revHead = (edit) => ({ ...REV_BASE, sources: REV_BASE.sources.map((entry) => edit(entry)) });
+const refreshed = (entry) => {
+  if (entry.id === "gwangju-transportation-route-topology") return { ...entry, retrievedAt: "2026-10-06", topologyAdmissionEvidence: { snapshotId: "b" } };
+  if (entry.id === "gwangju-transportation-accessibility") return { ...entry, accessibilityAdmissionEvidence: { snapshotId: "b" } };
+  return entry;
+};
+const revGate = (edit, overrides = {}) => gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: revHead(edit), ...overrides });
 const KRIC_STEP = { id: "kric-capital-timetable", changed: true, paths: ["tools/datapack/source-inventory.json"] };
 
 test("게이트 재계산: 원천 재확인 단계는 원장 행과 inventory 증거 행을 다시 계산해 증거 블록과 같아야 통과한다", async () => {
-  assert.deepEqual((await recomputeAutomationGates(gateInput("source-reverification"))).violations, []);
+  assert.deepEqual((await recomputeAutomationGates(revGate(refreshed))).violations, []);
   const before = kricInventory(KRIC_EVIDENCE(), KRIC_EVIDENCE({ snapshotId: "kric-korail-1" }));
   const after = kricInventory(KRIC_EVIDENCE({ reverifiedAt: "2026-10-07T00:00:00.000Z" }), KRIC_EVIDENCE({ snapshotId: "kric-korail-1", recordCount: 1010 }));
   const rows = ["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence"].flatMap((key) => evaluateEvidenceChange({
@@ -561,12 +589,29 @@ test("반증: 원천 재확인의 inventory 증거 변화가 정책 한도를 �
 });
 
 test("반증: 원천 재확인이 inventory의 원천 항목을 더하거나 지우거나 최상위 필드를 바꾸면 막는다", async () => {
-  const added = { ...INVENTORY_HEAD, sources: [...INVENTORY_HEAD.sources, { id: "new-source" }] };
-  assert.ok((await gateCodes(gateInput("source-reverification", { inventory: added }))).includes("INVENTORY_GATE"));
-  const removed = { ...INVENTORY_HEAD, sources: INVENTORY_HEAD.sources.slice(1) };
-  assert.ok((await gateCodes(gateInput("source-reverification", { inventory: removed }))).includes("INVENTORY_GATE"));
-  assert.ok((await gateCodes(gateInput("source-reverification", { inventory: { ...INVENTORY_HEAD, region: "other" } }))).includes("INVENTORY_GATE"));
-  assert.ok((await gateCodes(gateInput("source-reverification", { ledger: [HEAD_LEDGER[1]] }))).includes("LEDGER_GATE"));
+  const head = revHead(refreshed);
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: { ...head, sources: [...head.sources, { id: "new-source" }] } }))).includes("INVENTORY_GATE"));
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: { ...head, sources: head.sources.slice(1) } }))).includes("INVENTORY_GATE"));
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: { ...head, region: "other" } }))).includes("INVENTORY_GATE"));
+  assert.ok((await gateCodes(revGate(refreshed, { ledger: [HEAD_LEDGER[1]] }))).includes("LEDGER_GATE"));
+});
+
+// #987 N1: recipe가 소유한 항목 밖은 깊은 비교로 같아야 하고, 소유 항목 안에서도 갱신 대상 필드만 바뀔 수 있다.
+test("반증: 원천 재확인이 소유하지 않은 inventory 항목의 내용을 바꾸면 막는다", async () => {
+  const unrelated = (entry) => (entry.id === "other-source" ? { ...refreshed(entry), productionUseAllowed: true, datasetUrl: "https://evil.test" } : refreshed(entry));
+  assert.ok((await gateCodes(revGate(unrelated))).includes("INVENTORY_GATE"));
+  const quiet = (entry) => (entry.id === "other-source" ? { ...entry, value: 2 } : refreshed(entry));
+  assert.ok((await gateCodes(revGate(quiet))).includes("INVENTORY_GATE"));
+});
+
+test("반증: 원천 재확인이 소유한 항목의 정책성 필드(productionUseAllowed·requiredForProductionPack·license·datasetUrl·coverage)를 바꾸면 막는다", async () => {
+  for (const [field, value] of [["productionUseAllowed", false], ["requiredForProductionPack", false], ["license", { type: "OTHER" }], ["datasetUrl", "https://evil.test"], ["coverage", "all lines"]]) {
+    const tamper = (entry) => (entry.id === "gwangju-transportation-route-topology" ? { ...refreshed(entry), [field]: value } : refreshed(entry));
+    assert.ok((await gateCodes(revGate(tamper))).includes("INVENTORY_GATE"), field);
+  }
+  // 이 PR의 recipe가 소유하지 않은 항목은 소유 필드여도 바꿀 수 없다(광주 접근성은 gwangju-topology가 의존 항목으로 명시한다).
+  const stepsOnlyBusan = { steps: [{ id: "busan-topology", changed: true, paths: REVERIFICATION_PATHS }] };
+  assert.ok((await gateCodes(revGate(refreshed, { evidenceOverrides: stepsOnlyBusan }))).includes("INVENTORY_GATE"));
 });
 
 const SCHEDULED = { requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates" };

@@ -11,7 +11,7 @@ import {
   SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS,
   isSourceReverificationAllowedPath,
 } from "../ci/source-reverification-paths.mjs";
-import { P7D_SOURCE_COVERAGE, REVERIFICATION_RECIPES, p7dSourceIds, recipeById } from "./source-reverification-recipes.mjs";
+import { P7D_SOURCE_COVERAGE, REVERIFICATION_RECIPES, inventoryChangeViolations, p7dSourceIds, recipeById } from "./source-reverification-recipes.mjs";
 import { RECIPE_STEPS } from "./run-source-reverification.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 recipe 표. 정책의 P7D 원천은 모두 recipe·외부 workflow·막힌 사유 중 하나를 가져야 하고,
@@ -127,4 +127,42 @@ test("허용 경로는 원천 등록 결과 세 파일과 새 snapshot 파일뿐
     "tools/datapack/.capital-route-topology-registration-transaction.json", "/tmp/x.json", "",
   ]) assert.equal(isSourceReverificationAllowedPath(relative), false, relative);
   assert.equal(isSourceReverificationAllowedPath(undefined), false);
+});
+
+// #987 N1: 재확인 PR이 inventory에서 바꿀 수 있는 항목과 필드는 recipe 정의가 명시한 것뿐이다(의존 항목 포함). 정책성 필드는 어떤 recipe도 바꾸지 못한다.
+const POLICY_FIELDS = ["productionUseAllowed", "requiredForProductionPack", "license", "datasetUrl", "coverage", "id", "provider", "owner"];
+
+test("모든 recipe는 소유 원천마다 갱신 대상 필드를 명시하고 정책성 필드는 하나도 허용하지 않는다", () => {
+  for (const recipe of REVERIFICATION_RECIPES) {
+    const owned = Object.keys(recipe.inventoryChanges ?? {});
+    for (const sourceId of recipe.sourceIds) assert.ok(owned.includes(sourceId), `${recipe.id}: ${sourceId}`);
+    assert.ok(owned.length > 0, recipe.id);
+    for (const [sourceId, fields] of Object.entries(recipe.inventoryChanges)) {
+      assert.ok(Array.isArray(fields) && fields.length > 0, `${recipe.id}/${sourceId}`);
+      for (const field of fields) assert.equal(POLICY_FIELDS.includes(field), false, `${recipe.id}/${sourceId}: ${field}`);
+    }
+  }
+  // 의존 항목은 정의에 이름이 있어야 한다.
+  assert.deepEqual(Object.keys(recipeById("gwangju-topology").inventoryChanges).sort(), [
+    "gwangju-transportation-accessibility", "gwangju-transportation-route-map-positions", "gwangju-transportation-route-topology",
+    "kric-nationwide-timetable-file", "molit-urban-rail-full-route-gwangju-membership",
+  ]);
+});
+
+test("inventory 변경 검사: 소유하지 않은 항목의 변화와 소유 항목의 허용 밖 필드 변화를 항목별 사유로 돌려준다", () => {
+  const base = { sources: [{ id: "a", x: 1 }, { id: "gwangju-transportation-route-topology", datasetUrl: "u", retrievedAt: "1" }] };
+  const same = inventoryChangeViolations({ base, head: structuredClone(base), recipeIds: ["gwangju-topology"] });
+  assert.deepEqual(same, []);
+  const ok = structuredClone(base);
+  ok.sources[1].retrievedAt = "2";
+  assert.deepEqual(inventoryChangeViolations({ base, head: ok, recipeIds: ["gwangju-topology"] }), []);
+  const bad = structuredClone(ok);
+  bad.sources[0].x = 2;
+  bad.sources[1].datasetUrl = "v";
+  const found = inventoryChangeViolations({ base, head: bad, recipeIds: ["gwangju-topology"] });
+  assert.equal(found.length, 2);
+  assert.match(found[0], /^a: .*not owned/u);
+  assert.match(found[1], /^gwangju-transportation-route-topology: .*datasetUrl/u);
+  // recipe가 없으면 소유 항목도 없다.
+  assert.equal(inventoryChangeViolations({ base, head: ok, recipeIds: ["busan-topology"] }).length, 1);
 });
