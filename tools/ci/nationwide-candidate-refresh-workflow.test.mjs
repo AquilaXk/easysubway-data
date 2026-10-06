@@ -102,3 +102,15 @@ test("push 직전 재확인은 판정과 같은 규칙으로 대기 목록을 �
   const note = step("Note candidate refresh superseded by pending source automation");
   assert.equal(ifCondition(note.block), "${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'false' }}");
 });
+
+// #975 리뷰 F2: 후보 PR도 base/head 커밋에 결속된 증거 블록을 낸다(2단계 입력 계약).
+test("후보 PR 본문에는 push한 head와 base(main) 커밋에 결속된 증거 블록이 든다", () => {
+  const commit = step("Commit and push candidate refresh branch").block;
+  assert.match(commit, /printf 'CANDIDATE_BASE_SHA=%s\\n' "\$\(git rev-parse HEAD\)" >> "\$\{GITHUB_ENV\}"/u);
+  assert.ok(commit.indexOf("CANDIDATE_BASE_SHA") < commit.indexOf("git commit -m"), "the base is recorded before the candidate commit");
+  assert.match(commit, /printf 'CANDIDATE_HEAD_SHA=%s\\n' "\$\(git rev-parse HEAD\)" >> "\$\{GITHUB_ENV\}"/u);
+  assert.ok(commit.indexOf("git commit -m") < commit.indexOf("CANDIDATE_HEAD_SHA"), "the head is recorded after the candidate commit");
+  const { block } = step("Create candidate refresh pull request");
+  assert.match(block, /node tools\/ci\/automation-pr-evidence\.mjs candidate-refresh-block --build-spec tools\/datapack\/release\/candidate-build-spec\.json --base-sha "\$\{CANDIDATE_BASE_SHA\}" --head-sha "\$\{CANDIDATE_HEAD_SHA\}" --run-url "\$\{GITHUB_SERVER_URL\}\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{GITHUB_RUN_ID\}"/u);
+  assert.match(block, /\$\{evidence_block\}/u);
+});
