@@ -11,7 +11,7 @@
 // 출력 팩은 mobile 레포에 커밋하지 않는다. CI staging이 같은 입력 fixture에서 같은 팩을 파생하고 증거와 대조한다.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -44,8 +44,10 @@ async function run(repositoryRoot, script, args, env = {}) {
 }
 
 /** 승격 snapshot 하나의 파생 결속을 만든다. 바뀐 저장소 상대 경로를 정렬해 돌려준다. */
-export async function rebindItxPromotion({ repositoryRoot, buildNow }) {
-  if (!path.isAbsolute(repositoryRoot)) fail("ARGUMENTS", "repositoryRoot must be absolute");
+export async function rebindItxPromotion({ repositoryRoot: requestedRoot, buildNow }) {
+  if (!path.isAbsolute(requestedRoot)) fail("ARGUMENTS", "repositoryRoot must be absolute");
+  // 하위 도구의 직접 실행 판정은 실경로(import.meta.url)와 argv[1]을 비교하므로 심볼릭 링크 경로를 풀어 넘긴다.
+  const repositoryRoot = await realpath(requestedRoot);
   if (typeof buildNow !== "string" || Number.isNaN(Date.parse(buildNow)) || new Date(buildNow).toISOString() !== buildNow) fail("ARGUMENTS", "buildNow must be an ISO instant");
   const read = (relative) => readFile(path.join(repositoryRoot, relative));
   const contractBytes = await read(CONTRACT);
