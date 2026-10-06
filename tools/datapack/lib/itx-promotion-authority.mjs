@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { ITX_PROMOTION_GATE_POLICY_ID, evaluateItxPromotionMetrics, parseItxPromotionGatePolicy } from "../itx-promotion-gate.mjs";
 
 export const ITX_PROMOTION_MODE_OWNER_APPROVED = "CURRENT_CANDIDATE_OWNER_APPROVED";
@@ -14,7 +15,7 @@ const APPROVAL_URL = /^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\
 const SHA256 = /^[0-9a-f]{64}$/u;
 
 const sameKeys = (value, keys) => value !== null && typeof value === "object" && !Array.isArray(value)
-  && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+  && JSON.stringify(Object.keys(value).sort(codepointCompare)) === JSON.stringify([...keys].sort(codepointCompare));
 
 export function itxPromotionReceiptPath(artifactId) {
   return `tools/datapack/sources/${artifactId}-promotion-gate.json`;

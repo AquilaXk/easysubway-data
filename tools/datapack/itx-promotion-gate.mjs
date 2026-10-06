@@ -12,6 +12,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
 
 export const ITX_PROMOTION_GATE_POLICY_ID = "itx-promotion-gate-v1";
@@ -28,7 +29,7 @@ const LIMIT_KEYS = [
   "timetableTupleRemovedPermille",
   "tripCountDeltaPermille",
   "tripMembershipDeltaPermille",
-].sort();
+].sort(codepointCompare);
 const SHA256 = /^[0-9a-f]{64}$/u;
 
 function policyInvalid(detail) {
@@ -36,7 +37,7 @@ function policyInvalid(detail) {
 }
 
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const sameKeys = (value, keys) => isObject(value) && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+const sameKeys = (value, keys) => isObject(value) && JSON.stringify(Object.keys(value).sort(codepointCompare)) === JSON.stringify([...keys].sort(codepointCompare));
 const nonnegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0;
 
 export function parseItxPromotionGatePolicy(value) {
@@ -267,7 +268,7 @@ export function evaluateItxPromotionGate({
   const blockedCheckIds = checks
     .filter(({ status }) => status === "BLOCK")
     .map(({ id, dayCd }) => (dayCd === undefined ? id : `${id}:${dayCd}`))
-    .sort();
+    .sort(codepointCompare);
   return {
     schemaVersion: 1,
     artifactKind: "itx-promotion-gate-receipt",
@@ -315,7 +316,7 @@ function parseArguments(argv) {
 export async function runItxPromotionGateCli({ argv = process.argv.slice(2), repositoryRoot = path.resolve(import.meta.dirname, "../..") } = {}) {
   const args = parseArguments(argv);
   const required = ["candidate", "completeness", "capture", "replay", "coverage-contract", "policy", "output"];
-  if (JSON.stringify(Object.keys(args).sort()) !== JSON.stringify([...required].sort())
+  if (JSON.stringify(Object.keys(args).sort(codepointCompare)) !== JSON.stringify([...required].sort(codepointCompare))
     || required.some((name) => !path.isAbsolute(args[name]))) {
     throw new Error("ITX_PROMOTION_GATE_ARGUMENTS");
   }
