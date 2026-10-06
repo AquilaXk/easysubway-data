@@ -33,6 +33,7 @@ const run = (id, overrides = {}) => ({
 });
 const base = {
   inventory: inventory(), ledger: [row(PREVIOUS)], pullRequests: [], claims: [], runs: [], repository: REPOSITORY, currentMainSha: MAIN, now: NOW,
+  limits: { pullRequests: 1000, runs: 200 },
 };
 const decide = (overrides = {}) => decideCapitalTopologyRegistration({ ...base, ...overrides });
 
@@ -115,4 +116,18 @@ test("입력이 잘못되면 판정하지 않고 실패한다", () => {
   assert.throws(() => decide({ ledger: {} }), /REGISTRATION_INPUT_INVALID/u);
   assert.throws(() => decide({ pullRequests: null }), /REGISTRATION_INPUT_INVALID/u);
   assert.throws(() => decide({ now: new Date("x") }), /REGISTRATION_INPUT_INVALID/u);
+});
+
+// #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 반환 개수가 상한과 같으면 잘렸을 수 있으므로 판정하지 않고 실패한다.
+test("PR·run 목록이 조회 상한과 같은 개수면 잘린 것으로 보고 실패한다", () => {
+  const limits = { pullRequests: 3, runs: 2 };
+  const filler = (count, make) => Array.from({ length: count }, (_, index) => make(index));
+  const other = (index) => ({ number: 1000 + index, state: "MERGED", isDraft: false, headRefName: `feat/x${index}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } });
+  assert.throws(() => decide({ limits, pullRequests: filler(3, other) }), /REGISTRATION_LIST_TRUNCATED: pull request list reached its limit 3/u);
+  assert.throws(() => decide({ limits, runs: filler(2, (index) => run(900 + index, { conclusion: "success" })) }), /REGISTRATION_LIST_TRUNCATED: run list reached its limit 2/u);
+  assert.equal(decide({ limits, pullRequests: filler(2, other), runs: filler(1, (index) => run(900 + index, { conclusion: "success" })) }).state, "REGISTER");
+  // 등록된 snapshot이면 목록을 보지 않으므로 잘림과 무관하다.
+  assert.equal(decide({ limits, ledger: [row(PREVIOUS), row(SNAPSHOT)], pullRequests: filler(3, other) }).state, "REGISTERED");
+  assert.throws(() => decide({ limits: { pullRequests: 0, runs: 2 } }), /REGISTRATION_INPUT_INVALID/u);
+  assert.throws(() => decide({ limits: undefined }), /REGISTRATION_INPUT_INVALID/u);
 });

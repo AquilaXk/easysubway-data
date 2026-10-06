@@ -38,7 +38,7 @@ test("판정 step이 claim·게시·PR 생성보다 먼저 돌고 판정 입력�
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/456-capital-topology-registration-\*" > /u);
   assert.match(block, /gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow current-capital-topology-registration\.yml --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > /u);
   assert.match(block, /node tools\/ci\/decide-capital-topology-registration\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json /u);
-  assert.match(block, /--current-main-sha "\$\{main_sha\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /--current-main-sha "\$\{main_sha\}" --pr-limit 1000 --run-limit 200 --github-output "\$\{GITHUB_OUTPUT\}"/u);
   // 판정 시점의 checkout이 아직 main이어야 한다. 그 사이 main이 움직였으면 새 push가 자기 판정을 한다.
   assert.match(block, /git ls-remote origin refs\/heads\/main/u);
   assert.match(block, /state=SUPERSEDED/u);
