@@ -15,6 +15,7 @@ const NOW = new Date("2026-10-06T03:00:00.000Z");
 const SNAPSHOT = "capital-route-topology-20261006";
 const PREVIOUS = "capital-route-topology-20261004";
 const WORKFLOW_NAME = "Current Capital Topology Registration";
+const evidence = (runId) => ({ [String(runId)]: [`current-capital-topology-registration-${runId}`] });
 
 const inventory = ({ snapshotId = SNAPSHOT, freshUntil = "2026-10-13T00:30:00.000Z" } = {}) => ({
   sources: [
@@ -33,6 +34,7 @@ const run = (id, overrides = {}) => ({
 });
 const base = {
   inventory: inventory(), ledger: [row(PREVIOUS)], pullRequests: [], claims: [], runs: [], repository: REPOSITORY, currentMainSha: MAIN, now: NOW,
+  limits: { pullRequests: 1000, runs: 200 }, artifacts: {},
 };
 const decide = (overrides = {}) => decideCapitalTopologyRegistration({ ...base, ...overrides });
 
@@ -45,9 +47,9 @@ test("보호 admission의 topology snapshot이 원장 head에 이미 있으면 R
 });
 
 test("원장에 없고 열린 PR·claim·다른 자동화 PR이 없으면 REGISTER다", () => {
-  assert.deepEqual(decide(), { state: "REGISTER", snapshotId: SNAPSHOT });
-  // 병합된 이전 등록 PR의 claim은 살아 있는 claim이 아니다.
-  assert.deepEqual(decide({ pullRequests: [pr("MERGED", 1)], claims: [claim(1)] }), { state: "REGISTER", snapshotId: SNAPSHOT });
+  assert.deepEqual(decide(), { state: "REGISTER", snapshotId: SNAPSHOT, cleanupClaims: [] });
+  // 병합된 이전 등록 PR의 claim은 살아 있는 claim이 아니다. 남은 브랜치는 판정이 정리 대상으로 알려 준다(claim step과 같은 판정, #972 리뷰 F2).
+  assert.deepEqual(decide({ pullRequests: [pr("MERGED", 1)], claims: [claim(1)] }), { state: "REGISTER", snapshotId: SNAPSHOT, cleanupClaims: [`${REGISTRATION_CLAIM_PREFIX}1`] });
 });
 
 test("이 workflow의 열린 PR이 있으면 OPEN_PR이다", () => {
@@ -67,20 +69,34 @@ test("원장을 쓰는 다른 자동화 PR이 열려 있으면 BLOCKED_BY_PENDIN
   assert.equal(decide({ pullRequests: [{ ...other("automation/639-seoul-accessibility-refresh-", 976), state: "MERGED" }] }).state, "REGISTER");
 });
 
-test("PR 없는 claim은 producer run이 같은 main에서 실패한 경우에만 RECOVER_CLAIM이다", () => {
-  assert.deepEqual(decide({ claims: [claim(123)], runs: [run(123)] }), { state: "RECOVER_CLAIM", snapshotId: SNAPSHOT, branch: `${REGISTRATION_CLAIM_PREFIX}123`, recoveryRunId: "123" });
+test("PR 없는 claim은 같은 main에서 실패·취소된 producer run이 게시 증거(receipt artifact)를 남긴 경우에만 RECOVER_CLAIM이다", () => {
+  const recover = { state: "RECOVER_CLAIM", snapshotId: SNAPSHOT, branch: `${REGISTRATION_CLAIM_PREFIX}123`, recoveryRunId: "123", cleanupClaims: [] };
+  assert.deepEqual(decide({ claims: [claim(123)], runs: [run(123)], artifacts: evidence(123) }), recover);
+  for (const conclusion of ["cancelled", "timed_out"]) assert.deepEqual(decide({ claims: [claim(123)], runs: [run(123, { conclusion })], artifacts: evidence(123) }), recover, conclusion);
   // 복구도 새 원장 PR을 여는 일이라 다른 원장 쓰기 PR이 열려 있으면 기다린다.
-  assert.equal(decide({ claims: [claim(123)], runs: [run(123)], pullRequests: [pr("OPEN", 9, { number: 971, headRefName: "automation/639-seoul-accessibility-refresh-9" })] }).state, "BLOCKED_BY_PENDING_PR");
+  assert.equal(decide({ claims: [claim(123)], runs: [run(123)], artifacts: evidence(123), pullRequests: [pr("OPEN", 9, { number: 971, headRefName: "automation/639-seoul-accessibility-refresh-9" })] }).state, "BLOCKED_BY_PENDING_PR");
 });
 
-test("복구할 수 없는 claim은 이상이다: producer run 없음·실패 아님·다른 workflow·main 이동", () => {
-  const reject = (overrides, pattern) => assert.throws(() => decide(overrides), pattern);
-  reject({ claims: [claim(123)], runs: [] }, /REGISTRATION_CLAIM_UNRECOVERABLE: .*producer run 123 was not found/u);
-  reject({ claims: [claim(123)], runs: [run(123, { conclusion: "success" })] }, /REGISTRATION_CLAIM_UNRECOVERABLE: .*did not fail/u);
-  reject({ claims: [claim(123)], runs: [run(123, { status: "in_progress", conclusion: "" })] }, /REGISTRATION_CLAIM_UNRECOVERABLE: .*did not fail/u);
-  reject({ claims: [claim(123)], runs: [run(123, { workflowName: "Other" })] }, /REGISTRATION_CLAIM_UNRECOVERABLE: .*workflow/u);
-  reject({ claims: [claim(123)], runs: [run(123, { headBranch: "feature" })] }, /REGISTRATION_CLAIM_UNRECOVERABLE: .*main/u);
-  reject({ claims: [claim(123)], runs: [run(123, { headSha: "c".repeat(40) })] }, /REGISTRATION_CLAIM_UNRECOVERABLE: .*main moved/u);
+// #972 리뷰 F1·이슈 #973: provider 실패로 게시 증거 없이 남은 빈 claim은 사람이 지워야 하는 상태가 아니다. 판정이 정리 대상으로 알려 주고 이번 실행이 정리한 뒤 다시 시작한다.
+test("게시 증거 없이 남은 claim은 정리 대상으로 알리고 REGISTER로 다시 시작한다", () => {
+  const cleanup = (overrides) => decide(overrides);
+  const abandoned = { state: "REGISTER", snapshotId: SNAPSHOT, cleanupClaims: [`${REGISTRATION_CLAIM_PREFIX}123`] };
+  // receipt artifact가 없다: provider 단계 실패·취소·시간 초과
+  for (const conclusion of ["failure", "cancelled", "timed_out"]) assert.deepEqual(cleanup({ claims: [claim(123)], runs: [run(123, { conclusion })] }), abandoned, conclusion);
+  // 증거가 있어도 main이 움직였으면 그 evidence로 복구할 수 없다. 게시는 내용 주소 객체라 다시 시작해도 안전하다.
+  assert.deepEqual(cleanup({ claims: [claim(123)], runs: [run(123, { headSha: "c".repeat(40) })], artifacts: evidence(123) }), abandoned);
+  // producer run 기록이 없거나(목록 밖) 성공으로 끝났는데 PR이 없는 claim도 같다.
+  assert.deepEqual(cleanup({ claims: [claim(123)], runs: [] }), abandoned);
+  assert.deepEqual(cleanup({ claims: [claim(123)], runs: [run(123, { conclusion: "success" })] }), abandoned);
+  // 정리 대상 claim이 있어도 다른 원장 쓰기 PR이 열려 있으면 기다린다(쓰기 없음).
+  assert.equal(cleanup({ claims: [claim(123)], runs: [run(123)], pullRequests: [pr("OPEN", 9, { number: 971, headRefName: "automation/639-seoul-accessibility-refresh-9" })] }).state, "BLOCKED_BY_PENDING_PR");
+  // 아직 도는 producer run의 claim은 건드리지 않고 기다린다.
+  assert.deepEqual(cleanup({ claims: [claim(123)], runs: [run(123, { status: "in_progress", conclusion: "" })] }), { state: "CLAIM_IN_PROGRESS", snapshotId: SNAPSHOT, branch: `${REGISTRATION_CLAIM_PREFIX}123` });
+});
+
+test("claim 이름의 run이 다른 workflow의 run이면 이상이다", () => {
+  assert.throws(() => decide({ claims: [claim(123)], runs: [run(123, { workflowName: "Other" })] }), /REGISTRATION_CLAIM_UNRECOVERABLE: .*not the registration workflow/u);
+  assert.throws(() => decide({ claims: [claim(123)], runs: [run(123, { headBranch: "feature" })], artifacts: evidence(123) }), /REGISTRATION_CLAIM_UNRECOVERABLE: .*not on main/u);
 });
 
 test("claim이 둘 이상이거나 닫힌 PR에 묶였거나 PR이 중복이면 이상이다", () => {
@@ -115,4 +131,19 @@ test("입력이 잘못되면 판정하지 않고 실패한다", () => {
   assert.throws(() => decide({ ledger: {} }), /REGISTRATION_INPUT_INVALID/u);
   assert.throws(() => decide({ pullRequests: null }), /REGISTRATION_INPUT_INVALID/u);
   assert.throws(() => decide({ now: new Date("x") }), /REGISTRATION_INPUT_INVALID/u);
+});
+
+// #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 반환 개수가 상한과 같으면 잘렸을 수 있으므로 판정하지 않고 실패한다.
+test("PR·run 목록이 조회 상한과 같은 개수면 잘린 것으로 보고 실패한다", () => {
+  const limits = { pullRequests: 3, runs: 2 };
+  const filler = (count, make) => Array.from({ length: count }, (_, index) => make(index));
+  const other = (index) => ({ number: 1000 + index, state: "MERGED", isDraft: false, headRefName: `feat/x${index}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } });
+  assert.throws(() => decide({ limits, pullRequests: filler(3, other) }), /REGISTRATION_LIST_TRUNCATED: pull request list reached its limit 3/u);
+  assert.throws(() => decide({ limits, runs: filler(2, (index) => run(900 + index, { conclusion: "success" })) }), /REGISTRATION_LIST_TRUNCATED: run list reached its limit 2/u);
+  assert.equal(decide({ limits, pullRequests: filler(2, other), runs: filler(1, (index) => run(900 + index, { conclusion: "success" })) }).state, "REGISTER");
+  // 등록된 snapshot이면 목록을 보지 않으므로 잘림과 무관하다.
+  assert.equal(decide({ limits, ledger: [row(PREVIOUS), row(SNAPSHOT)], pullRequests: filler(3, other) }).state, "REGISTERED");
+  assert.throws(() => decide({ limits: { pullRequests: 0, runs: 2 } }), /REGISTRATION_INPUT_INVALID/u);
+  assert.throws(() => decide({ limits: undefined }), /REGISTRATION_INPUT_INVALID/u);
+  assert.throws(() => decide({ artifacts: null }), /REGISTRATION_INPUT_INVALID/u);
 });

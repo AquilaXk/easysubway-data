@@ -599,6 +599,8 @@
     {"path":"tools/ci/decide-capital-topology-registration.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/decide-nationwide-candidate-refresh.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/nationwide-candidate-refresh-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/ci/source-ledger-gate.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":300},
+    {"path":"tools/ci/automation-pr-evidence.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/current-capital-topology-registration-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1794},
     {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":85},

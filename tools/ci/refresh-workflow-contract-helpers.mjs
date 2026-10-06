@@ -29,13 +29,23 @@ export function assertOpenPullRequestSteps({ steps, file, decisionName }) {
   for (const item of [token, ensure, age]) assert.equal(ifCondition(all[item].block), OPEN_PR_CONDITION, `${file}: ${all[item].name}`);
   const escaped = file.replaceAll(".", String.raw`\.`);
   assert.match(all[ensure].block, new RegExp(String.raw`node tools/ci/refresh-pr-required-ci\.mjs --workflow ${escaped} --repository "\$\{GITHUB_REPOSITORY\}" --github-output "\$\{GITHUB_OUTPUT\}"`, "u"));
-  assert.match(all[age].block, new RegExp(String.raw`node tools/ci/refresh-open-pr-age\.mjs --workflow ${escaped} --prs "\$\{open_prs\}" --policy release/product-gates/datapack-freshness-sla\.json --repository "\$\{GITHUB_REPOSITORY\}" --ci-state "\$\{\{ steps\.required-ci\.outputs\.state \}\}"`, "u"));
+  // step output은 env로 받아 셸에는 변수로만 넣는다(표현식을 run 스크립트에 직접 펼치지 않는다).
+  assert.match(all[age].block, /\n          CI_STATE: \$\{\{ steps\.required-ci\.outputs\.state \}\}\n/u);
+  assert.match(all[age].block, new RegExp(String.raw`node tools/ci/refresh-open-pr-age\.mjs --workflow ${escaped} --prs "\$\{open_prs\}" --policy release/product-gates/datapack-freshness-sla\.json --repository "\$\{GITHUB_REPOSITORY\}" --ci-state "\$\{CI_STATE\}"`, "u"));
+}
+
+/** run 스크립트에는 ${{ }} 표현식을 직접 넣지 않는다. 값은 env로 받아 셸 변수로 쓴다(셸 주입 방지, #972·#974 리뷰). */
+export function assertNoExpressionInRunScripts({ steps, file }) {
+  for (const { name, block } of steps()) {
+    const script = block.split("\n        run: ")[1] ?? "";
+    assert.doesNotMatch(script, /\$\{\{/u, `${file}: step "${name}" interpolates an expression into its run script`);
+  }
 }
 
 /** 실패 보고 step이 failure()일 때만 자기 workflow 이름으로 돌고 마지막 step이다. */
-export function assertFailureReportLast({ yml, step, file }) {
+export function assertFailureReportLast({ yml, step, file, condition = "${{ failure() }}" }) {
   const report = step("Report refresh failure as an issue");
-  assert.equal(ifCondition(report.block), "${{ failure() }}");
+  assert.equal(ifCondition(report.block), condition);
   assert.ok(report.block.includes(`node tools/ci/report-refresh-failure.mjs --workflow ${file} --repository "\${GITHUB_REPOSITORY}" --run-id "\${GITHUB_RUN_ID}"`));
   assert.equal(yml.trimEnd().endsWith(report.block.trimEnd()), true);
   return report;

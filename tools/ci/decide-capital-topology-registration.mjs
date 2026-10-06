@@ -7,16 +7,19 @@
 // 이 판정은 읽기만 하고, 등록 workflow가 어느 단계를 할지 한 단어로 돌려준다.
 //
 //   REGISTERED              admission snapshot이 이미 원장 head다. 할 일이 없다.
-//   REGISTER                등록이 필요하고 기다릴 PR·claim이 없다.
+//   REGISTER                등록이 필요하다. cleanupClaims는 먼저 지울 claim 브랜치다(병합된 PR의 남은 claim, 게시 증거 없이 버려진 claim).
 //   OPEN_PR                 이 workflow의 열린 PR이 있다. 새 일을 하지 않고 CI·방치 상한만 본다.
-//   RECOVER_CLAIM           OCI 게시 뒤 실패해 PR 없이 남은 claim이다. 게시 증거로 PR만 다시 만든다.
+//   RECOVER_CLAIM           OCI 게시 receipt를 남기고 실패·취소된 claim이다. 그 증거로 PR만 다시 만든다.
+//   CLAIM_IN_PROGRESS       claim을 만든 run이 아직 돈다. 기다린다.
 //   BLOCKED_BY_PENDING_PR   같은 원장 파일을 쓰는 다른 자동화 PR이 열려 있다. 이상이 아니라 대기다.
 //
+// 게시 증거 없이 남은 claim은 사람이 지울 일이 아니다(이슈 #973). 정리 대상으로 알리고 이번 실행이 새로 시작한다.
 // 그 밖에 판정할 수 없는 상태(claim 중복·닫힌 PR의 claim·복구 불가 claim·admission 누락/만료 등)는 이상이다.
 // 이상은 REGISTRATION_* 코드로 실패해 실패 이슈로 드러난다. 이전 데이터로 대체하거나 성공으로 덮지 않는다.
 //
 // 사용: node tools/ci/decide-capital-topology-registration.mjs --inventory <file> --ledger <file> --prs <gh pr list JSON>
-//   --claims <git ls-remote 출력> --runs <gh run list JSON> --repository <owner/repo> --current-main-sha <sha> [--github-output <path>]
+//   --claims <git ls-remote 출력> --runs <gh run list JSON> --artifacts <run id별 artifact 이름 JSON> --repository <owner/repo> --current-main-sha <sha>
+//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -52,23 +55,31 @@ function admission(inventory) {
   return { snapshotId: value.topologySnapshotId, freshUntilMillis };
 }
 
-// claim 브랜치 이름의 run id가 가리키는 producer run이 이 main에서 실패한 등록 run일 때만 게시 증거로 복구할 수 있다.
-function recoverableRunId(branch, runs, currentMainSha) {
+// PR 없는 claim의 처지를 producer run(claim 브랜치 이름의 run id)으로 가린다(이슈 #973).
+//  - RECOVER: 같은 main에서 실패·취소·시간 초과로 끝났고 게시 receipt artifact를 남겼다. 그 증거로 PR만 다시 만든다.
+//  - RUNNING: 아직 도는 run이다. 건드리지 않고 기다린다.
+//  - ABANDONED: 게시 증거가 없거나(provider 단계 실패), main이 움직여 그 증거를 쓸 수 없거나, run 기록이 없거나 성공으로 끝났는데 PR이 없다.
+//    사람이 브랜치를 지울 일이 아니다. 정리 대상으로 알리고 이번 실행이 새로 시작한다(게시는 내용 주소 객체라 같은 원본이면 안전하다).
+const FINISHED_WITHOUT_PR = new Set(["failure", "cancelled", "timed_out"]);
+function classifyUnboundClaim(branch, { runs, artifacts, currentMainSha }) {
   const runId = branch.slice(REGISTRATION_CLAIM_PREFIX.length);
-  const unrecoverable = (reason) => fail("REGISTRATION_CLAIM_UNRECOVERABLE", `${branch}: ${reason}`);
   const found = runs.find((item) => String(item?.databaseId) === runId);
-  if (!found) unrecoverable(`producer run ${runId} was not found`);
-  if (found.status !== "completed" || found.conclusion !== "failure") unrecoverable(`producer run ${runId} did not fail (status ${String(found.status)}, conclusion ${String(found.conclusion)})`);
+  if (!found) return { kind: "ABANDONED" };
+  const unrecoverable = (reason) => fail("REGISTRATION_CLAIM_UNRECOVERABLE", `${branch}: ${reason}`);
   if (found.workflowName !== REGISTRATION_WORKFLOW_NAME) unrecoverable(`producer run ${runId} is not the registration workflow`);
   if (found.headBranch !== "main") unrecoverable(`producer run ${runId} was not on main`);
-  if (found.headSha !== currentMainSha) unrecoverable(`main moved since producer run ${runId}`);
-  return runId;
+  if (found.status !== "completed") return { kind: "RUNNING" };
+  if (!FINISHED_WITHOUT_PR.has(found.conclusion)) return { kind: "ABANDONED" };
+  const hasReceipt = (artifacts[runId] ?? []).includes(`current-capital-topology-registration-${runId}`);
+  return hasReceipt && found.headSha === currentMainSha ? { kind: "RECOVER", runId } : { kind: "ABANDONED" };
 }
 
-export function decideCapitalTopologyRegistration({ inventory, ledger, pullRequests, claims, runs, repository, currentMainSha, now } = {}) {
+export function decideCapitalTopologyRegistration({ inventory, ledger, pullRequests, claims, runs, repository, currentMainSha, now, limits, artifacts } = {}) {
   if (!Array.isArray(ledger) || !Array.isArray(pullRequests) || !Array.isArray(claims) || !Array.isArray(runs)
+    || !artifacts || typeof artifacts !== "object" || Array.isArray(artifacts)
     || !validRepository(repository) || !SHA.test(currentMainSha ?? "")
-    || !(now instanceof Date) || Number.isNaN(now.getTime())) fail("REGISTRATION_INPUT_INVALID");
+    || !(now instanceof Date) || Number.isNaN(now.getTime())
+    || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1) fail("REGISTRATION_INPUT_INVALID");
 
   const { snapshotId, freshUntilMillis } = admission(inventory);
   const rows = ledger.filter((entry) => entry?.sourceId === SOURCE_ID);
@@ -78,10 +89,16 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
   }
   if (now.getTime() >= freshUntilMillis) fail("REGISTRATION_ADMISSION_EXPIRED", `${snapshotId} expired before it was registered`);
 
+  // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
+  if (pullRequests.length >= limits.pullRequests) fail("REGISTRATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
+  if (runs.length >= limits.runs) fail("REGISTRATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
+
   const own = ownPullRequestsByBranch(pullRequests, REGISTRATION_CLAIM_PREFIX, repository, (branch) => fail("REGISTRATION_PR_DUPLICATE", branch));
   const open = [...own.values()].filter(({ state }) => state === "OPEN");
   if (open.length > 1) fail("REGISTRATION_PR_DUPLICATE", open.map(({ number }) => `#${number}`).join(", "));
   const live = claims.filter(({ branch }) => own.get(branch)?.state !== "MERGED");
+  // 병합된 PR의 claim 브랜치는 남아 있어도 살아 있는 claim이 아니다. claim step과 같은 기준으로 정리 대상에 올린다(#972 리뷰 F2).
+  const cleanupClaims = claims.filter(({ branch }) => own.get(branch)?.state === "MERGED").map(({ branch }) => branch);
   if (open.length === 1) {
     const [pullRequest] = open;
     if (!live.some(({ branch }) => branch === pullRequest.headRefName)) fail("REGISTRATION_CLAIM_MISSING", `#${pullRequest.number} has no claim branch`);
@@ -90,11 +107,15 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
   }
   if (live.length > 1) fail("REGISTRATION_CLAIM_DUPLICATE", live.map(({ branch }) => branch).join(", "));
 
-  let result = { state: "REGISTER", snapshotId };
+  let result = { state: "REGISTER", snapshotId, cleanupClaims };
   if (live.length === 1) {
     const [{ branch }] = live;
     if (own.get(branch)?.state === "CLOSED") fail("REGISTRATION_CLAIM_CLOSED", `${branch} is bound to a closed pull request`);
-    result = { state: "RECOVER_CLAIM", snapshotId, branch, recoveryRunId: recoverableRunId(branch, runs, currentMainSha) };
+    const claim = classifyUnboundClaim(branch, { runs, artifacts, currentMainSha });
+    if (claim.kind === "RUNNING") return { state: "CLAIM_IN_PROGRESS", snapshotId, branch };
+    result = claim.kind === "RECOVER"
+      ? { state: "RECOVER_CLAIM", snapshotId, branch, recoveryRunId: claim.runId, cleanupClaims }
+      : { state: "REGISTER", snapshotId, cleanupClaims: [...cleanupClaims, branch] };
   }
   const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, REGISTRATION_WORKFLOW);
   return blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", snapshotId, blockedBy } : result;
@@ -102,8 +123,8 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
 
 function parseArgs(argv) {
   const keys = new Map([
-    ["--inventory", "inventory"], ["--ledger", "ledger"], ["--prs", "prs"], ["--claims", "claims"], ["--runs", "runs"],
-    ["--repository", "repository"], ["--current-main-sha", "currentMainSha"], ["--github-output", "githubOutput"],
+    ["--inventory", "inventory"], ["--ledger", "ledger"], ["--prs", "prs"], ["--claims", "claims"], ["--runs", "runs"], ["--artifacts", "artifacts"],
+    ["--repository", "repository"], ["--current-main-sha", "currentMainSha"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -111,7 +132,7 @@ function parseArgs(argv) {
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("REGISTRATION_INPUT_INVALID", `argument ${String(argv[index])}`);
     values[key] = argv[index + 1];
   }
-  for (const key of ["inventory", "ledger", "prs", "claims", "runs", "repository", "currentMainSha"]) {
+  for (const key of ["inventory", "ledger", "prs", "claims", "runs", "artifacts", "repository", "currentMainSha", "prLimit", "runLimit"]) {
     if (!Object.hasOwn(values, key)) fail("REGISTRATION_INPUT_INVALID", `missing --${key}`);
   }
   return values;
@@ -122,14 +143,15 @@ export async function main(argv, { now = new Date(), log = console.log } = {}) {
   const readJson = async (file) => JSON.parse(await readFile(file, "utf8"));
   const result = decideCapitalTopologyRegistration({
     inventory: await readJson(values.inventory), ledger: await readJson(values.ledger), pullRequests: await readJson(values.prs),
-    claims: parseRegistrationClaims(await readFile(values.claims, "utf8")), runs: await readJson(values.runs),
+    claims: parseRegistrationClaims(await readFile(values.claims, "utf8")), runs: await readJson(values.runs), artifacts: await readJson(values.artifacts),
     repository: values.repository, currentMainSha: values.currentMainSha, now,
+    limits: { pullRequests: Number(values.prLimit), runs: Number(values.runLimit) },
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {
     await appendFile(values.githubOutput, [
       `state=${result.state}`, `snapshot_id=${result.snapshotId}`, `branch=${result.branch ?? ""}`,
-      `recovery_run_id=${result.recoveryRunId ?? ""}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, "",
+      `recovery_run_id=${result.recoveryRunId ?? ""}`, `cleanup_claims=${(result.cleanupClaims ?? []).join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, "",
     ].join("\n"));
   }
   return result;
