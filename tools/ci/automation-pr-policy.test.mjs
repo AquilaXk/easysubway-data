@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { automationPrEvidenceBlock, itxPromotionAllowedPaths } from "./automation-pr-evidence.mjs";
@@ -560,4 +563,60 @@ test("CLI: 알 수 없는 명령·인자는 실패한다", async () => {
   await assert.rejects(main(["unknown"]), /AUTOMATION_PR_INPUT/u);
   await assert.rejects(main(["decide", "--repository", REPOSITORY]), /AUTOMATION_PR_INPUT/u);
   await assert.rejects(main(["decide", "--repository", REPOSITORY, "--repository", REPOSITORY]), /AUTOMATION_PR_INPUT/u);
+});
+
+// ---------------------------------------------------------------------------
+// CLI 명령(CI job과 라벨러가 부른다)
+// ---------------------------------------------------------------------------
+async function withTemp(callback) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "automation-pr-policy-"));
+  try { return await callback(dir); } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
+test("CLI prepare: 정책 대상 PR이면 증거의 base sha를 내보내고, 대상이 아니면 applicable=false다", async () => {
+  await withTemp(async (dir) => {
+    const input = scenario("derivative-rebinding");
+    const pullFile = path.join(dir, "pull.json");
+    const output = path.join(dir, "output.txt");
+    await writeFile(pullFile, JSON.stringify(input.pull));
+    const lines = [];
+    await main(["prepare", "--pull-request", pullFile, "--github-output", output], { log: (line) => lines.push(line) });
+    assert.equal(await readFile(output, "utf8"), `applicable=true\nbase_sha=${BASE}\n`);
+
+    const other = { ...input.pull, head: { ...input.pull.head, ref: "automation/636-current-topology-refresh-1" } };
+    await writeFile(pullFile, JSON.stringify(other));
+    const outputOther = path.join(dir, "output-other.txt");
+    await main(["prepare", "--pull-request", pullFile, "--github-output", outputOther], { log: () => {} });
+    assert.equal(await readFile(outputOther, "utf8"), "applicable=false\nbase_sha=\n");
+  });
+});
+
+test("CLI prepare·gates: 증거가 없거나 단계가 브랜치와 다르거나 작업 트리 head가 PR head와 다르면 실패한다", async () => {
+  await withTemp(async (dir) => {
+    const pullFile = path.join(dir, "pull.json");
+    const input = scenario("registration");
+    await writeFile(pullFile, JSON.stringify({ ...input.pull, body: "증거 없음" }));
+    await assert.rejects(main(["prepare", "--pull-request", pullFile]), /AUTOMATION_PR_EVIDENCE_MISSING/u);
+    await writeFile(pullFile, JSON.stringify({ ...input.pull, head: { ...input.pull.head, ref: STAGES["itx-promotion"].branch } }));
+    await assert.rejects(main(["prepare", "--pull-request", pullFile]), /AUTOMATION_PR_BRANCH/u);
+    // 작업 트리(이 저장소)의 head는 PR의 가짜 head(bbbb...)와 다르다. 재계산 전에 막힌다.
+    await writeFile(pullFile, JSON.stringify(input.pull));
+    await assert.rejects(main(["gates", "--pull-request", pullFile, "--repository-root", path.resolve(import.meta.dirname, "../..")]), /AUTOMATION_PR_HEAD_MISMATCH/u);
+    await writeFile(pullFile, JSON.stringify({ head: { ref: "x" } }));
+    await assert.rejects(main(["prepare", "--pull-request", pullFile]), /AUTOMATION_PR_INPUT/u);
+  });
+});
+
+test("CLI decide: 판정을 GITHUB_OUTPUT에 쓰고, 값이 출력 형식에 맞지 않으면 쓰지 않고 실패한다", async () => {
+  await withTemp(async (dir) => {
+    const input = scenario("itx-promotion");
+    const output = path.join(dir, "output.txt");
+    const { api } = fakeApi(input);
+    await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "success", "--github-output", output], { api, log: () => {} });
+    assert.equal(await readFile(output, "utf8"), `state=ELIGIBLE\npull_request=77\nhead_sha=${HEAD}\nstage=itx-promotion\ndraft=true\nlabeled=false\nattested=false\n`);
+
+    const stale = path.join(dir, "stale.txt");
+    await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "cancelled", "--github-output", stale], { api, log: () => {} });
+    assert.equal(await readFile(stale, "utf8"), "state=STALE\npull_request=\nhead_sha=\nstage=\ndraft=false\nlabeled=false\nattested=false\n");
+  });
 });
