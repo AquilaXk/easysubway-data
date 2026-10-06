@@ -12,6 +12,7 @@ import { gzipSync } from "node:zlib";
 import {
   admittedTopologySource,
   applyTopology,
+  assertItxPackRuntime,
   readImmutableItxRideEdgeSetSha256,
   assertStoredTopology,
   bindItxTopologyEdgeProvenance,
@@ -908,6 +909,14 @@ test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam�
   candidate.evidence.pack.byteSizeDelta = gzipBytes.length - 1;
   assert.throws(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes, 1),
     /evidence or bundled pack index is stale/);
+});
+
+// #980 F4: 팩 바이트는 SQLite 엔진 버전에 묶인다. 다른 런타임이면 불투명한 해시 불일치 대신 원인(실제 버전)을 적어 계산 전에 거부한다.
+test("팩을 계산하는 런타임은 Node 24.19.0·SQLite 3.53.3만 받고 어긋나면 실제 버전을 적어 거부한다", () => {
+  assert.doesNotThrow(() => assertItxPackRuntime({ node: "24.19.0", sqlite: "3.53.3" }));
+  assert.throws(() => assertItxPackRuntime({ node: "24.19.0", sqlite: "3.53.4" }), /runtime must be Node 24\.19\.0 with SQLite 3\.53\.3.*SQLite 3\.53\.4/u);
+  assert.throws(() => assertItxPackRuntime({ node: "24.20.0", sqlite: "3.53.3" }), /Node 24\.20\.0/u);
+  assert.throws(() => assertItxPackRuntime({}), /runtime must be Node/u);
 });
 
 test("topology 입력 팩 식별은 coverage contract에서 읽고 승격마다 코드 허용 목록을 더하지 않는다", async () => {

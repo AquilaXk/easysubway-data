@@ -16,6 +16,9 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+// 출력 팩 바이트는 SQLite 엔진 버전에 묶인다(패치 버전이 달라도 파일 크기와 해시가 달라진다). emit-station-catalog-pack과 같은 런타임만 쓴다.
+const PACK_NODE_VERSION = "24.19.0";
+const PACK_SQLITE_VERSION = "3.53.3";
 const GZIP_HEADER_OS_BYTE_OFFSET = 9;
 const GZIP_HEADER_OS_BYTE = 19;
 const CATALOG_VERSION = 19;
@@ -1187,10 +1190,18 @@ function differingEvidenceFields(left, right, prefix = "") {
   return JSON.stringify(left) === JSON.stringify(right) ? [] : [`${prefix}: committed=${JSON.stringify(left)} derived=${JSON.stringify(right)}`];
 }
 
+/** 팩을 계산하는 런타임이 고정된 Node·SQLite인지 확인한다. 어긋나면 실제 버전을 적어 계산 전에 거부한다. */
+export function assertItxPackRuntime(versions = process.versions) {
+  if (versions.node !== PACK_NODE_VERSION || versions.sqlite !== PACK_SQLITE_VERSION) {
+    throw new Error(`ITX topology pack runtime must be Node ${PACK_NODE_VERSION} with SQLite ${PACK_SQLITE_VERSION} (actual: Node ${versions.node}, SQLite ${versions.sqlite})`);
+  }
+}
+
 /** 입력 팩에 승인 원천 topology를 적용해 출력 팩·index·증거를 계산한다. 파일을 쓰지 않는다. */
 async function computeItxTopologyPack({
   inputGzipBytes, index, admittedInputPack, topology, admissionEvidence, currentProjection, source, sourceBytes, reference,
 }) {
+  assertItxPackRuntime();
   const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-${randomUUID()}-`));
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
