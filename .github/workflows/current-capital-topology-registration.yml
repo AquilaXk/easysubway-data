@@ -238,11 +238,15 @@ jobs:
           mapfile -t changed < <(git status --porcelain=v1 | sed -E 's/^.. //')
           [[ "${#changed[@]}" == "4" ]] || { echo "registration changed an invalid path count" >&2; exit 1; }
           for file in "${expected[@]}"; do printf '%s\n' "${changed[@]}" | grep -Fqx "${file}" || { echo "registration output is missing" >&2; exit 1; }; done
+          # #975 리뷰 F5: 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)를 통과해야 push·PR이 만들어진다.
+          evidence_root="$(mktemp -d "${RUNNER_TEMP}/registration-evidence.XXXXXX")"
+          node tools/ci/source-ledger-gate.mjs --base-sha "${REGISTRATION_MAIN_SHA}" --output "${evidence_root}/gate.json"
           git add "${expected[@]}"
           git commit -m "Register current capital topology"
           git push origin "${REGISTRATION_BRANCH}"
+          node tools/ci/automation-pr-evidence.mjs registration-body --gate "${evidence_root}/gate.json" --base-sha "${REGISTRATION_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${evidence_root}/body.md"
           # #967: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨). push는 GITHUB_TOKEN 그대로다.
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REGISTRATION_BRANCH}" --title "Register current capital topology" --body "Register the protected current capital topology receipt.\n\nRefs #456"
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REGISTRATION_BRANCH}" --title "Register current capital topology" --body-file "${evidence_root}/body.md"
       - name: Detect retained publication receipt
         id: receipt
         if: ${{ always() && (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') }}
