@@ -108,6 +108,10 @@ test("공급자 응용 서버의 자기 오류 페이지(5xx)는 도달로 보�
   assert.equal(await verdict(() => response(200, "<response/>")), "REACHABLE");
 });
 
+test("프로브 정의의 기대값이 알 수 없는 값이면 응답 없음으로 위장하지 않고 바로 실패한다", async () => {
+  await assert.rejects(runProbe({ provider: "grtc", id: "x", kind: "http", required: true, url: "https://www.grtc.co.kr/x", expect: "typo" }, { fetchImpl: providerFetch().fetchImpl }), /PROBE_INPUT_INVALID: unknown expectation typo/u);
+});
+
 test("선택 점검(required: false)이 실패해도 공급자 판정은 필수 점검만 본다", async () => {
   const probes = (await buildProbes({ repositoryRoot: root })).filter(({ kind }) => kind !== "data-go-download");
   const page = probes.find(({ provider, id }) => provider === "korail.com" && id === "timetable-page");

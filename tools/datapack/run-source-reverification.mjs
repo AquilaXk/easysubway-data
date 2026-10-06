@@ -56,7 +56,10 @@ function fail(message) {
 }
 
 const text = (value) => typeof value === "string" && value !== "";
-const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+function compare(left, right) {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const jsonText = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const kstDate = (date) => KST_FORMAT.formatToParts(date).filter(({ type }) => type !== "literal").map(({ value }) => value).join("");
@@ -85,7 +88,7 @@ function redact(detail, env) {
     const value = env?.[name];
     if (typeof value === "string" && value.length >= 8) result = result.split(value).join("***");
   }
-  result = result.replace(/([\w-]*key)=([^&\s'"|]+)/giu, "$1=***").replace(/\/p\/[^/\s]+\//gu, "/p/***/");
+  result = result.replace(/([\w-]{0,32}key)=([^&\s'"|]+)/giu, "$1=***").replace(/\/p\/[^/\s]+\//gu, "/p/***/");
   return result.length > FAILURE_DETAIL_MAX_LENGTH ? result.slice(-FAILURE_DETAIL_MAX_LENGTH) : result;
 }
 
@@ -125,7 +128,7 @@ export function evaluateEvidenceChange({ sourceId, before, after, policy } = {})
     violate("BINDING_MISMATCH", after?.snapshotId, "the evidence lacks snapshotId, rawSha256, recordsSha256, recordCount or routes");
     return { row: null, violations };
   }
-  const effective = { ...policy, ...(policy.sourceOverrides[sourceId] ?? {}) };
+  const effective = { ...policy, ...policy.sourceOverrides[sourceId] };
   let rowDelta = 0;
   let coverageDelta = 0;
   let diffStatus = "FIRST";
@@ -292,8 +295,7 @@ async function daejeonTopologySnapshotPath(ctx) {
 async function daeguCapturedAt(directory) {
   const names = (await readdir(directory)).filter((name) => name.endsWith(".json") && !name.startsWith(".")).sort(compare);
   if (names.length === 0) fail("the Daegu collector wrote no snapshot");
-  const stamps = new Set();
-  for (const name of names) stamps.add(JSON.parse(await readFile(path.join(directory, name), "utf8")).capturedAt);
+  const stamps = new Set(await Promise.all(names.map(async (name) => JSON.parse(await readFile(path.join(directory, name), "utf8")).capturedAt)));
   const [capturedAt] = [...stamps];
   if (stamps.size !== 1 || !text(capturedAt) || new Date(capturedAt).toISOString() !== capturedAt) fail("the Daegu snapshots do not share one canonical capturedAt");
   return capturedAt;
@@ -452,8 +454,48 @@ async function gateEvidence({ repositoryRoot, policy, recipe, before }) {
 }
 
 function violationError(recipe, violations) {
-  const [first] = violations;
-  return new Error(`${first.code}: ${recipe.id}: ${violations.map(({ sourceId, snapshotId, detail }) => `${sourceId} ${snapshotId}: ${detail}`).join(" | ")}`);
+  const details = violations.map(({ sourceId, snapshotId, detail }) => `${sourceId} ${snapshotId}: ${detail}`).join(" | ");
+  return new Error(`${violations[0].code}: ${recipe.id}: ${details}`);
+}
+
+// recipe 하나: 단계를 순서대로 실행하고(실패는 이상 코드로 분류) 결과를 허용 경로·원장 게이트·증거 게이트에 통과시킨 뒤 한 커밋으로 쌓는다.
+async function runRecipe({ recipe, recipeSteps, ctx, policy, ledgerPath }) {
+  const { repositoryRoot, env } = ctx;
+  const beforeInventory = recipe.due?.kind === "inventory-evidence" ? await ctx.readJson(INVENTORY_PATH) : null;
+  for (const recipeStep of recipeSteps) {
+    try {
+      await recipeStep.run(ctx); // NOSONAR -- 단계는 앞 단계의 산출물(HEAD·입력 파일)에 의존해 순서대로 실행한다
+    } catch (error) {
+      throw recipeError(recipe, recipeStep, error, env);
+    }
+  }
+  const entries = await changedEntries(repositoryRoot);
+  if (entries.length === 0) fail(`SOURCE_REGISTRATION_FAILED: ${recipe.id}: the recipe produced no registration output`);
+  const outside = scopeViolations(entries);
+  if (outside.length > 0) fail(`REVERIFICATION_OUTPUT_SCOPE: ${recipe.id}: ${outside.join(", ")}`);
+  const paths = entries.map(({ path: relative }) => relative);
+  const violations = paths.includes(ledgerPath) ? await gateLedger({ repositoryRoot, ledgerPath, policy, recipe }) : [];
+  let evidenceRows = [];
+  if (beforeInventory && paths.includes(INVENTORY_PATH)) {
+    const gate = await gateEvidence({ repositoryRoot, policy, recipe, before: beforeInventory });
+    evidenceRows = gate.rows;
+    violations.push(...gate.violations);
+  }
+  if (violations.length > 0) throw violationError(recipe, violations);
+  await git(repositoryRoot, ["add", "--", ...paths]);
+  await git(repositoryRoot, ["commit", "-q", "-m", recipe.message]);
+  return { result: { id: recipe.id, changed: true, paths }, evidenceRows };
+}
+
+function recipeContext({ recipe, repositoryRoot, operationRoot, env, shared, lib, now, execute }) {
+  const operationDir = path.join(operationRoot, recipe.id);
+  return {
+    recipeId: recipe.id, repositoryRoot, operationDir, env, shared, lib, now, execute,
+    head: async () => (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim(),
+    originMain: async () => (await git(repositoryRoot, ["rev-parse", "origin/main"])).trim(),
+    readJson: async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8")),
+    file: (name) => path.join(operationDir, name),
+  };
 }
 
 export async function runSourceReverification({
@@ -464,48 +506,17 @@ export async function runSourceReverification({
   const ordered = orderedRecipes(recipeIds, recipes);
   if ((await changedEntries(repositoryRoot)).length > 0) fail("REVERIFICATION_WORKTREE_DIRTY: the reverification needs a clean worktree");
   const ledgerPolicy = parseLedgerChangePolicy(policy ?? JSON.parse(await readFile(path.join(ROOT, POLICY_PATH), "utf8")));
-  const clock = typeof now === "function" ? now : () => new Date(now);
-  const run = execute ?? defaultExecute(repositoryRoot, env);
-  const shared = new Map();
+  const base = { repositoryRoot, operationRoot, env, shared: new Map(), lib, now: typeof now === "function" ? now : () => new Date(now), execute: execute ?? defaultExecute(repositoryRoot, env) };
   const results = [];
   const evidenceSources = [];
   await mkdir(operationRoot, { recursive: true });
   for (const recipe of ordered) {
-    const operationDir = path.join(operationRoot, recipe.id);
-    await mkdir(operationDir, { recursive: true });
-    const ctx = {
-      recipeId: recipe.id, repositoryRoot, operationDir, env, shared, lib, now: clock, execute: run,
-      head: async () => (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim(),
-      originMain: async () => (await git(repositoryRoot, ["rev-parse", "origin/main"])).trim(),
-      readJson: async (relative) => JSON.parse(await readFile(path.join(repositoryRoot, relative), "utf8")),
-      file: (name) => path.join(operationDir, name),
-    };
-    const beforeInventory = recipe.due?.kind === "inventory-evidence" ? await ctx.readJson(INVENTORY_PATH) : null;
-    for (const recipeStep of steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`)) {
-      try {
-        await recipeStep.run(ctx);
-      } catch (error) {
-        throw recipeError(recipe, recipeStep, error, env);
-      }
-    }
-    const entries = await changedEntries(repositoryRoot);
-    if (entries.length === 0) fail(`SOURCE_REGISTRATION_FAILED: ${recipe.id}: the recipe produced no registration output`);
-    const outside = scopeViolations(entries);
-    if (outside.length > 0) fail(`REVERIFICATION_OUTPUT_SCOPE: ${recipe.id}: ${outside.join(", ")}`);
-    const paths = entries.map(({ path: relative }) => relative);
-    const violations = [];
-    if (paths.includes(ledgerPath)) violations.push(...await gateLedger({ repositoryRoot, ledgerPath, policy: ledgerPolicy, recipe }));
-    let evidenceRows = [];
-    if (beforeInventory && paths.includes(INVENTORY_PATH)) {
-      const gate = await gateEvidence({ repositoryRoot, policy: ledgerPolicy, recipe, before: beforeInventory });
-      evidenceRows = gate.rows;
-      violations.push(...gate.violations);
-    }
-    if (violations.length > 0) throw violationError(recipe, violations);
-    await git(repositoryRoot, ["add", "--", ...paths]);
-    await git(repositoryRoot, ["commit", "-q", "-m", recipe.message]);
+    const recipeSteps = steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`);
+    const ctx = recipeContext({ recipe, ...base });
+    await mkdir(ctx.operationDir, { recursive: true }); // NOSONAR -- recipe는 앞 recipe의 커밋 위에서 순서대로 실행한다
+    const { result, evidenceRows } = await runRecipe({ recipe, recipeSteps, ctx, policy: ledgerPolicy, ledgerPath }); // NOSONAR -- 위와 같다
     evidenceSources.push(...evidenceRows);
-    results.push({ id: recipe.id, changed: true, paths });
+    results.push(result);
   }
   return { steps: results, evidenceSources };
 }

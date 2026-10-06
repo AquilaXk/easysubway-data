@@ -35,7 +35,8 @@ import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs
 export const SOURCE_REVERIFICATION_WORKFLOW = "source-reverification.yml";
 export const SOURCE_REVERIFICATION_CLAIM_PREFIX = REFRESH_CLAIM_PREFIXES[SOURCE_REVERIFICATION_WORKFLOW];
 const WORKFLOW_NAME = "Source Reverification";
-const CLAIM = new RegExp(String.raw`^${SOURCE_REVERIFICATION_CLAIM_PREFIX.replaceAll("/", String.raw`\/`)}[1-9]\d*$`, "u");
+const CLAIM_PREFIX_PATTERN = SOURCE_REVERIFICATION_CLAIM_PREFIX.replaceAll("/", "\\/");
+const CLAIM = new RegExp(`^${CLAIM_PREFIX_PATTERN}[1-9]\\d*$`, "u");
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
@@ -95,6 +96,34 @@ function dueEntry({ recipe, sourceId, basisAt, freshUntil, windows, nowMillis })
   };
 }
 
+function ledgerDueEntries({ recipe, ledger, policy, windows, nowMillis }) {
+  return recipe.due.sourceIds.map((sourceId) => {
+    const head = ledgerHead(ledger, sourceId);
+    return dueEntry({ recipe, sourceId, basisAt: head[classOf(policy, sourceId).basisField], freshUntil: head.freshUntil, windows, nowMillis });
+  });
+}
+
+// 원장 행이 없는 증거(KRIC 시간표 projection): inventory 증거의 관측 시각이 기준이다.
+// 같은 원천의 projection 증거가 여럿이면 가장 이른 관측이 기준이다(가장 먼저 만료되는 쪽이 다시 확인을 이끈다).
+function evidenceDueEntries({ recipe, inventory, policy, now, windows, nowMillis }) {
+  const { due } = recipe;
+  const sources = inventory.sources.filter((entry) => entry?.id === due.sourceId);
+  if (sources.length !== 1) fail("REVERIFICATION_EVIDENCE_MISSING", due.sourceId);
+  const observed = due.evidenceKeys.map((key) => {
+    const value = sources[0][key]?.[due.basisField];
+    if (typeof value !== "string") fail("REVERIFICATION_EVIDENCE_MISSING", `${due.sourceId}: ${key}.${due.basisField}`);
+    return { value, millis: instant(value, `${due.sourceId} ${due.basisField}`, "REVERIFICATION_EVIDENCE_MISSING") };
+  });
+  const basisAt = observed.reduce((earliest, entry) => (entry.millis < earliest.millis ? entry : earliest)).value;
+  let freshUntil;
+  try {
+    freshUntil = deriveFreshnessExpiresAt({ policy: { clockSkewSeconds: policy.clockSkewSeconds, sourceClasses: [classOf(policy, due.sourceId)] }, sourceClassId: due.classId, basisAt, providerValidUntil: null, evaluationAt: now.toISOString() });
+  } catch (error) {
+    fail("REVERIFICATION_EVIDENCE_MISSING", `${due.sourceId}: ${error.message}`);
+  }
+  return [dueEntry({ recipe, sourceId: due.sourceId, basisAt, freshUntil, windows, nowMillis })];
+}
+
 /**
  * recipe가 자기 만료 기준을 가진 원천마다 기준 시각·만료·dueAt·상태를 계산한다(읽기 전용). 의존 recipe는 행이 없다.
  * @returns {{ recipeId: string, sourceId: string, basisAt: string, freshUntil: string, dueAt: string, state: "DUE"|"CURRENT" }[]}
@@ -103,36 +132,8 @@ export function sourceReverificationDue({ inventory, ledger, policy, now, recipe
   if (!Array.isArray(inventory?.sources) || !Array.isArray(ledger) || !(now instanceof Date) || Number.isNaN(now.getTime())) fail("REVERIFICATION_INPUT_INVALID");
   const windows = policyWindows(policy);
   const nowMillis = now.getTime();
-  const table = [];
-  for (const recipe of recipes) {
-    const due = recipe.due;
-    if (!due) continue;
-    if (due.kind === "ledger-head") {
-      for (const sourceId of due.sourceIds) {
-        const head = ledgerHead(ledger, sourceId);
-        const basisField = classOf(policy, sourceId).basisField;
-        table.push(dueEntry({ recipe, sourceId, basisAt: head[basisField], freshUntil: head.freshUntil, windows, nowMillis }));
-      }
-    } else if (due.kind === "inventory-evidence") {
-      const sources = inventory.sources.filter((entry) => entry?.id === due.sourceId);
-      if (sources.length !== 1) fail("REVERIFICATION_EVIDENCE_MISSING", due.sourceId);
-      const observed = due.evidenceKeys.map((key) => {
-        const value = sources[0][key]?.[due.basisField];
-        if (typeof value !== "string") fail("REVERIFICATION_EVIDENCE_MISSING", `${due.sourceId}: ${key}.${due.basisField}`);
-        return value;
-      });
-      // 같은 원천의 projection 증거가 여럿이면 가장 이른 관측이 기준이다(가장 먼저 만료되는 쪽이 다시 확인을 이끈다).
-      const basisAt = observed.reduce((earliest, value) => (instant(value, `${due.sourceId} ${due.basisField}`, "REVERIFICATION_EVIDENCE_MISSING") < instant(earliest, due.sourceId, "REVERIFICATION_EVIDENCE_MISSING") ? value : earliest));
-      let freshUntil;
-      try {
-        freshUntil = deriveFreshnessExpiresAt({ policy: { clockSkewSeconds: policy.clockSkewSeconds, sourceClasses: [classOf(policy, due.sourceId)] }, sourceClassId: due.classId, basisAt, providerValidUntil: null, evaluationAt: now.toISOString() });
-      } catch (error) {
-        fail("REVERIFICATION_EVIDENCE_MISSING", `${due.sourceId}: ${error.message}`);
-      }
-      table.push(dueEntry({ recipe, sourceId: due.sourceId, basisAt, freshUntil, windows, nowMillis }));
-    }
-  }
-  return table;
+  const entries = { "ledger-head": ledgerDueEntries, "inventory-evidence": evidenceDueEntries };
+  return recipes.filter(({ due }) => due).flatMap((recipe) => entries[recipe.due.kind]({ recipe, ledger, inventory, policy, now, windows, nowMillis }));
 }
 
 // DUE인 recipe와 그에 의존하는 recipe를 recipe 표 순서(= 의존 순서)로 돌려준다.
@@ -151,18 +152,17 @@ function classifyUnboundClaim(branch, runs) {
   return found.status === "completed" ? "ABANDONED" : "RUNNING";
 }
 
-export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, repository, now, limits, recipes = REVERIFICATION_RECIPES } = {}) {
+function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, repository, now, limits }) {
   if (!Array.isArray(pullRequests) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
     || !(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(ledger) || !Array.isArray(inventory?.sources)
     || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1) fail("REVERIFICATION_INPUT_INVALID");
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
   if (pullRequests.length >= limits.pullRequests) fail("REVERIFICATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
   if (runs.length >= limits.runs) fail("REVERIFICATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
+}
 
-  const dueRows = sourceReverificationDue({ inventory, ledger, policy, now, recipes });
-  const recipeIds = selectRecipes(dueRows, recipes);
-  const due = dueRows.filter(({ state }) => state === "DUE").map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
-
+// 이 workflow의 열린 PR과 claim 브랜치의 처지. 정할 수 있으면 state를, 아니면 state 없이 정리 대상 claim만 돌려준다.
+function classifyClaims({ pullRequests, automationBranches, runs, repository }) {
   const own = ownPullRequestsByBranch(pullRequests, SOURCE_REVERIFICATION_CLAIM_PREFIX, repository, (branch) => fail("REVERIFICATION_PR_DUPLICATE", branch));
   const open = [...own.values()].filter(({ state }) => state === "OPEN");
   if (open.length > 1) fail("REVERIFICATION_PR_DUPLICATE", open.map(({ number }) => `#${number}`).join(", "));
@@ -170,19 +170,28 @@ export function decideSourceReverification({ inventory, ledger, policy, pullRequ
   const live = claims.filter((branch) => own.get(branch)?.state !== "MERGED");
   // 병합된 PR의 claim 브랜치는 살아 있는 claim이 아니다. 정리 대상으로 알린다.
   const cleanupClaims = claims.filter((branch) => own.get(branch)?.state === "MERGED");
+  if (live.length > 1) fail("REVERIFICATION_CLAIM_DUPLICATE", live.join(", "));
   if (open.length === 1) {
     const [pullRequest] = open;
     if (!live.includes(pullRequest.headRefName)) fail("REVERIFICATION_CLAIM_MISSING", `#${pullRequest.number} has no claim branch`);
-    if (live.length > 1) fail("REVERIFICATION_CLAIM_DUPLICATE", live.join(", "));
-    return { state: "OPEN_PR", branch: pullRequest.headRefName, due: [], recipes: [], cleanupClaims };
+    return { state: "OPEN_PR", branch: pullRequest.headRefName, cleanupClaims };
   }
-  if (live.length > 1) fail("REVERIFICATION_CLAIM_DUPLICATE", live.join(", "));
   if (live.length === 1) {
     const [branch] = live;
     if (own.get(branch)?.state === "CLOSED") fail("REVERIFICATION_CLAIM_CLOSED", `${branch} is bound to a closed pull request`);
-    if (classifyUnboundClaim(branch, runs) === "RUNNING") return { state: "CLAIM_IN_PROGRESS", branch, due: [], recipes: [], cleanupClaims };
+    if (classifyUnboundClaim(branch, runs) === "RUNNING") return { state: "CLAIM_IN_PROGRESS", branch, cleanupClaims };
     cleanupClaims.push(branch);
   }
+  return { state: null, cleanupClaims };
+}
+
+export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, repository, now, limits, recipes = REVERIFICATION_RECIPES } = {}) {
+  assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, repository, now, limits });
+  const dueRows = sourceReverificationDue({ inventory, ledger, policy, now, recipes });
+  const recipeIds = selectRecipes(dueRows, recipes);
+  const due = dueRows.filter(({ state }) => state === "DUE").map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
+  const { state, branch, cleanupClaims } = classifyClaims({ pullRequests, automationBranches, runs, repository });
+  if (state) return { state, branch, due: [], recipes: [], cleanupClaims };
   if (recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], cleanupClaims };
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: SOURCE_REVERIFICATION_WORKFLOW });
   const blockedBy = [...pending.pullRequests, ...pending.branches];

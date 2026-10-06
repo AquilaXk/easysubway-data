@@ -45,7 +45,7 @@ export async function buildProbes({ repositoryRoot }) {
     { provider: "grtc", id: "station-time-info", kind: "http", required: true, url: `https://www.grtc.co.kr/subway/openapi/json/stationTimeInfomation?station_id=${stationId}`, expect: "json-array" },
     // 키 없이 부르면 부산교통공사 응용 서버가 자기 오류 페이지(HTTP 500, /voc/admin/images/error1.jpg)로 답한다(로컬에서도 같다).
     // 그 응답이 오는 것이 도달성의 증거다. 데이터 경로(서비스 키)는 이 측정이 아니라 첫 재확인 dispatch가 확인한다.
-    { provider: "humetro", id: "open-api-host", kind: "http", required: true, url: "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn", expect: "any-response", providerErrorPage: "/voc/admin/images/error1.jpg" },
+    { provider: "humetro", id: "open-api-host", kind: "http", required: true, url: "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn", expect: "any-response", providerErrorPage: "/voc/admin/images/error1.jpg" }, // NOSONAR -- provider contract is HTTP-only
     { provider: "humetro", id: "official-page", kind: "http", required: false, url: "https://www2.humetro.busan.kr/homepage/chs/page/subLocation.do?menu_no=1001010501", expect: "any-response" },
     { provider: "data.go.kr", id: "portal-file-detail", kind: "http", required: true, url: `https://www.data.go.kr/data/${DATA_GO_PROBE_DATASET}/fileData.do`, expect: "ok-html" },
     { provider: "data.go.kr", id: "file-download", kind: "data-go-download", required: true, datasetId: DATA_GO_PROBE_DATASET },
@@ -79,23 +79,40 @@ async function readBody(res) {
   return Buffer.concat(chunks);
 }
 
+const verdictOf = (ok, note = "ok") => ({ ok, note: ok ? "ok" : note });
+
+function judgeAnyResponse(status, body, providerErrorPage) {
+  // 5xx는 공급자 응용 서버가 자기 오류 페이지로 답한 경우만 도달로 본다(CDN·프록시·차단 페이지의 5xx와 구분한다).
+  if (status < 500) return body.length > 0 ? verdictOf(true) : verdictOf(false, "empty body");
+  const providerPage = Boolean(providerErrorPage) && body.toString("latin1").includes(providerErrorPage);
+  return providerPage ? { ok: true, note: "provider error page (no service key)" } : verdictOf(false, `HTTP ${status}`);
+}
+
+function judgeJsonArray(body) {
+  try {
+    return Array.isArray(JSON.parse(body.toString("utf8"))) && body.length > 2 ? verdictOf(true) : verdictOf(false, "the body is not a non-empty JSON array");
+  } catch {
+    return verdictOf(false, "the body is not JSON");
+  }
+}
+
+const BODY_JUDGES = Object.freeze({
+  "ok-html": (body) => (body.length > 0 ? verdictOf(true) : verdictOf(false, "empty body")),
+  xlsx: (body) => verdictOf(body.subarray(0, 4).equals(XLSX_SIGNATURE), "the body is not an xlsx workbook"),
+  "json-array": judgeJsonArray,
+});
+
+const EXPECTATIONS = new Set(["any-response", ...Object.keys(BODY_JUDGES)]);
+
 function judge(expect, status, body, providerErrorPage = null) {
-  if (expect === "any-response") {
-    // 5xx는 공급자 응용 서버가 자기 오류 페이지로 답한 경우만 도달로 본다(CDN·프록시·차단 페이지의 5xx와 구분한다).
-    if (status >= 500) return providerErrorPage && body.toString("latin1").includes(providerErrorPage) ? { ok: true, note: "provider error page (no service key)" } : { ok: false, note: `HTTP ${status}` };
-    return { ok: body.length > 0, note: body.length === 0 ? "empty body" : "ok" };
-  }
-  if (status !== 200) return { ok: false, note: `HTTP ${status}` };
-  if (expect === "ok-html") return { ok: body.length > 0, note: body.length > 0 ? "ok" : "empty body" };
-  if (expect === "xlsx") return body.subarray(0, 4).equals(XLSX_SIGNATURE) ? { ok: true, note: "ok" } : { ok: false, note: "the body is not an xlsx workbook" };
-  if (expect === "json-array") {
-    try { return Array.isArray(JSON.parse(body.toString("utf8"))) && body.length > 2 ? { ok: true, note: "ok" } : { ok: false, note: "the body is not a non-empty JSON array" }; } catch { return { ok: false, note: "the body is not JSON" }; }
-  }
-  return fail("PROBE_INPUT_INVALID", `unknown expectation ${String(expect)}`);
+  if (expect === "any-response") return judgeAnyResponse(status, body, providerErrorPage);
+  return status === 200 ? BODY_JUDGES[expect](body) : verdictOf(false, `HTTP ${status}`);
 }
 
 /** 점검 하나를 실행한다. 어떤 실패도 던지지 않고 결과로 돌려준다(다른 공급자 측정을 막지 않는다). */
 export async function runProbe(probe, { fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS, downloader = null } = {}) {
+  // 프로브 정의의 오류는 응답 없음(UNREACHABLE)으로 위장하지 않고 바로 드러낸다.
+  if (probe.kind !== "data-go-download" && !EXPECTATIONS.has(probe.expect)) fail("PROBE_INPUT_INVALID", `unknown expectation ${String(probe.expect)}`);
   const base = { provider: probe.provider, id: probe.id, required: probe.required, url: redactedUrl(probe.url ?? "") };
   const started = Date.now();
   try {
@@ -112,25 +129,25 @@ export async function runProbe(probe, { fetchImpl = fetch, timeoutMs = REQUEST_T
   }
 }
 
+// 점검은 서로 독립이고 하나가 실패해도 던지지 않으므로 함께 실행한다(결과 순서는 프로브 순서 그대로다).
 export async function probeProviders({ probes, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS, downloader = null } = {}) {
-  const results = [];
-  for (const probe of probes) results.push(await runProbe(probe, { fetchImpl, timeoutMs, downloader }));
-  return results;
+  return Promise.all(probes.map((probe) => runProbe(probe, { fetchImpl, timeoutMs, downloader })));
 }
 
 /**
  * 공급자 판정: 필수 점검이 모두 ok면 REACHABLE. 응답을 못 받은 필수 점검이 있으면 UNREACHABLE(DNS·연결·시간 초과),
  * 응답은 받았지만 기대와 다른 필수 점검이 있으면 BLOCKED(차단 페이지·4xx/5xx·잘못된 본문)다.
  */
+function providerVerdict(checks) {
+  const required = checks.filter(({ required: isRequired }) => isRequired);
+  if (required.length === 0 || required.some(({ ok, status }) => !ok && status === null)) return "UNREACHABLE";
+  return required.every(({ ok }) => ok) ? "REACHABLE" : "BLOCKED";
+}
+
 export function summarizeProbes(results) {
   const providers = PROBE_PROVIDERS.map((provider) => {
     const checks = results.filter((entry) => entry.provider === provider);
-    const required = checks.filter(({ required: isRequired }) => isRequired);
-    let verdict = "REACHABLE";
-    if (required.length === 0) verdict = "UNREACHABLE";
-    else if (required.some(({ ok, status }) => !ok && status === null)) verdict = "UNREACHABLE";
-    else if (required.some(({ ok }) => !ok)) verdict = "BLOCKED";
-    return { provider, verdict, checks };
+    return { provider, verdict: providerVerdict(checks), checks };
   });
   return { reachable: providers.every(({ verdict }) => verdict === "REACHABLE"), providers };
 }
