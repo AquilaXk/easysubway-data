@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { PR_FIELDS, collectAutomationPullRequests, main } from "./collect-automation-prs.mjs";
-import { ITX_PROMOTION_CLAIM_PREFIX, decideItxCurrentPromotion } from "./decide-itx-current-promotion.mjs";
+import { MAX_CLAIM_BRANCHES, PR_FIELDS, collectAutomationPullRequests, main } from "./collect-automation-prs.mjs";
+import { ITX_PROMOTION_CLAIM_PREFIX, decideItxCurrentPromotion, parseItxPromotionBranches } from "./decide-itx-current-promotion.mjs";
 
 // #993: 자동화 판정이 받는 PR 목록은 PR 이력 길이와 무관해야 한다. 열린 PR 전체(상한에 닿으면 실패)와
 // 판정이 보는 claim 브랜치별 PR(전 상태)만 받는다. 닫힘·병합 PR 이력이 아무리 쌓여도 같은 결과여야 한다.
@@ -138,6 +138,37 @@ test("5000건 이력에서 모은 목록으로 ITX 승격 판정이 이력 없�
   assert.throws(() => decide(legacy), /ITX_PROMOTION_LIST_TRUNCATED|ITX_PROMOTION_ORPHAN_BRANCH/u);
 });
 
+// #994 리뷰 F1: ITX 판정의 CLOSED 의미(브랜치가 남은 CLOSED PR만 이상)는 수집기가 브랜치 없는 CLOSED PR을 돌려주지 않는 데 기댄다. 둘을 함께 고정한다.
+test("수집기와 ITX 판정을 함께 돌리면 브랜치가 남은 CLOSED 승격 PR은 ITX_PROMOTION_PR_CLOSED, 브랜치가 지워진 CLOSED 승격 PR은 정상 진행이다", async () => {
+  const claim = `${ITX_PROMOTION_CLAIM_PREFIX}7`;
+  const dataset = [...history(5000, 100), pr(7, "CLOSED", claim)];
+  const decideWith = async (refsText) => {
+    const pullRequests = await collect({ repository: REPOSITORY, refsText, limit: 1000, runGh: fakeGitHub(dataset).runGh });
+    return decideItxCurrentPromotion({
+      now: new Date("2026-10-05T15:00:00Z"), contract: { sourceTimetableArtifact: { status: "ADMITTED", freshUntil: "2026-10-30T00:00:00+09:00" } },
+      pullRequests, branches: parseItxPromotionBranches(refsText), repository: REPOSITORY, limits: { pullRequests: 1000 },
+    });
+  };
+  await assert.rejects(decideWith(refs(claim)), /ITX_PROMOTION_PR_CLOSED: #7/u);
+  const afterDelete = await decideWith("");
+  assert.equal(afterDelete.state, "WAIT");
+  assert.equal(afterDelete.reason, "NOT_DUE");
+});
+
+test("claim 브랜치가 상한(50개)을 넘으면 gh를 부르기 전에 AUTOMATION_CLAIM_BRANCH_LIMIT로 실패한다", async () => {
+  assert.equal(MAX_CLAIM_BRANCHES, 50);
+  const branchesOf = (count) => refs(...Array.from({ length: count }, (_, index) => `${CLAIM}${index + 1}`));
+  const github = fakeGitHub([]);
+  assert.equal((await collect({ repository: REPOSITORY, refsText: branchesOf(50), limit: 1000, runGh: github.runGh })).length, 0);
+  assert.equal(github.calls.length, 51, "열린 목록 1회 + 브랜치 50회");
+  const untouched = fakeGitHub([]);
+  await assert.rejects(
+    collect({ repository: REPOSITORY, refsText: branchesOf(51), limit: 1000, runGh: untouched.runGh }),
+    /AUTOMATION_CLAIM_BRANCH_LIMIT: 51 claim branches exceed the limit 50/u,
+  );
+  assert.equal(untouched.calls.length, 0);
+});
+
 test("CLI는 ls-remote 출력 파일을 읽어 목록 JSON을 쓰고 gh 인자를 기록한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "collect-automation-prs-"));
   try {
@@ -150,7 +181,7 @@ test("CLI는 ls-remote 출력 파일을 읽어 목록 JSON을 쓰고 gh 인자�
     const written = JSON.parse(await readFile(output, "utf8"));
     assert.deepEqual(written.map(({ number }) => number).sort((left, right) => left - right), [3, 50]);
     assert.equal(lines.length, 1);
-    assert.match(lines[0], /open=1 claims=1 total=2/u);
+    assert.match(lines[0], /open=1 branch_lookups=1 total=2/u);
     assert.deepEqual(github.calls[0], ["pr", "list", "--repo", REPOSITORY, "--state", "open", "--limit", "1000", "--json", PR_FIELDS]);
     assert.deepEqual(github.calls[1], ["pr", "list", "--repo", REPOSITORY, "--state", "all", "--head", `${CLAIM}3`, "--limit", "100", "--json", PR_FIELDS]);
     await assert.rejects(main(["--repository", REPOSITORY, "--refs", refsFile, "--pr-limit", "1000"], { runGh: github.runGh }), /AUTOMATION_PR_INPUT_INVALID: missing --output/u);
