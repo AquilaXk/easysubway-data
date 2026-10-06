@@ -1,23 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { assertFailureReportLast, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
+
 // #969 P4: 파생 재결속 workflow 계약. 원장·정본 팩이 main에서 바뀌면(또는 정기 복구로) controller가 파생 산출물을 다시 만들고,
 // 바뀐 것이 있을 때만 App 토큰 PR 하나로 올린다. 변경이 없으면 PR도 만들지 않는다. 변수가 꺼져 있으면 push·정기 실행은 건너뛴다.
-const root = path.resolve(import.meta.dirname, "../..");
 const FILE = "source-derivative-rebinding.yml";
-const yml = readFileSync(path.join(root, ".github/workflows", FILE), "utf8");
-
-function steps() {
-  return yml.split("\n      - name: ").slice(1).map((block) => ({ name: block.split("\n")[0], block }));
-}
-function step(name) {
-  const found = steps().filter((item) => item.name === name);
-  assert.equal(found.length, 1, `step ${name}`);
-  return found[0];
-}
-const ifCondition = (block) => /\n        if: (\$\{\{[^\n]*\}\})/u.exec(block)?.[1] ?? null;
+const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const RUN = "${{ steps.decision.outputs.state == 'RUN' }}";
 const CHANGED = "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}";
 
@@ -78,23 +68,12 @@ test("push·App 토큰·PR 생성·정리는 바뀐 것이 있을 때만 돌고 
 });
 
 test("OPEN_PR이면 App 토큰 → required CI 보장 → 열린 PR 상한 검사 순서로 돈다", () => {
-  const all = steps();
-  const index = (name) => all.findIndex((item) => item.name === name);
-  const token = index("Mint App token for the open refresh pull request");
-  const ensure = index("Ensure required CI on the open refresh pull request");
-  const age = index("Enforce open refresh pull request age limit");
-  assert.ok(index("Decide whether derivative rebinding may run") < token && token < ensure && ensure < age);
-  for (const item of [token, ensure, age]) assert.equal(ifCondition(all[item].block), "${{ steps.decision.outputs.state == 'OPEN_PR' }}");
-  assert.match(all[ensure].block, /node tools\/ci\/refresh-pr-required-ci\.mjs --workflow source-derivative-rebinding\.yml --repository "\$\{GITHUB_REPOSITORY\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
-  assert.match(all[age].block, /node tools\/ci\/refresh-open-pr-age\.mjs --workflow source-derivative-rebinding\.yml --prs "\$\{open_prs\}" --policy release\/product-gates\/datapack-freshness-sla\.json --repository "\$\{GITHUB_REPOSITORY\}" --ci-state "\$\{\{ steps\.required-ci\.outputs\.state \}\}"/u);
+  assertOpenPullRequestSteps({ steps, file: FILE, decisionName: "Decide whether derivative rebinding may run" });
 });
 
 test("원장 쓰기 PR 때문에 기다리는 실행은 이유를 notice로 남기고, 실패 보고가 마지막 step이다", () => {
   const wait = step("Note derivative rebinding waiting on a pending source pull request");
   assert.equal(ifCondition(wait.block), "${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}");
   assert.match(wait.block, /steps\.decision\.outputs\.blocked_by/u);
-  const report = step("Report refresh failure as an issue");
-  assert.equal(ifCondition(report.block), "${{ failure() }}");
-  assert.ok(report.block.includes('node tools/ci/report-refresh-failure.mjs --workflow source-derivative-rebinding.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"'));
-  assert.equal(yml.trimEnd().endsWith(report.block.trimEnd()), true);
+  assertFailureReportLast({ yml, step, file: FILE });
 });
