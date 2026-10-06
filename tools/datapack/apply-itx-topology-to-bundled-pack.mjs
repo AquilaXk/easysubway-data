@@ -13,6 +13,7 @@ import {
 } from "./build-datapack.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode } from "./lib/itx-promotion-authority.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
@@ -294,11 +295,7 @@ function validateAdmittedSourceReference(contract, reference) {
 }
 
 function validateCurrentApprovalIdentity(reference) {
-  const promotion = reference?.promotion;
-  if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
-    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/(?:96|636)#issuecomment-[1-9][0-9]*$/u
-      .test(promotion.approvalUrl ?? "")
-    || promotion.approvedArtifactSha256 !== reference.sha256) {
+  if (!hasCurrentItxPromotionIdentity(reference)) {
     throw new Error("ITX topology approval identity is invalid");
   }
 }
@@ -353,7 +350,7 @@ export function validateAdmittedSourceDocuments(
     || Object.hasOwn(completeness ?? {}, "canonicalPackIdentity")
     || Object.hasOwn(completeness ?? {}, "readmissions")
     || Object.hasOwn(admission ?? {}, "canonicalPackIdentity")
-    || reference?.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED") {
+    || !isCurrentItxPromotionMode(reference?.promotion?.mode)) {
     throw new Error("ITX topology legacy admission is forbidden");
   }
   const contractIdentity = stationCatalogIdentity(
@@ -464,7 +461,7 @@ function hasExactKeys(value, keys) {
 export async function admittedTopologySource(reference, source, _currentAdmission = null) {
   if (Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
-    || reference?.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED") {
+    || !isCurrentItxPromotionMode(reference?.promotion?.mode)) {
     throw new Error("ITX topology legacy admission is forbidden");
   }
   const identity = stationCatalogIdentity(source?.stationCatalogPackIdentity, "ITX topology station catalog identity");
@@ -509,7 +506,7 @@ export function validateTopologyEvidence({
   ])
     || Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
-    || reference?.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || !isCurrentItxPromotionMode(reference?.promotion?.mode)
     || JSON.stringify(contractIdentity) !== JSON.stringify(sourceIdentity)
     || JSON.stringify(evidenceIdentity) !== JSON.stringify(sourceIdentity)
     || JSON.stringify(evidence?.sourceArtifact?.stationCatalogPackIdentity)

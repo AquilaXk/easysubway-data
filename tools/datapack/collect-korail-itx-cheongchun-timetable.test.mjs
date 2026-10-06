@@ -21,6 +21,8 @@ import {
 } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { emitStationCatalogPack } from "./emit-station-catalog-pack.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { hasCurrentItxPromotionIdentity, verifyItxGatePromotion } from "./lib/itx-promotion-authority.mjs";
+import { createProviderResponseRecorder, providerResponseCaptureBytes } from "./provider-response-capture.mjs";
 
 const PACK_ROOT = await mkdtemp(path.join(tmpdir(), "itx-station-catalog-pack-"));
 const PACK_PATH = path.join(PACK_ROOT, "station-catalog-pack");
@@ -455,6 +457,9 @@ function completenessForCandidate(candidate, { warnings = candidate.warnings } =
       dayCd,
       serviceDate: candidate.selectedServiceDates[dayCd],
       status: "SUPPORTED",
+      expectedOdCount: 2,
+      completedOdCount: 2,
+      failedOdCount: 0,
       warnings: dayWarnings.map(({ code: _, dayCd: __, ...warning }) => warning),
       roster: {
         stations: candidate.stationRosters.find((row) => row.dayCd === dayCd).stations,
@@ -1794,6 +1799,221 @@ test("ITX changed current candidate도 exact OWNER approval로 immutable artifac
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// #977: 승인 코멘트 없이 자동 이상 판정 게이트가 통과시킨 후보만 승격한다.
+// ---------------------------------------------------------------------------
+const GATE_POLICY_RELATIVE_PATH = "tools/datapack/itx-promotion-gate-policy.json";
+
+async function writeGateInputs(dir, candidate, { captureObservedAt = candidate.observedAt, providerStatus = 200 } = {}) {
+  const policyPath = path.join(dir, GATE_POLICY_RELATIVE_PATH);
+  await mkdir(path.dirname(policyPath), { recursive: true });
+  await writeFile(policyPath, await readFile(new URL("./itx-promotion-gate-policy.json", import.meta.url)));
+  const recorder = createProviderResponseRecorder({
+    fetchImpl: async () => new Response("{}", { status: providerStatus, headers: { "content-type": "application/json" } }),
+    observedAt: captureObservedAt,
+    selectedServiceDates: candidate.selectedServiceDates,
+  });
+  for (const pageNo of [1, 2, 3]) await recorder.fetchImpl(`https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2?serviceKey=SECRET&pageNo=${pageNo}`);
+  const capturePath = path.join(dir, "provider-response-capture.json");
+  await writeFile(capturePath, providerResponseCaptureBytes(recorder.captureArtifact()));
+  const replay = { ...completenessForCandidate(candidate), validationMode: "REPLAY", admissionStatus: "REPLAY_ONLY" };
+  delete replay.evidenceHash;
+  replay.evidenceHash = createHash("sha256").update(JSON.stringify(replay)).digest("hex");
+  const replayEvidencePath = path.join(dir, "itx-replay.json");
+  await writeFile(replayEvidencePath, `${JSON.stringify(replay, null, 2)}\n`);
+  return { capturePath, replayEvidencePath };
+}
+
+async function prepareGatedPromotion({ shiftPreviousSeconds = 0, withPrevious = true, gateOptions = {} } = {}) {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-gated-promotion-"));
+  const sourceDir = path.join(dir, "tools/datapack/sources");
+  await mkdir(sourceDir, { recursive: true });
+  const stationCatalogPackPath = path.join(dir, "station-catalog-pack");
+  await copyStationCatalogPack(stationCatalogPackPath);
+  const previous = previousSourceCandidate({ artifactId: "itx-cheongchun-source-timetable-20260714010000000" });
+  if (shiftPreviousSeconds !== 0) {
+    // 직전 승인 원천의 평일 2001 첫 정차를 앞당겨 후보와 시각 tuple이 하나 다르게 만든다(OWNER 승인 변경 테스트와 같은 방식).
+    const sequence = previous.stationSequences.find(({ dayCd, trainNumber }) => dayCd === "8" && trainNumber === "2001");
+    sequence.stops[0].arrivalSeconds -= shiftPreviousSeconds;
+    sequence.stops[0].departureSeconds -= shiftPreviousSeconds;
+    sequence.stops[0].arrivalAt = "2026-07-09T07:58:20+09:00";
+    sequence.stops[0].departureAt = "2026-07-09T07:58:20+09:00";
+    const stopTime = previous.transitStopTimes.find(({ tripId, stationId }) => tripId.endsWith("-2001-8") && stationId === YONGSAN_STATION_ID);
+    stopTime.arrivalSeconds -= shiftPreviousSeconds;
+    stopTime.departureSeconds -= shiftPreviousSeconds;
+    const tuple = previous.normalizedSnapshotSets.find(({ dayCd }) => dayCd === "8").sets.timetableTupleSet
+      .find(([, trainNumber, stationId]) => trainNumber === "2001" && stationId === YONGSAN_STATION_ID);
+    tuple[3] -= shiftPreviousSeconds;
+    tuple[4] -= shiftPreviousSeconds;
+  }
+  const contractExtras = {};
+  let previousSha = null;
+  if (withPrevious) {
+    const { reference } = await writeAdmittedSourceBundle(sourceDir, previous);
+    previousSha = reference.sha256;
+    contractExtras.sourceTimetableArtifact = reference;
+  }
+  const contractPath = await writeCoverageContract(dir, JSON.stringify(contractExtras));
+  const candidate = sourceCandidate({ promotionStatus: withPrevious ? "SUPPORTED" : "BOOTSTRAP_REVIEW_REQUIRED" });
+  if (withPrevious) {
+    candidate.snapshotDiff = unchangedSnapshotDiff(previousSha, candidate.normalizedSnapshotSets);
+    if (shiftPreviousSeconds !== 0) {
+      candidate.promotionStatus = "CHANGE_REVIEW_REQUIRED";
+      candidate.snapshotDiff.status = "CHANGE_REVIEW_REQUIRED";
+      const changedDay = candidate.snapshotDiff.serviceDays.find(({ dayCd }) => dayCd === "8");
+      changedDay.blocked = true;
+      changedDay.sets.timetableTupleSet.added = [["8", "2001", YONGSAN_STATION_ID, 28_800, 28_800]];
+      changedDay.sets.timetableTupleSet.removed = [["8", "2001", YONGSAN_STATION_ID, 28_800 - shiftPreviousSeconds, 28_800 - shiftPreviousSeconds]];
+    }
+  }
+  bindCandidateCompleteness(candidate);
+  const candidatePath = path.join(dir, "candidate.json");
+  const completenessPath = path.join(dir, "completeness.json");
+  await writeFile(candidatePath, sourceBytes(candidate));
+  await writeFile(completenessPath, completenessBytes(completenessForCandidate(candidate)));
+  const gate = await writeGateInputs(dir, candidate, gateOptions);
+  return {
+    dir, sourceDir, candidate, previous, candidatePath, completenessPath, contractPath, previousSha, gate,
+    options: {
+      candidatePath,
+      completenessPath,
+      gate,
+      sourceOutputDir: sourceDir,
+      coverageContractPath: contractPath,
+      stationCatalogPackPath,
+      repositoryRoot: dir,
+      now: new Date("2026-07-15T02:00:00.000Z"),
+      fetchImpl: async () => { throw new Error("gated promotion must not read an approval comment"); },
+    },
+  };
+}
+
+test("ITX 게이트 승격은 승인 코멘트 없이 통과한 후보만 승격하고 영수증을 원천 옆에 남긴다", async () => {
+  const fixture = await prepareGatedPromotion();
+  try {
+    const promoted = await promoteItxSourceCandidate(fixture.options);
+    const reference = promoted.sourceTimetableArtifact;
+    const receiptPath = `tools/datapack/sources/${fixture.candidate.artifactId}-promotion-gate.json`;
+    const receiptBytes = await readFile(path.join(fixture.dir, receiptPath));
+    const receipt = JSON.parse(receiptBytes);
+    assert.equal(receiptBytes.toString("utf8"), `${JSON.stringify(receipt, null, 2)}\n`);
+    assert.equal(receipt.status, "PASS");
+    assert.equal(receipt.candidate.sha256, promoted.candidateSha256);
+    assert.equal(receipt.previous.sha256, fixture.previousSha);
+    assert.equal(reference.status, "ADMITTED");
+    assert.deepEqual(reference.promotion, {
+      mode: "CURRENT_CANDIDATE_GATE_PASSED",
+      previousArtifactSha256: fixture.previousSha,
+      previousArtifactPath: `tools/datapack/sources/${fixture.previous.artifactId}.json`,
+      gate: {
+        policyId: "itx-promotion-gate-v1",
+        receiptPath,
+        receiptSha256: createHash("sha256").update(receiptBytes).digest("hex"),
+      },
+      gatedArtifactSha256: promoted.candidateSha256,
+    });
+    assert.equal(Object.hasOwn(reference.promotion, "approvalUrl"), false);
+    assert.equal(Object.hasOwn(reference.promotion, "approvedArtifactSha256"), false);
+    assert.equal(reference.freshUntil, fixture.candidate.freshUntil);
+    assert.equal(JSON.parse(await readFile(fixture.contractPath, "utf8")).freshness.nextReviewAt, fixture.candidate.freshUntil);
+    assert.deepEqual(await readFile(promoted.artifactPath), Buffer.from(sourceBytes(fixture.candidate)));
+    // CI가 쓰는 재검증이 이 승격 결과를 그대로 인정한다.
+    const verified = await verifyItxGatePromotion({ reference, repositoryRoot: fixture.dir });
+    assert.equal(verified.status, "PASS");
+    assert.equal(hasCurrentItxPromotionIdentity(reference), true);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX 게이트 승격은 지표가 한도를 넘으면 어떤 파일도 쓰지 않고 차단 코드를 오류로 드러낸다", async () => {
+  const fixture = await prepareGatedPromotion({ shiftPreviousSeconds: 100 });
+  try {
+    const contractBefore = await readFile(fixture.contractPath);
+    const sourcesBefore = await readdir(fixture.sourceDir);
+    await assert.rejects(
+      promoteItxSourceCandidate(fixture.options),
+      new Error("ITX_PROMOTION_GATE_BLOCKED: TUPLE_ADDED:8,TUPLE_REMOVED:8"),
+    );
+    assert.deepEqual(await readFile(fixture.contractPath), contractBefore);
+    assert.deepEqual(await readdir(fixture.sourceDir), sourcesBefore);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX 게이트 승격은 첫 승격(직전 승인 원천 없음)을 자동으로 승격하지 않는다", async () => {
+  const fixture = await prepareGatedPromotion({ withPrevious: false });
+  try {
+    await assert.rejects(promoteItxSourceCandidate(fixture.options), /ITX_PROMOTION_GATE_BLOCKED: PREVIOUS_APPROVED_SNAPSHOT_MISSING/u);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX 게이트 승격은 raw capture 결속·provider 오류가 어긋나면 차단한다", async () => {
+  for (const [name, gateOptions, pattern] of [
+    ["capture observedAt", { captureObservedAt: "2026-07-15T01:00:00.001Z" }, /SOURCE_BINDING/u],
+    ["provider 500", { providerStatus: 500 }, /FETCH_ERRORS/u],
+  ]) {
+    const fixture = await prepareGatedPromotion({ gateOptions });
+    try {
+      await assert.rejects(promoteItxSourceCandidate(fixture.options), pattern, name);
+    } finally {
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("ITX 승격은 승인 코멘트와 게이트를 함께 받으면 어느 쪽도 쓰지 않고 거부한다", async () => {
+  const fixture = await prepareGatedPromotion();
+  try {
+    await assert.rejects(promoteItxSourceCandidate({
+      ...fixture.options,
+      approvedSha256: "0".repeat(64),
+      approvalUrl: CURRENT_ITX_APPROVAL_URL,
+    }), /ITX_PROMOTION_AUTHORITY_AMBIGUOUS/u);
+    assert.deepEqual((await readdir(fixture.sourceDir)).filter((name) => name.includes(fixture.candidate.artifactId)), []);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX 게이트 승격 영수증은 CLI 인자 --auto-gate로 전달된다", async () => {
+  const calls = [];
+  await runKorailItxCompletenessCli({
+    argv: [
+      "--promote-candidate", "/tmp/candidate.json",
+      "--completeness-evidence", "/tmp/completeness.json",
+      "--source-output-dir", "/tmp/sources",
+      "--coverage-contract", path.join(path.resolve(import.meta.dirname, "../.."), "tools/datapack/itx-cheongchun-coverage-contract.json"),
+      "--station-catalog-pack", PACK_PATH,
+      "--auto-gate",
+      "--provider-capture", "/tmp/capture.json",
+      "--replay-evidence", "/tmp/replay.json",
+    ],
+    promoteImpl: async (options) => { calls.push(options); return { candidateSha256: "0".repeat(64), artifactPath: "a" }; },
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].gate, { capturePath: "/tmp/capture.json", replayEvidencePath: "/tmp/replay.json" });
+  assert.equal(calls[0].approvedSha256, undefined);
+  assert.equal(calls[0].approvalUrl, undefined);
+  await assert.rejects(runKorailItxCompletenessCli({
+    argv: [
+      "--promote-candidate", "/tmp/candidate.json",
+      "--completeness-evidence", "/tmp/completeness.json",
+      "--source-output-dir", "/tmp/sources",
+      "--coverage-contract", path.join(path.resolve(import.meta.dirname, "../.."), "tools/datapack/itx-cheongchun-coverage-contract.json"),
+      "--station-catalog-pack", PACK_PATH,
+      "--auto-gate",
+      "--approval-url", CURRENT_ITX_APPROVAL_URL,
+      "--provider-capture", "/tmp/capture.json",
+      "--replay-evidence", "/tmp/replay.json",
+    ],
+    promoteImpl: async () => { throw new Error("must not run"); },
+  }), /ITX_PROMOTION_AUTHORITY_AMBIGUOUS/u);
 });
 
 test("기존 UNCHANGED_AUTO fixture도 current approval 뒤 legacy admission pin을 station catalog identity로 교체한다", async () => {

@@ -16,6 +16,13 @@ import {
 } from "./collect-tago-itx-cheongchun-od.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest-validation.mjs";
+import {
+  ITX_PROMOTION_MODE_GATE_PASSED,
+  ITX_PROMOTION_MODE_OWNER_APPROVED,
+  itxPromotionReceiptPath,
+} from "./lib/itx-promotion-authority.mjs";
+import { evaluateItxPromotionGate, itxPromotionGateReceiptBytes, parseItxPromotionGatePolicy } from "./itx-promotion-gate.mjs";
+import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
 const API_ORIGIN = "https://apis.data.go.kr";
 const DETAIL_URL = "https://www.data.go.kr/data/15125762/openapi.do";
 const LINE_ID = "line-54a7b980b7c3";
@@ -420,6 +427,7 @@ async function promoteItxSourceCandidateLocked({
   completenessPath,
   approvedSha256,
   approvalUrl,
+  gate = null,
   sourceOutputDir,
   coverageContractPath,
   stationCatalogPackPath,
@@ -428,6 +436,10 @@ async function promoteItxSourceCandidateLocked({
   githubToken,
   repositoryRoot = repoRoot,
 }) {
+  // 승격 권한은 하나다: QA 승인 코멘트(approvalUrl) 또는 자동 이상 판정 게이트(gate). 둘을 함께 받으면 어느 쪽도 쓰지 않는다.
+  if (gate !== null && (approvedSha256 !== undefined || approvalUrl !== undefined)) {
+    throw new Error("ITX_PROMOTION_AUTHORITY_AMBIGUOUS");
+  }
   const candidateBytes = await readFile(candidatePath);
   const candidateSha256 = sha256(candidateBytes);
   const candidate = JSON.parse(candidateBytes);
@@ -469,14 +481,31 @@ async function promoteItxSourceCandidateLocked({
     || JSON.stringify(candidate.snapshotDiff) !== JSON.stringify(expectedSnapshotDiff)) {
     throw new Error("SNAPSHOT_PROMOTION_AUTHORITY_INVALID");
   }
-  const { bytes: completenessBytes } = await loadCompletenessEvidence(
+  const { bytes: completenessBytes, completeness } = await loadCompletenessEvidence(
     completenessPath ?? `${candidatePath}.completeness.json`,
     candidate,
     repositoryRoot,
     now,
     catalog.identity,
   );
-  {
+  let gateReceiptBytes = null;
+  let promotionBasis;
+  if (gate !== null) {
+    // 영수증을 믿지 않고 같은 입력으로 게이트를 다시 계산한다. PASS가 아니면 아무것도 쓰지 않는다.
+    const receipt = await evaluateGateForPromotion({
+      gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, repositoryRoot,
+    });
+    if (receipt.status !== "PASS") throw new Error(`ITX_PROMOTION_GATE_BLOCKED: ${receipt.blockedCheckIds.join(",")}`);
+    gateReceiptBytes = itxPromotionGateReceiptBytes(receipt);
+    promotionBasis = {
+      gate: {
+        policyId: receipt.policyId,
+        receiptPath: itxPromotionReceiptPath(candidate.artifactId),
+        receiptSha256: sha256(gateReceiptBytes),
+      },
+      gatedArtifactSha256: candidateSha256,
+    };
+  } else {
     if (approvedSha256 !== candidateSha256 || !/^[a-f0-9]{64}$/.test(approvedSha256 ?? "")) {
       throw new Error("CURRENT_CANDIDATE_APPROVAL_INVALID");
     }
@@ -487,6 +516,7 @@ async function promoteItxSourceCandidateLocked({
       fetchImpl,
       githubToken,
     });
+    promotionBasis = { approvalUrl, approvedArtifactSha256: candidateSha256 };
   }
   const artifactRelativePath = `tools/datapack/sources/${candidate.artifactId}.json`;
   const completenessRelativePath = `tools/datapack/sources/${candidate.artifactId}-completeness-evidence.json`;
@@ -498,8 +528,12 @@ async function promoteItxSourceCandidateLocked({
   );
   delete admission.canonicalPackIdentity;
   admission.stationCatalogPackIdentity = catalog.identity;
+  const receiptArtifactPath = gateReceiptBytes === null
+    ? null
+    : await validateSourceOutputPath(sourceOutputDir, itxPromotionReceiptPath(candidate.artifactId), repositoryRoot);
   await writeImmutableArtifact(artifactPath, candidateBytes, "ADMITTED_SOURCE_ARTIFACT");
   await writeImmutableArtifact(completenessArtifactPath, completenessBytes, "ADMITTED_COMPLETENESS_EVIDENCE");
+  if (receiptArtifactPath !== null) await writeImmutableArtifact(receiptArtifactPath, gateReceiptBytes, "ADMITTED_PROMOTION_GATE_RECEIPT");
   contract.sourceTimetableArtifact = {
     status: "ADMITTED",
     admissionEligible: true,
@@ -512,11 +546,10 @@ async function promoteItxSourceCandidateLocked({
     freshUntil: candidate.freshUntil,
     policyVersion: "itx-snapshot-anomaly-v1",
     promotion: {
-      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+      mode: gate === null ? ITX_PROMOTION_MODE_OWNER_APPROVED : ITX_PROMOTION_MODE_GATE_PASSED,
       previousArtifactSha256: previous?.sha256 ?? null,
       previousArtifactPath: previous?.artifactPath ?? null,
-      approvalUrl,
-      approvedArtifactSha256: candidateSha256,
+      ...promotionBasis,
     },
   };
   contract.freshness.nextReviewAt = candidate.freshUntil;
@@ -535,6 +568,33 @@ async function promoteItxSourceCandidateLocked({
     completenessArtifactPath,
     sourceTimetableArtifact: contract.sourceTimetableArtifact,
   };
+}
+
+const ITX_PROMOTION_GATE_POLICY_RELATIVE_PATH = "tools/datapack/itx-promotion-gate-policy.json";
+
+async function evaluateGateForPromotion({
+  gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, repositoryRoot,
+}) {
+  // 정책은 호출자가 고르지 않는다. 저장소의 정책 파일만 쓴다.
+  const policy = parseItxPromotionGatePolicy(JSON.parse(await readFile(
+    path.join(repositoryRoot, ...ITX_PROMOTION_GATE_POLICY_RELATIVE_PATH.split("/")),
+    "utf8",
+  )));
+  const captureBytes = await readFile(requiredString(gate?.capturePath, "gate.capturePath"));
+  const capture = parseProviderResponseCapture(captureBytes);
+  const replay = JSON.parse(await readFile(requiredString(gate?.replayEvidencePath, "gate.replayEvidencePath"), "utf8"));
+  return evaluateItxPromotionGate({
+    policy,
+    candidate,
+    candidateSha256,
+    completeness,
+    completenessSha256: sha256(completenessBytes),
+    previous: previousSource,
+    previousSha256: previousSource?.sourceTimetableArtifact?.sha256 ?? null,
+    capture,
+    captureSha256: sha256(captureBytes),
+    replay,
+  });
 }
 
 function validateTopologyInputPackIdentity(identity) {
@@ -2824,11 +2884,22 @@ export async function runKorailItxCompletenessCli({
       args["station-catalog-pack"],
       "--station-catalog-pack",
     );
+    const autoGate = args["auto-gate"] === true;
+    if (autoGate && (args["approval-url"] !== undefined || args["approved-sha256"] !== undefined)) {
+      throw new Error("ITX_PROMOTION_AUTHORITY_AMBIGUOUS");
+    }
     const promotion = await promoteImpl({
       candidatePath: requiredString(args["promote-candidate"], "--promote-candidate"),
       completenessPath: requiredString(args["completeness-evidence"], "--completeness-evidence"),
-      approvedSha256: args["approved-sha256"],
-      approvalUrl: args["approval-url"],
+      ...(autoGate ? {
+        gate: {
+          capturePath: requiredString(args["provider-capture"], "--provider-capture"),
+          replayEvidencePath: requiredString(args["replay-evidence"], "--replay-evidence"),
+        },
+      } : {
+        approvedSha256: args["approved-sha256"],
+        approvalUrl: args["approval-url"],
+      }),
       sourceOutputDir: requiredString(args["source-output-dir"], "--source-output-dir"),
       coverageContractPath,
       now,

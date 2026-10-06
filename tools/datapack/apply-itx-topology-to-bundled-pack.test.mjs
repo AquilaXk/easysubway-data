@@ -970,6 +970,50 @@ test("OWNER-approved current source는 exact static topology input에 결속된�
   }, admittedTopologyInputs.get(reference.sha256));
 });
 
+function gatePassedPromotion(reference) {
+  return {
+    mode: "CURRENT_CANDIDATE_GATE_PASSED",
+    previousArtifactSha256: reference.promotion.previousArtifactSha256,
+    previousArtifactPath: reference.promotion.previousArtifactPath,
+    gate: {
+      policyId: "itx-promotion-gate-v1",
+      receiptPath: `tools/datapack/sources/${reference.artifactId}-promotion-gate.json`,
+      receiptSha256: "e".repeat(64),
+    },
+    gatedArtifactSha256: reference.sha256,
+  };
+}
+
+test("게이트 승격 current source는 승인 승격과 같은 static topology input 결속으로 검증된다", async (context) => {
+  {
+    const { contract, reference, source, completeness, sourceBytes, completenessBytes } = await trackedLegacyDocuments();
+    reference.promotion = gatePassedPromotion(reference);
+    withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+      contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
+    )));
+    const admitted = await admittedTopologySource(reference, source);
+    assert.deepEqual({
+      id: "capital", sha256: admitted.gzipSha256, sqliteSha256: admitted.sqliteSha256, byteSize: admitted.byteSize,
+    }, admittedTopologyInputs.get(reference.sha256));
+  }
+  const cases = [
+    ["approval url mixed in", (reference) => { reference.promotion.approvalUrl = "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123"; }],
+    ["wrong gated sha", (reference) => { reference.promotion.gatedArtifactSha256 = "0".repeat(64); }],
+    ["wrong policy", (reference) => { reference.promotion.gate.policyId = "itx-promotion-gate-v2"; }],
+    ["wrong receipt path", (reference) => { reference.promotion.gate.receiptPath = "tools/datapack/sources/other-promotion-gate.json"; }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const { contract, reference, source, completeness, sourceBytes, completenessBytes } = await trackedLegacyDocuments();
+      reference.promotion = gatePassedPromotion(reference);
+      mutate(reference);
+      assert.throws(() => validateAdmittedSourceDocuments(
+        contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
+      ), /approval identity/);
+    });
+  }
+});
+
 test("OWNER-approved current source는 approval URL·approved SHA·mode를 exact 결속한다", async (context) => {
   const cases = [
     ["missing-url", (reference) => { reference.promotion.approvalUrl = ""; }],

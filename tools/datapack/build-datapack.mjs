@@ -40,6 +40,7 @@ import {
   validateSourceFreshness,
 } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
+import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode } from "./lib/itx-promotion-authority.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import {
   requireCurrentIncheonStationCodeDerivations,
@@ -2811,7 +2812,7 @@ export async function admittedItxNetworkEdgeEvidence(
     || reference?.schemaVersion !== 1
     || reference?.status !== "ADMITTED"
     || reference.admissionEligible !== true
-    || reference.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || !isCurrentItxPromotionMode(reference.promotion?.mode)
     || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== reference?.sha256) {
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
@@ -3005,11 +3006,7 @@ export async function admittedItxNetworkEdgeEvidence(
 }
 
 function validateCurrentItxApprovalIdentity(reference) {
-  const promotion = reference?.promotion;
-  if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
-    || !/^https:\/\/github\.com\/AquilaXk\/easysubway-data\/issues\/(?:96|636)#issuecomment-[1-9][0-9]*$/u
-      .test(promotion.approvalUrl ?? "")
-    || promotion.approvedArtifactSha256 !== reference.sha256) {
+  if (!hasCurrentItxPromotionIdentity(reference)) {
     throw new Error("ITX network edge approval identity is invalid");
   }
 }
