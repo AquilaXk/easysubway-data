@@ -186,7 +186,8 @@ test("새 원장 행의 행 수 변화가 한도를 넘으면 SOURCE_COUNT_DELTA
   const root = await ledgerRepository(); t.after(() => rm(root, { recursive: true, force: true }));
   const next = (rowCount) => ledgerRow("s2", { previousSnapshotId: "s1", rowCount, diffSummary: { status: "CHANGED", rowDelta: rowCount - 100, coverageDelta: 0 } });
   await assert.rejects(runDerivativeRebinding(options(root, [ledgerStep(rewriteLedger([ledgerRow("s1"), next(130)]))], { ledgerPath: LEDGER, policy: POLICY })), /^Error: SOURCE_COUNT_DELTA: ledger-step: seoul-metro-transfer-distance-duration s2: rowDelta 30 \(30\.0%\) exceeds 5\.0%$/u);
-  const ok = await runDerivativeRebinding(options(root, [ledgerStep(rewriteLedger([ledgerRow("s1"), next(103)]))], { ledgerPath: LEDGER, policy: POLICY }));
+  const fresh = await ledgerRepository(); t.after(() => rm(fresh, { recursive: true, force: true }));
+  const ok = await runDerivativeRebinding(options(fresh, [ledgerStep(rewriteLedger([ledgerRow("s1"), next(103)]))], { ledgerPath: LEDGER, policy: POLICY }));
   assert.equal(ok.steps[0].changed, true);
 });
 
