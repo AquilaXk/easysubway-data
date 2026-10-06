@@ -1067,6 +1067,35 @@ test("OWNER-approved current source topology는 실제 directed stop pattern을 
   assert.equal(topology.servedStations.length, OWNER_APPROVED_CURRENT_TOPOLOGY.servedStationCount);
 });
 
+// #980 F2: 증거의 개수는 같은 도구가 쓴 값이라 증거와 도구만 비교하면 승격된 잘못된 topology를 못 잡는다.
+// 원천 stationSequences·stationRosters에서 도구와 다른 방식(단순 집합 계산)으로 개수를 세어 증거와 대조하는 두 번째 oracle이다.
+test("topology 증거의 역·운행역·방향 간선 수는 원천 stationSequences에서 독립 계산한 값과 같다", async () => {
+  const { source } = await trackedLegacyDocuments();
+  const rosterKeys = new Set();
+  for (const roster of source.stationRosters) {
+    for (const station of roster.stations) rosterKeys.add(`${station.canonicalStationId}:${station.lineId}`);
+  }
+  const servedKeys = new Set();
+  const directedEdges = new Set();
+  for (const sequence of source.stationSequences) {
+    sequence.stops.forEach((stop, index) => {
+      servedKeys.add(`${stop.stationId}:${stop.lineId}`);
+      if (index === 0) return;
+      const previous = sequence.stops[index - 1];
+      directedEdges.add(`${previous.stationId}:${previous.lineId}>${stop.stationId}:${stop.lineId}`);
+    });
+  }
+  assert.equal(currentEvidence.topology.stationMembershipCount, rosterKeys.size);
+  assert.equal(currentEvidence.topology.servedStationCount, servedKeys.size);
+  assert.equal(currentEvidence.topology.edgeCount, directedEdges.size);
+  // 운행역은 모두 로스터 역의 부분집합이고, 모든 방향 간선은 반대 방향 간선과 짝을 이룬다.
+  assert.ok([...servedKeys].every((key) => rosterKeys.has(key)));
+  assert.ok([...directedEdges].every((edge) => {
+    const [from, to] = edge.split(">");
+    return directedEdges.has(`${to}>${from}`);
+  }));
+});
+
 test("production canonical fixture는 OWNER-approved current directed edge를 exact 투영한다", async () => {
   const [{ source }, fixture] = await Promise.all([
     trackedLegacyDocuments(),
