@@ -584,6 +584,23 @@ export function validateOwnership({
         issue(issues, 'INVALID_FIXTURE_PROFILE_COMMIT', fixtureName, `${profileName}:${commit}`);
       }
     }
+    // profileRef: workflow checkout이 쓰는 ref(태그). 커밋 고정은 profileCommit과 staging의 rev-parse 검증이 맡고, 태그는 그 커밋이 사라지지 않게 붙든다.
+    const profileRef = fixture.profileRef;
+    if (profileRef !== undefined && (!profileRef || typeof profileRef !== 'object' || Array.isArray(profileRef))) {
+      issue(issues, 'INVALID_FIXTURE_PROFILE_REF', fixtureName, String(profileRef));
+    }
+    for (const [profileName, ref] of Object.entries(
+      profileRef && typeof profileRef === 'object' && !Array.isArray(profileRef) ? profileRef : {},
+    )) {
+      if (
+        !Object.hasOwn(executionProfiles, profileName) ||
+        typeof ref !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9_.\/-]*$/.test(ref) ||
+        ref.includes('..')
+      ) {
+        issue(issues, 'INVALID_FIXTURE_PROFILE_REF', fixtureName, `${profileName}:${String(ref)}`);
+      }
+    }
     if (!isSafeRepositoryPath(fixture.path)) {
       issue(issues, 'INVALID_FIXTURE_PATH', fixtureName, String(fixture.path));
     }
@@ -599,6 +616,24 @@ export function validateOwnership({
     for (const requiredFile of fixture.requiredFiles ?? []) {
       if (!isSafeRepositoryPath(requiredFile.path) || !/^[a-f0-9]{64}$/.test(requiredFile.sha256 ?? '')) {
         issue(issues, 'INVALID_FIXTURE_FILE', fixtureName, String(requiredFile.path));
+      }
+      // #979: ITX 승격마다 바뀌는 파생 팩 해시는 코드·workflow에 박지 않고 커밋된 증거 JSON의 값을 가리킨다.
+      const derived = requiredFile.derivedProfileSha256;
+      if (derived !== undefined && (!derived || typeof derived !== 'object' || Array.isArray(derived))) {
+        issue(issues, 'INVALID_FIXTURE_DERIVED_HASH', fixtureName, String(requiredFile.path));
+      }
+      for (const [profileName, source] of Object.entries(
+        derived && typeof derived === 'object' && !Array.isArray(derived) ? derived : {},
+      )) {
+        if (
+          !Object.hasOwn(executionProfiles, profileName) ||
+          !isSafeRepositoryPath(source?.jsonPath) ||
+          !Array.isArray(source?.pointer) ||
+          source.pointer.length === 0 ||
+          source.pointer.some((segment) => typeof segment !== 'string' || segment === '')
+        ) {
+          issue(issues, 'INVALID_FIXTURE_DERIVED_HASH', fixtureName, `${requiredFile.path}:${profileName}`);
+        }
       }
       const profileSha256 = requiredFile.profileSha256;
       if (
@@ -636,7 +671,9 @@ export function validateOwnership({
       }
       for (const requiredFile of fixture.requiredFiles ?? []) {
         const actualHash = state.files?.[requiredFile.path];
-        const expectedHash = requiredFile.profileSha256?.[fixtureProfile] ?? requiredFile.sha256;
+        const expectedHash = requiredFile.derivedProfileSha256?.[fixtureProfile] === undefined
+          ? requiredFile.profileSha256?.[fixtureProfile] ?? requiredFile.sha256
+          : state.derived?.[requiredFile.path]?.[fixtureProfile];
         if (actualHash !== expectedHash) {
           issue(
             issues,
@@ -799,7 +836,7 @@ export function validateOwnership({
       }
       for (const contract of [
         `repository: ${fixture.repository}`,
-        `ref: ${fixture.profileCommit?.[fixtureProfile] ?? fixture.commit}`,
+        `ref: ${fixture.profileRef?.[fixtureProfile] ?? fixture.profileCommit?.[fixtureProfile] ?? fixture.commit}`,
         `path: ${fixture.checkoutPath}`,
         'persist-credentials: false',
         ...[...uniqueStageContracts].filter((entry) => typeof entry === 'string' && entry.length > 0),
@@ -959,7 +996,18 @@ function repositoryInputs({
         }
         files[requiredFile.path] = sha256(readFileSync(filePath));
       }
-      fixtureStates[fixtureName] = { headSha, files };
+      const derived = {};
+      for (const requiredFile of fixture.requiredFiles ?? []) {
+        for (const [profileName, source] of Object.entries(requiredFile.derivedProfileSha256 ?? {})) {
+          let value = JSON.parse(readFileSync(resolve(repoRoot, source.jsonPath), 'utf8'));
+          for (const segment of source.pointer) value = value?.[segment];
+          if (!/^[a-f0-9]{64}$/.test(value ?? '')) {
+            throw new Error(`derived fixture hash is not a sha256: ${source.jsonPath}`);
+          }
+          derived[requiredFile.path] = { ...derived[requiredFile.path], [profileName]: value };
+        }
+      }
+      fixtureStates[fixtureName] = { headSha, files, derived };
     } catch (error) {
       fixtureStates[fixtureName] = { error: error.message, files: {} };
     }

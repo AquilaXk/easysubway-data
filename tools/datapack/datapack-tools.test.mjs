@@ -12,6 +12,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
 import { bindCurrentProductionScopePolicy } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { bindBuildSpecToCurrentItx } from "./test-fixtures/current-itx-bound-build-spec.mjs";
 import {
   admittedIncheonTopologyEvidence,
   admittedRegisteredIncheonAccessibilityEvidence,
@@ -13203,6 +13204,14 @@ test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경�
   );
 });
 
+// #979: 작업 트리의 승격 원천을 읽는 route graph 검사는 현재 contract 기준으로 ITX pin을 다시 계산한 임시 spec을 쓴다(커밋된 spec은 건드리지 않는다).
+async function writeCurrentItxBoundBuildSpec(directory) {
+  const committed = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  const specPath = path.join(directory, "current-itx-bound-build-spec.json");
+  await writeFile(specPath, `${JSON.stringify(await bindBuildSpecToCurrentItx(committed, root), null, 2)}\n`);
+  return specPath;
+}
+
 test("수도권 pilot fixture는 source import를 검증하지만 production route coverage로 승격하지 않는다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-capital-pilot-production-source-${Date.now()}`);
   const inputPath = "tools/datapack/inputs/capital-pilot-production-source-input.json";
@@ -13525,7 +13534,7 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
       "--root",
       packOutputDir,
       "--build-spec",
-      path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+      await writeCurrentItxBoundBuildSpec(outputDir),
       "--output",
       routeGraphTopologyReportPath,
     ],

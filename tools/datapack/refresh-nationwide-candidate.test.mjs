@@ -170,14 +170,22 @@ async function copiedRepository(t) {
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
   // 정책 sync는 ITX 승인 원천을 읽는다. 계약이 가리키는 원천·완결성 증거도 함께 복사한다.
   const itxReference = JSON.parse(await readFile(path.join(root, ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
-  for (const relative of [
+  // 게이트 승격(#977)이면 승격 근거(영수증·정책·직전·기준선 원천)도 같은 루트에서 다시 계산할 수 있어야 한다.
+  const gate = itxReference.promotion?.gate === undefined ? [] : [
+    itxReference.promotion.gate.receiptPath,
+    "tools/datapack/itx-promotion-gate-policy.json",
+    itxReference.promotion.previousArtifactPath,
+    itxReference.promotion.baselineArtifactPath,
+  ];
+  for (const relative of [...new Set([
     ...NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS,
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/fixtures/admin-review-overrides.json",
     ITX_CONTRACT,
     itxReference.artifactPath,
     itxReference.completenessEvidencePath,
-  ]) {
+    ...gate,
+  ])]) {
     await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true });
     await cp(path.join(root, relative), path.join(repositoryRoot, relative));
   }
