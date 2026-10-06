@@ -263,7 +263,7 @@ test("ITX 승격 본문: 원천 행·적용 한도·요일별 지표·변경 경
   assert.match(body, new RegExp(`\\| itx-cheongchun-source-timetable \\| ${ITX_ID} \\| ${ITX_PREVIOUS_ID} \\|`, "u"));
   assert.match(body, /itx-promotion-gate-v1/u);
   assert.match(body, /\| TUPLE_REMOVED \| 8 \| 4 \/ 14 \|/u);
-  assert.match(body, /\| 첫차 이동 한도 \| 300초 \|/u);
+  assert.match(body, /\| 첫차 이동 한도 \| 0초 \|/u);
   for (const path of ITX_PATHS) assert.ok(body.includes(path), path);
   assert.match(body, /Refs #977\nRefs #870\nRefs #969\nRefs #636/u);
   assert.doesNotMatch(body, /Closes/u);

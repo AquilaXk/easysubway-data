@@ -16,8 +16,8 @@
     "stopPatternChangedTripsPermille": 50,
     "timetableTupleRemovedPermille": 50,
     "timetableTupleAddedPermille": 50,
-    "firstDepartureShiftSeconds": 300,
-    "lastDepartureShiftSeconds": 300,
+    "firstDepartureShiftSeconds": 0,
+    "lastDepartureShiftSeconds": 240,
     "providerErrorRecords": 0
   },
   "measuredBasis": {

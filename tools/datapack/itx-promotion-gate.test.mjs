@@ -249,16 +249,18 @@ test("tuple 제거만 일어나도(정차 소실) 제거 한도에서 차단되�
   assert.deepEqual(blockedIds(metricsOnly(dropStops(limit + 1))).filter((id) => id.startsWith("TUPLE_")), ["TUPLE_REMOVED:9"]);
 });
 
-test("첫차 시각 이동은 300초까지 통과하고 301초에서 차단된다", () => {
+test("첫차 시각 이동은 한도 0(이력 최대 0초)에서 0초는 통과하고 1초부터 차단된다", () => {
+  assert.equal(POLICY.limits.firstDepartureShiftSeconds, 0);
   const shiftFirst = (seconds) => ({ sets }) => {
     const [first, ...rest] = sets["8"].timetableTupleSet;
     sets["8"].timetableTupleSet = [[first[0], first[1], first[2], first[3] - seconds, first[4] - seconds], ...rest];
   };
-  assert.deepEqual(blockedIds(metricsOnly(shiftFirst(300))).filter((id) => id.startsWith("FIRST_DEPARTURE")), []);
-  assert.deepEqual(blockedIds(metricsOnly(shiftFirst(301))).filter((id) => id.startsWith("FIRST_DEPARTURE")), ["FIRST_DEPARTURE_SHIFT:8"]);
+  assert.deepEqual(blockedIds(metricsOnly(shiftFirst(0))).filter((id) => id.startsWith("FIRST_DEPARTURE")), []);
+  assert.deepEqual(blockedIds(metricsOnly(shiftFirst(1))).filter((id) => id.startsWith("FIRST_DEPARTURE")), ["FIRST_DEPARTURE_SHIFT:8"]);
 });
 
-test("막차 시각 이동은 300초까지 통과하고 301초에서 차단된다 (앞·뒤 방향 모두)", () => {
+test("막차 시각 이동은 한도 240초(이력 최대)까지 통과하고 241초에서 차단된다 (앞·뒤 방향 모두)", () => {
+  assert.equal(POLICY.limits.lastDepartureShiftSeconds, 240);
   for (const sign of [1, -1]) {
     // 마지막 열차의 모든 정차를 함께 옮겨, 옮긴 뒤에도 그 열차가 막차 시각을 정한다.
     const shiftLast = (seconds) => ({ sets }) => {
@@ -267,8 +269,8 @@ test("막차 시각 이동은 300초까지 통과하고 301초에서 차단된�
         tuple[1] === lastTrain ? [tuple[0], tuple[1], tuple[2], tuple[3] + sign * seconds, tuple[4] + sign * seconds] : tuple
       ));
     };
-    assert.deepEqual(blockedIds(metricsOnly(shiftLast(300))).filter((id) => id.startsWith("LAST_DEPARTURE")), [], `sign ${sign}`);
-    assert.deepEqual(blockedIds(metricsOnly(shiftLast(301))).filter((id) => id.startsWith("LAST_DEPARTURE")), ["LAST_DEPARTURE_SHIFT:9"], `sign ${sign}`);
+    assert.deepEqual(blockedIds(metricsOnly(shiftLast(240))).filter((id) => id.startsWith("LAST_DEPARTURE")), [], `sign ${sign}`);
+    assert.deepEqual(blockedIds(metricsOnly(shiftLast(241))).filter((id) => id.startsWith("LAST_DEPARTURE")), ["LAST_DEPARTURE_SHIFT:9"], `sign ${sign}`);
   }
 });
 
