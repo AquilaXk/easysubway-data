@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 
 import {
   admittedIncheonTopologyEvidence,
@@ -1148,48 +1149,40 @@ test("tracked current source admission은 review-required approval identity muta
   }
 });
 
-test("tracked current source admission은 게이트 승격 모드를 승인 모드와 같은 강도로 받아들인다", async (context) => {
-  const [buildSpec, contract, fixture] = await Promise.all([
+test("tracked current source admission은 게이트 승격을 커밋된 영수증 재계산으로 받아들이고 변조를 거부한다 (F1)", async (context) => {
+  const [buildSpec, fixture] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
   const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
-  const gated = (reference) => ({
-    mode: "CURRENT_CANDIDATE_GATE_PASSED",
-    previousArtifactSha256: reference.promotion.previousArtifactSha256,
-    previousArtifactPath: reference.promotion.previousArtifactPath,
-    gate: {
-      policyId: "itx-promotion-gate-v1",
-      receiptPath: `tools/datapack/sources/${reference.artifactId}-promotion-gate.json`,
-      receiptSha256: "e".repeat(64),
-    },
-    gatedArtifactSha256: reference.sha256,
-    baselineArtifactPath: reference.promotion.previousArtifactPath,
-    baselineArtifactSha256: reference.promotion.previousArtifactSha256,
-  });
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
   process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-10-05T00:00:00.000Z";
-  try {
-    const accepted = structuredClone(contract);
-    accepted.sourceTimetableArtifact.promotion = gated(accepted.sourceTimetableArtifact);
-    const admitted = await admittedItxNetworkEdgeEvidence(accepted, topology);
-    assert.equal(admitted.sourceSnapshotId, contract.sourceTimetableArtifact.artifactId);
-    for (const [name, mutate] of [
-      ["approval-url-mixed-in", (reference) => { reference.promotion.approvalUrl = "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-1"; }],
-      ["wrong-gated-sha", (reference) => { reference.promotion.gatedArtifactSha256 = "0".repeat(64); }],
-      ["wrong-policy", (reference) => { reference.promotion.gate.policyId = "itx-promotion-gate-v0"; }],
-    ]) {
-      await context.test(name, async () => {
-        const candidate = structuredClone(accepted);
-        mutate(candidate.sourceTimetableArtifact);
-        await assert.rejects(admittedItxNetworkEdgeEvidence(candidate, topology), /approval identity/);
-      });
-    }
-  } finally {
+  const gated = await createGatedPromotionRoot();
+  context.after(async () => {
+    await gated.cleanup();
     if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
     else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
+  });
+  const admitted = await admittedItxNetworkEdgeEvidence(gated.contract, topology, null, gated.root);
+  assert.equal(admitted.sourceSnapshotId, gated.reference.artifactId);
+  // 구조 검사만 통과하는 변조는 거부한다: 영수증이 없는 루트, 승인 키 혼입, 잘못된 정책, 영수증 변조.
+  await assert.rejects(admittedItxNetworkEdgeEvidence(gated.contract, topology, null, root), /ENOENT|ITX_PROMOTION_/u);
+  for (const [name, mutate] of [
+    ["approval-url-mixed-in", (reference) => { reference.promotion.approvalUrl = "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-1"; }],
+    ["wrong-gated-sha", (reference) => { reference.promotion.gatedArtifactSha256 = "0".repeat(64); }],
+    ["wrong-policy", (reference) => { reference.promotion.gate.policyId = "itx-promotion-gate-v0"; }],
+  ]) {
+    await context.test(name, async () => {
+      const candidate = structuredClone(gated.contract);
+      mutate(candidate.sourceTimetableArtifact);
+      await assert.rejects(admittedItxNetworkEdgeEvidence(candidate, topology, null, gated.root), /approval identity/);
+    });
   }
+  await context.test("receipt-sha-mismatch", async () => {
+    const candidate = structuredClone(gated.contract);
+    candidate.sourceTimetableArtifact.promotion.gate.receiptSha256 = "0".repeat(64);
+    await assert.rejects(admittedItxNetworkEdgeEvidence(candidate, topology, null, gated.root), /ITX_PROMOTION_RECEIPT_SHA256_MISMATCH/);
+  });
 });
 
 test("tracked topology admission은 legacy migration evidence를 거부한다", async (context) => {

@@ -138,7 +138,7 @@ function snapshot(artifactId, { shiftSeconds = 0 } = {}) {
   };
 }
 
-async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = null } = {}) {
+async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = null, gatePolicy = POLICY } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-authority-"));
   const sourceDir = path.join(dir, "tools/datapack/sources");
   await mkdir(sourceDir, { recursive: true });
@@ -149,7 +149,6 @@ async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = nul
   const BASELINE_ID = "itx-cheongchun-source-timetable-20260920000000000";
   const baseline = baselineShiftSeconds === null ? previous : snapshot(BASELINE_ID, { shiftSeconds: baselineShiftSeconds });
   const baselineBytes = baselineShiftSeconds === null ? previousBytes : Buffer.from(`${JSON.stringify(baseline, null, 2)}\n`);
-  const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
   const completeness = {
     validationMode: "ADMISSION",
     validationStatus: "SUPPORTED",
@@ -161,6 +160,9 @@ async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = nul
       roster: { evidenceHash: rosterEvidenceHash }, timetable: { evidenceHash: timetableEvidenceHash },
     })),
   };
+  const completenessBytes = Buffer.from(`${JSON.stringify(completeness, null, 2)}\n`);
+  candidate.completenessEvidenceSha256 = sha256(completenessBytes);
+  const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
   const capture = {
     artifactKind: "provider-response-capture",
     observedAt: candidate.observedAt,
@@ -170,11 +172,11 @@ async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = nul
   };
   const replay = { ...completeness, validationMode: "REPLAY", evidenceHash: sha256("replay") };
   const receipt = evaluateItxPromotionGate({
-    policy: POLICY,
+    policy: gatePolicy,
     candidate,
     candidateSha256: sha256(candidateBytes),
     completeness,
-    completenessSha256: candidate.completenessEvidenceSha256,
+    completenessSha256: sha256(completenessBytes),
     previous,
     previousSha256: sha256(previousBytes),
     baseline,
@@ -188,7 +190,12 @@ async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = nul
   if (baselineShiftSeconds !== null) await writeFile(path.join(sourceDir, `${BASELINE_ID}.json`), baselineBytes);
   await writeFile(path.join(sourceDir, `${ARTIFACT_ID}.json`), candidateBytes);
   await writeFile(path.join(dir, itxPromotionReceiptPath(ARTIFACT_ID)), receiptBytes);
+  await writeFile(path.join(sourceDir, `${ARTIFACT_ID}-completeness-evidence.json`), completenessBytes);
+  await mkdir(path.join(dir, "tools/datapack"), { recursive: true });
+  await writeFile(path.join(dir, "tools/datapack/itx-promotion-gate-policy.json"), JSON.stringify(POLICY, null, 2));
   const reference = gateReference({
+    completenessEvidencePath: `tools/datapack/sources/${ARTIFACT_ID}-completeness-evidence.json`,
+    completenessEvidenceSha256: sha256(completenessBytes),
     sha256: sha256(candidateBytes),
     artifactPath: `tools/datapack/sources/${ARTIFACT_ID}.json`,
     freshUntil: candidate.freshUntil,
@@ -221,7 +228,7 @@ test("영수증·후보·직전 원천 중 하나라도 어긋나면 재검증�
     const fixture = await committedPromotion();
     try {
       await tamper(fixture);
-      await assert.rejects(verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_/u, name);
+      assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_/u, name);
     } finally {
       await rm(fixture.dir, { recursive: true, force: true });
     }
@@ -236,7 +243,7 @@ test("영수증이 PASS여도 영수증에 적힌 지표가 원천 파일에서 
     const forged = itxPromotionGateReceiptBytes(receipt);
     await writeFile(path.join(fixture.dir, itxPromotionReceiptPath(ARTIFACT_ID)), forged);
     fixture.reference.promotion.gate.receiptSha256 = sha256(forged);
-    await assert.rejects(verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_METRICS_MISMATCH/u);
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_METRICS_MISMATCH/u);
   } finally {
     await rm(fixture.dir, { recursive: true, force: true });
   }
@@ -259,7 +266,7 @@ test("원천이 한도를 넘게 달라졌다면 다시 계산한 지표가 차�
     const rebound = itxPromotionGateReceiptBytes(receipt);
     await writeFile(path.join(fixture.dir, itxPromotionReceiptPath(ARTIFACT_ID)), rebound);
     fixture.reference.promotion.gate.receiptSha256 = sha256(rebound);
-    await assert.rejects(verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_METRICS_MISMATCH/u);
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_METRICS_MISMATCH/u);
   } finally {
     await rm(fixture.dir, { recursive: true, force: true });
   }
@@ -281,7 +288,7 @@ test("영수증의 판정이 PASS가 아니거나 후보·직전 결속이 다�
       const forged = itxPromotionGateReceiptBytes(receipt);
       await writeFile(path.join(fixture.dir, itxPromotionReceiptPath(ARTIFACT_ID)), forged);
       fixture.reference.promotion.gate.receiptSha256 = sha256(forged);
-      await assert.rejects(verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_IDENTITY_INVALID/u, name);
+      assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_IDENTITY_INVALID/u, name);
     } finally {
       await rm(fixture.dir, { recursive: true, force: true });
     }
@@ -296,14 +303,92 @@ test("기준선이 직전 원천과 다르면 기준선 대비 지표도 다시 
     assert.equal((await verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir })).status, "PASS");
     // 기준선 파일이 바뀌면(sha가 다르면) 거부한다.
     await writeFile(path.join(fixture.dir, fixture.reference.promotion.baselineArtifactPath), "{}\n");
-    await assert.rejects(verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_SOURCE_SHA256_MISMATCH/u);
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_SOURCE_SHA256_MISMATCH/u);
   } finally {
     await rm(fixture.dir, { recursive: true, force: true });
   }
 });
 
+async function rebindReceipt(fixture, mutate) {
+  const file = path.join(fixture.dir, itxPromotionReceiptPath(ARTIFACT_ID));
+  const receipt = JSON.parse(await readFile(file, "utf8"));
+  mutate(receipt);
+  const bytes = itxPromotionGateReceiptBytes(receipt);
+  await writeFile(file, bytes);
+  fixture.reference.promotion.gate.receiptSha256 = sha256(bytes);
+}
+
+// F1: 영수증이 스스로 적은 정책으로 판정받으면 한도를 넓힌 영수증이 통과한다. 커밋된 정책과 같아야 한다.
+test("한도를 넓힌 정책으로 계산한 PASS 영수증은 contract의 receiptSha를 함께 고쳐도 커밋된 정책과 달라 거부한다 (F1)", async () => {
+  const widened = parseItxPromotionGatePolicy({
+    ...structuredClone(POLICY),
+    limits: Object.fromEntries(Object.entries(POLICY.limits).map(([key, value]) => [key, key.endsWith("Permille") ? 1000 : key.endsWith("Seconds") ? 86_400 : value])),
+  });
+  // 직전 원천과 시각이 어긋난 후보(100초). 실제 한도에서는 차단되지만 넓힌 정책에서는 PASS 영수증이 나온다.
+  const fixture = await committedPromotion({ shiftSeconds: 100, gatePolicy: widened });
+  try {
+    assert.equal(fixture.receipt.status, "PASS");
+    assert.deepEqual(fixture.receipt.policy.limits.tripCountDeltaPermille, 1000);
+    // 영수증·contract가 서로 일관돼도(receiptSha 재결속) 정책이 다르면 거부한다.
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_POLICY_MISMATCH/u);
+    // 영수증의 정책을 커밋된 정책으로 되돌려도 지표가 한도를 넘으므로 거부한다.
+    await rebindReceipt(fixture, (receipt) => { receipt.policy = structuredClone(POLICY); });
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_METRICS_MISMATCH/u);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("커밋된 정책 파일이 영수증의 정책과 달라지면(어느 쪽이 바뀌었든) 재검증이 실패한다 (F1)", async () => {
+  const fixture = await committedPromotion();
+  try {
+    const tightened = structuredClone(POLICY);
+    tightened.limits.lastDepartureShiftSeconds = 120;
+    await writeFile(path.join(fixture.dir, "tools/datapack/itx-promotion-gate-policy.json"), JSON.stringify(tightened, null, 2));
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_POLICY_MISMATCH/u);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("커밋된 완전성 증거가 실패를 담고 있으면 contract의 sha를 맞춰도 영수증과 대조해 거부한다 (F1)", async () => {
+  const fixture = await committedPromotion();
+  try {
+    const file = path.join(fixture.dir, fixture.reference.completenessEvidencePath);
+    const completeness = JSON.parse(await readFile(file, "utf8"));
+    completeness.serviceDays[1].failedOdCount = 2;
+    const bytes = Buffer.from(`${JSON.stringify(completeness, null, 2)}\n`);
+    await writeFile(file, bytes);
+    fixture.reference.completenessEvidenceSha256 = sha256(bytes);
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_METRICS_MISMATCH/u);
+    // 완전성 증거 sha가 contract와 다르면 그 전에 거부한다.
+    fixture.reference.completenessEvidenceSha256 = "f".repeat(64);
+    assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_SOURCE_SHA256_MISMATCH/u);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("raw capture에 의존하는 check는 영수증에 PASS로 한 번씩 있어야 하고 raw sha 형식이 맞아야 한다 (F1)", async () => {
+  for (const [name, mutate] of Object.entries({
+    "source binding blocked": (receipt) => { receipt.checks.find(({ id }) => id === "SOURCE_BINDING").status = "BLOCK"; },
+    "fetch errors missing": (receipt) => { receipt.checks = receipt.checks.filter(({ id }) => id !== "FETCH_ERRORS"); },
+    "source binding duplicated": (receipt) => { receipt.checks.push(structuredClone(receipt.checks.find(({ id }) => id === "SOURCE_BINDING"))); },
+    "raw sha malformed": (receipt) => { receipt.source.rawCaptureSha256 = "short"; },
+    "replay hash missing": (receipt) => { receipt.source.replayEvidenceHash = null; },
+  })) {
+    const fixture = await committedPromotion();
+    try {
+      await rebindReceipt(fixture, mutate);
+      assert.throws(() => verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_RAW_CHECK_INVALID/u, name);
+    } finally {
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("승인 모드 승격에는 게이트 재검증을 적용하지 않는다", async () => {
-  await assert.rejects(verifyItxGatePromotion({ reference: ownerReference(), repositoryRoot }), /ITX_PROMOTION_GATE_IDENTITY_INVALID/u);
+  assert.throws(() => verifyItxGatePromotion({ reference: ownerReference(), repositoryRoot }), /ITX_PROMOTION_GATE_IDENTITY_INVALID/u);
 });
 
 test("저장소의 현재 승격 근거는 구조가 맞고, 게이트 승격이면 커밋된 영수증이 재검증된다", async () => {

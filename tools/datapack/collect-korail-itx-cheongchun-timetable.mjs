@@ -501,7 +501,7 @@ async function promoteItxSourceCandidateLocked({
       : previous === null ? null : { path: previous.artifactPath, sha256: previous.sha256 };
     const baselineSource = baselineReference === null || baselineReference.sha256 === previous?.sha256
       ? previousSource
-      : JSON.parse(await readTrackedItxSource({ repositoryRoot, relativePath: baselineReference.path, sha256: baselineReference.sha256 }));
+      : JSON.parse(readTrackedItxSource({ repositoryRoot, relativePath: baselineReference.path, sha256: baselineReference.sha256 }));
     const receipt = await evaluateGateForPromotion({
       gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, baselineSource,
       baselineSha256: baselineReference?.sha256 ?? null, repositoryRoot,

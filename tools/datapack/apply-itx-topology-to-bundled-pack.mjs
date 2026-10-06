@@ -13,7 +13,7 @@ import {
 } from "./build-datapack.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode } from "./lib/itx-promotion-authority.mjs";
+import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
@@ -216,6 +216,7 @@ async function admittedSource(contractPath, {
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const reference = contract?.sourceTimetableArtifact;
   validateAdmittedSourceReference(contract, reference);
+  verifyCurrentItxPromotion({ reference, repositoryRoot });
   const currentAdmission = currentAdmissionPath == null
     ? null
     : JSON.parse(await readFile(currentAdmissionPath, "utf8"));

@@ -182,6 +182,46 @@ export function evaluateItxPromotionMetricChecks({ policy, candidate, previous, 
   return checks;
 }
 
+/**
+ * 커밋된 파일만으로 다시 계산할 수 있는 결속·수집 오류 check(후보, 완전성 증거).
+ * raw provider capture·오프라인 replay는 저장소에 남지 않아 다시 계산할 수 없다. 그 check(SOURCE_BINDING·FETCH_ERRORS)는
+ * 승격 시점에 한 번 계산한 결과만 영수증에 남는다. CI의 재검증(verifyItxGatePromotion)은 이 함수의 결과를 영수증과 대조한다.
+ */
+export function evaluateItxPromotionCommittedChecks({ policy, candidate, candidateSha256, completeness, completenessSha256 }) {
+  const binding = [];
+  if (candidate?.artifactKind !== "itx-cheongchun-source-timetable" || candidate.validationStatus !== "SUPPORTED") binding.push("CANDIDATE_IDENTITY");
+  if (!SHA256.test(candidateSha256 ?? "")) binding.push("CANDIDATE_SHA256");
+  if (!SHA256.test(completenessSha256 ?? "") || completenessSha256 !== candidate?.completenessEvidenceSha256) binding.push("COMPLETENESS_SHA256");
+  if (completeness?.sourceTimetableArtifact?.artifactId !== candidate?.artifactId) binding.push("COMPLETENESS_ARTIFACT_ID");
+  if (completeness?.observedAt !== candidate?.observedAt
+    || stringify(completeness?.selectedServiceDates) !== stringify(candidate?.selectedServiceDates)) binding.push("COMPLETENESS_OBSERVATION");
+  const completenessDays = Array.isArray(completeness?.serviceDays) ? completeness.serviceDays : [];
+  const lineage = Array.isArray(candidate?.sourceLineage) ? candidate.sourceLineage : [];
+  const fetch = [];
+  if (completeness?.validationStatus !== "SUPPORTED" || completeness?.validationMode !== "ADMISSION") fetch.push("COMPLETENESS_NOT_SUPPORTED");
+  if (Object.hasOwn(completeness ?? {}, "failureReasonCode") || Object.hasOwn(completeness ?? {}, "failureStage")) fetch.push("COMPLETENESS_FAILURE_CODE");
+  for (const dayCd of policy.dayCds) {
+    const days = completenessDays.filter((day) => day?.dayCd === dayCd);
+    const lineageDays = lineage.filter((day) => day?.dayCd === dayCd);
+    if (days.length !== 1 || lineageDays.length !== 1) {
+      binding.push(`LINEAGE_DAY_${dayCd}`);
+      if (days.length !== 1) fetch.push(`DAY_${dayCd}_MISSING`);
+      continue;
+    }
+    const [day] = days;
+    const [lineageDay] = lineageDays;
+    if (![[day.roster?.evidenceHash, lineageDay.rosterEvidenceHash], [day.timetable?.evidenceHash, lineageDay.timetableEvidenceHash]]
+      .every(([fromEvidence, fromCandidate]) => SHA256.test(fromEvidence ?? "") && fromEvidence === fromCandidate)) binding.push(`LINEAGE_HASH_${dayCd}`);
+    if (day.status !== "SUPPORTED") fetch.push(`DAY_${dayCd}_NOT_SUPPORTED`);
+    if (!Number.isInteger(day.expectedOdCount) || day.expectedOdCount < 1
+      || day.completedOdCount !== day.expectedOdCount || day.failedOdCount !== 0) fetch.push(`DAY_${dayCd}_OD_INCOMPLETE`);
+  }
+  return [
+    check("COMMITTED_BINDING", null, binding.length > 0, { failures: binding }, {}),
+    check("COMMITTED_FETCH", null, fetch.length > 0, { failures: fetch }, {}),
+  ];
+}
+
 function evaluateBinding({ candidate, candidateSha256, completeness, completenessSha256, capture, captureSha256, replay, dayCds }) {
   const failures = [];
   const fail = (code) => failures.push(code);
@@ -276,6 +316,7 @@ export function evaluateItxPromotionGate({
   } else {
     checks.push(...evaluateItxPromotionMetricChecks({ policy, candidate, previous, previousSha256, baseline, baselineSha256 }));
   }
+  checks.push(...evaluateItxPromotionCommittedChecks({ policy, candidate, candidateSha256, completeness, completenessSha256 }));
   const effectiveBaseline = baseline ?? previous ?? null;
   const effectiveBaselineSha256 = baseline ? baselineSha256 : previousSha256 ?? null;
   checks.push(evaluateBinding({

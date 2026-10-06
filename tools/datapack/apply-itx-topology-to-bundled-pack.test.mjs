@@ -11,6 +11,7 @@ import { gzipSync } from "node:zlib";
 import {
   admittedTopologySource,
   applyTopology,
+  readImmutableItxRideEdgeSetSha256,
   assertStoredTopology,
   bindItxTopologyEdgeProvenance,
   deriveTopology,
@@ -21,6 +22,7 @@ import {
 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { projectedItxDirectionalPairs } from "./build-datapack.mjs";
 import { buildItxCurrentTopologyAdmission } from "./build-itx-current-topology-admission.mjs";
+import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -1013,6 +1015,36 @@ test("게이트 승격 current source는 승인 승격과 같은 static topology
         contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
       ), /approval identity/);
     });
+  }
+});
+
+// F1: 소비자가 게이트 승격을 구조 검사만으로 받지 않고 커밋된 영수증을 다시 계산해 대조한다.
+test("게이트 승격 source는 커밋된 영수증이 재계산으로 맞을 때만 읽히고, 영수증·정책·원천이 어긋나면 거부한다", async () => {
+  const fixture = await createGatedPromotionRoot();
+  try {
+    assert.equal(await readImmutableItxRideEdgeSetSha256(fixture.root), await readImmutableItxRideEdgeSetSha256(root));
+    // 영수증 내용이 바뀌면(contract의 receiptSha와 다르면) 읽히지 않는다.
+    const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+    receipt.policy.limits.lastDepartureShiftSeconds = 86_400;
+    await writeFile(fixture.receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+    await assert.rejects(readImmutableItxRideEdgeSetSha256(fixture.root), /ITX_PROMOTION_RECEIPT_SHA256_MISMATCH/u);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("게이트 승격 source의 영수증 정책이 커밋된 정책과 다르면 contract sha를 맞춰도 읽히지 않는다", async () => {
+  const fixture = await createGatedPromotionRoot();
+  try {
+    const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+    receipt.policy.limits.lastDepartureShiftSeconds = 86_400;
+    const bytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
+    await writeFile(fixture.receiptPath, bytes);
+    fixture.contract.sourceTimetableArtifact.promotion.gate.receiptSha256 = sha256(bytes);
+    await writeFile(fixture.contractPath, `${JSON.stringify(fixture.contract, null, 2)}\n`);
+    await assert.rejects(readImmutableItxRideEdgeSetSha256(fixture.root), /ITX_PROMOTION_RECEIPT_POLICY_MISMATCH/u);
+  } finally {
+    await fixture.cleanup();
   }
 });
 

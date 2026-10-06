@@ -40,7 +40,7 @@ import {
   validateSourceFreshness,
 } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
-import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode } from "./lib/itx-promotion-authority.mjs";
+import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import {
   requireCurrentIncheonStationCodeDerivations,
@@ -2817,6 +2817,8 @@ export async function admittedItxNetworkEdgeEvidence(
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
   validateCurrentItxApprovalIdentity(reference);
+  // 게이트 승격이면 커밋된 영수증을 정책·원천 파일에서 다시 계산해 대조한다(구조 검사만으로 받지 않는다).
+  verifyCurrentItxPromotion({ reference, repositoryRoot });
   if (contract.coverageStates?.schedule_timetable !== "MISSING"
     || contract.claimGate?.currentStatus !== "NO_GO"
     || contract.claimGate?.supportClaimAllowed !== false) {
