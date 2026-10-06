@@ -186,6 +186,18 @@ jobs:
             --governance-policy tools/datapack/source-governance-policy.json \
             --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}"
 
+      # #884: 테스트가 추적 파일을 덮어쓰거나 추적되지 않는 산출물을 남기면(.gitignore 대상은 제외) job을 실패시킨다.
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: |
+          # apps/mobile은 이 job이 Mobile 레포에서 복사해 파생하는 작업 사본이라 검사에서 뺀다.
+          changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"
+          if [[ -n "${changed}" ]]; then
+            echo "tests changed the working tree:" >&2
+            echo "${changed}" >&2
+            exit 1
+          fi
+
   contracts_shard_1:
     name: Data contracts (shard 1/4)
     permissions:
@@ -282,6 +294,18 @@ jobs:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 1
+
+      # #884: 테스트가 추적 파일을 덮어쓰거나 추적되지 않는 산출물을 남기면(.gitignore 대상은 제외) job을 실패시킨다.
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: |
+          # apps/mobile은 이 job이 Mobile 레포에서 복사해 파생하는 작업 사본이라 검사에서 뺀다.
+          changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"
+          if [[ -n "${changed}" ]]; then
+            echo "tests changed the working tree:" >&2
+            echo "${changed}" >&2
+            exit 1
+          fi
 
   contracts_shard_2:
     name: Data contracts (shard 2/4)
@@ -380,6 +404,18 @@ jobs:
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 2
 
+      # #884: 테스트가 추적 파일을 덮어쓰거나 추적되지 않는 산출물을 남기면(.gitignore 대상은 제외) job을 실패시킨다.
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: |
+          # apps/mobile은 이 job이 Mobile 레포에서 복사해 파생하는 작업 사본이라 검사에서 뺀다.
+          changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"
+          if [[ -n "${changed}" ]]; then
+            echo "tests changed the working tree:" >&2
+            echo "${changed}" >&2
+            exit 1
+          fi
+
   contracts_shard_3:
     name: Data contracts (shard 3/4)
     permissions:
@@ -477,6 +513,18 @@ jobs:
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 3
 
+      # #884: 테스트가 추적 파일을 덮어쓰거나 추적되지 않는 산출물을 남기면(.gitignore 대상은 제외) job을 실패시킨다.
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: |
+          # apps/mobile은 이 job이 Mobile 레포에서 복사해 파생하는 작업 사본이라 검사에서 뺀다.
+          changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"
+          if [[ -n "${changed}" ]]; then
+            echo "tests changed the working tree:" >&2
+            echo "${changed}" >&2
+            exit 1
+          fi
+
   contracts_shard_4:
     name: Data contracts (shard 4/4)
     permissions:
@@ -573,6 +621,18 @@ jobs:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 4
+
+      # #884: 테스트가 추적 파일을 덮어쓰거나 추적되지 않는 산출물을 남기면(.gitignore 대상은 제외) job을 실패시킨다.
+      - name: Verify tests left the working tree clean
+        shell: bash
+        run: |
+          # apps/mobile은 이 job이 Mobile 레포에서 복사해 파생하는 작업 사본이라 검사에서 뺀다.
+          changed="$(git status --porcelain --untracked-files=all -- . ':(exclude)apps/mobile')"
+          if [[ -n "${changed}" ]]; then
+            echo "tests changed the working tree:" >&2
+            echo "${changed}" >&2
+            exit 1
+          fi
 
   # #985: 자동화 PR(App이 연 claim 브랜치)의 원장·ITX 승격·후보 게이트를 PR head 작업 트리에서 다시 계산한다(#870 전체 자동화 2단계).
   # 읽기 전용 토큰의 pull_request에서만 돈다. PR 코드를 쓰기 토큰으로 실행하지 않는다는 신뢰 모델의 한 축이다. 증거 블록의 PASS 주장은 믿지 않는다.
