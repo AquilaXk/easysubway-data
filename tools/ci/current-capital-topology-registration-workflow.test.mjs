@@ -133,3 +133,17 @@ test("producer가 실행 중인 claim은 이유를 notice로 남기고 아무것
   const { block } = step("Note registration waiting on a running producer");
   assert.equal(ifCondition(block), "${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}");
 });
+
+// #975 리뷰 F2·F5: 등록 PR도 원장 변화 게이트를 통과해야 하고, 본문에 base/head 커밋에 결속된 증거 블록을 낸다.
+test("등록 PR은 push 전에 원장 변화 게이트를 통과하고 증거 블록이 든 본문 파일로 연다", () => {
+  const { block } = step("Commit exactly four registration outputs and open draft PR");
+  const gate = block.indexOf('node tools/ci/source-ledger-gate.mjs --base-sha "${REGISTRATION_MAIN_SHA}" --output "${evidence_root}/gate.json"');
+  const push = block.indexOf('git push origin "${REGISTRATION_BRANCH}"');
+  const body = block.indexOf('node tools/ci/automation-pr-evidence.mjs registration-body --gate "${evidence_root}/gate.json" --base-sha "${REGISTRATION_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)"');
+  const create = block.indexOf("gh pr create");
+  assert.ok(gate !== -1 && gate < push, "the ledger gate runs before the push");
+  assert.ok(push < body && body < create, "the body is built from the pushed head before the PR is created");
+  assert.match(block, /--run-url "\$\{GITHUB_SERVER_URL\}\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{GITHUB_RUN_ID\}" --output "\$\{evidence_root\}\/body\.md"/u);
+  assert.match(block, /--body-file "\$\{evidence_root\}\/body\.md"/u);
+  assert.match(block, /evidence_root="\$\(mktemp -d "\$\{RUNNER_TEMP\}\/registration-evidence\.XXXXXX"\)"/u);
+});
