@@ -55,6 +55,9 @@ jobs:
       # 병합 호출만 PAT로 수행한다(GITHUB_TOKEN 병합은 후속 workflow run을 만들지 않는다).
       MERGE_GH_TOKEN: ${{ secrets.AUTOMERGE_PAT != '' && secrets.AUTOMERGE_PAT || github.token }}
       HAS_AUTOMERGE_PAT: ${{ secrets.AUTOMERGE_PAT != '' }}
+      # 자동화 PR 자동 병합(#985)의 켜짐 스위치. true일 때만 자동화 경로(App의 정책 통과 기록)를 인정한다. 기본은 꺼짐이고 코드가 켜지 않는다.
+      # 꺼지면 이미 기록이 있는 PR도 이 경로로는 병합되지 않는다(사람 PR 경로만 남는다).
+      AUTOMATION_AUTOMERGE_ENABLED: ${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' }}
       EVENT_NAME: ${{ github.event_name }}
       EVENT_PR: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
       EVENT_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
@@ -329,6 +332,62 @@ jobs:
             return 1
           }
           # fail-closed-pr-end
+          # automation-policy-begin
+          # 자동화 PR(#985)은 신뢰 협력자의 Aquila 리뷰 대신 App의 exact-head 정책 통과 기록(attestation)으로 리뷰 게이트를 통과한다.
+          # 기록은 automation-pr-automerge.yml이 정책(작성자·브랜치·증거 블록·API diff 경로·커밋 신원·CI·게이트 재계산)을 모두 통과한 head에만 남긴다.
+          # 이 함수는 그 기록을 다시 검증할 뿐 정책을 되풀이하지 않는다: 스위치가 켜져 있고, PR 작성자가 신뢰 App(login·id·type)이고, 현재 head의 기록이
+          # 신뢰 App의 comment이고, 신뢰 협력자의 활성 변경 요청이 없어야 한다. 조회·형식 실패와 애매한 상태는 모두 통과하지 못한다(fail closed).
+          # 후보당 청구 모델: Aquila 판정이 실패한 후보에서만 REST 2회(PR 조회, head 커밋 조회)를 더 쓴다. marker 복구와 같은 드문 경로라 후보당 청구에 넣지 않는다.
+          # 입력: pr, head, comments, reviews(read_pages 페이지 배열). 병합은 이 함수가 아니라 아래 병합 분기가 같은 게이트 뒤에서 한다.
+          automation_policy_authorized() {
+            [[ "${AUTOMATION_AUTOMERGE_ENABLED:-}" == "true" ]] || return 1
+            local pull author payload digest
+            pull="$(gh api "repos/${repo}/pulls/${pr}" --jq '{user, body}')" || return 1
+            author="$(jq -c '.user' <<<"${pull}")" || return 1
+            # 기록은 CI가 본 증거 블록(JSON 페이로드 텍스트의 sha256)에 묶인다(#986 F3). 지금 본문의 블록이 정확히 하나가 아니면 판정하지 못한다.
+            payload="$(jq -r '.body | [match("<!-- easysubway-automation-pr:v1 (.*?) -->"; "g")] | if length == 1 then .[0].captures[0].string else empty end' <<<"${pull}")" || return 1
+            [[ -n "${payload}" ]] || return 1
+            digest="$(printf '%s' "${payload}" | openssl dgst -sha256 -r | cut -d' ' -f1)" || return 1
+            # 기록은 편집되지 않았고 head 커밋 이후에 만들어진 것만 인정한다(#986 F1). 커밋 시각을 못 읽으면 판정하지 못하므로 통과하지 못한다.
+            head_at="$(gh api "repos/${repo}/commits/${head}" --jq '.commit.committer.date')" || return 1
+            # shellcheck disable=SC2016
+            jq -e --arg head "${head}" --arg digest "${digest}" --arg head_at "${head_at}" --argjson author "${author}" --argjson comments "${comments}" '
+              def is_app:
+                type == "object" and
+                .login == "easysubway-release-chain[bot]" and
+                .id == 337648189 and
+                .type == "Bot";
+              def is_coderabbit:
+                .author_association == "NONE" and
+                .user.login == "coderabbitai[bot]" and
+                .user.id == 136622811 and
+                .user.type == "Bot";
+              ($author | is_app) and
+              ($comments | flatten | any(
+                (.user | is_app) and
+                (.body // "") == ("<!-- Automation automerge policy: " + $head + " evidence " + $digest + " -->") and
+                .created_at == .updated_at and
+                ((.created_at | fromdateiso8601) >= ($head_at | fromdateiso8601)))) and
+              ([flatten[] |
+                select(
+                  .author_association == "OWNER" or
+                  .author_association == "MEMBER" or
+                  .author_association == "COLLABORATOR" or
+                  is_coderabbit
+                )] |
+              sort_by(.submitted_at, .id) |
+              reduce .[] as $review ({};
+                if $review.state == "COMMENTED" then
+                  .[$review.user.login] //= "COMMENTED"
+                elif $review.state == "DISMISSED" then
+                  del(.[$review.user.login])
+                else
+                  .[$review.user.login] = $review.state
+                end
+              ) | all(.[]; . == "APPROVED" or . == "COMMENTED"))
+            ' <<<"${reviews}" >/dev/null
+          }
+          # automation-policy-end
           # authorization-marker-sync-begin
           # exact-head marker는 라벨 이벤트가 게시한다. 코디네이터는 두 경우에만 marker를 맞춘다.
           #  - 재발행: 아래 BEHIND 분기가 P에서 base 갱신을 요청했다는 canonical 기록이 정확히
@@ -551,6 +610,8 @@ jobs:
             }
             sync_authorization_marker
             base_update_records="$(canonical_bot_comment_heads "${base_update_prefix}")"
+            # 후보마다 초기화한다. 앞 후보의 자동화 통과 여부가 다음 후보로 새면 안 된다.
+            automation_authorized=false
             # review-state-filter-begin
             # 저장소 협력자 외에는 GitHub가 고정한 CodeRabbit Bot tuple만 신뢰한다.
             # frozen discovery는 라벨 이벤트에서 GitHub Actions가 기록한 exact-head marker가
@@ -595,8 +656,13 @@ jobs:
                      (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->")) or
                      (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:")))))))
             ' <<<"${reviews}" >/dev/null; then
-              echo "PR #${pr}: no trusted frozen discovery review, or an active change request is open; skipping."
-              continue
+              if automation_policy_authorized; then
+                automation_authorized=true
+                echo "PR #${pr}: authorized by the automation policy attestation for ${head}."
+              else
+                echo "PR #${pr}: no trusted frozen discovery review, or an active change request is open; skipping."
+                continue
+              fi
             fi
             # review-state-filter-end
 
@@ -691,6 +757,22 @@ jobs:
               continue
             fi
             # required-context-loop-end
+            # automation-gates-begin
+            # 자동화 경로로 리뷰 게이트를 통과한 후보는 병합 직전에 게이트 재계산 check를 다시 확인한다(#986 F6). 이 check는 ruleset의 required가 아니므로
+            # 기록만 믿지 않고 코디네이터가 같은 head의 check-run(위에서 읽은 페이지)에서 github-actions의 성공을 직접 본다. 성공만 허용한다.
+            if [[ "${automation_authorized:-false}" == true ]]; then
+              # shellcheck disable=SC2016
+              if ! jq -e '
+                ([.[].check_runs[] | select(.name == "Automation PR gates" and .app.id == 15368)] |
+                  sort_by(.started_at, .id) |
+                  last) as $run |
+                $run != null and $run.status == "completed" and $run.conclusion == "success"
+              ' <<<"${checks}" >/dev/null; then
+                echo "::warning::PR #${pr}: Automation PR gates is not a completed success from github-actions on this head; skipping."
+                continue
+              fi
+            fi
+            # automation-gates-end
 
             # required context 검증이 병합 가능 여부의 정본이다. mergeStateStatus는 여기서
             # 실제로 병합이 불가능한 상태(base 갱신 필요·충돌)를 가려내는 데만 쓴다.
@@ -715,6 +797,12 @@ jobs:
                 fi
                 ;;
               BEHIND)
+                # 자동화 PR의 base 갱신은 사람(PAT 소유자) 작성 병합 커밋을 만들어 head가 바뀌고, 그러면 증거 블록의 head 결속과 정책 통과 기록이
+                # 함께 깨진다. 자동화 PR은 갱신하지 않고 건너뛴다. automation-pr-behind-recreate.yml이 이 PR을 닫고 브랜치를 지운 뒤 최신 main에서 다시 만들게 한다.
+                if [[ "${automation_authorized:-false}" == true ]]; then
+                  echo "::warning::PR #${pr} is an automation PR behind main; automation-pr-behind-recreate.yml closes it and requests a fresh run instead of updating its base (a base merge would void its head-bound policy attestation)."
+                  continue
+                fi
                 # GITHUB_TOKEN이 만든 병합 커밋은 CI를 트리거하지 못하므로 PAT가 없으면 소유
                 # 세션에 돌려보낸다. PAT가 있으면 게이트를 통과한 현재 head를 고정해 base만
                 # 갱신하고, 수락된 요청을 기록한 뒤 실행을 끝낸다. 새 head의 CI 완료가 다음

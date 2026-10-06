@@ -29,7 +29,7 @@ const SOURCE = {
   rawSha256: "c".repeat(64), contentSha256: "d".repeat(64), rowDelta: 0, coverageDelta: 0, diffStatus: "CHANGED",
 };
 const STEP = { id: "busan-transfer-metrics", changed: true, paths: ["tools/datapack/release/current-busan-transfer-metrics.json"] };
-const CANDIDATE = { candidateId: "nationwide-candidate-20261006-seq128", releaseSequence: 128, sourceSnapshotSetHash: "e".repeat(64) };
+const CANDIDATE = { candidateId: "nationwide-candidate-20261006-seq128", releaseSequence: 128, sourceSnapshotSetHash: "e".repeat(64), paths: ["tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json"] };
 const registration = (overrides = {}) => ({ stage: "registration", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: POLICY, sources: [SOURCE], steps: [], candidate: null, ...overrides });
 const rebinding = (overrides = {}) => ({ stage: "derivative-rebinding", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: POLICY, sources: [], steps: [STEP, { id: "seoul-measured-transfer-metrics", changed: false, paths: [] }], candidate: null, ...overrides });
 const candidate = (overrides = {}) => ({ stage: "candidate-refresh", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: null, sources: [], steps: [], candidate: CANDIDATE, ...overrides });
@@ -128,6 +128,10 @@ test("후보 갱신 블록은 후보 식별을 담고 원천·단계·정책이 
     ["candidate extra", { candidate: { ...CANDIDATE, extra: 1 } }], ["candidate id empty", { candidate: { ...CANDIDATE, candidateId: "" } }],
     ["sequence zero", { candidate: { ...CANDIDATE, releaseSequence: 0 } }], ["sequence fraction", { candidate: { ...CANDIDATE, releaseSequence: 1.5 } }],
     ["set hash", { candidate: { ...CANDIDATE, sourceSnapshotSetHash: "short" } }],
+    ["paths missing", { candidate: { candidateId: CANDIDATE.candidateId, releaseSequence: 128, sourceSnapshotSetHash: CANDIDATE.sourceSnapshotSetHash } }],
+    ["paths empty", { candidate: { ...CANDIDATE, paths: [] } }], ["paths unsorted", { candidate: { ...CANDIDATE, paths: [...CANDIDATE.paths].reverse() } }],
+    ["paths duplicate", { candidate: { ...CANDIDATE, paths: [CANDIDATE.paths[0], CANDIDATE.paths[0]] } }], ["paths blank", { candidate: { ...CANDIDATE, paths: [""] } }],
+    ["paths not array", { candidate: { ...CANDIDATE, paths: "a" } }],
   ]) assert.throws(() => automationPrEvidenceBlock(candidate(overrides)), /AUTOMATION_PR_EVIDENCE_INVALID/u, label);
 });
 
@@ -169,7 +173,8 @@ test("CLI는 게이트 출력·결과 JSON·후보 build spec에서 본문과 �
   await main(["derivative-rebinding-body", "--gate", file("gate.json"), "--result", file("result.json"), ...common, "--output", file("rebinding.md")]);
   assert.equal(parseAutomationPrEvidence(await readFile(file("rebinding.md"), "utf8")).steps.length, 2);
   const lines = [];
-  await main(["candidate-refresh-block", "--build-spec", file("spec.json"), ...common], { write: (text) => lines.push(text) });
+  await writeFile(file("paths.txt"), `${CANDIDATE.paths.join("\n")}\n`);
+  await main(["candidate-refresh-block", "--build-spec", file("spec.json"), "--changed-paths", file("paths.txt"), ...common], { write: (text) => lines.push(text) });
   assert.deepEqual(parseAutomationPrEvidence(lines.join("")).candidate, CANDIDATE);
   await assert.rejects(main(["registration-body", "--gate", file("gate.json"), ...common, "--output", file("registration.md")]), /EEXIST/u);
   await assert.rejects(main(["other", "--result", file("result.json")]), /AUTOMATION_PR_EVIDENCE_ARGUMENTS/u);
