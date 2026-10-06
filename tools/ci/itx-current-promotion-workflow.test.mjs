@@ -14,6 +14,15 @@ const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#"))
 const COLLECT = "${{ steps.decision.outputs.state == 'COLLECT' }}";
 const DECISION = "Decide whether ITX promotion is due";
 
+// F5: 승격 PR만으로는 required CI가 green이 되지 않는다. 재결속 자동화(#979)가 병합되기 전에는 정기 실행 변수를 켜지 않는다.
+test("정기 실행 변수는 재결속 자동화 이슈(#979)가 닫히기 전에는 켜지 않는다고 workflow가 스스로 밝힌다", () => {
+  const header = yml.split("\n").filter((line) => line.startsWith("#")).join("\n");
+  assert.match(header, /#979/u);
+  assert.match(header, /DATAPACK_SCHEDULED_ITX_PROMOTION[^\n]*켜지 않는다/u);
+  // 코드는 변수를 스스로 켜지 않고, 정기 실행은 변수가 true일 때만 돈다.
+  assert.doesNotMatch(code, /DATAPACK_SCHEDULED_ITX_PROMOTION[^\n]*(?:=|:)\s*['"]?true['"]?\s*$/mu);
+});
+
 test("트리거: 매일 03:00 KST 정기 실행과 사람 dispatch(force 입력). push 트리거는 없다", () => {
   assert.match(yml, /^on:\n  schedule:\n    - cron: "0 18 \* \* \*"\n  workflow_dispatch:\n    inputs:\n      force_collect:\n        description: [^\n]+\n        required: false\n        default: false\n        type: boolean\n/mu);
   assert.doesNotMatch(code, /\n  push:|\n  pull_request:|\n  pull_request_target:|\n  workflow_run:/u);

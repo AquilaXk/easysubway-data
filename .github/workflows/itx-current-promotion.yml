@@ -7,6 +7,8 @@ name: ITX Current Promotion
 # - 수집(KST 하루 한 번, 예산 가드) -> 오프라인 replay -> 게이트 -> 승격 -> 브랜치 push -> App 토큰 PR. 게이트가 막으면 job이 실패해 실패 이슈(#926)로 드러난다.
 # - 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_ITX_PROMOTION이 true일 때만 돈다(기본 꺼짐). 사람 dispatch는 항상 돈다.
 #   force_collect를 주면 수집할 때가 아니어도 수집한다(후속 단계가 새 수집분을 기다릴 때).
+# - 재결속 자동화(#979: literal 테스트·topology 입력 허용 목록·증거와 팩·mobile fixture 재핀·raw capture 원장 대조)가 병합되기 전에는
+#   DATAPACK_SCHEDULED_ITX_PROMOTION을 켜지 않는다. 그 전의 승격 PR은 required CI가 green이 되지 않는다.
 # - 수동 승인 경로(collect-korail-itx-cheongchun-timetable --promote-candidate --approval-url ...)는 override로 그대로 있다. 이 workflow는 쓰지 않는다.
 on:
   schedule:
