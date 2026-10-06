@@ -13203,6 +13203,21 @@ test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경�
   );
 });
 
+// #979: 커밋된 build spec의 ITX pin은 게시된(OCI) 후보 입력을 가리켜, ITX 승격 PR에서는 작업 트리의 승격 원천과 다를 수 있다.
+// 작업 트리의 원천을 읽는 검사는 현재 contract·버전 증거 기준으로 pin을 다시 계산한 임시 spec을 쓴다(커밋된 spec은 건드리지 않는다).
+async function writeCurrentItxBoundBuildSpec(directory) {
+  const contractBytes = await readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"));
+  const artifactId = JSON.parse(contractBytes).sourceTimetableArtifact.artifactId;
+  const evidencePath = `tools/datapack/itx-cheongchun-topology-evidence-${artifactId.slice("itx-cheongchun-source-timetable-".length)}.json`;
+  const spec = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+  spec.networkEdgeEvidence.itxCoverageContract.sha256 = sha256(contractBytes);
+  spec.itxTopologyEvidencePath = evidencePath;
+  spec.itxTopologyEvidenceSha256 = sha256(await readFile(path.join(root, evidencePath)));
+  const specPath = path.join(directory, "current-itx-bound-build-spec.json");
+  await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+  return specPath;
+}
+
 test("수도권 pilot fixture는 source import를 검증하지만 production route coverage로 승격하지 않는다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-capital-pilot-production-source-${Date.now()}`);
   const inputPath = "tools/datapack/inputs/capital-pilot-production-source-input.json";
@@ -13525,7 +13540,7 @@ test("수도권 pilot fixture는 source import를 검증하지만 production rou
       "--root",
       packOutputDir,
       "--build-spec",
-      path.join(root, "tools/datapack/release/candidate-build-spec.json"),
+      await writeCurrentItxBoundBuildSpec(outputDir),
       "--output",
       routeGraphTopologyReportPath,
     ],
