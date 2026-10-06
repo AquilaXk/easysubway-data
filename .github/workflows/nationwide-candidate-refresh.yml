@@ -85,16 +85,20 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          CI_STATE: ${{ steps.required-ci.outputs.state }}
         run: |
           set -euo pipefail
           # #939: 열린 후보 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
           open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow nationwide-candidate-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow nationwide-candidate-refresh.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${CI_STATE}"
       - name: Note candidate refresh waiting on a pending source pull request
         if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
+        env:
+          STALE_PATHS: ${{ steps.decision.outputs.stale_paths }}
+          BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
         run: |
-          echo "::notice title=Nationwide candidate refresh::candidate inputs changed (${{ steps.decision.outputs.stale_paths }}) but source-ledger automation pull request(s) ${{ steps.decision.outputs.blocked_by }} are still open; the candidate is refreshed after they merge."
+          echo "::notice title=Nationwide candidate refresh::candidate inputs changed (${STALE_PATHS}) but source-ledger automation pull request(s) ${BLOCKED_BY} are still open; the candidate is refreshed after they merge."
       - name: Validate candidate refresh inputs
         id: plan
         if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
