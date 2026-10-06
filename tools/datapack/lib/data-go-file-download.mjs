@@ -136,15 +136,11 @@ async function readLimitedBody(response, datasetId, maxBytes) {
   if (Number.isFinite(declared) && declared > maxBytes) throw exceeds();
   const chunks = [];
   let received = 0;
-  const reader = response.body?.getReader();
-  if (!reader) return Buffer.alloc(0);
-  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-    received += chunk.value.byteLength;
-    if (received > maxBytes) {
-      await reader.cancel();
-      throw exceeds();
-    }
-    chunks.push(chunk.value);
+  // 본문 중간에서 상한을 넘으면 반복을 중단해 나머지 스트림을 받지 않는다.
+  for await (const chunk of response.body ?? []) {
+    received += chunk.byteLength;
+    if (received > maxBytes) throw exceeds();
+    chunks.push(chunk);
   }
   return Buffer.concat(chunks);
 }
@@ -166,6 +162,17 @@ export async function downloadDataGoFile(fetchImpl, datasetId, { maxBytes = MAX_
     throw new Error(`data.go.kr ${datasetId} file is not a data file`);
   }
   return { datasetId, detailUrl, downloadUrl, rawSha256: sha256(bytes), bytes };
+}
+
+// 같은 수집기의 FILE을 모두 받는다. 하나라도 실패하면 전체가 실패하고, provenance는 datasetIds 순서를 따른다.
+export async function downloadDataGoFiles(fetchImpl, datasetIds) {
+  const downloads = await Promise.all(datasetIds.map((datasetId) => downloadDataGoFile(fetchImpl, datasetId)));
+  return {
+    bytes: downloads.map(({ bytes }) => bytes),
+    downloadProvenance: downloads.map(({ datasetId, detailUrl, downloadUrl, rawSha256 }) => (
+      { datasetId, detailUrl, downloadUrl, rawSha256 }
+    )),
+  };
 }
 
 // 수집기가 실제로 파싱한 바이트와 기록하려는 provenance가 같은 원본인지 확인하고 정규화한다.

@@ -494,6 +494,7 @@
     {"path":"tools/datapack/lib/official-line-timetable.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/lib/kric-capital-timetable-records.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/lib/data-go-file-download.test.mjs","semanticOwner":"data890","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/lib/download-mode-cli.test.mjs","semanticOwner":"data890","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/lib/timetable-duplicate-departures.test.mjs","semanticOwner":"data920","classes":["required-pr"],"durationMs":10},
     {"path":"tools/datapack/lib/external-stop-times.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":9},

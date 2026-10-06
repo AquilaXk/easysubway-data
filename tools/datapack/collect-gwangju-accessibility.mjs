@@ -7,7 +7,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
-import { downloadDataGoFile, verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
 const ELEVATOR_DATASET_ID = "15041385";
 const ESCALATOR_DATASET_ID = "15041362";
@@ -291,53 +292,21 @@ function retainedRawSource(datasetId, bytes) {
   };
 }
 
-function parseArgs(argv) {
-  const args = { download: false };
-  const valueFlags = ["elevator-input", "escalator-input", "inventory", "output", "captured-at"];
-  for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
-    if (flag === "--download") {
-      if (args.download) throw new Error("Gwangju collector arguments mismatch");
-      args.download = true;
-      continue;
-    }
-    const key = flag?.slice(2);
-    if (!flag?.startsWith("--") || !valueFlags.includes(key) || Object.hasOwn(args, key)
-      || !argv[index + 1] || argv[index + 1].startsWith("--")) {
-      throw new Error("Gwangju collector arguments mismatch");
-    }
-    args[key] = argv[index + 1];
-    index += 1;
-  }
-  // 다운로드 capture 시각은 공식 FILE 본문을 받은 시각이므로 직접 지정할 수 없다.
-  const required = args.download ? ["inventory", "output"] : valueFlags;
-  const forbidden = args.download ? ["elevator-input", "escalator-input", "captured-at"] : [];
-  if (required.some((key) => !args[key]) || forbidden.some((key) => args[key] !== undefined)
-    || !path.isAbsolute(args.output)) {
-    throw new Error("Gwangju collector arguments mismatch");
-  }
-  return args;
-}
+const ARG_SPEC = Object.freeze({
+  usage: "Gwangju collector arguments mismatch",
+  valueFlags: ["elevator-input", "escalator-input", "inventory", "output", "captured-at"],
+  fileModeRequired: ["elevator-input", "escalator-input", "inventory", "output", "captured-at"],
+  downloadRequired: ["inventory", "output"],
+  downloadForbidden: ["elevator-input", "escalator-input", "captured-at"],
+  absolute: ["output"],
+});
 
 export async function runGwangjuAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
-  const args = parseArgs(argv);
+  const args = parseDownloadModeArgs(argv, ARG_SPEC);
   const inventory = await readFile(args.inventory, "utf8").then(JSON.parse);
-  let elevatorBytes;
-  let escalatorBytes;
-  let downloadProvenance;
-  if (args.download) {
-    const downloads = [];
-    for (const datasetId of DATASET_IDS) downloads.push(await downloadDataGoFile(fetchImpl, datasetId));
-    [elevatorBytes, escalatorBytes] = downloads.map(({ bytes }) => bytes);
-    downloadProvenance = downloads.map(({ datasetId, detailUrl, downloadUrl, rawSha256 }) => (
-      { datasetId, detailUrl, downloadUrl, rawSha256 }
-    ));
-  } else {
-    [elevatorBytes, escalatorBytes] = await Promise.all([
-      readFile(args["elevator-input"]),
-      readFile(args["escalator-input"]),
-    ]);
-  }
+  const { bytes: [elevatorBytes, escalatorBytes], downloadProvenance } = await loadDataGoInputs({
+    args, fetchImpl, datasetIds: DATASET_IDS, inputPaths: [args["elevator-input"], args["escalator-input"]],
+  });
   const selected = inventory.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
   if (selected.length !== 1) throw new Error("Gwangju topology source selection mismatch");
   const topologySource = selected[0];
@@ -349,8 +318,8 @@ export async function runGwangjuAccessibilityCollector(argv, { fetchImpl = fetch
     escalatorBytes,
     topologySnapshot,
     topologySource,
-    now: args.download ? validDate(now(), "now") : new Date(args["captured-at"]),
-    ...(downloadProvenance ? { downloadProvenance } : {}),
+    now: resolveCapturedAt(args, now),
+    downloadProvenance,
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
   console.log(`Gwangju accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);

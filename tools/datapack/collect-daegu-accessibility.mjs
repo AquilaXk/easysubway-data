@@ -13,7 +13,8 @@ import {
   decodeOfficialCsv,
   normalizedStationName,
 } from "./collect-daegu-datapack-sources.mjs";
-import { downloadDataGoFile, verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
 const DATASET_ID = "15149872";
 const DETAIL_URL = `https://www.data.go.kr/data/${DATASET_ID}/fileData.do`;
@@ -226,55 +227,28 @@ function retainedRawSource(datasetId, bytes) {
   };
 }
 
-const USAGE = "usage: collect-daegu-accessibility.mjs (--input <csv> [--captured-at <iso>] | --download) "
-  + "--sources-dir <dir> --inventory <json> --output <absolute.json>";
-
-function parseArgs(argv) {
-  const args = { download: false };
-  const seen = new Set();
-  for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
-    if (seen.has(flag)) throw new Error(USAGE);
-    seen.add(flag);
-    if (flag === "--download") {
-      args.download = true;
-      continue;
-    }
-    if (!["--input", "--sources-dir", "--inventory", "--output", "--captured-at"].includes(flag)) {
-      throw new Error(USAGE);
-    }
-    const value = argv[index + 1];
-    if (!value || value.startsWith("--")) throw new Error(USAGE);
-    args[flag.slice(2)] = value;
-    index += 1;
-  }
-  // 다운로드 capture 시각은 공식 FILE 본문을 받은 시각이므로 직접 지정할 수 없다.
-  if (Boolean(args.input) === args.download || !args["sources-dir"] || !args.inventory
-    || !args.output || !path.isAbsolute(args.output)
-    || (args.download && args["captured-at"])) {
-    throw new Error(USAGE);
-  }
-  return args;
-}
+const ARG_SPEC = Object.freeze({
+  usage: "usage: collect-daegu-accessibility.mjs (--input <csv> [--captured-at <iso>] | --download) "
+    + "--sources-dir <dir> --inventory <json> --output <absolute.json>",
+  valueFlags: ["input", "sources-dir", "inventory", "output", "captured-at"],
+  fileModeRequired: ["input", "sources-dir", "inventory", "output"],
+  downloadRequired: ["sources-dir", "inventory", "output"],
+  downloadForbidden: ["input", "captured-at"],
+  absolute: ["output"],
+});
 
 export async function runDaeguAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
-  const args = parseArgs(argv);
+  const args = parseDownloadModeArgs(argv, ARG_SPEC);
   const inventory = await readFile(args.inventory, "utf8").then(JSON.parse);
-  const downloaded = args.download ? await downloadDataGoFile(fetchImpl, DATASET_ID) : null;
-  const facilitiesBytes = downloaded ? downloaded.bytes : await readFile(args.input);
+  const { bytes: [facilitiesBytes], downloadProvenance } = await loadDataGoInputs({
+    args, fetchImpl, datasetIds: [DATASET_ID], inputPaths: [args.input],
+  });
   const topologySnapshots = await loadAdmittedDaeguTopologySnapshots(args["sources-dir"], inventory);
   const snapshot = collectDaeguAccessibility({
     facilitiesBytes,
     topologySnapshots,
-    now: downloaded ? validDate(now(), "now") : args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
-    ...(downloaded ? {
-      downloadProvenance: [{
-        datasetId: downloaded.datasetId,
-        detailUrl: downloaded.detailUrl,
-        downloadUrl: downloaded.downloadUrl,
-        rawSha256: downloaded.rawSha256,
-      }],
-    } : {}),
+    now: resolveCapturedAt(args, now),
+    downloadProvenance,
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
   console.log(`Daegu accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);

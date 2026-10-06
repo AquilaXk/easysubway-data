@@ -7,7 +7,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
-import { downloadDataGoFile, verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_PREFIX = Object.freeze({ "평일": "WEEK", "토요일": "SAT", "휴일": "HOLI" });
@@ -354,33 +355,15 @@ export function parseDaeguTrainTimetable(upBytes, downBytes, topologySnapshot, {
   return snapshot;
 }
 
-const USAGE = "usage: collect-daegu-datapack-sources.mjs "
-  + "(--input-dir <dir> --captured-at <iso> | --download) --output-dir <absolute-dir>";
-
-function parseArgs(argv) {
-  const args = { download: false };
-  const seen = new Set();
-  for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
-    if (seen.has(flag)) throw new Error(USAGE);
-    seen.add(flag);
-    if (flag === "--download") {
-      args.download = true;
-      continue;
-    }
-    if (!["--input-dir", "--output-dir", "--captured-at"].includes(flag)) throw new Error(USAGE);
-    const value = argv[index + 1];
-    if (typeof value !== "string" || value.length === 0 || value.startsWith("--")) throw new Error(USAGE);
-    args[flag.slice(2)] = value;
-    index += 1;
-  }
-  // 다운로드 capture 시각은 공식 FILE 본문을 받은 시각이므로 직접 지정할 수 없다.
-  const modeMismatch = args.download
-    ? Boolean(args["input-dir"] || args["captured-at"])
-    : !args["input-dir"] || !args["captured-at"];
-  if (modeMismatch || !args["output-dir"] || !path.isAbsolute(args["output-dir"])) throw new Error(USAGE);
-  return args;
-}
+const ARG_SPEC = Object.freeze({
+  usage: "usage: collect-daegu-datapack-sources.mjs "
+    + "(--input-dir <dir> --captured-at <iso> | --download) --output-dir <absolute-dir>",
+  valueFlags: ["input-dir", "output-dir", "captured-at"],
+  fileModeRequired: ["input-dir", "output-dir", "captured-at"],
+  downloadRequired: ["output-dir"],
+  downloadForbidden: ["input-dir", "captured-at"],
+  absolute: ["output-dir"],
+});
 
 export function daeguSourceSnapshotIdentity(snapshot) {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(snapshot?.sourceId ?? "")) {
@@ -424,26 +407,24 @@ export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
 
 async function readLineRawFiles(config, args, fetchImpl) {
   const datasetIds = [config.intervalDatasetId, config.upDatasetId, config.downDatasetId];
-  if (!args.download) {
-    const bytes = await Promise.all(datasetIds.map((datasetId) => readFile(path.join(args["input-dir"], `data-go-${datasetId}.csv`))));
-    return { bytesByDatasetId: Object.fromEntries(datasetIds.map((datasetId, index) => [datasetId, bytes[index]])) };
-  }
-  const bytesByDatasetId = {};
-  const provenanceByDatasetId = {};
-  for (const datasetId of datasetIds) {
-    const { bytes, detailUrl, downloadUrl, rawSha256 } = await downloadDataGoFile(fetchImpl, datasetId);
-    bytesByDatasetId[datasetId] = bytes;
-    provenanceByDatasetId[datasetId] = { datasetId, detailUrl, downloadUrl, rawSha256 };
-  }
-  return { bytesByDatasetId, provenanceByDatasetId };
+  const { bytes, downloadProvenance } = await loadDataGoInputs({
+    args,
+    fetchImpl,
+    datasetIds,
+    inputPaths: datasetIds.map((datasetId) => path.join(args["input-dir"] ?? "", `data-go-${datasetId}.csv`)),
+  });
+  return {
+    bytesByDatasetId: Object.fromEntries(datasetIds.map((datasetId, index) => [datasetId, bytes[index]])),
+    provenanceByDatasetId: downloadProvenance
+      && Object.fromEntries(downloadProvenance.map((entry) => [entry.datasetId, entry])),
+  };
 }
 
 export async function runDaeguSourceCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
-  const args = parseArgs(argv);
+  const args = parseDownloadModeArgs(argv, ARG_SPEC);
   // 선택한 노선의 공식 FILE이 모두 있어야 capture가 성립하므로 받기·파싱을 끝낸 뒤에만 쓴다.
-  const raws = [];
-  for (const config of DAEGU_LINES) raws.push(await readLineRawFiles(config, args, fetchImpl));
-  const capturedAt = args.download ? validDate(now()).toISOString() : args["captured-at"];
+  const raws = await Promise.all(DAEGU_LINES.map((config) => readLineRawFiles(config, args, fetchImpl)));
+  const capturedAt = resolveCapturedAt(args, now).toISOString();
   const prepared = DAEGU_LINES.map((config, index) => {
     const { bytesByDatasetId, provenanceByDatasetId } = raws[index];
     const provenance = (...datasetIds) => (provenanceByDatasetId
