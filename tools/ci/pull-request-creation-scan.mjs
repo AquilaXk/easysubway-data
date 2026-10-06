@@ -41,5 +41,6 @@ export function scanPullRequestCreators(root) {
   };
   walk(".github/workflows", (name) => /\.ya?ml$/u.test(name));
   walk(".github/actions", (name) => !/\.(?:md|png|jpg|svg)$/u.test(name));
-  return found.sort();
+  // 경로는 ASCII다. 비교 함수를 명시해 정렬 순서(UTF-16 코드 단위)를 고정한다.
+  return found.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
