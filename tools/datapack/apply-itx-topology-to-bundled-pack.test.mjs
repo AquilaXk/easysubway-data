@@ -65,6 +65,15 @@ async function trackedLegacyDocuments() {
   const contract = JSON.parse(await readFile(
     path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
   const reference = contract.sourceTimetableArtifact;
+  // 이 파일의 "legacy" 문서 테스트는 승인 승격 모드 모양을 전제한다. 현재 승격이 게이트 모드여도 같은 원천 바이트를 승인 모드로 해석한다(#979).
+  // 게이트 모드는 아래 게이트 승격 테스트가 따로 검증한다.
+  reference.promotion = {
+    mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+    previousArtifactSha256: reference.promotion.previousArtifactSha256,
+    previousArtifactPath: reference.promotion.previousArtifactPath,
+    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-1",
+    approvedArtifactSha256: reference.sha256,
+  };
   const sourceBytes = await readFile(path.join(root, reference.artifactPath));
   const completenessBytes = await readFile(path.join(root, reference.completenessEvidencePath));
   return {
