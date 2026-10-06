@@ -990,6 +990,31 @@ test("등록 inventory는 등록한 원천 항목 안에서도 등록기가 갱�
   assert.deepEqual((await recomputeAutomationGates(gateInput("registration"))).violations, []);
 });
 
+// #989 리뷰 F2: 필드표에 없는 원천은 모든 필드가 고정이다(빈 기본값). 표에 이름이 없는 원천을 등록 증거가 주장해도 그 항목의 어떤 필드도 바뀔 수 없다.
+test("반증: 등록 필드표에 없는 원천은 어떤 필드도 바뀔 수 없다(기본값은 빈 집합)", async () => {
+  assert.equal(Object.hasOwn(REGISTRATION_INVENTORY_FIELDS, "other-source"), false);
+  const unlistedRow = { ...EXPECTED_SOURCE, sourceId: "other-source" };
+  const inputWith = (mutate) => {
+    const head = structuredClone(INVENTORY_HEAD);
+    mutate(head.sources[0]);
+    return gateInput("registration", { inventory: head, evidenceOverrides: { sources: [unlistedRow] } });
+  };
+  // 표에 있는 다른 원천의 갱신 필드와 정책성 필드를 모두 시험해 어떤 비어 있지 않은 기본값도 걸리게 한다.
+  const mutations = {
+    retrievedAt: (entry) => { entry.retrievedAt = "2026-10-06"; },
+    observedDataUpdatedAt: (entry) => { entry.observedDataUpdatedAt = "2026-10-06"; },
+    capitalTopologyAdmissionEvidence: (entry) => { entry.capitalTopologyAdmissionEvidence = { snapshotId: "b" }; },
+    datasetUrl: (entry) => { entry.datasetUrl = "https://evil.test"; },
+    productionUseAllowed: (entry) => { entry.productionUseAllowed = false; },
+    value: (entry) => { entry.value = 2; },
+  };
+  for (const [field, mutate] of Object.entries(mutations)) {
+    const violations = (await recomputeAutomationGates(inputWith(mutate))).violations.filter(({ code }) => code === "INVENTORY_GATE");
+    assert.equal(violations.length, 1, field);
+    assert.match(violations[0].detail, new RegExp(`other-source: .*${field}`, "u"), field);
+  }
+});
+
 // #989: 기록된 실제 등록 커밋(seq127 #940의 6741d1b89, seq128 #976의 8a7b4c1ba)이 ground truth다. fixture는 git show로 읽은 base·head의
 // 원장 행과 inventory 항목, 변경 파일 목록이고, 두 커밋 모두 원장·inventory 두 파일만 바꿨다(governance·SLA는 바뀌지 않았다).
 const RECORDED = JSON.parse(await readFile(new URL("../datapack/test-fixtures/registration-recorded-commits.json", import.meta.url), "utf8")).commits;
