@@ -876,12 +876,12 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     readFile(path.join(root, reference.completenessEvidencePath)),
     readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
   ]);
-  const buildNow = "2026-10-04T15:15:19.525Z";
+  // #979: 승격마다 바뀌는 시각·경로는 현재 승인 원천의 식별(artifactId의 수집 시각 stamp)에서 도출한다.
+  const stamp = reference.artifactId.slice("itx-cheongchun-source-timetable-".length);
+  const collectedAt = Date.UTC(+stamp.slice(0, 4), +stamp.slice(4, 6) - 1, +stamp.slice(6, 8), +stamp.slice(8, 10), +stamp.slice(10, 12), +stamp.slice(12, 14), +stamp.slice(14, 17));
+  const buildNow = new Date(collectedAt + 1).toISOString();
   const topologyEvidencePath = deriveApprovedItxTopologyEvidencePath(reference);
-  assert.equal(
-    topologyEvidencePath,
-    "tools/datapack/itx-cheongchun-topology-evidence-20261004151519524.json",
-  );
+  assert.equal(topologyEvidencePath, `tools/datapack/itx-cheongchun-topology-evidence-${stamp}.json`);
   assert.throws(() => deriveApprovedItxTopologyEvidencePath({
     artifactId: "itx-cheongchun-source-timetable-invalid",
   }), /approved ITX source artifact identity is invalid/);
