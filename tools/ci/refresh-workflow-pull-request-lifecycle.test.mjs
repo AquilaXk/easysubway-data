@@ -14,10 +14,10 @@ import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 const root = path.resolve(import.meta.dirname, "../..");
 const REFRESH_WORKFLOWS = Object.keys(REFRESH_CLAIM_PREFIXES);
 const CANDIDATE_WORKFLOW = "nationwide-candidate-refresh.yml";
-// #967: 등록 workflow도 같은 계약을 따른다. PR 생성 지점이 하나인 workflow는 후보 갱신과 등록 둘이다.
+// #967: 등록 workflow도 같은 계약을 따른다. PR 생성 지점이 하나인 workflow는 후보 갱신·등록·파생 재결속(#969)이다.
 const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
-const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW];
-const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW])];
+const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, "source-derivative-rebinding.yml"];
+const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, ...SINGLE_PR_PATH_WORKFLOWS])];
 const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
 
 function workflowText(file) {

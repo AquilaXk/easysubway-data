@@ -51,7 +51,8 @@ test("controller는 RUN일 때만 돌고 OCI 읽기 주소는 시크릿에서만
   assert.equal(ifCondition(rebind.block), RUN);
   assert.match(rebind.block, /\n        id: rebind\n/u);
   assert.match(rebind.block, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}/u);
-  assert.match(rebind.block, /node tools\/datapack\/run-derivative-rebinding\.mjs --operation-root "\$\{RUNNER_TEMP\}\/derivative-rebinding\/\$\{GITHUB_RUN_ID\}\/operation" > "\$\{RUNNER_TEMP\}\/derivative-rebinding\/\$\{GITHUB_RUN_ID\}\/result\.json"/u);
+  assert.match(rebind.block, /operation="\$\{RUNNER_TEMP\}\/derivative-rebinding\/\$\{GITHUB_RUN_ID\}"/u);
+  assert.match(rebind.block, /node tools\/datapack\/run-derivative-rebinding\.mjs --operation-root "\$\{operation\}\/operation" > "\$\{operation\}\/result\.json"/u);
   assert.match(rebind.block, /git config user\.name "github-actions\[bot\]"/u);
   assert.match(rebind.block, /changed=/u);
   const note = step("Note derivative bindings are already current");

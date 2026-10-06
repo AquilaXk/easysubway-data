@@ -15,6 +15,7 @@ export const REFRESH_WORKFLOWS = Object.freeze({
   "nationwide-candidate-refresh.yml": "전국 후보 갱신(nationwide candidate)",
   "retained-gwangju-timetable-refresh.yml": "KRIC 전국 시간표 파일(kric-nationwide-timetable-file)",
   "seoul-current-accessibility-refresh.yml": "서울 지하철 접근성",
+  "source-derivative-rebinding.yml": "원천 파생 산출물 재결속(환승 지표·광주 보관 projection)",
 });
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
