@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { assertFailureReportLast, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
+import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
 // #969 P3: 수도권 topology 등록 workflow 계약.
 // 갱신 PR이 병합되면 사람이 dispatch하지 않아도 등록이 PR까지 이어진다. 정기·push 실행은 저장소 변수가 켜졌을 때만 돈다.
@@ -80,4 +80,10 @@ test("복구 증거 artifact는 게시를 시도한 실행에서만 올리고, �
 test("이 workflow는 workflow dispatch를 호출하지 않고 push는 GITHUB_TOKEN, PR 생성만 App 토큰이다", () => {
   assert.doesNotMatch(yml, /gh workflow run|\/dispatches|repository_dispatch|actions: write/u);
   assert.match(step("Commit exactly four registration outputs and open draft PR").block, /\n          GH_TOKEN: \$\{\{ github\.token \}\}\n/u);
+});
+
+// #972 리뷰 F4: step output(required-ci 상태·blocked_by)을 run 스크립트에 표현식으로 펼치면 나중에 출력이 바뀔 때 셸 주입 지점이 된다.
+test("run 스크립트에는 표현식을 직접 넣지 않고 env로만 받는다", () => {
+  assertNoExpressionInRunScripts({ steps, file: FILE });
+  assert.match(step("Note registration waiting on another pending automation pull request").block, /\n          BLOCKED_BY: \$\{\{ steps\.decision\.outputs\.blocked_by \}\}\n/u);
 });
