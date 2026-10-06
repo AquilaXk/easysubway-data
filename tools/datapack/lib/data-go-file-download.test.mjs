@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import test from "node:test";
 
@@ -205,4 +206,34 @@ test("모든 요청은 redirect를 따르지 않고, 다른 호스트로 넘어�
     const portal = await realPortal();
     await assert.rejects(downloadDataGoFile(redirecting(portal.fetchImpl), "15065526"), TypeError, hop);
   }
+});
+
+test("실제 전체 detail 페이지(gzip)에서도 다운로드 버튼을 한 번만 읽는다", async () => {
+  const html = gunzipSync(await readFile(path.join(fixtureDir, "detail-15065526.full.html.gz"))).toString("utf8");
+  assert.ok(html.length > 100_000);
+  assert.equal(html.split("fn_fileDataDown(").length - 1, 1);
+  assert.deepEqual(parseDataGoDownloadAction(html, "15065526"), {
+    publicDataPk: "15065526",
+    publicDataDetailPk: "uddi:2e3b04af-143f-480f-8948-ef72ce788d05",
+    fileDetailSn: "1",
+  });
+});
+
+test("해석 규칙에 맞지 않는 다른 모양의 다운로드 호출이 하나라도 있으면 조용히 하나를 고르지 않고 실패한다", async () => {
+  const html = await read("detail-15065526.html");
+  const detailPk = "uddi:2e3b04af-143f-480f-8948-ef72ce788d05";
+  for (const extra of [
+    `<button onclick='fileDetailObj.fn_fileDataDown("15065526", "${detailPk}", "", "2", "9")'>x</button>`,
+    `<button onclick="fileDetailObj.fn_fileDataDown('15065526', '${detailPk}', '', '2', '9', 'extra')">x</button>`,
+    `<button onclick="fileDetailObj.fn_fileDataDown(dataPk, detailPk)">x</button>`,
+    `<button onclick="fileDetailObj.fn_fileDataDown('15065526', 'uddi:ZZ', '', '1', '9')">x</button>`,
+    `<script>fn_fileDataDown(</script>`,
+  ]) {
+    assert.throws(() => parseDataGoDownloadAction(`${html}${extra}`, "15065526"), /download action/, extra);
+  }
+  // 따옴표 모양만 다른 같은 파일 호출은 같은 행동으로 본다.
+  assert.deepEqual(
+    parseDataGoDownloadAction(`${html}<a onclick="fn_fileDataDown(&quot;x&quot;)"></a>`.replace("&quot;x&quot;", `"15065526", "${detailPk}", "", "1", "9"`), "15065526"),
+    { publicDataPk: "15065526", publicDataDetailPk: detailPk, fileDetailSn: "1" },
+  );
 });

@@ -8,9 +8,9 @@ const USER_AGENT = "easysubway-datapack-collector/1.0";
 const REQUEST_TIMEOUT_MS = 60_000;
 // 포털 script_fileDetail.js의 fn_fileDataDown이 고정해 보내는 공공데이터 유형 코드.
 const PUBLIC_DATA_TYPE_CODE = "PR0051";
-const DATASET_ID_PATTERN = /^[1-9][0-9]{0,11}$/u;
-const ATCH_FILE_ID_PATTERN = /^FILE_[0-9]+$/u;
-const FILE_DETAIL_SN_PATTERN = /^[1-9][0-9]*$/u;
+const DATASET_ID_PATTERN = /^[1-9]\d{0,11}$/u;
+const ATCH_FILE_ID_PATTERN = /^FILE_\d+$/u;
+const FILE_DETAIL_SN_PATTERN = /^[1-9]\d*$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 
 function sha256(value) {
@@ -40,15 +40,33 @@ export function isCanonicalDataGoDownloadUrl(value) {
 }
 
 // 버튼: fileDetailObj.fn_fileDataDown('<PK>', 'uddi:<상세 PK>', '<atchFileId>','<fileDetailSn>', '<이력 순번>')
-const DOWNLOAD_ACTION = /fn_fileDataDown\(\s*'([0-9]+)'\s*,\s*'(uddi:[0-9a-f-]+)'\s*,\s*'[^']*'\s*,\s*'?([0-9]+)'?\s*,\s*'?[0-9]+'?\s*\)/gu;
+const DOWNLOAD_CALL = "fn_fileDataDown(";
+const DOWNLOAD_CALL_PATTERN = /fn_fileDataDown\(([^)]*)\)/gu;
+const QUOTED_ARGUMENT = /^(['"])(.*)\1$/u;
+const DETAIL_PK_PATTERN = /^uddi:[0-9a-f-]+$/u;
+
+function parseDownloadCall(args) {
+  const values = args.split(",").map((value) => QUOTED_ARGUMENT.exec(value.trim())?.[2]);
+  if (values.length !== 5 || values.some((value) => value === undefined)) return null;
+  const [publicDataPk, publicDataDetailPk, , fileDetailSn, historySn] = values;
+  if (!DATASET_ID_PATTERN.test(publicDataPk) || !DETAIL_PK_PATTERN.test(publicDataDetailPk)
+    || !FILE_DETAIL_SN_PATTERN.test(fileDetailSn) || !/^\d+$/u.test(historySn)) return null;
+  return { publicDataPk, publicDataDetailPk, fileDetailSn };
+}
 
 export function parseDataGoDownloadAction(html, datasetId) {
   if (typeof html !== "string") throw new TypeError("data.go.kr detail HTML is required");
   requireDatasetId(datasetId);
+  // 어떤 모양이든 호출 하나를 해석하지 못하면 남은 호출 중 하나를 고르지 않고 실패한다.
+  const occurrences = html.split(DOWNLOAD_CALL).length - 1;
+  const calls = [...html.matchAll(DOWNLOAD_CALL_PATTERN)].map(([, args]) => parseDownloadCall(args));
+  if (calls.length !== occurrences || calls.some((call) => call === null)) {
+    throw new Error(`data.go.kr ${datasetId} detail has an unrecognized download action`);
+  }
   const actions = new Map();
-  for (const [, publicDataPk, publicDataDetailPk, fileDetailSn] of html.matchAll(DOWNLOAD_ACTION)) {
-    if (publicDataPk !== datasetId) continue;
-    actions.set(`${publicDataDetailPk}\0${fileDetailSn}`, { publicDataPk, publicDataDetailPk, fileDetailSn });
+  for (const call of calls) {
+    if (call.publicDataPk !== datasetId) continue;
+    actions.set(`${call.publicDataDetailPk}\0${call.fileDetailSn}`, call);
   }
   if (actions.size !== 1) {
     throw new Error(`data.go.kr ${datasetId} detail must contain exactly one download action`);
