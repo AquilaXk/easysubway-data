@@ -16,12 +16,12 @@ import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 const root = path.resolve(import.meta.dirname, "../..");
 const REFRESH_WORKFLOWS = Object.keys(REFRESH_CLAIM_PREFIXES);
 const CANDIDATE_WORKFLOW = "nationwide-candidate-refresh.yml";
-// #967: 등록 workflow도 같은 계약을 따른다. PR 생성 지점이 하나인 workflow는 후보 갱신과 등록 둘이다.
+// #967: 등록 workflow도 같은 계약을 따른다. PR 생성 지점이 하나인 workflow는 후보 갱신·등록·파생 재결속(#969)이다.
 const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
 // #977: ITX 승격 workflow도 PR 생성 지점이 하나이고 취소·시간 초과도 보고한다.
 const ITX_PROMOTION_WORKFLOW = "itx-current-promotion.yml";
-const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, ITX_PROMOTION_WORKFLOW];
-const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW])];
+const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, ITX_PROMOTION_WORKFLOW, "source-derivative-rebinding.yml"];
+const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, ...SINGLE_PR_PATH_WORKFLOWS])];
 const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
 
 function workflowText(file) {
@@ -157,6 +157,6 @@ test("OPEN_PR이면 App 토큰 발급 → required CI 보장(close→reopen) →
     assert.match(ageBlock, new RegExp(`node tools/ci/refresh-open-pr-age\\.mjs --workflow ${file.replaceAll(".", "\\.")} --prs "\\$\\{open_prs\\}" --policy release/product-gates/datapack-freshness-sla\\.json --repository "\\$\\{GITHUB_REPOSITORY\\}" --ci-state ${ciState}`, "u"), file);
     const report = find("Report refresh failure as an issue");
     assert.ok(report > age, file);
-    assert.equal(ifCondition(all[report].block), [REGISTRATION_WORKFLOW, CANDIDATE_WORKFLOW, ITX_PROMOTION_WORKFLOW].includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}", file);
+    assert.equal(ifCondition(all[report].block), SINGLE_PR_PATH_WORKFLOWS.includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}", file);
   }
 });
