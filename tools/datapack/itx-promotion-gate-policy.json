@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "itx-promotion-gate-policy",
+  "policyId": "itx-promotion-gate-v1",
+  "anomalyPolicyVersion": "itx-snapshot-anomaly-v1",
+  "dayCds": [
+    "8",
+    "7",
+    "9"
+  ],
+  "limits": {
+    "stationSetDelta": 0,
+    "odSetDelta": 0,
+    "tripCountDeltaPermille": 50,
+    "tripMembershipDeltaPermille": 50,
+    "stopPatternChangedTripsPermille": 50,
+    "timetableTupleRemovedPermille": 50,
+    "timetableTupleAddedPermille": 50,
+    "firstDepartureShiftSeconds": 300,
+    "lastDepartureShiftSeconds": 300,
+    "providerErrorRecords": 0
+  },
+  "measuredBasis": {
+    "snapshots": 10,
+    "transitions": 9,
+    "stableTransitions": 5,
+    "changedTransitions": 4,
+    "observedMax": {
+      "stationSetDelta": 0,
+      "odSetDelta": 0,
+      "tripCountDelta": 0,
+      "tripMembershipDelta": 0,
+      "firstDepartureShiftSeconds": 0,
+      "lastDepartureShiftSeconds": 240
+    },
+    "changedDayMinPermille": {
+      "stopPatternChangedTrips": 442,
+      "timetableTupleRemoved": 72,
+      "timetableTupleAdded": 57
+    },
+    "note": "limits are permille of the previous approved snapshot rounded down to whole trips or tuples; every nonzero day-level change in the history exceeds them"
+  }
+}
