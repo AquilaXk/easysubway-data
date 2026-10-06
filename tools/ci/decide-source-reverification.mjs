@@ -29,7 +29,7 @@ import { pathToFileURL } from "node:url";
 import { addCadence, deriveFreshnessExpiresAt } from "../datapack/freshness-policy.mjs";
 import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
-import { ownPullRequestsByBranch, parseAutomationBranches, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
+import { activeRuns, ownPullRequestsByBranch, parseAutomationBranches, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
 import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs";
 
 export const SOURCE_REVERIFICATION_WORKFLOW = "source-reverification.yml";
@@ -146,7 +146,8 @@ function selectRecipes(dueRows, recipes) {
 // PR 없는 claim의 처지를 producer run(claim 브랜치 이름의 run id)으로 가린다. 복구는 하지 않는다(정리하고 다시 시작한다).
 function classifyUnboundClaim(branch, runs) {
   const runId = branch.slice(SOURCE_REVERIFICATION_CLAIM_PREFIX.length);
-  const found = runs.find((item) => String(item?.databaseId) === runId);
+  // 끝난 run은 목록에 없는 run과 같다(둘 다 정리 대상). 끝나지 않은 run만 본다.
+  const found = activeRuns(runs).find((item) => String(item?.databaseId) === runId);
   if (!found) return "ABANDONED";
   if (found.workflowName !== WORKFLOW_NAME || found.headBranch !== "main") fail("REVERIFICATION_CLAIM_RUN_INVALID", `${branch}: producer run ${runId} is not a ${WORKFLOW_NAME} run on main`);
   return found.status === "completed" ? "ABANDONED" : "RUNNING";
@@ -158,7 +159,7 @@ function assertDecisionInput({ inventory, ledger, pullRequests, automationBranch
     || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1) fail("REVERIFICATION_INPUT_INVALID");
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
   if (pullRequests.length >= limits.pullRequests) fail("REVERIFICATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
-  if (runs.length >= limits.runs) fail("REVERIFICATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
+  if (activeRuns(runs).length >= limits.runs) fail("REVERIFICATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
 }
 
 // 이 workflow의 열린 PR과 claim 브랜치의 처지. 정할 수 있으면 state를, 아니면 state 없이 정리 대상 claim만 돌려준다.

@@ -79,3 +79,11 @@ export function pendingLedgerWriters({ pullRequests, automationBranches, reposit
   const branches = automationBranches.filter((branch) => prefixes.some((prefix) => branch.startsWith(prefix)) && !openBranches.has(branch) && !merged.has(branch));
   return { pullRequests: open.map(({ number }) => number).sort((left, right) => left - right), branches: [...branches].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)) };
 }
+
+/**
+ * gh run list 결과에서 아직 끝나지 않은 run만 고른다(#987 리뷰 F1). 정기 workflow의 run 이력은 계속 쌓이므로(하루 12번)
+ * 목록 상한은 끝나지 않은 run에만 적용한다. 끝난 run은 판정에 필요 없거나(없는 run과 같은 처리) run id로 직접 조회한다.
+ */
+export function activeRuns(runs) {
+  return runs.filter((item) => item?.status !== "completed");
+}

@@ -40,7 +40,7 @@ test("판정 step이 claim·수집보다 먼저 돌고 PR·run·브랜치 목록
   assert.match(block, /for status in in_progress queued waiting pending requested; do\n\s+gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow source-reverification\.yml --status "\$\{status\}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "[^"]+"\n\s+done/u);
   assert.equal((block.match(/gh run list/gu) ?? []).length, 1, "every run listing is filtered by status");
   assert.doesNotMatch(block, /--status "?completed|--status completed/u);
-  assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' "[^"]+"\/\*\.json > "\$\{decision_root\}\/runs\.json"/u);
+  assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' "\$\{decision_root\}"\/runs\/\*\.json > "\$\{decision_root\}\/runs\.json"/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
   assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --github-output "\$\{GITHUB_OUTPUT\}"/u);
   before("Decide which P7D sources are due", "Claim exact main before provider access");

@@ -47,7 +47,12 @@ jobs:
           # 목록 조회에는 개수 상한이 있다. 판정이 상한과 같은 개수를 잘렸을 수 있는 목록으로 보고 실패한다(#972 리뷰 F3).
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
           git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
-          gh run list --repo "${GITHUB_REPOSITORY}" --workflow source-reverification.yml --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs.json"
+          # #987 리뷰 F1: 끝난 run 이력은 하루 12개씩 쌓여 17일이면 상한을 넘는다. 끝나지 않은 상태별로만 조회한다(끝난 run은 판정에 필요 없다).
+          mkdir -p "${decision_root}/runs"
+          for status in in_progress queued waiting pending requested; do
+            gh run list --repo "${GITHUB_REPOSITORY}" --workflow source-reverification.yml --status "${status}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs/${status}.json"
+          done
+          jq -s 'add | unique_by(.databaseId)' "${decision_root}"/runs/*.json > "${decision_root}/runs.json"
           node tools/ci/decide-source-reverification.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --policy release/product-gates/datapack-freshness-sla.json --prs "${decision_root}/prs.json" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --run-limit 200 --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open

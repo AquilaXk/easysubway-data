@@ -156,8 +156,8 @@ test("끝난 run·기록 없는 run의 claim은 정리 대상으로 알리고 �
 test("병합된 PR의 남은 claim도 정리 대상이고, 다른 workflow의 run을 가리키는 claim은 이상이다", () => {
   const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}5`;
   assert.deepEqual(decideSourceReverification(input({ pullRequests: [pr("MERGED", 5)], automationBranches: [claim] })).cleanupClaims, [claim]);
-  assert.throws(() => decideSourceReverification(input({ automationBranches: [claim], runs: [run(5, "completed", "failure", { workflowName: "Source Derivative Rebinding" })] })), /REVERIFICATION_CLAIM_RUN_INVALID/u);
-  assert.throws(() => decideSourceReverification(input({ automationBranches: [claim], runs: [run(5, "completed", "failure", { headBranch: "feature" })] })), /REVERIFICATION_CLAIM_RUN_INVALID/u);
+  assert.throws(() => decideSourceReverification(input({ automationBranches: [claim], runs: [run(5, "in_progress", null, { workflowName: "Source Derivative Rebinding" })] })), /REVERIFICATION_CLAIM_RUN_INVALID/u);
+  assert.throws(() => decideSourceReverification(input({ automationBranches: [claim], runs: [run(5, "in_progress", null, { headBranch: "feature" })] })), /REVERIFICATION_CLAIM_RUN_INVALID/u);
 });
 
 test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으면 BLOCKED_BY_PENDING_PR로 기다리고, DUE가 아니면 기다릴 이유도 없다", () => {
