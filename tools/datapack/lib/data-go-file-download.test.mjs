@@ -298,3 +298,9 @@ test("본문은 크기 상한을 넘으면 헤더 선언·실제 수신 어느 �
   };
   await assert.rejects(downloadDataGoFile(declared, "15065526"), /15065526 file exceeds/);
 });
+
+test("발췌 fixture HTML은 문서 언어를 선언한다(정적 분석 접근성 규칙)", async () => {
+  for (const name of ["detail-15065526.html", "detail-15149872.html"]) {
+    assert.match(await read(name), /<html lang="ko">/u, name);
+  }
+});
