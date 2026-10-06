@@ -358,4 +358,7 @@ test("CLI source-reverification-body는 원장 게이트 출력과 controller �
   await assert.rejects(main(args), /EEXIST/u);
   await writeFile(file("result.json"), JSON.stringify({ steps: [{ id: "unknown", changed: true, paths: [RV_INVENTORY] }], evidenceSources: [] }));
   await assert.rejects(main(args.map((value) => (value === file("body.md") ? file("other.md") : value))), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+  // controller 결과에 증거 행 목록이 없으면 빈 목록으로 보지 않고 실패한다.
+  await writeFile(file("result.json"), JSON.stringify({ steps: [RV_STEP] }));
+  await assert.rejects(main(args.map((value) => (value === file("body.md") ? file("third.md") : value))), /AUTOMATION_PR_EVIDENCE_INVALID: source-reverification: the controller result lacks/u);
 });

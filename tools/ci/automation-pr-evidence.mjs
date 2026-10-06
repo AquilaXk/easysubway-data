@@ -308,6 +308,7 @@ export async function main(argv, { write = (chunk) => process.stdout.write(chunk
     need("gate", "result", "base-sha", "head-sha", "run-url", "output");
     const { policy, sources } = await readJson(values.gate);
     const { steps, evidenceSources } = await readJson(values.result);
+    if (!Array.isArray(steps) || !Array.isArray(evidenceSources)) invalid("source-reverification: the controller result lacks steps or evidenceSources");
     // 원장 행 증거(게이트)와 원장 행이 없는 증거(controller의 inventory 증거 게이트)를 한 표로 합친다.
     await writeFile(values.output, sourceReverificationPullRequestBody({ ...common(), policy, sources: [...sources, ...evidenceSources], steps: steps.map((step) => ({ ...step, paths: step.paths ?? [] })) }), { flag: "wx" });
   } else if (command === "itx-promotion-body") {
