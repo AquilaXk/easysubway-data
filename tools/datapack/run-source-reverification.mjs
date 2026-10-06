@@ -193,6 +193,8 @@ async function governanceEntry(ctx, sourceId) {
 }
 
 // 코레일 topology: 이전 등록 증거(inventory·원장 head·snapshot)에서 수집 대상(URL·고정 sha)과 선택 범위·거버넌스 항목을 다시 만든다.
+// 한계: 이전에 등록한 URL의 같은 파일만 확인한다. 같은 URL의 본문 변경은 SOURCE_SHA_DRIFT, URL 소멸은 SOURCE_FETCH_FAILED로 멈추지만
+// 옛 파일 옆에 새 URL로 올라온 새 파일은 감지하지 못한다(후속: #988).
 async function korailPrevious(ctx) {
   const source = await sourceByKey(ctx, KORAIL_SOURCE_ID);
   const evidence = source.topologyAdmissionEvidence;
