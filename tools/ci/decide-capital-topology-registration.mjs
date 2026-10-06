@@ -22,7 +22,8 @@ import { pathToFileURL } from "node:url";
 
 import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
 import { isCapitalRouteTopologySnapshotId } from "../datapack/lib/capital-route-topology-snapshot-id.mjs";
-import { LEDGER_WRITER_WORKFLOWS, REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
+import { ownPullRequestsByBranch, parsePrefixedRefs, pendingLedgerWriterPullRequests, validRepository } from "./automation-pr-state.mjs";
+import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 export const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
 export const REGISTRATION_CLAIM_PREFIX = REFRESH_CLAIM_PREFIXES[REGISTRATION_WORKFLOW];
@@ -30,8 +31,6 @@ const REGISTRATION_WORKFLOW_NAME = "Current Capital Topology Registration";
 const SOURCE_ID = "capital-route-topology";
 const OWNER_SOURCE_ID = "seoul-metro-route-map-positions";
 const SHA = /^[0-9a-f]{40}$/u;
-const REPOSITORY = /^[^/\s]+\/[^/\s]+$/u;
-const CLAIM_REF = new RegExp(`^([0-9a-f]{40})\\trefs/heads/(${REGISTRATION_CLAIM_PREFIX.replaceAll("/", "\\/")}[1-9][0-9]*)$`, "u");
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
@@ -39,14 +38,7 @@ function fail(code, detail = "") {
 
 /** git ls-remote --heads 출력에서 등록 claim 브랜치만 읽는다. 다른 형식이 섞이면 실패한다. */
 export function parseRegistrationClaims(text) {
-  if (typeof text !== "string") fail("REGISTRATION_CLAIM_INVALID", "claim listing is not text");
-  const claims = text.split("\n").filter(Boolean).map((line) => {
-    const match = CLAIM_REF.exec(line);
-    if (!match) fail("REGISTRATION_CLAIM_INVALID", line);
-    return { sha: match[1], branch: match[2] };
-  });
-  if (new Set(claims.map(({ branch }) => branch)).size !== claims.length) fail("REGISTRATION_CLAIM_INVALID", "duplicate claim refs");
-  return claims;
+  return parsePrefixedRefs(text, REGISTRATION_CLAIM_PREFIX, (detail) => fail("REGISTRATION_CLAIM_INVALID", detail));
 }
 
 function admission(inventory) {
@@ -58,29 +50,6 @@ function admission(inventory) {
     fail("REGISTRATION_ADMISSION_MISSING", "the protected capital topology admission is missing or malformed");
   }
   return { snapshotId: value.topologySnapshotId, freshUntilMillis };
-}
-
-function ownPullRequests(pullRequests, repository) {
-  const byBranch = new Map();
-  for (const item of pullRequests) {
-    if (typeof item?.headRefName !== "string" || !item.headRefName.startsWith(REGISTRATION_CLAIM_PREFIX)
-      || item.baseRefName !== "main" || item.isCrossRepository !== false || item.headRepository?.nameWithOwner !== repository) continue;
-    if (!["OPEN", "CLOSED", "MERGED"].includes(item.state) || !Number.isSafeInteger(item.number) || byBranch.has(item.headRefName)) {
-      fail("REGISTRATION_PR_DUPLICATE", item.headRefName);
-    }
-    byBranch.set(item.headRefName, item);
-  }
-  return byBranch;
-}
-
-// 원장을 쓰는 다른 자동화 workflow의 열린 PR. 후보 갱신·사람 PR·다른 저장소 PR은 보지 않는다.
-function pendingLedgerPullRequests(pullRequests, repository) {
-  const prefixes = LEDGER_WRITER_WORKFLOWS.filter((workflow) => workflow !== REGISTRATION_WORKFLOW).map((workflow) => REFRESH_CLAIM_PREFIXES[workflow]);
-  return pullRequests
-    .filter((item) => item?.state === "OPEN" && item.baseRefName === "main" && item.isCrossRepository === false
-      && item.headRepository?.nameWithOwner === repository && typeof item.headRefName === "string"
-      && prefixes.some((prefix) => item.headRefName.startsWith(prefix)))
-    .map(({ number }) => number).sort((left, right) => left - right);
 }
 
 // claim 브랜치 이름의 run id가 가리키는 producer run이 이 main에서 실패한 등록 run일 때만 게시 증거로 복구할 수 있다.
@@ -98,7 +67,7 @@ function recoverableRunId(branch, runs, currentMainSha) {
 
 export function decideCapitalTopologyRegistration({ inventory, ledger, pullRequests, claims, runs, repository, currentMainSha, now } = {}) {
   if (!Array.isArray(ledger) || !Array.isArray(pullRequests) || !Array.isArray(claims) || !Array.isArray(runs)
-    || typeof repository !== "string" || !REPOSITORY.test(repository) || !SHA.test(currentMainSha ?? "")
+    || !validRepository(repository) || !SHA.test(currentMainSha ?? "")
     || !(now instanceof Date) || Number.isNaN(now.getTime())) fail("REGISTRATION_INPUT_INVALID");
 
   const { snapshotId, freshUntilMillis } = admission(inventory);
@@ -109,7 +78,7 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
   }
   if (now.getTime() >= freshUntilMillis) fail("REGISTRATION_ADMISSION_EXPIRED", `${snapshotId} expired before it was registered`);
 
-  const own = ownPullRequests(pullRequests, repository);
+  const own = ownPullRequestsByBranch(pullRequests, REGISTRATION_CLAIM_PREFIX, repository, (branch) => fail("REGISTRATION_PR_DUPLICATE", branch));
   const open = [...own.values()].filter(({ state }) => state === "OPEN");
   if (open.length > 1) fail("REGISTRATION_PR_DUPLICATE", open.map(({ number }) => `#${number}`).join(", "));
   const live = claims.filter(({ branch }) => own.get(branch)?.state !== "MERGED");
@@ -127,7 +96,7 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
     if (own.get(branch)?.state === "CLOSED") fail("REGISTRATION_CLAIM_CLOSED", `${branch} is bound to a closed pull request`);
     result = { state: "RECOVER_CLAIM", snapshotId, branch, recoveryRunId: recoverableRunId(branch, runs, currentMainSha) };
   }
-  const blockedBy = pendingLedgerPullRequests(pullRequests, repository);
+  const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, REGISTRATION_WORKFLOW);
   return blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", snapshotId, blockedBy } : result;
 }
 
