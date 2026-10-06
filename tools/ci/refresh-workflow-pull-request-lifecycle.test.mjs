@@ -20,7 +20,7 @@ const CANDIDATE_WORKFLOW = "nationwide-candidate-refresh.yml";
 const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
 // #977: ITX 승격 workflow도 PR 생성 지점이 하나이고 취소·시간 초과도 보고한다.
 const ITX_PROMOTION_WORKFLOW = "itx-current-promotion.yml";
-const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, ITX_PROMOTION_WORKFLOW, "source-derivative-rebinding.yml"];
+const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, ITX_PROMOTION_WORKFLOW, "source-derivative-rebinding.yml", "source-reverification.yml"];
 const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, ...SINGLE_PR_PATH_WORKFLOWS])];
 const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
 

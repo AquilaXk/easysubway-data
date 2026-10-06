@@ -36,7 +36,11 @@ test("판정 step이 claim·게시·PR 생성보다 먼저 돌고 판정 입력�
   assert.match(block, /RECOVERY_RUN_ID: \$\{\{ inputs\.recovery_run_id \}\}/u);
   assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/456-capital-topology-registration-\*" > /u);
-  assert.match(block, /gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow current-capital-topology-registration\.yml --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > /u);
+  // #987 리뷰 F1: 아직 끝나지 않은 run만 상태별로 조회하고, 복구에 필요한 claim의 producer run은 run id로 직접 가져온다(끝난 이력은 조회하지 않는다).
+  assert.match(block, /for status in in_progress queued waiting pending requested; do\n\s+gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow current-capital-topology-registration\.yml --status "\$\{status\}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "[^"]+"\n\s+done/u);
+  assert.equal((block.match(/gh run list/gu) ?? []).length, 1, "every run listing is filtered by status");
+  assert.match(block, /gh run view "\$\{claim_run\}" --repo "\$\{GITHUB_REPOSITORY\}" --json databaseId,status,conclusion,workflowName,headBranch,headSha/u);
+  assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' /u);
   assert.match(block, /node tools\/ci\/decide-capital-topology-registration\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json /u);
   assert.match(block, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{claim_run\}\/artifacts" --jq '\[\.artifacts\[\]\.name\]'/u);
   assert.match(block, /--artifacts "\$\{decision_root\}\/artifacts\.json" --repository "\$\{GITHUB_REPOSITORY\}"/u);
@@ -54,6 +58,25 @@ test("claim·게시·복구·App 토큰·PR 생성은 REGISTER 또는 RECOVER_CL
   assert.equal(ifCondition(step("Recover published registration without OCI").block), "${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}");
   assert.doesNotMatch(yml, /inputs\.recovery_run_id == ''/u);
   assert.doesNotMatch(yml, /inputs\.recovery_run_id != ''/u);
+});
+
+// #987 리뷰 F5: 재확인 workflow는 push 직전에 원장 쓰기 자동화를 다시 확인한다. 수도권 등록도 같아야 직렬화가 양방향이다.
+// 이 workflow는 게시 증거(receipt artifact)를 남기고 실패하면 다음 실행이 그 증거로 PR만 다시 만든다(복구). 그래서 기다림은 성공이 아니라 복구 가능한 실패로 끝낸다.
+test("push 직전에 원장을 쓰는 다른 자동화(열린 PR·claim 브랜치)가 없는지 다시 확인하고, 있으면 push하지 않고 복구 가능한 실패로 끝낸다", () => {
+  const recheck = step("Recheck that no source-ledger automation is pending before pushing");
+  assert.equal(ifCondition(recheck.block), WRITES);
+  assert.match(recheck.block, /\n          GH_TOKEN: \$\{\{ github\.token \}\}\n/u);
+  assert.match(recheck.block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  assert.match(recheck.block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
+  assert.match(recheck.block, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --except-workflow current-capital-topology-registration\.yml --github-output "[^"]+"/u);
+  assert.match(recheck.block, /grep -qx 'idle=true' /u);
+  assert.match(recheck.block, /REGISTRATION_LEDGER_WRITER_PENDING: /u);
+  const names = steps().map(({ name }) => name);
+  assert.ok(names.indexOf("Publish and register once") < names.indexOf(recheck.name));
+  assert.ok(names.indexOf("Recover published registration without OCI") < names.indexOf(recheck.name));
+  assert.ok(names.indexOf(recheck.name) < names.indexOf("Mint App token for the registration pull request"));
+  assert.ok(names.indexOf(recheck.name) < names.indexOf("Commit exactly four registration outputs and open draft PR"));
+  assert.ok(names.indexOf("Mint App token for the registration pull request") !== -1);
 });
 
 test("복구 run id는 사람 입력 또는 판정 결과에서만 받고, producer run의 이벤트는 dispatch·push·schedule을 받는다", () => {

@@ -37,6 +37,9 @@ import { promisify } from "node:util";
 import { automationPrEvidencePayload, itxPromotionAllowedPaths, itxPromotionSourceRow, parseAutomationPrEvidence } from "./automation-pr-evidence.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
+import { SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
+import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
+import { REVERIFICATION_RECIPES, inventoryChangeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
 import { ITX_PROMOTION_MODE_GATE_PASSED, itxPromotionReceiptPath, verifyItxGatePromotion } from "../datapack/lib/itx-promotion-authority.mjs";
 import { SCHEDULED_RELEASE_ROLES, gateRunViolations } from "../datapack/lib/scheduled-release-authority.mjs";
@@ -66,6 +69,7 @@ export const AUTOMATION_STAGE_WORKFLOWS = Object.freeze({
   "derivative-rebinding": "source-derivative-rebinding.yml",
   "candidate-refresh": "nationwide-candidate-refresh.yml",
   "itx-promotion": "itx-current-promotion.yml",
+  "source-reverification": "source-reverification.yml",
 });
 export const AUTOMATION_STAGE_PREFIXES = Object.freeze(
   Object.fromEntries(Object.entries(AUTOMATION_STAGE_WORKFLOWS).map(([stage, workflow]) => [stage, REFRESH_CLAIM_PREFIXES[workflow]])),
@@ -83,6 +87,7 @@ export const REGISTRATION_ALLOWED_PATHS = Object.freeze([
 ]);
 
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
+const GOVERNANCE_PATH = "tools/datapack/source-governance-policy.json";
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 const LEDGER_POLICY_PATH = "tools/ci/source-ledger-change-policy.json";
 const ITX_CONTRACT_PATH = "tools/datapack/itx-cheongchun-coverage-contract.json";
@@ -197,6 +202,20 @@ function pathViolation(evidence, files) {
     }
     const expected = sortCodepoint(new Set(claimed));
     return sameJson(changed, expected) ? null : describeSetDifference(changed, expected);
+  }
+  if (evidence.stage === "source-reverification") {
+    // 원천 재확인(#987 F6): 증거가 주장한 경로가 재확인이 허용한 경로(원장·inventory·새 snapshot 파일)여야 하고 API diff와 정확히 같아야 한다.
+    // governance 정책은 재확인이 바꾸지 않는다. 바뀌면 등록 단계처럼 사람 경로로 보낸다.
+    const claimed = sortCodepoint(new Set(evidence.steps.flatMap((step) => step.paths)));
+    const outside = claimed.filter((entry) => !isSourceReverificationAllowedPath(entry) || entry === GOVERNANCE_PATH);
+    if (outside.length > 0) return `원천 재확인이 자동 병합 대상으로 허용하지 않는 경로: ${outside.slice(0, 8).join(", ")}`;
+    // 파일 status(#987 N2): snapshot 파일은 새 파일(added)만, 원장·inventory는 제자리 수정(modified)만 허용한다. 이미 있는 snapshot의 수정·삭제·이름 변경은 불변 계약 위반이다.
+    for (const entry of files) {
+      const inPlace = SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS.includes(entry.filename);
+      const expected = inPlace ? "modified" : "added";
+      if (entry.status !== expected) return `${entry.filename}의 변경 종류(${String(entry.status)})가 ${expected}가 아니다${inPlace ? "" : " (기존 snapshot 파일은 불변이다)"}`;
+    }
+    return sameJson(changed, claimed) ? null : describeSetDifference(changed, claimed);
   }
   // 후보 갱신: 증거가 주장한 경로가 후보 갱신 도구의 출력 목록 안이어야 하고 API diff가 그 경로와 정확히 같아야 한다(#986 F4).
   const outputs = sortCodepoint(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS);
@@ -362,8 +381,39 @@ export async function recomputeAutomationGates({
     if (evidence.stage === "registration" || evidence.stage === "derivative-rebinding") {
       if (!sameJson(sources, evidence.sources)) violate("EVIDENCE_DRIFT", "증거 블록의 원천 행이 원장에서 다시 계산한 변화와 다르다");
       if (!sameJson(policy, evidence.policy)) violate("EVIDENCE_DRIFT", "증거 블록의 정책이 커밋된 원장 변화 정책과 다르다");
-    } else if (sources.length > 0) {
+    } else if (evidence.stage !== "source-reverification" && sources.length > 0) {
       violate("EVIDENCE_DRIFT", `${evidence.stage} 단계는 원장 행을 바꾸지 않는데 새 행이 ${sources.length}개 있다`);
+    }
+  }
+
+  if (evidence.stage === "source-reverification" && sources !== null) {
+    // 원천 재확인(#987 F6): 원장 행은 위에서 다시 계산한 값이고, 원장 행이 없는 KRIC projection 증거 행은 inventory 두 판본에서 다시 계산한다.
+    // inventory는 원천 항목을 더하거나 지울 수 없고 최상위 필드도 그대로여야 한다. 항목 내용의 정합은 required CI의 inventory 검증이 본다.
+    try {
+      const base = JSON.parse(await files.readBase(evidence.baseSha, INVENTORY_PATH));
+      const head = JSON.parse(await files.readTree(INVENTORY_PATH));
+      if (!Array.isArray(base?.sources) || !Array.isArray(head?.sources)) throw new Error("inventory sources must be an array");
+      const { sources: baseSources, ...baseTop } = base;
+      const { sources: headSources, ...headTop } = head;
+      if (!sameJson(baseTop, headTop)) throw new Error("inventory top-level fields changed");
+      // 항목 범위(#987 N1): 이 PR의 recipe가 소유하지 않은 항목은 깊은 비교로 같아야 하고, 소유 항목도 recipe가 명시한 갱신 필드만 바뀐다.
+      const outside = inventoryChangeViolations({ base, head, recipeIds: evidence.steps.map(({ id }) => id) });
+      if (outside.length > 0) throw new Error(`inventory changed outside the recipes' scope: ${outside.slice(0, 6).join(" | ")}`);
+      const rows = [];
+      for (const step of evidence.steps) {
+        const due = REVERIFICATION_RECIPES.find(({ id }) => id === step.id)?.due;
+        if (due?.kind !== "inventory-evidence") continue;
+        const find = (list) => list.find((entry) => entry?.id === due.sourceId);
+        for (const key of due.evidenceKeys) {
+          const result = evaluateEvidenceChange({ sourceId: due.sourceId, before: find(baseSources)?.[key] ?? null, after: find(headSources)?.[key] ?? null, policy });
+          for (const item of result.violations) violate("INVENTORY_GATE", `${item.code}: ${item.sourceId} ${item.snapshotId}: ${item.detail}`);
+          if (result.row) rows.push(result.row);
+        }
+      }
+      if (!sameJson([...sources, ...rows], evidence.sources)) violate("EVIDENCE_DRIFT", "증거 블록의 원천 행이 원장·inventory 증거에서 다시 계산한 변화와 다르다");
+      if (!sameJson(policy, evidence.policy)) violate("EVIDENCE_DRIFT", "증거 블록의 정책이 커밋된 원장 변화 정책과 다르다");
+    } catch (error) {
+      violate("INVENTORY_GATE", message(error));
     }
   }
 

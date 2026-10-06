@@ -25,7 +25,7 @@ import { pathToFileURL } from "node:url";
 
 import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
 import { isCapitalRouteTopologySnapshotId } from "../datapack/lib/capital-route-topology-snapshot-id.mjs";
-import { ownPullRequestsByBranch, parsePrefixedRefs, pendingLedgerWriterPullRequests, validRepository } from "./automation-pr-state.mjs";
+import { activeRuns, ownPullRequestsByBranch, parsePrefixedRefs, pendingLedgerWriterPullRequests, validRepository } from "./automation-pr-state.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 export const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
@@ -91,7 +91,8 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
 
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
   if (pullRequests.length >= limits.pullRequests) fail("REGISTRATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
-  if (runs.length >= limits.runs) fail("REGISTRATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
+  // 상한은 아직 끝나지 않은 run에만 적용한다. 끝난 producer run(복구 대상 claim의 run)은 run id로 직접 받은 것이라 세지 않는다(#987 리뷰 F1).
+  if (activeRuns(runs).length >= limits.runs) fail("REGISTRATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
 
   const own = ownPullRequestsByBranch(pullRequests, REGISTRATION_CLAIM_PREFIX, repository, (branch) => fail("REGISTRATION_PR_DUPLICATE", branch));
   const open = [...own.values()].filter(({ state }) => state === "OPEN");

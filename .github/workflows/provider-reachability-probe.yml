@@ -1,0 +1,27 @@
+name: Provider Reachability Probe
+
+# 공급자 도달성 읽기 전용 측정(#984, #969 위험 항목 1): P7D 재확인 recipe가 부르는 공급자
+# (grtc·humetro·data.go.kr·korail.com·kric)가 GitHub 호스팅 runner에서 열리는지 사람이 dispatch로 잰다.
+# - GET만 하고 키·토큰·환경 비밀을 쓰지 않는다. 저장소·PR·이슈를 바꾸지 않는다(contents: read).
+# - 닿지 않거나 막힌 공급자가 있으면 job이 실패하고, 요약 표가 어느 공급자가 왜 그런지 남긴다. 대체 경로는 이 workflow가 정하지 않는다.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    name: Provider reachability
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Probe provider reachability from this runner
+        run: node tools/ci/probe-provider-reachability.mjs

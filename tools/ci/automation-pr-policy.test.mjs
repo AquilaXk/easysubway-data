@@ -20,6 +20,7 @@ import {
 } from "./automation-pr-policy.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
 import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "../datapack/refresh-nationwide-candidate.mjs";
+import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
 
 // #985: 데이터 전용 자동화 PR의 자동 병합 정책(#870 전체 자동화 2단계). 정책은 PR 본문 증거 블록을 색인으로만 쓰고,
 // 변경 경로·커밋 신원·CI·게이트는 API 데이터와 재계산으로 대조한다. 어느 조건이든 어긋나면 위반으로 막는다(fail closed).
@@ -48,7 +49,15 @@ const BUSAN_STEP = DERIVATIVE_STEPS.find(({ id }) => id === "busan-transfer-metr
 const BUSAN_PATH = "tools/datapack/release/current-busan-transfer-metrics.json";
 const CANDIDATE_PATHS = [...NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS].slice(0, 3).sort();
 
+const REVERIFICATION_SNAPSHOT = `tools/datapack/sources/gwangju-transportation-route-topology-${"a".repeat(64)}.json`;
+const REVERIFICATION_PATHS = ["tools/datapack/release/source-snapshots.json", "tools/datapack/source-inventory.json", REVERIFICATION_SNAPSHOT];
+
 const STAGES = {
+  "source-reverification": {
+    branch: "automation/984-source-reverification-9005",
+    paths: REVERIFICATION_PATHS,
+    evidence: { stage: "source-reverification", policy: POLICY, sources: [LEDGER_SOURCE], steps: [{ id: "gwangju-topology", changed: true, paths: REVERIFICATION_PATHS }], candidate: null },
+  },
   registration: {
     branch: "automation/456-capital-topology-registration-9001",
     paths: [...REGISTRATION_ALLOWED_PATHS],
@@ -92,7 +101,7 @@ function scenario(stage = "registration") {
       base: { ref: "main", sha: BASE, repo: { full_name: REPOSITORY } },
     },
     commits: [commit("1".repeat(40)), commit(HEAD)],
-    files: paths.map((filename) => file(filename)),
+    files: paths.map((filename) => file(filename, filename === REVERIFICATION_SNAPSHOT ? { status: "added" } : {})),
     compare: { status: "ahead", ahead_by: 2, behind_by: 0, merge_base_commit: { sha: BASE } },
     checkRuns: [run("Data contracts", "success", { id: 10 }), run(AUTOMATION_PR_GATES_CONTEXT, "success", { id: 11 })],
     requiredContexts: [{ context: "Data contracts", integration_id: null }],
@@ -111,7 +120,7 @@ test("신뢰 신원은 App easysubway-release-chain[bot]의 login·id·type으�
   for (const [head, digest] of [["abc", DIGEST], [HEAD, "abc"], [HEAD, "A".repeat(64)], [HEAD, undefined]]) assert.throws(() => automationAttestationMarker(head, digest), /AUTOMATION_PR_INPUT/u);
 });
 
-test("claim 접두사는 네 단계에만 대응하고 그 밖의 브랜치는 정책 대상이 아니다", () => {
+test("claim 접두사는 다섯 단계에만 대응하고 그 밖의 브랜치는 정책 대상이 아니다", () => {
   for (const [stage, { branch }] of Object.entries(STAGES)) assert.equal(automationStageForBranch(branch), stage);
   for (const branch of [
     "feature/x", "automation/636-current-topology-refresh-1", "automation/456-capital-topology-registration-", "automation/456-capital-topology-registration-0",
@@ -197,6 +206,43 @@ test("반증: 변경 경로가 비었거나 API 파일 목록이 상한에 닿�
   const truncated = scenario("candidate-refresh");
   truncated.files = Array.from({ length: 3000 }, (_, index) => file(CANDIDATE_PATHS[index % CANDIDATE_PATHS.length]));
   assert.ok(codesOf(truncated).includes("PATHS"));
+});
+
+// #987 F6: 원천 재확인 단계는 증거가 주장한 경로와 API diff가 정확히 같고, 재확인이 허용한 경로(원장·inventory·새 snapshot 파일)여야 한다.
+// governance 정책은 재확인 PR이 바꾸지 않는다(등록 단계와 같은 이유로 사람 경로로 보낸다).
+test("원천 재확인 단계: 증거의 경로 주장과 API diff가 정확히 같고 허용 경로 안일 때만 통과한다", () => {
+  const governance = "tools/datapack/source-governance-policy.json";
+  assert.deepEqual(codesOf(scenario("source-reverification")), []);
+  const extra = scenario("source-reverification");
+  extra.files = [...extra.files, file("tools/datapack/release/candidate-build-spec.json")];
+  assert.ok(codesOf(extra).includes("PATHS"));
+  const missing = scenario("source-reverification");
+  missing.files = missing.files.slice(1);
+  assert.ok(codesOf(missing).includes("PATHS"));
+  const withGovernance = scenario("source-reverification");
+  withGovernance.pull.body = withGovernance.pull.body.replace(/<!-- easysubway-automation-pr:v1 (.*?) -->/u, (_, json) => {
+    const value = JSON.parse(json);
+    value.steps[0].paths = [...value.steps[0].paths, governance].sort();
+    return `<!-- easysubway-automation-pr:v1 ${JSON.stringify(value)} -->`;
+  });
+  withGovernance.ciEvidence = { ...withGovernance.ciEvidence, evidenceSha256: automationEvidenceDigest(withGovernance.pull.body) };
+  withGovernance.files = [...withGovernance.files, file(governance)];
+  assert.ok(codesOf(withGovernance).includes("PATHS"), "governance policy changes are not auto-mergeable");
+});
+
+// #987 N2: 재확인이 쓰는 snapshot 파일은 새 파일(added)이어야 한다. 이미 있는 snapshot의 수정·삭제·이름 변경은 불변 계약 위반이다.
+test("반증: 원천 재확인의 snapshot 경로는 API diff의 status가 added일 때만 허용하고 수정·삭제·이름 변경은 막는다", () => {
+  for (const status of ["modified", "removed", "renamed", "changed", "copied", "unchanged"]) {
+    const input = scenario("source-reverification");
+    input.files = input.files.map((entry) => (entry.filename === REVERIFICATION_SNAPSHOT ? { ...entry, status } : entry));
+    assert.ok(codesOf(input).includes("PATHS"), status);
+  }
+  // 원장·inventory는 제자리에서 바뀌는 파일이라 modified여야 한다(새 파일이나 삭제는 이상이다).
+  for (const status of ["added", "removed"]) {
+    const input = scenario("source-reverification");
+    input.files = input.files.map((entry) => (entry.filename === "tools/datapack/source-inventory.json" ? { ...entry, status } : entry));
+    assert.ok(codesOf(input).includes("PATHS"), `inventory ${status}`);
+  }
 });
 
 test("재결속 단계는 증거의 변경 단계 경로와 정확히 같아야 하고 각 경로는 그 단계가 허용한 경로여야 한다", () => {
@@ -400,7 +446,7 @@ const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contract, receipt, verifyItx, candidate, policy = POLICY, extraTree = {}, inventory = INVENTORY_HEAD, inventoryBase = INVENTORY_BASE } = {}) {
   const evidence = {
     schemaVersion: 1, issue: 969, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, ...STAGES[stage].evidence,
-    ...(stage === "registration" ? { sources: [EXPECTED_SOURCE] } : {}), ...evidenceOverrides,
+    ...(["registration", "source-reverification"].includes(stage) ? { sources: [EXPECTED_SOURCE] } : {}), ...evidenceOverrides,
   };
   const tree = {
     "tools/datapack/release/source-snapshots.json": JSON.stringify(ledger),
@@ -497,6 +543,85 @@ test("반증: ITX 게이트가 실패하거나 승인 모드·다른 snapshot이
   assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: ITX_CONTRACT, receipt: forgedRow }))).some((code) => code === "ITX_GATE" || code === "EVIDENCE_DRIFT"));
   // ITX 승격이 원장 행을 바꾸면 그 자체로 막는다(ITX 단계는 원장을 쓰지 않는다).
   assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: HEAD_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt() }))).includes("EVIDENCE_DRIFT"));
+});
+
+// 원천 재확인 단계의 게이트: 원장 행은 원장 두 판본에서, 원장 행이 없는 KRIC projection 증거 행은 inventory 두 판본에서 다시 계산해 증거 블록과 같아야 한다.
+const KRIC_EVIDENCE = (overrides = {}) => ({ snapshotId: "kric-capital-1", rawSha256: "5".repeat(64), recordsSha256: "6".repeat(64), recordCount: 1000, routes: Array.from({ length: 10 }, (_, index) => ({ routeNumber: `R${index}` })), ...overrides });
+const kricInventory = (capital, korail) => ({ ...INVENTORY_BASE, sources: [...INVENTORY_BASE.sources, { id: "kric-nationwide-timetable-file", capitalScheduleAdmissionEvidence: capital, korailScheduleAdmissionEvidence: korail }] });
+const REV_OWNED = { productionUseAllowed: true, requiredForProductionPack: true, license: { type: "PUBLIC_DATA_FREE_USE" }, datasetUrl: "https://example.test/gwangju", coverage: "Gwangju line 1" };
+const REV_BASE = { schemaVersion: 1, region: "nationwide", sources: [
+  { id: "other-source", value: 1, productionUseAllowed: false },
+  { id: "gwangju-transportation-route-topology", ...REV_OWNED, retrievedAt: "2026-10-05", topologyAdmissionEvidence: { snapshotId: "a" } },
+  { id: "gwangju-transportation-accessibility", ...REV_OWNED, accessibilityAdmissionEvidence: { snapshotId: "a" } },
+] };
+const revHead = (edit) => ({ ...REV_BASE, sources: REV_BASE.sources.map((entry) => edit(entry)) });
+const refreshed = (entry) => {
+  if (entry.id === "gwangju-transportation-route-topology") return { ...entry, retrievedAt: "2026-10-06", topologyAdmissionEvidence: { snapshotId: "b" } };
+  if (entry.id === "gwangju-transportation-accessibility") return { ...entry, accessibilityAdmissionEvidence: { snapshotId: "b" } };
+  return entry;
+};
+const revGate = (edit, overrides = {}) => gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: revHead(edit), ...overrides });
+const KRIC_STEP = { id: "kric-capital-timetable", changed: true, paths: ["tools/datapack/source-inventory.json"] };
+
+test("게이트 재계산: 원천 재확인 단계는 원장 행과 inventory 증거 행을 다시 계산해 증거 블록과 같아야 통과한다", async () => {
+  assert.deepEqual((await recomputeAutomationGates(revGate(refreshed))).violations, []);
+  const before = kricInventory(KRIC_EVIDENCE(), KRIC_EVIDENCE({ snapshotId: "kric-korail-1" }));
+  const after = kricInventory(KRIC_EVIDENCE({ reverifiedAt: "2026-10-07T00:00:00.000Z" }), KRIC_EVIDENCE({ snapshotId: "kric-korail-1", recordCount: 1010 }));
+  const rows = ["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence"].flatMap((key) => evaluateEvidenceChange({
+    sourceId: "kric-nationwide-timetable-file", before: before.sources.at(-1)[key], after: after.sources.at(-1)[key], policy: POLICY,
+  }).row);
+  const input = (overrides = {}) => gateInput("source-reverification", { inventoryBase: before, inventory: after, evidenceOverrides: { steps: [KRIC_STEP], sources: [EXPECTED_SOURCE, ...rows], ...overrides } });
+  assert.deepEqual((await recomputeAutomationGates(input())).violations, []);
+  // 증거 행이 빠지거나 값이 다르면 막는다.
+  assert.ok((await gateCodes(input({ sources: [EXPECTED_SOURCE] }))).includes("EVIDENCE_DRIFT"));
+  assert.ok((await gateCodes(input({ sources: [EXPECTED_SOURCE, { ...rows[0], contentSha256: "0".repeat(64) }, rows[1]] }))).includes("EVIDENCE_DRIFT"));
+  assert.ok((await gateCodes(input({ policy: { ...POLICY, maxRowDeltaRatio: 1 } }))).includes("EVIDENCE_DRIFT"));
+});
+
+test("반증: 원천 재확인의 inventory 증거 변화가 정책 한도를 넘으면 증거 블록이 PASS를 주장해도 막는다", async () => {
+  const before = kricInventory(KRIC_EVIDENCE(), KRIC_EVIDENCE({ snapshotId: "kric-korail-1" }));
+  const grown = kricInventory(KRIC_EVIDENCE({ snapshotId: "kric-capital-2", rawSha256: "7".repeat(64), recordCount: 1400 }), KRIC_EVIDENCE({ snapshotId: "kric-korail-1" }));
+  const rows = ["capitalScheduleAdmissionEvidence", "korailScheduleAdmissionEvidence"].flatMap((key) => evaluateEvidenceChange({
+    sourceId: "kric-nationwide-timetable-file", before: before.sources.at(-1)[key], after: grown.sources.at(-1)[key], policy: { ...POLICY, maxRowDeltaRatio: 1 },
+  }).row);
+  const codes = await gateCodes(gateInput("source-reverification", { inventoryBase: before, inventory: grown, evidenceOverrides: { steps: [KRIC_STEP], sources: [EXPECTED_SOURCE, ...rows] } }));
+  assert.ok(codes.includes("INVENTORY_GATE"));
+});
+
+test("반증: 원천 재확인이 inventory의 원천 항목을 더하거나 지우거나 최상위 필드를 바꾸면 막는다", async () => {
+  const head = revHead(refreshed);
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: { ...head, sources: [...head.sources, { id: "new-source" }] } }))).includes("INVENTORY_GATE"));
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: { ...head, sources: head.sources.slice(1) } }))).includes("INVENTORY_GATE"));
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: REV_BASE, inventory: { ...head, region: "other" } }))).includes("INVENTORY_GATE"));
+  assert.ok((await gateCodes(revGate(refreshed, { ledger: [HEAD_LEDGER[1]] }))).includes("LEDGER_GATE"));
+});
+
+// #987 N1: recipe가 소유한 항목 밖은 깊은 비교로 같아야 하고, 소유 항목 안에서도 갱신 대상 필드만 바뀔 수 있다.
+test("반증: 원천 재확인이 소유하지 않은 inventory 항목의 내용을 바꾸면 막는다", async () => {
+  const unrelated = (entry) => (entry.id === "other-source" ? { ...refreshed(entry), productionUseAllowed: true, datasetUrl: "https://evil.test" } : refreshed(entry));
+  assert.ok((await gateCodes(revGate(unrelated))).includes("INVENTORY_GATE"));
+  const quiet = (entry) => (entry.id === "other-source" ? { ...entry, value: 2 } : refreshed(entry));
+  assert.ok((await gateCodes(revGate(quiet))).includes("INVENTORY_GATE"));
+});
+
+test("반증: 실제 inventory에서 무관한 항목(kric-station-elevator)의 productionUseAllowed·datasetUrl을 바꿔도 막는다", async () => {
+  const real = JSON.parse(await readFile(path.join(import.meta.dirname, "../datapack/source-inventory.json"), "utf8"));
+  const tampered = structuredClone(real);
+  const entry = tampered.sources.find(({ id }) => id === "kric-station-elevator");
+  entry.productionUseAllowed = !entry.productionUseAllowed;
+  entry.datasetUrl = "https://evil.test/elevator";
+  assert.ok((await gateCodes(gateInput("source-reverification", { inventoryBase: real, inventory: tampered }))).includes("INVENTORY_GATE"));
+  assert.ok(!(await gateCodes(gateInput("source-reverification", { inventoryBase: real, inventory: structuredClone(real) }))).includes("INVENTORY_GATE"));
+});
+
+test("반증: 원천 재확인이 소유한 항목의 정책성 필드(productionUseAllowed·requiredForProductionPack·license·datasetUrl·coverage)를 바꾸면 막는다", async () => {
+  for (const [field, value] of [["productionUseAllowed", false], ["requiredForProductionPack", false], ["license", { type: "OTHER" }], ["datasetUrl", "https://evil.test"], ["coverage", "all lines"]]) {
+    const tamper = (entry) => (entry.id === "gwangju-transportation-route-topology" ? { ...refreshed(entry), [field]: value } : refreshed(entry));
+    assert.ok((await gateCodes(revGate(tamper))).includes("INVENTORY_GATE"), field);
+  }
+  // 이 PR의 recipe가 소유하지 않은 항목은 소유 필드여도 바꿀 수 없다(광주 접근성은 gwangju-topology가 의존 항목으로 명시한다).
+  const stepsOnlyBusan = { steps: [{ id: "busan-topology", changed: true, paths: REVERIFICATION_PATHS }] };
+  assert.ok((await gateCodes(revGate(refreshed, { evidenceOverrides: stepsOnlyBusan }))).includes("INVENTORY_GATE"));
 });
 
 const SCHEDULED = { requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates" };

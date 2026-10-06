@@ -15,6 +15,7 @@ import {
   main,
   parseAutomationPrEvidence,
   registrationPullRequestBody,
+  sourceReverificationPullRequestBody,
 } from "./automation-pr-evidence.mjs";
 
 // #969: 2단계(자동 병합 정책)가 읽는 자동화 PR 출력 계약(이슈 §7). PR 본문의 기계 판독 블록은 색인일 뿐이고 정책은 diff와 원장에서 다시 계산해 대조한다.
@@ -33,8 +34,8 @@ const registration = (overrides = {}) => ({ stage: "registration", runUrl: RUN_U
 const rebinding = (overrides = {}) => ({ stage: "derivative-rebinding", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: POLICY, sources: [], steps: [STEP, { id: "seoul-measured-transfer-metrics", changed: false, paths: [] }], candidate: null, ...overrides });
 const candidate = (overrides = {}) => ({ stage: "candidate-refresh", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: null, sources: [], steps: [], candidate: CANDIDATE, ...overrides });
 
-test("단계는 등록·후보 갱신·파생 재결속·ITX 승격 넷이다", () => {
-  assert.deepEqual([...AUTOMATION_PR_STAGES], ["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion"]);
+test("단계는 등록·후보 갱신·파생 재결속·ITX 승격·원천 재확인 다섯이다", () => {
+  assert.deepEqual([...AUTOMATION_PR_STAGES], ["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification"]);
 });
 
 test("블록은 원천별 sha·snapshot·delta·diff 상태와 적용 정책, base/head 커밋, 실행 run을 JSON 한 줄로 남기고 그대로 읽힌다", () => {
@@ -301,4 +302,69 @@ test("CLI itx-promotion-body는 영수증·변경 경로 목록·커밋에서 �
   await assert.rejects(main(args), /EEXIST/u);
   await writeFile(file("paths.txt"), `${ITX_PATHS.slice(1).join("\n")}\n`);
   await assert.rejects(main(args.map((value) => (value === file("body.md") ? file("other.md") : value))), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+});
+
+// ---------------------------------------------------------------------------
+// #984: P7D 원천 재확인 단계(source-reverification). 등록과 같은 원천 행(원장 게이트 + 증거 게이트)과 recipe별 변경 경로를 담는다.
+// ---------------------------------------------------------------------------
+const RV_LEDGER = "tools/datapack/release/source-snapshots.json";
+const RV_INVENTORY = "tools/datapack/source-inventory.json";
+const RV_SNAPSHOT = `tools/datapack/sources/gwangju-transportation-route-topology-${"a".repeat(64)}.json`;
+const RV_STEP = { id: "gwangju-topology", changed: true, paths: [RV_INVENTORY, RV_LEDGER, RV_SNAPSHOT] };
+const RV_SOURCE = { ...SOURCE, sourceId: "gwangju-transportation-route-topology", snapshotId: "gwangju-transportation-route-topology-1", previousSnapshotId: "gwangju-transportation-route-topology-0" };
+const reverification = (overrides = {}) => ({ stage: "source-reverification", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: POLICY, sources: [RV_SOURCE], steps: [RV_STEP], candidate: null, ...overrides });
+
+test("원천 재확인 블록은 정책·원천 행·recipe 단계를 담고 후보 식별이 없다", () => {
+  const parsed = parseAutomationPrEvidence(automationPrEvidenceBlock(reverification()), { headSha: HEAD });
+  assert.equal(parsed.stage, "source-reverification");
+  assert.deepEqual(parsed.policy, POLICY);
+  assert.deepEqual(parsed.sources, [RV_SOURCE]);
+  assert.deepEqual(parsed.steps, [RV_STEP]);
+  assert.equal(parsed.candidate, null);
+  assert.doesNotThrow(() => automationPrEvidenceBlock(reverification({ steps: [RV_STEP, { id: "gwangju-accessibility", changed: true, paths: [RV_INVENTORY, RV_LEDGER] }] })));
+});
+
+test("원천 재확인 블록은 알려진 recipe·허용 경로·바뀐 단계만 받는다", () => {
+  for (const [label, overrides] of [
+    ["no policy", { policy: null }], ["no sources", { sources: [] }], ["no steps", { steps: [] }], ["candidate", { candidate: CANDIDATE }],
+    ["unknown recipe", { steps: [{ ...RV_STEP, id: "busan-transfer-metrics" }] }],
+    ["duplicate recipe", { steps: [RV_STEP, RV_STEP] }],
+    ["unchanged step", { steps: [{ id: "gwangju-topology", changed: false, paths: [] }] }],
+    ["candidate path", { steps: [{ ...RV_STEP, paths: [...RV_STEP.paths, "tools/datapack/release/candidate-build-spec.json"] }] }],
+    ["nested snapshot path", { steps: [{ ...RV_STEP, paths: [RV_INVENTORY, "tools/datapack/sources/nested/x.json"] }] }],
+    ["workflow path", { steps: [{ ...RV_STEP, paths: [".github/workflows/ci.yml"] }] }],
+    ["freshness policy path", { steps: [{ ...RV_STEP, paths: [...RV_STEP.paths, "release/product-gates/datapack-freshness-sla.json"] }] }],
+    ["parent path", { steps: [{ ...RV_STEP, paths: ["tools/datapack/sources/../source-inventory.json"] }] }],
+  ]) assert.throws(() => automationPrEvidenceBlock(reverification(overrides)), /AUTOMATION_PR_EVIDENCE_INVALID/u, label);
+  // 저장된 블록도 같은 검증을 한다(본문은 PR 생성 뒤에도 고칠 수 있다).
+  const value = JSON.parse(automationPrEvidenceBlock(reverification()).slice(`<!-- ${AUTOMATION_PR_EVIDENCE_MARKER} `.length, -" -->".length));
+  assert.throws(() => parseAutomationPrEvidence(stored({ ...value, steps: [{ ...RV_STEP, paths: [...RV_STEP.paths, "tools/datapack/release/hash-evidence.json"] }] })), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+});
+
+test("원천 재확인 본문: recipe 표·원천 표·Refs와 증거 블록을 만든다", () => {
+  const body = sourceReverificationPullRequestBody({ runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: POLICY, sources: [RV_SOURCE], steps: [RV_STEP] });
+  assert.match(body, /\| gwangju-topology \| 갱신 \|/u);
+  assert.match(body, /\| gwangju-transportation-route-topology \| gwangju-transportation-route-topology-1 \| gwangju-transportation-route-topology-0 \|/u);
+  assert.match(body, /Refs #984\nRefs #969\nRefs #870/u);
+  assert.doesNotMatch(body, /Closes/u);
+  assert.equal(parseAutomationPrEvidence(body, { headSha: HEAD }).stage, "source-reverification");
+});
+
+test("CLI source-reverification-body는 원장 게이트 출력과 controller 결과(증거 행 포함)에서 본문을 만든다", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "automation-pr-evidence-reverification-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = (name) => path.join(directory, name);
+  const evidenceRow = { ...SOURCE, sourceId: "kric-nationwide-timetable-file", snapshotId: "kric-capital-1", previousSnapshotId: "kric-capital-1", diffStatus: "NO_CHANGE" };
+  await writeFile(file("gate.json"), JSON.stringify({ policy: POLICY, sources: [RV_SOURCE] }));
+  await writeFile(file("result.json"), JSON.stringify({ steps: [RV_STEP, { id: "kric-capital-timetable", changed: true, paths: [RV_INVENTORY] }], evidenceSources: [evidenceRow] }));
+  const args = ["source-reverification-body", "--gate", file("gate.json"), "--result", file("result.json"), "--base-sha", BASE, "--head-sha", HEAD, "--run-url", RUN_URL, "--output", file("body.md")];
+  await main(args);
+  const parsed = parseAutomationPrEvidence(await readFile(file("body.md"), "utf8"), { headSha: HEAD });
+  assert.deepEqual(parsed.sources.map(({ snapshotId }) => snapshotId), [RV_SOURCE.snapshotId, "kric-capital-1"]);
+  assert.deepEqual(parsed.steps.map(({ id }) => id), ["gwangju-topology", "kric-capital-timetable"]);
+  await assert.rejects(main(args), /EEXIST/u);
+  await writeFile(file("result.json"), JSON.stringify({ steps: [{ id: "unknown", changed: true, paths: [RV_INVENTORY] }], evidenceSources: [] }));
+  await assert.rejects(main(args.map((value) => (value === file("body.md") ? file("other.md") : value))), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+  // controller 결과에 증거 행 목록이 없으면 빈 목록으로 보지 않고 실패한다.
+  await writeFile(file("result.json"), JSON.stringify({ steps: [RV_STEP] }));
+  await assert.rejects(main(args.map((value) => (value === file("body.md") ? file("third.md") : value))), /AUTOMATION_PR_EVIDENCE_INVALID: source-reverification: the controller result lacks/u);
 });

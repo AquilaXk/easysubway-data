@@ -23,6 +23,8 @@ export const REFRESH_CLAIM_PREFIXES = Object.freeze({
   "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
   "nationwide-candidate-refresh.yml": "automation/927-nationwide-candidate-refresh-",
   "source-derivative-rebinding.yml": "automation/969-derivative-rebinding-",
+  // #984: P7D 원천 재확인(수집 → OCI 게시 → 원장 등록).
+  "source-reverification.yml": "automation/984-source-reverification-",
   // #977: ITX-청춘 원천 시간표 자동 승격(#870 3단계).
   "itx-current-promotion.yml": "automation/977-itx-promotion-",
 });
@@ -36,6 +38,7 @@ export const LEDGER_WRITER_WORKFLOWS = Object.freeze([
   "seoul-current-accessibility-refresh.yml",
   "current-capital-topology-registration.yml",
   "source-derivative-rebinding.yml",
+  "source-reverification.yml",
   "itx-current-promotion.yml",
 ]);
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
