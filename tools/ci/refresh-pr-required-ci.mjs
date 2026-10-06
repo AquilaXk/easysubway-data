@@ -4,6 +4,8 @@
 //   인정되지 않는다(#948 실험). 그래서 CI가 없으면 그 PR만 App(easysubway-release-chain) 토큰으로 닫았다 다시 연다.
 //   reopened 이벤트가 App 행위자로 발생해 pull_request CI가 다시 실행된다.
 // - 이미 붙었거나(rollup에 Data contracts) 같은 head의 pull_request CI가 진행 중이면 아무것도 쓰지 않는다(멱등).
+// - required CI(Data contracts 계열)가 실패·취소·시간초과면 닫았다 다시 열지 않고 AUTOMATION_PR_CI_FAILED로 job을 실패시킨다(#969).
+//   열린 지 manualCheckCadence가 지나서야 드러나지 않게, 실패 이슈(report-refresh-failure)로 바로 드러낸다.
 // - 읽기는 GITHUB_TOKEN, 닫기·다시 열기만 App 토큰으로 한다. 실패하면 job을 실패시킨다.
 //
 // 사용: node tools/ci/refresh-pr-required-ci.mjs --workflow <file> --repository <owner/repo> [--github-output <path>]
@@ -16,6 +18,9 @@ import { promisify } from "node:util";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 const REQUIRED_CONTEXT = "Data contracts";
+// #969: required CI는 집계 check(Data contracts)와 shard·mobile job(Data contracts (...))이다. 이 계열이 실패·취소·시간초과면 이상이다.
+// action_required는 승인 대기로 CI가 안 붙은 경우라 실패가 아니다(다시 열기 경로).
+const FAILED_CONCLUSIONS = new Set(["FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ERROR"]);
 const ACTIVE_RUN_STATUSES = new Set(["queued", "in_progress", "waiting", "requested", "pending"]);
 const SHA = /^[0-9a-f]{40}$/u;
 const REOPEN_COMMENT = "열린 갱신 PR head에 required CI(pull_request)가 없어 App으로 다시 열어 CI를 실행한다(#939).";
@@ -24,8 +29,20 @@ function fail(code, detail = "") {
   throw new Error(detail ? `REFRESH_PR_CI_${code}: ${detail}` : `REFRESH_PR_CI_${code}`);
 }
 
+function checkName(item) { return item?.name ?? item?.context; }
+function isRequiredFamily(name) { return name === REQUIRED_CONTEXT || (typeof name === "string" && name.startsWith(`${REQUIRED_CONTEXT} (`)); }
+// check run은 conclusion, status context는 state에 결과가 있다.
+function checkOutcome(item) { return String(item?.conclusion || item?.state || "").toUpperCase(); }
+
+export function failedRequiredChecks(rollupContexts) {
+  return rollupContexts
+    .filter((item) => isRequiredFamily(checkName(item)) && FAILED_CONCLUSIONS.has(checkOutcome(item)))
+    .map((item) => `${checkName(item)}=${checkOutcome(item)}`);
+}
+
 export function requiredCiState({ headSha, rollupContexts, ciRuns }) {
   if (!SHA.test(headSha ?? "") || !Array.isArray(rollupContexts) || !Array.isArray(ciRuns)) fail("INPUT_INVALID");
+  if (failedRequiredChecks(rollupContexts).length > 0) return "FAILED";
   if (rollupContexts.some((item) => (item?.name ?? item?.context) === REQUIRED_CONTEXT)) return "ATTACHED";
   const pending = ciRuns.some((run) => run?.event === "pull_request" && run.headSha === headSha && ACTIVE_RUN_STATUSES.has(run.status));
   return pending ? "PENDING" : "MISSING";
@@ -54,6 +71,8 @@ export async function ensureRefreshPullRequestRequiredCi({ workflow, repository,
   const ciRuns = await read(["run", "list", "--repo", repository, "--workflow", "ci.yml", "--branch", pr.headRefName,
     "--event", "pull_request", "--limit", "100", "--json", "event,headSha,status,conclusion"]);
   const state = requiredCiState({ headSha: pr.headRefOid, rollupContexts: statusCheckRollup ?? [], ciRuns });
+  // 이상: 실패한 required CI는 닫았다 다시 열어 덮지 않고 job을 실패시킨다(실패 이슈로 드러난다).
+  if (state === "FAILED") throw new Error(`AUTOMATION_PR_CI_FAILED: #${pr.number} ${failedRequiredChecks(statusCheckRollup).join(", ")}`);
   if (state !== "MISSING") return { state, number: pr.number, headSha: pr.headRefOid };
   if (typeof appToken !== "string" || appToken.length === 0) fail("APP_TOKEN_REQUIRED");
   await gh(["pr", "close", String(pr.number), "--repo", repository, "--comment", REOPEN_COMMENT], { token: appToken });
