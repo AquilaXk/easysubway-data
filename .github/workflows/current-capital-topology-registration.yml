@@ -1,6 +1,19 @@
 name: Current Capital Topology Registration
 
+# 수도권 topology 등록(#456, #969, #870 전체 자동화 1단계): 갱신 PR(current-capital-topology-refresh)이 병합돼 보호 admission이 main에 들어오면
+# 그 topology 원본을 OCI에 게시하고 원장에 등록한 결과를 App 토큰 PR로 올린다.
+# - 판정(decide-capital-topology-registration)이 REGISTER·RECOVER_CLAIM·OPEN_PR·BLOCKED_BY_PENDING_PR·REGISTERED를 정한다. 쓰기 step은 앞의 둘에서만 돈다.
+# - push·정기 실행은 저장소 변수 DATAPACK_SCHEDULED_SOURCE_REGISTRATION이 true일 때만 돈다. 사람 dispatch는 항상 돈다.
+# - 이상(판정 불가 claim·admission 누락/만료·CI 실패·방치)은 job을 실패시키고 실패 이슈로 드러난다. 이전 데이터로 대체하지 않는다.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/datapack/sources/capital-route-topology-*.json
+      - tools/datapack/release/capital-topology-reverification-*.json
+  schedule:
+    - cron: "5 */2 * * *"
   workflow_dispatch:
     inputs:
       recovery_run_id:
@@ -8,10 +21,7 @@ on:
         required: false
         type: string
 
-permissions:
-  actions: read
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: current-capital-topology-registration-main
@@ -19,8 +29,14 @@ concurrency:
 
 jobs:
   register:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    name: Capital topology registration
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_SCHEDULED_SOURCE_REGISTRATION == 'true') }}
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+      issues: write
     environment: datapack-release-check
     timeout-minutes: 15
     steps:
@@ -39,10 +55,71 @@ jobs:
           mkdir -p "${operation_parent}"
           chmod 700 "${operation_parent}"
           printf 'REGISTRATION_OPERATION_ROOT=%s\n' "${operation_root}" >> "${GITHUB_ENV}"
-      - name: Claim exact main before OCI publication
+      - name: Decide whether capital topology registration is needed
+        id: decision
         env:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+        run: |
+          set -euo pipefail
+          main_sha="$(git rev-parse HEAD)"
+          # 판정 시점의 checkout이 아직 main이어야 한다. 그 사이 main이 움직였으면 새 push·정기 실행이 자기 판정을 한다.
+          if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" != "${main_sha}" ]]; then
+            echo "::notice title=Capital topology registration::main moved after this run started; a newer run decides on the new main."
+            echo "state=SUPERSEDED" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if [[ -n "${RECOVERY_RUN_ID}" ]]; then
+            # 사람이 지정한 복구는 판정을 거치지 않는다. 같은 입력의 producer run·claim 검증은 claim step이 한다.
+            [[ "${RECOVERY_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "recovery run ID is invalid" >&2; exit 1; }
+            printf 'state=RECOVER_CLAIM\nrecovery_run_id=%s\n' "${RECOVERY_RUN_ID}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          decision_root="${RUNNER_TEMP}/capital-topology-registration-decision/${GITHUB_RUN_ID}"
+          mkdir -p "${decision_root}"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*" > "${decision_root}/claims.txt"
+          gh run list --repo "${GITHUB_REPOSITORY}" --workflow current-capital-topology-registration.yml --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs.json"
+          node tools/ci/decide-capital-topology-registration.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --prs "${decision_root}/prs.json" --claims "${decision_root}/claims.txt" --runs "${decision_root}/runs.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --github-output "${GITHUB_OUTPUT}"
+      - name: Mint App token for the open refresh pull request
+        id: app-token-open
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Ensure required CI on the open refresh pull request
+        id: required-ci
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
+        run: |
+          set -euo pipefail
+          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다). #969: CI가 실패했으면 바로 실패한다.
+          node tools/ci/refresh-pr-required-ci.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
+      - name: Enforce open refresh pull request age limit
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #939: 열린 등록 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
+          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow current-capital-topology-registration.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+      - name: Note registration waiting on another pending automation pull request
+        if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
+        run: |
+          echo "::notice title=Capital topology registration::waiting for pending source-ledger automation pull request(s) ${{ steps.decision.outputs.blocked_by }}; they write the same ledger files."
+      - name: Claim exact main before OCI publication
+        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_RUN_ID: ${{ steps.decision.outputs.recovery_run_id }}
         run: |
           set -euo pipefail
           main_sha="$(git rev-parse HEAD)"
@@ -53,7 +130,9 @@ jobs:
             [[ "${RECOVERY_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "recovery run ID is invalid" >&2; exit 1; }
             metadata="$(gh run view "${RECOVERY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --json databaseId,status,conclusion,event,workflowName,headBranch,headSha --jq '[.databaseId,.status,.conclusion,.event,.workflowName,.headBranch,.headSha] | @tsv')"
             IFS=$'\t' read -r run_id run_status run_conclusion run_event run_workflow run_branch run_head <<< "${metadata}"
-            [[ "${run_id}" == "${RECOVERY_RUN_ID}" && "${run_status}" == "completed" && "${run_conclusion}" == "failure" && "${run_event}" == "workflow_dispatch" && "${run_workflow}" == "Current Capital Topology Registration" && "${run_branch}" == "main" && "${run_head}" == "${main_sha}" ]] || { echo "recovery producer run identity is invalid" >&2; exit 1; }
+            # producer run은 사람 dispatch뿐 아니라 push·정기 실행일 수 있다(#969).
+            [[ "${run_event}" == "workflow_dispatch" || "${run_event}" == "push" || "${run_event}" == "schedule" ]] || { echo "recovery producer run event is invalid" >&2; exit 1; }
+            [[ "${run_id}" == "${RECOVERY_RUN_ID}" && "${run_status}" == "completed" && "${run_conclusion}" == "failure" && "${run_workflow}" == "Current Capital Topology Registration" && "${run_branch}" == "main" && "${run_head}" == "${main_sha}" ]] || { echo "recovery producer run identity is invalid" >&2; exit 1; }
             branch="automation/456-capital-topology-registration-${RECOVERY_RUN_ID}"
             git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
             read -r claim_head claim_parent extra_parent <<< "$(git rev-list --parents -n 1 "origin/${branch}")"
@@ -81,7 +160,7 @@ jobs:
           fi
           printf 'REGISTRATION_BRANCH=%s\nREGISTRATION_MAIN_SHA=%s\n' "${branch}" "${main_sha}" >> "${GITHUB_ENV}"
       - name: Publish and register once
-        if: ${{ inputs.recovery_run_id == '' }}
+        if: ${{ steps.decision.outputs.state == 'REGISTER' }}
         env:
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
@@ -90,9 +169,9 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
           node tools/datapack/run-current-capital-route-topology-registration.mjs --repository-root "${GITHUB_WORKSPACE}" --operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}"
       - name: Recover published registration without OCI
-        if: ${{ inputs.recovery_run_id != '' }}
+        if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
-          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+          RECOVERY_RUN_ID: ${{ steps.decision.outputs.recovery_run_id }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin main:refs/remotes/origin/main
@@ -100,6 +179,7 @@ jobs:
           node tools/datapack/run-current-capital-route-topology-registration.mjs recover-published --repository-root "${GITHUB_WORKSPACE}" --source-operation-root "${REGISTRATION_SOURCE_OPERATION_ROOT}" --target-operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}" --expected-publication-operation-id "${RECOVERY_RUN_ID}"
       - name: Mint App token for the registration pull request
         id: app-token-pr
+        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
@@ -108,6 +188,7 @@ jobs:
           repositories: easysubway-data
           permission-pull-requests: write
       - name: Commit exactly four registration outputs and open draft PR
+        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
           APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           GH_TOKEN: ${{ github.token }}
@@ -124,7 +205,7 @@ jobs:
           # #967: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨). push는 GITHUB_TOKEN 그대로다.
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REGISTRATION_BRANCH}" --title "Register current capital topology" --body "Register the protected current capital topology receipt.\n\nRefs #456"
       - name: Retain sanitized publication recovery evidence
-        if: ${{ always() }}
+        if: ${{ always() && (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: current-capital-topology-registration-${{ github.run_id }}
@@ -133,3 +214,8 @@ jobs:
             ${{ env.REGISTRATION_OPERATION_ROOT }}/capital-route-topology.raw-receipt.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
