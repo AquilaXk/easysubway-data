@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+
+import { REGISTRATION_ALLOWED_PATHS } from "./automation-pr-policy.mjs";
 
 import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
@@ -51,7 +56,7 @@ test("판정 step이 claim·게시·PR 생성보다 먼저 돌고 판정 입력�
 });
 
 test("claim·게시·복구·App 토큰·PR 생성은 REGISTER 또는 RECOVER_CLAIM일 때만 돌고, 게시와 복구는 서로 배타적이다", () => {
-  for (const name of ["Claim exact main before OCI publication", "Mint App token for the registration pull request", "Commit exactly four registration outputs and open draft PR"]) {
+  for (const name of ["Claim exact main before OCI publication", "Mint App token for the registration pull request", "Commit exactly two registration outputs and open draft PR"]) {
     assert.equal(ifCondition(step(name).block), WRITES, name);
   }
   assert.equal(ifCondition(step("Publish and register once").block), "${{ steps.decision.outputs.state == 'REGISTER' }}");
@@ -75,7 +80,7 @@ test("push 직전에 원장을 쓰는 다른 자동화(열린 PR·claim 브랜�
   assert.ok(names.indexOf("Publish and register once") < names.indexOf(recheck.name));
   assert.ok(names.indexOf("Recover published registration without OCI") < names.indexOf(recheck.name));
   assert.ok(names.indexOf(recheck.name) < names.indexOf("Mint App token for the registration pull request"));
-  assert.ok(names.indexOf(recheck.name) < names.indexOf("Commit exactly four registration outputs and open draft PR"));
+  assert.ok(names.indexOf(recheck.name) < names.indexOf("Commit exactly two registration outputs and open draft PR"));
   assert.ok(names.indexOf("Mint App token for the registration pull request") !== -1);
 });
 
@@ -103,7 +108,7 @@ test("복구 증거 artifact는 게시를 시도한 실행에서만 올리고, �
 
 test("이 workflow는 workflow dispatch를 호출하지 않고 push는 GITHUB_TOKEN, PR 생성만 App 토큰이다", () => {
   assert.doesNotMatch(yml, /gh workflow run|\/dispatches|repository_dispatch|actions: write/u);
-  assert.match(step("Commit exactly four registration outputs and open draft PR").block, /\n          GH_TOKEN: \$\{\{ github\.token \}\}\n/u);
+  assert.match(step("Commit exactly two registration outputs and open draft PR").block, /\n          GH_TOKEN: \$\{\{ github\.token \}\}\n/u);
 });
 
 // #972 리뷰 F4: step output(required-ci 상태·blocked_by)을 run 스크립트에 표현식으로 펼치면 나중에 출력이 바뀔 때 셸 주입 지점이 된다.
@@ -159,7 +164,7 @@ test("producer가 실행 중인 claim은 이유를 notice로 남기고 아무것
 
 // #975 리뷰 F2·F5: 등록 PR도 원장 변화 게이트를 통과해야 하고, 본문에 base/head 커밋에 결속된 증거 블록을 낸다.
 test("등록 PR은 push 전에 원장 변화 게이트를 통과하고 증거 블록이 든 본문 파일로 연다", () => {
-  const { block } = step("Commit exactly four registration outputs and open draft PR");
+  const { block } = step("Commit exactly two registration outputs and open draft PR");
   const gate = block.indexOf('node tools/ci/source-ledger-gate.mjs --base-sha "${REGISTRATION_MAIN_SHA}" --output "${evidence_root}/gate.json"');
   const push = block.indexOf('git push origin "${REGISTRATION_BRANCH}"');
   const body = block.indexOf('node tools/ci/automation-pr-evidence.mjs registration-body --gate "${evidence_root}/gate.json" --base-sha "${REGISTRATION_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)"');
@@ -169,4 +174,74 @@ test("등록 PR은 push 전에 원장 변화 게이트를 통과하고 증거 �
   assert.match(block, /--run-url "\$\{GITHUB_SERVER_URL\}\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{GITHUB_RUN_ID\}" --output "\$\{evidence_root\}\/body\.md"/u);
   assert.match(block, /--body-file "\$\{evidence_root\}\/body\.md"/u);
   assert.match(block, /evidence_root="\$\(mktemp -d "\$\{RUNNER_TEMP\}\/registration-evidence\.XXXXXX"\)"/u);
+});
+
+// #989: 재등록은 정책 파일(governance·신선도 SLA)을 바꾸지 않는다. 등록 PR은 정확히 원장·inventory 둘만 커밋하고(자동 병합 정책의 등록 allowlist와 같다),
+// 정책 파일이 바뀌어 있으면 아무것도 push하지 않고 REGISTRATION_POLICY_CHANGED로 실패한다.
+const GOVERNANCE = "tools/datapack/source-governance-policy.json";
+const FRESHNESS = "release/product-gates/datapack-freshness-sla.json";
+
+function commitStepPathChecks() {
+  const { block } = step("Commit exactly two registration outputs and open draft PR");
+  const start = block.indexOf("          expected=(");
+  const end = block.indexOf("          # #975 리뷰 F5");
+  assert.ok(start !== -1 && end > start, "the path check section is delimited");
+  return { block, section: block.slice(start, end) };
+}
+
+function runPathChecks(changedFiles) {
+  const { section } = commitStepPathChecks();
+  const dir = mkdtempSync(path.join(os.tmpdir(), "registration-paths-"));
+  try {
+    const git = (...args) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+    git("init", "-q");
+    git("config", "user.email", "test@example.test");
+    git("config", "user.name", "test");
+    for (const file of [...REGISTRATION_ALLOWED_PATHS, GOVERNANCE, FRESHNESS]) {
+      mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      writeFileSync(path.join(dir, file), "{}\n");
+    }
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    for (const file of changedFiles) writeFileSync(path.join(dir, file), '{"changed":true}\n');
+    try {
+      execFileSync("bash", ["-c", `set -euo pipefail\n${section}`], { cwd: dir, stdio: "pipe", encoding: "utf8" });
+      return { ok: true, stderr: "" };
+    } catch (error) {
+      return { ok: false, stderr: String(error.stderr) };
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("등록 PR은 정확히 원장·inventory 둘만 커밋하고 그 경로는 자동 병합 정책의 등록 allowlist와 같다(#989)", () => {
+  const { block, section } = commitStepPathChecks();
+  const expected = /\n\s+expected=\(([^)]*)\)\n/u.exec(block)?.[1].trim().split(/\s+/u);
+  assert.deepEqual([...(expected ?? [])].sort(), [...REGISTRATION_ALLOWED_PATHS].sort());
+  assert.match(block, /git add "\$\{expected\[@\]\}"/u);
+  assert.doesNotMatch(block, /git add [^\n]*(source-governance-policy|datapack-freshness-sla)/u);
+  assert.match(section, /REGISTRATION_POLICY_CHANGED/u);
+});
+
+test("두 경로만 바뀌면 경로 검사를 통과한다(재등록의 실제 모양)", () => {
+  assert.deepEqual(runPathChecks([...REGISTRATION_ALLOWED_PATHS]), { ok: true, stderr: "" });
+});
+
+test("governance 또는 신선도 SLA가 바뀌어 있으면 REGISTRATION_POLICY_CHANGED로 실패한다", () => {
+  for (const policy of [GOVERNANCE, FRESHNESS]) {
+    const result = runPathChecks([...REGISTRATION_ALLOWED_PATHS, policy]);
+    assert.equal(result.ok, false, policy);
+    assert.match(result.stderr, /REGISTRATION_POLICY_CHANGED/u, policy);
+    assert.ok(result.stderr.includes(policy), policy);
+  }
+  assert.match(runPathChecks([GOVERNANCE, FRESHNESS, ...REGISTRATION_ALLOWED_PATHS]).stderr, /REGISTRATION_POLICY_CHANGED/u);
+});
+
+test("원장·inventory 중 하나라도 빠졌거나 아무것도 안 바뀌었으면 실패한다", () => {
+  for (const changed of [[REGISTRATION_ALLOWED_PATHS[0]], [REGISTRATION_ALLOWED_PATHS[1]], []]) {
+    const result = runPathChecks(changed);
+    assert.equal(result.ok, false, JSON.stringify(changed));
+    assert.doesNotMatch(result.stderr, /REGISTRATION_POLICY_CHANGED/u);
+  }
 });

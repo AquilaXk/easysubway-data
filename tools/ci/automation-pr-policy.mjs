@@ -15,7 +15,7 @@
 //                   이 검사는 advisory다(인증이 아니다): github-actions의 git push 커밋은 서명되지 않고(실측 verification.verified=false) GitHub이 작성자를 이메일로
 //                   연결하므로 github-actions noreply 주소를 쓴 커밋은 이 검사를 통과한다. 실제 경계는 자동화 브랜치를 push할 수 있는 사람(저장소 쓰기 권한)이다.
 //                   검사가 하는 일은 자동화 브랜치에 손으로 커밋을 얹은 정상적인 사람 개입을 이상으로 드러내는 것이다.
-//   PATHS           API diff의 변경 경로가 단계별 allowlist와 정확히 맞는다(등록·ITX: 정확히 같음. 등록은 원장·inventory 둘뿐이다, 재결속: 증거의 변경 단계 경로와 같고
+//   PATHS           API diff의 변경 경로가 단계별 allowlist와 정확히 맞는다(등록·ITX: 정확히 같음. 등록은 원장·inventory 둘뿐이다(#989: 재등록은 정책 파일을 쓰지 않는다), 재결속: 증거의 변경 단계 경로와 같고
 //                   각 단계가 허용한 경로, 후보: 후보 갱신 도구의 출력 목록 안).
 //   CI              CI workflow가 이 head에서 성공으로 끝났고 ruleset의 required context가 모두 성공이다.
 //   GATES           PR head에서 게이트를 다시 계산한 check(Automation PR gates)가 github-actions가 만든 성공이다.
@@ -39,7 +39,7 @@ import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 import { SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
 import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
-import { REVERIFICATION_RECIPES, inventoryChangeViolations } from "../datapack/source-reverification-recipes.mjs";
+import { REVERIFICATION_RECIPES, inventoryChangeViolations, inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
 import { ITX_PROMOTION_MODE_GATE_PASSED, itxPromotionReceiptPath, verifyItxGatePromotion } from "../datapack/lib/itx-promotion-authority.mjs";
 import { SCHEDULED_RELEASE_ROLES, gateRunViolations } from "../datapack/lib/scheduled-release-authority.mjs";
@@ -77,14 +77,22 @@ export const AUTOMATION_STAGE_PREFIXES = Object.freeze(
 
 /**
  * 등록 PR이 자동 병합 대상으로서 바꿔도 되는 경로: 원장과 inventory 둘이다(#986 F6).
- * 등록 workflow는 governance 정책·신선도 SLA(release/product-gates)도 커밋하지만, 두 파일은 원천을 처음 등록할 때만 바뀌고 내용을 독립적으로
- * 재계산할 수 없다. 그래서 자동 병합 allowlist에서 빼고 사람 경로로 보낸다(그 PR은 PATHS 위반으로 드러난다). 재등록(P7D)이 두 파일을 바꾸지 않게 되면
- * 자동 병합 대상이 된다. 계약 테스트가 이 두 경로와 workflow가 커밋하는 네 경로의 관계를 고정한다.
+ * governance 정책·신선도 SLA(release/product-gates)는 원천을 처음 등록할 때만 바뀌는 정책이고 내용을 독립적으로 재계산할 수 없어 allowlist에 넣지 않는다.
+ * 재등록(P7D)은 두 파일을 쓰지 않는다(#989): 등록기는 정책 변경이 필요하면 게시 전에 REGISTRATION_POLICY_CHANGE_REQUIRED로 실패하고,
+ * 등록 workflow는 두 경로만 커밋하며 정책 파일이 바뀌어 있으면 REGISTRATION_POLICY_CHANGED로 실패한다. 계약 테스트가 이 두 경로와 workflow가 커밋하는 경로를 고정한다.
  */
 export const REGISTRATION_ALLOWED_PATHS = Object.freeze([
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/source-inventory.json",
 ]);
+
+/**
+ * 등록 단계가 inventory의 등록 원천 항목에서 바꾸는 필드(#989). 등록기가 항목을 다시 만들 때 바뀌는 것은 수집 시각과 admission 증거뿐이고,
+ * 실제 등록 커밋(seq127 6741d1b89, seq128 8a7b4c1ba)이 정확히 이 세 필드만 바꿨다. 정책성 필드(productionUseAllowed·license·datasetUrl·coverage 등)는 고정이다.
+ */
+export const REGISTRATION_INVENTORY_FIELDS = Object.freeze({
+  "capital-route-topology": Object.freeze(["observedDataUpdatedAt", "retrievedAt", "capitalTopologyAdmissionEvidence"]),
+});
 
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const GOVERNANCE_PATH = "tools/datapack/source-governance-policy.json";
@@ -418,17 +426,20 @@ export async function recomputeAutomationGates({
   }
 
   if (evidence.stage === "registration") {
-    // 원장 밖 파일의 범위 재계산(#986 F6): inventory는 등록한 원천의 항목만 바뀔 수 있다. 항목 내용의 정합은 required CI의 inventory 검증이 본다.
+    // 원장 밖 파일의 범위 재계산(#986 F6, #989): inventory는 등록한 원천 항목의 갱신 필드만 바뀔 수 있고(원천 재확인 #987 N1과 같은 규칙) 그 밖의 항목·최상위 필드는 그대로여야 한다.
+    // 항목 내용의 정합은 required CI의 inventory 검증이 본다.
     try {
-      const ids = new Set(evidence.sources.map(({ sourceId }) => sourceId));
       const base = JSON.parse(await files.readBase(evidence.baseSha, INVENTORY_PATH));
       const head = JSON.parse(await files.readTree(INVENTORY_PATH));
-      const outside = (inventory) => ({ ...inventory, sources: inventory.sources.filter((entry) => !ids.has(entry?.id)) });
       if (!Array.isArray(base?.sources) || !Array.isArray(head?.sources)) throw new Error("inventory sources must be an array");
-      if (!sameJson(outside(base), outside(head))) throw new Error("inventory changed outside the registered sources");
-      for (const id of ids) {
-        const count = head.sources.filter((entry) => entry?.id === id).length;
-        if (count !== 1) throw new Error(`inventory must have exactly one entry for ${id} (found ${count})`);
+      const topLevel = (inventory) => Object.fromEntries(Object.entries(inventory).filter(([key]) => key !== "sources"));
+      if (!sameJson(topLevel(base), topLevel(head))) throw new Error("inventory top-level fields changed");
+      const allowed = new Map(evidence.sources.map(({ sourceId }) => [sourceId, new Set(REGISTRATION_INVENTORY_FIELDS[sourceId] ?? [])]));
+      const outside = inventoryScopeViolations({ base, head, allowed });
+      if (outside.length > 0) throw new Error(`inventory changed outside the registered sources' scope: ${outside.slice(0, 6).join(" | ")}`);
+      for (const { sourceId } of evidence.sources) {
+        const count = head.sources.filter((entry) => entry?.id === sourceId).length;
+        if (count !== 1) throw new Error(`inventory must have exactly one entry for ${sourceId} (found ${count})`);
       }
     } catch (error) {
       violate("INVENTORY_GATE", message(error));
