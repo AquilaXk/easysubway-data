@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -28,12 +29,15 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const buildNow = "2026-07-16T00:00:00.000Z";
 
+// #979: 현재 승인 원천의 기대값을 literal로 박지 않는다. 커밋된 증거(파생 결과)와 원천에서 다시 도출한 topology가 같은지 본다.
+const currentContract = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+const currentEvidence = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
 const OWNER_APPROVED_CURRENT_TOPOLOGY = Object.freeze({
-  artifactSha256: "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189",
-  topologySha256: "d9afca0a844a5967ca19768b8b13fe2ccf83947a7d18c9cb8406ccb7aa4babff",
-  stationMembershipCount: 18,
-  servedStationCount: 14,
-  edgeCount: 48,
+  artifactSha256: currentContract.sourceTimetableArtifact.sha256,
+  topologySha256: currentEvidence.topology.sha256,
+  stationMembershipCount: currentEvidence.topology.stationMembershipCount,
+  servedStationCount: currentEvidence.topology.servedStationCount,
+  edgeCount: currentEvidence.topology.edgeCount,
   unpairedEdgeCount: 0,
 });
 
@@ -50,50 +54,12 @@ const stationCatalogPackIdentity = Object.freeze({
   manifestSha256: "3".repeat(64),
 });
 
-const admittedTopologyInputs = new Map([
-  ["e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad", {
-    id: "capital",
-    sha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
-    sqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
-    byteSize: 354980,
-  }],
-  ["e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e", {
-    id: "capital",
-    sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-    sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
-    byteSize: 359319,
-  }],
-  ["2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26", {
-    id: "capital",
-    sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-    sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
-    byteSize: 359319,
-  }],
-  ["f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab", {
-    id: "capital",
-    sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-    sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-    byteSize: 1463745,
-  }],
-  ["7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e", {
-    id: "capital",
-    sha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
-    sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
-    byteSize: 388623,
-  }],
-  ["11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658", {
-    id: "capital",
-    sha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
-    sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
-    byteSize: 388623,
-  }],
-  ["32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189", {
-    id: "capital",
-    sha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
-    sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
-    byteSize: 388623,
-  }],
-]);
+// 입력 팩 식별은 코드 허용 목록이 아니라 coverage contract가 정한다(#979).
+function currentTopologyInput() {
+  const identity = currentContract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity;
+  return { id: identity.id, sha256: identity.sha256, sqliteSha256: identity.sqliteSha256, byteSize: identity.byteSize };
+}
+
 
 async function trackedLegacyDocuments() {
   const contract = JSON.parse(await readFile(
@@ -113,10 +79,7 @@ async function trackedLegacyDocuments() {
 
 async function admittedDocuments() {
   const { contract, source, completeness } = await trackedLegacyDocuments();
-  const topologyInputPackIdentity = admittedTopologyInputs.get(
-    contract.sourceTimetableArtifact.sha256,
-  );
-  assert.ok(topologyInputPackIdentity, "fixture predecessor must have an exact static topology input admission");
+  const topologyInputPackIdentity = currentTopologyInput();
   delete contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
   contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity =
     structuredClone(stationCatalogPackIdentity);
@@ -938,19 +901,27 @@ test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam�
     /evidence or bundled pack index is stale/);
 });
 
-test("current source static admission은 exact topology input tuple을 반환한다", async () => {
-  const { reference, source } = await admittedDocuments();
-  reference.sha256 = "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e";
-  const admitted = await admittedTopologySource(reference, source);
+test("topology 입력 팩 식별은 coverage contract에서 읽고 승격마다 코드 허용 목록을 더하지 않는다", async () => {
+  const { contract, reference, source } = await admittedDocuments();
+  // 어떤 원천 sha든(허용 목록 없이) contract의 입력 팩 식별을 돌려준다.
+  reference.sha256 = "e".repeat(64);
+  const admitted = await admittedTopologySource(reference, source, null, contract);
   assert.deepEqual({
-    id: "capital",
-    sha256: admitted.gzipSha256,
-    sqliteSha256: admitted.sqliteSha256,
-    byteSize: admitted.byteSize,
-  }, admittedTopologyInputs.get(reference.sha256));
+    id: "capital", sha256: admitted.gzipSha256, sqliteSha256: admitted.sqliteSha256, byteSize: admitted.byteSize,
+  }, currentTopologyInput());
+  // contract의 식별이 바뀌면 그대로 따라간다. 식별이 없거나 잘못되면 추정하지 않고 거부한다.
+  const changed = structuredClone(contract);
+  changed.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.byteSize += 1;
+  assert.equal((await admittedTopologySource(reference, source, null, changed)).byteSize, currentTopologyInput().byteSize + 1);
+  for (const broken of [null, {}, { id: "capital", sha256: "short", sqliteSha256: "0".repeat(64), byteSize: 1 }, { id: "other", sha256: "0".repeat(64), sqliteSha256: "0".repeat(64), byteSize: 1 }]) {
+    const invalid = structuredClone(contract);
+    invalid.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity = broken;
+    await assert.rejects(admittedTopologySource(reference, source, null, invalid), /ITX topology input pack identity is invalid/u);
+  }
+  await assert.rejects(admittedTopologySource(reference, source), /ITX topology input pack identity is invalid/u);
 });
 
-test("OWNER-approved current source는 exact static topology input에 결속된다", async () => {
+test("OWNER-approved current source는 contract의 topology input에 결속된다", async () => {
   const { contract, reference, source, completeness, sourceBytes, completenessBytes } =
     await trackedLegacyDocuments();
   reference.promotion.approvalUrl =
@@ -963,13 +934,13 @@ test("OWNER-approved current source는 exact static topology input에 결속된�
     sha256(sourceBytes),
     sha256(completenessBytes),
   )));
-  const admitted = await admittedTopologySource(reference, source);
+  const admitted = await admittedTopologySource(reference, source, null, contract);
   assert.deepEqual({
     id: "capital",
     sha256: admitted.gzipSha256,
     sqliteSha256: admitted.sqliteSha256,
     byteSize: admitted.byteSize,
-  }, admittedTopologyInputs.get(reference.sha256));
+  }, currentTopologyInput());
 });
 
 function gatePassedPromotion(reference) {
@@ -995,10 +966,10 @@ test("게이트 승격 current source는 승인 승격과 같은 static topology
     withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
       contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
     )));
-    const admitted = await admittedTopologySource(reference, source);
+    const admitted = await admittedTopologySource(reference, source, null, contract);
     assert.deepEqual({
       id: "capital", sha256: admitted.gzipSha256, sqliteSha256: admitted.sqliteSha256, byteSize: admitted.byteSize,
-    }, admittedTopologyInputs.get(reference.sha256));
+    }, currentTopologyInput());
   }
   const cases = [
     ["approval url mixed in", (reference) => { reference.promotion.approvalUrl = "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123"; }],
