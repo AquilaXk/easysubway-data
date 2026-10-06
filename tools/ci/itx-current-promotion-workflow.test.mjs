@@ -232,7 +232,7 @@ test("이 workflow는 workflow dispatch를 호출하지 않고 run 스크립트�
 });
 
 // #979: 승격 뒤 파생 재결속. fixture는 CI와 같은 고정 입력이어야 하고, 재결속은 승격 직후·PR 생성 전에 돈다.
-test("재결속은 CI와 같은 고정 mobile 입력 fixture에서 돌고 증거·spec·fixture를 PR에 포함한다", () => {
+test("재결속은 CI와 같은 고정 mobile 입력 fixture에서 돌고 증거·fixture를 PR에 포함한다", () => {
   const ci = readFileSync(path.resolve(import.meta.dirname, "../../.github/workflows/ci.yml"), "utf8");
   const pin = (text, key) => new RegExp(`${key}="?([0-9a-f]{40,64})"?`, "u").exec(text)?.[1];
   const stage = step("Stage pinned Mobile input fixture").block;

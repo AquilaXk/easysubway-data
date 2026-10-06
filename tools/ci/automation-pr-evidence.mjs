@@ -57,12 +57,11 @@ const ITX_CONTRACT_PATH = "tools/datapack/itx-cheongchun-coverage-contract.json"
 const ITX_GATE_POLICY_ID = "itx-promotion-gate-v1";
 
 const ITX_TOPOLOGY_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
-const ITX_CANDIDATE_SPEC_PATH = "tools/datapack/release/candidate-build-spec.json";
 const ITX_ALIGNMENT_FIXTURE_PATHS = Object.freeze(["busan", "daegu", "daejeon", "gwangju", "seoul"].map((name) => `tools/route-map/route-map-defs/${name}-alignment-fixture.json`));
 
 /**
  * ITX 승격 PR이 바꿔도 되는 경로(#977 + #979 파생 재결속): coverage contract와 승격한 snapshot의 파일 셋(4),
- * 같은 job의 재결속이 만드는 topology 증거(현재·버전 별)·후보 build spec·5권역 alignment fixture(8). 코드 상수 하나다.
+ * 같은 job의 재결속이 만드는 topology 증거(현재·버전 별)·5권역 alignment fixture(7). 후보 pin은 병합 뒤 전국 후보 준비가 묶는다. 코드 상수 하나다.
  */
 export function itxPromotionAllowedPaths(snapshotId) {
   const stamp = ITX_SNAPSHOT_ID.exec(snapshotId)?.[0].slice(`${ITX_SOURCE_ID}-`.length);
@@ -74,7 +73,6 @@ export function itxPromotionAllowedPaths(snapshotId) {
     `tools/datapack/sources/${snapshotId}.json`,
     ITX_TOPOLOGY_EVIDENCE_PATH,
     `tools/datapack/itx-cheongchun-topology-evidence-${stamp}.json`,
-    ITX_CANDIDATE_SPEC_PATH,
     ...ITX_ALIGNMENT_FIXTURE_PATHS,
   ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
@@ -245,7 +243,7 @@ export function itxPromotionPullRequestBody({ runUrl, baseSha, headSha, receipt,
     ...receipt.checks.filter((item) => item.dayCd !== undefined).map((item) => `| ${item.id} | ${item.dayCd} | ${metricCell(item)} |`), "",
     "## 변경 경로", "", ...paths.map((entry) => `- ${code(entry)}`), "",
     `- 실행 run: ${runUrl}`,
-    "- 같은 run의 재결속이 topology 증거·후보 build spec 결속·alignment fixture를 새 원천에 맞췄다. mobile fixture는 ITX 적용 전 입력 팩으로 고정돼 있어 바뀌지 않고, CI가 입력 팩에서 출력 팩을 파생해 증거와 대조한다.", "",
+    "- 같은 run의 재결속이 topology 증거와 alignment fixture를 새 원천에 맞췄다. mobile fixture는 ITX 적용 전 입력 팩으로 고정돼 있어 바뀌지 않고, CI가 입력 팩에서 출력 팩을 파생해 증거와 대조한다.", "",
     "Refs #977", "Refs #979", "Refs #870", "Refs #969", "Refs #636", "", block, "",
   ].join("\n");
 }

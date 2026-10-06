@@ -188,7 +188,6 @@ const ITX_PATHS = [
   // #979: 같은 run의 파생 재결속 산출물
   "tools/datapack/itx-cheongchun-topology-evidence.json",
   "tools/datapack/itx-cheongchun-topology-evidence-20261010181500000.json",
-  "tools/datapack/release/candidate-build-spec.json",
   ...["busan", "daegu", "daejeon", "gwangju", "seoul"].map((name) => `tools/route-map/route-map-defs/${name}-alignment-fixture.json`),
 ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 const ITX_SOURCE = {
@@ -273,7 +272,7 @@ test("ITX 승격 본문: 원천 행·적용 한도·요일별 지표·변경 경
   assert.match(body, /\| 첫차 이동 한도 \| 0초 \|/u);
   for (const path of ITX_PATHS) assert.ok(body.includes(path), path);
   assert.match(body, /Refs #977\nRefs #979\nRefs #870\nRefs #969\nRefs #636/u);
-  assert.match(body, /재결속이 topology 증거·후보 build spec 결속·alignment fixture를 새 원천에 맞췄다/u);
+  assert.match(body, /재결속이 topology 증거와 alignment fixture를 새 원천에 맞췄다/u);
   assert.doesNotMatch(body, /Closes/u);
   assert.match(body, /승인 코멘트/u);
   const parsed = parseAutomationPrEvidence(body, { headSha: HEAD });

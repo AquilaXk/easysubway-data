@@ -1,4 +1,4 @@
-// #979: 다음 ITX 수집이 승격되면 파생 결속(증거·spec·alignment fixture·mobile fixture 파생)까지 사람 손 없이 이어지는지 종단으로 본다.
+// #979: 다음 ITX 수집이 승격되면 파생 결속(증거·alignment fixture·mobile fixture 파생)까지 사람 손 없이 이어지는지 종단으로 본다.
 // 실제 공급자 호출·dispatch 없이, 커밋된 HEAD의 격리 worktree에 합성 수집을 승격한 뒤 재결속 도구와 CI의 fixture 파생 경로를 그대로 돌린다.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -19,6 +19,7 @@ const json = (file) => JSON.parse(readFileSync(file, "utf8"));
 const CONTRACT = "tools/datapack/itx-cheongchun-coverage-contract.json";
 const EVIDENCE = "tools/datapack/itx-cheongchun-topology-evidence.json";
 const SPEC = "tools/datapack/release/candidate-build-spec.json";
+const PIN_FILES = [SPEC, "tools/datapack/release/nationwide-candidate-input-manifest.json", "tools/datapack/release/nationwide-candidate-preparation.json"];
 
 function git(args, cwd = root) {
   return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
@@ -71,19 +72,17 @@ test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속
   stageInputFixture(stagedFixture);
   const changed = await rebindItxPromotion({ repositoryRoot: worktree, buildNow });
   const versionedEvidence = `tools/datapack/itx-cheongchun-topology-evidence-${reference.artifactId.replace("itx-cheongchun-source-timetable-", "")}.json`;
-  assert.ok(changed.includes(EVIDENCE) && changed.includes(SPEC) && changed.includes(versionedEvidence), changed.join("\n"));
-  const allowed = new Set([EVIDENCE, SPEC, versionedEvidence, ...ALIGNMENT_FIXTURES]);
+  assert.ok(changed.includes(EVIDENCE) && changed.includes(versionedEvidence), changed.join("\n"));
+  const allowed = new Set([EVIDENCE, versionedEvidence, ...ALIGNMENT_FIXTURES]);
   for (const file of changed) assert.ok(allowed.has(file), `예상 밖 변경: ${file}`);
 
-  // 3. 결속 검증: 증거·버전 증거·spec pin·alignment fixture가 새 원천과 새 팩에 맞는다.
+  // 3. 결속 검증: 증거·버전 증거·alignment fixture가 새 원천과 새 팩에 맞는다.
   const evidence = json(path.join(worktree, EVIDENCE));
   assert.equal(evidence.sourceArtifact.sha256, reference.sha256);
   assert.equal(evidence.pack.inputSha256, json(path.join(worktree, CONTRACT)).officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.sha256);
   assert.equal(readFileSync(path.join(worktree, versionedEvidence), "utf8"), readFileSync(path.join(worktree, EVIDENCE), "utf8"));
-  const spec = json(path.join(worktree, SPEC));
-  assert.equal(spec.itxTopologyEvidencePath, versionedEvidence);
-  assert.equal(spec.itxTopologyEvidenceSha256, sha256(readFileSync(path.join(worktree, EVIDENCE))));
-  assert.equal(spec.networkEdgeEvidence.itxCoverageContract.sha256, sha256(readFileSync(path.join(worktree, CONTRACT))));
+  // 후보 pin은 승격 PR이 건드리지 않는다(게시된 입력을 가리키고, 병합 뒤 전국 후보 준비가 다시 묶는다).
+  for (const file of PIN_FILES) assert.equal(git(["status", "--porcelain", "--", file], worktree), "", file);
   assert.doesNotThrow(() => verifyCurrentItxPromotion({ reference, repositoryRoot: worktree }));
   const outputPack = readFileSync(path.join(stagedFixture, "assets/datapacks/capital.sqlite.gz"));
   assert.equal(sha256(outputPack), evidence.pack.outputSha256);

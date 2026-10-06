@@ -5,9 +5,10 @@
 //  1. 게이트 승격 근거를 다시 계산해 확인한다(verifyCurrentItxPromotion).
 //  2. 저장소 안 apps/mobile에 stage된 입력 fixture 팩(ITX topology 적용 전, mobile 고정 커밋)에 새 원천 topology를 적용해 팩·index·증거를 만든다
 //     (apply-itx-topology write 모드). 입력 팩 식별은 contract의 topologyInputPackIdentity와 같아야 한다.
-//  3. 증거를 승격 snapshot의 버전 증거(itx-cheongchun-topology-evidence-<stamp>.json)로도 남긴다(후보 생성이 읽는다).
-//  4. 후보 build spec의 ITX 결속(contract sha·버전 증거 경로·sha)을 새 원천으로 바꾼다(bindApprovedItxCurrentSourceSpec).
-//  5. 5권역 alignment fixture의 packSha256만 새 팩으로 다시 맞춘다. 다른 값이 바뀌면 이상이라 실패한다.
+//  3. 증거를 승격 snapshot의 버전 증거(itx-cheongchun-topology-evidence-<stamp>.json)로도 남긴다(승격 병합 뒤 전국 후보 준비가 이 경로를 읽는다).
+//  4. 5권역 alignment fixture의 packSha256만 새 팩으로 다시 맞춘다. 다른 값이 바뀌면 이상이라 실패한다.
+// 후보 build spec·전국 후보 입력 manifest·preparation의 ITX pin은 건드리지 않는다. PR CI는 그 pin이 가리키는 게시된 입력(OCI)을 받아 쓰고,
+// 승격 병합 뒤 전국 후보 준비 단계가 새 원천으로 다시 묶는다(#942).
 // 출력 팩은 mobile 레포에 커밋하지 않는다. CI staging이 같은 입력 fixture에서 같은 팩을 파생하고 증거와 대조한다.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -16,14 +17,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { bindApprovedItxCurrentSourceSpec, deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
+import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 
 const execFileAsync = promisify(execFile);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const CONTRACT = "tools/datapack/itx-cheongchun-coverage-contract.json";
 const EVIDENCE = "tools/datapack/itx-cheongchun-topology-evidence.json";
-const SPEC = "tools/datapack/release/candidate-build-spec.json";
 export const ALIGNMENT_FIXTURES = Object.freeze([
   "busan", "daegu", "daejeon", "gwangju", "seoul",
 ].map((name) => `tools/route-map/route-map-defs/${name}-alignment-fixture.json`));
@@ -68,22 +68,8 @@ export async function rebindItxPromotion({ repositoryRoot: requestedRoot, buildN
   const versionedPath = deriveApprovedItxTopologyEvidencePath(reference);
   await writeFile(path.join(repositoryRoot, versionedPath), evidenceBytes, { flag: "wx" });
 
-  // 4. 후보 build spec 결속
-  const baseSpec = JSON.parse(await read(SPEC));
-  const bound = await bindApprovedItxCurrentSourceSpec({
-    baseSpec,
-    coverageContractBytes: contractBytes,
-    sourceBytes: await read(reference.artifactPath),
-    completenessBytes: await read(reference.completenessEvidencePath),
-    topologyEvidenceBytes: evidenceBytes,
-    topologyEvidencePath: versionedPath,
-    buildNow,
-    repositoryRoot,
-  });
-  await writeFile(path.join(repositoryRoot, SPEC), `${JSON.stringify(bound, null, 2)}\n`);
-
-  // 5. alignment fixture: packSha256만 바뀌어야 한다.
-  const changed = [EVIDENCE, versionedPath, SPEC];
+  // 4. alignment fixture: packSha256만 바뀌어야 한다.
+  const changed = [EVIDENCE, versionedPath];
   for (const relative of ALIGNMENT_FIXTURES) {
     const currentBytes = await read(relative);
     const current = JSON.parse(currentBytes);

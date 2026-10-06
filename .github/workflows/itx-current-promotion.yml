@@ -8,7 +8,7 @@ name: ITX Current Promotion
 # - 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_ITX_PROMOTION이 true일 때만 돈다(기본 꺼짐). 사람 dispatch는 항상 돈다.
 #   force_collect를 주면 수집할 때가 아니어도 수집한다(후속 단계가 새 수집분을 기다릴 때).
 # - 승격 뒤 파생 재결속(#979)을 같은 job에서 한다: 고정 입력 fixture(mobile, ITX 적용 전 팩)에 새 원천 topology를 적용해 증거(현재·버전 별)와 팩을 만들고,
-#   후보 build spec 결속과 5권역 alignment fixture를 새 팩에 맞춘다. mobile 커밋·workflow pin은 승격마다 바뀌지 않는다(CI가 입력 팩에서 출력 팩을 파생해 증거와 대조).
+#   5권역 alignment fixture를 새 팩에 맞춘다(후보 build spec·입력 manifest pin은 게시된 입력을 가리키므로 건드리지 않고 병합 뒤 후보 준비가 다시 묶는다). mobile 커밋·workflow pin은 승격마다 바뀌지 않는다(CI가 입력 팩에서 출력 팩을 파생해 증거와 대조).
 #   그래서 승격 PR 하나가 사람 손 없이 required CI를 통과한다. raw capture 원장(OCI 발행) 등록은 아직 없다(#979 본문 참조).
 #   DATAPACK_SCHEDULED_ITX_PROMOTION은 그 남은 항목의 처리와 QA 결정 전까지 켜지 않는다.
 # - 수동 승인 경로(collect-korail-itx-cheongchun-timetable --promote-candidate --approval-url ...)는 override로 그대로 있다. 이 workflow는 쓰지 않는다.
@@ -200,7 +200,7 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'COLLECT' }}
         run: |
           set -euo pipefail
-          # 승격 근거를 다시 확인한 뒤 입력 팩에 새 topology를 적용해 증거·버전 증거·후보 build spec 결속·alignment fixture를 새 원천에 맞춘다.
+          # 승격 근거를 다시 확인한 뒤 입력 팩에 새 topology를 적용해 증거·버전 증거·alignment fixture를 새 원천에 맞춘다.
           node tools/datapack/rebind-itx-promotion.mjs --repository-root "${GITHUB_WORKSPACE}" --build-now "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
       - name: Mint App token for the promotion pull request
         id: app-token-pr
@@ -222,7 +222,7 @@ jobs:
           contract="tools/datapack/itx-cheongchun-coverage-contract.json"
           artifact_id="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).sourceTimetableArtifact.artifactId)' "${contract}")"
           [[ "${artifact_id}" =~ ^itx-cheongchun-source-timetable-[0-9]{17}$ ]] || { echo "promoted artifact identity is invalid" >&2; exit 1; }
-          # 허용 경로의 정본은 증거 단계 코드 한 곳이다(원천 승격 4 + 재결속 8). 정확히 이 집합만 바뀌어야 한다.
+          # 허용 경로의 정본은 증거 단계 코드 한 곳이다(원천 승격 4 + 재결속 7). 정확히 이 집합만 바뀌어야 한다.
           mapfile -t paths < <(node -e 'import("./tools/ci/automation-pr-evidence.mjs").then(({ itxPromotionAllowedPaths }) => process.stdout.write(itxPromotionAllowedPaths(process.argv[1]).join("\n") + "\n"))' "${artifact_id}")
           mapfile -t changed < <(git status --porcelain=v1 | sed -E 's/^.. //')
           [[ "${#changed[@]}" == "${#paths[@]}" ]] || { echo "promotion changed an unsupported path count" >&2; exit 1; }
