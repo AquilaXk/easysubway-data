@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   ITX_PROMOTION_GATE_POLICY_ID,
   evaluateItxPromotionGate,
   evaluateItxPromotionMetrics,
   parseItxPromotionGatePolicy,
+  runItxPromotionGateCli,
 } from "./itx-promotion-gate.mjs";
+import { createProviderResponseRecorder, providerResponseCaptureBytes } from "./provider-response-capture.mjs";
 
 const POLICY = parseItxPromotionGatePolicy(JSON.parse(await readFile(new URL("./itx-promotion-gate-policy.json", import.meta.url), "utf8")));
 const SOURCES = new URL("./sources/", import.meta.url);
@@ -441,4 +447,177 @@ test("정책 measuredBasis는 이력에서 다시 계산한 값과 같다", asyn
   assert.ok(POLICY.limits.timetableTupleAddedPermille < min.timetableTupleAdded);
   assert.ok(POLICY.limits.firstDepartureShiftSeconds >= observed.firstDepartureShiftSeconds);
   assert.ok(POLICY.limits.lastDepartureShiftSeconds >= observed.lastDepartureShiftSeconds);
+});
+
+// ---------------------------------------------------------------------------
+// CLI: 파일을 읽어 영수증을 쓴다. 영수증은 한 번만 쓴다(wx).
+// ---------------------------------------------------------------------------
+async function cliFixture({ mutateCandidate = () => {}, previousShaOverride = null } = {}) {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-gate-cli-"));
+  const sourceDir = path.join(dir, "tools/datapack/sources");
+  await mkdir(sourceDir, { recursive: true });
+  const previous = snapshot("previous", { observedAt: "2026-09-30T16:38:54.026Z", freshUntil: "2026-10-11T00:00:00+09:00" });
+  const candidate = snapshot("candidate", { mutate: mutateCandidate });
+  const bytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+  const previousBytes = bytes(previous);
+  const candidateBytes = bytes(candidate);
+  const completeness = completenessFor(candidate);
+  const completenessBytes = bytes(completeness);
+  candidate.completenessEvidenceSha256 = sha256(completenessBytes);
+  const reboundCandidateBytes = bytes(candidate);
+  await writeFile(path.join(sourceDir, `${previous.artifactId}.json`), previousBytes);
+  const contractPath = path.join(dir, "tools/datapack/itx-cheongchun-coverage-contract.json");
+  await writeFile(contractPath, JSON.stringify({ sourceTimetableArtifact: {
+    status: "ADMITTED", artifactId: previous.artifactId, artifactPath: `tools/datapack/sources/${previous.artifactId}.json`, sha256: previousShaOverride ?? sha256(previousBytes),
+  } }));
+  const recorder = createProviderResponseRecorder({
+    fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+    observedAt: candidate.observedAt,
+    selectedServiceDates: candidate.selectedServiceDates,
+  });
+  await recorder.fetchImpl("https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2?serviceKey=SECRET&pageNo=1");
+  const files = {
+    candidate: path.join(dir, "candidate.json"),
+    completeness: path.join(dir, "completeness.json"),
+    capture: path.join(dir, "capture.json"),
+    replay: path.join(dir, "replay.json"),
+    "coverage-contract": contractPath,
+    policy: path.join(repositoryRootForCli, "tools/datapack/itx-promotion-gate-policy.json"),
+    output: path.join(dir, "receipt.json"),
+  };
+  await writeFile(files.candidate, reboundCandidateBytes);
+  await writeFile(files.completeness, completenessBytes);
+  await writeFile(files.capture, providerResponseCaptureBytes(recorder.captureArtifact()));
+  await writeFile(files.replay, JSON.stringify(replayFor(candidate)));
+  const argv = Object.entries(files).flatMap(([name, value]) => [`--${name}`, value]);
+  return { dir, files, argv };
+}
+const repositoryRootForCli = path.resolve(import.meta.dirname, "../..");
+
+test("CLI는 후보·직전 원천(coverage contract)·capture·replay·정책으로 영수증을 한 번만 쓴다", async () => {
+  const fixture = await cliFixture();
+  try {
+    const receipt = await runItxPromotionGateCli({ argv: fixture.argv, repositoryRoot: fixture.dir });
+    assert.equal(receipt.status, "PASS");
+    const written = JSON.parse(await readFile(fixture.files.output, "utf8"));
+    assert.deepEqual(written, receipt);
+    assert.equal(receipt.source.providerRecordCount, 1);
+    assert.equal(receipt.source.rawCaptureSha256, sha256(await readFile(fixture.files.capture)));
+    assert.equal(JSON.stringify(written).includes("SECRET"), false);
+    await assert.rejects(runItxPromotionGateCli({ argv: fixture.argv, repositoryRoot: fixture.dir }), /EEXIST/u);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI는 차단돼도 영수증을 남기고 BLOCK을 돌려준다", async () => {
+  const fixture = await cliFixture({ mutateCandidate: ({ sets }) => { sets["9"] = daySets("9", { trains: 48 }); } });
+  try {
+    const receipt = await runItxPromotionGateCli({ argv: fixture.argv, repositoryRoot: fixture.dir });
+    assert.equal(receipt.status, "BLOCK");
+    assert.ok(receipt.blockedCheckIds.includes("TRIP_COUNT:9"));
+    assert.equal(JSON.parse(await readFile(fixture.files.output, "utf8")).status, "BLOCK");
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI는 직전 원천 sha가 contract와 다르거나 인자가 잘못되면 실패한다", async () => {
+  const mismatched = await cliFixture({ previousShaOverride: "f".repeat(64) });
+  try {
+    await assert.rejects(runItxPromotionGateCli({ argv: mismatched.argv, repositoryRoot: mismatched.dir }), /ITX_PROMOTION_GATE_PREVIOUS_SHA256_MISMATCH/u);
+  } finally {
+    await rm(mismatched.dir, { recursive: true, force: true });
+  }
+  const fixture = await cliFixture();
+  try {
+    await assert.rejects(runItxPromotionGateCli({ argv: fixture.argv.slice(2), repositoryRoot: fixture.dir }), /ITX_PROMOTION_GATE_ARGUMENTS/u);
+    await assert.rejects(runItxPromotionGateCli({ argv: [...fixture.argv, "--extra", "x"], repositoryRoot: fixture.dir }), /ITX_PROMOTION_GATE_ARGUMENTS/u);
+    const relative = [...fixture.argv];
+    relative[relative.indexOf("--candidate") + 1] = "candidate.json";
+    await assert.rejects(runItxPromotionGateCli({ argv: relative, repositoryRoot: fixture.dir }), /ITX_PROMOTION_GATE_ARGUMENTS/u);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 실행 파일: workflow는 종료 코드로 PASS(0)·BLOCK(3)·오류(1)를 가른다. 저장소의 현재 승인 원천을 직전 원천으로 쓴다.
+// ---------------------------------------------------------------------------
+const execFileAsync = promisify(execFile);
+
+async function executableFixture({ mutate }) {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-gate-exec-"));
+  const contract = JSON.parse(await readFile(new URL("./itx-cheongchun-coverage-contract.json", import.meta.url), "utf8"));
+  const reference = contract.sourceTimetableArtifact;
+  const current = JSON.parse(await readFile(new URL(`../../${reference.artifactPath}`, import.meta.url), "utf8"));
+  const completeness = JSON.parse(await readFile(new URL(`../../${reference.completenessEvidencePath}`, import.meta.url), "utf8"));
+  const candidate = structuredClone(current);
+  mutate(candidate);
+  const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+  const completenessBytes = Buffer.from(`${JSON.stringify(completeness, null, 2)}\n`);
+  candidate.completenessEvidenceSha256 = sha256(completenessBytes);
+  const reboundBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+  const recorder = createProviderResponseRecorder({
+    fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+    observedAt: candidate.observedAt,
+    selectedServiceDates: candidate.selectedServiceDates,
+  });
+  await recorder.fetchImpl("https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2?serviceKey=SECRET&pageNo=1");
+  const replay = { ...completeness, validationMode: "REPLAY", evidenceHash: sha256("replay") };
+  const files = {
+    candidate: path.join(dir, "candidate.json"),
+    completeness: path.join(dir, "completeness.json"),
+    capture: path.join(dir, "capture.json"),
+    replay: path.join(dir, "replay.json"),
+    "coverage-contract": new URL("./itx-cheongchun-coverage-contract.json", import.meta.url).pathname,
+    policy: new URL("./itx-promotion-gate-policy.json", import.meta.url).pathname,
+    output: path.join(dir, "receipt.json"),
+  };
+  await writeFile(files.candidate, reboundBytes);
+  await writeFile(files.completeness, completenessBytes);
+  await writeFile(files.capture, providerResponseCaptureBytes(recorder.captureArtifact()));
+  await writeFile(files.replay, JSON.stringify(replay));
+  return { dir, files, argv: Object.entries(files).flatMap(([name, value]) => [`--${name}`, value]) };
+}
+
+async function runExecutable(argv) {
+  try {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [new URL("./itx-promotion-gate.mjs", import.meta.url).pathname, ...argv]);
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    return { code: error.code, stdout: error.stdout, stderr: error.stderr };
+  }
+}
+
+test("실행 파일은 PASS면 0, BLOCK이면 3, 오류면 1로 끝나고 차단 코드를 stderr에 남긴다", async () => {
+  const same = await executableFixture({ mutate: () => {} });
+  try {
+    const result = await runExecutable(same.argv);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /ITX promotion gate PASS: policy=itx-promotion-gate-v1/u);
+    assert.equal(JSON.parse(await readFile(same.files.output, "utf8")).status, "PASS");
+    const again = await runExecutable(same.argv);
+    assert.equal(again.code, 1);
+    assert.match(again.stderr, /EEXIST/u);
+  } finally {
+    await rm(same.dir, { recursive: true, force: true });
+  }
+  const blocked = await executableFixture({
+    mutate: (candidate) => {
+      const day = candidate.normalizedSnapshotSets.find(({ dayCd }) => dayCd === "8");
+      day.sets.trainSet = day.sets.trainSet.slice(0, 30);
+    },
+  });
+  try {
+    const result = await runExecutable(blocked.argv);
+    assert.equal(result.code, 3, result.stderr);
+    assert.match(result.stderr, /ITX promotion gate BLOCK: .*blocked=.*TRIP_COUNT:8/u);
+    assert.equal(JSON.parse(await readFile(blocked.files.output, "utf8")).status, "BLOCK");
+  } finally {
+    await rm(blocked.dir, { recursive: true, force: true });
+  }
+  const invalid = await runExecutable(["--candidate", "relative.json"]);
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /ITX_PROMOTION_GATE_ARGUMENTS/u);
 });
