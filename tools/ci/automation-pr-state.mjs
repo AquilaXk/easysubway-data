@@ -77,5 +77,5 @@ export function pendingLedgerWriters({ pullRequests, automationBranches, reposit
   const openBranches = new Set(open.map(({ headRefName }) => headRefName));
   const merged = new Set(owned.filter(({ state }) => state === "MERGED").map(({ headRefName }) => headRefName));
   const branches = automationBranches.filter((branch) => prefixes.some((prefix) => branch.startsWith(prefix)) && !openBranches.has(branch) && !merged.has(branch));
-  return { pullRequests: open.map(({ number }) => number).sort((left, right) => left - right), branches: [...branches].sort() };
+  return { pullRequests: open.map(({ number }) => number).sort((left, right) => left - right), branches: [...branches].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)) };
 }
