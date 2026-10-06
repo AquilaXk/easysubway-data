@@ -17,7 +17,7 @@ const CANDIDATE_WORKFLOW = "nationwide-candidate-refresh.yml";
 // #967: 등록 workflow도 같은 계약을 따른다. PR 생성 지점이 하나인 workflow는 후보 갱신과 등록 둘이다.
 const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
 const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW];
-const PR_WORKFLOWS = [...REFRESH_WORKFLOWS, CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW];
+const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW])];
 const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
 
 function workflowText(file) {
