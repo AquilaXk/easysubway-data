@@ -329,7 +329,13 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(manifest.expiresAt, itxFreshUntil);
   assert.equal(artifactFreshness.freshUntil, itxFreshUntil);
   assert.deepEqual(artifactFreshness.decidedBy, [{ kind: "network" }]);
-  // 시간표 원천은 모두 팩 만료보다 늦다(시간표 창이 만료를 정하지 않는다).
+  // 가장 이른 인용 원천은 수도권 topology(P7D)다. spec에서 유도한 값이 아니라 현재 후보 값으로 고정해 원천 id가 바뀌면 드러나게 한다.
+  assert.equal(earliestCited.sourceId, "capital-route-topology");
+  // 시간표 원천은 모두 팩 만료보다 늦다(시간표 창이 만료를 정하지 않는다). 목록이 비면 every가 공허하게 통과하므로 비어 있지 않음을 먼저 단언한다.
+  assert.ok(artifactFreshness.timetableSources.length > 0, "timetable sources must be reported");
+  const earliestTimetableSource = [...artifactFreshness.timetableSources]
+    .sort((left, right) => Date.parse(left.freshnessExpiresAt) - Date.parse(right.freshnessExpiresAt))[0];
+  assert.equal(earliestTimetableSource.sourceId, "kric-nationwide-timetable-file");
   assert.ok(artifactFreshness.timetableSources.every(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) > Date.parse(manifest.expiresAt)));
   // 검증 전용 빌드(dev 채널)는 시간표 신선도를 계산하지 않고 사유를 남긴다.
   assert.deepEqual(validationOnlyProvenance.candidateBuild.artifactFreshness,
