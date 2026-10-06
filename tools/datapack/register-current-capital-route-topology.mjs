@@ -102,7 +102,12 @@ async function admissionInputBytes(root, supplied) {
   return Object.fromEntries(ADMISSION_INPUT_KEYS.map((key) => [key, Buffer.from(supplied[key])]));
 }
 
-export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot, now = new Date(), inputBytes = null } = {}) {
+// 재등록은 정책 파일(governance·신선도 SLA)을 쓰지 않는다(#989). 자동 병합 정책의 등록 단계는 원장·inventory 둘만 허용하므로 정책 변경이 필요한 상황은 사람 경로의 일이다.
+function policyChangeRequired(detail) {
+  return new Error(`REGISTRATION_POLICY_CHANGE_REQUIRED: ${detail}`);
+}
+
+export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot, now = new Date(), inputBytes = null, forbidPolicyChange = false } = {}) {
   const root = rootPath(repositoryRoot);
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology admission time is invalid");
   const { inventoryBytes, candidateBytes, governanceBytes, freshnessBytes } = await admissionInputBytes(root, inputBytes);
@@ -141,6 +146,9 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
     || (existingGovernance.length === 1) !== (existingFreshness.length === 1)
     || (existingGovernance.length === 1 && (!isDeepStrictEqual(existingGovernance[0], governance) || !matchesSourceFreshness(existingFreshness[0], freshness)))) {
     throw new Error("capital topology registration policy binding is invalid");
+  }
+  if (forbidPolicyChange && existingGovernance.length === 0) {
+    throw policyChangeRequired(`${SOURCE_ID} has no registered governance or freshness policy, so registering it would write both policy files`);
   }
   const governancePolicy = existingGovernance.length === 1 ? baseGovernancePolicy
     : buildAppendOnlyGovernancePolicyRegistration({
@@ -210,7 +218,7 @@ function currentHead(ledger, snapshotId) {
   return head;
 }
 
-export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot, receiptPath, now = new Date() } = {}) {
+export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot, receiptPath, now = new Date(), forbidPolicyChange = false } = {}) {
   const root = rootPath(repositoryRoot);
   if (!path.isAbsolute(receiptPath ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology registration arguments are invalid");
   const [inventoryBytes, ledgerBytes, candidateBytes, governanceBytes, freshnessBytes, receiptBytes] = await Promise.all([
@@ -221,6 +229,7 @@ export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repo
     repositoryRoot: root,
     now,
     inputBytes: { inventoryBytes, candidateBytes, governanceBytes, freshnessBytes },
+    forbidPolicyChange,
   });
   const inventory = parse(inventoryBytes, "source inventory");
   const ledger = parse(ledgerBytes, "source snapshot ledger");
@@ -282,6 +291,10 @@ export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repo
     { relative: OUTPUTS[3], prestateBytes: freshnessBytes, bytes: jsonBytes(nextFreshnessPolicy) },
   ];
   outputs.forEach((output) => { output.inputs = inputs; });
+  if (forbidPolicyChange) {
+    const changed = outputs.slice(2).filter(({ bytes, prestateBytes }) => !bytes.equals(prestateBytes)).map(({ relative }) => relative);
+    if (changed.length > 0) throw policyChangeRequired(`the registration would rewrite ${changed.join(", ")}`);
+  }
   return outputs;
 }
 
