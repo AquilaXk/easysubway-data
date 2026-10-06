@@ -76,7 +76,7 @@ const STAGES = {
 
 const file = (filename, extra = {}) => ({ filename, status: "modified", ...extra });
 const HEAD_COMMITTED_AT = "2026-10-06T00:00:00Z";
-const commit = (sha, { author = ACTIONS_BOT, committer = ACTIONS_BOT, parents = 1, committedAt = HEAD_COMMITTED_AT } = {}) => ({ sha, author, committer, commit: { committer: { date: committedAt } }, parents: Array.from({ length: parents }, (_, index) => ({ sha: `${index}`.repeat(40) })) });
+const commit = (sha, { author = ACTIONS_BOT, committer = ACTIONS_BOT, parents = 1, committedAt = HEAD_COMMITTED_AT, verified = false } = {}) => ({ sha, author, committer, commit: { committer: { date: committedAt }, verification: { verified } }, parents: Array.from({ length: parents }, (_, index) => ({ sha: `${index}`.repeat(40) })) });
 const run = (name, conclusion = "success", { app = 15368, id = 1, startedAt = "2026-10-06T00:00:00Z" } = {}) => ({ id, name, status: "completed", conclusion, started_at: startedAt, app: { id: app } });
 
 /** 정상 입력. 각 반증 테스트는 여기서 정확히 한 가지만 바꾼다. */
@@ -153,7 +153,7 @@ test("반증: 사람이 쓴 커밋이 하나라도 있으면 막는다(작성자
     assert.ok(codesOf(input).includes("COMMITS"), name);
   }
   // App과 github-actions 둘 다 신뢰 신원이다.
-  const mixed = { ...scenario(), commits: [commit("1".repeat(40), { author: AUTOMATION_PR_APP, committer: ACTIONS_BOT }), commit("2".repeat(40))] };
+  const mixed = { ...scenario(), commits: [commit("1".repeat(40), { author: AUTOMATION_PR_APP, committer: ACTIONS_BOT, verified: true }), commit("2".repeat(40))] };
   assert.equal(eligible(mixed), true);
 });
 
@@ -772,4 +772,24 @@ test("CLI gates: --digest-output으로 CI가 본 블록의 digest 기록을 남�
     await writeEvidenceDigest({ file, pull: input.pull, evidence: { stage: "itx-promotion" } });
     assert.deepEqual(JSON.parse(await readFile(file, "utf8")), input.ciEvidence);
   });
+});
+
+// #986 리뷰 F5: App이 만든 커밋은 GitHub 서명(verification.verified)을 요구한다. github-actions의 git push 커밋은 서명되지 않아 이 검사는 advisory다.
+test("반증: App 신원의 커밋은 GitHub 서명이 검증돼야 하고, 서명되지 않은 App 신원은 위조로 보고 막는다", () => {
+  const unsignedApp = { ...scenario(), commits: [commit("1".repeat(40), { author: AUTOMATION_PR_APP, committer: AUTOMATION_PR_APP }), commit(HEAD)] };
+  assert.ok(codesOf(unsignedApp).includes("COMMITS"));
+  const unsignedAppAuthor = { ...scenario(), commits: [commit("1".repeat(40), { author: AUTOMATION_PR_APP }), commit(HEAD)] };
+  assert.ok(codesOf(unsignedAppAuthor).includes("COMMITS"));
+  const unsignedAppCommitter = { ...scenario(), commits: [commit("1".repeat(40), { committer: AUTOMATION_PR_APP }), commit(HEAD)] };
+  assert.ok(codesOf(unsignedAppCommitter).includes("COMMITS"));
+  const signedApp = { ...scenario(), commits: [commit("1".repeat(40), { author: AUTOMATION_PR_APP, committer: AUTOMATION_PR_APP, verified: true }), commit(HEAD)] };
+  assert.equal(eligible(signedApp), true);
+  // github-actions 신원 커밋은 서명이 없다(실측: git push 커밋의 verification.verified가 false). 이 신원은 서명으로 검증할 수 없어 advisory로 둔다.
+  assert.equal(eligible({ ...scenario(), commits: [commit("1".repeat(40)), commit(HEAD)] }), true);
+  assert.equal(eligible({ ...scenario(), commits: [commit("1".repeat(40), { verified: true }), commit(HEAD)] }), true);
+  for (const verification of [undefined, null, { verified: "true" }, { verified: 1 }]) {
+    const odd = commit("1".repeat(40), { author: AUTOMATION_PR_APP, committer: AUTOMATION_PR_APP, verified: true });
+    odd.commit.verification = verification;
+    assert.ok(codesOf({ ...scenario(), commits: [odd, commit(HEAD)] }).includes("COMMITS"), String(JSON.stringify(verification)));
+  }
 });

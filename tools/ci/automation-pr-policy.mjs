@@ -11,7 +11,10 @@
 //   HEAD_MISMATCH   블록의 head sha가 PR head와 같다.
 //   BASE            블록의 base sha가 실제 분기점(compare merge base)과 같다.
 //   BEHIND          PR이 main보다 뒤처지지 않았다(base 갱신은 head를 바꿔 블록 결속을 깨므로 하지 않는다).
-//   COMMITS         브랜치의 모든 커밋의 작성자·커미터가 App 또는 github-actions이고 merge 커밋이 없다.
+//   COMMITS         브랜치의 모든 커밋의 작성자·커미터가 App 또는 github-actions이고 merge 커밋이 없다. App 신원의 커밋은 GitHub 서명(verification.verified)도 요구한다.
+//                   이 검사는 advisory다(인증이 아니다): github-actions의 git push 커밋은 서명되지 않고(실측 verification.verified=false) GitHub이 작성자를 이메일로
+//                   연결하므로 github-actions noreply 주소를 쓴 커밋은 이 검사를 통과한다. 실제 경계는 자동화 브랜치를 push할 수 있는 사람(저장소 쓰기 권한)이다.
+//                   검사가 하는 일은 자동화 브랜치에 손으로 커밋을 얹은 정상적인 사람 개입을 이상으로 드러내는 것이다.
 //   PATHS           API diff의 변경 경로가 단계별 allowlist와 정확히 맞는다(등록·ITX: 정확히 같음, 재결속: 증거의 변경 단계 경로와 같고
 //                   각 단계가 허용한 경로, 후보: 후보 갱신 도구의 출력 목록 안).
 //   CI              CI workflow가 이 head에서 성공으로 끝났고 ruleset의 required context가 모두 성공이다.
@@ -220,6 +223,10 @@ function commitViolation(commits, compare) {
     const sha = typeof entry?.sha === "string" ? entry.sha.slice(0, 12) : "?";
     if (!isObject(entry) || !trustedCommitIdentity(entry.author)) return `커밋 ${sha}의 작성자가 App 또는 github-actions가 아니다`;
     if (!trustedCommitIdentity(entry.committer)) return `커밋 ${sha}의 커미터가 App 또는 github-actions가 아니다`;
+    // App 신원은 GitHub 서명이 검증된 커밋만 인정한다. App 토큰으로 API를 통해 만든 커밋은 서명되므로 noreply 주소만 흉내 낸 커밋은 걸러진다.
+    if ((sameIdentity(entry.author, AUTOMATION_PR_APP) || sameIdentity(entry.committer, AUTOMATION_PR_APP)) && entry.commit?.verification?.verified !== true) {
+      return `커밋 ${sha}가 App 신원인데 GitHub 서명(verification.verified)이 검증되지 않았다`;
+    }
     if (!Array.isArray(entry.parents) || entry.parents.length !== 1) return `커밋 ${sha}가 merge 커밋이거나 부모를 알 수 없다`;
   }
   return null;
