@@ -459,12 +459,29 @@ test("정책 한도를 넓히면 같은 입력이 통과한다 (한도가 판정
 // ---------------------------------------------------------------------------
 // 이력 재생: 실제 승인 원천 10개를 순서대로 비교한다. 정책 한도의 측정 근거다.
 // ---------------------------------------------------------------------------
-async function historicalSources() {
+async function allSources() {
   const names = (await readdir(SOURCES)).filter((name) => /^itx-cheongchun-source-timetable-\d{17}\.json$/u.test(name)).sort();
   const sources = [];
   for (const name of names) sources.push(JSON.parse(await readFile(new URL(name, SOURCES), "utf8")));
   return sources.sort((left, right) => left.observedAt.localeCompare(right.observedAt));
 }
+
+// 정책 한도는 승인된 이력 앞쪽 snapshot(measuredBasis.snapshots개)에서 잰 값이다. 이후 자동 승격이 snapshot을 더해도 이 측정 근거는 바뀌지 않는다(#979).
+async function historicalSources() {
+  const sources = await allSources();
+  assert.ok(sources.length >= POLICY.measuredBasis.snapshots, "측정 근거 snapshot이 모두 남아 있어야 한다");
+  return sources.slice(0, POLICY.measuredBasis.snapshots);
+}
+
+test("측정 근거 이후의 snapshot은 모두 게이트 승격이고 영수증이 같이 커밋돼 있다", async () => {
+  const later = (await allSources()).slice(POLICY.measuredBasis.snapshots);
+  for (const source of later) {
+    const receipt = JSON.parse(await readFile(new URL(`${source.artifactId}-promotion-gate.json`, SOURCES), "utf8"));
+    assert.equal(receipt.artifactKind, "itx-promotion-gate-receipt");
+    assert.equal(receipt.status, "PASS");
+    assert.equal(receipt.candidate.artifactId, source.artifactId);
+  }
+});
 
 test("이력 재생: 안정 구간은 통과하고 시각표가 흔들린 4개 구간은 차단된다", async () => {
   const sources = await historicalSources();
