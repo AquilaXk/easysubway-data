@@ -56,7 +56,7 @@ test("PR을 만드는 workflow 전부는 workflow dispatch를 쓰지 않는다",
 test("갱신 PR은 바로 앞 step에서 같은 조건으로 받은 App 토큰으로만 연다", () => {
   for (const file of PR_WORKFLOWS) {
     const all = steps(workflowText(file));
-    const creators = all.map((item, index) => ({ ...item, index })).filter(({ block }) => block.includes("gh pr create"));
+    const creators = all.map((item, index) => ({ ...item, index })).filter(({ block }) => createsPullRequest(block));
     assert.equal(creators.length, SINGLE_PR_PATH_WORKFLOWS.includes(file) ? 1 : 2, `${file}: PR creation paths`);
     for (const { name, block, index } of creators) {
       const commands = [...block.matchAll(/^\s*(.*gh pr create.*)$/gmu)].map(([, line]) => line.trim());
