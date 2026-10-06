@@ -13,10 +13,9 @@ const TEST_PATH_PATTERN = /\.test\.[^/]+$/;
 export const MAX_WORKERS_LIMIT = 4;
 // 한 파일이 이 시간보다 길면(기록된 durationMs 기준) top-level test 이름으로 나눠 병렬 실행한다.
 export const PARTITION_TARGET_MS = 120_000;
-// 직렬 그룹: 실제 저장소의 추적 파일을 다시 쓰는 테스트다. 같은 job의 다른 테스트가 그 파일을
-// 읽는 도중 잘린 내용을 보지 않도록 병렬 pool 앞에서 혼자 실행한다(삭제·skip하지 않는다).
-//  - prepare-nationwide-candidate-run: tools/datapack/release/의 nationwide-candidate-preparation.json,
-//    전국 팩·route/station-line 입력·격리 증거 등 6개 파일을 writeFiles: true로 다시 쓴다.
+// 직렬 그룹: 한 테스트를 병렬 pool 앞에서 혼자 실행한다. prepare-nationwide-candidate-run은 #884 이후
+// writeFiles: false로 돌아 추적 파일을 쓰지 않으므로 지금은 방어용 직렬 슬롯일 뿐이다(삭제·skip하지 않는다).
+// 추적 파일 불변은 ci.yml의 clean-tree step이 보장한다. 이 그룹의 제거는 후속 이슈에서 다룬다.
 export const EXCLUSIVE_TESTS = ['tools/datapack/prepare-nationwide-candidate-run.test.mjs'];
 const TOP_LEVEL_REPORTER = fileURLToPath(new URL('./data-test-top-level-reporter.mjs', import.meta.url));
 const SUPPORTED_TEST_PATTERN = /\.test\.mjs$/;

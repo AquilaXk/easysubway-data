@@ -748,7 +748,7 @@ export async function prepareNationwideCandidate({
   requestedBy: requestedByOption = null,
   approvedBy: approvedByOption = null,
   platformInfoMap = null,
-  writeFiles = true,
+  writeFiles = false,
   // #942: 후보 입력 매니페스트를 기록하거나 후보가 고정한 입력으로 재현할 때 저장소 읽기를 바꿔 끼운다.
   readRepositoryFile = null,
 } = {}) {
@@ -2521,7 +2521,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   let releaseSequence = 122;
   const seqArg = args.find((a) => a.startsWith("--sequence="));
   if (seqArg) releaseSequence = Number(seqArg.split("=")[1]);
-  prepareNationwideCandidate({ releaseSequence }).then((res) => {
+  prepareNationwideCandidate({ releaseSequence, writeFiles: true }).then((res) => {
     console.log("Prepared:", res);
   }).catch((err) => {
     console.error(err);

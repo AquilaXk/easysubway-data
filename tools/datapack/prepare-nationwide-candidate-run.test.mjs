@@ -101,7 +101,7 @@ test("nationwide candidate preparation records genuine non-literal hashes and fa
     requestedBy: "data-operator-lead",
     approvedBy: "data-release-authority",
     releaseSequence: 122,
-    writeFiles: true,
+    writeFiles: false,
   });
   const stationLineData = result.stationLineInput;
   const stationLineRaw = JSON.stringify(stationLineData);
