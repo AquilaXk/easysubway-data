@@ -105,16 +105,19 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          CI_STATE: ${{ steps.required-ci.outputs.state }}
         run: |
           set -euo pipefail
           # #939: 열린 등록 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
           open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow current-capital-topology-registration.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow current-capital-topology-registration.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${CI_STATE}"
       - name: Note registration waiting on another pending automation pull request
         if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
+        env:
+          BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
         run: |
-          echo "::notice title=Capital topology registration::waiting for pending source-ledger automation pull request(s) ${{ steps.decision.outputs.blocked_by }}; they write the same ledger files."
+          echo "::notice title=Capital topology registration::waiting for pending source-ledger automation pull request(s) ${BLOCKED_BY}; they write the same ledger files."
       - name: Claim exact main before OCI publication
         if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:
