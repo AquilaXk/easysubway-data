@@ -224,7 +224,7 @@ test("KST quota guard는 fresh window의 exact current run과 자동 refresh led
     quotaWindow: "2026-08-13",
     otherRunCount: 0,
   });
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 5);
   const requestUrl = new URL(calls[0].url);
   assert.equal(requestUrl.origin, "https://api.github.com");
   assert.equal(requestUrl.pathname, "/repos/AquilaXk/easysubway-data/actions/workflows/itx-current-collection.yml/runs");
@@ -256,6 +256,51 @@ test("KST quota guard는 scheduled topology refresh의 exact current run을 허�
   });
   assert.equal(result.runId, 9001);
   assert.equal(result.otherRunCount, 0);
+});
+
+// #977: ITX 승격 workflow(정기·사람 dispatch)도 같은 KST 하루 한 번 제한을 나눠 쓴다.
+test("KST quota guard는 ITX 승격 workflow의 exact current run을 허용하고 먼저 collector에 들어간 실행을 소비로 막는다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  const promotionJob = (runId, conclusion) => ({
+    id: runId + 10_000,
+    run_id: runId,
+    name: "ITX current promotion",
+    status: "completed",
+    conclusion: "failure",
+    steps: [
+      { name: "Guard KST quota window", status: "completed", conclusion: "success" },
+      { name: "Collect current ITX timetable", status: "completed", conclusion },
+    ],
+  });
+  for (const event of ["schedule", "workflow_dispatch"]) {
+    const run = (id) => ({ ...workflowRun(id), event, path: ".github/workflows/itx-current-promotion.yml" });
+    const fetchFor = ({ runs, jobsByRun = {} }) => async (url) => {
+      const request = new URL(url);
+      if (request.pathname.endsWith("/runs")) {
+        const selected = request.pathname.includes("/itx-current-promotion.yml/") && request.searchParams.get("event") === event ? runs : [];
+        return githubResponse({ total_count: selected.length, workflow_runs: selected });
+      }
+      const match = request.pathname.match(/\/actions\/runs\/(\d+)\/jobs$/);
+      const jobs = match ? jobsByRun[match[1]] ?? [] : [];
+      return githubResponse({ total_count: jobs.length, jobs });
+    };
+    const options = { env: budgetEnv({ GITHUB_EVENT_NAME: event }), now: new Date("2026-08-12T15:15:00.000Z") };
+    const allowed = await guardItxCurrentCollectionBudget({ ...options, fetchImpl: fetchFor({ runs: [run(9001)] }) });
+    assert.equal(allowed.runId, 9001, event);
+    // 앞선 실행이 collector에 들어갔으면(성공·실패·취소) 같은 KST 날의 두 번째 수집은 막는다.
+    for (const conclusion of ["success", "failure", "cancelled"]) {
+      await assert.rejects(() => guardItxCurrentCollectionBudget({
+        ...options,
+        fetchImpl: fetchFor({ runs: [run(9000), run(9001)], jobsByRun: { 9000: [promotionJob(9000, conclusion)] } }),
+      }), /quota guard failed/u, `${event} ${conclusion}`);
+    }
+    // 판정이 WAIT여서 collector step이 skipped인 앞선 실행은 공급자를 부르지 않았으므로 소비로 세지 않는다.
+    const skipped = await guardItxCurrentCollectionBudget({
+      ...options,
+      fetchImpl: fetchFor({ runs: [run(9000), run(9001)], jobsByRun: { 9000: [promotionJob(9000, "skipped")] } }),
+    });
+    assert.equal(skipped.otherRunCount, 0, event);
+  }
 });
 
 test("KST quota guard는 collector가 skipped인 same-window pre-provider failure를 소비로 세지 않는다", async () => {

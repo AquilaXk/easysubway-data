@@ -18,6 +18,13 @@ const COLLECTION_CONTEXTS = [
     jobName: "Current topology refresh",
     collectorStepName: "Collect current ITX timetable once",
   },
+  // #977: ITX 원천 시간표 자동 승격 workflow도 같은 KST 하루 한 번 제한을 나눠 쓴다.
+  {
+    workflowFile: "itx-current-promotion.yml",
+    events: ["schedule", "workflow_dispatch"],
+    jobName: "ITX current promotion",
+    collectorStepName: "Collect current ITX timetable",
+  },
 ];
 const MAX_RUNS = 100;
 const MAX_JOBS = 100;
