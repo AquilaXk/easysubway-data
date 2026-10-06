@@ -33,7 +33,16 @@ function stageInputFixture(destination) {
   for (const name of ["capital.sqlite.gz", "index.json"]) cpSync(path.join(inputFixtureRoot, "assets/datapacks", name), path.join(destination, "assets/datapacks", name));
 }
 
-test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속 전부를 맞춘다", { timeout: 20 * 60_000 }, async (context) => {
+// 시나리오 둘: 수집 시각이 직전 수집의 7일 뒤인 경우(기본)와, 운행일은 7일 뒤지만 수집 시각이 다른 원천의 신선도 시계와 같은 날인 경우.
+// 뒤의 것은 build 시계가 원천들의 수집 시각 최댓값에 묶인 테스트까지 함께 돌려 보는 전체 시뮬레이션이 쓴다.
+for (const [label, synthesisOptions] of [
+  ["수집 시각이 직전 수집 7일 뒤", {}],
+  ["수집 시각이 현재 원천들과 같은 날", { observedAtOverride: Date.parse("2026-10-06T08:00:00.000Z") }],
+]) {
+  test(`승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속 전부를 맞춘다 (${label})`, { timeout: 20 * 60_000 }, (context) => rebindScenario(context, synthesisOptions));
+}
+
+async function rebindScenario(context, synthesisOptions) {
   assert.ok(existsSync(path.join(inputFixtureRoot, "assets/datapacks/capital.sqlite.gz")), "pinned Mobile 입력 fixture가 필요함");
   const scratch = realpathSync(mkdtempSync(path.join(os.tmpdir(), "itx-rebind-")));
   const worktree = path.join(scratch, "repo");
@@ -44,7 +53,7 @@ test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속
   });
 
   // 1. 다음 주 수집을 합성해 승격한다(실제 게이트·승격 경로).
-  const collection = await synthesizeNextItxCollection({ repositoryRoot: worktree, outputDirectory: path.join(scratch, "collection") });
+  const collection = await synthesizeNextItxCollection({ repositoryRoot: worktree, outputDirectory: path.join(scratch, "collection"), ...synthesisOptions });
   const before = json(path.join(worktree, CONTRACT)).sourceTimetableArtifact;
   const promoted = await promoteItxSourceCandidate({
     candidatePath: collection.candidatePath,
@@ -108,4 +117,4 @@ test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속
     rejection = String(error.stderr);
   }
   assert.match(rejection, /ITX_FIXTURE_DERIVATION_MISMATCH/u);
-});
+}

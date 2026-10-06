@@ -17,13 +17,14 @@ function shiftIsoDate(value, days) {
   return new Date(Date.UTC(year, month - 1, day) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
-export async function synthesizeNextItxCollection({ repositoryRoot, outputDirectory, shiftDays = 7 }) {
+export async function synthesizeNextItxCollection({ repositoryRoot, outputDirectory, shiftDays = 7, observedAtOverride = null }) {
   if (shiftDays % 7 !== 0 || shiftDays <= 0) throw new Error("shiftDays must be a positive multiple of 7 to keep weekday identities");
   const contract = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
   const reference = contract.sourceTimetableArtifact;
   let text = await readFile(path.join(repositoryRoot, reference.completenessEvidencePath), "utf8");
   const completeness = JSON.parse(text);
-  const observedShifted = new Date(Date.parse(completeness.observedAt) + shiftDays * DAY_MS);
+  // observedAtOverride: 운행일은 shiftDays만큼 옮기되 수집 시각은 이 시각으로 둔다(다른 원천의 신선도 시계와 맞춘 시뮬레이션용).
+  const observedShifted = new Date(observedAtOverride ?? Date.parse(completeness.observedAt) + shiftDays * DAY_MS);
   const observedAt = observedShifted.toISOString();
   const artifactId = `itx-cheongchun-source-timetable-${observedAt.replace(/\D/g, "")}`;
   // 날짜 문자열을 모두 같은 일수만큼 옮긴다(ISO 날짜, 따옴표로 둘러싼 YYYYMMDD 운행일, 수집 시각 stamp).
