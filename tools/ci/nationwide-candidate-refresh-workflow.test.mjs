@@ -9,6 +9,7 @@ import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPull
 const FILE = "nationwide-candidate-refresh.yml";
 const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const PROCEED = "${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}";
+const WRITE = "${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'true' }}";
 
 test("트리거: 2시간마다 정기 폴링과 사람 dispatch(2인 역할 입력 유지), push 트리거는 없다", () => {
   assert.match(yml, /\non:\n  schedule:\n    - cron: "29 \*\/2 \* \* \*"\n  workflow_dispatch:\n    inputs:\n      releaseSequence:/u);
@@ -38,14 +39,18 @@ test("판정 step이 입력 검증·후보 생성보다 먼저 돌고 열린 PR�
   assert.match(block, /EVENT_NAME: \$\{\{ github\.event_name \}\}/u);
   assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/927-nationwide-candidate-refresh-\*" > /u);
-  assert.match(block, /node tools\/ci\/decide-nationwide-candidate-refresh\.mjs --event "\$\{EVENT_NAME\}" --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
+  assert.match(block, /node tools\/ci\/decide-nationwide-candidate-refresh\.mjs --event "\$\{EVENT_NAME\}" --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
 });
 
 test("후보 생성·범위 검증·push·App 토큰·PR 생성은 STALE 또는 FORCED일 때만 돈다", () => {
-  for (const name of [
-    "Validate candidate refresh inputs", "Record the candidate gate run", "Refresh nationwide candidate", "Verify candidate refresh output scope",
-    "Commit and push candidate refresh branch", "Mint App token for the candidate refresh pull request", "Create candidate refresh pull request",
-  ]) assert.equal(ifCondition(step(name).block), PROCEED, name);
+  for (const name of ["Validate candidate refresh inputs", "Record the candidate gate run", "Refresh nationwide candidate", "Verify candidate refresh output scope", "Recheck that no source-ledger automation is pending before pushing"]) {
+    assert.equal(ifCondition(step(name).block), PROCEED, name);
+  }
+  // #974 리뷰 F2: 후보 생성은 길다. push 직전에 원장 쓰기 자동화(열린 PR·claim 브랜치)가 생기지 않았는지 다시 확인하고, 있으면 아무것도 올리지 않는다.
+  for (const name of ["Commit and push candidate refresh branch", "Mint App token for the candidate refresh pull request", "Create candidate refresh pull request"]) {
+    assert.equal(ifCondition(step(name).block), WRITE, name);
+  }
   // #974 리뷰 F3: 취소·시간 초과에도 이 run이 push한 branch와 PR을 정리한다.
   assert.equal(ifCondition(step("Remove the candidate refresh branch after a later failure").block), "${{ (failure() || cancelled()) && env.CANDIDATE_BRANCH != '' }}");
 });
@@ -84,4 +89,16 @@ test("판정이 알린 남은 후보 브랜치는 입력 검증 전에 지운다
   const names = steps().map(({ name }) => name);
   assert.ok(names.indexOf("Decide whether the nationwide candidate must be refreshed") < names.indexOf(cleanup.name));
   assert.ok(names.indexOf(cleanup.name) < names.indexOf("Validate candidate refresh inputs"));
+});
+
+test("push 직전 재확인은 판정과 같은 규칙으로 대기 목록을 읽고, 대기 중이면 이유를 notice로 남긴다", () => {
+  const recheck = step("Recheck that no source-ledger automation is pending before pushing");
+  assert.match(recheck.block, /\n        id: recheck\n/u);
+  assert.match(recheck.block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  assert.match(recheck.block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
+  assert.match(recheck.block, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  const names = steps().map(({ name }) => name);
+  assert.ok(names.indexOf("Verify candidate refresh output scope") < names.indexOf(recheck.name) && names.indexOf(recheck.name) < names.indexOf("Commit and push candidate refresh branch"));
+  const note = step("Note candidate refresh superseded by pending source automation");
+  assert.equal(ifCondition(note.block), "${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'false' }}");
 });

@@ -598,6 +598,7 @@
     {"path":"tools/ci/refresh-workflow-pull-request-lifecycle.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/decide-capital-topology-registration.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/decide-nationwide-candidate-refresh.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/ci/ledger-writers-idle.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/nationwide-candidate-refresh-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/source-ledger-gate.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":300},
     {"path":"tools/ci/automation-pr-evidence.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},

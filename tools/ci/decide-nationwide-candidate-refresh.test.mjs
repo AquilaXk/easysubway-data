@@ -22,7 +22,7 @@ const pr = (state, runId, overrides = {}) => ({
 });
 const ledgerWriter = (number, prefix = "automation/639-seoul-accessibility-refresh-") => pr("OPEN", 9, { number, headRefName: `${prefix}9` });
 const run = async (overrides = {}) => decideNationwideCandidateRefresh({
-  manifest: manifest(), readLocal: reader(FILES), pullRequests: [], branches: [], repository: REPOSITORY, event: "schedule", ...overrides,
+  manifest: manifest(), readLocal: reader(FILES), pullRequests: [], branches: [], automationBranches: [], repository: REPOSITORY, event: "schedule", ...overrides,
 });
 
 test("후보가 읽은 입력이 모두 작업 트리와 같으면 CURRENT이고 아무것도 하지 않는다", async () => {
@@ -58,6 +58,17 @@ test("STALE이어도 원장을 쓰는 자동화 PR이 열려 있으면 BLOCKED_B
 });
 
 // #974 리뷰 F3·이슈 #973: PR 없이 남았거나 닫힌 PR의 후보 브랜치는 사람이 지울 일이 아니다. 판정이 정리 대상으로 알린다.
+// #974 리뷰 F2: 등록 run은 PR을 열기 전에 claim 브랜치를 push하고 OCI에 게시한다. 그 사이에도 원장 쓰기가 진행 중이다.
+test("PR 전의 원장 쓰기 claim 브랜치가 있어도 STALE은 BLOCKED_BY_PENDING_PR로 기다린다", async () => {
+  const stale = { readLocal: reader({ ...FILES, "a.json": "A2" }) };
+  const claim = "automation/456-capital-topology-registration-111";
+  assert.deepEqual(await run({ ...stale, automationBranches: [claim] }), { state: "BLOCKED_BY_PENDING_PR", stalePaths: ["a.json"], blockedBy: [claim], cleanupBranches: [] });
+  assert.deepEqual(await run({ ...stale, automationBranches: [claim], pullRequests: [ledgerWriter(971)] }).then(({ blockedBy }) => blockedBy), [971, claim]);
+  // 병합된 PR의 claim 브랜치는 끝난 일이다. CURRENT는 기다리지 않는다.
+  assert.equal((await run({ ...stale, automationBranches: [claim], pullRequests: [pr("MERGED", 111, { headRefName: claim })] })).state, "STALE");
+  assert.equal((await run({ automationBranches: [claim] })).state, "CURRENT");
+});
+
 test("PR 없이 남았거나 닫힌 PR의 후보 브랜치는 정리 대상으로 알리고 판정은 계속한다", async () => {
   const orphan = `${CANDIDATE_REFRESH_CLAIM_PREFIX}7`;
   assert.deepEqual(await run({ branches: [orphan] }), { state: "CURRENT", cleanupBranches: [orphan] });
