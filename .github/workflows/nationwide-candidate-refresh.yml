@@ -227,7 +227,10 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${STALE_PATHS}" ]]; then reason="후보 입력 변경(${STALE_PATHS})"; else reason="사람 dispatch(명시 요청)"; fi
-          evidence_block="$(node tools/ci/automation-pr-evidence.mjs candidate-refresh-block --build-spec tools/datapack/release/candidate-build-spec.json --base-sha "${CANDIDATE_BASE_SHA}" --head-sha "${CANDIDATE_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+          # #986 F4: 이 PR이 바꾼 경로 전체를 증거 블록에 싣는다(2단계 정책이 API diff와 정확히 대조한다).
+          changed_paths="${RUNNER_TEMP}/candidate-changed-paths.txt"
+          git diff --name-only "${CANDIDATE_BASE_SHA}" "${CANDIDATE_HEAD_SHA}" > "${changed_paths}"
+          evidence_block="$(node tools/ci/automation-pr-evidence.mjs candidate-refresh-block --build-spec tools/datapack/release/candidate-build-spec.json --changed-paths "${changed_paths}" --base-sha "${CANDIDATE_BASE_SHA}" --head-sha "${CANDIDATE_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
           body="$(printf '%s\n' \
             "## Summary" \
             "" \

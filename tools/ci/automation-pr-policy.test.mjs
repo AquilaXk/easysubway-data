@@ -70,7 +70,7 @@ const STAGES = {
   "candidate-refresh": {
     branch: "automation/927-nationwide-candidate-refresh-9004",
     paths: CANDIDATE_PATHS,
-    evidence: { stage: "candidate-refresh", policy: null, sources: [], steps: [], candidate: CANDIDATE },
+    evidence: { stage: "candidate-refresh", policy: null, sources: [], steps: [], candidate: { ...CANDIDATE, paths: CANDIDATE_PATHS } },
   },
 };
 
@@ -221,12 +221,22 @@ test("재결속 단계는 증거의 변경 단계 경로와 정확히 같아야 
   assert.equal(BUSAN_STEP.isAllowedPath(BUSAN_PATH), true);
 });
 
-test("후보 갱신 단계는 후보 갱신 도구가 선언한 출력 목록 안에서만 바뀔 수 있다", () => {
+test("후보 갱신 단계는 증거가 주장한 경로와 API diff가 정확히 같고 그 경로가 후보 갱신 도구의 출력 목록 안일 때만 통과한다(#986 F4)", () => {
   const input = scenario("candidate-refresh");
+  // API diff가 증거의 경로보다 적어도(빠져도) 막는다. 부분집합은 통과하지 않는다.
   input.files = [file(CANDIDATE_PATHS[0])];
+  assert.ok(codesOf(input).includes("PATHS"), "subset of the claimed paths");
+  input.files = [...CANDIDATE_PATHS.map((entry) => file(entry)), file("tools/datapack/source-inventory.json")];
+  assert.ok(codesOf(input).includes("PATHS"), "extra path");
+  input.files = CANDIDATE_PATHS.map((entry) => file(entry));
   assert.equal(eligible(input), true);
-  input.files = [file(CANDIDATE_PATHS[0]), file("tools/datapack/source-inventory.json")];
-  assert.ok(codesOf(input).includes("PATHS"));
+  // 증거가 출력 목록 밖 경로를 주장하면 diff와 같아도 막는다.
+  const outside = scenario("candidate-refresh");
+  const claimed = [...CANDIDATE_PATHS, "tools/datapack/source-inventory.json"].sort();
+  outside.pull.body = automationPrEvidenceBlock({ ...STAGES["candidate-refresh"].evidence, candidate: { ...CANDIDATE, paths: claimed }, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD });
+  outside.ciEvidence = { ...outside.ciEvidence, evidenceSha256: automationEvidenceDigest(outside.pull.body) };
+  outside.files = claimed.map((entry) => file(entry));
+  assert.ok(codesOf(outside).includes("PATHS"), "claimed path outside the tool outputs");
 });
 
 // ---------------------------------------------------------------------------
@@ -479,17 +489,58 @@ test("반증: ITX 게이트가 실패하거나 승인 모드·다른 snapshot이
   assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: HEAD_LEDGER, contract: ITX_CONTRACT, receipt: itxReceipt() }))).includes("EVIDENCE_DRIFT"));
 });
 
+const SCHEDULED = { requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates" };
+const GATE_RUN = { repository: "AquilaXk/easysubway-data", workflowPath: ".github/workflows/nationwide-candidate-refresh.yml", runId: 123456, runAttempt: 1, event: "schedule", headSha: BASE };
+const candidateState = (overrides = {}) => ({
+  buildSpec: { ...CANDIDATE, publishedAt: "2026-10-06T00:51:18.300Z" },
+  fanIn: { evaluatedAt: "2026-10-06T00:51:18.300Z" },
+  releaseRequest: { ...SCHEDULED, gateRun: { ...GATE_RUN } },
+  ...overrides,
+});
+
 test("게이트 재계산: 후보 갱신 단계는 후보 결속 위반이 없고 증거의 후보 식별이 커밋된 build spec과 같아야 한다", async () => {
-  const state = { buildSpec: { ...CANDIDATE }, fanIn: { evaluatedAt: "2026-10-06T00:00:00.000Z" }, releaseRequest: { requestedBy: "a", approvedBy: "b", gateRun: null } };
+  const state = candidateState();
   const calls = [];
   const ok = gateInput("candidate-refresh", { ledger: BASE_LEDGER, candidate: { state, violations: (arguments_) => { calls.push(arguments_); return []; } } });
   assert.deepEqual((await recomputeAutomationGates(ok)).violations, []);
-  assert.equal(calls[0].evaluatedAt, "2026-10-06T00:00:00.000Z");
-  assert.equal(calls[0].requestedBy, "a");
   assert.ok((await gateCodes(gateInput("candidate-refresh", { ledger: BASE_LEDGER, candidate: { state, violations: () => ["sourceSnapshotSetHash mismatch"] } }))).includes("CANDIDATE_GATE"));
-  const drifted = { ...state, buildSpec: { ...CANDIDATE, releaseSequence: 129 } };
+  const drifted = candidateState({ buildSpec: { ...CANDIDATE, releaseSequence: 129, publishedAt: "2026-10-06T00:51:18.300Z" } });
   assert.ok((await gateCodes(gateInput("candidate-refresh", { ledger: BASE_LEDGER, candidate: { state: drifted, violations: () => [] } }))).includes("EVIDENCE_DRIFT"));
   assert.ok((await gateCodes(gateInput("candidate-refresh", { ledger: HEAD_LEDGER, candidate: { state, violations: () => [] } }))).includes("EVIDENCE_DRIFT"));
+});
+
+// #986 F4: 결속 검증기에 넘기는 기대값은 검증 대상 파일 자신이 아니라 독립 원천에서 온다.
+test("후보 게이트의 기대값은 build spec(후보 시계)·정기 역할 상수·증거의 run과 base에서 오고 release request 자신에서 오지 않는다", async () => {
+  // fan-in의 시계가 달라도 기대 시계는 build spec의 publishedAt이다. release request가 사람 역할을 주장해도 기대 역할은 정기 역할이다.
+  const state = candidateState({
+    fanIn: { evaluatedAt: "2099-01-01T00:00:00.000Z" },
+    releaseRequest: { requestedBy: "someone", approvedBy: "someone-else", gateRun: { ...GATE_RUN, runId: 999, headSha: OTHER } },
+  });
+  const calls = [];
+  const input = gateInput("candidate-refresh", { ledger: BASE_LEDGER, candidate: { state, violations: (arguments_) => { calls.push(arguments_); return []; } } });
+  await recomputeAutomationGates(input);
+  assert.equal(calls[0].evaluatedAt, "2026-10-06T00:51:18.300Z");
+  assert.equal(calls[0].requestedBy, SCHEDULED.requestedBy);
+  assert.equal(calls[0].approvedBy, SCHEDULED.approvedBy);
+  assert.deepEqual({ runId: calls[0].gateRun.runId, headSha: calls[0].gateRun.headSha }, { runId: 123456, headSha: BASE });
+  // 결속 검증기가 기대값과 release request의 불일치를 위반으로 드러내는지 실제 검증기로 확인한다.
+  const real = await recomputeAutomationGates({ ...input, candidateViolations: undefined });
+  const texts = real.violations.map(({ detail }) => detail).join(" | ");
+  for (const expected of ["requestedBy mismatch", "approvedBy mismatch", "gateRun mismatch"]) assert.ok(texts.includes(expected), expected);
+});
+
+test("반증: 후보의 gateRun이 증거의 run·base와 다르거나 형식이 틀리거나 없으면 막는다", async () => {
+  const run = async (gateRun) => gateCodes(gateInput("candidate-refresh", { ledger: BASE_LEDGER, candidate: { state: candidateState({ releaseRequest: { ...SCHEDULED, gateRun } }), violations: () => [] } }));
+  assert.deepEqual(await run({ ...GATE_RUN }), []);
+  for (const [name, gateRun] of Object.entries({
+    "other run": { ...GATE_RUN, runId: 1 },
+    "other base": { ...GATE_RUN, headSha: OTHER },
+    "other workflow": { ...GATE_RUN, workflowPath: ".github/workflows/ci.yml" },
+    "other repository": { ...GATE_RUN, repository: "other/repo" },
+    "extra key": { ...GATE_RUN, extra: 1 },
+    missing: undefined,
+    "string run id": { ...GATE_RUN, runId: "123456" },
+  })) assert.ok((await run(gateRun)).includes("CANDIDATE_GATE"), name);
 });
 
 test("게이트 재계산: 읽을 수 없는 입력은 예외 없이 위반으로 막는다(원장·정책·base 읽기 실패)", async () => {

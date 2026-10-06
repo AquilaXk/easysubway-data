@@ -36,6 +36,7 @@ import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
 import { ITX_PROMOTION_MODE_GATE_PASSED, itxPromotionReceiptPath, verifyItxGatePromotion } from "../datapack/lib/itx-promotion-authority.mjs";
+import { SCHEDULED_RELEASE_ROLES, gateRunViolations } from "../datapack/lib/scheduled-release-authority.mjs";
 import {
   NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS,
   nationwideCandidateRefreshViolations,
@@ -190,8 +191,12 @@ function pathViolation(evidence, files) {
     const expected = sortCodepoint(new Set(claimed));
     return sameJson(changed, expected) ? null : describeSetDifference(changed, expected);
   }
+  // 후보 갱신: 증거가 주장한 경로가 후보 갱신 도구의 출력 목록 안이어야 하고 API diff가 그 경로와 정확히 같아야 한다(#986 F4).
   const outputs = sortCodepoint(NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS);
-  return changed.every((entry) => outputs.includes(entry)) ? null : describeSetDifference(changed, outputs, { subset: true });
+  const claimed = evidence.candidate.paths;
+  const outside = claimed.filter((entry) => !outputs.includes(entry));
+  if (outside.length > 0) return `증거가 후보 갱신 출력 목록 밖 경로를 주장한다: ${outside.slice(0, 8).join(", ")}`;
+  return sameJson(changed, sortCodepoint(claimed)) ? null : describeSetDifference(changed, sortCodepoint(claimed));
 }
 
 function latestRun(checkRuns, name, appId = null) {
@@ -370,13 +375,25 @@ export async function recomputeAutomationGates({
     let state = null;
     try {
       state = await readCandidateState(repositoryRoot);
-      const problems = candidateViolations({
-        ...state,
-        evaluatedAt: state.fanIn?.evaluatedAt,
-        requestedBy: state.releaseRequest?.requestedBy,
-        approvedBy: state.releaseRequest?.approvedBy,
-        gateRun: state.releaseRequest?.gateRun,
-      });
+      // 결속 검증기에 넘기는 기대값은 검증 대상 파일(release request) 자신에서 가져오지 않는다(#986 F4).
+      //  - 후보 시계: build spec의 publishedAt. 검증기가 fan-in의 시계와 대조한다.
+      //  - 요청·승인 역할: 정기 후보 갱신의 고정 역할 쌍. 사람 역할(dispatch)의 후보는 자동 병합 대상이 아니다.
+      //  - gateRun: 이 증거 블록을 만든 run과 그 run이 본 main 커밋(증거의 base). release request의 gateRun 나머지 필드(반복·이벤트 등)는 형식만 본다.
+      const runId = Number(/\/actions\/runs\/([1-9][0-9]*)$/u.exec(evidence.runUrl)?.[1]);
+      const recorded = state.releaseRequest?.gateRun;
+      const expectedGateRun = { ...(isObject(recorded) ? recorded : {}), runId, headSha: evidence.baseSha };
+      const problems = [
+        ...gateRunViolations(recorded),
+        ...(isObject(recorded) && recorded.runId !== runId ? [`gateRun runId ${String(recorded.runId)} is not the evidence run ${runId}`] : []),
+        ...(isObject(recorded) && recorded.headSha !== evidence.baseSha ? [`gateRun headSha ${String(recorded.headSha)} is not the evidence base ${evidence.baseSha}`] : []),
+        ...candidateViolations({
+          ...state,
+          evaluatedAt: state.buildSpec?.publishedAt,
+          requestedBy: SCHEDULED_RELEASE_ROLES.requestedBy,
+          approvedBy: SCHEDULED_RELEASE_ROLES.approvedBy,
+          gateRun: expectedGateRun,
+        }),
+      ];
       if (problems.length > 0) throw new Error(problems.join("; "));
     } catch (error) {
       violate("CANDIDATE_GATE", message(error));
@@ -384,7 +401,8 @@ export async function recomputeAutomationGates({
     }
     if (state !== null) {
       const { candidateId, releaseSequence, sourceSnapshotSetHash } = state.buildSpec ?? {};
-      if (!sameJson({ candidateId, releaseSequence, sourceSnapshotSetHash }, evidence.candidate)) violate("EVIDENCE_DRIFT", "증거 블록의 후보 식별이 커밋된 후보 build spec과 다르다");
+      const { candidateId: claimedId, releaseSequence: claimedSequence, sourceSnapshotSetHash: claimedHash } = evidence.candidate;
+      if (!sameJson({ candidateId, releaseSequence, sourceSnapshotSetHash }, { candidateId: claimedId, releaseSequence: claimedSequence, sourceSnapshotSetHash: claimedHash })) violate("EVIDENCE_DRIFT", "증거 블록의 후보 식별이 커밋된 후보 build spec과 다르다");
     }
   }
   return { violations };
