@@ -64,6 +64,8 @@ export function parseAutomationBranches(text) {
 /**
  * 원장을 쓰는 다른 자동화 workflow의 진행 중인 일(#974 리뷰 F2, #975 리뷰 F6).
  * 열린 PR뿐 아니라 PR이 열리기 전의 claim 브랜치(OCI 게시 중)와 닫힌 PR에 남은 브랜치도 진행 흔적이다. 병합된 PR의 브랜치는 끝난 일이다.
+ * PR 없는 claim이 만든 run이 실패해 고아가 된 경우에도 여기서는 진행 중으로 본다(기다린다). 그 claim은 소유 workflow가 만든 run과 게시 증거로
+ * 판정해 복구하거나 보고(#926)한 뒤 지운다(claim-orphans.mjs·remove-orphan-claims.mjs, #995). 대기는 소유 workflow의 다음 정기 실행까지다.
  * @returns {{ pullRequests: number[], branches: string[] }} 열린 PR 번호(오름차순)와 열린 PR이 없는 claim 브랜치 이름(오름차순)
  */
 export function pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow = null } = {}) {

@@ -2,13 +2,17 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { parsePrefixedRefs } from "./automation-pr-state.mjs";
+import { CLAIM_OWNERS, planUnboundClaims } from "./claim-orphans.mjs";
+
+const WORKFLOW = "kric-current-facility-refresh.yml";
 const SOURCE_ID = "kric-station-convenience-standard";
 const AUTOMATION_BRANCH = /^automation\/629-kric-facility-refresh-[0-9]+$/;
-const CLAIM_REF = /^([0-9a-f]{40})\trefs\/heads\/(automation\/629-kric-facility-refresh-[0-9]+)\t([^\t]+)$/;
 const SOURCE_RUN_ID = /^[1-9][0-9]*$/;
 const GITHUB_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-// 회수할 수 없는 claim을 닫았다는 기록이다. 브랜치를 지우지 않고 이 subject의 빈 커밋을 남긴다.
-export const ABANDONED_CLAIM_SUBJECT = "Abandon KRIC facility refresh claim";
+// 회수할 수 없는 claim을 닫았다는 기록이다. 복구 step이 이 subject의 빈 커밋을 남기고, 판정은 이 claim을 정리 대상(보고 뒤 삭제)으로 본다(#995).
+// 이름의 정본은 claim 판정 모듈(claim-orphans)이다.
+export const ABANDONED_CLAIM_SUBJECT = CLAIM_OWNERS[WORKFLOW].abandonedSubject;
 // workflow의 evidence upload retention-days와 같아야 한다(workflow 계약 테스트가 확인한다).
 export const KRIC_FACILITY_EVIDENCE_RETENTION_DAYS = 14;
 
@@ -51,21 +55,16 @@ function automationPullRequests(value, repository) {
 }
 
 function automationClaims(bytes) {
-  const lines = bytes.toString("utf8").split("\n").filter(Boolean);
-  const claims = lines.map((line) => {
-    const match = CLAIM_REF.exec(line);
-    if (!match) throw new Error("KRIC refresh claim is invalid");
-    return { sha: match[1], branch: match[2], subject: match[3] };
-  });
-  if (new Set(claims.map(({ branch }) => branch)).size !== claims.length) {
-    throw new Error("duplicate KRIC refresh claims exist");
-  }
-  return claims;
+  const invalid = (detail) => {
+    throw new Error(detail === "duplicate refs" ? "duplicate KRIC refresh claims exist" : "KRIC refresh claim is invalid");
+  };
+  return parsePrefixedRefs(bytes.toString("utf8"), CLAIM_OWNERS[WORKFLOW].prefix, invalid).map(({ branch }) => branch);
 }
 
-export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, repository, now = new Date() } = {}) {
-  const [inventoryBytes, policyBytes, prsBytes, claimsBytes] = await Promise.all([
+export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, now = new Date() } = {}) {
+  const [inventoryBytes, policyBytes, prsBytes, claimsBytes, evidenceBytes] = await Promise.all([
     readFile(path.resolve(inventoryPath)), readFile(path.resolve(policyPath)), readFile(path.resolve(prsPath)), readFile(path.resolve(claimsPath)),
+    readFile(path.resolve(claimEvidencePath)),
   ]);
   const inventory = requireObject(parseJson(inventoryBytes, "source inventory"), "source inventory");
   const policy = requireObject(parseJson(policyBytes, "freshness policy"), "freshness policy");
@@ -83,35 +82,26 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   const openPullRequests = pullRequests.filter(({ state }) => state === "OPEN");
   if (openPullRequests.length > 1) throw new Error("duplicate KRIC refresh pull requests exist");
   const claims = automationClaims(claimsBytes);
-  if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry };
-  const analyzedClaims = claims.map((claim) => {
-    const { branch } = claim;
-    const associated = pullRequests.filter(({ headRefName }) => headRefName === branch);
-    if (associated.length > 1) throw new Error("duplicate KRIC refresh pull requests exist");
-    return {
-      ...claim,
-      pullRequestNumber: associated[0]?.number ?? null,
-      pullRequestState: associated[0]?.state ?? null,
-    };
+  // #995: PR 없는 claim은 만든 run과 게시 증거(출력 커밋·receipt artifact)로 가른다. 증거 없는 빈 claim은 복구할 것이 없으므로 정리 대상(보고 뒤 삭제)이다.
+  const plan = planUnboundClaims({
+    workflowFile: WORKFLOW, repository, claimBranches: claims, pullRequests, evidence: parseJson(evidenceBytes, "claim evidence"),
   });
-  const abandoned = analyzedClaims.filter(({ subject }) => subject === ABANDONED_CLAIM_SUBJECT);
-  if (abandoned.some(({ pullRequestState }) => pullRequestState !== null)) {
-    throw new Error("abandoned KRIC refresh claim has a pull request");
-  }
-  const active = analyzedClaims.filter(({ subject }) => subject !== ABANDONED_CLAIM_SUBJECT);
-  const recoverable = active.filter(({ pullRequestState }) => pullRequestState === null);
-  const closed = active.filter(({ pullRequestState }) => pullRequestState === "CLOSED");
-  if (recoverable.length > 1) throw new Error("duplicate KRIC refresh claims exist");
-  if (closed.length > 1 || (closed.length === 1 && recoverable.length === 1)) {
+  const cleanupClaims = plan.abandoned;
+  if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry, cleanupClaims };
+  const live = [...plan.active, ...plan.recoverable];
+  const closed = claims.filter((branch) => pullRequests.some(({ headRefName, state }) => headRefName === branch && state === "CLOSED"));
+  if (closed.length > 1 || (closed.length === 1 && live.length === 1)) {
     throw new Error("KRIC refresh claims are ambiguous");
   }
   if (closed.length === 1) {
     throw new Error("closed KRIC refresh claim requires manual resolution");
   }
-  if (recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: recoverable[0].branch };
-  if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry };
-  if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry };
-  return { state: "NOT_DUE", alertBeforePackExpiry };
+  if (live.length > 1) throw new Error("duplicate KRIC refresh claims exist");
+  if (plan.active.length === 1) return { state: "CLAIM_IN_PROGRESS", alertBeforePackExpiry, branch: plan.active[0], cleanupClaims };
+  if (plan.recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: plan.recoverable[0], cleanupClaims };
+  if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry, cleanupClaims };
+  if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry, cleanupClaims };
+  return { state: "NOT_DUE", alertBeforePackExpiry, cleanupClaims };
 }
 
 // RECOVER_CLAIM이 원래 run의 보존 증거(journal·raw receipt)를 받을 수 있는지 판정한다.
@@ -144,11 +134,11 @@ export function classifyKricFacilityClaimEvidence({ sourceRunId, sourceRunUpdate
   throw new Error("KRIC refresh retained evidence is missing inside its retention window");
 }
 
-export async function runCurrentKricFacilityRefreshDecision({ inventoryPath, policyPath, prsPath, claimsPath, repository, outputPath, githubOutputPath, now } = {}) {
-  const result = await decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, repository, now });
+export async function runCurrentKricFacilityRefreshDecision({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, outputPath, githubOutputPath, now } = {}) {
+  const result = await decideCurrentKricFacilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, now });
   await Promise.all([
     writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }),
-    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\n`, { flag: "a" }),
+    writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\n`, { flag: "a" }),
   ]);
   return result;
 }
@@ -160,13 +150,13 @@ function parseArgs(argv) {
     if (!name?.startsWith("--") || options[name.slice(2)] !== undefined) throw new Error("decision arguments are invalid");
     options[name.slice(2)] = argv[index + 1];
   }
-  if (Object.keys(options).some((name) => !["inventory", "policy", "prs", "claims", "repository", "output", "github-output"].includes(name)) || Object.values(options).some((value) => typeof value !== "string" || value === "")) throw new Error("decision arguments are invalid");
+  if (Object.keys(options).some((name) => !["inventory", "policy", "prs", "claims", "claim-evidence", "repository", "output", "github-output"].includes(name)) || Object.values(options).some((value) => typeof value !== "string" || value === "")) throw new Error("decision arguments are invalid");
   return options;
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const options = parseArgs(process.argv.slice(2));
-  runCurrentKricFacilityRefreshDecision({ inventoryPath: options.inventory, policyPath: options.policy, prsPath: options.prs, claimsPath: options.claims, repository: options.repository, outputPath: options.output, githubOutputPath: options["github-output"] }).catch((error) => {
+  runCurrentKricFacilityRefreshDecision({ inventoryPath: options.inventory, policyPath: options.policy, prsPath: options.prs, claimsPath: options.claims, claimEvidencePath: options["claim-evidence"], repository: options.repository, outputPath: options.output, githubOutputPath: options["github-output"] }).catch((error) => {
     console.error(error instanceof Error ? error.message : "KRIC refresh decision failed");
     process.exitCode = 1;
   });

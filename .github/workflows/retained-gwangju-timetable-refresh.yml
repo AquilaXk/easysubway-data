@@ -16,6 +16,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
       pull-requests: write
       issues: write
@@ -40,14 +41,32 @@ jobs:
           node tools/ci/decide-retained-gwangju-timetable-refresh.mjs > "${state_root}/due.json"
           git ls-remote --heads origin "refs/heads/automation/504-retained-gwangju-timetable-refresh-*" > "${state_root}/claims.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claims.txt" --pr-limit 1000 --output "${state_root}/prs.json"
+          # #995: PR 없는 claim은 DUE·CURRENT와 무관하게 만든 run과 게시 증거로 판정한다. 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다).
+          node tools/ci/claim-orphans.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claims.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"
           STATE_ROOT="${state_root}" node --input-type=module -e '
             import { appendFile, readFile } from "node:fs/promises";
             import { classifyRetainedGwangjuRefreshDelivery, parseRetainedGwangjuRefreshClaims } from "./tools/ci/retained-gwangju-refresh-delivery.mjs";
             const root = process.env.STATE_ROOT;
-            const result = classifyRetainedGwangjuRefreshDelivery({ decision: JSON.parse(await readFile(root + "/due.json")), repository: process.env.GITHUB_REPOSITORY, claims: parseRetainedGwangjuRefreshClaims(await readFile(root + "/claims.txt", "utf8")), pullRequests: JSON.parse(await readFile(root + "/prs.json", "utf8")) });
-            await appendFile(process.env.GITHUB_OUTPUT, "state=" + result.state + "\nbranch=" + (result.branch ?? "") + "\n");
+            const result = classifyRetainedGwangjuRefreshDelivery({ decision: JSON.parse(await readFile(root + "/due.json")), repository: process.env.GITHUB_REPOSITORY, claims: parseRetainedGwangjuRefreshClaims(await readFile(root + "/claims.txt", "utf8")), pullRequests: JSON.parse(await readFile(root + "/prs.json", "utf8")), claimEvidence: JSON.parse(await readFile(root + "/claim-evidence.json", "utf8")) });
+            await appendFile(process.env.GITHUB_OUTPUT, "state=" + result.state + "\nbranch=" + (result.branch ?? "") + "\ncleanup_claims=" + result.cleanupClaims.join(",") + "\n");
           '
           printf 'RETAINED_GWANGJU_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
+      - name: Remove abandoned retained timetable claims named by the decision
+        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
+        run: |
+          set -euo pipefail
+          # #995: 판정이 정리 대상으로 알린 claim만 지운다(만든 run이 끝났고 빈 claim뿐인 고아). 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
+          gh auth setup-git
+          node tools/ci/remove-orphan-claims.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+      - name: Note retained timetable refresh waiting on a running producer
+        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
+        env:
+          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
+        run: |
+          echo "::notice title=Retained Gwangju timetable refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}

@@ -62,7 +62,25 @@ jobs:
           node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
           # #977: 같은 KST 날 다른 ITX 수집 workflow가 이미 공급자를 불렀다면 대기 상태로 끝난다(예산 가드 실패로 이슈를 만들지 않는다).
           itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"
-          node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --itx-collected-today "${itx_collected}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
+          # #995: PR 없는 claim은 만든 run과 게시 증거로 판정한다. 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다).
+          node tools/ci/claim-orphans.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claim-refs.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"
+          node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --claim-evidence "${state_root}/claim-evidence.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --itx-collected-today "${itx_collected}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Remove abandoned topology refresh claims named by the decision
+        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
+        run: |
+          set -euo pipefail
+          # #995: 판정이 정리 대상으로 알린 claim만 지운다(main이 움직여 current가 아니고 만든 run이 끝난 빈 claim). 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
+          gh auth setup-git
+          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+      - name: Note current topology refresh waiting on a running producer
+        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
+        env:
+          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
+        run: |
+          echo "::notice title=Current topology refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
       - name: Note current topology refresh waiting on today's ITX collection
         if: ${{ steps.decision.outputs.state == 'WAIT_ITX_COLLECTED_TODAY' }}
         run: |

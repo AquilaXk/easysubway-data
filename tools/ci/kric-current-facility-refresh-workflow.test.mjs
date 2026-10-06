@@ -116,10 +116,56 @@ test("KRIC refresh workflow recovers a published claim through the same registra
   assert.match(yml, /git push origin "\$\{branch\}"/);
 });
 
-test("KRIC refresh workflow passes each claim head subject to the decision", () => {
+// #995: claim head subject를 git으로 읽어 넘기던 방식은 claim 판정 증거(claim 뒤 커밋 제목)가 대신한다.
+test("KRIC refresh workflow classifies PR-less claims from run and publication evidence before any recovery or claim", () => {
   const yml = readFileSync(workflowPath, "utf8");
-  assert.match(yml, /git ls-remote --heads origin \\\n\s+"refs\/heads\/automation\/629-kric-facility-refresh-\*" > "\$\{claim_refs\}"/);
-  assert.match(yml, /while IFS=\$'\\t' read -r claim_head claim_ref; do[\s\S]*git fetch --no-tags origin "\$\{claim_ref\}"[\s\S]*git log -1 --format=%s "\$\{claim_head\}"[\s\S]*printf '%s\\t%s\\t%s\\n' "\$\{claim_head\}" "\$\{claim_ref\}" "\$\{claim_subject\}"[\s\S]*done < "\$\{claim_refs\}" > "\$\{claims\}"/);
+  const stepOf = (name) => {
+    const start = yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
+    assert.notEqual(start, -1, `missing workflow step: ${name}`);
+    const end = yml.indexOf("\n      - name: ", start + 1);
+    return yml.slice(start, end === -1 ? yml.length : end);
+  };
+  const decision = stepOf("Read due state");
+  assert.doesNotMatch(decision, /git fetch|git log -1|claim_subject|while IFS=/);
+  const collect = decision.indexOf("node tools/ci/collect-automation-prs.mjs");
+  const evidence = decision.indexOf('node tools/ci/claim-orphans.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"');
+  assert.ok(collect !== -1 && evidence > collect);
+  assert.ok(decision.indexOf("decide-current-kric-facility-refresh.mjs") > evidence);
+  assert.match(decision, /--claims "\$\{claims\}" \\\n\s+--claim-evidence "\$\{claim_evidence\}"/);
+  assert.doesNotMatch(decision, /gh run list/);
+  assert.match(yml, /\n    permissions:\n      actions: read\n/);
+  const cleanup = stepOf("Remove abandoned claims named by the decision");
+  assert.match(cleanup, /\n        if: \$\{\{ steps\.decision\.outputs\.cleanup_claims != '' \}\}\n/);
+  assert.match(cleanup, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/);
+  const script = cleanup.split("\n        run: |")[1];
+  assert.doesNotMatch(script, /\$\{\{/);
+  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow kric-current-facility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/);
+  const running = stepOf("Note refresh waiting on a running producer");
+  assert.match(running, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'CLAIM_IN_PROGRESS' \}\}\n/);
+  const order = (name) => yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
+  assert.ok(order("Read due state") < order("Remove abandoned claims named by the decision"));
+  assert.ok(order("Remove abandoned claims named by the decision") < order("Recover claimed refresh"));
+  assert.ok(order("Remove abandoned claims named by the decision") < order("Create durable claim"));
+});
+
+// receipt artifact는 게시 뒤 실패한 run만 남긴다. 그래야 claim 판정이 "복구할 증거가 있는 claim"과 "빈 claim뿐인 고아"를 가른다.
+test("KRIC refresh workflow uploads the recovery artifact only when the run left a publication receipt", () => {
+  const yml = readFileSync(workflowPath, "utf8");
+  const stepOf = (name) => {
+    const start = yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
+    assert.notEqual(start, -1, `missing workflow step: ${name}`);
+    const end = yml.indexOf("\n      - name: ", start + 1);
+    return yml.slice(start, end === -1 ? yml.length : end);
+  };
+  const detect = stepOf("Detect retained publication receipt");
+  assert.match(detect, /\n        id: receipt\n/);
+  assert.match(detect, /\n        if: \$\{\{ always\(\) \}\}\n/);
+  assert.match(detect, /-f "\$\{KRIC_REFRESH_OPERATION_ROOT\}\/raw-receipt\.json"/);
+  assert.match(detect, /has_receipt=true/);
+  const upload = stepOf("Upload sanitized evidence");
+  assert.match(upload, /\n        if: \$\{\{ always\(\) && steps\.receipt\.outputs\.has_receipt == 'true' \}\}\n/);
+  assert.match(upload, /name: kric-current-facility-refresh-\$\{\{ github\.run_id \}\}/);
+  assert.ok(yml.indexOf("Detect retained publication receipt") < yml.indexOf("Upload sanitized evidence"));
 });
 
 test("KRIC refresh workflow closes out an expired claim explicitly instead of downloading forever", async () => {

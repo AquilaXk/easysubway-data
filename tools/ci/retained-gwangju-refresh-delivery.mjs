@@ -1,3 +1,6 @@
+import { planUnboundClaims } from "./claim-orphans.mjs";
+
+const WORKFLOW = "retained-gwangju-timetable-refresh.yml";
 const BRANCH = /^automation\/504-retained-gwangju-timetable-refresh-\d+$/u;
 const REF = /^[a-f0-9]{40}\trefs\/heads\/(automation\/504-retained-gwangju-timetable-refresh-\d+)$/u;
 const OUTPUTS = Object.freeze([
@@ -20,19 +23,27 @@ export function parseRetainedGwangjuRefreshClaims(text) {
 }
 
 /**
- * Classifies due state against only same-repository PRs in the exact claim
- * namespace. CURRENT deliberately returns before any claim/PR interpretation.
+ * Classifies the delivery state against only same-repository PRs in the exact claim namespace.
+ * Claims are interpreted whether the source is DUE or CURRENT (#995): a CURRENT source used to return before any claim
+ * was read, so an orphan claim from a failed run stayed forever and blocked every other ledger writer.
+ * A claim without any PR is classified by its producer run and publication evidence (claim-orphans.mjs):
+ * a running producer waits, a claim that carries output is recovered, and an empty claim of a finished run is handed to
+ * cleanup (reported, then removed) while the normal due state continues.
+ * @returns {{ state: "CURRENT"|"DUE"|"OPEN_PR"|"RECOVER_CLAIM"|"CLAIM_IN_PROGRESS", branch?: string, cleanupClaims: string[] }}
  */
-export function classifyRetainedGwangjuRefreshDelivery({ decision, repository, claims, pullRequests } = {}) {
-  if (decision?.state === "CURRENT") return { state: "CURRENT" };
-  if (decision?.state !== "DUE") throw new Error("retained Gwangju refresh due decision is invalid");
+export function classifyRetainedGwangjuRefreshDelivery({ decision, repository, claims, pullRequests, claimEvidence } = {}) {
+  if (decision?.state !== "CURRENT" && decision?.state !== "DUE") throw new Error("retained Gwangju refresh due decision is invalid");
   if (typeof repository !== "string" || !/^[^/\s]+\/[^/\s]+$/u.test(repository)
-    || !Array.isArray(claims) || !Array.isArray(pullRequests)) {
+    || !Array.isArray(claims) || !Array.isArray(pullRequests) || !Array.isArray(claimEvidence)) {
     throw new Error("retained Gwangju refresh delivery input is invalid");
   }
   const byBranch = indexRefreshPullRequests(pullRequests, repository);
   validateRefreshClaims(claims);
-  const live = claims.filter(({ branch }) => byBranch.get(branch)?.state !== "MERGED");
+  const plan = planUnboundClaims({
+    workflowFile: WORKFLOW, repository, claimBranches: claims.map(({ branch }) => branch), pullRequests, evidence: claimEvidence,
+  });
+  const cleanupClaims = plan.abandoned;
+  const live = claims.filter(({ branch }) => byBranch.get(branch)?.state !== "MERGED" && !cleanupClaims.includes(branch));
   if (live.length > 1) throw new Error("retained Gwangju refresh has multiple live claims");
   const open = [...byBranch.values()].filter(({ state }) => state === "OPEN");
   if (open.length > 1) throw new Error("retained Gwangju refresh has multiple open PRs");
@@ -40,15 +51,14 @@ export function classifyRetainedGwangjuRefreshDelivery({ decision, repository, c
     if (live.some(({ branch }) => branch !== open[0].headRefName)) {
       throw new Error("retained Gwangju refresh has multiple live claims");
     }
-    return { state: "OPEN_PR", branch: open[0].headRefName };
+    return { state: "OPEN_PR", branch: open[0].headRefName, cleanupClaims };
   }
   if (live.length === 1) {
-    const associated = byBranch.get(live[0].branch);
-    if (associated?.state === "CLOSED") throw new Error("retained Gwangju refresh has a closed live claim");
-    if (associated?.state === "OPEN") return { state: "OPEN_PR", branch: live[0].branch };
-    return { state: "RECOVER_CLAIM", branch: live[0].branch };
+    const [{ branch }] = live;
+    if (byBranch.get(branch)?.state === "CLOSED") throw new Error("retained Gwangju refresh has a closed live claim");
+    return { state: plan.active.includes(branch) ? "CLAIM_IN_PROGRESS" : "RECOVER_CLAIM", branch, cleanupClaims };
   }
-  return { state: "DUE" };
+  return { state: decision.state, cleanupClaims };
 }
 
 /** Recovery may create a PR only when the exact claim has no same-repository PR. */

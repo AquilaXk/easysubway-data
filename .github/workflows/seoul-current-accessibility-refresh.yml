@@ -16,6 +16,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
       pull-requests: write
       issues: write
@@ -43,9 +44,28 @@ jobs:
           set -euo pipefail
           prs="${RUNNER_TEMP}/seoul-current-accessibility-refresh/open-prs.json"
           claims="${RUNNER_TEMP}/seoul-current-accessibility-refresh/claims.txt"
+          claim_evidence="${RUNNER_TEMP}/seoul-current-accessibility-refresh/claim-evidence.json"
           git ls-remote --heads origin "refs/heads/automation/639-seoul-accessibility-refresh-*" > "${claims}"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --pr-limit 1000 --output "${prs}"
-          node tools/ci/decide-current-seoul-accessibility-refresh.mjs --inventory tools/datapack/source-inventory.json --policy release/product-gates/datapack-freshness-sla.json --prs "${prs}" --claims "${claims}" --repository "${GITHUB_REPOSITORY}" --output "${SEOUL_REFRESH_DECISION}" --github-output "${GITHUB_OUTPUT}"
+          # #995: PR 없는 claim은 DUE 여부와 무관하게 만든 run과 게시 증거로 판정한다. 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다).
+          node tools/ci/claim-orphans.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"
+          node tools/ci/decide-current-seoul-accessibility-refresh.mjs --inventory tools/datapack/source-inventory.json --policy release/product-gates/datapack-freshness-sla.json --prs "${prs}" --claims "${claims}" --claim-evidence "${claim_evidence}" --repository "${GITHUB_REPOSITORY}" --output "${SEOUL_REFRESH_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Remove abandoned Seoul refresh claims named by the decision
+        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
+        run: |
+          set -euo pipefail
+          # #995: 판정이 정리 대상으로 알린 claim만 지운다(만든 run이 끝났고 빈 claim뿐인 고아). 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
+          gh auth setup-git
+          node tools/ci/remove-orphan-claims.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+      - name: Note Seoul refresh waiting on a running producer
+        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
+        env:
+          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
+        run: |
+          echo "::notice title=Seoul accessibility refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}

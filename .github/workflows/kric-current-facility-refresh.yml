@@ -51,25 +51,41 @@ jobs:
           set -euo pipefail
           prs="${RUNNER_TEMP}/kric-current-facility-refresh/open-prs.json"
           claims="${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
-          claim_refs="${RUNNER_TEMP}/kric-current-facility-refresh/claim-refs.txt"
+          claim_evidence="${RUNNER_TEMP}/kric-current-facility-refresh/claim-evidence.json"
           git ls-remote --heads origin \
-            "refs/heads/automation/629-kric-facility-refresh-*" > "${claim_refs}"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claim_refs}" --pr-limit 1000 --output "${prs}"
-          # decision은 claim head subject로 닫힌(Abandon) claim을 회수 대상에서 뺀다.
-          while IFS=$'\t' read -r claim_head claim_ref; do
-            [[ -n "${claim_head}" ]] || continue
-            git fetch --no-tags origin "${claim_ref}"
-            claim_subject="$(git log -1 --format=%s "${claim_head}")"
-            printf '%s\t%s\t%s\n' "${claim_head}" "${claim_ref}" "${claim_subject}"
-          done < "${claim_refs}" > "${claims}"
+            "refs/heads/automation/629-kric-facility-refresh-*" > "${claims}"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --pr-limit 1000 --output "${prs}"
+          # #995: PR 없는 claim은 DUE 여부와 무관하게 만든 run과 게시 증거(출력 커밋·receipt artifact)로 판정한다.
+          # 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다). 닫힌(Abandon) claim도 같은 증거로 정리 대상이 된다.
+          node tools/ci/claim-orphans.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"
           node tools/ci/decide-current-kric-facility-refresh.mjs \
             --inventory tools/datapack/source-inventory.json \
             --policy release/product-gates/datapack-freshness-sla.json \
             --prs "${prs}" \
             --claims "${claims}" \
+            --claim-evidence "${claim_evidence}" \
             --repository "${GITHUB_REPOSITORY}" \
             --output "${KRIC_REFRESH_DECISION}" \
             --github-output "${GITHUB_OUTPUT}"
+
+      - name: KRIC current facility refresh / Remove abandoned claims named by the decision
+        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
+        run: |
+          set -euo pipefail
+          # #995: 판정이 정리 대상으로 알린 claim만 지운다(만든 run이 끝났고 receipt 없는 빈 claim뿐인 고아, 닫힌 Abandon claim).
+          # 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
+          gh auth setup-git
+          node tools/ci/remove-orphan-claims.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+
+      - name: KRIC current facility refresh / Note refresh waiting on a running producer
+        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
+        env:
+          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
+        run: |
+          echo "::notice title=KRIC facility refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
 
       - name: KRIC current facility refresh / Mint App token for the open refresh pull request
         id: app-token-open
@@ -451,8 +467,20 @@ jobs:
             --title "Refresh KRIC facility snapshot" \
             --body "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29"
 
-      - name: KRIC current facility refresh / Upload sanitized evidence
+      - name: KRIC current facility refresh / Detect retained publication receipt
+        id: receipt
         if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          # #995: 판정은 이 artifact의 유무로 claim을 복구할지(게시 receipt가 있다) 정리할지(빈 claim뿐이다) 정한다. 게시 receipt가 없으면 올리지 않는다.
+          if [[ -n "${KRIC_REFRESH_OPERATION_ROOT:-}" && -f "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json" ]]; then
+            echo "has_receipt=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has_receipt=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: KRIC current facility refresh / Upload sanitized evidence
+        if: ${{ always() && steps.receipt.outputs.has_receipt == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: kric-current-facility-refresh-${{ github.run_id }}

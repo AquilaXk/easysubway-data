@@ -23,7 +23,7 @@ test("트리거: 2시간마다 정기 실행과 사람 dispatch뿐이고 push·w
 test("권한은 job에만 주고, 변수가 true일 때만 정기 실행이 돌며(기본 꺼짐), 시간 상한이 있다", () => {
   assert.match(yml, /\npermissions: \{\}\n/u);
   assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
-  assert.match(yml, /\n    permissions:\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
+  assert.match(yml, /\n    permissions:\n      actions: read\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
   assert.doesNotMatch(yml, /actions: write|gh workflow run|repository_dispatch/u);
   assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'workflow_dispatch' \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION == 'true'\) \}\}\n/u);
   assert.match(yml, /\n    environment: datapack-release-check\n/u);
@@ -68,9 +68,9 @@ test("판정이 알린 남은 claim은 claim·수집 전에 지운다(열린 PR�
   const cleanup = step("Remove stale reverification claims named by the decision");
   assert.equal(ifCondition(cleanup.block), "${{ steps.decision.outputs.cleanup_claims != '' }}");
   assert.match(cleanup.block, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/u);
-  assert.match(cleanup.block, /\^automation\/984-source-reverification-\[1-9\]\[0-9\]\*\$/u);
-  assert.match(cleanup.block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state open --head "\$\{claim_branch\}" --json number --jq 'length'/u);
-  assert.match(cleanup.block, /git push origin --delete "\$\{claim_branch\}"/u);
+  // #995: 조용히 지우지 않는다. 병합된 PR의 남은 claim은 보고 없이, 끝난 run의 PR 없는 claim은 #926 실패 보고를 먼저 하고 지운다.
+  assert.match(cleanup.block, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow source-reverification\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/u);
+  assert.doesNotMatch(cleanup.block, /git push origin --delete/u);
   before("Decide which P7D sources are due", cleanup.name);
   before(cleanup.name, "Claim exact main before provider access");
 });

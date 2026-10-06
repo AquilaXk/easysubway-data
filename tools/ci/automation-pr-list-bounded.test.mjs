@@ -65,7 +65,8 @@ test("수집기 호출은 같은 step에서 먼저 받은 ls-remote 출력과 �
 test("도구 코드의 PR 전 상태 목록 조회는 이 허용 목록뿐이다", () => {
   // automation-pr-recreate: 닫힌 PR 최근 100건 표본(24시간 창 계산용, overflow: return, 최신순). 잘림이 실패가 되지 않고 이력 길이와 무관하다.
   // collect-automation-prs: 전 상태 조회는 --head <claim 브랜치> 단건뿐이고 열린 PR 목록은 --state open이다.
-  const allowed = new Set(["tools/ci/automation-pr-recreate.mjs", "tools/ci/collect-automation-prs.mjs"]);
+  // remove-orphan-claims(#995): 지우기 직전에 그 claim 브랜치 하나의 PR 상태를 --head 단건으로 다시 확인한다(상한 100, 닿으면 실패).
+  const allowed = new Set(["tools/ci/automation-pr-recreate.mjs", "tools/ci/collect-automation-prs.mjs", "tools/ci/remove-orphan-claims.mjs"]);
   const visit = (directory) => readdirSync(path.join(ROOT, directory), { withFileTypes: true }).flatMap((entry) => {
     const relative = path.posix.join(directory, entry.name);
     if (entry.isDirectory()) return relative === "tools/node_modules" ? [] : visit(relative);

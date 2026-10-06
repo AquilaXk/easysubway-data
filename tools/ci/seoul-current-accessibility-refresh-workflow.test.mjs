@@ -32,3 +32,35 @@ test("Seoul refresh workflow ends at ledger registration and never commits candi
   }
   assert.equal((yml.match(/\[\[ "\$\(wc -l <<< "\$\{changed\}" \| tr -d ' '\)" == "4" \]\]/g) ?? []).length, 2);
 });
+
+// #995: PR 없는 claim(고아)은 DUE 여부와 무관하게 만든 run과 게시 증거로 판정한다. 빈 claim뿐이면 보고(#926)한 뒤 지운다.
+test("orphan claims are classified from run and publication evidence and cleaned before any claim or recovery", () => {
+  const yml = readFileSync(workflowPath, "utf8");
+  assert.match(yml, /\n    permissions:\n      actions: read\n      contents: write\n      pull-requests: write\n      issues: write\n/);
+  const step = (name) => {
+    const start = yml.indexOf(`      - name: ${name}\n`);
+    assert.notEqual(start, -1, `missing workflow step: ${name}`);
+    const end = yml.indexOf("\n      - name: ", start + 1);
+    return yml.slice(start, end === -1 ? yml.length : end);
+  };
+  const decision = step("Read due state");
+  const collect = decision.indexOf("node tools/ci/collect-automation-prs.mjs");
+  const evidence = decision.indexOf('node tools/ci/claim-orphans.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"');
+  assert.ok(collect !== -1 && evidence > collect);
+  assert.ok(decision.indexOf("decide-current-seoul-accessibility-refresh.mjs") > evidence);
+  assert.match(decision, /--claims "\$\{claims\}" --claim-evidence "\$\{claim_evidence\}" --repository/);
+  assert.doesNotMatch(decision, /gh run list/);
+  const cleanup = step("Remove abandoned Seoul refresh claims named by the decision");
+  assert.match(cleanup, /\n        if: \$\{\{ steps\.decision\.outputs\.cleanup_claims != '' \}\}\n/);
+  assert.match(cleanup, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/);
+  const script = cleanup.split("\n        run: ")[1];
+  assert.doesNotMatch(script, /\$\{\{/);
+  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow seoul-current-accessibility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/);
+  assert.doesNotMatch(script, /git push origin --delete/);
+  const running = step("Note Seoul refresh waiting on a running producer");
+  assert.match(running, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'CLAIM_IN_PROGRESS' \}\}\n/);
+  const order = (name) => yml.indexOf(`      - name: ${name}\n`);
+  assert.ok(order("Read due state") < order("Remove abandoned Seoul refresh claims named by the decision"));
+  assert.ok(order("Remove abandoned Seoul refresh claims named by the decision") < order("Recover completed claimed refresh"));
+  assert.ok(order("Remove abandoned Seoul refresh claims named by the decision") < order("Create durable claim"));
+});
