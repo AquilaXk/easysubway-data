@@ -10,6 +10,7 @@ import {
   AUTOMATION_PR_APP,
   AUTOMATION_PR_GATES_CONTEXT,
   REGISTRATION_ALLOWED_PATHS,
+  REGISTRATION_INVENTORY_FIELDS,
   automationAttestationMarker,
   automationEvidenceDigest,
   automationStageForBranch,
@@ -439,8 +440,9 @@ const BASE_LEDGER = [row()];
 const HEAD_LEDGER = [row(), row({ snapshotId: "capital-route-topology-20261006", previousSnapshotId: "capital-route-topology-20261004", rawSha256: "3".repeat(64), contentSha256: "d".repeat(64), rowCount: 100, coverageCount: 50, diffSummary: { status: "CHANGED", rowDelta: 0, coverageDelta: 0 } })];
 const EXPECTED_SOURCE = { ...LEDGER_SOURCE, previousSnapshotId: "capital-route-topology-20261004", rawSha256: "3".repeat(64), contentSha256: "d".repeat(64) };
 
-const INVENTORY_BASE = { schemaVersion: 1, region: "nationwide", sources: [{ id: "other-source", value: 1 }, { id: "capital-route-topology", value: 1 }] };
-const INVENTORY_HEAD = { schemaVersion: 1, region: "nationwide", sources: [{ id: "other-source", value: 1 }, { id: "capital-route-topology", value: 2 }] };
+const CAPITAL_ENTRY = { id: "capital-route-topology", productionUseAllowed: true, datasetUrl: "https://example.test/capital", retrievedAt: "2026-10-04", capitalTopologyAdmissionEvidence: { snapshotId: "a" } };
+const INVENTORY_BASE = { schemaVersion: 1, region: "nationwide", sources: [{ id: "other-source", value: 1 }, CAPITAL_ENTRY] };
+const INVENTORY_HEAD = { schemaVersion: 1, region: "nationwide", sources: [{ id: "other-source", value: 1 }, { ...CAPITAL_ENTRY, retrievedAt: "2026-10-06", capitalTopologyAdmissionEvidence: { snapshotId: "b" } }] };
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 
 function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contract, receipt, verifyItx, candidate, policy = POLICY, extraTree = {}, inventory = INVENTORY_HEAD, inventoryBase = INVENTORY_BASE } = {}) {
@@ -953,14 +955,14 @@ test("등록 inventory는 등록한 원천의 항목만 바뀔 수 있다(원장
     "other source removed": rewrite((head) => { head.sources.shift(); }),
     "other source added": rewrite((head) => { head.sources.push({ id: "new-source", value: 1 }); }),
     "registered source missing": rewrite((head) => { head.sources.pop(); }),
-    "registered source duplicated": rewrite((head) => { head.sources.push({ id: "capital-route-topology", value: 3 }); }),
+    "registered source duplicated": rewrite((head) => { head.sources.push({ ...CAPITAL_ENTRY, retrievedAt: "2026-10-07" }); }),
     "top-level key changed": rewrite((head) => { head.region = "other"; }),
     "top-level key added": rewrite((head) => { head.extra = true; }),
   };
   for (const [name, inventory] of Object.entries(cases)) assert.ok((await gateCodes(gateInput("registration", { inventory }))).includes("INVENTORY_GATE"), name);
-  // 첫 등록(기본 inventory에 원천이 없던 경우)도 그 원천 항목만 늘어난다.
+  // 등록 단계는 이미 등록된 원천의 재등록이다. 항목이 새로 생기는 첫 등록은 정책 파일도 바뀌므로 자동 병합 대상이 아니다(#989, #987 N1과 같은 규칙).
   const first = { ...INVENTORY_BASE, sources: [INVENTORY_BASE.sources[0]] };
-  assert.deepEqual((await recomputeAutomationGates(gateInput("registration", { inventoryBase: first }))).violations, []);
+  assert.ok((await gateCodes(gateInput("registration", { inventoryBase: first }))).includes("INVENTORY_GATE"));
   const broken = gateInput("registration");
   broken.files.readTree = async (relative) => { if (relative === INVENTORY_PATH) throw new Error("ENOENT"); return JSON.stringify(relative.endsWith("source-snapshots.json") ? HEAD_LEDGER : POLICY); };
   assert.ok((await recomputeAutomationGates(broken)).violations.some(({ code }) => code === "INVENTORY_GATE"));
@@ -968,6 +970,116 @@ test("등록 inventory는 등록한 원천의 항목만 바뀔 수 있다(원장
   const noInventory = gateInput("derivative-rebinding", { ledger: BASE_LEDGER });
   noInventory.files.readTree = async (relative) => { assert.notEqual(relative, INVENTORY_PATH); return JSON.stringify(relative.endsWith("source-snapshots.json") ? BASE_LEDGER : POLICY); };
   assert.deepEqual((await recomputeAutomationGates(noInventory)).violations, []);
+});
+
+// #989: 등록 단계도 원천 재확인(#987 N1)처럼 소유 항목 안에서 등록기가 갱신하는 필드만 바뀔 수 있다.
+test("등록 inventory는 등록한 원천 항목 안에서도 등록기가 갱신하는 필드만 바뀔 수 있다(정책성 필드는 고정)", async () => {
+  assert.deepEqual([...REGISTRATION_INVENTORY_FIELDS["capital-route-topology"]].sort(), ["capitalTopologyAdmissionEvidence", "observedDataUpdatedAt", "retrievedAt"]);
+  const tamper = (mutate) => { const head = structuredClone(INVENTORY_HEAD); mutate(head.sources[1]); return head; };
+  const cases = {
+    "productionUseAllowed flipped": tamper((entry) => { entry.productionUseAllowed = false; }),
+    "datasetUrl changed": tamper((entry) => { entry.datasetUrl = "https://evil.test"; }),
+    "license added": tamper((entry) => { entry.license = { type: "OTHER" }; }),
+    "field removed": tamper((entry) => { delete entry.datasetUrl; }),
+  };
+  for (const [name, inventory] of Object.entries(cases)) {
+    const codes = await gateCodes(gateInput("registration", { inventory }));
+    assert.ok(codes.includes("INVENTORY_GATE"), name);
+  }
+  // 갱신 필드만 바뀐 정상 diff는 통과한다.
+  assert.deepEqual((await recomputeAutomationGates(gateInput("registration"))).violations, []);
+});
+
+// #989: 기록된 실제 등록 커밋(seq127 #940의 6741d1b89, seq128 #976의 8a7b4c1ba)이 ground truth다. fixture는 git show로 읽은 base·head의
+// 원장 행과 inventory 항목, 변경 파일 목록이고, 두 커밋 모두 원장·inventory 두 파일만 바꿨다(governance·SLA는 바뀌지 않았다).
+const RECORDED = JSON.parse(await readFile(new URL("../datapack/test-fixtures/registration-recorded-commits.json", import.meta.url), "utf8")).commits;
+const LEDGER_PATH_RECORDED = "tools/datapack/release/source-snapshots.json";
+
+function recordedEntries(commit) {
+  const after = commit.inventory.ownedEntryAfter;
+  const before = { ...after, ...commit.inventory.changedFieldsBefore };
+  const stubs = commit.inventory.unownedEntryIds.map((id) => ({ id }));
+  return { before, after, stubs };
+}
+
+function recordedGateInput(commit, { mutateHead = (entry) => entry, files: extraFiles = {} } = {}) {
+  const { before, after, stubs } = recordedEntries(commit);
+  const inventory = (entry) => ({ ...commit.inventory.top, sources: [...stubs, entry] });
+  const realPolicy = readFile(new URL("./source-ledger-change-policy.json", import.meta.url), "utf8");
+  const evidence = {
+    schemaVersion: 1, issue: 969, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, ...STAGES.registration.evidence, sources: commit.gateSources,
+  };
+  return {
+    evidence,
+    repositoryRoot: "/repo",
+    files: {
+      readTree: async (relative) => {
+        if (relative === LEDGER_PATH_RECORDED) return JSON.stringify(commit.ledger.head);
+        if (relative === INVENTORY_PATH) return JSON.stringify(inventory(mutateHead(structuredClone(after))));
+        if (relative === "tools/ci/source-ledger-change-policy.json") return realPolicy;
+        throw new Error(`missing ${relative}`);
+      },
+      readBase: async (sha, relative) => {
+        assert.equal(sha, BASE);
+        if (relative === LEDGER_PATH_RECORDED) return JSON.stringify(commit.ledger.base);
+        assert.equal(relative, INVENTORY_PATH);
+        return JSON.stringify(inventory(before));
+      },
+      ...extraFiles,
+    },
+  };
+}
+
+function recordedScenario(commit, { extraFiles = [] } = {}) {
+  const base = scenario("registration");
+  const body = `자동화 PR\n\n${automationPrEvidenceBlock({ ...STAGES.registration.evidence, sources: commit.gateSources, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD })}\n`;
+  return {
+    ...base,
+    pull: { ...base.pull, body },
+    files: [...commit.files, ...extraFiles].map(({ filename, status }) => file(filename, { status })),
+    ciEvidence: { ...base.ciEvidence, evidenceSha256: automationEvidenceDigest(body) },
+  };
+}
+
+test("기록된 실제 등록 커밋(seq127·seq128)은 경로 검사와 게이트 재계산을 모두 통과해 적격이다", async () => {
+  assert.deepEqual(RECORDED.map(({ label }) => label), ["seq127", "seq128"]);
+  for (const commit of RECORDED) {
+    assert.deepEqual(commit.files.map(({ filename }) => filename).sort(), [...REGISTRATION_ALLOWED_PATHS].sort(), `${commit.label} changed only the ledger and inventory`);
+    assert.deepEqual(Object.keys(commit.inventory.changedFieldsBefore).sort(), [...REGISTRATION_INVENTORY_FIELDS["capital-route-topology"]].sort(), `${commit.label} changed exactly the registrar's refresh fields`);
+    const result = evaluateAutomationPullRequest(recordedScenario(commit));
+    assert.deepEqual(result.violations, [], commit.label);
+    assert.equal(result.eligible, true, commit.label);
+    assert.deepEqual((await recomputeAutomationGates(recordedGateInput(commit))).violations, [], commit.label);
+  }
+});
+
+test("반증: 기록된 등록 diff에 governance·신선도 SLA 변경이 더해지면 PATHS로 막는다(허용 목록은 넓히지 않는다)", () => {
+  for (const commit of RECORDED) {
+    for (const extra of ["tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]) {
+      const input = recordedScenario(commit, { extraFiles: [{ filename: extra, status: "modified" }] });
+      assert.equal(eligible(input), false, `${commit.label} + ${extra}`);
+      assert.ok(codesOf(input).includes("PATHS"), `${commit.label} + ${extra}`);
+    }
+  }
+});
+
+test("반증: 기록된 등록 diff에서 정책성 inventory 필드를 바꾸거나 소유 밖 항목을 바꾸면 게이트가 막는다", async () => {
+  for (const commit of RECORDED) {
+    const policyField = recordedGateInput(commit, { mutateHead: (entry) => ({ ...entry, productionUseAllowed: !entry.productionUseAllowed }) });
+    assert.ok((await gateCodes(policyField)).includes("INVENTORY_GATE"), `${commit.label} productionUseAllowed`);
+    const license = recordedGateInput(commit, { mutateHead: (entry) => ({ ...entry, license: { ...entry.license, type: "OTHER" } }) });
+    assert.ok((await gateCodes(license)).includes("INVENTORY_GATE"), `${commit.label} license`);
+    const unowned = recordedGateInput(commit);
+    const readTree = unowned.files.readTree;
+    unowned.files.readTree = async (relative) => {
+      const text = await readTree(relative);
+      if (relative !== INVENTORY_PATH) return text;
+      const head = JSON.parse(text);
+      head.sources[0].datasetUrl = "https://evil.test";
+      return JSON.stringify(head);
+    };
+    assert.ok((await gateCodes(unowned)).includes("INVENTORY_GATE"), `${commit.label} unowned entry`);
+  }
 });
 
 // #986 리뷰 F2: 뒤처진 자동화 PR은 라벨러가 이상으로 세지 않는다. 닫고 다시 만드는 일은 recreate workflow의 몫이고 라벨러는 아무것도 쓰지 않는다.

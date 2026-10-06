@@ -91,6 +91,20 @@ test("passes the explicit selected HEAD to every guard and defaults it to main",
   assert.equal(parseArgs(["recover-published", "--repository-root", "/repo", "--source-operation-root", "/tmp/source", "--target-operation-root", "/tmp/target", "--expected-main-sha", SHA, "--expected-publication-operation-id", "123", "--expected-head-sha", HEAD]).expectedHeadSha, HEAD);
 });
 
+// #989: 등록은 정책 파일을 쓰지 않는다. 게시 전 admission 읽기와 등록 둘 다 정책 변경 금지로 부른다(복구 경로 포함).
+test("admission 읽기와 등록을 정책 변경 금지(forbidPolicyChange)로 부른다(run·recover-published 모두)", async (t) => {
+  const f = await fixture(); t.after(() => rm(f.base, { recursive: true, force: true }));
+  const bytes = Buffer.from("{}\n"); const admissionOptions = []; const registerOptions = [];
+  const readAdmission = async (options) => { admissionOptions.push(options); return { sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", topologyBytes: bytes }; };
+  const register = async (options) => { registerOptions.push(options); return { targets: TARGETS }; };
+  await runCurrentCapitalRouteTopologyRegistration({ repositoryRoot: f.repositoryRoot, operationRoot: f.operationRoot, expectedMainSha: SHA, readAdmission, register, exactMain: async () => ({}),
+    publish: async ({ receiptPath }) => { await writeFile(receiptPath, JSON.stringify({ sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260904", rawObjectSha256: digest(bytes) })); } });
+  await recoverPublishedCurrentCapitalRouteTopologyRegistration({ repositoryRoot: f.repositoryRoot, sourceOperationRoot: f.operationRoot, targetOperationRoot: path.join(f.base, "recovery"), expectedMainSha: SHA,
+    expectedPublicationOperationId: path.basename(f.operationRoot), readAdmission, register, exactMain: async () => ({}) });
+  assert.equal(admissionOptions.length, 2); assert.equal(registerOptions.length, 2);
+  for (const options of [...admissionOptions, ...registerOptions]) assert.equal(options.forbidPolicyChange, true);
+});
+
 test("topology OCI publisher accepts a clean descendant HEAD and rejects a non-descendant before admission reads", async () => {
   const { publishCapitalRouteTopologyRaw } = await import("./publish-capital-route-topology-raw.mjs");
   const HEAD = "b".repeat(40);
