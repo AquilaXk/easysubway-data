@@ -57,6 +57,7 @@ const meta = (id, dependsOn = [], extra = {}) => ({ id, message: `[Data] ${id} �
 const stepsOf = (kind, run) => [{ id: "only", kind, run }];
 const rewriteLedger = (rows) => async ({ repositoryRoot }) => writeFile(path.join(repositoryRoot, LEDGER), `${JSON.stringify(rows, null, 2)}\n`);
 const options = (root, overrides = {}) => ({ repositoryRoot: root, operationRoot: path.join(root, "..", `op-${path.basename(root)}`), env: {}, policy: POLICY, now: new Date("2026-10-07T00:00:00.000Z"), execute: async () => ({ stdout: "" }), ...overrides });
+const resetWorktree = (root) => { git(root, "reset", "-q", "--hard", "HEAD"); git(root, "clean", "-fdq"); };
 const commitSubjects = (root, count) => git(root, "log", "--format=%s", `-${count}`).split("\n");
 
 test("recipe를 의존 순서로 실행하고 recipe마다 바뀐 허용 경로를 한 커밋으로 쌓는다", async (t) => {
@@ -205,6 +206,7 @@ test("새 행의 행 수 변화가 정책 한도를 넘거나 커버리지가 �
   const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
   const grown = gwangju("gwangju-2", { previousSnapshotId: "gwangju-1", rowCount: 130, diffSummary: { status: "CHANGED", rowDelta: 30, coverageDelta: 0 } });
   await assert.rejects(runSourceReverification(options(root, ledgerRecipe([gwangju("gwangju-1"), grown]))), /^Error: SOURCE_COUNT_DELTA: first: gwangju-transportation-route-topology gwangju-2: rowDelta 30 \(30\.0%\) exceeds 5\.0%$/u);
+  resetWorktree(root);
   const shrunk = gwangju("gwangju-2", { previousSnapshotId: "gwangju-1", coverageCount: 7, diffSummary: { status: "CHANGED", rowDelta: 0, coverageDelta: -1 } });
   await assert.rejects(runSourceReverification(options(root, ledgerRecipe([gwangju("gwangju-1"), shrunk]))), /^Error: SOURCE_COUNT_DELTA: first: .*coverageDelta -1 decreases coverage$/u);
 });
@@ -243,8 +245,10 @@ test("증거의 원본·내용 sha가 바뀌면 정책이 막을 때 SOURCE_SHA_
   const korail = evidence({ snapshotId: "kric-korail-1" });
   const changedRaw = evidence({ snapshotId: "kric-capital-2", rawSha256: SHA("9"), recordsSha256: SHA("8") });
   await assert.rejects(runSourceReverification(options(root, { ...kricRecipe(rewriteInventory(changedRaw, korail)), policy: STRICT })), /^Error: SOURCE_SHA_DRIFT: kric: kric-nationwide-timetable-file kric-capital-2: /u);
+  resetWorktree(root);
   const grown = evidence({ snapshotId: "kric-capital-2", rawSha256: SHA("9"), recordsSha256: SHA("8"), recordCount: 1300 });
   await assert.rejects(runSourceReverification(options(root, kricRecipe(rewriteInventory(grown, korail)))), /^Error: SOURCE_COUNT_DELTA: kric: kric-nationwide-timetable-file kric-capital-2: rowDelta 300 \(30\.0%\) exceeds 5\.0%$/u);
+  resetWorktree(root);
   const fewer = evidence({ snapshotId: "kric-capital-2", rawSha256: SHA("9"), recordsSha256: SHA("8"), routes: [{ routeNumber: "R0" }] });
   await assert.rejects(runSourceReverification(options(root, kricRecipe(rewriteInventory(fewer, korail)))), /^Error: SOURCE_COUNT_DELTA: kric: .*coverageDelta -9 decreases coverage$/u);
 });

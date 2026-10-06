@@ -24,7 +24,7 @@ test("정책의 P7D 원천은 모두 커버리지 표에 있고 표에는 정책
   const expected = policy.sourceClasses.filter((entry) => entry.reverificationCadence === "P7D").flatMap((entry) => entry.sourceIds).sort();
   assert.deepEqual(p7dSourceIds(policy), expected);
   assert.deepEqual(Object.keys(P7D_SOURCE_COVERAGE).sort(), expected);
-  assert.equal(expected.length, 11);
+  assert.equal(expected.length, 10);
 });
 
 test("커버리지 항목은 recipe·외부 workflow·막힌 사유 중 하나 이상이고 대상이 실제로 있다", () => {
