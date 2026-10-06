@@ -9,7 +9,7 @@
 //   itx-promotion(#977)은 ITX 원천 행 하나(raw capture sha·후보 sha·직전 snapshot)와 변경 경로 단계 하나이고 정책·후보 식별이 없다.
 //   변경 경로는 coverage contract와 그 snapshot의 원천·완전성 증거·게이트 영수증 네 개뿐이어야 한다(2단계 allowlist).
 //   source-reverification(#984)은 정책·원천 행(원장 게이트 + 증거 게이트)·recipe 단계를 담는다. 단계 id는 알려진 recipe뿐이고,
-//   변경 경로는 등록 도구의 네 출력 파일과 새 원천 snapshot 파일뿐이어야 한다(경로 계약은 source-reverification-paths.mjs 하나).
+//   변경 경로는 등록 결과 세 파일(신선도 정책 제외)과 새 원천 snapshot 파일뿐이어야 한다(경로 계약은 source-reverification-paths.mjs 하나).
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 

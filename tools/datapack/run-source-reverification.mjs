@@ -10,7 +10,7 @@
 //   SOURCE_SHA_DRIFT            원본 sha가 고정과 다르거나, 원장·증거 변화가 정책(tools/ci/source-ledger-change-policy.json)을 넘었다.
 //   SOURCE_COUNT_DELTA          행 수 변화가 정책 한도를 넘거나 커버리지가 줄었다.
 //   BINDING_MISMATCH            원장·증거의 필수 필드·직전 연결이 어긋났다.
-//   REVERIFICATION_OUTPUT_SCOPE recipe가 허용 경로(등록 도구의 네 출력 파일 + 새 snapshot 파일) 밖을 바꿨다.
+//   REVERIFICATION_OUTPUT_SCOPE recipe가 허용 경로(등록 결과 세 파일 + 새 snapshot 파일) 밖을 바꿨다.
 //
 // 사용(깨끗한 작업 트리, origin/main의 후손 HEAD에서):
 //   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>
@@ -388,7 +388,7 @@ function scopeViolations(entries) {
   for (const { code, path: relative } of entries) {
     if (!isSourceReverificationAllowedPath(relative)) { violations.push(relative); continue; }
     if (code.includes("D")) { violations.push(`${relative} (deleted)`); continue; }
-    // 새 snapshot 파일만 쓸 수 있다. 이미 있는 snapshot은 불변이다(등록 도구의 네 출력 파일만 제자리에서 바뀐다).
+    // 새 snapshot 파일만 쓸 수 있다. 이미 있는 snapshot은 불변이다(등록 결과 세 파일만 제자리에서 바뀐다).
     if (!SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS.includes(relative) && SNAPSHOT_FILE.test(relative) && code !== "??" && !code.includes("A")) {
       violations.push(`${relative} (existing snapshot files are immutable)`);
     }
