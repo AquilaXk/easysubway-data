@@ -71,7 +71,8 @@ const STAGES = {
 };
 
 const file = (filename, extra = {}) => ({ filename, status: "modified", ...extra });
-const commit = (sha, { author = ACTIONS_BOT, committer = ACTIONS_BOT, parents = 1 } = {}) => ({ sha, author, committer, parents: Array.from({ length: parents }, (_, index) => ({ sha: `${index}`.repeat(40) })) });
+const HEAD_COMMITTED_AT = "2026-10-06T00:00:00Z";
+const commit = (sha, { author = ACTIONS_BOT, committer = ACTIONS_BOT, parents = 1, committedAt = HEAD_COMMITTED_AT } = {}) => ({ sha, author, committer, commit: { committer: { date: committedAt } }, parents: Array.from({ length: parents }, (_, index) => ({ sha: `${index}`.repeat(40) })) });
 const run = (name, conclusion = "success", { app = 15368, id = 1, startedAt = "2026-10-06T00:00:00Z" } = {}) => ({ id, name, status: "completed", conclusion, started_at: startedAt, app: { id: app } });
 
 /** 정상 입력. 각 반증 테스트는 여기서 정확히 한 가지만 바꾼다. */
@@ -86,7 +87,7 @@ function scenario(stage = "registration") {
       head: { ref: branch, sha: HEAD, repo: { full_name: REPOSITORY } },
       base: { ref: "main", sha: BASE, repo: { full_name: REPOSITORY } },
     },
-    commits: [commit("1".repeat(40)), commit("2".repeat(40))],
+    commits: [commit("1".repeat(40)), commit(HEAD)],
     files: paths.map((filename) => file(filename)),
     compare: { status: "ahead", ahead_by: 2, behind_by: 0, merge_base_commit: { sha: BASE } },
     checkRuns: [run("Data contracts", "success", { id: 10 }), run(AUTOMATION_PR_GATES_CONTEXT, "success", { id: 11 })],
@@ -512,17 +513,20 @@ function fakeApi(input, { pulls, labels = [], comments = [] } = {}) {
   return { api, calls };
 }
 
+const ATTESTED_AT = "2026-10-06T00:10:00Z";
+const attestationComment = (overrides = {}) => ({ user: { ...AUTOMATION_PR_APP }, body: automationAttestationMarker(HEAD), created_at: ATTESTED_AT, updated_at: ATTESTED_AT, ...overrides });
+
 test("라벨러 판정: 적격이면 ELIGIBLE과 PR 번호·head·단계·이미 한 일을 돌려준다", async () => {
   const input = scenario("itx-promotion");
   const { api } = fakeApi(input);
   const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api });
   assert.deepEqual(decision, { state: "ELIGIBLE", pullRequest: 77, headSha: HEAD, stage: "itx-promotion", draft: true, labeled: false, attested: false });
-  const done = fakeApi(input, { labels: [{ name: "automerge" }], comments: [{ user: { ...AUTOMATION_PR_APP }, body: automationAttestationMarker(HEAD) }] });
+  const done = fakeApi(input, { labels: [{ name: "automerge" }], comments: [attestationComment()] });
   const again = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: done.api });
   assert.equal(again.labeled, true);
   assert.equal(again.attested, true);
   // 같은 head의 기록이라도 신뢰 App이 쓴 것만 센다.
-  const forged = fakeApi(input, { comments: [{ user: HUMAN, body: automationAttestationMarker(HEAD) }] });
+  const forged = fakeApi(input, { comments: [attestationComment({ user: HUMAN })] });
   assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: forged.api })).attested, false);
 });
 
@@ -619,4 +623,24 @@ test("CLI decide: 판정을 GITHUB_OUTPUT에 쓰고, 값이 출력 형식에 맞
     await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "cancelled", "--github-output", stale], { api, log: () => {} });
     assert.equal(await readFile(stale, "utf8"), "state=STALE\npull_request=\nhead_sha=\nstage=\ndraft=false\nlabeled=false\nattested=false\n");
   });
+});
+
+// #986 리뷰 F1: 이미 한 일(attested)로 세는 기록도 코디네이터와 같은 기준이다. 편집된 기록·head 커밋보다 먼저 만든 기록은 없는 것으로 본다.
+test("반증: 편집됐거나 head 커밋보다 먼저 만들어진 기록은 attested로 세지 않아 라벨러가 새 기록을 남긴다", async () => {
+  const input = scenario();
+  const attestedOf = async (comments) => (await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(input, { comments }).api })).attested;
+  assert.equal(await attestedOf([attestationComment()]), true);
+  assert.equal(await attestedOf([attestationComment({ updated_at: "2026-10-06T00:20:00Z" })]), false, "edited");
+  assert.equal(await attestedOf([attestationComment({ created_at: "2026-10-05T23:59:59Z", updated_at: "2026-10-05T23:59:59Z" })]), false, "created before the head commit");
+  assert.equal(await attestedOf([attestationComment({ created_at: HEAD_COMMITTED_AT, updated_at: HEAD_COMMITTED_AT })]), true, "same second");
+  assert.equal(await attestedOf([attestationComment({ created_at: undefined, updated_at: undefined })]), false, "no timestamps");
+  assert.equal(await attestedOf([attestationComment({ created_at: "garbage", updated_at: "garbage" })]), false, "bad timestamps");
+  // 편집된 기록 옆에 올바른 기록이 있으면 인정한다.
+  assert.equal(await attestedOf([attestationComment({ updated_at: "2026-10-06T00:20:00Z" }), attestationComment()]), true);
+  // head 커밋을 PR 커밋 목록에서 찾지 못하면 기록 시각을 비교할 수 없으므로 없는 것으로 본다.
+  const noHead = scenario();
+  noHead.commits = [commit("1".repeat(40))];
+  noHead.compare = { ...noHead.compare, ahead_by: 1 };
+  const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(noHead, { comments: [attestationComment()] }).api });
+  assert.equal(decision.attested, false);
 });

@@ -97,6 +97,19 @@ export function automationAttestationMarker(headSha) {
   return `${ATTESTATION_PREFIX}${headSha} -->`;
 }
 
+/**
+ * App이 남긴 정책 통과 기록이 이 head에서 유효한지(#986 F1). 코디네이터의 jq 판정과 같은 기준이다.
+ * - 작성자가 신뢰 App이고 본문이 이 head의 기록과 정확히 같다.
+ * - 편집되지 않았다(updated_at이 created_at과 같다). 쓰기 권한자가 App 기록을 새 head로 고쳐 쓰는 것을 막는다.
+ * - head 커밋보다 먼저 만들어지지 않았다. 앞선 head의 기록을 재사용하는 것을 막는다(커밋 시각은 작성자가 정할 수 있어 이것만으로 방어가 되지는 않는다).
+ */
+export function isValidAttestation(comment, headSha, headCommittedAt) {
+  if (!isObject(comment) || !sameIdentity(comment.user, AUTOMATION_PR_APP) || comment.body !== automationAttestationMarker(headSha)) return false;
+  const created = Date.parse(comment.created_at);
+  return typeof comment.created_at === "string" && comment.created_at === comment.updated_at
+    && created >= Date.parse(headCommittedAt);
+}
+
 /** 브랜치가 어느 단계의 claim 브랜치인지. 접두사 뒤가 양의 정수 run id 하나가 아니면 null이다. */
 export function automationStageForBranch(ref) {
   if (typeof ref !== "string") return null;
@@ -410,7 +423,7 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
   });
   if (!result.applicable) return { state: "NOT_APPLICABLE" };
   if (!result.eligible) throw new Error(result.violations.map(({ code, detail }) => `AUTOMATION_PR_${code}: ${detail}`).join("\n"));
-  const marker = automationAttestationMarker(headSha);
+  const headCommittedAt = commits.find((entry) => entry?.sha === headSha)?.commit?.committer?.date;
   return {
     state: "ELIGIBLE",
     pullRequest: number,
@@ -418,7 +431,7 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
     stage: result.stage,
     draft: pull.draft === true,
     labeled: Array.isArray(pull.labels) && pull.labels.some((label) => label?.name === AUTOMATION_AUTOMERGE_LABEL),
-    attested: comments.some((comment) => isAutomationApp(comment?.user) && comment.body === marker),
+    attested: comments.some((comment) => isValidAttestation(comment, headSha, headCommittedAt)),
   };
 }
 

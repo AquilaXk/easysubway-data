@@ -29,10 +29,15 @@ function stubbedBash(lines) {
   };
 }
 
-const attestation = (head = HEAD, user = APP, body) => ({
+const HEAD_COMMITTED_AT = '2026-10-06T00:00:00Z';
+const ATTESTED_AT = '2026-10-06T00:10:00Z';
+const attestation = (head = HEAD, user = APP, body, overrides = {}) => ({
   id: 1,
   user,
   body: body ?? `<!-- Automation automerge policy: ${head} -->`,
+  created_at: ATTESTED_AT,
+  updated_at: ATTESTED_AT,
+  ...overrides,
 });
 const review = (id, state, overrides = {}) => ({
   id,
@@ -56,7 +61,7 @@ const aquilaReview = (overrides = {}) =>
   });
 
 /** 리뷰 게이트 블록(함수 정의 포함)을 1회 루프에 넣어 실제 판정을 실행한다. */
-async function runGate({ reviews = [], comments = [], author = APP, enabled = 'true', authorFails = false }) {
+async function runGate({ reviews = [], comments = [], author = APP, enabled = 'true', authorFails = false, headCommittedAt = HEAD_COMMITTED_AT, headDateFails = false }) {
   const workflow = await readWorkflow();
   const policy = workflow.match(/# automation-policy-begin\n([\s\S]*?)\n\s+# automation-policy-end/)?.[1];
   const gate = workflow.match(/# review-state-filter-begin\n([\s\S]*?)\n\s+# review-state-filter-end/)?.[0];
@@ -69,6 +74,7 @@ async function runGate({ reviews = [], comments = [], author = APP, enabled = 't
     `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
     '  case "$*" in',
     `    "api repos/o/r/pulls/26 --jq .user") ${authorFails ? 'return 1' : `printf '%s' ${JSON.stringify(JSON.stringify(author))}`} ;;`,
+    `    "api repos/o/r/commits/${HEAD} --jq .commit.committer.date") ${headDateFails ? 'return 1' : `printf '%s' ${JSON.stringify(headCommittedAt)}`} ;;`,
     '    *) return 99 ;;',
     '  esac',
     '}',
@@ -181,12 +187,12 @@ test('사람 PR 경로는 그대로다: Aquila 리뷰와 exact-head marker가 �
   assert.equal(changes.passed, false);
 });
 
-test('자동화 판정 함수는 github.token의 GET 하나만 쓰고 쓰기·병합 토큰을 만지지 않는다', async () => {
+test('자동화 판정 함수는 github.token의 GET 조회만 쓰고 쓰기·병합 토큰을 만지지 않는다', async () => {
   const workflow = await readWorkflow();
   const policy = workflow.match(/# automation-policy-begin\n([\s\S]*?)\n\s+# automation-policy-end/)?.[1];
   assert.ok(policy);
   assert.doesNotMatch(policy, /--method|gh pr |MERGE_GH_TOKEN|gh workflow/);
-  assert.equal((policy.match(/\bgh api\b/g) ?? []).length, 1);
+  assert.equal((policy.match(/\bgh api\b/g) ?? []).length, 2, 'PR author and head commit time are the only reads');
   assert.match(policy, /\[\[ "\$\{AUTOMATION_AUTOMERGE_ENABLED:-\}" == "true" \]\] \|\| return 1/);
   assert.ok(policy.indexOf('AUTOMATION_AUTOMERGE_ENABLED') < policy.indexOf('gh api'), 'the switch is read before any API call');
 });
@@ -247,4 +253,29 @@ test('병합 호출은 자동화 경로에서도 --match-head-commit으로 판�
   const workflow = await readWorkflow();
   assert.ok(workflow.includes('gh pr merge --squash "${pr}" --repo "${repo}" \\\n                  --match-head-commit "${head}"'));
   assert.equal((workflow.match(/gh pr merge/g) ?? []).length, 1, 'there is exactly one merge call, shared by both paths');
+});
+
+// #986 리뷰 F1: App 기록은 편집되지 않았고(updated_at == created_at) head 커밋 이후에 만들어진 것만 인정한다.
+test('반증: 편집된 기록은 본문이 맞아도 통과하지 못한다(쓰기 권한자의 기록 재작성)', async () => {
+  const edited = attestation(HEAD, APP, undefined, { updated_at: '2026-10-06T00:20:00Z' });
+  const result = await runGate({ comments: [edited] });
+  assert.equal(result.passed, false);
+  assert.equal(result.skipped, true);
+  // 편집 시각이 달라진 기록 옆에 편집되지 않은 올바른 기록이 있으면 그것이 인정된다.
+  assert.equal((await runGate({ comments: [edited, attestation(HEAD, APP, undefined, { id: 2 })] })).passed, true);
+  for (const broken of [{ updated_at: undefined }, { created_at: undefined }, { created_at: 'not a date', updated_at: 'not a date' }]) {
+    assert.equal((await runGate({ comments: [attestation(HEAD, APP, undefined, broken)] })).passed, false, JSON.stringify(broken));
+  }
+});
+
+test('반증: head 커밋보다 먼저 만들어진 기록은 재사용으로 보고 통과하지 못한다', async () => {
+  const early = attestation(HEAD, APP, undefined, { created_at: '2026-10-05T23:59:59Z', updated_at: '2026-10-05T23:59:59Z' });
+  assert.equal((await runGate({ comments: [early] })).passed, false);
+  // head 커밋과 같은 초에 만든 기록은 인정한다(경계).
+  const same = attestation(HEAD, APP, undefined, { created_at: HEAD_COMMITTED_AT, updated_at: HEAD_COMMITTED_AT });
+  assert.equal((await runGate({ comments: [same] })).passed, true);
+  // head 커밋 시각을 읽지 못하면 판정하지 못하므로 통과하지 못한다.
+  assert.equal((await runGate({ comments: [attestation()], headDateFails: true })).passed, false);
+  assert.equal((await runGate({ comments: [attestation()], headCommittedAt: 'garbage' })).passed, false);
+  assert.equal((await runGate({ comments: [attestation()], headCommittedAt: '2026-10-06T00:11:00Z' })).passed, false);
 });
