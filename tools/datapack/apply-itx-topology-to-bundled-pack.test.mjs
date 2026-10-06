@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -912,6 +912,44 @@ test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam�
 });
 
 // #980 F4: 팩 바이트는 SQLite 엔진 버전에 묶인다. 다른 런타임이면 불투명한 해시 불일치 대신 원인(실제 버전)을 적어 계산 전에 거부한다.
+// #980 F5: --derive-fixture의 증거 대조는 CI에서만 드러나지 않도록 작은 테스트로 고정한다. 고정 입력 팩에서 파생한 결과가 커밋된 증거와
+// 같으면 통과하고, 증거의 한 자리만 바뀌어도 달라진 필드(pack.outputSha256)를 적어 거부한다.
+test("--derive-fixture는 커밋된 증거와 같을 때만 통과하고 한 자리 변조를 필드명과 함께 거부한다", async (context) => {
+  const inputFixture = path.join(root, ".external/mobile/apps/mobile/assets/datapacks");
+  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-derive-mismatch-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const stage = async (name) => {
+    const target = path.join(directory, name);
+    await mkdir(path.join(target, "assets/datapacks"), { recursive: true });
+    for (const file of ["capital.sqlite.gz", "index.json"]) await cp(path.join(inputFixture, file), path.join(target, "assets/datapacks", file));
+    return target;
+  };
+  const evidencePath = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  const derive = (fixture, evidenceFile) => execFileAsync(process.execPath, [
+    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--derive-fixture", fixture, "--evidence", evidenceFile,
+  ], { cwd: root });
+
+  const good = await stage("good");
+  await derive(good, evidencePath);
+  assert.equal(sha256(await readFile(path.join(good, "assets/datapacks/capital.sqlite.gz"))), evidence.pack.outputSha256);
+
+  const lastDigit = evidence.pack.outputSha256.at(-1);
+  const tampered = structuredClone(evidence);
+  tampered.pack.outputSha256 = `${evidence.pack.outputSha256.slice(0, -1)}${lastDigit === "0" ? "1" : "0"}`;
+  const tamperedPath = path.join(directory, "tampered-evidence.json");
+  await writeFile(tamperedPath, `${JSON.stringify(tampered, null, 2)}\n`);
+  const bad = await stage("bad");
+  const inputBefore = await readFile(path.join(bad, "assets/datapacks/capital.sqlite.gz"));
+  await assert.rejects(derive(bad, tamperedPath), (error) => {
+    assert.match(error.stderr, /ITX_FIXTURE_DERIVATION_MISMATCH/u);
+    assert.match(error.stderr, /pack\.outputSha256/u);
+    return true;
+  });
+  // 거부된 파생은 fixture를 건드리지 않는다.
+  assert.deepEqual(await readFile(path.join(bad, "assets/datapacks/capital.sqlite.gz")), inputBefore);
+});
+
 test("팩을 계산하는 런타임은 Node 24.19.0·SQLite 3.53.3만 받고 어긋나면 실제 버전을 적어 거부한다", () => {
   assert.doesNotThrow(() => assertItxPackRuntime({ node: "24.19.0", sqlite: "3.53.3" }));
   assert.throws(() => assertItxPackRuntime({ node: "24.19.0", sqlite: "3.53.4" }), /runtime must be Node 24\.19\.0 with SQLite 3\.53\.3.*SQLite 3\.53\.4/u);
