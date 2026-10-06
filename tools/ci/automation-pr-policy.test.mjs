@@ -288,7 +288,8 @@ test("반증: 게이트 재계산 check가 없거나 성공이 아니거나 gith
     pending: (input) => { input.checkRuns = [run("Data contracts"), { ...run(AUTOMATION_PR_GATES_CONTEXT), conclusion: null, status: "in_progress" }]; },
     "foreign app": (input) => { input.checkRuns = [run("Data contracts"), run(AUTOMATION_PR_GATES_CONTEXT, "success", { app: 99999 })]; },
     "latest failed": (input) => {
-      input.checkRuns = [run("Data contracts"), run(AUTOMATION_PR_GATES_CONTEXT, "success", { id: 1, startedAt: "2026-10-06T00:00:00Z" }), run(AUTOMATION_PR_GATES_CONTEXT, "failure", { id: 2, startedAt: "2026-10-06T01:00:00Z" })];
+      // 배열 순서가 아니라 시작 시각으로 최신을 고른다(최신 실패가 배열 앞에 있어도 막아야 한다).
+      input.checkRuns = [run("Data contracts"), run(AUTOMATION_PR_GATES_CONTEXT, "failure", { id: 2, startedAt: "2026-10-06T01:00:00Z" }), run(AUTOMATION_PR_GATES_CONTEXT, "success", { id: 1, startedAt: "2026-10-06T00:00:00Z" })];
     },
   };
   for (const [name, mutate] of Object.entries(mutations)) {
@@ -373,14 +374,17 @@ const BASE_LEDGER = [row()];
 const HEAD_LEDGER = [row(), row({ snapshotId: "capital-route-topology-20261006", previousSnapshotId: "capital-route-topology-20261004", rawSha256: "3".repeat(64), contentSha256: "d".repeat(64), rowCount: 100, coverageCount: 50, diffSummary: { status: "CHANGED", rowDelta: 0, coverageDelta: 0 } })];
 const EXPECTED_SOURCE = { ...LEDGER_SOURCE, previousSnapshotId: "capital-route-topology-20261004", rawSha256: "3".repeat(64), contentSha256: "d".repeat(64) };
 
-function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contract, receipt, verifyItx, candidate, policy = POLICY } = {}) {
-  const evidence = { schemaVersion: 1, issue: 969, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, ...STAGES[stage].evidence, ...evidenceOverrides };
-  if (stage === "registration") evidence.sources = [EXPECTED_SOURCE];
+function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contract, receipt, verifyItx, candidate, policy = POLICY, extraTree = {} } = {}) {
+  const evidence = {
+    schemaVersion: 1, issue: 969, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, ...STAGES[stage].evidence,
+    ...(stage === "registration" ? { sources: [EXPECTED_SOURCE] } : {}), ...evidenceOverrides,
+  };
   const tree = {
     "tools/datapack/release/source-snapshots.json": JSON.stringify(ledger),
     "tools/ci/source-ledger-change-policy.json": JSON.stringify(policy),
     ...(contract === undefined ? {} : { "tools/datapack/itx-cheongchun-coverage-contract.json": JSON.stringify(contract) }),
     ...(receipt === undefined ? {} : { [`tools/datapack/sources/${ITX_ID}-promotion-gate.json`]: JSON.stringify(receipt) }),
+    ...extraTree,
   };
   return {
     evidence,
@@ -455,7 +459,9 @@ test("반증: ITX 게이트가 실패하거나 승인 모드·다른 snapshot이
   const owner = { sourceTimetableArtifact: { ...ITX_CONTRACT.sourceTimetableArtifact, promotion: { mode: "CURRENT_CANDIDATE_OWNER_APPROVED" } } };
   assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: owner, receipt: itxReceipt() }))).includes("ITX_GATE"));
   const other = { sourceTimetableArtifact: { ...ITX_CONTRACT.sourceTimetableArtifact, artifactId: ITX_PREVIOUS_ID } };
-  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: other, receipt: itxReceipt() }))).includes("ITX_GATE"));
+  // 다른 snapshot의 영수증이 트리에 있어도 증거의 snapshot과 다른 승격 원천이면 막는다.
+  const otherReceipt = { [`tools/datapack/sources/${ITX_PREVIOUS_ID}-promotion-gate.json`]: JSON.stringify(itxReceipt()) };
+  assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: other, receipt: itxReceipt(), extraTree: otherReceipt }))).includes("ITX_GATE"));
   const blocked = itxReceipt({ status: "BLOCKED", blockedCheckIds: ["TRIP_COUNT"] });
   assert.ok((await gateCodes(gateInput("itx-promotion", { ledger: BASE_LEDGER, contract: ITX_CONTRACT, receipt: blocked }))).includes("ITX_GATE"));
   const forgedRow = itxReceipt({ source: { rawCaptureSha256: "0".repeat(64) } });
@@ -529,7 +535,10 @@ test("라벨러 판정: 정책 대상이 아닌 PR·닫힌 PR·head가 이미 �
   const base = scenario();
   const other = scenario();
   other.pull.head.ref = "automation/636-current-topology-refresh-1";
-  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(other).api })).state, "NOT_APPLICABLE");
+  const otherApi = fakeApi(other);
+  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: otherApi.api })).state, "NOT_APPLICABLE");
+  // 대상이 아닌 PR은 커밋·파일·check 같은 무거운 읽기를 하지 않는다.
+  assert.deepEqual(otherApi.calls, [`repos/${REPOSITORY}/commits/${HEAD}/pulls`, `repos/${REPOSITORY}/pulls/77`]);
   assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(base, { pulls: [] }).api })).state, "NOT_APPLICABLE");
   const moved = scenario();
   moved.pull.head.sha = OTHER;
