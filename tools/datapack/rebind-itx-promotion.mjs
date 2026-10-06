@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 
@@ -68,24 +69,26 @@ export async function rebindItxPromotion({ repositoryRoot: requestedRoot, buildN
   const versionedPath = deriveApprovedItxTopologyEvidencePath(reference);
   await writeFile(path.join(repositoryRoot, versionedPath), evidenceBytes, { flag: "wx" });
 
-  // 4. alignment fixture: packSha256만 바뀌어야 한다.
-  const changed = [EVIDENCE, versionedPath];
-  for (const relative of ALIGNMENT_FIXTURES) {
-    const currentBytes = await read(relative);
-    const current = JSON.parse(currentBytes);
-    await run(repositoryRoot, "tools/route-map/generate-basemap-alignment-fixture.mjs", [
-      "--pack", packRelative, "--geometry", current.generatedFrom.geometry, "--region", current.region, "--out", relative,
-    ]);
-    const next = JSON.parse(await read(relative));
-    const normalized = structuredClone(next);
-    normalized.generatedFrom.packSha256 = current.generatedFrom.packSha256;
-    if (JSON.stringify(normalized) !== JSON.stringify(current)) {
-      await writeFile(path.join(repositoryRoot, relative), currentBytes);
-      fail("ALIGNMENT_CONTENT_CHANGED", relative);
-    }
-    if (next.generatedFrom.packSha256 !== current.generatedFrom.packSha256) changed.push(relative);
+  // 4. alignment fixture: packSha256만 바뀌어야 한다. 권역마다 자기 파일만 쓰는 독립 작업이라 함께 돌린다.
+  const alignmentChanged = await Promise.all(ALIGNMENT_FIXTURES.map((relative) => rebindAlignmentFixture({ repositoryRoot, relative, packRelative })));
+  return [EVIDENCE, versionedPath, ...alignmentChanged.filter((relative) => relative !== null)].sort(codepointCompare);
+}
+
+/** alignment fixture 하나를 새 팩에 맞춘다. 바뀌었으면 경로를, 같으면 null을 돌려준다. packSha256 밖의 값이 바뀌면 원래 바이트로 되돌리고 실패한다. */
+async function rebindAlignmentFixture({ repositoryRoot, relative, packRelative }) {
+  const currentBytes = await readFile(path.join(repositoryRoot, relative));
+  const current = JSON.parse(currentBytes);
+  await run(repositoryRoot, "tools/route-map/generate-basemap-alignment-fixture.mjs", [
+    "--pack", packRelative, "--geometry", current.generatedFrom.geometry, "--region", current.region, "--out", relative,
+  ]);
+  const next = JSON.parse(await readFile(path.join(repositoryRoot, relative)));
+  const normalized = structuredClone(next);
+  normalized.generatedFrom.packSha256 = current.generatedFrom.packSha256;
+  if (JSON.stringify(normalized) !== JSON.stringify(current)) {
+    await writeFile(path.join(repositoryRoot, relative), currentBytes);
+    fail("ALIGNMENT_CONTENT_CHANGED", relative);
   }
-  return changed.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  return next.generatedFrom.packSha256 === current.generatedFrom.packSha256 ? null : relative;
 }
 
 function parseArgs(argv) {

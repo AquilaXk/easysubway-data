@@ -1181,7 +1181,7 @@ async function main() {
 /** 두 증거 JSON에서 값이 다른 필드 경로(정렬)를 돌려준다. 값은 해시·개수뿐이라 그대로 오류에 적는다. */
 function differingEvidenceFields(left, right, prefix = "") {
   if (left !== null && right !== null && typeof left === "object" && typeof right === "object" && !Array.isArray(left) && !Array.isArray(right)) {
-    return [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()
+    return [...new Set([...Object.keys(left), ...Object.keys(right)])].sort(codepointCompare)
       .flatMap((key) => differingEvidenceFields(left[key], right[key], prefix === "" ? key : `${prefix}.${key}`));
   }
   return JSON.stringify(left) === JSON.stringify(right) ? [] : [`${prefix}: committed=${JSON.stringify(left)} derived=${JSON.stringify(right)}`];

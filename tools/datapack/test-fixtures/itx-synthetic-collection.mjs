@@ -28,7 +28,10 @@ export async function synthesizeNextItxCollection({ repositoryRoot, outputDirect
   const artifactId = `itx-cheongchun-source-timetable-${observedAt.replace(/\D/g, "")}`;
   // 날짜 문자열을 모두 같은 일수만큼 옮긴다(ISO 날짜, 따옴표로 둘러싼 YYYYMMDD 운행일, 수집 시각 stamp).
   text = text.replaceAll(/20\d\d-\d\d-\d\d/g, (date) => shiftIsoDate(date, shiftDays));
-  text = text.replaceAll(/"(20\d\d)(\d\d)(\d\d)"/g, (_, year, month, day) => `"${shiftIsoDate(`${year}-${month}-${day}`, shiftDays).replaceAll("-", "")}"`);
+  text = text.replaceAll(/"(20\d\d)(\d\d)(\d\d)"/g, (_, year, month, day) => {
+    const shifted = shiftIsoDate([year, month, day].join("-"), shiftDays).replaceAll("-", "");
+    return `"${shifted}"`;
+  });
   text = text.replaceAll(reference.artifactId, artifactId);
   const next = JSON.parse(text);
   next.observedAt = observedAt;
