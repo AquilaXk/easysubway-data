@@ -37,7 +37,9 @@ test("판정 step이 입력 검증·후보 생성보다 먼저 돌고 열린 PR�
   assert.match(block, /\n        id: decision\n/u);
   assert.match(block, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
   assert.match(block, /EVENT_NAME: \$\{\{ github\.event_name \}\}/u);
-  assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/927-nationwide-candidate-refresh-\*" > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
   assert.match(block, /node tools\/ci\/decide-nationwide-candidate-refresh\.mjs --event "\$\{EVENT_NAME\}" --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
@@ -94,7 +96,9 @@ test("판정이 알린 남은 후보 브랜치는 입력 검증 전에 지운다
 test("push 직전 재확인은 판정과 같은 규칙으로 대기 목록을 읽고, 대기 중이면 이유를 notice로 남긴다", () => {
   const recheck = step("Recheck that no source-ledger automation is pending before pushing");
   assert.match(recheck.block, /\n        id: recheck\n/u);
-  assert.match(recheck.block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(recheck.block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(recheck.block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(recheck.block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
   assert.match(recheck.block, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
   const names = steps().map(({ name }) => name);

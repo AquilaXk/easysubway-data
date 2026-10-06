@@ -175,6 +175,17 @@ test("입력이 잘못되면 추정하지 않고 실패한다", () => {
   assert.throws(() => decide({ pullRequests: [pr()], limits: { pullRequests: 1 } }), /ITX_PROMOTION_LIST_TRUNCATED/u);
 });
 
+// #993: 상한은 열린 PR 목록에만 건다. 닫힘·병합 PR 이력은 자동화가 매일 PR을 열어 계속 쌓인다.
+test("닫힘·병합 PR 이력이 상한을 훨씬 넘게 있어도 실패하지 않고 열린 PR이 상한에 닿을 때만 실패한다", () => {
+  const history = (count, state, prefix) => Array.from({ length: count }, (_, index) => pr({ number: 3000 + index, state, headRefName: `${prefix}${state}-${index}` }));
+  const merged = history(2500, "MERGED", "feat/old-");
+  const closedElsewhere = history(2500, "CLOSED", "feat/old-");
+  assert.equal(decide({ pullRequests: [...merged, ...closedElsewhere] }).state, "WAIT");
+  assert.equal(decide({ pullRequests: [...merged, ...closedElsewhere, pr()], branches: [{ sha: "b".repeat(40), branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }).state, "OPEN_PR");
+  assert.throws(() => decide({ pullRequests: [...merged, ...history(1000, "OPEN", "feat/open-")] }), /ITX_PROMOTION_LIST_TRUNCATED: pull request list reached its limit 1000/u);
+  assert.equal(decide({ pullRequests: [...merged, ...history(999, "OPEN", "feat/open-")] }).state, "WAIT");
+});
+
 test("ls-remote 출력에서 승격 브랜치만 읽고 다른 형식이 섞이면 실패한다", () => {
   const sha = "b".repeat(40);
   assert.deepEqual(parseItxPromotionBranches(`${sha}\trefs/heads/${ITX_PROMOTION_CLAIM_PREFIX}9\n`), [{ sha, branch: `${ITX_PROMOTION_CLAIM_PREFIX}9` }]);

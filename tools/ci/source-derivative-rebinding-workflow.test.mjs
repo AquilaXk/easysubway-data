@@ -33,7 +33,9 @@ test("판정 step이 controller보다 먼저 돌고 열린 PR·브랜치만 읽�
   assert.ok(decision !== -1 && decision < rebind);
   const { block } = all[decision];
   assert.match(block, /\n        id: decision\n/u);
-  assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/969-derivative-rebinding-\*" > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
   assert.match(block, /node tools\/ci\/decide-derivative-rebinding\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);

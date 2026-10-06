@@ -21,7 +21,7 @@
 //   BLOCKED_BY_PENDING_PR   수집할 때지만 다른 자동화 PR이 열려 있다. 대기다. 만료 1일 전이면 이상이다.
 // 판정할 수 없는 상태(PR 중복·PR 없는 브랜치·닫힌 PR·잘못된 입력)는 실패해 실패 이슈로 드러난다. 추정하지 않는다.
 //
-// 사용: node tools/ci/decide-itx-current-promotion.mjs --contract <coverage contract> --prs <gh pr list JSON>
+// 사용: node tools/ci/decide-itx-current-promotion.mjs --contract <coverage contract> --prs <collect-automation-prs.mjs 출력>
 //   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--itx-collected-today true|false] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -83,7 +83,8 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   const daysUntilExpiry = expiryDay - today;
   const lapsed = now.getTime() >= freshUntilMillis;
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다.
-  if (pullRequests.length >= limits.pullRequests) fail("ITX_PROMOTION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
+  // 상한은 열린 PR에만 적용한다. 목록은 열린 PR 전체와 승격 claim 브랜치별 PR(전 상태)이고(collect-automation-prs.mjs), 닫힘·병합 이력은 쌓여도 판정에 영향이 없다(#993).
+  if (pullRequests.filter(({ state }) => state === "OPEN").length >= limits.pullRequests) fail("ITX_PROMOTION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
 
   const own = ownPullRequestsByBranch(pullRequests, ITX_PROMOTION_CLAIM_PREFIX, repository, (branch) => fail("ITX_PROMOTION_PR_DUPLICATE", branch));
   const base = { daysUntilExpiry, lapsed, freshUntil: contract.sourceTimetableArtifact.freshUntil };

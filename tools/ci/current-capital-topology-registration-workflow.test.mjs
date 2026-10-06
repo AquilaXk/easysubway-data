@@ -39,7 +39,9 @@ test("판정 step이 claim·게시·PR 생성보다 먼저 돌고 판정 입력�
   assert.match(block, /\n        id: decision\n/u);
   assert.match(block, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
   assert.match(block, /RECOVERY_RUN_ID: \$\{\{ inputs\.recovery_run_id \}\}/u);
-  assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/456-capital-topology-registration-\*" > /u);
   // #987 리뷰 F1: 아직 끝나지 않은 run만 상태별로 조회하고, 복구에 필요한 claim의 producer run은 run id로 직접 가져온다(끝난 이력은 조회하지 않는다).
   assert.match(block, /for status in in_progress queued waiting pending requested; do\n\s+gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow current-capital-topology-registration\.yml --status "\$\{status\}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "[^"]+"\n\s+done/u);
@@ -71,7 +73,9 @@ test("push 직전에 원장을 쓰는 다른 자동화(열린 PR·claim 브랜�
   const recheck = step("Recheck that no source-ledger automation is pending before pushing");
   assert.equal(ifCondition(recheck.block), WRITES);
   assert.match(recheck.block, /\n          GH_TOKEN: \$\{\{ github\.token \}\}\n/u);
-  assert.match(recheck.block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(recheck.block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(recheck.block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(recheck.block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
   assert.match(recheck.block, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --except-workflow current-capital-topology-registration\.yml --github-output "[^"]+"/u);
   assert.match(recheck.block, /grep -qx 'idle=true' /u);

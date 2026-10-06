@@ -69,8 +69,8 @@ jobs:
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/itx-current-promotion-decision/${GITHUB_RUN_ID}"
           mkdir -p "${decision_root}"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
           git ls-remote --heads origin "refs/heads/automation/977-itx-promotion-*" > "${decision_root}/branches.txt"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
           force=false
           if [[ "${FORCE_COLLECT}" == "true" ]]; then force=true; fi
           # 같은 KST 날 topology 갱신·수동 수집이 이미 ITX 공급자를 불렀다면 공급자 호출은 하루 한 번이라 오늘은 수집하지 않고 정상 종료한다.

@@ -133,11 +133,23 @@ test("입력이 잘못되면 판정하지 않고 실패한다", () => {
   assert.throws(() => decide({ now: new Date("x") }), /REGISTRATION_INPUT_INVALID/u);
 });
 
+// #993: 상한은 열린 PR 목록에만 건다. 열린 PR은 적게 유지되지만 닫힘·병합 PR 이력은 자동화가 매일 PR을 열어 계속 쌓인다.
+test("닫힘·병합 PR 이력이 상한을 훨씬 넘게 있어도 실패하지 않고 열린 PR이 상한에 닿을 때만 실패한다", () => {
+  const history = (count, state) => Array.from({ length: count }, (_, index) => ({
+    number: 2000 + index, state, isDraft: false, headRefName: `feat/old-${state}-${index}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY },
+  }));
+  const pullRequests = [...history(2500, "MERGED"), ...history(2500, "CLOSED")];
+  assert.deepEqual(decide({ pullRequests }), { state: "REGISTER", snapshotId: SNAPSHOT, cleanupClaims: [] });
+  assert.deepEqual(decide({ pullRequests: [...pullRequests, pr("MERGED", 1)], claims: [claim(1)] }), { state: "REGISTER", snapshotId: SNAPSHOT, cleanupClaims: [`${REGISTRATION_CLAIM_PREFIX}1`] });
+  assert.throws(() => decide({ pullRequests: [...pullRequests, ...history(1000, "OPEN")] }), /REGISTRATION_LIST_TRUNCATED: pull request list reached its limit 1000/u);
+  assert.equal(decide({ pullRequests: [...pullRequests, ...history(999, "OPEN")] }).state, "REGISTER");
+});
+
 // #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 반환 개수가 상한과 같으면 잘렸을 수 있으므로 판정하지 않고 실패한다.
 test("PR·run 목록이 조회 상한과 같은 개수면 잘린 것으로 보고 실패한다", () => {
   const limits = { pullRequests: 3, runs: 2 };
   const filler = (count, make) => Array.from({ length: count }, (_, index) => make(index));
-  const other = (index) => ({ number: 1000 + index, state: "MERGED", isDraft: false, headRefName: `feat/x${index}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } });
+  const other = (index) => ({ number: 1000 + index, state: "OPEN", isDraft: false, headRefName: `feat/x${index}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } });
   assert.throws(() => decide({ limits, pullRequests: filler(3, other) }), /REGISTRATION_LIST_TRUNCATED: pull request list reached its limit 3/u);
   // 상한은 아직 끝나지 않은 run에만 적용한다. 끝난 run의 이력은 쌓여도(정기 실행이 하루 12번) 판정을 막지 않는다(#987 리뷰 F1).
   const active = (index) => run(900 + index, { status: "in_progress", conclusion: "" });

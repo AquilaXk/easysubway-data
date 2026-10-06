@@ -47,9 +47,9 @@ jobs:
         run: |
           set -euo pipefail
           state_root="${RUNNER_TEMP}/current-capital-topology-refresh"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${state_root}/prs.json"
           main_sha="$(git rev-parse HEAD)"
           git ls-remote --heads origin "refs/heads/automation/636-current-topology-refresh-*" > "${state_root}/claim-refs.txt"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claim-refs.txt" --pr-limit 1000 --output "${state_root}/prs.json"
           : > "${state_root}/claims.json"
           while IFS=$'\t' read -r head_sha ref; do
             [[ -z "${head_sha}" ]] && continue

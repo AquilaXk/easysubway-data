@@ -328,6 +328,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/985",
       "title": "[CI] 데이터 전용 자동화 PR을 증거 기반 정책으로 자동 병합 경로에 올리기 (#870 전체 자동화 2단계)"
     },
+    "data993": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/993",
+      "title": "[Fix] 자동화 판정이 gh pr list --state all --limit 1000 전체 이력에 의존해 PR이 쌓이면 영구 실패하는 시한폭탄 제거"
+    },
     "data977": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/977",
       "title": "[CI] ITX-청춘 원천 승격을 QA 승인 코멘트 없이 자동 이상 판정 게이트로 전환 (#870 전체 자동화 3단계)"
@@ -639,6 +643,8 @@
     {"path":"tools/ci/automation-pr-automerge-workflow.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/automerge-queue-automation.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":3000},
     {"path":"tools/ci/automation-pr-recreate.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":60},
+    {"path":"tools/ci/collect-automation-prs.test.mjs","semanticOwner":"data993","classes":["required-pr"],"durationMs":300},
+    {"path":"tools/ci/automation-pr-list-bounded.test.mjs","semanticOwner":"data993","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/decide-itx-current-promotion.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":120},
     {"path":"tools/ci/itx-current-promotion-workflow.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":40},
     {"path":"tools/datapack/itx-promotion-gate.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":300},

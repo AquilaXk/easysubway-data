@@ -20,7 +20,7 @@
 // 판정할 수 없는 상태(원장 head 없음·갈라짐·증거 누락·열린 PR 중복·다른 workflow의 run을 가리키는 claim 등)는 이상이다.
 // 이상은 REVERIFICATION_* 코드로 실패해 실패 이슈로 드러난다. 이전·추정 값으로 대체하거나 성공으로 덮지 않는다.
 //
-// 사용: node tools/ci/decide-source-reverification.mjs --inventory <file> --ledger <file> --policy <file> --prs <gh pr list JSON>
+// 사용: node tools/ci/decide-source-reverification.mjs --inventory <file> --ledger <file> --policy <file> --prs <collect-automation-prs.mjs 출력>
 //   --automation-branches <git ls-remote "automation/*" 출력> --runs <gh run list JSON> --repository <owner/repo>
 //   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
@@ -159,7 +159,8 @@ function assertDecisionInput({ inventory, ledger, pullRequests, automationBranch
     || !(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(ledger) || !Array.isArray(inventory?.sources)
     || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1) fail("REVERIFICATION_INPUT_INVALID");
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
-  if (pullRequests.length >= limits.pullRequests) fail("REVERIFICATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
+  // 상한은 열린 PR에만 적용한다. 목록은 열린 PR 전체와 automation/* 브랜치별 PR(전 상태)이고(collect-automation-prs.mjs), 닫힘·병합 이력은 쌓여도 판정에 영향이 없다(#993).
+  if (pullRequests.filter(({ state }) => state === "OPEN").length >= limits.pullRequests) fail("REVERIFICATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
   if (activeRuns(runs).length >= limits.runs) fail("REVERIFICATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
 }
 

@@ -35,7 +35,9 @@ test("권한은 job에만 주고, 변수가 true일 때만 정기 실행이 돌�
 test("판정 step이 claim·수집보다 먼저 돌고 PR·run·브랜치 목록을 상한 1000·200으로 읽는다", () => {
   const { block } = step("Decide which P7D sources are due");
   assert.match(block, /\n        id: decision\n/u);
-  assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(block, /gh pr list[^\n]*--state all --limit/u);
   // #987 리뷰 F1: 끝난 run 이력은 쌓이므로 아직 끝나지 않은 상태별로만 조회한다(completed는 조회하지 않는다).
   assert.match(block, /for status in in_progress queued waiting pending requested; do\n\s+gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow source-reverification\.yml --status "\$\{status\}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "[^"]+"\n\s+done/u);
   assert.equal((block.match(/gh run list/gu) ?? []).length, 1, "every run listing is filtered by status");
@@ -121,7 +123,9 @@ test("push 직전 재확인은 판정과 같은 규칙으로 대기 목록을 �
   const recheck = step("Recheck that no source-ledger automation is pending before pushing");
   assert.equal(ifCondition(recheck.block), CLAIMED);
   assert.match(recheck.block, /\n        id: recheck\n/u);
-  assert.match(recheck.block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(recheck.block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(recheck.block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(recheck.block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
   assert.match(recheck.block, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --except-workflow source-reverification\.yml --github-output "\$\{GITHUB_OUTPUT\}"/u);
   before("Reverify due P7D sources", recheck.name);

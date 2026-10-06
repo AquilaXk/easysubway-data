@@ -44,9 +44,10 @@ jobs:
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/source-reverification-decision/${GITHUB_RUN_ID}"
           mkdir -p "${decision_root}"
-          # 목록 조회에는 개수 상한이 있다. 판정이 상한과 같은 개수를 잘렸을 수 있는 목록으로 보고 실패한다(#972 리뷰 F3).
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
+          # PR 목록은 열린 PR 전체와 automation/* 브랜치별 PR(전 상태)만 받는다. PR 이력은 쌓이므로 전체를 받지 않는다(#993).
+          # 열린 PR 목록이 상한과 같은 개수면 잘렸을 수 있으므로 실패한다(#972 리뷰 F3).
           git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/automation-branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
           # #987 리뷰 F1: 끝난 run 이력은 하루 12개씩 쌓여 17일이면 상한을 넘는다. 끝나지 않은 상태별로만 조회한다(끝난 run은 판정에 필요 없다).
           mkdir -p "${decision_root}/runs"
           for status in in_progress queued waiting pending requested; do
@@ -171,8 +172,8 @@ jobs:
           # controller는 길다. 그 사이 원장을 쓰는 다른 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 올리지 않고 다음 실행에 맡긴다(#975 리뷰 F6).
           recheck_root="${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/recheck"
           mkdir -p "${recheck_root}"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${recheck_root}/prs.json"
           git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${recheck_root}/automation-branches.txt" --pr-limit 1000 --output "${recheck_root}/prs.json"
           node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow source-reverification.yml --github-output "${GITHUB_OUTPUT}"
       - name: Note reverification superseded by pending source automation
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.claim.outputs.claimed == 'true' && steps.recheck.outputs.idle == 'false' }}
