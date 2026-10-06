@@ -44,6 +44,7 @@ test("자동화 workflow의 claim 브랜치 접두어를 고정한다", () => {
     "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
     "nationwide-candidate-refresh.yml": "automation/927-nationwide-candidate-refresh-",
     "source-derivative-rebinding.yml": "automation/969-derivative-rebinding-",
+    "source-reverification.yml": "automation/984-source-reverification-",
     "itx-current-promotion.yml": "automation/977-itx-promotion-",
   });
 });
