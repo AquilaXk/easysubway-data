@@ -23,6 +23,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { preauthenticatedObjectStorageClient, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
+import { evaluateLedgerChange, parseLedgerChangePolicy } from "../ci/source-ledger-gate.mjs";
 import { runNodeScript } from "./refresh-nationwide-candidate.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -31,6 +32,7 @@ const GIT = "/usr/bin/git";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 const RETAINED_SOURCE_ID = "kric-nationwide-timetable-file";
+const POLICY_PATH = "tools/ci/source-ledger-change-policy.json";
 const OCI_OBJECT_URI = /^oci:\/\/axvym6vk8g7i\/easysubway-datapacks\/(.+)$/u;
 const CODED = /^[A-Z][A-Z0-9_]+: /u;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -125,13 +127,28 @@ async function changedPaths(repositoryRoot) {
   return status.split("\0").filter(Boolean).map((entry) => entry.slice(3)).sort();
 }
 
+// 단계가 원장을 바꿨으면 원장 변화 게이트를 통과해야 커밋된다(#975 리뷰 F5). 경로 allowlist는 변화의 크기를 모르기 때문이다.
+// ledgerPath가 null이면 게이트를 끈다(원장이 없는 테스트 저장소용). 정책의 기본값은 저장소의 정책 파일이다.
+async function assertLedgerChangeAllowed({ repositoryRoot, ledgerPath, baseCommit, policy, stepId }) {
+  const baseLedger = JSON.parse(await git(repositoryRoot, ["show", `${baseCommit}:${ledgerPath}`]));
+  const headLedger = JSON.parse(await readFile(path.join(repositoryRoot, ledgerPath), "utf8"));
+  const { violations } = evaluateLedgerChange({ baseLedger, headLedger, policy });
+  if (violations.length > 0) {
+    const [first] = violations;
+    fail(`${first.code}: ${stepId}: ${violations.map(({ sourceId, snapshotId, detail }) => `${sourceId} ${snapshotId}: ${detail}`).join(" | ")}`);
+  }
+}
+
 export async function runDerivativeRebinding({
   repositoryRoot = ROOT, operationRoot, steps = DERIVATIVE_STEPS, env = process.env, ociClient = null,
+  ledgerPath = LEDGER_PATH, policy = null,
   execute = (script, args) => runNodeScript(repositoryRoot, script, args),
 } = {}) {
   if (!path.isAbsolute(repositoryRoot) || !path.isAbsolute(operationRoot ?? "")) fail("DERIVATIVE_ARGUMENTS: repository and operation roots must be absolute");
   if ((await changedPaths(repositoryRoot)).length > 0) fail("DERIVATIVE_WORKTREE_DIRTY: the rebinding needs a clean worktree");
   await mkdir(operationRoot, { recursive: true });
+  const baseCommit = (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim();
+  const ledgerPolicy = ledgerPath === null ? null : parseLedgerChangePolicy(policy ?? JSON.parse(await readFile(path.join(ROOT, POLICY_PATH), "utf8")));
   const results = [];
   for (const step of steps) {
     try {
@@ -145,6 +162,9 @@ export async function runDerivativeRebinding({
     if (changed.length === 0) { results.push({ id: step.id, changed: false }); continue; }
     const outside = changed.filter((relative) => !step.isAllowedPath(relative));
     if (outside.length > 0) fail(`DERIVATIVE_OUTPUT_SCOPE: ${step.id}: ${outside.join(", ")}`);
+    if (ledgerPath !== null && changed.includes(ledgerPath)) {
+      await assertLedgerChangeAllowed({ repositoryRoot, ledgerPath, baseCommit, policy: ledgerPolicy, stepId: step.id });
+    }
     await git(repositoryRoot, ["add", "--", ...changed]);
     await git(repositoryRoot, ["commit", "-q", "-m", step.message]);
     results.push({ id: step.id, changed: true, paths: changed });

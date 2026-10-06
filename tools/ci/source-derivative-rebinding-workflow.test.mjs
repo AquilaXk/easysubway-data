@@ -65,7 +65,7 @@ test("push·App 토큰·PR 생성·정리는 바뀐 것이 있을 때만 돌고 
   assert.doesNotMatch(push.block, /git add/u);
   const pr = step("Create derivative rebinding pull request");
   assert.match(pr.block, /GH_TOKEN="\$\{APP_PR_TOKEN\}" gh pr create --repo "\$\{GITHUB_REPOSITORY\}" --draft --base main --head "\$\{REBINDING_BRANCH\}"/u);
-  assert.match(pr.block, /node tools\/ci\/automation-pr-evidence\.mjs derivative-rebinding-body --result /u);
+  assert.match(pr.block, /node tools\/ci\/automation-pr-evidence\.mjs derivative-rebinding-body --gate /u);
   assert.match(pr.block, /APP_PR_TOKEN: \$\{\{ steps\.app-token-pr\.outputs\.token \}\}/u);
   const cleanup = step("Remove the rebinding branch after a later failure");
   // #975 리뷰 F7: 취소·시간 초과에도 이 run이 push한 branch와 PR을 정리한다.
