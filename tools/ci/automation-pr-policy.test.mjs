@@ -393,7 +393,11 @@ const BASE_LEDGER = [row()];
 const HEAD_LEDGER = [row(), row({ snapshotId: "capital-route-topology-20261006", previousSnapshotId: "capital-route-topology-20261004", rawSha256: "3".repeat(64), contentSha256: "d".repeat(64), rowCount: 100, coverageCount: 50, diffSummary: { status: "CHANGED", rowDelta: 0, coverageDelta: 0 } })];
 const EXPECTED_SOURCE = { ...LEDGER_SOURCE, previousSnapshotId: "capital-route-topology-20261004", rawSha256: "3".repeat(64), contentSha256: "d".repeat(64) };
 
-function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contract, receipt, verifyItx, candidate, policy = POLICY, extraTree = {} } = {}) {
+const INVENTORY_BASE = { schemaVersion: 1, region: "nationwide", sources: [{ id: "other-source", value: 1 }, { id: "capital-route-topology", value: 1 }] };
+const INVENTORY_HEAD = { schemaVersion: 1, region: "nationwide", sources: [{ id: "other-source", value: 1 }, { id: "capital-route-topology", value: 2 }] };
+const INVENTORY_PATH = "tools/datapack/source-inventory.json";
+
+function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contract, receipt, verifyItx, candidate, policy = POLICY, extraTree = {}, inventory = INVENTORY_HEAD, inventoryBase = INVENTORY_BASE } = {}) {
   const evidence = {
     schemaVersion: 1, issue: 969, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, ...STAGES[stage].evidence,
     ...(stage === "registration" ? { sources: [EXPECTED_SOURCE] } : {}), ...evidenceOverrides,
@@ -401,6 +405,7 @@ function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contra
   const tree = {
     "tools/datapack/release/source-snapshots.json": JSON.stringify(ledger),
     "tools/ci/source-ledger-change-policy.json": JSON.stringify(policy),
+    [INVENTORY_PATH]: JSON.stringify(inventory),
     ...(contract === undefined ? {} : { "tools/datapack/itx-cheongchun-coverage-contract.json": JSON.stringify(contract) }),
     ...(receipt === undefined ? {} : { [`tools/datapack/sources/${ITX_ID}-promotion-gate.json`]: JSON.stringify(receipt) }),
     ...extraTree,
@@ -410,7 +415,12 @@ function gateInput(stage, { ledger = HEAD_LEDGER, evidenceOverrides = {}, contra
     repositoryRoot: "/repo",
     files: {
       readTree: async (relative) => { if (!Object.hasOwn(tree, relative)) throw new Error(`missing ${relative}`); return tree[relative]; },
-      readBase: async (sha, relative) => { assert.equal(sha, BASE); assert.equal(relative, "tools/datapack/release/source-snapshots.json"); return JSON.stringify(BASE_LEDGER); },
+      readBase: async (sha, relative) => {
+        assert.equal(sha, BASE);
+        if (relative === INVENTORY_PATH) return JSON.stringify(inventoryBase);
+        assert.equal(relative, "tools/datapack/release/source-snapshots.json");
+        return JSON.stringify(BASE_LEDGER);
+      },
     },
     verifyItx: verifyItx ?? (() => ({})),
     readCandidateState: candidate?.state ? async () => candidate.state : async () => { throw new Error("candidate state must not be read"); },
@@ -792,4 +802,45 @@ test("반증: App 신원의 커밋은 GitHub 서명이 검증돼야 하고, 서�
     odd.commit.verification = verification;
     assert.ok(codesOf({ ...scenario(), commits: [odd, commit(HEAD)] }).includes("COMMITS"), String(JSON.stringify(verification)));
   }
+});
+
+// ---------------------------------------------------------------------------
+// #986 리뷰 F6: 등록 단계의 원장 밖 파일
+// ---------------------------------------------------------------------------
+test("등록 단계 allowlist는 원장과 inventory 둘뿐이다. governance·신선도 SLA(product gate)는 사람 경로로 보낸다", () => {
+  assert.deepEqual([...REGISTRATION_ALLOWED_PATHS].sort(), ["tools/datapack/release/source-snapshots.json", "tools/datapack/source-inventory.json"]);
+  const input = scenario("registration");
+  input.files = [...REGISTRATION_ALLOWED_PATHS, "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"].map((entry) => file(entry));
+  assert.ok(codesOf(input).includes("PATHS"));
+  for (const only of ["tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"]) {
+    input.files = [...REGISTRATION_ALLOWED_PATHS, only].map((entry) => file(entry));
+    assert.ok(codesOf(input).includes("PATHS"), only);
+  }
+  // 어느 단계의 allowlist에도 product gate 경로는 없다(자동 병합이 product gate를 바꾸지 못한다).
+  for (const stage of Object.keys(STAGES)) assert.ok(STAGES[stage].paths.every((entry) => !entry.startsWith("release/product-gates/")), stage);
+});
+
+test("등록 inventory는 등록한 원천의 항목만 바뀔 수 있다(원장 밖 파일의 범위 재계산)", async () => {
+  assert.deepEqual((await recomputeAutomationGates(gateInput("registration"))).violations, []);
+  const rewrite = (mutate) => { const head = structuredClone(INVENTORY_HEAD); mutate(head); return head; };
+  const cases = {
+    "other source changed": rewrite((head) => { head.sources[0].value = 9; }),
+    "other source removed": rewrite((head) => { head.sources.shift(); }),
+    "other source added": rewrite((head) => { head.sources.push({ id: "new-source", value: 1 }); }),
+    "registered source missing": rewrite((head) => { head.sources.pop(); }),
+    "registered source duplicated": rewrite((head) => { head.sources.push({ id: "capital-route-topology", value: 3 }); }),
+    "top-level key changed": rewrite((head) => { head.region = "other"; }),
+    "top-level key added": rewrite((head) => { head.extra = true; }),
+  };
+  for (const [name, inventory] of Object.entries(cases)) assert.ok((await gateCodes(gateInput("registration", { inventory }))).includes("INVENTORY_GATE"), name);
+  // 첫 등록(기본 inventory에 원천이 없던 경우)도 그 원천 항목만 늘어난다.
+  const first = { ...INVENTORY_BASE, sources: [INVENTORY_BASE.sources[0]] };
+  assert.deepEqual((await recomputeAutomationGates(gateInput("registration", { inventoryBase: first }))).violations, []);
+  const broken = gateInput("registration");
+  broken.files.readTree = async (relative) => { if (relative === INVENTORY_PATH) throw new Error("ENOENT"); return JSON.stringify(relative.endsWith("source-snapshots.json") ? HEAD_LEDGER : POLICY); };
+  assert.ok((await recomputeAutomationGates(broken)).violations.some(({ code }) => code === "INVENTORY_GATE"));
+  // 다른 단계는 inventory를 읽지 않는다(재결속 단계의 inventory 변경은 단계 allowlist와 원장 게이트가 본다).
+  const noInventory = gateInput("derivative-rebinding", { ledger: BASE_LEDGER });
+  noInventory.files.readTree = async (relative) => { assert.notEqual(relative, INVENTORY_PATH); return JSON.stringify(relative.endsWith("source-snapshots.json") ? BASE_LEDGER : POLICY); };
+  assert.deepEqual((await recomputeAutomationGates(noInventory)).violations, []);
 });

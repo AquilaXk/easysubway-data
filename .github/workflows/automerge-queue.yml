@@ -757,6 +757,22 @@ jobs:
               continue
             fi
             # required-context-loop-end
+            # automation-gates-begin
+            # 자동화 경로로 리뷰 게이트를 통과한 후보는 병합 직전에 게이트 재계산 check를 다시 확인한다(#986 F6). 이 check는 ruleset의 required가 아니므로
+            # 기록만 믿지 않고 코디네이터가 같은 head의 check-run(위에서 읽은 페이지)에서 github-actions의 성공을 직접 본다. 성공만 허용한다.
+            if [[ "${automation_authorized:-false}" == true ]]; then
+              # shellcheck disable=SC2016
+              if ! jq -e '
+                ([.[].check_runs[] | select(.name == "Automation PR gates" and .app.id == 15368)] |
+                  sort_by(.started_at, .id) |
+                  last) as $run |
+                $run != null and $run.status == "completed" and $run.conclusion == "success"
+              ' <<<"${checks}" >/dev/null; then
+                echo "::warning::PR #${pr}: Automation PR gates is not a completed success from github-actions on this head; skipping."
+                continue
+              fi
+            fi
+            # automation-gates-end
 
             # required context 검증이 병합 가능 여부의 정본이다. mergeStateStatus는 여기서
             # 실제로 병합이 불가능한 상태(base 갱신 필요·충돌)를 가려내는 데만 쓴다.

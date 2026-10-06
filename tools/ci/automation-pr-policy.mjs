@@ -15,11 +15,11 @@
 //                   이 검사는 advisory다(인증이 아니다): github-actions의 git push 커밋은 서명되지 않고(실측 verification.verified=false) GitHub이 작성자를 이메일로
 //                   연결하므로 github-actions noreply 주소를 쓴 커밋은 이 검사를 통과한다. 실제 경계는 자동화 브랜치를 push할 수 있는 사람(저장소 쓰기 권한)이다.
 //                   검사가 하는 일은 자동화 브랜치에 손으로 커밋을 얹은 정상적인 사람 개입을 이상으로 드러내는 것이다.
-//   PATHS           API diff의 변경 경로가 단계별 allowlist와 정확히 맞는다(등록·ITX: 정확히 같음, 재결속: 증거의 변경 단계 경로와 같고
+//   PATHS           API diff의 변경 경로가 단계별 allowlist와 정확히 맞는다(등록·ITX: 정확히 같음. 등록은 원장·inventory 둘뿐이다, 재결속: 증거의 변경 단계 경로와 같고
 //                   각 단계가 허용한 경로, 후보: 후보 갱신 도구의 출력 목록 안).
 //   CI              CI workflow가 이 head에서 성공으로 끝났고 ruleset의 required context가 모두 성공이다.
 //   GATES           PR head에서 게이트를 다시 계산한 check(Automation PR gates)가 github-actions가 만든 성공이다.
-//   LEDGER_GATE·ITX_GATE·CANDIDATE_GATE·EVIDENCE_DRIFT   게이트 재계산(CI가 PR head 작업 트리에서 한다)의 위반이다.
+//   LEDGER_GATE·INVENTORY_GATE·ITX_GATE·CANDIDATE_GATE·EVIDENCE_DRIFT   게이트 재계산(CI가 PR head 작업 트리에서 한다)의 위반이다.
 //
 // 이 파일의 명령:
 //   prepare   CI job의 분류: 정책 대상 PR이면 증거의 base sha를 내보낸다(그 커밋을 fetch한 뒤 gates를 부른다).
@@ -71,14 +71,18 @@ export const AUTOMATION_STAGE_PREFIXES = Object.freeze(
   Object.fromEntries(Object.entries(AUTOMATION_STAGE_WORKFLOWS).map(([stage, workflow]) => [stage, REFRESH_CLAIM_PREFIXES[workflow]])),
 );
 
-/** 등록 PR이 바꿔도 되는 경로. current-capital-topology-registration.yml의 expected 목록과 계약 테스트가 같음을 고정한다. */
+/**
+ * 등록 PR이 자동 병합 대상으로서 바꿔도 되는 경로: 원장과 inventory 둘이다(#986 F6).
+ * 등록 workflow는 governance 정책·신선도 SLA(release/product-gates)도 커밋하지만, 두 파일은 원천을 처음 등록할 때만 바뀌고 내용을 독립적으로
+ * 재계산할 수 없다. 그래서 자동 병합 allowlist에서 빼고 사람 경로로 보낸다(그 PR은 PATHS 위반으로 드러난다). 재등록(P7D)이 두 파일을 바꾸지 않게 되면
+ * 자동 병합 대상이 된다. 계약 테스트가 이 두 경로와 workflow가 커밋하는 네 경로의 관계를 고정한다.
+ */
 export const REGISTRATION_ALLOWED_PATHS = Object.freeze([
-  "release/product-gates/datapack-freshness-sla.json",
   "tools/datapack/release/source-snapshots.json",
-  "tools/datapack/source-governance-policy.json",
   "tools/datapack/source-inventory.json",
 ]);
 
+const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 const LEDGER_POLICY_PATH = "tools/ci/source-ledger-change-policy.json";
 const ITX_CONTRACT_PATH = "tools/datapack/itx-cheongchun-coverage-contract.json";
@@ -360,6 +364,24 @@ export async function recomputeAutomationGates({
       if (!sameJson(policy, evidence.policy)) violate("EVIDENCE_DRIFT", "증거 블록의 정책이 커밋된 원장 변화 정책과 다르다");
     } else if (sources.length > 0) {
       violate("EVIDENCE_DRIFT", `${evidence.stage} 단계는 원장 행을 바꾸지 않는데 새 행이 ${sources.length}개 있다`);
+    }
+  }
+
+  if (evidence.stage === "registration") {
+    // 원장 밖 파일의 범위 재계산(#986 F6): inventory는 등록한 원천의 항목만 바뀔 수 있다. 항목 내용의 정합은 required CI의 inventory 검증이 본다.
+    try {
+      const ids = new Set(evidence.sources.map(({ sourceId }) => sourceId));
+      const base = JSON.parse(await files.readBase(evidence.baseSha, INVENTORY_PATH));
+      const head = JSON.parse(await files.readTree(INVENTORY_PATH));
+      const outside = (inventory) => ({ ...inventory, sources: inventory.sources.filter((entry) => !ids.has(entry?.id)) });
+      if (!Array.isArray(base?.sources) || !Array.isArray(head?.sources)) throw new Error("inventory sources must be an array");
+      if (!sameJson(outside(base), outside(head))) throw new Error("inventory changed outside the registered sources");
+      for (const id of ids) {
+        const count = head.sources.filter((entry) => entry?.id === id).length;
+        if (count !== 1) throw new Error(`inventory must have exactly one entry for ${id} (found ${count})`);
+      }
+    } catch (error) {
+      violate("INVENTORY_GATE", message(error));
     }
   }
 

@@ -302,3 +302,48 @@ test('반증: 기록의 증거 digest가 현재 본문 블록과 다르면 통�
   // 기록 digest가 형식에 맞아도 다른 값이면 막는다.
   assert.equal((await runGate({ comments: [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} evidence ${'0'.repeat(64)} -->`)] })).passed, false);
 });
+
+// #986 리뷰 F6: 병합 직전에 `Automation PR gates` check를 다시 확인한다(성공만 허용). 후보 평가에서 이미 읽은 check-run 페이지를 재사용한다.
+test('자동화 경로로 통과한 후보는 병합 직전 Automation PR gates check가 github-actions의 성공일 때만 계속한다', async () => {
+  const workflow = await readWorkflow();
+  const block = workflow.match(/# automation-gates-begin\n([\s\S]*?)\n\s+# automation-gates-end/)?.[1];
+  assert.ok(block, 'automation gates recheck must stay testable');
+  assert.ok(workflow.indexOf('# required-context-loop-end') < workflow.indexOf('# automation-gates-begin'));
+  assert.ok(workflow.indexOf('# automation-gates-end') < workflow.indexOf('# merge-state-dispatch-begin'));
+  const run = (flag, runs) =>
+    stubbedBash([
+      'set -euo pipefail',
+      'pr=26',
+      ...(flag === undefined ? [] : [`automation_authorized=${flag}`]),
+      `checks=${JSON.stringify(JSON.stringify([{ check_runs: runs }]))}`,
+      'for _ in 1; do',
+      dedent(block, 12),
+      `printf 'CONTINUED\\n'`,
+      'done',
+    ]);
+  const gate = (overrides = {}) => ({ id: 2, name: 'Automation PR gates', status: 'completed', conclusion: 'success', started_at: '2026-10-06T00:00:00Z', app: { id: 15368 }, ...overrides });
+  const continued = (result) => result.stdout.includes('CONTINUED');
+  assert.equal(continued(run('true', [gate()])), true);
+  // 다시 돈 실행이 성공이면 앞선 실패는 무시하고 최신 실행을 본다(배열 순서와 무관).
+  const retried = [gate({ id: 3, conclusion: 'failure' }), gate({ id: 4, started_at: '2026-10-06T01:00:00Z' })];
+  assert.equal(continued(run('true', retried)), true);
+  assert.equal(continued(run('true', [...retried].reverse())), true);
+  for (const [name, runs] of Object.entries({
+    none: [],
+    failure: [gate({ conclusion: 'failure' })],
+    skipped: [gate({ conclusion: 'skipped' })],
+    cancelled: [gate({ conclusion: 'cancelled' })],
+    neutral: [gate({ conclusion: 'neutral' })],
+    pending: [gate({ status: 'in_progress', conclusion: null })],
+    'foreign app': [gate({ app: { id: 99999 } })],
+    'other name': [gate({ name: 'Data contracts' })],
+    'latest failed listed first': [gate({ id: 3, conclusion: 'failure', started_at: '2026-10-06T01:00:00Z' }), gate({ id: 2 })],
+    'latest failed listed last': [gate({ id: 2 }), gate({ id: 3, conclusion: 'failure', started_at: '2026-10-06T01:00:00Z' })],
+  })) {
+    const result = run('true', runs);
+    assert.equal(continued(result), false, name);
+    assert.match(result.stdout + result.stderr, /::warning::PR #26: Automation PR gates/, name);
+  }
+  // 사람 PR(자동화 경로가 아님)은 이 check를 요구하지 않는다. 변수가 정의되지 않은 경로에서도 깨지지 않는다.
+  for (const flag of ['false', undefined]) assert.equal(continued(run(flag, [])), true, String(flag));
+});

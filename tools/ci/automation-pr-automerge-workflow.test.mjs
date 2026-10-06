@@ -185,11 +185,12 @@ test("게이트 재계산은 PR head 작업 트리에서 읽기 전용으로 돌
 // ---------------------------------------------------------------------------
 // 단계 상수와 자동화 workflow의 일치
 // ---------------------------------------------------------------------------
-test("등록 단계 allowlist 상수는 등록 workflow가 커밋하는 네 경로와 같다", () => {
+test("등록 단계 allowlist 상수는 등록 workflow가 커밋하는 네 경로 중 원장·inventory 둘이고 governance·SLA는 사람 경로다(#986 F6)", () => {
   const registration = readFileSync(path.join(root, ".github/workflows/current-capital-topology-registration.yml"), "utf8");
   const expected = /\n\s+expected=\(([^)]*)\)\n/u.exec(registration)?.[1].trim().split(/\s+/u);
   assert.ok(expected && expected.length === 4);
-  assert.deepEqual([...REGISTRATION_ALLOWED_PATHS].sort(), [...expected].sort());
+  const human = ["release/product-gates/datapack-freshness-sla.json", "tools/datapack/source-governance-policy.json"];
+  assert.deepEqual([...REGISTRATION_ALLOWED_PATHS, ...human].sort(), [...expected].sort());
 });
 
 test("단계별 claim 접두사는 각 workflow가 실제로 push하는 브랜치와 같고 정책은 그 접두사만 인정한다", () => {
