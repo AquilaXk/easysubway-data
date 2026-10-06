@@ -336,6 +336,26 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   assert.ok(first.evidence.servicePatternEvidence.expressTripCount > 0);
 });
 
+// F1: 게이트 승격은 구조 검사만으로 받지 않고 커밋된 영수증을 재계산해 대조한다. 영수증이 없는 저장소 루트는 거부한다.
+test("게이트 승격 contract는 커밋된 영수증이 없으면 snapshot을 만들지 않는다", async () => {
+  const value = await inputs();
+  const contract = JSON.parse(value.contractBytes);
+  const reference = contract.sourceTimetableArtifact;
+  reference.promotion = {
+    mode: "CURRENT_CANDIDATE_GATE_PASSED",
+    previousArtifactPath: reference.promotion.previousArtifactPath,
+    previousArtifactSha256: reference.promotion.previousArtifactSha256,
+    gate: { policyId: "itx-promotion-gate-v1", receiptPath: `tools/datapack/sources/${reference.artifactId}-promotion-gate.json`, receiptSha256: "e".repeat(64) },
+    gatedArtifactSha256: reference.sha256,
+    baselineArtifactPath: reference.promotion.previousArtifactPath,
+    baselineArtifactSha256: reference.promotion.previousArtifactSha256,
+  };
+  const gated = { ...value, contractBytes: Buffer.from(`${JSON.stringify(contract, null, 2)}\n`), buildNow };
+  assert.throws(() => buildServerTimetableSnapshot(gated), /ENOENT|ITX_PROMOTION_/u);
+  assert.throws(() => buildServerTimetableSnapshot({ ...gated, repositoryRoot: path.join(root, "tools") }), /ENOENT|ITX_PROMOTION_/u);
+  assert.doesNotThrow(() => buildServerTimetableSnapshot({ ...value, buildNow }));
+});
+
 test("접근성 source snapshot의 lineage와 governance 값을 그대로 materialize한다", async () => {
   const value = await inputs();
   const reviewedPack = JSON.parse(value.reviewedPackBytes);

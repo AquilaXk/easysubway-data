@@ -10,6 +10,8 @@ import {
   automationPrEvidenceBlock,
   candidateRefreshEvidenceBlock,
   derivativeRebindingPullRequestBody,
+  itxPromotionPullRequestBody,
+  itxPromotionSourceRow,
   main,
   parseAutomationPrEvidence,
   registrationPullRequestBody,
@@ -31,8 +33,8 @@ const registration = (overrides = {}) => ({ stage: "registration", runUrl: RUN_U
 const rebinding = (overrides = {}) => ({ stage: "derivative-rebinding", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: POLICY, sources: [], steps: [STEP, { id: "seoul-measured-transfer-metrics", changed: false, paths: [] }], candidate: null, ...overrides });
 const candidate = (overrides = {}) => ({ stage: "candidate-refresh", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: null, sources: [], steps: [], candidate: CANDIDATE, ...overrides });
 
-test("단계는 등록·후보 갱신·파생 재결속 셋이다", () => {
-  assert.deepEqual([...AUTOMATION_PR_STAGES], ["registration", "candidate-refresh", "derivative-rebinding"]);
+test("단계는 등록·후보 갱신·파생 재결속·ITX 승격 넷이다", () => {
+  assert.deepEqual([...AUTOMATION_PR_STAGES], ["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion"]);
 });
 
 test("블록은 원천별 sha·snapshot·delta·diff 상태와 적용 정책, base/head 커밋, 실행 run을 JSON 한 줄로 남기고 그대로 읽힌다", () => {
@@ -171,4 +173,120 @@ test("CLI는 게이트 출력·결과 JSON·후보 build spec에서 본문과 �
   await assert.rejects(main(["registration-body", "--gate", file("gate.json"), ...common, "--output", file("registration.md")]), /EEXIST/u);
   await assert.rejects(main(["other", "--result", file("result.json")]), /AUTOMATION_PR_EVIDENCE_ARGUMENTS/u);
   await assert.rejects(main(["registration-body", "--gate", file("gate.json"), "--base-sha", "x", "--head-sha", HEAD, "--run-url", RUN_URL, "--output", file("again.md")]), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+});
+
+// ---------------------------------------------------------------------------
+// #977: ITX-청춘 원천 승격 단계(itx-promotion)
+// ---------------------------------------------------------------------------
+const ITX_ID = "itx-cheongchun-source-timetable-20261010181500000";
+const ITX_PREVIOUS_ID = "itx-cheongchun-source-timetable-20261004151519524";
+const ITX_PATHS = [
+  "tools/datapack/itx-cheongchun-coverage-contract.json",
+  `tools/datapack/sources/${ITX_ID}-completeness-evidence.json`,
+  `tools/datapack/sources/${ITX_ID}-promotion-gate.json`,
+  `tools/datapack/sources/${ITX_ID}.json`,
+];
+const ITX_SOURCE = {
+  sourceId: "itx-cheongchun-source-timetable", snapshotId: ITX_ID, previousSnapshotId: ITX_PREVIOUS_ID,
+  rawSha256: "1".repeat(64), contentSha256: "2".repeat(64), rowDelta: 0, coverageDelta: 0, diffStatus: "PASS",
+};
+const ITX_STEP = { id: "itx-promotion", changed: true, paths: ITX_PATHS };
+const itx = (overrides = {}) => ({ stage: "itx-promotion", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: null, sources: [ITX_SOURCE], steps: [ITX_STEP], candidate: null, ...overrides });
+const ITX_RECEIPT = {
+  schemaVersion: 1,
+  artifactKind: "itx-promotion-gate-receipt",
+  policyId: "itx-promotion-gate-v1",
+  anomalyPolicyVersion: "itx-snapshot-anomaly-v1",
+  status: "PASS",
+  candidate: { artifactId: ITX_ID, sha256: ITX_SOURCE.contentSha256, observedAt: "2026-10-10T18:15:00.000Z", freshUntil: "2026-10-18T00:00:00+09:00" },
+  previous: { artifactId: ITX_PREVIOUS_ID, sha256: "3".repeat(64) },
+  baseline: { artifactId: ITX_PREVIOUS_ID, sha256: "3".repeat(64) },
+  source: { rawCaptureSha256: ITX_SOURCE.rawSha256, captureContentSha256: "4".repeat(64), replayEvidenceHash: "5".repeat(64), providerRecordCount: 1500 },
+  policy: JSON.parse(await readFile(new URL("../datapack/itx-promotion-gate-policy.json", import.meta.url), "utf8")),
+  checks: [
+    { id: "STATION_COVERAGE", dayCd: "8", status: "PASS", observed: { added: 0, removed: 0 }, limit: { delta: 0 } },
+    { id: "OD_COVERAGE", dayCd: "8", status: "PASS", observed: { added: 0, removed: 0 }, limit: { delta: 0 } },
+    { id: "TUPLE_REMOVED", dayCd: "8", status: "PASS", observed: { previous: 280, count: 4 }, limit: { count: 14 } },
+    { id: "TUPLE_ADDED", dayCd: "8", status: "PASS", observed: { previous: 280, count: 6 }, limit: { count: 14 } },
+    { id: "TUPLE_REMOVED", dayCd: "7", status: "PASS", observed: { previous: 364, count: 0 }, limit: { count: 18 } },
+    { id: "TUPLE_ADDED", dayCd: "7", status: "PASS", observed: { previous: 364, count: 1 }, limit: { count: 18 } },
+    { id: "SOURCE_BINDING", status: "PASS", observed: { failures: [] }, limit: {} },
+    { id: "FETCH_ERRORS", status: "PASS", observed: { failures: [], providerErrorRecords: 0 }, limit: { providerErrorRecords: 0 } },
+  ],
+  blockedCheckIds: [],
+};
+
+test("ITX 승격 블록은 원천 행 하나·변경 경로 단계 하나를 담고 정책·후보 식별이 없다", () => {
+  const block = automationPrEvidenceBlock(itx());
+  const parsed = parseAutomationPrEvidence(block, { headSha: HEAD });
+  assert.deepEqual({ stage: parsed.stage, policy: parsed.policy, candidate: parsed.candidate }, { stage: "itx-promotion", policy: null, candidate: null });
+  assert.deepEqual(parsed.sources, [ITX_SOURCE]);
+  assert.deepEqual(parsed.steps, [ITX_STEP]);
+  for (const [label, overrides] of [
+    ["policy present", { policy: POLICY }], ["candidate present", { candidate: CANDIDATE }], ["no source", { sources: [] }],
+    ["two sources", { sources: [ITX_SOURCE, ITX_SOURCE] }], ["no step", { steps: [] }], ["two steps", { steps: [ITX_STEP, STEP] }],
+    ["foreign source id", { sources: [{ ...ITX_SOURCE, sourceId: "capital-route-topology" }] }],
+    ["snapshot id shape", { sources: [{ ...ITX_SOURCE, snapshotId: "itx-cheongchun-source-timetable-2026" }] }],
+    ["no previous", { sources: [{ ...ITX_SOURCE, previousSnapshotId: null }] }],
+    ["diff status", { sources: [{ ...ITX_SOURCE, diffStatus: "BLOCK" }] }],
+    ["foreign step id", { steps: [{ ...ITX_STEP, id: "busan-transfer-metrics" }] }],
+    ["missing path", { steps: [{ ...ITX_STEP, paths: ITX_PATHS.slice(1) }] }],
+    ["extra path", { steps: [{ ...ITX_STEP, paths: [...ITX_PATHS, "tools/datapack/source-inventory.json"] }] }],
+    ["other snapshot path", { steps: [{ ...ITX_STEP, paths: [...ITX_PATHS.slice(0, 3), "tools/datapack/sources/itx-cheongchun-source-timetable-20260930163854026.json"] }] }],
+    ["unchanged step", { steps: [{ id: "itx-promotion", changed: false, paths: [] }] }],
+  ]) {
+    assert.throws(() => automationPrEvidenceBlock(itx(overrides)), /AUTOMATION_PR_EVIDENCE_INVALID/u, label);
+  }
+});
+
+test("ITX 원천 행은 게이트 영수증에서만 만들고 raw capture sha·후보 sha·직전 snapshot에 결속된다", () => {
+  assert.deepEqual(itxPromotionSourceRow(ITX_RECEIPT), { ...ITX_SOURCE, rowDelta: 3, coverageDelta: 0 });
+  // rowDelta는 시각 tuple 순증감(추가-제거), coverageDelta는 역·OD 변화 합이다.
+  const changed = structuredClone(ITX_RECEIPT);
+  changed.checks.find(({ id, dayCd }) => id === "STATION_COVERAGE" && dayCd === "8").observed = { added: 1, removed: 2 };
+  assert.equal(itxPromotionSourceRow(changed).coverageDelta, 3);
+  for (const mutate of [
+    (receipt) => { receipt.status = "BLOCK"; },
+    (receipt) => { receipt.blockedCheckIds = ["TRIP_COUNT:8"]; },
+    (receipt) => { receipt.previous = null; },
+    (receipt) => { receipt.source.rawCaptureSha256 = "short"; },
+    (receipt) => { receipt.policyId = "other"; },
+    (receipt) => { receipt.checks = receipt.checks.filter(({ id }) => id !== "STATION_COVERAGE"); },
+  ]) {
+    const broken = structuredClone(ITX_RECEIPT);
+    mutate(broken);
+    assert.throws(() => itxPromotionSourceRow(broken), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+  }
+});
+
+test("ITX 승격 본문: 원천 행·적용 한도·요일별 지표·변경 경로를 표로 남기고 Refs와 증거 블록을 단다", () => {
+  const body = itxPromotionPullRequestBody({ runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, receipt: ITX_RECEIPT, changedPaths: ITX_PATHS });
+  assert.match(body, new RegExp(`\\| itx-cheongchun-source-timetable \\| ${ITX_ID} \\| ${ITX_PREVIOUS_ID} \\|`, "u"));
+  assert.match(body, /itx-promotion-gate-v1/u);
+  assert.match(body, /누적 drift 기준선\(마지막 owner 승인 원천\): `itx-cheongchun-source-timetable-20261004151519524`/u);
+  assert.match(body, /\| TUPLE_REMOVED \| 8 \| 4 \/ 14 \|/u);
+  assert.match(body, /\| 첫차 이동 한도 \| 0초 \|/u);
+  for (const path of ITX_PATHS) assert.ok(body.includes(path), path);
+  assert.match(body, /Refs #977\nRefs #870\nRefs #969\nRefs #636/u);
+  assert.doesNotMatch(body, /Closes/u);
+  assert.match(body, /승인 코멘트/u);
+  const parsed = parseAutomationPrEvidence(body, { headSha: HEAD });
+  assert.equal(parsed.stage, "itx-promotion");
+  assert.deepEqual(parsed.sources[0], itxPromotionSourceRow(ITX_RECEIPT));
+  assert.deepEqual(parsed.steps[0].paths, ITX_PATHS);
+  // 경로 목록이 허용 경로와 다르면 본문도 만들지 않는다.
+  assert.throws(() => itxPromotionPullRequestBody({ runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, receipt: ITX_RECEIPT, changedPaths: ITX_PATHS.slice(1) }), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+});
+
+test("CLI itx-promotion-body는 영수증·변경 경로 목록·커밋에서 본문을 만든다", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "automation-pr-evidence-itx-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = (name) => path.join(directory, name);
+  await writeFile(file("receipt.json"), JSON.stringify(ITX_RECEIPT));
+  await writeFile(file("paths.txt"), `${ITX_PATHS.join("\n")}\n`);
+  const args = ["itx-promotion-body", "--receipt", file("receipt.json"), "--changed-paths", file("paths.txt"), "--base-sha", BASE, "--head-sha", HEAD, "--run-url", RUN_URL, "--output", file("body.md")];
+  await main(args);
+  assert.equal(parseAutomationPrEvidence(await readFile(file("body.md"), "utf8"), { headSha: HEAD }).sources[0].sourceId, "itx-cheongchun-source-timetable");
+  await assert.rejects(main(args), /EEXIST/u);
+  await writeFile(file("paths.txt"), `${ITX_PATHS.slice(1).join("\n")}\n`);
+  await assert.rejects(main(args.map((value) => (value === file("body.md") ? file("other.md") : value))), /AUTOMATION_PR_EVIDENCE_INVALID/u);
 });

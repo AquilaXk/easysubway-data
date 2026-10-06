@@ -18,7 +18,9 @@ const REFRESH_WORKFLOWS = Object.keys(REFRESH_CLAIM_PREFIXES);
 const CANDIDATE_WORKFLOW = "nationwide-candidate-refresh.yml";
 // #967: 등록 workflow도 같은 계약을 따른다. PR 생성 지점이 하나인 workflow는 후보 갱신·등록·파생 재결속(#969)이다.
 const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
-const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, "source-derivative-rebinding.yml"];
+// #977: ITX 승격 workflow도 PR 생성 지점이 하나이고 취소·시간 초과도 보고한다.
+const ITX_PROMOTION_WORKFLOW = "itx-current-promotion.yml";
+const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW, ITX_PROMOTION_WORKFLOW, "source-derivative-rebinding.yml"];
 const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, ...SINGLE_PR_PATH_WORKFLOWS])];
 const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
 
