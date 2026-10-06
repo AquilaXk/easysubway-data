@@ -77,16 +77,35 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          CI_STATE: ${{ steps.required-ci.outputs.state }}
         run: |
           set -euo pipefail
           # #939: 열린 재결속 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
           open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
-          node tools/ci/refresh-open-pr-age.mjs --workflow source-derivative-rebinding.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${{ steps.required-ci.outputs.state }}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow source-derivative-rebinding.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${CI_STATE}"
       - name: Note derivative rebinding waiting on a pending source pull request
         if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
+        env:
+          BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
         run: |
-          echo "::notice title=Derivative rebinding::waiting for pending source-ledger automation pull request(s) ${{ steps.decision.outputs.blocked_by }}; they write the same ledger files."
+          echo "::notice title=Derivative rebinding::waiting for pending source-ledger automation pull request(s) ${BLOCKED_BY}; they write the same ledger files."
+      - name: Remove stale rebinding branches named by the decision
+        if: ${{ steps.decision.outputs.cleanup_branches != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_BRANCHES: ${{ steps.decision.outputs.cleanup_branches }}
+        run: |
+          set -euo pipefail
+          # 이전 실행이 남긴 재결속 브랜치(PR 없음·닫힌 PR)는 사람이 지울 일이 아니다(이슈 #973). 판정이 알린 것만, 열린 PR이 없을 때만 지운다.
+          gh auth setup-git
+          IFS=',' read -r -a stale_branches <<< "${CLEANUP_BRANCHES}"
+          for stale_branch in "${stale_branches[@]}"; do
+            [[ "${stale_branch}" =~ ^automation/969-derivative-rebinding-[1-9][0-9]*$ ]] || { echo "stale rebinding branch name is invalid" >&2; exit 1; }
+            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${stale_branch}" --json number --jq 'length')" == "0" ]] || { echo "stale rebinding branch has an open pull request" >&2; exit 1; }
+            git push origin --delete "${stale_branch}"
+            echo "::notice title=Derivative rebinding::removed stale rebinding branch ${stale_branch}"
+          done
       - name: Rebind derivative artifacts from the current ledger heads
         id: rebind
         if: ${{ steps.decision.outputs.state == 'RUN' }}
@@ -147,7 +166,7 @@ jobs:
           pr_url="$(GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REBINDING_BRANCH}" --title "[Data] 파생 산출물을 현재 원천 head에 다시 결속" --body-file "${body}")"
           printf 'REBINDING_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
       - name: Remove the rebinding branch after a later failure
-        if: ${{ failure() && env.REBINDING_BRANCH != '' }}
+        if: ${{ (failure() || cancelled()) && env.REBINDING_BRANCH != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -159,7 +178,7 @@ jobs:
             git push origin --delete "${REBINDING_BRANCH}"
           fi
       - name: Report refresh failure as an issue
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node tools/ci/report-refresh-failure.mjs --workflow source-derivative-rebinding.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
