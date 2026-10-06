@@ -189,3 +189,20 @@ test("provenance 검증은 데이터셋 순서·URL·원본 sha 불일치를 거
     provenance, ["15065526", "15149872"], { 15065526: Buffer.from("changed"), 15149872: second.bytes },
   ), /15065526 download provenance sha256 mismatch/);
 });
+
+test("모든 요청은 redirect를 따르지 않고, 다른 호스트로 넘어가는 응답은 외부 본문을 받지 않고 실패한다", async () => {
+  const { fetchImpl, calls } = await realPortal();
+  await downloadDataGoFile(fetchImpl, "15065526");
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(({ init }) => init.redirect === "error"));
+  // 실제 fetch는 redirect "error"에서 3xx를 TypeError로 거부한다. 따르는 모드였다면 외부 호스트 본문을 받는 상황을 재현한다.
+  for (const hop of ["/data/15065526/fileData.do", "/tcs/dss/selectFileDataDownload.do", "/cmm/cmm/fileDownload.do"]) {
+    const redirecting = (inner) => async (url, init = {}) => {
+      if (new URL(url).pathname !== hop) return inner(url, init);
+      if (init.redirect === "error") throw new TypeError("fetch failed", { cause: new Error("redirect mode is set to error") });
+      return new Response("호선,역명\n1,foreign\n", { status: 200, headers: { "content-type": "application/octet-stream" } });
+    };
+    const portal = await realPortal();
+    await assert.rejects(downloadDataGoFile(redirecting(portal.fetchImpl), "15065526"), TypeError, hop);
+  }
+});

@@ -59,6 +59,7 @@ export function parseDataGoDownloadAction(html, datasetId) {
 async function requestGet(fetchImpl, url, headers, label) {
   const response = await fetchImpl(url, {
     method: "GET",
+    redirect: "error",
     headers: { "User-Agent": USER_AGENT, ...headers },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
