@@ -9,6 +9,7 @@ import path from "node:path";
 import { isDeepStrictEqual, promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import {
   overlayReviewedSourcesOnCanonicalRoster,
@@ -2162,6 +2163,7 @@ export async function bindApprovedItxCurrentSourceSpec({
   topologyEvidenceBytes,
   topologyEvidencePath,
   buildNow,
+  repositoryRoot = null,
 }) {
   const activationNow = new Date(requiredUtcInstant(buildNow, "approved ITX bootstrap buildNow"));
   const contract = parseJson(coverageContractBytes, "approved ITX coverage contract");
@@ -2174,6 +2176,7 @@ export async function bindApprovedItxCurrentSourceSpec({
     sourceBytes,
     completenessBytes,
   );
+  verifyCurrentItxPromotion({ reference, repositoryRoot });
   validateAdmittedSourceDocuments(
     contract,
     reference,
@@ -3031,6 +3034,7 @@ export async function generateCurrentCapitalTopologyRefresh({
           topologyEvidenceBytes: currentItxTopologyEvidenceBytes,
           topologyEvidencePath: selectedItxTopologyEvidencePath,
           buildNow,
+          repositoryRoot: repositoryPath,
         });
       },
     });

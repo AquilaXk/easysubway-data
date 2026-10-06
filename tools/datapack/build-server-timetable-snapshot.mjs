@@ -12,6 +12,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
@@ -45,6 +46,7 @@ export function buildServerTimetableSnapshot({
   sourceSnapshotsBytes,
   canonicalGzipBytes,
   buildNow = new Date(),
+  repositoryRoot = root,
 }) {
   const rawBaselineSql = normalizeBaselineSql(baselineGzipBytes);
   const contract = parseJson(contractBytes, "coverage contract");
@@ -62,6 +64,7 @@ export function buildServerTimetableSnapshot({
     completeness,
     completenessBytes,
     buildNow,
+    repositoryRoot,
   });
   const { canonicalPackIdentity, canonicalPackLineage } = validateCanonicalTopologyPack({
     contract,
@@ -830,6 +833,7 @@ function validateAdmission({
   completeness,
   completenessBytes,
   buildNow,
+  repositoryRoot,
 }) {
   const reference = contract?.sourceTimetableArtifact;
   if (contract?.schemaVersion !== 2
@@ -838,10 +842,11 @@ function validateAdmission({
     || !contract.allowedConsumerIssues?.includes("#2145")
     || reference?.status !== "ADMITTED"
     || reference.admissionEligible !== true
-    || reference.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || !isCurrentItxPromotionMode(reference.promotion?.mode)
     || reference.schemaVersion !== 1) {
     throw new Error("#2145 requires the canonical #2135 ADMITTED source contract");
   }
+  verifyCurrentItxPromotion({ reference, repositoryRoot });
   if (reference.sha256 !== sha256(sourceBytes)) {
     throw new Error("source artifact SHA-256 mismatch");
   }

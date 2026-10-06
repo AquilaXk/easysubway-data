@@ -128,6 +128,21 @@ test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EX
   });
 });
 
+test("같은 KST 날 ITX를 이미 수집했고 이번 갱신이 ITX 수집을 요구하면 WAIT_ITX_COLLECTED_TODAY로 정상 종료한다 (F4)", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const now = new Date("2026-08-30T11:00:00.000Z");
+  const due = await decideCurrentCapitalTopologyRefresh({ ...input, now });
+  assert.deepEqual({ state: due.state, itxRefreshRequired: due.itxRefreshRequired }, { state: "DUE", itxRefreshRequired: true });
+  const waiting = await decideCurrentCapitalTopologyRefresh({ ...input, now, itxCollectedToday: true });
+  assert.deepEqual({ state: waiting.state, itxRefreshRequired: waiting.itxRefreshRequired }, { state: "WAIT_ITX_COLLECTED_TODAY", itxRefreshRequired: true });
+  // 만료된 뒤에도, ITX 수집이 필요 없으면(아직 신선하면) 평소처럼 진행한다.
+  const expired = await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T12:00:00.000Z"), itxCollectedToday: true });
+  assert.equal(expired.state, "WAIT_ITX_COLLECTED_TODAY");
+  const notRequired = await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z"), itxCollectedToday: true });
+  assert.deepEqual({ state: notRequired.state, itxRefreshRequired: notRequired.itxRefreshRequired }, { state: "DUE", itxRefreshRequired: false });
+  await assert.rejects(() => decideCurrentCapitalTopologyRefresh({ ...input, now, itxCollectedToday: "yes" }), /decision input is invalid/);
+});
+
 test("requires exactly sixteen distinct admitted capital sources and all three Incheon inputs", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   const inventory = JSON.parse(await readFile(input.inventoryPath, "utf8"));

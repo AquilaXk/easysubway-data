@@ -22,15 +22,19 @@ export const REFRESH_CLAIM_PREFIXES = Object.freeze({
   "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
   "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
   "nationwide-candidate-refresh.yml": "automation/927-nationwide-candidate-refresh-",
+  // #977: ITX-청춘 원천 시간표 자동 승격(#870 3단계).
+  "itx-current-promotion.yml": "automation/977-itx-promotion-",
 });
 // #969: source-snapshots.json·source-inventory.json에 행을 덧붙이는 자동화 workflow. 이 PR들은 같은 파일을 바꾸므로 동시에 하나만 연다.
 // 후보 갱신은 원장을 쓰지 않아 여기에 넣지 않는다.
+// ITX 승격(#977)은 원장 파일을 쓰지 않지만 topology 활성화 PR이 읽고 묶는 coverage contract·원천 파일을 바꾸므로 같은 직렬화 그룹에 둔다.
 export const LEDGER_WRITER_WORKFLOWS = Object.freeze([
   "current-capital-topology-refresh.yml",
   "kric-current-facility-refresh.yml",
   "retained-gwangju-timetable-refresh.yml",
   "seoul-current-accessibility-refresh.yml",
   "current-capital-topology-registration.yml",
+  "itx-current-promotion.yml",
 ]);
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 // refresh-pr-required-ci가 돌려주는 열린 PR의 required CI 상태

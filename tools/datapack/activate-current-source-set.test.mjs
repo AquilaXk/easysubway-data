@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 
 import {
   overlayReviewedSourcesOnCanonicalRoster,
@@ -836,6 +837,31 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
 
 test("topology refresh skips the optional ITX admission file read", async () => {
   assert.equal(await readOptionalCurrentItxAdmissionBytes(root, undefined), null);
+});
+
+// F1: 활성화 도구도 게이트 승격을 구조 검사만으로 받지 않는다. 저장소 루트의 커밋된 영수증을 다시 계산해 대조한다.
+test("approved ITX bootstrap은 게이트 승격이면 저장소 루트의 영수증 재검증을 요구한다", async () => {
+  const fixture = await createGatedPromotionRoot();
+  try {
+    const coverageContractBytes = await readFile(fixture.contractPath);
+    const reference = fixture.reference;
+    const [baseSpec, sourceBytes, completenessBytes, topologyEvidenceBytes] = await Promise.all([
+      readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+      readFile(path.join(root, reference.artifactPath)),
+      readFile(path.join(root, reference.completenessEvidencePath)),
+      readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")),
+    ]);
+    const input = {
+      baseSpec, coverageContractBytes, sourceBytes, completenessBytes, topologyEvidenceBytes,
+      topologyEvidencePath: deriveApprovedItxTopologyEvidencePath(reference), buildNow: "2026-10-04T15:15:19.525Z",
+    };
+    await assert.rejects(bindApprovedItxCurrentSourceSpec(input), /ITX_PROMOTION_REPOSITORY_ROOT_REQUIRED/u);
+    await assert.rejects(bindApprovedItxCurrentSourceSpec({ ...input, repositoryRoot: root }), /ENOENT|ITX_PROMOTION_/u);
+    const bound = await bindApprovedItxCurrentSourceSpec({ ...input, repositoryRoot: fixture.root });
+    assert.equal(bound.networkEdgeEvidence.itxCoverageContract.sha256, sha256(coverageContractBytes));
+  } finally {
+    await fixture.cleanup();
+  }
 });
 
 test("approved ITX bootstrap은 exact full-source identity만 candidate에 결속한다", async () => {

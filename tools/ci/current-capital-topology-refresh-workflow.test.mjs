@@ -126,6 +126,19 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.match(yml, /Refs #636, #625/); assert.doesNotMatch(yml, /oci:|aws|retry|fallback|automerge|git push origin main/i);
 });
 
+// F4(#977): ITX 승격 workflow와 같은 KST 날 ITX 공급자 호출을 나눠 쓴다. 이미 수집됐으면 가드 실패(이슈)가 아니라 대기로 끝난다.
+test("topology refresh는 판정 전에 같은 KST 날 ITX 수집 여부를 보고 이미 수집됐으면 대기한다", () => {
+  const decision = stepBody("Decide whether current topology refresh is due");
+  assert.match(decision, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
+  const probe = decision.indexOf('itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"');
+  const decide = decision.indexOf("node tools/ci/decide-current-capital-topology-refresh.mjs");
+  assert.ok(probe !== -1 && probe < decide, "the probe runs before the decision");
+  assert.match(decision, /--itx-collected-today "\$\{itx_collected\}" --output "\$\{TOPOLOGY_DECISION\}"/);
+  // WAIT_ITX_COLLECTED_TODAY는 어떤 쓰기·수집 step의 조건에도 들지 않으므로 아무것도 하지 않고 성공으로 끝난다.
+  assert.equal(yml.includes("WAIT_ITX_COLLECTED_TODAY' &&"), false);
+  assert.match(stepBody("Note current topology refresh waiting on today's ITX collection"), /steps\.decision\.outputs\.state == 'WAIT_ITX_COLLECTED_TODAY'/);
+});
+
 test("topology refresh ends at source admission and never commits candidate-side outputs (#862 결정 C)", () => {
   for (const candidateSide of ["release-request.json", "hash-evidence.json"]) {
     assert.equal(yml.includes(candidateSide), false, `${candidateSide} belongs to the nationwide candidate refresh`);
