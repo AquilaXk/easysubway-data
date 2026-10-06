@@ -11,6 +11,7 @@
 //   EXPIRED      이미 만료됐다. 즉시 수집한다(끊김은 lapsed로 알린다).
 //   SAFETY_LEAD  만료까지 2일 이하다. 이득이 작아도 수집한다. 그날 실패해도 하루 재시도 여유가 남는다.
 //   BEST_DAY     오늘이 최대 확보일(7일)이고 이번 수집이 만료를 3일 이상 늘린다.
+//   FORCED       사람 dispatch가 force를 줬다(수집할 때가 아니어도 수집한다). 열린 PR·대기·이상 규칙은 그대로다.
 // 결과는 대개 주 3회(금·토·일)다. 시뮬레이션 테스트가 끊김 없음과 실패 한 번 내성을 고정한다.
 //
 //   OPEN_PR                 이 workflow의 열린 승격 PR이 있다. 새로 수집하지 않고 CI·방치 상한만 본다.
@@ -20,7 +21,7 @@
 // 판정할 수 없는 상태(PR 중복·PR 없는 브랜치·닫힌 PR·잘못된 입력)는 실패해 실패 이슈로 드러난다. 추정하지 않는다.
 //
 // 사용: node tools/ci/decide-itx-current-promotion.mjs --contract <coverage contract> --prs <gh pr list JSON>
-//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--github-output <path>]
+//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -72,9 +73,10 @@ function admittedFreshUntilDay(contract) {
   return { millis, day: kstDay(new Date(millis)) };
 }
 
-export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits } = {}) {
+export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false } = {}) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(pullRequests) || !Array.isArray(branches)
-    || !validRepository(repository) || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1) fail("ITX_PROMOTION_INPUT_INVALID");
+    || !validRepository(repository) || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1
+    || typeof force !== "boolean") fail("ITX_PROMOTION_INPUT_INVALID");
   const { millis: freshUntilMillis, day: expiryDay } = admittedFreshUntilDay(contract);
   const today = kstDay(now);
   const daysUntilExpiry = expiryDay - today;
@@ -100,6 +102,8 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   if (lapsed) reason = "EXPIRED";
   else if (daysUntilExpiry <= ITX_PROMOTION_SAFETY_LEAD_DAYS) reason = "SAFETY_LEAD";
   else if (projectedDay - today >= ITX_PROMOTION_BEST_EXTENSION_DAYS && projectedDay - expiryDay >= ITX_PROMOTION_MIN_GAIN_DAYS) reason = "BEST_DAY";
+  // 사람 dispatch의 force만 수집할 때가 아닌 날에도 수집하게 한다(예: 후속 단계가 새 수집분을 기다릴 때). 이유를 덮어쓰지 않는다.
+  if (reason === null && force) reason = "FORCED";
   if (reason === null) return { ...base, state: "WAIT", reason: "NOT_DUE" };
 
   const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, ITX_PROMOTION_WORKFLOW);
@@ -113,7 +117,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
 
 function parseArgs(argv) {
   const keys = new Map([
-    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--github-output", "githubOutput"],
+    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--force", "force"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -137,6 +141,7 @@ export async function main(argv, { now = new Date(), log = console.log } = {}) {
     branches: parseItxPromotionBranches(await readFile(values.branches, "utf8")),
     repository: values.repository,
     limits: { pullRequests: Number(values.prLimit) },
+    force: values.force === undefined ? false : values.force === "true" ? true : values.force === "false" ? false : fail("ITX_PROMOTION_INPUT_INVALID", "--force must be true or false"),
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {

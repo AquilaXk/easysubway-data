@@ -107,6 +107,20 @@ test("일·월요일처럼 7일을 확보하는 날 이득이 3일 이상이면 
   assert.equal(decide({ now: kst("2026-10-13"), contract: contractWith("2026-10-17") }).state, "WAIT");
 });
 
+test("사람 dispatch의 force는 수집할 때가 아니어도 수집하게 하지만 열린 PR·대기·이상 규칙은 그대로다", () => {
+  assert.deepEqual(
+    (({ state, reason }) => ({ state, reason }))(decide({ now: kst("2026-10-06"), force: true })),
+    { state: "COLLECT", reason: "FORCED" },
+  );
+  // 이미 수집할 이유가 있으면 이유를 덮어쓰지 않는다.
+  assert.equal(decide({ now: kst("2026-10-10"), force: true }).reason, "SAFETY_LEAD");
+  assert.equal(decide({ now: kst("2026-10-06"), force: false }).state, "WAIT");
+  assert.equal(decide({ now: kst("2026-10-06"), pullRequests: [pr()], force: true }).state, "OPEN_PR");
+  const other = pr({ number: 980, headRefName: "automation/456-capital-topology-registration-55" });
+  assert.equal(decide({ now: kst("2026-10-06"), pullRequests: [other], force: true }).state, "BLOCKED_BY_PENDING_PR");
+  assert.throws(() => decide({ now: kst("2026-10-06"), force: "yes" }), /ITX_PROMOTION_INPUT_INVALID/u);
+});
+
 test("열린 승격 PR이 있으면 새로 수집하지 않고 그 PR을 돌려준다", () => {
   const result = decide({ now: kst("2026-10-11"), pullRequests: [pr()], branches: [{ sha: "a".repeat(40), branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] });
   assert.deepEqual({ state: result.state, branch: result.branch, number: result.number }, { state: "OPEN_PR", branch: `${ITX_PROMOTION_CLAIM_PREFIX}123`, number: 990 });
@@ -218,6 +232,15 @@ test("CLI는 판정을 GITHUB_OUTPUT에 쓴다", async () => {
     await writeFile(path.join(dir, "branches.txt"), "");
     const output = path.join(dir, "output.txt");
     const logs = [];
+    const forced = await main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--force", "true",
+    ], { now: kst("2026-10-06"), log: () => {} });
+    assert.equal(forced.reason, "FORCED");
+    await assert.rejects(main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--force", "maybe",
+    ], { now: kst("2026-10-06"), log: () => {} }), /ITX_PROMOTION_INPUT_INVALID/u);
     const result = await main([
       "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
       "--repository", REPOSITORY, "--pr-limit", "1000", "--github-output", output,
