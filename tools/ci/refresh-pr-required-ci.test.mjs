@@ -10,14 +10,14 @@ const REPOSITORY = "AquilaXk/easysubway-data";
 const BRANCH = "automation/636-current-topology-refresh-37209118635";
 
 test("required CI 상태: rollup에 Data contracts가 있으면 ATTACHED, 같은 head의 pull_request CI가 진행 중이면 PENDING, 그 밖은 MISSING", () => {
-  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts" }], ciRuns: [] }), "ATTACHED");
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts", status: "COMPLETED", conclusion: "SUCCESS" }], ciRuns: [] }), "ATTACHED");
   for (const status of ["queued", "in_progress", "waiting", "requested", "pending"]) {
     assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [], ciRuns: [{ event: "pull_request", headSha: HEAD, status, conclusion: "" }] }), "PENDING", status);
   }
   // 승인 대기로 끝난 run(action_required), 다른 head, dispatch run은 CI가 붙은 것으로 보지 않는다.
   assert.equal(requiredCiState({
     headSha: HEAD,
-    rollupContexts: [{ name: "CodeQL" }, { context: "Data contracts (shard 1/4)" }],
+    rollupContexts: [{ name: "CodeQL", status: "COMPLETED", conclusion: "SUCCESS" }, { context: "Data contracts (shard 1/4)", state: "SUCCESS" }],
     ciRuns: [
       { event: "pull_request", headSha: HEAD, status: "completed", conclusion: "action_required" },
       { event: "pull_request", headSha: "b".repeat(40), status: "in_progress", conclusion: "" },
@@ -25,6 +25,52 @@ test("required CI 상태: rollup에 Data contracts가 있으면 ATTACHED, 같은
     ],
   }), "MISSING");
   assert.throws(() => requiredCiState({ headSha: "x", rollupContexts: [], ciRuns: [] }), /REFRESH_PR_CI_INPUT_INVALID/);
+});
+
+// #969: required CI(Data contracts 계열)가 실패·취소·시간초과면 그 PR은 이상이다. 열린 지 P1D가 지나서야 드러나지 않게 바로 멈춘다.
+test("required CI 상태: Data contracts 계열 check가 실패하면 ATTACHED·PENDING보다 FAILED가 우선한다", () => {
+  const failed = (name, conclusion) => requiredCiState({ headSha: HEAD, rollupContexts: [{ name, conclusion, status: "COMPLETED" }], ciRuns: [] });
+  for (const conclusion of ["FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"]) {
+    assert.equal(failed("Data contracts (shard 2/4)", conclusion), "FAILED", conclusion);
+    assert.equal(failed("Data contracts", conclusion), "FAILED", conclusion);
+  }
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ context: "Data contracts", state: "FAILURE" }], ciRuns: [] }), "FAILED");
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ context: "Data contracts", state: "ERROR" }], ciRuns: [] }), "FAILED");
+  // shard 하나만 실패해도 집계 check가 성공으로 보이는 순간과 무관하게 FAILED다.
+  assert.equal(requiredCiState({
+    headSha: HEAD,
+    rollupContexts: [{ name: "Data contracts", status: "COMPLETED", conclusion: "SUCCESS" }, { name: "Data contracts (shard 1/4)", status: "COMPLETED", conclusion: "FAILURE" }],
+    ciRuns: [{ event: "pull_request", headSha: HEAD, status: "in_progress", conclusion: "" }],
+  }), "FAILED");
+  // 성공한 shard만 있고 집계 check가 없으면 CI가 다 붙은 것이 아니다(MISSING). Data contracts가 아닌 check의 실패는 보지 않는다.
+  assert.equal(failed("Data contracts (shard 1/4)", "SUCCESS"), "MISSING");
+  assert.equal(failed("CodeQL", "FAILURE"), "MISSING");
+});
+
+// #970 리뷰 F1: 판정은 allow list다. 성공은 SUCCESS만, 진행 중은 알려진 상태만 인정하고 실패는 기존 목록이다.
+// 그 밖의 값(STALE·ACTION_REQUIRED·SKIPPED·모르는 값)은 ATTACHED로 조용히 넘어가지 않고 UNKNOWN 이상이다.
+test("required CI 상태: 성공이 아니고 실패·진행 중도 아닌 값은 집계·shard 이름 모두 UNKNOWN이다", () => {
+  const state = (name, conclusion, status = "COMPLETED") => requiredCiState({ headSha: HEAD, rollupContexts: [{ name, status, conclusion }], ciRuns: [] });
+  for (const name of ["Data contracts", "Data contracts (shard 2/4)", "Data contracts (mobile-v19)"]) {
+    for (const conclusion of ["STALE", "ACTION_REQUIRED", "SKIPPED", "NEUTRAL", "SOMETHING_NEW", ""]) {
+      assert.equal(state(name, conclusion), "UNKNOWN", `${name} ${conclusion}`);
+    }
+  }
+  assert.equal(state("Data contracts", "SUCCESS"), "ATTACHED");
+  // status context(state 필드)도 같다. PENDING은 진행 중이고 EXPECTED·모르는 값은 UNKNOWN이다.
+  const context = (value) => requiredCiState({ headSha: HEAD, rollupContexts: [{ context: "Data contracts", state: value }], ciRuns: [] });
+  assert.equal(context("SUCCESS"), "ATTACHED");
+  assert.equal(context("PENDING"), "PENDING");
+  assert.equal(context("EXPECTED"), "UNKNOWN");
+  assert.equal(context("WHATEVER"), "UNKNOWN");
+  // 실패가 모르는 값보다 우선한다.
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts", status: "COMPLETED", conclusion: "STALE" }, { name: "Data contracts (shard 1/4)", status: "COMPLETED", conclusion: "FAILURE" }], ciRuns: [] }), "FAILED");
+});
+
+test("required CI 상태: 진행 중 상태는 알려진 값만 PENDING이고 모르는 상태는 UNKNOWN이다", () => {
+  const state = (status) => requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts", status, conclusion: "" }], ciRuns: [] });
+  for (const status of ["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"]) assert.equal(state(status), "PENDING", status);
+  assert.equal(state("MYSTERY"), "UNKNOWN");
 });
 
 function fakeGh({ pullRequests, rollup = [], runs = [], failOn = null }) {
@@ -57,7 +103,7 @@ test("CI가 없으면 그 PR만 App 토큰으로 닫았다 다시 열고 REOPENE
 
 test("CI가 붙었거나 진행 중이면 아무 쓰기도 하지 않는다(멱등)", async () => {
   for (const [state, fixture] of [
-    ["ATTACHED", { rollup: [{ name: "Data contracts", conclusion: "SUCCESS" }] }],
+    ["ATTACHED", { rollup: [{ name: "Data contracts", status: "COMPLETED", conclusion: "SUCCESS" }] }],
     ["PENDING", { runs: [{ event: "pull_request", headSha: HEAD, status: "in_progress", conclusion: "" }] }],
   ]) {
     const { gh, calls } = fakeGh({ pullRequests: [openPr], ...fixture });
@@ -73,4 +119,68 @@ test("열린 갱신 PR이 없거나 둘 이상이거나, 닫기·다시 열기�
   await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, gh: fakeGh({ pullRequests: [openPr], failOn: "pr reopen" }).gh }), /gh pr reopen failed/);
   await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, appToken: "", gh: fakeGh({ pullRequests: [openPr] }).gh }), /REFRESH_PR_CI_APP_TOKEN_REQUIRED/);
   await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, workflow: "other.yml", gh: fakeGh({ pullRequests: [openPr] }).gh }), /REFRESH_PR_CI_WORKFLOW_INVALID/);
+});
+
+test("열린 갱신 PR의 required CI가 실패했으면 쓰기 없이 AUTOMATION_PR_CI_FAILED로 job을 실패시킨다", async () => {
+  const { gh, calls } = fakeGh({
+    pullRequests: [openPr],
+    rollup: [{ name: "Data contracts (shard 2/4)", status: "COMPLETED", conclusion: "FAILURE" }, { name: "Data contracts (shard 1/4)", status: "COMPLETED", conclusion: "SUCCESS" }],
+  });
+  await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, gh }), (error) => {
+    assert.match(error.message, /^AUTOMATION_PR_CI_FAILED: #936 /u);
+    assert.match(error.message, /Data contracts \(shard 2\/4\)=FAILURE/u);
+    assert.doesNotMatch(error.message, /shard 1\/4/u);
+    return true;
+  });
+  assert.equal(calls.some(({ args }) => /^pr (close|reopen)/u.test(args)), false);
+});
+
+test("집계 check의 ACTION_REQUIRED·STALE·모르는 값은 닫았다 다시 열지 않고 AUTOMATION_PR_CI_STATE_UNKNOWN으로 job을 실패시킨다", async () => {
+  for (const conclusion of ["ACTION_REQUIRED", "STALE", "SOMETHING_NEW"]) {
+    const { gh, calls } = fakeGh({ pullRequests: [openPr], rollup: [{ name: "Data contracts", status: "COMPLETED", conclusion }] });
+    await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, gh }), (error) => {
+      assert.match(error.message, /^AUTOMATION_PR_CI_STATE_UNKNOWN: #936 /u);
+      assert.ok(error.message.includes(`Data contracts=${conclusion}`), error.message);
+      return true;
+    }, conclusion);
+    assert.equal(calls.some(({ args }) => /^pr (close|reopen)/u.test(args)), false, conclusion);
+  }
+});
+
+// #970 리뷰 F2: 진행 중인 check run의 conclusion은 무시하고(status가 COMPLETED일 때만 본다), 같은 이름이 여러 개면 최신 항목만 본다.
+// 실패 뒤 rerun이 진행 중이면 이미 다시 시작한 PR이므로 FAILED가 아니라 PENDING이다.
+test("required CI 상태: COMPLETED가 아닌 check run은 conclusion을 무시한다", () => {
+  const state = (entry) => requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts", ...entry }], ciRuns: [] });
+  assert.equal(state({ status: "IN_PROGRESS", conclusion: "FAILURE" }), "PENDING");
+  assert.equal(state({ status: "QUEUED", conclusion: "CANCELLED" }), "PENDING");
+  assert.equal(state({ status: "COMPLETED", conclusion: "FAILURE" }), "FAILED");
+  assert.equal(state({ status: "COMPLETED", conclusion: "" }), "UNKNOWN");
+});
+
+test("required CI 상태: 같은 이름이 여러 개면 시작 시각이 가장 늦은 항목이 이기고, 시각이 없으면 목록에서 뒤에 있는 항목이 이긴다", () => {
+  const state = (...rollupContexts) => requiredCiState({ headSha: HEAD, rollupContexts, ciRuns: [] });
+  const shard = (startedAt, status, conclusion) => ({ name: "Data contracts (shard 1/4)", startedAt, status, conclusion });
+  // 이전 실패 뒤 rerun 진행 중: PENDING
+  assert.equal(state(shard("2026-10-06T00:00:00Z", "COMPLETED", "FAILURE"), shard("2026-10-06T00:10:00Z", "IN_PROGRESS", "")), "PENDING");
+  assert.equal(state(shard("2026-10-06T00:10:00Z", "IN_PROGRESS", ""), shard("2026-10-06T00:00:00Z", "COMPLETED", "FAILURE")), "PENDING");
+  // 최신이 실패면 FAILED, 최신이 성공이면 이전 실패는 무시한다.
+  assert.equal(state(shard("2026-10-06T00:00:00Z", "COMPLETED", "SUCCESS"), shard("2026-10-06T00:10:00Z", "COMPLETED", "FAILURE")), "FAILED");
+  assert.equal(state({ name: "Data contracts", status: "COMPLETED", conclusion: "SUCCESS" }, shard("2026-10-06T00:00:00Z", "COMPLETED", "FAILURE"), shard("2026-10-06T00:10:00Z", "COMPLETED", "SUCCESS")), "ATTACHED");
+  // 시각이 없으면 뒤 항목이 최신이다.
+  assert.equal(state(shard(undefined, "COMPLETED", "FAILURE"), shard(undefined, "IN_PROGRESS", "")), "PENDING");
+  assert.equal(state(shard(undefined, "IN_PROGRESS", ""), shard(undefined, "COMPLETED", "FAILURE")), "FAILED");
+  // 이름이 다르면 서로 가리지 않는다.
+  assert.equal(state({ name: "Data contracts (shard 2/4)", status: "COMPLETED", conclusion: "FAILURE" }, shard("2026-10-06T00:10:00Z", "IN_PROGRESS", "")), "FAILED");
+});
+
+test("실패 뒤 rerun이 진행 중인 열린 갱신 PR은 이상으로 실패하지 않고 쓰기 없이 PENDING이다", async () => {
+  const { gh, calls } = fakeGh({
+    pullRequests: [openPr],
+    rollup: [
+      { name: "Data contracts (shard 2/4)", startedAt: "2026-10-06T00:00:00Z", status: "COMPLETED", conclusion: "FAILURE" },
+      { name: "Data contracts (shard 2/4)", startedAt: "2026-10-06T00:20:00Z", status: "IN_PROGRESS", conclusion: "" },
+    ],
+  });
+  assert.deepEqual(await ensureRefreshPullRequestRequiredCi({ ...input, gh }), { state: "PENDING", number: 936, headSha: HEAD });
+  assert.equal(calls.some(({ args }) => /^pr (close|reopen)/u.test(args)), false);
 });
