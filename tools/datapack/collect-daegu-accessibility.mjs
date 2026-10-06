@@ -2,7 +2,7 @@
 // 대구교통공사 역사별 장애인 편의시설 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15149872)만 사용한다.
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -13,6 +13,9 @@ import {
   decodeOfficialCsv,
   normalizedStationName,
 } from "./collect-daegu-datapack-sources.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
+import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
 const DATASET_ID = "15149872";
 const DETAIL_URL = `https://www.data.go.kr/data/${DATASET_ID}/fileData.do`;
@@ -118,9 +121,13 @@ export function collectDaeguAccessibility({
   facilitiesBytes,
   topologySnapshots,
   now = new Date(),
+  downloadProvenance,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const rows = parseDaeguAccessibilityCsv(facilitiesBytes, topologySnapshots);
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, [DATASET_ID], { [DATASET_ID]: facilitiesBytes });
   const scope = rows.map(({ stationCode, stationName, lineId }) => ({ stationCode, stationName, lineId }));
   const topologyLineages = DAEGU_LINES.map((line) => {
     const topology = topologySnapshots[line.lineNumber];
@@ -161,6 +168,7 @@ export function collectDaeguAccessibility({
     rawSha256: sha256(Buffer.from(facilitiesBytes)),
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
   };
 }
 
@@ -220,33 +228,30 @@ function retainedRawSource(datasetId, bytes) {
   };
 }
 
-function parseArgs(argv) {
-  const args = {};
-  for (let index = 0; index < argv.length; index += 2) {
-    if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-daegu-accessibility.mjs --input <csv> --sources-dir <dir> --inventory <json> --output <absolute.json> [--captured-at <iso>]");
-    }
-    args[argv[index].slice(2)] = argv[index + 1];
-  }
-  if (!args.input || !args["sources-dir"] || !args.inventory || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-daegu-accessibility.mjs --input <csv> --sources-dir <dir> --inventory <json> --output <absolute.json> [--captured-at <iso>]");
-  }
-  return args;
-}
+const ARG_SPEC = Object.freeze({
+  usage: "usage: collect-daegu-accessibility.mjs (--input <csv> [--captured-at <iso>] | --download) "
+    + "--sources-dir <dir> --inventory <json> --output <absolute.json>",
+  valueFlags: ["input", "sources-dir", "inventory", "output", "captured-at"],
+  fileModeRequired: ["input", "sources-dir", "inventory", "output"],
+  downloadRequired: ["sources-dir", "inventory", "output"],
+  downloadForbidden: ["input", "captured-at"],
+  absolute: ["output"],
+});
 
-export async function runDaeguAccessibilityCollector(argv) {
-  const args = parseArgs(argv);
-  const [facilitiesBytes, inventory] = await Promise.all([
-    readFile(args.input),
-    readFile(args.inventory, "utf8").then(JSON.parse),
-  ]);
+export async function runDaeguAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+  const args = parseDownloadModeArgs(argv, ARG_SPEC);
+  const inventory = await readFile(args.inventory, "utf8").then(JSON.parse);
+  const { bytes: [facilitiesBytes], downloadProvenance } = await loadDataGoInputs({
+    args, fetchImpl, datasetIds: [DATASET_ID], inputPaths: [args.input],
+  });
   const topologySnapshots = await loadAdmittedDaeguTopologySnapshots(args["sources-dir"], inventory);
   const snapshot = collectDaeguAccessibility({
     facilitiesBytes,
     topologySnapshots,
-    now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
+    now: resolveCapturedAt(args, now),
+    downloadProvenance,
   });
-  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
+  await writeFileReplacing(args.output, Buffer.from(`${JSON.stringify(snapshot)}\n`));
   console.log(`Daegu accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
   return snapshot;
 }

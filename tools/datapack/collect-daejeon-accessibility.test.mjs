@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -10,6 +11,7 @@ import {
   parseDaejeonAccessibilityCsv,
   runDaejeonAccessibilityCollector,
 } from "./collect-daejeon-accessibility.mjs";
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const ELEVATOR_CSV = path.join(root, "tools/datapack/fixtures/daejeon-accessibility-raw/data-go-15041384.csv");
@@ -173,4 +175,131 @@ test("대전 accessibility collector CLI는 absolute output 경로를 강제한�
     "--molit-csv", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
     "--output", "relative.json",
   ]), /usage: collect-daejeon-accessibility/);
+});
+
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+async function downloadCliArgs(output) {
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const topology = inventory.sources.find(({ id }) => id === "daejeon-station-distance-fare");
+  return [
+    "--topology-snapshot", path.join(root, topology.topologyAdmissionEvidence.snapshotPath),
+    "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
+    "--molit-csv", path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv"),
+    "--output", output,
+  ];
+}
+
+test("대전 accessibility collector --download는 공식 FILE 두 개를 받아 원본 sha provenance와 함께 snapshot을 쓴다", async () => {
+  const [elevatorBytes, escalatorBytes] = await Promise.all([readFile(ELEVATOR_CSV), readFile(ESCALATOR_CSV)]);
+  const dir = await mkdtemp(path.join(tmpdir(), "daejeon-accessibility-download-"));
+  try {
+    const output = path.join(dir, "daejeon-accessibility.json");
+    const now = new Date("2026-10-06T03:00:00.000Z");
+    const snapshot = await runDaejeonAccessibilityCollector(
+      ["--download", ...await downloadCliArgs(output)],
+      { fetchImpl: createDataGoPortalFetch({ 15041384: elevatorBytes, 15041361: escalatorBytes }), now: () => now },
+    );
+    assert.equal(snapshot.capturedAt, now.toISOString());
+    assert.deepEqual(snapshot.downloadProvenance, [
+      {
+        datasetId: "15041384",
+        detailUrl: "https://www.data.go.kr/data/15041384/fileData.do",
+        downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015041384&fileDetailSn=1&insertDataPrcus=N",
+        rawSha256: sha256(elevatorBytes),
+      },
+      {
+        datasetId: "15041361",
+        detailUrl: "https://www.data.go.kr/data/15041361/fileData.do",
+        downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015041361&fileDetailSn=1&insertDataPrcus=N",
+        rawSha256: sha256(escalatorBytes),
+      },
+    ]);
+    assert.equal(snapshot.elevatorRawSha256, sha256(elevatorBytes));
+    assert.equal(snapshot.escalatorRawSha256, sha256(escalatorBytes));
+    assert.deepEqual(JSON.parse(await readFile(output, "utf8")), JSON.parse(JSON.stringify(snapshot)));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("대전 accessibility collector 파일 입력 모드는 downloadProvenance를 기록하지 않는다", async () => {
+  const snapshot = collectDaejeonAccessibility({
+    ...await loadInputs(),
+    now: new Date("2026-07-24T02:00:00.000Z"),
+  });
+  assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), false);
+});
+
+test("대전 accessibility collector --download 실패·인자 오류·provenance 변조는 snapshot을 남기지 않는다", async () => {
+  const inputs = await loadInputs();
+  const files = { 15041384: inputs.elevatorBytes, 15041361: inputs.escalatorBytes };
+  const dir = await mkdtemp(path.join(tmpdir(), "daejeon-accessibility-download-fail-"));
+  const common = await downloadCliArgs(path.join(dir, "out.json"));
+  try {
+    await assert.rejects(runDaejeonAccessibilityCollector(["--download", ...common], {
+      fetchImpl: createDataGoPortalFetch(files, { failFile: new Set(["15041361"]) }),
+    }), /15041361 file HTTP 503/);
+    await assert.rejects(runDaejeonAccessibilityCollector(["--download", ...common], {
+      fetchImpl: createDataGoPortalFetch({ 15041384: inputs.elevatorBytes }),
+    }), /15041361 detail HTTP 404/);
+    for (const extra of [
+      ["--elevator-input", ELEVATOR_CSV],
+      ["--escalator-input", ESCALATOR_CSV],
+      ["--captured-at", "2026-10-06T00:00:00.000Z"],
+      ["--download"],
+    ]) {
+      await assert.rejects(runDaejeonAccessibilityCollector(["--download", ...extra, ...common]),
+        /usage: collect-daejeon-accessibility/);
+    }
+    await assert.rejects(runDaejeonAccessibilityCollector(["--download", ...common.slice(0, -2), "--output", "relative.json"]),
+      /usage: collect-daejeon-accessibility/);
+    await assert.rejects(runDaejeonAccessibilityCollector(["--download", ...common.slice(0, 2), ...common.slice(4)]),
+      /usage: collect-daejeon-accessibility/);
+    assert.deepEqual(await readdir(dir), []);
+    const good = [
+      {
+        datasetId: "15041384",
+        detailUrl: "https://www.data.go.kr/data/15041384/fileData.do",
+        downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015041384&fileDetailSn=1&insertDataPrcus=N",
+        rawSha256: sha256(inputs.elevatorBytes),
+      },
+      {
+        datasetId: "15041361",
+        detailUrl: "https://www.data.go.kr/data/15041361/fileData.do",
+        downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015041361&fileDetailSn=1&insertDataPrcus=N",
+        rawSha256: sha256(inputs.escalatorBytes),
+      },
+    ];
+    const now = new Date("2026-07-24T02:00:00.000Z");
+    assert.deepEqual(collectDaejeonAccessibility({ ...inputs, now, downloadProvenance: good }).downloadProvenance, good);
+    assert.throws(() => collectDaejeonAccessibility({ ...inputs, now, downloadProvenance: [good[1], good[0]] }),
+      /download provenance is invalid/);
+    assert.throws(() => collectDaejeonAccessibility({
+      ...inputs, now, downloadProvenance: [good[0], { ...good[1], rawSha256: "0".repeat(64) }],
+    }), /15041361 download provenance sha256 mismatch/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("대전 accessibility collector는 출력을 임시 파일로 쓴 뒤 교체하며 기존 심볼릭 링크 대상을 건드리지 않는다", async () => {
+  const [elevatorBytes, escalatorBytes] = await Promise.all([readFile(ELEVATOR_CSV), readFile(ESCALATOR_CSV)]);
+  const dir = await mkdtemp(path.join(tmpdir(), "daejeon-accessibility-atomic-"));
+  try {
+    const target = path.join(dir, "target.json");
+    const output = path.join(dir, "out.json");
+    await writeFile(target, "keep");
+    await symlink(target, output);
+    await runDaejeonAccessibilityCollector(["--download", ...await downloadCliArgs(output)], {
+      fetchImpl: createDataGoPortalFetch({ 15041384: elevatorBytes, 15041361: escalatorBytes }),
+      now: () => new Date("2026-10-06T03:00:00.000Z"),
+    });
+    assert.equal(await readFile(target, "utf8"), "keep");
+    assert.equal((await lstat(output)).isSymbolicLink(), false);
+    assert.equal(JSON.parse(await readFile(output, "utf8")).stationCount, 22);
+    assert.deepEqual((await readdir(dir)).sort(), ["out.json", "target.json"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

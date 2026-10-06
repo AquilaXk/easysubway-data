@@ -2,11 +2,14 @@
 // 광주교통공사 1호선 엘리베이터·에스컬레이터 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15041385·15041362)만 사용한다.
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
+import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
 const ELEVATOR_DATASET_ID = "15041385";
 const ESCALATOR_DATASET_ID = "15041362";
@@ -91,6 +94,7 @@ export function collectGwangjuAccessibility({
   topologySnapshot,
   topologySource,
   now,
+  downloadProvenance,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const rows = parseGwangjuAccessibilityCsv({
@@ -108,6 +112,12 @@ export function collectGwangjuAccessibility({
   }];
   const elevatorSha256 = sha256(Buffer.from(elevatorBytes));
   const escalatorSha256 = sha256(Buffer.from(escalatorBytes));
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, DATASET_IDS, {
+      [ELEVATOR_DATASET_ID]: elevatorBytes,
+      [ESCALATOR_DATASET_ID]: escalatorBytes,
+    });
   return {
     schemaVersion: 2,
     artifactKind: ARTIFACT_KIND,
@@ -152,6 +162,7 @@ export function collectGwangjuAccessibility({
     escalatorRawSha256: escalatorSha256,
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
   };
 }
 
@@ -282,25 +293,21 @@ function retainedRawSource(datasetId, bytes) {
   };
 }
 
-function parseArgs(argv) {
-  const args = {};
-  const required = ["elevator-input", "escalator-input", "inventory", "output", "captured-at"];
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index]?.slice(2);
-    if (!argv[index]?.startsWith("--") || !required.includes(key) || Object.hasOwn(args, key) || !argv[index + 1]) throw new Error("Gwangju collector arguments mismatch");
-    args[key] = argv[index + 1];
-  }
-  if (required.some((key) => !args[key]) || !path.isAbsolute(args.output)) throw new Error("Gwangju collector arguments mismatch");
-  return args;
-}
+const ARG_SPEC = Object.freeze({
+  usage: "Gwangju collector arguments mismatch",
+  valueFlags: ["elevator-input", "escalator-input", "inventory", "output", "captured-at"],
+  fileModeRequired: ["elevator-input", "escalator-input", "inventory", "output", "captured-at"],
+  downloadRequired: ["inventory", "output"],
+  downloadForbidden: ["elevator-input", "escalator-input", "captured-at"],
+  absolute: ["output"],
+});
 
-export async function runGwangjuAccessibilityCollector(argv) {
-  const args = parseArgs(argv);
-  const [elevatorBytes, escalatorBytes, inventory] = await Promise.all([
-    readFile(args["elevator-input"]),
-    readFile(args["escalator-input"]),
-    readFile(args.inventory, "utf8").then(JSON.parse),
-  ]);
+export async function runGwangjuAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+  const args = parseDownloadModeArgs(argv, ARG_SPEC);
+  const inventory = await readFile(args.inventory, "utf8").then(JSON.parse);
+  const { bytes: [elevatorBytes, escalatorBytes], downloadProvenance } = await loadDataGoInputs({
+    args, fetchImpl, datasetIds: DATASET_IDS, inputPaths: [args["elevator-input"], args["escalator-input"]],
+  });
   const selected = inventory.sources?.filter(({ id }) => id === TOPOLOGY_SOURCE_ID) ?? [];
   if (selected.length !== 1) throw new Error("Gwangju topology source selection mismatch");
   const topologySource = selected[0];
@@ -312,9 +319,10 @@ export async function runGwangjuAccessibilityCollector(argv) {
     escalatorBytes,
     topologySnapshot,
     topologySource,
-    now: new Date(args["captured-at"]),
+    now: resolveCapturedAt(args, now),
+    downloadProvenance,
   });
-  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
+  await writeFileReplacing(args.output, Buffer.from(`${JSON.stringify(snapshot)}\n`));
   console.log(`Gwangju accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
   return snapshot;
 }

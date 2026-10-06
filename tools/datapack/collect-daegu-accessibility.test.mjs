@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -10,6 +11,7 @@ import {
   parseDaeguAccessibilityCsv,
   runDaeguAccessibilityCollector,
 } from "./collect-daegu-accessibility.mjs";
+import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const FIXTURE_CSV = path.join(root, "tools/datapack/fixtures/daegu-accessibility-raw/data-go-15149872.csv");
@@ -125,4 +127,107 @@ test("대구 accessibility collector CLI는 absolute output 경로를 강제한�
     "--sources-dir", path.join(root, "tools/datapack/sources"),
     "--output", "relative.json",
   ]), /usage: collect-daegu-accessibility/);
+});
+
+test("대구 accessibility collector --download는 공식 FILE을 받아 원본 sha provenance와 함께 snapshot을 쓴다", async () => {
+  const bytes = await readFile(FIXTURE_CSV);
+  const rawSha256 = createHash("sha256").update(bytes).digest("hex");
+  const dir = await mkdtemp(path.join(tmpdir(), "daegu-accessibility-download-"));
+  try {
+    const calls = [];
+    const output = path.join(dir, "daegu-accessibility.json");
+    const now = new Date("2026-10-06T03:00:00.000Z");
+    const snapshot = await runDaeguAccessibilityCollector([
+      "--download",
+      "--sources-dir", path.join(root, "tools/datapack/sources"),
+      "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
+      "--output", output,
+    ], { fetchImpl: createDataGoPortalFetch({ 15149872: bytes }, { calls }), now: () => now });
+    assert.equal(snapshot.capturedAt, now.toISOString());
+    assert.equal(snapshot.rawSha256, rawSha256);
+    assert.deepEqual(snapshot.downloadProvenance, [{
+      datasetId: "15149872",
+      detailUrl: "https://www.data.go.kr/data/15149872/fileData.do",
+      downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015149872&fileDetailSn=1&insertDataPrcus=N",
+      rawSha256,
+    }]);
+    assert.deepEqual(JSON.parse(await readFile(output, "utf8")), JSON.parse(JSON.stringify(snapshot)));
+    assert.equal(calls.length, 3);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("대구 accessibility collector 파일 입력 모드는 downloadProvenance를 기록하지 않는다", async () => {
+  const snapshot = collectDaeguAccessibility({
+    facilitiesBytes: await readFile(FIXTURE_CSV),
+    topologySnapshots: await loadTopologySnapshots(),
+    now: new Date("2026-07-24T01:00:00.000Z"),
+  });
+  assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), false);
+});
+
+test("대구 accessibility collector --download 실패·인자 오류·provenance 변조는 snapshot을 남기지 않는다", async () => {
+  const bytes = await readFile(FIXTURE_CSV);
+  const dir = await mkdtemp(path.join(tmpdir(), "daegu-accessibility-download-fail-"));
+  const common = [
+    "--sources-dir", path.join(root, "tools/datapack/sources"),
+    "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
+    "--output", path.join(dir, "out.json"),
+  ];
+  try {
+    await assert.rejects(runDaeguAccessibilityCollector(["--download", ...common], {
+      fetchImpl: createDataGoPortalFetch({ 15149872: bytes }, { failFile: new Set(["15149872"]) }),
+    }), /15149872 file HTTP 503/);
+    await assert.rejects(runDaeguAccessibilityCollector(["--download", ...common], {
+      fetchImpl: createDataGoPortalFetch({}),
+    }), /15149872 detail HTTP 404/);
+    await assert.rejects(runDaeguAccessibilityCollector(["--download", "--input", FIXTURE_CSV, ...common]),
+      /usage: collect-daegu-accessibility/);
+    await assert.rejects(runDaeguAccessibilityCollector(["--download", "--captured-at", "2026-10-06T00:00:00.000Z", ...common]),
+      /usage: collect-daegu-accessibility/);
+    await assert.rejects(runDaeguAccessibilityCollector(["--download", "--download", ...common]),
+      /usage: collect-daegu-accessibility/);
+    assert.deepEqual(await readdir(dir), []);
+    const topologySnapshots = await loadTopologySnapshots();
+    const base = {
+      facilitiesBytes: bytes, topologySnapshots, now: new Date("2026-07-24T01:00:00.000Z"),
+    };
+    const good = {
+      datasetId: "15149872",
+      detailUrl: "https://www.data.go.kr/data/15149872/fileData.do",
+      downloadUrl: "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000015149872&fileDetailSn=1&insertDataPrcus=N",
+      rawSha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+    assert.deepEqual(collectDaeguAccessibility({ ...base, downloadProvenance: [good] }).downloadProvenance, [good]);
+    assert.throws(() => collectDaeguAccessibility({ ...base, downloadProvenance: [{ ...good, rawSha256: "0".repeat(64) }] }),
+      /15149872 download provenance sha256 mismatch/);
+    assert.throws(() => collectDaeguAccessibility({ ...base, downloadProvenance: [] }),
+      /download provenance is invalid/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("대구 accessibility collector는 출력을 임시 파일로 쓴 뒤 교체하며 기존 심볼릭 링크 대상을 건드리지 않는다", async () => {
+  const bytes = await readFile(FIXTURE_CSV);
+  const dir = await mkdtemp(path.join(tmpdir(), "daegu-accessibility-atomic-"));
+  try {
+    const target = path.join(dir, "target.json");
+    const output = path.join(dir, "out.json");
+    await writeFile(target, "keep");
+    await symlink(target, output);
+    await runDaeguAccessibilityCollector([
+      "--download",
+      "--sources-dir", path.join(root, "tools/datapack/sources"),
+      "--inventory", path.join(root, "tools/datapack/source-inventory.json"),
+      "--output", output,
+    ], { fetchImpl: createDataGoPortalFetch({ 15149872: bytes }), now: () => new Date("2026-10-06T03:00:00.000Z") });
+    assert.equal(await readFile(target, "utf8"), "keep");
+    assert.equal((await lstat(output)).isSymbolicLink(), false);
+    assert.equal(JSON.parse(await readFile(output, "utf8")).stationCount, 94);
+    assert.deepEqual((await readdir(dir)).sort(), ["out.json", "target.json"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

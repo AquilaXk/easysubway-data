@@ -300,6 +300,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/899",
       "title": "[Fix] 수도권 지하철 공식 시간표를 전국 데이터팩에 적재"
     },
+    "data890": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/890",
+      "title": "[Fix] data.go.kr 파일 다운로드 경로 해석 실패와 공식 수집기 다운로드 모드 누락"
+    },
     "data913": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/913",
       "title": "[Fix] 데이터팩·서버 번들 만료 시각에 시간표 원천 신선도 반영"
@@ -493,6 +497,9 @@
     {"path":"tools/datapack/capital-official-timetable.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":15000},
     {"path":"tools/datapack/lib/official-line-timetable.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/lib/kric-capital-timetable-records.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/lib/data-go-file-download.test.mjs","semanticOwner":"data890","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/lib/download-mode-cli.test.mjs","semanticOwner":"data890","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/datapack/lib/staged-output.test.mjs","semanticOwner":"data890","classes":["required-pr"],"durationMs":100},
     {"path":"tools/datapack/lib/timetable-duplicate-departures.test.mjs","semanticOwner":"data920","classes":["required-pr"],"durationMs":10},
     {"path":"tools/datapack/lib/external-stop-times.test.mjs","semanticOwner":"data899","classes":["required-pr"],"durationMs":50},
     {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":9},

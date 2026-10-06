@@ -2,12 +2,15 @@
 // 대전교통공사 1호선 엘리베이터·에스컬레이터 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15041384·15041361)만 사용한다.
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
+import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
+import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
 const ELEVATOR_DATASET_ID = "15041384";
 const ESCALATOR_DATASET_ID = "15041361";
@@ -113,6 +116,7 @@ export function collectDaejeonAccessibility({
   topologySource,
   canonicalStationMappings,
   now = new Date(),
+  downloadProvenance,
 } = {}) {
   const capturedAt = validDate(now, "now");
   const topologyEvidence = validateTopologySourceBinding({ topologySnapshot, topologySource });
@@ -131,6 +135,12 @@ export function collectDaejeonAccessibility({
   }];
   const elevatorSha256 = sha256(Buffer.from(elevatorBytes));
   const escalatorSha256 = sha256(Buffer.from(escalatorBytes));
+  const verifiedDownloadProvenance = downloadProvenance == null
+    ? undefined
+    : verifyDataGoDownloadProvenance(downloadProvenance, DATASET_IDS, {
+      [ELEVATOR_DATASET_ID]: elevatorBytes,
+      [ESCALATOR_DATASET_ID]: escalatorBytes,
+    });
   return {
     schemaVersion: 1,
     artifactKind: ARTIFACT_KIND,
@@ -175,6 +185,7 @@ export function collectDaejeonAccessibility({
     escalatorRawSha256: escalatorSha256,
     rowsSha256: sha256(JSON.stringify(rows)),
     rows,
+    ...(verifiedDownloadProvenance == null ? {} : { downloadProvenance: verifiedDownloadProvenance }),
   };
 }
 
@@ -328,30 +339,27 @@ function retainedRawSource(datasetId, bytes) {
   };
 }
 
-function parseArgs(argv) {
-  const args = {};
-  for (let index = 0; index < argv.length; index += 2) {
-    if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
-    }
-    args[argv[index].slice(2)] = argv[index + 1];
-  }
-  if (!args["elevator-input"] || !args["escalator-input"] || !args["topology-snapshot"]
-    || !args.inventory || !args["molit-csv"] || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-daejeon-accessibility.mjs --elevator-input <csv> --escalator-input <csv> --topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json> [--captured-at <iso>]");
-  }
-  return args;
-}
+const ARG_SPEC = Object.freeze({
+  usage: "usage: collect-daejeon-accessibility.mjs "
+    + "(--elevator-input <csv> --escalator-input <csv> [--captured-at <iso>] | --download) "
+    + "--topology-snapshot <json> --inventory <json> --molit-csv <csv> --output <absolute.json>",
+  valueFlags: ["elevator-input", "escalator-input", "topology-snapshot", "inventory", "molit-csv", "output", "captured-at"],
+  fileModeRequired: ["elevator-input", "escalator-input", "topology-snapshot", "inventory", "molit-csv", "output"],
+  downloadRequired: ["topology-snapshot", "inventory", "molit-csv", "output"],
+  downloadForbidden: ["elevator-input", "escalator-input", "captured-at"],
+  absolute: ["output"],
+});
 
-export async function runDaejeonAccessibilityCollector(argv) {
-  const args = parseArgs(argv);
-  const [elevatorBytes, escalatorBytes, topologySnapshot, inventory, molitBytes] = await Promise.all([
-    readFile(args["elevator-input"]),
-    readFile(args["escalator-input"]),
+export async function runDaejeonAccessibilityCollector(argv, { fetchImpl = fetch, now = () => new Date() } = {}) {
+  const args = parseDownloadModeArgs(argv, ARG_SPEC);
+  const [topologySnapshot, inventory, molitBytes] = await Promise.all([
     readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
     readFile(args.inventory, "utf8").then(JSON.parse),
     readFile(args["molit-csv"]),
   ]);
+  const { bytes: [elevatorBytes, escalatorBytes], downloadProvenance } = await loadDataGoInputs({
+    args, fetchImpl, datasetIds: DATASET_IDS, inputPaths: [args["elevator-input"], args["escalator-input"]],
+  });
   const topologySource = selectTopologySource(inventory);
   assertTopologyInputPath(args, topologySource);
   const snapshot = collectDaejeonAccessibility({
@@ -360,9 +368,10 @@ export async function runDaejeonAccessibilityCollector(argv) {
     topologySnapshot,
     topologySource,
     canonicalStationMappings: parseMolitDaejeonStationMappings(molitBytes),
-    now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
+    now: resolveCapturedAt(args, now),
+    downloadProvenance,
   });
-  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
+  await writeFileReplacing(args.output, Buffer.from(`${JSON.stringify(snapshot)}\n`));
   console.log(`Daejeon accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
   return snapshot;
 }
