@@ -228,6 +228,7 @@ test("every scheduled source refresh workflow reports its own failure as an issu
     "current-capital-topology-refresh.yml",
     "current-capital-topology-registration.yml",
     "kric-current-facility-refresh.yml",
+    "nationwide-candidate-refresh.yml",
     "retained-gwangju-timetable-refresh.yml",
     "seoul-current-accessibility-refresh.yml",
   ]);
