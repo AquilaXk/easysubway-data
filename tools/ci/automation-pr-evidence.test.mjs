@@ -185,7 +185,12 @@ const ITX_PATHS = [
   `tools/datapack/sources/${ITX_ID}-completeness-evidence.json`,
   `tools/datapack/sources/${ITX_ID}-promotion-gate.json`,
   `tools/datapack/sources/${ITX_ID}.json`,
-];
+  // #979: 같은 run의 파생 재결속 산출물
+  "tools/datapack/itx-cheongchun-topology-evidence.json",
+  "tools/datapack/itx-cheongchun-topology-evidence-20261010181500000.json",
+  "tools/datapack/release/candidate-build-spec.json",
+  ...["busan", "daegu", "daejeon", "gwangju", "seoul"].map((name) => `tools/route-map/route-map-defs/${name}-alignment-fixture.json`),
+].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 const ITX_SOURCE = {
   sourceId: "itx-cheongchun-source-timetable", snapshotId: ITX_ID, previousSnapshotId: ITX_PREVIOUS_ID,
   rawSha256: "1".repeat(64), contentSha256: "2".repeat(64), rowDelta: 0, coverageDelta: 0, diffStatus: "PASS",
@@ -267,14 +272,17 @@ test("ITX 승격 본문: 원천 행·적용 한도·요일별 지표·변경 경
   assert.match(body, /\| TUPLE_REMOVED \| 8 \| 4 \/ 14 \|/u);
   assert.match(body, /\| 첫차 이동 한도 \| 0초 \|/u);
   for (const path of ITX_PATHS) assert.ok(body.includes(path), path);
-  assert.match(body, /Refs #977\nRefs #870\nRefs #969\nRefs #636/u);
+  assert.match(body, /Refs #977\nRefs #979\nRefs #870\nRefs #969\nRefs #636/u);
+  assert.match(body, /재결속이 topology 증거·후보 build spec 결속·alignment fixture를 새 원천에 맞췄다/u);
   assert.doesNotMatch(body, /Closes/u);
   assert.match(body, /승인 코멘트/u);
   const parsed = parseAutomationPrEvidence(body, { headSha: HEAD });
   assert.equal(parsed.stage, "itx-promotion");
   assert.deepEqual(parsed.sources[0], itxPromotionSourceRow(ITX_RECEIPT));
   assert.deepEqual(parsed.steps[0].paths, ITX_PATHS);
-  // 경로 목록이 허용 경로와 다르면 본문도 만들지 않는다.
+  // 경로 목록이 허용 경로와 다르면 본문도 만들지 않는다(재결속 산출물이 빠져도, 처음 4개만 있어도).
+  assert.throws(() => itxPromotionPullRequestBody({ runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, receipt: ITX_RECEIPT, changedPaths: ITX_PATHS.filter((entry) => !entry.includes("alignment-fixture")) }), /AUTOMATION_PR_EVIDENCE_INVALID/u);
+  assert.throws(() => itxPromotionPullRequestBody({ runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, receipt: ITX_RECEIPT, changedPaths: ITX_PATHS.filter((entry) => entry.startsWith("tools/datapack/sources/") || entry.endsWith("coverage-contract.json")) }), /AUTOMATION_PR_EVIDENCE_INVALID/u);
   assert.throws(() => itxPromotionPullRequestBody({ runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, receipt: ITX_RECEIPT, changedPaths: ITX_PATHS.slice(1) }), /AUTOMATION_PR_EVIDENCE_INVALID/u);
 });
 

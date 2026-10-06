@@ -7,8 +7,10 @@ name: ITX Current Promotion
 # - 수집(KST 하루 한 번, 예산 가드) -> 오프라인 replay -> 게이트 -> 승격 -> 브랜치 push -> App 토큰 PR. 게이트가 막으면 job이 실패해 실패 이슈(#926)로 드러난다.
 # - 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_ITX_PROMOTION이 true일 때만 돈다(기본 꺼짐). 사람 dispatch는 항상 돈다.
 #   force_collect를 주면 수집할 때가 아니어도 수집한다(후속 단계가 새 수집분을 기다릴 때).
-# - 재결속 자동화(#979: literal 테스트·topology 입력 허용 목록·증거와 팩·mobile fixture 재핀·raw capture 원장 대조)가 병합되기 전에는
-#   DATAPACK_SCHEDULED_ITX_PROMOTION을 켜지 않는다. 그 전의 승격 PR은 required CI가 green이 되지 않는다.
+# - 승격 뒤 파생 재결속(#979)을 같은 job에서 한다: 고정 입력 fixture(mobile, ITX 적용 전 팩)에 새 원천 topology를 적용해 증거(현재·버전 별)와 팩을 만들고,
+#   후보 build spec 결속과 5권역 alignment fixture를 새 팩에 맞춘다. mobile 커밋·workflow pin은 승격마다 바뀌지 않는다(CI가 입력 팩에서 출력 팩을 파생해 증거와 대조).
+#   그래서 승격 PR 하나가 사람 손 없이 required CI를 통과한다. raw capture 원장(OCI 발행) 등록은 아직 없다(#979 본문 참조).
+#   DATAPACK_SCHEDULED_ITX_PROMOTION은 그 남은 항목의 처리와 QA 결정 전까지 켜지 않는다.
 # - 수동 승인 경로(collect-korail-itx-cheongchun-timetable --promote-candidate --approval-url ...)는 override로 그대로 있다. 이 workflow는 쓰지 않는다.
 on:
   schedule:
@@ -157,6 +159,49 @@ jobs:
           set -euo pipefail
           # 승인 코멘트 없이 게이트를 같은 입력으로 다시 계산해 PASS일 때만 원천·완전성 증거·게이트 영수증을 쓰고 coverage contract를 갱신한다.
           node tools/datapack/collect-korail-itx-cheongchun-timetable.mjs --promote-candidate "${ITX_OPERATION_ROOT}/itx-result.json" --completeness-evidence "${ITX_OPERATION_ROOT}/itx-completeness.json" --source-output-dir "${GITHUB_WORKSPACE}/tools/datapack/sources" --coverage-contract "${GITHUB_WORKSPACE}/tools/datapack/itx-cheongchun-coverage-contract.json" --station-catalog-pack "${ITX_OPERATION_ROOT}/station-catalog-pack" --auto-gate --provider-capture "${ITX_OPERATION_ROOT}/provider-response-capture.json" --replay-evidence "${ITX_OPERATION_ROOT}/itx-replay.json"
+      - name: Checkout pinned Mobile input fixture
+        if: ${{ steps.decision.outputs.state == 'COLLECT' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: 573aefdbbf2e639d28de18697eb449da85415353
+          path: .external/mobile
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Stage pinned Mobile input fixture
+        if: ${{ steps.decision.outputs.state == 'COLLECT' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ci.yml의 Stage pinned Mobile fixture와 같은 고정 커밋·입력 팩 sha256이다(workflow 계약 테스트가 두 곳의 일치를 본다).
+          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          cp -a "${source}" apps/mobile
+      - name: Rebind derived ITX bindings
+        if: ${{ steps.decision.outputs.state == 'COLLECT' }}
+        run: |
+          set -euo pipefail
+          # 승격 근거를 다시 확인한 뒤 입력 팩에 새 topology를 적용해 증거·버전 증거·후보 build spec 결속·alignment fixture를 새 원천에 맞춘다.
+          node tools/datapack/rebind-itx-promotion.mjs --repository-root "${GITHUB_WORKSPACE}" --build-now "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
       - name: Mint App token for the promotion pull request
         id: app-token-pr
         if: ${{ steps.decision.outputs.state == 'COLLECT' }}
@@ -167,7 +212,7 @@ jobs:
           owner: AquilaXk
           repositories: easysubway-data
           permission-pull-requests: write
-      - name: Commit exactly four promotion outputs and open draft PR
+      - name: Commit exactly the promotion and rebinding outputs and open draft PR
         if: ${{ steps.decision.outputs.state == 'COLLECT' }}
         env:
           APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
@@ -177,9 +222,10 @@ jobs:
           contract="tools/datapack/itx-cheongchun-coverage-contract.json"
           artifact_id="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).sourceTimetableArtifact.artifactId)' "${contract}")"
           [[ "${artifact_id}" =~ ^itx-cheongchun-source-timetable-[0-9]{17}$ ]] || { echo "promoted artifact identity is invalid" >&2; exit 1; }
-          paths=("${contract}" "tools/datapack/sources/${artifact_id}.json" "tools/datapack/sources/${artifact_id}-completeness-evidence.json" "tools/datapack/sources/${artifact_id}-promotion-gate.json")
+          # 허용 경로의 정본은 증거 단계 코드 한 곳이다(원천 승격 4 + 재결속 8). 정확히 이 집합만 바뀌어야 한다.
+          mapfile -t paths < <(node -e 'import("./tools/ci/automation-pr-evidence.mjs").then(({ itxPromotionAllowedPaths }) => process.stdout.write(`${itxPromotionAllowedPaths(process.argv[1]).join("\n")}\n`))' "${artifact_id}")
           mapfile -t changed < <(git status --porcelain=v1 | sed -E 's/^.. //')
-          [[ "${#changed[@]}" == "4" ]] || { echo "promotion changed an unsupported path count" >&2; exit 1; }
+          [[ "${#changed[@]}" == "${#paths[@]}" ]] || { echo "promotion changed an unsupported path count" >&2; exit 1; }
           for file in "${paths[@]}"; do printf '%s\n' "${changed[@]}" | grep -Fqx "${file}" || { echo "promotion changed an unsupported path" >&2; exit 1; }; done
           base_sha="$(git rev-parse HEAD)"
           branch="automation/977-itx-promotion-${GITHUB_RUN_ID}"

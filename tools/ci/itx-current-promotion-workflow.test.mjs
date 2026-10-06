@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -14,8 +15,8 @@ const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#"))
 const COLLECT = "${{ steps.decision.outputs.state == 'COLLECT' }}";
 const DECISION = "Decide whether ITX promotion is due";
 
-// F5: 승격 PR만으로는 required CI가 green이 되지 않는다. 재결속 자동화(#979)가 병합되기 전에는 정기 실행 변수를 켜지 않는다.
-test("정기 실행 변수는 재결속 자동화 이슈(#979)가 닫히기 전에는 켜지 않는다고 workflow가 스스로 밝힌다", () => {
+// F5 → #979: 재결속은 같은 job에서 끝나지만 raw capture 원장 등록이 남아 있어 정기 실행 변수는 QA 결정 전까지 켜지 않는다.
+test("정기 실행 변수는 남은 항목 처리와 QA 결정 전에는 켜지 않는다고 workflow가 스스로 밝힌다", () => {
   const header = yml.split("\n").filter((line) => line.startsWith("#")).join("\n");
   assert.match(header, /#979/u);
   assert.match(header, /DATAPACK_SCHEDULED_ITX_PROMOTION[^\n]*켜지 않는다/u);
@@ -74,19 +75,23 @@ test("수집·게이트·승격·브랜치·PR 생성은 모두 COLLECT일 때�
     "Replay retained capture offline",
     "Evaluate promotion gate",
     "Promote the gated candidate",
+    "Checkout pinned Mobile input fixture",
+    "Stage pinned Mobile input fixture",
+    "Rebind derived ITX bindings",
     "Mint App token for the promotion pull request",
-    "Commit exactly four promotion outputs and open draft PR",
+    "Commit exactly the promotion and rebinding outputs and open draft PR",
   ]) {
     assert.equal(ifCondition(step(name).block), COLLECT, name);
   }
 });
 
-test("순서: 준비 -> 예산 가드 -> 수집 -> 오프라인 replay -> 게이트 -> 승격 -> App 토큰 -> 커밋·PR", () => {
+test("순서: 준비 -> 예산 가드 -> 수집 -> 오프라인 replay -> 게이트 -> 승격 -> fixture -> 재결속 -> App 토큰 -> 커밋·PR", () => {
   const names = steps().map(({ name }) => name);
   const order = [
     DECISION, "Prepare current ITX promotion", "Guard KST quota window", "Collect current ITX timetable", "Replay retained capture offline",
-    "Evaluate promotion gate", "Promote the gated candidate", "Mint App token for the promotion pull request",
-    "Commit exactly four promotion outputs and open draft PR",
+    "Evaluate promotion gate", "Promote the gated candidate", "Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture",
+    "Rebind derived ITX bindings", "Mint App token for the promotion pull request",
+    "Commit exactly the promotion and rebinding outputs and open draft PR",
   ];
   const indexes = order.map((name) => names.indexOf(name));
   assert.ok(indexes.every((index) => index !== -1), indexes.join(","));
@@ -131,7 +136,7 @@ test("승격은 승인 코멘트 없이 게이트 경로로만 돌고, 수동 �
 
 test("App 토큰은 PR 생성 바로 앞 step에서 같은 조건으로 받고 push만 GITHUB_TOKEN이다", () => {
   const all = steps();
-  const create = all.findIndex(({ name }) => name === "Commit exactly four promotion outputs and open draft PR");
+  const create = all.findIndex(({ name }) => name === "Commit exactly the promotion and rebinding outputs and open draft PR");
   const token = all[create - 1];
   assert.equal(token.name, "Mint App token for the promotion pull request");
   assert.match(token.block, /\n        id: app-token-pr\n/u);
@@ -143,10 +148,12 @@ test("App 토큰은 PR 생성 바로 앞 step에서 같은 조건으로 받고 p
   assert.match(block, /GH_TOKEN="\$\{APP_PR_TOKEN\}" gh pr create --repo "\$\{GITHUB_REPOSITORY\}" --draft --base main --head "\$\{branch\}"/u);
 });
 
-test("커밋은 허용된 네 경로만 명시적으로 스테이징하고 push·본문 생성·PR 생성 순서다", () => {
-  const { block } = step("Commit exactly four promotion outputs and open draft PR");
+test("커밋은 증거 단계 코드가 정한 허용 경로만 명시적으로 스테이징하고 push·본문 생성·PR 생성 순서다", () => {
+  const { block } = step("Commit exactly the promotion and rebinding outputs and open draft PR");
   assert.doesNotMatch(block, /git add (-A|--all|\.)(\s|$)/u);
-  assert.match(block, /\[\[ "\$\{#changed\[@\]\}" == "4" \]\]/u);
+  // 허용 경로의 정본은 automation-pr-evidence의 itxPromotionAllowedPaths 한 곳이고, 바뀐 경로 집합이 정확히 그것이어야 한다.
+  assert.match(block, /itxPromotionAllowedPaths\(process\.argv\[1\]\)/u);
+  assert.match(block, /\[\[ "\$\{#changed\[@\]\}" == "\$\{#paths\[@\]\}" \]\]/u);
   assert.match(block, /tools\/datapack\/itx-cheongchun-coverage-contract\.json/u);
   const add = block.indexOf('git add "${paths[@]}"');
   const commit = block.indexOf("git commit");
@@ -199,7 +206,7 @@ test("신선도가 이미 끊긴 뒤의 복구 수집은 PR을 연 뒤 실패로
   const lapsed = step("Surface a lapsed freshness");
   assert.equal(ifCondition(lapsed.block), "${{ steps.decision.outputs.state == 'COLLECT' && steps.decision.outputs.lapsed == 'true' }}");
   const names = steps().map(({ name }) => name);
-  assert.ok(names.indexOf("Commit exactly four promotion outputs and open draft PR") < names.indexOf(lapsed.name));
+  assert.ok(names.indexOf("Commit exactly the promotion and rebinding outputs and open draft PR") < names.indexOf(lapsed.name));
   assert.match(lapsed.block, /exit 1/u);
 });
 
@@ -222,4 +229,22 @@ test("게이트 차단·수집 실패·CI 실패·방치는 job을 실패시키�
 test("이 workflow는 workflow dispatch를 호출하지 않고 run 스크립트에 표현식을 직접 넣지 않는다", () => {
   assert.doesNotMatch(yml, /gh workflow run|\/dispatches|repository_dispatch|actions: write/u);
   assertNoExpressionInRunScripts({ steps, file: FILE });
+});
+
+// #979: 승격 뒤 파생 재결속. fixture는 CI와 같은 고정 입력이어야 하고, 재결속은 승격 직후·PR 생성 전에 돈다.
+test("재결속은 CI와 같은 고정 mobile 입력 fixture에서 돌고 증거·spec·fixture를 PR에 포함한다", () => {
+  const ci = readFileSync(path.resolve(import.meta.dirname, "../../.github/workflows/ci.yml"), "utf8");
+  const pin = (text, key) => new RegExp(`${key}="?([0-9a-f]{40,64})"?`, "u").exec(text)?.[1];
+  const stage = step("Stage pinned Mobile input fixture").block;
+  const ciStage = /- name: Stage pinned Mobile fixture[\s\S]*?\n      - name:/u.exec(ci)[0];
+  assert.equal(pin(stage, "expected_revision"), pin(ciStage, "expected_revision"));
+  assert.equal(pin(stage, "expected_sha256"), pin(ciStage, "expected_sha256"));
+  assert.match(step("Checkout pinned Mobile input fixture").block, new RegExp(`ref: ${pin(ciStage, "expected_revision")}\n`, "u"));
+  assert.match(step("Checkout pinned Mobile input fixture").block, /persist-credentials: false/u);
+  for (const name of ["Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture", "Rebind derived ITX bindings"]) {
+    assert.equal(ifCondition(step(name).block), COLLECT, name);
+  }
+  const rebind = step("Rebind derived ITX bindings").block;
+  assert.match(rebind, /node tools\/datapack\/rebind-itx-promotion\.mjs --repository-root "\$\{GITHUB_WORKSPACE\}" --build-now "\$\(date -u \+%Y-%m-%dT%H:%M:%S\.000Z\)"/u);
+  assert.doesNotMatch(rebind, /continue-on-error|\|\| true|DATA_GO_KR_SERVICE_KEY/u);
 });
