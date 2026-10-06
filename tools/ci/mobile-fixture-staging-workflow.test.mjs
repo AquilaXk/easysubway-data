@@ -12,11 +12,12 @@ const ownership = JSON.parse(
   readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
-const ciMobileRevision = "4d419569a914883bd98f4f5cfd4e1d6d217c8f66";
-const ciCapitalGzipSha256 = "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208";
-const releaseMobileRevision = "4d419569a914883bd98f4f5cfd4e1d6d217c8f66";
-const releaseCapitalGzipSha256 = "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208";
-const releaseIndexSha256 = "7e5ca038a1803a0e20eb0a663f2b05d0c89bfca31fea5cb192a11e97aae6cdbb";
+// #979: fixture 커밋은 ITX topology 적용 전 입력 팩을 담고, 출력 팩은 staging 뒤 커밋된 증거에서 파생한다.
+const ciMobileRevision = "573aefdbbf2e639d28de18697eb449da85415353";
+const ciCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
+const releaseMobileRevision = "573aefdbbf2e639d28de18697eb449da85415353";
+const releaseCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
+const releaseIndexSha256 = "a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf";
 const releaseSourceInventorySha256 = "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2";
 
 function namedWorkflowStep(yml, name) {
@@ -71,7 +72,7 @@ function fixtureStep(workflow) {
   test(`${workflow}: pinned Mobile fixture는 immutable checkout을 credentials 없이 수행한다`, () => {
     const { yml, block, stage } = fixtureStep(workflow);
     assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
-    assert.match(block, new RegExp(`ref:\\s*${ciMobileRevision}`));
+    assert.match(block, /ref:\s*data-fixture\/itx-979\n/); // 커밋 고정은 아래 stage의 rev-parse가, 커밋이 사라지지 않게 붙드는 것은 태그가 맡는다(#980 F6)
     assert.match(block, /path:\s*\.external\/mobile/);
     assert.match(block, /persist-credentials:\s*false/);
     assert.match(block, /fetch-depth:\s*0/);
@@ -304,7 +305,7 @@ function assertPinnedFixtureJob(job, timeoutMinutes = 30) {
   assert.match(repository, /ref:\s*\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(repository, /persist-credentials:\s*false/);
   assert.match(fixture, new RegExp(`repository:\\s*${mobileRepository}`));
-  assert.match(fixture, new RegExp(`ref:\\s*${ciMobileRevision}`));
+  assert.match(fixture, /ref:\s*data-fixture\/itx-979\n/);
   assert.match(fixture, /path:\s*\.external\/mobile/);
   assert.match(fixture, /persist-credentials:\s*false/);
   assert.match(fixture, /fetch-depth:\s*0/);
@@ -425,7 +426,7 @@ test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture
 
   assert.match(block, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
   assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
-  assert.match(block, new RegExp(`ref:\\s*${releaseMobileRevision}`));
+  assert.match(block, /ref:\s*data-fixture\/itx-979\n/);
   assert.match(block, /path:\s*\.external\/mobile/);
   assert.match(block, /persist-credentials:\s*false/);
   assert.match(block, /fetch-depth:\s*0/);
@@ -491,4 +492,107 @@ test("#942 required CI 테스트 job은 후보 고정 입력 공개 읽기 경�
     assert.match(guard, /\[\[ "\$\{EASYSUBWAY_DATA_PACK_BASE_URL:-\}" =~ \^https:\/\/\[\^\[:space:\]\]\+\$ \]\] \|\| \{ [^}]*exit 1; \}/u, id);
     assert.ok(job.indexOf("Require public candidate input base URL") < job.indexOf("data-test-discovery.mjs run --class required-pr"), id);
   }
+});
+
+// #979: ITX-청춘 승격마다 mobile 커밋·workflow pin을 바꾸지 않는다. fixture는 ITX topology 적용 전 입력 팩으로 고정하고,
+// staging 뒤 커밋된 승인 원천에서 같은 팩을 파생해 커밋된 증거와 대조한다.
+test("모든 Data contracts job은 Node 설정 뒤 fixture 검증 전에 ITX topology를 입력 팩에서 파생한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  for (const id of contractJobIds) {
+    const job = namedJob(ci, id);
+    const derive = namedWorkflowStep(job, "Derive ITX-청춘 topology into the staged Mobile fixture");
+    assert.match(derive, /\n        run: \|\n          set -euo pipefail\n/);
+    assert.match(derive, /^          node tools\/datapack\/apply-itx-topology-to-bundled-pack\.mjs --derive-fixture apps\/mobile$/m);
+    assert.doesNotMatch(derive, /continue-on-error|\|\| true/);
+    assertWorkflowStepOrder(job, [
+      "Stage pinned Mobile fixture",
+      "Set up Node.js",
+      "Derive ITX-청춘 topology into the staged Mobile fixture",
+      "Require public candidate input base URL",
+    ]);
+  }
+  const mobile = namedJob(ci, "contracts_mobile_v19");
+  assertWorkflowStepOrder(mobile, [
+    "Derive ITX-청춘 topology into the staged Mobile fixture",
+    "Verify current Mobile v19 ITX topology evidence",
+    "Verify and run current Mobile v19 owned required tests",
+    "Re-verify current Mobile fixture for owned tests",
+  ]);
+});
+
+test("파생된 팩의 기대 sha256은 workflow가 아니라 커밋된 증거가 정한다(승격마다 workflow를 고치지 않는다)", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const reverify = namedWorkflowStep(ci, "Re-verify current Mobile fixture for owned tests");
+  assert.match(reverify, /expected_target_sha256="\$\(node -p "JSON\.parse\(require\('node:fs'\)\.readFileSync\('tools\/datapack\/itx-cheongchun-topology-evidence\.json', 'utf8'\)\)\.pack\.outputSha256"\)"/);
+  assert.match(reverify, /\[\[ "\$\{target_sha256\}" == "\$\{expected_target_sha256\}" \]\]/);
+  assert.match(reverify, /\[\[ "\$\{source_sha256\}" == "\$\{expected_sha256\}" \]\]/);
+  const evidence = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
+  // workflow·manifest·테스트 어디에도 파생 출력 팩 sha256 literal이 없다.
+  for (const file of [".github/workflows/ci.yml", ".github/workflows/datapack-release.yml", "tools/ci/data-test-ownership.json", "tools/ci/mobile-fixture-staging-workflow.test.mjs", "tools/ci/stage-local-mobile-fixture.mjs"]) {
+    assert.equal(readFileSync(path.join(root, file), "utf8").includes(evidence.pack.outputSha256), false, `${file} must not pin the derived output pack`);
+  }
+  // 입력 pin은 coverage contract의 입력 팩 식별과 mobile fixture 입력 sha가 같아야 한다.
+  const contract = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+  assert.equal(contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.sha256, ciCapitalGzipSha256);
+  assert.equal(evidence.pack.inputSha256, ciCapitalGzipSha256);
+  const fixture = ownership.fixtures.mobile.requiredFiles.find(({ path: file }) => file === "assets/datapacks/capital.sqlite.gz");
+  assert.deepEqual(fixture.derivedProfileSha256, {
+    "mobile-v19": { jsonPath: "tools/datapack/itx-cheongchun-topology-evidence.json", pointer: ["pack", "outputSha256"] },
+  });
+});
+
+test("Data Pack Release도 deterministic-release 전에 같은 방식으로 파생하고 CI와 같은 Node 런타임을 쓴다", () => {
+  const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
+  const derive = namedWorkflowStep(release, "Data Pack Release / Derive ITX-청춘 topology into the staged Mobile fixture");
+  assert.match(derive, /^          node tools\/datapack\/apply-itx-topology-to-bundled-pack\.mjs --derive-fixture apps\/mobile$/m);
+  assert.ok(derive.includes("if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}"));
+  assertWorkflowStepOrder(release, [
+    "Data Pack Release / Stage pinned Mobile fixture",
+    "Data Pack Release / Derive ITX-청춘 topology into the staged Mobile fixture",
+    "Data Pack Release / Validate ITX-청춘 coverage contract",
+  ]);
+  const node = namedWorkflowStep(release, "Data Pack Release / Set up Node.js");
+  assert.match(node, /node-version: "24\.19\.0"/);
+});
+
+// #980 F6: 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 모든 required job의 checkout이 불투명하게 실패하므로,
+// checkout 전에 태그가 기대 커밋을 가리키는지 먼저 확인해 원인을 드러낸다. 보호 규칙 대신 CI가 존재를 검사한다.
+const fixtureTag = "data-fixture/itx-979";
+const verifyRefStep = "Verify pinned Mobile fixture ref exists";
+
+function assertFixtureRefGuard(yml, { verifyName, checkoutName, where }) {
+  const verify = namedWorkflowStep(yml, verifyName);
+  assert.match(verify, new RegExp(`git ls-remote https://github\\.com/${mobileRepository}\\.git 'refs/tags/${fixtureTag}\\^\\{\\}'`), `${where}: peeled tag를 조회해야 함`);
+  assert.ok(verify.includes(`"${ciMobileRevision}"`), `${where}: 기대 커밋`);
+  assert.match(verify, /do not delete or move this tag/u);
+  assert.match(verify, /set -euo pipefail/u);
+  const checkout = namedWorkflowStep(yml, checkoutName);
+  assert.match(checkout, new RegExp(`ref:\\s*${fixtureTag}\\n`, "u"), `${where}: checkout은 태그 ref를 쓴다`);
+  assert.ok(yml.indexOf(`- name: ${verifyName}`) < yml.indexOf(`- name: ${checkoutName}`), `${where}: 존재 검사는 checkout보다 앞서야 함`);
+}
+
+test("모든 Data contracts job은 fixture checkout 전에 고정 태그의 존재와 커밋을 검사하고 태그 ref로 checkout한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  for (const id of contractJobIds) {
+    assertFixtureRefGuard(namedJob(ci, id), { verifyName: verifyRefStep, checkoutName: "Checkout pinned Mobile fixture", where: id });
+  }
+});
+
+test("Data Pack Release와 ITX 승격 workflow도 같은 태그 존재 검사를 checkout 앞에 둔다", () => {
+  const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
+  assertFixtureRefGuard(release, { verifyName: `Data Pack Release / ${verifyRefStep}`, checkoutName: "Data Pack Release / Checkout pinned Mobile fixture", where: "datapack-release" });
+  const releaseVerify = namedWorkflowStep(release, `Data Pack Release / ${verifyRefStep}`);
+  assert.ok(releaseVerify.includes("if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}"));
+  const promotion = readFileSync(path.join(root, ".github/workflows/itx-current-promotion.yml"), "utf8");
+  assertFixtureRefGuard(promotion, { verifyName: verifyRefStep, checkoutName: "Checkout pinned Mobile input fixture", where: "itx-current-promotion" });
+});
+
+// #980 F7: 도구 주석이 가리키는 workflow step은 실제로 있는 이름이어야 하고, --derive-fixture 옵션은 한 번만 읽어 변수가 갈라지지 않는다.
+test("apply-itx 도구의 주석은 실제 derive step 이름을 가리키고 --derive-fixture는 한 번만 읽는다", () => {
+  const tool = readFileSync(path.join(root, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"), "utf8");
+  const stepName = "Derive ITX-청춘 topology into the staged Mobile fixture";
+  assert.ok(tool.includes(`(${stepName})`), "주석이 실제 step 이름을 적어야 함");
+  assert.equal(tool.includes("derive-itx-mobile-fixture"), false);
+  assert.ok(readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8").includes(`- name: ${stepName}`));
+  assert.equal((tool.match(/option\("--derive-fixture"/gu) ?? []).length, 1);
 });

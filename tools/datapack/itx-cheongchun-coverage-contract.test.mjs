@@ -9,6 +9,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 
+import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 import { resolveItxStationCatalogEvidenceTarget } from "./lib/itx-release-evidence-target.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -185,7 +186,7 @@ test("ITX-청춘 admission contract는 날짜·OD matrix·양방향 completeness
   });
 });
 
-test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 그대로 보존한다", async () => {
+test("ITX-청춘 current source artifact는 승격 근거(승인 또는 게이트)와 admission bytes를 그대로 보존한다", async () => {
   const reference = contract.sourceTimetableArtifact;
   assert.equal(reference.status, "ADMITTED");
   assert.equal(reference.admissionEligible, true);
@@ -197,13 +198,12 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
     `tools/datapack/sources/${reference.artifactId}-completeness-evidence.json`,
   );
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
-  assert.deepEqual(reference.promotion, {
-    mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
-    previousArtifactSha256: "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260930163854026.json",
-    approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5981684543",
-    approvedArtifactSha256: "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189",
-  });
+  // #979: 승격마다 바뀌는 값은 literal이 아니라 contract에서 읽는다. 승격 근거는 두 모드 중 하나이고 각자 구조·근거가 검증된다.
+  assert.ok(isCurrentItxPromotionMode(reference.promotion.mode), reference.promotion.mode);
+  assert.ok(hasCurrentItxPromotionIdentity(reference), "승격 근거 구조");
+  assert.doesNotThrow(() => verifyCurrentItxPromotion({ reference, repositoryRoot: root }));
+  assert.match(reference.promotion.previousArtifactPath, /^tools\/datapack\/sources\/itx-cheongchun-source-timetable-\d{17}\.json$/u);
+  assert.notEqual(reference.promotion.previousArtifactSha256, reference.sha256);
 
   const previousBytes = await readFile(new URL(`../../${reference.promotion.previousArtifactPath}`, import.meta.url));
   assert.equal(
@@ -226,7 +226,7 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.deepEqual(completeness.selectedServiceDates, artifact.selectedServiceDates);
   assert.equal(artifact.artifactId, reference.artifactId);
   assert.equal(artifact.artifactKind, "itx-cheongchun-source-timetable");
-  // #938: 2026-10-04 수집분은 직전 승인 원천(11ba30b4) 대비 모든 집합 변화가 0이라 SUPPORTED다(QA 승인 #636 issuecomment-5981684543).
+  // 승인 원천(#938)과 게이트 승격 모두 직전 원천 대비 차단된 요일이 없어야 SUPPORTED다.
   assert.equal(artifact.promotionStatus, "SUPPORTED");
   assert.equal(artifact.snapshotDiff.status, "SUPPORTED");
   assert.equal(artifact.snapshotDiff.previousArtifactSha256, reference.promotion.previousArtifactSha256);
@@ -235,7 +235,7 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
   assert.deepEqual(artifact.normalizedSnapshotSets.map(({ dayCd }) => dayCd).sort(), expectedDayCds);
   assert.deepEqual([...diffByDay.keys()].sort(), expectedDayCds);
   const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
-  // QA 승인 체크포인트(#938): 평일(8)·토(7)·일(9) 모두 변화가 없어 차단되지 않았다.
+  // 평일(8)·토(7)·일(9) 모두 차단되지 않았다.
   const expectedBlockedByDay = { "7": false, "8": false, "9": false };
   for (const { dayCd, sets } of artifact.normalizedSnapshotSets) {
     const diff = diffByDay.get(dayCd);
@@ -250,14 +250,24 @@ test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 �
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20261006", "7": "20261010", "9": "20261011" });
+  // 운행일은 요일 구분(8 평일·7 토·9 일)과 일치하고 신선도 경계는 마지막 운행일 다음 날 00:00(Asia/Seoul)이다.
+  const weekdayOf = (serviceDate) => new Date(Date.UTC(+serviceDate.slice(0, 4), +serviceDate.slice(4, 6) - 1, +serviceDate.slice(6, 8))).getUTCDay();
+  assert.deepEqual(Object.keys(artifact.selectedServiceDates).sort(), ["7", "8", "9"]);
+  assert.ok(weekdayOf(artifact.selectedServiceDates["8"]) >= 1 && weekdayOf(artifact.selectedServiceDates["8"]) <= 5);
+  assert.equal(weekdayOf(artifact.selectedServiceDates["7"]), 6);
+  assert.equal(weekdayOf(artifact.selectedServiceDates["9"]), 0);
+  const lastServiceDate = Object.values(artifact.selectedServiceDates).sort().at(-1);
+  const nextDay = new Date(Date.UTC(+lastServiceDate.slice(0, 4), +lastServiceDate.slice(4, 6) - 1, +lastServiceDate.slice(6, 8) + 1)).toISOString().slice(0, 10);
+  assert.equal(reference.freshUntil, `${nextDay}T00:00:00+09:00`);
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
       ["down", "up"],
     );
   }
-  assert.equal(artifact.stationSequences.filter(({ trainNumber }) => trainNumber === "2035").length, 1);
+  // 같은 요일의 같은 열차번호는 한 번만 나온다(중복 적재 없음).
+  const trainKeys = artifact.stationSequences.map(({ dayCd, trainNumber }) => `${dayCd}:${trainNumber}`);
+  assert.equal(new Set(trainKeys).size, trainKeys.length);
   assert.doesNotMatch(
     artifactBytes.toString("utf8"),
     /serviceKey(?:=|["']?\s*:)|KRIC_SERVICE_KEY|DATA_GO_KR_SERVICE_KEY/i,

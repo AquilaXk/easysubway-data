@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { bindBuildSpecToCurrentItx } from "./test-fixtures/current-itx-bound-build-spec.mjs";
 import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 
 import {
@@ -1084,6 +1085,12 @@ test("expired historical ITX admission은 current source admission으로 재사�
   }), /identity mismatch|stale/);
 });
 
+// ITX 원천의 수집 시각(artifactId의 UTC stamp YYYYMMDDHHmmssSSS). 승격마다 바뀌는 시계를 literal로 박지 않기 위해 쓴다(#979).
+function itxObservedAtMillis(contract) {
+  const stamp = contract.sourceTimetableArtifact.artifactId.slice("itx-cheongchun-source-timetable-".length);
+  return Date.UTC(+stamp.slice(0, 4), +stamp.slice(4, 6) - 1, +stamp.slice(6, 8), +stamp.slice(8, 10), +stamp.slice(10, 12), +stamp.slice(12, 14), +stamp.slice(14, 17));
+}
+
 test("tracked current source topology evidence는 expired overlay 없이 exact admission을 만든다", async () => {
   const [buildSpec, contract, fixture] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
@@ -1091,18 +1098,22 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
   assert.equal(Object.hasOwn(buildSpec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
-  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const topology = await validateTrackedItxTopologyEvidence(await bindBuildSpecToCurrentItx(buildSpec, root), fixture);
   const expectedItxEdgeCount = topology.evidence.topology.edgeCount;
-  contract.sourceTimetableArtifact.promotion.approvalUrl =
-    "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123";
+  // 승인 승격이면 승인 URL이 근거이고, 게이트 승격이면 커밋된 영수증이 근거다(작업 트리 영수증을 다시 계산한다).
+  if (contract.sourceTimetableArtifact.promotion.mode === "CURRENT_CANDIDATE_OWNER_APPROVED") {
+    contract.sourceTimetableArtifact.promotion.approvalUrl =
+      "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123";
+  }
   assert.equal(
     fixture.packs.find(({ id }) => id === "capital").networkEdges
       .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length,
     expectedItxEdgeCount,
   );
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  // 승격마다 바뀌는 시각이라 literal 대신 현재 승인 원천의 수집 시각에서 도출한다: 관측 직후부터 신선도 경계 전까지만 유효하다.
   const evaluationAt = new Date(Math.min(
-    Date.parse(buildSpec.publishedAt),
+    Math.max(Date.parse(buildSpec.publishedAt), itxObservedAtMillis(contract) + 1_000),
     Date.parse(contract.sourceTimetableArtifact.freshUntil) - 1_000,
   ));
   process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = evaluationAt.toISOString();
@@ -1124,7 +1135,7 @@ test("tracked current source admission은 review-required approval identity muta
     readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
-  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const topology = await validateTrackedItxTopologyEvidence(await bindBuildSpecToCurrentItx(buildSpec, root), fixture);
   const cases = [
     ["missing-url", (reference) => { reference.promotion.approvalUrl = ""; }],
     ["wrong-approved-sha", (reference) => { reference.promotion.approvedArtifactSha256 = "0".repeat(64); }],
@@ -1154,10 +1165,10 @@ test("tracked current source admission은 게이트 승격을 커밋된 영수�
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
-  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const topology = await validateTrackedItxTopologyEvidence(await bindBuildSpecToCurrentItx(buildSpec, root), fixture);
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
-  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-10-05T00:00:00.000Z";
   const gated = await createGatedPromotionRoot();
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = new Date(itxObservedAtMillis(gated.contract) + 1_000).toISOString();
   context.after(async () => {
     await gated.cleanup();
     if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;

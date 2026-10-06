@@ -320,6 +320,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/977",
       "title": "[CI] ITX-청춘 원천 승격을 QA 승인 코멘트 없이 자동 이상 판정 게이트로 전환 (#870 전체 자동화 3단계)"
     },
+    "data979": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/979",
+      "title": "[CI] ITX 승격 뒤 파생 재결속(literal 테스트·topology 입력 허용 목록·증거와 팩·mobile fixture 재핀)과 raw capture 원장 대조 자동화 (#870 3단계 후속)"
+    },
     "data942": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/942",
       "title": "[Fix] PR CI가 커밋된 전국 후보 pin과 현재 원장 head의 일치를 요구해 원천 갱신 PR이 통과하지 못하는 문제"
@@ -345,8 +349,8 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"4d419569a914883bd98f4f5cfd4e1d6d217c8f66\"",
-          "expected_sha256=\"1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208\"",
+          "expected_revision=\"573aefdbbf2e639d28de18697eb449da85415353\"",
+          "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
         ]
@@ -374,9 +378,9 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"4d419569a914883bd98f4f5cfd4e1d6d217c8f66\"",
-          "expected_capital_gzip_sha256=\"1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208\"",
-          "expected_index_sha256=\"7e5ca038a1803a0e20eb0a663f2b05d0c89bfca31fea5cb192a11e97aae6cdbb\"",
+          "expected_revision=\"573aefdbbf2e639d28de18697eb449da85415353\"",
+          "expected_capital_gzip_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
+          "expected_index_sha256=\"a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf\"",
           "expected_source_inventory_sha256=\"69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
@@ -613,6 +617,7 @@
     {"path":"tools/ci/itx-current-promotion-workflow.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":40},
     {"path":"tools/datapack/itx-promotion-gate.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/lib/itx-promotion-authority.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":60},
+    {"path":"tools/datapack/rebind-itx-promotion.test.mjs","semanticOwner":"data979","classes":["required-pr"],"durationMs":5000},
     {"path":"tools/ci/current-capital-topology-registration-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1794},
     {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":85},
@@ -791,7 +796,10 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
+        "mobile-v19": "573aefdbbf2e639d28de18697eb449da85415353"
+      },
+      "profileRef": {
+        "mobile-v19": "data-fixture/itx-979"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -801,7 +809,13 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+            "mobile-v19": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+          },
+          "derivedProfileSha256": {
+            "mobile-v19": {
+              "jsonPath": "tools/datapack/itx-cheongchun-topology-evidence.json",
+              "pointer": ["pack", "outputSha256"]
+            }
           }
         },
         {
