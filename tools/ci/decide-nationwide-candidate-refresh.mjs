@@ -22,13 +22,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, parseCandidateInputManifest } from "../datapack/lib/candidate-input-bundle.mjs";
-import { LEDGER_WRITER_WORKFLOWS, REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
+import { ownPullRequestsByBranch, parsePrefixedBranches, pendingLedgerWriterPullRequests, validRepository } from "./automation-pr-state.mjs";
+import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 export const CANDIDATE_REFRESH_WORKFLOW = "nationwide-candidate-refresh.yml";
 export const CANDIDATE_REFRESH_CLAIM_PREFIX = REFRESH_CLAIM_PREFIXES[CANDIDATE_REFRESH_WORKFLOW];
-const REPOSITORY = /^[^/\s]+\/[^/\s]+$/u;
 const EVENTS = Object.freeze(["schedule", "workflow_dispatch"]);
-const BRANCH_REF = new RegExp(`^[0-9a-f]{40}\\trefs/heads/(${CANDIDATE_REFRESH_CLAIM_PREFIX.replaceAll("/", "\\/")}[1-9][0-9]*)$`, "u");
 const ROOT = path.resolve(import.meta.dirname, "../..");
 
 function fail(code, detail = "") {
@@ -37,43 +36,14 @@ function fail(code, detail = "") {
 
 /** git ls-remote --heads 출력에서 후보 갱신 브랜치만 읽는다. 다른 형식이 섞이면 실패한다. */
 export function parseCandidateRefreshBranches(text) {
-  if (typeof text !== "string") fail("CANDIDATE_REFRESH_BRANCH_INVALID", "listing is not text");
-  const branches = text.split("\n").filter(Boolean).map((line) => {
-    const match = BRANCH_REF.exec(line);
-    if (!match) fail("CANDIDATE_REFRESH_BRANCH_INVALID", line);
-    return match[1];
-  });
-  if (new Set(branches).size !== branches.length) fail("CANDIDATE_REFRESH_BRANCH_INVALID", "duplicate refs");
-  return branches;
-}
-
-function ownPullRequests(pullRequests, repository) {
-  const byBranch = new Map();
-  for (const item of pullRequests) {
-    if (typeof item?.headRefName !== "string" || !item.headRefName.startsWith(CANDIDATE_REFRESH_CLAIM_PREFIX)
-      || item.baseRefName !== "main" || item.isCrossRepository !== false || item.headRepository?.nameWithOwner !== repository) continue;
-    if (!["OPEN", "CLOSED", "MERGED"].includes(item.state) || !Number.isSafeInteger(item.number) || byBranch.has(item.headRefName)) {
-      fail("CANDIDATE_REFRESH_PR_DUPLICATE", item.headRefName);
-    }
-    byBranch.set(item.headRefName, item);
-  }
-  return byBranch;
-}
-
-function pendingLedgerPullRequests(pullRequests, repository) {
-  const prefixes = LEDGER_WRITER_WORKFLOWS.map((workflow) => REFRESH_CLAIM_PREFIXES[workflow]);
-  return pullRequests
-    .filter((item) => item?.state === "OPEN" && item.baseRefName === "main" && item.isCrossRepository === false
-      && item.headRepository?.nameWithOwner === repository && typeof item.headRefName === "string"
-      && prefixes.some((prefix) => item.headRefName.startsWith(prefix)))
-    .map(({ number }) => number).sort((left, right) => left - right);
+  return parsePrefixedBranches(text, CANDIDATE_REFRESH_CLAIM_PREFIX, (detail) => fail("CANDIDATE_REFRESH_BRANCH_INVALID", detail));
 }
 
 export async function decideNationwideCandidateRefresh({ manifest, readLocal, pullRequests, branches, repository, event } = {}) {
   if (!Array.isArray(pullRequests) || !Array.isArray(branches) || typeof readLocal !== "function"
-    || typeof repository !== "string" || !REPOSITORY.test(repository) || !EVENTS.includes(event)) fail("CANDIDATE_REFRESH_INPUT_INVALID");
+    || !validRepository(repository) || !EVENTS.includes(event)) fail("CANDIDATE_REFRESH_INPUT_INVALID");
 
-  const own = ownPullRequests(pullRequests, repository);
+  const own = ownPullRequestsByBranch(pullRequests, CANDIDATE_REFRESH_CLAIM_PREFIX, repository, (branch) => fail("CANDIDATE_REFRESH_PR_DUPLICATE", branch));
   const open = [...own.values()].filter(({ state }) => state === "OPEN");
   if (open.length > 1) fail("CANDIDATE_REFRESH_PR_DUPLICATE", open.map(({ number }) => `#${number}`).join(", "));
   // 병합된 이전 후보 PR의 브랜치는 남아 있어도 된다. 그 밖에 PR이 없거나 닫힌 브랜치는 정리되지 않은 흔적이다.
@@ -94,7 +64,7 @@ export async function decideNationwideCandidateRefresh({ manifest, readLocal, pu
     stalePaths = stale[1].split(", ");
   }
   if (stalePaths.length === 0) return event === "workflow_dispatch" ? { state: "FORCED" } : { state: "CURRENT" };
-  const blockedBy = pendingLedgerPullRequests(pullRequests, repository);
+  const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository);
   return blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", stalePaths, blockedBy } : { state: "STALE", stalePaths };
 }
 
