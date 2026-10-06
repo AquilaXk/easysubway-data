@@ -23,7 +23,7 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const EVIDENCE_KEYS = Object.freeze(["schemaVersion", "stage", "issue", "runUrl", "baseSha", "headSha", "policy", "sources", "steps", "candidate"]);
 const SOURCE_KEYS = Object.freeze(["sourceId", "snapshotId", "previousSnapshotId", "rawSha256", "contentSha256", "rowDelta", "coverageDelta", "diffStatus"]);
 const STEP_KEYS = Object.freeze(["id", "changed", "paths"]);
-const CANDIDATE_KEYS = Object.freeze(["candidateId", "releaseSequence", "sourceSnapshotSetHash"]);
+const CANDIDATE_KEYS = Object.freeze(["candidateId", "releaseSequence", "sourceSnapshotSetHash", "paths"]);
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
@@ -47,7 +47,9 @@ function validateStep(step) {
 
 function validateCandidate(candidate) {
   if (!hasExactKeys(candidate, CANDIDATE_KEYS) || !text(candidate.candidateId) || !Number.isSafeInteger(candidate.releaseSequence)
-    || candidate.releaseSequence < 1 || !SHA256.test(candidate.sourceSnapshotSetHash)) invalid("candidate");
+    || candidate.releaseSequence < 1 || !SHA256.test(candidate.sourceSnapshotSetHash)
+    || !Array.isArray(candidate.paths) || candidate.paths.length === 0 || candidate.paths.some((entry) => !text(entry))
+    || candidate.paths.some((entry, index) => index > 0 && !(candidate.paths[index - 1] < entry))) invalid("candidate");
 }
 
 const ITX_SOURCE_ID = "itx-cheongchun-source-timetable";
@@ -118,6 +120,15 @@ function evidenceValue({ stage, runUrl, baseSha, headSha, policy, sources, steps
 
 export function automationPrEvidenceBlock(input) {
   return `<!-- ${AUTOMATION_PR_EVIDENCE_MARKER} ${JSON.stringify(evidenceValue(input))} -->`;
+}
+
+/**
+ * 본문의 증거 블록 JSON 페이로드 텍스트(마커와 공백 구분자 사이, 한 글자도 바꾸지 않은 원문). 블록이 정확히 하나가 아니면 null이다.
+ * 2단계 자동 병합 정책(#985)이 CI가 본 블록과 라벨 시점의 블록이 같은지 sha256으로 대조할 때 쓴다.
+ */
+export function automationPrEvidencePayload(body) {
+  const blocks = [...String(body ?? "").matchAll(BLOCK)];
+  return blocks.length === 1 ? blocks[0][1] : null;
 }
 
 /** 블록이 없으면 null. 둘 이상이거나 형식이 어긋나면 실패한다. headSha를 넘기면 블록의 headSha와 같아야 한다(블록이 없으면 실패). */
@@ -280,9 +291,11 @@ export async function main(argv, { write = (chunk) => process.stdout.write(chunk
     const changedPaths = (await readFile(values["changed-paths"], "utf8")).split("\n").filter(Boolean);
     await writeFile(values.output, itxPromotionPullRequestBody({ ...common(), receipt, changedPaths }), { flag: "wx" });
   } else if (command === "candidate-refresh-block") {
-    need("build-spec", "base-sha", "head-sha", "run-url");
+    need("build-spec", "changed-paths", "base-sha", "head-sha", "run-url");
     const { candidateId, releaseSequence, sourceSnapshotSetHash } = await readJson(values["build-spec"]);
-    write(`${candidateRefreshEvidenceBlock({ ...common(), candidate: { candidateId, releaseSequence, sourceSnapshotSetHash } })}\n`);
+    // 후보 PR이 바꾼 경로 전체(#986 F4). 2단계 정책이 API diff와 정확히 대조하고 후보 갱신 도구의 출력 목록 안인지 본다.
+    const paths = [...new Set((await readFile(values["changed-paths"], "utf8")).split("\n").filter(Boolean))].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    write(`${candidateRefreshEvidenceBlock({ ...common(), candidate: { candidateId, releaseSequence, sourceSnapshotSetHash, paths } })}\n`);
   } else {
     fail("AUTOMATION_PR_EVIDENCE_ARGUMENTS");
   }

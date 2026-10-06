@@ -111,6 +111,9 @@ test("후보 PR 본문에는 push한 head와 base(main) 커밋에 결속된 증�
   assert.match(commit, /printf 'CANDIDATE_HEAD_SHA=%s\\n' "\$\(git rev-parse HEAD\)" >> "\$\{GITHUB_ENV\}"/u);
   assert.ok(commit.indexOf("git commit -m") < commit.indexOf("CANDIDATE_HEAD_SHA"), "the head is recorded after the candidate commit");
   const { block } = step("Create candidate refresh pull request");
-  assert.match(block, /node tools\/ci\/automation-pr-evidence\.mjs candidate-refresh-block --build-spec tools\/datapack\/release\/candidate-build-spec\.json --base-sha "\$\{CANDIDATE_BASE_SHA\}" --head-sha "\$\{CANDIDATE_HEAD_SHA\}" --run-url "\$\{GITHUB_SERVER_URL\}\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{GITHUB_RUN_ID\}"/u);
+  assert.match(block, /node tools\/ci\/automation-pr-evidence\.mjs candidate-refresh-block --build-spec tools\/datapack\/release\/candidate-build-spec\.json --changed-paths "\$\{changed_paths\}" --base-sha "\$\{CANDIDATE_BASE_SHA\}" --head-sha "\$\{CANDIDATE_HEAD_SHA\}" --run-url "\$\{GITHUB_SERVER_URL\}\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{GITHUB_RUN_ID\}"/u);
   assert.match(block, /\$\{evidence_block\}/u);
+  // #986 F4: 후보 PR이 바꾼 경로 전체를 증거 블록에 싣는다. 정책이 API diff와 정확히 대조한다.
+  assert.match(block, /changed_paths="\$\{RUNNER_TEMP\}\/candidate-changed-paths\.txt"\n\s+git diff --name-only "\$\{CANDIDATE_BASE_SHA\}" "\$\{CANDIDATE_HEAD_SHA\}" > "\$\{changed_paths\}"/u);
+  assert.ok(block.indexOf("git diff --name-only") < block.indexOf("candidate-refresh-block"));
 });
