@@ -81,8 +81,10 @@ test("이미 있던 행의 원천 식별(sha·행 수·커버리지·직전 연�
 
 test("새 행의 필수 필드·직전 연결·diffSummary가 어긋나면 BINDING_MISMATCH다", () => {
   for (const [label, overrides] of [
-    ["no contentSha256", { contentSha256: undefined }], ["no rowCount", { rowCount: undefined }], ["negative coverage", { coverageCount: -1 }],
-    ["fractional rows", { rowCount: 100.5 }], ["unknown previous", { previousSnapshotId: "ghost" }],
+    ["no contentSha256", { contentSha256: undefined }], ["short rawSha256", { rawSha256: "abc" }], ["no sourceId", { sourceId: undefined }], ["no rowCount", { rowCount: undefined }], ["negative coverage", { coverageCount: -1 }],
+    ["fractional rows", { rowCount: 100.5 }],
+    ["negative coverage with a matching diffSummary", { coverageCount: -1, diffSummary: { status: "CHANGED", rowDelta: 0, coverageDelta: -9 } }],
+    ["negative rows with a matching diffSummary", { rowCount: -1, diffSummary: { status: "CHANGED", rowDelta: -101, coverageDelta: 0 } }], ["unknown previous", { previousSnapshotId: "ghost" }],
     ["diffSummary row delta mismatch", { rowCount: 101, diffSummary: { status: "CHANGED", rowDelta: 0, coverageDelta: 0 } }],
     ["diffSummary coverage delta mismatch", { diffSummary: { status: "NO_CHANGE", rowDelta: 0, coverageDelta: 2 } }],
   ]) assert.ok(codes(evaluate([...BASE, next(overrides)])).includes("BINDING_MISMATCH"), label);
