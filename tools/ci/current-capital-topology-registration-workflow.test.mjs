@@ -1,24 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+
+import { assertFailureReportLast, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
 // #969 P3: 수도권 topology 등록 workflow 계약.
 // 갱신 PR이 병합되면 사람이 dispatch하지 않아도 등록이 PR까지 이어진다. 정기·push 실행은 저장소 변수가 켜졌을 때만 돈다.
 // 판정(REGISTER·RECOVER_CLAIM·OPEN_PR·BLOCKED_BY_PENDING_PR·REGISTERED)이 모든 쓰기 step을 가르고, 이상은 실패 이슈로 드러난다.
-const root = path.resolve(import.meta.dirname, "../..");
 const FILE = "current-capital-topology-registration.yml";
-const yml = readFileSync(path.join(root, ".github/workflows", FILE), "utf8");
-
-function steps() {
-  return yml.split("\n      - name: ").slice(1).map((block) => ({ name: block.split("\n")[0], block }));
-}
-function step(name) {
-  const found = steps().filter((item) => item.name === name);
-  assert.equal(found.length, 1, `step ${name}`);
-  return found[0];
-}
-const ifCondition = (block) => /\n        if: (\$\{\{[^\n]*\}\})/u.exec(block)?.[1] ?? null;
+const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const WRITES = "${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}";
 
 test("트리거: 수도권 topology 활성화 산출 경로 push, 정기 복구 실행, 사람 dispatch(복구 run 입력 유지)", () => {
@@ -72,16 +62,7 @@ test("복구 run id는 사람 입력 또는 판정 결과에서만 받고, produ
 });
 
 test("OPEN_PR이면 App 토큰 → required CI 보장 → 열린 PR 상한 검사 순서로 돈다", () => {
-  const all = steps();
-  const index = (name) => all.findIndex((item) => item.name === name);
-  const token = index("Mint App token for the open refresh pull request");
-  const ensure = index("Ensure required CI on the open refresh pull request");
-  const age = index("Enforce open refresh pull request age limit");
-  const decision = index("Decide whether capital topology registration is needed");
-  assert.ok(decision < token && token < ensure && ensure < age);
-  for (const item of [token, ensure, age]) assert.equal(ifCondition(all[item].block), "${{ steps.decision.outputs.state == 'OPEN_PR' }}");
-  assert.match(all[ensure].block, /node tools\/ci\/refresh-pr-required-ci\.mjs --workflow current-capital-topology-registration\.yml --repository "\$\{GITHUB_REPOSITORY\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
-  assert.match(all[age].block, /node tools\/ci\/refresh-open-pr-age\.mjs --workflow current-capital-topology-registration\.yml --prs "\$\{open_prs\}" --policy release\/product-gates\/datapack-freshness-sla\.json --repository "\$\{GITHUB_REPOSITORY\}" --ci-state "\$\{\{ steps\.required-ci\.outputs\.state \}\}"/u);
+  assertOpenPullRequestSteps({ steps, file: FILE, decisionName: "Decide whether capital topology registration is needed" });
 });
 
 test("다른 원장 쓰기 PR 때문에 기다리는 실행은 이유를 notice로 남기고 아무것도 쓰지 않는다", () => {
@@ -93,10 +74,7 @@ test("다른 원장 쓰기 PR 때문에 기다리는 실행은 이유를 notice�
 
 test("복구 증거 artifact는 게시를 시도한 실행에서만 올리고, 실패 보고가 마지막 step이다", () => {
   assert.equal(ifCondition(step("Retain sanitized publication recovery evidence").block), "${{ always() && (steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM') }}");
-  const report = step("Report refresh failure as an issue");
-  assert.equal(ifCondition(report.block), "${{ failure() }}");
-  assert.ok(report.block.includes('node tools/ci/report-refresh-failure.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"'));
-  assert.equal(yml.trimEnd().endsWith(report.block.trimEnd()), true);
+  assertFailureReportLast({ yml, step, file: FILE });
 });
 
 test("이 workflow는 workflow dispatch를 호출하지 않고 push는 GITHUB_TOKEN, PR 생성만 App 토큰이다", () => {
