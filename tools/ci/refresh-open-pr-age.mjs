@@ -22,6 +22,7 @@ export const REFRESH_CLAIM_PREFIXES = Object.freeze({
   "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
   "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
   "nationwide-candidate-refresh.yml": "automation/927-nationwide-candidate-refresh-",
+  "source-derivative-rebinding.yml": "automation/969-derivative-rebinding-",
 });
 // #969: source-snapshots.json·source-inventory.json에 행을 덧붙이는 자동화 workflow. 이 PR들은 같은 파일을 바꾸므로 동시에 하나만 연다.
 // 후보 갱신은 원장을 쓰지 않아 여기에 넣지 않는다.
@@ -31,6 +32,7 @@ export const LEDGER_WRITER_WORKFLOWS = Object.freeze([
   "retained-gwangju-timetable-refresh.yml",
   "seoul-current-accessibility-refresh.yml",
   "current-capital-topology-registration.yml",
+  "source-derivative-rebinding.yml",
 ]);
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 // refresh-pr-required-ci가 돌려주는 열린 PR의 required CI 상태
