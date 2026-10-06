@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { expandExternalStopTimes } from "./lib/external-stop-times.mjs";
 import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { bindBuildSpecToCurrentItx } from "./test-fixtures/current-itx-bound-build-spec.mjs";
 import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 
 import {
@@ -1091,7 +1092,7 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
   assert.equal(Object.hasOwn(buildSpec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
-  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const topology = await validateTrackedItxTopologyEvidence(await bindBuildSpecToCurrentItx(buildSpec, root), fixture);
   const expectedItxEdgeCount = topology.evidence.topology.edgeCount;
   contract.sourceTimetableArtifact.promotion.approvalUrl =
     "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123";
@@ -1124,7 +1125,7 @@ test("tracked current source admission은 review-required approval identity muta
     readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
-  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const topology = await validateTrackedItxTopologyEvidence(await bindBuildSpecToCurrentItx(buildSpec, root), fixture);
   const cases = [
     ["missing-url", (reference) => { reference.promotion.approvalUrl = ""; }],
     ["wrong-approved-sha", (reference) => { reference.promotion.approvedArtifactSha256 = "0".repeat(64); }],
@@ -1154,7 +1155,7 @@ test("tracked current source admission은 게이트 승격을 커밋된 영수�
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
-  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const topology = await validateTrackedItxTopologyEvidence(await bindBuildSpecToCurrentItx(buildSpec, root), fixture);
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
   process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-10-05T00:00:00.000Z";
   const gated = await createGatedPromotionRoot();

@@ -886,6 +886,7 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
     artifactId: "itx-cheongchun-source-timetable-invalid",
   }), /approved ITX source artifact identity is invalid/);
   const bound = await bindApprovedItxCurrentSourceSpec({
+    repositoryRoot: root,
     baseSpec,
     coverageContractBytes,
     sourceBytes,
@@ -915,6 +916,7 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
   ]), /unknown approved ITX bootstrap argument/);
 
   await assert.rejects(bindApprovedItxCurrentSourceSpec({
+    repositoryRoot: root,
     baseSpec,
     coverageContractBytes,
     sourceBytes,
@@ -927,6 +929,7 @@ test("approved ITX bootstrap은 exact full-source identity만 candidate에 결�
   const tamperedEvidence = Buffer.from(topologyEvidenceBytes);
   tamperedEvidence[tamperedEvidence.length - 2] ^= 1;
   await assert.rejects(bindApprovedItxCurrentSourceSpec({
+    repositoryRoot: root,
     baseSpec,
     coverageContractBytes,
     sourceBytes,

@@ -13,6 +13,7 @@ import {
   validateCurrentItxTopologyEvidencePack,
 } from "./build-route-graph-topology-report.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
+import { bindBuildSpecToCurrentItx } from "./test-fixtures/current-itx-bound-build-spec.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
@@ -20,10 +21,11 @@ stageLocalMobileFixture({ repositoryRoot: root });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const topologyEvidencePath = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
 const currentTopologyEvidence = JSON.parse(await readFile(topologyEvidencePath, "utf8"));
-const currentBuildSpec = JSON.parse(await readFile(
+// #979: 커밋된 spec의 ITX pin은 게시된 후보 입력을 가리키므로 승격 PR에서는 작업 트리 원천과 다를 수 있다. 현재 contract 기준으로 pin을 다시 계산한 사본을 쓴다.
+const currentBuildSpec = await bindBuildSpecToCurrentItx(JSON.parse(await readFile(
   path.join(root, "tools/datapack/release/candidate-build-spec.json"),
   "utf8",
-));
+)), root);
 const emptyItxEdgeSetSha256 = canonicalRideEdgeSetSha256([]);
 
 function buildReport(sqlitePath, pack, admittedItxHash = emptyItxEdgeSetSha256) {
@@ -344,9 +346,7 @@ test("route graph topology report는 current evidence가 pin한 v19 ITX pack만 
   const directory = await mkdtemp(path.join(tmpdir(), "route-graph-admitted-itx-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const sqlitePath = path.join(directory, "capital.sqlite");
-  const candidate = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8",
-  ));
+  const candidate = currentBuildSpec;
   const candidateEvidenceBytes = await readFile(path.join(root, candidate.itxTopologyEvidencePath));
   assert.equal(sha256(candidateEvidenceBytes), candidate.itxTopologyEvidenceSha256);
   const evidenceBytes = await readFile(topologyEvidencePath);
