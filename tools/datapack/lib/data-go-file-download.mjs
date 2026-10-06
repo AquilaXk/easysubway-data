@@ -11,6 +11,17 @@ const PUBLIC_DATA_TYPE_CODE = "PR0051";
 const DATASET_ID_PATTERN = /^[1-9]\d{0,11}$/u;
 const ATCH_FILE_ID_PATTERN = /^FILE_\d+$/u;
 const FILE_DETAIL_SN_PATTERN = /^[1-9]\d*$/u;
+// 실제 응답은 CSV 모두 application/octet-stream이며, 포털이 CSV·XLS(X)로 내려줄 수 있는 형식만 허용한다.
+export const ALLOWED_DATA_GO_FILE_TYPES = Object.freeze([
+  "application/octet-stream",
+  "application/csv",
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+// 지금 원천의 최대 파일은 300KB 미만이다. 포털 응답이 바뀌어도 메모리를 무한히 쓰지 않는다.
+export const MAX_DATA_GO_FILE_BYTES = 16 * 1024 * 1024;
+const HTML_DOCUMENT_START = /^(?:<!doctype\s+html|<html[\s>])/iu;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 
 function sha256(value) {
@@ -119,17 +130,41 @@ export async function resolveDataGoFileDownload(fetchImpl, datasetId) {
   return { datasetId, detailUrl, downloadUrl: downloadUrl.toString() };
 }
 
-export async function downloadDataGoFile(fetchImpl, datasetId) {
+async function readLimitedBody(response, datasetId, maxBytes) {
+  const exceeds = () => new Error(`data.go.kr ${datasetId} file exceeds ${maxBytes} bytes`);
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) throw exceeds();
+  const chunks = [];
+  let received = 0;
+  const reader = response.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    received += chunk.value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel();
+      throw exceeds();
+    }
+    chunks.push(chunk.value);
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function downloadDataGoFile(fetchImpl, datasetId, { maxBytes = MAX_DATA_GO_FILE_BYTES } = {}) {
   const { detailUrl, downloadUrl } = await resolveDataGoFileDownload(fetchImpl, datasetId);
   if (!isCanonicalDataGoDownloadUrl(downloadUrl)) {
     throw new Error(`data.go.kr ${datasetId} download URL is invalid`);
   }
   const response = await requestGet(fetchImpl, downloadUrl, { Referer: detailUrl }, `${datasetId} file`);
-  if ((response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) {
+  const contentType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!ALLOWED_DATA_GO_FILE_TYPES.includes(contentType)) {
+    throw new Error(`data.go.kr ${datasetId} file content-type is not allowed`);
+  }
+  const bytes = await readLimitedBody(response, datasetId, maxBytes);
+  if (bytes.byteLength === 0) throw new Error(`data.go.kr ${datasetId} file is empty`);
+  // 허용된 content-type으로 내려온 오류 페이지(HTML)도 데이터 파일로 받지 않는다.
+  if (HTML_DOCUMENT_START.test(bytes.subarray(0, 512).toString("utf8").replace(/^\ufeff/u, "").trimStart())) {
     throw new Error(`data.go.kr ${datasetId} file is not a data file`);
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength === 0) throw new Error(`data.go.kr ${datasetId} file is empty`);
   return { datasetId, detailUrl, downloadUrl, rawSha256: sha256(bytes), bytes };
 }
 

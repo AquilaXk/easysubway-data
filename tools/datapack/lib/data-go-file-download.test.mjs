@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  ALLOWED_DATA_GO_FILE_TYPES,
   downloadDataGoFile,
   isCanonicalDataGoDownloadUrl,
   parseDataGoDownloadAction,
@@ -152,7 +153,7 @@ test("다운로드 본문이 비었거나 오류 페이지거나 HTTP 오류면 
   })).fetchImpl, "15065526"), /15065526 file is empty/);
   await assert.rejects(downloadDataGoFile((await realPortal({
     files: { FILE_000000003042523: { body: "<html>error</html>", type: "text/html;charset=UTF-8" } },
-  })).fetchImpl, "15065526"), /15065526 file is not a data file/);
+  })).fetchImpl, "15065526"), /15065526 file content-type is not allowed/);
   await assert.rejects(downloadDataGoFile((await realPortal({
     files: { FILE_000000003042523: { body: "x", status: 503 } },
   })).fetchImpl, "15065526"), /15065526 file HTTP 503/);
@@ -236,4 +237,64 @@ test("해석 규칙에 맞지 않는 다른 모양의 다운로드 호출이 하
     parseDataGoDownloadAction(`${html}<a onclick="fn_fileDataDown(&quot;x&quot;)"></a>`.replace("&quot;x&quot;", `"15065526", "${detailPk}", "", "1", "9"`), "15065526"),
     { publicDataPk: "15065526", publicDataDetailPk: detailPk, fileDetailSn: "1" },
   );
+});
+
+test("허용한 content-type(CSV·XLS·octet-stream)만 받고 그 밖이거나 없으면 실패한다", async () => {
+  const fileWith = async (type) => (await realPortal({
+    files: { FILE_000000003042523: { body: "호선,역명\n1,a\n", type } },
+  })).fetchImpl;
+  for (const type of ALLOWED_DATA_GO_FILE_TYPES) {
+    assert.equal((await downloadDataGoFile(await fileWith(`${type}; charset=UTF-8`), "15065526")).bytes.byteLength > 0, true, type);
+  }
+  assert.deepEqual([...ALLOWED_DATA_GO_FILE_TYPES].sort(), [
+    "application/csv",
+    "application/octet-stream",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+  ]);
+  for (const type of ["text/plain", "application/json", "text/html", "application/xml"]) {
+    await assert.rejects(downloadDataGoFile(await fileWith(type), "15065526"), /15065526 file content-type is not allowed/, type);
+  }
+  const noType = async () => new Response("x");
+  const portal = await realPortal();
+  await assert.rejects(downloadDataGoFile(async (url, init) => (
+    new URL(url).pathname === "/cmm/cmm/fileDownload.do" ? noType() : portal.fetchImpl(url, init)
+  ), "15065526"), /file content-type is not allowed/);
+});
+
+test("content-type이 허용돼도 본문이 HTML 문서면 실패한다", async () => {
+  for (const body of ["<!DOCTYPE html><html></html>", "\ufeff  \n<HTML lang=ko>", "<html><body>오류</body></html>", " <!doctype HTML>"]) {
+    await assert.rejects(downloadDataGoFile((await realPortal({
+      files: { FILE_000000003042523: { body } },
+    })).fetchImpl, "15065526"), /15065526 file is not a data file/, body);
+  }
+});
+
+test("본문은 크기 상한을 넘으면 헤더 선언·실제 수신 어느 쪽이든 실패한다", async () => {
+  const body = "a,b\n".repeat(100);
+  const portalFor = async (files) => (await realPortal({ files })).fetchImpl;
+  const ok = await downloadDataGoFile(await portalFor({ FILE_000000003042523: { body } }), "15065526", { maxBytes: body.length });
+  assert.equal(ok.bytes.byteLength, body.length);
+  await assert.rejects(downloadDataGoFile(
+    await portalFor({ FILE_000000003042523: { body } }), "15065526", { maxBytes: body.length - 1 },
+  ), /15065526 file exceeds/);
+  // Content-Length가 거짓이거나 없어도(chunked) 실제로 받은 바이트로 상한을 막는다.
+  const portal = await realPortal();
+  const lying = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return portal.fetchImpl(url, init);
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(body));
+        controller.enqueue(new TextEncoder().encode(body));
+        controller.close();
+      },
+    }), { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  await assert.rejects(downloadDataGoFile(lying, "15065526", { maxBytes: body.length + 10 }), /15065526 file exceeds/);
+  const declared = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return portal.fetchImpl(url, init);
+    return new Response("a", { status: 200, headers: { "content-type": "application/octet-stream", "content-length": "999999999" } });
+  };
+  await assert.rejects(downloadDataGoFile(declared, "15065526"), /15065526 file exceeds/);
 });
