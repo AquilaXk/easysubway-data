@@ -250,7 +250,9 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   assert.match(yml, /^on:\n  schedule:\n    - cron: "[^"]+"\n  workflow_dispatch:\n/mu);
   assert.doesNotMatch(yml, /\n  (push|pull_request|workflow_run):/u);
   // #939: 후보 갱신 PR은 App 토큰으로 열고 CI를 dispatch하지 않는다. 그래서 actions 권한이 없다.
-  assert.match(yml, /\npermissions:\n  contents: write\n  pull-requests: write\n/u);
+  // #969: 권한은 job에만 주고(issues 쓰기는 실패 보고용) workflow dispatch 권한(actions: write)은 여전히 없다.
+  assert.match(yml, /\n    permissions:\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
+  assert.doesNotMatch(yml, /actions: write/u);
   assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(github\.event_name != 'schedule' \|\| vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true'\) \}\}/u);
   assert.match(yml, /cancel-in-progress: false/u);
   assert.match(yml, /persist-credentials: false/u);
@@ -345,8 +347,11 @@ test("candidate chain treats only git diff exit 1 as superseded and fails on any
 test("a failure after the automation branch is pushed closes its PR and deletes the branch (F2)", async () => {
   const yml = workflowText("nationwide-candidate-refresh.yml");
   const cleanup = stepBody(yml, "Remove the candidate refresh branch after a later failure");
-  assert.match(cleanup, /\n        if: \$\{\{ failure\(\) && env\.CANDIDATE_BRANCH != '' \}\}\n/u);
-  assert.equal(yml.trimEnd().endsWith(cleanup.trimEnd()), true, "cleanup runs after every other step");
+  assert.match(cleanup, /\n        if: \$\{\{ \(failure\(\) \|\| cancelled\(\)\) && env\.CANDIDATE_BRANCH != '' \}\}\n/u);
+  // #969: 실패 보고 step만 정리 뒤에 온다(정리가 실패해도 보고가 돈다).
+  const report = stepBody(yml, "Report refresh failure as an issue");
+  assert.equal(yml.trimEnd().endsWith(report.trimEnd()), true, "the failure report is the last step");
+  assert.ok(yml.indexOf(cleanup.trimEnd()) < yml.indexOf("Report refresh failure as an issue"), "cleanup runs after every other step except the failure report");
   const pr = stepBody(yml, "Create candidate refresh pull request");
   assert.match(pr, /printf 'CANDIDATE_PR_URL=%s\\n' "\$\{pr_url\}" >> "\$\{GITHUB_ENV\}"/u);
   assert.match(pr, /set -euo pipefail/u);

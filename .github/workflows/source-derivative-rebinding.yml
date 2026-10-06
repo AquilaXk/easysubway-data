@@ -1,0 +1,217 @@
+name: Source Derivative Rebinding
+
+# 파생 산출물 재결속(#969, #870 전체 자동화 1단계): 원천 등록·재확인이 병합돼 원장 head나 수도권 정본 팩이 바뀌면
+# 그 head에 결속된 파생 산출물(광주 보관 시간표 projection, 부산·서울 환승 지표, 서울 환승 원천 admission)을 다시 만들어 App 토큰 PR로 올린다.
+# - 도구가 멱등이라 controller를 실행해 diff가 없으면 PR도 만들지 않는다(이미 현재 head에 결속돼 있다).
+# - push·정기 실행은 저장소 변수 DATAPACK_SCHEDULED_SOURCE_REBINDING이 true일 때만 돈다. 사람 dispatch는 항상 돈다.
+# - 원장을 쓰는 다른 자동화 PR이 열려 있으면 기다리고, 이 workflow의 열린 PR은 CI·방치 상한을 감시한다.
+# - 이상(결속 불일치·관측 읽기 실패·허용 밖 변경·CI 실패·방치)은 job을 실패시키고 실패 이슈로 드러난다. OCI는 GET만 한다.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/datapack/release/source-snapshots.json
+      - tools/datapack/release/capital-production-canonical-pack.json
+  schedule:
+    - cron: "41 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: source-derivative-rebinding-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rebind:
+    name: Derivative rebinding
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_SCHEDULED_SOURCE_REBINDING == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    environment: datapack-release-check
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Decide whether derivative rebinding may run
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          decision_root="${RUNNER_TEMP}/derivative-rebinding-decision/${GITHUB_RUN_ID}"
+          mkdir -p "${decision_root}"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/969-derivative-rebinding-*" > "${decision_root}/branches.txt"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
+          node tools/ci/decide-derivative-rebinding.mjs --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+      - name: Mint App token for the open refresh pull request
+        id: app-token-open
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Ensure required CI on the open refresh pull request
+        id: required-ci
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PR_TOKEN: ${{ steps.app-token-open.outputs.token }}
+        run: |
+          set -euo pipefail
+          # #939: head에 pull_request CI가 없으면 그 PR만 App으로 닫았다 다시 열어 CI를 실행한다(이미 있으면 아무것도 하지 않는다). #969: CI가 실패했으면 바로 실패한다.
+          node tools/ci/refresh-pr-required-ci.mjs --workflow source-derivative-rebinding.yml --repository "${GITHUB_REPOSITORY}" --github-output "${GITHUB_OUTPUT}"
+      - name: Enforce open refresh pull request age limit
+        if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_STATE: ${{ steps.required-ci.outputs.state }}
+        run: |
+          set -euo pipefail
+          # #939: 열린 재결속 PR이 정책 manualCheckCadence를 넘기면 실패해 실패 보고(report-refresh-failure)로 드러낸다.
+          open_prs="${RUNNER_TEMP}/open-refresh-prs-${GITHUB_RUN_ID}.json"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "${open_prs}"
+          node tools/ci/refresh-open-pr-age.mjs --workflow source-derivative-rebinding.yml --prs "${open_prs}" --policy release/product-gates/datapack-freshness-sla.json --repository "${GITHUB_REPOSITORY}" --ci-state "${CI_STATE}"
+      - name: Note derivative rebinding waiting on a pending source pull request
+        if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
+        env:
+          BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
+        run: |
+          echo "::notice title=Derivative rebinding::waiting for pending source-ledger automation pull request(s) ${BLOCKED_BY}; they write the same ledger files."
+      - name: Remove stale rebinding branches named by the decision
+        if: ${{ steps.decision.outputs.cleanup_branches != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_BRANCHES: ${{ steps.decision.outputs.cleanup_branches }}
+        run: |
+          set -euo pipefail
+          # 이전 실행이 남긴 재결속 브랜치(PR 없음·닫힌 PR)는 사람이 지울 일이 아니다(이슈 #973). 판정이 알린 것만, 열린 PR이 없을 때만 지운다.
+          gh auth setup-git
+          IFS=',' read -r -a stale_branches <<< "${CLEANUP_BRANCHES}"
+          for stale_branch in "${stale_branches[@]}"; do
+            [[ "${stale_branch}" =~ ^automation/969-derivative-rebinding-[1-9][0-9]*$ ]] || { echo "stale rebinding branch name is invalid" >&2; exit 1; }
+            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${stale_branch}" --json number --jq 'length')" == "0" ]] || { echo "stale rebinding branch has an open pull request" >&2; exit 1; }
+            git push origin --delete "${stale_branch}"
+            echo "::notice title=Derivative rebinding::removed stale rebinding branch ${stale_branch}"
+          done
+      - name: Rebind derivative artifacts from the current ledger heads
+        id: rebind
+        if: ${{ steps.decision.outputs.state == 'RUN' }}
+        env:
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          base_sha="$(git rev-parse HEAD)"
+          operation="${RUNNER_TEMP}/derivative-rebinding/${GITHUB_RUN_ID}"
+          mkdir -p "${operation}"
+          node tools/datapack/run-derivative-rebinding.mjs --operation-root "${operation}/operation" > "${operation}/result.json"
+          printf 'REBINDING_BASE_SHA=%s\nREBINDING_RESULT=%s\n' "${base_sha}" "${operation}/result.json" >> "${GITHUB_ENV}"
+          if [[ "$(git rev-list --count "${base_sha}..HEAD")" == "0" ]]; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            # #975 리뷰 F5: controller의 커밋 전체가 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)를 통과해야 PR이 된다.
+            node tools/ci/source-ledger-gate.mjs --base-sha "${base_sha}" --output "${operation}/gate.json"
+            printf 'REBINDING_HEAD_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Note derivative bindings are already current
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'false' }}
+        run: |
+          echo "::notice title=Derivative rebinding::every derivative artifact is already bound to the current ledger heads; no pull request is needed."
+      - name: Recheck that no source-ledger automation is pending before pushing
+        id: recheck
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # controller는 길다(231MB 관측을 받는다). 그 사이 원장을 쓰는 자동화(열린 PR·PR 전의 등록 claim 브랜치)가 시작됐으면 올리지 않고 다음 실행에 맡긴다(#975 리뷰 F6).
+          recheck_root="${RUNNER_TEMP}/derivative-rebinding/${GITHUB_RUN_ID}/recheck"
+          mkdir -p "${recheck_root}"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${recheck_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
+          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow source-derivative-rebinding.yml --github-output "${GITHUB_OUTPUT}"
+      - name: Note rebinding superseded by pending source automation
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'false' }}
+        env:
+          BLOCKED_BY: ${{ steps.recheck.outputs.blocked_by }}
+        run: |
+          echo "::notice title=Derivative rebinding::source-ledger automation (${BLOCKED_BY}) started while the rebinding was running; nothing was pushed and the next run decides again."
+      - name: Verify the rebinding is based on the current main and push its branch
+        id: push
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 재결속은 읽은 main 기준이다. 병합이 연달아 일어나 main이 움직였으면 이 체인에서는 정상 경로다. 올리지 않고 끝내며 새 push·정기 실행이 다시 만든다(#975 리뷰 F4).
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" != "${REBINDING_BASE_SHA}" ]]; then
+            echo "::notice title=Derivative rebinding::main moved from ${REBINDING_BASE_SHA} while the derivative rebinding was running; nothing was pushed and a newer run decides on the new main."
+            echo "pushed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          branch="automation/969-derivative-rebinding-${GITHUB_RUN_ID}"
+          git branch "${branch}" HEAD
+          gh auth setup-git
+          git push origin "${branch}"
+          printf 'REBINDING_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          echo "pushed=true" >> "${GITHUB_OUTPUT}"
+      - name: Note rebinding superseded by a newer main
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'false' }}
+        run: |
+          echo "::notice title=Derivative rebinding::the rebinding was built on an older main and was dropped; the next run rebuilds it."
+      - name: Mint App token for the derivative rebinding pull request
+        id: app-token-pr
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Create derivative rebinding pull request
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}
+        env:
+          APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          body="${RUNNER_TEMP}/derivative-rebinding/${GITHUB_RUN_ID}/pr-body.md"
+          node tools/ci/automation-pr-evidence.mjs derivative-rebinding-body --gate "${RUNNER_TEMP}/derivative-rebinding/${GITHUB_RUN_ID}/gate.json" --result "${REBINDING_RESULT}" --base-sha "${REBINDING_BASE_SHA}" --head-sha "${REBINDING_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${body}"
+          # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          pr_url="$(GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REBINDING_BRANCH}" --title "[Data] 파생 산출물을 현재 원천 head에 다시 결속" --body-file "${body}")"
+          printf 'REBINDING_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
+      - name: Remove the rebinding branch after a later failure
+        if: ${{ (failure() || cancelled()) && env.REBINDING_BRANCH != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # push 뒤 단계(App 토큰 발급·PR 생성)가 실패하면 남은 automation 브랜치와 CI 없는 PR을 정리한다. job은 실패로 남는다.
+          if [[ -n "${REBINDING_PR_URL:-}" ]]; then
+            gh pr close "${REBINDING_PR_URL}" --repo "${GITHUB_REPOSITORY}" --delete-branch --comment "재결속 run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}이 PR 생성 뒤 실패해 이 PR과 브랜치를 정리한다."
+          else
+            git push origin --delete "${REBINDING_BRANCH}"
+          fi
+      - name: Report refresh failure as an issue
+        if: ${{ failure() || cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow source-derivative-rebinding.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
