@@ -10,14 +10,14 @@ const REPOSITORY = "AquilaXk/easysubway-data";
 const BRANCH = "automation/636-current-topology-refresh-37209118635";
 
 test("required CI 상태: rollup에 Data contracts가 있으면 ATTACHED, 같은 head의 pull_request CI가 진행 중이면 PENDING, 그 밖은 MISSING", () => {
-  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts" }], ciRuns: [] }), "ATTACHED");
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts", status: "COMPLETED", conclusion: "SUCCESS" }], ciRuns: [] }), "ATTACHED");
   for (const status of ["queued", "in_progress", "waiting", "requested", "pending"]) {
     assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [], ciRuns: [{ event: "pull_request", headSha: HEAD, status, conclusion: "" }] }), "PENDING", status);
   }
   // 승인 대기로 끝난 run(action_required), 다른 head, dispatch run은 CI가 붙은 것으로 보지 않는다.
   assert.equal(requiredCiState({
     headSha: HEAD,
-    rollupContexts: [{ name: "CodeQL" }, { context: "Data contracts (shard 1/4)" }],
+    rollupContexts: [{ name: "CodeQL", status: "COMPLETED", conclusion: "SUCCESS" }, { context: "Data contracts (shard 1/4)", state: "SUCCESS" }],
     ciRuns: [
       { event: "pull_request", headSha: HEAD, status: "completed", conclusion: "action_required" },
       { event: "pull_request", headSha: "b".repeat(40), status: "in_progress", conclusion: "" },
@@ -42,13 +42,35 @@ test("required CI 상태: Data contracts 계열 check가 실패하면 ATTACHED·
     rollupContexts: [{ name: "Data contracts", conclusion: "SUCCESS" }, { name: "Data contracts (shard 1/4)", conclusion: "FAILURE" }],
     ciRuns: [{ event: "pull_request", headSha: HEAD, status: "in_progress", conclusion: "" }],
   }), "FAILED");
-  // 성공·건너뜀·중립·진행 중과, Data contracts가 아닌 check의 실패는 FAILED가 아니다.
-  for (const conclusion of ["SUCCESS", "SKIPPED", "NEUTRAL", ""]) {
-    assert.equal(failed("Data contracts (shard 1/4)", conclusion), "MISSING", conclusion);
-  }
+  // 성공한 shard만 있고 집계 check가 없으면 CI가 다 붙은 것이 아니다(MISSING). Data contracts가 아닌 check의 실패는 보지 않는다.
+  assert.equal(failed("Data contracts (shard 1/4)", "SUCCESS"), "MISSING");
   assert.equal(failed("CodeQL", "FAILURE"), "MISSING");
-  // action_required는 승인 대기로 CI가 안 붙은 경우라 다시 열기 경로(MISSING)로 간다.
-  assert.equal(failed("Data contracts (shard 1/4)", "ACTION_REQUIRED"), "MISSING");
+});
+
+// #970 리뷰 F1: 판정은 allow list다. 성공은 SUCCESS만, 진행 중은 알려진 상태만 인정하고 실패는 기존 목록이다.
+// 그 밖의 값(STALE·ACTION_REQUIRED·SKIPPED·모르는 값)은 ATTACHED로 조용히 넘어가지 않고 UNKNOWN 이상이다.
+test("required CI 상태: 성공이 아니고 실패·진행 중도 아닌 값은 집계·shard 이름 모두 UNKNOWN이다", () => {
+  const state = (name, conclusion, status = "COMPLETED") => requiredCiState({ headSha: HEAD, rollupContexts: [{ name, status, conclusion }], ciRuns: [] });
+  for (const name of ["Data contracts", "Data contracts (shard 2/4)", "Data contracts (mobile-v19)"]) {
+    for (const conclusion of ["STALE", "ACTION_REQUIRED", "SKIPPED", "NEUTRAL", "SOMETHING_NEW", ""]) {
+      assert.equal(state(name, conclusion), "UNKNOWN", `${name} ${conclusion}`);
+    }
+  }
+  assert.equal(state("Data contracts", "SUCCESS"), "ATTACHED");
+  // status context(state 필드)도 같다. PENDING은 진행 중이고 EXPECTED·모르는 값은 UNKNOWN이다.
+  const context = (value) => requiredCiState({ headSha: HEAD, rollupContexts: [{ context: "Data contracts", state: value }], ciRuns: [] });
+  assert.equal(context("SUCCESS"), "ATTACHED");
+  assert.equal(context("PENDING"), "PENDING");
+  assert.equal(context("EXPECTED"), "UNKNOWN");
+  assert.equal(context("WHATEVER"), "UNKNOWN");
+  // 실패가 모르는 값보다 우선한다.
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts", status: "COMPLETED", conclusion: "STALE" }, { name: "Data contracts (shard 1/4)", status: "COMPLETED", conclusion: "FAILURE" }], ciRuns: [] }), "FAILED");
+});
+
+test("required CI 상태: 진행 중 상태는 알려진 값만 PENDING이고 모르는 상태는 UNKNOWN이다", () => {
+  const state = (status) => requiredCiState({ headSha: HEAD, rollupContexts: [{ name: "Data contracts", status, conclusion: "" }], ciRuns: [] });
+  for (const status of ["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"]) assert.equal(state(status), "PENDING", status);
+  assert.equal(state("MYSTERY"), "UNKNOWN");
 });
 
 function fakeGh({ pullRequests, rollup = [], runs = [], failOn = null }) {
@@ -81,7 +103,7 @@ test("CI가 없으면 그 PR만 App 토큰으로 닫았다 다시 열고 REOPENE
 
 test("CI가 붙었거나 진행 중이면 아무 쓰기도 하지 않는다(멱등)", async () => {
   for (const [state, fixture] of [
-    ["ATTACHED", { rollup: [{ name: "Data contracts", conclusion: "SUCCESS" }] }],
+    ["ATTACHED", { rollup: [{ name: "Data contracts", status: "COMPLETED", conclusion: "SUCCESS" }] }],
     ["PENDING", { runs: [{ event: "pull_request", headSha: HEAD, status: "in_progress", conclusion: "" }] }],
   ]) {
     const { gh, calls } = fakeGh({ pullRequests: [openPr], ...fixture });
@@ -111,4 +133,16 @@ test("열린 갱신 PR의 required CI가 실패했으면 쓰기 없이 AUTOMATIO
     return true;
   });
   assert.equal(calls.some(({ args }) => /^pr (close|reopen)/u.test(args)), false);
+});
+
+test("집계 check의 ACTION_REQUIRED·STALE·모르는 값은 닫았다 다시 열지 않고 AUTOMATION_PR_CI_STATE_UNKNOWN으로 job을 실패시킨다", async () => {
+  for (const conclusion of ["ACTION_REQUIRED", "STALE", "SOMETHING_NEW"]) {
+    const { gh, calls } = fakeGh({ pullRequests: [openPr], rollup: [{ name: "Data contracts", status: "COMPLETED", conclusion }] });
+    await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, gh }), (error) => {
+      assert.match(error.message, /^AUTOMATION_PR_CI_STATE_UNKNOWN: #936 /u);
+      assert.ok(error.message.includes(`Data contracts=${conclusion}`), error.message);
+      return true;
+    }, conclusion);
+    assert.equal(calls.some(({ args }) => /^pr (close|reopen)/u.test(args)), false, conclusion);
+  }
 });
