@@ -7,8 +7,15 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
-export const PINNED_MOBILE_REVISION = "4d419569a914883bd98f4f5cfd4e1d6d217c8f66";
-export const EXPECTED_CAPITAL_GZIP_SHA256 = "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208";
+// #979: fixture 커밋은 ITX topology 적용 전 입력 팩을 담는다. 승격마다 mobile 커밋이 바뀌지 않고, 출력 팩은 커밋된 증거에서 결정적으로 파생한다.
+export const PINNED_MOBILE_REVISION = "573aefdbbf2e639d28de18697eb449da85415353";
+export const INPUT_CAPITAL_GZIP_SHA256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
+
+/** 파생된 팩의 기대 sha256은 커밋된 증거가 정한다. */
+export function expectedDerivedCapitalGzipSha256(root = ROOT) {
+  const evidence = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
+  return evidence.pack.outputSha256;
+}
 
 function sha256(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
@@ -21,7 +28,7 @@ export function stageLocalMobileFixture({ repositoryRoot = ROOT, candidatePaths 
 
   if (existsSync(targetPack) && existsSync(targetIndex)) {
     const actualSha = sha256(readFileSync(targetPack));
-    if (actualSha === EXPECTED_CAPITAL_GZIP_SHA256) {
+    if (actualSha === expectedDerivedCapitalGzipSha256(root)) {
       return { staged: false, alreadyPresent: true };
     }
   }
@@ -72,10 +79,22 @@ export function stageLocalMobileFixture({ repositoryRoot = ROOT, candidatePaths 
     throw new Error(`Extraction failed: ${targetPack} not found after git archive`);
   }
 
-  const actualSha = sha256(readFileSync(targetPack));
-  if (actualSha !== EXPECTED_CAPITAL_GZIP_SHA256) {
+  const inputSha = sha256(readFileSync(targetPack));
+  if (inputSha !== INPUT_CAPITAL_GZIP_SHA256) {
     throw new Error(
-      `Extracted capital.sqlite.gz sha256 mismatch: expected ${EXPECTED_CAPITAL_GZIP_SHA256}, got ${actualSha}`
+      `Extracted capital.sqlite.gz sha256 mismatch: expected input ${INPUT_CAPITAL_GZIP_SHA256}, got ${inputSha}`
+    );
+  }
+  // 입력 팩에 승인 원천 topology를 적용해 커밋된 증거와 같은 팩을 파생한다. Node 24.19.0·SQLite 3.53.3(CI와 같은 런타임)이 필요하다.
+  execFileSync(process.execPath, [
+    path.join(root, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"),
+    "--derive-fixture",
+    path.join(root, "apps/mobile"),
+  ], { stdio: ["ignore", "inherit", "inherit"] });
+  const actualSha = sha256(readFileSync(targetPack));
+  if (actualSha !== expectedDerivedCapitalGzipSha256(root)) {
+    throw new Error(
+      `Derived capital.sqlite.gz sha256 mismatch: expected ${expectedDerivedCapitalGzipSha256(root)}, got ${actualSha}`
     );
   }
 

@@ -345,8 +345,8 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"4d419569a914883bd98f4f5cfd4e1d6d217c8f66\"",
-          "expected_sha256=\"1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208\"",
+          "expected_revision=\"573aefdbbf2e639d28de18697eb449da85415353\"",
+          "expected_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
         ]
@@ -374,9 +374,9 @@
       "fixtureStageContracts": {
         "mobile": [
           "source=\".external/mobile/apps/mobile\"",
-          "expected_revision=\"4d419569a914883bd98f4f5cfd4e1d6d217c8f66\"",
-          "expected_capital_gzip_sha256=\"1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208\"",
-          "expected_index_sha256=\"7e5ca038a1803a0e20eb0a663f2b05d0c89bfca31fea5cb192a11e97aae6cdbb\"",
+          "expected_revision=\"573aefdbbf2e639d28de18697eb449da85415353\"",
+          "expected_capital_gzip_sha256=\"609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a\"",
+          "expected_index_sha256=\"a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf\"",
           "expected_source_inventory_sha256=\"69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2\"",
           "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile"
@@ -785,7 +785,7 @@
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "39d2c4723d0ff855041c6162825930c7d12ffad3",
       "profileCommit": {
-        "mobile-v19": "4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
+        "mobile-v19": "573aefdbbf2e639d28de18697eb449da85415353"
       },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
@@ -795,7 +795,13 @@
           "path": "assets/datapacks/capital.sqlite.gz",
           "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
           "profileSha256": {
-            "mobile-v19": "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+            "mobile-v19": "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+          },
+          "derivedProfileSha256": {
+            "mobile-v19": {
+              "jsonPath": "tools/datapack/itx-cheongchun-topology-evidence.json",
+              "pointer": ["pack", "outputSha256"]
+            }
           }
         },
         {

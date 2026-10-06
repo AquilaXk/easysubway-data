@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d419569a914883bd98f4f5cfd4e1d6d217c8f66
+          ref: 573aefdbbf2e639d28de18697eb449da85415353
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -50,10 +50,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
+          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -79,6 +79,13 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
 
       - name: Require public candidate input base URL
         run: |
@@ -121,8 +128,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
-          expected_sha256="1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
+          # 파생된 팩(apps/mobile)은 커밋된 증거의 출력 sha여야 한다(#979).
+          expected_target_sha256="$(node -p "JSON.parse(require('node:fs').readFileSync('tools/datapack/itx-cheongchun-topology-evidence.json', 'utf8')).pack.outputSha256")"
           source=".external/mobile/apps/mobile"
           source_capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
           target="apps/mobile"
@@ -138,7 +147,7 @@ jobs:
 
           [[ -f "${target_capital_gzip}" && ! -L "${target_capital_gzip}" ]]
           target_sha256="$(sha256sum "${target_capital_gzip}" | awk '{print $1}')"
-          [[ "${target_sha256}" == "${expected_sha256}" ]]
+          [[ "${target_sha256}" == "${expected_target_sha256}" ]]
 
       - name: Lint workflows
         shell: bash
@@ -187,7 +196,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d419569a914883bd98f4f5cfd4e1d6d217c8f66
+          ref: 573aefdbbf2e639d28de18697eb449da85415353
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -196,10 +205,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
+          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -225,6 +234,13 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
 
       - name: Require public candidate input base URL
         run: |
@@ -266,7 +282,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d419569a914883bd98f4f5cfd4e1d6d217c8f66
+          ref: 573aefdbbf2e639d28de18697eb449da85415353
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -275,10 +291,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
+          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -304,6 +320,13 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
 
       - name: Require public candidate input base URL
         run: |
@@ -345,7 +368,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d419569a914883bd98f4f5cfd4e1d6d217c8f66
+          ref: 573aefdbbf2e639d28de18697eb449da85415353
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -354,10 +377,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
+          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -383,6 +406,13 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
 
       - name: Require public candidate input base URL
         run: |
@@ -424,7 +454,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 4d419569a914883bd98f4f5cfd4e1d6d217c8f66
+          ref: 573aefdbbf2e639d28de18697eb449da85415353
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0
@@ -433,10 +463,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_revision="4d419569a914883bd98f4f5cfd4e1d6d217c8f66"
+          expected_revision="573aefdbbf2e639d28de18697eb449da85415353"
           source=".external/mobile/apps/mobile"
           capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
-          expected_sha256="1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208"
+          expected_sha256="609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a"
 
           actual_revision="$(git -C .external/mobile rev-parse HEAD)"
           [[ "${actual_revision}" == "${expected_revision}" ]]
@@ -462,6 +492,13 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+      - name: Derive ITX-청춘 topology into the staged Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # #979: fixture는 ITX topology 적용 전 입력 팩으로 고정돼 있다. 승격마다 mobile 커밋을 새로 만들지 않고, 커밋된 승인 원천에서
+          # 같은 팩·index를 결정적으로 파생한다. 파생 증거가 커밋된 itx-cheongchun-topology-evidence.json과 한 글자라도 다르면 실패한다.
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs --derive-fixture apps/mobile
 
       - name: Require public candidate input base URL
         run: |

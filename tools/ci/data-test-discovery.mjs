@@ -600,6 +600,24 @@ export function validateOwnership({
       if (!isSafeRepositoryPath(requiredFile.path) || !/^[a-f0-9]{64}$/.test(requiredFile.sha256 ?? '')) {
         issue(issues, 'INVALID_FIXTURE_FILE', fixtureName, String(requiredFile.path));
       }
+      // #979: ITX 승격마다 바뀌는 파생 팩 해시는 코드·workflow에 박지 않고 커밋된 증거 JSON의 값을 가리킨다.
+      const derived = requiredFile.derivedProfileSha256;
+      if (derived !== undefined && (!derived || typeof derived !== 'object' || Array.isArray(derived))) {
+        issue(issues, 'INVALID_FIXTURE_DERIVED_HASH', fixtureName, String(requiredFile.path));
+      }
+      for (const [profileName, source] of Object.entries(
+        derived && typeof derived === 'object' && !Array.isArray(derived) ? derived : {},
+      )) {
+        if (
+          !Object.hasOwn(executionProfiles, profileName) ||
+          !isSafeRepositoryPath(source?.jsonPath) ||
+          !Array.isArray(source?.pointer) ||
+          source.pointer.length === 0 ||
+          source.pointer.some((segment) => typeof segment !== 'string' || segment === '')
+        ) {
+          issue(issues, 'INVALID_FIXTURE_DERIVED_HASH', fixtureName, `${requiredFile.path}:${profileName}`);
+        }
+      }
       const profileSha256 = requiredFile.profileSha256;
       if (
         profileSha256 !== undefined &&
@@ -636,7 +654,9 @@ export function validateOwnership({
       }
       for (const requiredFile of fixture.requiredFiles ?? []) {
         const actualHash = state.files?.[requiredFile.path];
-        const expectedHash = requiredFile.profileSha256?.[fixtureProfile] ?? requiredFile.sha256;
+        const expectedHash = requiredFile.derivedProfileSha256?.[fixtureProfile] === undefined
+          ? requiredFile.profileSha256?.[fixtureProfile] ?? requiredFile.sha256
+          : state.derived?.[requiredFile.path]?.[fixtureProfile];
         if (actualHash !== expectedHash) {
           issue(
             issues,
@@ -959,7 +979,18 @@ function repositoryInputs({
         }
         files[requiredFile.path] = sha256(readFileSync(filePath));
       }
-      fixtureStates[fixtureName] = { headSha, files };
+      const derived = {};
+      for (const requiredFile of fixture.requiredFiles ?? []) {
+        for (const [profileName, source] of Object.entries(requiredFile.derivedProfileSha256 ?? {})) {
+          let value = JSON.parse(readFileSync(resolve(repoRoot, source.jsonPath), 'utf8'));
+          for (const segment of source.pointer) value = value?.[segment];
+          if (!/^[a-f0-9]{64}$/.test(value ?? '')) {
+            throw new Error(`derived fixture hash is not a sha256: ${source.jsonPath}`);
+          }
+          derived[requiredFile.path] = { ...derived[requiredFile.path], [profileName]: value };
+        }
+      }
+      fixtureStates[fixtureName] = { headSha, files, derived };
     } catch (error) {
       fixtureStates[fixtureName] = { error: error.message, files: {} };
     }

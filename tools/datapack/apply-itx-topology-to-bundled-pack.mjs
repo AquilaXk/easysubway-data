@@ -20,64 +20,6 @@ const CATALOG_VERSION = 19;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
 const CURRENT_VERIFICATION_MODE = "current";
 const IMMUTABLE_INTEGRITY_VERIFICATION_MODE = "immutable-integrity";
-const ADMITTED_TOPOLOGY_INPUTS = new Map([
-  [
-    "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
-    {
-      gzipSha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
-      sqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
-      byteSize: 354980,
-    },
-  ],
-  [
-    "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
-    {
-      gzipSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
-      byteSize: 359319,
-    },
-  ],
-  [
-    "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
-    {
-      gzipSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
-      byteSize: 359319,
-    },
-  ],
-  [
-    "f3f00e6f99862ddf1c6964d09a220169f29a85181f420f30e20428f2bee835ab",
-    {
-      gzipSha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-      sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-      byteSize: 1463745,
-    },
-  ],
-  [
-    "7bff64ecf229a31e64817bd3315a95bc965c20cbe0aa88d788e59b9fd6d5789e",
-    {
-      gzipSha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
-      sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
-      byteSize: 388623,
-    },
-  ],
-  [
-    "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
-    {
-      gzipSha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
-      sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
-      byteSize: 388623,
-    },
-  ],
-  [
-    "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189",
-    {
-      gzipSha256: "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a",
-      sqliteSha256: "bba39f717671c82278a44d0be731801c41d90b7a92dd11a9f184e6ec0f55da98",
-      byteSize: 388623,
-    },
-  ],
-]);
 const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS = `
   service_class TEXT NOT NULL PRIMARY KEY,
   timetable_artifact_id TEXT NOT NULL,
@@ -459,18 +401,27 @@ function hasExactKeys(value, keys) {
       === [...keys].sort((left, right) => left.localeCompare(right)).join(",");
 }
 
-export async function admittedTopologySource(reference, source, _currentAdmission = null) {
+// 입력 팩 식별은 coverage contract의 topologyInputPackIdentity가 정한다(#979). 승격마다 원천 sha를 코드 허용 목록에 사람이 더하지 않는다.
+// 이 식별이 실제 입력 팩과 같은지는 고정된 mobile fixture를 staging하는 단계(derive-itx-mobile-fixture)와 write 모드의 입력 팩 대조가 강제한다.
+export async function admittedTopologySource(reference, source, _currentAdmission = null, contract = null) {
   if (Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
     || !isCurrentItxPromotionMode(reference?.promotion?.mode)) {
     throw new Error("ITX topology legacy admission is forbidden");
   }
   const identity = stationCatalogIdentity(source?.stationCatalogPackIdentity, "ITX topology station catalog identity");
-  const admittedInput = ADMITTED_TOPOLOGY_INPUTS.get(reference?.sha256);
-  if (admittedInput == null) {
-    throw new Error("ITX topology current source identity is not admitted");
-  }
-  return { reference, source, stationCatalogPackIdentity: identity, ...admittedInput };
+  const input = topologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX topology input pack identity",
+  );
+  return {
+    reference,
+    source,
+    stationCatalogPackIdentity: identity,
+    gzipSha256: input.sha256,
+    sqliteSha256: input.sqliteSha256,
+    byteSize: input.byteSize,
+  };
 }
 
 export function validateTopologyEvidence({
@@ -1120,18 +1071,20 @@ export function assertStoredTopology(sqlitePath, topology, admissionEvidence, ed
 }
 
 async function main() {
-  const packPath = path.resolve(root, option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz"));
-  const indexPath = path.resolve(root, option("--index", "apps/mobile/assets/datapacks/index.json"));
+  const deriveRoot = option("--derive-fixture", null);
+  const packPath = path.resolve(root, deriveRoot == null ? option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz") : path.join(deriveRoot, "assets/datapacks/capital.sqlite.gz"));
+  const indexPath = path.resolve(root, deriveRoot == null ? option("--index", "apps/mobile/assets/datapacks/index.json") : path.join(deriveRoot, "assets/datapacks/index.json"));
   const contractPath = path.resolve(root, option("--contract", "tools/datapack/itx-cheongchun-coverage-contract.json"));
   const evidencePath = path.resolve(root, option("--evidence", "tools/datapack/itx-cheongchun-topology-evidence.json"));
   const currentAdmissionOption = option("--current-admission", null);
   const currentAdmissionPath = currentAdmissionOption == null ? null : path.resolve(root, currentAdmissionOption);
   const fixtureProjectionPath = option("--project-fixture", null);
+  const deriveFixtureRoot = option("--derive-fixture", null);
   const check = process.argv.includes("--check");
   const immutableIntegrity = process.argv.includes("--verify-immutable-integrity");
   const migrateCurrentV18Requested = process.argv.includes("--migrate-current-v18");
-  if ([check, immutableIntegrity, migrateCurrentV18Requested, fixtureProjectionPath != null].filter(Boolean).length > 1) {
-    throw new Error("--check, --verify-immutable-integrity, --migrate-current-v18 and --project-fixture are mutually exclusive");
+  if ([check, immutableIntegrity, migrateCurrentV18Requested, fixtureProjectionPath != null, deriveFixtureRoot != null].filter(Boolean).length > 1) {
+    throw new Error("--check, --verify-immutable-integrity, --migrate-current-v18, --project-fixture and --derive-fixture are mutually exclusive");
   }
   if (migrateCurrentV18Requested) {
     throw new Error("--migrate-current-v18 is forbidden by the current-only datapack contract");
@@ -1147,13 +1100,14 @@ async function main() {
   }
   const { contract, reference, source, sourceBytes, currentAdmission, currentProjection } =
     await admittedSource(contractPath, {
-      verificationMode: immutableIntegrity
+      // fixture 파생(staging)은 시계에 묶이지 않는다: 만료된 원천이어도 고정 입력에서 같은 팩을 다시 만들어 커밋된 증거와 대조한다.
+      verificationMode: immutableIntegrity || deriveFixtureRoot != null
         ? IMMUTABLE_INTEGRITY_VERIFICATION_MODE
         : CURRENT_VERIFICATION_MODE,
       currentAdmissionPath,
       requireFresh: true,
     });
-  const topologySource = await admittedTopologySource(reference, source, currentAdmission);
+  const topologySource = await admittedTopologySource(reference, source, currentAdmission, contract);
   const topology = deriveTopology(source);
   if (fixtureProjectionPath != null) {
     const fixturePath = path.resolve(root, fixtureProjectionPath);
@@ -1205,6 +1159,27 @@ async function main() {
     }
     return;
   }
+  const computed = await computeItxTopologyPack({
+    inputGzipBytes, index: JSON.parse(await readFile(indexPath, "utf8")), admittedInputPack, topology,
+    admissionEvidence, currentProjection, source, sourceBytes, reference,
+  });
+  if (deriveFixtureRoot != null) {
+    // staging 전용: 이미 커밋된 증거와 같은 팩·index를 입력 fixture에서 파생한다. 증거는 쓰지 않고 한 글자라도 다르면 실패한다.
+    const committed = JSON.parse(await readFile(evidencePath, "utf8"));
+    if (JSON.stringify(committed) !== JSON.stringify(computed.evidence)) {
+      throw new Error("ITX_FIXTURE_DERIVATION_MISMATCH: the derived topology evidence differs from the committed evidence");
+    }
+  } else {
+    await writeFile(evidencePath, `${JSON.stringify(computed.evidence, null, 2)}\n`);
+  }
+  await writeFile(packPath, computed.outputGzipBytes);
+  await writeFile(indexPath, `${JSON.stringify(computed.index, null, 2)}\n`);
+}
+
+/** 입력 팩에 승인 원천 topology를 적용해 출력 팩·index·증거를 계산한다. 파일을 쓰지 않는다. */
+async function computeItxTopologyPack({
+  inputGzipBytes, index, admittedInputPack, topology, admissionEvidence, currentProjection, source, sourceBytes, reference,
+}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-${randomUUID()}-`));
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
@@ -1221,7 +1196,6 @@ async function main() {
     if (outputGzipBytes.length - inputGzipBytes.length > MAX_GZIP_DELTA_BYTES) {
       throw new Error("ITX topology exceeds the 64 KiB compressed size budget");
     }
-    const index = JSON.parse(await readFile(indexPath, "utf8"));
     const pack = index.packs?.find(({ id }) => id === "capital");
     if (!pack || pack.sha256 !== sha256(inputGzipBytes)) {
       throw new Error("ITX topology bundled pack index is stale");
@@ -1266,9 +1240,7 @@ async function main() {
         byteSizeDelta: outputGzipBytes.length - inputGzipBytes.length,
       },
     };
-    await writeFile(packPath, outputGzipBytes);
-    await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
-    await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+    return { outputGzipBytes, index, evidence };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

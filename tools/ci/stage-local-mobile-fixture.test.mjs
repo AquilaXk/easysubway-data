@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   stageLocalMobileFixture,
-  EXPECTED_CAPITAL_GZIP_SHA256,
+  expectedDerivedCapitalGzipSha256,
   PINNED_MOBILE_REVISION,
 } from "./stage-local-mobile-fixture.mjs";
 
@@ -25,7 +25,8 @@ test("stageLocalMobileFixture verifies pinned mobile fixture idempotently", () =
   assert.ok(existsSync(indexPath), "index.json must exist");
 
   const actualSha256 = createHash("sha256").update(readFileSync(capitalGzipPath)).digest("hex");
-  assert.equal(actualSha256, EXPECTED_CAPITAL_GZIP_SHA256);
+  // 파생된 팩의 sha256은 커밋된 topology 증거가 정한다(승격마다 코드에 박지 않는다).
+  assert.equal(actualSha256, expectedDerivedCapitalGzipSha256(root));
 });
 
 test("stageLocalMobileFixture rejects invalid repository root without candidates", () => {

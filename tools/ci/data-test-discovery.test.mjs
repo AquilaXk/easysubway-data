@@ -275,6 +275,52 @@ test('execution profiles bind manifest membership and fixture hashes', () => {
   assert.ok(errorCodes(() => validateOwnership(badHash)).includes('INVALID_FIXTURE_PROFILE_HASH'));
 });
 
+// #979: ITX 승격마다 바뀌는 파생 팩 해시는 증거 JSON에서 읽은 값을 기대값으로 쓴다.
+test('derived profile hash는 증거에서 읽은 값과 staged 파일 해시가 같을 때만 통과하고 모양이 닫혀 있다', () => {
+  const derivedFixture = () => {
+    const value = fixture();
+    value.manifest.tests[0].executionProfile = 'mobile-v19';
+    value.executionProfile = 'mobile-v19';
+    value.manifest.fixtures.mobile.profileCommit = { 'mobile-v19': '2'.repeat(40) };
+    value.fixtureStates.mobile.headSha = '2'.repeat(40);
+    // staged 파일은 입력 팩이 아니라 파생된 팩이다. 기대값은 profileSha256(입력 고정)이 아니라 증거 값이다.
+    value.manifest.fixtures.mobile.requiredFiles[0].derivedProfileSha256 = {
+      'mobile-v19': { jsonPath: 'tools/datapack/itx-cheongchun-topology-evidence.json', pointer: ['pack', 'outputSha256'] },
+    };
+    value.fixtureStates.mobile.files['pubspec.yaml'] = '3'.repeat(64);
+    value.fixtureStates.mobile.derived = { 'pubspec.yaml': { 'mobile-v19': '3'.repeat(64) } };
+    return value;
+  };
+  assert.doesNotThrow(() => validateOwnership(derivedFixture()));
+
+  const mismatch = derivedFixture();
+  mismatch.fixtureStates.mobile.derived['pubspec.yaml']['mobile-v19'] = '4'.repeat(64);
+  assert.ok(errorCodes(() => validateOwnership(mismatch)).includes('FIXTURE_HASH_MISMATCH'));
+
+  const missingDerived = derivedFixture();
+  delete missingDerived.fixtureStates.mobile.derived;
+  assert.ok(errorCodes(() => validateOwnership(missingDerived)).includes('FIXTURE_HASH_MISMATCH'));
+
+  // 입력 고정 해시가 우연히 staged 파일과 같아도 파생 기대값이 우선한다(파생이 없으면 통과하지 못한다).
+  const inputPinned = derivedFixture();
+  inputPinned.manifest.fixtures.mobile.requiredFiles[0].profileSha256['mobile-v19'] = '3'.repeat(64);
+  inputPinned.fixtureStates.mobile.derived['pubspec.yaml']['mobile-v19'] = '5'.repeat(64);
+  assert.ok(errorCodes(() => validateOwnership(inputPinned)).includes('FIXTURE_HASH_MISMATCH'));
+
+  for (const bad of [
+    'text',
+    [],
+    { 'mobile-v19': { jsonPath: '../escape.json', pointer: ['a'] } },
+    { 'mobile-v19': { jsonPath: 'tools/x.json', pointer: [] } },
+    { 'mobile-v19': { jsonPath: 'tools/x.json', pointer: [''] } },
+    { unknown: { jsonPath: 'tools/x.json', pointer: ['a'] } },
+  ]) {
+    const invalid = derivedFixture();
+    invalid.manifest.fixtures.mobile.requiredFiles[0].derivedProfileSha256 = bad;
+    assert.ok(errorCodes(() => validateOwnership(invalid)).includes('INVALID_FIXTURE_DERIVED_HASH'), JSON.stringify(bad));
+  }
+});
+
 test('release-only ownership is valid but required workflow cannot become advisory', () => {
   const releaseOnly = fixture();
   releaseOnly.manifest.tests[0].classes = ['deterministic-release'];

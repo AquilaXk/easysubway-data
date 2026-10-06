@@ -2186,7 +2186,7 @@ export async function bindApprovedItxCurrentSourceSpec({
     sha256(completenessBytes),
     activationNow,
   );
-  const admittedInput = await admittedTopologySource(reference, source);
+  const admittedInput = await admittedTopologySource(reference, source, null, contract);
   const topology = deriveTopology(source);
   let evidence;
   try {

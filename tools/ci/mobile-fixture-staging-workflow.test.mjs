@@ -12,11 +12,12 @@ const ownership = JSON.parse(
   readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
-const ciMobileRevision = "4d419569a914883bd98f4f5cfd4e1d6d217c8f66";
-const ciCapitalGzipSha256 = "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208";
-const releaseMobileRevision = "4d419569a914883bd98f4f5cfd4e1d6d217c8f66";
-const releaseCapitalGzipSha256 = "1649793186e4b0629cc00223c6a5929d2d513e737d139bc1598170fe79967208";
-const releaseIndexSha256 = "7e5ca038a1803a0e20eb0a663f2b05d0c89bfca31fea5cb192a11e97aae6cdbb";
+// #979: fixture 커밋은 ITX topology 적용 전 입력 팩을 담고, 출력 팩은 staging 뒤 커밋된 증거에서 파생한다.
+const ciMobileRevision = "573aefdbbf2e639d28de18697eb449da85415353";
+const ciCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
+const releaseMobileRevision = "573aefdbbf2e639d28de18697eb449da85415353";
+const releaseCapitalGzipSha256 = "609a74095859b5bf7602c25e142caa47cc212170a72d6240e2d01b39f874047a";
+const releaseIndexSha256 = "a39031e0e588508b1d111c830ef19441740ca15de6cad62ef9e9e8f5654468bf";
 const releaseSourceInventorySha256 = "69cdbd88a169d77ef4941d197c5bae5a0ab26999418ce513778903abbe7d70d2";
 
 function namedWorkflowStep(yml, name) {
@@ -491,4 +492,65 @@ test("#942 required CI 테스트 job은 후보 고정 입력 공개 읽기 경�
     assert.match(guard, /\[\[ "\$\{EASYSUBWAY_DATA_PACK_BASE_URL:-\}" =~ \^https:\/\/\[\^\[:space:\]\]\+\$ \]\] \|\| \{ [^}]*exit 1; \}/u, id);
     assert.ok(job.indexOf("Require public candidate input base URL") < job.indexOf("data-test-discovery.mjs run --class required-pr"), id);
   }
+});
+
+// #979: ITX-청춘 승격마다 mobile 커밋·workflow pin을 바꾸지 않는다. fixture는 ITX topology 적용 전 입력 팩으로 고정하고,
+// staging 뒤 커밋된 승인 원천에서 같은 팩을 파생해 커밋된 증거와 대조한다.
+test("모든 Data contracts job은 Node 설정 뒤 fixture 검증 전에 ITX topology를 입력 팩에서 파생한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  for (const id of contractJobIds) {
+    const job = namedJob(ci, id);
+    const derive = namedWorkflowStep(job, "Derive ITX-청춘 topology into the staged Mobile fixture");
+    assert.match(derive, /\n        run: \|\n          set -euo pipefail\n/);
+    assert.match(derive, /^          node tools\/datapack\/apply-itx-topology-to-bundled-pack\.mjs --derive-fixture apps\/mobile$/m);
+    assert.doesNotMatch(derive, /continue-on-error|\|\| true/);
+    assertWorkflowStepOrder(job, [
+      "Stage pinned Mobile fixture",
+      "Set up Node.js",
+      "Derive ITX-청춘 topology into the staged Mobile fixture",
+      "Require public candidate input base URL",
+    ]);
+  }
+  const mobile = namedJob(ci, "contracts_mobile_v19");
+  assertWorkflowStepOrder(mobile, [
+    "Derive ITX-청춘 topology into the staged Mobile fixture",
+    "Verify current Mobile v19 ITX topology evidence",
+    "Verify and run current Mobile v19 owned required tests",
+    "Re-verify current Mobile fixture for owned tests",
+  ]);
+});
+
+test("파생된 팩의 기대 sha256은 workflow가 아니라 커밋된 증거가 정한다(승격마다 workflow를 고치지 않는다)", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const reverify = namedWorkflowStep(ci, "Re-verify current Mobile fixture for owned tests");
+  assert.match(reverify, /expected_target_sha256="\$\(node -p "JSON\.parse\(require\('node:fs'\)\.readFileSync\('tools\/datapack\/itx-cheongchun-topology-evidence\.json', 'utf8'\)\)\.pack\.outputSha256"\)"/);
+  assert.match(reverify, /\[\[ "\$\{target_sha256\}" == "\$\{expected_target_sha256\}" \]\]/);
+  assert.match(reverify, /\[\[ "\$\{source_sha256\}" == "\$\{expected_sha256\}" \]\]/);
+  const evidence = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
+  // workflow·manifest·테스트 어디에도 파생 출력 팩 sha256 literal이 없다.
+  for (const file of [".github/workflows/ci.yml", ".github/workflows/datapack-release.yml", "tools/ci/data-test-ownership.json", "tools/ci/mobile-fixture-staging-workflow.test.mjs", "tools/ci/stage-local-mobile-fixture.mjs"]) {
+    assert.equal(readFileSync(path.join(root, file), "utf8").includes(evidence.pack.outputSha256), false, `${file} must not pin the derived output pack`);
+  }
+  // 입력 pin은 coverage contract의 입력 팩 식별과 mobile fixture 입력 sha가 같아야 한다.
+  const contract = JSON.parse(readFileSync(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+  assert.equal(contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.sha256, ciCapitalGzipSha256);
+  assert.equal(evidence.pack.inputSha256, ciCapitalGzipSha256);
+  const fixture = ownership.fixtures.mobile.requiredFiles.find(({ path: file }) => file === "assets/datapacks/capital.sqlite.gz");
+  assert.deepEqual(fixture.derivedProfileSha256, {
+    "mobile-v19": { jsonPath: "tools/datapack/itx-cheongchun-topology-evidence.json", pointer: ["pack", "outputSha256"] },
+  });
+});
+
+test("Data Pack Release도 deterministic-release 전에 같은 방식으로 파생하고 CI와 같은 Node 런타임을 쓴다", () => {
+  const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
+  const derive = namedWorkflowStep(release, "Data Pack Release / Derive ITX-청춘 topology into the staged Mobile fixture");
+  assert.match(derive, /^          node tools\/datapack\/apply-itx-topology-to-bundled-pack\.mjs --derive-fixture apps\/mobile$/m);
+  assert.ok(derive.includes("if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}"));
+  assertWorkflowStepOrder(release, [
+    "Data Pack Release / Stage pinned Mobile fixture",
+    "Data Pack Release / Derive ITX-청춘 topology into the staged Mobile fixture",
+    "Data Pack Release / Validate ITX-청춘 coverage contract",
+  ]);
+  const node = namedWorkflowStep(release, "Data Pack Release / Set up Node.js");
+  assert.match(node, /node-version: "24\.19\.0"/);
 });
