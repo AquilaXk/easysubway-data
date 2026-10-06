@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { assertFailureReportLast, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
+import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
 // #969 P5: 전국 후보 갱신 workflow 계약. 정기 실행은 매일 무조건 후보를 올리지 않고, 입력이 바뀌었을 때(STALE)만 한 번 PR을 만든다.
 // 사람 dispatch는 명시 요청이라 CURRENT여도 진행한다(FORCED). 열린 후보 PR이 있거나 원장 쓰기 PR이 열려 있으면 새로 만들지 않는다.
@@ -63,4 +63,12 @@ test("원장 쓰기 PR 때문에 기다리는 실행은 이유를 notice로 남�
 test("후보 PR 본문은 정기 갱신이 입력 변경으로 시작됐음을 남기고, 실패 보고가 마지막 step이다", () => {
   assert.match(step("Create candidate refresh pull request").block, /steps\.decision\.outputs\.stale_paths/u);
   assertFailureReportLast({ yml, step, file: FILE });
+});
+
+// #974 리뷰 F1: 기준 경로 목록은 매니페스트의 값이다. 경로에 따옴표·백틱·$가 있어도 셸이 실행하지 않도록 env로만 받는다.
+test("run 스크립트에는 표현식을 직접 넣지 않고 env로만 받는다", () => {
+  assertNoExpressionInRunScripts({ steps, file: FILE });
+  const { block } = step("Note candidate refresh waiting on a pending source pull request");
+  assert.match(block, /\n          STALE_PATHS: \$\{\{ steps\.decision\.outputs\.stale_paths \}\}\n/u);
+  assert.match(block, /\n          BLOCKED_BY: \$\{\{ steps\.decision\.outputs\.blocked_by \}\}\n/u);
 });
