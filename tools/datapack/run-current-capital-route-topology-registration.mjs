@@ -13,6 +13,7 @@ const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const RAW = "capital-route-topology.raw.json";
 const RECEIPT = "capital-route-topology.raw-receipt.json";
 const JOURNAL = "capital-route-topology-registration.json";
+// 재등록은 정책 파일을 쓰지 않는다(#989): admission 읽기와 등록 모두 forbidPolicyChange로 불러, 정책 변경이 필요하면 OCI 게시 전에 REGISTRATION_POLICY_CHANGE_REQUIRED로 실패한다.
 const TARGETS = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"];
 const SHA = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
@@ -38,7 +39,7 @@ async function writeJournal(root, journal) { const bytes = Buffer.from(`${JSON.s
 async function readJournal(root, expected) { return validJournal(parse(await regularBytes(path.join(root, JOURNAL), "capital topology registration journal"), "capital topology registration journal"), expected); }
 async function sealReceipt(root, journal) { const raw = await regularBytes(path.join(root, RAW), "capital topology raw"); if (sha256(raw) !== journal.rawSha256) throw new Error("capital topology raw binding is invalid"); const receiptBytes = await regularBytes(path.join(root, RECEIPT), "capital topology OCI receipt"); const receipt = parse(receiptBytes, "capital topology OCI receipt"); if (receipt?.rawObjectSha256 !== journal.rawSha256 || receipt?.sourceId !== journal.sourceId || receipt?.snapshotId !== journal.snapshotId) throw new Error("capital topology OCI receipt binding is invalid"); return receiptBytes; }
 // #862: 명시한 origin/main의 clean 후손 HEAD에서 등록한다(FACILITY와 같은 가드). HEAD를 생략하면 main과 같다.
-async function registerPublished({ repository, operation, journal, register, now, expectedHeadSha = journal.expectedMainSha, exactMain = assertSelectedHeadPreflight }) { await exactMain({ repositoryRoot: repository, expectedMainSha: journal.expectedMainSha, expectedHeadSha }); await sealReceipt(operation, journal); const registered = await register({ repositoryRoot: repository, receiptPath: path.join(operation, RECEIPT), now }); const targets = exactTargets(registered?.targets); await writeJournal(operation, { ...journal, phase: "FINALIZED" }); return { status: "PASS", sourceId: journal.sourceId, snapshotId: journal.snapshotId, targets }; }
+async function registerPublished({ repository, operation, journal, register, now, expectedHeadSha = journal.expectedMainSha, exactMain = assertSelectedHeadPreflight }) { await exactMain({ repositoryRoot: repository, expectedMainSha: journal.expectedMainSha, expectedHeadSha }); await sealReceipt(operation, journal); const registered = await register({ repositoryRoot: repository, receiptPath: path.join(operation, RECEIPT), now, forbidPolicyChange: true }); const targets = exactTargets(registered?.targets); await writeJournal(operation, { ...journal, phase: "FINALIZED" }); return { status: "PASS", sourceId: journal.sourceId, snapshotId: journal.snapshotId, targets }; }
 
 export function parseArgs(argv) {
   const head = (rest) => rest.length === 0 ? {} : rest.length === 2 && rest[0] === "--expected-head-sha" && SHA.test(rest[1] ?? "") ? { expectedHeadSha: rest[1] } : null;
@@ -50,7 +51,7 @@ export function parseArgs(argv) {
 export async function runCurrentCapitalRouteTopologyRegistration({ repositoryRoot = ROOT, operationRoot, expectedMainSha, expectedHeadSha = expectedMainSha, readAdmission = readCurrentCapitalRouteTopologyAdmission, publish = publishCapitalRouteTopologyRaw, register = registerCurrentCapitalRouteTopology, exactMain = assertSelectedHeadPreflight, env = process.env, now = new Date() } = {}) {
   if (!SHA.test(expectedMainSha ?? "") || !SHA.test(expectedHeadSha ?? "") || !(now instanceof Date) || Number.isNaN(now.valueOf())) throw new Error("capital topology registration arguments are invalid");
   const { repository, operation } = await externalOperationRoot(repositoryRoot, operationRoot, { create: true });
-  const admission = await readAdmission({ repositoryRoot: repository, now }); if (!Buffer.isBuffer(admission?.topologyBytes)) throw new Error("capital topology protected admission is invalid");
+  const admission = await readAdmission({ repositoryRoot: repository, now, forbidPolicyChange: true }); if (!Buffer.isBuffer(admission?.topologyBytes)) throw new Error("capital topology protected admission is invalid");
   const rawSha256 = sha256(admission.topologyBytes); await createOnce(path.join(operation, RAW), admission.topologyBytes);
   let journal = validJournal({ schemaVersion: 1, phase: "PREPARED", repositoryRoot: repository, expectedMainSha, publicationOperationId: path.basename(operation), sourceId: admission.sourceId, snapshotId: admission.snapshotId, rawSha256, preparedAt: now.toISOString() }); await writeJournal(operation, journal);
   journal = { ...journal, phase: "PUBLISHING" }; await writeJournal(operation, journal);
@@ -63,7 +64,7 @@ export async function recoverPublishedCurrentCapitalRouteTopologyRegistration({ 
   const { repository, operation: source } = await externalOperationRoot(repositoryRoot, sourceOperationRoot); const { operation: target } = await externalOperationRoot(repository, targetOperationRoot, { create: true }); if (source === target) throw new Error("source and target operation roots must differ");
   const journal = await readJournal(source, { repositoryRoot: repository, expectedMainSha, publicationOperationId: expectedPublicationOperationId }); if (!["PUBLISHING", "PUBLISHED", "FINALIZED"].includes(journal.phase)) throw new Error("capital topology publication is not recoverable");
   await exactMain({ repositoryRoot: repository, expectedMainSha, expectedHeadSha });
-  const admission = await readAdmission({ repositoryRoot: repository, now });
+  const admission = await readAdmission({ repositoryRoot: repository, now, forbidPolicyChange: true });
   if (!Buffer.isBuffer(admission?.topologyBytes) || admission.sourceId !== journal.sourceId || admission.snapshotId !== journal.snapshotId || sha256(admission.topologyBytes) !== journal.rawSha256) throw new Error("retained capital topology publication no longer binds current admission");
   const receipt = await regularBytes(path.join(source, RECEIPT), "retained capital topology OCI receipt"); const receiptValue = parse(receipt, "retained capital topology OCI receipt");
   if (receiptValue?.sourceId !== journal.sourceId || receiptValue?.snapshotId !== journal.snapshotId || receiptValue?.rawObjectSha256 !== journal.rawSha256) throw new Error("retained capital topology OCI receipt binding is invalid");

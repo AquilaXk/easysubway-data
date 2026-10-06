@@ -11,7 +11,7 @@ import {
   SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS,
   isSourceReverificationAllowedPath,
 } from "../ci/source-reverification-paths.mjs";
-import { P7D_SOURCE_COVERAGE, REVERIFICATION_RECIPES, inventoryChangeViolations, p7dSourceIds, recipeById } from "./source-reverification-recipes.mjs";
+import { P7D_SOURCE_COVERAGE, REVERIFICATION_RECIPES, inventoryChangeViolations, inventoryScopeViolations, p7dSourceIds, recipeById } from "./source-reverification-recipes.mjs";
 import { RECIPE_STEPS } from "./run-source-reverification.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 recipe 표. 정책의 P7D 원천은 모두 recipe·외부 workflow·막힌 사유 중 하나를 가져야 하고,
@@ -165,4 +165,23 @@ test("inventory 변경 검사: 소유하지 않은 항목의 변화와 소유 �
   assert.match(found[1], /^gwangju-transportation-route-topology: .*datasetUrl/u);
   // recipe가 없으면 소유 항목도 없다.
   assert.equal(inventoryChangeViolations({ base, head: ok, recipeIds: ["busan-topology"] }).length, 1);
+});
+
+// #989: 등록 단계가 같은 범위 검사를 쓴다. recipe 없이 항목 id -> 갱신 필드 집합만으로 같은 규칙을 적용한다.
+test("inventory 범위 검사(공용): 허용 필드만 바뀌면 통과하고 정책성 필드 변화·소유 밖 항목 변화·항목 추가·삭제는 사유를 돌려준다", () => {
+  const base = { sources: [{ id: "a", x: 1 }, { id: "b", datasetUrl: "u", retrievedAt: "1" }] };
+  const allowed = new Map([["b", new Set(["retrievedAt"])]]);
+  const ok = structuredClone(base);
+  ok.sources[1].retrievedAt = "2";
+  assert.deepEqual(inventoryScopeViolations({ base, head: ok, allowed }), []);
+  const policy = structuredClone(ok);
+  policy.sources[1].datasetUrl = "v";
+  assert.match(inventoryScopeViolations({ base, head: policy, allowed })[0], /^b: .*datasetUrl/u);
+  const unowned = structuredClone(ok);
+  unowned.sources[0].x = 2;
+  assert.match(inventoryScopeViolations({ base, head: unowned, allowed })[0], /^a: .*not owned/u);
+  assert.match(inventoryScopeViolations({ base, head: { sources: [...ok.sources, { id: "c" }] }, allowed })[0], /^c: .*added/u);
+  assert.match(inventoryScopeViolations({ base, head: { sources: ok.sources.slice(0, 1) }, allowed })[0], /^b: .*removed/u);
+  // 소유 항목에 허용 필드가 하나도 없으면(빈 집합) 어떤 필드도 바뀔 수 없다.
+  assert.match(inventoryScopeViolations({ base, head: ok, allowed: new Map([["b", new Set()]]) })[0], /^b: .*retrievedAt/u);
 });

@@ -156,17 +156,14 @@ export function p7dSourceIds(policy) {
 const byText = (left, right) => (left < right ? -1 : Number(left > right));
 
 /**
- * 재확인 PR의 inventory 변화가 실행한 recipe의 소유 범위 안인지 본다(#987 N1).
- * - recipe가 소유하지 않은 항목은 base와 head가 깊은 비교로 같아야 한다.
- * - 소유 항목은 그 recipe가 명시한 갱신 필드만 바뀔 수 있다. 정책성 필드는 어떤 recipe도 명시하지 않으므로 고정이다.
+ * inventory 변화가 소유 범위 안인지 본다(#987 N1, 등록 단계 #989와 공용).
+ * - allowed에 없는 항목은 base와 head가 깊은 비교로 같아야 한다.
+ * - allowed에 있는 항목은 명시한 필드만 바뀔 수 있다. 정책성 필드는 어디에도 명시하지 않으므로 고정이다.
  * - 항목을 더하거나 지우는 것은 소유 여부와 상관없이 위반이다.
+ * @param {{ base: object, head: object, allowed: Map<string, Set<string>> }} input allowed는 항목 id -> 바뀔 수 있는 필드 집합
  * @returns {string[]} 항목별 위반 사유(없으면 빈 배열)
  */
-export function inventoryChangeViolations({ base, head, recipeIds }) {
-  const allowed = new Map();
-  for (const id of recipeIds) {
-    for (const [sourceId, fields] of Object.entries(recipeById(id).inventoryChanges)) allowed.set(sourceId, new Set([...(allowed.get(sourceId) ?? []), ...fields]));
-  }
+export function inventoryScopeViolations({ base, head, allowed }) {
   const entries = (inventory) => new Map(inventory.sources.map((entry) => [entry?.id, entry]));
   const before = entries(base);
   const after = entries(head);
@@ -181,4 +178,16 @@ export function inventoryChangeViolations({ base, head, recipeIds }) {
     if (outside.length > 0) violations.push(`${id}: fields outside the recipe's refresh set changed: ${outside.sort(byText).join(", ")}`);
   }
   return violations;
+}
+
+/**
+ * 재확인 PR의 inventory 변화가 실행한 recipe의 소유 범위 안인지 본다(#987 N1).
+ * @returns {string[]} 항목별 위반 사유(없으면 빈 배열)
+ */
+export function inventoryChangeViolations({ base, head, recipeIds }) {
+  const allowed = new Map();
+  for (const id of recipeIds) {
+    for (const [sourceId, fields] of Object.entries(recipeById(id).inventoryChanges)) allowed.set(sourceId, new Set([...(allowed.get(sourceId) ?? []), ...fields]));
+  }
+  return inventoryScopeViolations({ base, head, allowed });
 }
