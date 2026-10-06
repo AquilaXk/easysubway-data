@@ -20,6 +20,7 @@ import {
 import { createFixtureCapitalTopologyReceipt } from "./test-fixtures/current-capital-topology-registration.mjs";
 import { evaluateSourceGovernance } from "./source-governance-policy.mjs";
 import { REGISTRATION_INVENTORY_FIELDS } from "../ci/automation-pr-policy.mjs";
+import { recoverPublishedCurrentCapitalRouteTopologyRegistration, runCurrentCapitalRouteTopologyRegistration } from "./run-current-capital-route-topology-registration.mjs";
 import { TOPOLOGY_FRESHNESS_CUTOVER_AT, topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -300,6 +301,64 @@ test("정책 파일 바이트가 재직렬화와 다르면 재등록은 정책 �
   // 옵션이 없으면(첫 등록·수동 도구) 기존 동작 그대로다.
   const outputs = await buildCurrentCapitalRouteTopologyRegistrationOutputs({ repositoryRoot: root, receiptPath, now });
   assert.equal(outputs.length, 4);
+});
+
+// 정책 바이트 변화는 OCI 게시 전(admission 읽기)에 잡혀야 한다. 게시 뒤에 잡히면 고아 raw object가 남고 복구도 같은 곳에서 다시 실패한다(#989 리뷰 F1).
+const POLICY_FILES = [GOVERNANCE_RELATIVE, FRESHNESS_RELATIVE];
+
+test("admission 읽기가 정책 파일 바이트 변화를 게시 전에 REGISTRATION_POLICY_CHANGE_REQUIRED로 막는다(#989 F1)", async (t) => {
+  for (const relative of POLICY_FILES) {
+    const { root, now } = await fixture(t);
+    const file = path.join(root, relative);
+    await writeFile(file, JSON.stringify(JSON.parse(await readFile(file))));
+    await assert.rejects(() => readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now, forbidPolicyChange: true }), /^Error: REGISTRATION_POLICY_CHANGE_REQUIRED: /u, relative);
+    // 옵션이 없으면(첫 등록·수동 도구) 기존 동작 그대로 읽힌다.
+    await readCurrentCapitalRouteTopologyAdmission({ repositoryRoot: root, now });
+  }
+});
+
+async function operationParent(t) {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "capital-topology-operation-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  return parent;
+}
+
+test("runner는 정책 바이트가 다르면 publish를 한 번도 부르지 않고 실패한다(#989 F1)", async (t) => {
+  for (const relative of POLICY_FILES) {
+    const { root, now } = await fixture(t);
+    const file = path.join(root, relative);
+    await writeFile(file, JSON.stringify(JSON.parse(await readFile(file))));
+    const parent = await operationParent(t);
+    let publishCalls = 0;
+    let registerCalls = 0;
+    await assert.rejects(() => runCurrentCapitalRouteTopologyRegistration({
+      repositoryRoot: root, operationRoot: path.join(parent, "run"), expectedMainSha: "a".repeat(40), now, exactMain: async () => ({}),
+      publish: async () => { publishCalls += 1; }, register: async () => { registerCalls += 1; return { targets: [] }; },
+    }), /REGISTRATION_POLICY_CHANGE_REQUIRED/u, relative);
+    assert.equal(publishCalls, 0, `${relative}: nothing is published`);
+    assert.equal(registerCalls, 0, `${relative}: nothing is registered`);
+  }
+});
+
+test("runner 복구 경로도 정책 바이트가 다르면 등록 전에 REGISTRATION_POLICY_CHANGE_REQUIRED로 실패한다(#989 F1)", async (t) => {
+  const { root, now } = await fixture(t);
+  const parent = await operationParent(t);
+  const source = path.join(parent, "source");
+  const { admission } = await receiptFixture(root, now);
+  const rawSha256 = sha(admission.topologyBytes);
+  await assert.rejects(() => runCurrentCapitalRouteTopologyRegistration({
+    repositoryRoot: root, operationRoot: source, expectedMainSha: "a".repeat(40), now, exactMain: async () => ({}),
+    publish: async ({ receiptPath }) => { await writeFile(receiptPath, JSON.stringify({ sourceId: admission.sourceId, snapshotId: admission.snapshotId, rawObjectSha256: rawSha256 })); },
+    register: async () => { throw new Error("registrar stopped"); },
+  }), /registrar stopped/u);
+  const file = path.join(root, GOVERNANCE_RELATIVE);
+  await writeFile(file, JSON.stringify(JSON.parse(await readFile(file))));
+  let registerCalls = 0;
+  await assert.rejects(() => recoverPublishedCurrentCapitalRouteTopologyRegistration({
+    repositoryRoot: root, sourceOperationRoot: source, targetOperationRoot: path.join(parent, "target"), expectedMainSha: "a".repeat(40),
+    expectedPublicationOperationId: "source", now, exactMain: async () => ({}), register: async () => { registerCalls += 1; return { targets: [] }; },
+  }), /REGISTRATION_POLICY_CHANGE_REQUIRED/u);
+  assert.equal(registerCalls, 0);
 });
 
 test("places capital topology evidence on the source schema", async () => {
