@@ -251,6 +251,29 @@ test("원천이 한도를 넘게 달라졌다면 다시 계산한 지표가 차�
   }
 });
 
+test("영수증의 판정이 PASS가 아니거나 후보·직전 결속이 다르면 지표가 맞아도 거부한다", async () => {
+  for (const [name, mutate] of Object.entries({
+    "status BLOCK": (receipt) => { receipt.status = "BLOCK"; },
+    "blocked ids": (receipt) => { receipt.blockedCheckIds = ["TRIP_COUNT:8"]; },
+    "other candidate": (receipt) => { receipt.candidate.artifactId = PREVIOUS_ID; },
+    "other previous": (receipt) => { receipt.previous.sha256 = "d".repeat(64); },
+    "other freshUntil": (receipt) => { receipt.candidate.freshUntil = "2026-10-19T00:00:00+09:00"; },
+    "other policy": (receipt) => { receipt.policyId = "itx-promotion-gate-v2"; },
+  })) {
+    const fixture = await committedPromotion();
+    try {
+      const receipt = JSON.parse(await readFile(path.join(fixture.dir, itxPromotionReceiptPath(ARTIFACT_ID)), "utf8"));
+      mutate(receipt);
+      const forged = itxPromotionGateReceiptBytes(receipt);
+      await writeFile(path.join(fixture.dir, itxPromotionReceiptPath(ARTIFACT_ID)), forged);
+      fixture.reference.promotion.gate.receiptSha256 = sha256(forged);
+      await assert.rejects(verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_RECEIPT_IDENTITY_INVALID/u, name);
+    } finally {
+      await rm(fixture.dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("승인 모드 승격에는 게이트 재검증을 적용하지 않는다", async () => {
   await assert.rejects(verifyItxGatePromotion({ reference: ownerReference(), repositoryRoot }), /ITX_PROMOTION_GATE_IDENTITY_INVALID/u);
 });
