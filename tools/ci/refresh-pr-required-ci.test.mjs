@@ -39,7 +39,7 @@ test("required CI 상태: Data contracts 계열 check가 실패하면 ATTACHED·
   // shard 하나만 실패해도 집계 check가 성공으로 보이는 순간과 무관하게 FAILED다.
   assert.equal(requiredCiState({
     headSha: HEAD,
-    rollupContexts: [{ name: "Data contracts", conclusion: "SUCCESS" }, { name: "Data contracts (shard 1/4)", conclusion: "FAILURE" }],
+    rollupContexts: [{ name: "Data contracts", status: "COMPLETED", conclusion: "SUCCESS" }, { name: "Data contracts (shard 1/4)", status: "COMPLETED", conclusion: "FAILURE" }],
     ciRuns: [{ event: "pull_request", headSha: HEAD, status: "in_progress", conclusion: "" }],
   }), "FAILED");
   // 성공한 shard만 있고 집계 check가 없으면 CI가 다 붙은 것이 아니다(MISSING). Data contracts가 아닌 check의 실패는 보지 않는다.
@@ -124,7 +124,7 @@ test("열린 갱신 PR이 없거나 둘 이상이거나, 닫기·다시 열기�
 test("열린 갱신 PR의 required CI가 실패했으면 쓰기 없이 AUTOMATION_PR_CI_FAILED로 job을 실패시킨다", async () => {
   const { gh, calls } = fakeGh({
     pullRequests: [openPr],
-    rollup: [{ name: "Data contracts (shard 2/4)", conclusion: "FAILURE" }, { name: "Data contracts (shard 1/4)", conclusion: "SUCCESS" }],
+    rollup: [{ name: "Data contracts (shard 2/4)", status: "COMPLETED", conclusion: "FAILURE" }, { name: "Data contracts (shard 1/4)", status: "COMPLETED", conclusion: "SUCCESS" }],
   });
   await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, gh }), (error) => {
     assert.match(error.message, /^AUTOMATION_PR_CI_FAILED: #936 /u);

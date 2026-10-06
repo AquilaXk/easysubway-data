@@ -33,8 +33,15 @@ function fail(code, detail = "") {
 
 function checkName(item) { return item?.name ?? item?.context; }
 function isRequiredFamily(name) { return name === REQUIRED_CONTEXT || (typeof name === "string" && name.startsWith(`${REQUIRED_CONTEXT} (`)); }
-// check run은 conclusion, status context는 state에 결과가 있다. 진행 중인 check run은 conclusion이 비어 status만 있다.
-function checkOutcome(item) { return String(item?.conclusion || item?.state || item?.status || "").toUpperCase(); }
+// check run은 status가 COMPLETED일 때만 conclusion을 본다(진행 중 항목의 conclusion은 이전 시도의 값일 수 있어 무시한다, 리뷰 F2).
+// status가 없는 항목은 status context이고 결과는 state에 있다.
+function checkOutcome(item) {
+  if (typeof item?.status === "string") {
+    const status = item.status.toUpperCase();
+    return status === "COMPLETED" ? String(item.conclusion ?? "").toUpperCase() : status;
+  }
+  return String(item?.state ?? "").toUpperCase();
+}
 function classify(item) {
   const outcome = checkOutcome(item);
   if (outcome === "SUCCESS") return "SUCCESS";
@@ -42,8 +49,21 @@ function classify(item) {
   if (IN_FLIGHT_STATES.has(outcome)) return "PENDING";
   return "UNKNOWN";
 }
+// 같은 이름이 여러 개면(rerun) 시작 시각이 가장 늦은 항목만 본다. 시각이 없으면 목록에서 뒤에 있는 항목이 최신이다.
+function latestPerName(rollupContexts) {
+  const latest = new Map();
+  rollupContexts.forEach((item, index) => {
+    const name = checkName(item);
+    if (!isRequiredFamily(name)) return;
+    const startedAt = Date.parse(item?.startedAt ?? "");
+    const rank = Number.isFinite(startedAt) ? startedAt : Number.NEGATIVE_INFINITY;
+    const previous = latest.get(name);
+    if (!previous || rank >= previous.rank) latest.set(name, { item, rank, index });
+  });
+  return [...latest.values()].map(({ item }) => item);
+}
 function requiredChecks(rollupContexts) {
-  return rollupContexts.filter((item) => isRequiredFamily(checkName(item))).map((item) => ({ name: checkName(item), outcome: checkOutcome(item), kind: classify(item) }));
+  return latestPerName(rollupContexts).map((item) => ({ name: checkName(item), outcome: checkOutcome(item), kind: classify(item) }));
 }
 const describe = (checks) => checks.map(({ name, outcome }) => `${name}=${outcome === "" ? "(empty)" : outcome}`);
 
