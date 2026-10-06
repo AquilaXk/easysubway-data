@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -27,9 +27,14 @@ function git(args, cwd = root) {
 // mobile fixture(.external/mobile)는 required-pr mobile-v19 job이 고정 커밋으로 checkout한다. 없으면 건너뛰지 않고 실패한다.
 const inputFixtureRoot = path.join(root, ".external/mobile/apps/mobile");
 
+function stageInputFixture(destination) {
+  mkdirSync(path.join(destination, "assets/datapacks"), { recursive: true });
+  for (const name of ["capital.sqlite.gz", "index.json"]) cpSync(path.join(inputFixtureRoot, "assets/datapacks", name), path.join(destination, "assets/datapacks", name));
+}
+
 test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속 전부를 맞춘다", { timeout: 20 * 60_000 }, async (context) => {
   assert.ok(existsSync(path.join(inputFixtureRoot, "assets/datapacks/capital.sqlite.gz")), "pinned Mobile 입력 fixture가 필요함");
-  const scratch = mkdtempSync(path.join(os.tmpdir(), "itx-rebind-"));
+  const scratch = realpathSync(mkdtempSync(path.join(os.tmpdir(), "itx-rebind-")));
   const worktree = path.join(scratch, "repo");
   git(["worktree", "add", "--detach", worktree, "HEAD"]);
   context.after(() => {
@@ -61,10 +66,10 @@ test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속
 
   // 2. 재결속(승격 workflow가 같은 job에서 돌리는 도구)
   const buildNow = new Date(collection.now.getTime() + 30 * 60_000).toISOString();
-  const fixtureCopy = path.join(scratch, "input-fixture");
-  mkdirSync(path.join(fixtureCopy, "assets/datapacks"), { recursive: true });
-  for (const name of ["capital.sqlite.gz", "index.json"]) cpSync(path.join(inputFixtureRoot, "assets/datapacks", name), path.join(fixtureCopy, "assets/datapacks", name));
-  const changed = await rebindItxPromotion({ repositoryRoot: worktree, fixtureRoot: fixtureCopy, buildNow });
+  // CI staging과 같다: 고정 입력 fixture를 저장소 안 apps/mobile로 복사한다.
+  const stagedFixture = path.join(worktree, "apps/mobile");
+  stageInputFixture(stagedFixture);
+  const changed = await rebindItxPromotion({ repositoryRoot: worktree, buildNow });
   const versionedEvidence = `tools/datapack/itx-cheongchun-topology-evidence-${reference.artifactId.replace("itx-cheongchun-source-timetable-", "")}.json`;
   assert.ok(changed.includes(EVIDENCE) && changed.includes(SPEC) && changed.includes(versionedEvidence), changed.join("\n"));
   const allowed = new Set([EVIDENCE, SPEC, versionedEvidence, ...ALIGNMENT_FIXTURES]);
@@ -80,21 +85,26 @@ test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속
   assert.equal(spec.itxTopologyEvidenceSha256, sha256(readFileSync(path.join(worktree, EVIDENCE))));
   assert.equal(spec.networkEdgeEvidence.itxCoverageContract.sha256, sha256(readFileSync(path.join(worktree, CONTRACT))));
   assert.doesNotThrow(() => verifyCurrentItxPromotion({ reference, repositoryRoot: worktree }));
-  const outputPack = readFileSync(path.join(fixtureCopy, "assets/datapacks/capital.sqlite.gz"));
+  const outputPack = readFileSync(path.join(stagedFixture, "assets/datapacks/capital.sqlite.gz"));
   assert.equal(sha256(outputPack), evidence.pack.outputSha256);
   for (const relative of ALIGNMENT_FIXTURES) assert.equal(json(path.join(worktree, relative)).generatedFrom.packSha256, evidence.pack.outputSha256, relative);
 
   // 4. CI가 하는 일을 그대로 한다: 입력 fixture를 stage한 뒤 --derive-fixture로 같은 팩을 파생하고 증거와 대조한다.
   const staged = path.join(scratch, "ci-staged");
-  mkdirSync(path.join(staged, "assets/datapacks"), { recursive: true });
-  for (const name of ["capital.sqlite.gz", "index.json"]) cpSync(path.join(inputFixtureRoot, "assets/datapacks", name), path.join(staged, "assets/datapacks", name));
+  stageInputFixture(staged);
   execFileSync(process.execPath, [path.join(worktree, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"), "--derive-fixture", staged], { cwd: worktree, encoding: "utf8" });
   assert.equal(sha256(readFileSync(path.join(staged, "assets/datapacks/capital.sqlite.gz"))), evidence.pack.outputSha256);
-  assert.deepEqual(readFileSync(path.join(staged, "assets/datapacks/index.json")), readFileSync(path.join(fixtureCopy, "assets/datapacks/index.json")));
+  assert.deepEqual(readFileSync(path.join(staged, "assets/datapacks/index.json")), readFileSync(path.join(stagedFixture, "assets/datapacks/index.json")));
 
   // 5. 재결속하지 않은 승격은 파생이 거부한다(결속이 실제로 검사된다).
   const stale = path.join(scratch, "stale-staged");
-  cpSync(staged, stale, { recursive: true });
-  execFileSync("git", ["checkout", "--", EVIDENCE], { cwd: worktree });
-  assert.throws(() => execFileSync(process.execPath, [path.join(worktree, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"), "--derive-fixture", stale], { cwd: worktree, stdio: "pipe" }), /ITX_FIXTURE_DERIVATION_MISMATCH|evidence|stale|mismatch/iu);
+  stageInputFixture(stale);
+  git(["restore", "--source=HEAD", "--", EVIDENCE], worktree);
+  let rejection = "";
+  try {
+    execFileSync(process.execPath, [path.join(worktree, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"), "--derive-fixture", stale], { cwd: worktree, stdio: "pipe", encoding: "utf8" });
+  } catch (error) {
+    rejection = String(error.stderr);
+  }
+  assert.match(rejection, /ITX_FIXTURE_DERIVATION_MISMATCH/u);
 });
