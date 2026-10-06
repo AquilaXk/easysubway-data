@@ -29,6 +29,7 @@ jobs:
     if: ${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       checks: read
       contents: read
       issues: write
@@ -50,10 +51,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           # 정책 대상이 아니거나 head가 이미 바뀐 실행은 아무것도 하지 않고 성공한다. 대상인데 조건이 어긋나면 이 step이 실패한다.
-          node tools/ci/automation-pr-policy.mjs decide --repository "${GITHUB_REPOSITORY}" --head-sha "${HEAD_SHA}" --run-conclusion "${RUN_CONCLUSION}" --github-output "${GITHUB_OUTPUT}"
+          # CI의 게이트 재계산 job이 artifact로 남긴 증거 블록 digest가 지금 본문의 블록과 같은지도 여기서 대조한다(#986 F3).
+          node tools/ci/automation-pr-policy.mjs decide --repository "${GITHUB_REPOSITORY}" --head-sha "${HEAD_SHA}" --run-conclusion "${RUN_CONCLUSION}" --run-id "${RUN_ID}" --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the automerge approval
         id: app-token
         if: ${{ steps.decision.outputs.state == 'ELIGIBLE' }}
@@ -70,15 +73,16 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PULL_REQUEST: ${{ steps.decision.outputs.pull_request }}
           HEAD_SHA: ${{ steps.decision.outputs.head_sha }}
+          EVIDENCE_SHA256: ${{ steps.decision.outputs.evidence_sha256 }}
           DRAFT: ${{ steps.decision.outputs.draft }}
           ATTESTED: ${{ steps.decision.outputs.attested }}
           LABELED: ${{ steps.decision.outputs.labeled }}
         run: |
           set -euo pipefail
-          [[ "${PULL_REQUEST}" =~ ^[1-9][0-9]*$ && "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          marker="<!-- Automation automerge policy: ${HEAD_SHA} -->"
+          [[ "${PULL_REQUEST}" =~ ^[1-9][0-9]*$ && "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ && "${EVIDENCE_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          marker="<!-- Automation automerge policy: ${HEAD_SHA} evidence ${EVIDENCE_SHA256} -->"
           # 순서가 의미를 가진다: 기록 -> ready -> 라벨. 라벨 이벤트가 코디네이터를 깨우므로 그때는 기록이 이미 있고 PR이 draft가 아니어야 한다.
-          # 기록은 판정한 head(HEAD_SHA)에 묶인다. 그 사이에 head가 바뀌면 기록이 맞지 않아 코디네이터가 병합하지 않고, 새 head의 CI가 다시 판정한다.
+          # 기록은 판정한 head(HEAD_SHA)와 CI가 본 증거 블록 digest에 묶인다. head가 바뀌거나 본문의 블록이 고쳐지면 기록이 맞지 않아 코디네이터가 병합하지 않는다.
           if [[ "${ATTESTED}" != "true" ]]; then
             gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PULL_REQUEST}/comments" -f body="${marker}"
           fi

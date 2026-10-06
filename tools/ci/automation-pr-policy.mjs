@@ -23,13 +23,15 @@
 //   gates     CI job의 게이트 재계산. 읽기 전용 토큰으로 PR head 작업 트리에서 돈다.
 //   decide    라벨러(workflow_run, 기본 브랜치 코드)의 판정. PR 데이터는 API로만 읽고 PR 코드는 실행하지 않는다.
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { itxPromotionAllowedPaths, itxPromotionSourceRow, parseAutomationPrEvidence } from "./automation-pr-evidence.mjs";
+import { automationPrEvidencePayload, itxPromotionAllowedPaths, itxPromotionSourceRow, parseAutomationPrEvidence } from "./automation-pr-evidence.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
@@ -92,19 +94,30 @@ function inputError(detail) {
   return new Error(`AUTOMATION_PR_INPUT: ${detail}`);
 }
 
-export function automationAttestationMarker(headSha) {
+const SHA256 = /^[0-9a-f]{64}$/u;
+
+/** 기록 본문. head와 CI가 본 증거 블록 digest에 묶인다(#986 F3). */
+export function automationAttestationMarker(headSha, evidenceSha256) {
   if (typeof headSha !== "string" || !COMMIT.test(headSha)) throw inputError("head sha");
-  return `${ATTESTATION_PREFIX}${headSha} -->`;
+  if (typeof evidenceSha256 !== "string" || !SHA256.test(evidenceSha256)) throw inputError("evidence sha256");
+  return `${ATTESTATION_PREFIX}${headSha} evidence ${evidenceSha256} -->`;
+}
+
+/** 본문 증거 블록 JSON 페이로드 텍스트의 sha256. 블록이 없거나 둘 이상이면 실패한다. */
+export function automationEvidenceDigest(body) {
+  const payload = automationPrEvidencePayload(body);
+  if (payload === null) throw new Error("AUTOMATION_PR_EVIDENCE: 증거 블록이 정확히 하나가 아니다");
+  return createHash("sha256").update(payload).digest("hex");
 }
 
 /**
  * App이 남긴 정책 통과 기록이 이 head에서 유효한지(#986 F1). 코디네이터의 jq 판정과 같은 기준이다.
- * - 작성자가 신뢰 App이고 본문이 이 head의 기록과 정확히 같다.
+ * - 작성자가 신뢰 App이고 본문이 이 head와 증거 블록 digest의 기록과 정확히 같다.
  * - 편집되지 않았다(updated_at이 created_at과 같다). 쓰기 권한자가 App 기록을 새 head로 고쳐 쓰는 것을 막는다.
  * - head 커밋보다 먼저 만들어지지 않았다. 앞선 head의 기록을 재사용하는 것을 막는다(커밋 시각은 작성자가 정할 수 있어 이것만으로 방어가 되지는 않는다).
  */
-export function isValidAttestation(comment, headSha, headCommittedAt) {
-  if (!isObject(comment) || !sameIdentity(comment.user, AUTOMATION_PR_APP) || comment.body !== automationAttestationMarker(headSha)) return false;
+export function isValidAttestation(comment, headSha, evidenceSha256, headCommittedAt) {
+  if (!isObject(comment) || !sameIdentity(comment.user, AUTOMATION_PR_APP) || comment.body !== automationAttestationMarker(headSha, evidenceSha256)) return false;
   const created = Date.parse(comment.created_at);
   return typeof comment.created_at === "string" && comment.created_at === comment.updated_at
     && created >= Date.parse(headCommittedAt);
@@ -214,7 +227,7 @@ function commitViolation(commits, compare) {
 export function evaluateAutomationPullRequest(input) {
   const violations = [];
   const violate = (code, detail) => violations.push({ code, detail });
-  const { repository, pull, commits, files, compare, checkRuns, requiredContexts, workflowRun } = isObject(input) ? input : {};
+  const { repository, pull, commits, files, compare, checkRuns, requiredContexts, workflowRun, ciEvidence } = isObject(input) ? input : {};
   const ref = pull?.head?.ref;
   const headSha = pull?.head?.sha;
   if (!isObject(pull) || typeof ref !== "string" || typeof headSha !== "string") {
@@ -235,6 +248,16 @@ export function evaluateAutomationPullRequest(input) {
   } catch (error) {
     const text = message(error);
     violate(text.startsWith("AUTOMATION_PR_EVIDENCE_HEAD_MISMATCH") ? "HEAD_MISMATCH" : "EVIDENCE", text);
+  }
+
+  if (evidence !== null) {
+    // CI가 게이트를 재계산할 때 본 증거 블록과 지금 본문의 블록이 같아야 한다(#986 F3). CI 뒤 본문 편집으로 단계·경로 주장을 바꾸지 못한다.
+    const keys = isObject(ciEvidence) ? Object.keys(ciEvidence).sort() : [];
+    if (!isObject(ciEvidence) || keys.join(",") !== "evidenceSha256,headSha,schemaVersion,stage" || ciEvidence.schemaVersion !== 1
+      || ciEvidence.headSha !== headSha || ciEvidence.stage !== evidence.stage
+      || typeof ciEvidence.evidenceSha256 !== "string" || ciEvidence.evidenceSha256 !== automationEvidenceDigest(pull.body)) {
+      violate("DIGEST", "CI가 기록한 증거 블록 digest가 현재 본문의 블록과 다르다");
+    }
   }
 
   const arrays = [["commits", commits], ["files", files], ["checkRuns", checkRuns]].filter(([, value]) => !Array.isArray(value));
@@ -390,15 +413,32 @@ function requiredContextsOf(rules) {
     .map((item) => ({ context: item?.context, integration_id: item?.integration_id ?? null }));
 }
 
+export const EVIDENCE_ARTIFACT_NAME = "automation-pr-evidence";
+export const EVIDENCE_ARTIFACT_MEMBER = "evidence-digest.json";
+
+/** 게이트 재계산 job이 본 증거 블록의 digest 기록(artifact 본문). */
+export async function writeEvidenceDigest({ file, pull, evidence }) {
+  await writeFile(file, `${JSON.stringify({ schemaVersion: 1, headSha: pull.head.sha, stage: evidence.stage, evidenceSha256: automationEvidenceDigest(pull.body) })}\n`);
+}
+
+/** 이 CI run의 digest artifact를 읽는다. 없거나 만료됐거나 둘 이상이면 판정하지 않고 막는다. */
+async function readCiEvidence({ api, repository, runId }) {
+  const listing = await api(`repos/${repository}/actions/runs/${runId}/artifacts?name=${EVIDENCE_ARTIFACT_NAME}`);
+  const live = (Array.isArray(listing?.artifacts) ? listing.artifacts : []).filter((item) => item?.name === EVIDENCE_ARTIFACT_NAME && item.expired === false);
+  if (live.length !== 1 || !Number.isSafeInteger(live[0].id)) throw new Error(`AUTOMATION_PR_DIGEST: CI run ${runId}의 ${EVIDENCE_ARTIFACT_NAME} artifact가 정확히 하나(만료 전)가 아니다`);
+  return api(`repos/${repository}/actions/artifacts/${live[0].id}/zip#${EVIDENCE_ARTIFACT_MEMBER}`);
+}
+
 /**
  * 라벨러가 CI 완료 뒤 부른다. 정책 대상이 아니거나 head가 이미 바뀌었으면 아무것도 하지 않는 상태를 돌려주고,
  * 대상인데 어긋나면 위반 코드를 담은 예외로 끝난다(job 실패 -> #926 실패 보고).
  * @returns {Promise<{ state: "ELIGIBLE", pullRequest: number, headSha: string, stage: string, draft: boolean, labeled: boolean, attested: boolean } | { state: "NOT_APPLICABLE" | "STALE" }>}
  */
-export async function decideAutomationPullRequest({ repository, headSha, runConclusion, api }) {
+export async function decideAutomationPullRequest({ repository, headSha, runConclusion, runId, api }) {
   if (typeof repository !== "string" || !REPOSITORY.test(repository)) throw inputError("repository");
   if (typeof headSha !== "string" || !COMMIT.test(headSha)) throw inputError("head sha");
   if (typeof runConclusion !== "string" || runConclusion === "") throw inputError("run conclusion");
+  if (!Number.isSafeInteger(runId) || runId < 1) throw inputError("run id");
   if (runConclusion === "cancelled" || runConclusion === "skipped") return { state: "STALE" };
 
   const associated = (await api(`repos/${repository}/commits/${headSha}/pulls`)).filter((item) => item?.state === "open" && item.base?.ref === MAIN);
@@ -418,8 +458,10 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
   const requiredContexts = requiredContextsOf(await api(`repos/${repository}/rules/branches/${MAIN}`));
   const comments = await readPages(api, `repos/${repository}/issues/${number}/comments`, { limit: 3 });
 
+  const ciEvidence = await readCiEvidence({ api, repository, runId });
+
   const result = evaluateAutomationPullRequest({
-    repository, pull, commits, files, compare, checkRuns, requiredContexts, workflowRun: { conclusion: runConclusion, headSha },
+    repository, pull, commits, files, compare, checkRuns, requiredContexts, workflowRun: { conclusion: runConclusion, headSha }, ciEvidence,
   });
   if (!result.applicable) return { state: "NOT_APPLICABLE" };
   if (!result.eligible) throw new Error(result.violations.map(({ code, detail }) => `AUTOMATION_PR_${code}: ${detail}`).join("\n"));
@@ -429,9 +471,10 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
     pullRequest: number,
     headSha,
     stage: result.stage,
+    evidenceSha256: ciEvidence.evidenceSha256,
     draft: pull.draft === true,
     labeled: Array.isArray(pull.labels) && pull.labels.some((label) => label?.name === AUTOMATION_AUTOMERGE_LABEL),
-    attested: comments.some((comment) => isValidAttestation(comment, headSha, headCommittedAt)),
+    attested: comments.some((comment) => isValidAttestation(comment, headSha, ciEvidence.evidenceSha256, headCommittedAt)),
   };
 }
 
@@ -439,6 +482,21 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
 // CLI
 // ---------------------------------------------------------------------------
 async function ghApi(endpoint) {
+  const hash = endpoint.indexOf("#");
+  if (hash !== -1) {
+    // artifact zip 안의 파일 하나를 JSON으로 읽는다: <endpoint>#<member>
+    const member = endpoint.slice(hash + 1);
+    if (member !== EVIDENCE_ARTIFACT_MEMBER) throw inputError(`artifact member ${member}`);
+    const { stdout: bytes } = await execFileAsync("gh", ["api", endpoint.slice(0, hash)], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+    const dir = await mkdtemp(path.join(os.tmpdir(), "automation-pr-artifact-"));
+    try {
+      const zip = path.join(dir, "artifact.zip");
+      await writeFile(zip, bytes);
+      return JSON.parse((await execFileAsync("unzip", ["-p", zip, member], { maxBuffer: 1024 * 1024 })).stdout);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
   const { stdout } = await execFileAsync("gh", ["api", "-H", "Accept: application/vnd.github+json", endpoint], { maxBuffer: 256 * 1024 * 1024 });
   return JSON.parse(stdout);
 }
@@ -451,7 +509,7 @@ function parseOptions(rest, allowed) {
     values[key.slice(2)] = rest[index + 1];
   }
   for (const key of allowed) {
-    if (key !== "github-output" && !Object.hasOwn(values, key)) throw inputError(`--${key} is required`);
+    if (key !== "github-output" && key !== "digest-output" && !Object.hasOwn(values, key)) throw inputError(`--${key} is required`);
   }
   return values;
 }
@@ -461,7 +519,7 @@ function writeOutputs(file, outputs) {
   if (file === undefined) return;
   for (const [key, value] of Object.entries(outputs)) {
     const text = String(value);
-    if (!/^[a-z_]+$/u.test(key) || !OUTPUT_VALUE.test(text)) throw inputError(`output ${key}`);
+    if (!/^[a-z0-9_]+$/u.test(key) || !OUTPUT_VALUE.test(text)) throw inputError(`output ${key}`);
     appendFileSync(file, `${key}=${text}\n`);
   }
 }
@@ -488,22 +546,24 @@ export async function main(argv, { api = ghApi, log = (line) => process.stdout.w
     writeOutputs(values["github-output"], { applicable: "true", base_sha: evidence.baseSha });
     log(`자동화 PR 게이트 대상: ${stage}`);
   } else if (command === "gates") {
-    const values = parseOptions(rest, ["pull-request", "repository-root"]);
+    const values = parseOptions(rest, ["pull-request", "repository-root", "digest-output"]);
     const pull = await readPull(values["pull-request"]);
     const evidence = parseAutomationPrEvidence(pull.body, { headSha: pull.head.sha });
     const head = (await execFileAsync(GIT, ["rev-parse", "HEAD"], { cwd: values["repository-root"] })).stdout.trim();
     if (head !== pull.head.sha) throw new Error(`AUTOMATION_PR_HEAD_MISMATCH: 작업 트리 head(${head})가 PR head(${pull.head.sha})와 다르다`);
     const { violations } = await recomputeAutomationGates({ evidence, repositoryRoot: path.resolve(values["repository-root"]) });
     if (violations.length > 0) throw new Error(violations.map(({ code, detail }) => `AUTOMATION_PR_${code}: ${detail}`).join("\n"));
+    if (values["digest-output"] !== undefined) await writeEvidenceDigest({ file: values["digest-output"], pull, evidence });
     log(`자동화 PR 게이트 재계산 통과: ${evidence.stage}`);
   } else if (command === "decide") {
-    const values = parseOptions(rest, ["repository", "head-sha", "run-conclusion", "github-output"]);
-    const decision = await decideAutomationPullRequest({ repository: values.repository, headSha: values["head-sha"], runConclusion: values["run-conclusion"], api });
+    const values = parseOptions(rest, ["repository", "head-sha", "run-conclusion", "run-id", "github-output"]);
+    const decision = await decideAutomationPullRequest({ repository: values.repository, headSha: values["head-sha"], runConclusion: values["run-conclusion"], runId: Number(values["run-id"]), api });
     writeOutputs(values["github-output"], {
       state: decision.state,
       pull_request: decision.pullRequest ?? "",
       head_sha: decision.headSha ?? "",
       stage: decision.stage ?? "",
+      evidence_sha256: decision.evidenceSha256 ?? "",
       draft: decision.draft ?? false,
       labeled: decision.labeled ?? false,
       attested: decision.attested ?? false,

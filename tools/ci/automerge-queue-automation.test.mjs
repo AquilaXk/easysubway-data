@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -29,12 +30,16 @@ function stubbedBash(lines) {
   };
 }
 
+const PAYLOAD = '{"schemaVersion":1,"stage":"registration"}';
+const BODY = `자동화 PR\n\n<!-- easysubway-automation-pr:v1 ${PAYLOAD} -->\n`;
+const digestOf = (payload) => createHash('sha256').update(payload).digest('hex');
+const DIGEST = digestOf(PAYLOAD);
 const HEAD_COMMITTED_AT = '2026-10-06T00:00:00Z';
 const ATTESTED_AT = '2026-10-06T00:10:00Z';
 const attestation = (head = HEAD, user = APP, body, overrides = {}) => ({
   id: 1,
   user,
-  body: body ?? `<!-- Automation automerge policy: ${head} -->`,
+  body: body ?? `<!-- Automation automerge policy: ${head} evidence ${DIGEST} -->`,
   created_at: ATTESTED_AT,
   updated_at: ATTESTED_AT,
   ...overrides,
@@ -61,7 +66,7 @@ const aquilaReview = (overrides = {}) =>
   });
 
 /** 리뷰 게이트 블록(함수 정의 포함)을 1회 루프에 넣어 실제 판정을 실행한다. */
-async function runGate({ reviews = [], comments = [], author = APP, enabled = 'true', authorFails = false, headCommittedAt = HEAD_COMMITTED_AT, headDateFails = false }) {
+async function runGate({ reviews = [], comments = [], author = APP, enabled = 'true', authorFails = false, prBody = BODY, headCommittedAt = HEAD_COMMITTED_AT, headDateFails = false }) {
   const workflow = await readWorkflow();
   const policy = workflow.match(/# automation-policy-begin\n([\s\S]*?)\n\s+# automation-policy-end/)?.[1];
   const gate = workflow.match(/# review-state-filter-begin\n([\s\S]*?)\n\s+# review-state-filter-end/)?.[0];
@@ -73,7 +78,7 @@ async function runGate({ reviews = [], comments = [], author = APP, enabled = 't
     'gh() {',
     `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
     '  case "$*" in',
-    `    "api repos/o/r/pulls/26 --jq .user") ${authorFails ? 'return 1' : `printf '%s' ${JSON.stringify(JSON.stringify(author))}`} ;;`,
+    `    "api repos/o/r/pulls/26 --jq {user, body}") ${authorFails ? 'return 1' : `printf '%s' ${JSON.stringify(JSON.stringify({ user: author, body: prBody }))}`} ;;`,
     `    "api repos/o/r/commits/${HEAD} --jq .commit.committer.date") ${headDateFails ? 'return 1' : `printf '%s' ${JSON.stringify(headCommittedAt)}`} ;;`,
     '    *) return 99 ;;',
     '  esac',
@@ -113,7 +118,7 @@ test('자동화 정책 판정은 켜져 있고 App 작성 PR에 exact-head App �
   const passed = await runGate({ comments: [attestation()] });
   assert.equal(passed.passed, true);
   assert.equal(passed.automation, true);
-  assert.match(passed.calls, /gh api repos\/o\/r\/pulls\/26 --jq \.user/);
+  assert.match(passed.calls, /gh api repos\/o\/r\/pulls\/26 --jq \{user, body\}/);
 
   // 신뢰 협력자의 COMMENTED·APPROVED 리뷰가 함께 있어도 막지 않는다.
   assert.equal((await runGate({ comments: [attestation()], reviews: [review(1, 'COMMENTED')] })).passed, true);
@@ -138,9 +143,11 @@ test('반증: 기록이 없거나 다른 head의 것이거나 신뢰 App이 쓴 
     'login only': [attestation(HEAD, { ...APP, id: 1 })],
     'id only': [attestation(HEAD, { ...APP, login: 'someone[bot]' })],
     'wrong type': [attestation(HEAD, { ...APP, type: 'User' })],
-    'suffix text': [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} -->\n승인`)],
-    'prefix text': [attestation(HEAD, APP, `승인 <!-- Automation automerge policy: ${HEAD} -->`)],
-    'short sha': [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD.slice(0, 7)} -->`)],
+    'suffix text': [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} evidence ${DIGEST} -->\n승인`)],
+    'prefix text': [attestation(HEAD, APP, `승인 <!-- Automation automerge policy: ${HEAD} evidence ${DIGEST} -->`)],
+    'short sha': [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD.slice(0, 7)} evidence ${DIGEST} -->`)],
+    'no digest (old format)': [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} -->`)],
+    'short digest': [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} evidence ${DIGEST.slice(0, 12)} -->`)],
     'frozen discovery marker only': [marker()],
   };
   for (const [name, comments] of Object.entries(forged)) {
@@ -278,4 +285,20 @@ test('반증: head 커밋보다 먼저 만들어진 기록은 재사용으로 �
   assert.equal((await runGate({ comments: [attestation()], headDateFails: true })).passed, false);
   assert.equal((await runGate({ comments: [attestation()], headCommittedAt: 'garbage' })).passed, false);
   assert.equal((await runGate({ comments: [attestation()], headCommittedAt: '2026-10-06T00:11:00Z' })).passed, false);
+});
+
+// #986 리뷰 F3: 기록은 CI가 본 증거 블록(digest)에 묶인다. 코디네이터는 지금 PR 본문의 블록 digest와 기록의 digest를 대조한다.
+test('반증: 기록의 증거 digest가 현재 본문 블록과 다르면 통과하지 못한다(CI·라벨 뒤 본문 편집)', async () => {
+  const otherPayload = '{"schemaVersion":1,"stage":"registration","edited":true}';
+  const edited = `자동화 PR\n\n<!-- easysubway-automation-pr:v1 ${otherPayload} -->\n`;
+  assert.equal((await runGate({ comments: [attestation()], prBody: edited })).passed, false);
+  assert.equal((await runGate({ comments: [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} evidence ${digestOf(otherPayload)} -->`)], prBody: edited })).passed, true);
+  // 블록이 없거나 둘 이상이거나 본문이 비어 있으면 digest를 정할 수 없으므로 통과하지 못한다.
+  for (const prBody of ['', '블록 없음', `${BODY}${BODY}`, null]) {
+    assert.equal((await runGate({ comments: [attestation()], prBody })).passed, false, String(prBody));
+  }
+  // 블록이 없는 본문에 빈 문자열의 digest를 가진 기록이 있어도 통과하지 못한다.
+  assert.equal((await runGate({ comments: [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} evidence ${digestOf('')} -->`)], prBody: '블록 없음' })).passed, false);
+  // 기록 digest가 형식에 맞아도 다른 값이면 막는다.
+  assert.equal((await runGate({ comments: [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} evidence ${'0'.repeat(64)} -->`)] })).passed, false);
 });

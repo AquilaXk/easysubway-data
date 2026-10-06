@@ -341,12 +341,17 @@ jobs:
           # 입력: pr, head, comments, reviews(read_pages 페이지 배열). 병합은 이 함수가 아니라 아래 병합 분기가 같은 게이트 뒤에서 한다.
           automation_policy_authorized() {
             [[ "${AUTOMATION_AUTOMERGE_ENABLED:-}" == "true" ]] || return 1
-            local author
-            author="$(gh api "repos/${repo}/pulls/${pr}" --jq '.user')" || return 1
+            local pull author payload digest
+            pull="$(gh api "repos/${repo}/pulls/${pr}" --jq '{user, body}')" || return 1
+            author="$(jq -c '.user' <<<"${pull}")" || return 1
+            # 기록은 CI가 본 증거 블록(JSON 페이로드 텍스트의 sha256)에 묶인다(#986 F3). 지금 본문의 블록이 정확히 하나가 아니면 판정하지 못한다.
+            payload="$(jq -r '.body | [match("<!-- easysubway-automation-pr:v1 (.*?) -->"; "g")] | if length == 1 then .[0].captures[0].string else empty end' <<<"${pull}")" || return 1
+            [[ -n "${payload}" ]] || return 1
+            digest="$(printf '%s' "${payload}" | openssl dgst -sha256 -r | cut -d' ' -f1)" || return 1
             # 기록은 편집되지 않았고 head 커밋 이후에 만들어진 것만 인정한다(#986 F1). 커밋 시각을 못 읽으면 판정하지 못하므로 통과하지 못한다.
             head_at="$(gh api "repos/${repo}/commits/${head}" --jq '.commit.committer.date')" || return 1
             # shellcheck disable=SC2016
-            jq -e --arg head "${head}" --arg head_at "${head_at}" --argjson author "${author}" --argjson comments "${comments}" '
+            jq -e --arg head "${head}" --arg digest "${digest}" --arg head_at "${head_at}" --argjson author "${author}" --argjson comments "${comments}" '
               def is_app:
                 type == "object" and
                 .login == "easysubway-release-chain[bot]" and
@@ -360,7 +365,7 @@ jobs:
               ($author | is_app) and
               ($comments | flatten | any(
                 (.user | is_app) and
-                (.body // "") == ("<!-- Automation automerge policy: " + $head + " -->") and
+                (.body // "") == ("<!-- Automation automerge policy: " + $head + " evidence " + $digest + " -->") and
                 .created_at == .updated_at and
                 ((.created_at | fromdateiso8601) >= ($head_at | fromdateiso8601)))) and
               ([flatten[] |

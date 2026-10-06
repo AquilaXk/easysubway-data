@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,7 @@ import {
   AUTOMATION_PR_GATES_CONTEXT,
   REGISTRATION_ALLOWED_PATHS,
   automationAttestationMarker,
+  automationEvidenceDigest,
   automationStageForBranch,
   decideAutomationPullRequest,
   evaluateAutomationPullRequest,
@@ -25,6 +27,8 @@ const REPOSITORY = "AquilaXk/easysubway-data";
 const BASE = "a".repeat(40);
 const HEAD = "b".repeat(40);
 const OTHER = "c".repeat(40);
+const RUN_ID = 123456;
+const DIGEST = "a".repeat(64);
 const RUN_URL = "https://github.com/AquilaXk/easysubway-data/actions/runs/123456";
 const POLICY = { schemaVersion: 1, issue: 969, allowContentChange: true, maxRowDeltaRatio: 0.05, allowCoverageDecrease: false, sourceOverrides: {} };
 const ACTIONS_BOT = { login: "github-actions[bot]", id: 41898282, type: "Bot" };
@@ -93,6 +97,7 @@ function scenario(stage = "registration") {
     checkRuns: [run("Data contracts", "success", { id: 10 }), run(AUTOMATION_PR_GATES_CONTEXT, "success", { id: 11 })],
     requiredContexts: [{ context: "Data contracts", integration_id: null }],
     workflowRun: { conclusion: "success", headSha: HEAD },
+    ciEvidence: { schemaVersion: 1, headSha: HEAD, stage, evidenceSha256: automationEvidenceDigest(body) },
   };
 }
 
@@ -102,8 +107,8 @@ const eligible = (input) => evaluateAutomationPullRequest(input).eligible;
 test("신뢰 신원은 App easysubway-release-chain[bot]의 login·id·type으로 고정한다", () => {
   assert.deepEqual({ ...AUTOMATION_PR_APP }, { login: "easysubway-release-chain[bot]", id: 337648189, type: "Bot" });
   assert.equal(AUTOMATION_PR_GATES_CONTEXT, "Automation PR gates");
-  assert.equal(automationAttestationMarker(HEAD), `<!-- Automation automerge policy: ${HEAD} -->`);
-  assert.throws(() => automationAttestationMarker("abc"), /AUTOMATION_PR_INPUT/u);
+  assert.equal(automationAttestationMarker(HEAD, DIGEST), `<!-- Automation automerge policy: ${HEAD} evidence ${DIGEST} -->`);
+  for (const [head, digest] of [["abc", DIGEST], [HEAD, "abc"], [HEAD, "A".repeat(64)], [HEAD, undefined]]) assert.throws(() => automationAttestationMarker(head, digest), /AUTOMATION_PR_INPUT/u);
 });
 
 test("claim 접두사는 네 단계에만 대응하고 그 밖의 브랜치는 정책 대상이 아니다", () => {
@@ -496,7 +501,7 @@ test("게이트 재계산: 읽을 수 없는 입력은 예외 없이 위반으�
 // ---------------------------------------------------------------------------
 // 라벨러의 판정 흐름(API 읽기만 쓴다)
 // ---------------------------------------------------------------------------
-function fakeApi(input, { pulls, labels = [], comments = [] } = {}) {
+function fakeApi(input, { pulls, labels = [], comments = [], artifacts = [{ id: 55, name: "automation-pr-evidence", expired: false }] } = {}) {
   const calls = [];
   const api = async (path) => {
     calls.push(path);
@@ -508,33 +513,35 @@ function fakeApi(input, { pulls, labels = [], comments = [] } = {}) {
     if (path.startsWith(`repos/${REPOSITORY}/commits/${HEAD}/check-runs`)) return { total_count: input.checkRuns.length, check_runs: input.checkRuns };
     if (path === `repos/${REPOSITORY}/rules/branches/main`) return [{ type: "required_status_checks", parameters: { required_status_checks: input.requiredContexts } }];
     if (path.startsWith(`repos/${REPOSITORY}/issues/77/comments`)) return comments;
+    if (path === `repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=automation-pr-evidence`) return { total_count: artifacts.length, artifacts };
+    if (path === `repos/${REPOSITORY}/actions/artifacts/55/zip#evidence-digest.json`) return input.ciEvidence;
     throw new Error(`unexpected API path ${path}`);
   };
   return { api, calls };
 }
 
 const ATTESTED_AT = "2026-10-06T00:10:00Z";
-const attestationComment = (overrides = {}) => ({ user: { ...AUTOMATION_PR_APP }, body: automationAttestationMarker(HEAD), created_at: ATTESTED_AT, updated_at: ATTESTED_AT, ...overrides });
+const attestationFor = (input, overrides = {}) => ({ user: { ...AUTOMATION_PR_APP }, body: automationAttestationMarker(HEAD, automationEvidenceDigest(input.pull.body)), created_at: ATTESTED_AT, updated_at: ATTESTED_AT, ...overrides });
 
 test("라벨러 판정: 적격이면 ELIGIBLE과 PR 번호·head·단계·이미 한 일을 돌려준다", async () => {
   const input = scenario("itx-promotion");
   const { api } = fakeApi(input);
-  const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api });
-  assert.deepEqual(decision, { state: "ELIGIBLE", pullRequest: 77, headSha: HEAD, stage: "itx-promotion", draft: true, labeled: false, attested: false });
-  const done = fakeApi(input, { labels: [{ name: "automerge" }], comments: [attestationComment()] });
-  const again = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: done.api });
+  const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api });
+  assert.deepEqual(decision, { state: "ELIGIBLE", pullRequest: 77, headSha: HEAD, stage: "itx-promotion", evidenceSha256: input.ciEvidence.evidenceSha256, draft: true, labeled: false, attested: false });
+  const done = fakeApi(input, { labels: [{ name: "automerge" }], comments: [attestationFor(input)] });
+  const again = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: done.api });
   assert.equal(again.labeled, true);
   assert.equal(again.attested, true);
   // 같은 head의 기록이라도 신뢰 App이 쓴 것만 센다.
-  const forged = fakeApi(input, { comments: [attestationComment({ user: HUMAN })] });
-  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: forged.api })).attested, false);
+  const forged = fakeApi(input, { comments: [attestationFor(input, { user: HUMAN })] });
+  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: forged.api })).attested, false);
 });
 
 test("라벨러 판정: 위반이면 예외로 끝나고 코드가 메시지에 남는다. 쓰기 호출은 없다", async () => {
   const input = scenario();
   input.pull.user = HUMAN;
   const { api, calls } = fakeApi(input);
-  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api }), /AUTOMATION_PR_AUTHOR/u);
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api }), /AUTOMATION_PR_AUTHOR/u);
   assert.ok(calls.every((path) => typeof path === "string"));
 });
 
@@ -543,24 +550,24 @@ test("라벨러 판정: 정책 대상이 아닌 PR·닫힌 PR·head가 이미 �
   const other = scenario();
   other.pull.head.ref = "automation/636-current-topology-refresh-1";
   const otherApi = fakeApi(other);
-  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: otherApi.api })).state, "NOT_APPLICABLE");
+  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: otherApi.api })).state, "NOT_APPLICABLE");
   // 대상이 아닌 PR은 커밋·파일·check 같은 무거운 읽기를 하지 않는다.
   assert.deepEqual(otherApi.calls, [`repos/${REPOSITORY}/commits/${HEAD}/pulls`, `repos/${REPOSITORY}/pulls/77`]);
-  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(base, { pulls: [] }).api })).state, "NOT_APPLICABLE");
+  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(base, { pulls: [] }).api })).state, "NOT_APPLICABLE");
   const moved = scenario();
   moved.pull.head.sha = OTHER;
-  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(moved).api })).state, "STALE");
+  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(moved).api })).state, "STALE");
   // 취소된 CI 실행은 새 head의 실행이 이어받는다.
-  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "cancelled", api: fakeApi(base).api })).state, "STALE");
+  assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "cancelled", runId: RUN_ID, api: fakeApi(base).api })).state, "STALE");
 });
 
 test("라벨러 판정: 같은 head를 가진 열린 PR이 둘 이상이면 모호하므로 막고 API 실패는 그대로 실패한다", async () => {
   const input = scenario();
   const two = [{ number: 77, state: "open", base: { ref: "main" }, head: { sha: HEAD } }, { number: 78, state: "open", base: { ref: "main" }, head: { sha: HEAD } }];
-  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(input, { pulls: two }).api }), /AUTOMATION_PR_INPUT/u);
-  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: async () => { throw new Error("HTTP 502"); } }), /HTTP 502/u);
-  await assert.rejects(decideAutomationPullRequest({ repository: "bad repo", headSha: HEAD, runConclusion: "success", api: fakeApi(input).api }), /AUTOMATION_PR_INPUT/u);
-  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: "abc", runConclusion: "success", api: fakeApi(input).api }), /AUTOMATION_PR_INPUT/u);
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input, { pulls: two }).api }), /AUTOMATION_PR_INPUT/u);
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: async () => { throw new Error("HTTP 502"); } }), /HTTP 502/u);
+  await assert.rejects(decideAutomationPullRequest({ repository: "bad repo", headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input).api }), /AUTOMATION_PR_INPUT/u);
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: "abc", runConclusion: "success", runId: RUN_ID, api: fakeApi(input).api }), /AUTOMATION_PR_INPUT/u);
 });
 
 test("CLI: 알 수 없는 명령·인자는 실패한다", async () => {
@@ -616,31 +623,102 @@ test("CLI decide: 판정을 GITHUB_OUTPUT에 쓰고, 값이 출력 형식에 맞
     const input = scenario("itx-promotion");
     const output = path.join(dir, "output.txt");
     const { api } = fakeApi(input);
-    await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "success", "--github-output", output], { api, log: () => {} });
-    assert.equal(await readFile(output, "utf8"), `state=ELIGIBLE\npull_request=77\nhead_sha=${HEAD}\nstage=itx-promotion\ndraft=true\nlabeled=false\nattested=false\n`);
+    await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "success", "--run-id", String(RUN_ID), "--github-output", output], { api, log: () => {} });
+    assert.equal(await readFile(output, "utf8"), `state=ELIGIBLE\npull_request=77\nhead_sha=${HEAD}\nstage=itx-promotion\nevidence_sha256=${input.ciEvidence.evidenceSha256}\ndraft=true\nlabeled=false\nattested=false\n`);
 
     const stale = path.join(dir, "stale.txt");
-    await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "cancelled", "--github-output", stale], { api, log: () => {} });
-    assert.equal(await readFile(stale, "utf8"), "state=STALE\npull_request=\nhead_sha=\nstage=\ndraft=false\nlabeled=false\nattested=false\n");
+    await main(["decide", "--repository", REPOSITORY, "--head-sha", HEAD, "--run-conclusion", "cancelled", "--run-id", String(RUN_ID), "--github-output", stale], { api, log: () => {} });
+    assert.equal(await readFile(stale, "utf8"), "state=STALE\npull_request=\nhead_sha=\nstage=\nevidence_sha256=\ndraft=false\nlabeled=false\nattested=false\n");
   });
 });
 
 // #986 리뷰 F1: 이미 한 일(attested)로 세는 기록도 코디네이터와 같은 기준이다. 편집된 기록·head 커밋보다 먼저 만든 기록은 없는 것으로 본다.
 test("반증: 편집됐거나 head 커밋보다 먼저 만들어진 기록은 attested로 세지 않아 라벨러가 새 기록을 남긴다", async () => {
   const input = scenario();
-  const attestedOf = async (comments) => (await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(input, { comments }).api })).attested;
-  assert.equal(await attestedOf([attestationComment()]), true);
-  assert.equal(await attestedOf([attestationComment({ updated_at: "2026-10-06T00:20:00Z" })]), false, "edited");
-  assert.equal(await attestedOf([attestationComment({ created_at: "2026-10-05T23:59:59Z", updated_at: "2026-10-05T23:59:59Z" })]), false, "created before the head commit");
-  assert.equal(await attestedOf([attestationComment({ created_at: HEAD_COMMITTED_AT, updated_at: HEAD_COMMITTED_AT })]), true, "same second");
-  assert.equal(await attestedOf([attestationComment({ created_at: undefined, updated_at: undefined })]), false, "no timestamps");
-  assert.equal(await attestedOf([attestationComment({ created_at: "garbage", updated_at: "garbage" })]), false, "bad timestamps");
+  const attestedOf = async (comments) => (await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input, { comments }).api })).attested;
+  assert.equal(await attestedOf([attestationFor(input)]), true);
+  assert.equal(await attestedOf([attestationFor(input, { updated_at: "2026-10-06T00:20:00Z" })]), false, "edited");
+  assert.equal(await attestedOf([attestationFor(input, { created_at: "2026-10-05T23:59:59Z", updated_at: "2026-10-05T23:59:59Z" })]), false, "created before the head commit");
+  assert.equal(await attestedOf([attestationFor(input, { created_at: HEAD_COMMITTED_AT, updated_at: HEAD_COMMITTED_AT })]), true, "same second");
+  assert.equal(await attestedOf([attestationFor(input, { created_at: undefined, updated_at: undefined })]), false, "no timestamps");
+  assert.equal(await attestedOf([attestationFor(input, { created_at: "garbage", updated_at: "garbage" })]), false, "bad timestamps");
   // 편집된 기록 옆에 올바른 기록이 있으면 인정한다.
-  assert.equal(await attestedOf([attestationComment({ updated_at: "2026-10-06T00:20:00Z" }), attestationComment()]), true);
+  assert.equal(await attestedOf([attestationFor(input, { updated_at: "2026-10-06T00:20:00Z" }), attestationFor(input)]), true);
   // head 커밋을 PR 커밋 목록에서 찾지 못하면 기록 시각을 비교할 수 없으므로 없는 것으로 본다.
   const noHead = scenario();
   noHead.commits = [commit("1".repeat(40))];
   noHead.compare = { ...noHead.compare, ahead_by: 1 };
-  const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", api: fakeApi(noHead, { comments: [attestationComment()] }).api });
+  const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(noHead, { comments: [attestationFor(noHead)] }).api });
   assert.equal(decision.attested, false);
+});
+
+// ---------------------------------------------------------------------------
+// #986 리뷰 F3: CI가 본 증거 블록과 지금 본문의 블록이 같아야 한다(블록 digest 결속)
+// ---------------------------------------------------------------------------
+test("증거 digest는 본문 블록의 JSON 페이로드 텍스트의 sha256이고 블록이 없거나 둘 이상이면 실패한다", () => {
+  const body = scenario().pull.body;
+  const payload = /<!-- easysubway-automation-pr:v1 (.*?) -->/u.exec(body)[1];
+  assert.equal(automationEvidenceDigest(body), createHash("sha256").update(payload).digest("hex"));
+  assert.notEqual(automationEvidenceDigest(scenario("itx-promotion").pull.body), automationEvidenceDigest(body));
+  for (const bad of ["", null, "블록 없음", `${body}\n${body}`]) assert.throws(() => automationEvidenceDigest(bad), /AUTOMATION_PR_EVIDENCE/u);
+});
+
+test("반증: CI가 기록한 digest가 없거나 현재 본문 블록과 다르면 막는다(CI 뒤 본문 편집)", () => {
+  const mutations = {
+    missing: (input) => { delete input.ciEvidence; },
+    null: (input) => { input.ciEvidence = null; },
+    "digest of another block": (input) => { input.ciEvidence = { ...input.ciEvidence, evidenceSha256: automationEvidenceDigest(scenario("itx-promotion").pull.body) }; },
+    "body edited after CI": (input) => { input.pull.body = input.pull.body.replace("registration", "registration ").replace('"rowDelta":0', '"rowDelta":1'); },
+    "other head": (input) => { input.ciEvidence = { ...input.ciEvidence, headSha: OTHER }; },
+    "other stage": (input) => { input.ciEvidence = { ...input.ciEvidence, stage: "candidate-refresh" }; },
+    "extra key": (input) => { input.ciEvidence = { ...input.ciEvidence, extra: true }; },
+    "wrong schema": (input) => { input.ciEvidence = { ...input.ciEvidence, schemaVersion: 2 }; },
+    "bad digest format": (input) => { input.ciEvidence = { ...input.ciEvidence, evidenceSha256: "ABC" }; },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const input = scenario();
+    mutate(input);
+    assert.ok(codesOf(input).includes("DIGEST") || codesOf(input).includes("EVIDENCE"), name);
+    assert.equal(eligible(input), false, name);
+  }
+  assert.equal(eligible(scenario()), true);
+});
+
+test("라벨러 판정: CI가 남긴 digest artifact를 읽어 대조하고 없거나 만료됐거나 둘 이상이면 막는다", async () => {
+  const input = scenario();
+  const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input).api });
+  assert.equal(decision.evidenceSha256, input.ciEvidence.evidenceSha256);
+  for (const [name, artifacts] of Object.entries({
+    none: [],
+    expired: [{ id: 55, name: "automation-pr-evidence", expired: true }],
+    duplicate: [{ id: 55, name: "automation-pr-evidence", expired: false }, { id: 56, name: "automation-pr-evidence", expired: false }],
+    "other name": [{ id: 55, name: "other", expired: false }],
+  })) {
+    await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input, { artifacts }).api }), /AUTOMATION_PR_DIGEST/u, name);
+  }
+  const edited = scenario();
+  edited.pull.body = edited.pull.body.replace('"rowDelta":0', '"rowDelta":1');
+  const stale = fakeApi(edited);
+  const original = scenario();
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: async (path) => (path.endsWith("#evidence-digest.json") ? original.ciEvidence : stale.api(path)) }), /AUTOMATION_PR_DIGEST/u);
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: "x", api: fakeApi(input).api }), /AUTOMATION_PR_INPUT/u);
+});
+
+test("반증: 기록은 증거 digest까지 같아야 인정한다(다른 블록에 대한 기록 재사용)", async () => {
+  const input = scenario();
+  const withDigest = (digest) => ({ ...attestationFor(input), body: automationAttestationMarker(HEAD, digest) });
+  const attestedOf = async (comments) => (await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input, { comments }).api })).attested;
+  assert.equal(await attestedOf([attestationFor(input)]), true);
+  assert.equal(await attestedOf([withDigest("0".repeat(64))]), false);
+  assert.equal(await attestedOf([{ ...attestationFor(input), body: `<!-- Automation automerge policy: ${HEAD} -->` }]), false, "old format without digest");
+});
+
+test("CLI gates: --digest-output으로 CI가 본 블록의 digest 기록을 남긴다", async () => {
+  await withTemp(async (dir) => {
+    const { writeEvidenceDigest } = await import("./automation-pr-policy.mjs");
+    const input = scenario("itx-promotion");
+    const file = path.join(dir, "evidence-digest.json");
+    await writeEvidenceDigest({ file, pull: input.pull, evidence: { stage: "itx-promotion" } });
+    assert.deepEqual(JSON.parse(await readFile(file, "utf8")), input.ciEvidence);
+  });
 });

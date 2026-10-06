@@ -577,7 +577,7 @@ jobs:
   # #985: 자동화 PR(App이 연 claim 브랜치)의 원장·ITX 승격·후보 게이트를 PR head 작업 트리에서 다시 계산한다(#870 전체 자동화 2단계).
   # 읽기 전용 토큰의 pull_request에서만 돈다. PR 코드를 쓰기 토큰으로 실행하지 않는다는 신뢰 모델의 한 축이다. 증거 블록의 PASS 주장은 믿지 않는다.
   # 이 check는 ruleset의 required가 아니고 Data contracts 집계도 이 job을 기다리지 않는다(사람 PR의 병합 경로는 바뀌지 않는다).
-  # 자동 병합 라벨러(automation-pr-automerge.yml)가 github-actions가 만든 이 check의 성공을 조건으로 읽는다.
+  # 자동 병합 라벨러(automation-pr-automerge.yml)가 github-actions가 만든 이 check의 성공과, 이 job이 본 증거 블록 digest artifact를 조건으로 읽는다.
   automation_pr_gates:
     name: Automation PR gates
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'automation/') }}
@@ -629,7 +629,17 @@ jobs:
           PULL_FILE: ${{ steps.classify.outputs.pull_file }}
         run: |
           set -euo pipefail
-          node tools/ci/automation-pr-policy.mjs gates --pull-request "${PULL_FILE}" --repository-root "${GITHUB_WORKSPACE}"
+          node tools/ci/automation-pr-policy.mjs gates --pull-request "${PULL_FILE}" --repository-root "${GITHUB_WORKSPACE}" --digest-output "${RUNNER_TEMP}/evidence-digest.json"
+
+      - name: Upload the evidence digest the gates saw
+        if: ${{ steps.classify.outputs.applicable == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: automation-pr-evidence
+          path: ${{ runner.temp }}/evidence-digest.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 7
 
   contracts:
     name: Data contracts
