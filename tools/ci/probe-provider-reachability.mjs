@@ -152,15 +152,16 @@ export function summarizeProbes(results) {
   return { reachable: providers.every(({ verdict }) => verdict === "REACHABLE"), providers };
 }
 
+function summaryRow(provider, verdict, check) {
+  const noResponse = check.status === null;
+  const state = noResponse ? "UNREACHABLE" : check.status;
+  const result = noResponse ? check.error : (check.error ?? (check.ok ? "ok" : check.note));
+  return `| ${provider} | ${check.id}${check.required ? "" : " (선택)"} | ${state} | ${result} | ${check.bytes ?? "-"} | ${verdict} |`;
+}
+
 export function renderSummary(summary) {
   const lines = ["## Provider reachability from this runner", "", "| 공급자 | 점검 | 상태 | 결과 | 바이트 | 판정 |", "| --- | --- | --- | --- | --- | --- |"];
-  for (const { provider, verdict, checks } of summary.providers) {
-    for (const check of checks) {
-      const state = check.status ?? "UNREACHABLE";
-      const result = check.error ?? (check.ok ? "ok" : check.note);
-      lines.push(`| ${provider} | ${check.id}${check.required ? "" : " (선택)"} | ${check.status === null ? "UNREACHABLE" : state} | ${check.status === null ? check.error : result} | ${check.bytes ?? "-"} | ${verdict} |`);
-    }
-  }
+  for (const { provider, verdict, checks } of summary.providers) lines.push(...checks.map((check) => summaryRow(provider, verdict, check)));
   const bad = summary.providers.filter(({ verdict }) => verdict !== "REACHABLE");
   lines.push("", summary.reachable ? "ALL REACHABLE" : bad.map(({ provider, verdict }) => `${verdict}: ${provider}`).join("\n"), "");
   return lines.join("\n");

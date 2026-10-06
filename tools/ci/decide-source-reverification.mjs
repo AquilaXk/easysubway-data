@@ -35,8 +35,9 @@ import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs
 export const SOURCE_REVERIFICATION_WORKFLOW = "source-reverification.yml";
 export const SOURCE_REVERIFICATION_CLAIM_PREFIX = REFRESH_CLAIM_PREFIXES[SOURCE_REVERIFICATION_WORKFLOW];
 const WORKFLOW_NAME = "Source Reverification";
-const CLAIM_PREFIX_PATTERN = SOURCE_REVERIFICATION_CLAIM_PREFIX.replaceAll("/", "\\/");
-const CLAIM = new RegExp(`^${CLAIM_PREFIX_PATTERN}[1-9]\\d*$`, "u");
+const CLAIM_PREFIX_PATTERN = SOURCE_REVERIFICATION_CLAIM_PREFIX.replaceAll("/", String.raw`\/`);
+const CLAIM_SUFFIX_PATTERN = String.raw`[1-9]\d*$`;
+const CLAIM = new RegExp(`^${CLAIM_PREFIX_PATTERN}${CLAIM_SUFFIX_PATTERN}`, "u");
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);

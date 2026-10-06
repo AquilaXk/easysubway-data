@@ -153,6 +153,8 @@ export function p7dSourceIds(policy) {
   return policy.sourceClasses.filter((entry) => entry?.reverificationCadence === "P7D").flatMap((entry) => entry.sourceIds ?? []).sort();
 }
 
+const byText = (left, right) => (left < right ? -1 : Number(left > right));
+
 /**
  * 재확인 PR의 inventory 변화가 실행한 recipe의 소유 범위 안인지 본다(#987 N1).
  * - recipe가 소유하지 않은 항목은 base와 head가 깊은 비교로 같아야 한다.
@@ -169,14 +171,14 @@ export function inventoryChangeViolations({ base, head, recipeIds }) {
   const before = entries(base);
   const after = entries(head);
   const violations = [];
-  for (const id of [...new Set([...before.keys(), ...after.keys()])].sort()) {
+  for (const id of [...new Set([...before.keys(), ...after.keys()])].sort(byText)) {
     const [was, now] = [before.get(id), after.get(id)];
     if (was === undefined || now === undefined) { violations.push(`${String(id)}: the inventory entry was ${was === undefined ? "added" : "removed"}`); continue; }
     if (JSON.stringify(was) === JSON.stringify(now)) continue;
     const fields = allowed.get(id);
     if (!fields) { violations.push(`${id}: the entry changed but no recipe in this pull request owns it (not owned)`); continue; }
     const outside = [...new Set([...Object.keys(was), ...Object.keys(now)])].filter((key) => JSON.stringify(was[key]) !== JSON.stringify(now[key]) && !fields.has(key));
-    if (outside.length > 0) violations.push(`${id}: fields outside the recipe's refresh set changed: ${outside.sort().join(", ")}`);
+    if (outside.length > 0) violations.push(`${id}: fields outside the recipe's refresh set changed: ${outside.sort(byText).join(", ")}`);
   }
   return violations;
 }
