@@ -37,6 +37,9 @@ async function fixtureRepository() {
   git(root, "init", "-q", "-b", "main");
   git(root, "config", "user.name", "test");
   git(root, "config", "user.email", "test@example.invalid");
+  // 커밋이 백그라운드 gc를 띄우면 테스트 정리(rm)와 겹쳐 ENOTEMPTY가 난다.
+  git(root, "config", "gc.auto", "0");
+  git(root, "config", "maintenance.auto", "false");
   const files = {
     [INVENTORY]: `${JSON.stringify(inventoryWith(evidence(), evidence({ snapshotId: "kric-korail-1" })), null, 2)}\n`,
     [LEDGER]: `${JSON.stringify([ledgerRow("gwangju-transportation-route-topology", "gwangju-1")], null, 2)}\n`,
@@ -61,7 +64,7 @@ const resetWorktree = (root) => { git(root, "reset", "-q", "--hard", "HEAD"); gi
 const commitSubjects = (root, count) => git(root, "log", "--format=%s", `-${count}`).split("\n");
 
 test("recipe를 의존 순서로 실행하고 recipe마다 바뀐 허용 경로를 한 커밋으로 쌓는다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const order = [];
   const recipes = [meta("first"), meta("second", ["first"]), meta("third")];
   const steps = {
@@ -83,7 +86,7 @@ test("recipe를 의존 순서로 실행하고 recipe마다 바뀐 허용 경로�
 });
 
 test("의존 recipe가 목록에 없거나 알 수 없는 recipe·중복이 있으면 아무것도 실행하지 않고 실패한다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   let ran = 0;
   const recipes = [meta("first"), meta("second", ["first"])];
   const steps = { first: stepsOf("register", async () => { ran += 1; }), second: stepsOf("register", async () => { ran += 1; }) };
@@ -95,7 +98,7 @@ test("의존 recipe가 목록에 없거나 알 수 없는 recipe·중복이 있�
 });
 
 test("실행 순서는 목록 순서가 아니라 recipe 표 순서(의존 순서)다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const order = [];
   const recipes = [meta("first"), meta("second", ["first"])];
   const run = (id) => stepsOf("register", async (ctx) => { order.push(id); await writeFile(path.join(ctx.repositoryRoot, `tools/datapack/sources/${id}.json`), "{}\n"); });
@@ -104,7 +107,7 @@ test("실행 순서는 목록 순서가 아니라 recipe 표 순서(의존 순�
 });
 
 test("수집 단계 실패는 SOURCE_FETCH_FAILED, 등록·입력 조립 실패는 SOURCE_REGISTRATION_FAILED로 드러나고 이후 recipe는 실행하지 않는다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const ran = [];
   const make = (kind, message) => ({
     first: stepsOf("register", async (ctx) => { ran.push("first"); await writeFile(path.join(ctx.repositoryRoot, "tools/datapack/sources/first.json"), "{}\n"); }),
@@ -139,13 +142,13 @@ test("수집·등록을 한 번에 하는 단계는 수집기 오류 코드로 �
 });
 
 test("원본 sha가 고정과 다르면 SOURCE_SHA_DRIFT로 멈춘다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   await assert.rejects(runSourceReverification(options(root, { recipes: [meta("korail")], steps: { korail: stepsOf("collect", async () => { throw new Error("KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256"); }) }, recipeIds: ["korail"] })),
     /^Error: SOURCE_SHA_DRIFT: korail\/only: KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256$/u);
 });
 
 test("recipe가 아무 등록 결과도 만들지 않으면 조용히 성공하지 않고 SOURCE_REGISTRATION_FAILED로 멈춘다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const before = git(root, "rev-parse", "HEAD");
   await assert.rejects(runSourceReverification(options(root, { recipes: [meta("first")], steps: { first: stepsOf("register", async () => {}) }, recipeIds: ["first"] })),
     /^Error: SOURCE_REGISTRATION_FAILED: first: the recipe produced no registration output$/u);
@@ -153,7 +156,7 @@ test("recipe가 아무 등록 결과도 만들지 않으면 조용히 성공하�
 });
 
 test("허용 경로 밖을 바꾸거나 기존 snapshot 파일을 고치면 커밋하지 않고 REVERIFICATION_OUTPUT_SCOPE로 실패한다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const before = git(root, "rev-parse", "HEAD");
   const run = (write) => runSourceReverification(options(root, { recipes: [meta("first")], steps: { first: stepsOf("register", write) }, recipeIds: ["first"] }));
   await assert.rejects(run(async ({ repositoryRoot }) => {
@@ -170,7 +173,7 @@ test("허용 경로 밖을 바꾸거나 기존 snapshot 파일을 고치면 커�
 });
 
 test("시작할 때 작업 트리가 깨끗하지 않거나 경로가 절대 경로가 아니면 실패한다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   await writeFile(path.join(root, GOVERNANCE), "dirty\n");
   await assert.rejects(runSourceReverification(options(root, { recipes: [meta("first")], steps: { first: stepsOf("register", async () => {}) }, recipeIds: ["first"] })), /REVERIFICATION_WORKTREE_DIRTY/u);
   await assert.rejects(runSourceReverification(options(root, { repositoryRoot: "relative", recipes: [meta("first")], steps: { first: stepsOf("register", async () => {}) }, recipeIds: ["first"] })), /REVERIFICATION_ARGUMENTS/u);
@@ -182,14 +185,14 @@ const gwangju = (snapshotId, overrides = {}) => ledgerRow("gwangju-transportatio
 const ledgerRecipe = (rows) => ({ recipes: [meta("first")], steps: { first: stepsOf("register", rewriteLedger(rows)) }, recipeIds: ["first"] });
 
 test("원장에 새 행을 덧붙이고 변화가 정책 안이면 통과하고 커밋된다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const next = gwangju("gwangju-2", { previousSnapshotId: "gwangju-1", rowCount: 103, diffSummary: { status: "CHANGED", rowDelta: 3, coverageDelta: 0 } });
   const result = await runSourceReverification(options(root, ledgerRecipe([gwangju("gwangju-1"), next])));
   assert.deepEqual(result.steps, [{ id: "first", changed: true, paths: [LEDGER] }]);
 });
 
 test("원장의 기존 행 원천 식별이 바뀌면 SOURCE_SHA_DRIFT로 멈추고 커밋하지 않는다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const before = git(root, "rev-parse", "HEAD");
   await assert.rejects(runSourceReverification(options(root, ledgerRecipe([gwangju("gwangju-1", { rawSha256: SHA("e") })]))),
     /^Error: SOURCE_SHA_DRIFT: first: gwangju-transportation-route-topology gwangju-1: an existing row changed its source identity \(rawSha256\)$/u);
@@ -197,13 +200,13 @@ test("원장의 기존 행 원천 식별이 바뀌면 SOURCE_SHA_DRIFT로 멈추
 });
 
 test("정책이 내용 변경을 막으면 새 행의 contentSha256이 직전 head와 달라도 SOURCE_SHA_DRIFT다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const next = gwangju("gwangju-2", { previousSnapshotId: "gwangju-1", contentSha256: SHA("f"), diffSummary: { status: "CHANGED", rowDelta: 0, coverageDelta: 0 } });
   await assert.rejects(runSourceReverification(options(root, { ...ledgerRecipe([gwangju("gwangju-1"), next]), policy: STRICT })), /^Error: SOURCE_SHA_DRIFT: first: gwangju-transportation-route-topology gwangju-2: contentSha256 changed from /u);
 });
 
 test("새 행의 행 수 변화가 정책 한도를 넘거나 커버리지가 줄면 SOURCE_COUNT_DELTA로 멈춘다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const grown = gwangju("gwangju-2", { previousSnapshotId: "gwangju-1", rowCount: 130, diffSummary: { status: "CHANGED", rowDelta: 30, coverageDelta: 0 } });
   await assert.rejects(runSourceReverification(options(root, ledgerRecipe([gwangju("gwangju-1"), grown]))), /^Error: SOURCE_COUNT_DELTA: first: gwangju-transportation-route-topology gwangju-2: rowDelta 30 \(30\.0%\) exceeds 5\.0%$/u);
   resetWorktree(root);
@@ -212,11 +215,11 @@ test("새 행의 행 수 변화가 정책 한도를 넘거나 커버리지가 �
 });
 
 test("한도는 정책 파일에서 읽는다(기본 정책 = 저장소의 source-ledger-change-policy.json)", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const grown = gwangju("gwangju-2", { previousSnapshotId: "gwangju-1", rowCount: 130, diffSummary: { status: "CHANGED", rowDelta: 30, coverageDelta: 0 } });
   const loose = { ...POLICY, maxRowDeltaRatio: 0.5 };
   assert.deepEqual((await runSourceReverification(options(root, { ...ledgerRecipe([gwangju("gwangju-1"), grown]), policy: loose }))).steps.map(({ id }) => id), ["first"]);
-  const second = await fixtureRepository(); t.after(() => rm(second, { recursive: true, force: true }));
+  const second = await fixtureRepository(); t.after(() => rm(second, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   await assert.rejects(runSourceReverification(options(second, { ...ledgerRecipe([gwangju("gwangju-1"), grown]), policy: undefined })), /^Error: SOURCE_COUNT_DELTA: first: /u);
 });
 
@@ -229,7 +232,7 @@ const kricRecipe = (write) => ({
 const rewriteInventory = (capital, korail) => async ({ repositoryRoot }) => writeFile(path.join(repositoryRoot, INVENTORY), `${JSON.stringify(inventoryWith(capital, korail), null, 2)}\n`);
 
 test("증거만 바꾸는 recipe는 증거 행(원본 sha·내용 sha·수 변화)을 남기고 같은 원본의 재확인은 NO_CHANGE다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const result = await runSourceReverification(options(root, kricRecipe(rewriteInventory(
     evidence({ reverifiedAt: "2026-10-07T00:00:00.000Z" }), evidence({ snapshotId: "kric-korail-2", rawSha256: SHA("1"), recordsSha256: SHA("2"), recordCount: 1020 }),
   ))));
@@ -241,7 +244,7 @@ test("증거만 바꾸는 recipe는 증거 행(원본 sha·내용 sha·수 변�
 });
 
 test("증거의 원본·내용 sha가 바뀌면 정책이 막을 때 SOURCE_SHA_DRIFT, 수 변화가 한도를 넘거나 노선이 줄면 SOURCE_COUNT_DELTA다", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const korail = evidence({ snapshotId: "kric-korail-1" });
   const changedRaw = evidence({ snapshotId: "kric-capital-2", rawSha256: SHA("9"), recordsSha256: SHA("8") });
   await assert.rejects(runSourceReverification(options(root, { ...kricRecipe(rewriteInventory(changedRaw, korail)), policy: STRICT })), /^Error: SOURCE_SHA_DRIFT: kric: kric-nationwide-timetable-file kric-capital-2: /u);
@@ -265,7 +268,7 @@ test("증거 비교는 직전 증거가 없으면 FIRST, 증거를 지우면 BIN
 });
 
 test("실행 기록은 recipe 결과를 그대로 증거 단계로 돌려준다(단계 id = recipe id)", async (t) => {
-  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const result = await runSourceReverification(options(root, { recipes: [meta("first")], steps: { first: stepsOf("register", async ({ repositoryRoot }) => writeFile(path.join(repositoryRoot, "tools/datapack/sources/a.json"), "{}\n")) }, recipeIds: ["first"] }));
   assert.deepEqual(JSON.parse(JSON.stringify(result)), { steps: [{ id: "first", changed: true, paths: ["tools/datapack/sources/a.json"] }], evidenceSources: [] });
   const text = await readFile(path.join(root, "tools/datapack/sources/a.json"), "utf8");

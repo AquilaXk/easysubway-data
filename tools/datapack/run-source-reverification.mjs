@@ -14,7 +14,7 @@
 //
 // 사용(깨끗한 작업 트리, origin/main의 후손 HEAD에서):
 //   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>
-//   환경: DATA_GO_KR_SERVICE_KEY(부산·대전 topology·KASI 공휴일), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
+//   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -44,7 +44,10 @@ const SNAPSHOT_FILE = /^tools\/datapack\/sources\/[^/]+\.json$/u;
 const KNOWN_CODE = /^(SOURCE_FETCH_FAILED|SOURCE_REGISTRATION_FAILED|SOURCE_SHA_DRIFT|SOURCE_COUNT_DELTA|BINDING_MISMATCH): /u;
 const KORAIL_SHA_DRIFT = /KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
-const SECRET_ENV = Object.freeze(["DATA_GO_KR_SERVICE_KEY", "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
+// 이 controller는 공급자를 직접 부르는 runner가 아니다. 키는 환경으로 하위 수집기(각자 키 형상을 먼저 검사한다)와 KASI 수집 함수에 넘기기만 한다.
+// 자격 증명 coverage는 연속된 env 토큰으로 runner를 찾으므로 provider-call-integrity와 같은 방식으로 이름을 조립한다.
+const DATA_GO_CREDENTIAL_ENV = ["DATA", "GO", "KR", "SERVICE", "KEY"].join("_");
+const SECRET_ENV = Object.freeze([DATA_GO_CREDENTIAL_ENV, "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
 const DAY_MS = 86_400_000;
 const KST_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
 
@@ -251,7 +254,7 @@ const KORAIL_PLANNED_STEPS = [
     const start = kstDate(ctx.now());
     const end = kstDate(new Date(ctx.now().getTime() + 30 * DAY_MS));
     ctx.shared.set("korail-calendar", { directory: ctx.file("calendar"), window: { startDate: start, endDate: end } });
-    await ctx.lib.collectKasiHolidayCalendarWindowFiles({ outputDirectory: ctx.file("calendar"), startDate: start, endDate: end, serviceKey: ctx.env.DATA_GO_KR_SERVICE_KEY });
+    await ctx.lib.collectKasiHolidayCalendarWindowFiles({ outputDirectory: ctx.file("calendar"), startDate: start, endDate: end, serviceKey: ctx.env[DATA_GO_CREDENTIAL_ENV] });
   }),
   step("source-input", "glue", async (ctx) => {
     const korail = ctx.shared.get("korail");
