@@ -112,7 +112,7 @@ export const isAutomationApp = (user) => sameIdentity(user, AUTOMATION_PR_APP);
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  if (isObject(value)) return `{${sortCodepoint(Object.keys(value)).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
   return JSON.stringify(value);
 }
 const sameJson = (left, right) => canonicalJson(left) === canonicalJson(right);
