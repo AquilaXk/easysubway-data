@@ -2,7 +2,7 @@
 // ITX-청춘 승격 뒤 파생 재결속(#979, #870 3단계 후속). 승격(--auto-gate)이 coverage contract와 원천·완전성 증거·게이트 영수증을 쓴 직후에
 // 같은 workflow 안에서 돌아, 승격 PR 하나가 사람 손 없이 required CI를 통과하게 한다.
 //
-//  1. 게이트 승격 근거를 다시 계산해 확인한다(verifyCurrentItxPromotion).
+//  1. 승격 근거를 다시 계산해 확인한다(verifyCurrentItxPromotion). 게이트 승격과 사람 승인(OWNER_APPROVED) 승격을 같은 경로로 처리한다.
 //  2. 저장소 안 apps/mobile에 stage된 입력 fixture 팩(ITX topology 적용 전, mobile 고정 커밋)에 새 원천 topology를 적용해 팩·index·증거를 만든다
 //     (apply-itx-topology write 모드). 입력 팩 식별은 contract의 topologyInputPackIdentity와 같아야 한다.
 //  3. 증거를 승격 snapshot의 버전 증거(itx-cheongchun-topology-evidence-<stamp>.json)로도 남긴다(승격 병합 뒤 전국 후보 준비가 이 경로를 읽는다).
@@ -54,7 +54,6 @@ export async function rebindItxPromotion({ repositoryRoot: requestedRoot, buildN
   const contractBytes = await read(CONTRACT);
   const reference = JSON.parse(contractBytes).sourceTimetableArtifact;
   verifyCurrentItxPromotion({ reference, repositoryRoot });
-  if (reference.promotion?.mode !== "CURRENT_CANDIDATE_GATE_PASSED") fail("PROMOTION_MODE", "only gate promotions are rebound automatically");
 
   // 2. 입력 fixture에 topology를 적용한다(입력 팩 sha가 contract와 다르면 도구가 거부한다).
   const packRelative = "apps/mobile/assets/datapacks/capital.sqlite.gz";

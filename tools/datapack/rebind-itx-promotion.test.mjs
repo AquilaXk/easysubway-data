@@ -3,7 +3,9 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { gunzipSync } from "node:zlib";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -33,13 +35,48 @@ function stageInputFixture(destination) {
   for (const name of ["capital.sqlite.gz", "index.json"]) cpSync(path.join(inputFixtureRoot, "assets/datapacks", name), path.join(destination, "assets/datapacks", name));
 }
 
-// 시나리오 둘: 수집 시각이 직전 수집의 7일 뒤인 경우(기본)와, 운행일은 7일 뒤지만 수집 시각이 다른 원천의 신선도 시계와 같은 날인 경우.
-// 뒤의 것은 build 시계가 원천들의 수집 시각 최댓값에 묶인 테스트까지 함께 돌려 보는 전체 시뮬레이션이 쓴다.
-for (const [label, synthesisOptions] of [
-  ["수집 시각이 직전 수집 7일 뒤", {}],
-  ["수집 시각이 현재 원천들과 같은 날", { observedAtOverride: Date.parse("2026-10-06T08:00:00.000Z") }],
-]) {
-  test(`승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속 전부를 맞춘다 (${label})`, { timeout: 20 * 60_000 }, (context) => rebindScenario(context, synthesisOptions));
+// 시나리오: 수집 시각이 직전 수집의 7일 뒤인 경우(기본), 운행일은 7일 뒤지만 수집 시각이 다른 원천의 신선도 시계와 같은 날인 경우(build 시계가
+// 원천들의 수집 시각 최댓값에 묶인 테스트까지 함께 돌려 보는 전체 시뮬레이션이 쓴다), 그리고 운행역이 바뀐 경우 둘(#980 F3).
+// 운행역이 바뀐 수집은 자동 게이트가 막으므로 사람 승인 경로(OWNER_APPROVED)로 승격하고, 같은 재결속 도구가 그 승격도 처리해야 한다.
+const SCENARIOS = [
+  { label: "수집 시각이 직전 수집 7일 뒤", synthesisOptions: {} },
+  { label: "수집 시각이 현재 원천들과 같은 날", synthesisOptions: { observedAtOverride: Date.parse("2026-10-06T08:00:00.000Z") } },
+  { label: "운행역 하나가 빠진 수집(사람 승인 승격)", synthesisOptions: { topologyChange: "remove-served-station" } },
+  { label: "운행역 하나가 늘어난 수집(사람 승인 승격)", synthesisOptions: { topologyChange: "add-served-station" } },
+];
+for (const scenario of SCENARIOS) {
+  test(`승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속 전부를 맞춘다 (${scenario.label})`, { timeout: 20 * 60_000 }, (context) => rebindScenario(context, scenario.synthesisOptions));
+}
+
+// 원천 stationSequences·stationRosters에서 증거 도구와 다른 방식(단순 집합 계산)으로 센 topology 개수.
+function independentTopologyCounts(source) {
+  const rosterKeys = new Set(source.stationRosters.flatMap((roster) => roster.stations.map((station) => `${station.canonicalStationId}:${station.lineId}`)));
+  const servedKeys = new Set();
+  const directedEdges = new Set();
+  for (const sequence of source.stationSequences) {
+    sequence.stops.forEach((stop, index) => {
+      servedKeys.add(`${stop.stationId}:${stop.lineId}`);
+      if (index > 0) directedEdges.add(`${sequence.stops[index - 1].stationId}>${stop.stationId}`);
+    });
+  }
+  return { stationMembershipCount: rosterKeys.size, servedStationCount: servedKeys.size, edgeCount: directedEdges.size };
+}
+
+function itxEdgesTouching(packBytes, stationId) {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "itx-pack-"));
+  try {
+    const sqlitePath = path.join(directory, "capital.sqlite");
+    writeFileSync(sqlitePath, gunzipSync(packBytes));
+    const database = new DatabaseSync(sqlitePath, { readOnly: true });
+    try {
+      return database.prepare("SELECT COUNT(*) AS count FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN' AND (from_node_id LIKE ? OR to_node_id LIKE ?)")
+        .get(`${stationId}:%`, `${stationId}:%`).count;
+    } finally {
+      database.close();
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 async function rebindScenario(context, synthesisOptions) {
@@ -54,22 +91,45 @@ async function rebindScenario(context, synthesisOptions) {
 
   // 1. 다음 주 수집을 합성해 승격한다(실제 게이트·승격 경로).
   const collection = await synthesizeNextItxCollection({ repositoryRoot: worktree, outputDirectory: path.join(scratch, "collection"), ...synthesisOptions });
-  const before = json(path.join(worktree, CONTRACT)).sourceTimetableArtifact;
-  const promoted = await promoteItxSourceCandidate({
+  const beforeContract = json(path.join(worktree, CONTRACT));
+  const before = beforeContract.sourceTimetableArtifact;
+  const beforeCounts = independentTopologyCounts(json(path.join(worktree, before.artifactPath)));
+  const common = {
     candidatePath: collection.candidatePath,
     completenessPath: collection.completenessPath,
-    gate: { capturePath: collection.capturePath, replayEvidencePath: collection.replayEvidencePath },
     sourceOutputDir: path.join(worktree, "tools/datapack/sources"),
     coverageContractPath: path.join(worktree, CONTRACT),
     stationCatalogPackPath: collection.stationCatalogPackPath,
     repositoryRoot: worktree,
     now: collection.now,
-  });
+  };
+  const gate = { capturePath: collection.capturePath, replayEvidencePath: collection.replayEvidencePath };
+  const topologyChanged = collection.topologyChangeSummary !== null;
+  let promoted;
+  if (topologyChanged) {
+    // 운행역이 바뀐 수집은 자동 게이트가 막는다. 아무것도 쓰지 않는다.
+    await assert.rejects(promoteItxSourceCandidate({ ...common, gate }), /ITX_PROMOTION_GATE_BLOCKED/u);
+    assert.equal(git(["status", "--porcelain"], worktree), "");
+    const candidateSha256 = sha256(readFileSync(collection.candidatePath));
+    const approvalUrl = "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-1";
+    const approval = {
+      author_association: "OWNER", user: { login: "AquilaXk" }, html_url: approvalUrl,
+      body: `/approve-itx-current artifactId=${collection.artifactId} sha256=${candidateSha256} policy=itx-snapshot-anomaly-v1`,
+      created_at: new Date(collection.now.getTime() + 1000).toISOString(),
+    };
+    promoted = await promoteItxSourceCandidate({
+      ...common, approvedSha256: candidateSha256, approvalUrl, githubToken: "synthetic",
+      fetchImpl: async () => new Response(JSON.stringify(approval), { status: 200, headers: { "content-type": "application/json" } }),
+    });
+  } else {
+    promoted = await promoteItxSourceCandidate({ ...common, gate });
+  }
   const reference = promoted.sourceTimetableArtifact;
   assert.notEqual(reference.sha256, before.sha256, "승격이 새 원천으로 바뀌어야 함");
-  assert.equal(reference.promotion.mode, "CURRENT_CANDIDATE_GATE_PASSED");
+  assert.equal(reference.promotion.mode, topologyChanged ? "CURRENT_CANDIDATE_OWNER_APPROVED" : "CURRENT_CANDIDATE_GATE_PASSED");
   const promotedPaths = git(["status", "--porcelain", "-uall"], worktree).split("\n").filter(Boolean).map((line) => line.slice(3)).sort();
-  assert.equal(promotedPaths.length, 4, `승격 PR은 4개 경로만 바꾼다: ${promotedPaths}`);
+  // 게이트 승격은 영수증까지 4개, 사람 승인 승격은 영수증 없이 3개다.
+  assert.equal(promotedPaths.length, topologyChanged ? 3 : 4, `승격은 원천 경로만 바꾼다: ${promotedPaths}`);
 
   // 승격만으로는 파생 결속이 어긋나 있다(재결속이 필요한 이유).
   assert.notEqual(json(path.join(worktree, EVIDENCE)).sourceArtifact.sha256, reference.sha256);
@@ -98,6 +158,29 @@ async function rebindScenario(context, synthesisOptions) {
   // gzip 헤더의 OS 바이트는 플랫폼(macOS 19, Linux 3)이 아니라 고정값이다. 그래야 Linux CI가 파생한 팩이 개발 환경에서 만든 증거와 같다.
   assert.equal(outputPack[9], 19);
   for (const relative of ALIGNMENT_FIXTURES) assert.equal(json(path.join(worktree, relative)).generatedFrom.packSha256, evidence.pack.outputSha256, relative);
+
+  // 3-1. topology 변경이 실제로 반영된다: 증거의 개수는 승격된 원천에서 독립 계산한 값과 같고, 바뀐 정차역은 파생 팩의 ITX 간선에 따라간다.
+  const afterCounts = independentTopologyCounts(json(path.join(worktree, reference.artifactPath)));
+  assert.deepEqual({
+    stationMembershipCount: evidence.topology.stationMembershipCount,
+    servedStationCount: evidence.topology.servedStationCount,
+    edgeCount: evidence.topology.edgeCount,
+  }, afterCounts);
+  if (topologyChanged) {
+    const { change, stationId } = collection.topologyChangeSummary;
+    const beforeEdgesTouching = itxEdgesTouching(readFileSync(path.join(inputFixtureRoot, "assets/datapacks/capital.sqlite.gz")), stationId);
+    const afterEdgesTouching = itxEdgesTouching(outputPack, stationId);
+    if (change === "remove-served-station") {
+      assert.equal(afterCounts.servedStationCount, beforeCounts.servedStationCount - 1);
+      assert.ok(beforeEdgesTouching > 0 && afterEdgesTouching === 0, `removed station edges ${beforeEdgesTouching} -> ${afterEdgesTouching}`);
+    } else {
+      assert.equal(afterCounts.servedStationCount, beforeCounts.servedStationCount + 1);
+      assert.ok(beforeEdgesTouching === 0 && afterEdgesTouching > 0, `added station edges ${beforeEdgesTouching} -> ${afterEdgesTouching}`);
+    }
+    assert.notEqual(afterCounts.edgeCount, beforeCounts.edgeCount);
+  } else {
+    assert.deepEqual(afterCounts, beforeCounts);
+  }
 
   // 4. CI가 하는 일을 그대로 한다: 입력 fixture를 stage한 뒤 --derive-fixture로 같은 팩을 파생하고 증거와 대조한다.
   const staged = path.join(scratch, "ci-staged");
