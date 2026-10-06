@@ -231,6 +231,7 @@ test("every scheduled source refresh workflow reports its own failure as an issu
     "nationwide-candidate-refresh.yml",
     "retained-gwangju-timetable-refresh.yml",
     "seoul-current-accessibility-refresh.yml",
+    "source-derivative-rebinding.yml",
   ]);
   for (const file of Object.keys(REFRESH_WORKFLOWS)) {
     const yml = workflowText(file);
