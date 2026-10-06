@@ -1,0 +1,95 @@
+name: Automation PR Automerge
+
+# 데이터 전용 자동화 PR의 자동 병합 승인(#985, #870 전체 자동화 2단계): 사람의 리뷰·라벨 없이, 증거 기반 정책이 통과한 PR만
+# 기존 병합 경로(automerge 라벨 -> automerge-queue 코디네이터)에 올린다. 사람은 이상이 났을 때만 개입한다.
+# - 이 workflow는 병합하지 않는다. 병합 주체는 코디네이터 하나다. 여기서는 PR을 ready로 바꾸고, exact-head 정책 통과 기록(attestation)을 남기고,
+#   기존 automerge 라벨을 붙인다. 코디네이터는 이 기록을 신뢰 협력자의 Aquila 리뷰 대신 인정하고 나머지 게이트(미해결 thread, required context)는 그대로 요구한다.
+# - 정책(tools/ci/automation-pr-policy.mjs): 작성자가 App easysubway-release-chain[bot]이고, 브랜치가 단계의 claim 접두사이고, 증거 블록이 PR head에 결속되고,
+#   API diff의 변경 경로가 단계별 allowlist와 정확히 맞고, 모든 커밋이 App 또는 github-actions 작성이고, CI·게이트 재계산이 성공이어야 한다.
+#   하나라도 어긋나면 라벨을 붙이지 않고 job이 실패해 실패 이슈(#926, report-refresh-failure)로 드러난다. 사람이 그 이상을 처리한다.
+# - 신뢰 모델: PR 코드는 쓰기 토큰으로 실행하지 않는다. 게이트 재계산은 읽기 전용 토큰의 pull_request CI가 PR head에서 하고(ci.yml automation_pr_gates),
+#   이 workflow는 workflow_run으로 기본 브랜치의 코드만 실행하며 PR 데이터는 API로만 읽는다. 변경 경로 allowlist가 .github·tools 변경을 막으므로
+#   CI가 실행한 게이트 코드는 기본 브랜치의 코드와 같다. 쓰기 토큰은 App 설치 토큰(pull-requests: write) 하나이고 승인 step에서만 쓴다.
+# - 저장소 변수 DATAPACK_AUTOMATION_AUTOMERGE가 true일 때만 돈다(기본 꺼짐, 코드가 켜지 않는다). 변수는 QA 보고 뒤 별도 설정 변경으로만 켠다.
+#   꺼져 있으면 코디네이터도 자동화 경로를 인정하지 않는다.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: automation-pr-automerge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    name: Automation PR automerge
+    if: ${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+      issues: write
+      pull-requests: read
+    timeout-minutes: 10
+    steps:
+      # workflow_run의 기본 checkout은 기본 브랜치의 최신 커밋이다. PR head·merge ref는 가져오지 않는다.
+      - name: Checkout the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Decide whether the pull request may enter the merge queue
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          # 정책 대상이 아니거나 head가 이미 바뀐 실행은 아무것도 하지 않고 성공한다. 대상인데 조건이 어긋나면 이 step이 실패한다.
+          node tools/ci/automation-pr-policy.mjs decide --repository "${GITHUB_REPOSITORY}" --head-sha "${HEAD_SHA}" --run-conclusion "${RUN_CONCLUSION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Mint App token for the automerge approval
+        id: app-token
+        if: ${{ steps.decision.outputs.state == 'ELIGIBLE' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-data
+          permission-pull-requests: write
+      - name: Record the policy attestation, mark ready and apply the automerge label
+        if: ${{ steps.decision.outputs.state == 'ELIGIBLE' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PULL_REQUEST: ${{ steps.decision.outputs.pull_request }}
+          HEAD_SHA: ${{ steps.decision.outputs.head_sha }}
+          DRAFT: ${{ steps.decision.outputs.draft }}
+          ATTESTED: ${{ steps.decision.outputs.attested }}
+          LABELED: ${{ steps.decision.outputs.labeled }}
+        run: |
+          set -euo pipefail
+          [[ "${PULL_REQUEST}" =~ ^[1-9][0-9]*$ && "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          marker="<!-- Automation automerge policy: ${HEAD_SHA} -->"
+          # 순서가 의미를 가진다: 기록 -> ready -> 라벨. 라벨 이벤트가 코디네이터를 깨우므로 그때는 기록이 이미 있고 PR이 draft가 아니어야 한다.
+          # 기록은 판정한 head(HEAD_SHA)에 묶인다. 그 사이에 head가 바뀌면 기록이 맞지 않아 코디네이터가 병합하지 않고, 새 head의 CI가 다시 판정한다.
+          if [[ "${ATTESTED}" != "true" ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PULL_REQUEST}/comments" -f body="${marker}"
+          fi
+          if [[ "${DRAFT}" == "true" ]]; then
+            gh pr ready "${PULL_REQUEST}" --repo "${GITHUB_REPOSITORY}"
+          fi
+          if [[ "${LABELED}" != "true" ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PULL_REQUEST}/labels" -f "labels[]=automerge"
+          fi
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow automation-pr-automerge.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

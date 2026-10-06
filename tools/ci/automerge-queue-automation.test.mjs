@@ -130,6 +130,7 @@ test('반증: 기록이 없거나 다른 head의 것이거나 신뢰 App이 쓴 
     'human author': [attestation(HEAD, { login: 'AquilaXk', id: 12345, type: 'User' })],
     'github-actions author': [attestation(HEAD, { login: 'github-actions[bot]', id: 41898282, type: 'Bot' })],
     'login only': [attestation(HEAD, { ...APP, id: 1 })],
+    'id only': [attestation(HEAD, { ...APP, login: 'someone[bot]' })],
     'wrong type': [attestation(HEAD, { ...APP, type: 'User' })],
     'suffix text': [attestation(HEAD, APP, `<!-- Automation automerge policy: ${HEAD} -->\n승인`)],
     'prefix text': [attestation(HEAD, APP, `승인 <!-- Automation automerge policy: ${HEAD} -->`)],
@@ -147,6 +148,7 @@ test('반증: PR 작성자가 신뢰 App이 아니거나 작성자를 읽지 못
   for (const author of [
     { login: 'AquilaXk', id: 12345, type: 'User' },
     { ...APP, id: 1 },
+    { ...APP, login: 'someone[bot]' },
     { ...APP, type: 'User' },
     { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
   ]) {

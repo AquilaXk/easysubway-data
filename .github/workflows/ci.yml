@@ -574,6 +574,63 @@ jobs:
           ROUTE_MAP_CHROME_NO_SANDBOX: "1"
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile --max-workers 4 --shard-count 4 --shard-index 4
 
+  # #985: 자동화 PR(App이 연 claim 브랜치)의 원장·ITX 승격·후보 게이트를 PR head 작업 트리에서 다시 계산한다(#870 전체 자동화 2단계).
+  # 읽기 전용 토큰의 pull_request에서만 돈다. PR 코드를 쓰기 토큰으로 실행하지 않는다는 신뢰 모델의 한 축이다. 증거 블록의 PASS 주장은 믿지 않는다.
+  # 이 check는 ruleset의 required가 아니고 Data contracts 집계도 이 job을 기다리지 않는다(사람 PR의 병합 경로는 바뀌지 않는다).
+  # 자동 병합 라벨러(automation-pr-automerge.yml)가 github-actions가 만든 이 check의 성공을 조건으로 읽는다.
+  automation_pr_gates:
+    name: Automation PR gates
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'automation/') }}
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: Classify the automation pull request
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 정책 대상이 아닌 automation/ 브랜치(증거 블록이 없는 다른 갱신 PR)는 이 job이 아무것도 하지 않고 성공한다.
+          pull_file="${RUNNER_TEMP}/automation-pr.json"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > "${pull_file}"
+          printf 'pull_file=%s\n' "${pull_file}" >> "${GITHUB_OUTPUT}"
+          node tools/ci/automation-pr-policy.mjs prepare --pull-request "${pull_file}" --github-output "${GITHUB_OUTPUT}"
+
+      - name: Fetch the evidence base commit
+        if: ${{ steps.classify.outputs.applicable == 'true' }}
+        shell: bash
+        env:
+          BASE_SHA: ${{ steps.classify.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+
+      - name: Recompute the ledger, ITX promotion and candidate gates on the pull request head
+        if: ${{ steps.classify.outputs.applicable == 'true' }}
+        shell: bash
+        env:
+          PULL_FILE: ${{ steps.classify.outputs.pull_file }}
+        run: |
+          set -euo pipefail
+          node tools/ci/automation-pr-policy.mjs gates --pull-request "${PULL_FILE}" --repository-root "${GITHUB_WORKSPACE}"
+
   contracts:
     name: Data contracts
     permissions:

@@ -60,7 +60,7 @@ test("job은 변수가 true이고 같은 저장소의 automation/ 브랜치 PR C
 test("PR 코드를 checkout하거나 실행하지 않는다. checkout은 기본 브랜치 코드뿐이다", () => {
   const checkouts = steps().filter(({ block }) => block.includes("uses: actions/checkout@"));
   assert.equal(checkouts.length, 1);
-  assert.match(checkouts[0].block, /uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n/u);
+  assert.match(checkouts[0].block, /uses: actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false(?:\n|$)/u);
   assert.doesNotMatch(checkouts[0].block, /\n          ref:/u);
   for (const forbidden of [/head_sha[^\n]*checkout/u, /refs\/pull/u, /pull_request\.head/u, /head\.ref/u, /\n\s+ref: /u, /actions\/download-artifact/u, /npm (?:ci|install)/u, /\bpnpm\b|\byarn\b/u]) {
     assert.doesNotMatch(code, forbidden, String(forbidden));
