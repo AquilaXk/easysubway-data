@@ -14,7 +14,7 @@ const SHA = "d".repeat(40);
 const pr = (number, branch, state = "OPEN", overrides = {}) => ({ number, state, isDraft: true, headRefName: branch, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY }, ...overrides });
 const REGISTRATION = "automation/456-capital-topology-registration-111";
 const SEOUL = "automation/639-seoul-accessibility-refresh-222";
-const REBINDING = "automation/969-derivative-rebinding-333";
+const TOPOLOGY = "automation/636-current-topology-refresh-333";
 const CANDIDATE = "automation/927-nationwide-candidate-refresh-444";
 
 test("자동화 브랜치 목록은 automation/ 아래 ref만 받고 형식이 어긋나면 실패한다", () => {
@@ -42,8 +42,8 @@ test("열린 PR과 PR이 없는 원장 쓰기 claim 브랜치가 진행 중이�
 });
 
 test("자기 workflow는 제외하고 정렬된 목록을 돌려준다", () => {
-  const input = { pullRequests: [pr(972, REBINDING), pr(971, REGISTRATION)], automationBranches: [REBINDING, REGISTRATION, SEOUL], repository: REPOSITORY };
-  assert.deepEqual(pendingLedgerWriters({ ...input, exceptWorkflow: "source-derivative-rebinding.yml" }), { pullRequests: [971], branches: [SEOUL] });
+  const input = { pullRequests: [pr(972, TOPOLOGY), pr(971, REGISTRATION)], automationBranches: [TOPOLOGY, REGISTRATION, SEOUL], repository: REPOSITORY };
+  assert.deepEqual(pendingLedgerWriters({ ...input, exceptWorkflow: "current-capital-topology-registration.yml" }), { pullRequests: [972], branches: [SEOUL] });
   assert.deepEqual(pendingLedgerWriters({ ...input, exceptWorkflow: null }), { pullRequests: [971, 972], branches: [SEOUL] });
   assert.throws(() => pendingLedgerWriters({ ...input, exceptWorkflow: 5 }), /AUTOMATION_PR_STATE_INPUT_INVALID/u);
   assert.throws(() => pendingLedgerWriters({ ...input, pullRequests: null }), /AUTOMATION_PR_STATE_INPUT_INVALID/u);
@@ -60,6 +60,6 @@ test("CLI는 대기 중인 쓰기 자동화가 없으면 idle=true, 있으면 id
   };
   assert.deepEqual(await run([], []), { idle: "true", blocked_by: "" });
   assert.deepEqual(await run([pr(971, SEOUL)], [SEOUL, REGISTRATION]), { idle: "false", blocked_by: `971,${REGISTRATION}` });
-  assert.deepEqual(await run([pr(972, REBINDING)], [REBINDING], ["--except-workflow", "source-derivative-rebinding.yml"]), { idle: "true", blocked_by: "" });
+  assert.deepEqual(await run([pr(972, REGISTRATION)], [REGISTRATION], ["--except-workflow", "current-capital-topology-registration.yml"]), { idle: "true", blocked_by: "" });
   await assert.rejects(main(["--repository", REPOSITORY]), /AUTOMATION_PR_STATE_INPUT_INVALID/u);
 });

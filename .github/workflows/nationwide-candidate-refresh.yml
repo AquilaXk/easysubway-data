@@ -60,7 +60,8 @@ jobs:
           mkdir -p "${decision_root}"
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
           git ls-remote --heads origin "refs/heads/automation/927-nationwide-candidate-refresh-*" > "${decision_root}/branches.txt"
-          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --github-output "${GITHUB_OUTPUT}"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
+          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -166,8 +167,27 @@ jobs:
             1) ;;
             *) echo "candidate refresh staged diff check failed (git diff exit ${diff_status})" >&2; exit "${diff_status}" ;;
           esac
-      - name: Commit and push candidate refresh branch
+      - name: Recheck that no source-ledger automation is pending before pushing
+        id: recheck
         if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 후보 생성은 길다. 그 사이 원장을 쓰는 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 이 결과를 올리지 않고 다음 실행에 맡긴다(#974 리뷰 F2).
+          recheck_root="${RUNNER_TEMP}/nationwide-candidate-refresh-recheck/${GITHUB_RUN_ID}"
+          mkdir -p "${recheck_root}"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${recheck_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
+          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+      - name: Note candidate refresh superseded by pending source automation
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'false' }}
+        env:
+          BLOCKED_BY: ${{ steps.recheck.outputs.blocked_by }}
+        run: |
+          echo "::notice title=Nationwide candidate refresh::source-ledger automation (${BLOCKED_BY}) started while the candidate was being built; nothing was pushed and the next run decides again."
+      - name: Commit and push candidate refresh branch
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'true' }}
         env:
           EVALUATED_AT: ${{ steps.plan.outputs.evaluated_at }}
           RELEASE_SEQUENCE: ${{ steps.plan.outputs.release_sequence }}
@@ -184,7 +204,7 @@ jobs:
           printf 'CANDIDATE_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
       - name: Mint App token for the candidate refresh pull request
         id: app-token-pr
-        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'true' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
@@ -193,7 +213,7 @@ jobs:
           repositories: easysubway-data
           permission-pull-requests: write
       - name: Create candidate refresh pull request
-        if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
+        if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'true' }}
         env:
           APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           STALE_PATHS: ${{ steps.decision.outputs.stale_paths }}

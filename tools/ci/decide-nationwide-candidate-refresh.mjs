@@ -17,13 +17,13 @@
 // 잘못된 매니페스트)는 CANDIDATE_REFRESH_* 이상으로 실패한다.
 //
 // 사용: node tools/ci/decide-nationwide-candidate-refresh.mjs --event <schedule|workflow_dispatch> --repository <owner/repo>
-//   --prs <gh pr list JSON> --branches <git ls-remote 출력> [--manifest <path>] [--github-output <path>]
+//   --prs <gh pr list JSON> --branches <git ls-remote 출력> --automation-branches <git ls-remote "automation/*" 출력> [--manifest <path>] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, parseCandidateInputManifest } from "../datapack/lib/candidate-input-bundle.mjs";
-import { ownPullRequestsByBranch, parsePrefixedBranches, pendingLedgerWriterPullRequests, validRepository } from "./automation-pr-state.mjs";
+import { ownPullRequestsByBranch, parseAutomationBranches, parsePrefixedBranches, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 export const CANDIDATE_REFRESH_WORKFLOW = "nationwide-candidate-refresh.yml";
@@ -40,8 +40,8 @@ export function parseCandidateRefreshBranches(text) {
   return parsePrefixedBranches(text, CANDIDATE_REFRESH_CLAIM_PREFIX, (detail) => fail("CANDIDATE_REFRESH_BRANCH_INVALID", detail));
 }
 
-export async function decideNationwideCandidateRefresh({ manifest, readLocal, pullRequests, branches, repository, event } = {}) {
-  if (!Array.isArray(pullRequests) || !Array.isArray(branches) || typeof readLocal !== "function"
+export async function decideNationwideCandidateRefresh({ manifest, readLocal, pullRequests, branches, automationBranches, repository, event } = {}) {
+  if (!Array.isArray(pullRequests) || !Array.isArray(branches) || !Array.isArray(automationBranches) || typeof readLocal !== "function"
     || !validRepository(repository) || !EVENTS.includes(event)) fail("CANDIDATE_REFRESH_INPUT_INVALID");
 
   const own = ownPullRequestsByBranch(pullRequests, CANDIDATE_REFRESH_CLAIM_PREFIX, repository, (branch) => fail("CANDIDATE_REFRESH_PR_DUPLICATE", branch));
@@ -65,19 +65,21 @@ export async function decideNationwideCandidateRefresh({ manifest, readLocal, pu
     stalePaths = stale[1].split(", ");
   }
   if (stalePaths.length === 0) return event === "workflow_dispatch" ? { state: "FORCED", cleanupBranches } : { state: "CURRENT", cleanupBranches };
-  const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository);
+  // 열린 PR뿐 아니라 PR 전의 claim 브랜치도 원장을 쓰는 중이다(#974 리뷰 F2).
+  const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository });
+  const blockedBy = [...pending.pullRequests, ...pending.branches];
   return blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", stalePaths, blockedBy, cleanupBranches } : { state: "STALE", stalePaths, cleanupBranches };
 }
 
 function parseArgs(argv) {
-  const keys = new Map([["--event", "event"], ["--repository", "repository"], ["--prs", "prs"], ["--branches", "branches"], ["--manifest", "manifest"], ["--github-output", "githubOutput"]]);
+  const keys = new Map([["--event", "event"], ["--repository", "repository"], ["--prs", "prs"], ["--branches", "branches"], ["--automation-branches", "automationBranches"], ["--manifest", "manifest"], ["--github-output", "githubOutput"]]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const key = keys.get(argv[index]);
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("CANDIDATE_REFRESH_INPUT_INVALID", `argument ${String(argv[index])}`);
     values[key] = argv[index + 1];
   }
-  for (const key of ["event", "repository", "prs", "branches"]) if (!Object.hasOwn(values, key)) fail("CANDIDATE_REFRESH_INPUT_INVALID", `missing --${key}`);
+  for (const key of ["event", "repository", "prs", "branches", "automationBranches"]) if (!Object.hasOwn(values, key)) fail("CANDIDATE_REFRESH_INPUT_INVALID", `missing --${key}`);
   return values;
 }
 
@@ -91,7 +93,7 @@ export async function main(argv, { repositoryRoot = ROOT, log = console.log } = 
   }
   const result = await decideNationwideCandidateRefresh({
     manifest, readLocal: (relative) => readFile(path.resolve(repositoryRoot, relative)),
-    pullRequests: JSON.parse(await readFile(values.prs, "utf8")), branches: parseCandidateRefreshBranches(await readFile(values.branches, "utf8")),
+    pullRequests: JSON.parse(await readFile(values.prs, "utf8")), branches: parseCandidateRefreshBranches(await readFile(values.branches, "utf8")), automationBranches: parseAutomationBranches(await readFile(values.automationBranches, "utf8")),
     repository: values.repository, event: values.event,
   });
   log(JSON.stringify(result));
