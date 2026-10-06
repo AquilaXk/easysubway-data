@@ -46,7 +46,8 @@ test("후보 생성·범위 검증·push·App 토큰·PR 생성은 STALE 또는 
     "Validate candidate refresh inputs", "Record the candidate gate run", "Refresh nationwide candidate", "Verify candidate refresh output scope",
     "Commit and push candidate refresh branch", "Mint App token for the candidate refresh pull request", "Create candidate refresh pull request",
   ]) assert.equal(ifCondition(step(name).block), PROCEED, name);
-  assert.equal(ifCondition(step("Remove the candidate refresh branch after a later failure").block), "${{ failure() && env.CANDIDATE_BRANCH != '' }}");
+  // #974 리뷰 F3: 취소·시간 초과에도 이 run이 push한 branch와 PR을 정리한다.
+  assert.equal(ifCondition(step("Remove the candidate refresh branch after a later failure").block), "${{ (failure() || cancelled()) && env.CANDIDATE_BRANCH != '' }}");
 });
 
 test("OPEN_PR이면 App 토큰 → required CI 보장 → 열린 PR 상한 검사 순서로 돈다", () => {
@@ -62,7 +63,7 @@ test("원장 쓰기 PR 때문에 기다리는 실행은 이유를 notice로 남�
 
 test("후보 PR 본문은 정기 갱신이 입력 변경으로 시작됐음을 남기고, 실패 보고가 마지막 step이다", () => {
   assert.match(step("Create candidate refresh pull request").block, /steps\.decision\.outputs\.stale_paths/u);
-  assertFailureReportLast({ yml, step, file: FILE });
+  assertFailureReportLast({ yml, step, file: FILE, condition: "${{ failure() || cancelled() }}" });
 });
 
 // #974 리뷰 F1: 기준 경로 목록은 매니페스트의 값이다. 경로에 따옴표·백틱·$가 있어도 셸이 실행하지 않도록 env로만 받는다.
@@ -71,4 +72,16 @@ test("run 스크립트에는 표현식을 직접 넣지 않고 env로만 받는�
   const { block } = step("Note candidate refresh waiting on a pending source pull request");
   assert.match(block, /\n          STALE_PATHS: \$\{\{ steps\.decision\.outputs\.stale_paths \}\}\n/u);
   assert.match(block, /\n          BLOCKED_BY: \$\{\{ steps\.decision\.outputs\.blocked_by \}\}\n/u);
+});
+
+// 이슈 #973: 이전 실행이 남긴 후보 브랜치(PR 없음·닫힌 PR)는 판정이 알려 주고 이번 실행이 지운다.
+test("판정이 알린 남은 후보 브랜치는 입력 검증 전에 지운다", () => {
+  const cleanup = step("Remove stale candidate refresh branches named by the decision");
+  assert.equal(ifCondition(cleanup.block), "${{ steps.decision.outputs.cleanup_branches != '' }}");
+  assert.match(cleanup.block, /CLEANUP_BRANCHES: \$\{\{ steps\.decision\.outputs\.cleanup_branches \}\}/u);
+  assert.match(cleanup.block, /\^automation\/927-nationwide-candidate-refresh-\[1-9\]\[0-9\]\*\$/u);
+  assert.match(cleanup.block, /git push origin --delete "\$\{stale_branch\}"/u);
+  const names = steps().map(({ name }) => name);
+  assert.ok(names.indexOf("Decide whether the nationwide candidate must be refreshed") < names.indexOf(cleanup.name));
+  assert.ok(names.indexOf(cleanup.name) < names.indexOf("Validate candidate refresh inputs"));
 });
