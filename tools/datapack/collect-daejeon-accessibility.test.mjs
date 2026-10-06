@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -278,6 +278,27 @@ test("대전 accessibility collector --download 실패·인자 오류·provenanc
     assert.throws(() => collectDaejeonAccessibility({
       ...inputs, now, downloadProvenance: [good[0], { ...good[1], rawSha256: "0".repeat(64) }],
     }), /15041361 download provenance sha256 mismatch/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("대전 accessibility collector는 출력을 임시 파일로 쓴 뒤 교체하며 기존 심볼릭 링크 대상을 건드리지 않는다", async () => {
+  const [elevatorBytes, escalatorBytes] = await Promise.all([readFile(ELEVATOR_CSV), readFile(ESCALATOR_CSV)]);
+  const dir = await mkdtemp(path.join(tmpdir(), "daejeon-accessibility-atomic-"));
+  try {
+    const target = path.join(dir, "target.json");
+    const output = path.join(dir, "out.json");
+    await writeFile(target, "keep");
+    await symlink(target, output);
+    await runDaejeonAccessibilityCollector(["--download", ...await downloadCliArgs(output)], {
+      fetchImpl: createDataGoPortalFetch({ 15041384: elevatorBytes, 15041361: escalatorBytes }),
+      now: () => new Date("2026-10-06T03:00:00.000Z"),
+    });
+    assert.equal(await readFile(target, "utf8"), "keep");
+    assert.equal((await lstat(output)).isSymbolicLink(), false);
+    assert.equal(JSON.parse(await readFile(output, "utf8")).stationCount, 22);
+    assert.deepEqual((await readdir(dir)).sort(), ["out.json", "target.json"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

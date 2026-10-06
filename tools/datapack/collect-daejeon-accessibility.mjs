@@ -2,12 +2,13 @@
 // 대전교통공사 1호선 엘리베이터·에스컬레이터 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15041384·15041361)만 사용한다.
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
 import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
@@ -370,7 +371,7 @@ export async function runDaejeonAccessibilityCollector(argv, { fetchImpl = fetch
     now: resolveCapturedAt(args, now),
     downloadProvenance,
   });
-  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
+  await writeFileReplacing(args.output, Buffer.from(`${JSON.stringify(snapshot)}\n`));
   console.log(`Daejeon accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
   return snapshot;
 }

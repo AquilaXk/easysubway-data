@@ -2,7 +2,7 @@
 // 대구교통공사 역사별 장애인 편의시설 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15149872)만 사용한다.
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -13,6 +13,7 @@ import {
   decodeOfficialCsv,
   normalizedStationName,
 } from "./collect-daegu-datapack-sources.mjs";
+import { writeFileReplacing } from "./lib/staged-output.mjs";
 import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
@@ -250,7 +251,7 @@ export async function runDaeguAccessibilityCollector(argv, { fetchImpl = fetch, 
     now: resolveCapturedAt(args, now),
     downloadProvenance,
   });
-  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
+  await writeFileReplacing(args.output, Buffer.from(`${JSON.stringify(snapshot)}\n`));
   console.log(`Daegu accessibility snapshot ready: stations=${snapshot.stationCount} rows=${snapshot.rowCount}`);
   return snapshot;
 }

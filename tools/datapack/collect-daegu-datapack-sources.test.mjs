@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -513,4 +513,24 @@ test("대구 시각표·topology provenance는 원본 sha·순서·데이터셋�
     { ...options, downloadProvenance: [down, up] }), /download provenance is invalid/);
   assert.throws(() => parseDaeguTrainTimetable(files[config.upDatasetId], files[config.downDatasetId], topology,
     { ...options, downloadProvenance: [up] }), /download provenance is invalid/);
+});
+
+test("대구 collector는 이미 같은 이름의 snapshot이 있으면 그대로 실패하고 먼저 만든 snapshot을 남기지 않는다", async (t) => {
+  const files = await retainedDaeguRawFiles();
+  const first = await mkdtemp(path.join(os.tmpdir(), "daegu-atomic-first-"));
+  const second = await mkdtemp(path.join(os.tmpdir(), "daegu-atomic-second-"));
+  t.after(() => Promise.all([rm(first, { recursive: true, force: true }), rm(second, { recursive: true, force: true })]));
+  const run = (outputDirectory) => runDaeguSourceCollector(["--download", "--output-dir", outputDirectory], {
+    fetchImpl: createDataGoPortalFetch(files), now: () => new Date("2026-10-06T03:00:00.000Z"),
+  });
+  const outputs = await run(first);
+  assert.equal(outputs.length, 6);
+  // 여섯 번째(마지막) 이름만 미리 있는 디렉터리: 앞선 다섯 개를 쓴 뒤 실패하던 부분 쓰기를 재현한다.
+  const lastName = path.basename(outputs[5]);
+  await copyFile(outputs[5], path.join(second, lastName));
+  await assert.rejects(run(second), { code: "EEXIST" });
+  assert.deepEqual(await readdir(second), [lastName]);
+  assert.deepEqual(await readFile(path.join(second, lastName)), await readFile(outputs[5]));
+  // 아무것도 없던 디렉터리에는 여섯 개가 모두 생기고 staging 흔적이 없다.
+  assert.equal((await readdir(first)).length, 6);
 });

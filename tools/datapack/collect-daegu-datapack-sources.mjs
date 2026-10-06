@@ -2,11 +2,12 @@
 // 대구교통공사 1·2·3호선 공식 파일데이터(역 구간정보·열차시각표)를 결정론적 snapshot으로 수집한다.
 // 원문은 공공데이터포털 CSV(파일별 EUC-KR/UTF-8 BOM 혼재)이며, 차량기지·비영업 행은 exact tuple로 격리한다.
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+import { writeFilesCreateOnly } from "./lib/staged-output.mjs";
 import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
 
@@ -393,7 +394,7 @@ export async function loadAdmittedDaeguTopologySnapshots(sourcesDirectory, inven
   return Object.fromEntries(entries);
 }
 
-export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
+function planDaeguSourceSnapshot(outputDirectory, snapshot) {
   if (!path.isAbsolute(outputDirectory ?? "")) throw new Error("Daegu source output directory must be absolute");
   const identity = daeguSourceSnapshotIdentity(snapshot);
   const bytes = Buffer.from(`${JSON.stringify(snapshot)}\n`);
@@ -401,8 +402,18 @@ export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
   if (path.dirname(output) !== path.resolve(outputDirectory)) {
     throw new Error("Daegu source snapshot output escapes directory");
   }
-  await writeFile(output, bytes, { flag: "wx", mode: 0o600 });
-  return output;
+  return { path: output, bytes };
+}
+
+// 한 번에 여러 snapshot을 쓸 때도 일부만 남지 않는다(이미 있으면 EEXIST, 아무것도 만들지 않음).
+export async function writeDaeguSourceSnapshots(outputDirectory, snapshots) {
+  const plans = snapshots.map((snapshot) => planDaeguSourceSnapshot(outputDirectory, snapshot));
+  await writeFilesCreateOnly(plans, { mode: 0o600 });
+  return plans.map(({ path: planPath }) => planPath);
+}
+
+export async function writeDaeguSourceSnapshot(outputDirectory, snapshot) {
+  return (await writeDaeguSourceSnapshots(outputDirectory, [snapshot]))[0];
 }
 
 async function readLineRawFiles(config, args, fetchImpl) {
@@ -439,11 +450,10 @@ export async function runDaeguSourceCollector(argv, { fetchImpl = fetch, now = (
     );
     return { config, topology, timetable };
   });
-  const outputs = [];
+  const outputs = await writeDaeguSourceSnapshots(
+    args["output-dir"], prepared.flatMap(({ topology, timetable }) => [topology, timetable]),
+  );
   for (const { config, topology, timetable } of prepared) {
-    const topologyPath = await writeDaeguSourceSnapshot(args["output-dir"], topology);
-    const timetablePath = await writeDaeguSourceSnapshot(args["output-dir"], timetable);
-    outputs.push(topologyPath, timetablePath);
     console.log(`Daegu line ${config.lineNumber}: ${topology.stationCount} stations, ${topology.edgeCount} edges, ${timetable.tripCount} trips, ${timetable.stopTimeCount} stop times`);
   }
   return outputs;
