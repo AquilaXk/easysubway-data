@@ -223,7 +223,7 @@ jobs:
           artifact_id="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).sourceTimetableArtifact.artifactId)' "${contract}")"
           [[ "${artifact_id}" =~ ^itx-cheongchun-source-timetable-[0-9]{17}$ ]] || { echo "promoted artifact identity is invalid" >&2; exit 1; }
           # 허용 경로의 정본은 증거 단계 코드 한 곳이다(원천 승격 4 + 재결속 8). 정확히 이 집합만 바뀌어야 한다.
-          mapfile -t paths < <(node -e 'import("./tools/ci/automation-pr-evidence.mjs").then(({ itxPromotionAllowedPaths }) => process.stdout.write(`${itxPromotionAllowedPaths(process.argv[1]).join("\n")}\n`))' "${artifact_id}")
+          mapfile -t paths < <(node -e 'import("./tools/ci/automation-pr-evidence.mjs").then(({ itxPromotionAllowedPaths }) => process.stdout.write(itxPromotionAllowedPaths(process.argv[1]).join("\n") + "\n"))' "${artifact_id}")
           mapfile -t changed < <(git status --porcelain=v1 | sed -E 's/^.. //')
           [[ "${#changed[@]}" == "${#paths[@]}" ]] || { echo "promotion changed an unsupported path count" >&2; exit 1; }
           for file in "${paths[@]}"; do printf '%s\n' "${changed[@]}" | grep -Fqx "${file}" || { echo "promotion changed an unsupported path" >&2; exit 1; }; done
