@@ -17,7 +17,7 @@
 // 그 밖에 판정할 수 없는 상태(claim 중복·닫힌 PR의 claim·복구 불가 claim·admission 누락/만료 등)는 이상이다.
 // 이상은 REGISTRATION_* 코드로 실패해 실패 이슈로 드러난다. 이전 데이터로 대체하거나 성공으로 덮지 않는다.
 //
-// 사용: node tools/ci/decide-capital-topology-registration.mjs --inventory <file> --ledger <file> --prs <gh pr list JSON>
+// 사용: node tools/ci/decide-capital-topology-registration.mjs --inventory <file> --ledger <file> --prs <collect-automation-prs.mjs 출력>
 //   --claims <git ls-remote 출력> --runs <gh run list JSON> --artifacts <run id별 artifact 이름 JSON> --repository <owner/repo> --current-main-sha <sha>
 //   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
@@ -90,7 +90,8 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
   if (now.getTime() >= freshUntilMillis) fail("REGISTRATION_ADMISSION_EXPIRED", `${snapshotId} expired before it was registered`);
 
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
-  if (pullRequests.length >= limits.pullRequests) fail("REGISTRATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
+  // 상한은 열린 PR에만 적용한다. 목록은 열린 PR 전체와 claim 브랜치별 PR(전 상태)이고(collect-automation-prs.mjs), 닫힘·병합 이력은 쌓여도 판정에 영향이 없다(#993).
+  if (pullRequests.filter(({ state }) => state === "OPEN").length >= limits.pullRequests) fail("REGISTRATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
   // 상한은 아직 끝나지 않은 run에만 적용한다. 끝난 producer run(복구 대상 claim의 run)은 run id로 직접 받은 것이라 세지 않는다(#987 리뷰 F1).
   if (activeRuns(runs).length >= limits.runs) fail("REGISTRATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
 

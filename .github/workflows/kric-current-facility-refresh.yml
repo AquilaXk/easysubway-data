@@ -52,10 +52,9 @@ jobs:
           prs="${RUNNER_TEMP}/kric-current-facility-refresh/open-prs.json"
           claims="${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
           claim_refs="${RUNNER_TEMP}/kric-current-facility-refresh/claim-refs.txt"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 \
-            --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${prs}"
           git ls-remote --heads origin \
             "refs/heads/automation/629-kric-facility-refresh-*" > "${claim_refs}"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claim_refs}" --pr-limit 1000 --output "${prs}"
           # decision은 claim head subject로 닫힌(Abandon) claim을 회수 대상에서 뺀다.
           while IFS=$'\t' read -r claim_head claim_ref; do
             [[ -n "${claim_head}" ]] || continue

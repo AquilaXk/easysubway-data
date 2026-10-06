@@ -43,8 +43,8 @@ jobs:
           set -euo pipefail
           prs="${RUNNER_TEMP}/seoul-current-accessibility-refresh/open-prs.json"
           claims="${RUNNER_TEMP}/seoul-current-accessibility-refresh/claims.txt"
-          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${prs}"
           git ls-remote --heads origin "refs/heads/automation/639-seoul-accessibility-refresh-*" > "${claims}"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --pr-limit 1000 --output "${prs}"
           node tools/ci/decide-current-seoul-accessibility-refresh.mjs --inventory tools/datapack/source-inventory.json --policy release/product-gates/datapack-freshness-sla.json --prs "${prs}" --claims "${claims}" --repository "${GITHUB_REPOSITORY}" --output "${SEOUL_REFRESH_DECISION}" --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open

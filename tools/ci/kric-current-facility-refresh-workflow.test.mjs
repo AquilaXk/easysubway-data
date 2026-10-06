@@ -21,7 +21,9 @@ test("KRIC refresh workflow has one scheduled, fail-closed, PR-only path", () =>
   assert.match(yml, /node-version: "24\.19\.0"/);
   assert.match(yml, /environment: datapack-release-check/);
   assert.match(yml, /github\.ref == 'refs\/heads\/main'/);
-  assert.match(yml, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000/);
+  // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
+  assert.match(yml, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
+  assert.doesNotMatch(yml, /gh pr list[^\n]*--state all --limit/u);
   assert.match(yml, /headRefName,baseRefName,headRepository,isCrossRepository/);
   assert.match(yml, /git ls-remote --heads origin/);
   assert.match(yml, /decide-current-kric-facility-refresh\.mjs/);
