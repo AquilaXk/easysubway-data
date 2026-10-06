@@ -280,6 +280,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/876",
       "title": "[Feat] 운영기관별 공식 환승 거리·시간 원천 확보(서울·부산 외)"
     },
+    "data884": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/884",
+      "title": "[Test] 후보 준비 테스트가 커밋된 release 산출물을 덮어쓰지 않게 수정"
+    },
     "data854": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/854",
       "title": "[Fix] 전국 정본 팩의 운행 요일 값·노선도 라벨 결함으로 release-candidate 빌드 실패"
@@ -627,7 +631,7 @@
     {"path":"tools/ci/probe-provider-reachability.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/provider-reachability-probe-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/source-reverification-recipes.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":120},
-    {"path":"tools/datapack/run-source-reverification.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":2000},
+    {"path":"tools/datapack/run-source-reverification.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":3200},
     {"path":"tools/datapack/run-source-reverification-steps.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/ci/source-ledger-gate.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":300},
     {"path":"tools/ci/automation-pr-evidence.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":60},
@@ -678,7 +682,7 @@
     {"path":"tools/datapack/plan-kric-nationwide-timetable-collection.test.mjs","semanticOwner":"data454","classes":["required-pr"],"durationMs":8},
     {"path":"tools/datapack/plan-tago-schedule-collection.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":163},
     {"path":"tools/datapack/prepare-current-server-route-bundle-final.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":47},
-    {"path":"tools/datapack/prepare-nationwide-candidate-run.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":12373},
+    {"path":"tools/datapack/prepare-nationwide-candidate-run.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":84000},
     {"path":"tools/datapack/probe-busan-fare-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":52},
     {"path":"tools/datapack/probe-daejeon-coverage-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":331},
     {"path":"tools/datapack/probe-korail-facility-workbook.test.mjs","semanticOwner":"data10","classes":["required-pr"],"durationMs":42},
@@ -710,6 +714,7 @@
     {"path":"tools/datapack/build-seoul-measured-transfer-metrics.test.mjs","semanticOwner":"data876","classes":["required-pr"],"durationMs":3000},
     {"path":"tools/datapack/register-seoul-metro-transfer-car-door-duration.test.mjs","semanticOwner":"data876","classes":["required-pr"],"durationMs":2000},
     {"path":"tools/datapack/refresh-nationwide-candidate.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":2100},
+    {"path":"tools/ci/ci-clean-tree-step.test.mjs","semanticOwner":"data884","classes":["required-pr"],"durationMs":5},
     {"path":"tools/ci/plan-datapack-release-chain.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/lib/scheduled-release-authority.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":10},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":17},
