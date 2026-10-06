@@ -8,13 +8,16 @@
 // - 단계(stage)별 필수 내용: registration은 원천 행(sources)과 정책, derivative-rebinding은 단계(steps)와 정책, candidate-refresh는 후보 식별(candidate).
 //   itx-promotion(#977)은 ITX 원천 행 하나(raw capture sha·후보 sha·직전 snapshot)와 변경 경로 단계 하나이고 정책·후보 식별이 없다.
 //   변경 경로는 coverage contract와 그 snapshot의 원천·완전성 증거·게이트 영수증 네 개뿐이어야 한다(2단계 allowlist).
+//   source-reverification(#984)은 정책·원천 행(원장 게이트 + 증거 게이트)·recipe 단계를 담는다. 단계 id는 알려진 recipe뿐이고,
+//   변경 경로는 등록 도구의 네 출력 파일과 새 원천 snapshot 파일뿐이어야 한다(경로 계약은 source-reverification-paths.mjs 하나).
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
+import { SOURCE_REVERIFICATION_RECIPE_IDS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
 
 export const AUTOMATION_PR_EVIDENCE_MARKER = "easysubway-automation-pr:v1";
-export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion"]);
+export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification"]);
 const ISSUE = 969;
 const BLOCK = new RegExp(`<!-- ${AUTOMATION_PR_EVIDENCE_MARKER} (.*?) -->`, "gu");
 const RUN_URL = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/actions\/runs\/[1-9][0-9]*$/u;
@@ -85,6 +88,15 @@ function validateItxPromotion(source, step) {
   }
 }
 
+function validateSourceReverification(steps) {
+  const seen = new Set();
+  for (const step of steps) {
+    if (!SOURCE_REVERIFICATION_RECIPE_IDS.includes(step.id) || seen.has(step.id) || step.changed !== true
+      || step.paths.some((relative) => !isSourceReverificationAllowedPath(relative))) invalid(`source-reverification: step ${String(step.id)}`);
+    seen.add(step.id);
+  }
+}
+
 function validateEvidence(value) {
   if (!hasExactKeys(value, EVIDENCE_KEYS)) invalid("keys");
   if (value.schemaVersion !== 1 || value.issue !== ISSUE) invalid("schemaVersion or issue");
@@ -103,6 +115,9 @@ function validateEvidence(value) {
     only(value.policy !== null && value.sources.length > 0 && value.steps.length === 0 && value.candidate === null, "needs a policy and source rows, no steps or candidate");
   } else if (value.stage === "derivative-rebinding") {
     only(value.policy !== null && value.steps.length > 0 && value.candidate === null, "needs a policy and steps, no candidate");
+  } else if (value.stage === "source-reverification") {
+    only(value.policy !== null && value.sources.length > 0 && value.steps.length > 0 && value.candidate === null, "needs a policy, source rows and recipe steps, no candidate");
+    validateSourceReverification(value.steps);
   } else if (value.stage === "itx-promotion") {
     only(value.policy === null && value.sources.length === 1 && value.steps.length === 1 && value.candidate === null, "needs one source row and one step, no policy or candidate");
     validateItxPromotion(value.sources[0], value.steps[0]);
@@ -161,6 +176,21 @@ export function derivativeRebindingPullRequestBody({ runUrl, baseSha, headSha, p
     "| 단계 | 결과 | 경로 |", "| --- | --- | --- |",
     ...steps.map((step) => `| ${step.id} | ${step.changed ? "갱신" : "변경 없음"} | ${step.changed ? step.paths.map(code).join(", ") : "-"} |`),
     "", "Refs #969", "Refs #870", "", block, "",
+  ].join("\n");
+}
+
+export function sourceReverificationPullRequestBody({ runUrl, baseSha, headSha, policy, sources, steps }) {
+  const block = automationPrEvidenceBlock({ stage: "source-reverification", runUrl, baseSha, headSha, policy, sources, steps, candidate: null });
+  return [
+    "## Summary", "",
+    "- 만료가 가까운 P7D 원천을 `run-source-reverification`이 수집 → OCI 게시 → 원장 등록 순서로 다시 확인해 등록했다.",
+    "- 원장·증거 변화는 `source-ledger-change-policy.json`의 정책(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA)을 통과했다. 파생 재결속·후보 갱신은 이 PR이 바꾸지 않는다.",
+    `- 실행 run: ${runUrl}`, "",
+    "| recipe | 결과 | 경로 |", "| --- | --- | --- |",
+    ...steps.map((step) => `| ${step.id} | ${step.changed ? "갱신" : "변경 없음"} | ${step.paths.map(code).join(", ") || "-"} |`), "",
+    "| 원천 | snapshot | 직전 snapshot | rowDelta | coverageDelta | diff |", "| --- | --- | --- | --- | --- | --- |",
+    ...sources.map((source) => `| ${source.sourceId} | ${source.snapshotId} | ${source.previousSnapshotId ?? "-"} | ${source.rowDelta} | ${source.coverageDelta} | ${source.diffStatus} |`),
+    "", "Refs #984", "Refs #969", "Refs #870", "", block, "",
   ].join("\n");
 }
 
@@ -274,6 +304,12 @@ export async function main(argv, { write = (chunk) => process.stdout.write(chunk
     const { steps } = await readJson(values.result);
     // controller 결과의 변경 없는 단계는 paths가 없다. 증거 블록은 항상 paths를 남긴다.
     await writeFile(values.output, derivativeRebindingPullRequestBody({ ...common(), policy, sources, steps: steps.map((step) => ({ ...step, paths: step.paths ?? [] })) }), { flag: "wx" });
+  } else if (command === "source-reverification-body") {
+    need("gate", "result", "base-sha", "head-sha", "run-url", "output");
+    const { policy, sources } = await readJson(values.gate);
+    const { steps, evidenceSources } = await readJson(values.result);
+    // 원장 행 증거(게이트)와 원장 행이 없는 증거(controller의 inventory 증거 게이트)를 한 표로 합친다.
+    await writeFile(values.output, sourceReverificationPullRequestBody({ ...common(), policy, sources: [...sources, ...evidenceSources], steps: steps.map((step) => ({ ...step, paths: step.paths ?? [] })) }), { flag: "wx" });
   } else if (command === "itx-promotion-body") {
     need("receipt", "changed-paths", "base-sha", "head-sha", "run-url", "output");
     const receipt = await readJson(values.receipt);
