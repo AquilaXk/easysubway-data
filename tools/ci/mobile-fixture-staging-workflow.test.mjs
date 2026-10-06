@@ -586,3 +586,13 @@ test("Data Pack Release와 ITX 승격 workflow도 같은 태그 존재 검사를
   const promotion = readFileSync(path.join(root, ".github/workflows/itx-current-promotion.yml"), "utf8");
   assertFixtureRefGuard(promotion, { verifyName: verifyRefStep, checkoutName: "Checkout pinned Mobile input fixture", where: "itx-current-promotion" });
 });
+
+// #980 F7: 도구 주석이 가리키는 workflow step은 실제로 있는 이름이어야 하고, --derive-fixture 옵션은 한 번만 읽어 변수가 갈라지지 않는다.
+test("apply-itx 도구의 주석은 실제 derive step 이름을 가리키고 --derive-fixture는 한 번만 읽는다", () => {
+  const tool = readFileSync(path.join(root, "tools/datapack/apply-itx-topology-to-bundled-pack.mjs"), "utf8");
+  const stepName = "Derive ITX-청춘 topology into the staged Mobile fixture";
+  assert.ok(tool.includes(`(${stepName})`), "주석이 실제 step 이름을 적어야 함");
+  assert.equal(tool.includes("derive-itx-mobile-fixture"), false);
+  assert.ok(readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8").includes(`- name: ${stepName}`));
+  assert.equal((tool.match(/option\("--derive-fixture"/gu) ?? []).length, 1);
+});

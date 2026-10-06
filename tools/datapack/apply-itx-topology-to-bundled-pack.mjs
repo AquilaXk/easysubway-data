@@ -407,7 +407,7 @@ function hasExactKeys(value, keys) {
 }
 
 // 입력 팩 식별은 coverage contract의 topologyInputPackIdentity가 정한다(#979). 승격마다 원천 sha를 코드 허용 목록에 사람이 더하지 않는다.
-// 이 식별이 실제 입력 팩과 같은지는 고정된 mobile fixture를 staging하는 단계(derive-itx-mobile-fixture)와 write 모드의 입력 팩 대조가 강제한다.
+// 이 식별이 실제 입력 팩과 같은지는 고정된 mobile fixture를 staging하는 단계(Derive ITX-청춘 topology into the staged Mobile fixture)와 write 모드의 입력 팩 대조가 강제한다.
 export async function admittedTopologySource(reference, source, _currentAdmission = null, contract = null) {
   if (Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
@@ -1076,15 +1076,14 @@ export function assertStoredTopology(sqlitePath, topology, admissionEvidence, ed
 }
 
 async function main() {
-  const deriveRoot = option("--derive-fixture", null);
-  const packPath = path.resolve(root, deriveRoot == null ? option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz") : path.join(deriveRoot, "assets/datapacks/capital.sqlite.gz"));
-  const indexPath = path.resolve(root, deriveRoot == null ? option("--index", "apps/mobile/assets/datapacks/index.json") : path.join(deriveRoot, "assets/datapacks/index.json"));
+  const deriveFixtureRoot = option("--derive-fixture", null);
+  const packPath = path.resolve(root, deriveFixtureRoot == null ? option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz") : path.join(deriveFixtureRoot, "assets/datapacks/capital.sqlite.gz"));
+  const indexPath = path.resolve(root, deriveFixtureRoot == null ? option("--index", "apps/mobile/assets/datapacks/index.json") : path.join(deriveFixtureRoot, "assets/datapacks/index.json"));
   const contractPath = path.resolve(root, option("--contract", "tools/datapack/itx-cheongchun-coverage-contract.json"));
   const evidencePath = path.resolve(root, option("--evidence", "tools/datapack/itx-cheongchun-topology-evidence.json"));
   const currentAdmissionOption = option("--current-admission", null);
   const currentAdmissionPath = currentAdmissionOption == null ? null : path.resolve(root, currentAdmissionOption);
   const fixtureProjectionPath = option("--project-fixture", null);
-  const deriveFixtureRoot = option("--derive-fixture", null);
   const check = process.argv.includes("--check");
   const immutableIntegrity = process.argv.includes("--verify-immutable-integrity");
   const migrateCurrentV18Requested = process.argv.includes("--migrate-current-v18");
