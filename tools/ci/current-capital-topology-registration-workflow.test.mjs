@@ -36,7 +36,11 @@ test("판정 step이 claim·게시·PR 생성보다 먼저 돌고 판정 입력�
   assert.match(block, /RECOVERY_RUN_ID: \$\{\{ inputs\.recovery_run_id \}\}/u);
   assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/456-capital-topology-registration-\*" > /u);
-  assert.match(block, /gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow current-capital-topology-registration\.yml --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > /u);
+  // #987 리뷰 F1: 아직 끝나지 않은 run만 상태별로 조회하고, 복구에 필요한 claim의 producer run은 run id로 직접 가져온다(끝난 이력은 조회하지 않는다).
+  assert.match(block, /for status in in_progress queued waiting pending requested; do\n\s+gh run list --repo "\$\{GITHUB_REPOSITORY\}" --workflow current-capital-topology-registration\.yml --status "\$\{status\}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "[^"]+"\n\s+done/u);
+  assert.equal((block.match(/gh run list/gu) ?? []).length, 1, "every run listing is filtered by status");
+  assert.match(block, /gh run view "\$\{claim_run\}" --repo "\$\{GITHUB_REPOSITORY\}" --json databaseId,status,conclusion,workflowName,headBranch,headSha/u);
+  assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' /u);
   assert.match(block, /node tools\/ci\/decide-capital-topology-registration\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json /u);
   assert.match(block, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{claim_run\}\/artifacts" --jq '\[\.artifacts\[\]\.name\]'/u);
   assert.match(block, /--artifacts "\$\{decision_root\}\/artifacts\.json" --repository "\$\{GITHUB_REPOSITORY\}"/u);

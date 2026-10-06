@@ -173,11 +173,20 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
 });
 
 // #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다.
-test("PR·run 목록이 조회 상한에 닿으면 잘렸을 수 있으므로 판정하지 않고 실패한다", () => {
+test("PR 목록이나 아직 끝나지 않은 run 목록이 조회 상한에 닿으면 잘렸을 수 있으므로 판정하지 않고 실패한다", () => {
   const many = (count, factory) => Array.from({ length: count }, (_, index) => factory(index));
   assert.throws(() => decideSourceReverification(input({ pullRequests: many(1000, (index) => pr("MERGED", index + 1, { number: index + 1, headRefName: `feat/x-${index}` })) })), /REVERIFICATION_LIST_TRUNCATED: pull request list reached its limit 1000/u);
-  assert.throws(() => decideSourceReverification(input({ runs: many(200, (index) => run(index + 1, "completed", "success")) })), /REVERIFICATION_LIST_TRUNCATED: run list reached its limit 200/u);
+  assert.throws(() => decideSourceReverification(input({ runs: many(200, (index) => run(index + 1, "in_progress")) })), /REVERIFICATION_LIST_TRUNCATED: run list reached its limit 200/u);
   assert.equal(decideSourceReverification(input({ pullRequests: many(999, (index) => pr("MERGED", index + 1, { number: index + 1, headRefName: `feat/x-${index}` })) })).state, "NOT_DUE");
+});
+
+// #987 리뷰 F1: 정기 실행이 하루 12번이라 끝난 run은 17일이면 200개를 넘는다. 끝난 run은 판정에 필요 없으므로(없는 run도 같은 ABANDONED) 상한에 세지 않는다.
+test("끝난 run이 상한을 넘게 쌓여도 판정은 실패하지 않는다", () => {
+  const history = Array.from({ length: 500 }, (_, index) => run(1000 + index, "completed", index % 2 === 0 ? "success" : "failure"));
+  assert.deepEqual(decideSourceReverification(input({ runs: history })), { state: "NOT_DUE", due: [], recipes: [], cleanupClaims: [] });
+  const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}1000`;
+  assert.deepEqual(decideSourceReverification(input({ automationBranches: [claim], runs: history })).cleanupClaims, [claim]);
+  assert.equal(decideSourceReverification(input({ automationBranches: [`${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`], runs: [...history, run(77, "in_progress")] })).state, "CLAIM_IN_PROGRESS");
 });
 
 test("입력이 잘못되면 판정하지 않고 실패한다", () => {

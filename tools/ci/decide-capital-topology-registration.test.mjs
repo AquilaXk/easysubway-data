@@ -139,8 +139,14 @@ test("PR·run 목록이 조회 상한과 같은 개수면 잘린 것으로 보�
   const filler = (count, make) => Array.from({ length: count }, (_, index) => make(index));
   const other = (index) => ({ number: 1000 + index, state: "MERGED", isDraft: false, headRefName: `feat/x${index}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY } });
   assert.throws(() => decide({ limits, pullRequests: filler(3, other) }), /REGISTRATION_LIST_TRUNCATED: pull request list reached its limit 3/u);
-  assert.throws(() => decide({ limits, runs: filler(2, (index) => run(900 + index, { conclusion: "success" })) }), /REGISTRATION_LIST_TRUNCATED: run list reached its limit 2/u);
-  assert.equal(decide({ limits, pullRequests: filler(2, other), runs: filler(1, (index) => run(900 + index, { conclusion: "success" })) }).state, "REGISTER");
+  // 상한은 아직 끝나지 않은 run에만 적용한다. 끝난 run의 이력은 쌓여도(정기 실행이 하루 12번) 판정을 막지 않는다(#987 리뷰 F1).
+  const active = (index) => run(900 + index, { status: "in_progress", conclusion: "" });
+  assert.throws(() => decide({ limits, runs: filler(2, active) }), /REGISTRATION_LIST_TRUNCATED: run list reached its limit 2/u);
+  assert.equal(decide({ limits, pullRequests: filler(2, other), runs: filler(1, active) }).state, "REGISTER");
+  assert.equal(decide({ limits, runs: filler(50, (index) => run(900 + index, { conclusion: "success" })) }).state, "REGISTER");
+  // 복구는 끝난 producer run(claim 브랜치의 run id)이 목록에 있어야 하므로 그 run은 상한과 상관없이 쓴다.
+  const recover = decide({ limits, claims: [claim(123)], runs: [run(123), ...filler(50, (index) => run(900 + index, { conclusion: "success" }))], artifacts: evidence(123) });
+  assert.equal(recover.state, "RECOVER_CLAIM");
   // 등록된 snapshot이면 목록을 보지 않으므로 잘림과 무관하다.
   assert.equal(decide({ limits, ledger: [row(PREVIOUS), row(SNAPSHOT)], pullRequests: filler(3, other) }).state, "REGISTERED");
   assert.throws(() => decide({ limits: { pullRequests: 0, runs: 2 } }), /REGISTRATION_INPUT_INVALID/u);
