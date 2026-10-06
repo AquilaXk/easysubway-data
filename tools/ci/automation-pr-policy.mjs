@@ -268,7 +268,7 @@ export function evaluateAutomationPullRequest(input) {
 
   if (evidence !== null) {
     // CI가 게이트를 재계산할 때 본 증거 블록과 지금 본문의 블록이 같아야 한다(#986 F3). CI 뒤 본문 편집으로 단계·경로 주장을 바꾸지 못한다.
-    const keys = isObject(ciEvidence) ? Object.keys(ciEvidence).sort() : [];
+    const keys = isObject(ciEvidence) ? sortCodepoint(Object.keys(ciEvidence)) : [];
     if (!isObject(ciEvidence) || keys.join(",") !== "evidenceSha256,headSha,schemaVersion,stage" || ciEvidence.schemaVersion !== 1
       || ciEvidence.headSha !== headSha || ciEvidence.stage !== evidence.stage
       || typeof ciEvidence.evidenceSha256 !== "string" || ciEvidence.evidenceSha256 !== automationEvidenceDigest(pull.body)) {
