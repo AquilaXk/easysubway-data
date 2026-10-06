@@ -15,11 +15,12 @@ const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#"))
 const COLLECT = "${{ steps.decision.outputs.state == 'COLLECT' }}";
 const DECISION = "Decide whether ITX promotion is due";
 
-// F5 → #979: 재결속은 같은 job에서 끝나지만 raw capture 원장 등록이 남아 있어 정기 실행 변수는 QA 결정 전까지 켜지 않는다.
-test("정기 실행 변수는 남은 항목 처리와 QA 결정 전에는 켜지 않는다고 workflow가 스스로 밝힌다", () => {
+// F5 → #979 → #980 F1: 원장 대조·첫 dispatch 확인은 #981로 분리했고 변수 켜기의 선행 조건이 아니다. 변수는 코드가 켜지 않고 QA 보고 뒤 별도 설정 변경으로 켠다.
+test("정기 실행 변수는 코드가 켜지 않고 QA 보고 뒤 별도 설정 변경으로만 켠다고 workflow가 스스로 밝힌다", () => {
   const header = yml.split("\n").filter((line) => line.startsWith("#")).join("\n");
-  assert.match(header, /#979/u);
-  assert.match(header, /DATAPACK_SCHEDULED_ITX_PROMOTION[^\n]*켜지 않는다/u);
+  assert.match(header, /#981/u);
+  assert.match(header, /DATAPACK_SCHEDULED_ITX_PROMOTION[^\n]*QA 보고 뒤[^\n]*설정 변경/u);
+  assert.doesNotMatch(header, /#979 본문 참조/u);
   // 코드는 변수를 스스로 켜지 않고, 정기 실행은 변수가 true일 때만 돈다.
   assert.doesNotMatch(code, /DATAPACK_SCHEDULED_ITX_PROMOTION[^\n]*(?:=|:)\s*['"]?true['"]?\s*$/mu);
 });

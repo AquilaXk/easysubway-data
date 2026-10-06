@@ -9,8 +9,8 @@ name: ITX Current Promotion
 #   force_collect를 주면 수집할 때가 아니어도 수집한다(후속 단계가 새 수집분을 기다릴 때).
 # - 승격 뒤 파생 재결속(#979)을 같은 job에서 한다: 고정 입력 fixture(mobile, ITX 적용 전 팩)에 새 원천 topology를 적용해 증거(현재·버전 별)와 팩을 만들고,
 #   5권역 alignment fixture를 새 팩에 맞춘다(후보 build spec·입력 manifest pin은 게시된 입력을 가리키므로 건드리지 않고 병합 뒤 후보 준비가 다시 묶는다). mobile 커밋·workflow pin은 승격마다 바뀌지 않는다(CI가 입력 팩에서 출력 팩을 파생해 증거와 대조).
-#   그래서 승격 PR 하나가 사람 손 없이 required CI를 통과한다. raw capture 원장(OCI 발행) 등록은 아직 없다(#979 본문 참조).
-#   DATAPACK_SCHEDULED_ITX_PROMOTION은 그 남은 항목의 처리와 QA 결정 전까지 켜지 않는다.
+#   그래서 승격 PR 하나가 사람 손 없이 required CI를 통과한다. raw capture 원장(OCI 발행) 대조와 첫 실제 dispatch 확인은 #981로 분리했고 변수 켜기의 선행 조건이 아니다.
+#   DATAPACK_SCHEDULED_ITX_PROMOTION은 코드가 켜지 않는다. QA 보고 뒤 별도 설정 변경으로만 켠다.
 # - 수동 승인 경로(collect-korail-itx-cheongchun-timetable --promote-candidate --approval-url ...)는 override로 그대로 있다. 이 workflow는 쓰지 않는다.
 on:
   schedule:
