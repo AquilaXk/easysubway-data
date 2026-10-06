@@ -50,7 +50,10 @@ test("판정 step이 공급자 접근·쓰기보다 먼저 돌고 PR·브랜치 
   assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/977-itx-promotion-\*" > /u);
   assert.match(block, /node tools\/ci\/decide-itx-current-promotion\.mjs --contract tools\/datapack\/itx-cheongchun-coverage-contract\.json /u);
-  assert.match(block, /--repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --force "\$\{force\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /--repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --force "\$\{force\}" --itx-collected-today "\$\{itx_collected\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  // F4: 같은 KST 날 다른 workflow가 이미 ITX를 수집했는지 공급자 호출 전에 본다. 수집했다면 WAIT로 정상 종료한다.
+  assert.match(block, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
+  assert.match(block, /itx_collected="\$\(node tools\/ci\/guard-itx-current-collection-budget\.mjs --probe\)"/u);
   assert.doesNotMatch(block, /DATA_GO_KR_SERVICE_KEY/u);
 });
 

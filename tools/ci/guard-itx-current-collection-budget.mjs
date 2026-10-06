@@ -153,13 +153,8 @@ async function previousRunEnteredCollector({ runId, token, fetchImpl, context })
   return enteredCollector;
 }
 
-export async function guardItxCurrentCollectionBudget({
-  argv = [],
-  env = process.env,
-  now = new Date(),
-  fetchImpl = globalThis.fetch,
-} = {}) {
-  if (!Array.isArray(argv) || argv.length !== 0) throw failure();
+// 같은 KST 날의 ITX 수집 workflow 실행을 모두 읽어, 이 run 밖에서 collector에 들어간 실행의 id를 돌려준다.
+async function inspectItxCollectionWindow({ env, now, fetchImpl }) {
   if (!env || typeof env !== "object") throw failure();
   if (env.GITHUB_REPOSITORY !== EXPECTED_REPOSITORY
     || !COLLECTION_CONTEXTS.some(({ events }) => events.includes(env.GITHUB_EVENT_NAME))
@@ -212,20 +207,45 @@ export async function guardItxCurrentCollectionBudget({
   const currentRuns = runs.filter(({ run }) => run.id === runId);
   if (currentRuns.length !== 1 || currentRuns[0].run.run_attempt !== 1
     || currentRuns[0].run.event !== env.GITHUB_EVENT_NAME) throw failure();
+  const entered = [];
   for (const { run, context } of runs) {
     if (run.id !== runId && await previousRunEnteredCollector({
       runId: run.id, token, fetchImpl, context,
     })) {
-      throw failure();
+      entered.push(run.id);
     }
   }
+  return { runId, window, entered };
+}
 
+export async function guardItxCurrentCollectionBudget({
+  argv = [],
+  env = process.env,
+  now = new Date(),
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  if (!Array.isArray(argv) || argv.length !== 0) throw failure();
+  const { runId, window, entered } = await inspectItxCollectionWindow({ env, now, fetchImpl });
+  if (entered.length > 0) throw failure();
   return {
     repository: EXPECTED_REPOSITORY,
     runId,
     quotaWindow: window.label,
     otherRunCount: 0,
   };
+}
+
+/**
+ * 같은 KST 날 다른 ITX 수집 workflow가 이미 collector에 들어갔는지 실패 없이 알려 준다(#977).
+ * 판정 단계가 공급자 호출 전에 이것을 보고 정상 종료(WAIT)한다. 읽을 수 없으면 추정하지 않고 실패한다.
+ */
+export async function probeItxCollectionToday({
+  env = process.env,
+  now = new Date(),
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  const { runId, window, entered } = await inspectItxCollectionWindow({ env, now, fetchImpl });
+  return { repository: EXPECTED_REPOSITORY, runId, quotaWindow: window.label, collectedToday: entered.length > 0 };
 }
 
 function receiptOutput(argv) {
@@ -269,6 +289,16 @@ export async function runItxCurrentCollectionBudgetGuardCli({
 }
 
 async function main() {
+  if (process.argv.length === 3 && process.argv[2] === "--probe") {
+    try {
+      const { collectedToday } = await probeItxCollectionToday();
+      process.stdout.write(`${collectedToday}\n`);
+    } catch {
+      process.stderr.write(`${FAILURE_MESSAGE}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
   try {
     const result = await runItxCurrentCollectionBudgetGuardCli();
     process.stdout.write(`${JSON.stringify(result)}\n`);

@@ -121,6 +121,23 @@ test("사람 dispatch의 force는 수집할 때가 아니어도 수집하게 하
   assert.throws(() => decide({ now: kst("2026-10-06"), force: "yes" }), /ITX_PROMOTION_INPUT_INVALID/u);
 });
 
+test("같은 KST 날 다른 workflow가 이미 ITX를 수집했으면 수집할 때여도 WAIT로 정상 종료한다 (F4, 이상 아님)", () => {
+  for (const [name, overrides] of [
+    ["SAFETY_LEAD", { now: kst("2026-10-10") }],
+    ["EXPIRED", { now: kst("2026-10-12", "03:00:00") }],
+    ["FORCED", { now: kst("2026-10-06"), force: true }],
+  ]) {
+    const result = decide({ ...overrides, itxCollectedToday: true });
+    assert.deepEqual({ state: result.state, reason: result.reason }, { state: "WAIT", reason: "ITX_COLLECTED_TODAY" }, name);
+  }
+  // 수집할 때가 아니면 그대로 NOT_DUE, 열린 PR이 있으면 그대로 OPEN_PR이다.
+  assert.equal(decide({ now: kst("2026-10-06"), itxCollectedToday: true }).reason, "NOT_DUE");
+  assert.equal(decide({ now: kst("2026-10-10"), itxCollectedToday: true, pullRequests: [pr()] }).state, "OPEN_PR");
+  // 다음 날에는 다시 수집한다.
+  assert.equal(decide({ now: kst("2026-10-11"), itxCollectedToday: false }).state, "COLLECT");
+  assert.throws(() => decide({ now: kst("2026-10-10"), itxCollectedToday: "yes" }), /ITX_PROMOTION_INPUT_INVALID/u);
+});
+
 test("열린 승격 PR이 있으면 새로 수집하지 않고 그 PR을 돌려준다", () => {
   const result = decide({ now: kst("2026-10-11"), pullRequests: [pr()], branches: [{ sha: "a".repeat(40), branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] });
   assert.deepEqual({ state: result.state, branch: result.branch, number: result.number }, { state: "OPEN_PR", branch: `${ITX_PROMOTION_CLAIM_PREFIX}123`, number: 990 });
@@ -250,6 +267,15 @@ test("CLI는 판정을 GITHUB_OUTPUT에 쓴다", async () => {
       "state=COLLECT", "reason=SAFETY_LEAD", "branch=", "pr_number=", "blocked_by=", "days_until_expiry=2", "lapsed=false",
     ]);
     assert.equal(logs.length, 1);
+    const waiting = await main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "true",
+    ], { now: kst("2026-10-10"), log: () => {} });
+    assert.deepEqual({ state: waiting.state, reason: waiting.reason }, { state: "WAIT", reason: "ITX_COLLECTED_TODAY" });
+    await assert.rejects(main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "maybe",
+    ], { now: kst("2026-10-10"), log: () => {} }), /ITX_PROMOTION_INPUT_INVALID/u);
     await assert.rejects(main(["--contract", path.join(dir, "contract.json")], { now: kst("2026-10-10") }), /ITX_PROMOTION_INPUT_INVALID/u);
   } finally {
     await rm(dir, { recursive: true, force: true });

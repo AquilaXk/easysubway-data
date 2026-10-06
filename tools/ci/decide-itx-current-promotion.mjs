@@ -17,11 +17,12 @@
 //   OPEN_PR                 이 workflow의 열린 승격 PR이 있다. 새로 수집하지 않고 CI·방치 상한만 본다.
 //   WAIT                    수집할 때가 아니다.
 //   COLLECT                 수집·게이트·승격 PR을 진행한다.
+//   WAIT(ITX_COLLECTED_TODAY) 수집할 때지만 같은 KST 날 다른 workflow가 이미 ITX를 수집했다(공급자 호출은 하루 한 번). 이상이 아니다.
 //   BLOCKED_BY_PENDING_PR   수집할 때지만 다른 자동화 PR이 열려 있다. 대기다. 만료 1일 전이면 이상이다.
 // 판정할 수 없는 상태(PR 중복·PR 없는 브랜치·닫힌 PR·잘못된 입력)는 실패해 실패 이슈로 드러난다. 추정하지 않는다.
 //
 // 사용: node tools/ci/decide-itx-current-promotion.mjs --contract <coverage contract> --prs <gh pr list JSON>
-//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--github-output <path>]
+//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--itx-collected-today true|false] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -73,10 +74,10 @@ function admittedFreshUntilDay(contract) {
   return { millis, day: kstDay(new Date(millis)) };
 }
 
-export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false } = {}) {
+export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false, itxCollectedToday = false } = {}) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(pullRequests) || !Array.isArray(branches)
     || !validRepository(repository) || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1
-    || typeof force !== "boolean") fail("ITX_PROMOTION_INPUT_INVALID");
+    || typeof force !== "boolean" || typeof itxCollectedToday !== "boolean") fail("ITX_PROMOTION_INPUT_INVALID");
   const { millis: freshUntilMillis, day: expiryDay } = admittedFreshUntilDay(contract);
   const today = kstDay(now);
   const daysUntilExpiry = expiryDay - today;
@@ -106,6 +107,8 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   if (reason === null && force) reason = "FORCED";
   if (reason === null) return { ...base, state: "WAIT", reason: "NOT_DUE" };
 
+  // 같은 KST 날 다른 workflow(topology 갱신·수동 수집)가 이미 공급자를 불렀다면 오늘은 수집할 수 없다. 이상이 아니라 대기다(내일 다시 판정한다).
+  if (itxCollectedToday) return { ...base, state: "WAIT", reason: "ITX_COLLECTED_TODAY" };
   const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, ITX_PROMOTION_WORKFLOW);
   if (blockedBy.length > 0) {
     // 대기는 이상이 아니다. 하지만 만료 1일 전까지 풀리지 않으면 재시도 여유가 없으므로 이상으로 드러낸다.
@@ -117,7 +120,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
 
 function parseArgs(argv) {
   const keys = new Map([
-    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--force", "force"], ["--github-output", "githubOutput"],
+    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--force", "force"], ["--itx-collected-today", "itxCollectedToday"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -131,6 +134,13 @@ function parseArgs(argv) {
   return values;
 }
 
+function booleanOption(value, name) {
+  if (value === undefined) return false;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return fail("ITX_PROMOTION_INPUT_INVALID", `${name} must be true or false`);
+}
+
 export async function main(argv, { now = new Date(), log = console.log } = {}) {
   const values = parseArgs(argv);
   const readJson = async (file) => JSON.parse(await readFile(file, "utf8"));
@@ -141,7 +151,8 @@ export async function main(argv, { now = new Date(), log = console.log } = {}) {
     branches: parseItxPromotionBranches(await readFile(values.branches, "utf8")),
     repository: values.repository,
     limits: { pullRequests: Number(values.prLimit) },
-    force: values.force === undefined ? false : values.force === "true" ? true : values.force === "false" ? false : fail("ITX_PROMOTION_INPUT_INVALID", "--force must be true or false"),
+    force: booleanOption(values.force, "--force"),
+    itxCollectedToday: booleanOption(values.itxCollectedToday, "--itx-collected-today"),
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {

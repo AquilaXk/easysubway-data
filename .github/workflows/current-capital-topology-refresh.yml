@@ -42,6 +42,7 @@ jobs:
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           CLAIMS_PATH: ${{ runner.temp }}/current-capital-topology-refresh/claims.json
         run: |
           set -euo pipefail
@@ -59,7 +60,13 @@ jobs:
             node --input-type=module -e 'import { appendFile } from "node:fs/promises"; const [headSha, ref, mergeBaseSha, commitCount, subjects] = process.argv.slice(1); await appendFile(process.env.CLAIMS_PATH, JSON.stringify({ headSha, ref, mergeBaseSha, commitCount: Number(commitCount), subjects: subjects ? subjects.split("\n") : [] }) + "\n");' "${head_sha}" "${ref}" "${merge_base}" "${commit_count}" "${subjects}"
           done < "${state_root}/claim-refs.txt"
           node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
-          node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
+          # #977: 같은 KST 날 다른 ITX 수집 workflow가 이미 공급자를 불렀다면 대기 상태로 끝난다(예산 가드 실패로 이슈를 만들지 않는다).
+          itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"
+          node tools/ci/decide-current-capital-topology-refresh.mjs --inventory tools/datapack/source-inventory.json --candidate tools/datapack/release/candidate-build-spec.json --policy release/product-gates/datapack-freshness-sla.json --prs "${state_root}/prs.json" --claims "${state_root}/claims.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --itx-collected-today "${itx_collected}" --output "${TOPOLOGY_DECISION}" --github-output "${GITHUB_OUTPUT}"
+      - name: Note current topology refresh waiting on today's ITX collection
+        if: ${{ steps.decision.outputs.state == 'WAIT_ITX_COLLECTED_TODAY' }}
+        run: |
+          echo "::notice title=Current topology refresh::another workflow already collected ITX today (the provider allows one collection per KST day); the next run decides again."
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}

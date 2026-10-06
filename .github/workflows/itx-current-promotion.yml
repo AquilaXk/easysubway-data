@@ -56,6 +56,7 @@ jobs:
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           FORCE_COLLECT: ${{ inputs.force_collect }}
         run: |
           set -euo pipefail
@@ -65,7 +66,9 @@ jobs:
           git ls-remote --heads origin "refs/heads/automation/977-itx-promotion-*" > "${decision_root}/branches.txt"
           force=false
           if [[ "${FORCE_COLLECT}" == "true" ]]; then force=true; fi
-          node tools/ci/decide-itx-current-promotion.mjs --contract tools/datapack/itx-cheongchun-coverage-contract.json --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --force "${force}" --github-output "${GITHUB_OUTPUT}"
+          # 같은 KST 날 topology 갱신·수동 수집이 이미 ITX 공급자를 불렀다면 공급자 호출은 하루 한 번이라 오늘은 수집하지 않고 정상 종료한다.
+          itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"
+          node tools/ci/decide-itx-current-promotion.mjs --contract tools/datapack/itx-cheongchun-coverage-contract.json --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --force "${force}" --itx-collected-today "${itx_collected}" --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -101,8 +104,9 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'WAIT' }}
         env:
           DAYS_UNTIL_EXPIRY: ${{ steps.decision.outputs.days_until_expiry }}
+          WAIT_REASON: ${{ steps.decision.outputs.reason }}
         run: |
-          echo "::notice title=ITX promotion::the admitted ITX source stays fresh for ${DAYS_UNTIL_EXPIRY} more day(s); no provider call was made and no pull request was opened."
+          echo "::notice title=ITX promotion::${WAIT_REASON}: the admitted ITX source stays fresh for ${DAYS_UNTIL_EXPIRY} more day(s); no provider call was made and no pull request was opened."
       - name: Note ITX promotion waiting on another pending automation pull request
         if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}
         env:
