@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { assertFailureReportLast, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
+import { assertFailureReportLast, assertNoExpressionInRunScripts, assertOpenPullRequestSteps, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
 // #969 P4: 파생 재결속 workflow 계약. 원장·정본 팩이 main에서 바뀌면(또는 정기 복구로) controller가 파생 산출물을 다시 만들고,
 // 바뀐 것이 있을 때만 App 토큰 PR 하나로 올린다. 변경이 없으면 PR도 만들지 않는다. 변수가 꺼져 있으면 push·정기 실행은 건너뛴다.
@@ -64,7 +64,8 @@ test("push·App 토큰·PR 생성·정리는 바뀐 것이 있을 때만 돌고 
   assert.match(pr.block, /node tools\/ci\/automation-pr-evidence\.mjs derivative-rebinding-body --result /u);
   assert.match(pr.block, /APP_PR_TOKEN: \$\{\{ steps\.app-token-pr\.outputs\.token \}\}/u);
   const cleanup = step("Remove the rebinding branch after a later failure");
-  assert.equal(ifCondition(cleanup.block), "${{ failure() && env.REBINDING_BRANCH != '' }}");
+  // #975 리뷰 F7: 취소·시간 초과에도 이 run이 push한 branch와 PR을 정리한다.
+  assert.equal(ifCondition(cleanup.block), "${{ (failure() || cancelled()) && env.REBINDING_BRANCH != '' }}");
 });
 
 test("OPEN_PR이면 App 토큰 → required CI 보장 → 열린 PR 상한 검사 순서로 돈다", () => {
@@ -75,5 +76,23 @@ test("원장 쓰기 PR 때문에 기다리는 실행은 이유를 notice로 남�
   const wait = step("Note derivative rebinding waiting on a pending source pull request");
   assert.equal(ifCondition(wait.block), "${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_PR' }}");
   assert.match(wait.block, /steps\.decision\.outputs\.blocked_by/u);
-  assertFailureReportLast({ yml, step, file: FILE });
+  assertFailureReportLast({ yml, step, file: FILE, condition: "${{ failure() || cancelled() }}" });
+});
+
+// #975 리뷰 F7·이슈 #973: 이전 실행이 남긴 재결속 브랜치(PR 없음·닫힌 PR)는 판정이 알려 주고 이번 실행이 지운다.
+test("판정이 알린 남은 재결속 브랜치는 controller 전에 지운다", () => {
+  const cleanup = step("Remove stale rebinding branches named by the decision");
+  assert.equal(ifCondition(cleanup.block), "${{ steps.decision.outputs.cleanup_branches != '' }}");
+  assert.match(cleanup.block, /CLEANUP_BRANCHES: \$\{\{ steps\.decision\.outputs\.cleanup_branches \}\}/u);
+  assert.match(cleanup.block, /\^automation\/969-derivative-rebinding-\[1-9\]\[0-9\]\*\$/u);
+  assert.match(cleanup.block, /git push origin --delete "\$\{stale_branch\}"/u);
+  const names = steps().map(({ name }) => name);
+  assert.ok(names.indexOf("Decide whether derivative rebinding may run") < names.indexOf(cleanup.name));
+  assert.ok(names.indexOf(cleanup.name) < names.indexOf("Rebind derivative artifacts from the current ledger heads"));
+});
+
+// #975 리뷰 F7·#972/#974 리뷰: step output은 env로만 받는다.
+test("run 스크립트에는 표현식을 직접 넣지 않고 env로만 받는다", () => {
+  assertNoExpressionInRunScripts({ steps, file: FILE });
+  assert.match(step("Note derivative rebinding waiting on a pending source pull request").block, /\n          BLOCKED_BY: \$\{\{ steps\.decision\.outputs\.blocked_by \}\}\n/u);
 });

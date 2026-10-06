@@ -155,6 +155,6 @@ test("OPEN_PR이면 App 토큰 발급 → required CI 보장(close→reopen) →
     assert.match(ageBlock, new RegExp(`node tools/ci/refresh-open-pr-age\\.mjs --workflow ${file.replaceAll(".", "\\.")} --prs "\\$\\{open_prs\\}" --policy release/product-gates/datapack-freshness-sla\\.json --repository "\\$\\{GITHUB_REPOSITORY\\}" --ci-state ${ciState}`, "u"), file);
     const report = find("Report refresh failure as an issue");
     assert.ok(report > age, file);
-    assert.equal(ifCondition(all[report].block), [REGISTRATION_WORKFLOW, CANDIDATE_WORKFLOW].includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}", file);
+    assert.equal(ifCondition(all[report].block), SINGLE_PR_PATH_WORKFLOWS.includes(file) ? "${{ failure() || cancelled() }}" : "${{ failure() }}", file);
   }
 });
