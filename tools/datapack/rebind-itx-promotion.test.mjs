@@ -86,6 +86,8 @@ test("승격 뒤 재결속은 사람 손 없이 CI가 확인하는 파생 결속
   assert.doesNotThrow(() => verifyCurrentItxPromotion({ reference, repositoryRoot: worktree }));
   const outputPack = readFileSync(path.join(stagedFixture, "assets/datapacks/capital.sqlite.gz"));
   assert.equal(sha256(outputPack), evidence.pack.outputSha256);
+  // gzip 헤더의 OS 바이트는 플랫폼(macOS 19, Linux 3)이 아니라 고정값이다. 그래야 Linux CI가 파생한 팩이 개발 환경에서 만든 증거와 같다.
+  assert.equal(outputPack[9], 19);
   for (const relative of ALIGNMENT_FIXTURES) assert.equal(json(path.join(worktree, relative)).generatedFrom.packSha256, evidence.pack.outputSha256, relative);
 
   // 4. CI가 하는 일을 그대로 한다: 입력 fixture를 stage한 뒤 --derive-fixture로 같은 팩을 파생하고 증거와 대조한다.

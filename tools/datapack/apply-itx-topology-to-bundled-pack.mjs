@@ -16,6 +16,8 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const GZIP_HEADER_OS_BYTE_OFFSET = 9;
+const GZIP_HEADER_OS_BYTE = 19;
 const CATALOG_VERSION = 19;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
 const CURRENT_VERIFICATION_MODE = "current";
@@ -1167,13 +1169,22 @@ async function main() {
     // staging 전용: 이미 커밋된 증거와 같은 팩·index를 입력 fixture에서 파생한다. 증거는 쓰지 않고 한 글자라도 다르면 실패한다.
     const committed = JSON.parse(await readFile(evidencePath, "utf8"));
     if (JSON.stringify(committed) !== JSON.stringify(computed.evidence)) {
-      throw new Error("ITX_FIXTURE_DERIVATION_MISMATCH: the derived topology evidence differs from the committed evidence");
+      throw new Error(`ITX_FIXTURE_DERIVATION_MISMATCH: the derived topology evidence differs from the committed evidence (${differingEvidenceFields(committed, computed.evidence).join(", ")})`);
     }
   } else {
     await writeFile(evidencePath, `${JSON.stringify(computed.evidence, null, 2)}\n`);
   }
   await writeFile(packPath, computed.outputGzipBytes);
   await writeFile(indexPath, `${JSON.stringify(computed.index, null, 2)}\n`);
+}
+
+/** 두 증거 JSON에서 값이 다른 필드 경로(정렬)를 돌려준다. 값은 해시·개수뿐이라 그대로 오류에 적는다. */
+function differingEvidenceFields(left, right, prefix = "") {
+  if (left !== null && right !== null && typeof left === "object" && typeof right === "object" && !Array.isArray(left) && !Array.isArray(right)) {
+    return [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()
+      .flatMap((key) => differingEvidenceFields(left[key], right[key], prefix === "" ? key : `${prefix}.${key}`));
+  }
+  return JSON.stringify(left) === JSON.stringify(right) ? [] : [`${prefix}: committed=${JSON.stringify(left)} derived=${JSON.stringify(right)}`];
 }
 
 /** 입력 팩에 승인 원천 topology를 적용해 출력 팩·index·증거를 계산한다. 파일을 쓰지 않는다. */
@@ -1193,6 +1204,9 @@ async function computeItxTopologyPack({
     applyTopology(sqlitePath, topology, admissionEvidence, currentProjection);
     const outputSqliteBytes = await readFile(sqlitePath);
     const outputGzipBytes = gzipSync(outputSqliteBytes, { level: 9, mtime: 0 });
+    // zlib은 gzip 헤더의 OS 바이트(오프셋 9)를 실행 플랫폼으로 채운다(macOS 19, Linux 3). 압축 본문은 같지만 팩 sha256이 플랫폼마다 달라져
+    // CI(Linux)가 파생한 팩이 커밋된 증거와 어긋난다. OS 바이트를 고정해 어느 플랫폼에서든 같은 팩 바이트를 만든다(#979).
+    outputGzipBytes[GZIP_HEADER_OS_BYTE_OFFSET] = GZIP_HEADER_OS_BYTE;
     if (outputGzipBytes.length - inputGzipBytes.length > MAX_GZIP_DELTA_BYTES) {
       throw new Error("ITX topology exceeds the 64 KiB compressed size budget");
     }
