@@ -321,6 +321,35 @@ test('derived profile hash는 증거에서 읽은 값과 staged 파일 해시가
   }
 });
 
+// #980 F6: 고정 커밋을 mobile 레포의 태그가 붙들게 하면 workflow checkout은 태그 ref를 쓰고, 커밋 고정은 staging의 rev-parse 검증이 맡는다.
+test('fixture checkout ref는 profileRef(태그)가 정하고 모양이 닫혀 있다', () => {
+  const tagged = () => {
+    const value = fixture();
+    value.manifest.workflows['required-pr'].fixtureProfiles = { mobile: 'mobile-v19' };
+    value.manifest.tests[0].executionProfile = 'mobile-v19';
+    value.executionProfile = 'mobile-v19';
+    value.manifest.fixtures.mobile.profileCommit = { 'mobile-v19': 'd85742f14cbf97c526a6b94dd55bbf863e1d1346' };
+    value.manifest.fixtures.mobile.profileRef = { 'mobile-v19': 'data-fixture/itx-979' };
+    value.manifest.fixtures.mobile.requiredFiles[0].profileSha256 = { 'mobile-v19': value.fixtureStates.mobile.files['pubspec.yaml'] };
+    value.workflowSources['.github/workflows/ci.yml'] = value.workflowSources['.github/workflows/ci.yml']
+      .replace('ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346', 'ref: data-fixture/itx-979');
+    return value;
+  };
+  assert.doesNotThrow(() => validateOwnership(tagged()));
+
+  // workflow가 여전히 커밋 sha로 checkout하면 profileRef와 어긋나 거부한다.
+  const stillCommit = tagged();
+  stillCommit.workflowSources['.github/workflows/ci.yml'] = stillCommit.workflowSources['.github/workflows/ci.yml']
+    .replace('ref: data-fixture/itx-979', 'ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346');
+  assert.ok(errorCodes(() => validateOwnership(stillCommit)).includes('WORKFLOW_FIXTURE_CHECKOUT_MISSING'));
+
+  for (const bad of ['text', [], { unknown: 'data-fixture/itx-979' }, { 'mobile-v19': '' }, { 'mobile-v19': 'bad ref' }, { 'mobile-v19': '../x' }]) {
+    const invalid = tagged();
+    invalid.manifest.fixtures.mobile.profileRef = bad;
+    assert.ok(errorCodes(() => validateOwnership(invalid)).includes('INVALID_FIXTURE_PROFILE_REF'), JSON.stringify(bad));
+  }
+});
+
 test('release-only ownership is valid but required workflow cannot become advisory', () => {
   const releaseOnly = fixture();
   releaseOnly.manifest.tests[0].classes = ['deterministic-release'];

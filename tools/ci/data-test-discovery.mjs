@@ -584,6 +584,23 @@ export function validateOwnership({
         issue(issues, 'INVALID_FIXTURE_PROFILE_COMMIT', fixtureName, `${profileName}:${commit}`);
       }
     }
+    // profileRef: workflow checkout이 쓰는 ref(태그). 커밋 고정은 profileCommit과 staging의 rev-parse 검증이 맡고, 태그는 그 커밋이 사라지지 않게 붙든다.
+    const profileRef = fixture.profileRef;
+    if (profileRef !== undefined && (!profileRef || typeof profileRef !== 'object' || Array.isArray(profileRef))) {
+      issue(issues, 'INVALID_FIXTURE_PROFILE_REF', fixtureName, String(profileRef));
+    }
+    for (const [profileName, ref] of Object.entries(
+      profileRef && typeof profileRef === 'object' && !Array.isArray(profileRef) ? profileRef : {},
+    )) {
+      if (
+        !Object.hasOwn(executionProfiles, profileName) ||
+        typeof ref !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9_.\/-]*$/.test(ref) ||
+        ref.includes('..')
+      ) {
+        issue(issues, 'INVALID_FIXTURE_PROFILE_REF', fixtureName, `${profileName}:${String(ref)}`);
+      }
+    }
     if (!isSafeRepositoryPath(fixture.path)) {
       issue(issues, 'INVALID_FIXTURE_PATH', fixtureName, String(fixture.path));
     }
@@ -819,7 +836,7 @@ export function validateOwnership({
       }
       for (const contract of [
         `repository: ${fixture.repository}`,
-        `ref: ${fixture.profileCommit?.[fixtureProfile] ?? fixture.commit}`,
+        `ref: ${fixture.profileRef?.[fixtureProfile] ?? fixture.profileCommit?.[fixtureProfile] ?? fixture.commit}`,
         `path: ${fixture.checkoutPath}`,
         'persist-credentials: false',
         ...[...uniqueStageContracts].filter((entry) => typeof entry === 'string' && entry.length > 0),

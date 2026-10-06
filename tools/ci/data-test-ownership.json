@@ -792,6 +792,9 @@
       "profileCommit": {
         "mobile-v19": "573aefdbbf2e639d28de18697eb449da85415353"
       },
+      "profileRef": {
+        "mobile-v19": "data-fixture/itx-979"
+      },
       "checkoutPath": ".external/mobile",
       "sourcePath": "apps/mobile",
       "path": "apps/mobile",

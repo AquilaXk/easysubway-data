@@ -75,10 +75,10 @@ test("수집·게이트·승격·브랜치·PR 생성은 모두 COLLECT일 때�
     "Collect current ITX timetable",
     "Replay retained capture offline",
     "Evaluate promotion gate",
-    "Promote the gated candidate",
+    "Verify pinned Mobile fixture ref exists",
     "Checkout pinned Mobile input fixture",
     "Stage pinned Mobile input fixture",
-    "Rebind derived ITX bindings",
+    "Promote the gated candidate",
     "Mint App token for the promotion pull request",
     "Commit exactly the promotion and rebinding outputs and open draft PR",
   ]) {
@@ -86,12 +86,12 @@ test("수집·게이트·승격·브랜치·PR 생성은 모두 COLLECT일 때�
   }
 });
 
-test("순서: 준비 -> 예산 가드 -> 수집 -> 오프라인 replay -> 게이트 -> 승격 -> fixture -> 재결속 -> App 토큰 -> 커밋·PR", () => {
+test("순서: 준비 -> 예산 가드 -> 수집 -> 오프라인 replay -> 게이트 -> fixture 확인·checkout·stage -> 승격(--rebind) -> App 토큰 -> 커밋·PR", () => {
   const names = steps().map(({ name }) => name);
   const order = [
     DECISION, "Prepare current ITX promotion", "Guard KST quota window", "Collect current ITX timetable", "Replay retained capture offline",
-    "Evaluate promotion gate", "Promote the gated candidate", "Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture",
-    "Rebind derived ITX bindings", "Mint App token for the promotion pull request",
+    "Evaluate promotion gate", "Verify pinned Mobile fixture ref exists", "Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture",
+    "Promote the gated candidate", "Mint App token for the promotion pull request",
     "Commit exactly the promotion and rebinding outputs and open draft PR",
   ];
   const indexes = order.map((name) => names.indexOf(name));
@@ -240,12 +240,14 @@ test("재결속은 CI와 같은 고정 mobile 입력 fixture에서 돌고 증거
   const ciStage = /- name: Stage pinned Mobile fixture[\s\S]*?\n      - name:/u.exec(ci)[0];
   assert.equal(pin(stage, "expected_revision"), pin(ciStage, "expected_revision"));
   assert.equal(pin(stage, "expected_sha256"), pin(ciStage, "expected_sha256"));
-  assert.match(step("Checkout pinned Mobile input fixture").block, new RegExp(`ref: ${pin(ciStage, "expected_revision")}\n`, "u"));
+  assert.match(step("Checkout pinned Mobile input fixture").block, /ref: data-fixture\/itx-979\n/u);
   assert.match(step("Checkout pinned Mobile input fixture").block, /persist-credentials: false/u);
-  for (const name of ["Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture", "Rebind derived ITX bindings"]) {
+  for (const name of ["Verify pinned Mobile fixture ref exists", "Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture"]) {
     assert.equal(ifCondition(step(name).block), COLLECT, name);
   }
-  const rebind = step("Rebind derived ITX bindings").block;
-  assert.match(rebind, /node tools\/datapack\/rebind-itx-promotion\.mjs --repository-root "\$\{GITHUB_WORKSPACE\}" --build-now "\$\(date -u \+%Y-%m-%dT%H:%M:%S\.000Z\)"/u);
-  assert.doesNotMatch(rebind, /continue-on-error|\|\| true|DATA_GO_KR_SERVICE_KEY/u);
+  // 재결속은 별도 step이 아니라 승격 CLI의 --rebind다. 수동 승인 경로도 같은 플래그로 같은 재결속을 탄다. fixture는 승격 전에 stage돼 있어야 한다.
+  assert.equal(steps().some(({ name }) => name === "Rebind derived ITX bindings"), false);
+  const promote = step("Promote the gated candidate").block;
+  assert.match(promote, /--auto-gate --provider-capture "\$\{ITX_OPERATION_ROOT\}\/provider-response-capture\.json" --replay-evidence "\$\{ITX_OPERATION_ROOT\}\/itx-replay\.json" --rebind(?:\s|$)/u);
+  assert.doesNotMatch(promote, /continue-on-error|\|\| true|DATA_GO_KR_SERVICE_KEY/u);
 });

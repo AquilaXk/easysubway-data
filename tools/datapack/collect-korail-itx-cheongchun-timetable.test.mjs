@@ -2069,6 +2069,40 @@ test("ITX 게이트 승격 영수증은 CLI 인자 --auto-gate로 전달된다",
   }), /ITX_PROMOTION_AUTHORITY_AMBIGUOUS/u);
 });
 
+// #980 F6: 사람 승인(OWNER_APPROVED) 승격도 게이트 승격과 같은 재결속 도구를 --rebind로 탄다. 승격이 실패하면 재결속은 돌지 않는다.
+test("ITX 승격 CLI의 --rebind는 승격 성공 뒤 같은 재결속을 승인·게이트 두 경로에서 모두 실행한다", async () => {
+  const contract = path.join(path.resolve(import.meta.dirname, "../.."), "tools/datapack/itx-cheongchun-coverage-contract.json");
+  const base = [
+    "--promote-candidate", "/tmp/candidate.json", "--completeness-evidence", "/tmp/completeness.json", "--source-output-dir", "/tmp/sources",
+    "--coverage-contract", contract, "--station-catalog-pack", PACK_PATH,
+  ];
+  const now = new Date("2026-10-11T15:30:00.000Z");
+  for (const authority of [
+    ["--approval-url", CURRENT_ITX_APPROVAL_URL, "--approved-sha256", "a".repeat(64)],
+    ["--auto-gate", "--provider-capture", "/tmp/capture.json", "--replay-evidence", "/tmp/replay.json"],
+  ]) {
+    const order = [];
+    await runKorailItxCompletenessCli({
+      argv: [...base, ...authority, "--rebind"], now,
+      promoteImpl: async () => { order.push("promote"); return { candidateSha256: "0".repeat(64), artifactPath: "a" }; },
+      rebindImpl: async (options) => { order.push(options); return []; },
+    });
+    assert.deepEqual(order, ["promote", { repositoryRoot: path.resolve(import.meta.dirname, "../.."), buildNow: "2026-10-11T15:30:00.000Z" }]);
+  }
+  // --rebind가 없으면 재결속하지 않고, 승격이 실패하면 재결속도 하지 않는다.
+  const skipped = [];
+  await runKorailItxCompletenessCli({
+    argv: [...base, "--auto-gate", "--provider-capture", "/tmp/capture.json", "--replay-evidence", "/tmp/replay.json"], now,
+    promoteImpl: async () => ({ candidateSha256: "0".repeat(64), artifactPath: "a" }), rebindImpl: async () => { skipped.push("rebind"); return []; },
+  });
+  assert.deepEqual(skipped, []);
+  await assert.rejects(runKorailItxCompletenessCli({
+    argv: [...base, "--auto-gate", "--provider-capture", "/tmp/capture.json", "--replay-evidence", "/tmp/replay.json", "--rebind"], now,
+    promoteImpl: async () => { throw new Error("ITX_PROMOTION_GATE_BLOCKED: STATION_COVERAGE"); }, rebindImpl: async () => { skipped.push("rebind"); return []; },
+  }), /ITX_PROMOTION_GATE_BLOCKED/u);
+  assert.deepEqual(skipped, []);
+});
+
 test("기존 UNCHANGED_AUTO fixture도 current approval 뒤 legacy admission pin을 station catalog identity로 교체한다", async () => {
   const { promoted, contract } = await promoteUnchangedWithPin({
     pin: stalePin(),

@@ -1007,12 +1007,24 @@ jobs:
             --output "${EASYSUBWAY_HEADWAY_REPORT}"
           test -s "${EASYSUBWAY_HEADWAY_REPORT}"
 
+      - name: Data Pack Release / Verify pinned Mobile fixture ref exists
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 checkout이 불투명하게 실패하므로 먼저 원인을 드러낸다.
+          peeled="$(git ls-remote https://github.com/AquilaXk/easysubway-mobile.git 'refs/tags/data-fixture/itx-979^{}' | awk '{print $1}')"
+          if [[ "${peeled}" != "573aefdbbf2e639d28de18697eb449da85415353" ]]; then
+            echo "pinned Mobile fixture tag data-fixture/itx-979 must point to 573aefdbbf2e639d28de18697eb449da85415353 (found '${peeled}'); do not delete or move this tag" >&2
+            exit 1
+          fi
+
       - name: Data Pack Release / Checkout pinned Mobile fixture
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: AquilaXk/easysubway-mobile
-          ref: 573aefdbbf2e639d28de18697eb449da85415353
+          ref: data-fixture/itx-979
           path: .external/mobile
           persist-credentials: false
           fetch-depth: 0

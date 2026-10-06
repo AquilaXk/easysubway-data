@@ -2886,6 +2886,9 @@ export async function runKorailItxCompletenessCli({
   providerServiceKey = null,
   collectImpl = collectKorailItxCheongchunCompleteness,
   promoteImpl = promoteItxSourceCandidate,
+  // --rebind: 승격 직후 같은 재결속(topology 증거·버전 증거·alignment fixture)을 만든다. 게이트 승격과 사람 승인 승격이 같은 경로를 탄다(#979).
+  // rebind 도구가 이 모듈을 간접으로 불러 순환하므로 필요할 때만 불러온다.
+  rebindImpl = async (options) => (await import("./rebind-itx-promotion.mjs")).rebindItxPromotion(options),
   repositoryRoot = repoRoot,
   onPublicationEvent = null,
 } = {}) {
@@ -2922,8 +2925,13 @@ export async function runKorailItxCompletenessCli({
       repositoryRoot,
       stationCatalogPackPath,
     });
+    if (args.rebind === true) {
+      // 승격이 성공했을 때만 돈다. 승격이 던지면 위에서 끝난다.
+      await rebindImpl({ repositoryRoot, buildNow: now.toISOString() });
+    }
     return { promotion, exitCode: 0 };
   }
+  if (args.rebind !== undefined) throw new Error("--rebind requires --promote-candidate");
   const serviceKey = normalizeDataGoKrServiceKey(providerServiceKey ?? env.DATA_GO_KR_SERVICE_KEY);
   const output = requiredString(args.output, "--output");
   if (!path.isAbsolute(output)) throw new Error("--output must be absolute");

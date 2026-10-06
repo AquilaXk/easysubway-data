@@ -72,7 +72,7 @@ function fixtureStep(workflow) {
   test(`${workflow}: pinned Mobile fixture는 immutable checkout을 credentials 없이 수행한다`, () => {
     const { yml, block, stage } = fixtureStep(workflow);
     assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
-    assert.match(block, new RegExp(`ref:\\s*${ciMobileRevision}`));
+    assert.match(block, /ref:\s*data-fixture\/itx-979\n/); // 커밋 고정은 아래 stage의 rev-parse가, 커밋이 사라지지 않게 붙드는 것은 태그가 맡는다(#980 F6)
     assert.match(block, /path:\s*\.external\/mobile/);
     assert.match(block, /persist-credentials:\s*false/);
     assert.match(block, /fetch-depth:\s*0/);
@@ -305,7 +305,7 @@ function assertPinnedFixtureJob(job, timeoutMinutes = 30) {
   assert.match(repository, /ref:\s*\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(repository, /persist-credentials:\s*false/);
   assert.match(fixture, new RegExp(`repository:\\s*${mobileRepository}`));
-  assert.match(fixture, new RegExp(`ref:\\s*${ciMobileRevision}`));
+  assert.match(fixture, /ref:\s*data-fixture\/itx-979\n/);
   assert.match(fixture, /path:\s*\.external\/mobile/);
   assert.match(fixture, /persist-credentials:\s*false/);
   assert.match(fixture, /fetch-depth:\s*0/);
@@ -426,7 +426,7 @@ test("Data Pack Release는 deterministic-release 전에 immutable Mobile fixture
 
   assert.match(block, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
   assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
-  assert.match(block, new RegExp(`ref:\\s*${releaseMobileRevision}`));
+  assert.match(block, /ref:\s*data-fixture\/itx-979\n/);
   assert.match(block, /path:\s*\.external\/mobile/);
   assert.match(block, /persist-credentials:\s*false/);
   assert.match(block, /fetch-depth:\s*0/);
@@ -553,4 +553,36 @@ test("Data Pack Release도 deterministic-release 전에 같은 방식으로 파�
   ]);
   const node = namedWorkflowStep(release, "Data Pack Release / Set up Node.js");
   assert.match(node, /node-version: "24\.19\.0"/);
+});
+
+// #980 F6: 고정 fixture 커밋은 mobile 레포의 태그가 붙들고 있다. 태그가 지워지거나 옮겨지면 모든 required job의 checkout이 불투명하게 실패하므로,
+// checkout 전에 태그가 기대 커밋을 가리키는지 먼저 확인해 원인을 드러낸다. 보호 규칙 대신 CI가 존재를 검사한다.
+const fixtureTag = "data-fixture/itx-979";
+const verifyRefStep = "Verify pinned Mobile fixture ref exists";
+
+function assertFixtureRefGuard(yml, { verifyName, checkoutName, where }) {
+  const verify = namedWorkflowStep(yml, verifyName);
+  assert.match(verify, new RegExp(`git ls-remote https://github\\.com/${mobileRepository}\\.git 'refs/tags/${fixtureTag}\\^\\{\\}'`), `${where}: peeled tag를 조회해야 함`);
+  assert.ok(verify.includes(`"${ciMobileRevision}"`), `${where}: 기대 커밋`);
+  assert.match(verify, /do not delete or move this tag/u);
+  assert.match(verify, /set -euo pipefail/u);
+  const checkout = namedWorkflowStep(yml, checkoutName);
+  assert.match(checkout, new RegExp(`ref:\\s*${fixtureTag}\\n`, "u"), `${where}: checkout은 태그 ref를 쓴다`);
+  assert.ok(yml.indexOf(`- name: ${verifyName}`) < yml.indexOf(`- name: ${checkoutName}`), `${where}: 존재 검사는 checkout보다 앞서야 함`);
+}
+
+test("모든 Data contracts job은 fixture checkout 전에 고정 태그의 존재와 커밋을 검사하고 태그 ref로 checkout한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  for (const id of contractJobIds) {
+    assertFixtureRefGuard(namedJob(ci, id), { verifyName: verifyRefStep, checkoutName: "Checkout pinned Mobile fixture", where: id });
+  }
+});
+
+test("Data Pack Release와 ITX 승격 workflow도 같은 태그 존재 검사를 checkout 앞에 둔다", () => {
+  const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
+  assertFixtureRefGuard(release, { verifyName: `Data Pack Release / ${verifyRefStep}`, checkoutName: "Data Pack Release / Checkout pinned Mobile fixture", where: "datapack-release" });
+  const releaseVerify = namedWorkflowStep(release, `Data Pack Release / ${verifyRefStep}`);
+  assert.ok(releaseVerify.includes("if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' && steps.release-mode.outputs.mode != 'candidate-create' }}"));
+  const promotion = readFileSync(path.join(root, ".github/workflows/itx-current-promotion.yml"), "utf8");
+  assertFixtureRefGuard(promotion, { verifyName: verifyRefStep, checkoutName: "Checkout pinned Mobile input fixture", where: "itx-current-promotion" });
 });
