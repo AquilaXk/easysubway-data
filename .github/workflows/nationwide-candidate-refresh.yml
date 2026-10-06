@@ -99,6 +99,22 @@ jobs:
           BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
         run: |
           echo "::notice title=Nationwide candidate refresh::candidate inputs changed (${STALE_PATHS}) but source-ledger automation pull request(s) ${BLOCKED_BY} are still open; the candidate is refreshed after they merge."
+      - name: Remove stale candidate refresh branches named by the decision
+        if: ${{ steps.decision.outputs.cleanup_branches != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_BRANCHES: ${{ steps.decision.outputs.cleanup_branches }}
+        run: |
+          set -euo pipefail
+          # 이전 실행이 남긴 후보 브랜치(PR 없음·닫힌 PR)는 사람이 지울 일이 아니다(이슈 #973). 판정이 알린 것만, 열린 PR이 없을 때만 지운다.
+          gh auth setup-git
+          IFS=',' read -r -a stale_branches <<< "${CLEANUP_BRANCHES}"
+          for stale_branch in "${stale_branches[@]}"; do
+            [[ "${stale_branch}" =~ ^automation/927-nationwide-candidate-refresh-[1-9][0-9]*$ ]] || { echo "stale candidate branch name is invalid" >&2; exit 1; }
+            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${stale_branch}" --json number --jq 'length')" == "0" ]] || { echo "stale candidate branch has an open pull request" >&2; exit 1; }
+            git push origin --delete "${stale_branch}"
+            echo "::notice title=Nationwide candidate refresh::removed stale candidate branch ${stale_branch}"
+          done
       - name: Validate candidate refresh inputs
         id: plan
         if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
@@ -207,7 +223,7 @@ jobs:
           pr_url="$(GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}")"
           printf 'CANDIDATE_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
       - name: Remove the candidate refresh branch after a later failure
-        if: ${{ failure() && env.CANDIDATE_BRANCH != '' }}
+        if: ${{ (failure() || cancelled()) && env.CANDIDATE_BRANCH != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -219,7 +235,7 @@ jobs:
             git push origin --delete "${CANDIDATE_BRANCH}"
           fi
       - name: Report refresh failure as an issue
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node tools/ci/report-refresh-failure.mjs --workflow nationwide-candidate-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
