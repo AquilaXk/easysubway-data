@@ -247,7 +247,7 @@ test('자동화 PR은 base 갱신(update-branch)을 요청하지 않는다. 사�
   assert.equal(automation.status, 0);
   assert.doesNotMatch(automation.calls, /update-branch/);
   assert.match(automation.calls, /SKIPPED/);
-  assert.match(automation.stdout + automation.stderr, /::warning::PR #26 is an automation PR behind main/);
+  assert.match(automation.stdout + automation.stderr, /::warning::PR #26 is an automation PR behind main; automation-pr-behind-recreate\.yml closes it/);
   // 사람 PR은 PAT가 있으면 지금처럼 base를 갱신한다. 변수가 정의되지 않은 경로에서도 깨지지 않는다.
   for (const flag of ['false', undefined]) {
     const human = run(flag);

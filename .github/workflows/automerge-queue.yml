@@ -798,9 +798,9 @@ jobs:
                 ;;
               BEHIND)
                 # 자동화 PR의 base 갱신은 사람(PAT 소유자) 작성 병합 커밋을 만들어 head가 바뀌고, 그러면 증거 블록의 head 결속과 정책 통과 기록이
-                # 함께 깨진다. 자동화 PR은 갱신하지 않고 건너뛴다. 새 head의 CI 뒤 라벨러가 다시 판정하고, 판정이 어긋나면 이상으로 드러난다.
+                # 함께 깨진다. 자동화 PR은 갱신하지 않고 건너뛴다. automation-pr-behind-recreate.yml이 이 PR을 닫고 브랜치를 지운 뒤 최신 main에서 다시 만들게 한다.
                 if [[ "${automation_authorized:-false}" == true ]]; then
-                  echo "::warning::PR #${pr} is an automation PR behind main; it is not updated because a base merge would void its head-bound policy attestation."
+                  echo "::warning::PR #${pr} is an automation PR behind main; automation-pr-behind-recreate.yml closes it and requests a fresh run instead of updating its base (a base merge would void its head-bound policy attestation)."
                   continue
                 fi
                 # GITHUB_TOKEN이 만든 병합 커밋은 CI를 트리거하지 못하므로 PAT가 없으면 소유

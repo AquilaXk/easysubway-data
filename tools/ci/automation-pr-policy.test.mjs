@@ -844,3 +844,16 @@ test("등록 inventory는 등록한 원천의 항목만 바뀔 수 있다(원장
   noInventory.files.readTree = async (relative) => { assert.notEqual(relative, INVENTORY_PATH); return JSON.stringify(relative.endsWith("source-snapshots.json") ? BASE_LEDGER : POLICY); };
   assert.deepEqual((await recomputeAutomationGates(noInventory)).violations, []);
 });
+
+// #986 리뷰 F2: 뒤처진 자동화 PR은 라벨러가 이상으로 세지 않는다. 닫고 다시 만드는 일은 recreate workflow의 몫이고 라벨러는 아무것도 쓰지 않는다.
+test("라벨러 판정: 뒤처진 것만이 위반이면 BEHIND 상태로 물러나고, 다른 위반이 함께 있으면 여전히 실패한다", async () => {
+  const input = scenario();
+  input.compare = { ...input.compare, behind_by: 2 };
+  const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input).api });
+  assert.deepEqual(decision, { state: "BEHIND" });
+  input.pull.user = HUMAN;
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input).api }), /AUTOMATION_PR_AUTHOR[\s\S]*AUTOMATION_PR_BEHIND/u);
+  const diverged = scenario();
+  diverged.compare = { ...diverged.compare, status: "diverged", behind_by: 1 };
+  assert.deepEqual(await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(diverged).api }), { state: "BEHIND" });
+});

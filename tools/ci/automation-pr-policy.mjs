@@ -91,14 +91,14 @@ const FILE_LIMIT = 3000;
 const COMMIT_PAGES = 3;
 const FILE_PAGES = 30;
 const COMMIT = /^[0-9a-f]{40}$/u;
-const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
+export const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const MAIN = "main";
 
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const sortCodepoint = (values) => [...values].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 const message = (error) => (error instanceof Error ? error.message : String(error));
 
-function inputError(detail) {
+export function inputError(detail) {
   return new Error(`AUTOMATION_PR_INPUT: ${detail}`);
 }
 
@@ -440,10 +440,11 @@ export async function recomputeAutomationGates({
 // ---------------------------------------------------------------------------
 // 라벨러의 판정: PR 데이터는 API로만 읽는다.
 // ---------------------------------------------------------------------------
-async function readPages(api, endpoint, { limit, pick = (body) => body, overflow = "throw" }) {
+export async function readPages(api, endpoint, { limit, pick = (body) => body, overflow = "throw" }) {
   const items = [];
+  const separator = endpoint.includes("?") ? "&" : "?";
   for (let page = 1; page <= limit; page += 1) {
-    const list = pick(await api(`${endpoint}?per_page=100&page=${page}`));
+    const list = pick(await api(`${endpoint}${separator}per_page=100&page=${page}`));
     if (!Array.isArray(list)) throw inputError(`${endpoint} 응답이 배열이 아니다`);
     items.push(...list);
     if (list.length < 100) return items;
@@ -482,7 +483,7 @@ async function readCiEvidence({ api, repository, runId }) {
  * @returns {Promise<{ state: "ELIGIBLE", pullRequest: number, headSha: string, stage: string, draft: boolean, labeled: boolean, attested: boolean } | { state: "NOT_APPLICABLE" | "STALE" }>}
  */
 export async function decideAutomationPullRequest({ repository, headSha, runConclusion, runId, api }) {
-  if (typeof repository !== "string" || !REPOSITORY.test(repository)) throw inputError("repository");
+  if (typeof repository !== "string" || !REPOSITORY_PATTERN.test(repository)) throw inputError("repository");
   if (typeof headSha !== "string" || !COMMIT.test(headSha)) throw inputError("head sha");
   if (typeof runConclusion !== "string" || runConclusion === "") throw inputError("run conclusion");
   if (!Number.isSafeInteger(runId) || runId < 1) throw inputError("run id");
@@ -511,6 +512,8 @@ export async function decideAutomationPullRequest({ repository, headSha, runConc
     repository, pull, commits, files, compare, checkRuns, requiredContexts, workflowRun: { conclusion: runConclusion, headSha }, ciEvidence,
   });
   if (!result.applicable) return { state: "NOT_APPLICABLE" };
+  // 뒤처진 것만이 위반이면 이상이 아니다. base 갱신은 head 결속을 깨므로 하지 않고, 닫고 다시 만드는 일은 automation-pr-behind-recreate.yml의 몫이다(#986 F2).
+  if (!result.eligible && result.violations.every(({ code }) => code === "BEHIND")) return { state: "BEHIND" };
   if (!result.eligible) throw new Error(result.violations.map(({ code, detail }) => `AUTOMATION_PR_${code}: ${detail}`).join("\n"));
   const headCommittedAt = commits.find((entry) => entry?.sha === headSha)?.commit?.committer?.date;
   return {
@@ -548,7 +551,7 @@ async function ghApi(endpoint) {
   return JSON.parse(stdout);
 }
 
-function parseOptions(rest, allowed) {
+export function parseOptions(rest, allowed, optional = ["github-output", "digest-output"]) {
   const values = {};
   for (let index = 0; index < rest.length; index += 2) {
     const key = rest[index];
@@ -556,13 +559,13 @@ function parseOptions(rest, allowed) {
     values[key.slice(2)] = rest[index + 1];
   }
   for (const key of allowed) {
-    if (key !== "github-output" && key !== "digest-output" && !Object.hasOwn(values, key)) throw inputError(`--${key} is required`);
+    if (!optional.includes(key) && !Object.hasOwn(values, key)) throw inputError(`--${key} is required`);
   }
   return values;
 }
 
 const OUTPUT_VALUE = /^[A-Za-z0-9._/-]*$/u;
-function writeOutputs(file, outputs) {
+export function writeOutputs(file, outputs) {
   if (file === undefined) return;
   for (const [key, value] of Object.entries(outputs)) {
     const text = String(value);

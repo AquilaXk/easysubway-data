@@ -226,6 +226,7 @@ test("a malformed issue listing fails the report instead of opening a duplicate 
 test("every scheduled source refresh workflow reports its own failure as an issue (#860 알림 조건)", () => {
   assert.deepEqual(Object.keys(REFRESH_WORKFLOWS).sort(), [
     "automation-pr-automerge.yml",
+    "automation-pr-behind-recreate.yml",
     "current-capital-topology-refresh.yml",
     "current-capital-topology-registration.yml",
     "itx-current-promotion.yml",

@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url";
 
 export const REFRESH_WORKFLOWS = Object.freeze({
   "automation-pr-automerge.yml": "자동화 PR 자동 병합 정책(데이터 전용 PR)",
+  "automation-pr-behind-recreate.yml": "뒤처진 자동화 PR 재생성(데이터 전용 PR)",
   "current-capital-topology-refresh.yml": "수도권 노선 구조(capital-route-topology)",
   "current-capital-topology-registration.yml": "수도권 노선 구조 등록(capital-route-topology)",
   "itx-current-promotion.yml": "ITX-청춘 원천 시간표 승격(itx-cheongchun-source-timetable)",
