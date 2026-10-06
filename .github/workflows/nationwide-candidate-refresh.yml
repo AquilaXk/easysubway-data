@@ -198,7 +198,9 @@ jobs:
           git switch -c "${branch}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf 'CANDIDATE_BASE_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
           git commit -m "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})"
+          printf 'CANDIDATE_HEAD_SHA=%s\n' "$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
           gh auth setup-git
           git push origin "${branch}"
           printf 'CANDIDATE_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
@@ -225,6 +227,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${STALE_PATHS}" ]]; then reason="후보 입력 변경(${STALE_PATHS})"; else reason="사람 dispatch(명시 요청)"; fi
+          evidence_block="$(node tools/ci/automation-pr-evidence.mjs candidate-refresh-block --build-spec tools/datapack/release/candidate-build-spec.json --base-sha "${CANDIDATE_BASE_SHA}" --head-sha "${CANDIDATE_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
           body="$(printf '%s\n' \
             "## Summary" \
             "" \
@@ -238,7 +241,9 @@ jobs:
             "이 PR이 main에 들어오면 \`datapack-release-candidate-chain.yml\`이 release-candidate를 실행한다." \
             "" \
             "Refs #927" \
-            "Refs #870")"
+            "Refs #870" \
+            "" \
+            "${evidence_block}")"
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
           pr_url="$(GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${CANDIDATE_BRANCH}" --title "[Data] 전국 후보 재생성(releaseSequence ${RELEASE_SEQUENCE}, 후보 시계 ${EVALUATED_AT})" --body "${body}")"
           printf 'CANDIDATE_PR_URL=%s\n' "${pr_url}" >> "${GITHUB_ENV}"
