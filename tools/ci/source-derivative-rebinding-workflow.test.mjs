@@ -10,6 +10,7 @@ const FILE = "source-derivative-rebinding.yml";
 const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const RUN = "${{ steps.decision.outputs.state == 'RUN' }}";
 const CHANGED = "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}";
+const PUSHED = "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'true' }}";
 
 test("트리거: 원장·정본 팩 push, 정기 복구, 사람 dispatch", () => {
   assert.match(yml, /^on:\n  push:\n    branches:\n      - main\n    paths:\n      - tools\/datapack\/release\/source-snapshots\.json\n      - tools\/datapack\/release\/capital-production-canonical-pack\.json\n  schedule:\n    - cron: "41 \*\/6 \* \* \*"\n  workflow_dispatch:\n/mu);
@@ -50,8 +51,9 @@ test("controller는 RUN일 때만 돌고 OCI 읽기 주소는 시크릿에서만
 });
 
 test("push·App 토큰·PR 생성·정리는 바뀐 것이 있을 때만 돌고 push는 GITHUB_TOKEN, PR 생성만 App 토큰이다", () => {
-  for (const name of ["Verify the rebinding is based on the current main and push its branch", "Mint App token for the derivative rebinding pull request", "Create derivative rebinding pull request"]) {
-    assert.equal(ifCondition(step(name).block), CHANGED, name);
+  assert.equal(ifCondition(step("Verify the rebinding is based on the current main and push its branch").block), CHANGED);
+  for (const name of ["Mint App token for the derivative rebinding pull request", "Create derivative rebinding pull request"]) {
+    assert.equal(ifCondition(step(name).block), PUSHED, name);
   }
   const push = step("Verify the rebinding is based on the current main and push its branch");
   assert.match(push.block, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
@@ -95,4 +97,16 @@ test("판정이 알린 남은 재결속 브랜치는 controller 전에 지운다
 test("run 스크립트에는 표현식을 직접 넣지 않고 env로만 받는다", () => {
   assertNoExpressionInRunScripts({ steps, file: FILE });
   assert.match(step("Note derivative rebinding waiting on a pending source pull request").block, /\n          BLOCKED_BY: \$\{\{ steps\.decision\.outputs\.blocked_by \}\}\n/u);
+});
+
+// #975 리뷰 F4: push 뒤 병합이 연달아 일어나는 것은 이 체인의 정상 경로다. 읽은 main이 움직였으면 이상이 아니라 SUPERSEDED로 끝내고 새 실행에 맡긴다.
+test("읽은 main이 움직였으면 아무것도 올리지 않고 notice로 끝낸다(이슈 아님)", () => {
+  const push = step("Verify the rebinding is based on the current main and push its branch");
+  assert.match(push.block, /\n        id: push\n/u);
+  assert.match(push.block, /::notice title=Derivative rebinding::main moved/u);
+  assert.match(push.block, /echo "pushed=false" >> "\$\{GITHUB_OUTPUT\}"\n\s+exit 0/u);
+  assert.match(push.block, /echo "pushed=true" >> "\$\{GITHUB_OUTPUT\}"/u);
+  assert.doesNotMatch(yml, /BINDING_BASE_MOVED/u);
+  const note = step("Note rebinding superseded by a newer main");
+  assert.equal(ifCondition(note.block), "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'false' }}");
 });
