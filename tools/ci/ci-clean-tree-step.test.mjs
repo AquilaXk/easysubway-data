@@ -21,7 +21,7 @@ test("각 Data contracts job은 마지막 step에서 작업 트리가 깨끗한�
     const last = steps[steps.length - 1];
     assert.match(last, /^Verify tests left the working tree clean/, `${name}: 마지막 step`);
     assert.match(last, /git status --porcelain --untracked-files=all -- \. ':\(exclude\)apps\/mobile'/, `${name}: 검사 명령`);
-    assert.match(last, /\[\[ -n "\$\{changed\}" \]\]/, `${name}: 출력이 있으면 실패`);
+    assert.match(last, /\[\[ -n "\$\{changed\}" \]\];/, `${name}: 출력이 있으면 실패`);
     assert.match(last, /exit 1/, `${name}: 실패 종료`);
     assert.doesNotMatch(last, /continue-on-error|\|\| true/, `${name}: 경고만으로 통과시키지 않는다`);
   }
