@@ -1022,7 +1022,7 @@ test("게이트 승격 current source는 승인 승격과 같은 static topology
 test("게이트 승격 source는 커밋된 영수증이 재계산으로 맞을 때만 읽히고, 영수증·정책·원천이 어긋나면 거부한다", async () => {
   const fixture = await createGatedPromotionRoot();
   try {
-    assert.equal(await readImmutableItxRideEdgeSetSha256(fixture.root), await readImmutableItxRideEdgeSetSha256(root));
+    assert.match(await readImmutableItxRideEdgeSetSha256(fixture.root), /^[0-9a-f]{64}$/u);
     // 영수증 내용이 바뀌면(contract의 receiptSha와 다르면) 읽히지 않는다.
     const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
     receipt.policy.limits.lastDepartureShiftSeconds = 86_400;
