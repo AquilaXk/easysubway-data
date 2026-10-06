@@ -42,13 +42,14 @@ test("자동화 workflow의 claim 브랜치 접두어를 고정한다", () => {
     "retained-gwangju-timetable-refresh.yml": "automation/504-retained-gwangju-timetable-refresh-",
     "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
     "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
+    "nationwide-candidate-refresh.yml": "automation/927-nationwide-candidate-refresh-",
     "itx-current-promotion.yml": "automation/977-itx-promotion-",
   });
 });
 
 // #969: 원장을 쓰는 자동화 PR은 동시에 하나만 연다. 직렬화 대상은 접두어 목록의 부분집합이어야 하고 후보 갱신은 넣지 않는다.
 test("원장을 쓰는 자동화 workflow 목록은 claim 접두어가 있는 workflow의 부분집합이다", () => {
-  assert.deepEqual([...LEDGER_WRITER_WORKFLOWS].sort(), Object.keys(REFRESH_CLAIM_PREFIXES).sort());
+  assert.deepEqual([...LEDGER_WRITER_WORKFLOWS].sort(), Object.keys(REFRESH_CLAIM_PREFIXES).filter((file) => file !== "nationwide-candidate-refresh.yml").sort());
   assert.ok(!LEDGER_WRITER_WORKFLOWS.includes("nationwide-candidate-refresh.yml"));
 });
 

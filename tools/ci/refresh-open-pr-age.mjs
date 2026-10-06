@@ -21,6 +21,7 @@ export const REFRESH_CLAIM_PREFIXES = Object.freeze({
   "retained-gwangju-timetable-refresh.yml": "automation/504-retained-gwangju-timetable-refresh-",
   "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
   "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
+  "nationwide-candidate-refresh.yml": "automation/927-nationwide-candidate-refresh-",
   // #977: ITX-청춘 원천 시간표 자동 승격(#870 3단계).
   "itx-current-promotion.yml": "automation/977-itx-promotion-",
 });
