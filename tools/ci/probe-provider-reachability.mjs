@@ -43,8 +43,9 @@ export async function buildProbes({ repositoryRoot }) {
   if (typeof korailUrl !== "string" || !korailUrl.startsWith("https://www.korail.com/")) fail("PROBE_INPUT_INVALID", "the Korail collection receipt has no official URL");
   return [
     { provider: "grtc", id: "station-time-info", kind: "http", required: true, url: `https://www.grtc.co.kr/subway/openapi/json/stationTimeInfomation?station_id=${stationId}`, expect: "json-array" },
-    // 키 없이 부르면 공급자가 오류 문서로 답한다. 그 응답이 오는 것이 도달성의 증거다(데이터는 받지 않는다).
-    { provider: "humetro", id: "open-api-host", kind: "http", required: true, url: "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn", expect: "any-response" },
+    // 키 없이 부르면 부산교통공사 응용 서버가 자기 오류 페이지(HTTP 500, /voc/admin/images/error1.jpg)로 답한다(로컬에서도 같다).
+    // 그 응답이 오는 것이 도달성의 증거다. 데이터 경로(서비스 키)는 이 측정이 아니라 첫 재확인 dispatch가 확인한다.
+    { provider: "humetro", id: "open-api-host", kind: "http", required: true, url: "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn", expect: "any-response", providerErrorPage: "/voc/admin/images/error1.jpg" },
     { provider: "humetro", id: "official-page", kind: "http", required: false, url: "https://www2.humetro.busan.kr/homepage/chs/page/subLocation.do?menu_no=1001010501", expect: "any-response" },
     { provider: "data.go.kr", id: "portal-file-detail", kind: "http", required: true, url: `https://www.data.go.kr/data/${DATA_GO_PROBE_DATASET}/fileData.do`, expect: "ok-html" },
     { provider: "data.go.kr", id: "file-download", kind: "data-go-download", required: true, datasetId: DATA_GO_PROBE_DATASET },
@@ -78,8 +79,12 @@ async function readBody(res) {
   return Buffer.concat(chunks);
 }
 
-function judge(expect, status, body) {
-  if (expect === "any-response") return { ok: status < 500 && body.length > 0, note: status >= 500 ? `HTTP ${status}` : body.length === 0 ? "empty body" : "ok" };
+function judge(expect, status, body, providerErrorPage = null) {
+  if (expect === "any-response") {
+    // 5xx는 공급자 응용 서버가 자기 오류 페이지로 답한 경우만 도달로 본다(CDN·프록시·차단 페이지의 5xx와 구분한다).
+    if (status >= 500) return providerErrorPage && body.toString("latin1").includes(providerErrorPage) ? { ok: true, note: "provider error page (no service key)" } : { ok: false, note: `HTTP ${status}` };
+    return { ok: body.length > 0, note: body.length === 0 ? "empty body" : "ok" };
+  }
   if (status !== 200) return { ok: false, note: `HTTP ${status}` };
   if (expect === "ok-html") return { ok: body.length > 0, note: body.length > 0 ? "ok" : "empty body" };
   if (expect === "xlsx") return body.subarray(0, 4).equals(XLSX_SIGNATURE) ? { ok: true, note: "ok" } : { ok: false, note: "the body is not an xlsx workbook" };
@@ -101,7 +106,7 @@ export async function runProbe(probe, { fetchImpl = fetch, timeoutMs = REQUEST_T
     }
     const res = await fetchImpl(probe.url, { method: "GET", redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "user-agent": "easysubway-datapack-reachability-probe/1.0", "accept-encoding": "identity" } });
     const body = await readBody(res);
-    return { ...base, ...judge(probe.expect, res.status, body), status: res.status, bytes: body.length, ms: Date.now() - started };
+    return { ...base, ...judge(probe.expect, res.status, body, probe.providerErrorPage), status: res.status, bytes: body.length, ms: Date.now() - started };
   } catch (error) {
     return { ...base, ok: false, status: null, bytes: null, ms: Date.now() - started, error: probe.kind === "data-go-download" ? String(error?.message ?? error) : errorCode(error), note: "no usable response" };
   }

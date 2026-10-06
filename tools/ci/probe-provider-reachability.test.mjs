@@ -25,7 +25,8 @@ function providerFetch({ down = [], overrides = {} } = {}) {
     if (down.includes(host)) throw refused();
     if (url in overrides) return overrides[url]();
     if (host === "www.grtc.co.kr") return response(200, JSON.stringify([{ ok: 1 }]), { "content-type": "application/json" });
-    if (host === "data.humetro.busan.kr") return response(200, "<response><error>SERVICE KEY IS NOT REGISTERED</error></response>", { "content-type": "text/xml" });
+    // 부산교통공사 응용 서버는 키 없는 요청에 자기 오류 페이지(HTTP 500)로 답한다. 실제 runner 측정과 로컬 curl이 같았다.
+    if (host === "data.humetro.busan.kr") return response(500, '<html><body><img src="/voc/admin/images/error1.jpg" alt="Error Page!"/></body></html>', { "content-type": "text/html; charset=euc-kr" });
     if (host === "www2.humetro.busan.kr") return response(200, "<html>ok</html>", { "content-type": "text/html" });
     if (host === "www.data.go.kr") return response(200, "<html>detail</html>", { "content-type": "text/html" });
     if (host === "apis.data.go.kr") return response(401, "Unauthorized");
@@ -95,6 +96,16 @@ test("받은 응답이 기대와 다르면(차단 페이지·5xx·잘못된 서�
   }
   const { fetchImpl } = providerFetch({ overrides: { [probes.find(({ provider, id }) => provider === "grtc" && id === "station-time-info").url]: () => response(200, "{}") } });
   assert.equal(summarizeProbes(await probeProviders({ probes, fetchImpl })).providers[0].verdict, "BLOCKED");
+});
+
+test("공급자 응용 서버의 자기 오류 페이지(5xx)는 도달로 보지만 CDN·프록시의 5xx는 BLOCKED다", async () => {
+  const probes = (await buildProbes({ repositoryRoot: root })).filter(({ kind }) => kind !== "data-go-download");
+  const humetro = probes.find(({ provider, id }) => provider === "humetro" && id === "open-api-host");
+  const verdict = async (override) => summarizeProbes(await probeProviders({ probes, fetchImpl: providerFetch({ overrides: { [humetro.url]: override } }).fetchImpl })).providers.find(({ provider }) => provider === "humetro").verdict;
+  assert.equal(await verdict(() => response(500, '<img src="/voc/admin/images/error1.jpg"/>')), "REACHABLE");
+  assert.equal(await verdict(() => response(502, "<html>Bad Gateway</html>")), "BLOCKED");
+  assert.equal(await verdict(() => response(500, "<html>Internal Server Error</html>")), "BLOCKED");
+  assert.equal(await verdict(() => response(200, "<response/>")), "REACHABLE");
 });
 
 test("선택 점검(required: false)이 실패해도 공급자 판정은 필수 점검만 본다", async () => {
