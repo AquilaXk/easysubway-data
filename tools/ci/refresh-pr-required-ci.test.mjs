@@ -27,6 +27,30 @@ test("required CI 상태: rollup에 Data contracts가 있으면 ATTACHED, 같은
   assert.throws(() => requiredCiState({ headSha: "x", rollupContexts: [], ciRuns: [] }), /REFRESH_PR_CI_INPUT_INVALID/);
 });
 
+// #969: required CI(Data contracts 계열)가 실패·취소·시간초과면 그 PR은 이상이다. 열린 지 P1D가 지나서야 드러나지 않게 바로 멈춘다.
+test("required CI 상태: Data contracts 계열 check가 실패하면 ATTACHED·PENDING보다 FAILED가 우선한다", () => {
+  const failed = (name, conclusion) => requiredCiState({ headSha: HEAD, rollupContexts: [{ name, conclusion, status: "COMPLETED" }], ciRuns: [] });
+  for (const conclusion of ["FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"]) {
+    assert.equal(failed("Data contracts (shard 2/4)", conclusion), "FAILED", conclusion);
+    assert.equal(failed("Data contracts", conclusion), "FAILED", conclusion);
+  }
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ context: "Data contracts", state: "FAILURE" }], ciRuns: [] }), "FAILED");
+  assert.equal(requiredCiState({ headSha: HEAD, rollupContexts: [{ context: "Data contracts", state: "ERROR" }], ciRuns: [] }), "FAILED");
+  // shard 하나만 실패해도 집계 check가 성공으로 보이는 순간과 무관하게 FAILED다.
+  assert.equal(requiredCiState({
+    headSha: HEAD,
+    rollupContexts: [{ name: "Data contracts", conclusion: "SUCCESS" }, { name: "Data contracts (shard 1/4)", conclusion: "FAILURE" }],
+    ciRuns: [{ event: "pull_request", headSha: HEAD, status: "in_progress", conclusion: "" }],
+  }), "FAILED");
+  // 성공·건너뜀·중립·진행 중과, Data contracts가 아닌 check의 실패는 FAILED가 아니다.
+  for (const conclusion of ["SUCCESS", "SKIPPED", "NEUTRAL", ""]) {
+    assert.equal(failed("Data contracts (shard 1/4)", conclusion), "MISSING", conclusion);
+  }
+  assert.equal(failed("CodeQL", "FAILURE"), "MISSING");
+  // action_required는 승인 대기로 CI가 안 붙은 경우라 다시 열기 경로(MISSING)로 간다.
+  assert.equal(failed("Data contracts (shard 1/4)", "ACTION_REQUIRED"), "MISSING");
+});
+
 function fakeGh({ pullRequests, rollup = [], runs = [], failOn = null }) {
   const calls = [];
   const gh = async (args, { token }) => {
@@ -73,4 +97,18 @@ test("열린 갱신 PR이 없거나 둘 이상이거나, 닫기·다시 열기�
   await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, gh: fakeGh({ pullRequests: [openPr], failOn: "pr reopen" }).gh }), /gh pr reopen failed/);
   await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, appToken: "", gh: fakeGh({ pullRequests: [openPr] }).gh }), /REFRESH_PR_CI_APP_TOKEN_REQUIRED/);
   await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, workflow: "other.yml", gh: fakeGh({ pullRequests: [openPr] }).gh }), /REFRESH_PR_CI_WORKFLOW_INVALID/);
+});
+
+test("열린 갱신 PR의 required CI가 실패했으면 쓰기 없이 AUTOMATION_PR_CI_FAILED로 job을 실패시킨다", async () => {
+  const { gh, calls } = fakeGh({
+    pullRequests: [openPr],
+    rollup: [{ name: "Data contracts (shard 2/4)", conclusion: "FAILURE" }, { name: "Data contracts (shard 1/4)", conclusion: "SUCCESS" }],
+  });
+  await assert.rejects(ensureRefreshPullRequestRequiredCi({ ...input, gh }), (error) => {
+    assert.match(error.message, /^AUTOMATION_PR_CI_FAILED: #936 /u);
+    assert.match(error.message, /Data contracts \(shard 2\/4\)=FAILURE/u);
+    assert.doesNotMatch(error.message, /shard 1\/4/u);
+    return true;
+  });
+  assert.equal(calls.some(({ args }) => /^pr (close|reopen)/u.test(args)), false);
 });
