@@ -112,11 +112,13 @@ test("새 workflow는 claim 접두어를 갖고 원장을 쓰는 workflow 직렬
   assert.ok(LEDGER_WRITER_WORKFLOWS.includes("source-reverification.yml"));
 });
 
-test("허용 경로는 등록 도구가 쓰는 네 파일과 새 snapshot 파일뿐이다", () => {
+test("허용 경로는 원천 등록 결과 세 파일과 새 snapshot 파일뿐이다", () => {
   assert.deepEqual([...SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS], [
     "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
-    "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json",
+    "tools/datapack/source-governance-policy.json",
   ]);
+  // #987 리뷰 F4: 신선도 정책은 등록 도구가 읽기만 한다. 허용 경로가 아니다.
+  assert.equal(isSourceReverificationAllowedPath("release/product-gates/datapack-freshness-sla.json"), false);
   for (const relative of SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS) assert.equal(isSourceReverificationAllowedPath(relative), true, relative);
   assert.equal(isSourceReverificationAllowedPath(`tools/datapack/sources/gwangju-transportation-route-topology-${"a".repeat(64)}.json`), true);
   for (const relative of [

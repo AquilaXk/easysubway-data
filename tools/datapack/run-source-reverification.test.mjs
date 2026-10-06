@@ -70,7 +70,7 @@ test("recipe를 의존 순서로 실행하고 recipe마다 바뀐 허용 경로�
   const steps = {
     first: stepsOf("register", async (ctx) => { order.push(["first", ctx.operationDir]); await writeFile(path.join(ctx.repositoryRoot, "tools/datapack/sources/new-first.json"), "{}\n"); await rewriteLedger([ledgerRow("gwangju-transportation-route-topology", "gwangju-1")])(ctx); await writeFile(path.join(ctx.repositoryRoot, GOVERNANCE), "{\"v\":2}\n"); }),
     second: stepsOf("register", async (ctx) => { order.push(["second", ctx.operationDir]); await writeFile(path.join(ctx.repositoryRoot, "tools/datapack/sources/new-second.json"), "{}\n"); }),
-    third: stepsOf("register", async (ctx) => { order.push(["third", ctx.operationDir]); await writeFile(path.join(ctx.repositoryRoot, FRESHNESS), "{\"v\":2}\n"); }),
+    third: stepsOf("register", async (ctx) => { order.push(["third", ctx.operationDir]); await writeFile(path.join(ctx.repositoryRoot, INVENTORY), `${JSON.stringify(inventoryWith(evidence({ reverifiedAt: "x" }), evidence({ snapshotId: "kric-korail-1" })), null, 2)}\n`); }),
   };
   const operationRoot = path.join(root, "..", `op-order-${path.basename(root)}`);
   const result = await runSourceReverification(options(root, { recipes, steps, recipeIds: ["first", "second", "third"], operationRoot }));
@@ -78,7 +78,7 @@ test("recipe를 의존 순서로 실행하고 recipe마다 바뀐 허용 경로�
   assert.deepEqual(result.steps, [
     { id: "first", changed: true, paths: [GOVERNANCE, "tools/datapack/sources/new-first.json"] },
     { id: "second", changed: true, paths: ["tools/datapack/sources/new-second.json"] },
-    { id: "third", changed: true, paths: [FRESHNESS] },
+    { id: "third", changed: true, paths: [INVENTORY] },
   ]);
   assert.deepEqual(commitSubjects(root, 4), ["[Data] third 재확인", "[Data] second 재확인", "[Data] first 재확인", "base"]);
   assert.equal(git(root, "status", "--porcelain"), "");
@@ -170,6 +170,17 @@ test("허용 경로 밖을 바꾸거나 기존 snapshot 파일을 고치면 커�
   git(root, "checkout", "-q", "--", ".");
   await assert.rejects(run(async ({ repositoryRoot }) => { await writeFile(path.join(repositoryRoot, "tools/datapack/.capital-route-topology-registration.lock"), "x"); }),
     /^Error: REVERIFICATION_OUTPUT_SCOPE: first: tools\/datapack\/\.capital-route-topology-registration\.lock$/u);
+});
+
+// #987 리뷰 F4: 신선도 정책은 dueAt·주기·허용 오차를 정한다. 등록 도구는 읽기만 해야 하고 바뀌면 같은 신뢰 경로의 조용한 정책 변경이다.
+test("신선도 정책 파일이 바뀌면 커밋하지 않고 REVERIFICATION_OUTPUT_SCOPE로 실패한다", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const before = git(root, "rev-parse", "HEAD");
+  await assert.rejects(runSourceReverification(options(root, { recipes: [meta("first")], steps: { first: stepsOf("register", async ({ repositoryRoot }) => {
+    await writeFile(path.join(repositoryRoot, GOVERNANCE), "{\"v\":2}\n");
+    await writeFile(path.join(repositoryRoot, FRESHNESS), "{\"cadence\":\"P30D\"}\n");
+  }) }, recipeIds: ["first"] })), /^Error: REVERIFICATION_OUTPUT_SCOPE: first: release\/product-gates\/datapack-freshness-sla\.json$/u);
+  assert.equal(git(root, "rev-parse", "HEAD"), before);
 });
 
 test("시작할 때 작업 트리가 깨끗하지 않거나 경로가 절대 경로가 아니면 실패한다", async (t) => {

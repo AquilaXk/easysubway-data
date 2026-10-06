@@ -328,6 +328,7 @@ test("원천 재확인 블록은 알려진 recipe·허용 경로·바뀐 단계�
     ["candidate path", { steps: [{ ...RV_STEP, paths: [...RV_STEP.paths, "tools/datapack/release/candidate-build-spec.json"] }] }],
     ["nested snapshot path", { steps: [{ ...RV_STEP, paths: [RV_INVENTORY, "tools/datapack/sources/nested/x.json"] }] }],
     ["workflow path", { steps: [{ ...RV_STEP, paths: [".github/workflows/ci.yml"] }] }],
+    ["freshness policy path", { steps: [{ ...RV_STEP, paths: [...RV_STEP.paths, "release/product-gates/datapack-freshness-sla.json"] }] }],
     ["parent path", { steps: [{ ...RV_STEP, paths: ["tools/datapack/sources/../source-inventory.json"] }] }],
   ]) assert.throws(() => automationPrEvidenceBlock(reverification(overrides)), /AUTOMATION_PR_EVIDENCE_INVALID/u, label);
   // 저장된 블록도 같은 검증을 한다(본문은 PR 생성 뒤에도 고칠 수 있다).
