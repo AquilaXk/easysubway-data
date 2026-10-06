@@ -175,9 +175,19 @@ test("DUE인데 원장을 쓰는 다른 자동화 PR·claim 브랜치가 있으�
 // #972 리뷰 F3: 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다.
 test("PR 목록이나 아직 끝나지 않은 run 목록이 조회 상한에 닿으면 잘렸을 수 있으므로 판정하지 않고 실패한다", () => {
   const many = (count, factory) => Array.from({ length: count }, (_, index) => factory(index));
-  assert.throws(() => decideSourceReverification(input({ pullRequests: many(1000, (index) => pr("MERGED", index + 1, { number: index + 1, headRefName: `feat/x-${index}` })) })), /REVERIFICATION_LIST_TRUNCATED: pull request list reached its limit 1000/u);
+  assert.throws(() => decideSourceReverification(input({ pullRequests: many(1000, (index) => pr("OPEN", index + 1, { number: index + 1, headRefName: `feat/x-${index}` })) })), /REVERIFICATION_LIST_TRUNCATED: pull request list reached its limit 1000/u);
   assert.throws(() => decideSourceReverification(input({ runs: many(200, (index) => run(index + 1, "in_progress")) })), /REVERIFICATION_LIST_TRUNCATED: run list reached its limit 200/u);
-  assert.equal(decideSourceReverification(input({ pullRequests: many(999, (index) => pr("MERGED", index + 1, { number: index + 1, headRefName: `feat/x-${index}` })) })).state, "NOT_DUE");
+  assert.equal(decideSourceReverification(input({ pullRequests: many(999, (index) => pr("OPEN", index + 1, { number: index + 1, headRefName: `feat/x-${index}` })) })).state, "NOT_DUE");
+});
+
+// #993: 상한은 열린 PR 목록에만 건다. 닫힘·병합 PR 이력은 자동화가 매일 PR을 열어 계속 쌓인다.
+test("닫힘·병합 PR 이력이 상한을 훨씬 넘게 있어도 판정은 실패하지 않는다", () => {
+  const history = (count, state) => Array.from({ length: count }, (_, index) => pr(state, index + 1, { number: 4000 + index, headRefName: `feat/old-${state}-${index}` }));
+  const pullRequests = [...history(2500, "MERGED"), ...history(2500, "CLOSED")];
+  assert.deepEqual(decideSourceReverification(input({ pullRequests })), { state: "NOT_DUE", due: [], recipes: [], cleanupClaims: [] });
+  const claim = `${SOURCE_REVERIFICATION_CLAIM_PREFIX}77`;
+  const merged = pr("MERGED", 77, { number: 4999 });
+  assert.deepEqual(decideSourceReverification(input({ pullRequests: [...pullRequests, merged], automationBranches: [claim] })).cleanupClaims, [claim]);
 });
 
 // #987 리뷰 F1: 정기 실행이 하루 12번이라 끝난 run은 17일이면 200개를 넘는다. 끝난 run은 판정에 필요 없으므로(없는 run도 같은 ABANDONED) 상한에 세지 않는다.
