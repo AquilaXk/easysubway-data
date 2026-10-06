@@ -130,22 +130,32 @@ jobs:
         run: |
           echo "::notice title=Derivative rebinding::every derivative artifact is already bound to the current ledger heads; no pull request is needed."
       - name: Verify the rebinding is based on the current main and push its branch
+        id: push
         if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # 재결속은 읽은 main 기준이다. 그 사이 main이 움직였으면 이 결과를 올리지 않고 실패로 드러낸다(새 push·정기 실행이 다시 만든다).
+          # 재결속은 읽은 main 기준이다. 병합이 연달아 일어나 main이 움직였으면 이 체인에서는 정상 경로다. 올리지 않고 끝내며 새 push·정기 실행이 다시 만든다(#975 리뷰 F4).
           git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "${REBINDING_BASE_SHA}" ]] || { echo "BINDING_BASE_MOVED: main moved from ${REBINDING_BASE_SHA} while the derivative rebinding was running" >&2; exit 1; }
+          if [[ "$(git rev-parse origin/main)" != "${REBINDING_BASE_SHA}" ]]; then
+            echo "::notice title=Derivative rebinding::main moved from ${REBINDING_BASE_SHA} while the derivative rebinding was running; nothing was pushed and a newer run decides on the new main."
+            echo "pushed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           branch="automation/969-derivative-rebinding-${GITHUB_RUN_ID}"
           git branch "${branch}" HEAD
           gh auth setup-git
           git push origin "${branch}"
           printf 'REBINDING_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
+          echo "pushed=true" >> "${GITHUB_OUTPUT}"
+      - name: Note rebinding superseded by a newer main
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'false' }}
+        run: |
+          echo "::notice title=Derivative rebinding::the rebinding was built on an older main and was dropped; the next run rebuilds it."
       - name: Mint App token for the derivative rebinding pull request
         id: app-token-pr
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'true' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
@@ -154,7 +164,7 @@ jobs:
           repositories: easysubway-data
           permission-pull-requests: write
       - name: Create derivative rebinding pull request
-        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}
+        if: ${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'true' }}
         env:
           APP_PR_TOKEN: ${{ steps.app-token-pr.outputs.token }}
           GH_TOKEN: ${{ github.token }}
