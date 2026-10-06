@@ -20,7 +20,17 @@ export const REFRESH_CLAIM_PREFIXES = Object.freeze({
   "kric-current-facility-refresh.yml": "automation/629-kric-facility-refresh-",
   "retained-gwangju-timetable-refresh.yml": "automation/504-retained-gwangju-timetable-refresh-",
   "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
+  "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
 });
+// #969: source-snapshots.json·source-inventory.json에 행을 덧붙이는 자동화 workflow. 이 PR들은 같은 파일을 바꾸므로 동시에 하나만 연다.
+// 후보 갱신은 원장을 쓰지 않아 여기에 넣지 않는다.
+export const LEDGER_WRITER_WORKFLOWS = Object.freeze([
+  "current-capital-topology-refresh.yml",
+  "kric-current-facility-refresh.yml",
+  "retained-gwangju-timetable-refresh.yml",
+  "seoul-current-accessibility-refresh.yml",
+  "current-capital-topology-registration.yml",
+]);
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 // refresh-pr-required-ci가 돌려주는 열린 PR의 required CI 상태
 const CI_STATES = Object.freeze(["ATTACHED", "PENDING", "REOPENED"]);

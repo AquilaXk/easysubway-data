@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  LEDGER_WRITER_WORKFLOWS,
   REFRESH_CLAIM_PREFIXES,
   claimReflectedInMain,
   evaluateOpenRefreshPullRequest,
@@ -34,13 +35,20 @@ function pr(overrides = {}) {
   };
 }
 
-test("갱신 workflow 4종의 claim 브랜치 접두어를 고정한다", () => {
+test("자동화 workflow의 claim 브랜치 접두어를 고정한다", () => {
   assert.deepEqual(REFRESH_CLAIM_PREFIXES, {
     "current-capital-topology-refresh.yml": "automation/636-current-topology-refresh-",
     "kric-current-facility-refresh.yml": "automation/629-kric-facility-refresh-",
     "retained-gwangju-timetable-refresh.yml": "automation/504-retained-gwangju-timetable-refresh-",
     "seoul-current-accessibility-refresh.yml": "automation/639-seoul-accessibility-refresh-",
+    "current-capital-topology-registration.yml": "automation/456-capital-topology-registration-",
   });
+});
+
+// #969: 원장을 쓰는 자동화 PR은 동시에 하나만 연다. 직렬화 대상은 접두어 목록의 부분집합이어야 하고 후보 갱신은 넣지 않는다.
+test("원장을 쓰는 자동화 workflow 목록은 claim 접두어가 있는 workflow의 부분집합이다", () => {
+  assert.deepEqual([...LEDGER_WRITER_WORKFLOWS].sort(), Object.keys(REFRESH_CLAIM_PREFIXES).sort());
+  assert.ok(!LEDGER_WRITER_WORKFLOWS.includes("nationwide-candidate-refresh.yml"));
 });
 
 test("상한은 신선도 정책 monitoring.manualCheckCadence(사람이 확인하는 주기)에서 읽는다", () => {

@@ -19,7 +19,7 @@ const CANDIDATE_WORKFLOW = "nationwide-candidate-refresh.yml";
 // #967: 등록 workflow도 같은 계약을 따른다. PR 생성 지점이 하나인 workflow는 후보 갱신과 등록 둘이다.
 const REGISTRATION_WORKFLOW = "current-capital-topology-registration.yml";
 const SINGLE_PR_PATH_WORKFLOWS = [CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW];
-const PR_WORKFLOWS = [...REFRESH_WORKFLOWS, CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW];
+const PR_WORKFLOWS = [...new Set([...REFRESH_WORKFLOWS, CANDIDATE_WORKFLOW, REGISTRATION_WORKFLOW])];
 const APP_TOKEN_ACTION = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1";
 
 function workflowText(file) {
@@ -150,9 +150,11 @@ test("OPEN_PR이면 App 토큰 발급 → required CI 보장(close→reopen) →
     const ageBlock = all[age].block;
     assert.match(ageBlock, /GH_TOKEN: \$\{\{ github\.token \}\}/u, file);
     assert.match(ageBlock, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state open --base main --limit 1000 --json number,url,createdAt,headRefName,baseRefName,isCrossRepository > "\$\{open_prs\}"/u, file);
-    assert.match(ageBlock, new RegExp(`node tools/ci/refresh-open-pr-age\\.mjs --workflow ${file.replaceAll(".", "\\.")} --prs "\\$\\{open_prs\\}" --policy release/product-gates/datapack-freshness-sla\\.json --repository "\\$\\{GITHUB_REPOSITORY\\}" --ci-state "\\$\\{\\{ steps\\.required-ci\\.outputs\\.state \\}\\}"`, "u"), file);
+    // #972 리뷰 F4: 새 workflow는 step output을 env로 받아 셸 변수로 쓴다. 기존 갱신 4종은 이 PR의 범위 밖이라 그대로다.
+    const ciState = SINGLE_PR_PATH_WORKFLOWS.includes(file) ? '"\\$\\{CI_STATE\\}"' : '"\\$\\{\\{ steps\\.required-ci\\.outputs\\.state \\}\\}"';
+    assert.match(ageBlock, new RegExp(`node tools/ci/refresh-open-pr-age\\.mjs --workflow ${file.replaceAll(".", "\\.")} --prs "\\$\\{open_prs\\}" --policy release/product-gates/datapack-freshness-sla\\.json --repository "\\$\\{GITHUB_REPOSITORY\\}" --ci-state ${ciState}`, "u"), file);
     const report = find("Report refresh failure as an issue");
     assert.ok(report > age, file);
-    assert.equal(ifCondition(all[report].block), "${{ failure() }}", file);
+    assert.equal(ifCondition(all[report].block), file === REGISTRATION_WORKFLOW ? "${{ failure() || cancelled() }}" : "${{ failure() }}", file);
   }
 });
