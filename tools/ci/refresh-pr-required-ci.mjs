@@ -18,9 +18,11 @@ import { promisify } from "node:util";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 const REQUIRED_CONTEXT = "Data contracts";
-// #969: required CI는 집계 check(Data contracts)와 shard·mobile job(Data contracts (...))이다. 이 계열이 실패·취소·시간초과면 이상이다.
-// action_required는 승인 대기로 CI가 안 붙은 경우라 실패가 아니다(다시 열기 경로).
+// #969: required CI는 집계 check(Data contracts)와 shard·mobile job(Data contracts (...))이다.
+// 판정은 allow list다(리뷰 F1). 성공은 SUCCESS만, 진행 중은 아래 알려진 상태만 인정하고, 실패는 아래 목록이다.
+// 그 밖의 값(STALE·ACTION_REQUIRED·SKIPPED·모르는 값)은 조용히 통과시키지 않고 UNKNOWN 이상으로 실패한다.
 const FAILED_CONCLUSIONS = new Set(["FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ERROR"]);
+const IN_FLIGHT_STATES = new Set(["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"]);
 const ACTIVE_RUN_STATUSES = new Set(["queued", "in_progress", "waiting", "requested", "pending"]);
 const SHA = /^[0-9a-f]{40}$/u;
 const REOPEN_COMMENT = "열린 갱신 PR head에 required CI(pull_request)가 없어 App으로 다시 열어 CI를 실행한다(#939).";
@@ -31,19 +33,34 @@ function fail(code, detail = "") {
 
 function checkName(item) { return item?.name ?? item?.context; }
 function isRequiredFamily(name) { return name === REQUIRED_CONTEXT || (typeof name === "string" && name.startsWith(`${REQUIRED_CONTEXT} (`)); }
-// check run은 conclusion, status context는 state에 결과가 있다.
-function checkOutcome(item) { return String(item?.conclusion || item?.state || "").toUpperCase(); }
+// check run은 conclusion, status context는 state에 결과가 있다. 진행 중인 check run은 conclusion이 비어 status만 있다.
+function checkOutcome(item) { return String(item?.conclusion || item?.state || item?.status || "").toUpperCase(); }
+function classify(item) {
+  const outcome = checkOutcome(item);
+  if (outcome === "SUCCESS") return "SUCCESS";
+  if (FAILED_CONCLUSIONS.has(outcome)) return "FAILED";
+  if (IN_FLIGHT_STATES.has(outcome)) return "PENDING";
+  return "UNKNOWN";
+}
+function requiredChecks(rollupContexts) {
+  return rollupContexts.filter((item) => isRequiredFamily(checkName(item))).map((item) => ({ name: checkName(item), outcome: checkOutcome(item), kind: classify(item) }));
+}
+const describe = (checks) => checks.map(({ name, outcome }) => `${name}=${outcome === "" ? "(empty)" : outcome}`);
 
 export function failedRequiredChecks(rollupContexts) {
-  return rollupContexts
-    .filter((item) => isRequiredFamily(checkName(item)) && FAILED_CONCLUSIONS.has(checkOutcome(item)))
-    .map((item) => `${checkName(item)}=${checkOutcome(item)}`);
+  return describe(requiredChecks(rollupContexts).filter(({ kind }) => kind === "FAILED"));
+}
+export function unknownRequiredChecks(rollupContexts) {
+  return describe(requiredChecks(rollupContexts).filter(({ kind }) => kind === "UNKNOWN"));
 }
 
 export function requiredCiState({ headSha, rollupContexts, ciRuns }) {
   if (!SHA.test(headSha ?? "") || !Array.isArray(rollupContexts) || !Array.isArray(ciRuns)) fail("INPUT_INVALID");
-  if (failedRequiredChecks(rollupContexts).length > 0) return "FAILED";
-  if (rollupContexts.some((item) => (item?.name ?? item?.context) === REQUIRED_CONTEXT)) return "ATTACHED";
+  const checks = requiredChecks(rollupContexts);
+  if (checks.some(({ kind }) => kind === "FAILED")) return "FAILED";
+  if (checks.some(({ kind }) => kind === "UNKNOWN")) return "UNKNOWN";
+  if (checks.some(({ kind }) => kind === "PENDING")) return "PENDING";
+  if (checks.some(({ name }) => name === REQUIRED_CONTEXT)) return "ATTACHED";
   const pending = ciRuns.some((run) => run?.event === "pull_request" && run.headSha === headSha && ACTIVE_RUN_STATUSES.has(run.status));
   return pending ? "PENDING" : "MISSING";
 }
@@ -73,6 +90,8 @@ export async function ensureRefreshPullRequestRequiredCi({ workflow, repository,
   const state = requiredCiState({ headSha: pr.headRefOid, rollupContexts: statusCheckRollup ?? [], ciRuns });
   // 이상: 실패한 required CI는 닫았다 다시 열어 덮지 않고 job을 실패시킨다(실패 이슈로 드러난다).
   if (state === "FAILED") throw new Error(`AUTOMATION_PR_CI_FAILED: #${pr.number} ${failedRequiredChecks(statusCheckRollup).join(", ")}`);
+  // 알 수 없는 상태(STALE·ACTION_REQUIRED·모르는 값)도 이상이다. 다시 열기로 덮지 않는다.
+  if (state === "UNKNOWN") throw new Error(`AUTOMATION_PR_CI_STATE_UNKNOWN: #${pr.number} ${unknownRequiredChecks(statusCheckRollup).join(", ")}`);
   if (state !== "MISSING") return { state, number: pr.number, headSha: pr.headRefOid };
   if (typeof appToken !== "string" || appToken.length === 0) fail("APP_TOKEN_REQUIRED");
   await gh(["pr", "close", String(pr.number), "--repo", repository, "--comment", REOPEN_COMMENT], { token: appToken });
