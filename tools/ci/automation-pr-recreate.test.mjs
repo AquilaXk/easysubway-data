@@ -96,7 +96,7 @@ test("재생성은 PR 닫기 -> 브랜치 삭제 -> workflow 재실행 순서이
 });
 
 test("후보 갱신 단계는 dispatch하지 않는다: 정기 역할은 schedule 이벤트에서만 쓸 수 있어 2시간 정기 실행이 다시 만든다", async () => {
-  assert.deepEqual({ ...STAGE_REDISPATCH }, { registration: true, "derivative-rebinding": true, "candidate-refresh": false, "itx-promotion": true });
+  assert.deepEqual({ ...STAGE_REDISPATCH }, { registration: true, "derivative-rebinding": true, "candidate-refresh": false, "itx-promotion": true, "source-reverification": true });
   const { api } = fakeApi({ openPulls: [open(1, BRANCHES["candidate-refresh"])], behind: { [sha(1)]: 1 } });
   const writer = recorder();
   await recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer });
