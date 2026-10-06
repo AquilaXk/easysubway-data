@@ -11,11 +11,11 @@
   "limits": {
     "stationSetDelta": 0,
     "odSetDelta": 0,
-    "tripCountDeltaPermille": 50,
-    "tripMembershipDeltaPermille": 50,
-    "stopPatternChangedTripsPermille": 50,
-    "timetableTupleRemovedPermille": 50,
-    "timetableTupleAddedPermille": 50,
+    "tripCountDeltaPermille": 0,
+    "tripMembershipDeltaPermille": 0,
+    "stopPatternChangedTripsPermille": 0,
+    "timetableTupleRemovedPermille": 0,
+    "timetableTupleAddedPermille": 0,
     "firstDepartureShiftSeconds": 0,
     "lastDepartureShiftSeconds": 240,
     "providerErrorRecords": 0
@@ -38,6 +38,6 @@
       "timetableTupleRemoved": 72,
       "timetableTupleAdded": 57
     },
-    "note": "limits are permille of the previous approved snapshot rounded down to whole trips or tuples; every nonzero day-level change in the history exceeds them"
+    "note": "limits are the observed maxima of the approved history (permille of the previous approved snapshot, rounded down); every change the history ever contained besides the 240 second last departure shift is above them, and the same limits are applied against the last owner-approved baseline to catch accumulated drift"
   }
 }

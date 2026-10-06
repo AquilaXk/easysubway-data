@@ -20,6 +20,7 @@ import {
   ITX_PROMOTION_MODE_GATE_PASSED,
   ITX_PROMOTION_MODE_OWNER_APPROVED,
   itxPromotionReceiptPath,
+  readTrackedItxSource,
 } from "./lib/itx-promotion-authority.mjs";
 import { evaluateItxPromotionGate, itxPromotionGateReceiptBytes, parseItxPromotionGatePolicy } from "./itx-promotion-gate.mjs";
 import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
@@ -489,11 +490,21 @@ async function promoteItxSourceCandidateLocked({
     catalog.identity,
   );
   let gateReceiptBytes = null;
+  let baselineReference = null;
   let promotionBasis;
   if (gate !== null) {
     // 영수증을 믿지 않고 같은 입력으로 게이트를 다시 계산한다. PASS가 아니면 아무것도 쓰지 않는다.
+    // 기준선은 마지막 owner 승인 원천이다. 현재 원천이 게이트 승격이면 그 승격이 이어받은 기준선을, 아니면(승인 승격) 현재 원천 자신을 쓴다.
+    const currentPromotion = contract.sourceTimetableArtifact?.promotion;
+    baselineReference = currentPromotion?.mode === ITX_PROMOTION_MODE_GATE_PASSED
+      ? { path: currentPromotion.baselineArtifactPath, sha256: currentPromotion.baselineArtifactSha256 }
+      : previous === null ? null : { path: previous.artifactPath, sha256: previous.sha256 };
+    const baselineSource = baselineReference === null || baselineReference.sha256 === previous?.sha256
+      ? previousSource
+      : JSON.parse(await readTrackedItxSource({ repositoryRoot, relativePath: baselineReference.path, sha256: baselineReference.sha256 }));
     const receipt = await evaluateGateForPromotion({
-      gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, repositoryRoot,
+      gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, baselineSource,
+      baselineSha256: baselineReference?.sha256 ?? null, repositoryRoot,
     });
     if (receipt.status !== "PASS") throw new Error(`ITX_PROMOTION_GATE_BLOCKED: ${receipt.blockedCheckIds.join(",")}`);
     gateReceiptBytes = itxPromotionGateReceiptBytes(receipt);
@@ -504,6 +515,8 @@ async function promoteItxSourceCandidateLocked({
         receiptSha256: sha256(gateReceiptBytes),
       },
       gatedArtifactSha256: candidateSha256,
+      baselineArtifactPath: baselineReference.path,
+      baselineArtifactSha256: baselineReference.sha256,
     };
   } else {
     if (approvedSha256 !== candidateSha256 || !/^[a-f0-9]{64}$/.test(approvedSha256 ?? "")) {
@@ -573,7 +586,7 @@ async function promoteItxSourceCandidateLocked({
 const ITX_PROMOTION_GATE_POLICY_RELATIVE_PATH = "tools/datapack/itx-promotion-gate-policy.json";
 
 async function evaluateGateForPromotion({
-  gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, repositoryRoot,
+  gate, candidate, candidateSha256, completeness, completenessBytes, previousSource, baselineSource, baselineSha256, repositoryRoot,
 }) {
   // 정책은 호출자가 고르지 않는다. 저장소의 정책 파일만 쓴다.
   const policy = parseItxPromotionGatePolicy(JSON.parse(await readFile(
@@ -591,6 +604,8 @@ async function evaluateGateForPromotion({
     completenessSha256: sha256(completenessBytes),
     previous: previousSource,
     previousSha256: previousSource?.sourceTimetableArtifact?.sha256 ?? null,
+    baseline: baselineSource ?? null,
+    baselineSha256,
     capture,
     captureSha256: sha256(captureBytes),
     replay,

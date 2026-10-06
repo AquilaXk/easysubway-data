@@ -169,6 +169,19 @@ export function evaluateItxPromotionMetrics({ policy, candidate, previous }) {
   return checks;
 }
 
+/**
+ * 직전 승인 원천 대비 지표와 마지막 owner 승인 기준선 대비 지표(BASELINE_*)를 함께 낸다.
+ * 직전 승인본 대비만 보면 매번 조금씩 어긋나는 누적 drift를 놓치므로 같은 한도로 기준선 대비도 본다.
+ * 기준선이 직전 원천과 같으면(승인 승격 바로 다음) 같은 비교라 check를 더하지 않는다.
+ */
+export function evaluateItxPromotionMetricChecks({ policy, candidate, previous, previousSha256 = null, baseline = null, baselineSha256 = null }) {
+  const checks = evaluateItxPromotionMetrics({ policy, candidate, previous });
+  if (baseline && baselineSha256 !== previousSha256) {
+    checks.push(...evaluateItxPromotionMetrics({ policy, candidate, previous: baseline }).map((item) => ({ ...item, id: `BASELINE_${item.id}` })));
+  }
+  return checks;
+}
+
 function evaluateBinding({ candidate, candidateSha256, completeness, completenessSha256, capture, captureSha256, replay, dayCds }) {
   const failures = [];
   const fail = (code) => failures.push(code);
@@ -251,6 +264,8 @@ export function evaluateItxPromotionGate({
   completenessSha256,
   previous,
   previousSha256,
+  baseline = null,
+  baselineSha256 = null,
   capture,
   captureSha256,
   replay,
@@ -259,8 +274,10 @@ export function evaluateItxPromotionGate({
   if (previous === null || previous === undefined) {
     checks.push(check("PREVIOUS_APPROVED_SNAPSHOT_MISSING", null, true, {}, {}));
   } else {
-    checks.push(...evaluateItxPromotionMetrics({ policy, candidate, previous }));
+    checks.push(...evaluateItxPromotionMetricChecks({ policy, candidate, previous, previousSha256, baseline, baselineSha256 }));
   }
+  const effectiveBaseline = baseline ?? previous ?? null;
+  const effectiveBaselineSha256 = baseline ? baselineSha256 : previousSha256 ?? null;
   checks.push(evaluateBinding({
     candidate, candidateSha256, completeness, completenessSha256, capture, captureSha256, replay, dayCds: policy.dayCds,
   }));
@@ -282,6 +299,7 @@ export function evaluateItxPromotionGate({
       freshUntil: candidate?.freshUntil ?? null,
     },
     previous: previous ? { artifactId: previous.artifactId, sha256: previousSha256 } : null,
+    baseline: effectiveBaseline ? { artifactId: effectiveBaseline.artifactId, sha256: effectiveBaselineSha256 } : null,
     source: {
       rawCaptureSha256: captureSha256 ?? null,
       captureContentSha256: capture?.contentSha256 ?? null,

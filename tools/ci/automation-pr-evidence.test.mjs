@@ -200,6 +200,7 @@ const ITX_RECEIPT = {
   status: "PASS",
   candidate: { artifactId: ITX_ID, sha256: ITX_SOURCE.contentSha256, observedAt: "2026-10-10T18:15:00.000Z", freshUntil: "2026-10-18T00:00:00+09:00" },
   previous: { artifactId: ITX_PREVIOUS_ID, sha256: "3".repeat(64) },
+  baseline: { artifactId: ITX_PREVIOUS_ID, sha256: "3".repeat(64) },
   source: { rawCaptureSha256: ITX_SOURCE.rawSha256, captureContentSha256: "4".repeat(64), replayEvidenceHash: "5".repeat(64), providerRecordCount: 1500 },
   policy: JSON.parse(await readFile(new URL("../datapack/itx-promotion-gate-policy.json", import.meta.url), "utf8")),
   checks: [
@@ -262,6 +263,7 @@ test("ITX 승격 본문: 원천 행·적용 한도·요일별 지표·변경 경
   const body = itxPromotionPullRequestBody({ runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, receipt: ITX_RECEIPT, changedPaths: ITX_PATHS });
   assert.match(body, new RegExp(`\\| itx-cheongchun-source-timetable \\| ${ITX_ID} \\| ${ITX_PREVIOUS_ID} \\|`, "u"));
   assert.match(body, /itx-promotion-gate-v1/u);
+  assert.match(body, /누적 drift 기준선\(마지막 owner 승인 원천\): `itx-cheongchun-source-timetable-20261004151519524`/u);
   assert.match(body, /\| TUPLE_REMOVED \| 8 \| 4 \/ 14 \|/u);
   assert.match(body, /\| 첫차 이동 한도 \| 0초 \|/u);
   for (const path of ITX_PATHS) assert.ok(body.includes(path), path);

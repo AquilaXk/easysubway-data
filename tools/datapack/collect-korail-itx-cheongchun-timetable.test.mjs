@@ -1826,7 +1826,7 @@ async function writeGateInputs(dir, candidate, { captureObservedAt = candidate.o
   return { capturePath, replayEvidencePath };
 }
 
-async function prepareGatedPromotion({ shiftPreviousSeconds = 0, withPrevious = true, gateOptions = {} } = {}) {
+async function prepareGatedPromotion({ shiftPreviousSeconds = 0, withPrevious = true, gateOptions = {}, baselineShiftSeconds = null } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-gated-promotion-"));
   const sourceDir = path.join(dir, "tools/datapack/sources");
   await mkdir(sourceDir, { recursive: true });
@@ -1850,10 +1850,34 @@ async function prepareGatedPromotion({ shiftPreviousSeconds = 0, withPrevious = 
   }
   const contractExtras = {};
   let previousSha = null;
+  let baseline = null;
   if (withPrevious) {
     const { reference } = await writeAdmittedSourceBundle(sourceDir, previous);
     previousSha = reference.sha256;
     contractExtras.sourceTimetableArtifact = reference;
+    if (baselineShiftSeconds !== null) {
+      // 현재 원천이 이미 게이트 승격이고 그 기준선은 더 오래된 owner 승인 원천이다.
+      baseline = previousSourceCandidate({ artifactId: "itx-cheongchun-source-timetable-20260713010000000" });
+      const sequence = baseline.stationSequences.find(({ dayCd, trainNumber }) => dayCd === "8" && trainNumber === "2001");
+      for (const key of ["arrivalSeconds", "departureSeconds"]) sequence.stops[0][key] -= baselineShiftSeconds;
+      const stopTime = baseline.transitStopTimes.find(({ tripId, stationId }) => tripId.endsWith("-2001-8") && stationId === YONGSAN_STATION_ID);
+      stopTime.arrivalSeconds -= baselineShiftSeconds;
+      stopTime.departureSeconds -= baselineShiftSeconds;
+      const tuple = baseline.normalizedSnapshotSets.find(({ dayCd }) => dayCd === "8").sets.timetableTupleSet
+        .find(([, trainNumber, stationId]) => trainNumber === "2001" && stationId === YONGSAN_STATION_ID);
+      tuple[3] -= baselineShiftSeconds;
+      tuple[4] -= baselineShiftSeconds;
+      const { reference: baselineReference } = await writeAdmittedSourceBundle(sourceDir, baseline);
+      reference.promotion = {
+        mode: "CURRENT_CANDIDATE_GATE_PASSED",
+        previousArtifactSha256: baselineReference.sha256,
+        previousArtifactPath: baselineReference.artifactPath,
+        gate: { policyId: "itx-promotion-gate-v1", receiptPath: `tools/datapack/sources/${previous.artifactId}-promotion-gate.json`, receiptSha256: "e".repeat(64) },
+        gatedArtifactSha256: reference.sha256,
+        baselineArtifactPath: baselineReference.artifactPath,
+        baselineArtifactSha256: baselineReference.sha256,
+      };
+    }
   }
   const contractPath = await writeCoverageContract(dir, JSON.stringify(contractExtras));
   const candidate = sourceCandidate({ promotionStatus: withPrevious ? "SUPPORTED" : "BOOTSTRAP_REVIEW_REQUIRED" });
@@ -1875,7 +1899,7 @@ async function prepareGatedPromotion({ shiftPreviousSeconds = 0, withPrevious = 
   await writeFile(completenessPath, completenessBytes(completenessForCandidate(candidate)));
   const gate = await writeGateInputs(dir, candidate, gateOptions);
   return {
-    dir, sourceDir, candidate, previous, candidatePath, completenessPath, contractPath, previousSha, gate,
+    dir, sourceDir, candidate, previous, baseline, candidatePath, completenessPath, contractPath, previousSha, gate,
     options: {
       candidatePath,
       completenessPath,
@@ -1913,6 +1937,9 @@ test("ITX 게이트 승격은 승인 코멘트 없이 통과한 후보만 승격
         receiptSha256: createHash("sha256").update(receiptBytes).digest("hex"),
       },
       gatedArtifactSha256: promoted.candidateSha256,
+      // 승인 승격 바로 다음 게이트 승격의 기준선은 직전 원천 자신이다.
+      baselineArtifactPath: `tools/datapack/sources/${fixture.previous.artifactId}.json`,
+      baselineArtifactSha256: fixture.previousSha,
     });
     assert.equal(Object.hasOwn(reference.promotion, "approvalUrl"), false);
     assert.equal(Object.hasOwn(reference.promotion, "approvedArtifactSha256"), false);
@@ -1935,12 +1962,38 @@ test("ITX 게이트 승격은 지표가 한도를 넘으면 어떤 파일도 쓰
     const sourcesBefore = await readdir(fixture.sourceDir);
     await assert.rejects(
       promoteItxSourceCandidate(fixture.options),
-      new Error("ITX_PROMOTION_GATE_BLOCKED: TUPLE_ADDED:8,TUPLE_REMOVED:8"),
+      new Error("ITX_PROMOTION_GATE_BLOCKED: FIRST_DEPARTURE_SHIFT:8,TUPLE_ADDED:8,TUPLE_REMOVED:8"),
     );
     assert.deepEqual(await readFile(fixture.contractPath), contractBefore);
     assert.deepEqual(await readdir(fixture.sourceDir), sourcesBefore);
   } finally {
     await rm(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX 게이트 승격은 이어받은 owner 기준선을 새 승격에 그대로 남기고 기준선 대비 누적 drift를 차단한다 (F2)", async () => {
+  // 기준선과 후보가 같은 내용이면(drift 없음) 기준선 필드가 이어진다.
+  const carried = await prepareGatedPromotion({ baselineShiftSeconds: 0 });
+  try {
+    const promoted = await promoteItxSourceCandidate(carried.options);
+    assert.equal(promoted.sourceTimetableArtifact.promotion.baselineArtifactPath, `tools/datapack/sources/${carried.baseline.artifactId}.json`);
+    assert.notEqual(promoted.sourceTimetableArtifact.promotion.baselineArtifactPath, promoted.sourceTimetableArtifact.promotion.previousArtifactPath);
+    const receipt = JSON.parse(await readFile(path.join(carried.dir, promoted.sourceTimetableArtifact.promotion.gate.receiptPath), "utf8"));
+    assert.equal(receipt.baseline.artifactId, carried.baseline.artifactId);
+    assert.ok(receipt.checks.some(({ id }) => id === "BASELINE_TRIP_COUNT"));
+  } finally {
+    await rm(carried.dir, { recursive: true, force: true });
+  }
+  // 직전 원천은 후보와 같지만 기준선과는 시각이 어긋나 있다: 직전 대비는 통과, 기준선 대비는 차단.
+  const drifted = await prepareGatedPromotion({ baselineShiftSeconds: 100 });
+  try {
+    await assert.rejects(
+      promoteItxSourceCandidate(drifted.options),
+      new Error("ITX_PROMOTION_GATE_BLOCKED: BASELINE_FIRST_DEPARTURE_SHIFT:8,BASELINE_TUPLE_ADDED:8,BASELINE_TUPLE_REMOVED:8"),
+    );
+    assert.deepEqual((await readdir(drifted.sourceDir)).filter((name) => name.includes(drifted.candidate.artifactId)), []);
+  } finally {
+    await rm(drifted.dir, { recursive: true, force: true });
   }
 });
 

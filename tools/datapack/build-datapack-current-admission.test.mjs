@@ -1165,6 +1165,8 @@ test("tracked current source admission은 게이트 승격 모드를 승인 모�
       receiptSha256: "e".repeat(64),
     },
     gatedArtifactSha256: reference.sha256,
+    baselineArtifactPath: reference.promotion.previousArtifactPath,
+    baselineArtifactSha256: reference.promotion.previousArtifactSha256,
   });
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
   process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-10-05T00:00:00.000Z";

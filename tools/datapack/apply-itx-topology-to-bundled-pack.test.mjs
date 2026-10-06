@@ -981,6 +981,8 @@ function gatePassedPromotion(reference) {
       receiptSha256: "e".repeat(64),
     },
     gatedArtifactSha256: reference.sha256,
+    baselineArtifactPath: reference.promotion.previousArtifactPath,
+    baselineArtifactSha256: reference.promotion.previousArtifactSha256,
   };
 }
 

@@ -126,6 +126,22 @@ function gateInput(candidateOverrides = {}, previousOverrides = {}) {
   };
 }
 
+// 한도 산식(천분율을 내림해 열차·tuple 수로 바꾸고 초과만 차단)을 한도가 0이 아닌 정책으로 따로 검증한다. 실제 정책 한도는 0이다.
+const WIDE = parseItxPromotionGatePolicy({
+  ...structuredClone(POLICY),
+  limits: {
+    ...POLICY.limits,
+    tripCountDeltaPermille: 50,
+    tripMembershipDeltaPermille: 50,
+    stopPatternChangedTripsPermille: 50,
+    timetableTupleRemovedPermille: 50,
+    timetableTupleAddedPermille: 50,
+  },
+});
+function wideMetrics(candidateMutate) {
+  return evaluateItxPromotionMetrics({ policy: WIDE, candidate: snapshot("candidate", { mutate: candidateMutate }), previous: snapshot("previous") });
+}
+
 function metricsOnly(candidateMutate) {
   const previous = snapshot("previous");
   const candidate = snapshot("candidate", { mutate: candidateMutate });
@@ -199,54 +215,110 @@ test("역 canonical-provider 매핑이 바뀌면 역 집합이 같아도 차단�
   assert.ok(blocked.includes("STATION_COVERAGE:8"));
 });
 
-test("편수 변화는 한도(평일 40편 -> 2편)까지 통과하고 한도+1에서 차단된다", () => {
-  const limit = Math.floor((40 * POLICY.limits.tripCountDeltaPermille) / 1000);
+test("[5% 한도 정책] 편수 변화는 한도(평일 40편 -> 2편)까지 통과하고 한도+1에서 차단된다", () => {
+  const limit = Math.floor((40 * WIDE.limits.tripCountDeltaPermille) / 1000);
   assert.equal(limit, 2);
   for (const direction of ["drop", "add"]) {
     const change = (count) => ({ sets }) => {
       sets["8"] = daySets("8", { trains: direction === "drop" ? 40 - count : 40 + count });
     };
-    assert.deepEqual(blockedIds(metricsOnly(change(limit))).filter((id) => id.startsWith("TRIP_COUNT")), [], direction);
-    assert.deepEqual(blockedIds(metricsOnly(change(limit + 1))).filter((id) => id.startsWith("TRIP_COUNT")), ["TRIP_COUNT:8"], direction);
+    assert.deepEqual(blockedIds(wideMetrics(change(limit))).filter((id) => id.startsWith("TRIP_COUNT")), [], direction);
+    assert.deepEqual(blockedIds(wideMetrics(change(limit + 1))).filter((id) => id.startsWith("TRIP_COUNT")), ["TRIP_COUNT:8"], direction);
   }
 });
 
-test("열차 구성이 바뀌면 편수가 같아도 TRIP_MEMBERSHIP이 한도+1에서 차단된다", () => {
-  const limit = Math.floor((40 * POLICY.limits.tripMembershipDeltaPermille) / 1000);
+test("[5% 한도 정책] 열차 구성이 바뀌면 편수가 같아도 TRIP_MEMBERSHIP이 한도+1에서 차단된다", () => {
+  const limit = Math.floor((40 * WIDE.limits.tripMembershipDeltaPermille) / 1000);
   const swap = (count) => ({ sets }) => {
     const trains = sets["8"].trainSet;
     sets["8"].trainSet = trains.map((train, index) => (index < count ? `9${train}` : train));
   };
-  assert.deepEqual(blockedIds(metricsOnly(swap(limit))).filter((id) => id.startsWith("TRIP_MEMBERSHIP")), []);
-  assert.deepEqual(blockedIds(metricsOnly(swap(limit + 1))).filter((id) => id.startsWith("TRIP_MEMBERSHIP")), ["TRIP_MEMBERSHIP:8"]);
+  assert.deepEqual(blockedIds(wideMetrics(swap(limit))).filter((id) => id.startsWith("TRIP_MEMBERSHIP")), []);
+  assert.deepEqual(blockedIds(wideMetrics(swap(limit + 1))).filter((id) => id.startsWith("TRIP_MEMBERSHIP")), ["TRIP_MEMBERSHIP:8"]);
 });
 
-test("정차 순서가 바뀐 열차 수는 한도(52편 -> 2편)까지 통과하고 한도+1에서 차단된다", () => {
-  const limit = Math.floor((52 * POLICY.limits.stopPatternChangedTripsPermille) / 1000);
+test("[5% 한도 정책] 정차 순서가 바뀐 열차 수는 한도(52편 -> 2편)까지 통과하고 한도+1에서 차단된다", () => {
+  const limit = Math.floor((52 * WIDE.limits.stopPatternChangedTripsPermille) / 1000);
   assert.equal(limit, 2);
   const changePattern = (count) => ({ sets }) => {
     sets["7"].stopSequenceSet = sets["7"].stopSequenceSet.map((entry, index) => (
       index < count ? [entry[0], entry[1], entry[2], entry[3].slice(0, -2).concat(entry[3].at(-1))] : entry
     ));
   };
-  assert.deepEqual(blockedIds(metricsOnly(changePattern(limit))).filter((id) => id.startsWith("STOP_PATTERN")), []);
-  assert.deepEqual(blockedIds(metricsOnly(changePattern(limit + 1))).filter((id) => id.startsWith("STOP_PATTERN")), ["STOP_PATTERN:7"]);
+  assert.deepEqual(blockedIds(wideMetrics(changePattern(limit))).filter((id) => id.startsWith("STOP_PATTERN")), []);
+  assert.deepEqual(blockedIds(wideMetrics(changePattern(limit + 1))).filter((id) => id.startsWith("STOP_PATTERN")), ["STOP_PATTERN:7"]);
 });
 
-test("시각 tuple 이동은 한도(평일 280개 -> 14개)까지 통과하고 한도+1에서 제거·추가가 함께 차단된다", () => {
-  const limit = Math.floor((280 * POLICY.limits.timetableTupleRemovedPermille) / 1000);
+test("[5% 한도 정책] 시각 tuple 이동은 한도(평일 280개 -> 14개)까지 통과하고 한도+1에서 제거·추가가 함께 차단된다", () => {
+  const limit = Math.floor((280 * WIDE.limits.timetableTupleRemovedPermille) / 1000);
   assert.equal(limit, 14);
   const retime = (count) => ({ sets }) => retimeTuples(sets, "8", count, 120);
-  assert.deepEqual(blockedIds(metricsOnly(retime(limit))).filter((id) => id.startsWith("TUPLE_")), []);
-  assert.deepEqual(blockedIds(metricsOnly(retime(limit + 1))).filter((id) => id.startsWith("TUPLE_")), ["TUPLE_ADDED:8", "TUPLE_REMOVED:8"]);
+  assert.deepEqual(blockedIds(wideMetrics(retime(limit))).filter((id) => id.startsWith("TUPLE_")), []);
+  assert.deepEqual(blockedIds(wideMetrics(retime(limit + 1))).filter((id) => id.startsWith("TUPLE_")), ["TUPLE_ADDED:8", "TUPLE_REMOVED:8"]);
 });
 
-test("tuple 제거만 일어나도(정차 소실) 제거 한도에서 차단되고 추가 지표는 통과한다", () => {
-  const limit = Math.floor((364 * POLICY.limits.timetableTupleRemovedPermille) / 1000);
+test("[5% 한도 정책] tuple 제거만 일어나도(정차 소실) 제거 한도에서 차단되고 추가 지표는 통과한다", () => {
+  const limit = Math.floor((364 * WIDE.limits.timetableTupleRemovedPermille) / 1000);
   assert.equal(limit, 18);
   const dropStops = (count) => ({ sets }) => { sets["9"].timetableTupleSet = sets["9"].timetableTupleSet.filter((_, index) => !(index % PATTERN.length === 3 && index / PATTERN.length < count)); };
-  assert.deepEqual(blockedIds(metricsOnly(dropStops(limit))).filter((id) => id.startsWith("TUPLE_")), []);
-  assert.deepEqual(blockedIds(metricsOnly(dropStops(limit + 1))).filter((id) => id.startsWith("TUPLE_")), ["TUPLE_REMOVED:9"]);
+  assert.deepEqual(blockedIds(wideMetrics(dropStops(limit))).filter((id) => id.startsWith("TUPLE_")), []);
+  assert.deepEqual(blockedIds(wideMetrics(dropStops(limit + 1))).filter((id) => id.startsWith("TUPLE_")), ["TUPLE_REMOVED:9"]);
+});
+
+test("편수·열차 구성·정차 순서·시각 tuple 한도는 0이다: 이력상 안정 구간이 모두 0이라 한 편·한 tuple 변화도 멈춘다 (F2)", () => {
+  for (const key of ["tripCountDeltaPermille", "tripMembershipDeltaPermille", "stopPatternChangedTripsPermille", "timetableTupleRemovedPermille", "timetableTupleAddedPermille"]) {
+    assert.equal(POLICY.limits[key], 0, key);
+  }
+  for (const direction of ["drop", "add"]) {
+    const oneTrip = ({ sets }) => { sets["8"] = daySets("8", { trains: direction === "drop" ? 39 : 41 }); };
+    assert.ok(blockedIds(metricsOnly(oneTrip)).includes("TRIP_COUNT:8"), direction);
+  }
+  const swapOne = ({ sets }) => { sets["8"].trainSet = sets["8"].trainSet.map((train, index) => (index === 0 ? `9${train}` : train)); };
+  assert.ok(blockedIds(metricsOnly(swapOne)).includes("TRIP_MEMBERSHIP:8"));
+  const patternOne = ({ sets }) => { sets["7"].stopSequenceSet = sets["7"].stopSequenceSet.map((entry, index) => (index === 0 ? [entry[0], entry[1], entry[2], entry[3].slice(0, -2).concat(entry[3].at(-1))] : entry)); };
+  assert.ok(blockedIds(metricsOnly(patternOne)).includes("STOP_PATTERN:7"));
+  const retimeOne = ({ sets }) => retimeTuples(sets, "8", 1, 60);
+  assert.deepEqual(blockedIds(metricsOnly(retimeOne)).filter((id) => id.startsWith("TUPLE_")), ["TUPLE_ADDED:8", "TUPLE_REMOVED:8"]);
+  const dropOne = ({ sets }) => { sets["9"].timetableTupleSet = sets["9"].timetableTupleSet.filter((_, index) => index !== 3); };
+  assert.deepEqual(blockedIds(metricsOnly(dropOne)).filter((id) => id.startsWith("TUPLE_")), ["TUPLE_REMOVED:9"]);
+  assert.deepEqual(blockedIds(metricsOnly(() => {})), []);
+});
+
+// F2: 직전 승인본 대비만 보면 매번 조금씩 어긋나는 누적 drift를 놓친다. 마지막 owner 기준선 대비도 같은 한도로 비교한다.
+function driftChain({ previousShift, candidateShift }) {
+  const shiftLast = (seconds) => ({ sets }) => {
+    const lastTrain = sets["9"].trainSet.at(-1);
+    sets["9"].timetableTupleSet = sets["9"].timetableTupleSet.map((tuple) => (
+      tuple[1] === lastTrain ? [tuple[0], tuple[1], tuple[2], tuple[3] + seconds, tuple[4] + seconds] : tuple
+    ));
+  };
+  return {
+    baseline: snapshot("baseline", { observedAt: "2026-09-20T16:00:00.000Z", freshUntil: "2026-09-27T00:00:00+09:00" }),
+    previous: snapshot("previous", { observedAt: "2026-09-30T16:38:54.026Z", freshUntil: "2026-10-11T00:00:00+09:00", mutate: shiftLast(previousShift) }),
+    candidate: shiftLast(candidateShift),
+  };
+}
+
+test("누적 drift: 직전 대비는 한도 안이어도 owner 기준선 대비가 한도를 넘으면 BASELINE_* check가 차단한다 (F2)", () => {
+  const chain = driftChain({ previousShift: 240, candidateShift: 480 });
+  const input = { ...gateInput({ mutate: chain.candidate }), previous: chain.previous, baseline: chain.baseline, baselineSha256: sha256("baseline-bytes") };
+  const receipt = evaluateItxPromotionGate(input);
+  assert.equal(receipt.status, "BLOCK");
+  assert.deepEqual(receipt.blockedCheckIds.filter((id) => id.startsWith("BASELINE_")).sort(), ["BASELINE_LAST_DEPARTURE_SHIFT:9", "BASELINE_TUPLE_ADDED:9", "BASELINE_TUPLE_REMOVED:9"].sort());
+  // 직전 대비 check만 보면 마지막 이동은 240초라 통과한다. 기준선 check가 없으면 놓친다.
+  assert.ok(!receipt.blockedCheckIds.includes("LAST_DEPARTURE_SHIFT:9"));
+  assert.deepEqual(receipt.baseline, { artifactId: chain.baseline.artifactId, sha256: sha256("baseline-bytes") });
+});
+
+test("누적 drift: 기준선 대비도 한도 안이면 통과하고, 기준선이 직전 원천이면 추가 check를 만들지 않는다 (F2)", () => {
+  const same = evaluateItxPromotionGate({ ...gateInput(), baseline: snapshot("previous"), baselineSha256: sha256("previous-bytes") });
+  assert.equal(same.status, "PASS");
+  assert.equal(same.checks.some(({ id }) => id.startsWith("BASELINE_")), false);
+  assert.deepEqual(same.baseline, { artifactId: "itx-cheongchun-source-timetable-previous", sha256: sha256("previous-bytes") });
+  const withinChain = driftChain({ previousShift: 0, candidateShift: 0 });
+  const passed = evaluateItxPromotionGate({ ...gateInput({ mutate: withinChain.candidate }), previous: withinChain.previous, baseline: withinChain.baseline, baselineSha256: sha256("baseline-bytes") });
+  assert.equal(passed.status, "PASS");
+  assert.ok(passed.checks.some(({ id }) => id === "BASELINE_TRIP_COUNT"));
 });
 
 test("첫차 시각 이동은 한도 0(이력 최대 0초)에서 0초는 통과하고 1초부터 차단된다", () => {

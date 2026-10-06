@@ -52,6 +52,8 @@ function gateReference(overrides = {}) {
       previousArtifactPath: `tools/datapack/sources/${PREVIOUS_ID}.json`,
       gate: { policyId: "itx-promotion-gate-v1", receiptPath: itxPromotionReceiptPath(ARTIFACT_ID), receiptSha256: "c".repeat(64) },
       gatedArtifactSha256: sha,
+      baselineArtifactPath: `tools/datapack/sources/${PREVIOUS_ID}.json`,
+      baselineArtifactSha256: "b".repeat(64),
     },
     ...overrides,
   };
@@ -89,6 +91,9 @@ test("게이트 모드 승격은 정확한 키·영수증 경로·정책 id·후
     "gated sha": (reference) => { reference.promotion.gatedArtifactSha256 = "d".repeat(64); },
     "missing previous": (reference) => { reference.promotion.previousArtifactSha256 = null; },
     "extra gate key": (reference) => { reference.promotion.gate.extra = true; },
+    "missing baseline": (reference) => { delete reference.promotion.baselineArtifactSha256; },
+    "baseline sha": (reference) => { reference.promotion.baselineArtifactSha256 = "short"; },
+    "baseline path": (reference) => { reference.promotion.baselineArtifactPath = "tools/datapack/other.json"; },
     "extra promotion key": (reference) => { reference.promotion.extra = true; },
   };
   for (const [name, mutate] of Object.entries(cases)) {
@@ -133,13 +138,17 @@ function snapshot(artifactId, { shiftSeconds = 0 } = {}) {
   };
 }
 
-async function committedPromotion({ shiftSeconds = 0 } = {}) {
+async function committedPromotion({ shiftSeconds = 0, baselineShiftSeconds = null } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-authority-"));
   const sourceDir = path.join(dir, "tools/datapack/sources");
   await mkdir(sourceDir, { recursive: true });
   const previous = snapshot(PREVIOUS_ID);
   const candidate = snapshot(ARTIFACT_ID, { shiftSeconds });
   const previousBytes = Buffer.from(`${JSON.stringify(previous, null, 2)}\n`);
+  // 기준선(마지막 owner 승인 원천)이 직전 원천과 다르면 별도 파일이다.
+  const BASELINE_ID = "itx-cheongchun-source-timetable-20260920000000000";
+  const baseline = baselineShiftSeconds === null ? previous : snapshot(BASELINE_ID, { shiftSeconds: baselineShiftSeconds });
+  const baselineBytes = baselineShiftSeconds === null ? previousBytes : Buffer.from(`${JSON.stringify(baseline, null, 2)}\n`);
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
   const completeness = {
     validationMode: "ADMISSION",
@@ -168,12 +177,15 @@ async function committedPromotion({ shiftSeconds = 0 } = {}) {
     completenessSha256: candidate.completenessEvidenceSha256,
     previous,
     previousSha256: sha256(previousBytes),
+    baseline,
+    baselineSha256: sha256(baselineBytes),
     capture,
     captureSha256: sha256("capture-bytes"),
     replay,
   });
   const receiptBytes = itxPromotionGateReceiptBytes(receipt);
   await writeFile(path.join(sourceDir, `${PREVIOUS_ID}.json`), previousBytes);
+  if (baselineShiftSeconds !== null) await writeFile(path.join(sourceDir, `${BASELINE_ID}.json`), baselineBytes);
   await writeFile(path.join(sourceDir, `${ARTIFACT_ID}.json`), candidateBytes);
   await writeFile(path.join(dir, itxPromotionReceiptPath(ARTIFACT_ID)), receiptBytes);
   const reference = gateReference({
@@ -184,6 +196,8 @@ async function committedPromotion({ shiftSeconds = 0 } = {}) {
   reference.promotion.previousArtifactSha256 = sha256(previousBytes);
   reference.promotion.gatedArtifactSha256 = reference.sha256;
   reference.promotion.gate.receiptSha256 = sha256(receiptBytes);
+  reference.promotion.baselineArtifactSha256 = sha256(baselineBytes);
+  reference.promotion.baselineArtifactPath = `tools/datapack/sources/${baselineShiftSeconds === null ? PREVIOUS_ID : BASELINE_ID}.json`;
   return { dir, reference, receipt, sourceDir, candidate, previous };
 }
 
@@ -271,6 +285,20 @@ test("영수증의 판정이 PASS가 아니거나 후보·직전 결속이 다�
     } finally {
       await rm(fixture.dir, { recursive: true, force: true });
     }
+  }
+});
+
+test("기준선이 직전 원천과 다르면 기준선 대비 지표도 다시 계산해 영수증과 대조한다 (F2)", async () => {
+  // 기준선과 같은 내용의 후보: 직전도 기준선과 같아 모든 BASELINE_* check가 통과한다.
+  const fixture = await committedPromotion({ baselineShiftSeconds: 0 });
+  try {
+    assert.ok(fixture.receipt.checks.some(({ id }) => id === "BASELINE_TRIP_COUNT"));
+    assert.equal((await verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir })).status, "PASS");
+    // 기준선 파일이 바뀌면(sha가 다르면) 거부한다.
+    await writeFile(path.join(fixture.dir, fixture.reference.promotion.baselineArtifactPath), "{}\n");
+    await assert.rejects(verifyItxGatePromotion({ reference: fixture.reference, repositoryRoot: fixture.dir }), /ITX_PROMOTION_SOURCE_SHA256_MISMATCH/u);
+  } finally {
+    await rm(fixture.dir, { recursive: true, force: true });
   }
 });
 
