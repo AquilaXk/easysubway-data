@@ -156,6 +156,12 @@ export async function readCurrentCapitalRouteTopologyAdmission({ repositoryRoot,
       addedSources: [governance],
     }).policy;
   const freshnessPolicy = existingFreshness.length === 1 ? baseFreshnessPolicy : { ...baseFreshnessPolicy, sourceClasses: [...baseFreshnessPolicy.sourceClasses, freshness] };
+  if (forbidPolicyChange) {
+    // 정책 출력은 기존 정책의 재직렬화다. 바이트가 현재 파일과 다르면 등록이 정책 파일을 쓰게 되므로 OCI 게시 전에(이 admission 읽기에서) 막는다.
+    const changed = [[OUTPUTS[2], governanceBytes, governancePolicy], [OUTPUTS[3], freshnessBytes, freshnessPolicy]]
+      .filter(([, current, next]) => !jsonBytes(next).equals(current)).map(([relative]) => relative);
+    if (changed.length > 0) throw policyChangeRequired(`the registration would rewrite ${changed.join(", ")}`);
+  }
   const review = governance.licenseReview;
   const reviewedAt = instant(review?.reviewedAt, "capital topology license reviewedAt");
   const nextReviewAt = instant(review?.nextReviewAt, "capital topology license nextReviewAt");
@@ -291,10 +297,6 @@ export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repo
     { relative: OUTPUTS[3], prestateBytes: freshnessBytes, bytes: jsonBytes(nextFreshnessPolicy) },
   ];
   outputs.forEach((output) => { output.inputs = inputs; });
-  if (forbidPolicyChange) {
-    const changed = outputs.slice(2).filter(({ bytes, prestateBytes }) => !bytes.equals(prestateBytes)).map(({ relative }) => relative);
-    if (changed.length > 0) throw policyChangeRequired(`the registration would rewrite ${changed.join(", ")}`);
-  }
   return outputs;
 }
 
