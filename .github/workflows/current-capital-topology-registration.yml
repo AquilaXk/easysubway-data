@@ -229,6 +229,20 @@ jobs:
           git fetch --no-tags origin main:refs/remotes/origin/main
           [[ "$(git rev-parse HEAD)" == "${REGISTRATION_MAIN_SHA}" && "$(git rev-parse origin/main)" == "${REGISTRATION_MAIN_SHA}" ]] || { echo "main changed after claim" >&2; exit 1; }
           node tools/datapack/run-current-capital-route-topology-registration.mjs recover-published --repository-root "${GITHUB_WORKSPACE}" --source-operation-root "${REGISTRATION_SOURCE_OPERATION_ROOT}" --target-operation-root "${REGISTRATION_OPERATION_ROOT}" --expected-main-sha "${REGISTRATION_MAIN_SHA}" --expected-publication-operation-id "${RECOVERY_RUN_ID}"
+      - name: Recheck that no source-ledger automation is pending before pushing
+        if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #987 리뷰 F5: 게시·등록은 길다. 그 사이 원장을 쓰는 다른 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 push하지 않는다(재확인 workflow와 같은 양방향 직렬화).
+          # 이 workflow는 게시 증거(receipt artifact)를 남기고 실패하면 다음 실행이 그 증거로 PR만 다시 만든다. 기다림도 그 복구 경로로 끝낸다.
+          recheck_root="${RUNNER_TEMP}/current-capital-topology-registration/recheck-${GITHUB_RUN_ID}"
+          mkdir -p "${recheck_root}"
+          gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${recheck_root}/prs.json"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
+          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow current-capital-topology-registration.yml --github-output "${recheck_root}/idle.txt"
+          grep -qx 'idle=true' "${recheck_root}/idle.txt" || { echo "REGISTRATION_LEDGER_WRITER_PENDING: source-ledger automation started while the registration was running; nothing was pushed. The retained publication receipt lets the next run recreate the pull request." >&2; exit 1; }
       - name: Mint App token for the registration pull request
         id: app-token-pr
         if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
