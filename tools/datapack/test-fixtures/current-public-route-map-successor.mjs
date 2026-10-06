@@ -481,6 +481,8 @@ const SUCCESSOR_FIXTURE_PATHS = Object.freeze([
   "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.json",
   "tools/datapack/sources/seoul-metro-station-contact-20260930T054853Z.raw.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
+  "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz",
+  "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",
   CURRENT_ROUTE_ROSTERS_PATH,
 ]);
 

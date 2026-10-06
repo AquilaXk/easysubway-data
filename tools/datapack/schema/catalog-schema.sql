@@ -65,6 +65,34 @@ CREATE TABLE station_contacts (
   FOREIGN KEY (line_id) REFERENCES lines(id)
 );
 
+-- #957: 국토교통부 환승 이동경로(이동내용상세)를 원문 그대로 담는다. 키는 앱이 환승 구간에서 만들 수 있는 내부 식별자다.
+-- from_prev_station_id: 앞 승차 구간에서 내리기 직전에 지난 역. to_next_station_id: 뒤 승차 구간에서 타고 나서 다음에 서는 역.
+-- detail: 원문 문장(앞뒤 공백만 정리). step_order: 원천 단계 순서(1부터).
+CREATE TABLE transfer_guide_sources (
+  source_snapshot_id TEXT NOT NULL PRIMARY KEY,
+  dataset_label TEXT NOT NULL,
+  attribution TEXT NOT NULL,
+  raw_sha256 TEXT NOT NULL CHECK (length(raw_sha256) = 64 AND raw_sha256 NOT GLOB '*[^0-9a-f]*')
+);
+
+CREATE TABLE transfer_guide_steps (
+  station_id TEXT NOT NULL,
+  from_line_id TEXT NOT NULL,
+  from_prev_station_id TEXT NOT NULL,
+  to_line_id TEXT NOT NULL,
+  to_next_station_id TEXT NOT NULL,
+  step_order INTEGER NOT NULL CHECK (step_order >= 1),
+  detail TEXT NOT NULL CHECK (length(detail) > 0),
+  source_snapshot_id TEXT NOT NULL,
+  PRIMARY KEY (station_id, from_line_id, from_prev_station_id, to_line_id, to_next_station_id, step_order),
+  FOREIGN KEY (station_id) REFERENCES stations(id),
+  FOREIGN KEY (from_line_id) REFERENCES lines(id),
+  FOREIGN KEY (from_prev_station_id) REFERENCES stations(id),
+  FOREIGN KEY (to_line_id) REFERENCES lines(id),
+  FOREIGN KEY (to_next_station_id) REFERENCES stations(id),
+  FOREIGN KEY (source_snapshot_id) REFERENCES transfer_guide_sources(source_snapshot_id)
+);
+
 CREATE TABLE service_calendars (
   service_id TEXT NOT NULL PRIMARY KEY,
   monday INTEGER NOT NULL CHECK (monday IN (0, 1)),

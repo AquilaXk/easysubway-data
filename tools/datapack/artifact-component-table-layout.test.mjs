@@ -105,8 +105,26 @@ test("map and catalog projections keep only their owned table and field sets", (
     station_congestion_stats: ["station_id", "line_id", "direction", "day_type", "slot_start_minute", "congestion_permille", "source_snapshot_id"],
     station_congestion_sources: ["source_snapshot_id", "dataset_label", "captured_at", "attribution"],
     station_contacts: ["station_id", "line_id", "phone", "phone_raw", "source_snapshot_id"],
+    transfer_guide_sources: ["source_snapshot_id", "dataset_label", "attribution", "raw_sha256"],
+    transfer_guide_steps: ["station_id", "from_line_id", "from_prev_station_id", "to_line_id", "to_next_station_id", "step_order", "detail", "source_snapshot_id"],
   });
   assert.deepEqual(contract.artifacts.stationCatalogPack.generatedTables, []);
+});
+
+// #957 F6: 앱이 환승 구간 응답에서 같은 키를 만들 수 있도록 키 규칙을 계약에 명문화한다.
+test("transfer_guide_steps 키 규칙은 앱이 경로 결과의 승차 구간에서 만드는 식별자로 고정된다", () => {
+  assert.deepEqual(contract.artifacts.stationCatalogPack.keyRules, {
+    transfer_guide_steps: {
+      station_id: "transfer leg fromStationId (in-station transfer: fromStationId equals toStationId)",
+      from_line_id: "previous ride leg lineId",
+      from_prev_station_id: "previous ride leg stops[stops.length - 2].stationId, the station passed just before alighting",
+      to_line_id: "next ride leg lineId",
+      to_next_station_id: "next ride leg stops[1].stationId, the station after boarding",
+      source_heading_semantics: "source 'X 방면' is the station the train heads to from that platform; to_next_station_id equals the last-step heading station, from_prev_station_id is the other LOCAL neighbor of the first-step heading station",
+      exclusion: "a sequence is not packed when the first-step line has other than exactly two LOCAL neighbors, or any identifier cannot be mapped exactly; exclusions are reported in current.provenance.json derivedTables.transfer_guide_steps",
+      lookup: "WHERE station_id=? AND from_line_id=? AND from_prev_station_id=? AND to_line_id=? AND to_next_station_id=? ORDER BY step_order; no row means no guide, never an estimate",
+    },
+  });
 });
 
 test("route service evidence tables는 server timetable component의 exact references와 ownership을 유지한다", () => {
@@ -114,7 +132,7 @@ test("route service evidence tables는 server timetable component의 exact refer
   assert.deepEqual(contract.serverRouteBundle.sourceSchema, {
     path: "tools/datapack/schema/catalog-schema.sql",
     sqliteUserVersion: 19,
-    sha256: "f8014298c2110bc5f583db0c7c1952212ef6043abef36ddef80799b36241d507",
+    sha256: "23fbd81f2b6438f88ac56522d173f927f1d3ebf359ca71abae271f5b37326569",
   });
   const sourceSchemaBytes = readFileSync(contract.serverRouteBundle.sourceSchema.path);
   assert.equal(createHash("sha256").update(sourceSchemaBytes).digest("hex"), contract.serverRouteBundle.sourceSchema.sha256);
