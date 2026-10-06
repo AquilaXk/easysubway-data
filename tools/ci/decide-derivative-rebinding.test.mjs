@@ -10,7 +10,7 @@ const pr = (state, runId, overrides = {}) => ({
   isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY }, ...overrides,
 });
 const writer = (number, prefix = "automation/639-seoul-accessibility-refresh-") => pr("OPEN", 9, { number, headRefName: `${prefix}9` });
-const decide = (overrides = {}) => decideDerivativeRebinding({ pullRequests: [], branches: [], repository: REPOSITORY, ...overrides });
+const decide = (overrides = {}) => decideDerivativeRebinding({ pullRequests: [], branches: [], automationBranches: [], repository: REPOSITORY, ...overrides });
 
 test("claim 접두어는 이 이슈 번호의 파생 재결속 브랜치다", () => {
   assert.equal(DERIVATIVE_REBINDING_CLAIM_PREFIX, "automation/969-derivative-rebinding-");
@@ -28,6 +28,7 @@ test("이 workflow의 열린 PR이 있으면 OPEN_PR이다", () => {
 
 test("원장을 쓰는 다른 자동화 PR이 열려 있으면 BLOCKED_BY_PENDING_PR로 기다린다", () => {
   assert.deepEqual(decide({ pullRequests: [writer(971), writer(972, "automation/456-capital-topology-registration-")] }), { state: "BLOCKED_BY_PENDING_PR", blockedBy: [971, 972], cleanupBranches: [] });
+  // 후보 PR·사람 PR·다른 저장소 PR·닫힌 PR은 기다릴 이유가 아니다.
   // 후보 PR·사람 PR·다른 저장소 PR·닫힌 PR은 기다릴 이유가 아니다.
   assert.equal(decide({ pullRequests: [writer(973, "automation/927-nationwide-candidate-refresh-"), writer(974, "feat/x"), { ...writer(975), isCrossRepository: true }, { ...writer(976), state: "CLOSED" }] }).state, "RUN");
 });
@@ -52,4 +53,15 @@ test("브랜치 목록은 파생 재결속 브랜치 ref만 받는다", () => {
   const sha = "d".repeat(40);
   assert.deepEqual(parseDerivativeRebindingBranches(`${sha}\trefs/heads/${DERIVATIVE_REBINDING_CLAIM_PREFIX}5\n`), [`${DERIVATIVE_REBINDING_CLAIM_PREFIX}5`]);
   assert.throws(() => parseDerivativeRebindingBranches(`${sha}\trefs/heads/automation/other-1\n`), /DERIVATIVE_REBINDING_BRANCH_INVALID/u);
+});
+
+// #975 리뷰 F6: 등록 run은 PR을 열기 전에 claim 브랜치를 push하고 OCI에 게시한다. 그 claim도 원장을 쓰는 중이다.
+test("PR 전의 원장 쓰기 claim 브랜치가 있으면 BLOCKED_BY_PENDING_PR로 기다린다", () => {
+  const claim = "automation/456-capital-topology-registration-111";
+  assert.deepEqual(decide({ automationBranches: [claim] }), { state: "BLOCKED_BY_PENDING_PR", blockedBy: [claim], cleanupBranches: [] });
+  assert.deepEqual(decide({ automationBranches: [claim], pullRequests: [writer(971)] }).blockedBy, [971, claim]);
+  // 병합된 PR의 claim 브랜치·후보 브랜치·자기 브랜치는 기다릴 이유가 아니다.
+  assert.equal(decide({ automationBranches: [claim], pullRequests: [pr("MERGED", 111, { headRefName: claim })] }).state, "RUN");
+  assert.equal(decide({ automationBranches: ["automation/927-nationwide-candidate-refresh-5", `${DERIVATIVE_REBINDING_CLAIM_PREFIX}7`] }).state, "RUN");
+  assert.throws(() => decide({ automationBranches: null }), /DERIVATIVE_REBINDING_INPUT_INVALID/u);
 });

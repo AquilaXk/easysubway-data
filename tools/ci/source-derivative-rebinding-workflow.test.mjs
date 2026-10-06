@@ -10,7 +10,8 @@ const FILE = "source-derivative-rebinding.yml";
 const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../.."), FILE);
 const RUN = "${{ steps.decision.outputs.state == 'RUN' }}";
 const CHANGED = "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' }}";
-const PUSHED = "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'true' }}";
+const IDLE = "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'true' }}";
+const PUSHED = "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'true' }}";
 
 test("트리거: 원장·정본 팩 push, 정기 복구, 사람 dispatch", () => {
   assert.match(yml, /^on:\n  push:\n    branches:\n      - main\n    paths:\n      - tools\/datapack\/release\/source-snapshots\.json\n      - tools\/datapack\/release\/capital-production-canonical-pack\.json\n  schedule:\n    - cron: "41 \*\/6 \* \* \*"\n  workflow_dispatch:\n/mu);
@@ -34,7 +35,8 @@ test("판정 step이 controller보다 먼저 돌고 열린 PR·브랜치만 읽�
   assert.match(block, /\n        id: decision\n/u);
   assert.match(block, /gh pr list --repo "\$\{GITHUB_REPOSITORY\}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/969-derivative-rebinding-\*" > /u);
-  assert.match(block, /node tools\/ci\/decide-derivative-rebinding\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
+  assert.match(block, /node tools\/ci\/decide-derivative-rebinding\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
 });
 
 test("controller는 RUN일 때만 돌고 OCI 읽기 주소는 시크릿에서만 받으며, 바뀐 것이 없으면 이유를 notice로 남긴다", () => {
@@ -51,7 +53,7 @@ test("controller는 RUN일 때만 돌고 OCI 읽기 주소는 시크릿에서만
 });
 
 test("push·App 토큰·PR 생성·정리는 바뀐 것이 있을 때만 돌고 push는 GITHUB_TOKEN, PR 생성만 App 토큰이다", () => {
-  assert.equal(ifCondition(step("Verify the rebinding is based on the current main and push its branch").block), CHANGED);
+  assert.equal(ifCondition(step("Verify the rebinding is based on the current main and push its branch").block), IDLE);
   for (const name of ["Mint App token for the derivative rebinding pull request", "Create derivative rebinding pull request"]) {
     assert.equal(ifCondition(step(name).block), PUSHED, name);
   }
@@ -108,5 +110,23 @@ test("읽은 main이 움직였으면 아무것도 올리지 않고 notice로 끝
   assert.match(push.block, /echo "pushed=true" >> "\$\{GITHUB_OUTPUT\}"/u);
   assert.doesNotMatch(yml, /BINDING_BASE_MOVED/u);
   const note = step("Note rebinding superseded by a newer main");
-  assert.equal(ifCondition(note.block), "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.push.outputs.pushed == 'false' }}");
+  assert.equal(ifCondition(note.block), "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'true' && steps.push.outputs.pushed == 'false' }}");
+});
+
+// #975 리뷰 F5·F6: controller가 만든 원장 변화는 gate를 통과해야 하고, push 직전에 원장 쓰기 자동화(등록 claim 포함)가 없는지 다시 확인한다. 본문은 base/head에 결속된다.
+test("원장 변화 게이트와 push 직전 재확인과 증거 본문", () => {
+  const rebind = step("Rebind derivative artifacts from the current ledger heads").block;
+  assert.match(rebind, /node tools\/ci\/source-ledger-gate\.mjs --base-sha "\$\{base_sha\}" --output "\$\{operation\}\/gate\.json"/u);
+  assert.ok(rebind.indexOf("run-derivative-rebinding.mjs") < rebind.indexOf("source-ledger-gate.mjs"), "the gate runs on the controller's commits");
+  const recheck = step("Recheck that no source-ledger automation is pending before pushing");
+  assert.match(recheck.block, /\n        id: recheck\n/u);
+  assert.equal(ifCondition(recheck.block), CHANGED);
+  assert.match(recheck.block, /node tools\/ci\/ledger-writers-idle\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --automation-branches "[^"]+" --except-workflow source-derivative-rebinding\.yml --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  const names = steps().map(({ name }) => name);
+  assert.ok(names.indexOf(recheck.name) < names.indexOf("Verify the rebinding is based on the current main and push its branch"));
+  const note = step("Note rebinding superseded by pending source automation");
+  assert.equal(ifCondition(note.block), "${{ steps.decision.outputs.state == 'RUN' && steps.rebind.outputs.changed == 'true' && steps.recheck.outputs.idle == 'false' }}");
+  const create = step("Create derivative rebinding pull request").block;
+  assert.match(create, /node tools\/ci\/automation-pr-evidence\.mjs derivative-rebinding-body --gate "\$\{RUNNER_TEMP\}\/derivative-rebinding\/\$\{GITHUB_RUN_ID\}\/gate\.json" --result "\$\{REBINDING_RESULT\}" --base-sha "\$\{REBINDING_BASE_SHA\}" --head-sha "\$\{REBINDING_HEAD_SHA\}"/u);
+  assert.match(rebind, /printf 'REBINDING_HEAD_SHA=%s\\n' "\$\(git rev-parse HEAD\)" >> "\$\{GITHUB_ENV\}"/u);
 });

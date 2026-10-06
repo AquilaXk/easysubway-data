@@ -35,7 +35,7 @@ async function fixtureRepository(files = { "a.json": "A\n", "b.json": "B\n", "c.
 
 const step = (id, allowed, run) => ({ id, message: `[Data] ${id}`, isAllowedPath: (relative) => allowed.includes(relative), run });
 const write = (name, content) => async ({ repositoryRoot: root }) => writeFile(path.join(root, name), content);
-const options = (root, steps, extra = {}) => ({ repositoryRoot: root, operationRoot: path.join(root, "..", `op-${path.basename(root)}`), steps, ...extra });
+const options = (root, steps, extra = {}) => ({ repositoryRoot: root, operationRoot: path.join(root, "..", `op-${path.basename(root)}`), steps, ledgerPath: null, ...extra });
 
 test("단계를 정해진 순서로 실행하고 바뀐 단계만 허용 경로를 그 단계 커밋으로 쌓는다", async (t) => {
   const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true }));
@@ -152,4 +152,47 @@ test("관측을 받지 못하거나 바이트가 원장과 다르면 SOURCE_FETC
   await assert.rejects(restore({ readObject: async () => ({ exists: true, body: Buffer.concat([bytes, Buffer.from("x")]) }) }), /^Error: SOURCE_FETCH_FAILED: .*sha256/u);
   await assert.rejects(restore({ readObject: async () => ({ exists: true, body: bytes }) }, { rawObjectUri: "https://example.invalid/x" }), /^Error: SOURCE_FETCH_FAILED: .*object URI/u);
   await mkdir(path.join(operationRoot, "unused"), { recursive: true });
+});
+
+// #975 리뷰 F5: 경로 allowlist만으로는 원장 변화의 크기를 모른다. 단계가 원장을 바꾸면 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA)를 통과해야 커밋된다.
+const LEDGER = "tools/datapack/release/source-snapshots.json";
+const POLICY = { schemaVersion: 1, issue: 969, allowContentChange: true, maxRowDeltaRatio: 0.05, allowCoverageDecrease: false, sourceOverrides: {} };
+const ledgerRow = (snapshotId, overrides = {}) => ({ sourceId: "seoul-metro-transfer-distance-duration", snapshotId, previousSnapshotId: null, rawSha256: "a".repeat(64), contentSha256: "b".repeat(64), rowCount: 100, coverageCount: 8, transferTopology: { canonicalPackSha256: "1".repeat(64) }, ...overrides });
+async function ledgerRepository() {
+  const root = await fixtureRepository({ "a.json": "A\n" });
+  await mkdir(path.join(root, "tools/datapack/release"), { recursive: true });
+  await writeFile(path.join(root, LEDGER), `${JSON.stringify([ledgerRow("s1")])}\n`);
+  git(root, "add", LEDGER); git(root, "commit", "-q", "-m", "ledger");
+  return root;
+}
+const rewriteLedger = (rows) => async ({ repositoryRoot: root }) => writeFile(path.join(root, LEDGER), `${JSON.stringify(rows)}\n`);
+const ledgerStep = (run) => step("ledger-step", [LEDGER], run);
+
+test("원장을 바꾸는 단계가 결속 필드만 바꾸면 통과하고 커밋된다", async (t) => {
+  const root = await ledgerRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const result = await runDerivativeRebinding(options(root, [ledgerStep(rewriteLedger([ledgerRow("s1", { transferTopology: { canonicalPackSha256: "2".repeat(64) } })]))], { ledgerPath: LEDGER, policy: POLICY }));
+  assert.deepEqual(result.steps.map(({ changed }) => changed), [true]);
+});
+
+test("원장의 기존 행 원천 식별을 바꾸면 SOURCE_SHA_DRIFT로 멈추고 커밋하지 않는다", async (t) => {
+  const root = await ledgerRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const before = git(root, "rev-parse", "HEAD");
+  await assert.rejects(runDerivativeRebinding(options(root, [ledgerStep(rewriteLedger([ledgerRow("s1", { contentSha256: "c".repeat(64) })]))], { ledgerPath: LEDGER, policy: POLICY })),
+    /^Error: SOURCE_SHA_DRIFT: ledger-step: seoul-metro-transfer-distance-duration s1: an existing row changed its source identity \(contentSha256\)$/u);
+  assert.equal(git(root, "rev-parse", "HEAD"), before);
+});
+
+test("새 원장 행의 행 수 변화가 한도를 넘으면 SOURCE_COUNT_DELTA로 멈추고, 한도 안이면 통과한다", async (t) => {
+  const root = await ledgerRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const next = (rowCount) => ledgerRow("s2", { previousSnapshotId: "s1", rowCount, diffSummary: { status: "CHANGED", rowDelta: rowCount - 100, coverageDelta: 0 } });
+  await assert.rejects(runDerivativeRebinding(options(root, [ledgerStep(rewriteLedger([ledgerRow("s1"), next(130)]))], { ledgerPath: LEDGER, policy: POLICY })), /^Error: SOURCE_COUNT_DELTA: ledger-step: seoul-metro-transfer-distance-duration s2: rowDelta 30 \(30\.0%\) exceeds 5\.0%$/u);
+  const ok = await runDerivativeRebinding(options(root, [ledgerStep(rewriteLedger([ledgerRow("s1"), next(103)]))], { ledgerPath: LEDGER, policy: POLICY }));
+  assert.equal(ok.steps[0].changed, true);
+});
+
+test("원장 게이트 기본 정책은 저장소의 정책 파일이고, 원장을 바꾸지 않는 단계에는 게이트가 끼지 않는다", async (t) => {
+  const root = await ledgerRepository(); t.after(() => rm(root, { recursive: true, force: true }));
+  const result = await runDerivativeRebinding(options(root, [step("plain", ["a.json"], write("a.json", "A2\n"))], { ledgerPath: LEDGER }));
+  assert.equal(result.steps[0].changed, true);
+  await assert.rejects(runDerivativeRebinding(options(root, [ledgerStep(rewriteLedger([ledgerRow("s1", { rowCount: 101 })]))], { ledgerPath: LEDGER })), /^Error: SOURCE_SHA_DRIFT: ledger-step: /u);
 });
