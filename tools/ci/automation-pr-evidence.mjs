@@ -6,13 +6,15 @@
 // - 블록은 알려진 키와 값만 받는다. 모르는 키·잘못된 이슈 번호·잘못된 값은 정규화하지 않고 파싱 오류로 실패한다(fail closed).
 // - 블록은 base/head 커밋에 결속된다. 읽는 쪽이 PR head 커밋을 넘기면 블록의 headSha와 같아야 한다.
 // - 단계(stage)별 필수 내용: registration은 원천 행(sources)과 정책, derivative-rebinding은 단계(steps)와 정책, candidate-refresh는 후보 식별(candidate).
+//   itx-promotion(#977)은 ITX 원천 행 하나(raw capture sha·후보 sha·직전 snapshot)와 변경 경로 단계 하나이고 정책·후보 식별이 없다.
+//   변경 경로는 coverage contract와 그 snapshot의 원천·완전성 증거·게이트 영수증 네 개뿐이어야 한다(2단계 allowlist).
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 
 export const AUTOMATION_PR_EVIDENCE_MARKER = "easysubway-automation-pr:v1";
-export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding"]);
+export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion"]);
 const ISSUE = 969;
 const BLOCK = new RegExp(`<!-- ${AUTOMATION_PR_EVIDENCE_MARKER} (.*?) -->`, "gu");
 const RUN_URL = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/actions\/runs\/[1-9][0-9]*$/u;
@@ -48,6 +50,30 @@ function validateCandidate(candidate) {
     || candidate.releaseSequence < 1 || !SHA256.test(candidate.sourceSnapshotSetHash)) invalid("candidate");
 }
 
+const ITX_SOURCE_ID = "itx-cheongchun-source-timetable";
+const ITX_SNAPSHOT_ID = /^itx-cheongchun-source-timetable-\d{17}$/u;
+const ITX_STEP_ID = "itx-promotion";
+const ITX_CONTRACT_PATH = "tools/datapack/itx-cheongchun-coverage-contract.json";
+const ITX_GATE_POLICY_ID = "itx-promotion-gate-v1";
+
+/** ITX 승격 PR이 바꿔도 되는 경로: coverage contract와 승격한 snapshot의 파일 셋. 코드 상수 하나다. */
+export function itxPromotionAllowedPaths(snapshotId) {
+  return [
+    ITX_CONTRACT_PATH,
+    `tools/datapack/sources/${snapshotId}-completeness-evidence.json`,
+    `tools/datapack/sources/${snapshotId}-promotion-gate.json`,
+    `tools/datapack/sources/${snapshotId}.json`,
+  ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+function validateItxPromotion(source, step) {
+  if (source.sourceId !== ITX_SOURCE_ID || !ITX_SNAPSHOT_ID.test(source.snapshotId) || !ITX_SNAPSHOT_ID.test(source.previousSnapshotId ?? "")
+    || source.previousSnapshotId === source.snapshotId || source.diffStatus !== "PASS") invalid("itx-promotion: source row");
+  if (step.id !== ITX_STEP_ID || step.changed !== true || JSON.stringify(step.paths) !== JSON.stringify(itxPromotionAllowedPaths(source.snapshotId))) {
+    invalid("itx-promotion: changed paths are not the allowed set");
+  }
+}
+
 function validateEvidence(value) {
   if (!hasExactKeys(value, EVIDENCE_KEYS)) invalid("keys");
   if (value.schemaVersion !== 1 || value.issue !== ISSUE) invalid("schemaVersion or issue");
@@ -66,6 +92,9 @@ function validateEvidence(value) {
     only(value.policy !== null && value.sources.length > 0 && value.steps.length === 0 && value.candidate === null, "needs a policy and source rows, no steps or candidate");
   } else if (value.stage === "derivative-rebinding") {
     only(value.policy !== null && value.steps.length > 0 && value.candidate === null, "needs a policy and steps, no candidate");
+  } else if (value.stage === "itx-promotion") {
+    only(value.policy === null && value.sources.length === 1 && value.steps.length === 1 && value.candidate === null, "needs one source row and one step, no policy or candidate");
+    validateItxPromotion(value.sources[0], value.steps[0]);
   } else {
     only(value.candidate !== null && value.policy === null && value.sources.length === 0 && value.steps.length === 0, "needs only the candidate identity");
   }
@@ -124,6 +153,90 @@ export function derivativeRebindingPullRequestBody({ runUrl, baseSha, headSha, p
   ].join("\n");
 }
 
+const sumChecks = (checks, id, pick) => checks.filter((item) => item?.id === id).reduce((total, item) => total + pick(item.observed), 0);
+const needInteger = (value) => { if (!Number.isSafeInteger(value)) invalid("itx-promotion: receipt metric"); return value; };
+
+/** 게이트 영수증에서 ITX 원천 행을 만든다. PASS 영수증만 받고, 행의 sha는 영수증이 결속한 raw capture·후보 sha 그대로다. */
+export function itxPromotionSourceRow(receipt) {
+  if (!isObject(receipt) || receipt.artifactKind !== "itx-promotion-gate-receipt" || receipt.schemaVersion !== 1
+    || receipt.policyId !== ITX_GATE_POLICY_ID || receipt.status !== "PASS"
+    || !Array.isArray(receipt.blockedCheckIds) || receipt.blockedCheckIds.length !== 0 || !Array.isArray(receipt.checks)
+    || !isObject(receipt.candidate) || !isObject(receipt.previous) || !isObject(receipt.source)) invalid("itx-promotion: receipt");
+  const checks = receipt.checks;
+  for (const id of ["STATION_COVERAGE", "OD_COVERAGE", "TUPLE_REMOVED", "TUPLE_ADDED"]) {
+    if (!checks.some((item) => item?.id === id && item.status === "PASS")) invalid(`itx-promotion: receipt lacks ${id}`);
+  }
+  if (checks.some((item) => item?.status !== "PASS")) invalid("itx-promotion: receipt has a blocked check");
+  const rowDelta = sumChecks(checks, "TUPLE_ADDED", (observed) => needInteger(observed.count)) - sumChecks(checks, "TUPLE_REMOVED", (observed) => needInteger(observed.count));
+  const coverageDelta = ["STATION_COVERAGE", "OD_COVERAGE"].reduce((total, id) => total + sumChecks(checks, id, (observed) => needInteger(observed.added) + needInteger(observed.removed)), 0);
+  const row = {
+    sourceId: ITX_SOURCE_ID,
+    snapshotId: receipt.candidate.artifactId,
+    previousSnapshotId: receipt.previous.artifactId,
+    rawSha256: receipt.source.rawCaptureSha256,
+    contentSha256: receipt.candidate.sha256,
+    rowDelta,
+    coverageDelta,
+    diffStatus: "PASS",
+  };
+  validateSource(row);
+  validateItxPromotion(row, { id: ITX_STEP_ID, changed: true, paths: itxPromotionAllowedPaths(row.snapshotId) });
+  return row;
+}
+
+const LIMIT_LABELS = Object.freeze([
+  ["stationSetDelta", "역 집합 변화 한도", (value) => `${value}`],
+  ["odSetDelta", "OD 집합 변화 한도", (value) => `${value}`],
+  ["tripCountDeltaPermille", "편수 변화 한도(직전 대비)", (value) => `${value / 10}%`],
+  ["tripMembershipDeltaPermille", "열차 구성 변화 한도(직전 대비)", (value) => `${value / 10}%`],
+  ["stopPatternChangedTripsPermille", "정차 순서가 바뀐 열차 한도(직전 대비)", (value) => `${value / 10}%`],
+  ["timetableTupleRemovedPermille", "정차 시각 제거 한도(직전 대비)", (value) => `${value / 10}%`],
+  ["timetableTupleAddedPermille", "정차 시각 추가 한도(직전 대비)", (value) => `${value / 10}%`],
+  ["firstDepartureShiftSeconds", "첫차 이동 한도", (value) => `${value}초`],
+  ["lastDepartureShiftSeconds", "막차 이동 한도", (value) => `${value}초`],
+  ["providerErrorRecords", "공급자 오류 응답 한도", (value) => `${value}건`],
+]);
+
+function metricCell(item) {
+  const { observed, limit } = item;
+  switch (item.id) {
+    case "STATION_COVERAGE": case "OD_COVERAGE": return `+${observed.added} -${observed.removed} / ${limit.delta}`;
+    case "TRIP_COUNT": return `${observed.delta} / ${limit.delta}`;
+    case "TRIP_MEMBERSHIP": return `+${observed.added} -${observed.removed} / ${limit.each}`;
+    case "STOP_PATTERN": return `${observed.changed} / ${limit.changed}`;
+    case "TUPLE_REMOVED": case "TUPLE_ADDED": return `${observed.count} / ${limit.count}`;
+    case "FIRST_DEPARTURE_SHIFT": case "LAST_DEPARTURE_SHIFT": return `${observed.shiftSeconds} / ${limit.shiftSeconds}`;
+    default: return "-";
+  }
+}
+
+export function itxPromotionPullRequestBody({ runUrl, baseSha, headSha, receipt, changedPaths }) {
+  const source = itxPromotionSourceRow(receipt);
+  const paths = [...changedPaths].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  const block = automationPrEvidenceBlock({
+    stage: "itx-promotion", runUrl, baseSha, headSha, policy: null, sources: [source],
+    steps: [{ id: ITX_STEP_ID, changed: true, paths }], candidate: null,
+  });
+  const basis = receipt.policy?.measuredBasis;
+  return [
+    `ITX-청춘 원천 시간표 ${code(source.snapshotId)}를 자동 이상 판정 게이트(${code(receipt.policyId)})가 통과시켜 승격한다. 승인 코멘트(${code("/approve-itx-current")})는 쓰지 않았다.`, "",
+    "| 원천 | snapshot | 직전 snapshot | raw capture sha256 | 후보 sha256 | 시각 tuple 순증감 | 역·OD 변화 | 판정 |", "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    `| ${source.sourceId} | ${source.snapshotId} | ${source.previousSnapshotId} | ${code(source.rawSha256)} | ${code(source.contentSha256)} | ${source.rowDelta} | ${source.coverageDelta} | ${source.diffStatus} |`, "",
+    ...(receipt.baseline ? [`누적 drift 기준선(마지막 owner 승인 원천): ${code(receipt.baseline.artifactId)}`, ""] : []),
+    "## 적용한 한도", "",
+    "| 항목 | 값 |", "| --- | --- |",
+    ...LIMIT_LABELS.map(([key, label, format]) => `| ${label} | ${format(receipt.policy.limits[key])} |`), "",
+    ...(basis ? [`측정 근거: 승인 이력 snapshot ${basis.snapshots}개, 전환 ${basis.transitions}회(안정 ${basis.stableTransitions}, 변동 ${basis.changedTransitions}). 역·OD·편수 변화 최대 0, 막차 이동 최대 ${basis.observedMax.lastDepartureShiftSeconds}초. 변동 구간의 0이 아닌 일별 변화는 정차 순서 ${basis.changedDayMinPermille.stopPatternChangedTrips}‰, 제거 ${basis.changedDayMinPermille.timetableTupleRemoved}‰, 추가 ${basis.changedDayMinPermille.timetableTupleAdded}‰ 이상이었다.`, ""] : []),
+    "## 요일별 지표 (관측 / 한도)", "",
+    "| 지표 | 요일 | 관측 / 한도 |", "| --- | --- | --- |",
+    ...receipt.checks.filter((item) => item.dayCd !== undefined).map((item) => `| ${item.id} | ${item.dayCd} | ${metricCell(item)} |`), "",
+    "## 변경 경로", "", ...paths.map((entry) => `- ${code(entry)}`), "",
+    `- 실행 run: ${runUrl}`,
+    "- 이 PR은 원천 승격만 바꾼다. 승격 뒤 topology 증거·정적 입력 허용 목록·mobile fixture 고정값 재결속은 포함하지 않는다.", "",
+    "Refs #977", "Refs #870", "Refs #969", "Refs #636", "", block, "",
+  ].join("\n");
+}
+
 function parseOptions(rest) {
   const values = {};
   for (let index = 0; index < rest.length; index += 2) {
@@ -150,6 +263,11 @@ export async function main(argv, { write = (chunk) => process.stdout.write(chunk
     const { steps } = await readJson(values.result);
     // controller 결과의 변경 없는 단계는 paths가 없다. 증거 블록은 항상 paths를 남긴다.
     await writeFile(values.output, derivativeRebindingPullRequestBody({ ...common(), policy, sources, steps: steps.map((step) => ({ ...step, paths: step.paths ?? [] })) }), { flag: "wx" });
+  } else if (command === "itx-promotion-body") {
+    need("receipt", "changed-paths", "base-sha", "head-sha", "run-url", "output");
+    const receipt = await readJson(values.receipt);
+    const changedPaths = (await readFile(values["changed-paths"], "utf8")).split("\n").filter(Boolean);
+    await writeFile(values.output, itxPromotionPullRequestBody({ ...common(), receipt, changedPaths }), { flag: "wx" });
   } else if (command === "candidate-refresh-block") {
     need("build-spec", "base-sha", "head-sha", "run-url");
     const { candidateId, releaseSequence, sourceSnapshotSetHash } = await readJson(values["build-spec"]);

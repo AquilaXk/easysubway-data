@@ -11,6 +11,7 @@ import { gzipSync } from "node:zlib";
 import {
   admittedTopologySource,
   applyTopology,
+  readImmutableItxRideEdgeSetSha256,
   assertStoredTopology,
   bindItxTopologyEdgeProvenance,
   deriveTopology,
@@ -21,6 +22,7 @@ import {
 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { projectedItxDirectionalPairs } from "./build-datapack.mjs";
 import { buildItxCurrentTopologyAdmission } from "./build-itx-current-topology-admission.mjs";
+import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -968,6 +970,82 @@ test("OWNER-approved current source는 exact static topology input에 결속된�
     sqliteSha256: admitted.sqliteSha256,
     byteSize: admitted.byteSize,
   }, admittedTopologyInputs.get(reference.sha256));
+});
+
+function gatePassedPromotion(reference) {
+  return {
+    mode: "CURRENT_CANDIDATE_GATE_PASSED",
+    previousArtifactSha256: reference.promotion.previousArtifactSha256,
+    previousArtifactPath: reference.promotion.previousArtifactPath,
+    gate: {
+      policyId: "itx-promotion-gate-v1",
+      receiptPath: `tools/datapack/sources/${reference.artifactId}-promotion-gate.json`,
+      receiptSha256: "e".repeat(64),
+    },
+    gatedArtifactSha256: reference.sha256,
+    baselineArtifactPath: reference.promotion.previousArtifactPath,
+    baselineArtifactSha256: reference.promotion.previousArtifactSha256,
+  };
+}
+
+test("게이트 승격 current source는 승인 승격과 같은 static topology input 결속으로 검증된다", async (context) => {
+  {
+    const { contract, reference, source, completeness, sourceBytes, completenessBytes } = await trackedLegacyDocuments();
+    reference.promotion = gatePassedPromotion(reference);
+    withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+      contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
+    )));
+    const admitted = await admittedTopologySource(reference, source);
+    assert.deepEqual({
+      id: "capital", sha256: admitted.gzipSha256, sqliteSha256: admitted.sqliteSha256, byteSize: admitted.byteSize,
+    }, admittedTopologyInputs.get(reference.sha256));
+  }
+  const cases = [
+    ["approval url mixed in", (reference) => { reference.promotion.approvalUrl = "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-123"; }],
+    ["wrong gated sha", (reference) => { reference.promotion.gatedArtifactSha256 = "0".repeat(64); }],
+    ["wrong policy", (reference) => { reference.promotion.gate.policyId = "itx-promotion-gate-v2"; }],
+    ["wrong receipt path", (reference) => { reference.promotion.gate.receiptPath = "tools/datapack/sources/other-promotion-gate.json"; }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const { contract, reference, source, completeness, sourceBytes, completenessBytes } = await trackedLegacyDocuments();
+      reference.promotion = gatePassedPromotion(reference);
+      mutate(reference);
+      assert.throws(() => validateAdmittedSourceDocuments(
+        contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
+      ), /approval identity/);
+    });
+  }
+});
+
+// F1: 소비자가 게이트 승격을 구조 검사만으로 받지 않고 커밋된 영수증을 다시 계산해 대조한다.
+test("게이트 승격 source는 커밋된 영수증이 재계산으로 맞을 때만 읽히고, 영수증·정책·원천이 어긋나면 거부한다", async () => {
+  const fixture = await createGatedPromotionRoot();
+  try {
+    assert.match(await readImmutableItxRideEdgeSetSha256(fixture.root), /^[0-9a-f]{64}$/u);
+    // 영수증 내용이 바뀌면(contract의 receiptSha와 다르면) 읽히지 않는다.
+    const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+    receipt.policy.limits.lastDepartureShiftSeconds = 86_400;
+    await writeFile(fixture.receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+    await assert.rejects(readImmutableItxRideEdgeSetSha256(fixture.root), /ITX_PROMOTION_RECEIPT_SHA256_MISMATCH/u);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("게이트 승격 source의 영수증 정책이 커밋된 정책과 다르면 contract sha를 맞춰도 읽히지 않는다", async () => {
+  const fixture = await createGatedPromotionRoot();
+  try {
+    const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+    receipt.policy.limits.lastDepartureShiftSeconds = 86_400;
+    const bytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
+    await writeFile(fixture.receiptPath, bytes);
+    fixture.contract.sourceTimetableArtifact.promotion.gate.receiptSha256 = sha256(bytes);
+    await writeFile(fixture.contractPath, `${JSON.stringify(fixture.contract, null, 2)}\n`);
+    await assert.rejects(readImmutableItxRideEdgeSetSha256(fixture.root), /ITX_PROMOTION_RECEIPT_POLICY_MISMATCH/u);
+  } finally {
+    await fixture.cleanup();
+  }
 });
 
 test("OWNER-approved current source는 approval URL·approved SHA·mode를 exact 결속한다", async (context) => {

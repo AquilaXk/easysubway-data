@@ -227,6 +227,7 @@ test("every scheduled source refresh workflow reports its own failure as an issu
   assert.deepEqual(Object.keys(REFRESH_WORKFLOWS).sort(), [
     "current-capital-topology-refresh.yml",
     "current-capital-topology-registration.yml",
+    "itx-current-promotion.yml",
     "kric-current-facility-refresh.yml",
     "retained-gwangju-timetable-refresh.yml",
     "seoul-current-accessibility-refresh.yml",
@@ -243,7 +244,7 @@ test("every scheduled source refresh workflow reports its own failure as an issu
       : "Report refresh failure as an issue";
     const body = stepBody(yml, stepName);
     // #972 리뷰: 등록 workflow는 취소·시간 초과로 끝난 실행도 보고한다(PR 없는 claim이 조용히 남지 않게).
-    const condition = file === "current-capital-topology-registration.yml" ? String.raw`failure\(\) \|\| cancelled\(\)` : String.raw`failure\(\)`;
+    const condition = ["current-capital-topology-registration.yml", "itx-current-promotion.yml"].includes(file) ? String.raw`failure\(\) \|\| cancelled\(\)` : String.raw`failure\(\)`;
     assert.match(body, new RegExp(String.raw`\n        if: \$\{\{ ${condition} \}\}\n`, "u"), `${file} must report only on failure`);
     assert.match(body, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
     assert.ok(body.includes(
