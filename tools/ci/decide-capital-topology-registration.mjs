@@ -16,7 +16,8 @@
 // 이상은 REGISTRATION_* 코드로 실패해 실패 이슈로 드러난다. 이전 데이터로 대체하거나 성공으로 덮지 않는다.
 //
 // 사용: node tools/ci/decide-capital-topology-registration.mjs --inventory <file> --ledger <file> --prs <gh pr list JSON>
-//   --claims <git ls-remote 출력> --runs <gh run list JSON> --repository <owner/repo> --current-main-sha <sha> [--github-output <path>]
+//   --claims <git ls-remote 출력> --runs <gh run list JSON> --repository <owner/repo> --current-main-sha <sha>
+//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -65,10 +66,11 @@ function recoverableRunId(branch, runs, currentMainSha) {
   return runId;
 }
 
-export function decideCapitalTopologyRegistration({ inventory, ledger, pullRequests, claims, runs, repository, currentMainSha, now } = {}) {
+export function decideCapitalTopologyRegistration({ inventory, ledger, pullRequests, claims, runs, repository, currentMainSha, now, limits } = {}) {
   if (!Array.isArray(ledger) || !Array.isArray(pullRequests) || !Array.isArray(claims) || !Array.isArray(runs)
     || !validRepository(repository) || !SHA.test(currentMainSha ?? "")
-    || !(now instanceof Date) || Number.isNaN(now.getTime())) fail("REGISTRATION_INPUT_INVALID");
+    || !(now instanceof Date) || Number.isNaN(now.getTime())
+    || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1) fail("REGISTRATION_INPUT_INVALID");
 
   const { snapshotId, freshUntilMillis } = admission(inventory);
   const rows = ledger.filter((entry) => entry?.sourceId === SOURCE_ID);
@@ -77,6 +79,10 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
     return { state: "REGISTERED", snapshotId };
   }
   if (now.getTime() >= freshUntilMillis) fail("REGISTRATION_ADMISSION_EXPIRED", `${snapshotId} expired before it was registered`);
+
+  // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
+  if (pullRequests.length >= limits.pullRequests) fail("REGISTRATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
+  if (runs.length >= limits.runs) fail("REGISTRATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
 
   const own = ownPullRequestsByBranch(pullRequests, REGISTRATION_CLAIM_PREFIX, repository, (branch) => fail("REGISTRATION_PR_DUPLICATE", branch));
   const open = [...own.values()].filter(({ state }) => state === "OPEN");
@@ -103,7 +109,7 @@ export function decideCapitalTopologyRegistration({ inventory, ledger, pullReque
 function parseArgs(argv) {
   const keys = new Map([
     ["--inventory", "inventory"], ["--ledger", "ledger"], ["--prs", "prs"], ["--claims", "claims"], ["--runs", "runs"],
-    ["--repository", "repository"], ["--current-main-sha", "currentMainSha"], ["--github-output", "githubOutput"],
+    ["--repository", "repository"], ["--current-main-sha", "currentMainSha"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -111,7 +117,7 @@ function parseArgs(argv) {
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("REGISTRATION_INPUT_INVALID", `argument ${String(argv[index])}`);
     values[key] = argv[index + 1];
   }
-  for (const key of ["inventory", "ledger", "prs", "claims", "runs", "repository", "currentMainSha"]) {
+  for (const key of ["inventory", "ledger", "prs", "claims", "runs", "repository", "currentMainSha", "prLimit", "runLimit"]) {
     if (!Object.hasOwn(values, key)) fail("REGISTRATION_INPUT_INVALID", `missing --${key}`);
   }
   return values;
@@ -124,6 +130,7 @@ export async function main(argv, { now = new Date(), log = console.log } = {}) {
     inventory: await readJson(values.inventory), ledger: await readJson(values.ledger), pullRequests: await readJson(values.prs),
     claims: parseRegistrationClaims(await readFile(values.claims, "utf8")), runs: await readJson(values.runs),
     repository: values.repository, currentMainSha: values.currentMainSha, now,
+    limits: { pullRequests: Number(values.prLimit), runs: Number(values.runLimit) },
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {

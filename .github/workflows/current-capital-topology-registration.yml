@@ -80,7 +80,7 @@ jobs:
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --limit 1000 --json number,state,isDraft,headRefName,baseRefName,headRepository,isCrossRepository > "${decision_root}/prs.json"
           git ls-remote --heads origin "refs/heads/automation/456-capital-topology-registration-*" > "${decision_root}/claims.txt"
           gh run list --repo "${GITHUB_REPOSITORY}" --workflow current-capital-topology-registration.yml --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs.json"
-          node tools/ci/decide-capital-topology-registration.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --prs "${decision_root}/prs.json" --claims "${decision_root}/claims.txt" --runs "${decision_root}/runs.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/decide-capital-topology-registration.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --prs "${decision_root}/prs.json" --claims "${decision_root}/claims.txt" --runs "${decision_root}/runs.json" --repository "${GITHUB_REPOSITORY}" --current-main-sha "${main_sha}" --pr-limit 1000 --run-limit 200 --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
