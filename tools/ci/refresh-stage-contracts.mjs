@@ -19,7 +19,8 @@
 //   LEDGER_GATE     원장이 append-only가 아니거나(기존 행 변경·순서 변경) 새 행이 기대한 원천이 아니거나 원장 변화 정책(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)을 어겼다.
 //                   수도권 topology 단계는 원장이 한 글자도 바뀌면 안 된다.
 //   INVENTORY_GATE  inventory가 소유 항목·소유 필드 밖에서 바뀌었다(inventoryScopeViolations). 증거 전후 변화가 정책 한도를 넘었다.
-//   REFRESH_GATE    inventory 증거·snapshot 파일·원장 행·입력 파일이 서로 결속되지 않았다.
+//   REFRESH_GATE    inventory 증거·snapshot 파일·원장 행·입력 파일이 서로 결속되지 않았다. topology는 제거가 있거나(자동 경로 불허) snapshot 신원이 본문과 다르다.
+//   PACK_CONTENT    canonical pack이 출처 표식(sourceSnapshotId·updatedAt·lastVerifiedAt·reviewedAt) 밖에서 바뀌었거나 표식 값이 새 snapshot·증거 시각과 다르다.
 import { createHash } from "node:crypto";
 
 import { compareCapitalRouteTopologies, requireCurrentSourceSeparatedCapitalTopology } from "../datapack/collect-capital-route-topology.mjs";
@@ -330,6 +331,82 @@ function verifyGwangju({ spec, rows, newLedgerRows, headInventory, violate }) {
   bind(violate, evidence.observedAt === (ledgerRow?.capturedAt ?? null), "보관 증거 observedAt이 새 원장 행의 capturedAt과 다르다");
 }
 
+
+// ---------------------------------------------------------------------------
+// canonical pack: base·head 구조 diff(리뷰 F1)
+// ---------------------------------------------------------------------------
+export const PACK_STAMP_KEYS = Object.freeze(["sourceSnapshotId", "updatedAt", "lastVerifiedAt", "reviewedAt"]);
+const PACK_TIME_KEYS = Object.freeze(["updatedAt", "lastVerifiedAt", "reviewedAt"]);
+
+/**
+ * 갱신이 pack에서 바꾸는 것은 출처 표식 키 4개뿐이다(기록된 갱신 커밋 ab90519c9 등). base와 head를 구조로 비교해
+ * 표식 밖의 키·값·키 구성·배열 길이와 순서가 한 글자라도 다르면 위반으로 모은다. 표식 값도 믿지 않는다.
+ *  - sourceSnapshotId: 직전 snapshot id에서 같은 원천의 새 snapshot id로 바뀐 것이어야 한다(원천마다 쌍이 정해져 있다).
+ *  - updatedAt·lastVerifiedAt·reviewedAt: 그 원천의 증거 시각(capturedAt)과 정확히 같아야 한다.
+ *  - sourceInventory 항목은 snapshot id를 갖지 않으므로 항목 id가 소유 원천이고 updatedAt만 그 원천의 증거 시각으로 바뀔 수 있다.
+ * @param {{ base: unknown, head: unknown, sources: { id: string, before: string, after: string, at: string }[] }} input
+ * @returns {string[]} 위반 사유(없으면 빈 배열)
+ */
+export function packContentViolations({ base, head, sources }) {
+  const problems = [];
+  const problem = (where, detail) => { if (problems.length < 50) problems.push(`${where}: ${detail}`); };
+  const pairs = sources.map(({ before, after, at }) => ({ before, after, at }));
+  const byInventoryId = new Map(sources.map((source) => [source.id, source]));
+  const pathOf = (parts) => parts.join(".");
+
+  const walk = (x, y, parts) => {
+    if (x === y) return;
+    const xArray = Array.isArray(x);
+    const yArray = Array.isArray(y);
+    if (xArray || yArray) {
+      if (!xArray || !yArray) { problem(pathOf(parts), "배열이 아닌 값으로 바뀌었다"); return; }
+      if (x.length !== y.length) { problem(pathOf(parts), `배열 길이가 ${x.length}에서 ${y.length}로 바뀌었다`); return; }
+      for (let index = 0; index < x.length; index += 1) walk(x[index], y[index], [...parts, `[${index}]`]);
+      return;
+    }
+    if (isObject(x) && isObject(y)) {
+      const xKeys = Object.keys(x);
+      const yKeys = Object.keys(y);
+      if (xKeys.length !== yKeys.length || xKeys.some((key) => !Object.hasOwn(y, key))) { problem(pathOf(parts), "키 구성이 바뀌었다"); return; }
+      const stamps = [];
+      for (const key of xKeys) {
+        if (PACK_STAMP_KEYS.includes(key) && (typeof x[key] !== "object" || x[key] === null) && (typeof y[key] !== "object" || y[key] === null)) {
+          if (x[key] !== y[key]) stamps.push(key);
+        } else {
+          walk(x[key], y[key], [...parts, key]);
+        }
+      }
+      if (stamps.length > 0) checkStamps(x, y, stamps, parts);
+      return;
+    }
+    // 원시값이 다르거나 형이 바뀌었다. 표식 키는 위에서 따로 처리했으므로 여기 오면 표식 밖이다.
+    problem(pathOf(parts), "표식 키가 아닌 값이 바뀌었다");
+  };
+
+  const checkStamps = (x, y, stamps, parts) => {
+    const where = pathOf(parts);
+    if (stamps.some((key) => typeof y[key] !== "string" || typeof x[key] !== "string")) { problem(where, "표식 값이 문자열이 아니다"); return; }
+    let at;
+    if (stamps.includes("sourceSnapshotId")) {
+      const pair = pairs.find(({ before, after }) => before === x.sourceSnapshotId && after === y.sourceSnapshotId);
+      if (!pair) { problem(where, `sourceSnapshotId가 소유 원천의 직전→새 snapshot(${y.sourceSnapshotId})로 바뀐 것이 아니다`); return; }
+      at = pair.at;
+    } else if (typeof y.id === "string" && byInventoryId.has(y.id) && stamps.every((key) => key === "updatedAt")) {
+      at = byInventoryId.get(y.id).at;
+    } else {
+      problem(where, `표식(${stamps.join(", ")})이 새 snapshot을 가리키지 않는 객체에서 바뀌었다`);
+      return;
+    }
+    for (const key of stamps.filter((entry) => PACK_TIME_KEYS.includes(entry))) {
+      if (y[key] !== at) problem(where, `${key}(${y[key]})가 증거 시각(${at})과 다르다`);
+    }
+  };
+
+  if (!isObject(base) || !isObject(head)) return ["pack이 객체가 아니다"];
+  walk(base, head, ["$"]);
+  return problems;
+}
+
 const countOf = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : null);
 
 /** 수도권 topology: 새 snapshot 파일 네 개와 재검증 기록, inventory 증거가 서로 결속되고 직전 현재 snapshot 대비 변화가 정책 한도 안이다. */
@@ -416,6 +493,7 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
     after: { snapshotId: stationAfter.snapshotId, rawSha256: stationAfter.rawSha256, contentSha256: stationAfter.contentSha256, rows: stationAfter.edgeCount, coverage: stationAfter.stationCount },
   }));
 
+  const packSources = [{ id: "incheon-transit-station-info", before: stationBefore.snapshotId, after: stationAfter.snapshotId, at: stationAfter.capturedAt }];
   for (const [sourceId, linePath] of Object.entries(linePaths)) {
     const before = entryOf(baseInventory, sourceId)?.scheduleAdmissionEvidence;
     const after = entryOf(headInventory, sourceId)?.scheduleAdmissionEvidence;
@@ -426,11 +504,20 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
     if (lineDoc !== null) bind(violate, lineDoc.sourceId === sourceId && lineDoc.rawSha256 === after.rawSha256, `${sourceId}: snapshot 파일의 sourceId·rawSha256이 증거와 다르다`);
     if ([before.rowCount, before.departureCount, after.rowCount, after.departureCount].some((value) => countOf(value) === null)
       || !HEX64.test(after.rawSha256 ?? "") || !HEX64.test(after.rowsSha256 ?? "")) { violate("REFRESH_GATE", `${sourceId}: 시간표 증거의 수치·sha 형식이 다르다`); continue; }
+    packSources.push({ id: sourceId, before: before.snapshotId, after: after.snapshotId, at: after.capturedAt });
     rows.push(evidenceDeltaRow({
       sourceId, policy, violate, identityChanged: before.rawSha256 !== after.rawSha256 || before.rowsSha256 !== after.rowsSha256,
       before: { snapshotId: before.snapshotId, rawSha256: before.rawSha256, contentSha256: before.rowsSha256, rows: before.rowCount, coverage: before.departureCount },
       after: { snapshotId: after.snapshotId, rawSha256: after.rawSha256, contentSha256: after.rowsSha256, rows: after.rowCount, coverage: after.departureCount },
     }));
+  }
+  try {
+    const basePack = JSON.parse(await files.readBase(baseSha, CANONICAL_PACK_PATH));
+    const headPack = JSON.parse(await files.readTree(CANONICAL_PACK_PATH));
+    const problems = packContentViolations({ base: basePack, head: headPack, sources: packSources });
+    if (problems.length > 0) violate("PACK_CONTENT", `canonical pack이 출처 표식 밖에서 바뀌었거나 표식 값이 새 snapshot과 다르다(${problems.length}건): ${problems.slice(0, 6).join(" | ")}`);
+  } catch (error) {
+    violate("PACK_CONTENT", `canonical pack을 비교하지 못했다: ${message(error)}`);
   }
   return rows;
 }
