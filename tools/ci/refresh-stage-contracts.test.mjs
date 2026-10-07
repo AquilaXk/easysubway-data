@@ -434,3 +434,66 @@ test("F2 경계: 등록 workflow의 코드가 snapshot 파일 바이트의 sha25
   assert.match(contract, /원본 응답의 출처는 병합 뒤 등록 workflow가 OCI 원본으로 확인/u, "계약 주석이 경계를 밝힌다");
   assert.match(contract, /requireCurrentSourceSeparatedCapitalTopology/u, "신원은 생산자의 검증 함수로 다시 계산한다");
 });
+
+// ---------------------------------------------------------------------------
+// 리뷰 F4: topology 자동 경로는 제거를 허용하지 않는다. 직전 역·간선 집합은 새 집합의 부분집합이어야 하고(항목 식별자 기준),
+// 추가·수정은 capital-route-topology 전용 override의 작은 한도(간선 2%)까지만 허용한다. 제거나 한도 초과는 사람 경로(#926 보고)다.
+// ---------------------------------------------------------------------------
+const addStation = (lineIndex, name) => (lines) => {
+  const line = lines[lineIndex];
+  const last = line.scope.at(-1);
+  line.scope.push({ stationName: name, sequence: last.sequence + 1 });
+  line.edges.push({ fromStationName: last.stationName, toStationName: name, distanceMeters: 900, durationSeconds: 0, branchNames: [] });
+};
+const details = (result) => result.violations.map(({ detail }) => detail).join("\n");
+
+test("F4: 정책 파일에 capital-route-topology 전용 override가 있고 다른 원천의 한도는 그대로다", () => {
+  assert.deepEqual(POLICY.sourceOverrides, { "capital-route-topology": { maxRowDeltaRatio: 0.02 } });
+  assert.equal(POLICY.maxRowDeltaRatio, 0.05);
+  assert.equal(POLICY.allowContentChange, true);
+  assert.equal(POLICY.allowCoverageDecrease, false);
+});
+
+test("F4 반증: 간선이나 역이 하나라도 제거되면 REFRESH_GATE(정책 한도와 무관하게 사람 경로)", async () => {
+  const loose = { ...POLICY, maxRowDeltaRatio: 1, sourceOverrides: {} };
+  for (const run of runsOf("capital-topology-refresh")) {
+    const edgeRemoved = (lines) => { lines[3].edges.pop(); };
+    const stationRemoved = (lines) => { lines[2].scope.pop(); lines[2].edges.pop(); };
+    for (const [label, mutate] of [["간선 제거", edgeRemoved], ["역·간선 제거", stationRemoved]]) {
+      for (const policy of [POLICY, loose]) {
+        const result = await evaluate(run, { mutateCapitalLines: mutate }, { policy });
+        assert.ok(codes(result).includes("REFRESH_GATE"), `${run.label} ${label}`);
+        assert.match(details(result), /제거/u, `${run.label} ${label}`);
+      }
+    }
+    // 같은 수로 교체해도(하나 빼고 하나 더하면 개수는 그대로) 제거로 잡힌다.
+    const swapped = (lines) => { lines[0].edges.pop(); addStation(5, "교체로추가된역")(lines); };
+    const swap = await evaluate(run, { mutateCapitalLines: swapped });
+    assert.equal(swap.rows.find(({ sourceId }) => sourceId === "capital-route-topology").rowDelta, 0, `${run.label}: 개수는 같다`);
+    assert.match(details(swap), /제거/u, `${run.label}: 같은 수 교체`);
+    // 같은 노선 안에서 간선 끝 역을 바꿔 치환해도 제거다.
+    const rewired = (lines) => { lines[1].edges[2] = { ...lines[1].edges[2], toStationName: "다른역" }; lines[1].scope[3] = { ...lines[1].scope[3], stationName: "다른역" }; };
+    const rewire = await evaluate(run, { mutateCapitalLines: rewired });
+    assert.match(details(rewire), /제거/u, `${run.label}: 같은 노선 치환`);
+  }
+});
+
+test("F4: 간선 추가는 2% 이내만 자동 통과하고 넘으면 SOURCE_COUNT_DELTA(수정된 간선도 같은 한도에 센다)", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const one = await evaluate(run, { mutateCapitalLines: addStation(0, "새역1") });
+    assert.deepEqual(one.violations, [], `${run.label}: 66개 중 1개(1.5%)는 통과`);
+    const row = one.rows.find(({ sourceId }) => sourceId === "capital-route-topology");
+    assert.deepEqual([row.rowDelta, row.diffStatus], [1, "CHANGED"], run.label);
+    const two = await evaluate(run, { mutateCapitalLines: (lines) => { addStation(0, "새역1")(lines); addStation(1, "새역2")(lines); } });
+    assert.match(details(two), /SOURCE_COUNT_DELTA: .*rowDelta 2 \(3\.0%\) exceeds 2\.0%/u, `${run.label}: 2개(3.0%)는 한도 초과`);
+    const modifiedOne = await evaluate(run, { mutateCapitalLines: (lines) => { lines[0].edges[0].distanceMeters += 10; } });
+    assert.deepEqual(modifiedOne.violations, [], `${run.label}: 수정 1개는 통과`);
+    const modifiedTwo = await evaluate(run, { mutateCapitalLines: (lines) => { lines[0].edges[0].distanceMeters += 10; lines[1].edges[0].distanceMeters += 10; } });
+    assert.match(details(modifiedTwo), /SOURCE_COUNT_DELTA: .*changed edges 2 \(3\.0%\) exceed 2\.0%/u, `${run.label}: 수정 2개는 한도 초과`);
+    const mixed = await evaluate(run, { mutateCapitalLines: (lines) => { addStation(0, "새역1")(lines); lines[1].edges[0].distanceMeters += 10; } });
+    assert.match(details(mixed), /changed edges 2/u, `${run.label}: 추가 + 수정 합산`);
+    // 전용 override가 아니라 일반 한도(5%)였다면 통과했을 변화다.
+    const generic = await evaluate(run, { mutateCapitalLines: (lines) => { addStation(0, "새역1")(lines); addStation(1, "새역2")(lines); } }, { policy: { ...POLICY, sourceOverrides: {} } });
+    assert.deepEqual(generic.violations, [], `${run.label}: override가 없으면 5% 한도라 통과한다(override가 실제로 쓰인다)`);
+  }
+});
