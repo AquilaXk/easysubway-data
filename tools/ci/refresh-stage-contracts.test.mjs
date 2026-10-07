@@ -604,3 +604,15 @@ test("F3 반증: Seoul 입력 파일의 evidenceHash가 새 snapshot에서 다�
   const control = await evaluate(run);
   assert.deepEqual(control.violations, [], "대조군: 기록된 실제 입력은 통과한다");
 });
+
+// ---------------------------------------------------------------------------
+// 리뷰 F5: 계약 주석이 실제 동작과 같아야 한다. 허용 목록 밖 경로(reviewed pack·ITX 입력 등)는 PR이 열린 뒤 사람 경로로 가는 것이 아니라
+// emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다(브랜치도 PR도 만들어지지 않는다).
+// ---------------------------------------------------------------------------
+test("F5: 계약 주석이 허용 밖 경로의 실제 동작(push 전 실패, #926 보고)을 설명하고 사람 경로로 간다고 말하지 않는다", async () => {
+  const text = await readFile(new URL("./refresh-stage-contracts.mjs", import.meta.url), "utf8");
+  const header = text.slice(0, text.indexOf("import "));
+  assert.doesNotMatch(header, /workflow가 만들 수는 있지만 자동 병합 대상이 아니라 사람 경로로 보낸다/u);
+  assert.match(header, /관측된 적 없는 경로\(reviewed pack, ITX 입력\)는 허용하지 않는다\. 이런 변경은 emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다/u);
+  assert.match(header, /브랜치도 PR도 만들어지지 않는다/u);
+});

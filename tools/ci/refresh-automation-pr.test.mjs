@@ -178,6 +178,9 @@ test("emitter 반증: 허용 밖 변경·소유하지 않은 항목·원장 변�
     ["capital-topology-refresh", { mutateFiles: (head) => { head.set(LEDGER_PATH, "[]"); } }, /허용 밖 경로/u],
     ["kric-facility-refresh", { mutateFiles: (head) => { head.set(".github/workflows/ci.yml", "name: x\n"); } }, /허용 밖 경로/u],
     ["seoul-accessibility-refresh", { mutateFiles: (head) => { head.set("tools/datapack/source-governance-policy.json", "{}\n"); } }, /허용 밖 경로/u],
+    // 리뷰 F5: 관측된 적 없는 경로는 사람 경로가 아니라 push 전 거부(본문 없음, workflow 실패)다.
+    ["capital-topology-refresh", { mutateFiles: (head) => { head.set("tools/datapack/release/capital-production-reviewed-pack.json", "{}\n"); } }, /AUTOMATION_PR_PATHS: 허용 밖 경로: tools\/datapack\/release\/capital-production-reviewed-pack\.json/u],
+    ["capital-topology-refresh", { mutateFiles: (head) => { head.set("tools/datapack/itx-current-network-edge-admission-20261007.json", "{}\n"); } }, /AUTOMATION_PR_PATHS: 허용 밖 경로: tools\/datapack\/itx-current-network-edge-admission-20261007\.json/u],
   ];
   for (const [stage, mutations, pattern] of cases) {
     const run = runsOf(stage)[0];
