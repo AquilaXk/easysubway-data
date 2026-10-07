@@ -13,6 +13,8 @@ import {
   HEADER_TIMEOUT_MS,
   KRIC_CURRENT_STATION_LINE_FILE_URL,
   KRIC_NATIONWIDE_TIMETABLE_FILE_URL,
+  MIN_BODY_THROUGHPUT_BYTES_PER_SECOND,
+  OBSERVED_FILE_BYTES,
   parseKricCurrentStationLineWorkbook,
 } from "./collect-kric-nationwide-timetable-file.mjs";
 
@@ -159,7 +161,16 @@ test("#454 bounds streamed bytes before buffering and requires the XLSX central-
 // 중단 오류는 BODY로 바뀌어 원인도 가려졌다. 연결·헤더 한도와 본문 한도를 나누고 본문 시간 초과는 TIMEOUT으로 드러낸다.
 test("#995 timeout defaults separate the connection/header limit from the body transfer limit", () => {
   assert.equal(HEADER_TIMEOUT_MS, 30_000);
-  assert.ok(BODY_TIMEOUT_MS >= 5 * 60_000, "17.9MB 본문을 느린 서버에서도 받을 수 있어야 한다");
+  assert.equal(BODY_TIMEOUT_MS, 5 * 60_000);
+});
+
+// 5분의 근거: 관측한 파일 크기를 최소 처리량으로 받는 데 걸리는 시간을 분 단위로 올림한 값이다.
+// 실패한 두 run은 30초 안에 17.9MB를 받지 못했다(runner 처리량 < 약 0.6MB/s). 하한은 그 상한의 10분의 1(60KB/s)로 둔다.
+test("#995 the body limit is derived from the observed size and a minimum throughput floor", () => {
+  assert.equal(OBSERVED_FILE_BYTES, 17_949_564);
+  assert.equal(MIN_BODY_THROUGHPUT_BYTES_PER_SECOND, 60_000);
+  assert.ok(BODY_TIMEOUT_MS / 1000 * MIN_BODY_THROUGHPUT_BYTES_PER_SECOND >= OBSERVED_FILE_BYTES, "하한 처리량으로도 관측한 크기를 받을 수 있다");
+  assert.ok(BODY_TIMEOUT_MS / 1000 * MIN_BODY_THROUGHPUT_BYTES_PER_SECOND - OBSERVED_FILE_BYTES < 60 * MIN_BODY_THROUGHPUT_BYTES_PER_SECOND, "분 단위 올림 이상으로 느슨하지 않다");
 });
 
 test("#995 a body that takes longer than the header limit still completes within the body limit", { timeout: 5000 }, async () => {
