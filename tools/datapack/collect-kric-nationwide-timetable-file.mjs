@@ -9,9 +9,13 @@ export const KRIC_NATIONWIDE_TIMETABLE_FILE_URL = "https://data.kric.go.kr/rips/
 export const KRIC_CURRENT_STATION_LINE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1";
 export const DEFAULT_MAXIMUM_BYTES = 128 * 1024 * 1024;
 // #995: 연결·헤더 한도와 본문 수신 한도를 나눈다. 약 17.9MB 본문이 느린 서버에서 30초를 넘겨도 받을 수 있어야 한다.
+// 본문 한도의 근거: 관측한 파일 크기(OBSERVED_FILE_BYTES, 2026-10-07 실측 17,949,564 bytes)를 최소 처리량(60KB/s)으로 받는 시간을 분 단위로 올림한 값(5분)이다.
+// 504 run 37399282636과 앞선 37393545518은 30초 안에 이 파일을 받지 못했다(runner 처리량 < 약 0.6MB/s, 같은 파일을 이 머신에서는 15.0초에 받았다).
+// 하한은 그 상한의 10분의 1이다. 하한 아래로 느려지면 TIMEOUT으로 드러난다(재시도·대체 없음).
 export const HEADER_TIMEOUT_MS = 30_000;
-export const BODY_TIMEOUT_MS = 5 * 60_000;
-
+export const OBSERVED_FILE_BYTES = 17_949_564;
+export const MIN_BODY_THROUGHPUT_BYTES_PER_SECOND = 60_000;
+export const BODY_TIMEOUT_MS = Math.ceil(OBSERVED_FILE_BYTES / MIN_BODY_THROUGHPUT_BYTES_PER_SECOND / 60) * 60_000;
 const TIMETABLE_PROFILE = Object.freeze({
   receiptArtifactKind: "kric-nationwide-timetable-file-receipt",
   sourceId: "kric-nationwide-timetable-file",
