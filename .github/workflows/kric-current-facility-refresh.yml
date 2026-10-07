@@ -51,25 +51,41 @@ jobs:
           set -euo pipefail
           prs="${RUNNER_TEMP}/kric-current-facility-refresh/open-prs.json"
           claims="${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
-          claim_refs="${RUNNER_TEMP}/kric-current-facility-refresh/claim-refs.txt"
+          claim_evidence="${RUNNER_TEMP}/kric-current-facility-refresh/claim-evidence.json"
           git ls-remote --heads origin \
-            "refs/heads/automation/629-kric-facility-refresh-*" > "${claim_refs}"
-          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claim_refs}" --pr-limit 1000 --output "${prs}"
-          # decision은 claim head subject로 닫힌(Abandon) claim을 회수 대상에서 뺀다.
-          while IFS=$'\t' read -r claim_head claim_ref; do
-            [[ -n "${claim_head}" ]] || continue
-            git fetch --no-tags origin "${claim_ref}"
-            claim_subject="$(git log -1 --format=%s "${claim_head}")"
-            printf '%s\t%s\t%s\n' "${claim_head}" "${claim_ref}" "${claim_subject}"
-          done < "${claim_refs}" > "${claims}"
+            "refs/heads/automation/629-kric-facility-refresh-*" > "${claims}"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --pr-limit 1000 --output "${prs}"
+          # #995: PR 없는 claim은 DUE 여부와 무관하게 만든 run과 게시 증거(출력 커밋·receipt artifact)로 판정한다.
+          # 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다). 닫힌(Abandon) claim도 같은 증거로 정리 대상이 된다.
+          node tools/ci/claim-orphans.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${claims}" --prs "${prs}" --output "${claim_evidence}"
           node tools/ci/decide-current-kric-facility-refresh.mjs \
             --inventory tools/datapack/source-inventory.json \
             --policy release/product-gates/datapack-freshness-sla.json \
             --prs "${prs}" \
             --claims "${claims}" \
+            --claim-evidence "${claim_evidence}" \
             --repository "${GITHUB_REPOSITORY}" \
             --output "${KRIC_REFRESH_DECISION}" \
             --github-output "${GITHUB_OUTPUT}"
+
+      - name: KRIC current facility refresh / Remove abandoned claims named by the decision
+        if: ${{ steps.decision.outputs.cleanup_claims != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_CLAIMS: ${{ steps.decision.outputs.cleanup_claims }}
+        run: |
+          set -euo pipefail
+          # #995: 판정이 정리 대상으로 알린 claim만 지운다(만든 run이 끝났고 receipt 없는 빈 claim뿐인 고아, 닫힌 Abandon claim).
+          # 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
+          gh auth setup-git
+          node tools/ci/remove-orphan-claims.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/kric-current-facility-refresh/claims.txt"
+
+      - name: KRIC current facility refresh / Note refresh waiting on a running producer
+        if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
+        env:
+          CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
+        run: |
+          echo "::notice title=KRIC facility refresh::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
 
       - name: KRIC current facility refresh / Mint App token for the open refresh pull request
         id: app-token-open
@@ -259,6 +275,9 @@ jobs:
                 artifacts,
               }));
             ')"
+            # #995: 이 Abandon 경로는 판정이 보존 artifact를 AVAILABLE로 본 뒤 이 step까지 사이에 artifact가 만료·삭제된 경우에만 닿는다.
+            # 판정은 만료됐거나 없는 artifact를 복구 대상에서 빼고(게시 step이 시작됐으면 이상으로 실패), 그 밖에는 정리 대상으로 알린다.
+            # Abandon 커밋이 남은 claim은 다음 판정이 정리 대상으로 보고하고 지운다.
             if [[ "${evidence_state}" == "EXPIRED" ]]; then
               # 보존 증거가 만료돼 회수할 수 없는 claim이다. 성공으로 넘기지 않고 claim을 닫은 기록을 남긴 뒤 실패한다.
               # 다음 run의 decision은 이 claim을 회수 대상에서 빼고 신선도 상태(DUE/EXPIRED)로 새로 판정한다.
@@ -368,19 +387,28 @@ jobs:
             exit 1
           fi
 
-      - name: KRIC current facility refresh / Collect and bind current snapshot
+      - name: KRIC current facility refresh / Collect current snapshot
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
+          # #995: 준비와 공급자 수집까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
           [[ "$(git rev-parse HEAD)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
             echo "KRIC refresh operation is not running from its claimed main" >&2
             exit 1
           }
           node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}" --expected-facility-head-sha "${KRIC_REFRESH_MAIN_SHA}"
           node tools/datapack/run-current-capital-facility-operation.mjs --phase collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
+
+      - name: KRIC current facility refresh / Publish and register current snapshot
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          # #995: finalize phase가 raw object를 OCI에 게시하고 receipt를 쓴 뒤 등록한다. 이 step이 시작되면 게시됐을 수 있다(claim 정리가 이 step 이름으로 판정한다: claim-orphans.mjs).
           node tools/datapack/run-current-capital-facility-operation.mjs --phase finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
 

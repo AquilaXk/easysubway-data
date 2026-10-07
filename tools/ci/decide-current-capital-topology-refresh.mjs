@@ -4,6 +4,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { requiresCurrentCapitalTopologyAdmission } from "../datapack/rebind-capital-route-map-admissions.mjs";
+import { planUnboundClaims } from "./claim-orphans.mjs";
+
+const WORKFLOW = "current-capital-topology-refresh.yml";
 
 const BRANCH = /^automation\/636-current-topology-refresh-[0-9]+$/u;
 const SHA = /^[0-9a-f]{40}$/u;
@@ -122,11 +125,28 @@ function availableTopologyRefreshClaims(prs, claims) {
 
 export function currentCapitalTopologyPreflight({ now = new Date(), jobWindowMinutes = 45, existingPaths = [], itxRefreshRequired = true } = {}) { const start = now instanceof Date ? now.getTime() : NaN; if (!Number.isFinite(start) || !Number.isInteger(jobWindowMinutes) || jobWindowMinutes < 1 || !Array.isArray(existingPaths) || existingPaths.some((item) => typeof item !== "string") || typeof itxRefreshRequired !== "boolean") throw new Error("current topology preflight is invalid"); const dates = new Set(); for (let point = start; point <= start + jobWindowMinutes * 60_000; point += 60_000) { const date = new Date(point); dates.add(date.toISOString().slice(0, 10).replaceAll("-", "")); dates.add(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date).filter(({ type }) => type !== "literal").map(({ value }) => value).join("")); } const candidates = [...dates].flatMap((stamp) => [`tools/datapack/sources/capital-route-topology-${stamp}.json`, `tools/datapack/sources/incheon-transit-station-info-${stamp}.json`, `tools/datapack/sources/incheon-line1-train-timetable-${stamp}.json`, `tools/datapack/sources/incheon-line2-train-timetable-${stamp}.json`, ...(itxRefreshRequired ? [`tools/datapack/itx-current-network-edge-admission-${stamp}.json`] : []), `tools/datapack/release/capital-topology-reverification-${stamp}.json`]); const conflicts = candidates.filter((candidate) => existingPaths.includes(candidate)); return { state: conflicts.length ? "WAIT_IMMUTABLE_IDENTITY" : "CLEAR", conflicts }; }
 
-export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candidatePath, policyPath, prsPath, claimsPath, repositoryRoot = process.cwd(), repository, currentMainSha, now = new Date(), itxCollectedToday = false } = {}) {
+function dueStateOf(current, freshUntil, threshold) {
+  if (current >= freshUntil) return "EXPIRED";
+  return current >= freshUntil - threshold ? "DUE" : "NOT_DUE";
+}
+const byText = (left, right) => (left < right ? -1 : Number(left > right));
+// #995: 도는 run의 claim은 판정 밖에서 기다린다. 나머지 claim 중 PR 없는 stale claim은 빈 claim이면 정리 대상이고 출력이 있으면 이상이다.
+function settleTopologyClaims({ claims, prs, plan }) {
+  const settled = claims.filter(({ branch }) => !plan.active.includes(branch));
+  const open = openTopologyRefreshPrs(prs, settled);
+  const stale = settled.filter((claim) => !claim.current && !prs.some(({ headRefName }) => headRefName === claim.branch));
+  const carrying = stale.filter(({ branch }) => plan.recoverable.includes(branch));
+  if (carrying.length > 0) throw new Error(`stale current topology refresh claim carries output: ${carrying.map(({ branch }) => branch).join(", ")}`);
+  const available = availableTopologyRefreshClaims(prs, settled);
+  if (plan.active.length + available.length > 1) throw new Error("duplicate current topology refresh claims exist");
+  return { open, available, cleanupClaims: stale.map(({ branch }) => branch).sort(byText) };
+}
+
+export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candidatePath, policyPath, prsPath, claimsPath, claimEvidencePath, repositoryRoot = process.cwd(), repository, currentMainSha, now = new Date(), itxCollectedToday = false } = {}) {
   if (typeof itxCollectedToday !== "boolean") throw new Error("decision input is invalid");
-  const [inventoryBytes, candidateBytes, policyBytes, prsBytes, claimsBytes] = await Promise.all([
+  const [inventoryBytes, candidateBytes, policyBytes, prsBytes, claimsBytes, evidenceBytes] = await Promise.all([
     readFile(path.resolve(inventoryPath)), readFile(path.resolve(candidatePath)), readFile(path.resolve(policyPath)),
-    readFile(path.resolve(prsPath)), readFile(path.resolve(claimsPath)),
+    readFile(path.resolve(prsPath)), readFile(path.resolve(claimsPath)), readFile(path.resolve(claimEvidencePath)),
   ]);
   const policy = object(json(policyBytes, "freshness policy"), "freshness policy");
   const alertBeforePackExpiry = policy.monitoring?.alertBeforePackExpiry;
@@ -138,20 +158,50 @@ export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candi
   const component = { alertBeforePackExpiry, itxFreshUntil: itx.freshUntil, itxRefreshRequired: current >= itx.reusableExpiry - threshold };
   const prs = ownedPrs(json(prsBytes, "pull requests"), repository);
   const claims = claimEvidence(json(claimsBytes, "current topology refresh claims"), currentMainSha);
-  const open = openTopologyRefreshPrs(prs, claims);
-  if (open.length === 1) return { state: "OPEN_PR", ...component };
-  const available = availableTopologyRefreshClaims(prs, claims);
+  // #995: PR 없는 claim은 만든 run과 게시 증거로 가른다. 도는 run의 claim은 기다리고(재사용·복구하지 않는다), main이 움직여 current가 아닌 claim은
+  // 예전에는 어떤 판정도 보지 않아 다른 자동화를 영원히 막았다. 빈 claim뿐이면 정리 대상(보고 뒤 삭제)이고, 출력이 있으면 지우지 않고 이상으로 드러낸다.
+  const plan = planUnboundClaims({
+    workflowFile: WORKFLOW, repository, claimBranches: claims.map(({ branch }) => branch), pullRequests: prs, evidence: json(evidenceBytes, "claim evidence"),
+  });
+  const { open, available, cleanupClaims } = settleTopologyClaims({ claims, prs, plan });
+  if (open.length === 1) return { state: "OPEN_PR", ...component, cleanupClaims };
+  if (plan.active.length === 1) return { state: "CLAIM_IN_PROGRESS", ...component, branch: plan.active[0], cleanupClaims };
   if (available.length === 1) {
     const reuse = available[0].commitCount === 1;
     // REUSE_CLAIM은 ITX 공급자를 다시 부르는 경로다. 같은 KST 날 이미 수집했다면 대기한다(#977). RECOVER_CLAIM은 공급자를 부르지 않는다.
-    if (reuse && itxCollectedToday && component.itxRefreshRequired) return { state: "WAIT_ITX_COLLECTED_TODAY", ...component, branch: available[0].branch };
-    return { state: reuse ? "REUSE_CLAIM" : "RECOVER_CLAIM", ...component, branch: available[0].branch };
+    if (reuse && itxCollectedToday && component.itxRefreshRequired) return { state: "WAIT_ITX_COLLECTED_TODAY", ...component, branch: available[0].branch, cleanupClaims };
+    return { state: reuse ? "REUSE_CLAIM" : "RECOVER_CLAIM", ...component, branch: available[0].branch, cleanupClaims };
   }
-  const state = current >= freshUntil ? "EXPIRED" : current >= freshUntil - threshold ? "DUE" : "NOT_DUE";
+  const state = dueStateOf(current, freshUntil, threshold);
   // 같은 KST 날 다른 workflow(ITX 승격·수동 수집)가 이미 ITX 공급자를 불렀고 이번 갱신도 ITX 수집을 요구하면, 오늘은 수집할 수 없다. 이상이 아니라 대기다(#977).
-  if (itxCollectedToday && component.itxRefreshRequired && state !== "NOT_DUE") return { state: "WAIT_ITX_COLLECTED_TODAY", ...component };
-  return { state, ...component };
+  if (itxCollectedToday && component.itxRefreshRequired && state !== "NOT_DUE") return { state: "WAIT_ITX_COLLECTED_TODAY", ...component, cleanupClaims };
+  return { state, ...component, cleanupClaims };
 }
-export async function runCurrentCapitalTopologyRefreshDecision({ outputPath, githubOutputPath, ...input } = {}) { const result = await decideCurrentCapitalTopologyRefresh(input); await Promise.all([writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }), writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\nitx_fresh_until=${result.itxFreshUntil ?? ""}\nitx_refresh_required=${result.itxRefreshRequired ?? ""}\n`, { flag: "a" })]); return result; }
-function args(argv) { const result = {}; for (let i = 0; i < argv.length; i += 2) { const key = argv[i]; if (!key?.startsWith("--") || result[key.slice(2)] !== undefined || !argv[i + 1]) throw new Error("decision arguments are invalid"); result[key.slice(2)] = argv[i + 1]; } if (Object.keys(result).some((key) => !["inventory", "candidate", "policy", "prs", "claims", "repository", "current-main-sha", "output", "github-output", "itx-collected-today"].includes(key))) throw new Error("decision arguments are invalid"); return result; }
-if (process.argv[1] === new URL(import.meta.url).pathname) { const value = args(process.argv.slice(2)); runCurrentCapitalTopologyRefreshDecision({ inventoryPath: value.inventory, candidatePath: value.candidate, policyPath: value.policy, prsPath: value.prs, claimsPath: value.claims, repository: value.repository, currentMainSha: value["current-main-sha"], outputPath: value.output, githubOutputPath: value["github-output"], itxCollectedToday: value["itx-collected-today"] === undefined ? false : value["itx-collected-today"] === "true" ? true : value["itx-collected-today"] === "false" ? false : undefined }).catch((error) => { console.error(error.message); process.exitCode = 1; }); }
+export async function runCurrentCapitalTopologyRefreshDecision({ outputPath, githubOutputPath, ...input } = {}) { const result = await decideCurrentCapitalTopologyRefresh(input); await Promise.all([writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }), writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\nitx_fresh_until=${result.itxFreshUntil ?? ""}\nitx_refresh_required=${result.itxRefreshRequired ?? ""}\n`, { flag: "a" })]); return result; }
+const ARGUMENT_NAMES = new Set(["inventory", "candidate", "policy", "prs", "claims", "claim-evidence", "repository", "current-main-sha", "output", "github-output", "itx-collected-today"]);
+function args(argv) {
+  const result = {};
+  for (let i = 0; i < argv.length; i += 2) {
+    const key = argv[i];
+    if (!key?.startsWith("--") || result[key.slice(2)] !== undefined || !argv[i + 1]) throw new Error("decision arguments are invalid");
+    result[key.slice(2)] = argv[i + 1];
+  }
+  if (Object.keys(result).some((key) => !ARGUMENT_NAMES.has(key))) throw new Error("decision arguments are invalid");
+  return result;
+}
+// 생략하면 false, "true"·"false"만 받는다. 그 밖의 값은 undefined라 판정 입력 검증에서 실패한다.
+const BOOLEAN_ARGUMENTS = new Map([["true", true], ["false", false]]);
+const itxCollectedTodayArgument = (value) => (value === undefined ? false : BOOLEAN_ARGUMENTS.get(value));
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  try {
+    const value = args(process.argv.slice(2));
+    await runCurrentCapitalTopologyRefreshDecision({
+      inventoryPath: value.inventory, candidatePath: value.candidate, policyPath: value.policy, prsPath: value.prs, claimsPath: value.claims,
+      claimEvidencePath: value["claim-evidence"], repository: value.repository, currentMainSha: value["current-main-sha"],
+      outputPath: value.output, githubOutputPath: value["github-output"], itxCollectedToday: itxCollectedTodayArgument(value["itx-collected-today"]),
+    });
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

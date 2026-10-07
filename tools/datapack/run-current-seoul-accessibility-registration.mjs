@@ -70,10 +70,19 @@ function registrationOperations(deps) {
     collect: collectSeoulAccessibilityObservation,
     observationRoot: seoulObservationOutputRoot,
     writeObservation: writeSeoulAccessibilityObservation,
+    readObservationManifest: readCollectedObservationManifest,
     publish: publishSeoulAccessibilityRawArtifact,
     register: registerCurrentSeoulAccessibilitySnapshot,
     ...deps,
   };
+}
+
+// publish 단계가 collect 단계가 남긴 observation을 찾는다. manifest의 snapshotId와 파일 이름이 맞아야 한다.
+async function readCollectedObservationManifest(outputRoot) {
+  const manifest = JSON.parse(await readFile(path.join(outputRoot, "observation.json"), "utf8"));
+  if (manifest?.artifactKind !== "seoul-accessibility-observation" || manifest.sourceId !== SOURCE_ID
+    || typeof manifest.snapshotId !== "string" || manifest.snapshotFile !== `${manifest.snapshotId}.json`) throw new Error("current Seoul accessibility collected observation is invalid");
+  return manifest;
 }
 
 async function readCurrentSeoulSnapshot(operations, root) {
@@ -88,6 +97,10 @@ async function readCurrentSeoulSnapshot(operations, root) {
   return previousSnapshot;
 }
 
+// #995: 수집("collect")과 OCI 게시·등록("publish")을 workflow step으로 나눌 수 있게 두 단계로 실행한다. "all"은 한 번에 둘 다 한다.
+// 게시 step이 시작됐는지가 PR 없는 claim 정리의 판정 근거라서(claim-orphans.mjs) 둘은 서로 다른 step이어야 한다.
+const PHASES = Object.freeze(["all", "collect", "publish"]);
+
 export async function runCurrentSeoulAccessibilityRegistration({
   observationName,
   receiptPath,
@@ -95,30 +108,42 @@ export async function runCurrentSeoulAccessibilityRegistration({
   repositoryRoot = ROOT,
   env = process.env,
   deps = {},
+  phase = "all",
 } = {}) {
+  if (!PHASES.includes(phase)) throw new Error("current Seoul accessibility registration phase is invalid");
   const operations = registrationOperations(deps);
   const root = path.resolve(repositoryRoot); const name = requiredObservationName(observationName); const externalReceipt = await requiredExternalReceipt(root, receiptPath);
   const serviceKey = normalizeDataGoKrServiceKey(env?.DATA_GO_KR_SERVICE_KEY);
-  const previousSnapshot = await readCurrentSeoulSnapshot(operations, root);
-  if (!Number.isSafeInteger(requestAttempts) || ![1, 2].includes(requestAttempts)) throw new Error("Seoul accessibility request attempts are invalid");
-  const observation = await operations.collect({ serviceKey, previousSnapshot, requestAttempts });
-  if (observation?.snapshot?.sourceId !== SOURCE_ID || typeof observation.snapshot.snapshotId !== "string") throw new Error("current Seoul accessibility observation is invalid");
-  const outputRoot = await operations.observationRoot(name);
-  await operations.writeObservation({ outputRoot, observation });
-  const snapshotPath = path.join(outputRoot, `${observation.snapshot.snapshotId}.json`);
+  let snapshotId; let outputRoot;
+  if (phase === "publish") {
+    outputRoot = await operations.observationRoot(name);
+    snapshotId = (await operations.readObservationManifest(outputRoot)).snapshotId;
+  } else {
+    const previousSnapshot = await readCurrentSeoulSnapshot(operations, root);
+    if (!Number.isSafeInteger(requestAttempts) || ![1, 2].includes(requestAttempts)) throw new Error("Seoul accessibility request attempts are invalid");
+    const observation = await operations.collect({ serviceKey, previousSnapshot, requestAttempts });
+    if (observation?.snapshot?.sourceId !== SOURCE_ID || typeof observation.snapshot.snapshotId !== "string") throw new Error("current Seoul accessibility observation is invalid");
+    outputRoot = await operations.observationRoot(name);
+    await operations.writeObservation({ outputRoot, observation });
+    snapshotId = observation.snapshot.snapshotId;
+    if (phase === "collect") return { status: "COLLECTED", snapshotId };
+  }
+  const snapshotPath = path.join(outputRoot, `${snapshotId}.json`);
   await operations.publish({ observationRoot: outputRoot, receiptPath: externalReceipt, repositoryRoot: root, env });
   const registration = await operations.register({ repositoryRoot: root, snapshotPath, receiptPath: externalReceipt });
-  if (JSON.stringify(registration?.outputs) !== JSON.stringify(expectedOutputs(observation.snapshot.snapshotId))) throw new Error("current Seoul accessibility registration output allowlist mismatch");
-  return { status: "PASS", snapshotId: observation.snapshot.snapshotId, outputs: registration.outputs };
+  if (JSON.stringify(registration?.outputs) !== JSON.stringify(expectedOutputs(snapshotId))) throw new Error("current Seoul accessibility registration output allowlist mismatch");
+  return { status: "PASS", snapshotId, outputs: registration.outputs };
 }
 
 async function main(argv) {
-  const scheduled = argv.length === 6 && argv[4] === "--request-attempts" && argv[5] === "1";
-  if ((!scheduled && (argv.length !== 4 || argv[0] !== "--observation-name" || argv[2] !== "--receipt"))
-    || (scheduled && (argv[0] !== "--observation-name" || argv[2] !== "--receipt"))) {
-    throw new Error("usage: --observation-name <safe> --receipt <absolute external path> [--request-attempts 1]");
-  }
-  const result = await runCurrentSeoulAccessibilityRegistration({ observationName: argv[1], receiptPath: argv[3], ...(scheduled ? { requestAttempts: 1 } : {}) });
+  const usage = "usage: --observation-name <safe> --receipt <absolute external path> [--request-attempts 1] [--phase collect|publish]";
+  if (argv[0] !== "--observation-name" || argv[2] !== "--receipt") throw new Error(usage);
+  const options = { observationName: argv[1], receiptPath: argv[3] };
+  let rest = argv.slice(4);
+  if (rest[0] === "--request-attempts" && rest[1] === "1") { options.requestAttempts = 1; rest = rest.slice(2); }
+  if (rest[0] === "--phase" && ["collect", "publish"].includes(rest[1])) { options.phase = rest[1]; rest = rest.slice(2); }
+  if (rest.length !== 0) throw new Error(usage);
+  const result = await runCurrentSeoulAccessibilityRegistration(options);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

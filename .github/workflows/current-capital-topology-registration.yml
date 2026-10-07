@@ -158,15 +158,10 @@ jobs:
         run: |
           set -euo pipefail
           # 판정이 정리 대상으로 알린 claim만 지운다: 병합된 PR의 남은 브랜치, 게시 증거 없이 버려진 이전 claim. 사람이 지울 일이 아니다(이슈 #973).
+          # #995: 조용히 지우지 않는다. 병합된 PR의 claim은 보고 없이, 게시 증거 없이 버려진 claim은 #926 실패 보고를 먼저 하고 지운다.
           [[ -n "${CLEANUP_CLAIMS}" ]] || exit 0
           gh auth setup-git
-          IFS=',' read -r -a claim_branches <<< "${CLEANUP_CLAIMS}"
-          for claim_branch in "${claim_branches[@]}"; do
-            [[ "${claim_branch}" =~ ^automation/456-capital-topology-registration-[1-9][0-9]*$ ]] || { echo "stale registration claim name is invalid" >&2; exit 1; }
-            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${claim_branch}" --json number --jq 'length')" == "0" ]] || { echo "stale registration claim has an open pull request" >&2; exit 1; }
-            git push origin --delete "${claim_branch}"
-            echo "::notice title=Capital topology registration::removed stale claim ${claim_branch}"
-          done
+          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/capital-topology-registration-decision/${GITHUB_RUN_ID}/claims.txt"
       - name: Claim exact main before OCI publication
         if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:

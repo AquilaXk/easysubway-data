@@ -8,7 +8,14 @@ import { inflateRawSync } from "node:zlib";
 export const KRIC_NATIONWIDE_TIMETABLE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1";
 export const KRIC_CURRENT_STATION_LINE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1";
 export const DEFAULT_MAXIMUM_BYTES = 128 * 1024 * 1024;
-
+// #995: 연결·헤더 한도와 본문 수신 한도를 나눈다. 약 17.9MB 본문이 느린 서버에서 30초를 넘겨도 받을 수 있어야 한다.
+// 본문 한도의 근거: 관측한 파일 크기(OBSERVED_FILE_BYTES, 2026-10-07 실측 17,949,564 bytes)를 최소 처리량(60KB/s)으로 받는 시간을 분 단위로 올림한 값(5분)이다.
+// 504 run 37399282636과 앞선 37393545518은 30초 안에 이 파일을 받지 못했다(runner 처리량 < 약 0.6MB/s, 같은 파일을 이 머신에서는 15.0초에 받았다).
+// 하한은 그 상한의 10분의 1이다. 하한 아래로 느려지면 TIMEOUT으로 드러난다(재시도·대체 없음).
+export const HEADER_TIMEOUT_MS = 30_000;
+export const OBSERVED_FILE_BYTES = 17_949_564;
+export const MIN_BODY_THROUGHPUT_BYTES_PER_SECOND = 60_000;
+export const BODY_TIMEOUT_MS = Math.ceil(OBSERVED_FILE_BYTES / MIN_BODY_THROUGHPUT_BYTES_PER_SECOND / 60) * 60_000;
 const TIMETABLE_PROFILE = Object.freeze({
   receiptArtifactKind: "kric-nationwide-timetable-file-receipt",
   sourceId: "kric-nationwide-timetable-file",
@@ -53,39 +60,36 @@ export function parseKricCurrentStationLineWorkbook(bytes, { maximumInflatedByte
 
 export async function collectKricNationwideTimetableFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   return collectKricFile({
-    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish,
+    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
   });
 }
 
 export async function collectKricCurrentStationLineFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   return collectKricFile({
-    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish,
+    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
   });
 }
 
 async function collectKricFile({
-  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish,
+  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
 }) {
   const maximum = positiveSafeInteger(maximumBytes, "maximumBytes");
+  const headerTimeout = positiveSafeInteger(headerTimeoutMs, "headerTimeoutMs");
+  const bodyTimeout = positiveSafeInteger(bodyTimeoutMs, "bodyTimeoutMs");
   const output = requiredTaskOutputFile(outputFile, profile.outputPrefix);
   const parent = path.dirname(output);
   const parentIdentity = await assertRegularDirectory(parent, "output parent");
   await assertAbsent(output);
 
-  let response;
-  try {
-    response = await fetchImpl(profile.url, {
-      method: "GET", redirect: "error", signal: AbortSignal.timeout(30_000), headers: { "accept-encoding": "identity" },
-    });
-  } catch {
-    fail("TRANSPORT");
-  }
+  const response = await fetchResponseHeaders(fetchImpl, profile.url, headerTimeout);
   const declaredLength = validateResponse(response, maximum, profile.url);
-  const bytes = await readBoundedBody(response.body, maximum);
+  const bytes = await readBoundedBody(response.body, maximum, bodyTimeout);
   validateXlsxBytes(bytes, declaredLength);
 
   const receipt = Object.freeze({
@@ -100,6 +104,21 @@ async function collectKricFile({
   });
   await publishAtomically({ beforePublish, bytes, output, parent, parentIdentity });
   return receipt;
+}
+
+// 연결·헤더 한도는 응답 헤더가 오면 끝난다. 본문 수신은 별도 한도(readBoundedBody)를 받는다. 한 signal을 본문까지 붙이면 큰 파일이 중간에 끊긴다(#995).
+async function fetchResponseHeaders(fetchImpl, url, headerTimeoutMs) {
+  const controller = new AbortController();
+  const headerTimer = setTimeout(() => controller.abort(), headerTimeoutMs);
+  try {
+    return await fetchImpl(url, {
+      method: "GET", redirect: "error", signal: controller.signal, headers: { "accept-encoding": "identity" },
+    });
+  } catch {
+    return fail(controller.signal.aborted ? "TIMEOUT" : "TRANSPORT");
+  } finally {
+    clearTimeout(headerTimer);
+  }
 }
 
 function validateResponse(response, maximumBytes, expectedUrl) {
@@ -122,26 +141,52 @@ function validateResponse(response, maximumBytes, expectedUrl) {
   return length;
 }
 
-async function readBoundedBody(body, maximumBytes) {
+const READ_FAILURES = new Set(["KRIC_TIMETABLE_FILE_BODY", "KRIC_TIMETABLE_FILE_TIMEOUT"]);
+
+async function cancelQuietly(reader) {
+  try { await reader.cancel(); } catch { /* cleanup is best effort */ }
+}
+
+// 본문 전체에 하나의 한도를 둔다. 시간 초과는 BODY와 구분해 원인을 드러낸다(504 run 37399282636).
+function bodyDeadline(timeoutMs) {
+  const expired = Symbol("body timeout");
+  let timer;
+  const promise = new Promise((resolve) => { timer = setTimeout(() => resolve(expired), timeoutMs); });
+  return { expired, promise, clear: () => clearTimeout(timer) };
+}
+
+async function readNextChunk(reader, deadline) {
+  const next = await Promise.race([reader.read(), deadline.promise]);
+  if (next === deadline.expired) {
+    reader.cancel().catch(() => {});
+    fail("TIMEOUT");
+  }
+  return next;
+}
+
+async function readBoundedBody(body, maximumBytes, timeoutMs) {
   if (!body || typeof body.getReader !== "function") fail("BODY");
   const reader = body.getReader();
   const chunks = [];
   let total = 0;
+  const deadline = bodyDeadline(timeoutMs);
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readNextChunk(reader, deadline);
       if (done) return Buffer.concat(chunks, total);
       if (!(value instanceof Uint8Array)) fail("BODY");
       total += value.byteLength;
       if (total > maximumBytes) {
-        try { await reader.cancel(); } catch { /* cleanup is best effort */ }
+        await cancelQuietly(reader);
         fail("BODY");
       }
       chunks.push(Buffer.from(value));
     }
   } catch (error) {
-    if (error?.message === "KRIC_TIMETABLE_FILE_BODY") throw error;
-    fail("BODY");
+    if (READ_FAILURES.has(error?.message)) throw error;
+    return fail("BODY");
+  } finally {
+    deadline.clear();
   }
 }
 

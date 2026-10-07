@@ -50,7 +50,7 @@ async function load() { return import(`${modulePath.href}?test=${Date.now()}`); 
 async function fixture() {
   const dir = await mkdtemp(path.join(os.tmpdir(), "topology-refresh-decision-"));
   const inventoryPath = path.join(dir, "inventory.json"); const policyPath = path.join(dir, "policy.json");
-  const prsPath = path.join(dir, "prs.json"); const claimsPath = path.join(dir, "claims.txt");
+  const prsPath = path.join(dir, "prs.json"); const claimsPath = path.join(dir, "claims.txt"); const claimEvidencePath = path.join(dir, "claim-evidence.json");
   const candidatePath = path.join(dir, "candidate.json");
   const itxEvidencePath =
     "tools/datapack/itx-cheongchun-topology-evidence-20260830151000000.json";
@@ -66,7 +66,7 @@ async function fixture() {
     { id: "incheon-line2-train-timetable", scheduleAdmissionEvidence: { freshUntil: "2026-08-30T15:00:00.000Z" } },
   ] }));
   await writeFile(policyPath, JSON.stringify({ monitoring: { alertBeforePackExpiry: "PT6H" } }));
-  await writeFile(prsPath, "[]"); await writeFile(claimsPath, "[]");
+  await writeFile(prsPath, "[]"); await writeFile(claimsPath, "[]"); await writeFile(claimEvidencePath, "[]");
   await mkdir(path.dirname(path.join(dir, itxEvidencePath)), { recursive: true });
   await writeFile(path.join(dir, itxEvidencePath), itxEvidenceBytes);
   await writeFile(candidatePath, JSON.stringify({
@@ -75,7 +75,7 @@ async function fixture() {
     networkEdgeEvidence: {},
   }));
   return {
-    inventoryPath, policyPath, prsPath, claimsPath, candidatePath,
+    inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, candidatePath,
     repositoryRoot: dir, repository: repo, currentMainSha: sha,
   };
 }
@@ -125,6 +125,7 @@ test("earliest canonical current topology expiry determines NOT_DUE, DUE, and EX
     alertBeforePackExpiry: "PT6H",
     itxFreshUntil: "2026-08-30T16:00:00.000Z",
     itxRefreshRequired: false,
+    cleanupClaims: [],
   });
 });
 
@@ -194,62 +195,90 @@ test("ITX provider skip uses the standalone evidence retained by the next candid
   assert.equal(result.itxRefreshRequired, true);
 });
 
+const PREFIX = "automation/636-current-topology-refresh-";
+const OLD_MAIN = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
+const SUBJECTS = ["Claim current topology refresh", "Register current topology inputs", "Activate current topology inputs"];
+const NOW = new Date("2026-08-30T07:00:00.000Z");
+const claimRecord = (runId, { mergeBaseSha = sha, commitCount = 1, subjects = SUBJECTS.slice(0, commitCount) } = {}) => ({ headSha: sha, ref: `refs/heads/${PREFIX}${runId}`, mergeBaseSha, commitCount, subjects });
+const topologyPr = (number, state, runId) => ({ number, state, isDraft: true, headRefName: `${PREFIX}${runId}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: repo } });
+const claimEvidence = (runId, overrides = {}) => ({
+  branch: `${PREFIX}${runId}`, runId: String(runId),
+  run: { found: true, status: "completed", conclusion: "failure", workflowName: "Current Capital Topology Refresh", headBranch: "main", steps: [] },
+  commits: { aheadBy: 1, subjects: [SUBJECTS[0]], changedFiles: 0 }, artifacts: [], ...overrides,
+});
+const withOutput = (runId) => claimEvidence(runId, { commits: { aheadBy: 3, subjects: SUBJECTS, changedFiles: 6 } });
+const running = (runId) => claimEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "Current Capital Topology Refresh", headBranch: "main", steps: [] } });
+const setClaims = async (input, claims, ...evidence) => { await writeFile(input.claimsPath, JSON.stringify(claims)); await writeFile(input.claimEvidencePath, JSON.stringify(evidence)); };
+const topologyResult = { alertBeforePackExpiry: "PT6H", itxFreshUntil: "2026-08-30T16:00:00.000Z", itxRefreshRequired: false };
+
 test("only a same-repository main-base claim can own this automation", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
-  const branch = "automation/636-current-topology-refresh-7";
-  await writeFile(input.prsPath, JSON.stringify([{ state: "OPEN", isDraft: true, headRefName: branch, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: repo } }]));
-  assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "OPEN_PR");
-  await writeFile(input.prsPath, "[]"); await writeFile(input.claimsPath, JSON.stringify([{ headSha: sha, ref: `refs/heads/${branch}`, mergeBaseSha: sha, commitCount: 3, subjects: ["Claim current topology refresh", "Register current topology inputs", "Activate current topology inputs"] }]));
-  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), {
-    state: "RECOVER_CLAIM",
-    alertBeforePackExpiry: "PT6H",
-    branch,
-    itxFreshUntil: "2026-08-30T16:00:00.000Z",
-    itxRefreshRequired: false,
-  });
+  const branch = `${PREFIX}7`;
+  await writeFile(input.prsPath, JSON.stringify([{ number: 1, state: "OPEN", isDraft: true, headRefName: branch, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: repo } }]));
+  assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now: NOW })).state, "OPEN_PR");
+  await writeFile(input.prsPath, "[]"); await setClaims(input, [claimRecord(7, { commitCount: 3 })], withOutput(7));
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: NOW }), { state: "RECOVER_CLAIM", ...topologyResult, branch, cleanupClaims: [] });
 });
 
 test("an exact empty current-main claim is reused after a provider failure", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
-  const branch = "automation/636-current-topology-refresh-33457248862";
-  await writeFile(input.claimsPath, JSON.stringify([{
-    headSha: sha,
-    ref: `refs/heads/${branch}`,
-    mergeBaseSha: sha,
-    commitCount: 1,
-    subjects: ["Claim current topology refresh"],
-  }]));
-  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({
-    ...input,
-    now: new Date("2026-08-30T07:00:00.000Z"),
-  }), {
-    state: "REUSE_CLAIM",
-    alertBeforePackExpiry: "PT6H",
-    branch,
-    itxFreshUntil: "2026-08-30T16:00:00.000Z",
-    itxRefreshRequired: false,
-  });
+  const branch = `${PREFIX}33457248862`;
+  await setClaims(input, [claimRecord(33457248862)], claimEvidence(33457248862));
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: NOW }), { state: "REUSE_CLAIM", ...topologyResult, branch, cleanupClaims: [] });
 });
 
 test("duplicate, malformed, and closed claims fail closed", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
   await writeFile(input.claimsPath, `bad\n`);
   await assert.rejects(() => decideCurrentCapitalTopologyRefresh(input), /claim/);
-  await writeFile(input.claimsPath, JSON.stringify([{ headSha: sha, ref: "refs/heads/automation/636-current-topology-refresh-1", mergeBaseSha: sha, commitCount: 3, subjects: ["Claim current topology refresh", "Register current topology inputs", "Activate current topology inputs"] }, { headSha: sha, ref: "refs/heads/automation/636-current-topology-refresh-2", mergeBaseSha: sha, commitCount: 3, subjects: ["Claim current topology refresh", "Register current topology inputs", "Activate current topology inputs"] }]));
+  await setClaims(input, [claimRecord(1, { commitCount: 3 }), claimRecord(2, { commitCount: 3 })], withOutput(1), withOutput(2));
   await assert.rejects(() => decideCurrentCapitalTopologyRefresh(input), /duplicate/);
-  const branch = "automation/636-current-topology-refresh-1";
-  await writeFile(input.claimsPath, JSON.stringify([{ headSha: sha, ref: `refs/heads/${branch}`, mergeBaseSha: sha, commitCount: 3, subjects: ["Claim current topology refresh", "Register current topology inputs", "Activate current topology inputs"] }]));
-  await writeFile(input.prsPath, JSON.stringify([{ state: "CLOSED", isDraft: true, headRefName: branch, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: repo } }]));
+  await setClaims(input, [claimRecord(1, { commitCount: 3 })], withOutput(1));
+  await writeFile(input.prsPath, JSON.stringify([topologyPr(5, "CLOSED", 1)]));
   await assert.rejects(() => decideCurrentCapitalTopologyRefresh(input), /closed/);
 });
 
-test("old-main claim remains inactive while current-main incomplete claim fails closed", async () => {
+test("current-main incomplete claim fails closed while its producer is finished", async () => {
   const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
-  const branch = "automation/636-current-topology-refresh-8";
-  await writeFile(input.claimsPath, JSON.stringify([{ headSha: sha, ref: `refs/heads/${branch}`, mergeBaseSha: "abcdefabcdefabcdefabcdefabcdefabcdefabcd", commitCount: 0, subjects: [] }]));
-  assert.equal((await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "DUE");
-  await writeFile(input.claimsPath, JSON.stringify([{ headSha: sha, ref: `refs/heads/${branch}`, mergeBaseSha: sha, commitCount: 2, subjects: ["Claim current topology refresh"] }]));
+  await setClaims(input, [claimRecord(8, { commitCount: 2, subjects: [SUBJECTS[0]] })], withOutput(8));
   await assert.rejects(() => decideCurrentCapitalTopologyRefresh(input), /current-main/);
+});
+
+// #995: 만든 run이 아직 도는 claim은 어떤 상태든 기다린다. 도는 run의 claim을 다른 run이 재사용·복구하지 않는다.
+test("a claim whose producer run is still running waits, even when it looks incomplete or stale", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const branch = `${PREFIX}9`;
+  for (const claim of [claimRecord(9), claimRecord(9, { commitCount: 2, subjects: SUBJECTS.slice(0, 2) }), claimRecord(9, { commitCount: 3 }), claimRecord(9, { mergeBaseSha: OLD_MAIN })]) {
+    await setClaims(input, [claim], running(9));
+    assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: NOW }), { state: "CLAIM_IN_PROGRESS", ...topologyResult, branch, cleanupClaims: [] }, JSON.stringify(claim));
+  }
+});
+
+// 504와 같은 종류: claim 뒤에 main이 움직이면 그 claim은 current가 아니라서 어떤 판정도 보지 않았고 다른 자동화를 영원히 막았다.
+test("a stale-main empty claim of a finished run is handed to cleanup while the due state continues", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  const branch = `${PREFIX}10`;
+  await setClaims(input, [claimRecord(10, { mergeBaseSha: OLD_MAIN })], claimEvidence(10));
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: NOW }), { state: "DUE", ...topologyResult, cleanupClaims: [branch] });
+  assert.deepEqual(await decideCurrentCapitalTopologyRefresh({ ...input, now: new Date("2026-08-30T01:00:00.000Z") }), { state: "NOT_DUE", ...topologyResult, cleanupClaims: [branch] });
+  await setClaims(input, [claimRecord(10, { mergeBaseSha: OLD_MAIN, commitCount: 0, subjects: [] })], claimEvidence(10, { run: { found: false } }));
+  assert.deepEqual((await decideCurrentCapitalTopologyRefresh({ ...input, now: NOW })).cleanupClaims, [branch]);
+});
+
+test("a stale-main claim that carries output is an anomaly, never deleted or ignored", async () => {
+  const { decideCurrentCapitalTopologyRefresh } = await load(); const input = await fixture();
+  await setClaims(input, [claimRecord(11, { mergeBaseSha: OLD_MAIN, commitCount: 3 })], withOutput(11));
+  await assert.rejects(() => decideCurrentCapitalTopologyRefresh({ ...input, now: NOW }), /stale current topology refresh claim carries output/);
+});
+
+test("a claim without evidence is not guessed and the CLI writes the cleanup claims", async () => {
+  const { decideCurrentCapitalTopologyRefresh, runCurrentCapitalTopologyRefreshDecision } = await load(); const input = await fixture();
+  await setClaims(input, [claimRecord(12, { mergeBaseSha: OLD_MAIN })]);
+  await assert.rejects(() => decideCurrentCapitalTopologyRefresh({ ...input, now: NOW }), /CLAIM_ORPHAN_EVIDENCE_MISSING/);
+  await setClaims(input, [claimRecord(12, { mergeBaseSha: OLD_MAIN })], claimEvidence(12));
+  const outputPath = path.join(input.repositoryRoot, "decision.json"); const githubOutputPath = path.join(input.repositoryRoot, "github-output.txt");
+  await runCurrentCapitalTopologyRefreshDecision({ ...input, outputPath, githubOutputPath, now: NOW });
+  assert.equal(await readFile(githubOutputPath, "utf8"), `state=DUE\nbranch=\ncleanup_claims=${PREFIX}12\nitx_fresh_until=2026-08-30T16:00:00.000Z\nitx_refresh_required=false\n`);
 });
 
 test("preflight blocks every possible UTC or KST identity during the job window", async () => {

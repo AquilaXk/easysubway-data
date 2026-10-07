@@ -39,6 +39,7 @@ function dependencies(events, { collectError = null, publishError = null, regist
     },
     async observationRoot(name) { events.push(["root", name]); return "/private/tmp/easysubway-seoul-accessibility-operation"; },
     async writeObservation(value) { events.push(["write", value]); },
+    async readObservationManifest(outputRoot) { events.push(["read-manifest", outputRoot]); return { snapshotId: SNAPSHOT_ID }; },
     async publish(value) { events.push(["publish", value]); if (publishError) throw publishError; return { artifactKind: "receipt" }; },
     async register(value) { events.push(["register", value]); return { outputs: registrationOutputs }; },
   };
@@ -111,4 +112,28 @@ test("partial, foreign, or reordered registration outputs cannot return PASS", a
     await assert.rejects(runCurrentSeoulAccessibilityRegistration(options(values, dependencies(events, { registrationOutputs }))), /output allowlist/);
     assert.equal(events.at(-1)[0], "register");
   }
+});
+
+// #995 F1: 수집과 게시를 workflow step으로 나누려면 runner가 두 단계로 실행돼야 한다. 게시 step이 시작됐는지가 claim 정리 판정의 근거다.
+test("collect phase writes the observation and stops before publication and registration", async (t) => {
+  const values = await fixture(t); const events = [];
+  const result = await runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies(events)), phase: "collect" });
+  assert.deepEqual(events.map(([name]) => name), ["validate-lineage", "validate-snapshot", "collect", "root", "write"]);
+  assert.deepEqual(result, { status: "COLLECTED", snapshotId: SNAPSHOT_ID });
+});
+
+test("publish phase reads the collected observation and never collects again", async (t) => {
+  const values = await fixture(t); const events = [];
+  const result = await runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies(events)), phase: "publish" });
+  assert.deepEqual(events.map(([name]) => name), ["root", "read-manifest", "publish", "register"]);
+  assert.equal(events[3][1].snapshotPath, `/private/tmp/easysubway-seoul-accessibility-operation/${SNAPSHOT_ID}.json`);
+  assert.deepEqual(result, { status: "PASS", snapshotId: SNAPSHOT_ID, outputs: outputsFor() });
+});
+
+test("publish phase stops when the collected observation is missing, and an unknown phase is rejected", async (t) => {
+  const values = await fixture(t); const events = [];
+  const deps = { ...dependencies(events), async readObservationManifest() { throw new Error("observation manifest is missing"); } };
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, deps), phase: "publish" }), /observation manifest is missing/);
+  assert.equal(events.some(([name]) => name === "publish" || name === "register"), false);
+  await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(values, dependencies([])), phase: "both" }), /phase is invalid/);
 });

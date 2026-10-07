@@ -2,6 +2,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { planUnboundClaims } from "./claim-orphans.mjs";
+
+const WORKFLOW = "seoul-current-accessibility-refresh.yml";
 const SOURCE_ID = "seoul-metro-accessibility";
 const AUTOMATION_BRANCH = /^automation\/639-seoul-accessibility-refresh-\d+$/;
 const CLAIM_REF = /^[\da-f]{40}\trefs\/heads\/(automation\/639-seoul-accessibility-refresh-\d+)$/;
@@ -81,12 +84,13 @@ function automationClaims(bytes) {
   return claims;
 }
 
-export async function decideCurrentSeoulAccessibilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, repository, now = new Date() } = {}) {
-  const [inventoryBytes, policyBytes, prsBytes, claimsBytes] = await Promise.all([
+export async function decideCurrentSeoulAccessibilityRefresh({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, now = new Date() } = {}) {
+  const [inventoryBytes, policyBytes, prsBytes, claimsBytes, evidenceBytes] = await Promise.all([
     readFile(path.resolve(inventoryPath)),
     readFile(path.resolve(policyPath)),
     readFile(path.resolve(prsPath)),
     readFile(path.resolve(claimsPath)),
+    readFile(path.resolve(claimEvidencePath)),
   ]);
   const inventory = requireObject(parseJson(inventoryBytes, "source inventory"), "source inventory");
   const source = inventory.sources?.find(({ id }) => id === SOURCE_ID);
@@ -109,30 +113,34 @@ export async function decideCurrentSeoulAccessibilityRefresh({ inventoryPath, po
   }
   const openPullRequests = pullRequests.filter(({ state }) => state === "OPEN");
   if (openPullRequests.length > 1) throw new Error("duplicate Seoul refresh pull requests exist");
-  if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry };
-  const recoverable = automationClaims(claimsBytes).filter(({ branch }) => {
+  const claims = automationClaims(claimsBytes);
+  // #995: PR 없는 claim은 만든 run과 게시 증거로 가른다. 빈 claim뿐인 고아는 복구할 것이 없으므로 정리 대상(보고 뒤 삭제)이다.
+  const plan = planUnboundClaims({
+    workflowFile: WORKFLOW, repository, claimBranches: claims.map(({ branch }) => branch), pullRequests,
+    evidence: parseJson(evidenceBytes, "claim evidence"),
+  });
+  const cleanupClaims = plan.abandoned;
+  if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry, cleanupClaims };
+  for (const { branch } of claims) {
     const associated = pullRequests.filter(({ headRefName }) => headRefName === branch);
     if (associated.length > 1) throw new Error("duplicate Seoul refresh pull requests exist");
-    if (associated[0]?.state === "CLOSED") {
-      throw new Error("closed Seoul refresh claim requires manual resolution");
-    }
-    return associated.length === 0;
-  });
-  if (recoverable.length > 1) throw new Error("duplicate Seoul refresh claims exist");
-  if (recoverable.length === 1) {
-    return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: recoverable[0].branch };
+    if (associated[0]?.state === "CLOSED") throw new Error("closed Seoul refresh claim requires manual resolution");
   }
-  if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry };
-  if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry };
-  return { state: "NOT_DUE", alertBeforePackExpiry };
+  if (plan.active.length + plan.recoverable.length > 1) throw new Error("duplicate Seoul refresh claims exist");
+  if (plan.active.length === 1) return { state: "CLAIM_IN_PROGRESS", alertBeforePackExpiry, branch: plan.active[0], cleanupClaims };
+  if (plan.recoverable.length === 1) return { state: "RECOVER_CLAIM", alertBeforePackExpiry, branch: plan.recoverable[0], cleanupClaims };
+  if (currentTime >= freshUntil) return { state: "EXPIRED", alertBeforePackExpiry, cleanupClaims };
+  if (currentTime >= freshUntil - threshold) return { state: "DUE", alertBeforePackExpiry, cleanupClaims };
+  return { state: "NOT_DUE", alertBeforePackExpiry, cleanupClaims };
 }
 
-export async function runCurrentSeoulAccessibilityRefreshDecision({ inventoryPath, policyPath, prsPath, claimsPath, repository, outputPath, githubOutputPath, now } = {}) {
+export async function runCurrentSeoulAccessibilityRefreshDecision({ inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository, outputPath, githubOutputPath, now } = {}) {
   const result = await decideCurrentSeoulAccessibilityRefresh({
     inventoryPath,
     policyPath,
     prsPath,
     claimsPath,
+    claimEvidencePath,
     repository,
     now,
   });
@@ -140,7 +148,7 @@ export async function runCurrentSeoulAccessibilityRefreshDecision({ inventoryPat
     writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }),
     writeFile(
       path.resolve(githubOutputPath),
-      `state=${result.state}\nbranch=${result.branch ?? ""}\n`,
+      `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\n`,
       { flag: "a" },
     ),
   ]);
@@ -157,7 +165,7 @@ function parseArgs(argv) {
     options[name.slice(2)] = argv[index + 1];
   }
   const allowed = new Set([
-    "inventory", "policy", "prs", "claims", "repository", "output", "github-output",
+    "inventory", "policy", "prs", "claims", "claim-evidence", "repository", "output", "github-output",
   ]);
   if (Object.keys(options).some((name) => !allowed.has(name))
     || Object.values(options).some((value) => typeof value !== "string" || value === "")) {
@@ -174,6 +182,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
       policyPath: options.policy,
       prsPath: options.prs,
       claimsPath: options.claims,
+      claimEvidencePath: options["claim-evidence"],
       repository: options.repository,
       outputPath: options.output,
       githubOutputPath: options["github-output"],

@@ -332,6 +332,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/993",
       "title": "[Fix] 자동화 판정이 gh pr list --state all --limit 1000 전체 이력에 의존해 PR이 쌓이면 영구 실패하는 시한폭탄 제거"
     },
+    "data995": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/995",
+      "title": "[Fix] PR 없는 claim 브랜치를 소유 workflow가 스스로 복구·정리하지 못해 원장 쓰기 자동화 전체가 대기"
+    },
     "data977": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/977",
       "title": "[CI] ITX-청춘 원천 승격을 QA 승인 코멘트 없이 자동 이상 판정 게이트로 전환 (#870 전체 자동화 3단계)"
@@ -645,6 +649,9 @@
     {"path":"tools/ci/automation-pr-recreate.test.mjs","semanticOwner":"data985","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/collect-automation-prs.test.mjs","semanticOwner":"data993","classes":["required-pr"],"durationMs":300},
     {"path":"tools/ci/automation-pr-list-bounded.test.mjs","semanticOwner":"data993","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/claim-orphans.test.mjs","semanticOwner":"data995","classes":["required-pr"],"durationMs":60},
+    {"path":"tools/ci/remove-orphan-claims.test.mjs","semanticOwner":"data995","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/retained-gwangju-timetable-refresh-workflow.test.mjs","semanticOwner":"data995","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/decide-itx-current-promotion.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":120},
     {"path":"tools/ci/itx-current-promotion-workflow.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":40},
     {"path":"tools/datapack/itx-promotion-gate.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":300},

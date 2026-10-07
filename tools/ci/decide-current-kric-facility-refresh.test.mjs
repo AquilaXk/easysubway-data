@@ -18,11 +18,13 @@ async function fixture({ freshUntil = "2026-08-30T12:00:00.000Z", policy = "PT6H
   const policyPath = path.join(directory, "policy.json");
   const prsPath = path.join(directory, "prs.json");
   const claimsPath = path.join(directory, "claims.txt");
+  const claimEvidencePath = path.join(directory, "claim-evidence.json");
   await writeFile(inventoryPath, JSON.stringify({ sources: [{ id: "kric-station-convenience-standard", accessibilityAdmissionEvidence: { freshUntil } }] }));
   await writeFile(policyPath, JSON.stringify({ monitoring: { alertBeforePackExpiry: policy } }));
   await writeFile(prsPath, "[]");
   await writeFile(claimsPath, "");
-  return { directory, inventoryPath, policyPath, prsPath, claimsPath, repository: "AquilaXk/easysubway-data" };
+  await writeFile(claimEvidencePath, "[]");
+  return { directory, inventoryPath, policyPath, prsPath, claimsPath, claimEvidencePath, repository: "AquilaXk/easysubway-data" };
 }
 
 test("KRIC refresh decision reads the policy threshold and distinguishes NOT_DUE, DUE, and EXPIRED", async () => {
@@ -49,78 +51,133 @@ test("KRIC refresh decision trusts only a same-repository main-base automation P
   await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /duplicate/);
 });
 
-test("KRIC refresh decision recovers exactly one durable remote claim before provider work", async () => {
+const PREFIX = "automation/629-kric-facility-refresh-";
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+const NOW = new Date("2026-08-30T07:00:00.000Z");
+const ref = (runId) => `${SHA}\trefs/heads/${PREFIX}${runId}\n`;
+const kricPr = (number, state, runId, input) => ({ number, state, isDraft: true, headRefName: `${PREFIX}${runId}`, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false });
+const NOT_PUBLISHED = [{ name: "KRIC current facility refresh / Publish and register current snapshot", status: "completed", conclusion: "skipped" }];
+const kricEvidence = (runId, overrides = {}) => ({
+  branch: `${PREFIX}${runId}`, runId: String(runId),
+  run: { found: true, status: "completed", conclusion: "failure", workflowName: "KRIC Current Facility Refresh", headBranch: "main", steps: NOT_PUBLISHED },
+  commits: { aheadBy: 1, subjects: ["Claim KRIC facility refresh"], changedFiles: 0 }, artifacts: [], ...overrides,
+});
+const withOutput = (runId) => kricEvidence(runId, { commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", "Refresh KRIC facility snapshot"], changedFiles: 3 } });
+const withReceipt = (runId) => kricEvidence(runId, { run: { found: true, status: "completed", conclusion: "failure", workflowName: "KRIC Current Facility Refresh", headBranch: "main", steps: [{ name: "KRIC current facility refresh / Publish and register current snapshot", status: "completed", conclusion: "failure" }] }, artifacts: [{ name: `kric-current-facility-refresh-${runId}`, expired: false }] });
+const running = (runId) => kricEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "KRIC Current Facility Refresh", headBranch: "main", steps: NOT_PUBLISHED } });
+const evidenceFile = (input, ...records) => writeFile(input.claimEvidencePath, JSON.stringify(records));
+
+test("KRIC refresh decision recovers exactly one durable remote claim that carries output or a receipt before provider work", async () => {
   const { decideCurrentKricFacilityRefresh } = await load();
   const input = await fixture();
-  await writeFile(input.claimsPath, "0123456789abcdef0123456789abcdef01234567\trefs/heads/automation/629-kric-facility-refresh-123\tClaim KRIC facility refresh\n");
-  const recovered = await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") });
-  assert.deepEqual(recovered, { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch: "automation/629-kric-facility-refresh-123" });
-  await writeFile(input.claimsPath, "0123456789abcdef0123456789abcdef01234567\trefs/heads/automation/629-kric-facility-refresh-123\tClaim KRIC facility refresh\n89abcdef0123456789abcdef0123456789abcdef\trefs/heads/automation/629-kric-facility-refresh-124\tClaim KRIC facility refresh\n");
-  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /duplicate/);
+  await writeFile(input.claimsPath, ref(123));
+  for (const record of [withOutput(123), withReceipt(123)]) {
+    await evidenceFile(input, record);
+    assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: NOW }), { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch: `${PREFIX}123`, cleanupClaims: [] });
+  }
+  await writeFile(input.claimsPath, ref(123) + ref(124));
+  await evidenceFile(input, withOutput(123), withReceipt(124));
+  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /duplicate/);
   await writeFile(input.claimsPath, "not-a-ref\n");
-  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /claim/);
+  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /claim/);
+});
+
+// #995: receipt 없는 빈 claim은 복구할 것이 없다. 예전에는 보존 artifact가 항상 올라와 복구 step이 14일 동안 실패했고 Abandon 뒤에도 브랜치가 남았다.
+test("an empty claim without a receipt is handed to cleanup in every due state and a running producer waits", async () => {
+  const { decideCurrentKricFacilityRefresh } = await load();
+  const input = await fixture();
+  await writeFile(input.claimsPath, ref(125));
+  await evidenceFile(input, kricEvidence(125));
+  for (const [now, state] of [["2026-08-30T05:59:59.999Z", "NOT_DUE"], ["2026-08-30T06:00:00.000Z", "DUE"], ["2026-08-30T12:00:00.000Z", "EXPIRED"]]) {
+    assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date(now) }), { state, alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}125`] }, state);
+  }
+  await evidenceFile(input, running(125));
+  for (const now of ["2026-08-30T05:00:00.000Z", "2026-08-30T07:00:00.000Z"]) {
+    assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date(now) }), { state: "CLAIM_IN_PROGRESS", alertBeforePackExpiry: "PT6H", branch: `${PREFIX}125`, cleanupClaims: [] }, now);
+  }
+  await evidenceFile(input);
+  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /CLAIM_ORPHAN_EVIDENCE_MISSING/);
+});
+
+// #995 F1: 게시 step이 시작된 run의 빈 claim은 보존 증거가 없으면 지우지 않고 실패한다(게시됐지만 등록되지 않은 상태일 수 있다).
+test("a published-but-unregistered claim without retained evidence fails instead of being cleaned", async () => {
+  const { decideCurrentKricFacilityRefresh } = await load();
+  const input = await fixture();
+  await writeFile(input.claimsPath, ref(126));
+  await evidenceFile(input, { ...withReceipt(126), artifacts: [] });
+  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /CLAIM_ORPHAN_PUBLISHED_UNREGISTERED/);
+  await evidenceFile(input, withReceipt(126));
+  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: NOW })).state, "RECOVER_CLAIM");
 });
 
 test("terminal historical claims ignore merged history and fail closed on closed claims", async () => {
   const { decideCurrentKricFacilityRefresh } = await load();
   const input = await fixture();
-  const branch = "automation/629-kric-facility-refresh-122";
-  await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\tRefresh KRIC facility snapshot\n`);
-  await writeFile(input.prsPath, JSON.stringify([{ number: 628, state: "MERGED", isDraft: false, headRefName: branch, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false }]));
-  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "DUE");
-  await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\tRefresh KRIC facility snapshot\n89abcdef0123456789abcdef0123456789abcdef\trefs/heads/automation/629-kric-facility-refresh-123\tClaim KRIC facility refresh\n`);
-  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "RECOVER_CLAIM");
-  await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\tRefresh KRIC facility snapshot\n`);
-  await writeFile(input.prsPath, JSON.stringify([{ number: 628, state: "CLOSED", isDraft: true, headRefName: branch, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false }]));
-  await assert.rejects(
-    () => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
-    /requires manual resolution/,
-  );
-  await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\tRefresh KRIC facility snapshot\n89abcdef0123456789abcdef0123456789abcdef\trefs/heads/automation/629-kric-facility-refresh-123\tClaim KRIC facility refresh\n`);
-  await assert.rejects(
-    () => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
-    /duplicate|ambiguous/,
-  );
+  await writeFile(input.claimsPath, ref(122));
+  await writeFile(input.prsPath, JSON.stringify([kricPr(628, "MERGED", 122, input)]));
+  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: NOW })).state, "DUE");
+  await writeFile(input.claimsPath, ref(122) + ref(123));
+  await evidenceFile(input, withOutput(123));
+  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: NOW })).state, "RECOVER_CLAIM");
+  await writeFile(input.claimsPath, ref(122));
+  await writeFile(input.prsPath, JSON.stringify([kricPr(628, "CLOSED", 122, input)]));
+  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /requires manual resolution/);
+  await writeFile(input.claimsPath, ref(122) + ref(123));
+  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /ambiguous/);
 });
 
-test("decision CLI writes only the generic recovery state and branch", async () => {
+test("decision CLI writes the state, branch and cleanup claims", async () => {
   const input = await fixture();
-  const branch = "automation/629-kric-facility-refresh-123";
-  await writeFile(input.claimsPath, `0123456789abcdef0123456789abcdef01234567\trefs/heads/${branch}\tRefresh KRIC facility snapshot\n`);
+  await writeFile(input.claimsPath, ref(123) + ref(124));
+  await evidenceFile(input, withOutput(123), kricEvidence(124));
   const outputPath = path.join(input.directory, "decision.json");
   const githubOutputPath = path.join(input.directory, "github-output.txt");
   const { runCurrentKricFacilityRefreshDecision } = await load();
-  await runCurrentKricFacilityRefreshDecision({ inventoryPath: input.inventoryPath, policyPath: input.policyPath, prsPath: input.prsPath, claimsPath: input.claimsPath, repository: input.repository, outputPath, githubOutputPath, now: new Date("2026-08-30T07:00:00.000Z") });
+  await runCurrentKricFacilityRefreshDecision({ inventoryPath: input.inventoryPath, policyPath: input.policyPath, prsPath: input.prsPath, claimsPath: input.claimsPath, claimEvidencePath: input.claimEvidencePath, repository: input.repository, outputPath, githubOutputPath, now: NOW });
   const output = await readFile(outputPath, "utf8");
   assert.match(output, /"state": "RECOVER_CLAIM"/);
   assert.doesNotMatch(output, /https:\/\//);
-  assert.equal(
-    await readFile(githubOutputPath, "utf8"),
-    `state=RECOVER_CLAIM\nbranch=${branch}\n`,
-  );
+  assert.equal(await readFile(githubOutputPath, "utf8"), `state=RECOVER_CLAIM\nbranch=${PREFIX}123\ncleanup_claims=${PREFIX}124\n`);
 });
 
-test("claim refs must carry their head commit subject", async () => {
+test("claim refs must be ls-remote heads of this workflow", async () => {
   const { decideCurrentKricFacilityRefresh } = await load();
   const input = await fixture();
-  await writeFile(input.claimsPath, "0123456789abcdef0123456789abcdef01234567\trefs/heads/automation/629-kric-facility-refresh-123\n");
-  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /KRIC refresh claim is invalid/);
+  for (const bad of [`${SHA}\trefs/heads/${PREFIX}123\textra\n`, `${SHA}\trefs/heads/automation/639-seoul-accessibility-refresh-1\n`, ref(1) + ref(1)]) {
+    await writeFile(input.claimsPath, bad);
+    await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /KRIC refresh claim is invalid|duplicate/);
+  }
 });
 
-test("an abandoned claim is closed out and no longer selected for recovery", async () => {
+test("a claim the workflow closed out with an Abandon commit is cleaned like any abandoned claim", async () => {
   const { decideCurrentKricFacilityRefresh, ABANDONED_CLAIM_SUBJECT } = await load();
   assert.equal(ABANDONED_CLAIM_SUBJECT, "Abandon KRIC facility refresh claim");
   const input = await fixture();
-  const abandoned = `0123456789abcdef0123456789abcdef01234567\trefs/heads/automation/629-kric-facility-refresh-33931967736\t${ABANDONED_CLAIM_SUBJECT}\n`;
-  await writeFile(input.claimsPath, abandoned);
-  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T12:00:00.000Z") })).state, "EXPIRED");
-  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") })).state, "DUE");
-  await writeFile(input.claimsPath, `${abandoned}89abcdef0123456789abcdef0123456789abcdef\trefs/heads/automation/629-kric-facility-refresh-123\tClaim KRIC facility refresh\n`);
-  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }),
-    { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch: "automation/629-kric-facility-refresh-123" });
-  await writeFile(input.claimsPath, abandoned);
-  await writeFile(input.prsPath, JSON.stringify([{ number: 700, state: "CLOSED", isDraft: true, headRefName: "automation/629-kric-facility-refresh-33931967736", baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false }]));
-  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T07:00:00.000Z") }), /abandoned KRIC refresh claim has a pull request/);
+  const closed = kricEvidence(33931967736, { commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", ABANDONED_CLAIM_SUBJECT], changedFiles: 0 }, artifacts: [{ name: "kric-current-facility-refresh-33931967736", expired: false }] });
+  await writeFile(input.claimsPath, ref(33931967736));
+  await evidenceFile(input, closed);
+  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: new Date("2026-08-30T12:00:00.000Z") }), { state: "EXPIRED", alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}33931967736`] });
+  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: NOW }), { state: "DUE", alertBeforePackExpiry: "PT6H", cleanupClaims: [`${PREFIX}33931967736`] });
+  await writeFile(input.claimsPath, ref(33931967736) + ref(123));
+  await evidenceFile(input, closed, withOutput(123));
+  assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: NOW }), { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch: `${PREFIX}123`, cleanupClaims: [`${PREFIX}33931967736`] });
+});
+
+// #995 F4: PR이 붙은 claim은 판정에서 묶인 claim이지만, Abandon 커밋이 있는 claim에 PR이 붙는 것은 이상이다(닫았다고 기록한 claim은 PR이 되지 않는다).
+test("an Abandon-headed claim that has a pull request fails with a named error in every PR state", async () => {
+  const { decideCurrentKricFacilityRefresh, ABANDONED_CLAIM_SUBJECT } = await load();
+  const input = await fixture();
+  await writeFile(input.claimsPath, ref(33931967736));
+  const boundEvidence = { branch: `${PREFIX}33931967736`, runId: "33931967736", bound: true, commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", ABANDONED_CLAIM_SUBJECT], changedFiles: 0 } };
+  await evidenceFile(input, boundEvidence);
+  for (const state of ["OPEN", "CLOSED", "MERGED"]) {
+    await writeFile(input.prsPath, JSON.stringify([kricPr(700, state, 33931967736, input)]));
+    await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /abandoned KRIC refresh claim has a pull request/, state);
+  }
+  // 닫지 않은 claim에 PR이 붙은 것은 정상이다.
+  await evidenceFile(input, { ...boundEvidence, commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", "Refresh KRIC facility snapshot"], changedFiles: 3 } });
+  await writeFile(input.prsPath, JSON.stringify([kricPr(700, "OPEN", 33931967736, input)]));
+  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: NOW })).state, "OPEN_PR");
 });
 
 test("claim evidence is AVAILABLE only while the named source-run artifact is unexpired", async () => {

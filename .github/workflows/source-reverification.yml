@@ -23,6 +23,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION == 'true') }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
       pull-requests: write
       issues: write
@@ -110,14 +111,9 @@ jobs:
         run: |
           set -euo pipefail
           # 판정이 정리 대상으로 알린 claim만 지운다: 병합된 PR의 남은 claim, 끝났거나 기록이 없는 run의 PR 없는 claim. 사람이 지울 일이 아니다(#973).
+          # #995: 조용히 지우지 않는다. 병합된 PR의 claim은 보고 없이, 끝난 run의 PR 없는 claim은 #926 실패 보고를 먼저 하고 지운다.
           gh auth setup-git
-          IFS=',' read -r -a claim_branches <<< "${CLEANUP_CLAIMS}"
-          for claim_branch in "${claim_branches[@]}"; do
-            [[ "${claim_branch}" =~ ^automation/984-source-reverification-[1-9][0-9]*$ ]] || { echo "stale reverification claim name is invalid" >&2; exit 1; }
-            [[ "$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --head "${claim_branch}" --json number --jq 'length')" == "0" ]] || { echo "stale reverification claim has an open pull request" >&2; exit 1; }
-            git push origin --delete "${claim_branch}"
-            echo "::notice title=Source reverification::removed stale claim ${claim_branch}"
-          done
+          node tools/ci/remove-orphan-claims.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/source-reverification-decision/${GITHUB_RUN_ID}/automation-branches.txt"
       - name: Claim exact main before provider access
         id: claim
         if: ${{ steps.decision.outputs.state == 'RUN' }}

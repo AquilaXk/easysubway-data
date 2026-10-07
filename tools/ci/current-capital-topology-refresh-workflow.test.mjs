@@ -152,3 +152,29 @@ test("topology refresh ends at source admission and never commits candidate-side
   const recovery = stepBody("Recover a completed claimed refresh");
   assert.match(recovery, /grep -Ev '\^\(tools\/datapack\/source-inventory\\\.json\|tools\/datapack\/release\/\(capital-production-reviewed-pack\\\.json\|capital-production-canonical-pack\\\.json\|capital-topology-reverification-\[0-9\]\{8\}\\\.json\)\)\$'/);
 });
+
+// #995: main이 움직여 current가 아니게 된 빈 claim은 어떤 판정도 보지 않아 다른 원장 쓰기 자동화를 영원히 막았다.
+// 만든 run이 도는 claim은 기다리고, 빈 claim뿐인 고아는 보고(#926)한 뒤 지운다. 출력이 있는 claim은 지우지 않는다.
+test("PR-less claims are classified from run and publication evidence before any reuse, recovery or new claim", () => {
+  const decision = stepBody("Decide whether current topology refresh is due");
+  const collect = decision.indexOf("node tools/ci/collect-automation-prs.mjs");
+  const evidence = decision.indexOf('node tools/ci/claim-orphans.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claim-refs.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"');
+  assert.ok(collect !== -1 && evidence > collect);
+  assert.ok(decision.indexOf("decide-current-capital-topology-refresh.mjs") > evidence);
+  assert.match(decision, /--claims "\$\{state_root\}\/claims\.json" --claim-evidence "\$\{state_root\}\/claim-evidence\.json" --repository/);
+  assert.doesNotMatch(decision, /gh run list/);
+  const cleanup = stepBody("Remove abandoned topology refresh claims named by the decision");
+  assert.match(cleanup, /\n        if: \$\{\{ steps\.decision\.outputs\.cleanup_claims != '' \}\}\n/);
+  assert.match(cleanup, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/);
+  const script = cleanup.split("\n        run: |")[1];
+  assert.doesNotMatch(script, /\$\{\{/);
+  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow current-capital-topology-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RUNNER_TEMP\}\/current-capital-topology-refresh\/claim-refs\.txt"/);
+  assert.doesNotMatch(script, /git push origin --delete/);
+  const running = stepBody("Note current topology refresh waiting on a running producer");
+  assert.match(running, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'CLAIM_IN_PROGRESS' \}\}\n/);
+  const at = (name) => yml.indexOf(`      - name: ${name}\n`);
+  assert.ok(at("Decide whether current topology refresh is due") < at("Remove abandoned topology refresh claims named by the decision"));
+  assert.ok(at("Remove abandoned topology refresh claims named by the decision") < at("Recover a completed claimed refresh"));
+  assert.ok(at("Remove abandoned topology refresh claims named by the decision") < at("Create durable claim before provider access"));
+  assert.ok(at("Remove abandoned topology refresh claims named by the decision") < at("Preflight immutable current topology identities"));
+});

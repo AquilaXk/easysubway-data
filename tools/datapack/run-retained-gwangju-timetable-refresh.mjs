@@ -22,6 +22,10 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 
 const TRIGGERS = Object.freeze(["DUE", "CONTRACT_REVISION"]);
 
+// #995: 수집·계약 준비("collect")와 OCI 게시·등록("publish")을 workflow step으로 나눌 수 있게 두 단계로 실행한다. "all"은 한 번에 둘 다 한다.
+// 게시 step이 시작됐는지가 PR 없는 claim 정리의 판정 근거라서(claim-orphans.mjs) 둘은 서로 다른 step이어야 한다.
+const PHASES = Object.freeze(["all", "collect", "publish"]);
+
 /**
  * 승인된 head가 갱신 시점에 도달했을 때만 한 번 실행한다.
  * CURRENT는 디렉터리 생성·자격 증명 조회·외부 호출 전에 종료한다.
@@ -29,9 +33,10 @@ const TRIGGERS = Object.freeze(["DUE", "CONTRACT_REVISION"]);
  * 새로 만든 계약이 등록된 계약(retainedContractSha256)과 다를 때만 게시·등록한다.
  */
 export async function runRetainedGwangjuTimetableRefresh({
-  repositoryRoot = ROOT, operationRoot, env = process.env, clock = () => new Date(), boundaries = {}, trigger = "DUE",
+  repositoryRoot = ROOT, operationRoot, env = process.env, clock = () => new Date(), boundaries = {}, trigger = "DUE", phase = "all",
 } = {}) {
   if (!TRIGGERS.includes(trigger)) throw new Error("retained Gwangju refresh trigger is invalid");
+  if (!PHASES.includes(phase)) throw new Error("retained Gwangju refresh phase is invalid");
   const root = requiredAbsolute(repositoryRoot, "repositoryRoot");
   const now = requiredClock(clock);
   const readDecision = boundaries.readDecision ?? readRetainedGwangjuTimetableRefreshDecision;
@@ -48,59 +53,84 @@ export async function runRetainedGwangjuTimetableRefresh({
   const serviceKey = normalizeDataGoKrServiceKey(env?.DATA_GO_KR_SERVICE_KEY, { label: "DATA_GO_KR_SERVICE_KEY" });
   requireOciParBaseUrl(env);
 
+  const paths = {
+    raw: path.join(operation, "kric-nationwide-timetable-file-refresh.xlsx"),
+    collectionReceipt: path.join(operation, "collection-receipt.json"),
+    observation: path.join(operation, "observation.json"),
+    holidayDirectory: path.join(operation, "kasi-holidays"),
+    preparationInput: path.join(operation, "prepare-input.json"),
+    retainedContract: path.join(operation, "retained-contract.json"),
+    publicationReceipt: path.join(operation, "publication-receipt.json"),
+    registrationInput: path.join(operation, "registration-input.json"),
+  };
+  const context = { root, operation, boundaries, env, clock, preflight, serviceKey, paths };
+  let collected = null;
+  if (phase !== "publish") collected = await collectPhase({ ...context, trigger, admittedContractSha256 });
+  if (phase === "collect") return { state: "COLLECTED", sourceId: SOURCE_ID, operationRoot: operation, freshnessExpiresAt: collected.freshnessExpiresAt };
+  return publishPhase({ ...context, collected });
+}
+
+async function collectPhase({ root, operation, boundaries, clock, preflight, serviceKey, paths, trigger, admittedContractSha256 }) {
   const fsMkdir = boundaries.mkdir ?? mkdir;
   const fsWriteFile = boundaries.writeFile ?? writeFile;
   await fsMkdir(operation, { mode: 0o700 });
-  const rawPath = path.join(operation, "kric-nationwide-timetable-file-refresh.xlsx");
-  const collectionReceiptPath = path.join(operation, "collection-receipt.json");
-  const observationPath = path.join(operation, "observation.json");
-  const holidayDirectory = path.join(operation, "kasi-holidays");
-  const preparationInputPath = path.join(operation, "prepare-input.json");
-  const retainedContractPath = path.join(operation, "retained-contract.json");
-  const publicationReceiptPath = path.join(operation, "publication-receipt.json");
-  const registrationInputPath = path.join(operation, "registration-input.json");
   const collectKric = boundaries.collectKric ?? collectKricNationwideTimetableFile;
   const buildObservation = boundaries.buildObservation ?? buildKricNationwideTimetableObservation;
-  const preparePublication = boundaries.preparePublication ?? prepareRetainedKricTimetablePublication;
   const collectKasi = boundaries.collectKasi ?? collectKasiHolidayCalendarWindowFiles;
   const prepareContract = boundaries.prepareContract ?? defaultPrepareContract;
-  const publish = boundaries.publish ?? publishRetainedKricTimetable;
-  const register = boundaries.register ?? registerRetainedKricTimetable;
-
-  const receipt = await collectKric({ outputFile: rawPath, now: requiredClock(clock) });
-  await writeJson(fsWriteFile, collectionReceiptPath, receipt);
-  const observation = await buildObservation({ inputFile: rawPath, receipt });
-  await writeJson(fsWriteFile, observationPath, observation);
-  const observationBytes = await (boundaries.readFile ?? readFile)(observationPath);
-  const publicationPlan = preparePublication({
-    candidate: preflight.candidate, observationBytes, receipt, routeNumber: preflight.routePolicy.routeNumber,
-    sourcePath: path.basename(observationPath), evaluationAt: requiredClock(clock).toISOString(), providerValidUntil: null,
-  });
+  const receipt = await collectKric({ outputFile: paths.raw, now: requiredClock(clock) });
+  await writeJson(fsWriteFile, paths.collectionReceipt, receipt);
+  const observation = await buildObservation({ inputFile: paths.raw, receipt });
+  await writeJson(fsWriteFile, paths.observation, observation);
+  const observationBytes = await (boundaries.readFile ?? readFile)(paths.observation);
+  const publicationPlan = planPublication({ boundaries, clock, preflight, observationPath: paths.observation, observationBytes, receipt });
   const window = retainedGwangjuConfirmationWindowDates({
     observedAt: receipt.capturedAt, freshnessExpiresAt: publicationPlan.freshnessExpiresAt,
   });
-  await collectKasi({ outputDirectory: holidayDirectory, startDate: window.startDate, endDate: window.endDate, serviceKey });
-  await writeJson(fsWriteFile, preparationInputPath, {
-    observationPath, receiptPath: collectionReceiptPath, holidayDirectory, providerValidUntil: null,
+  await collectKasi({ outputDirectory: paths.holidayDirectory, startDate: window.startDate, endDate: window.endDate, serviceKey });
+  await writeJson(fsWriteFile, paths.preparationInput, {
+    observationPath: paths.observation, receiptPath: paths.collectionReceipt, holidayDirectory: paths.holidayDirectory, providerValidUntil: null,
   });
-  await prepareContract({ repositoryRoot: root, inputPath: preparationInputPath, outputPath: retainedContractPath, now: requiredClock(clock) });
+  await prepareContract({ repositoryRoot: root, inputPath: paths.preparationInput, outputPath: paths.retainedContract, now: requiredClock(clock) });
   if (trigger === "CONTRACT_REVISION") {
-    const contract = JSON.parse(await (boundaries.readFile ?? readFile)(retainedContractPath, "utf8"));
+    const contract = JSON.parse(await (boundaries.readFile ?? readFile)(paths.retainedContract, "utf8"));
     if (createHash("sha256").update(canonicalJson(contract)).digest("hex") === admittedContractSha256) {
       throw new Error("contract revision trigger requires a changed retained contract");
     }
   }
+  return { receipt, publicationPlan };
+}
+
+function planPublication({ boundaries, clock, preflight, observationPath, observationBytes, receipt }) {
+  const preparePublication = boundaries.preparePublication ?? prepareRetainedKricTimetablePublication;
+  return preparePublication({
+    candidate: preflight.candidate, observationBytes, receipt, routeNumber: preflight.routePolicy.routeNumber,
+    sourcePath: path.basename(observationPath), evaluationAt: requiredClock(clock).toISOString(), providerValidUntil: null,
+  });
+}
+
+async function publishPhase({ root, operation, boundaries, env, clock, preflight, paths, collected }) {
+  const fsWriteFile = boundaries.writeFile ?? writeFile;
+  const publish = boundaries.publish ?? publishRetainedKricTimetable;
+  const register = boundaries.register ?? registerRetainedKricTimetable;
+  const readBytes = boundaries.readFile ?? readFile;
+  // 게시 단계는 수집 단계가 남긴 파일만 읽는다. 수집을 다시 하지 않는다.
+  let { receipt, publicationPlan } = collected ?? {};
+  if (!collected) {
+    receipt = JSON.parse(await readBytes(paths.collectionReceipt, "utf8"));
+    publicationPlan = planPublication({ boundaries, clock, preflight, observationPath: paths.observation, observationBytes: await readBytes(paths.observation), receipt });
+  }
   await publish({
-    inputPath: observationPath, receiptPath: publicationReceiptPath, receipt,
+    inputPath: paths.observation, receiptPath: paths.publicationReceipt, receipt,
     routeNumber: preflight.routePolicy.routeNumber, candidate: preflight.candidate,
     governancePolicy: preflight.governancePolicy, providerValidUntil: null, env, now: requiredClock(clock),
   });
-  await writeJson(fsWriteFile, registrationInputPath, {
+  await writeJson(fsWriteFile, paths.registrationInput, {
     schemaVersion: 1, artifactKind: "retained-kric-timetable-registration-input",
-    observationPath, collectionReceiptPath, publicationReceiptPath, retainedContractPath,
+    observationPath: paths.observation, collectionReceiptPath: paths.collectionReceipt, publicationReceiptPath: paths.publicationReceipt, retainedContractPath: paths.retainedContract,
     governanceEntry: preflight.governanceEntry, providerValidUntil: null,
   });
-  await register({ repositoryRoot: root, sourceInputPath: registrationInputPath, env, now: requiredClock(clock) });
+  await register({ repositoryRoot: root, sourceInputPath: paths.registrationInput, env, now: requiredClock(clock) });
   return { state: "REGISTERED", sourceId: SOURCE_ID, operationRoot: operation, freshnessExpiresAt: publicationPlan.freshnessExpiresAt };
 }
 
@@ -154,11 +184,15 @@ function requiredClock(clock) {
 }
 
 function parseArgs(argv) {
-  const revision = argv.length === 4 && argv[2] === "--trigger" && argv[3] === "contract-revision";
-  if ((argv.length !== 2 && !revision) || argv[0] !== "--operation-root" || !path.isAbsolute(argv[1])) {
-    throw new Error("usage: --operation-root <absolute-directory> [--trigger contract-revision]");
+  const usage = "usage: --operation-root <absolute-directory> [--trigger contract-revision] [--phase collect|publish]";
+  if (argv[0] !== "--operation-root" || !path.isAbsolute(argv[1] ?? "")) throw new Error(usage);
+  const values = { operationRoot: argv[1], trigger: "DUE", phase: "all" };
+  for (let index = 2; index < argv.length; index += 2) {
+    if (argv[index] === "--trigger" && argv[index + 1] === "contract-revision" && values.trigger === "DUE") values.trigger = "CONTRACT_REVISION";
+    else if (argv[index] === "--phase" && ["collect", "publish"].includes(argv[index + 1]) && values.phase === "all") values.phase = argv[index + 1];
+    else throw new Error(usage);
   }
-  return { operationRoot: argv[1], trigger: revision ? "CONTRACT_REVISION" : "DUE" };
+  return values;
 }
 
 if (isMainModule(import.meta.url)) {
