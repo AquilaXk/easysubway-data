@@ -105,7 +105,8 @@ test("정책은 알려진 키와 값만 받는다", () => {
 
 test("저장소의 기본 정책 파일이 위 기본값과 같다", async () => {
   const policy = JSON.parse(await readFile(path.join(import.meta.dirname, "source-ledger-change-policy.json"), "utf8"));
-  assert.deepEqual(parseLedgerChangePolicy(policy), POLICY);
+  // #1014 F4: 수도권 topology는 간선 2%까지만 자동 통과하도록 전용 override가 있다. 나머지 값은 기본값 그대로다.
+  assert.deepEqual(parseLedgerChangePolicy(policy), { ...POLICY, sourceOverrides: { "capital-route-topology": { maxRowDeltaRatio: 0.02 } } });
 });
 
 function git(cwd, ...args) {

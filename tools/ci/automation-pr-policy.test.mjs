@@ -1036,7 +1036,7 @@ function recordedGateInput(commit, { mutateHead = (entry) => entry, files: extra
   const inventory = (entry) => ({ ...commit.inventory.top, sources: [...stubs, entry] });
   const realPolicy = readFile(new URL("./source-ledger-change-policy.json", import.meta.url), "utf8");
   const evidence = {
-    schemaVersion: 1, issue: 969, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, ...STAGES.registration.evidence, sources: commit.gateSources,
+    schemaVersion: 1, issue: 969, runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, ...STAGES.registration.evidence, policy: recorded.POLICY, sources: commit.gateSources,
   };
   return {
     evidence,

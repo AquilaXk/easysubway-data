@@ -22,7 +22,7 @@
 //   REFRESH_GATE    inventory 증거·snapshot 파일·원장 행·입력 파일이 서로 결속되지 않았다.
 import { createHash } from "node:crypto";
 
-import { requireCurrentSourceSeparatedCapitalTopology } from "../datapack/collect-capital-route-topology.mjs";
+import { compareCapitalRouteTopologies, requireCurrentSourceSeparatedCapitalTopology } from "../datapack/collect-capital-route-topology.mjs";
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 
@@ -367,6 +367,23 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
     violate("REFRESH_GATE", `topology snapshot의 신원을 본문에서 다시 계산하지 못했다: ${message(error)}`);
     return [];
   }
+  // 리뷰 F4: 자동 경로는 제거를 허용하지 않는다. 직전 노선별 역·간선 집합은 새 집합의 부분집합이어야 한다(항목 식별자 기준: 역 이름, 방향 있는 간선 쌍).
+  // 같은 수로 교체해도 개수는 그대로지만 제거로 잡힌다. 추가·수정은 capital-route-topology 전용 override(정책 파일)의 작은 한도까지만 허용한다.
+  // 제거나 한도 초과는 PR을 열지 않고 실패해 사람 경로(#926 보고)로 간다.
+  const comparison = compareCapitalRouteTopologies(previous, capital);
+  const removedEdges = comparison.changes.flatMap(({ lineId, removed }) => removed.map((edge) => `${lineId}:${edge.fromStationName}->${edge.toStationName}`));
+  const stationsOf = (snapshot) => new Map(snapshot.lines.map((line) => [line.lineId, new Set(line.scope.map(({ stationName }) => stationName))]));
+  const [stationsBefore, stationsAfter] = [stationsOf(previous), stationsOf(capital)];
+  const removedStations = [...stationsBefore].flatMap(([lineId, names]) => [...names].filter((name) => !stationsAfter.get(lineId)?.has(name)).map((name) => `${lineId}:${name}`));
+  bind(violate, removedEdges.length === 0 && removedStations.length === 0,
+    `topology에서 간선 ${removedEdges.length}개·역 ${removedStations.length}개가 제거되었다(제거는 자동 병합하지 않는다): ${shown([...removedEdges, ...removedStations])}`);
+  const changedEdges = comparison.changes.reduce((sum, { added, modified }) => sum + added.length + modified.length, 0);
+  const capitalPolicy = { ...policy, ...(policy.sourceOverrides["capital-route-topology"] ?? {}) };
+  const changedRatio = changedEdges / Math.max(previous.totalEdgeCount, 1);
+  if (changedRatio > capitalPolicy.maxRowDeltaRatio) {
+    violate("INVENTORY_GATE", `SOURCE_COUNT_DELTA: capital-route-topology ${capitalId}: changed edges ${changedEdges} (${percent(changedRatio)}) exceed ${percent(capitalPolicy.maxRowDeltaRatio)}`);
+  }
+
   const reverification = JSON.parse(await files.readTree(reverificationPath));
   bind(violate, reverification?.candidate?.contentSha256 === capital.contentSha256, "재검증 기록의 후보 contentSha256이 새 topology와 다르다");
 
