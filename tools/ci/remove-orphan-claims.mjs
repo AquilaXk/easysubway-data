@@ -15,12 +15,12 @@
 // 사용: node tools/ci/remove-orphan-claims.mjs --workflow <file> --repository <owner/repo> --claims <claim 브랜치를 쉼표로 이은 목록> --refs <판정 시점의 git ls-remote 출력 파일>
 // git push 인증은 호출하는 step이 먼저 `gh auth setup-git`으로 준비한다.
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { ownPullRequestsByBranch } from "./automation-pr-state.mjs";
-import { CLAIM_OWNERS, assertClaimRunOwner, claimRunId, isEmptyClaim, lookupClaimCommits, lookupClaimRun } from "./claim-orphans.mjs";
+import { CLAIM_OWNERS, assertClaimRunOwner, claimRunId, classifyUnboundClaim, isEmptyClaim, lookupClaimCommits, lookupClaimRun } from "./claim-orphans.mjs";
 import { BRANCH_PR_LIMIT, PR_FIELDS } from "./collect-automation-prs.mjs";
 import { defaultRunGh, reportRefreshFailure } from "./report-refresh-failure.mjs";
 
@@ -37,8 +37,8 @@ async function defaultRunGit(args) {
   return stdout;
 }
 
-function defaultReport({ workflowFile, repository, runId }, runGh) {
-  return reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", runId], runGh });
+function defaultReport({ workflowFile, repository, runId, orphan }, runGh) {
+  return reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", runId], runGh, orphan });
 }
 
 async function remoteSha(runGit, branch) {
@@ -69,34 +69,46 @@ async function claimPullRequest(runGh, { workflowFile, repository, branch }) {
 }
 
 // 지우기 전 확인(보고 전·push 직전 두 번): 만든 run이 끝났고 이 workflow의 main run이어야 하고, 브랜치는 출력이 없는 빈 claim 하나여야 한다.
-// 판정(소유 workflow)이 정리 대상으로 알린 뒤 상황이 바뀌었을 때를 막는다.
+// 판정(소유 workflow)이 정리 대상으로 알린 뒤 상황이 바뀌었을 때를 막는다. 공유 판정을 쓰는 workflow는 같은 분류가 여전히 ABANDONED여야 한다
+// (게시 step이 시작된 run의 claim은 소유 판정을 거쳤어도 지우지 않는다). 분류 근거(reason)를 돌려준다.
 async function assertStillRemovable({ workflowFile, repository, branch, runId, runGh }) {
   const claimRun = await lookupClaimRun(runGh, repository, runId);
   assertClaimRunOwner(workflowFile, branch, claimRun);
   if (claimRun.found && claimRun.status !== "completed") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} producer run ${runId} is still ${claimRun.status}`);
   const commits = await lookupClaimCommits(runGh, repository, branch);
   if (!isEmptyClaim(workflowFile, commits)) fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} is not an empty claim (ahead ${commits.aheadBy}, files ${commits.changedFiles}); it is kept`);
+  if (CLAIM_OWNERS[workflowFile].publicationSteps === undefined) return { reason: "OWNER_DECISION", conclusion: claimRun.conclusion };
+  const classified = classifyUnboundClaim(workflowFile, { branch, runId, run: claimRun, commits, artifacts: [] });
+  if (classified.kind !== "ABANDONED") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} is ${classified.kind} (${classified.reason}), not abandoned; it is kept`);
+  return { reason: classified.reason, conclusion: claimRun.conclusion };
 }
 
-async function reportOrphan({ workflowFile, repository, runId, report }) {
-  return (await report({ workflowFile, repository, runId }))?.action ?? null;
+// 삭제 사실은 보고가 건너뛰어져도 run 로그(notice)와 step 요약에 남긴다.
+async function recordRemoval({ log, summaryFile, workflowFile, branch, runId, conclusion, reason, reported }) {
+  const fields = `workflow=${workflowFile} branch=${branch} producer_run=${runId} conclusion=${conclusion ?? "none"} reason=${reason} report=${reported ?? "none"}`;
+  log(`::notice title=Orphan claim removed::${fields}`);
+  if (summaryFile) {
+    await appendFile(summaryFile, `- 삭제한 claim \`${branch}\`: producer run ${runId}, conclusion \`${conclusion ?? "none"}\`, 분류 \`${reason}\`, 보고 \`${reported ?? "none"}\` (${workflowFile})\n`);
+  }
 }
 
-async function removeOne({ workflowFile, repository, branch, runId, classifiedSha, runGh, runGit, report }) {
+async function removeOne({ workflowFile, repository, branch, runId, classifiedSha, runGh, runGit, report, log, summaryFile }) {
   const sha = await remoteSha(runGit, branch);
   if (sha === null) return { branch, action: "absent", reported: null };
   if (sha !== classifiedSha) fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} moved since classification (${classifiedSha} -> ${sha})`);
   const pullRequest = await claimPullRequest(runGh, { workflowFile, repository, branch });
   if (pullRequest?.state === "OPEN" || pullRequest?.state === "CLOSED") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} has a ${pullRequest.state} pull request #${pullRequest.number}`);
   const merged = pullRequest?.state === "MERGED";
+  let removal = { conclusion: null, reason: "MERGED_LEFTOVER" };
   let reported = null;
   if (!merged) {
-    await assertStillRemovable({ workflowFile, repository, branch, runId, runGh });
+    removal = await assertStillRemovable({ workflowFile, repository, branch, runId, runGh });
     // 보고가 먼저다. 보고가 실패하면 지우지 않는다. 병합된 PR의 남은 claim은 끝난 일이라 보고하지 않는다.
-    reported = await reportOrphan({ workflowFile, repository, runId, report });
+    reported = (await report({ workflowFile, repository, runId, orphan: { branch, conclusion: removal.conclusion ?? "unknown", reason: removal.reason } }))?.action ?? null;
     await assertStillRemovable({ workflowFile, repository, branch, runId, runGh });
   }
   await runGit(["push", `--force-with-lease=refs/heads/${branch}:${classifiedSha}`, "origin", `:refs/heads/${branch}`]);
+  await recordRemoval({ log, summaryFile, workflowFile, branch, runId, conclusion: removal.conclusion, reason: removal.reason, reported });
   return { branch, action: merged ? "removed_merged" : "removed_orphan", reported };
 }
 
@@ -107,6 +119,7 @@ async function removeOne({ workflowFile, repository, branch, runId, classifiedSh
  */
 export async function removeOrphanClaims({
   workflowFile, repository, claims, refsText, runGh = defaultRunGh, runGit = defaultRunGit, report = (input) => defaultReport(input, runGh), log = console.log,
+  summaryFile = process.env.GITHUB_STEP_SUMMARY,
 } = {}) {
   if (!Object.hasOwn(CLAIM_OWNERS, workflowFile ?? "") || !Array.isArray(claims) || claims.length === 0 || new Set(claims).size !== claims.length) {
     fail("CLAIM_ORPHAN_INPUT_INVALID", "workflow or claim list");
@@ -116,7 +129,7 @@ export async function removeOrphanClaims({
   for (const branch of claims) if (!shas.has(branch)) fail("CLAIM_ORPHAN_INPUT_INVALID", `${branch} is not in the classification refs`);
   const results = [];
   for (const [index, branch] of claims.entries()) {
-    const result = await removeOne({ workflowFile, repository, branch, runId: runIds[index], classifiedSha: shas.get(branch), runGh, runGit, report });
+    const result = await removeOne({ workflowFile, repository, branch, runId: runIds[index], classifiedSha: shas.get(branch), runGh, runGit, report, log, summaryFile });
     log(JSON.stringify(result));
     results.push(result);
   }

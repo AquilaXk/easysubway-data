@@ -75,17 +75,23 @@ test("PR 없는 고아는 보고(#926)한 뒤에 지운다. 지울 때 본 sha�
   const h = harness({ runs: { 37399282636: finishedRun() }, remote: { [branch]: SHA } });
   const result = await run([branch], h);
   assert.deepEqual(result, [{ branch, action: "removed_orphan", reported: "skip" }]);
-  assert.deepEqual(h.reports, [{ workflowFile: GWANGJU, repository: REPOSITORY, runId: "37399282636" }]);
+  assert.deepEqual(h.reports, [{ workflowFile: GWANGJU, repository: REPOSITORY, runId: "37399282636", orphan: { branch, conclusion: "failure", reason: "PUBLISH_STEP_NOT_STARTED" } }]);
   const order = h.events.map(([kind, second]) => `${kind}:${second}`);
   assert.ok(order.indexOf("report:37399282636") < order.findIndex((entry) => entry === "git:push"), "보고가 삭제보다 먼저다");
   assert.deepEqual(h.events.at(-1), ["git", "push", `--force-with-lease=refs/heads/${branch}:${SHA}`, "origin", `:refs/heads/${branch}`]);
 });
 
-test("run 기록이 없어도(Not Found) 끝난 run이라 보고하고 지운다", async () => {
+// #995 F1: run 기록이 없으면 게시 step까지 갔는지 알 수 없다. OCI 게시가 없는 workflow(topology)만 지운다.
+test("run 기록이 없으면(Not Found) 게시 여부를 알 수 없어 지우지 않는다. 게시가 없는 workflow만 예외다", async () => {
   const branch = branchOf(5);
   const h = harness({ runs: {}, remote: { [branch]: SHA } });
-  assert.equal((await run([branch], h))[0].action, "removed_orphan");
-  assert.equal(h.reports.length, 1);
+  await assert.rejects(run([branch], h), /CLAIM_ORPHAN_RUN_UNAVAILABLE/u);
+  assert.deepEqual(h.reports, []);
+  assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  const topology = "current-capital-topology-refresh.yml";
+  const topologyBranch = branchOf(5, topology);
+  const t = harness({ runs: {}, remote: { [topologyBranch]: SHA }, compare: { [topologyBranch]: { aheadBy: 1, changedFiles: 0, messages: [CLAIM_OWNERS[topology].claimSubject] } } });
+  assert.equal((await run([topologyBranch], t, topology))[0].action, "removed_orphan");
 });
 
 test("병합된 PR의 남은 claim은 보고 없이 지운다", async () => {
@@ -178,8 +184,8 @@ test("CLI는 쉼표로 이어진 claim 목록을 받는다", async () => {
   const result = await main(["--workflow", GWANGJU, "--repository", REPOSITORY, "--claims", `${a},${b}`, "--refs", refsFile], { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log });
   await rm(directory, { recursive: true, force: true });
   assert.deepEqual(result.map(({ action }) => action), ["removed_orphan", "removed_orphan"]);
-  assert.equal(h.logs.length, 2);
-  assert.match(h.logs[0], /"action":"removed_orphan"/u);
+  assert.equal(h.logs.filter((line) => line.startsWith("{")).length, 2);
+  assert.match(h.logs.find((line) => line.startsWith("{")), /"action":"removed_orphan"/u);
   await assert.rejects(main(["--workflow", GWANGJU, "--repository", REPOSITORY, "--claims", a], { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log }), /CLAIM_ORPHAN_INPUT_INVALID/u);
 });
 

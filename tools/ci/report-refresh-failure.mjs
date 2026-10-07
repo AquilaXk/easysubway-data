@@ -47,6 +47,25 @@ function validated({ repository, workflowFile, runId }) {
   return { repository, workflowFile, runId, runUrl: `https://github.com/${repository}/actions/runs/${runId}` };
 }
 
+// #995: PR 없는 claim을 지운 보고. producer run의 conclusion을 그대로 적고(무조건 실패라고 쓰지 않는다) 삭제 사실을 이슈에 남긴다.
+function validatedOrphan(orphan) {
+  if (orphan === undefined) return null;
+  if (!orphan || typeof orphan !== "object" || typeof orphan.branch !== "string" || !orphan.branch.startsWith("automation/")
+    || typeof orphan.conclusion !== "string" || orphan.conclusion === "" || typeof orphan.reason !== "string" || orphan.reason === "") fail("ORPHAN");
+  return orphan;
+}
+
+const orphanMarker = (branch) => `<!-- easysubway-orphan-claim-removed:${branch} -->`;
+
+function orphanLines(input, orphan) {
+  return [
+    `- producer run: ${input.runUrl} (conclusion: ${orphan.conclusion})`,
+    `- 삭제한 claim 브랜치: \`${orphan.branch}\``,
+    `- 분류 근거: ${orphan.reason}`,
+    "- 삭제한 브랜치는 출력 커밋이 없는 빈 claim 하나였다. 복구에 쓸 증거는 남지 않는다.",
+  ];
+}
+
 function instant(value, code) {
   const millis = typeof value === "string" ? Date.parse(value) : Number.NaN;
   if (!Number.isFinite(millis)) fail(code);
@@ -81,8 +100,27 @@ function comments(issue) {
   });
 }
 
-export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now }) {
+// 이미 기록된 run이어도 claim을 지운 사실은 따로 남긴다. 같은 claim의 삭제는 한 번만 기록한다.
+function planOrphanComment({ input, orphan, issue, status, issueComments, reportedAt, duplicateNumbers }) {
+  if (issueComments.some(({ body }) => body.includes(orphanMarker(orphan.branch)))) return { action: "skip", issueNumber: issue.number, duplicateNumbers };
+  const recorded = status.runUrls.includes(input.runUrl) || issueComments.some(({ body }) => body.includes(input.runUrl));
+  return {
+    action: "comment",
+    issueNumber: issue.number,
+    ...(recorded ? {} : { issueBody: status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt)) }),
+    duplicateNumbers,
+    body: [
+      orphanMarker(orphan.branch),
+      `\`${input.workflowFile}\`의 PR 없는 claim 브랜치를 자동으로 삭제했다. 이전 데이터로 대체하지 않았다.`,
+      "",
+      ...orphanLines(input, orphan),
+    ].join("\n"),
+  };
+}
+
+export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now, orphan: orphanInput }) {
   const input = validated({ repository, workflowFile, runId });
+  const orphan = validatedOrphan(orphanInput);
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
   if (!Array.isArray(openIssues)) fail("ISSUES");
   const marker = refreshFailureMarker(input.workflowFile);
@@ -101,6 +139,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
     const issue = matching[0];
     const status = readStatus(issue.body);
     const issueComments = comments(issue);
+    if (orphan) return planOrphanComment({ input, orphan, issue, status, issueComments, reportedAt, duplicateNumbers });
     if (status.runUrls.includes(input.runUrl) || issueComments.some(({ body }) => body.includes(input.runUrl))) {
       return { action: "skip", issueNumber: issue.number, duplicateNumbers };
     }
@@ -136,8 +175,9 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       `${label} 원천 자동 갱신의 실패 원인을 고쳐 다음 정기 실행이 성공하게 한다.`,
       "",
       "### 배경",
-      `- 정기 원천 갱신 workflow \`${input.workflowFile}\`가 실패했다. 이전 데이터로 대체하지 않았다.`,
-      `- 실패 run: ${input.runUrl}`,
+      ...(orphan
+        ? [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`의 run이 PR 없는 claim 브랜치를 남겼고, 자동으로 삭제했다. 이전 데이터로 대체하지 않았다.`, ...orphanLines(input, orphan), orphanMarker(orphan.branch)]
+        : [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`가 실패했다. 이전 데이터로 대체하지 않았다.`, `- 실패 run: ${input.runUrl}`]),
       "- 이 이슈는 workflow가 만들었다. 같은 workflow가 다시 실패하면 아래 상태 블록에 run을 쌓고, 하루에 한 번 댓글로 알린다.",
       "",
       "### 완료 조건",
@@ -193,7 +233,7 @@ export function defaultRunGh(args, input = null, { resolve: resolveExecutable = 
   });
 }
 
-export async function reportRefreshFailure({ argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date() } = {}) {
+export async function reportRefreshFailure({ argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date(), orphan } = {}) {
   const args = parseArgs(argv);
   const input = validated(args);
   let openIssues;
@@ -205,7 +245,7 @@ export async function reportRefreshFailure({ argv = process.argv.slice(2), runGh
     if (error instanceof SyntaxError) fail("ISSUES");
     throw error;
   }
-  const plan = planRefreshFailureReport({ ...input, openIssues, now: now() });
+  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan });
   if (plan.action === "create") {
     await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
     return plan;
@@ -214,7 +254,7 @@ export async function reportRefreshFailure({ argv = process.argv.slice(2), runGh
   if (plan.action === "comment") {
     await runGh(["issue", "comment", String(plan.issueNumber), "--repo", input.repository, "--body-file", "-"], plan.body);
   }
-  if (plan.action === "comment" || plan.action === "status") {
+  if (plan.issueBody !== undefined) {
     await runGh(["issue", "edit", String(plan.issueNumber), "--repo", input.repository, "--body-file", "-"], plan.issueBody);
   }
   if (plan.duplicateNumbers.length > 0) {
