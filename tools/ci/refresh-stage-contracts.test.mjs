@@ -616,3 +616,27 @@ test("F5: 계약 주석이 허용 밖 경로의 실제 동작(push 전 실패, #
   assert.match(header, /관측된 적 없는 경로\(reviewed pack, ITX 입력\)는 허용하지 않는다\. 이런 변경은 emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다/u);
   assert.match(header, /브랜치도 PR도 만들어지지 않는다/u);
 });
+
+// probe로 드러난 틈: 소유 원천 목록의 표식은 updatedAt뿐, 역만 제거돼도 제거, 해시 방식을 모르는 입력 목록은 허용하지 않는다.
+test("F1·F4·F3 보강 반증: sourceInventory의 updatedAt 외 표식, 역만 제거, 해시 방식을 모르는 입력 목록", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const station = packSourcesOf(run)["incheon-transit-station-info"];
+    const inventoryStamp = await evaluate(run, {
+      mutateBasePack: (pack) => { pack.packs[0].sourceInventory[1].reviewedAt = station.before.at; },
+      mutatePack: (pack) => { pack.packs[0].sourceInventory[1].reviewedAt = station.after.at; },
+    });
+    assert.ok(codes(inventoryStamp).includes("PACK_CONTENT"), `${run.label}: sourceInventory 항목은 updatedAt만 바뀔 수 있다`);
+    const stationOnly = await evaluate(run, { mutateCapitalLines: (lines) => { lines[2].scope.pop(); } });
+    assert.match(details(stationOnly), /역 1개가 제거되었다/u, `${run.label}: 간선은 그대로이고 역만 제거`);
+  }
+  const [seoul] = runsOf("seoul-accessibility-refresh");
+  const stamped = (snapshotId, at, hash) => ({ id: "facility-1", note: "정책과 무관한 행", sourceSnapshotId: snapshotId, lastVerifiedAt: at, evidenceHash: hash });
+  const oldId = "seoul-metro-accessibility-20261002T061120173Z";
+  const newId = seoul.sourceInputChanges[0].after.sourceSnapshotId;
+  const newAt = seoul.sourceInputChanges[0].after.lastVerifiedAt;
+  const unknown = await evaluate(seoul, {
+    mutateBaseInput: (input) => { input.facilityRows = [stamped(oldId, "2026-10-02T06:11:20.173Z", "1".repeat(64))]; },
+    mutateInput: (input) => { input.facilityRows = [stamped(newId, newAt, "2".repeat(64))]; },
+  });
+  assert.match(details(unknown), /facilityRows 목록의 evidenceHash 계산 방식을 알 수 없다/u);
+});

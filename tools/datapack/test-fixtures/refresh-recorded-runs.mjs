@@ -162,7 +162,7 @@ export function sourceInputOf(run, side) {
 }
 
 /** 기록된 실행의 base·head 트리. mutate가 head 쪽만 고친다. */
-export function recordedTrees(run, { mutateInventory = () => {}, mutateLedger = () => {}, mutateInput = () => {}, mutateFiles = () => {}, mutateBaseInventory = () => {}, mutateCapitalLines = () => {}, mutatePack = () => {} } = {}) {
+export function recordedTrees(run, { mutateInventory = () => {}, mutateLedger = () => {}, mutateInput = () => {}, mutateFiles = () => {}, mutateBaseInventory = () => {}, mutateCapitalLines = () => {}, mutatePack = () => {}, mutateBasePack = () => {}, mutateBaseInput = () => {} } = {}) {
   const base = new Map();
   const head = new Map();
   const snapshotText = run.stage === "seoul-accessibility-refresh" || run.stage === "kric-facility-refresh" ? snapshotTextOf(run) : null;
@@ -182,6 +182,7 @@ export function recordedTrees(run, { mutateInventory = () => {}, mutateLedger = 
     const before = sourceInputOf(run, "before");
     const after = sourceInputOf(run, "after");
     mutateInput(after);
+    mutateBaseInput(before);
     base.set(INPUT_PATH, JSON.stringify(before));
     head.set(INPUT_PATH, JSON.stringify(after));
   }
@@ -195,7 +196,9 @@ export function recordedTrees(run, { mutateInventory = () => {}, mutateLedger = 
     for (const [filename, doc] of Object.entries(run.snapshotFiles)) head.set(filename, JSON.stringify(doc));
     const headPack = packOf(run, "after");
     mutatePack(headPack);
-    base.set(CANONICAL_PACK_PATH, JSON.stringify(packOf(run, "before")));
+    const basePack = packOf(run, "before");
+    mutateBasePack(basePack);
+    base.set(CANONICAL_PACK_PATH, JSON.stringify(basePack));
     head.set(CANONICAL_PACK_PATH, JSON.stringify(headPack));
   }
   mutateFiles(head, base);
