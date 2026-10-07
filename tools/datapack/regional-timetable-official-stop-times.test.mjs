@@ -318,14 +318,46 @@ test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 �
   }
 });
 
-test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 projection 행의 도착·출발 값이다(#913)", async () => {
-  const pack = activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"));
-  const inventory = readJson("tools/datapack/source-inventory.json");
-  const ledger = readJson("tools/datapack/release/source-snapshots.json");
-  const source = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
-  const projection = readJson(source.retainedGwangjuProjectionEvidence.snapshotPath);
-  const head = ledger.find(({ snapshotId }) => snapshotId === source.retainedScheduleAdmissionEvidence.snapshotId);
-  const contract = head.retainedTimetableInputs.contract;
+// #913·#1005: 광주 정차 시각의 원천은 KRIC 보관본 projection이다. 정본 팩이 어느 보관 스냅샷에 결속됐는지는 inventory head가 아니라
+// 팩 자신(trip.sourceSnapshotId)과 원장으로 판정한다. 정기 갱신 PR은 원장 행 추가와 inventory head 교체만 하고, 팩·projection은
+// 병합 뒤 source-derivative-rebinding과 후보 갱신이 다시 만든다. 그 사이 팩이 이전 head에 결속된 것은 정상 상태다.
+const RETAINED_SOURCE_ID = "kric-nationwide-timetable-file";
+
+function retainedHeadChain({ inventory, ledger }) {
+  const source = inventory.sources.find(({ id }) => id === RETAINED_SOURCE_ID);
+  const rows = new Map(ledger.filter(({ sourceId }) => sourceId === RETAINED_SOURCE_ID).map((row) => [row.snapshotId, row]));
+  const chain = [];
+  for (let id = source.retainedScheduleAdmissionEvidence.snapshotId; id; id = rows.get(id)?.previousSnapshotId) {
+    assert.ok(rows.has(id), `보관 스냅샷 ${id}은 원장 행이어야 한다`);
+    assert.ok(!chain.some((row) => row.snapshotId === id), "원장 previousSnapshotId 사슬에 순환이 없어야 한다");
+    chain.push(rows.get(id));
+  }
+  return { source, rows, chain };
+}
+
+function assertGwangjuStopTimesBoundToRetainedSource({ pack, inventory, ledger, readProjection }) {
+  const { source, rows, chain } = retainedHeadChain({ inventory, ledger });
+  const projection = readProjection(source.retainedGwangjuProjectionEvidence.snapshotPath);
+  const trips = new Map(pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-"))
+    .map((trip) => [trip.id, trip]));
+  assert.ok(trips.size > 0);
+  const stops = pack.transitStopTimes.filter(({ tripId }) => trips.has(tripId));
+  assert.ok(stops.length > 0);
+
+  // 팩의 결속: 광주 trip 전부가 같은 보관 스냅샷 하나를 가리키고, 그 스냅샷은 현재 head 사슬 위의 원장 행이어야 한다.
+  const packSnapshotIds = new Set([...trips.values()].map(({ sourceSnapshotId }) => sourceSnapshotId));
+  assert.equal(packSnapshotIds.size, 1, `광주 trip은 보관 스냅샷 하나에 결속돼야 한다: ${[...packSnapshotIds].join(", ")}`);
+  const [packSnapshotId] = packSnapshotIds;
+  const packRow = rows.get(packSnapshotId);
+  assert.ok(packRow, `팩이 가리키는 보관 스냅샷 ${packSnapshotId}은 원장 행이어야 한다`);
+  assert.ok(chain.some(({ snapshotId }) => snapshotId === packSnapshotId), "팩이 가리키는 보관 스냅샷은 inventory head에서 previousSnapshotId로 이어져야 한다");
+
+  // projection의 결속: projection이 만든 보관 스냅샷도 같은 사슬 위에 있고 원천 원본(xlsx) sha256이 팩의 스냅샷과 같아야 한다.
+  const projectionRow = rows.get(projection.retainedSnapshotId);
+  assert.ok(projectionRow && chain.includes(projectionRow), "projection의 보관 스냅샷은 inventory head 사슬 위의 원장 행이어야 한다");
+  assert.equal(projectionRow.rawSha256, packRow.rawSha256, "팩과 projection은 같은 원천 원본에서 나와야 한다");
+
+  const contract = packRow.retainedTimetableInputs.contract;
   const weekdayTypeByServiceId = new Map(Object.entries(contract.serviceIds).map(([weekdayType, serviceId]) => [serviceId, weekdayType]));
   const labelByStationId = new Map(contract.stationBindings.map(({ stationId, sourceLabel }) => [stationId, sourceLabel]));
   const seconds = (value) => { const [h, m, s] = value.split(":").map(Number); return h * 3600 + m * 60 + s; };
@@ -333,14 +365,8 @@ test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 proj
     .filter((cell) => /^\d{2}:\d{2}:\d{2}$/u.test(cell?.value ?? ""))
     // 자정 뒤 정차는 운행일 기준으로 86,400초를 더한 값일 수 있다.
     .flatMap((cell) => [0, 86_400].map((offset) => `${record.trainNumber}|${record.weekdayType}|${record.stationName}|${seconds(cell.value) + offset}`))));
-  const trips = new Map(pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-"))
-    .map((trip) => [trip.id, trip]));
-  assert.ok(trips.size > 0);
-  const stops = pack.transitStopTimes.filter(({ tripId }) => trips.has(tripId));
-  assert.ok(stops.length > 0);
   for (const stop of stops) {
     const trip = trips.get(stop.tripId);
-    assert.equal(trip.sourceSnapshotId, source.retainedScheduleAdmissionEvidence.snapshotId);
     const weekdayType = weekdayTypeByServiceId.get(trip.serviceId);
     const label = labelByStationId.get(stop.stationId);
     for (const value of [stop.arrivalSeconds, stop.departureSeconds]) {
@@ -348,4 +374,63 @@ test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 proj
         `광주 정차 ${trip.trainNo} ${weekdayType} ${label} ${value}초는 보관본 원천 행 값이어야 한다`);
     }
   }
+}
+
+const gwangjuBindingInputs = () => ({
+  pack: activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json")),
+  inventory: readJson("tools/datapack/source-inventory.json"),
+  ledger: readJson("tools/datapack/release/source-snapshots.json"),
+  readProjection: readJson,
+});
+
+// 정기 갱신(register-retained-kric-timetable)이 만드는 변화만 흉내 낸다: 원장 행 추가, inventory head 교체. 팩·projection은 그대로다.
+function withRetainedRefresh({ inventory, ledger, ...rest }, suffix = "f") {
+  const source = inventory.sources.find(({ id }) => id === RETAINED_SOURCE_ID);
+  const head = ledger.find(({ snapshotId }) => snapshotId === source.retainedScheduleAdmissionEvidence.snapshotId);
+  const refreshed = { ...head, snapshotId: `${RETAINED_SOURCE_ID}-${suffix.repeat(64)}`, previousSnapshotId: head.snapshotId, observedAt: "2099-01-01T00:00:00.000Z" };
+  const nextInventory = { ...inventory, sources: inventory.sources.map((entry) => entry.id !== RETAINED_SOURCE_ID ? entry : {
+    ...entry, retainedScheduleAdmissionEvidence: { ...entry.retainedScheduleAdmissionEvidence, snapshotId: refreshed.snapshotId } }) };
+  return { ...rest, inventory: nextInventory, ledger: [...ledger, refreshed] };
+}
+
+test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 projection 행의 도착·출발 값이다(#913)", () => {
+  assertGwangjuStopTimesBoundToRetainedSource(gwangjuBindingInputs());
+});
+
+test("광주 보관 시간표 정기 갱신(원장 행 추가·inventory head 교체)이 팩 결속 계약을 깨지 않는다(#1005)", () => {
+  const refreshed = withRetainedRefresh(gwangjuBindingInputs());
+  assertGwangjuStopTimesBoundToRetainedSource(refreshed);
+  // 갱신이 두 번 이어져도 팩은 사슬 위에 있다.
+  assertGwangjuStopTimesBoundToRetainedSource(withRetainedRefresh(refreshed, "e"));
+});
+
+test("광주 팩 결속 계약은 실제 결속 불일치를 계속 거부한다(#1005 반례)", () => {
+  const inputs = gwangjuBindingInputs();
+  const gwangjuTripIds = new Set(inputs.pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-")).map(({ id }) => id));
+  const withTrips = (mutate) => ({ ...inputs, pack: { ...inputs.pack, transitTrips: inputs.pack.transitTrips.map((trip) => gwangjuTripIds.has(trip.id) ? mutate(trip) : trip) } });
+  const ledgerRowOf = (snapshotId) => inputs.ledger.find((row) => row.snapshotId === snapshotId);
+  const [{ sourceSnapshotId: packSnapshotId }] = inputs.pack.transitTrips.filter(({ id }) => gwangjuTripIds.has(id));
+
+  // 팩이 원장에 없는 스냅샷을 가리킨다.
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(withTrips((trip) => ({ ...trip, sourceSnapshotId: `${RETAINED_SOURCE_ID}-${"0".repeat(64)}` }))), /원장 행/u);
+  // 팩이 head 사슬 밖의 원장 행을 가리킨다.
+  const orphan = { ...ledgerRowOf(packSnapshotId), snapshotId: `${RETAINED_SOURCE_ID}-${"1".repeat(64)}`, previousSnapshotId: null };
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource({ ...withTrips((trip) => ({ ...trip, sourceSnapshotId: orphan.snapshotId })), ledger: [...inputs.ledger, orphan] }), /previousSnapshotId로 이어/u);
+  // 광주 trip이 서로 다른 스냅샷에 걸친다.
+  let first = true;
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(withTrips((trip) => {
+    if (!first) return trip;
+    first = false;
+    return { ...trip, sourceSnapshotId: `${RETAINED_SOURCE_ID}-${"2".repeat(64)}` };
+  })), /하나에 결속/u);
+  // 갱신된 head의 원천 원본(xlsx)이 팩의 스냅샷과 다르면 팩은 새 원천에서 나온 것이 아니다.
+  const refreshed = withRetainedRefresh(inputs);
+  const changedRaw = { ...refreshed, ledger: refreshed.ledger.map((row, index, all) => index === all.length - 1 ? { ...row, rawSha256: "3".repeat(64) } : row) };
+  const changedProjection = { ...changedRaw, readProjection: (relative) => ({ ...readJson(relative), retainedSnapshotId: changedRaw.ledger.at(-1).snapshotId }) };
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(changedProjection), /같은 원천 원본/u);
+  // 정차 시각이 projection 값과 다르다.
+  const target = inputs.pack.transitStopTimes.findIndex(({ tripId }) => gwangjuTripIds.has(tripId));
+  const shifted = { ...inputs, pack: { ...inputs.pack, transitStopTimes: inputs.pack.transitStopTimes.map((stop, index) => (
+    index === target ? { ...stop, arrivalSeconds: stop.arrivalSeconds + 1 } : stop)) } };
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(shifted), /보관본 원천 행 값/u);
 });
