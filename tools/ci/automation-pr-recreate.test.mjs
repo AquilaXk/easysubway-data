@@ -6,6 +6,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { AUTOMATION_PR_APP, AUTOMATION_STAGE_WORKFLOWS } from "./automation-pr-policy.mjs";
+import { evaluateGithubExpression } from "./github-expression.mjs";
+import { REFRESH_STAGE_IDS } from "./refresh-stage-contracts.mjs";
 import {
   RECREATE_DAILY_LIMIT,
   STAGE_REDISPATCH,
@@ -26,6 +28,10 @@ const BRANCHES = {
   "derivative-rebinding": "automation/969-derivative-rebinding-9003",
   "candidate-refresh": "automation/927-nationwide-candidate-refresh-9004",
   "itx-promotion": "automation/977-itx-promotion-9002",
+  "gwangju-timetable-refresh": "automation/504-retained-gwangju-timetable-refresh-9101",
+  "capital-topology-refresh": "automation/636-current-topology-refresh-9102",
+  "kric-facility-refresh": "automation/629-kric-facility-refresh-9103",
+  "seoul-accessibility-refresh": "automation/639-seoul-accessibility-refresh-9104",
 };
 const sha = (digit) => String(digit).repeat(40);
 const open = (number, branch, { user = AUTOMATION_PR_APP, repo = REPOSITORY, head = sha(number % 10) } = {}) => ({ number, state: "open", user, head: { ref: branch, sha: head, repo: { full_name: repo } }, base: { ref: "main" } });
@@ -66,7 +72,7 @@ test("뒤처진 자동화 PR만 계획에 오른다: App 작성·단계 claim �
       open(3, BRANCHES["itx-promotion"]), // 최신
       open(4, BRANCHES.registration, { user: HUMAN, head: sha(4) }), // 사람이 같은 접두사 브랜치로 연 PR은 건드리지 않는다
       open(5, "feature/x", { head: sha(5) }),
-      open(6, "automation/636-current-topology-refresh-1", { head: sha(6) }),
+      open(6, "automation/700-unrelated-experiment-1", { head: sha(6) }),
       open(7, BRANCHES["candidate-refresh"], { repo: "someone/fork", head: sha(7) }),
     ],
     behind: { ...behind, [sha(4)]: 9, [sha(5)]: 9, [sha(6)]: 9, [sha(7)]: 9 },
@@ -96,7 +102,10 @@ test("재생성은 PR 닫기 -> 브랜치 삭제 -> workflow 재실행 순서이
 });
 
 test("후보 갱신 단계는 dispatch하지 않는다: 정기 역할은 schedule 이벤트에서만 쓸 수 있어 2시간 정기 실행이 다시 만든다", async () => {
-  assert.deepEqual({ ...STAGE_REDISPATCH }, { registration: true, "derivative-rebinding": true, "candidate-refresh": false, "itx-promotion": true, "source-reverification": true });
+  assert.deepEqual({ ...STAGE_REDISPATCH }, {
+    registration: true, "derivative-rebinding": true, "candidate-refresh": false, "itx-promotion": true, "source-reverification": true,
+    "gwangju-timetable-refresh": true, "capital-topology-refresh": true, "kric-facility-refresh": true, "seoul-accessibility-refresh": true,
+  });
   const { api } = fakeApi({ openPulls: [open(1, BRANCHES["candidate-refresh"])], behind: { [sha(1)]: 1 } });
   const writer = recorder();
   await recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer });
@@ -109,6 +118,65 @@ test("후보 갱신 단계는 dispatch하지 않는다: 정기 역할은 schedul
     const required = /required: true/u.test(inputs);
     assert.equal(STAGE_REDISPATCH[stage], !required, `${stage}: redispatch only when dispatch needs no required input`);
   }
+});
+
+// #1012: 정기 갱신 4종도 뒤처지면 닫고 같은 workflow를 다시 실행한다. 증거 블록이 head에 묶여 있어 base를 갱신할 수 없는 것은 기존 단계와 같다.
+test("정기 갱신 4종: 뒤처진 PR은 닫히고 브랜치가 지워지고 해당 workflow가 다시 실행된다. 단계마다 한 번만", async () => {
+  const stages = [...REFRESH_STAGE_IDS];
+  assert.deepEqual(Object.keys(STAGE_REDISPATCH).sort(), Object.keys(AUTOMATION_STAGE_WORKFLOWS).sort(), "단계마다 redispatch 여부가 정해져 있다(빠진 단계가 없다)");
+  const pulls = stages.map((stage, index) => open(20 + index, BRANCHES[stage], { head: sha(index + 1) }));
+  const behind = Object.fromEntries(stages.map((_, index) => [sha(index + 1), 2]));
+  const { api } = fakeApi({ openPulls: pulls, behind });
+  const writer = recorder();
+  await recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer });
+  assert.deepEqual(writer.writes, stages.flatMap((stage, index) => [["close", 20 + index], ["delete", BRANCHES[stage]], ["dispatch", AUTOMATION_STAGE_WORKFLOWS[stage]]]));
+  assert.deepEqual(writer.writes.filter(([kind]) => kind === "dispatch").map(([, workflow]) => workflow), [
+    "retained-gwangju-timetable-refresh.yml", "current-capital-topology-refresh.yml", "kric-current-facility-refresh.yml", "seoul-current-accessibility-refresh.yml",
+  ]);
+  // 최신인 갱신 PR은 건드리지 않고, 사람이 같은 접두사로 연 PR도 건드리지 않는다.
+  const quiet = fakeApi({ openPulls: [open(30, BRANCHES["kric-facility-refresh"]), open(31, BRANCHES["seoul-accessibility-refresh"], { user: HUMAN, head: sha(5) })], behind: { [sha(5)]: 9 } });
+  const untouched = recorder();
+  await recreateBehindPullRequests({ repository: REPOSITORY, api: quiet.api, now: NOW, ...untouched });
+  assert.deepEqual(untouched.writes, []);
+  // 같은 단계가 하루 3회를 넘게 닫히면 갱신 단계도 루프 상한으로 멈추고 이상으로 보고한다.
+  const loop = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6) })], closedPulls: [1, 2, 3].map((n) => closed(50 + n, BRANCHES["capital-topology-refresh"], n)), behind: { [sha(6)]: 1 } });
+  const stopped = recorder();
+  await assert.rejects(recreateBehindPullRequests({ repository: REPOSITORY, api: loop.api, now: NOW, ...stopped }), /AUTOMATION_PR_RECREATE_LOOP: capital-topology-refresh/u);
+  assert.deepEqual(stopped.writes, []);
+});
+
+// 플랫폼 서버 스케줄러(platform #238)는 이 workflow들을 매시간 App으로 dispatch한다. 변수 게이트가 있는 workflow(DATAPACK_SCHEDULED_*)는 App·다른 봇의 dispatch를
+// 변수가 true일 때만 받는다(#1001). recreate의 dispatch는 github-actions[bot]이므로 같은 게이트를 따른다. 갱신 4종은 변수 게이트가 없다(정기 실행이 기본 동작이다).
+const jobIfOf = (workflow) => {
+  const matches = [...readFileSync(path.resolve(import.meta.dirname, "../../.github/workflows", workflow), "utf8").matchAll(/\n    if: (\$\{\{[^\n]*\}\})\n/gu)];
+  assert.equal(matches.length, 1, `${workflow}: job-level if가 하나`);
+  return matches[0][1];
+};
+const runsOn = (workflow, { actor, vars }) => evaluateGithubExpression(jobIfOf(workflow), { github: { event_name: "workflow_dispatch", triggering_actor: actor, actor, ref: "refs/heads/main" }, vars });
+const SCHEDULED_VARIABLES = {
+  "current-capital-topology-registration.yml": "DATAPACK_SCHEDULED_SOURCE_REGISTRATION", "source-derivative-rebinding.yml": "DATAPACK_SCHEDULED_SOURCE_REBINDING",
+  "itx-current-promotion.yml": "DATAPACK_SCHEDULED_ITX_PROMOTION", "source-reverification.yml": "DATAPACK_SCHEDULED_SOURCE_REVERIFICATION",
+};
+
+test("recreate의 dispatch(github-actions[bot])는 변수 게이트와 충돌하지 않는다: 갱신 4종은 게이트가 없어 항상 돌고, 게이트가 있는 단계는 변수 true일 때 돈다", () => {
+  const APP = "easysubway-release-chain[bot]";
+  for (const stage of REFRESH_STAGE_IDS) {
+    const workflow = AUTOMATION_STAGE_WORKFLOWS[stage];
+    assert.equal(STAGE_REDISPATCH[stage], true, stage);
+    assert.doesNotMatch(jobIfOf(workflow), /vars\./u, `${workflow}: 변수 게이트 없음`);
+    for (const actor of ["github-actions[bot]", APP, "AquilaXk"]) {
+      for (const vars of [{}, { DATAPACK_AUTOMATION_AUTOMERGE: "true" }, { DATAPACK_AUTOMATION_AUTOMERGE: "false" }]) assert.equal(runsOn(workflow, { actor, vars }), true, `${workflow} ${actor} ${JSON.stringify(vars)}`);
+    }
+    // main이 아닌 ref에서는 돌지 않는다(recreate는 --ref main으로만 부른다).
+    assert.equal(evaluateGithubExpression(jobIfOf(workflow), { github: { event_name: "workflow_dispatch", triggering_actor: "github-actions[bot]", ref: "refs/heads/feature" }, vars: {} }), false, workflow);
+  }
+  for (const [workflow, variable] of Object.entries(SCHEDULED_VARIABLES)) {
+    assert.equal(runsOn(workflow, { actor: "github-actions[bot]", vars: { [variable]: "true" } }), true, `${workflow}: 변수 true`);
+    assert.equal(runsOn(workflow, { actor: "github-actions[bot]", vars: {} }), false, `${workflow}: 변수가 없으면 dispatch도 돌지 않는다(자동화가 꺼진 상태)`);
+  }
+  // 재dispatch하는 단계의 workflow는 모두 위 두 부류 중 하나다.
+  const redispatched = Object.entries(AUTOMATION_STAGE_WORKFLOWS).filter(([stage]) => STAGE_REDISPATCH[stage]).map(([, workflow]) => workflow);
+  for (const workflow of redispatched) assert.ok(Object.hasOwn(SCHEDULED_VARIABLES, workflow) || REFRESH_STAGE_IDS.some((stage) => AUTOMATION_STAGE_WORKFLOWS[stage] === workflow), `${workflow}: 게이트 분류가 없다`);
 });
 
 test("반증: 같은 단계가 하루 3회를 넘게 닫히면 닫지 않고 이상으로 보고한다(루프 상한)", async () => {

@@ -34,8 +34,9 @@ const registration = (overrides = {}) => ({ stage: "registration", runUrl: RUN_U
 const rebinding = (overrides = {}) => ({ stage: "derivative-rebinding", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: POLICY, sources: [], steps: [STEP, { id: "seoul-measured-transfer-metrics", changed: false, paths: [] }], candidate: null, ...overrides });
 const candidate = (overrides = {}) => ({ stage: "candidate-refresh", runUrl: RUN_URL, baseSha: BASE, headSha: HEAD, policy: null, sources: [], steps: [], candidate: CANDIDATE, ...overrides });
 
-test("단계는 등록·후보 갱신·파생 재결속·ITX 승격·원천 재확인 다섯이다", () => {
-  assert.deepEqual([...AUTOMATION_PR_STAGES], ["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification"]);
+test("단계는 등록·후보 갱신·파생 재결속·ITX 승격·원천 재확인 다섯 뒤에 정기 갱신 4종이 더해진다", () => {
+  assert.deepEqual([...AUTOMATION_PR_STAGES].slice(0, 5), ["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification"]);
+  assert.deepEqual([...AUTOMATION_PR_STAGES].slice(5), ["gwangju-timetable-refresh", "capital-topology-refresh", "kric-facility-refresh", "seoul-accessibility-refresh"]);
 });
 
 test("블록은 원천별 sha·snapshot·delta·diff 상태와 적용 정책, base/head 커밋, 실행 run을 JSON 한 줄로 남기고 그대로 읽힌다", () => {

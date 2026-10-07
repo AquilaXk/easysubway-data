@@ -5,9 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { automationPrEvidenceBlock, itxPromotionAllowedPaths } from "./automation-pr-evidence.mjs";
+import { automationPrEvidenceBlock, itxPromotionAllowedPaths, parseAutomationPrEvidence, refreshEvidenceBlock } from "./automation-pr-evidence.mjs";
 import {
   AUTOMATION_PR_APP,
+  AUTOMATION_STAGE_WORKFLOWS,
   AUTOMATION_PR_GATES_CONTEXT,
   REGISTRATION_ALLOWED_PATHS,
   REGISTRATION_INVENTORY_FIELDS,
@@ -22,6 +23,9 @@ import {
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
 import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "../datapack/refresh-nationwide-candidate.mjs";
 import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
+import * as recorded from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
+import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
+import { REFRESH_STAGES, REFRESH_STAGE_IDS, evaluateRefreshStage } from "./refresh-stage-contracts.mjs";
 
 // #985: 데이터 전용 자동화 PR의 자동 병합 정책(#870 전체 자동화 2단계). 정책은 PR 본문 증거 블록을 색인으로만 쓰고,
 // 변경 경로·커밋 신원·CI·게이트는 API 데이터와 재계산으로 대조한다. 어느 조건이든 어긋나면 위반으로 막는다(fail closed).
@@ -121,10 +125,10 @@ test("신뢰 신원은 App easysubway-release-chain[bot]의 login·id·type으�
   for (const [head, digest] of [["abc", DIGEST], [HEAD, "abc"], [HEAD, "A".repeat(64)], [HEAD, undefined]]) assert.throws(() => automationAttestationMarker(head, digest), /AUTOMATION_PR_INPUT/u);
 });
 
-test("claim 접두사는 다섯 단계에만 대응하고 그 밖의 브랜치는 정책 대상이 아니다", () => {
+test("claim 접두사는 정책이 아는 단계(기존 다섯과 갱신 4종)에만 대응하고 그 밖의 브랜치는 정책 대상이 아니다", () => {
   for (const [stage, { branch }] of Object.entries(STAGES)) assert.equal(automationStageForBranch(branch), stage);
   for (const branch of [
-    "feature/x", "automation/636-current-topology-refresh-1", "automation/456-capital-topology-registration-", "automation/456-capital-topology-registration-0",
+    "feature/x", "automation/700-unrelated-experiment-1", "automation/456-capital-topology-registration-", "automation/456-capital-topology-registration-0",
     "automation/456-capital-topology-registration-1/x", "xautomation/977-itx-promotion-1", "", undefined, null,
   ]) assert.equal(automationStageForBranch(branch), null, String(branch));
   assert.equal(evaluateAutomationPullRequest({ ...scenario(), pull: { ...scenario().pull, head: { ref: "feature/x", sha: HEAD, repo: { full_name: REPOSITORY } } } }).applicable, false);
@@ -736,7 +740,7 @@ test("라벨러 판정: 위반이면 예외로 끝나고 코드가 메시지에 
 test("라벨러 판정: 정책 대상이 아닌 PR·닫힌 PR·head가 이미 바뀐 실행은 아무것도 하지 않는다", async () => {
   const base = scenario();
   const other = scenario();
-  other.pull.head.ref = "automation/636-current-topology-refresh-1";
+  other.pull.head.ref = "automation/700-unrelated-experiment-1";
   const otherApi = fakeApi(other);
   assert.equal((await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: otherApi.api })).state, "NOT_APPLICABLE");
   // 대상이 아닌 PR은 커밋·파일·check 같은 무거운 읽기를 하지 않는다.
@@ -782,7 +786,7 @@ test("CLI prepare: 정책 대상 PR이면 증거의 base sha를 내보내고, �
     await main(["prepare", "--pull-request", pullFile, "--github-output", output], { log: (line) => lines.push(line) });
     assert.equal(await readFile(output, "utf8"), `applicable=true\nbase_sha=${BASE}\n`);
 
-    const other = { ...input.pull, head: { ...input.pull.head, ref: "automation/636-current-topology-refresh-1" } };
+    const other = { ...input.pull, head: { ...input.pull.head, ref: "automation/700-unrelated-experiment-1" } };
     await writeFile(pullFile, JSON.stringify(other));
     const outputOther = path.join(dir, "output-other.txt");
     await main(["prepare", "--pull-request", pullFile, "--github-output", outputOther], { log: () => {} });
@@ -1118,4 +1122,220 @@ test("라벨러 판정: 뒤처진 것만이 위반이면 BEHIND 상태로 물러
   const diverged = scenario();
   diverged.compare = { ...diverged.compare, status: "diverged", behind_by: 1 };
   assert.deepEqual(await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(diverged).api }), { state: "BEHIND" });
+});
+
+// ---------------------------------------------------------------------------
+// #1012: 정기 갱신 4종 단계(광주 보관 시간표·수도권 topology·KRIC 시설·서울 접근성).
+// 기록된 실제 갱신 PR(#937·#965·#1003·#1009·#1010·#1011)의 변경 파일·원장·inventory로 정책을 시험한다.
+// ---------------------------------------------------------------------------
+const refreshBranch = (stage) => `${REFRESH_CLAIM_PREFIXES[REFRESH_STAGES[stage].workflow]}9100`;
+const REFRESH_POLICY_PATH = "tools/ci/source-ledger-change-policy.json";
+
+const refreshFilesOf = (trees, { policy = POLICY } = {}) => ({
+  readTree: async (relative) => {
+    if (relative === REFRESH_POLICY_PATH) return JSON.stringify(policy);
+    if (!trees.head.has(relative)) throw new Error(`missing ${relative}`);
+    return trees.head.get(relative);
+  },
+  readBase: async (_sha, relative) => {
+    if (!trees.base.has(relative)) throw new Error(`missing base ${relative}`);
+    return trees.base.get(relative);
+  },
+});
+
+/** 기록된 실행 하나의 정상 입력. 반증은 여기서 정확히 한 가지만 바꾼다. */
+async function refreshScenario(run, { mutateTrees = {}, mutateValue = (value) => value, extraFiles = [], files, body } = {}) {
+  const trees = recorded.recordedTrees(run, mutateTrees);
+  const paths = recorded.filenames(run);
+  const { rows, violations } = await evaluateRefreshStage({ stage: run.stage, paths, baseSha: run.baseSha, policy: POLICY, files: refreshFilesOf(trees) });
+  assert.deepEqual(violations, [], run.label);
+  const generated = refreshEvidenceBlock({ stage: run.stage, runUrl: RUN_URL, baseSha: run.baseSha, headSha: HEAD, policy: POLICY, sources: rows, paths });
+  const value = JSON.parse(generated.slice("<!-- easysubway-automation-pr:v1 ".length, -" -->".length));
+  const text = body ?? `갱신 PR\n\n<!-- easysubway-automation-pr:v1 ${JSON.stringify(mutateValue(value))} -->\n`;
+  const base = scenario("registration");
+  return {
+    ...base,
+    trees,
+    pull: { ...base.pull, body: text, head: { ...base.pull.head, ref: refreshBranch(run.stage) } },
+    files: [...(files ?? run.files).map(({ filename, status, ...rest }) => file(filename, { status, ...rest })), ...extraFiles],
+    compare: { ...base.compare, merge_base_commit: { sha: run.baseSha } },
+    ciEvidence: { ...base.ciEvidence, stage: run.stage, evidenceSha256: body === undefined ? automationEvidenceDigest(text) : DIGEST },
+  };
+}
+
+const refreshGateInput = (input, options) => {
+  const evidence = parseAutomationPrEvidence(input.pull.body, { headSha: HEAD });
+  return { evidence, repositoryRoot: "/repo", files: refreshFilesOf(input.trees, options) };
+};
+
+test("갱신 4종 브랜치는 각자 단계로 분류되고 workflow 표에 단계마다 있다. 기존 다섯 단계의 매핑은 그대로다", () => {
+  assert.deepEqual(Object.keys(AUTOMATION_STAGE_WORKFLOWS).slice(0, 5), ["registration", "derivative-rebinding", "candidate-refresh", "itx-promotion", "source-reverification"]);
+  assert.deepEqual(Object.values(AUTOMATION_STAGE_WORKFLOWS).slice(0, 5), [
+    "current-capital-topology-registration.yml", "source-derivative-rebinding.yml", "nationwide-candidate-refresh.yml", "itx-current-promotion.yml", "source-reverification.yml",
+  ]);
+  assert.deepEqual(Object.keys(AUTOMATION_STAGE_WORKFLOWS).slice(5), [...REFRESH_STAGE_IDS]);
+  for (const stage of REFRESH_STAGE_IDS) {
+    assert.equal(AUTOMATION_STAGE_WORKFLOWS[stage], REFRESH_STAGES[stage].workflow, stage);
+    assert.equal(automationStageForBranch(refreshBranch(stage)), stage, stage);
+    const prefix = refreshBranch(stage).slice(0, -"9100".length);
+    for (const bad of [`${prefix}`, `${prefix}0`, `${prefix}12a`, `${prefix}-1`, `${prefix}1/2`, `${prefix.slice(0, -1)}9100`]) assert.equal(automationStageForBranch(bad), null, bad);
+  }
+  assert.equal(new Set(Object.values(AUTOMATION_STAGE_WORKFLOWS)).size, 9, "workflow가 단계마다 하나씩이다");
+});
+
+test("기록된 실제 갱신 PR 여섯 건은 경로·게이트 재계산·라벨러 판정을 모두 통과해 적격이다", async () => {
+  for (const run of recorded.RECORDED) {
+    const input = await refreshScenario(run);
+    const result = evaluateAutomationPullRequest(input);
+    assert.deepEqual(result.violations, [], run.label);
+    assert.equal(result.eligible, true, run.label);
+    assert.equal(result.stage, run.stage, run.label);
+    assert.deepEqual((await recomputeAutomationGates(refreshGateInput(input))).violations, [], run.label);
+    const decision = await decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(input).api });
+    assert.equal(decision.state, "ELIGIBLE", run.label);
+    assert.equal(decision.stage, run.stage, run.label);
+  }
+});
+
+test("반증: API diff에 추가 경로(.github·tools 코드·governance·SLA·후보 산출물)가 있으면 PATHS로 막는다", async () => {
+  const extras = [
+    ".github/workflows/ci.yml", "tools/ci/automation-pr-policy.mjs", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json",
+    "tools/ci/source-ledger-change-policy.json", "tools/datapack/release/release-request.json",
+  ];
+  for (const run of recorded.RECORDED) {
+    for (const extra of extras) {
+      for (const status of ["modified", "added"]) {
+        const input = await refreshScenario(run, { extraFiles: [file(extra, { status })] });
+        assert.equal(eligible(input), false, `${run.label} + ${extra}`);
+        assert.ok(codesOf(input).includes("PATHS"), `${run.label} + ${extra}`);
+      }
+    }
+  }
+});
+
+test("반증: 주장한 경로와 API diff가 정확히 같지 않거나 경로 종류(added·modified)가 규칙과 다르면 PATHS", async () => {
+  for (const run of recorded.RECORDED) {
+    const missing = await refreshScenario(run, { files: run.files.slice(1) });
+    assert.ok(codesOf(missing).includes("PATHS"), `${run.label}: API diff에 빠진 경로`);
+    for (const [index, entry] of run.files.entries()) {
+      const flipped = run.files.map((item, at) => (at === index ? { ...item, status: entry.status === "added" ? "modified" : "added" } : item));
+      const input = await refreshScenario(run, { files: flipped });
+      assert.ok(codesOf(input).includes("PATHS"), `${run.label} ${entry.filename}: 변경 종류`);
+      const renamed = await refreshScenario(run, { files: run.files.map((item, at) => (at === index ? { ...item, status: "renamed", previous_filename: "tools/datapack/sources/old.json" } : item)) });
+      assert.ok(codesOf(renamed).includes("PATHS"), `${run.label} ${entry.filename}: 이름 변경`);
+    }
+    const wide = await refreshScenario(run, { files: [...run.files, { filename: "tools/datapack/sources/another-20261007.json", status: "added" }] });
+    assert.ok(codesOf(wide).includes("PATHS"), `${run.label}: API diff가 주장보다 넓다`);
+    // 5000개 같은 상한에 닿은 목록은 전체를 알 수 없어 막는다(기존 단계와 같은 규칙).
+    const capped = await refreshScenario(run, { extraFiles: Array.from({ length: 3000 }, (_, index) => file(`tools/datapack/sources/x-${index}.json`, { status: "added" })) });
+    assert.ok(codesOf(capped).includes("PATHS"), `${run.label}: 목록 상한`);
+  }
+});
+
+test("반증: 정책성 inventory 필드를 바꾸거나 소유하지 않은 항목을 바꾸면 게이트 재계산이 INVENTORY_GATE로 막는다", async () => {
+  for (const run of recorded.RECORDED) {
+    const owned = run.inventory.changed[0].id;
+    const unowned = run.inventory.unownedEntryIds[0];
+    const policyField = await refreshScenario(run, { mutateTrees: { mutateInventory: (inventory) => { inventory.sources.find(({ id }) => id === owned).productionUseAllowed = false; } } }).catch((error) => error);
+    // 정상 입력 생성(refreshScenario)은 재계산을 통과해야 하므로, 변조는 증거 생성 뒤 트리에만 가한다.
+    assert.ok(policyField instanceof Error, `${run.label}: 변조된 트리로는 증거를 만들 수 없다`);
+    const input = await refreshScenario(run);
+    const gates = refreshGateInput(input);
+    const mutateHead = (edit) => {
+      const original = input.trees.head.get(recorded.INVENTORY_PATH);
+      const inventory = JSON.parse(original);
+      edit(inventory);
+      input.trees.head.set(recorded.INVENTORY_PATH, JSON.stringify(inventory));
+      return () => input.trees.head.set(recorded.INVENTORY_PATH, original);
+    };
+    const restore = mutateHead((inventory) => { inventory.sources.find(({ id }) => id === owned).productionUseAllowed = false; });
+    const policy = await recomputeAutomationGates(gates);
+    restore();
+    assert.ok(policy.violations.some(({ code }) => code === "INVENTORY_GATE"), `${run.label}: 소유 항목의 정책성 필드`);
+    const restoreUnowned = mutateHead((inventory) => { inventory.sources.find(({ id }) => id === unowned).datasetUrl = "https://evil.test/x"; });
+    const unownedResult = await recomputeAutomationGates(gates);
+    restoreUnowned();
+    assert.ok(unownedResult.violations.some(({ code, detail }) => code === "INVENTORY_GATE" && /not owned/u.test(detail)), `${run.label}: 소유하지 않은 항목`);
+    assert.deepEqual((await recomputeAutomationGates(gates)).violations, [], `${run.label}: 복원 뒤 대조군`);
+  }
+});
+
+test("반증: 증거 블록의 원천 행·정책이 재계산한 값과 다르면 EVIDENCE_DRIFT, 트리의 정책 파일이 다르면 막는다", async () => {
+  for (const run of recorded.RECORDED) {
+    const forgedRow = await refreshScenario(run, { mutateValue: (value) => ({ ...value, sources: value.sources.map((entry, index) => (index === 0 ? { ...entry, rawSha256: "0".repeat(64) } : entry)) }) });
+    assert.ok((await recomputeAutomationGates(refreshGateInput(forgedRow))).violations.some(({ code }) => code === "EVIDENCE_DRIFT"), `${run.label}: 위조된 행`);
+    const forgedDelta = await refreshScenario(run, { mutateValue: (value) => ({ ...value, sources: value.sources.map((entry) => ({ ...entry, rowDelta: entry.rowDelta + 1 })) }) });
+    assert.ok((await recomputeAutomationGates(refreshGateInput(forgedDelta))).violations.some(({ code }) => code === "EVIDENCE_DRIFT"), `${run.label}: 위조된 delta`);
+    const loosePolicy = await refreshScenario(run, { mutateValue: (value) => ({ ...value, policy: { ...value.policy, maxRowDeltaRatio: 1 } }) });
+    assert.ok((await recomputeAutomationGates(refreshGateInput(loosePolicy))).violations.some(({ code }) => code === "EVIDENCE_DRIFT"), `${run.label}: 느슨해진 정책 주장`);
+    const input = await refreshScenario(run);
+    const tighter = await recomputeAutomationGates(refreshGateInput(input, { policy: { ...POLICY, maxRowDeltaRatio: 0.5 } }));
+    assert.ok(tighter.violations.some(({ code }) => code === "EVIDENCE_DRIFT"), `${run.label}: 트리의 정책 파일이 증거와 다르다`);
+    const broken = await recomputeAutomationGates(refreshGateInput(input, { policy: { schemaVersion: 1 } }));
+    assert.ok(broken.violations.length > 0, `${run.label}: 정책 파일이 잘못됐다`);
+  }
+});
+
+test("반증: 위조된 head·digest·base·단계·증거 블록은 각자의 위반 코드로 막힌다", async () => {
+  for (const run of recorded.RECORDED) {
+    const good = await refreshScenario(run);
+    const other = recorded.RECORDED.find(({ stage }) => stage !== run.stage);
+    // 위조된 head: 블록의 head가 PR head와 다르다.
+    const forgedHead = structuredClone(good);
+    forgedHead.pull.head.sha = OTHER;
+    assert.ok(codesOf(forgedHead).includes("HEAD_MISMATCH"), `${run.label}: 위조된 head`);
+    // 위조된 base: 블록의 base가 실제 분기점과 다르다.
+    const forgedBase = structuredClone(good);
+    forgedBase.compare.merge_base_commit.sha = OTHER;
+    assert.ok(codesOf(forgedBase).includes("BASE"), `${run.label}: 위조된 base`);
+    // 증거 블록을 CI 뒤에 고쳐 쓰면 digest가 어긋난다(블록 밖 본문 편집은 정책이 보지 않는다).
+    const edited = structuredClone(good);
+    edited.pull.body = edited.pull.body.replace("actions/runs/123456", "actions/runs/123457");
+    assert.notEqual(edited.pull.body, good.pull.body);
+    assert.ok(codesOf(edited).includes("DIGEST"), `${run.label}: 증거 블록 편집`);
+    // 다른 단계의 증거를 이 단계 브랜치에 붙였다.
+    const crossed = await refreshScenario(other);
+    const wrongBranch = structuredClone(good);
+    wrongBranch.pull.body = crossed.pull.body.replace(new RegExp(`"headSha":"${HEAD}"`, "u"), `"headSha":"${HEAD}"`);
+    wrongBranch.ciEvidence = { ...wrongBranch.ciEvidence, stage: other.stage, evidenceSha256: automationEvidenceDigest(wrongBranch.pull.body) };
+    assert.ok(codesOf(wrongBranch).includes("BRANCH"), `${run.label}: 다른 단계의 증거`);
+    // 증거 블록이 없거나(이 변경 이전 형식의 본문) 둘이다.
+    const legacy = await refreshScenario(run, { body: "Refresh the due snapshot through the current OCI operation.\n\nRefs #629, #39, #29" });
+    assert.deepEqual(codesOf(legacy).filter((code) => code === "EVIDENCE"), ["EVIDENCE"], `${run.label}: 증거 없는 본문`);
+    assert.equal(eligible(legacy), false, `${run.label}: 증거 없는 본문`);
+    const block = good.pull.body.match(/<!-- easysubway-automation-pr:v1 .* -->/u)[0];
+    const doubled = await refreshScenario(run, { body: `${block}\n${block}` });
+    assert.equal(eligible(doubled), false, `${run.label}: 블록 둘`);
+    // 작성자·커밋·CI 규칙은 기존 단계와 같다.
+    const human = structuredClone(good);
+    human.pull.user = HUMAN;
+    assert.ok(codesOf(human).includes("AUTHOR"), `${run.label}: 사람 작성 PR`);
+    const behind = structuredClone(good);
+    behind.compare = { ...behind.compare, behind_by: 1 };
+    assert.ok(codesOf(behind).includes("BEHIND"), `${run.label}: 뒤처짐`);
+    const gatesFailed = structuredClone(good);
+    gatesFailed.checkRuns = gatesFailed.checkRuns.filter(({ name }) => name !== AUTOMATION_PR_GATES_CONTEXT);
+    assert.ok(codesOf(gatesFailed).includes("GATES"), `${run.label}: 게이트 check 없음`);
+  }
+});
+
+test("라벨러 판정: 증거 없는 이전 형식의 갱신 PR은 이상으로 막고(예외) 아무것도 쓰지 않는다", async () => {
+  const run = recorded.RECORDED.find(({ stage }) => stage === "kric-facility-refresh");
+  const legacy = await refreshScenario(run, { body: "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29" });
+  await assert.rejects(decideAutomationPullRequest({ repository: REPOSITORY, headSha: HEAD, runConclusion: "success", runId: RUN_ID, api: fakeApi(legacy).api }), /AUTOMATION_PR_EVIDENCE/u);
+});
+
+test("CLI prepare: 갱신 PR은 대상이고 증거의 base sha를 내보낸다. 증거 단계와 브랜치 단계가 다르면 실패한다", async () => {
+  const run = recorded.RECORDED.find(({ stage }) => stage === "capital-topology-refresh");
+  const input = await refreshScenario(run);
+  await withTemp(async (dir) => {
+    const pullFile = path.join(dir, "pull.json");
+    const output = path.join(dir, "out.txt");
+    await writeFile(pullFile, JSON.stringify(input.pull));
+    await main(["prepare", "--pull-request", pullFile, "--github-output", output]);
+    assert.equal(await readFile(output, "utf8"), `applicable=true\nbase_sha=${run.baseSha}\n`);
+    const crossed = { ...input.pull, head: { ...input.pull.head, ref: refreshBranch("seoul-accessibility-refresh") } };
+    await writeFile(pullFile, JSON.stringify(crossed));
+    await assert.rejects(main(["prepare", "--pull-request", pullFile, "--github-output", path.join(dir, "out2.txt")]), /AUTOMATION_PR_BRANCH/u);
+  });
 });
