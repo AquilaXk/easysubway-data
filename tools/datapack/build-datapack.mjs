@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { constants as zlibConstants, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { buildStationBindings, normalizeSeoulMetroCongestion } from "./normalize-seoul-metro-congestion.mjs";
@@ -455,8 +455,9 @@ export async function main(
     } finally {
       await rm(stagingDir, { recursive: true, force: true });
     }
-    // ponytail: Z_RLE is stable across supported zlib versions; byte 9 removes the platform OS marker.
-    const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0, strategy: zlibConstants.Z_RLE });
+    // #998: Z_RLE는 SQLite 페이지에서 LZ77 일치를 쓰지 못해 같은 팩이 약 6배 커졌다. 기본 전략 level 9를 쓴다.
+    // 결정성은 mtime 0과 고정 Node 런타임(.nvmrc)이, byte 9(OS 표지) 255가 플랫폼 차이 제거를 맡는다.
+    const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
     compressedBytes[9] = 255;
     const compressedSha256 = sha256(compressedBytes);
     const sqliteSha256 = sha256(sqliteBytes);
