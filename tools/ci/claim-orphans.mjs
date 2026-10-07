@@ -118,6 +118,11 @@ export function assertClaimRunOwner(workflowFile, branch, run) {
   }
 }
 
+/** claim 뒤에 커밋이 하나(빈 claim)뿐인가. 개수·제목·변경 파일 중 하나라도 다르면 내용이 있는 브랜치다. */
+export function isEmptyClaim(workflowFile, commits) {
+  return commits.aheadBy === 1 && commits.subjects.length === 1 && commits.subjects[0] === ownerOf(workflowFile).claimSubject && commits.changedFiles === 0;
+}
+
 // 게시 step이 시작됐는가. 건너뛰어진(skipped) step과 시작되지 않은 step은 게시하지 않았다. 목록에 게시 step이 하나도 없으면 판단할 수 없다.
 function publicationStarted(claimOwner, claimRun, branch) {
   const found = claimRun.steps.filter(({ name }) => claimOwner.publicationSteps.includes(name));
@@ -139,8 +144,7 @@ export function classifyUnboundClaim(workflowFile, evidence) {
   if (claimOwner.abandonedSubject && commits.subjects.at(-1) === claimOwner.abandonedSubject) return result("ABANDONED", "CLAIM_CLOSED_OUT");
   // 빈 claim 하나뿐인 브랜치만 "출력 커밋이 없다"고 본다. 개수·제목·내용 중 하나라도 다르면 내용이 있는 브랜치라 지우지 않는다.
   // 빈 claim이라는 것만으로는 게시되지 않았다는 증거가 아니다. 게시는 출력 커밋보다 먼저 일어난다(아래 step 판정).
-  const emptyClaim = commits.aheadBy === 1 && commits.subjects.length === 1 && commits.subjects[0] === claimOwner.claimSubject && commits.changedFiles === 0;
-  if (!emptyClaim) return result("RECOVERABLE", "BRANCH_CARRIES_OUTPUT");
+  if (!isEmptyClaim(workflowFile, commits)) return result("RECOVERABLE", "BRANCH_CARRIES_OUTPUT");
   if (claimOwner.publicationSteps === null) return result("ABANDONED", "EMPTY_CLAIM_NO_PUBLICATION");
   if (!run.found) fail("CLAIM_ORPHAN_RUN_UNAVAILABLE", `${branch}: producer run ${runId} record is gone, so whether it reached publication is unknown; the claim is kept`);
   if (!publicationStarted(claimOwner, run, branch)) return result("ABANDONED", "PUBLISH_STEP_NOT_STARTED");
@@ -209,7 +213,8 @@ export async function lookupClaimRun(runGh, repository, runId) {
   }
 }
 
-async function lookupCommits(runGh, repository, branch) {
+/** claim 브랜치가 main보다 몇 커밋 앞서는지와 변경 파일 수를 `gh api compare`로 조회한다. 브랜치가 없으면 404로 실패한다(추정하지 않는다). */
+export async function lookupClaimCommits(runGh, repository, branch) {
   // claim 뒤에 무엇이 올라갔는지는 main과 비교한 결과로 안다. 브랜치가 사라졌으면 404로 실패한다(추정하지 않는다).
   const compared = await ghJson(runGh, [
     "api", `repos/${repository}/compare/main...${branch}`, "--jq",
@@ -244,7 +249,7 @@ export async function collectClaimEvidence({ workflowFile, repository, claimBran
   for (const branch of claimBranches.filter((name) => !bound.has(name))) {
     const runId = claimRunId(workflowFile, branch);
     const run = await lookupClaimRun(runGh, repository, runId);
-    const commits = await lookupCommits(runGh, repository, branch);
+    const commits = await lookupClaimCommits(runGh, repository, branch);
     const artifacts = claimOwner.receiptArtifact && run.found ? await lookupArtifacts(runGh, repository, runId) : [];
     evidence.push({ branch, runId, run, commits, artifacts });
   }

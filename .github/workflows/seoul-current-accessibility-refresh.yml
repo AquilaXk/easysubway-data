@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           # #995: 판정이 정리 대상으로 알린 claim만 지운다(만든 run이 끝났고 빈 claim뿐인 고아). 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
           gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+          node tools/ci/remove-orphan-claims.mjs --workflow seoul-current-accessibility-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/seoul-current-accessibility-refresh/claims.txt"
       - name: Note Seoul refresh waiting on a running producer
         if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
         env:

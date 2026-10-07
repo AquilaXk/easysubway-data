@@ -74,7 +74,7 @@ jobs:
           set -euo pipefail
           # #995: 판정이 정리 대상으로 알린 claim만 지운다(main이 움직여 current가 아니고 만든 run이 끝난 빈 claim). 조용히 지우지 않는다: #926 실패 보고를 먼저 하고 지운다.
           gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/current-capital-topology-refresh/claim-refs.txt"
       - name: Note current topology refresh waiting on a running producer
         if: ${{ steps.decision.outputs.state == 'CLAIM_IN_PROGRESS' }}
         env:

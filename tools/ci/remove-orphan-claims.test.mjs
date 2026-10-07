@@ -152,7 +152,7 @@ test("삭제가 실패하면(lease 불일치 포함) 실패한다", async () => 
 test("이미 사라진 브랜치는 건너뛴다", async () => {
   const branch = branchOf(14);
   const h = harness({ remote: {} });
-  assert.deepEqual(await run([branch], h), [{ branch, action: "absent", reported: null }]);
+  assert.deepEqual(await run([branch], h, GWANGJU, { refsText: refsOf({ [branch]: SHA }) }), [{ branch, action: "absent", reported: null }]);
   assert.deepEqual(h.reports, []);
 });
 
@@ -181,7 +181,7 @@ test("CLI는 쉼표로 이어진 claim 목록을 받는다", async () => {
 test("등록·재확인 workflow의 정리도 같은 경로를 쓴다", async () => {
   for (const workflow of ["current-capital-topology-registration.yml", "source-reverification.yml"]) {
     const branch = branchOf(31, workflow);
-    const h = harness({ runs: { 31: finishedRun(workflow) }, remote: { [branch]: SHA } });
+    const h = harness({ runs: { 31: finishedRun(workflow) }, remote: { [branch]: SHA }, compare: { [branch]: { aheadBy: 1, changedFiles: 0, messages: [CLAIM_OWNERS[workflow].claimSubject] } } });
     assert.equal((await run([branch], h, workflow))[0].action, "removed_orphan", workflow);
     assert.equal(h.reports[0].workflowFile, workflow);
   }

@@ -161,7 +161,7 @@ jobs:
           # #995: 조용히 지우지 않는다. 병합된 PR의 claim은 보고 없이, 게시 증거 없이 버려진 claim은 #926 실패 보고를 먼저 하고 지운다.
           [[ -n "${CLEANUP_CLAIMS}" ]] || exit 0
           gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-registration.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/capital-topology-registration-decision/${GITHUB_RUN_ID}/claims.txt"
       - name: Claim exact main before OCI publication
         if: ${{ steps.decision.outputs.state == 'REGISTER' || steps.decision.outputs.state == 'RECOVER_CLAIM' }}
         env:

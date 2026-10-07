@@ -113,7 +113,7 @@ jobs:
           # 판정이 정리 대상으로 알린 claim만 지운다: 병합된 PR의 남은 claim, 끝났거나 기록이 없는 run의 PR 없는 claim. 사람이 지울 일이 아니다(#973).
           # #995: 조용히 지우지 않는다. 병합된 PR의 claim은 보고 없이, 끝난 run의 PR 없는 claim은 #926 실패 보고를 먼저 하고 지운다.
           gh auth setup-git
-          node tools/ci/remove-orphan-claims.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}"
+          node tools/ci/remove-orphan-claims.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --claims "${CLEANUP_CLAIMS}" --refs "${RUNNER_TEMP}/source-reverification-decision/${GITHUB_RUN_ID}/automation-branches.txt"
       - name: Claim exact main before provider access
         id: claim
         if: ${{ steps.decision.outputs.state == 'RUN' }}
