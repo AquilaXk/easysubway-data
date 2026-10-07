@@ -144,8 +144,15 @@ export function subNamed(station) {
 }
 
 
+// 원천의 "<노선> <역> 방면" 표기를 읽는다. 같은 표기의 서식 차이만 받는다(#1025).
+// - 끝의 "승강장" 접미: "4호선 고잔 방면 승강장"
+// - 역명에 붙은 "방면": "경의중앙선 양원방면"
+// - 공백이 든 역명: "3호선 을지로 3가 방면"
+// 읽은 역명은 directionStation이 완행 이웃 역 이름과 정확히 하나가 맞을 때만 방면 역으로 인정한다.
+// 종착역 표기, 노선 표기가 없는 방면, "도착" 표기는 읽지 않는다(null).
 export function parseDirection(value) {
-  const match = /^(\S+) (\S+) 방면$/u.exec(String(value ?? "").trim());
+  const text = String(value ?? "").trim().replace(/ 승강장$/u, "");
+  const match = /^(\S+) (.+?) ?방면$/u.exec(text);
   return match ? { lineToken: match[1], stationName: match[2] } : null;
 }
 
