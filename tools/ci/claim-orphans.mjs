@@ -123,6 +123,16 @@ export function isEmptyClaim(workflowFile, commits) {
   return commits.aheadBy === 1 && commits.subjects.length === 1 && commits.subjects[0] === ownerOf(workflowFile).claimSubject && commits.changedFiles === 0;
 }
 
+/**
+ * 소유 workflow가 Abandon 커밋으로 닫은 claim인가: claim 제목 커밋과 abandonedSubject 커밋 두 개뿐이고 변경 파일이 없다.
+ * abandonedSubject를 쓰지 않는 workflow는 항상 false다. 이 모양이 아니면 내용이 있는 브랜치다.
+ */
+export function isClosedOutClaim(workflowFile, commits) {
+  const { claimSubject, abandonedSubject } = ownerOf(workflowFile);
+  return abandonedSubject !== undefined && commits.aheadBy === 2 && commits.subjects.length === 2
+    && commits.subjects[0] === claimSubject && commits.subjects[1] === abandonedSubject && commits.changedFiles === 0;
+}
+
 // 게시 step이 시작됐는가. 건너뛰어진(skipped) step과 시작되지 않은 step은 게시하지 않았다. 목록에 게시 step이 하나도 없으면 판단할 수 없다.
 function publicationStarted(claimOwner, claimRun, branch) {
   const found = claimRun.steps.filter(({ name }) => claimOwner.publicationSteps.includes(name));
@@ -141,7 +151,7 @@ export function classifyUnboundClaim(workflowFile, evidence) {
   const result = (kind, reason) => ({ branch, runId, kind, reason });
   assertClaimRunOwner(workflowFile, branch, run);
   if (run.found && run.status !== "completed") return result("ACTIVE", "RUN_IN_PROGRESS");
-  if (claimOwner.abandonedSubject && commits.subjects.at(-1) === claimOwner.abandonedSubject) return result("ABANDONED", "CLAIM_CLOSED_OUT");
+  if (isClosedOutClaim(workflowFile, commits)) return result("ABANDONED", "CLAIM_CLOSED_OUT");
   // 빈 claim 하나뿐인 브랜치만 "출력 커밋이 없다"고 본다. 개수·제목·내용 중 하나라도 다르면 내용이 있는 브랜치라 지우지 않는다.
   // 빈 claim이라는 것만으로는 게시되지 않았다는 증거가 아니다. 게시는 출력 커밋보다 먼저 일어난다(아래 step 판정).
   if (!isEmptyClaim(workflowFile, commits)) return result("RECOVERABLE", "BRANCH_CARRIES_OUTPUT");

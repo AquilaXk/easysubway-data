@@ -10,7 +10,7 @@
 //  - 브랜치가 판정 시점(--refs)의 sha에서 움직였다. 삭제 lease도 그 sha다(--force-with-lease).
 //  - 같은 저장소 PR이 열려 있거나 닫혀 있다.
 //  - 만든 run이 아직 끝나지 않았거나 다른 workflow의 run을 가리킨다.
-//  - 브랜치가 빈 claim 하나(ahead_by 1, 제목 일치, 변경 파일 0)가 아니다. 보고 전과 push 직전에 두 번 확인한다.
+//  - 브랜치가 빈 claim 하나(ahead_by 1, 제목 일치, 변경 파일 0)도, Abandon 커밋으로 닫은 claim(claim + Abandon 두 커밋, 변경 파일 0, abandonedSubject를 쓰는 workflow만)도 아니다. 보고 전과 push 직전에 두 번 확인한다.
 //
 // 사용: node tools/ci/remove-orphan-claims.mjs --workflow <file> --repository <owner/repo> --claims <claim 브랜치를 쉼표로 이은 목록> --refs <판정 시점의 git ls-remote 출력 파일>
 // git push 인증은 호출하는 step이 먼저 `gh auth setup-git`으로 준비한다.
@@ -20,7 +20,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { ownPullRequestsByBranch } from "./automation-pr-state.mjs";
-import { CLAIM_OWNERS, assertClaimRunOwner, claimRunId, classifyUnboundClaim, isEmptyClaim, lookupClaimCommits, lookupClaimRun } from "./claim-orphans.mjs";
+import { CLAIM_OWNERS, assertClaimRunOwner, claimRunId, classifyUnboundClaim, isClosedOutClaim, isEmptyClaim, lookupClaimCommits, lookupClaimRun } from "./claim-orphans.mjs";
 import { BRANCH_PR_LIMIT, PR_FIELDS } from "./collect-automation-prs.mjs";
 import { defaultRunGh, reportRefreshFailure } from "./report-refresh-failure.mjs";
 
@@ -76,7 +76,9 @@ async function assertStillRemovable({ workflowFile, repository, branch, runId, r
   assertClaimRunOwner(workflowFile, branch, claimRun);
   if (claimRun.found && claimRun.status !== "completed") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} producer run ${runId} is still ${claimRun.status}`);
   const commits = await lookupClaimCommits(runGh, repository, branch);
-  if (!isEmptyClaim(workflowFile, commits)) fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} is not an empty claim (ahead ${commits.aheadBy}, files ${commits.changedFiles}); it is kept`);
+  // 빈 claim이거나 소유 workflow가 Abandon 커밋으로 닫은 claim(claim + Abandon, 변경 없음)만 지운다.
+  // 닫힌 claim은 같은 모양을 공유 판정이 CLAIM_CLOSED_OUT으로 분류하므로 아래 재판정이 그 reason을 돌려준다(테스트가 고정한다).
+  if (!isClosedOutClaim(workflowFile, commits) && !isEmptyClaim(workflowFile, commits)) fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} is not an empty or closed-out claim (ahead ${commits.aheadBy}, files ${commits.changedFiles}); it is kept`);
   if (CLAIM_OWNERS[workflowFile].publicationSteps === undefined) return { reason: "OWNER_DECISION", conclusion: claimRun.conclusion };
   const classified = classifyUnboundClaim(workflowFile, { branch, runId, run: claimRun, commits, artifacts: [] });
   if (classified.kind !== "ABANDONED") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} is ${classified.kind} (${classified.reason}), not abandoned; it is kept`);

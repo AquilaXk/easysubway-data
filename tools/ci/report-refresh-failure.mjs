@@ -102,7 +102,8 @@ function comments(issue) {
 
 // 이미 기록된 run이어도 claim을 지운 사실은 따로 남긴다. 같은 claim의 삭제는 한 번만 기록한다.
 function planOrphanComment({ input, orphan, issue, status, issueComments, reportedAt, duplicateNumbers }) {
-  if (issueComments.some(({ body }) => body.includes(orphanMarker(orphan.branch)))) return { action: "skip", issueNumber: issue.number, duplicateNumbers };
+  // 이슈를 만들 때 본문에 적은 삭제 기록도 이미 기록된 것이다.
+  if ((issue.body ?? "").includes(orphanMarker(orphan.branch)) || issueComments.some(({ body }) => body.includes(orphanMarker(orphan.branch)))) return { action: "skip", issueNumber: issue.number, duplicateNumbers };
   const recorded = status.runUrls.includes(input.runUrl) || issueComments.some(({ body }) => body.includes(input.runUrl));
   return {
     action: "comment",
