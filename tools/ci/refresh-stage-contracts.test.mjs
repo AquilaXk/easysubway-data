@@ -569,3 +569,38 @@ test("F1: pack 파일을 읽을 수 없거나 JSON이 아니면 PACK_CONTENT(fai
     assert.ok(codes(noBase).includes("PACK_CONTENT"), `${run.label}: base에 없음`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// 리뷰 F3: Seoul 입력 파일의 evidenceHash는 형식만 보지 않고 새 snapshot에서 생성 코드와 같은 방식으로 다시 계산한 값과 같아야 한다.
+// 생성 코드(materialize-accessibility-source-input.mjs)가 내보내는 계산 함수를 그대로 쓴다.
+// ---------------------------------------------------------------------------
+test("F3: 기록된 Seoul 갱신의 evidenceHash는 생성 코드의 계산 함수로 다시 계산한 값과 같다", async () => {
+  const { seoulEdgeEvidenceHash, seoulStatusEvidenceHash } = await import("../datapack/materialize-accessibility-source-input.mjs");
+  const [run] = runsOf("seoul-accessibility-refresh");
+  const changes = run.sourceInputChanges;
+  assert.ok(changes.some(({ container }) => container === "routeEdges") && changes.some(({ container }) => container === "accessibilityStatusEvidence"));
+  for (const { container, after } of changes) {
+    const expected = container === "routeEdges"
+      ? seoulEdgeEvidenceHash({ edgeId: after.id, sourceSnapshotId: after.sourceSnapshotId, providerRecordHash: after.providerRecordHash })
+      : seoulStatusEvidenceHash({ snapshotId: after.sourceSnapshotId, stationId: after.stationId, lineId: after.lineId, providerRecordHash: after.providerRecordHash });
+    assert.equal(after.evidenceHash, expected, `${container}`);
+  }
+});
+
+test("F3 반증: Seoul 입력 파일의 evidenceHash가 새 snapshot에서 다시 계산한 값과 다르면 REFRESH_GATE", async () => {
+  const [run] = runsOf("seoul-accessibility-refresh");
+  for (const { container, index } of run.sourceInputChanges) {
+    for (const forged of ["f".repeat(64), "0".repeat(64)]) {
+      const result = await evaluate(run, { mutateInput: (input) => { input[container][index].evidenceHash = forged; } });
+      assert.match(details(result), /evidenceHash가 새 snapshot에서 다시 계산한 값과 다르다/u, `${container}[${index}] ${forged.slice(0, 1)}`);
+    }
+    // 한 글자만 뒤집은 해시도 막는다.
+    const flipped = await evaluate(run, { mutateInput: (input) => { const hash = input[container][index].evidenceHash; input[container][index].evidenceHash = `${hash[0] === "a" ? "b" : "a"}${hash.slice(1)}`; } });
+    assert.match(details(flipped), /evidenceHash가 새 snapshot에서 다시 계산한 값과 다르다/u, `${container}[${index}] 한 글자`);
+  }
+  // 해시 계산에 쓰인 입력(providerRecordHash)을 바꾸고 해시를 맞춰 다시 써도 providerRecordHash는 증거 필드가 아니라 막힌다.
+  const rehash = await evaluate(run, { mutateInput: (input) => { input.routeEdges[0].providerRecordHash = "9".repeat(64); } });
+  assert.match(details(rehash), /증거 필드가 아닌 필드가 바뀌었다: providerRecordHash/u);
+  const control = await evaluate(run);
+  assert.deepEqual(control.violations, [], "대조군: 기록된 실제 입력은 통과한다");
+});
