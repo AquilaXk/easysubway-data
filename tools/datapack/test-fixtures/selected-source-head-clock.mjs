@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { isCapitalRouteTopologySnapshotId } from "../lib/capital-route-topology-snapshot-id.mjs";
+import { validateLineage } from "../source-snapshot-policy.mjs";
 
 export const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
   "molit-urban-rail-full-route", "seoulmetro-station-line-info", "seoul-metro-route-map-positions",
@@ -12,13 +13,17 @@ export const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
 
 // #1007: 정기 갱신 PR은 원장에 새 head를 덧붙이지만 후보 pin은 병합 뒤 후보 갱신이 옮긴다. 그 사이 커밋된 후보는 이전 snapshot을 가리킨다.
 // fixture는 후보가 현재 원장 head를 고른 것처럼(current-public-route-map-successor의 rollCandidateToLedgerHeads) 구성하므로, 시각 기준도
-// 후보가 고른 원천의 원장 head(원천별로 수집 시각이 가장 늦은 행)에서 구한다. 후보 pin이 이미 head이면 기존 계산과 같다.
-// 계보 검증은 하지 않는다(fork 같은 잘못된 원장은 fixture 구성 단계가 SOURCE_LINEAGE_BROKEN으로 거부한다).
+// 후보가 고른 원천의 원장 head에서 구한다. head는 롤포워드와 같은 정의(validateLineage의 headsBySource)다. fork·중복 id가 있는 원장은
+// validateLineage가 SOURCE_LINEAGE_BROKEN으로 거부하고, pin은 원장에 정확히 한 행으로 있어야 한다. pin이 이미 head이면 기존 계산과 같다.
+// 이 fixture 계열은 후보 pin 신선도를 판정하지 않는다. 그 판정은 release 게이트(validate-candidate-source-set.mjs 114행)의 몫이다.
 export function candidateSelectedLedgerHeads(buildSpec, sourceSnapshots) {
+  const { headsBySource } = validateLineage(sourceSnapshots);
   return buildSpec.sourceSnapshots.map(({ sourceId, snapshotId }) => {
-    const rows = sourceSnapshots.filter((entry) => entry.sourceId === sourceId);
-    assert.ok(rows.some((entry) => entry.snapshotId === snapshotId), `selected source snapshot identity: ${snapshotId}`);
-    return rows.reduce((head, entry) => Date.parse(entry.retrievedAt) >= Date.parse(head.retrievedAt) ? entry : head);
+    const pins = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId && entry.sourceId === sourceId);
+    assert.equal(pins.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    const heads = sourceSnapshots.filter((entry) => entry.snapshotId === headsBySource[sourceId]);
+    assert.equal(heads.length, 1, `selected source ledger head identity: ${sourceId}`);
+    return heads[0];
   });
 }
 

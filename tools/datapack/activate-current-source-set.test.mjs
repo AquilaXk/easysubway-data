@@ -7,6 +7,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
+import { assertLagIsContentEquivalent } from "./test-fixtures/ledger-lag-equivalence.mjs";
+import { latestEvidenceObservedDates, packSourceInventoryEntry } from "./import-official-sources.mjs";
 
 import {
   overlayReviewedSourcesOnCanonicalRoster,
@@ -314,6 +316,50 @@ function currentSuccessorGateFixture() {
       ],
     },
   };
+}
+
+// #1007: topology-only 갱신은 후보 갱신이 팩을 다시 만들기 전에도 돈다. 정기 갱신(KRIC 시설·서울 접근성)이 inventory·원장을 먼저 앞으로 옮긴 상태에서
+// 팩의 원천 행이 어떻게 달라질 수 있는지를 증거 행(facilities·stationFacilityEvidence)에서 도출한다.
+const EVIDENCE_COLLECTIONS = Object.freeze(["facilities", "stationFacilityEvidence"]);
+const evidenceRowsOf = (pack, sourceId) => EVIDENCE_COLLECTIONS.flatMap((name) =>
+  (pack[name] ?? []).filter((row) => row?.sourceId === sourceId));
+const evidenceSnapshotIds = (rows) => new Set(rows.map(({ sourceSnapshotId }) => sourceSnapshotId));
+const evidenceObservedDate = (rows) => rows.map(({ retrievedAt }) => retrievedAt.slice(0, 10)).sort().at(-1);
+
+/**
+ * topology-only 갱신 뒤 팩 원천 행의 기대값. 원천의 증거 행이 이전 팩과 같은 snapshot에 묶여 있으면 행은 이전 행과 정확히 같아야 한다
+ * (inventory가 앞서가도 증거를 새 날짜로 relabel하지 않는다). 증거 행이 새 snapshot으로 옮겨졌으면(같은 갱신이 pilot 입력까지 갱신한 경우)
+ * updatedAt만 싣고 있는 증거의 가장 늦은 관측일로 달라질 수 있고, 그 날짜는 inventory 관측일을 넘지 않고 이전 날짜로 되돌아가지 않는다.
+ */
+function expectedSourceRowsAfterTopologyRefresh({ previousPack, outputPack, inventory }) {
+  return previousPack.sourceInventory.map((row) => {
+    const outputEvidence = evidenceRowsOf(outputPack, row.id);
+    const previousIds = evidenceSnapshotIds(evidenceRowsOf(previousPack, row.id));
+    const outputIds = evidenceSnapshotIds(outputEvidence);
+    if (outputEvidence.length === 0 || (outputIds.size === previousIds.size && [...outputIds].every((id) => previousIds.has(id)))) return row;
+    const date = evidenceObservedDate(outputEvidence);
+    const observed = inventory.sources.find(({ id }) => id === row.id)?.observedDataUpdatedAt;
+    assert.ok(typeof observed === "string" && date <= observed, `${row.id}: 증거 관측일 ${date}은 inventory 관측일 ${observed}을 넘을 수 없다`);
+    assert.ok(`${date}T00:00:00.000Z` >= row.updatedAt, `${row.id}: 새 증거의 관측일 ${date}은 이전 updatedAt ${row.updatedAt}보다 앞설 수 없다`);
+    return { ...row, updatedAt: `${date}T00:00:00.000Z` };
+  });
+}
+
+/**
+ * 접근성 증거 행의 snapshot 결속. 행은 inventory가 admission한 현재 snapshot을 가리키거나, 후보 갱신이 팩을 다시 만들기 전이라면
+ * 이전 팩의 같은 원천 행이 가리키던 snapshot이고 거기서 현재 head까지 원장 경로의 모든 행이 내용상 같을 때만 허용한다.
+ * 내용이 바뀌었으면 현재 snapshot이어야 하고 아니면 실패한다(release 게이트 validate-candidate-source-set.mjs 114행은 head 일치를 엄격히 요구한다).
+ * Incheon은 이 갱신의 대상이라 현재 snapshot만 허용한다.
+ */
+function assertEvidenceRowsBoundToCurrentOrEquivalent({ rows, previousPack, currentSnapshotBySource, ledger }) {
+  for (const { sourceId, sourceSnapshotId } of rows) {
+    const current = currentSnapshotBySource.get(sourceId);
+    if (sourceSnapshotId === current) continue;
+    assert.notEqual(sourceId, "incheon-transit-accessibility", `${sourceId}: 현재 snapshot ${current}만 허용한다(${sourceSnapshotId})`);
+    assert.ok(evidenceSnapshotIds(evidenceRowsOf(previousPack, sourceId)).has(sourceSnapshotId),
+      `${sourceId}: 증거 행의 snapshot ${sourceSnapshotId}은 현재 snapshot도 이전 팩의 snapshot도 아니다`);
+    assertLagIsContentEquivalent({ ledger, sourceId, snapshotId: sourceSnapshotId, headSnapshotId: current, label: `${sourceId} 증거 행` });
+  }
 }
 
 test("current activation does not mistake a legacy predecessor fixture for a V2 current head", () => {
@@ -1695,18 +1741,10 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     assert.ok(rows.length > 0);
     assert.ok(rows.every((row) => row.sourceSnapshotId === admittedSnapshotId(source)));
   }
-  // #1007: 정기 갱신(KRIC 시설·서울 접근성)이 병합돼 inventory의 관측일이 앞서가면, 검토 팩이 그 원천 행의 updatedAt을 inventory 관측일로 투영한다
-  // (import-official-sources: observedDataUpdatedAt + T00:00:00.000Z). 후보 갱신이 팩을 다시 만들기 전까지 커밋된 팩은 이전 날짜다.
-  // 그래서 접근성 admission 증거를 가진 원천의 updatedAt만 inventory가 정한 더 늦은 날짜로 앞설 수 있고, 그 밖의 필드와 원천은 이전 행과 같아야 한다.
-  const inventoryUpdatedAt = (row) => {
-    const source = sourceInventory.sources.find(({ id }) => id === row.id);
-    const observed = source?.accessibilityAdmissionEvidence == null ? null : source.observedDataUpdatedAt;
-    const projected = typeof observed === "string" ? `${observed}T00:00:00.000Z` : null;
-    return projected !== null && Date.parse(projected) > Date.parse(row.updatedAt) ? { ...row, updatedAt: projected } : row;
-  };
+  const expectedPreviousRows = expectedSourceRowsAfterTopologyRefresh({ previousPack: previousCapital, outputPack: capital, inventory: sourceInventory });
   assert.deepEqual(
     capital.sourceInventory.filter(({ id }) => !incheonSuccessorIds.includes(id)),
-    previousCapital.sourceInventory.filter(({ id }) => !incheonSuccessorIds.includes(id)).map(inventoryUpdatedAt),
+    expectedPreviousRows.filter(({ id }) => !incheonSuccessorIds.includes(id)),
   );
   const incheonFacilities = capital.facilities.filter(({ sourceId }) =>
     sourceId === "incheon-transit-accessibility");
@@ -1743,21 +1781,10 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     ...capital.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
   ].filter(({ sourceId }) => currentAccessibilitySnapshotBySource.has(sourceId));
   assert.ok(accessibilityRows.length > 0);
-  // #1007: 접근성 증거 행은 inventory가 admission한 현재 snapshot을 가리키거나, 후보 갱신이 팩을 다시 만들기 전이라면(정기 갱신이 inventory를 먼저
-  // 앞으로 옮긴 상태) 커밋된 이전 팩의 같은 원천 행이 가리키던 snapshot 그대로여야 한다. topology 갱신은 이전 증거에 새 snapshot id를 붙이지 않는다.
-  // Incheon은 이 갱신의 대상이라 현재 snapshot만 허용한다.
-  const previousAccessibilitySnapshotIds = new Map();
-  for (const { sourceId, sourceSnapshotId } of [
-    ...previousCapital.facilities,
-    ...previousCapital.stationFacilityEvidence,
-    ...previousCapital.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
-  ]) {
-    if (sourceId === "incheon-transit-accessibility" || !currentAccessibilitySnapshotBySource.has(sourceId)) continue;
-    previousAccessibilitySnapshotIds.set(sourceId, new Set([...(previousAccessibilitySnapshotIds.get(sourceId) ?? []), sourceSnapshotId]));
-  }
-  assert.ok(accessibilityRows.every(({ sourceId, sourceSnapshotId }) =>
-    sourceSnapshotId === currentAccessibilitySnapshotBySource.get(sourceId)
-      || previousAccessibilitySnapshotIds.get(sourceId)?.has(sourceSnapshotId) === true));
+  assertEvidenceRowsBoundToCurrentOrEquivalent({
+    rows: accessibilityRows, previousPack: previousCapital, currentSnapshotBySource: currentAccessibilitySnapshotBySource,
+    ledger: await readJson("tools/datapack/release/source-snapshots.json"),
+  });
   assert.equal(result.sourceSeparatedTopologyPath, currentTopologyPath);
   assert.deepEqual(result.sourceSeparatedTopologyBytes, currentTopologyBytes);
   const incheon = result.sourceInventory.sources
@@ -1859,8 +1886,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const projectedSourcesById = new Map(projectedIncheonCapital.sourceInventory.map((source) => [source.id, source]));
   const capitalSourcesById = new Map(capital.sourceInventory.map((source) => [source.id, source]));
   assert.ok([...promotedSourceIds].every((id) => capitalSourcesById.has(id)));
-  assert.deepEqual(capital.sourceInventory.slice(0, previousCapital.sourceInventory.length),
-    previousCapital.sourceInventory.map(inventoryUpdatedAt));
+  assert.deepEqual(capital.sourceInventory.slice(0, previousCapital.sourceInventory.length), expectedPreviousRows);
   const appendedSources = capital.sourceInventory.slice(previousCapital.sourceInventory.length);
   assert.deepEqual(appendedSources, []);
   for (const sourceId of promotedSourceIds) {
@@ -2068,7 +2094,8 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   }
   assert.deepEqual(
     boundaryCapital.sourceInventory.filter(({ id }) => !boundarySourceIds.includes(id)),
-    previousCapital.sourceInventory.filter(({ id }) => !boundarySourceIds.includes(id)).map(inventoryUpdatedAt),
+    expectedSourceRowsAfterTopologyRefresh({ previousPack: previousCapital, outputPack: boundaryCapital, inventory: sourceInventory })
+      .filter(({ id }) => !boundarySourceIds.includes(id)),
   );
   const boundaryProjectedCapital = boundaryResult.incheonProjection.packs.find(({ id }) =>
     /^nationwide-incheon-schedule-[a-f0-9]{64}$/u.test(id));
@@ -2998,4 +3025,81 @@ test("approved ITX bootstrap은 교체한 spec과 새 증거로 같은 ITX 증�
     approvedItxBootstrap: false,
     bindApprovedSpec: outsideBootstrap,
   }), spec);
+});
+
+// --- #1007: 정기 갱신 상태(inventory·원장이 앞서가고 팩은 이전 증거)의 반례. 커밋된 데이터에는 갱신 직후 상태가 없어 합성 입력으로 분기를 직접 실행한다. ---
+
+const syntheticSource = (observedDataUpdatedAt) => ({
+  id: "kric-station-convenience-standard",
+  owner: "국가철도공단",
+  datasetUrl: "https://example.invalid/kric",
+  license: { name: "KOGL-1" },
+  updateFrequency: "daily",
+  observedDataUpdatedAt,
+  fieldsProvided: ["grndDvCd"],
+  coverageScope: { regionIds: ["capital"], operatorIds: ["seoul-metro"], sourceDomains: ["facility"] },
+});
+const evidence = (sourceSnapshotId, retrievedAt, sourceId = "kric-station-convenience-standard") => ({ sourceId, sourceSnapshotId, retrievedAt });
+const packOf = (sourceRow, ...rows) => ({ sourceInventory: [sourceRow], facilities: rows, stationFacilityEvidence: [] });
+const sourceRow = (updatedAt, id = "kric-station-convenience-standard") => ({ id, updatedAt });
+const inventoryOf = (observedDataUpdatedAt, id = "kric-station-convenience-standard") => ({ sources: [{ id, observedDataUpdatedAt }] });
+
+test("원천 행 updatedAt은 싣고 있는 증거의 관측일을 inventory 관측일 한도 안에서 따른다(#1007)", () => {
+  const rows = [evidence("old", "2026-10-02T06:11:20.173Z"), evidence("old", "2026-10-01T00:00:00.000Z"), { sourceId: "other" }];
+  assert.deepEqual([...latestEvidenceObservedDates(rows)], [["kric-station-convenience-standard", "2026-10-02"]]);
+  // inventory가 증거보다 늦으면(재확인만 앞서감) 증거 관측일을 남긴다.
+  assert.equal(packSourceInventoryEntry(syntheticSource("2026-10-07"), "2026-10-02").updatedAt, "2026-10-02T00:00:00.000Z");
+  // 같은 날이면 그대로, 증거가 inventory보다 늦어도 inventory 관측일을 넘지 않는다.
+  assert.equal(packSourceInventoryEntry(syntheticSource("2026-10-02"), "2026-10-02").updatedAt, "2026-10-02T00:00:00.000Z");
+  assert.equal(packSourceInventoryEntry(syntheticSource("2026-10-02"), "2026-10-09").updatedAt, "2026-10-02T00:00:00.000Z");
+  // 증거 행이 없는 원천은 inventory 관측일이다.
+  assert.equal(packSourceInventoryEntry(syntheticSource("2026-10-07"), undefined).updatedAt, "2026-10-07T00:00:00.000Z");
+});
+
+test("topology-only 갱신 뒤 원천 행은 증거가 같은 snapshot이면 이전 행 그대로이고 증거가 옮겨졌을 때만 증거 관측일을 따른다(#1007 반례)", () => {
+  const previousPack = packOf(sourceRow("2026-10-02T00:00:00.000Z"), evidence("old", "2026-10-02T06:00:00.000Z"));
+  const inventory = inventoryOf("2026-10-07");
+  const expected = (outputPack, inv = inventory, prev = previousPack) => expectedSourceRowsAfterTopologyRefresh({ previousPack: prev, outputPack, inventory: inv })[0];
+  // inventory가 앞서가도 증거가 이전 snapshot이면 updatedAt은 이전 값이다(relabel하지 않는다).
+  assert.equal(expected(packOf(sourceRow("2026-10-07T00:00:00.000Z"), evidence("old", "2026-10-02T06:00:00.000Z"))).updatedAt, "2026-10-02T00:00:00.000Z");
+  // 증거가 새 snapshot으로 옮겨졌으면 새 증거의 관측일이 기대값이다.
+  assert.equal(expected(packOf(sourceRow("2026-10-07T00:00:00.000Z"), evidence("new", "2026-10-07T13:00:00.000Z"))).updatedAt, "2026-10-07T00:00:00.000Z");
+  // 증거 관측일이 inventory 관측일을 넘으면 실패한다.
+  assert.throws(() => expected(packOf(sourceRow("2026-10-09T00:00:00.000Z"), evidence("new", "2026-10-09T00:00:00.000Z"))), /inventory 관측일/u);
+  // 같은 날 다시 수집해 snapshot만 바뀌면 updatedAt은 그대로다.
+  assert.equal(expected(packOf(sourceRow("2026-10-02T00:00:00.000Z"), evidence("new", "2026-10-02T12:00:00.000Z"))).updatedAt, "2026-10-02T00:00:00.000Z");
+  // 증거 관측일이 이전 updatedAt보다 앞서면(되돌아감) 실패한다.
+  assert.throws(() => expected(packOf(sourceRow("2026-10-01T00:00:00.000Z"), evidence("new", "2026-10-01T00:00:00.000Z"))), /앞설 수 없다/u);
+  // 증거 행이 없는 원천은 이전 행 그대로다.
+  assert.deepEqual(expectedSourceRowsAfterTopologyRefresh({
+    previousPack: { sourceInventory: [sourceRow("2026-06-01T00:00:00.000Z", "molit")] }, outputPack: { sourceInventory: [sourceRow("2026-10-07T00:00:00.000Z", "molit")] }, inventory: inventoryOf("2026-10-07", "molit"),
+  }), [sourceRow("2026-06-01T00:00:00.000Z", "molit")]);
+});
+
+test("접근성 증거 행은 현재 snapshot이거나 내용이 같은 이전 snapshot일 때만 허용한다(#1007 반례, release 게이트 validate-candidate-source-set.mjs 114행과 같은 방향)", () => {
+  const SOURCE = "kric-station-convenience-standard";
+  const row = (snapshotId, previousSnapshotId, content = "c1", raw = "r1") => ({
+    sourceId: SOURCE, snapshotId, previousSnapshotId, contentSha256: content, rawReceipt: { snapshotRawSha256: raw },
+  });
+  const previousPack = packOf(sourceRow("2026-10-02T00:00:00.000Z"), evidence("old", "2026-10-02T06:00:00.000Z"));
+  const current = new Map([[SOURCE, "head"]]);
+  const check = ({ rows, ledger, prev = previousPack, currentMap = current }) =>
+    assertEvidenceRowsBoundToCurrentOrEquivalent({ rows, previousPack: prev, currentSnapshotBySource: currentMap, ledger });
+  const equivalentLedger = [row("old", null), row("head", "old")];
+
+  check({ rows: [evidence("head", "2026-10-07T00:00:00.000Z")], ledger: equivalentLedger }); // 현재 snapshot
+  check({ rows: [evidence("old", "2026-10-02T00:00:00.000Z")], ledger: equivalentLedger }); // 내용이 같은 이전 snapshot
+  // 이전 snapshot이지만 경로 중간에 내용(원본 sha, 정규화 내용)이 바뀌었다.
+  assert.throws(() => check({ rows: [evidence("old", "2026-10-02T00:00:00.000Z")], ledger: [row("old", null), row("mid", "old", "c2"), row("head", "mid")] }), /LAG_CONTENT_CHANGED/u);
+  assert.throws(() => check({ rows: [evidence("old", "2026-10-02T00:00:00.000Z")], ledger: [row("old", null), row("head", "old", "c1", "r2")] }), /LAG_CONTENT_CHANGED/u);
+  // 현재도 이전 팩의 것도 아닌 snapshot(원장에 있어도, 없어도)을 가리킨다.
+  assert.throws(() => check({ rows: [evidence("unrelated", "2026-10-02T00:00:00.000Z")], ledger: [...equivalentLedger, row("unrelated", "head")] }), /현재 snapshot도 이전 팩의 snapshot도 아니다/u);
+  assert.throws(() => check({ rows: [evidence("ghost", "2026-10-02T00:00:00.000Z")], ledger: equivalentLedger }), /현재 snapshot도 이전 팩의 snapshot도 아니다/u);
+  // 이전 팩이 가리키던 snapshot이 원장에 없다.
+  assert.throws(() => check({ rows: [evidence("old", "2026-10-02T00:00:00.000Z")], ledger: [row("head", null)] }), /LAG_NOT_IN_LEDGER/u);
+  // Incheon은 현재 snapshot만 허용한다.
+  const incheon = "incheon-transit-accessibility";
+  const incheonPrevious = { sourceInventory: [sourceRow("2026-08-28T00:00:00.000Z", incheon)], facilities: [evidence("old", "2026-08-28T00:00:00.000Z", incheon)], stationFacilityEvidence: [] };
+  const incheonLedger = [{ ...row("old", null), sourceId: incheon }, { ...row("head", "old"), sourceId: incheon }];
+  assert.throws(() => check({ rows: [evidence("old", "2026-08-28T00:00:00.000Z", incheon)], ledger: incheonLedger, prev: incheonPrevious, currentMap: new Map([[incheon, "head"]]) }), /현재 snapshot head만 허용한다/u);
 });
