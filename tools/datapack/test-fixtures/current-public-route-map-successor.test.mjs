@@ -16,6 +16,7 @@ import {
 } from "./current-public-route-map-successor.mjs";
 import { candidateSelectedLedgerHeads } from "./selected-source-head-clock.mjs";
 import { validateCandidateSourceSet } from "../validate-candidate-source-set.mjs";
+import { nativeAdmissionRecordForHead } from "../build-current-five-region-source-fan-in.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS = [
@@ -487,4 +488,38 @@ test("release 게이트 validateCandidateSourceSet은 후보 pin이 원장 head�
   unknownPin.sourceSnapshots[0] = { ...unknownPin.sourceSnapshots[0], snapshotId: unknownPin.sourceSnapshotIds[0] };
   assert.throws(() => gate(baseLedger, unknownPin), /candidate ledger selection mismatch/u);
   assert.throws(() => gate(baseLedger, { ...structuredClone(candidate), sourceSnapshotSetHash: "7".repeat(64) }), /candidate source snapshot set hash mismatch/u);
+});
+
+// #1020: 광주 정기 갱신(kric-nationwide-timetable-file)은 원장 head와 inventory 증거(retainedScheduleAdmissionEvidence)를 함께 앞으로 옮기고 후보 pin은 그대로 둔다.
+// 이 원천의 후보 투영은 adminReviewRecordHash가 아니라 native admission 해시를 쓰므로, fixture 롤포워드도 head 증거로 같은 투영을 다시 만들어야 한다.
+test("광주 정기 갱신으로 native admission 원천의 원장 head가 앞서면 fixture 후보 투영은 head 증거로 다시 결속된다(#1020)", async () => {
+  const sourceId = "kric-nationwide-timetable-file";
+  const universe = await refreshedLedgerUniverse(sourceId);
+  universe.inventory = structuredClone(universe.inventory);
+  const source = universe.inventory.sources.find(({ id }) => id === sourceId);
+  assert.equal(Object.hasOwn(source.admissionEvidence ?? {}, "adminReviewRecordHash"), false);
+  source.retainedScheduleAdmissionEvidence = { ...source.retainedScheduleAdmissionEvidence, snapshotId: universe.successor.snapshotId };
+  const before = universe.candidate.sourceSnapshots.find((entry) => entry.sourceId === sourceId);
+  assert.ok(Array.isArray(before.admissionRecordSha256s));
+
+  rollCandidateToLedgerHeads(universe);
+
+  const rolled = universe.candidate.sourceSnapshots.find((entry) => entry.sourceId === sourceId);
+  assert.equal(rolled.snapshotId, universe.successor.snapshotId);
+  assert.equal(Object.hasOwn(rolled, "adminReviewRecordHash"), false);
+  const expected = nativeAdmissionRecordForHead({ source, head: universe.successor });
+  assert.equal(expected.kind, "retainedScheduleAdmissionEvidence");
+  assert.deepEqual(rolled.admissionRecordSha256s, [expected]);
+  assert.deepEqual(universe.candidate.sourceSnapshotIds, universe.candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId));
+  // native 투영은 head 원장 행의 원본·신선도·보존 필드를 그대로 따른다.
+  for (const field of ["rawObjectUri", "rawSha256", "schemaFingerprint", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"]) {
+    assert.equal(rolled[field], universe.successor[field], field);
+  }
+});
+
+test("native 투영 원천의 head 증거가 inventory와 결속되지 않으면 fixture 롤포워드가 추정 없이 거부한다(#1020 반례)", async () => {
+  const sourceId = "kric-nationwide-timetable-file";
+  const universe = await refreshedLedgerUniverse(sourceId);
+  // inventory 증거가 이전 snapshot에 머문 상태(갱신 PR이 inventory를 못 옮긴 경우)는 head 증거를 만들 수 없다.
+  assert.throws(() => rollCandidateToLedgerHeads(universe), /native admission evidence is not bound/u);
 });

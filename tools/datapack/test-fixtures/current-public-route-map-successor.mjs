@@ -30,6 +30,7 @@ import { currentTopologyAdmissionClock } from "./current-topology-admission-cloc
 import { candidateSelectedLedgerHeads } from "./selected-source-head-clock.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./current-capital-topology-registration.mjs";
 import { requiresCurrentCapitalTopologyAdmission } from "../rebind-capital-route-map-admissions.mjs";
+import { nativeAdmissionRecordForHead } from "../build-current-five-region-source-fan-in.mjs";
 import { selectCurrentKricRouteRostersPath } from "../build-current-capital-facility-collection-plan.mjs";
 import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, capitalRouteTopologySnapshotVersion } from "../lib/capital-route-topology-snapshot-id.mjs";
 // #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 경로 금지).
@@ -223,8 +224,11 @@ export function rollCandidateToLedgerHeads({ candidate, snapshots, inventory, go
     const head = headsBySource[projection.sourceId];
     if (head === undefined || head === projection.snapshotId
       || !chainsBySource[projection.sourceId]?.includes(projection.snapshotId)) return projection;
+    const headRow = snapshots.find(({ snapshotId }) => snapshotId === head);
+    // native admission 투영 원천(광주 시간표 등)은 adminReviewRecordHash가 없다. 후보 생성기(build-nationwide-candidate)와 같은 규칙으로 head 증거에서 다시 결속한다.
+    if (Object.hasOwn(projection, "admissionRecordSha256s")) return nativeProjectionForHead({ headRow, inventory });
     return deriveReleaseProjection({
-      snapshot: snapshots.find(({ snapshotId }) => snapshotId === head),
+      snapshot: headRow,
       sourceInventory: inventory,
       governancePolicy,
       governancePolicyBytes: governanceBytes,
@@ -233,6 +237,24 @@ export function rollCandidateToLedgerHeads({ candidate, snapshots, inventory, go
     });
   });
   candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
+}
+
+function nativeProjectionForHead({ headRow, inventory }) {
+  const source = inventory?.sources?.find(({ id }) => id === headRow.sourceId);
+  const nativeRecord = nativeAdmissionRecordForHead({ source, head: headRow });
+  if (!nativeRecord) throw new Error(`native admission evidence is not bound to the ledger head: ${headRow.sourceId}`);
+  return {
+    snapshotId: headRow.snapshotId, sourceId: headRow.sourceId, rawObjectUri: headRow.rawObjectUri,
+    rawSha256: headRow.rawSha256, redactedRequestFingerprint: headRow.redactedRequestFingerprint,
+    schemaFingerprint: headRow.schemaFingerprint, licenseStatus: headRow.licenseStatus,
+    redistributionAllowed: headRow.redistributionAllowed,
+    snapshotStatus: headRow.snapshotStatus, credentialRedacted: headRow.credentialRedacted ?? true,
+    freshnessExpiresAt: headRow.freshnessExpiresAt,
+    ...(headRow.rawRetentionExpiresAt ? { rawRetentionExpiresAt: headRow.rawRetentionExpiresAt } : {}),
+    ...(headRow.governancePolicyVersion ? { governancePolicyVersion: headRow.governancePolicyVersion } : {}),
+    ...(headRow.governancePolicySha256 ? { governancePolicySha256: headRow.governancePolicySha256 } : {}),
+    admissionRecordSha256s: [nativeRecord],
+  };
 }
 
 function bindFixtureRequiredSourceScope(scope, candidate) {
