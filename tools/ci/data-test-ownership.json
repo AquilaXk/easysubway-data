@@ -344,6 +344,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/979",
       "title": "[CI] ITX 승격 뒤 파생 재결속(literal 테스트·topology 입력 허용 목록·증거와 팩·mobile fixture 재핀)과 raw capture 원장 대조 자동화 (#870 3단계 후속)"
     },
+    "data998": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/998",
+      "title": "[Perf] 데이터팩 빌더 gzip Z_RLE 전략 제거로 팩 크기를 약 6분의 1로 축소"
+    },
     "data942": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/942",
       "title": "[Fix] PR CI가 커밋된 전국 후보 pin과 현재 원장 head의 일치를 요구해 원천 갱신 PR이 통과하지 못하는 문제"
@@ -657,6 +661,7 @@
     {"path":"tools/datapack/itx-promotion-gate.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":300},
     {"path":"tools/datapack/lib/itx-promotion-authority.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":60},
     {"path":"tools/datapack/rebind-itx-promotion.test.mjs","semanticOwner":"data979","classes":["required-pr"],"durationMs":5000},
+    {"path":"tools/datapack/build-datapack-compression.test.mjs","semanticOwner":"data998","classes":["required-pr"],"durationMs":500},
     {"path":"tools/ci/current-capital-topology-registration-workflow.test.mjs","semanticOwner":"data969","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/register-retained-kric-timetable.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":1794},
     {"path":"tools/datapack/register-gwangju-route-topology.test.mjs","semanticOwner":"data6","classes":["required-pr"],"durationMs":85},
