@@ -9,6 +9,10 @@
 //   KRIC 시설         #1010: 원장·inventory·새 snapshot 파일.
 //   서울 접근성       #1009: 원장·inventory·입력 파일·새 snapshot 파일.
 // 이전 세대(#644 #651 #667 #671 #708 #713)는 후보 spec·hash evidence·release request까지 같이 바꾸던 결정 C 이전 산출물이라 기준이 아니다.
+// 원본 응답의 출처는 병합 뒤 등록 workflow가 OCI 원본으로 확인한다. 수도권 topology의 원본은 커밋된 snapshot 파일 바이트 자체이고(run-current-capital-route-topology-registration.mjs:
+// `rawSha256 = sha256(admission.topologyBytes)`를 게시하고 `sha256(raw) !== journal.rawSha256`·`receipt.rawObjectSha256 !== journal.rawSha256`를 대조한다), 이 단계가 증거 행에 싣는
+// rawSha256은 그 파일 바이트의 sha256이다. 즉 이 단계가 증명하는 것은 "본문이 생산자 규칙으로 자기 일관적이고 직전과 비교한 변화가 한도 안"이며, 노선별 provider 원본 sha(line.rawSha256)의
+// 출처 확인은 이 단계의 몫이 아니다.
 // 관측된 적 없는 경로(reviewed pack, ITX 입력)는 허용하지 않는다. workflow가 만들 수는 있지만 자동 병합 대상이 아니라 사람 경로로 보낸다(fail closed).
 //
 // 게이트 재계산(evaluateRefreshStage)이 돌려주는 위반 코드:
@@ -18,6 +22,7 @@
 //   REFRESH_GATE    inventory 증거·snapshot 파일·원장 행·입력 파일이 서로 결속되지 않았다.
 import { createHash } from "node:crypto";
 
+import { requireCurrentSourceSeparatedCapitalTopology } from "../datapack/collect-capital-route-topology.mjs";
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 
@@ -350,12 +355,18 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
   const [previousId] = previousIds;
 
   const capitalText = await files.readTree(capitalPath);
-  const capital = JSON.parse(capitalText);
   const previousText = await files.readBase(baseSha, `${SNAPSHOT_DIR}/${previousId}.json`);
-  const previous = JSON.parse(previousText);
-  const shapeOk = capital.sourceId === "capital-route-topology" && previous.sourceId === "capital-route-topology" && HEX64.test(capital.contentSha256 ?? "") && HEX64.test(previous.contentSha256 ?? "")
-    && [capital.lineCount, capital.totalEdgeCount, previous.lineCount, previous.totalEdgeCount].every((value) => countOf(value) !== null);
-  if (!shapeOk) { violate("REFRESH_GATE", "topology snapshot 파일의 sourceId·contentSha256·lineCount·totalEdgeCount가 형식에 맞지 않는다"); return []; }
+  // 신원(노선별 scope·edges 해시, lineCount, totalEdgeCount, contentSha256)은 파일이 선언한 값이 아니라 본문에서 생산자의 검증 함수로 다시 계산한다(리뷰 F2).
+  // 이 검증은 노선 집합이 소유 규칙(인천 분리 노선 제외 22개)과 같은지도 본다. 비교 기준인 직전 snapshot도 같은 함수로 검증한다.
+  let capital;
+  let previous;
+  try {
+    capital = requireCurrentSourceSeparatedCapitalTopology(JSON.parse(capitalText));
+    previous = requireCurrentSourceSeparatedCapitalTopology(JSON.parse(previousText));
+  } catch (error) {
+    violate("REFRESH_GATE", `topology snapshot의 신원을 본문에서 다시 계산하지 못했다: ${message(error)}`);
+    return [];
+  }
   const reverification = JSON.parse(await files.readTree(reverificationPath));
   bind(violate, reverification?.candidate?.contentSha256 === capital.contentSha256, "재검증 기록의 후보 contentSha256이 새 topology와 다르다");
 
