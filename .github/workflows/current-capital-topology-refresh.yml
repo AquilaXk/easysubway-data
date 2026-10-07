@@ -173,7 +173,10 @@ jobs:
           gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"
           [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "topology claim already has a pull request" >&2; exit 1; }
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
+          # #1012: 정책이 읽는 증거 블록이 든 본문을 만든다. 기준은 복구한 branch와 main의 실제 분기점이다. 증거가 어긋나면 PR을 만들지 않고 실패한다.
+          body_file="${RUNNER_TEMP}/current-capital-topology-refresh/pull-request-body-recovery-${GITHUB_RUN_ID}.md"
+          node tools/ci/refresh-automation-pr.mjs body --stage capital-topology-refresh --base-sha "$(git merge-base origin/main "origin/${branch}")" --head-sha "$(git rev-parse "origin/${branch}")" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh due current capital and Incheon topology inputs." --refs "Refs #636, #625" --output "${body_file}"
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh current capital topology inputs" --body-file "${body_file}"
       - name: Create durable claim before provider access
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED') && steps.preflight.outputs.state == 'CLEAR' }}
         env:
@@ -355,6 +358,8 @@ jobs:
           git commit -m "Activate current topology inputs"
           node tools/datapack/activate-current-source-set.mjs --topology-source-admission --check --capital-topology "${TOPOLOGY_CAPITAL_PATH}" --incheon-topology "${TOPOLOGY_INCHEON_PATH}" --incheon-accessibility "${TOPOLOGY_INCHEON_ACCESSIBILITY_PATH}" --incheon-line1-timetable "${TOPOLOGY_LINE1_PATH}" --incheon-line2-timetable "${TOPOLOGY_LINE2_PATH}" --builder-git-sha "${TOPOLOGY_BUILDER_SHA}" --build-now "${TOPOLOGY_BUILD_NOW}"
           [[ -z "$(git diff --name-only)" && -z "$(git ls-files --others --exclude-standard)" ]] || { echo "topology activation changed an unsupported path" >&2; exit 1; }
+          # #1012: push 전에 증거 블록이 든 PR 본문을 만든다. 경로 allowlist·원장 불변·inventory 범위·증거 결속이 어긋나면 여기서 실패해 push도 PR도 없다(#926 실패 보고).
+          node tools/ci/refresh-automation-pr.mjs body --stage capital-topology-refresh --base-sha "${TOPOLOGY_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh due current capital and Incheon topology inputs." --refs "Refs #636, #625" --output "${TOPOLOGY_OPERATION_ROOT}/pull-request-body.md"
           git push origin "${TOPOLOGY_BRANCH}"
       - name: Mint App token for the refresh pull request
         id: app-token-pr
@@ -374,7 +379,7 @@ jobs:
         run: |
           set -euo pipefail
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body "Refresh due current capital and Incheon topology inputs.\n\nRefs #636, #625"
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body-file "${TOPOLOGY_OPERATION_ROOT}/pull-request-body.md"
       - name: Upload sanitized decision metadata
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

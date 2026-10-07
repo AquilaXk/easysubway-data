@@ -10,14 +10,17 @@
 //   변경 경로는 coverage contract와 그 snapshot의 원천·완전성 증거·게이트 영수증 네 개뿐이어야 한다(2단계 allowlist).
 //   source-reverification(#984)은 정책·원천 행(원장 게이트 + 증거 게이트)·recipe 단계를 담는다. 단계 id는 알려진 recipe뿐이고,
 //   변경 경로는 등록 결과 세 파일(신선도 정책 제외)과 새 원천 snapshot 파일뿐이어야 한다(경로 계약은 source-reverification-paths.mjs 하나).
+//   정기 갱신 4종(#1012: gwangju-timetable-refresh·capital-topology-refresh·kric-facility-refresh·seoul-accessibility-refresh)은 정책·원천 행·증거 step 하나(정확한 경로 allowlist)를 담는다.
+//   단계별 경로 규칙·원천 행의 원천 집합은 refresh-stage-contracts.mjs 하나가 정본이고, 이 파일은 그 계약으로 블록을 검증한다.
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
+import { REFRESH_STAGES, REFRESH_STAGE_IDS, isRefreshStage, refreshPathShapeViolation } from "./refresh-stage-contracts.mjs";
 import { SOURCE_REVERIFICATION_RECIPE_IDS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
 
 export const AUTOMATION_PR_EVIDENCE_MARKER = "easysubway-automation-pr:v1";
-export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification"]);
+export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification", ...REFRESH_STAGE_IDS]);
 const ISSUE = 969;
 const BLOCK = new RegExp(`<!-- ${AUTOMATION_PR_EVIDENCE_MARKER} (.*?) -->`, "gu");
 const RUN_URL = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/actions\/runs\/[1-9][0-9]*$/u;
@@ -99,6 +102,19 @@ function validateSourceReverification(steps) {
   }
 }
 
+/** 정기 갱신 4종(#1012): 정책·원천 행·증거 step 하나. step 경로는 단계 규칙과 정확히 맞고 정렬돼 있어야 하며 원천 행은 단계가 기대한 원천 집합과 같다. */
+function validateRefreshStage(value) {
+  const spec = REFRESH_STAGES[value.stage];
+  const only = (condition, detail) => { if (!condition) invalid(`${value.stage}: ${detail}`); };
+  only(value.policy !== null && value.candidate === null && value.sources.length > 0 && value.steps.length === 1, "needs a policy, source rows and exactly one step, no candidate");
+  const [step] = value.steps;
+  only(step.id === spec.stepId && step.changed === true, `the step must be ${spec.stepId} and changed`);
+  only(step.paths.every((entry, index) => index === 0 || step.paths[index - 1] < entry), "paths must be sorted and unique");
+  const shape = refreshPathShapeViolation(value.stage, step.paths);
+  only(shape === null, `paths: ${String(shape)}`);
+  only(JSON.stringify(value.sources.map(({ sourceId }) => sourceId)) === JSON.stringify(spec.expectedSourceIds), `source rows must be exactly ${spec.expectedSourceIds.join(", ")}`);
+}
+
 function validateEvidence(value) {
   if (!hasExactKeys(value, EVIDENCE_KEYS)) invalid("keys");
   if (value.schemaVersion !== 1 || value.issue !== ISSUE) invalid("schemaVersion or issue");
@@ -120,6 +136,8 @@ function validateEvidence(value) {
   } else if (value.stage === "source-reverification") {
     only(value.policy !== null && value.sources.length > 0 && value.steps.length > 0 && value.candidate === null, "needs a policy, source rows and recipe steps, no candidate");
     validateSourceReverification(value.steps);
+  } else if (isRefreshStage(value.stage)) {
+    validateRefreshStage(value);
   } else if (value.stage === "itx-promotion") {
     only(value.policy === null && value.sources.length === 1 && value.steps.length === 1 && value.candidate === null, "needs one source row and one step, no policy or candidate");
     validateItxPromotion(value.sources[0], value.steps[0]);
@@ -202,6 +220,29 @@ export function sourceReverificationPullRequestBody({ runUrl, baseSha, headSha, 
     "| 원천 | snapshot | 직전 snapshot | rowDelta | coverageDelta | diff |", "| --- | --- | --- | --- | --- | --- |",
     ...sources.map((source) => `| ${source.sourceId} | ${source.snapshotId} | ${source.previousSnapshotId ?? "-"} | ${source.rowDelta} | ${source.coverageDelta} | ${source.diffStatus} |`),
     "", "Refs #984", "Refs #969", "Refs #870", "", block, "",
+  ].join("\n");
+}
+
+/** 정기 갱신 4종의 증거 블록(#1012). 블록 생성 경로는 automationPrEvidenceBlock 하나이고 여기서는 단계의 step 하나만 채운다. */
+export function refreshEvidenceBlock({ stage, runUrl, baseSha, headSha, policy, sources, paths }) {
+  if (!isRefreshStage(stage)) invalid(`unknown refresh stage ${String(stage)}`);
+  return automationPrEvidenceBlock({ stage, runUrl, baseSha, headSha, policy, sources, steps: [{ id: REFRESH_STAGES[stage].stepId, changed: true, paths }], candidate: null });
+}
+
+const oneLine = (label, value) => {
+  if (typeof value !== "string" || value.trim() === "" || /[\r\n]/u.test(value) || value.includes(AUTOMATION_PR_EVIDENCE_MARKER)) invalid(`pull request ${label}`);
+  return value;
+};
+
+/** 정기 갱신 4종의 PR 본문: 요약, 참조 이슈, 원천 표, 변경 경로 목록, 증거 블록 하나. summary·refs는 한 줄이고 증거 마커를 담을 수 없다. */
+export function refreshPullRequestBody({ stage, runUrl, baseSha, headSha, policy, sources, paths, summary, refs }) {
+  const block = refreshEvidenceBlock({ stage, runUrl, baseSha, headSha, policy, sources, paths });
+  return [
+    oneLine("summary", summary), "", oneLine("refs", refs), "",
+    "| 원천 | snapshot | 직전 snapshot | rowDelta | coverageDelta | diff |", "| --- | --- | --- | --- | --- | --- |",
+    ...sources.map((source) => `| ${source.sourceId} | ${source.snapshotId} | ${source.previousSnapshotId ?? "-"} | ${source.rowDelta} | ${source.coverageDelta} | ${source.diffStatus} |`),
+    "", "## 변경 경로", "", ...paths.map((entry) => `- ${code(entry)}`), "",
+    `- 실행 run: ${runUrl}`, `- 기준 커밋: ${code(baseSha)}`, "", "Refs #969", "Refs #870", "", block, "",
   ].join("\n");
 }
 

@@ -4,5 +4,7 @@
   "allowContentChange": true,
   "maxRowDeltaRatio": 0.05,
   "allowCoverageDecrease": false,
-  "sourceOverrides": {}
+  "sourceOverrides": {
+    "capital-route-topology": { "maxRowDeltaRatio": 0.02 }
+  }
 }

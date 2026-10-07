@@ -199,12 +199,15 @@ test("등록 단계 allowlist 상수는 등록 workflow가 커밋하는 두 경�
 });
 
 test("단계별 claim 접두사는 각 workflow가 실제로 push하는 브랜치와 같고 정책은 그 접두사만 인정한다", () => {
-  assert.deepEqual(Object.keys(AUTOMATION_STAGE_WORKFLOWS).sort(), ["candidate-refresh", "derivative-rebinding", "itx-promotion", "registration", "source-reverification"]);
+  assert.deepEqual(Object.keys(AUTOMATION_STAGE_WORKFLOWS).sort(), [
+    "candidate-refresh", "capital-topology-refresh", "derivative-rebinding", "gwangju-timetable-refresh", "itx-promotion", "kric-facility-refresh", "registration", "seoul-accessibility-refresh", "source-reverification",
+  ]);
   for (const [stage, workflow] of Object.entries(AUTOMATION_STAGE_WORKFLOWS)) {
     const text = readFileSync(path.join(root, ".github/workflows", workflow), "utf8");
     assert.ok(text.includes(`${AUTOMATION_STAGE_PREFIXES[stage]}\${GITHUB_RUN_ID}`), `${workflow} pushes ${AUTOMATION_STAGE_PREFIXES[stage]}<run id>`);
     // 이 단계 workflow가 PR 본문에 증거 블록을 싣는다.
-    assert.match(text, /automation-pr-evidence\.mjs (?:registration-body|derivative-rebinding-body|itx-promotion-body|candidate-refresh-block|source-reverification-body)/u, workflow);
+    // 정기 갱신 4종(#1012)은 emitter(refresh-automation-pr)가 같은 일을 한다.
+    assert.match(text, new RegExp(String.raw`automation-pr-evidence\.mjs (?:registration-body|derivative-rebinding-body|itx-promotion-body|candidate-refresh-block|source-reverification-body)|refresh-automation-pr\.mjs body --stage ${stage}\b`, "u"), workflow);
   }
 });
 

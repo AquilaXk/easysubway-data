@@ -352,6 +352,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1001",
       "title": "[Chore] 외부 스케줄러 dispatch가 정기 실행과 같은 의미로 동작하도록 정기 workflow를 맞추고 스케줄러 중단을 실패 이슈로 감시"
     },
+    "data1012": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1012",
+      "title": "[CI] 정기 갱신 4종(광주·수도권 topology·KRIC 시설·서울 접근성) PR을 증거 기반 자동 병합 정책에 올리기 (#870 전체 자동화)"
+    },
     "data942": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/942",
       "title": "[Fix] PR CI가 커밋된 전국 후보 pin과 현재 원장 head의 일치를 요구해 원천 갱신 PR이 통과하지 못하는 문제"
@@ -664,6 +668,9 @@
     {"path":"tools/ci/itx-current-promotion-workflow.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/check-scheduler-heartbeat.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/external-scheduler-gate.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/refresh-stage-contracts.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/ci/refresh-automation-pr.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":2500},
+    {"path":"tools/ci/refresh-automation-pr-workflows.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/github-expression.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/data-workflow-scheduler-watchdog-workflow.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/datapack-expiry-alert-workflow.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":20},

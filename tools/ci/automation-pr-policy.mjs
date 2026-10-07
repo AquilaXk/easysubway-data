@@ -15,11 +15,11 @@
 //                   이 검사는 advisory다(인증이 아니다): github-actions의 git push 커밋은 서명되지 않고(실측 verification.verified=false) GitHub이 작성자를 이메일로
 //                   연결하므로 github-actions noreply 주소를 쓴 커밋은 이 검사를 통과한다. 실제 경계는 자동화 브랜치를 push할 수 있는 사람(저장소 쓰기 권한)이다.
 //                   검사가 하는 일은 자동화 브랜치에 손으로 커밋을 얹은 정상적인 사람 개입을 이상으로 드러내는 것이다.
-//   PATHS           API diff의 변경 경로가 단계별 allowlist와 정확히 맞는다(등록·ITX: 정확히 같음. 등록은 원장·inventory 둘뿐이다(#989: 재등록은 정책 파일을 쓰지 않는다), 재결속: 증거의 변경 단계 경로와 같고
+//   PATHS           API diff의 변경 경로가 단계별 allowlist와 정확히 맞는다(정기 갱신 4종(#1012): 증거 step의 경로와 정확히 같고 파일마다 added·modified가 규칙과 맞음. 등록·ITX: 정확히 같음. 등록은 원장·inventory 둘뿐이다(#989: 재등록은 정책 파일을 쓰지 않는다), 재결속: 증거의 변경 단계 경로와 같고
 //                   각 단계가 허용한 경로, 후보: 후보 갱신 도구의 출력 목록 안).
 //   CI              CI workflow가 이 head에서 성공으로 끝났고 ruleset의 required context가 모두 성공이다.
 //   GATES           PR head에서 게이트를 다시 계산한 check(Automation PR gates)가 github-actions가 만든 성공이다.
-//   LEDGER_GATE·INVENTORY_GATE·ITX_GATE·CANDIDATE_GATE·EVIDENCE_DRIFT   게이트 재계산(CI가 PR head 작업 트리에서 한다)의 위반이다.
+//   LEDGER_GATE·INVENTORY_GATE·ITX_GATE·CANDIDATE_GATE·REFRESH_GATE·EVIDENCE_DRIFT   게이트 재계산(CI가 PR head 작업 트리에서 한다)의 위반이다.
 //
 // 이 파일의 명령:
 //   prepare   CI job의 분류: 정책 대상 PR이면 증거의 base sha를 내보낸다(그 커밋을 fetch한 뒤 gates를 부른다).
@@ -41,6 +41,7 @@ import { SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS, isSourceReverificationAllow
 import { evaluateEvidenceChange } from "../datapack/run-source-reverification.mjs";
 import { REVERIFICATION_RECIPES, inventoryChangeViolations, inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { DERIVATIVE_STEPS } from "../datapack/run-derivative-rebinding.mjs";
+import { REFRESH_STAGES, REFRESH_STAGE_IDS, evaluateRefreshStage, isRefreshStage, refreshFileViolation } from "./refresh-stage-contracts.mjs";
 import { ITX_PROMOTION_MODE_GATE_PASSED, itxPromotionReceiptPath, verifyItxGatePromotion } from "../datapack/lib/itx-promotion-authority.mjs";
 import { SCHEDULED_RELEASE_ROLES, gateRunViolations } from "../datapack/lib/scheduled-release-authority.mjs";
 import {
@@ -70,6 +71,8 @@ export const AUTOMATION_STAGE_WORKFLOWS = Object.freeze({
   "candidate-refresh": "nationwide-candidate-refresh.yml",
   "itx-promotion": "itx-current-promotion.yml",
   "source-reverification": "source-reverification.yml",
+  // #1012: 정기 갱신 4종. workflow 표는 refresh-stage-contracts가 정본이다.
+  ...Object.fromEntries(REFRESH_STAGE_IDS.map((stage) => [stage, REFRESH_STAGES[stage].workflow])),
 });
 export const AUTOMATION_STAGE_PREFIXES = Object.freeze(
   Object.fromEntries(Object.entries(AUTOMATION_STAGE_WORKFLOWS).map(([stage, workflow]) => [stage, REFRESH_CLAIM_PREFIXES[workflow]])),
@@ -191,6 +194,14 @@ function pathViolation(evidence, files) {
   const changed = changedPathsOf(files);
   if (changed === null) return "변경 파일 항목의 형식이 다르다";
   if (changed.length === 0) return "변경 경로가 비어 있다";
+  if (isRefreshStage(evidence.stage)) {
+    // 정기 갱신 4종(#1012): 증거 step의 경로 allowlist와 API diff가 정확히 같고, 파일마다 단계 규칙이 정한 변경 종류(added·modified)여야 한다.
+    // allowlist는 .github·tools 코드·governance·SLA를 담지 못한다(단계 규칙 밖). 이름 변경·삭제는 규칙의 변경 종류가 아니다.
+    const fileReason = refreshFileViolation(evidence.stage, files);
+    if (fileReason !== null) return fileReason;
+    const claimedPaths = evidence.steps[0].paths;
+    return sameJson(changed, sortCodepoint(claimedPaths)) ? null : describeSetDifference(changed, sortCodepoint(claimedPaths));
+  }
   if (evidence.stage === "registration") {
     return sameJson(changed, sortCodepoint(REGISTRATION_ALLOWED_PATHS)) ? null : describeSetDifference(changed, sortCodepoint(REGISTRATION_ALLOWED_PATHS));
   }
@@ -371,6 +382,21 @@ export async function recomputeAutomationGates({
 }) {
   const violations = [];
   const violate = (code, detail) => violations.push({ code, detail });
+
+  if (isRefreshStage(evidence.stage)) {
+    // 정기 갱신 4종(#1012): 원장 방식·소유 inventory 범위·증거 결속은 단계 계약(evaluateRefreshStage)이 base·head 두 판본에서 다시 계산한다.
+    // 증거 블록의 정책·원천 행은 색인일 뿐이고 재계산한 값과 같아야 한다. emitter(refresh-automation-pr)가 PR을 열기 전에 같은 함수를 부른다.
+    try {
+      const policy = parseLedgerChangePolicy(JSON.parse(await files.readTree(LEDGER_POLICY_PATH)));
+      if (!sameJson(policy, evidence.policy)) violate("EVIDENCE_DRIFT", "증거 블록의 정책이 커밋된 원장 변화 정책과 다르다");
+      const result = await evaluateRefreshStage({ stage: evidence.stage, paths: evidence.steps[0].paths, baseSha: evidence.baseSha, policy, files });
+      for (const item of result.violations) violate(item.code, item.detail);
+      if (!sameJson(result.rows, evidence.sources)) violate("EVIDENCE_DRIFT", "증거 블록의 원천 행이 base·head에서 다시 계산한 변화와 다르다");
+    } catch (error) {
+      violate("LEDGER_GATE", message(error));
+    }
+    return { violations };
+  }
 
   let policy = null;
   let sources = null;
