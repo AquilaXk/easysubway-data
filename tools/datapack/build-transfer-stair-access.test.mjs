@@ -13,6 +13,7 @@ import {
   loadTransferStairAccessInputs,
 } from "./build-transfer-stair-access.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { parseDirection } from "./lib/transfer-direction.mjs";
 
 // #925 RED 계획. fixture 기대값은 손으로 적는다(도구 출력에서 복사하지 않는다).
 
@@ -332,7 +333,7 @@ test("방면 집합: 급행 간선은 넣지 않고, 인접 역이 둘이 아닌
 
 test("방면 표기가 '<노선> <역> 방면' 형식이 아니거나 인접 역으로 풀리지 않으면 경로를 사유와 함께 제외한다", () => {
   const rows = sadangRows().map((row) => {
-    if (row.LN_NM === "2호선" && row.CHTN_MV_CONT === "4호선 남태령 방면") return { ...row, CHTN_MV_CONT: "4호선 남태령 방면 승강장" };
+    if (row.LN_NM === "2호선" && row.CHTN_MV_CONT === "4호선 남태령 방면") return { ...row, CHTN_MV_CONT: "4호선 남태령(종착역)" };
     if (row.LN_NM === "4호선" && row.CHTN_MV_CONT === "2호선 낙성대 방면") return { ...row, CHTN_MV_CONT: "2호선 서울대입구 방면" };
     return row;
   });
@@ -348,6 +349,65 @@ test("방면 표기가 '<노선> <역> 방면' 형식이 아니거나 인접 역
   const fuzzy = derive({ rows: sadangRows().map((row) => (row.CHTN_MV_CONT === "4호선 총신대입구 방면"
     ? { ...row, CHTN_MV_CONT: "4호선 총신대 방면" } : row)) });
   assert.equal(edgeState(fuzzy, EDGE_2_4).state, "UNKNOWN");
+});
+
+test("방면 표기의 서식 차이(끝의 승강장 접미, 역명에 붙은 방면, 공백이 든 역명)는 같은 방면으로 읽는다 (#1025)", () => {
+  // 실제 원천 서식: '4호선 고잔 방면 승강장', '경의중앙선 양원방면', '3호선 을지로 3가 방면'. 방면 역은 그대로 이웃 역 이름과 정확히 하나가 맞아야 한다.
+  const withSuffix = sadangRows().map((row) => (row.CHTN_MV_CONT === "" ? row : { ...row, CHTN_MV_CONT: `${row.CHTN_MV_CONT} 승강장 ` }));
+  const suffixed = derive({ rows: withSuffix });
+  assert.deepEqual(suffixed.excludedPaths, []);
+  assert.equal(edgeState(suffixed, EDGE_2_4).state, "STEP_FREE");
+  assert.equal(edgeState(suffixed, EDGE_4_2).state, "STEP_FREE");
+
+  const attached = derive({ rows: sadangRows().map((row) => (row.CHTN_MV_CONT === "" ? row : { ...row, CHTN_MV_CONT: row.CHTN_MV_CONT.replace(" 방면", "방면") })) });
+  assert.deepEqual(attached.excludedPaths, []);
+  assert.equal(edgeState(attached, EDGE_2_4).state, "STEP_FREE");
+  assert.equal(edgeState(attached, EDGE_4_2).state, "STEP_FREE");
+
+  // 공백이 든 역명은 공백만 지웠을 때 정본 역 이름과 정확히 같아야 한다. 정본 '을지로3가', 원천 '을지로 3가'.
+  const spacedRows = sadangRows().map((row) => ({
+    ...row,
+    MV_CONT_DTL: row.MV_CONT_DTL.replaceAll("방배", "을지로 3가"),
+    CHTN_MV_CONT: row.CHTN_MV_CONT.replaceAll("방배", "을지로 3가"),
+  }));
+  const spacedCatalog = sadangCatalog();
+  spacedCatalog.stations = spacedCatalog.stations.map((station) => (station.id === "station-bangbae" ? { ...station, nameKo: "을지로3가" } : station));
+  const spaced = derive({ rows: spacedRows, catalog: spacedCatalog });
+  assert.deepEqual(spaced.excludedPaths, []);
+  assert.equal(edgeState(spaced, EDGE_2_4).state, "STEP_FREE");
+  assert.equal(edgeState(spaced, EDGE_4_2).state, "STEP_FREE");
+});
+
+test("서식을 완화해도 방면 역이 이웃 역과 정확히 하나로 맞지 않으면 제외하고, 읽지 못하는 서식은 계속 제외한다 (#1025)", () => {
+  // 붙은 방면 표기라도 이름이 이웃 역과 다르면(유사 이름) 풀지 않는다.
+  const fuzzy = derive({ rows: sadangRows().map((row) => (row.CHTN_MV_CONT === "4호선 총신대입구 방면"
+    ? { ...row, CHTN_MV_CONT: "4호선 총신대방면 승강장" } : row)) });
+  assert.equal(edgeState(fuzzy, EDGE_2_4).state, "UNKNOWN");
+  // '4호선 총신대입구 방면'은 4호선 출발 경로 2개의 첫 단계와 2호선 출발 경로 2개의 마지막 단계에 나온다.
+  assert.equal(fuzzy.summary.excludedPathsByReason.DIRECTION_NAME_UNRESOLVED, 4);
+  // 방면 표기가 아닌 문구, 노선 표기가 없는 방면, 종착역 표기는 이 이슈 범위 밖이라 계속 서식 미지원이다.
+  for (const unsupported of ["4호선 남태령", "남태령 방면 승강장", "4호선 방면", "4호선 남태령(종착역)", "4호선 남태령 종착", "4호선 금정 도착"]) {
+    const result = derive({ rows: sadangRows().map((row) => (row.CHTN_MV_CONT === "4호선 남태령 방면"
+      ? { ...row, CHTN_MV_CONT: unsupported } : row)) });
+    assert.equal(result.summary.excludedPathsByReason.DIRECTION_FORMAT_UNSUPPORTED, 4, unsupported);
+    assert.equal(edgeState(result, EDGE_2_4).reason, "DIRECTION_COMBO_MISSING", unsupported);
+  }
+});
+
+test("parseDirection은 '<노선> <역> 방면' 표기의 서식 차이만 읽고 그 밖은 null이다 (#1025)", () => {
+  for (const [value, expected] of [
+    ["4호선 남태령 방면", { lineToken: "4호선", stationName: "남태령" }],
+    ["4호선 남태령 방면 승강장", { lineToken: "4호선", stationName: "남태령" }],
+    ["  4호선 고잔 방면 승강장  ", { lineToken: "4호선", stationName: "고잔" }],
+    ["경의중앙선 양원방면", { lineToken: "경의중앙선", stationName: "양원" }],
+    ["4호선 범계방면 승강장", { lineToken: "4호선", stationName: "범계" }],
+    ["3호선 을지로 3가 방면", { lineToken: "3호선", stationName: "을지로 3가" }],
+  ]) {
+    assert.deepEqual(parseDirection(value), expected, value);
+  }
+  for (const value of ["", null, undefined, "4호선 남태령", "남태령 방면", "방면", "4호선 방면", "4호선 남태령(종착역)", "4호선 금정 도착", "서울역 종착역 승강장"]) {
+    assert.equal(parseDirection(value), null, String(value));
+  }
 });
 
 test("원천 경로가 없는 환승 간선은 UNKNOWN(NO_OFFICIAL_PATH)이고 단계 순서가 깨진 경로는 제외한다", () => {

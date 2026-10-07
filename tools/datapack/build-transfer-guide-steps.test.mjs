@@ -470,7 +470,8 @@ test("후보 실측: 모든 키에서 첫 단계 방면 역은 from_prev와 다�
     sourceSequences.at(-1).raw.push(row.MV_CONT_DTL);
     sourceSequences.at(-1).last = row.CHTN_MV_CONT;
   }
-  const headingName = (direction) => /^(\S+) (\S+) 방면$/u.exec(direction.trim())?.[2];
+  // #1025: 원천 서식 차이(끝의 승강장 접미, 역명에 붙은 방면, 공백이 든 역명)도 같은 방면 표기로 읽는다.
+  const headingName = (direction) => /^(\S+) (.+?) ?방면$/u.exec(direction.trim().replace(/ 승강장$/u, ""))?.[2];
   const neighborNamed = (stationId, lineId, name) => [...(neighbors.get(`${stationId}\0${lineId}`) ?? [])]
     .filter((neighborId) => namesOf(neighborId).has(normalize(name)));
   const keys = new Map();
