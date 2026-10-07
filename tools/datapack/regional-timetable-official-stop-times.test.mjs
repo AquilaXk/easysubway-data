@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { integrateRegionalTimetables } from "./lib/regional-timetable-integrator.mjs";
+import { assertLagIsContentEquivalent } from "./test-fixtures/ledger-lag-equivalence.mjs";
 import { HOLIDAYS_2026 } from "./materialize-incheon-timetable.mjs";
 
 // #855: 대전·광주 시간표 통합(#814)이 공식 원천에 없는 도착 시각을 만들었다.
@@ -318,14 +319,60 @@ test("커밋된 전국 정본 팩의 대전 정차 시각은 원천 값이고 �
   }
 });
 
-test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 projection 행의 도착·출발 값이다(#913)", async () => {
-  const pack = activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json"));
-  const inventory = readJson("tools/datapack/source-inventory.json");
-  const ledger = readJson("tools/datapack/release/source-snapshots.json");
-  const source = inventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
-  const projection = readJson(source.retainedGwangjuProjectionEvidence.snapshotPath);
-  const head = ledger.find(({ snapshotId }) => snapshotId === source.retainedScheduleAdmissionEvidence.snapshotId);
-  const contract = head.retainedTimetableInputs.contract;
+// #913·#1005: 광주 정차 시각의 원천은 KRIC 보관본 projection이다. 정기 갱신 PR은 원장 행 추가와 inventory head 교체만 하고, 정본 팩과
+// projection은 병합 뒤 source-derivative-rebinding과 후보 갱신이 다시 만든다. 그 사이 팩이 이전 보관 스냅샷에 결속된 것은 정상 상태다.
+// 단 뒤처짐은 팩(·projection)이 가리키는 행부터 head까지 경로의 모든 행이 내용상 같을 때만 허용한다(ledger-lag-equivalence.mjs).
+// 내용이 바뀌었으면 팩은 head와 같아야 하고 아니면 실패한다. release 게이트(validate-candidate-source-set.mjs 114행)는 후보 원천이
+// head와 정확히 같을 것을 내용과 무관하게 요구하며, 이 테스트는 그 게이트를 완화하지 않고 required-pr에서 내용이 같은 재확인만 허용한다.
+const RETAINED_SOURCE_ID = "kric-nationwide-timetable-file";
+
+// 광주 정차 시각을 정하는 보관본 내용: 원천 원본 sha256과 계약의 결속 내용(역·노선·서비스·요일 시작·공휴일 날짜).
+// 갱신마다 새로 쓰는 확인 창(calendar 시작·종료일, confirmationWindow, 공휴일 증거의 수집 시각·manifest sha)은 내용이 아니라 제외한다.
+function retainedContentKey(row) {
+  const contract = row.retainedTimetableInputs.contract;
+  return JSON.stringify({
+    rawSha256: row.rawSha256,
+    routeNumber: contract.routeNumber,
+    stationBindings: contract.stationBindings,
+    excludedEndpointLabels: contract.excludedEndpointLabels,
+    routeBindings: contract.routeBindings,
+    serviceIds: contract.serviceIds,
+    servicePatterns: contract.servicePatterns,
+    serviceDayStartSeconds: contract.serviceDayStartSeconds,
+    publicHolidayDates: contract.calendar?.publicHolidayDates,
+    festivalDates: contract.calendar?.festivalDates,
+  });
+}
+
+function assertGwangjuStopTimesBoundToRetainedSource({ pack, inventory, ledger, readProjection }) {
+  const source = inventory.sources.find(({ id }) => id === RETAINED_SOURCE_ID);
+  const headSnapshotId = source.retainedScheduleAdmissionEvidence.snapshotId;
+  const rows = new Map(ledger.filter(({ sourceId }) => sourceId === RETAINED_SOURCE_ID).map((row) => [row.snapshotId, row]));
+  const projection = readProjection(source.retainedGwangjuProjectionEvidence.snapshotPath);
+  const trips = new Map(pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-"))
+    .map((trip) => [trip.id, trip]));
+  assert.ok(trips.size > 0);
+  const stops = pack.transitStopTimes.filter(({ tripId }) => trips.has(tripId));
+  assert.ok(stops.length > 0);
+
+  // 팩의 결속: 광주 trip 전부가 같은 보관 스냅샷 하나를 가리키고, 그 스냅샷부터 head까지 내용이 같아야 한다.
+  const packSnapshotIds = new Set([...trips.values()].map(({ sourceSnapshotId }) => sourceSnapshotId));
+  assert.equal(packSnapshotIds.size, 1, `광주 trip은 보관 스냅샷 하나에 결속돼야 한다: ${[...packSnapshotIds].join(", ")}`);
+  const [packSnapshotId] = packSnapshotIds;
+  assertLagIsContentEquivalent({
+    ledger, sourceId: RETAINED_SOURCE_ID, snapshotId: packSnapshotId, headSnapshotId, contentKeyOf: retainedContentKey, label: "팩",
+  });
+  const packRow = rows.get(packSnapshotId);
+
+  // projection의 결속: projection이 만든 보관 스냅샷도 같은 규칙으로 head와 내용이 같아야 하고, projection이 읽은 records의 sha256은
+  // head 증거(inventory)가 기록한 recordsSha256과 같아야 한다. 원장 행에는 행별 recordsSha256이 없고, 같은 원본·같은 계약이면 records도 같다.
+  assertLagIsContentEquivalent({
+    ledger, sourceId: RETAINED_SOURCE_ID, snapshotId: projection.retainedSnapshotId, headSnapshotId, contentKeyOf: retainedContentKey, label: "projection",
+  });
+  assert.equal(projection.observationRecordsSha256, source.retainedScheduleAdmissionEvidence.recordsSha256,
+    "projection이 읽은 records의 sha256은 head 증거의 recordsSha256과 같아야 한다");
+
+  const contract = packRow.retainedTimetableInputs.contract;
   const weekdayTypeByServiceId = new Map(Object.entries(contract.serviceIds).map(([weekdayType, serviceId]) => [serviceId, weekdayType]));
   const labelByStationId = new Map(contract.stationBindings.map(({ stationId, sourceLabel }) => [stationId, sourceLabel]));
   const seconds = (value) => { const [h, m, s] = value.split(":").map(Number); return h * 3600 + m * 60 + s; };
@@ -333,14 +380,8 @@ test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 proj
     .filter((cell) => /^\d{2}:\d{2}:\d{2}$/u.test(cell?.value ?? ""))
     // 자정 뒤 정차는 운행일 기준으로 86,400초를 더한 값일 수 있다.
     .flatMap((cell) => [0, 86_400].map((offset) => `${record.trainNumber}|${record.weekdayType}|${record.stationName}|${seconds(cell.value) + offset}`))));
-  const trips = new Map(pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-"))
-    .map((trip) => [trip.id, trip]));
-  assert.ok(trips.size > 0);
-  const stops = pack.transitStopTimes.filter(({ tripId }) => trips.has(tripId));
-  assert.ok(stops.length > 0);
   for (const stop of stops) {
     const trip = trips.get(stop.tripId);
-    assert.equal(trip.sourceSnapshotId, source.retainedScheduleAdmissionEvidence.snapshotId);
     const weekdayType = weekdayTypeByServiceId.get(trip.serviceId);
     const label = labelByStationId.get(stop.stationId);
     for (const value of [stop.arrivalSeconds, stop.departureSeconds]) {
@@ -348,4 +389,113 @@ test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 proj
         `광주 정차 ${trip.trainNo} ${weekdayType} ${label} ${value}초는 보관본 원천 행 값이어야 한다`);
     }
   }
+}
+
+const gwangjuBindingInputs = () => ({
+  pack: activePackOf(readJson("tools/datapack/release/nationwide-production-canonical-pack.json")),
+  inventory: readJson("tools/datapack/source-inventory.json"),
+  ledger: readJson("tools/datapack/release/source-snapshots.json"),
+  readProjection: readJson,
+});
+
+// 정기 갱신(register-retained-kric-timetable)이 만드는 변화만 흉내 낸다: 원장 행 추가, inventory head 교체. 팩·projection은 그대로다.
+// mutate는 새 head 행을 바꾼다(기본: 내용 변화 없이 재확인만 한 갱신).
+function withRetainedRefresh({ inventory, ledger, ...rest }, suffix = "f", mutate = (row) => row) {
+  const source = inventory.sources.find(({ id }) => id === RETAINED_SOURCE_ID);
+  const head = ledger.find(({ snapshotId }) => snapshotId === source.retainedScheduleAdmissionEvidence.snapshotId);
+  const refreshed = mutate({ ...structuredClone(head), snapshotId: `${RETAINED_SOURCE_ID}-${suffix.repeat(64)}`, previousSnapshotId: head.snapshotId, observedAt: "2099-01-01T00:00:00.000Z" });
+  const nextInventory = { ...inventory, sources: inventory.sources.map((entry) => entry.id !== RETAINED_SOURCE_ID ? entry : {
+    ...entry, retainedScheduleAdmissionEvidence: { ...entry.retainedScheduleAdmissionEvidence, snapshotId: refreshed.snapshotId } }) };
+  return { ...rest, inventory: nextInventory, ledger: [...ledger, refreshed] };
+}
+
+const changeRawSha = (row) => ({ ...row, rawSha256: "3".repeat(64) });
+// 계약의 결속 내용 한 항목만 바꾼 행.
+const changeContractField = (field) => (row) => {
+  const next = structuredClone(row);
+  next.retainedTimetableInputs.contract[field] = { changedByTest: field };
+  return next;
+};
+const CONTRACT_CONTENT_FIELDS = ["routeNumber", "stationBindings", "excludedEndpointLabels", "routeBindings", "serviceIds", "servicePatterns", "serviceDayStartSeconds"];
+const changeCalendarDates = (field) => (row) => {
+  const next = structuredClone(row);
+  next.retainedTimetableInputs.contract.calendar = { ...next.retainedTimetableInputs.contract.calendar, [field]: ["20991225"] };
+  return next;
+};
+// 갱신마다 새로 쓰는 확인 창만 바뀐 행(실제 #1004가 이렇다).
+const shiftConfirmationWindow = (row) => {
+  const next = structuredClone(row);
+  const contract = next.retainedTimetableInputs.contract;
+  contract.calendar = { ...contract.calendar, startDate: "20991231", endDate: "21000107" };
+  contract.confirmationWindow = { observedAt: "2099-01-01T00:00:00.000Z", expiresAt: "2099-01-08T00:00:00.000Z" };
+  contract.holidayCalendarEvidence = { ...contract.holidayCalendarEvidence, manifestSha256: "4".repeat(64) };
+  return next;
+};
+
+test("커밋된 전국 정본 팩의 광주 정차 시각은 KRIC 보관본 projection 행의 도착·출발 값이다(#913)", () => {
+  assertGwangjuStopTimesBoundToRetainedSource(gwangjuBindingInputs());
+});
+
+test("광주 보관 시간표 정기 갱신(원장 행 추가·inventory head 교체)은 내용이 같으면 팩 결속 계약을 깨지 않는다(#1005)", () => {
+  const refreshed = withRetainedRefresh(gwangjuBindingInputs());
+  assertGwangjuStopTimesBoundToRetainedSource(refreshed);
+  // 갱신이 두 번 이어져도(확인 창만 바뀐 갱신 포함) 경로의 모든 행이 내용상 같다.
+  assertGwangjuStopTimesBoundToRetainedSource(withRetainedRefresh(refreshed, "e", shiftConfirmationWindow));
+});
+
+test("광주 팩 결속 계약은 실제 결속 불일치를 계속 거부한다(#1005 반례, release 게이트 validate-candidate-source-set.mjs 114행과 같은 방향)", () => {
+  const inputs = gwangjuBindingInputs();
+  const gwangjuTripIds = new Set(inputs.pack.transitTrips.filter(({ lineId, routeId }) => lineId === GWANGJU.lineId || routeId?.startsWith("route-S2901-")).map(({ id }) => id));
+  const withTrips = (mutate) => ({ ...inputs, pack: { ...inputs.pack, transitTrips: inputs.pack.transitTrips.map((trip) => gwangjuTripIds.has(trip.id) ? mutate(trip) : trip) } });
+  const ledgerRowOf = (snapshotId) => inputs.ledger.find((row) => row.snapshotId === snapshotId);
+  const [{ sourceSnapshotId: packSnapshotId }] = inputs.pack.transitTrips.filter(({ id }) => gwangjuTripIds.has(id));
+  const orphan = { ...structuredClone(ledgerRowOf(packSnapshotId)), snapshotId: `${RETAINED_SOURCE_ID}-${"1".repeat(64)}`, previousSnapshotId: null };
+  const missing = `${RETAINED_SOURCE_ID}-${"0".repeat(64)}`;
+
+  // 팩이 원장에 없는 스냅샷을 가리킨다.
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(withTrips((trip) => ({ ...trip, sourceSnapshotId: missing }))), /LAG_NOT_IN_LEDGER: 팩/u);
+  // 팩이 head 경로 밖의 원장 행을 가리킨다.
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource({ ...withTrips((trip) => ({ ...trip, sourceSnapshotId: orphan.snapshotId })), ledger: [...inputs.ledger, orphan] }), /LAG_OFF_CHAIN: 팩/u);
+  // 광주 trip이 서로 다른 스냅샷에 걸친다.
+  let first = true;
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(withTrips((trip) => {
+    if (!first) return trip;
+    first = false;
+    return { ...trip, sourceSnapshotId: missing };
+  })), /하나에 결속/u);
+
+  // 낡은 팩: 경로 중간 행의 원천 원본이 바뀌었다. 뒤의 head가 팩과 같아 보여도 실패해야 한다.
+  const midChanged = withRetainedRefresh(withRetainedRefresh(inputs, "d", changeRawSha), "e");
+  midChanged.ledger.at(-1).rawSha256 = ledgerRowOf(packSnapshotId).rawSha256;
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(midChanged), /LAG_CONTENT_CHANGED: 팩/u);
+  // 낡은 팩: head의 원천 원본이 바뀌었다.
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(withRetainedRefresh(inputs, "f", changeRawSha)), /LAG_CONTENT_CHANGED: 팩/u);
+  // 낡은 팩: 중간 행의 계약 결속 내용(항목마다)이나 공휴일 날짜가 바뀌었다.
+  for (const field of CONTRACT_CONTENT_FIELDS) {
+    assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(withRetainedRefresh(withRetainedRefresh(inputs, "d", changeContractField(field)), "e")), /LAG_CONTENT_CHANGED: 팩/u, field);
+  }
+  for (const field of ["publicHolidayDates", "festivalDates"]) {
+    assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(withRetainedRefresh(withRetainedRefresh(inputs, "d", changeCalendarDates(field)), "e")), /LAG_CONTENT_CHANGED: 팩/u, field);
+  }
+
+  // projection이 head 경로 밖의 원장 행을 가리킨다.
+  const projectionOf = (retainedSnapshotId, extra = {}) => ({ ...inputs, readProjection: (relative) => ({ ...readJson(relative), retainedSnapshotId, ...extra }) });
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource({ ...projectionOf(orphan.snapshotId), ledger: [...inputs.ledger, orphan] }), /LAG_OFF_CHAIN: projection/u);
+  // projection이 원장에 없는 스냅샷을 가리킨다.
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(projectionOf(missing)), /LAG_NOT_IN_LEDGER: projection/u);
+  // 낡은 projection: 팩은 내용이 바뀐 새 head로 다시 만들어졌지만 projection은 이전 보관 스냅샷에 남았다.
+  const changedHead = withRetainedRefresh(inputs, "d", changeRawSha);
+  const changedHeadId = changedHead.ledger.at(-1).snapshotId;
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource({
+    ...changedHead,
+    pack: { ...inputs.pack, transitTrips: inputs.pack.transitTrips.map((trip) => gwangjuTripIds.has(trip.id) ? { ...trip, sourceSnapshotId: changedHeadId } : trip) },
+  }), /LAG_CONTENT_CHANGED: projection/u);
+  // projection이 읽은 records의 sha256이 head 증거의 recordsSha256과 다르다.
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(projectionOf(inputs.inventory.sources.find(({ id }) => id === RETAINED_SOURCE_ID).retainedGwangjuProjectionEvidence.retainedSnapshotId, { observationRecordsSha256: "5".repeat(64) })), /recordsSha256/u);
+
+  // 정차 시각이 projection 값과 다르다.
+  const target = inputs.pack.transitStopTimes.findIndex(({ tripId }) => gwangjuTripIds.has(tripId));
+  const shifted = { ...inputs, pack: { ...inputs.pack, transitStopTimes: inputs.pack.transitStopTimes.map((stop, index) => (
+    index === target ? { ...stop, arrivalSeconds: stop.arrivalSeconds + 1 } : stop)) } };
+  assert.throws(() => assertGwangjuStopTimesBoundToRetainedSource(shifted), /보관본 원천 행 값/u);
 });
