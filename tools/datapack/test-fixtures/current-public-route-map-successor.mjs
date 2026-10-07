@@ -27,6 +27,7 @@ import { buildSnapshotDiff, validateLineage } from "../source-snapshot-policy.mj
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { buildCurrentCapitalRouteTopologyRegistrationOutputs } from "../register-current-capital-route-topology.mjs";
 import { currentTopologyAdmissionClock } from "./current-topology-admission-clock.mjs";
+import { candidateSelectedLedgerHeads } from "./selected-source-head-clock.mjs";
 import { createFixtureCapitalTopologyReceipt } from "./current-capital-topology-registration.mjs";
 import { requiresCurrentCapitalTopologyAdmission } from "../rebind-capital-route-map-admissions.mjs";
 import { selectCurrentKricRouteRostersPath } from "../build-current-capital-facility-collection-plan.mjs";
@@ -210,6 +211,28 @@ function projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory
   };
   bindFixtureRequiredSourceScope(scope, candidate);
   return { snapshots: fixtureSnapshots, pack: fixturePack, inventory: fixtureInventory };
+}
+
+// #1007: 정기 갱신 PR은 원장 head와 inventory 증거를 먼저 앞으로 옮기고 후보 pin은 병합 뒤 후보 갱신이 옮긴다.
+// 커밋된 후보가 그 사이 이전 head를 가리키는 것은 정상 상태인데, 이 fixture는 후보 pin을 "초기 후보"로 삼고 그 위에 합성 후속 snapshot을 쌓는다.
+// 같은 원천의 원장 행이 이미 있으면 후속이 fork가 되므로, 초기 후보가 가리키는 원천이 원장 head가 아닐 때는 후보가 현재 head를 고른 것처럼
+// pin을 head 사슬 안에서 앞으로 옮긴다. 사슬 밖을 가리키는 pin은 그대로 두어 아래 결속 검사가 거부한다.
+export function rollCandidateToLedgerHeads({ candidate, snapshots, inventory, governancePolicy, governanceBytes, freshnessPolicy, now }) {
+  const { headsBySource, chainsBySource } = validateLineage(snapshots);
+  candidate.sourceSnapshots = candidate.sourceSnapshots.map((projection) => {
+    const head = headsBySource[projection.sourceId];
+    if (head === undefined || head === projection.snapshotId
+      || !chainsBySource[projection.sourceId]?.includes(projection.snapshotId)) return projection;
+    return deriveReleaseProjection({
+      snapshot: snapshots.find(({ snapshotId }) => snapshotId === head),
+      sourceInventory: inventory,
+      governancePolicy,
+      governancePolicyBytes: governanceBytes,
+      freshnessPolicy,
+      nowMillis: now.getTime(),
+    });
+  });
+  candidate.sourceSnapshotIds = candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId);
 }
 
 function bindFixtureRequiredSourceScope(scope, candidate) {
@@ -508,6 +531,10 @@ export async function copySyntheticCurrentPublicRouteMapRepository(
   ]);
   const governancePolicy = JSON.parse(governanceBytes);
   const fixture = projectFixtureLifecycleUniverse({ candidate, snapshots, pack, inventory, governancePolicy, scope });
+  rollCandidateToLedgerHeads({
+    candidate, snapshots: fixture.snapshots, inventory: fixture.inventory, governancePolicy, governanceBytes,
+    freshnessPolicy: await readJson(source, "release/product-gates/datapack-freshness-sla.json"), now,
+  });
   const historicalTopologyEvidence = candidate.networkEdgeEvidence?.capitalTopology;
   if (!historicalTopologyEvidence
     || !CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN.test(historicalTopologyEvidence.path ?? "")
@@ -600,9 +627,9 @@ export async function nextSyntheticCurrentStaticNetworkNow(root) {
     ...FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS,
     CAPITAL_TOPOLOGY_SOURCE_ID,
   ]);
-  const selected = candidate.sourceSnapshotIds
-    .map((snapshotId) => snapshots.find((snapshot) => snapshot.snapshotId === snapshotId))
-    .filter((snapshot) => snapshot != null && staticSourceIds.has(snapshot.sourceId));
+  // #1007: 후보 pin이 아니라 후보가 고른 원천의 원장 head 기준이다(rollCandidateToLedgerHeads와 같은 의미).
+  const selected = candidateSelectedLedgerHeads(candidate, snapshots)
+    .filter((snapshot) => staticSourceIds.has(snapshot.sourceId));
   if (selected.length === 0) {
     throw new Error("synthetic current static-network clock fixture is incomplete");
   }

@@ -12,7 +12,9 @@ import {
   copySyntheticCurrentPublicRouteMapRepository,
   createStaticNetworkRegistrarPredecessorFixture,
   nextSyntheticCurrentStaticNetworkNow,
+  rollCandidateToLedgerHeads,
 } from "./current-public-route-map-successor.mjs";
+import { candidateSelectedLedgerHeads } from "./selected-source-head-clock.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS = [
@@ -371,4 +373,58 @@ test("registrar fixture derives a selected same-source public root", async (t) =
   assert.equal(selected.snapshotId, result.currentSnapshotId);
   assert.equal(selected.previousSnapshotId, result.predecessorSnapshotId);
   assert.doesNotThrow(() => validateLineage(snapshots));
+});
+
+// #1007: 정기 갱신(KRIC 시설·서울 접근성)은 원장에 새 head를 덧붙이고 후보 pin은 그대로 둔다. 후보 갱신이 pin을 옮기기 전의 상태다.
+async function refreshedLedgerUniverse(sourceId) {
+  const [candidate, snapshots, inventory, governanceBytes, freshnessPolicy] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json")),
+    readFile(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json"), "utf8").then(JSON.parse),
+  ]);
+  const pinned = snapshots.find(({ snapshotId }) => snapshotId === candidate.sourceSnapshots.find((entry) => entry.sourceId === sourceId).snapshotId);
+  const successor = {
+    ...structuredClone(pinned),
+    snapshotId: `${sourceId}-20991231T000000000Z`,
+    previousSnapshotId: pinned.snapshotId,
+    retrievedAt: "2099-12-31T00:00:00.000Z",
+    capturedAt: "2099-12-31T00:00:00.000Z",
+  };
+  successor.diffSummary = buildSnapshotDiff(pinned, successor);
+  return {
+    candidate, inventory, pinned, successor, governanceBytes, freshnessPolicy,
+    snapshots: [...snapshots, successor],
+    governancePolicy: JSON.parse(governanceBytes),
+    now: new Date("2099-12-31T00:01:00.000Z"),
+  };
+}
+
+test("정기 갱신으로 원장 head가 후보 pin보다 앞서면 fixture 후보와 시각 기준은 head를 고른다(#1007)", async () => {
+  const universe = await refreshedLedgerUniverse("seoul-metro-accessibility");
+  const original = structuredClone(universe.candidate);
+  const headOf = (sourceId) => candidateSelectedLedgerHeads(original, universe.snapshots).find((entry) => entry.sourceId === sourceId);
+  assert.equal(headOf("seoul-metro-accessibility").snapshotId, universe.successor.snapshotId);
+  for (const { sourceId, snapshotId } of original.sourceSnapshots.filter(({ sourceId: id }) => id !== "seoul-metro-accessibility")) {
+    assert.equal(headOf(sourceId).snapshotId, snapshotId, `${sourceId} pin은 이미 head다`);
+  }
+
+  rollCandidateToLedgerHeads(universe);
+  const rolled = Object.fromEntries(universe.candidate.sourceSnapshots.map((entry) => [entry.sourceId, entry.snapshotId]));
+  assert.equal(rolled["seoul-metro-accessibility"], universe.successor.snapshotId);
+  for (const { sourceId, snapshotId } of original.sourceSnapshots.filter(({ sourceId: id }) => id !== "seoul-metro-accessibility")) {
+    assert.equal(rolled[sourceId], snapshotId, `${sourceId} pin은 그대로다`);
+  }
+  assert.deepEqual(universe.candidate.sourceSnapshotIds, universe.candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId));
+});
+
+test("후보 pin이 원장에 없으면 시각 기준 계산이 거부하고 fixture는 pin을 옮기지 않는다(#1007 반례)", async () => {
+  const universe = await refreshedLedgerUniverse("kric-station-convenience-standard");
+  const unknown = `kric-station-convenience-standard-${"0".repeat(8)}`;
+  universe.candidate.sourceSnapshots = universe.candidate.sourceSnapshots.map((entry) =>
+    entry.sourceId === "kric-station-convenience-standard" ? { ...entry, snapshotId: unknown } : entry);
+  assert.throws(() => candidateSelectedLedgerHeads(universe.candidate, universe.snapshots), /selected source snapshot identity/u);
+  rollCandidateToLedgerHeads(universe);
+  assert.equal(universe.candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-station-convenience-standard").snapshotId, unknown);
 });

@@ -168,8 +168,11 @@ async function finalizeFixture(t, { prepared = false, observationFreshUntil } = 
   const snapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json"); const inventoryPath = path.join(root, "tools/datapack/source-inventory.json");
   const snapshots = JSON.parse(await readFile(snapshotsPath, "utf8")); const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   const candidate = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
-  const previousId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === snapshot.sourceId)?.snapshotId;
-  const previous = snapshots.find(({ snapshotId }) => snapshotId === previousId); assert.ok(previous);
+  // #1007: 후속 snapshot은 후보 pin이 아니라 원장 head 위에 쌓는다. 정기 갱신 직후에는 pin이 head보다 앞선 사슬 구성원이라, pin 위에 쌓으면 fork가 된다.
+  const pinnedId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === snapshot.sourceId)?.snapshotId;
+  const { headsBySource, chainsBySource } = validateLineage(snapshots);
+  assert.ok(chainsBySource[snapshot.sourceId]?.includes(pinnedId), "candidate source pin is a ledger lineage member");
+  const previous = snapshots.find(({ snapshotId }) => snapshotId === headsBySource[snapshot.sourceId]); assert.ok(previous);
   const dateToken = snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
   const next = { ...structuredClone(previous), snapshotId: snapshot.snapshotId, previousSnapshotId: previous.snapshotId, retrievedAt: snapshot.capturedAt, sourceUpdatedAt: snapshot.capturedAt, rowCount: 0, coverageCount: plan.counts.providerTupleCount, rawSha256: "a".repeat(64), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/${dateToken}/${"a".repeat(64)}.json`, redactedRequestFingerprint: snapshot.redactedRequestFingerprint, schemaFingerprint: snapshot.schemaFingerprint, contentSha256: snapshot.contentSha256, freshnessExpiresAt: snapshot.freshUntil, rawRetentionExpiresAt: snapshot.freshUntil };
   const governanceBytes = await load("tools/datapack/source-governance-policy.json"); const governance = JSON.parse(governanceBytes);
@@ -524,7 +527,9 @@ test("terminal source preflight may replace only an expired KRIC predecessor", a
   const candidatePath = path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json");
   const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
   const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
-  const kricId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-station-convenience-standard").snapshotId;
+  // #1007: 사전 검사는 후보 pin이 아니라 원장 head를 판정한다. 정기 갱신 직후에는 pin이 head보다 앞선 사슬 구성원이므로 head 행을 만료시킨다.
+  const heads = validateLineage(ledger).headsBySource;
+  const kricId = heads["kric-station-convenience-standard"];
   const kric = ledger.find(({ snapshotId }) => snapshotId === kricId);
   assert.ok(kric);
   kric.freshnessExpiresAt = NOW.toISOString();
@@ -546,7 +551,7 @@ test("terminal source preflight may replace only an expired KRIC predecessor", a
   }));
   assert.equal(providerCalls, 1);
 
-  const seoulId = candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "seoul-metro-accessibility").snapshotId;
+  const seoulId = heads["seoul-metro-accessibility"];
   const seoul = ledger.find(({ snapshotId }) => snapshotId === seoulId);
   assert.ok(seoul);
   seoul.freshnessExpiresAt = NOW.toISOString();

@@ -304,7 +304,8 @@ async function historicalFacilityFixtureInput(observedAt) {
       const selectedHead = input.sourceSnapshots.find(({ snapshotId, sourceId }) =>
         snapshotId === projection.snapshotId && sourceId === projection.sourceId);
       assert.ok(selectedHead, `selected ${projection.sourceId} ledger head`);
-      assert.equal(lineage.headsBySource[projection.sourceId], selectedHead.snapshotId);
+      // #1007: 정기 갱신이 원장에 새 head를 덧붙인 직후에는 후보 pin이 head보다 앞선 사슬 구성원이다. head와 같다고 고정하지 않고
+      // 아래에서 pin이 원장 사슬의 구성원인지를 검사한다. 이 fixture의 역사 입력은 시각(historicalMembershipAt)으로 따로 고른다.
       const sourceChain = lineage.chainsBySource[projection.sourceId];
       const selectedIndex = sourceChain.indexOf(selectedHead.snapshotId);
       assert.ok(selectedIndex >= 0, `selected ${projection.sourceId} lineage member`);

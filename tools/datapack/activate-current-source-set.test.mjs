@@ -1695,9 +1695,18 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     assert.ok(rows.length > 0);
     assert.ok(rows.every((row) => row.sourceSnapshotId === admittedSnapshotId(source)));
   }
+  // #1007: 정기 갱신(KRIC 시설·서울 접근성)이 병합돼 inventory의 관측일이 앞서가면, 검토 팩이 그 원천 행의 updatedAt을 inventory 관측일로 투영한다
+  // (import-official-sources: observedDataUpdatedAt + T00:00:00.000Z). 후보 갱신이 팩을 다시 만들기 전까지 커밋된 팩은 이전 날짜다.
+  // 그래서 접근성 admission 증거를 가진 원천의 updatedAt만 inventory가 정한 더 늦은 날짜로 앞설 수 있고, 그 밖의 필드와 원천은 이전 행과 같아야 한다.
+  const inventoryUpdatedAt = (row) => {
+    const source = sourceInventory.sources.find(({ id }) => id === row.id);
+    const observed = source?.accessibilityAdmissionEvidence == null ? null : source.observedDataUpdatedAt;
+    const projected = typeof observed === "string" ? `${observed}T00:00:00.000Z` : null;
+    return projected !== null && Date.parse(projected) > Date.parse(row.updatedAt) ? { ...row, updatedAt: projected } : row;
+  };
   assert.deepEqual(
     capital.sourceInventory.filter(({ id }) => !incheonSuccessorIds.includes(id)),
-    previousCapital.sourceInventory.filter(({ id }) => !incheonSuccessorIds.includes(id)),
+    previousCapital.sourceInventory.filter(({ id }) => !incheonSuccessorIds.includes(id)).map(inventoryUpdatedAt),
   );
   const incheonFacilities = capital.facilities.filter(({ sourceId }) =>
     sourceId === "incheon-transit-accessibility");
@@ -1734,8 +1743,21 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     ...capital.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
   ].filter(({ sourceId }) => currentAccessibilitySnapshotBySource.has(sourceId));
   assert.ok(accessibilityRows.length > 0);
+  // #1007: 접근성 증거 행은 inventory가 admission한 현재 snapshot을 가리키거나, 후보 갱신이 팩을 다시 만들기 전이라면(정기 갱신이 inventory를 먼저
+  // 앞으로 옮긴 상태) 커밋된 이전 팩의 같은 원천 행이 가리키던 snapshot 그대로여야 한다. topology 갱신은 이전 증거에 새 snapshot id를 붙이지 않는다.
+  // Incheon은 이 갱신의 대상이라 현재 snapshot만 허용한다.
+  const previousAccessibilitySnapshotIds = new Map();
+  for (const { sourceId, sourceSnapshotId } of [
+    ...previousCapital.facilities,
+    ...previousCapital.stationFacilityEvidence,
+    ...previousCapital.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
+  ]) {
+    if (sourceId === "incheon-transit-accessibility" || !currentAccessibilitySnapshotBySource.has(sourceId)) continue;
+    previousAccessibilitySnapshotIds.set(sourceId, new Set([...(previousAccessibilitySnapshotIds.get(sourceId) ?? []), sourceSnapshotId]));
+  }
   assert.ok(accessibilityRows.every(({ sourceId, sourceSnapshotId }) =>
-    sourceSnapshotId === currentAccessibilitySnapshotBySource.get(sourceId)));
+    sourceSnapshotId === currentAccessibilitySnapshotBySource.get(sourceId)
+      || previousAccessibilitySnapshotIds.get(sourceId)?.has(sourceSnapshotId) === true));
   assert.equal(result.sourceSeparatedTopologyPath, currentTopologyPath);
   assert.deepEqual(result.sourceSeparatedTopologyBytes, currentTopologyBytes);
   const incheon = result.sourceInventory.sources
@@ -1838,7 +1860,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   const capitalSourcesById = new Map(capital.sourceInventory.map((source) => [source.id, source]));
   assert.ok([...promotedSourceIds].every((id) => capitalSourcesById.has(id)));
   assert.deepEqual(capital.sourceInventory.slice(0, previousCapital.sourceInventory.length),
-    previousCapital.sourceInventory);
+    previousCapital.sourceInventory.map(inventoryUpdatedAt));
   const appendedSources = capital.sourceInventory.slice(previousCapital.sourceInventory.length);
   assert.deepEqual(appendedSources, []);
   for (const sourceId of promotedSourceIds) {
@@ -2046,7 +2068,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   }
   assert.deepEqual(
     boundaryCapital.sourceInventory.filter(({ id }) => !boundarySourceIds.includes(id)),
-    previousCapital.sourceInventory.filter(({ id }) => !boundarySourceIds.includes(id)),
+    previousCapital.sourceInventory.filter(({ id }) => !boundarySourceIds.includes(id)).map(inventoryUpdatedAt),
   );
   const boundaryProjectedCapital = boundaryResult.incheonProjection.packs.find(({ id }) =>
     /^nationwide-incheon-schedule-[a-f0-9]{64}$/u.test(id));
