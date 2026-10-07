@@ -13,7 +13,8 @@
 // `rawSha256 = sha256(admission.topologyBytes)`를 게시하고 `sha256(raw) !== journal.rawSha256`·`receipt.rawObjectSha256 !== journal.rawSha256`를 대조한다), 이 단계가 증거 행에 싣는
 // rawSha256은 그 파일 바이트의 sha256이다. 즉 이 단계가 증명하는 것은 "본문이 생산자 규칙으로 자기 일관적이고 직전과 비교한 변화가 한도 안"이며, 노선별 provider 원본 sha(line.rawSha256)의
 // 출처 확인은 이 단계의 몫이 아니다.
-// 관측된 적 없는 경로(reviewed pack, ITX 입력)는 허용하지 않는다. workflow가 만들 수는 있지만 자동 병합 대상이 아니라 사람 경로로 보낸다(fail closed).
+// 관측된 적 없는 경로(reviewed pack, ITX 입력)는 허용하지 않는다. 이런 변경은 emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다.
+// 브랜치도 PR도 만들어지지 않는다(workflow가 그 파일을 스테이징해도 증거 본문을 만들지 못한다). 허용하려면 이 표에 규칙을 더하는 코드 변경이 필요하다(fail closed).
 //
 // 게이트 재계산(evaluateRefreshStage)이 돌려주는 위반 코드:
 //   LEDGER_GATE     원장이 append-only가 아니거나(기존 행 변경·순서 변경) 새 행이 기대한 원천이 아니거나 원장 변화 정책(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA·BINDING_MISMATCH)을 어겼다.
