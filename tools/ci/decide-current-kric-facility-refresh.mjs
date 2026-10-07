@@ -83,10 +83,13 @@ export async function decideCurrentKricFacilityRefresh({ inventoryPath, policyPa
   if (openPullRequests.length > 1) throw new Error("duplicate KRIC refresh pull requests exist");
   const claims = automationClaims(claimsBytes);
   // #995: PR 없는 claim은 만든 run과 게시 증거(출력 커밋·receipt artifact)로 가른다. 증거 없는 빈 claim은 복구할 것이 없으므로 정리 대상(보고 뒤 삭제)이다.
-  const plan = planUnboundClaims({
-    workflowFile: WORKFLOW, repository, claimBranches: claims, pullRequests, evidence: parseJson(evidenceBytes, "claim evidence"),
-  });
+  const evidence = parseJson(evidenceBytes, "claim evidence");
+  const plan = planUnboundClaims({ workflowFile: WORKFLOW, repository, claimBranches: claims, pullRequests, evidence });
   const cleanupClaims = plan.abandoned;
+  // #995 F4: 닫았다고(Abandon 커밋) 기록한 claim은 PR이 되지 않는다. PR이 붙었으면 상태와 무관하게 이름 있는 이상이다.
+  if (evidence.some((record) => record?.bound === true && record.commits?.subjects?.at(-1) === ABANDONED_CLAIM_SUBJECT)) {
+    throw new Error("abandoned KRIC refresh claim has a pull request");
+  }
   if (openPullRequests.length === 1) return { state: "OPEN_PR", alertBeforePackExpiry, cleanupClaims };
   const live = [...plan.active, ...plan.recoverable];
   const closed = claims.filter((branch) => pullRequests.some(({ headRefName, state }) => headRefName === branch && state === "CLOSED"));

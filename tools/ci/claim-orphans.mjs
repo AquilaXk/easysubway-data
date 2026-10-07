@@ -238,7 +238,7 @@ async function lookupArtifacts(runGh, repository, runId) {
 }
 
 /**
- * PR 없는 claim마다 증거(run 상태, claim 뒤 커밋, receipt artifact)를 모은다. PR이 있는 claim은 조회하지 않는다.
+ * PR 없는 claim마다 증거(run 상태, claim 뒤 커밋, 보존 증거 artifact)를 모은다. PR이 있는 claim은 조회하지 않는다(Abandon 커밋을 쓰는 workflow만 커밋을 본다).
  * 고아마다 gh run view 한 번, 커밋 비교 한 번, (receipt artifact를 정의한 workflow만) artifact 목록 한 번이다.
  */
 export async function collectClaimEvidence({ workflowFile, repository, claimBranches, pullRequests, runGh = defaultRunGh } = {}) {
@@ -246,6 +246,12 @@ export async function collectClaimEvidence({ workflowFile, repository, claimBran
   assertClaimBranches(workflowFile, claimBranches);
   const bound = boundBranches(workflowFile, repository, pullRequests);
   const evidence = [];
+  // Abandon 커밋을 남기는 workflow는 PR이 붙은 claim의 커밋도 본다(닫았다고 기록한 claim에 PR이 붙으면 이상이다). run은 조회하지 않는다.
+  if (claimOwner.abandonedSubject) {
+    for (const branch of claimBranches.filter((name) => bound.has(name))) {
+      evidence.push({ branch, runId: claimRunId(workflowFile, branch), bound: true, commits: await lookupClaimCommits(runGh, repository, branch) });
+    }
+  }
   for (const branch of claimBranches.filter((name) => !bound.has(name))) {
     const runId = claimRunId(workflowFile, branch);
     const run = await lookupClaimRun(runGh, repository, runId);
