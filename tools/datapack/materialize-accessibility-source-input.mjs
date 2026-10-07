@@ -196,7 +196,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
       sourceId: SEOUL_SOURCE_ID,
       sourceSnapshotId: seoulSnapshot.snapshotId,
       providerRecordHash,
-      evidenceHash: hash({ snapshotId: seoulSnapshot.snapshotId, stationId, lineId: mapping.lineId, providerRecordHash }),
+      evidenceHash: seoulStatusEvidenceHash({ snapshotId: seoulSnapshot.snapshotId, stationId, lineId: mapping.lineId, providerRecordHash }),
       provenanceKind: "OFFICIAL_SOURCE",
       installationStatus: station ? "INSTALLED" : "NOT_COVERED",
       operationalStatus,
@@ -246,7 +246,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
       lastVerifiedAt: seoulSnapshot.observedAt,
       sourceSnapshotId: seoulSnapshot.snapshotId,
       providerRecordHash: status.providerRecordHash,
-      evidenceHash: hash({ edgeId: edge.id, sourceSnapshotId: seoulSnapshot.snapshotId, providerRecordHash: status.providerRecordHash }),
+      evidenceHash: seoulEdgeEvidenceHash({ edgeId: edge.id, sourceSnapshotId: seoulSnapshot.snapshotId, providerRecordHash: status.providerRecordHash }),
     };
   });
   const minimumFacilities = input.minimumProductionCoverage?.facilities;
@@ -329,6 +329,15 @@ function normalize(value) {
 
 function hash(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+// 서울 접근성 증거 해시의 계산 방식(키 순서가 해시를 정한다). 자동 병합 정책(refresh-stage-contracts)이 같은 함수로 다시 계산해 대조한다.
+export function seoulStatusEvidenceHash({ snapshotId, stationId, lineId, providerRecordHash }) {
+  return hash({ snapshotId, stationId, lineId, providerRecordHash });
+}
+
+export function seoulEdgeEvidenceHash({ edgeId, sourceSnapshotId, providerRecordHash }) {
+  return hash({ edgeId, sourceSnapshotId, providerRecordHash });
 }
 
 async function main(argv) {

@@ -24,6 +24,7 @@
 import { createHash } from "node:crypto";
 
 import { compareCapitalRouteTopologies, requireCurrentSourceSeparatedCapitalTopology } from "../datapack/collect-capital-route-topology.mjs";
+import { seoulEdgeEvidenceHash, seoulStatusEvidenceHash } from "../datapack/materialize-accessibility-source-input.mjs";
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 
@@ -299,7 +300,13 @@ function sourceInputViolations({ base, head, sourceId, snapshotId, capturedAt })
       for (const field of changed.filter((entry) => SOURCE_INPUT_TIME_KEYS.includes(entry))) {
         if (after[field] !== capturedAt) problems.push(`${where}: ${field}가 새 snapshot 시각(${capturedAt})이 아니다`);
       }
-      if (changed.includes("evidenceHash") && !HEX64.test(after.evidenceHash)) problems.push(`${where}: evidenceHash 형식이 다르다`);
+      // evidenceHash는 형식이 아니라 값을 본다: 생성 코드와 같은 함수로 새 snapshot에서 다시 계산한 값과 같아야 한다.
+      // 계산 방식을 아는 행 목록(routeEdges, accessibilityStatusEvidence)만 허용한다. 그 밖의 목록은 해시를 확인할 수 없어 막는다.
+      let expectedHash = null;
+      if (key === "routeEdges") expectedHash = seoulEdgeEvidenceHash({ edgeId: after.id, sourceSnapshotId: after.sourceSnapshotId, providerRecordHash: after.providerRecordHash });
+      else if (key === "accessibilityStatusEvidence") expectedHash = seoulStatusEvidenceHash({ snapshotId: after.sourceSnapshotId, stationId: after.stationId, lineId: after.lineId, providerRecordHash: after.providerRecordHash });
+      if (expectedHash === null) problems.push(`${where}: ${key} 목록의 evidenceHash 계산 방식을 알 수 없다`);
+      else if (after.evidenceHash !== expectedHash) problems.push(`${where}: evidenceHash가 새 snapshot에서 다시 계산한 값과 다르다`);
     }
   }
   if (changedRows === 0 && problems.length === 0) problems.push("입력 파일이 바뀌지 않았다");
