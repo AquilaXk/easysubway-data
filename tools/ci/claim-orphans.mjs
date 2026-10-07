@@ -249,14 +249,15 @@ export async function collectClaimEvidence({ workflowFile, repository, claimBran
   // Abandon 커밋을 남기는 workflow는 PR이 붙은 claim의 커밋도 본다(닫았다고 기록한 claim에 PR이 붙으면 이상이다). run은 조회하지 않는다.
   if (claimOwner.abandonedSubject) {
     for (const branch of claimBranches.filter((name) => bound.has(name))) {
-      evidence.push({ branch, runId: claimRunId(workflowFile, branch), bound: true, commits: await lookupClaimCommits(runGh, repository, branch) });
+      evidence.push({ branch, runId: claimRunId(workflowFile, branch), bound: true, commits: await lookupClaimCommits(runGh, repository, branch) }); // NOSONAR -- gh 호출은 일부러 순차다(claim 50개 상한)
     }
   }
   for (const branch of claimBranches.filter((name) => !bound.has(name))) {
     const runId = claimRunId(workflowFile, branch);
-    const run = await lookupClaimRun(runGh, repository, runId);
-    const commits = await lookupClaimCommits(runGh, repository, branch);
-    const artifacts = claimOwner.receiptArtifact && run.found ? await lookupArtifacts(runGh, repository, runId) : [];
+    // gh 호출은 일부러 순차다(claim 50개 상한, 조회 폭주 방지).
+    const run = await lookupClaimRun(runGh, repository, runId); // NOSONAR
+    const commits = await lookupClaimCommits(runGh, repository, branch); // NOSONAR
+    const artifacts = claimOwner.receiptArtifact && run.found ? await lookupArtifacts(runGh, repository, runId) : []; // NOSONAR
     evidence.push({ branch, runId, run, commits, artifacts });
   }
   return evidence;

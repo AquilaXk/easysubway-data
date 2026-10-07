@@ -129,7 +129,8 @@ export async function removeOrphanClaims({
   for (const branch of claims) if (!shas.has(branch)) fail("CLAIM_ORPHAN_INPUT_INVALID", `${branch} is not in the classification refs`);
   const results = [];
   for (const [index, branch] of claims.entries()) {
-    const result = await removeOne({ workflowFile, repository, branch, runId: runIds[index], classifiedSha: shas.get(branch), runGh, runGit, report, log, summaryFile });
+    // 삭제는 claim마다 순차로 하고 하나가 실패하면 거기서 멈춘다.
+    const result = await removeOne({ workflowFile, repository, branch, runId: runIds[index], classifiedSha: shas.get(branch), runGh, runGit, report, log, summaryFile }); // NOSONAR
     log(JSON.stringify(result));
     results.push(result);
   }

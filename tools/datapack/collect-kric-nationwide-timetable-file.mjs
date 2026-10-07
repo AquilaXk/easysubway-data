@@ -141,37 +141,52 @@ function validateResponse(response, maximumBytes, expectedUrl) {
   return length;
 }
 
+const READ_FAILURES = new Set(["KRIC_TIMETABLE_FILE_BODY", "KRIC_TIMETABLE_FILE_TIMEOUT"]);
+
+async function cancelQuietly(reader) {
+  try { await reader.cancel(); } catch { /* cleanup is best effort */ }
+}
+
+// 본문 전체에 하나의 한도를 둔다. 시간 초과는 BODY와 구분해 원인을 드러낸다(504 run 37399282636).
+function bodyDeadline(timeoutMs) {
+  const expired = Symbol("body timeout");
+  let timer;
+  const promise = new Promise((resolve) => { timer = setTimeout(() => resolve(expired), timeoutMs); });
+  return { expired, promise, clear: () => clearTimeout(timer) };
+}
+
+async function readNextChunk(reader, deadline) {
+  const next = await Promise.race([reader.read(), deadline.promise]);
+  if (next === deadline.expired) {
+    reader.cancel().catch(() => {});
+    fail("TIMEOUT");
+  }
+  return next;
+}
+
 async function readBoundedBody(body, maximumBytes, timeoutMs) {
   if (!body || typeof body.getReader !== "function") fail("BODY");
   const reader = body.getReader();
   const chunks = [];
   let total = 0;
-  // 본문 전체에 하나의 한도를 둔다. 시간 초과는 BODY와 구분해 원인을 드러낸다(504 run 37399282636).
-  let timer;
-  const expired = Symbol("body timeout");
-  const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve(expired), timeoutMs); });
+  const deadline = bodyDeadline(timeoutMs);
   try {
     while (true) {
-      const next = await Promise.race([reader.read(), deadline]);
-      if (next === expired) {
-        reader.cancel().catch(() => {});
-        fail("TIMEOUT");
-      }
-      const { done, value } = next;
+      const { done, value } = await readNextChunk(reader, deadline);
       if (done) return Buffer.concat(chunks, total);
       if (!(value instanceof Uint8Array)) fail("BODY");
       total += value.byteLength;
       if (total > maximumBytes) {
-        try { await reader.cancel(); } catch { /* cleanup is best effort */ }
+        await cancelQuietly(reader);
         fail("BODY");
       }
       chunks.push(Buffer.from(value));
     }
   } catch (error) {
-    if (error?.message === "KRIC_TIMETABLE_FILE_BODY" || error?.message === "KRIC_TIMETABLE_FILE_TIMEOUT") throw error;
-    fail("BODY");
+    if (READ_FAILURES.has(error?.message)) throw error;
+    return fail("BODY");
   } finally {
-    clearTimeout(timer);
+    deadline.clear();
   }
 }
 

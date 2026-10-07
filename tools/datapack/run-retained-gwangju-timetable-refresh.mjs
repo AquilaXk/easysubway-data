@@ -76,7 +76,6 @@ async function collectPhase({ root, operation, boundaries, clock, preflight, ser
   await fsMkdir(operation, { mode: 0o700 });
   const collectKric = boundaries.collectKric ?? collectKricNationwideTimetableFile;
   const buildObservation = boundaries.buildObservation ?? buildKricNationwideTimetableObservation;
-  const preparePublication = boundaries.preparePublication ?? prepareRetainedKricTimetablePublication;
   const collectKasi = boundaries.collectKasi ?? collectKasiHolidayCalendarWindowFiles;
   const prepareContract = boundaries.prepareContract ?? defaultPrepareContract;
   const receipt = await collectKric({ outputFile: paths.raw, now: requiredClock(clock) });
