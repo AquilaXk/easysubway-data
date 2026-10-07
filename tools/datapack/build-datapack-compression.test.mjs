@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,7 +12,8 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 
 // #998: Z_RLE는 거리 1 반복만 찾아 SQLite 페이지·인덱스에서 LZ77 일치를 전혀 쓰지 못한다(실팩 39.0MB vs 6.4MB).
-// 기본 전략 level 9 대비 허용 오차를 둬 압축 효율 회귀를 계약으로 고정한다.
+// 이 상한은 "비효율 전략 회귀 차단"용 효율 계약이다. level 6·Z_FILTERED처럼 level 9와 몇 퍼센트 안쪽인 설정은
+// 통과하도록 의도했다. level 9·기본 전략·mtime 0·OS 255 자체는 아래 바이트 동일성 테스트가 따로 고정한다.
 const MAX_RATIO_VS_DEFAULT_LEVEL_9 = 1.05;
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -30,7 +31,7 @@ async function buildFixturePack() {
   return { outputDir, pack, compressed };
 }
 
-test("빌더 gzip 산출물은 기본 deflate level 9 수준으로 압축된다", async () => {
+test("빌더 gzip 산출물은 기본 level 9 대비 1.05배 이내로 압축된다", async () => {
   const { outputDir, compressed } = await buildFixturePack();
   try {
     const sqlite = gunzipSync(compressed);
@@ -62,4 +63,34 @@ test("빌더 gzip 산출물은 해시·크기·헤더 결정성 규약을 유지
     await rm(first.outputDir, { recursive: true, force: true });
     await rm(second.outputDir, { recursive: true, force: true });
   }
+});
+
+test("빌더 gzip 산출물은 기본 전략 level 9·mtime 0·OS 표지 255 gzip과 바이트가 같다", async () => {
+  const { outputDir, compressed } = await buildFixturePack();
+  try {
+    const expected = gzipSync(gunzipSync(compressed), { level: 9, mtime: 0 });
+    expected[9] = 255;
+    assert.equal(sha256(compressed), sha256(expected));
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+// gz 바이트는 Node에 번들된 zlib에 의존하므로 빌더를 실행하는 workflow의 Node를 .nvmrc 고정과 같게 둔다.
+test("build-datapack.mjs를 실행하는 workflow는 floating Node 버전을 쓰지 않는다", async () => {
+  const pinned = (await readFile(path.join(root, ".nvmrc"), "utf8")).trim();
+  const workflowDirectory = path.join(root, ".github/workflows");
+  const offenders = [];
+  let checkedWorkflows = 0;
+  for (const name of (await readdir(workflowDirectory)).filter((file) => file.endsWith(".yml"))) {
+    const text = await readFile(path.join(workflowDirectory, name), "utf8");
+    if (!/tools\/datapack\/build-datapack\.mjs/.test(text)) continue;
+    checkedWorkflows += 1;
+    for (const match of text.matchAll(/^\s*node-version(-file)?:\s*["']?([^"'\s#]+)["']?/gm)) {
+      const allowed = match[1] ? match[2] === ".nvmrc" : match[2] === pinned;
+      if (!allowed) offenders.push(`${name}: ${match[0].trim()}`);
+    }
+  }
+  assert.ok(checkedWorkflows > 0, "build-datapack.mjs를 실행하는 workflow를 찾지 못함");
+  assert.deepEqual(offenders, []);
 });
