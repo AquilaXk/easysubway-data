@@ -128,7 +128,10 @@ jobs:
           [[ -z "${unexpected}" ]] && [[ "$(wc -l <<< "${changed}" | tr -d ' ')" == "4" ]] || { echo "Seoul refresh claim changed an unsupported path" >&2; exit 1; }
           existing="${RUNNER_TEMP}/seoul-current-accessibility-refresh/claim-prs.json"; gh pr list --repo "${GITHUB_REPOSITORY}" --state all --base main --head "${branch}" --limit 100 --json number,state,headRefName,baseRefName,headRepository,isCrossRepository > "${existing}"; [[ "$(tr -d '[:space:]' < "${existing}")" == "[]" ]] || { echo "Seoul refresh claim already has a pull request" >&2; exit 1; }
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh Seoul accessibility snapshot" --body "Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639"
+          # #1012: 정책이 읽는 증거 블록이 든 본문을 만든다. 기준은 복구한 branch와 main의 실제 분기점이다. 증거가 어긋나면 PR을 만들지 않고 실패한다.
+          body_file="${RUNNER_TEMP}/seoul-current-accessibility-refresh/pull-request-body-recovery-${GITHUB_RUN_ID}.md"
+          node tools/ci/refresh-automation-pr.mjs body --stage seoul-accessibility-refresh --base-sha "$(git merge-base origin/main "origin/${branch}")" --head-sha "$(git rev-parse "origin/${branch}")" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due Seoul accessibility snapshot through the current OCI operation." --refs "Refs #639" --output "${body_file}"
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" --title "Refresh Seoul accessibility snapshot" --body-file "${body_file}"
       - name: Create durable claim
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
@@ -189,7 +192,11 @@ jobs:
           while IFS= read -r required; do [[ "$(grep -Fxc "${required}" <<< "${changed}")" == "1" ]] || { echo "Seoul refresh produced an incomplete output" >&2; exit 1; }; done <<< "${expected}"
           unexpected="$(printf '%s\n' "${changed}" | grep -Ev '^(tools/datapack/sources/seoul-metro-accessibility-[^/]+\.json|tools/datapack/source-inventory\.json|tools/datapack/release/source-snapshots\.json|tools/datapack/inputs/capital-pilot-production-source-input\.json)$' || true)"
           [[ -z "${unexpected}" ]] && [[ "$(wc -l <<< "${changed}" | tr -d ' ')" == "4" ]] || { echo "Seoul refresh changed an unsupported path" >&2; exit 1; }
-          git diff --cached --quiet && exit 1; git commit -m "Refresh Seoul accessibility snapshot"; git push origin "${SEOUL_REFRESH_BRANCH}"
+          git diff --cached --quiet && exit 1
+          git commit -m "Refresh Seoul accessibility snapshot"
+          # #1012: push 전에 증거 블록이 든 PR 본문을 만든다. 원장 게이트·inventory 범위·입력 파일 범위·증거 결속이 어긋나면 여기서 실패해 push도 PR도 없다(#926 실패 보고).
+          node tools/ci/refresh-automation-pr.mjs body --stage seoul-accessibility-refresh --base-sha "${SEOUL_REFRESH_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due Seoul accessibility snapshot through the current OCI operation." --refs "Refs #639" --output "${RUNNER_TEMP}/seoul-current-accessibility-refresh/pull-request-body-${GITHUB_RUN_ID}.md"
+          git push origin "${SEOUL_REFRESH_BRANCH}"
       - name: Mint App token for the refresh pull request
         id: app-token-pr
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -207,7 +214,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
-          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${SEOUL_REFRESH_BRANCH}" --title "Refresh Seoul accessibility snapshot" --body $'Refresh the due Seoul accessibility snapshot through the current OCI operation.\n\nRefs #639'
+          GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${SEOUL_REFRESH_BRANCH}" --title "Refresh Seoul accessibility snapshot" --body-file "${RUNNER_TEMP}/seoul-current-accessibility-refresh/pull-request-body-${GITHUB_RUN_ID}.md"
       - name: Upload sanitized evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

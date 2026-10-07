@@ -349,9 +349,12 @@ jobs:
             exit 1
           }
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
+          # #1012: 정책이 읽는 증거 블록이 든 본문을 만든다. 기준은 복구한 branch와 main의 실제 분기점이다. 증거가 어긋나면 PR을 만들지 않고 실패한다.
+          body_file="${RUNNER_TEMP}/kric-current-facility-refresh/pull-request-body-recovery-${GITHUB_RUN_ID}.md"
+          node tools/ci/refresh-automation-pr.mjs body --stage kric-facility-refresh --base-sha "$(git merge-base origin/main "origin/${branch}")" --head-sha "$(git rev-parse "origin/${branch}")" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due KRIC facility snapshot through the current OCI operation." --refs "Refs #629, #39, #29" --output "${body_file}"
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${branch}" \
             --title "Refresh KRIC facility snapshot" \
-            --body "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29"
+            --body-file "${body_file}"
 
       - name: KRIC current facility refresh / Create durable claim
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -455,6 +458,8 @@ jobs:
           fi
           git diff --cached --quiet && exit 1
           git commit -m "Refresh KRIC facility snapshot"
+          # #1012: push 전에 증거 블록이 든 PR 본문을 만든다. 원장 게이트·inventory 범위·증거 결속이 어긋나면 여기서 실패해 push도 PR도 없다(#926 실패 보고).
+          node tools/ci/refresh-automation-pr.mjs body --stage kric-facility-refresh --base-sha "${KRIC_REFRESH_MAIN_SHA}" --head-sha "$(git rev-parse HEAD)" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --summary "Refresh the due KRIC facility snapshot through the current OCI operation." --refs "Refs #629, #39, #29" --output "${RUNNER_TEMP}/kric-current-facility-refresh/pull-request-body-${GITHUB_RUN_ID}.md"
           git push origin "${KRIC_REFRESH_BRANCH}"
 
       - name: KRIC current facility refresh / Mint App token for the refresh pull request
@@ -477,7 +482,7 @@ jobs:
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${KRIC_REFRESH_BRANCH}" \
             --title "Refresh KRIC facility snapshot" \
-            --body "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29"
+            --body-file "${RUNNER_TEMP}/kric-current-facility-refresh/pull-request-body-${GITHUB_RUN_ID}.md"
 
       - name: KRIC current facility refresh / Upload sanitized evidence
         if: ${{ always() }}

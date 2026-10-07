@@ -31,7 +31,11 @@ const WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAIN = "main";
 
 /** 닫은 뒤 같은 단계 workflow를 dispatch할 수 있는가. 후보 갱신은 dispatch에 사람 역할이 필수라 정기 실행이 다시 만든다. */
-export const STAGE_REDISPATCH = Object.freeze({ registration: true, "derivative-rebinding": true, "candidate-refresh": false, "itx-promotion": true, "source-reverification": true });
+export const STAGE_REDISPATCH = Object.freeze({
+  registration: true, "derivative-rebinding": true, "candidate-refresh": false, "itx-promotion": true, "source-reverification": true,
+  // #1012: 정기 갱신 4종은 변수 게이트가 없고 dispatch에 필수 입력이 없다. 정기 실행(2시간)을 기다리지 않고 바로 최신 main에서 증거가 든 PR을 다시 만든다.
+  "gwangju-timetable-refresh": true, "capital-topology-refresh": true, "kric-facility-refresh": true, "seoul-accessibility-refresh": true,
+});
 
 const message = (error) => (error instanceof Error ? error.message : String(error));
 
