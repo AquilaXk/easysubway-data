@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "external-scheduler-heartbeat-policy",
+  "dispatcher": { "login": "easysubway-release-chain[bot]", "type": "Bot" },
+  "workflows": [
+    { "workflow": "current-capital-topology-refresh.yml", "maxAge": "PT5H" },
+    { "workflow": "current-capital-topology-registration.yml", "maxAge": "PT5H" },
+    { "workflow": "datapack-expiry-alert.yml", "maxAge": "PT9H" },
+    { "workflow": "itx-current-promotion.yml", "maxAge": "PT27H" },
+    { "workflow": "kric-current-facility-refresh.yml", "maxAge": "PT5H" },
+    { "workflow": "retained-gwangju-timetable-refresh.yml", "maxAge": "PT5H" },
+    { "workflow": "seoul-current-accessibility-refresh.yml", "maxAge": "PT5H" },
+    { "workflow": "source-derivative-rebinding.yml", "maxAge": "PT13H" },
+    { "workflow": "source-reverification.yml", "maxAge": "PT5H" }
+  ]
+}

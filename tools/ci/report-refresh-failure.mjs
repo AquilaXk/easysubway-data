@@ -13,6 +13,7 @@ export const REFRESH_WORKFLOWS = Object.freeze({
   "automation-pr-behind-recreate.yml": "뒤처진 자동화 PR 재생성(데이터 전용 PR)",
   "current-capital-topology-refresh.yml": "수도권 노선 구조(capital-route-topology)",
   "current-capital-topology-registration.yml": "수도권 노선 구조 등록(capital-route-topology)",
+  "data-workflow-scheduler-watchdog.yml": "외부 정기 dispatch 스케줄러(OCI k3s CronJob) 중단 감시",
   "itx-current-promotion.yml": "ITX-청춘 원천 시간표 승격(itx-cheongchun-source-timetable)",
   "kric-current-facility-refresh.yml": "KRIC 역사 편의시설",
   "nationwide-candidate-refresh.yml": "전국 후보 갱신(nationwide candidate)",

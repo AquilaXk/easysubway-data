@@ -1,0 +1,48 @@
+name: Data Workflow Scheduler Watchdog
+
+# 외부 스케줄러 감시(#1001, #870): GitHub schedule은 늦거나 빠진다. 그래서 OCI k3s CronJob(AquilaXk/easysubway-platform)이
+# App easysubway-release-chain[bot]으로 data 정기 workflow를 workflow_dispatch로 깨운다. GitHub schedule은 백업 경로로 남는다.
+# 스케줄러가 멈추면 백업 경로가 돌아 갱신은 계속되지만 그 사실이 묻힌다. 이 workflow가 GitHub 정기 실행(백업 경로이므로 늦어도
+# 몇 시간 안에 한 번은 돈다)으로 release/product-gates/external-scheduler-heartbeat.json의 workflow마다 App의 가장 최근 dispatch가
+# maxAge 안에 있는지 보고, 아니면 실패해 #926 실패 이슈로 알린다. 점검 불가(API 오류)도 통과가 아니라 실패다.
+# 정기 실행은 저장소 변수 DATAPACK_SCHEDULER_WATCHDOG이 true일 때만 돈다(기본 꺼짐). 코드가 켜지 않는다.
+# 스케줄러를 배포하고 첫 dispatch run을 확인한 뒤 QA 보고 후 별도 설정 변경으로만 켠다. 사람 dispatch는 항상 돈다.
+on:
+  schedule:
+    - cron: "53 */3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: data-workflow-scheduler-watchdog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Data workflow scheduler watchdog
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_SCHEDULER_WATCHDOG == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - name: Check external scheduler heartbeat
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/check-scheduler-heartbeat.mjs --repository "${GITHUB_REPOSITORY}" --policy release/product-gates/external-scheduler-heartbeat.json
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow data-workflow-scheduler-watchdog.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"

@@ -20,7 +20,8 @@ concurrency:
 jobs:
   reverify:
     name: Source reverification
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION == 'true') }}
+    # #1001: 외부 스케줄러(App easysubway-release-chain[bot])의 dispatch는 정기 실행과 같아서 변수가 true일 때만 돈다. 사람 dispatch는 변수와 무관하게 돈다.
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.actor != 'easysubway-release-chain[bot]') || vars.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       actions: read

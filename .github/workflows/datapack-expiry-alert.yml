@@ -5,9 +5,21 @@ on:
     - cron: "23 */4 * * *"
     - cron: "41 0 * * *"
   workflow_dispatch:
+    inputs:
+      target:
+        description: >-
+          Which check to run. all runs both jobs (manual default). The external scheduler (#1001) dispatches datapack-expiry
+          every 4 hours and provider-approval once a day so the daily Slack notice is not repeated.
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - datapack-expiry
+          - provider-approval
 
 concurrency:
-  group: datapack-expiry-alert-${{ github.workflow }}-${{ github.ref }}-${{ github.event.schedule || github.event_name }}
+  group: datapack-expiry-alert-${{ github.workflow }}-${{ github.ref }}-${{ github.event.schedule || inputs.target || github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -15,7 +27,7 @@ permissions:
 
 jobs:
   provider-approval-expiry:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '41 0 * * *' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'provider-approval')) || github.event.schedule == '41 0 * * *' }}
     name: Provider Approval Expiry
     runs-on: ubuntu-latest
     permissions:
@@ -60,7 +72,7 @@ jobs:
                     • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>
 
   datapack-expiry-alert:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '23 */4 * * *' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'datapack-expiry')) || github.event.schedule == '23 */4 * * *' }}
     name: Data Pack Expiry Alert
     runs-on: ubuntu-latest
     permissions:
