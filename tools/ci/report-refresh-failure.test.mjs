@@ -341,3 +341,19 @@ test("an invalid orphan description is rejected before any GitHub call", async (
     assert.throws(() => planRefreshFailureReport({ repository, workflowFile, runId: "1", openIssues: [], now: start, orphan }), /REFRESH_FAILURE_REPORT_ORPHAN/u, JSON.stringify(orphan));
   }
 });
+
+// #995 F3 잔여: 이슈를 만들 때 본문에 적은 삭제 기록도 "이미 기록됨"이다. 같은 삭제를 comment로 다시 쓰지 않는다.
+test("an orphan removal already written in the issue body is not repeated as a comment", async () => {
+  const github = fakeGitHub();
+  const orphanReport = (when) => { github.setClock(when); return reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => when, orphan: orphanClaim() }); };
+  assert.equal((await orphanReport(start)).action, "create");
+  assert.ok(github.issues[0].body.includes("easysubway-orphan-claim-removed:automation/636-current-topology-refresh-123"));
+  const writesBefore = github.writes.length;
+  assert.equal((await orphanReport(new Date(start.getTime() + hours(1)))).action, "skip");
+  assert.equal(github.writes.length, writesBefore);
+  assert.equal(github.issues[0].comments.length, 0);
+  // 다른 claim의 삭제는 여전히 따로 기록한다.
+  github.setClock(new Date(start.getTime() + hours(2)));
+  const other = await reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => new Date(start.getTime() + hours(2)), orphan: orphanClaim({ branch: "automation/636-current-topology-refresh-124" }) });
+  assert.equal(other.action, "comment");
+});

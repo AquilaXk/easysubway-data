@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { MAX_CLAIM_BRANCHES } from "./collect-automation-prs.mjs";
 import {
-  CLAIM_OWNERS, VERIFIED_PRE_PUBLICATION_RUNS, classifyUnboundClaim, claimRunId, collectClaimEvidence, isGhNotFound, main, planUnboundClaims,
+  CLAIM_OWNERS, VERIFIED_PRE_PUBLICATION_RUNS, classifyUnboundClaim, isClosedOutClaim, claimRunId, collectClaimEvidence, isGhNotFound, main, planUnboundClaims,
 } from "./claim-orphans.mjs";
 
 // #995: PR 없는 claim 브랜치(고아)는 만든 run과 게시 증거로 가른다.
@@ -410,4 +410,19 @@ test("owner 표의 게시 step 이름은 workflow 파일에 실제로 있고 분
     assert.equal(text.includes(`      - name: ${owner.publicationSteps.at(-1)}\n`), false, `${workflowFile}: 분리 전 이름은 이제 없다`);
   }
   assert.equal(CLAIM_OWNERS["current-capital-topology-refresh.yml"].publicationSteps, null);
+});
+
+test("닫힌 claim은 claim 제목 + Abandon 제목 두 커밋이고 변경 파일이 없는 KRIC 브랜치뿐이다", () => {
+  const claim = CLAIM_OWNERS[KRIC].claimSubject;
+  const abandon = CLAIM_OWNERS[KRIC].abandonedSubject;
+  assert.equal(isClosedOutClaim(KRIC, { aheadBy: 2, subjects: [claim, abandon], changedFiles: 0 }), true);
+  for (const commits of [
+    { aheadBy: 2, subjects: [claim, abandon], changedFiles: 1 }, { aheadBy: 3, subjects: [claim, abandon], changedFiles: 0 },
+    { aheadBy: 2, subjects: [abandon, abandon], changedFiles: 0 }, { aheadBy: 2, subjects: [claim, "other"], changedFiles: 0 },
+    { aheadBy: 1, subjects: [abandon], changedFiles: 0 },
+  ]) assert.equal(isClosedOutClaim(KRIC, commits), false, JSON.stringify(commits));
+  assert.equal(isClosedOutClaim(GWANGJU, { aheadBy: 2, subjects: [GWANGJU_CLAIM, abandon], changedFiles: 0 }), false);
+  // 판정도 같은 조건이다: Abandon 제목이어도 내용이 바뀌었으면 닫힌 claim이 아니라 내용이 있는 브랜치다.
+  const result = classifyUnboundClaim(KRIC, evidence(KRIC, 61, { commits: { aheadBy: 2, subjects: [claim, abandon], changedFiles: 2 } }));
+  assert.equal(result.kind, "RECOVERABLE");
 });
