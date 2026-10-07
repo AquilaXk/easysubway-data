@@ -304,11 +304,18 @@ async function historicalFacilityFixtureInput(observedAt) {
       const selectedHead = input.sourceSnapshots.find(({ snapshotId, sourceId }) =>
         snapshotId === projection.snapshotId && sourceId === projection.sourceId);
       assert.ok(selectedHead, `selected ${projection.sourceId} ledger head`);
-      assert.equal(lineage.headsBySource[projection.sourceId], selectedHead.snapshotId);
       const sourceChain = lineage.chainsBySource[projection.sourceId];
+      // #1007: 이 fixture의 역사 입력은 아래에서 시각(historicalMembershipAt)으로 따로 고르므로, 원천 갱신이 원장 head를 앞으로 옮긴 직후의
+      // 후보 pin(병합 뒤 후보 갱신이 옮긴다)에 의존하지 않는다. pin 신선도(pin이 원장 head와 같을 것)는 release 게이트
+      // validate-candidate-source-set.mjs 114행이 판정하고 current-public-route-map-successor.test.mjs가 그 게이트의 거부를 직접 실행한다.
+      // 노선도 원천은 pin 이전 계보의 projection 이관 표지를 쓰므로 pin이 head와 같아야 한다(이 원천은 정기 갱신 대상이 아니다).
+      if (projection.sourceId === "seoul-metro-route-map-positions") {
+        assert.equal(lineage.headsBySource[projection.sourceId], selectedHead.snapshotId);
+      }
       const selectedIndex = sourceChain.indexOf(selectedHead.snapshotId);
       assert.ok(selectedIndex >= 0, `selected ${projection.sourceId} lineage member`);
-      const selectedChain = sourceChain.slice(0, selectedIndex + 1).map((snapshotId) => snapshotsById.get(snapshotId));
+      const selectedChain = (projection.sourceId === "seoul-metro-route-map-positions" ? sourceChain.slice(0, selectedIndex + 1) : sourceChain)
+        .map((snapshotId) => snapshotsById.get(snapshotId));
       const markers = selectedChain.filter(({ projectionMigration }) =>
         projectionMigration?.migrationKind === "CROSS_SOURCE_CANONICAL_REPLACEMENT");
       if (projection.sourceId !== "seoul-metro-route-map-positions") {

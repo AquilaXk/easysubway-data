@@ -110,6 +110,7 @@ export function buildFixture(inventory, input) {
     facilities: facilities.length,
   });
   const productionCoverageEvidence = productionCoverageEvidenceSummary(input, selectedSources, allowedSourceIds);
+  const evidenceObservedDates = latestEvidenceObservedDates([...facilities, ...stationFacilityEvidence]);
 
   return {
     manifest: input.manifest,
@@ -120,7 +121,7 @@ export function buildFixture(inventory, input) {
         artifactKind: input.pack.artifactKind ?? "fixture",
         schemaVersion: requiredString(input.pack.schemaVersion, "pack.schemaVersion"),
         url: input.pack.url ?? `catalog/${input.pack.id}-v${input.pack.version}.sqlite.gz`,
-        sourceInventory: selectedSources.map(packSourceInventoryEntry),
+        sourceInventory: selectedSources.map((source) => packSourceInventoryEntry(source, evidenceObservedDates.get(source.id))),
         requiredTables: input.requiredTables ?? compactUnique([
           "catalog_metadata",
           "operators",
@@ -603,7 +604,22 @@ function inventorySourceMap(inventory) {
   return sources;
 }
 
-function packSourceInventoryEntry(source) {
+// #1007: 원천 행의 updatedAt은 inventory 관측일이다. 정기 갱신이 inventory를 앞으로 옮겼는데(재확인) 이 pack이 싣는 증거 행(시설·증거)은
+// 이전 snapshot에 묶여 있으면, 증거보다 늦은 날짜를 원천이 갱신된 날로 적게 된다(증거 행이 가리키는 관측일을 새 날짜로 relabel).
+// 증거를 새 snapshot에 재결속하면 그 snapshot의 내용으로 행을 다시 만들어야 하는데 이 단계는 그렇게 하지 않는다(후보 갱신의 몫).
+// 그래서 증거 행을 싣는 원천의 updatedAt은 inventory 관측일을 넘지 않는 범위에서 싣고 있는 증거의 가장 늦은 관측일로 남긴다.
+// 증거 행이 없는 원천(시간표·노선도 등)과 증거가 inventory와 같은 날 관측된 원천은 그대로다.
+export function latestEvidenceObservedDates(rows) {
+  const dates = new Map();
+  for (const { sourceId, retrievedAt } of rows) {
+    if (typeof sourceId !== "string" || typeof retrievedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T/u.test(retrievedAt)) continue;
+    const date = retrievedAt.slice(0, 10);
+    if (date > (dates.get(sourceId) ?? "")) dates.set(sourceId, date);
+  }
+  return dates;
+}
+
+export function packSourceInventoryEntry(source, evidenceObservedDate) {
   return {
     id: requiredString(source.id, "source.id"),
     owner: requiredString(source.owner, `${source.id}.owner`),
@@ -612,7 +628,9 @@ function packSourceInventoryEntry(source) {
     licenseStatus: "redistributable",
     redistributionAllowed: true,
     updateFrequency: requiredString(source.updateFrequency, `${source.id}.updateFrequency`),
-    updatedAt: `${requiredString(source.observedDataUpdatedAt, `${source.id}.observedDataUpdatedAt`)}T00:00:00.000Z`,
+    updatedAt: `${evidenceObservedDate !== undefined && evidenceObservedDate < source.observedDataUpdatedAt
+      ? evidenceObservedDate
+      : requiredString(source.observedDataUpdatedAt, `${source.id}.observedDataUpdatedAt`)}T00:00:00.000Z`,
     fields: requiredStringArray(source.fieldsProvided, `${source.id}.fieldsProvided`),
     coverageScope: {
       regionIds: requiredStringArray(source.coverageScope?.regionIds, `${source.id}.coverageScope.regionIds`),

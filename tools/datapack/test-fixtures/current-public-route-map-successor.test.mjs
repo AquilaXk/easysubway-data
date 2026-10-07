@@ -12,7 +12,10 @@ import {
   copySyntheticCurrentPublicRouteMapRepository,
   createStaticNetworkRegistrarPredecessorFixture,
   nextSyntheticCurrentStaticNetworkNow,
+  rollCandidateToLedgerHeads,
 } from "./current-public-route-map-successor.mjs";
+import { candidateSelectedLedgerHeads } from "./selected-source-head-clock.mjs";
+import { validateCandidateSourceSet } from "../validate-candidate-source-set.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const FIXTURE_INITIAL_CANDIDATE_SOURCE_IDS = [
@@ -227,7 +230,7 @@ test("current public fixture rejects a fork outside the selected head before mut
   );
 
   await assert.rejects(
-    activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: await nextSyntheticCurrentStaticNetworkNow(root) }),
+    async () => activateSyntheticCurrentPublicRouteMapSuccessor(root, { now: await nextSyntheticCurrentStaticNetworkNow(root) }),
     /SOURCE_LINEAGE_BROKEN: snapshot fork/,
   );
 });
@@ -371,4 +374,117 @@ test("registrar fixture derives a selected same-source public root", async (t) =
   assert.equal(selected.snapshotId, result.currentSnapshotId);
   assert.equal(selected.previousSnapshotId, result.predecessorSnapshotId);
   assert.doesNotThrow(() => validateLineage(snapshots));
+});
+
+// #1007: 정기 갱신(KRIC 시설·서울 접근성)은 원장에 새 head를 덧붙이고 후보 pin은 그대로 둔다. 후보 갱신이 pin을 옮기기 전의 상태다.
+async function refreshedLedgerUniverse(sourceId) {
+  const [candidate, snapshots, inventory, governanceBytes, freshnessPolicy] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/release/source-snapshots.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-governance-policy.json")),
+    readFile(path.join(repositoryRoot, "release/product-gates/datapack-freshness-sla.json"), "utf8").then(JSON.parse),
+  ]);
+  // 후속은 후보 pin이 아니라 원장 head 위에 쌓는다(이미 정기 갱신이 head를 앞으로 옮긴 저장소에서도 같은 테스트가 돈다).
+  const pinned = snapshots.find(({ snapshotId }) => snapshotId === validateLineage(snapshots).headsBySource[sourceId]);
+  const successor = {
+    ...structuredClone(pinned),
+    snapshotId: `${sourceId}-20991231T000000000Z`,
+    previousSnapshotId: pinned.snapshotId,
+    retrievedAt: "2099-12-31T00:00:00.000Z",
+    capturedAt: "2099-12-31T00:00:00.000Z",
+  };
+  successor.diffSummary = buildSnapshotDiff(pinned, successor);
+  return {
+    candidate, inventory, pinned, successor, governanceBytes, freshnessPolicy,
+    snapshots: [...snapshots, successor],
+    governancePolicy: JSON.parse(governanceBytes),
+    now: new Date("2099-12-31T00:01:00.000Z"),
+  };
+}
+
+test("정기 갱신으로 원장 head가 후보 pin보다 앞서면 fixture 후보와 시각 기준은 head를 고른다(#1007)", async () => {
+  const universe = await refreshedLedgerUniverse("seoul-metro-accessibility");
+  const { headsBySource } = validateLineage(universe.snapshots);
+  assert.equal(headsBySource["seoul-metro-accessibility"], universe.successor.snapshotId);
+  const original = structuredClone(universe.candidate);
+  const clockHeads = candidateSelectedLedgerHeads(original, universe.snapshots);
+  assert.deepEqual(clockHeads.map(({ snapshotId }) => snapshotId), original.sourceSnapshots.map(({ sourceId }) => headsBySource[sourceId]));
+  assert.equal(clockHeads.find(({ sourceId }) => sourceId === "seoul-metro-accessibility").snapshotId, universe.successor.snapshotId);
+
+  rollCandidateToLedgerHeads(universe);
+  assert.deepEqual(universe.candidate.sourceSnapshots.map(({ sourceId, snapshotId }) => [sourceId, snapshotId]),
+    original.sourceSnapshots.map(({ sourceId }) => [sourceId, headsBySource[sourceId]]));
+  assert.deepEqual(universe.candidate.sourceSnapshotIds, universe.candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId));
+  // 이미 head인 pin의 투영은 건드리지 않는다.
+  for (const projection of universe.candidate.sourceSnapshots) {
+    const before = original.sourceSnapshots.find(({ sourceId }) => sourceId === projection.sourceId);
+    if (before.snapshotId === projection.snapshotId) assert.deepEqual(projection, before);
+  }
+});
+
+test("원장에 없는 후보 pin은 시각 기준 계산이 거부하고 fixture는 pin을 옮기지 않는다(#1007 반례)", async () => {
+  const universe = await refreshedLedgerUniverse("kric-station-convenience-standard");
+  const unknown = `kric-station-convenience-standard-${"0".repeat(8)}`;
+  universe.candidate.sourceSnapshots = universe.candidate.sourceSnapshots.map((entry) =>
+    entry.sourceId === "kric-station-convenience-standard" ? { ...entry, snapshotId: unknown } : entry);
+  assert.throws(() => candidateSelectedLedgerHeads(universe.candidate, universe.snapshots), /selected source snapshot identity/u);
+  // 다른 원천의 실재 snapshot id를 pin으로 두어도 거부한다.
+  const otherSource = universe.snapshots.find(({ sourceId }) => sourceId === "seoul-metro-accessibility").snapshotId;
+  assert.throws(() => candidateSelectedLedgerHeads({ sourceSnapshots: [{ sourceId: "kric-station-convenience-standard", snapshotId: otherSource }] }, universe.snapshots), /selected source snapshot identity/u);
+  rollCandidateToLedgerHeads(universe);
+  assert.equal(universe.candidate.sourceSnapshots.find(({ sourceId }) => sourceId === "kric-station-convenience-standard").snapshotId, unknown);
+});
+
+test("원장 계보 밖의 실재 행·중복 id는 head 선택과 fixture 후보 이동이 모두 거부한다(#1007 반례)", async () => {
+  const universe = await refreshedLedgerUniverse("seoul-metro-accessibility");
+  // 같은 원천의 실재 행이 head 사슬 밖에 있다(같은 선행에서 갈라진 fork).
+  const orphan = { ...structuredClone(universe.successor), snapshotId: "seoul-metro-accessibility-orphan" };
+  const forked = { ...universe, snapshots: [...universe.snapshots, orphan] };
+  assert.throws(() => candidateSelectedLedgerHeads(universe.candidate, forked.snapshots), /SOURCE_LINEAGE_BROKEN/u);
+  assert.throws(() => rollCandidateToLedgerHeads(forked), /SOURCE_LINEAGE_BROKEN/u);
+  // 같은 snapshotId의 행이 둘이다.
+  const duplicated = [...universe.snapshots, structuredClone(universe.successor)];
+  assert.throws(() => candidateSelectedLedgerHeads(universe.candidate, duplicated), /SOURCE_LINEAGE_BROKEN: duplicate snapshot ID/u);
+});
+
+test("fixture 시계가 원장 head보다 앞서면(시각 역전) 후보를 head로 옮기지 않고 거부한다(#1007 반례)", async () => {
+  const universe = await refreshedLedgerUniverse("seoul-metro-accessibility");
+  assert.throws(() => rollCandidateToLedgerHeads({ ...universe, now: new Date("2099-12-30T00:00:00.000Z") }), /basisAt exceeds clock skew/u);
+});
+
+test("release 게이트 validateCandidateSourceSet은 후보 pin이 원장 head가 아니면 내용이 같아도 거부한다(validate-candidate-source-set.mjs 114행, #1007)", async () => {
+  const [productionScopeBytes, sourceInventoryBytes] = await Promise.all([
+    readFile(path.join(repositoryRoot, "release/product-gates/production-datapack-scope.json")),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-inventory.json")),
+  ]);
+  const universe = await refreshedLedgerUniverse("kric-station-convenience-standard");
+  const baseLedger = universe.snapshots.filter(({ snapshotId }) => snapshotId !== universe.successor.snapshotId);
+  // 지금 원장·inventory에 맞게 결속한 후보(pin이 head)를 만든다. 커밋된 후보가 정기 갱신 직후 이전 pin을 가리켜도 이 테스트는 같다.
+  const sha = (value) => createHash("sha256").update(value).digest("hex");
+  const rolled = structuredClone(universe.candidate);
+  rollCandidateToLedgerHeads({ ...universe, candidate: rolled, snapshots: baseLedger, now: new Date("2099-12-31T00:01:00.000Z"), inventory: universe.inventory });
+  const selectedIds = new Set(rolled.sourceSnapshotIds);
+  const bind = (candidate, ledger) => {
+    const bound = structuredClone(candidate);
+    bound.sourceSnapshotSetHash = sha(JSON.stringify(ledger.filter(({ snapshotId }) => selectedIds.has(snapshotId))));
+    bound.sourceInventorySha256 = sha(JSON.stringify(universe.inventory));
+    bound.networkEdgeEvidence = { ...bound.networkEdgeEvidence, sourceInventory: { path: "tools/datapack/source-inventory.json", sha256: sha(sourceInventoryBytes) } };
+    return bound;
+  };
+  const candidate = bind(rolled, baseLedger);
+  const gate = (ledger, value = candidate) => validateCandidateSourceSet({ productionScopeBytes, sourceInventoryBytes, candidate: value, ledger });
+  // 결속된 후보는 통과한다(pin이 head다).
+  assert.equal(gate(baseLedger).headsBySource["kric-station-convenience-standard"], universe.pinned.snapshotId);
+  // 정기 갱신이 원장에 head를 덧붙이면, 후속의 내용(원본·정규화 내용 sha)이 같아도 달라도 게이트는 후보를 거부한다.
+  assert.throws(() => gate([...baseLedger, universe.successor]), /candidate source is not the active ledger head/u);
+  const changed = { ...universe.successor, rawSha256: "9".repeat(64), contentSha256: "8".repeat(64) };
+  changed.diffSummary = buildSnapshotDiff(universe.pinned, changed);
+  assert.throws(() => gate([...baseLedger, changed]), /candidate source is not the active ledger head/u);
+  // 후보 pin이 원장에 없거나 선택 집합 해시가 다르면 거부한다.
+  const unknownPin = structuredClone(candidate);
+  unknownPin.sourceSnapshotIds[0] = `${unknownPin.sourceSnapshots[0].sourceId}-${"0".repeat(8)}`;
+  unknownPin.sourceSnapshots[0] = { ...unknownPin.sourceSnapshots[0], snapshotId: unknownPin.sourceSnapshotIds[0] };
+  assert.throws(() => gate(baseLedger, unknownPin), /candidate ledger selection mismatch/u);
+  assert.throws(() => gate(baseLedger, { ...structuredClone(candidate), sourceSnapshotSetHash: "7".repeat(64) }), /candidate source snapshot set hash mismatch/u);
 });

@@ -26,6 +26,7 @@ import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs
 import { canonicalCurrentCapitalRouteEdgeInputJson } from "./current-capital-station-line-contract.mjs";
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL, emitArtifactComponents, insertTransferStairEvidence, nationwideTopologyEdgeStairColumns, populateNationwideTopologyEdges, projectTransferStairAccess, serializeArtifactComponents, validateInputBinding } from "./emit-artifact-components.mjs";
 import { loadTransferStairAccessInputs } from "./build-transfer-stair-access.mjs";
+import { candidateSelectedLedgerHeads } from "./test-fixtures/selected-source-head-clock.mjs";
 import { summarizeBundleEdgeProvenance } from "./lib/bundle-edge-provenance.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
@@ -81,11 +82,9 @@ async function selectedSourceWindow() {
     readFile("tools/datapack/release/source-snapshots.json", "utf8").then(JSON.parse),
     currentTopologyAdmissionClock(process.cwd()),
   ]);
-  const selected = buildSpec.sourceSnapshotIds.map((snapshotId) => {
-    const matches = sourceSnapshots.filter((entry) => entry.snapshotId === snapshotId);
-    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
-    return matches[0];
-  }).filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
+  // #1007: 후보 pin이 아니라 후보가 고른 원천의 원장 head를 기준으로 한다(정기 갱신 직후 pin은 head보다 앞설 수 있다).
+  const selected = candidateSelectedLedgerHeads(buildSpec, sourceSnapshots)
+    .filter((entry) => CURRENT_CAPITAL_BASE_SOURCE_IDS.includes(entry.sourceId));
   const basisAt = Math.max(...selected.flatMap((entry) => [
     entry.retrievedAt,
     entry.sourceUpdatedAt,
