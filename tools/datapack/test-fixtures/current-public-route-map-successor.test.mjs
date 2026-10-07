@@ -15,7 +15,7 @@ import {
   rollCandidateToLedgerHeads,
 } from "./current-public-route-map-successor.mjs";
 import { candidateSelectedLedgerHeads } from "./selected-source-head-clock.mjs";
-import { validateCandidateSourceSet } from "../validate-candidate-source-set.mjs";
+import { validateAdmissionProjection, validateCandidateSourceSet } from "../validate-candidate-source-set.mjs";
 import { nativeAdmissionRecordForHead } from "../build-current-five-region-source-fan-in.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
@@ -499,22 +499,36 @@ test("광주 정기 갱신으로 native admission 원천의 원장 head가 앞�
   const source = universe.inventory.sources.find(({ id }) => id === sourceId);
   assert.equal(Object.hasOwn(source.admissionEvidence ?? {}, "adminReviewRecordHash"), false);
   source.retainedScheduleAdmissionEvidence = { ...source.retainedScheduleAdmissionEvidence, snapshotId: universe.successor.snapshotId };
+  // 복사되는 필드가 상수나 기본값으로 대체돼도 걸리도록, head 행의 값을 기본값(PASS·true·LOCKED)과 다른 값으로 둔다.
+  Object.assign(universe.successor, {
+    licenseStatus: "REVIEW", redistributionAllowed: false, snapshotStatus: "PENDING", credentialRedacted: false,
+    redactedRequestFingerprint: "7".repeat(64), schemaFingerprint: "6".repeat(64),
+  });
+  universe.successor.diffSummary = buildSnapshotDiff(universe.pinned, universe.successor);
   const before = universe.candidate.sourceSnapshots.find((entry) => entry.sourceId === sourceId);
   assert.ok(Array.isArray(before.admissionRecordSha256s));
 
   rollCandidateToLedgerHeads(universe);
 
   const rolled = universe.candidate.sourceSnapshots.find((entry) => entry.sourceId === sourceId);
-  assert.equal(rolled.snapshotId, universe.successor.snapshotId);
-  assert.equal(Object.hasOwn(rolled, "adminReviewRecordHash"), false);
-  const expected = nativeAdmissionRecordForHead({ source, head: universe.successor });
-  assert.equal(expected.kind, "retainedScheduleAdmissionEvidence");
-  assert.deepEqual(rolled.admissionRecordSha256s, [expected]);
+  const head = universe.successor;
+  const record = nativeAdmissionRecordForHead({ source, head });
+  assert.equal(record.kind, "retainedScheduleAdmissionEvidence");
+  // 투영 전체가 head 원장 행에서 복사되는 모든 필드와 native 해시 하나로만 이뤄진다.
+  assert.deepEqual(rolled, {
+    snapshotId: head.snapshotId, sourceId, rawObjectUri: head.rawObjectUri, rawSha256: head.rawSha256,
+    redactedRequestFingerprint: head.redactedRequestFingerprint, schemaFingerprint: head.schemaFingerprint,
+    licenseStatus: head.licenseStatus, redistributionAllowed: head.redistributionAllowed, snapshotStatus: head.snapshotStatus,
+    credentialRedacted: head.credentialRedacted, freshnessExpiresAt: head.freshnessExpiresAt,
+    rawRetentionExpiresAt: head.rawRetentionExpiresAt, governancePolicyVersion: head.governancePolicyVersion,
+    governancePolicySha256: head.governancePolicySha256, admissionRecordSha256s: [record],
+  });
+  // 후보 생성기가 만든 커밋된 native 투영과 키 구성이 같다(생성기와 어긋나면 여기서 깨진다).
+  assert.deepEqual(Object.keys(rolled).sort(), Object.keys(before).sort());
+  // production 검증기(validateNationwideCandidateSourceSet이 부르는 투영 검증)를 통과한다. 기대값을 fixture와 같은 함수로만 만들지 않는다.
+  assert.doesNotThrow(() => validateAdmissionProjection({ projection: rolled, source, head: { ...head, admissionRecordSha256s: [record] } }));
+  assert.throws(() => validateAdmissionProjection({ projection: { ...rolled, admissionRecordSha256s: [{ ...record, sha256: "0".repeat(64) }] }, source, head: { ...head, admissionRecordSha256s: [record] } }), /native admission binding mismatch/u);
   assert.deepEqual(universe.candidate.sourceSnapshotIds, universe.candidate.sourceSnapshots.map(({ snapshotId }) => snapshotId));
-  // native 투영은 head 원장 행의 원본·신선도·보존 필드를 그대로 따른다.
-  for (const field of ["rawObjectUri", "rawSha256", "schemaFingerprint", "freshnessExpiresAt", "rawRetentionExpiresAt", "governancePolicyVersion", "governancePolicySha256"]) {
-    assert.equal(rolled[field], universe.successor[field], field);
-  }
 });
 
 test("native 투영 원천의 head 증거가 inventory와 결속되지 않으면 fixture 롤포워드가 추정 없이 거부한다(#1020 반례)", async () => {
