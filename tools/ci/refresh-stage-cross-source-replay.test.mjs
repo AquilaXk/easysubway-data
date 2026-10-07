@@ -6,9 +6,10 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildCurrentSeoulAccessibilityRegistrationOutputs } from "../datapack/register-current-seoul-accessibility-snapshot.mjs";
+import { materializeAccessibilitySourceInput } from "../datapack/materialize-accessibility-source-input.mjs";
 import { buildSnapshotDiff } from "../datapack/source-snapshot-policy.mjs";
 import { POLICY } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
-import { evaluateRefreshStage } from "./refresh-stage-contracts.mjs";
+import { evaluateRefreshStage, kricRebaseViolations } from "./refresh-stage-contracts.mjs";
 
 // #1018: 입력 파일(capital-pilot-production-source-input.json)은 KRIC과 서울 두 원천의 head를 함께 투영한 파일이다.
 // KRIC 정기 갱신은 원장·inventory만 옮기고 입력 파일은 그대로 둔다(그래야 단계 규칙이 입력 파일을 허용 경로로 두지 않는다).
@@ -235,4 +236,88 @@ test("반증: 서울 소유 행의 변조는 KRIC 행이 정상이어도 여전�
   input.accessibilityStatusEvidence.find(({ sourceId }) => sourceId === SEOUL).stationId = "station-evil";
   const result = await gate("seoul-accessibility-refresh", kric.tree, { ...seoul, tree: new Map(seoul.tree).set(INPUT, json(input)) });
   assert.match(detailsOf(result), /증거 필드가 아닌 필드가 바뀌었다: stationId/u);
+});
+
+// 주변 단계 게이트(inventory 소유 필드, 원장 한 행 규칙)는 아래 위조를 먼저 막는다. 그 규칙에 기대지 않고 KRIC 함수 자체가 base에 묶여 있는지 직접 부른다.
+const rebaseCheck = (base, step) => kricRebaseViolations({
+  base: JSON.parse(base.get(INPUT)), head: JSON.parse(step.tree.get(INPUT)),
+  baseInventory: JSON.parse(base.get(INVENTORY)), headInventory: JSON.parse(step.tree.get(INVENTORY)),
+  baseSha: "base", seoulSnapshotId: step.snapshotId,
+  files: {
+    readTree: async (relative) => { if (!step.tree.has(relative)) throw new Error(`head에 없는 파일: ${relative}`); return step.tree.get(relative); },
+    readBase: async (_sha, relative) => base.get(relative),
+  },
+});
+const refreshGateDetails = (result) => result.violations.filter(({ code }) => code === "REFRESH_GATE").map(({ detail }) => detail).join("\n");
+const withInput = (step, mutate) => {
+  const input = JSON.parse(step.tree.get(INPUT));
+  mutate(input);
+  return { ...step, tree: new Map(step.tree).set(INPUT, json(input)) };
+};
+
+test("반증: 서울 소유 행의 sourceId를 KRIC으로 바꿔 서울 규칙을 피하려 하면 막는다(#1022 F2 relabel)", async () => {
+  const kric = applyKricRefresh(await seedTree());
+  const seoul = await applySeoulRefresh(kric.tree);
+  const relabeled = withInput(seoul, (input) => { input.accessibilityStatusEvidence.find(({ sourceId }) => sourceId === SEOUL).sourceId = KRIC; });
+  const result = await gate("seoul-accessibility-refresh", kric.tree, relabeled);
+  assert.match(refreshGateDetails(result), /accessibilityStatusEvidence: 행 수가 바뀌었다/u);
+  assert.match(refreshGateDetails(result), /KRIC 소유 행/u);
+});
+
+test("반증: KRIC 행과 서울 행의 소유자(sourceId)를 맞바꿔도 막는다(#1022 F2 swap)", async () => {
+  const kric = applyKricRefresh(await seedTree());
+  const seoul = await applySeoulRefresh(kric.tree);
+  const swapped = withInput(seoul, (input) => {
+    const rows = input.accessibilityStatusEvidence;
+    const [kricRow, seoulRow] = [rows.find(({ sourceId }) => sourceId === KRIC), rows.find(({ sourceId }) => sourceId === SEOUL)];
+    [kricRow.sourceId, seoulRow.sourceId] = [SEOUL, KRIC];
+  });
+  const result = await gate("seoul-accessibility-refresh", kric.tree, swapped);
+  assert.notEqual(refreshGateDetails(result), "");
+  assert.match(refreshGateDetails(result), /KRIC 소유 행 \d+개가 KRIC head/u);
+});
+
+test("반증: head inventory의 KRIC 증거를 비-head snapshot으로 재지정하면(파일 sha 재계산 포함) KRIC 함수 안에서 base 증거와 달라 막는다(#1022 F1·F2)", async () => {
+  const start = await seedTree();
+  const kric = applyKricRefresh(start);
+  const seoul = await applySeoulRefresh(kric.tree);
+  const olderEvidence = entry(JSON.parse(start.get(INVENTORY)), KRIC).accessibilityAdmissionEvidence;
+  // 입력 KRIC 행도 그 옛 snapshot에서 생산자 규칙으로 다시 만들어, 행 대조만으로는 걸리지 않게 한다.
+  const olderSnapshot = JSON.parse(seoul.tree.get(olderEvidence.snapshotPath));
+  const seoulDoc = JSON.parse(seoul.tree.get(`tools/datapack/sources/${seoul.snapshotId}.json`));
+  const forged = withInput(seoul, (input) => {
+    const projected = materializeAccessibilitySourceInput({ input: JSON.parse(kric.tree.get(INPUT)), kricSnapshot: olderSnapshot, seoulSnapshot: seoulDoc });
+    input.facilityRows = projected.facilityRows;
+    input.accessibilityStatusEvidence = projected.accessibilityStatusEvidence;
+  });
+  const inventory = JSON.parse(forged.tree.get(INVENTORY));
+  entry(inventory, KRIC).accessibilityAdmissionEvidence = structuredClone(olderEvidence);
+  forged.tree = new Map(forged.tree).set(INVENTORY, json(inventory));
+  assert.equal(sha(forged.tree.get(olderEvidence.snapshotPath)), olderEvidence.snapshotFileSha256, "재지정한 증거의 sha는 파일과 맞는다");
+  assert.deepEqual(await rebaseCheck(kric.tree, seoul), [], "정상 트리는 함수 안에서 통과한다");
+  assert.match((await rebaseCheck(kric.tree, forged)).join("\n"), /head inventory의 KRIC accessibilityAdmissionEvidence가 base와 다르다/u);
+  assert.notEqual(detailsOf(await gate("seoul-accessibility-refresh", kric.tree, forged)), "", "단계 게이트도 막는다");
+});
+
+test("반증: KRIC head snapshot 파일을 위조하고 inventory 증거 sha까지 다시 계산해도 base 증거와 달라 막는다(#1022 F1)", async () => {
+  const kric = applyKricRefresh(await seedTree());
+  const seoul = await applySeoulRefresh(kric.tree);
+  const kricPath = `tools/datapack/sources/${kric.snapshotId}.json`;
+  const forgedText = `${seoul.tree.get(kricPath)} `;
+  const inventory = JSON.parse(seoul.tree.get(INVENTORY));
+  entry(inventory, KRIC).accessibilityAdmissionEvidence.snapshotFileSha256 = sha(forgedText);
+  const forged = { ...seoul, tree: new Map(seoul.tree).set(kricPath, forgedText).set(INVENTORY, json(inventory)) };
+  assert.match((await rebaseCheck(kric.tree, forged)).join("\n"), /head inventory의 KRIC accessibilityAdmissionEvidence가 base와 다르다/u);
+  assert.notEqual(detailsOf(await gate("seoul-accessibility-refresh", kric.tree, forged)), "", "단계 게이트도 막는다");
+});
+
+test("반증: head 원장에 KRIC 행이 더해지면 KRIC 함수 안에서 base 원장과 달라 막는다(#1022 F1)", async () => {
+  const kric = applyKricRefresh(await seedTree());
+  const seoul = await applySeoulRefresh(kric.tree);
+  const ledger = JSON.parse(seoul.tree.get(LEDGER));
+  const head = ledger.filter((row) => row.sourceId === KRIC).at(-1);
+  ledger.push({ ...structuredClone(head), snapshotId: `${KRIC}-20991231T000000000Z`, previousSnapshotId: head.snapshotId });
+  const forged = { ...seoul, tree: new Map(seoul.tree).set(LEDGER, json(ledger)) };
+  assert.match((await rebaseCheck(kric.tree, forged)).join("\n"), /head 원장의 KRIC 행이 base와 다르다/u);
+  assert.notEqual(detailsOf(await gate("seoul-accessibility-refresh", kric.tree, forged)), "", "단계 게이트도 막는다");
 });

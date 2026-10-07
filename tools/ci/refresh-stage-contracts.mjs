@@ -338,9 +338,11 @@ function sourceInputViolations({ base, head, sourceId, snapshotId, capturedAt })
  * KRIC 소유 행이 바뀐 서울 갱신: 바뀐 행 전체가 현재 KRIC head snapshot에서 생산자 규칙(materializeAccessibilitySourceInput)으로 다시 만든 값과 같아야 한다.
  * 행 순서나 위치를 짝지어 보지 않는다. KRIC head는 head inventory 증거가 가리키는 snapshot 파일이고, 파일 바이트는 증거 snapshotFileSha256으로, head 여부는 원장 계보로 대조한다.
  */
-async function kricRebaseViolations({ base, head, headInventory, seoulSnapshotId, files }) {
-  const evidence = entryOf(headInventory, KRIC_SOURCE_ID)?.accessibilityAdmissionEvidence;
-  if (!isObject(evidence) || typeof evidence.snapshotId !== "string") return [`${KRIC_SOURCE_ID}: accessibilityAdmissionEvidence가 없어 KRIC 소유 행이 바뀐 근거를 확인할 수 없다`];
+export async function kricRebaseViolations({ base, head, baseInventory, headInventory, baseSha, seoulSnapshotId, files }) {
+  // KRIC head는 base(main)의 inventory 증거와 원장이 정한다. head 트리의 값은 base와 정확히 같을 때만 믿는다(서울 단계 소유 규칙에 기대지 않는다).
+  const evidence = entryOf(baseInventory, KRIC_SOURCE_ID)?.accessibilityAdmissionEvidence;
+  if (!isObject(evidence) || typeof evidence.snapshotId !== "string") return [`${KRIC_SOURCE_ID}: base inventory의 accessibilityAdmissionEvidence가 없어 KRIC 소유 행이 바뀐 근거를 확인할 수 없다`];
+  if (!sameJson(entryOf(headInventory, KRIC_SOURCE_ID)?.accessibilityAdmissionEvidence, evidence)) return ["head inventory의 KRIC accessibilityAdmissionEvidence가 base와 다르다(서울 갱신은 KRIC head를 옮길 수 없다)"];
   const kricPath = `${SNAPSHOT_DIR}/${evidence.snapshotId}.json`;
   if (evidence.snapshotPath !== kricPath) return [`KRIC 증거 snapshotPath(${String(evidence.snapshotPath)})가 head snapshot 파일(${kricPath})과 다르다`];
   const read = async (relative, what) => {
@@ -352,11 +354,14 @@ async function kricRebaseViolations({ base, head, headInventory, seoulSnapshotId
   };
   try {
     const kricText = await read(kricPath, "KRIC head snapshot 파일");
-    if (sha256(kricText) !== evidence.snapshotFileSha256) return ["KRIC head snapshot 파일의 sha256이 inventory 증거 snapshotFileSha256과 다르다"];
+    if (sha256(kricText) !== evidence.snapshotFileSha256) return ["KRIC head snapshot 파일의 sha256이 base inventory 증거 snapshotFileSha256과 다르다"];
     const kricSnapshot = JSON.parse(kricText);
-    if (kricSnapshot.sourceId !== KRIC_SOURCE_ID || kricSnapshot.snapshotId !== evidence.snapshotId) return ["KRIC head snapshot 파일의 sourceId·snapshotId가 inventory 증거와 다르다"];
-    const heads = validateLineage(JSON.parse(await read(LEDGER_PATH, "원장"))).headsBySource;
-    if (heads[KRIC_SOURCE_ID] !== evidence.snapshotId) return [`KRIC inventory 증거(${evidence.snapshotId})가 원장의 KRIC head(${String(heads[KRIC_SOURCE_ID])})와 다르다`];
+    if (kricSnapshot.sourceId !== KRIC_SOURCE_ID || kricSnapshot.snapshotId !== evidence.snapshotId) return ["KRIC head snapshot 파일의 sourceId·snapshotId가 base inventory 증거와 다르다"];
+    const baseLedger = JSON.parse(await files.readBase(baseSha, LEDGER_PATH));
+    const heads = validateLineage(baseLedger).headsBySource;
+    if (heads[KRIC_SOURCE_ID] !== evidence.snapshotId) return [`KRIC inventory 증거(${evidence.snapshotId})가 base 원장의 KRIC head(${String(heads[KRIC_SOURCE_ID])})와 다르다`];
+    const kricRows = (ledger) => ledger.filter((row) => row?.sourceId === KRIC_SOURCE_ID);
+    if (!sameJson(kricRows(baseLedger), kricRows(JSON.parse(await read(LEDGER_PATH, "원장"))))) return ["head 원장의 KRIC 행이 base와 다르다(서울 갱신은 KRIC 원장을 바꿀 수 없다)"];
     const seoulSnapshot = JSON.parse(await read(`${SNAPSHOT_DIR}/${seoulSnapshotId}.json`, "서울 새 snapshot 파일"));
     const expected = materializeAccessibilitySourceInput({ input: structuredClone(base), kricSnapshot, seoulSnapshot });
     const problems = [];
@@ -376,14 +381,14 @@ async function kricRebaseViolations({ base, head, headInventory, seoulSnapshotId
 
 async function verifySeoul(context) {
   await verifyAccessibilityBinding(context);
-  const { rows, newLedgerRows, files, baseSha, violate, headInventory } = context;
+  const { rows, newLedgerRows, files, baseSha, violate, baseInventory, headInventory } = context;
   const row = rows[0];
   const ledgerRow = newLedgerRows.get(row.snapshotId);
   const base = await readJson(async () => files.readBase(baseSha, SEOUL_INPUT_PATH), "base 입력 파일", violate);
   const head = await readJson(async () => files.readTree(SEOUL_INPUT_PATH), "head 입력 파일", violate);
   if (base === null || head === null) return;
   const { problems, kricChangedKeys } = sourceInputViolations({ base, head, sourceId: context.spec.expectedSourceIds[0], snapshotId: row.snapshotId, capturedAt: ledgerRow?.retrievedAt ?? null });
-  if (kricChangedKeys.length > 0) problems.push(...await kricRebaseViolations({ base, head, headInventory, seoulSnapshotId: row.snapshotId, files }));
+  if (kricChangedKeys.length > 0) problems.push(...await kricRebaseViolations({ base, head, baseInventory, headInventory, baseSha, seoulSnapshotId: row.snapshotId, files }));
   for (const problem of problems) violate("REFRESH_GATE", `입력 파일 ${SEOUL_INPUT_PATH}: ${problem}`);
 }
 
