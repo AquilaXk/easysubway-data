@@ -69,7 +69,7 @@ test("판정이 알린 남은 claim은 claim·수집 전에 지운다(열린 PR�
   assert.equal(ifCondition(cleanup.block), "${{ steps.decision.outputs.cleanup_claims != '' }}");
   assert.match(cleanup.block, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/u);
   // #995: 조용히 지우지 않는다. 병합된 PR의 남은 claim은 보고 없이, 끝난 run의 PR 없는 claim은 #926 실패 보고를 먼저 하고 지운다.
-  assert.match(cleanup.block, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow source-reverification\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/u);
+  assert.match(cleanup.block, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow source-reverification\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RUNNER_TEMP\}\/source-reverification-decision\/\$\{GITHUB_RUN_ID\}\/automation-branches\.txt"/u);
   assert.doesNotMatch(cleanup.block, /git push origin --delete/u);
   before("Decide which P7D sources are due", cleanup.name);
   before(cleanup.name, "Claim exact main before provider access");

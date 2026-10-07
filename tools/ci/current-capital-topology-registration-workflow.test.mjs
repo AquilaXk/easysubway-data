@@ -145,7 +145,7 @@ test("판정이 알린 정리 대상(병합된 PR의 남은 claim·게시 증거
   assert.equal(ifCondition(cleanup.block), WRITES);
   assert.match(cleanup.block, /CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}/u);
   // #995: 조용히 지우지 않는다. 병합된 PR의 남은 claim은 보고 없이, 게시 증거 없이 버려진 claim은 #926 실패 보고를 먼저 하고 지운다.
-  assert.match(cleanup.block, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow current-capital-topology-registration\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/u);
+  assert.match(cleanup.block, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow current-capital-topology-registration\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RUNNER_TEMP\}\/capital-topology-registration-decision\/\$\{GITHUB_RUN_ID\}\/claims\.txt"/u);
   assert.doesNotMatch(cleanup.block, /git push origin --delete/u);
   const names = steps().map(({ name }) => name);
   assert.ok(names.indexOf("Decide whether capital topology registration is needed") < names.indexOf(cleanup.name));

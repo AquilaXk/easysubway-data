@@ -139,7 +139,7 @@ test("KRIC refresh workflow classifies PR-less claims from run and publication e
   assert.match(cleanup, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/);
   const script = cleanup.split("\n        run: |")[1];
   assert.doesNotMatch(script, /\$\{\{/);
-  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow kric-current-facility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/);
+  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow kric-current-facility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RUNNER_TEMP\}\/kric-current-facility-refresh\/claims\.txt"/);
   const running = stepOf("Note refresh waiting on a running producer");
   assert.match(running, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'CLAIM_IN_PROGRESS' \}\}\n/);
   const order = (name) => yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);

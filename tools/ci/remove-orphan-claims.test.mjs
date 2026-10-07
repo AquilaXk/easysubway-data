@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { PR_FIELDS } from "./collect-automation-prs.mjs";
@@ -17,10 +20,14 @@ const pr = (number, state, headRefName, overrides = {}) => ({
 const finishedRun = (workflow = GWANGJU, overrides = {}) => ({ status: "completed", conclusion: "failure", workflowName: CLAIM_OWNERS[workflow].workflowName, headBranch: "main", ...overrides });
 
 /** gh·git·보고를 흉내 내고 호출 순서를 한 목록에 기록한다. */
-function harness({ prs = {}, runs = {}, remote = {}, reportError = null, deleteError = null } = {}) {
+function harness({ prs = {}, runs = {}, remote = {}, compare = {}, reportError = null, deleteError = null } = {}) {
   const events = [];
   const runGh = async (args) => {
     events.push(["gh", ...args.slice(0, 2)]);
+    if (args[0] === "api") {
+      const branch = /compare\/main\.\.\.(.+)$/u.exec(args[1])[1];
+      return JSON.stringify(compare[branch] ?? { aheadBy: 1, changedFiles: 0, messages: ["Claim retained Gwangju timetable refresh"] });
+    }
     if (args[0] === "pr" && args[1] === "list") {
       assert.equal(args[args.indexOf("--json") + 1], PR_FIELDS);
       assert.equal(args[args.indexOf("--state") + 1], "all");
@@ -50,10 +57,12 @@ function harness({ prs = {}, runs = {}, remote = {}, reportError = null, deleteE
     return { action: "skip", issueNumber: 966 };
   };
   const logs = [];
-  return { runGh, runGit, report, events, reports, logs, log: (line) => logs.push(line) };
+  return { runGh, runGit, report, events, reports, logs, remote, log: (line) => logs.push(line) };
 }
-const run = (claims, h, workflowFile = GWANGJU) => removeOrphanClaims({
-  workflowFile, repository: REPOSITORY, claims, runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log,
+// 판정 시점의 ls-remote 출력(--refs). 기본값은 지금 원격과 같다.
+const refsOf = (remote) => Object.entries(remote).map(([name, sha]) => `${sha}\trefs/heads/${name}\n`).join("");
+const run = (claims, h, workflowFile = GWANGJU, { refsText = refsOf(h.remote) } = {}) => removeOrphanClaims({
+  workflowFile, repository: REPOSITORY, claims, refsText, runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log,
 });
 
 test("PR 없는 고아는 보고(#926)한 뒤에 지운다. 지울 때 본 sha가 아니면 지우지 않는다(lease)", async () => {
@@ -158,11 +167,15 @@ test("claim 이름이 이 workflow의 형식이 아니거나 중복이면 아무
 test("CLI는 쉼표로 이어진 claim 목록을 받는다", async () => {
   const a = branchOf(21); const b = branchOf(22);
   const h = harness({ runs: { 21: finishedRun(), 22: finishedRun() }, remote: { [a]: SHA, [b]: SHA } });
-  const result = await main(["--workflow", GWANGJU, "--repository", REPOSITORY, "--claims", `${a},${b}`], { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log });
+  const directory = await mkdtemp(path.join(tmpdir(), "remove-claims-"));
+  const refsFile = path.join(directory, "claims.txt");
+  await writeFile(refsFile, refsOf(h.remote));
+  const result = await main(["--workflow", GWANGJU, "--repository", REPOSITORY, "--claims", `${a},${b}`, "--refs", refsFile], { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log });
+  await rm(directory, { recursive: true, force: true });
   assert.deepEqual(result.map(({ action }) => action), ["removed_orphan", "removed_orphan"]);
   assert.equal(h.logs.length, 2);
   assert.match(h.logs[0], /"action":"removed_orphan"/u);
-  await assert.rejects(main(["--workflow", GWANGJU, "--repository", REPOSITORY], { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log }), /CLAIM_ORPHAN_INPUT_INVALID/u);
+  await assert.rejects(main(["--workflow", GWANGJU, "--repository", REPOSITORY, "--claims", a], { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log }), /CLAIM_ORPHAN_INPUT_INVALID/u);
 });
 
 test("등록·재확인 workflow의 정리도 같은 경로를 쓴다", async () => {
@@ -172,4 +185,60 @@ test("등록·재확인 workflow의 정리도 같은 경로를 쓴다", async ()
     assert.equal((await run([branch], h, workflow))[0].action, "removed_orphan", workflow);
     assert.equal(h.reports[0].workflowFile, workflow);
   }
+});
+
+// #995 F2: 삭제 guard. lease는 판정 시점의 sha이고, push 직전에 빈 claim인지와 run 상태를 다시 확인한다.
+test("삭제 lease는 판정 시점(--refs)의 sha다. 그 뒤 브랜치가 움직였으면 지우지 않는다", async () => {
+  const branch = branchOf(41);
+  const moved = harness({ runs: { 41: finishedRun() }, remote: { [branch]: "d".repeat(40) } });
+  await assert.rejects(run([branch], moved, GWANGJU, { refsText: refsOf({ [branch]: SHA }) }), /CLAIM_ORPHAN_REMOVE_REFUSED.*moved since classification/u);
+  assert.equal(moved.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  assert.deepEqual(moved.reports, []);
+  const same = harness({ runs: { 41: finishedRun() }, remote: { [branch]: SHA } });
+  await run([branch], same);
+  assert.deepEqual(same.events.at(-1), ["git", "push", `--force-with-lease=refs/heads/${branch}:${SHA}`, "origin", `:refs/heads/${branch}`]);
+  // 판정 시점 목록에 없는 claim은 지우지 않는다.
+  await assert.rejects(run([branch], harness({ runs: { 41: finishedRun() }, remote: { [branch]: SHA } }), GWANGJU, { refsText: "" }), /CLAIM_ORPHAN_INPUT_INVALID.*classification refs/u);
+});
+
+test("출력 커밋이 있거나 비어 있지 않은 claim은 remover에 넘겨도 거부한다(보고도 삭제도 하지 않는다)", async () => {
+  const branch = branchOf(42);
+  const subject = "Claim retained Gwangju timetable refresh";
+  for (const carried of [
+    { aheadBy: 2, changedFiles: 2, messages: [subject, "Refresh retained Gwangju timetable"] },
+    { aheadBy: 1, changedFiles: 1, messages: [subject] },
+    { aheadBy: 1, changedFiles: 0, messages: ["someone else"] },
+    { aheadBy: 0, changedFiles: 0, messages: [] },
+  ]) {
+    const h = harness({ runs: { 42: finishedRun() }, remote: { [branch]: SHA }, compare: { [branch]: carried } });
+    await assert.rejects(run([branch], h), /CLAIM_ORPHAN_REMOVE_REFUSED.*not an empty claim/u, JSON.stringify(carried));
+    assert.deepEqual(h.reports, []);
+    assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  }
+});
+
+test("보고 사이에 claim에 커밋이 올라오면 push 직전 재확인에서 거부한다", async () => {
+  const branch = branchOf(43);
+  const subject = "Claim retained Gwangju timetable refresh";
+  const compare = { [branch]: { aheadBy: 1, changedFiles: 0, messages: [subject] } };
+  const h = harness({ runs: { 43: finishedRun() }, remote: { [branch]: SHA }, compare });
+  const report = async (input) => { await h.report(input); compare[branch] = { aheadBy: 2, changedFiles: 2, messages: [subject, "Refresh retained Gwangju timetable"] }; return { action: "skip" }; };
+  await assert.rejects(removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report, log: h.log }), /CLAIM_ORPHAN_REMOVE_REFUSED.*not an empty claim/u);
+  assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+});
+
+test("보고 사이에 run 상태가 진행 중으로 바뀌면 push 직전 재확인에서 거부한다", async () => {
+  const branch = branchOf(45);
+  const runs = { 45: finishedRun() };
+  const h = harness({ runs, remote: { [branch]: SHA } });
+  const report = async (input) => { await h.report(input); runs[45] = finishedRun(GWANGJU, { status: "in_progress", conclusion: null }); return { action: "skip" }; };
+  await assert.rejects(removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report, log: h.log }), /CLAIM_ORPHAN_REMOVE_REFUSED.*producer run 45 is still in_progress/u);
+  assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+});
+
+test("병합된 PR의 남은 claim은 빈 claim 검사 없이 지운다", async () => {
+  const branch = branchOf(44);
+  const h = harness({ prs: { [branch]: [pr(1, "MERGED", branch)] }, remote: { [branch]: SHA }, compare: { [branch]: { aheadBy: 3, changedFiles: 4, messages: ["a", "b", "c"] } } });
+  assert.equal((await run([branch], h))[0].action, "removed_merged");
+  assert.equal(h.events.some(([kind, second]) => kind === "gh" && second === "api"), false);
 });

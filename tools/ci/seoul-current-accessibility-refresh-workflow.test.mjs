@@ -56,7 +56,7 @@ test("orphan claims are classified from run and publication evidence and cleaned
   assert.match(cleanup, /\n          CLEANUP_CLAIMS: \$\{\{ steps\.decision\.outputs\.cleanup_claims \}\}\n/);
   const script = cleanup.split("\n        run: ")[1];
   assert.doesNotMatch(script, /\$\{\{/);
-  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow seoul-current-accessibility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/);
+  assert.match(script, /gh auth setup-git\n[\s\S]*node tools\/ci\/remove-orphan-claims\.mjs --workflow seoul-current-accessibility-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RUNNER_TEMP\}\/seoul-current-accessibility-refresh\/claims\.txt"/);
   assert.doesNotMatch(script, /git push origin --delete/);
   const running = step("Note Seoul refresh waiting on a running producer");
   assert.match(running, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'CLAIM_IN_PROGRESS' \}\}\n/);

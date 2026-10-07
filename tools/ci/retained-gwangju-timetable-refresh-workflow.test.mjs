@@ -39,7 +39,7 @@ test("정리 대상 claim은 보고한 뒤 지우고, 그 일은 복구·새 cla
   const script = scriptOf(cleanup.block);
   assert.doesNotMatch(script, /\$\{\{/u, "표현식은 env로 받는다");
   assert.match(script, /gh auth setup-git\n/u);
-  assert.match(script, /node tools\/ci\/remove-orphan-claims\.mjs --workflow retained-gwangju-timetable-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}"/u);
+  assert.match(script, /node tools\/ci\/remove-orphan-claims\.mjs --workflow retained-gwangju-timetable-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{CLEANUP_CLAIMS\}" --refs "\$\{RETAINED_GWANGJU_STATE_ROOT\}\/claims\.txt"/u);
   assert.doesNotMatch(script, /git push origin --delete/u, "삭제는 보고 뒤에 도구가 한다. 셸이 직접 지우지 않는다");
   before("Read retained timetable due state", cleanup.name);
   before(cleanup.name, "Recover completed retained timetable claim");
