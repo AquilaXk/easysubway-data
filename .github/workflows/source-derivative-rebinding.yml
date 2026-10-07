@@ -26,8 +26,8 @@ concurrency:
 jobs:
   rebind:
     name: Derivative rebinding
-    # #1001: 외부 스케줄러(App easysubway-release-chain[bot])의 dispatch는 정기 실행과 같아서 변수가 true일 때만 돈다. 사람 dispatch는 변수와 무관하게 돈다.
-    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.actor != 'easysubway-release-chain[bot]') || vars.DATAPACK_SCHEDULED_SOURCE_REBINDING == 'true') }}
+    # #1001: 사람(triggering_actor가 App이 아니고 [bot] 접미사 계정도 아님)의 dispatch만 변수와 무관하게 돈다. App·다른 봇의 dispatch와 정기 실행은 변수가 true일 때만 돈다.
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.triggering_actor != 'easysubway-release-chain[bot]' && !endsWith(github.triggering_actor, '[bot]')) || vars.DATAPACK_SCHEDULED_SOURCE_REBINDING == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

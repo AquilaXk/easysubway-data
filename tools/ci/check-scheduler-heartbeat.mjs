@@ -21,6 +21,8 @@ const POLICY_KEYS = ["schemaVersion", "artifactKind", "dispatcher", "workflows"]
 const DISPATCHER = Object.freeze({ login: "easysubway-release-chain[bot]", type: "Bot" });
 // GitHub와 runner 시계 차이를 받아주는 한도. 이보다 미래인 run 시각은 깨진 응답이다.
 const CLOCK_SKEW_MS = 300_000;
+// run의 display_title(run-name)과 정확히 비교하는 값. 한 줄 출력 가능 문자만 허용한다.
+const RUN_NAME = /^[\x20-\x7e]{1,120}$/u;
 const MAX_AGE = /^(?:PT([1-9]\d{0,3})([HM])|P([1-9]\d{0,2})D)$/u;
 
 function fail(code, detail = "") {
@@ -43,13 +45,20 @@ export function validateHeartbeatPolicy(policy) {
     fail("SCHEDULER_HEARTBEAT_POLICY", `dispatcher must be ${DISPATCHER.login}`);
   }
   if (!Array.isArray(policy.workflows) || policy.workflows.length === 0) fail("SCHEDULER_HEARTBEAT_POLICY", "workflows");
-  const seen = new Set();
+  const byWorkflow = new Map();
   for (const item of policy.workflows) {
-    if (!exactKeys(item, ["workflow", "maxAge"]) || typeof item.workflow !== "string" || !WORKFLOW_FILE.test(item.workflow) || seen.has(item.workflow)) {
+    if (!isObject(item) || !Object.keys(item).every((key) => ["workflow", "maxAge", "runName"].includes(key)) || !Object.hasOwn(item, "workflow") || !Object.hasOwn(item, "maxAge")
+      || typeof item.workflow !== "string" || !WORKFLOW_FILE.test(item.workflow)) {
       fail("SCHEDULER_HEARTBEAT_POLICY", `workflow ${JSON.stringify(item?.workflow)}`);
     }
-    seen.add(item.workflow);
     parseMaxAge(item.maxAge);
+    if (Object.hasOwn(item, "runName") && (typeof item.runName !== "string" || !RUN_NAME.test(item.runName))) fail("SCHEDULER_HEARTBEAT_POLICY", `runName ${JSON.stringify(item.runName)}`);
+    byWorkflow.set(item.workflow, [...(byWorkflow.get(item.workflow) ?? []), item.runName]);
+  }
+  // 한 workflow를 dispatch 종류별로 나눌 때는 모두 runName이 있고 서로 달라야 한다(없는 항목이 섞이면 종류를 가려낼 수 없다).
+  for (const [workflow, names] of byWorkflow) {
+    const keyed = names.filter((name) => name !== undefined);
+    if (names.length > 1 && (keyed.length !== names.length || new Set(keyed).size !== keyed.length)) fail("SCHEDULER_HEARTBEAT_POLICY", `${workflow} entries must each have a distinct runName`);
   }
   return policy;
 }
@@ -65,21 +74,23 @@ export function checkSchedulerHeartbeat({ policy, runsByWorkflow, now }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("SCHEDULER_HEARTBEAT_ARGUMENTS", "clock");
   const violations = [];
   const results = [];
-  for (const { workflow, maxAge } of policy.workflows) {
+  for (const { workflow, maxAge, runName } of policy.workflows) {
+    const label = runName === undefined ? workflow : `${workflow} (${runName})`;
     const runs = runsByWorkflow?.[workflow];
     if (!Array.isArray(runs)) fail("SCHEDULER_HEARTBEAT_RUN_INVALID", `${workflow} has no run list`);
     const dispatched = runs
       .filter((run) => run?.event === "workflow_dispatch" && run.head_branch === "main"
-        && run.actor?.login === policy.dispatcher.login && run.actor?.type === policy.dispatcher.type)
+        && run.actor?.login === policy.dispatcher.login && run.actor?.type === policy.dispatcher.type
+        && (runName === undefined || run.display_title === runName))
       .map((run) => runTime(run, now, workflow));
     if (dispatched.length === 0) {
-      violations.push(`SCHEDULER_HEARTBEAT_MISSING: ${workflow} has no workflow_dispatch run by ${policy.dispatcher.login} on main`);
+      violations.push(`SCHEDULER_HEARTBEAT_MISSING: ${label} has no workflow_dispatch run by ${policy.dispatcher.login} on main`);
       continue;
     }
     const age = Math.max(0, now.getTime() - Math.max(...dispatched));
-    results.push({ workflow, ageMinutes: Math.floor(age / 60_000) });
+    results.push({ workflow: label, ageMinutes: Math.floor(age / 60_000) });
     if (age > parseMaxAge(maxAge)) {
-      violations.push(`SCHEDULER_HEARTBEAT_STALE: ${workflow} last dispatch by ${policy.dispatcher.login} was ${Math.floor(age / 60_000)} minutes ago (limit ${maxAge})`);
+      violations.push(`SCHEDULER_HEARTBEAT_STALE: ${label} last dispatch by ${policy.dispatcher.login} was ${Math.floor(age / 60_000)} minutes ago (limit ${maxAge})`);
     }
   }
   return { violations, results };
@@ -109,7 +120,7 @@ export async function main(argv = process.argv.slice(2), { runGh = defaultRunGh,
   }
   validateHeartbeatPolicy(policy);
   const runsByWorkflow = {};
-  for (const { workflow } of policy.workflows) {
+  for (const workflow of new Set(policy.workflows.map((item) => item.workflow))) {
     let listing;
     try {
       listing = JSON.parse(await runGh(["api", `repos/${repository}/actions/workflows/${workflow}/runs?event=workflow_dispatch&branch=main&per_page=100`]));

@@ -27,7 +27,7 @@ test("권한은 workflow 전체가 아니라 job에만 준다(issues 쓰기는 �
 });
 
 test("push·정기 실행은 저장소 변수가 true일 때만 돌고 사람 dispatch는 항상 돈다", () => {
-  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.actor != 'easysubway-release-chain\[bot\]'\) \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REGISTRATION == 'true'\) \}\}\n/u);
+  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.triggering_actor != 'easysubway-release-chain\[bot\]' && !endsWith\(github\.triggering_actor, '\[bot\]'\)\) \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REGISTRATION == 'true'\) \}\}\n/u);
 });
 
 test("판정 step이 claim·게시·PR 생성보다 먼저 돌고 판정 입력을 저장소·GitHub 기록에서만 읽는다", () => {

@@ -24,13 +24,18 @@ test("데이터팩 만료 점검 job은 dispatch target이 all·datapack-expiry�
   assert.match(yml, /\n  datapack-expiry-alert:\n    if: \$\{\{ \(github\.event_name == 'workflow_dispatch' && \(inputs\.target == 'all' \|\| inputs\.target == 'datapack-expiry'\)\) \|\| github\.event\.schedule == '23 \*\/4 \* \* \*' \}\}\n/u);
 });
 
+test("run 이름에 target이 들어가 heartbeat 점검이 dispatch 종류를 구분하고, 같은 target의 중복 dispatch는 실행 중인 점검을 취소하지 않는다", () => {
+  assert.match(yml, /\nrun-name: \$\{\{ github\.workflow \}\} \(\$\{\{ inputs\.target \|\| github\.event_name \}\}\)\n/u);
+  assert.match(yml, /^name: Data Pack Expiry Alert\n/u);
+});
+
 test("같은 시각에 target이 다른 dispatch 둘이 서로를 취소하지 않도록 concurrency 그룹에 target을 넣는다", () => {
-  assert.match(yml, /\nconcurrency:\n  group: datapack-expiry-alert-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}-\$\{\{ github\.event\.schedule \|\| inputs\.target \|\| github\.event_name \}\}\n  cancel-in-progress: true\n/u);
+  assert.match(yml, /\nconcurrency:\n  group: datapack-expiry-alert-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}-\$\{\{ github\.event\.schedule \|\| inputs\.target \|\| github\.event_name \}\}\n  cancel-in-progress: false\n/u);
 });
 
 test("dispatch 입력은 job if 조건에서만 쓰고 셸 스크립트에 펼치지 않는다", () => {
   const lines = yml.split("\n").filter((line) => line.includes("inputs.target"));
   const jobConditions = lines.filter((line) => line.startsWith("    if: "));
   assert.equal(jobConditions.length, 2);
-  assert.equal(lines.length, 3, "두 job if와 concurrency 그룹 말고는 쓰지 않는다");
+  assert.equal(lines.length, 4, "두 job if, concurrency 그룹, run-name 말고는 쓰지 않는다");
 });

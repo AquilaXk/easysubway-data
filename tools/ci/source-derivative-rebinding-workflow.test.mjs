@@ -22,7 +22,7 @@ test("권한은 job에만 주고 변수가 true일 때만 push·정기 실행이
   assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
   assert.match(yml, /\n    permissions:\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
   assert.doesNotMatch(yml, /actions: write|gh workflow run|repository_dispatch/u);
-  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.actor != 'easysubway-release-chain\[bot\]'\) \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REBINDING == 'true'\) \}\}\n/u);
+  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.triggering_actor != 'easysubway-release-chain\[bot\]' && !endsWith\(github\.triggering_actor, '\[bot\]'\)\) \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REBINDING == 'true'\) \}\}\n/u);
   assert.match(yml, /\n    environment: datapack-release-check\n/u);
 });
 

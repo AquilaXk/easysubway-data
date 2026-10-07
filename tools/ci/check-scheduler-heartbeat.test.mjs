@@ -21,7 +21,7 @@ const policy = {
     { workflow: "itx-current-promotion.yml", maxAge: "PT27H" },
   ],
 };
-const run = (login, createdAt, extra = {}) => ({ id: 1, created_at: createdAt, event: "workflow_dispatch", head_branch: "main", actor: { login, type: "Bot" }, ...extra });
+const run = (login, createdAt, extra = {}) => ({ display_title: "title", id: 1, created_at: createdAt, event: "workflow_dispatch", head_branch: "main", actor: { login, type: "Bot" }, ...extra });
 
 test("정책의 모든 workflow에 App의 최근 dispatch run이 maxAge 안에 있으면 통과한다", () => {
   const result = checkSchedulerHeartbeat({
@@ -90,6 +90,49 @@ test("5분 이내의 시계 차이는 받아주고 나이는 0분으로 센다",
   assert.equal(results[0].ageMinutes, 0);
 });
 
+const expiryPolicy = {
+  ...policy,
+  workflows: [
+    { workflow: "datapack-expiry-alert.yml", runName: "Data Pack Expiry Alert (datapack-expiry)", maxAge: "PT9H" },
+    { workflow: "datapack-expiry-alert.yml", runName: "Data Pack Expiry Alert (provider-approval)", maxAge: "PT27H" },
+  ],
+};
+const titled = (target, hours) => run(APP, hoursAgo(hours), { display_title: `Data Pack Expiry Alert (${target})` });
+
+test("runName이 있는 항목은 display_title이 정확히 같은 run만 세어 dispatch 종류별로 maxAge를 적용한다", () => {
+  const file = "datapack-expiry-alert.yml";
+  const ok = checkSchedulerHeartbeat({ policy: expiryPolicy, now, runsByWorkflow: { [file]: [titled("datapack-expiry", 3), titled("provider-approval", 20)] } });
+  assert.deepEqual(ok.violations, []);
+  // 4시간 점검만 멈췄고 하루 한 번 알림은 최근에 돌았다: 전체 최신 run만 보면 가려진다.
+  const hidden = checkSchedulerHeartbeat({ policy: expiryPolicy, now, runsByWorkflow: { [file]: [titled("provider-approval", 1), titled("datapack-expiry", 10)] } });
+  assert.equal(hidden.violations.length, 1);
+  assert.match(hidden.violations[0], /^SCHEDULER_HEARTBEAT_STALE: datapack-expiry-alert\.yml \(Data Pack Expiry Alert \(datapack-expiry\)\)/u);
+  const missing = checkSchedulerHeartbeat({ policy: expiryPolicy, now, runsByWorkflow: { [file]: [titled("datapack-expiry", 1)] } });
+  assert.match(missing.violations[0], /^SCHEDULER_HEARTBEAT_MISSING: datapack-expiry-alert\.yml \(Data Pack Expiry Alert \(provider-approval\)\)/u);
+});
+
+test("display_title이 없거나 달라서 dispatch 종류를 판별할 수 없으면 통과가 아니라 MISSING이다", () => {
+  const file = "datapack-expiry-alert.yml";
+  for (const display_title of [undefined, null, "", "Data Pack Expiry Alert", "Data Pack Expiry Alert (all)", "data pack expiry alert (datapack-expiry) "]) {
+    const { violations } = checkSchedulerHeartbeat({ policy: expiryPolicy, now, runsByWorkflow: { [file]: [run(APP, hoursAgo(1), { display_title })] } });
+    assert.equal(violations.length, 2, String(display_title));
+    assert.ok(violations.every((line) => line.startsWith("SCHEDULER_HEARTBEAT_MISSING")));
+  }
+});
+
+test("같은 workflow의 항목은 모두 runName이 있고 서로 달라야 한다", () => {
+  const entry = (extra) => ({ workflow: "datapack-expiry-alert.yml", maxAge: "PT9H", ...extra });
+  assert.doesNotThrow(() => validateHeartbeatPolicy(expiryPolicy));
+  for (const workflows of [
+    [entry({ runName: "A" }), entry({})],
+    [entry({}), entry({ runName: "A" })],
+    [entry({ runName: "A" }), entry({ runName: "A" })],
+    [entry({ runName: "" })],
+    [entry({ runName: "x\ny" })],
+    [entry({ runName: 5 })],
+  ]) assert.throws(() => validateHeartbeatPolicy({ ...policy, workflows }), /SCHEDULER_HEARTBEAT_POLICY/u, JSON.stringify(workflows));
+});
+
 test("maxAge는 PT<시간>H·PT<분>M·P<일>D만 읽고 나머지는 거절한다", () => {
   assert.equal(parseMaxAge("PT5H"), 5 * 3_600_000);
   assert.equal(parseMaxAge("PT90M"), 90 * 60_000);
@@ -147,6 +190,7 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
     "current-capital-topology-refresh.yml",
     "current-capital-topology-registration.yml",
     "datapack-expiry-alert.yml",
+    "datapack-expiry-alert.yml",
     "itx-current-promotion.yml",
     "kric-current-facility-refresh.yml",
     "retained-gwangju-timetable-refresh.yml",
@@ -161,12 +205,13 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
     parseMaxAge(maxAge);
   }
   // 정기 주기의 두 배보다 크게 잡아 스케줄러가 한 번 늦은 것만으로는 알리지 않는다(2시간 workflow는 5시간).
-  const maxAge = Object.fromEntries(actual.workflows.map((item) => [item.workflow, parseMaxAge(item.maxAge)]));
+  const maxAge = Object.fromEntries(actual.workflows.filter(({ runName }) => runName === undefined).map((item) => [item.workflow, parseMaxAge(item.maxAge)]));
   const hours = (value) => value * 3_600_000;
   for (const workflow of ["current-capital-topology-refresh.yml", "current-capital-topology-registration.yml", "kric-current-facility-refresh.yml", "retained-gwangju-timetable-refresh.yml", "seoul-current-accessibility-refresh.yml", "source-reverification.yml"]) {
     assert.equal(maxAge[workflow], hours(5), workflow);
   }
-  assert.equal(maxAge["datapack-expiry-alert.yml"], hours(9));
+  const expiry = Object.fromEntries(actual.workflows.filter(({ workflow }) => workflow === "datapack-expiry-alert.yml").map((item) => [item.runName, parseMaxAge(item.maxAge)]));
+  assert.deepEqual(expiry, { "Data Pack Expiry Alert (datapack-expiry)": hours(9), "Data Pack Expiry Alert (provider-approval)": hours(27) });
   assert.equal(maxAge["source-derivative-rebinding.yml"], hours(13));
   assert.equal(maxAge["itx-current-promotion.yml"], hours(27));
 });

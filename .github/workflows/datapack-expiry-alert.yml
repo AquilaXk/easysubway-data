@@ -1,5 +1,8 @@
 name: Data Pack Expiry Alert
 
+# #1001: run 이름에 dispatch target이 들어가 heartbeat 점검(check-scheduler-heartbeat)이 4시간 점검과 하루 한 번 알림을 구분한다.
+run-name: ${{ github.workflow }} (${{ inputs.target || github.event_name }})
+
 on:
   schedule:
     - cron: "23 */4 * * *"
@@ -20,7 +23,7 @@ on:
 
 concurrency:
   group: datapack-expiry-alert-${{ github.workflow }}-${{ github.ref }}-${{ github.event.schedule || inputs.target || github.event_name }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read

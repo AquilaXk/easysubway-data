@@ -37,7 +37,7 @@ test("권한은 workflow 전체가 아니라 job에만 준다(issues 쓰기는 �
 });
 
 test("정기 실행은 저장소 변수가 true일 때만 돌고 사람 dispatch는 항상 돈다. 변수 기본값은 꺼짐이다", () => {
-  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.actor != 'easysubway-release-chain\[bot\]'\) \|\| vars\.DATAPACK_SCHEDULED_ITX_PROMOTION == 'true'\) \}\}\n/u);
+  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.triggering_actor != 'easysubway-release-chain\[bot\]' && !endsWith\(github\.triggering_actor, '\[bot\]'\)\) \|\| vars\.DATAPACK_SCHEDULED_ITX_PROMOTION == 'true'\) \}\}\n/u);
   // 이 workflow가 변수를 스스로 켜는 일은 없다.
   assert.doesNotMatch(yml, /gh variable|gh api[^\n]*variables/u);
 });
