@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { INVENTORY_PATH, LEDGER_PATH, POLICY, RECORDED, buildCapitalSnapshot, filenames, recordedTrees, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
+import { INVENTORY_PATH, LEDGER_PATH, PACK_STAMP_KEYS, POLICY, RECORDED, buildCapitalSnapshot, packSourcesOf, filenames, recordedTrees, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
 
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import {
@@ -495,5 +495,77 @@ test("F4: 간선 추가는 2% 이내만 자동 통과하고 넘으면 SOURCE_COU
     // 전용 override가 아니라 일반 한도(5%)였다면 통과했을 변화다.
     const generic = await evaluate(run, { mutateCapitalLines: (lines) => { addStation(0, "새역1")(lines); addStation(1, "새역2")(lines); } }, { policy: { ...POLICY, sourceOverrides: {} } });
     assert.deepEqual(generic.violations, [], `${run.label}: override가 없으면 5% 한도라 통과한다(override가 실제로 쓰인다)`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 리뷰 F1: canonical pack은 경로만 보지 않고 base·head를 구조 diff로 비교한다.
+// 기록된 실제 갱신 커밋(ab90519c9: #1003 활성화 커밋 등)은 출처 표식 키 4개(sourceSnapshotId·updatedAt·lastVerifiedAt·reviewedAt)만 바꾼다.
+// 이 키의 값은 새 snapshot id·증거 시각과 정확히 같아야 하고, 그 밖의 키·값·키 구성·배열 길이와 순서는 한 글자도 달라지면 안 된다(PACK_CONTENT).
+// ---------------------------------------------------------------------------
+test("F1: 표식 키 4개가 기록된 갱신 커밋이 바꾸는 키와 같다", () => {
+  assert.deepEqual([...PACK_STAMP_KEYS].sort(), ["lastVerifiedAt", "reviewedAt", "sourceSnapshotId", "updatedAt"]);
+});
+
+const packCases = (run) => {
+  const sources = packSourcesOf(run);
+  const station = sources["incheon-transit-station-info"].after;
+  const line1 = sources["incheon-line1-train-timetable"].after;
+  return {
+    "빈 pack({})": (pack) => { for (const key of Object.keys(pack)) delete pack[key]; },
+    "pack 껍데기만 남김": (pack) => { pack.packs = [{ networkEdges: [{ accessible: false }] }]; },
+    "접근성 값 하나 변경": (pack) => { pack.packs[0].networkEdges[0].stairFree = false; },
+    "역 접근성 값 변경": (pack) => { pack.packs[0].stations[1].accessible = true; },
+    "간선 추가": (pack) => { pack.packs[0].networkEdges.push({ ...pack.packs[0].networkEdges[0], id: "edge-new" }); },
+    "간선 삭제": (pack) => { pack.packs[0].networkEdges.pop(); },
+    "정차 시각 하나 변경": (pack) => { pack.packs[0].transitStopTimes[1].arrivalSeconds += 1; },
+    "정차 시각 삭제": (pack) => { pack.packs[0].transitStopTimes.pop(); },
+    "배열 순서 변경": (pack) => { pack.packs[0].stations.reverse(); },
+    "표식 키 sourceSnapshotId에 엉뚱한 값": (pack) => { pack.packs[0].stations[0].sourceSnapshotId = "evil-snapshot"; },
+    "표식 키 lastVerifiedAt에 엉뚱한 값": (pack) => { pack.packs[0].networkEdges[0].lastVerifiedAt = "1999-01-01T00:00:00.000Z"; },
+    "표식 키 updatedAt에 엉뚱한 값": (pack) => { pack.packs[0].transitTrips[0].updatedAt = "1999-01-01T00:00:00.000Z"; },
+    "표식 키 reviewedAt에 엉뚱한 값": (pack) => { pack.packs[0].routeMapPositions[0].reviewedAt = "1999-01-01T00:00:00.000Z"; },
+    "표식 키 값의 형식 변경": (pack) => { pack.packs[0].stations[0].lastVerifiedAt = 20261007; },
+    "역 표식에 시간표 snapshot id": (pack) => { pack.packs[0].stations[0].sourceSnapshotId = line1.snapshotId; },
+    "역 표식에 시간표 시각": (pack) => { pack.packs[0].stations[0].lastVerifiedAt = line1.at; },
+    "시간표 표식에 역 시각": (pack) => { pack.packs[0].transitTrips[0].updatedAt = station.at; },
+    "소유하지 않은 원천의 표식 변경": (pack) => { pack.packs[0].sourceInventory[0].updatedAt = station.at; },
+    "소유하지 않은 snapshot의 표식 변경": (pack) => { pack.packs[0].routeMapPositions[1].reviewedAt = station.at; },
+    "sourceInventory 표식에 엉뚱한 시각": (pack) => { pack.packs[0].sourceInventory[1].updatedAt = "1999-01-01T00:00:00.000Z"; },
+    "표식 키가 없던 객체에 표식 추가": (pack) => { pack.packs[0].metadata.sourceSnapshotId = station.snapshotId; },
+    "표식 키 삭제": (pack) => { delete pack.packs[0].stations[0].lastVerifiedAt; },
+    "표식과 같은 객체의 다른 키 변경": (pack) => { pack.packs[0].stations[0].nameKo = "다"; },
+    "새 키 추가": (pack) => { pack.packs[0].stations[0].extra = true; },
+    "최상위 키 추가": (pack) => { pack.extra = true; },
+    "pack 하나 추가": (pack) => { pack.packs.push(structuredClone(pack.packs[0])); },
+    "메타데이터 변경": (pack) => { pack.packs[0].metadata.note = "바뀜"; },
+    "통째로 다른 sha": (pack) => { pack.packs[0].routeServiceArtifactEvidence[0].sha256 = "3".repeat(64); },
+  };
+};
+
+test("F1: canonical pack 내용이 출처 표식 밖에서 바뀌거나 표식 값이 새 snapshot과 다르면 PACK_CONTENT", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    for (const [label, mutate] of Object.entries(packCases(run))) {
+      const result = await evaluate(run, { mutatePack: mutate });
+      assert.ok(codes(result).includes("PACK_CONTENT"), `${run.label}: ${label}`);
+    }
+  }
+});
+
+test("F1: 기록된 갱신처럼 표식만 새 snapshot·증거 시각으로 바뀐 pack은 통과한다(대조군)", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const result = await evaluate(run);
+    assert.deepEqual(result.violations, [], run.label);
+  }
+});
+
+test("F1: pack 파일을 읽을 수 없거나 JSON이 아니면 PACK_CONTENT(fail closed)", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const unreadable = await evaluate(run, { mutateFiles: (head) => { head.delete("tools/datapack/release/capital-production-canonical-pack.json"); } });
+    assert.ok(codes(unreadable).includes("PACK_CONTENT"), `${run.label}: head에 없음`);
+    const broken = await evaluate(run, { mutateFiles: (head) => { head.set("tools/datapack/release/capital-production-canonical-pack.json", "{ not json"); } });
+    assert.ok(codes(broken).includes("PACK_CONTENT"), `${run.label}: JSON 아님`);
+    const noBase = await evaluate(run, { mutateFiles: (_head, base) => { base.delete("tools/datapack/release/capital-production-canonical-pack.json"); } });
+    assert.ok(codes(noBase).includes("PACK_CONTENT"), `${run.label}: base에 없음`);
   }
 });
