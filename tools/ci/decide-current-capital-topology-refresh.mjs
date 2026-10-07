@@ -125,6 +125,19 @@ function availableTopologyRefreshClaims(prs, claims) {
 
 export function currentCapitalTopologyPreflight({ now = new Date(), jobWindowMinutes = 45, existingPaths = [], itxRefreshRequired = true } = {}) { const start = now instanceof Date ? now.getTime() : NaN; if (!Number.isFinite(start) || !Number.isInteger(jobWindowMinutes) || jobWindowMinutes < 1 || !Array.isArray(existingPaths) || existingPaths.some((item) => typeof item !== "string") || typeof itxRefreshRequired !== "boolean") throw new Error("current topology preflight is invalid"); const dates = new Set(); for (let point = start; point <= start + jobWindowMinutes * 60_000; point += 60_000) { const date = new Date(point); dates.add(date.toISOString().slice(0, 10).replaceAll("-", "")); dates.add(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date).filter(({ type }) => type !== "literal").map(({ value }) => value).join("")); } const candidates = [...dates].flatMap((stamp) => [`tools/datapack/sources/capital-route-topology-${stamp}.json`, `tools/datapack/sources/incheon-transit-station-info-${stamp}.json`, `tools/datapack/sources/incheon-line1-train-timetable-${stamp}.json`, `tools/datapack/sources/incheon-line2-train-timetable-${stamp}.json`, ...(itxRefreshRequired ? [`tools/datapack/itx-current-network-edge-admission-${stamp}.json`] : []), `tools/datapack/release/capital-topology-reverification-${stamp}.json`]); const conflicts = candidates.filter((candidate) => existingPaths.includes(candidate)); return { state: conflicts.length ? "WAIT_IMMUTABLE_IDENTITY" : "CLEAR", conflicts }; }
 
+const byText = (left, right) => (left < right ? -1 : Number(left > right));
+// #995: 도는 run의 claim은 판정 밖에서 기다린다. 나머지 claim 중 PR 없는 stale claim은 빈 claim이면 정리 대상이고 출력이 있으면 이상이다.
+function settleTopologyClaims({ claims, prs, plan }) {
+  const settled = claims.filter(({ branch }) => !plan.active.includes(branch));
+  const open = openTopologyRefreshPrs(prs, settled);
+  const stale = settled.filter((claim) => !claim.current && !prs.some(({ headRefName }) => headRefName === claim.branch));
+  const carrying = stale.filter(({ branch }) => plan.recoverable.includes(branch));
+  if (carrying.length > 0) throw new Error(`stale current topology refresh claim carries output: ${carrying.map(({ branch }) => branch).join(", ")}`);
+  const available = availableTopologyRefreshClaims(prs, settled);
+  if (plan.active.length + available.length > 1) throw new Error("duplicate current topology refresh claims exist");
+  return { open, available, cleanupClaims: stale.map(({ branch }) => branch).sort(byText) };
+}
+
 export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candidatePath, policyPath, prsPath, claimsPath, claimEvidencePath, repositoryRoot = process.cwd(), repository, currentMainSha, now = new Date(), itxCollectedToday = false } = {}) {
   if (typeof itxCollectedToday !== "boolean") throw new Error("decision input is invalid");
   const [inventoryBytes, candidateBytes, policyBytes, prsBytes, claimsBytes, evidenceBytes] = await Promise.all([
@@ -146,15 +159,8 @@ export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candi
   const plan = planUnboundClaims({
     workflowFile: WORKFLOW, repository, claimBranches: claims.map(({ branch }) => branch), pullRequests: prs, evidence: json(evidenceBytes, "claim evidence"),
   });
-  const settled = claims.filter(({ branch }) => !plan.active.includes(branch));
-  const open = openTopologyRefreshPrs(prs, settled);
-  const stale = settled.filter((claim) => !claim.current && !prs.some(({ headRefName }) => headRefName === claim.branch));
-  const carrying = stale.filter(({ branch }) => plan.recoverable.includes(branch));
-  if (carrying.length > 0) throw new Error(`stale current topology refresh claim carries output: ${carrying.map(({ branch }) => branch).join(", ")}`);
-  const cleanupClaims = stale.map(({ branch }) => branch).sort();
+  const { open, available, cleanupClaims } = settleTopologyClaims({ claims, prs, plan });
   if (open.length === 1) return { state: "OPEN_PR", ...component, cleanupClaims };
-  const available = availableTopologyRefreshClaims(prs, settled);
-  if (plan.active.length + available.length > 1) throw new Error("duplicate current topology refresh claims exist");
   if (plan.active.length === 1) return { state: "CLAIM_IN_PROGRESS", ...component, branch: plan.active[0], cleanupClaims };
   if (available.length === 1) {
     const reuse = available[0].commitCount === 1;
@@ -168,5 +174,30 @@ export async function decideCurrentCapitalTopologyRefresh({ inventoryPath, candi
   return { state, ...component, cleanupClaims };
 }
 export async function runCurrentCapitalTopologyRefreshDecision({ outputPath, githubOutputPath, ...input } = {}) { const result = await decideCurrentCapitalTopologyRefresh(input); await Promise.all([writeFile(path.resolve(outputPath), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }), writeFile(path.resolve(githubOutputPath), `state=${result.state}\nbranch=${result.branch ?? ""}\ncleanup_claims=${result.cleanupClaims.join(",")}\nitx_fresh_until=${result.itxFreshUntil ?? ""}\nitx_refresh_required=${result.itxRefreshRequired ?? ""}\n`, { flag: "a" })]); return result; }
-function args(argv) { const result = {}; for (let i = 0; i < argv.length; i += 2) { const key = argv[i]; if (!key?.startsWith("--") || result[key.slice(2)] !== undefined || !argv[i + 1]) throw new Error("decision arguments are invalid"); result[key.slice(2)] = argv[i + 1]; } if (Object.keys(result).some((key) => !["inventory", "candidate", "policy", "prs", "claims", "claim-evidence", "repository", "current-main-sha", "output", "github-output", "itx-collected-today"].includes(key))) throw new Error("decision arguments are invalid"); return result; }
-if (process.argv[1] === new URL(import.meta.url).pathname) { const value = args(process.argv.slice(2)); runCurrentCapitalTopologyRefreshDecision({ inventoryPath: value.inventory, candidatePath: value.candidate, policyPath: value.policy, prsPath: value.prs, claimsPath: value.claims, claimEvidencePath: value["claim-evidence"], repository: value.repository, currentMainSha: value["current-main-sha"], outputPath: value.output, githubOutputPath: value["github-output"], itxCollectedToday: value["itx-collected-today"] === undefined ? false : value["itx-collected-today"] === "true" ? true : value["itx-collected-today"] === "false" ? false : undefined }).catch((error) => { console.error(error.message); process.exitCode = 1; }); }
+const ARGUMENT_NAMES = ["inventory", "candidate", "policy", "prs", "claims", "claim-evidence", "repository", "current-main-sha", "output", "github-output", "itx-collected-today"];
+function args(argv) {
+  const result = {};
+  for (let i = 0; i < argv.length; i += 2) {
+    const key = argv[i];
+    if (!key?.startsWith("--") || result[key.slice(2)] !== undefined || !argv[i + 1]) throw new Error("decision arguments are invalid");
+    result[key.slice(2)] = argv[i + 1];
+  }
+  if (Object.keys(result).some((key) => !ARGUMENT_NAMES.includes(key))) throw new Error("decision arguments are invalid");
+  return result;
+}
+// 생략하면 false, "true"·"false"만 받는다. 그 밖의 값은 undefined라 판정 입력 검증에서 실패한다.
+const BOOLEAN_ARGUMENTS = new Map([["true", true], ["false", false]]);
+const itxCollectedTodayArgument = (value) => (value === undefined ? false : BOOLEAN_ARGUMENTS.get(value));
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  try {
+    const value = args(process.argv.slice(2));
+    await runCurrentCapitalTopologyRefreshDecision({
+      inventoryPath: value.inventory, candidatePath: value.candidate, policyPath: value.policy, prsPath: value.prs, claimsPath: value.claims,
+      claimEvidencePath: value["claim-evidence"], repository: value.repository, currentMainSha: value["current-main-sha"],
+      outputPath: value.output, githubOutputPath: value["github-output"], itxCollectedToday: itxCollectedTodayArgument(value["itx-collected-today"]),
+    });
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

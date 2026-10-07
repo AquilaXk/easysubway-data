@@ -156,8 +156,10 @@ function parseArgs(argv) {
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const options = parseArgs(process.argv.slice(2));
-  runCurrentKricFacilityRefreshDecision({ inventoryPath: options.inventory, policyPath: options.policy, prsPath: options.prs, claimsPath: options.claims, claimEvidencePath: options["claim-evidence"], repository: options.repository, outputPath: options.output, githubOutputPath: options["github-output"] }).catch((error) => {
+  try {
+    await runCurrentKricFacilityRefreshDecision({ inventoryPath: options.inventory, policyPath: options.policy, prsPath: options.prs, claimsPath: options.claims, claimEvidencePath: options["claim-evidence"], repository: options.repository, outputPath: options.output, githubOutputPath: options["github-output"] });
+  } catch (error) {
     console.error(error instanceof Error ? error.message : "KRIC refresh decision failed");
     process.exitCode = 1;
-  });
+  }
 }

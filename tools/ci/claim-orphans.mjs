@@ -68,6 +68,7 @@ export function isGhNotFound(error) {
   return error instanceof Error && /HTTP 404(?!\d)/u.test(error.message);
 }
 
+const byText = (left, right) => (left < right ? -1 : Number(left > right));
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
 
@@ -143,7 +144,7 @@ export function planUnboundClaims({ workflowFile, repository, claimBranches, pul
     if (matches.length !== 1) fail("CLAIM_ORPHAN_EVIDENCE_MISSING", `${branch} has ${matches.length} evidence records`);
     groups[classifyUnboundClaim(workflowFile, matches[0]).kind].push(branch);
   }
-  for (const group of Object.values(groups)) group.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  for (const group of Object.values(groups)) group.sort(byText);
   return plan;
 }
 
@@ -234,8 +235,10 @@ export async function main(argv, { runGh = defaultRunGh, log = console.log } = {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).catch((error) => {
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
-  });
+  }
 }

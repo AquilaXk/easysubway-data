@@ -83,19 +83,7 @@ async function collectKricFile({
   const parentIdentity = await assertRegularDirectory(parent, "output parent");
   await assertAbsent(output);
 
-  // 연결·헤더 한도는 응답 헤더가 오면 끝난다. 본문 수신은 별도 한도(readBoundedBody)를 받는다. 한 signal을 본문까지 붙이면 큰 파일이 중간에 끊긴다(#995).
-  const controller = new AbortController();
-  const headerTimer = setTimeout(() => controller.abort(), headerTimeout);
-  let response;
-  try {
-    response = await fetchImpl(profile.url, {
-      method: "GET", redirect: "error", signal: controller.signal, headers: { "accept-encoding": "identity" },
-    });
-  } catch {
-    fail(controller.signal.aborted ? "TIMEOUT" : "TRANSPORT");
-  } finally {
-    clearTimeout(headerTimer);
-  }
+  const response = await fetchResponseHeaders(fetchImpl, profile.url, headerTimeout);
   const declaredLength = validateResponse(response, maximum, profile.url);
   const bytes = await readBoundedBody(response.body, maximum, bodyTimeout);
   validateXlsxBytes(bytes, declaredLength);
@@ -112,6 +100,21 @@ async function collectKricFile({
   });
   await publishAtomically({ beforePublish, bytes, output, parent, parentIdentity });
   return receipt;
+}
+
+// 연결·헤더 한도는 응답 헤더가 오면 끝난다. 본문 수신은 별도 한도(readBoundedBody)를 받는다. 한 signal을 본문까지 붙이면 큰 파일이 중간에 끊긴다(#995).
+async function fetchResponseHeaders(fetchImpl, url, headerTimeoutMs) {
+  const controller = new AbortController();
+  const headerTimer = setTimeout(() => controller.abort(), headerTimeoutMs);
+  try {
+    return await fetchImpl(url, {
+      method: "GET", redirect: "error", signal: controller.signal, headers: { "accept-encoding": "identity" },
+    });
+  } catch {
+    return fail(controller.signal.aborted ? "TIMEOUT" : "TRANSPORT");
+  } finally {
+    clearTimeout(headerTimer);
+  }
 }
 
 function validateResponse(response, maximumBytes, expectedUrl) {

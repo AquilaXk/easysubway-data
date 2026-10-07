@@ -52,8 +52,28 @@ async function claimPullRequest(runGh, { workflowFile, repository, branch }) {
   return own.get(branch) ?? null;
 }
 
+// 보고 대상 고아(PR이 없는 claim)를 지우기 전 확인: 만든 run이 끝났고 이 workflow의 main run이어야 한다. 그 뒤에 보고하고(실패하면 지우지 않는다) 결과를 돌려준다.
+async function reportOrphan({ workflowFile, repository, branch, runId, runGh, report }) {
+  const claimRun = await lookupClaimRun(runGh, repository, runId);
+  assertClaimRunOwner(workflowFile, branch, claimRun);
+  if (claimRun.found && claimRun.status !== "completed") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} producer run ${runId} is still ${claimRun.status}`);
+  return (await report({ workflowFile, repository, runId }))?.action ?? null;
+}
+
+async function removeOne({ workflowFile, repository, branch, runId, runGh, runGit, report }) {
+  const sha = await remoteSha(runGit, branch);
+  if (sha === null) return { branch, action: "absent", reported: null };
+  const pullRequest = await claimPullRequest(runGh, { workflowFile, repository, branch });
+  if (pullRequest?.state === "OPEN" || pullRequest?.state === "CLOSED") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} has a ${pullRequest.state} pull request #${pullRequest.number}`);
+  const merged = pullRequest?.state === "MERGED";
+  // 보고가 먼저다. 병합된 PR의 남은 claim은 끝난 일이라 보고하지 않는다.
+  const reported = merged ? null : await reportOrphan({ workflowFile, repository, branch, runId, runGh, report });
+  await runGit(["push", `--force-with-lease=refs/heads/${branch}:${sha}`, "origin", `:refs/heads/${branch}`]);
+  return { branch, action: merged ? "removed_merged" : "removed_orphan", reported };
+}
+
 /**
- * 판정이 정리 대상으로 알린 claim을 보고한 뒤 지운다.
+ * 판정이 정리 대상으로 알린 claim을 보고한 뒤 지운다. claim 하나가 실패하면 거기서 멈추고 실패한다.
  * @returns {{ branch: string, action: "removed_orphan"|"removed_merged"|"absent", reported: string|null }[]}
  */
 export async function removeOrphanClaims({
@@ -65,23 +85,7 @@ export async function removeOrphanClaims({
   const runIds = claims.map((branch) => claimRunId(workflowFile, branch));
   const results = [];
   for (const [index, branch] of claims.entries()) {
-    const sha = await remoteSha(runGit, branch);
-    let result = { branch, action: "absent", reported: null };
-    if (sha !== null) {
-      const pullRequest = await claimPullRequest(runGh, { workflowFile, repository, branch });
-      if (pullRequest?.state === "OPEN" || pullRequest?.state === "CLOSED") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} has a ${pullRequest.state} pull request #${pullRequest.number}`);
-      if (pullRequest?.state === "MERGED") {
-        result = { branch, action: "removed_merged", reported: null };
-      } else {
-        const claimRun = await lookupClaimRun(runGh, repository, runIds[index]);
-        assertClaimRunOwner(workflowFile, branch, claimRun);
-        if (claimRun.found && claimRun.status !== "completed") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} producer run ${runIds[index]} is still ${claimRun.status}`);
-        // 보고가 먼저다. 보고가 실패하면 지우지 않는다.
-        const reported = await report({ workflowFile, repository, runId: runIds[index] });
-        result = { branch, action: "removed_orphan", reported: reported?.action ?? null };
-      }
-      await runGit(["push", `--force-with-lease=refs/heads/${branch}:${sha}`, "origin", `:refs/heads/${branch}`]);
-    }
+    const result = await removeOne({ workflowFile, repository, branch, runId: runIds[index], runGh, runGit, report });
     log(JSON.stringify(result));
     results.push(result);
   }
@@ -105,8 +109,10 @@ export async function main(argv, dependencies = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).catch((error) => {
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
-  });
+  }
 }
