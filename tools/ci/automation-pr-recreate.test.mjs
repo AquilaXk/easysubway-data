@@ -174,6 +174,11 @@ test("recreate의 dispatch(github-actions[bot])는 변수 게이트와 충돌하
     assert.equal(runsOn(workflow, { actor: "github-actions[bot]", vars: { [variable]: "true" } }), true, `${workflow}: 변수 true`);
     assert.equal(runsOn(workflow, { actor: "github-actions[bot]", vars: {} }), false, `${workflow}: 변수가 없으면 dispatch도 돌지 않는다(자동화가 꺼진 상태)`);
   }
+  // 외부 스케줄러 heartbeat는 App의 dispatch만 센다. recreate의 dispatch(github-actions[bot])가 스케줄러 중단을 가리지 않는다.
+  const heartbeat = JSON.parse(readFileSync(path.resolve(import.meta.dirname, "../../release/product-gates/external-scheduler-heartbeat.json"), "utf8"));
+  assert.equal(heartbeat.dispatcher.login, APP);
+  assert.notEqual(heartbeat.dispatcher.login, "github-actions[bot]");
+  for (const stage of REFRESH_STAGE_IDS) assert.ok(heartbeat.workflows.some(({ workflow }) => workflow === AUTOMATION_STAGE_WORKFLOWS[stage]), `${stage}: 스케줄러 heartbeat 대상`);
   // 재dispatch하는 단계의 workflow는 모두 위 두 부류 중 하나다.
   const redispatched = Object.entries(AUTOMATION_STAGE_WORKFLOWS).filter(([stage]) => STAGE_REDISPATCH[stage]).map(([, workflow]) => workflow);
   for (const workflow of redispatched) assert.ok(Object.hasOwn(SCHEDULED_VARIABLES, workflow) || REFRESH_STAGE_IDS.some((stage) => AUTOMATION_STAGE_WORKFLOWS[stage] === workflow), `${workflow}: 게이트 분류가 없다`);

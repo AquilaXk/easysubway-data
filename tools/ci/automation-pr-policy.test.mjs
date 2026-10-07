@@ -1226,6 +1226,14 @@ test("반증: 주장한 경로와 API diff가 정확히 같지 않거나 경로 
     }
     const wide = await refreshScenario(run, { files: [...run.files, { filename: "tools/datapack/sources/another-20261007.json", status: "added" }] });
     assert.ok(codesOf(wide).includes("PATHS"), `${run.label}: API diff가 주장보다 넓다`);
+    // 규칙에는 맞지만 증거가 주장한 경로와 다른 새 파일(날짜·snapshot id가 다르다)은 정확 대조에서 막힌다.
+    const swapped = run.files.find(({ status, filename }) => status === "added" && !filename.includes("capital-"));
+    if (swapped !== undefined) {
+      const renamedTo = swapped.filename.replace(/(\d{8})(T\d{9}Z)?\.json$/u, (_, day, rest = "") => `${day === "20990101" ? "20990102" : "20990101"}${rest}.json`);
+      const diverged = await refreshScenario(run, { files: run.files.map((item) => (item === swapped ? { ...item, filename: renamedTo } : item)) });
+      assert.ok(codesOf(diverged).includes("PATHS"), `${run.label}: 같은 규칙의 다른 경로`);
+      assert.match(evaluateAutomationPullRequest(diverged).violations.find(({ code }) => code === "PATHS").detail, /허용 밖 경로|빠진 경로/u, run.label);
+    }
     // 5000개 같은 상한에 닿은 목록은 전체를 알 수 없어 막는다(기존 단계와 같은 규칙).
     const capped = await refreshScenario(run, { extraFiles: Array.from({ length: 3000 }, (_, index) => file(`tools/datapack/sources/x-${index}.json`, { status: "added" })) });
     assert.ok(codesOf(capped).includes("PATHS"), `${run.label}: 목록 상한`);

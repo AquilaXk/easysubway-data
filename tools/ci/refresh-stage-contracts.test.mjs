@@ -345,3 +345,45 @@ test("입력 오류는 예외가 아니라 위반으로 돌려준다(fail closed
   assert.notDeepEqual(badPolicy.violations, []);
   await assert.rejects(evaluateRefreshStage({ stage: "registration", paths: [], baseSha: run.baseSha, policy: POLICY, files: {} }), /REFRESH_STAGE_UNKNOWN/u);
 });
+
+// ---------------------------------------------------------------------------
+// falsifiability probe로 드러난 틈을 닫는 반증(#1012): 검사 하나를 없애면 반드시 실패해야 하는 개별 시험.
+// ---------------------------------------------------------------------------
+test("반증: 원장 새 행의 contentSha256만 바뀌면(정책은 내용 변경을 허용) inventory 증거와의 결속이 REFRESH_GATE로 막는다", async () => {
+  for (const run of RECORDED.filter(({ stage }) => REFRESH_STAGES[stage].ledger === "append")) {
+    const result = await evaluate(run, { mutateLedger: (rows) => { rows[1].contentSha256 = "9".repeat(64); } });
+    assert.deepEqual(codes(result).filter((code) => code !== "REFRESH_GATE"), [], `${run.label}: 원장 게이트는 통과한다`);
+    assert.ok(codes(result).includes("REFRESH_GATE"), `${run.label}: 결속이 어긋난다`);
+  }
+});
+
+test("반증: Seoul 입력 파일에서 이미 있는 비증거 필드(stationId)를 고치면 REFRESH_GATE", async () => {
+  const [run] = runsOf("seoul-accessibility-refresh");
+  const result = await evaluate(run, { mutateInput: (input) => { input.accessibilityStatusEvidence[4].stationId = "station-evil"; } });
+  assert.match(result.violations.map(({ detail }) => detail).join("\n"), /증거 필드가 아닌 필드가 바뀌었다: stationId/u);
+});
+
+test("반증: currentTopologyAdmission을 가진 항목이 소유한 16개와 다르면(소유 밖 항목이 더해지면) REFRESH_GATE", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const extra = { id: "extra-route-map-positions", routeMapAdmissionEvidence: { currentTopologyAdmission: { topologySnapshotId: run.capital.head.path.split("/").pop().replace(/\.json$/u, "") } } };
+    const result = await evaluate(run, { mutateBaseInventory: (inventory) => { inventory.sources.push(structuredClone(extra)); }, mutateInventory: (inventory) => { inventory.sources.push(structuredClone(extra)); } });
+    assert.match(result.violations.map(({ detail }) => detail).join("\n"), /소유한 16개와 다르다/u, run.label);
+  }
+});
+
+test("반증: topology 변화 한도는 항목마다 따로 막는다(행 수 비율·커버리지 감소·내용 변경 정책)", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const capital = (patch) => (head) => { head.set(run.capital.head.path, JSON.stringify({ sourceId: "capital-route-topology", contentSha256: run.capital.head.contentSha256, lineCount: run.capital.head.lineCount, totalEdgeCount: run.capital.head.totalEdgeCount, ...patch })); };
+    const ratio = await evaluate(run, { mutateFiles: capital({ totalEdgeCount: run.capital.head.totalEdgeCount * 2 }) });
+    assert.match(ratio.violations.map(({ detail }) => detail).join("\n"), /SOURCE_COUNT_DELTA: .*rowDelta/u, `${run.label}: 행 수 비율`);
+    const coverage = await evaluate(run, { mutateFiles: capital({ lineCount: run.capital.head.lineCount - 1 }) });
+    assert.match(coverage.violations.map(({ detail }) => detail).join("\n"), /SOURCE_COUNT_DELTA: .*decreases coverage/u, `${run.label}: 커버리지 감소`);
+    const content = await evaluate(run, { mutateFiles: (head) => { head.set(run.capital.head.path, JSON.stringify({ sourceId: "capital-route-topology", contentSha256: "2".repeat(64), lineCount: run.capital.head.lineCount, totalEdgeCount: run.capital.head.totalEdgeCount })); head.set(run.capital.reverificationPath, JSON.stringify({ candidate: { contentSha256: "2".repeat(64) } })); } }, { policy: { ...POLICY, allowContentChange: false } });
+    assert.match(content.violations.map(({ detail }) => detail).join("\n"), /SOURCE_SHA_DRIFT/u, `${run.label}: 내용 변경 정책`);
+    const allowed = await evaluate(run, { mutateFiles: (head) => { head.set(run.capital.head.path, JSON.stringify({ sourceId: "capital-route-topology", contentSha256: "2".repeat(64), lineCount: run.capital.head.lineCount, totalEdgeCount: run.capital.head.totalEdgeCount })); head.set(run.capital.reverificationPath, JSON.stringify({ candidate: { contentSha256: "2".repeat(64) } })); } });
+    assert.deepEqual(allowed.violations, [], `${run.label}: 정책이 내용 변경을 허용하면 한도 안의 내용 변경은 통과한다`);
+    assert.equal(allowed.rows.find(({ sourceId }) => sourceId === "capital-route-topology").diffStatus, "CHANGED", run.label);
+    const malformed = await evaluate(run, { mutateFiles: (head) => { head.set(run.capital.head.path, JSON.stringify({ sourceId: "other-source", contentSha256: run.capital.head.contentSha256, lineCount: "22", totalEdgeCount: run.capital.head.totalEdgeCount })); } });
+    assert.ok(codes(malformed).includes("REFRESH_GATE"), `${run.label}: topology 파일 형식`);
+  }
+});
