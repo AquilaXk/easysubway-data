@@ -163,6 +163,23 @@ test("a claim the workflow closed out with an Abandon commit is cleaned like any
   assert.deepEqual(await decideCurrentKricFacilityRefresh({ ...input, now: NOW }), { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch: `${PREFIX}123`, cleanupClaims: [`${PREFIX}33931967736`] });
 });
 
+// #995 F4: PR이 붙은 claim은 판정에서 묶인 claim이지만, Abandon 커밋이 있는 claim에 PR이 붙는 것은 이상이다(닫았다고 기록한 claim은 PR이 되지 않는다).
+test("an Abandon-headed claim that has a pull request fails with a named error in every PR state", async () => {
+  const { decideCurrentKricFacilityRefresh, ABANDONED_CLAIM_SUBJECT } = await load();
+  const input = await fixture();
+  await writeFile(input.claimsPath, ref(33931967736));
+  const boundEvidence = { branch: `${PREFIX}33931967736`, runId: "33931967736", bound: true, commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", ABANDONED_CLAIM_SUBJECT], changedFiles: 0 } };
+  await evidenceFile(input, boundEvidence);
+  for (const state of ["OPEN", "CLOSED", "MERGED"]) {
+    await writeFile(input.prsPath, JSON.stringify([kricPr(700, state, 33931967736, input)]));
+    await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /abandoned KRIC refresh claim has a pull request/, state);
+  }
+  // 닫지 않은 claim에 PR이 붙은 것은 정상이다.
+  await evidenceFile(input, { ...boundEvidence, commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", "Refresh KRIC facility snapshot"], changedFiles: 3 } });
+  await writeFile(input.prsPath, JSON.stringify([kricPr(700, "OPEN", 33931967736, input)]));
+  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: NOW })).state, "OPEN_PR");
+});
+
 test("claim evidence is AVAILABLE only while the named source-run artifact is unexpired", async () => {
   const { classifyKricFacilityClaimEvidence, KRIC_FACILITY_EVIDENCE_RETENTION_DAYS } = await load();
   assert.equal(KRIC_FACILITY_EVIDENCE_RETENTION_DAYS, 14);

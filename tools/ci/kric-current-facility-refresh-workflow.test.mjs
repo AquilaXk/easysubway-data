@@ -182,3 +182,11 @@ test("KRIC refresh workflow always uploads decision.json and journal.json (and r
   assert.match(upload, /if-no-files-found: ignore/);
   assert.equal(yml.includes("Detect retained publication receipt"), false);
 });
+
+// #995 F4: 판정이 보존 artifact가 없거나 만료된 claim을 복구 대상에서 빼므로, recover step의 Abandon 경로는 경합 구간에서만 닿는다.
+test("KRIC recover step documents when the Abandon path can still run", () => {
+  const yml = readFileSync(workflowPath, "utf8");
+  const recover = yml.slice(yml.indexOf("Recover claimed refresh"), yml.indexOf("Create durable claim"));
+  assert.match(recover, /# #995: 이 Abandon 경로는 판정이 보존 artifact를 AVAILABLE로 본 뒤 이 step까지 사이에 artifact가 만료·삭제된 경우에만 닿는다/);
+  assert.match(recover, /Abandon 커밋이 남은 claim은 다음 판정이 정리 대상으로 보고하고 지운다/);
+});

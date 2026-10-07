@@ -273,6 +273,22 @@ test("고아마다 gh run view를 한 번씩 부르고 PR이 있는 claim은 조
   assert.equal(github.calls.length, 2, "receipt artifact가 없는 workflow는 artifact를 조회하지 않는다");
 });
 
+// #995 F4: Abandon 커밋을 남기는 workflow(KRIC)만, PR이 붙은 claim도 커밋을 조회해 닫힌 claim에 PR이 붙었는지 판정에 넘긴다.
+test("Abandon 커밋을 쓰는 workflow는 PR이 있는 claim의 커밋도 bound 증거로 수집하고 run은 조회하지 않는다", async () => {
+  const bound = branch(KRIC, 71);
+  const kric = fakeGitHub({ compare: { [bound]: compared(KRIC) } });
+  const result = await collectClaimEvidence({ workflowFile: KRIC, repository: REPOSITORY, claimBranches: [bound], pullRequests: [pr(9, "OPEN", bound)], runGh: kric.runGh });
+  assert.deepEqual(result, [{ branch: bound, runId: "71", bound: true, commits: { aheadBy: 1, subjects: [CLAIM_OWNERS[KRIC].claimSubject], changedFiles: 0 } }]);
+  assert.equal(kric.calls.some(([a, b]) => a === "run" && b === "view"), false);
+  const gwangju = fakeGitHub();
+  const none = await collectClaimEvidence({ workflowFile: GWANGJU, repository: REPOSITORY, claimBranches: [branch(GWANGJU, 72)], pullRequests: [pr(9, "OPEN", branch(GWANGJU, 72))], runGh: gwangju.runGh });
+  assert.deepEqual(none, []);
+  assert.equal(gwangju.calls.length, 0);
+  // bound 증거는 고아 판정에 쓰이지 않는다.
+  const plan = planUnboundClaims({ workflowFile: KRIC, repository: REPOSITORY, claimBranches: [bound], pullRequests: [pr(9, "OPEN", bound)], evidence: result });
+  assert.deepEqual(plan, { active: [], recoverable: [], abandoned: [] });
+});
+
 test("run 기록이 없으면(Not Found) { found: false }로 수집한다(판정은 빈 claim도 지우지 않는다). 그 밖의 gh 오류는 수집에서 fail closed다", async () => {
   const orphan = branch(GWANGJU, 101);
   const gone = fakeGitHub({ runs: {}, compare: { [orphan]: compared() } });
