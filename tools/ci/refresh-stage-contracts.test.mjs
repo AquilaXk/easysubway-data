@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { INVENTORY_PATH, LEDGER_PATH, POLICY, RECORDED, buildCapitalSnapshot, filenames, recordedTrees, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
@@ -389,4 +390,47 @@ test("반증: topology 변화 한도는 항목마다 따로 막는다(간선 수
     const malformed = await evaluate(run, { mutateFiles: (head) => { head.set(run.capital.head.path, JSON.stringify({ ...buildCapitalSnapshot(), sourceId: "other-source" })); } });
     assert.ok(codes(malformed).includes("REFRESH_GATE"), `${run.label}: topology 파일 형식`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 리뷰 F2: snapshot 본문의 신원(contentSha256·lineCount·totalEdgeCount)은 선언값이 아니라 본문에서 다시 계산한다.
+// 원본 응답의 출처는 병합 뒤 등록 workflow가 OCI 원본으로 확인한다(경계는 계약 주석과 PR 본문에 적는다).
+// ---------------------------------------------------------------------------
+test("F2 반증: topology snapshot의 선언 신원이 본문과 다르면 REFRESH_GATE(해시·개수를 임의로 써도 통과하지 못한다)", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const rewrite = (edit) => (head) => { const snapshot = JSON.parse(head.get(run.capital.head.path)); edit(snapshot); head.set(run.capital.head.path, JSON.stringify(snapshot)); };
+    const arbitrary = "a".repeat(64);
+    const hash = await evaluate(run, { mutateFiles: (head, base) => { rewrite((snapshot) => { snapshot.contentSha256 = arbitrary; })(head, base); head.set(run.capital.reverificationPath, JSON.stringify({ candidate: { contentSha256: arbitrary } })); } });
+    assert.ok(codes(hash).includes("REFRESH_GATE"), `${run.label}: 임의 contentSha256`);
+    const counts = await evaluate(run, { mutateFiles: rewrite((snapshot) => { snapshot.totalEdgeCount -= 1; }) });
+    assert.ok(codes(counts).includes("REFRESH_GATE"), `${run.label}: 선언 totalEdgeCount만 다름`);
+    const lines = await evaluate(run, { mutateFiles: rewrite((snapshot) => { snapshot.lineCount -= 1; }) });
+    assert.ok(codes(lines).includes("REFRESH_GATE"), `${run.label}: 선언 lineCount만 다름`);
+    const body = await evaluate(run, { mutateFiles: rewrite((snapshot) => { snapshot.lines[0].edges[0].distanceMeters += 7; }) });
+    assert.ok(codes(body).includes("REFRESH_GATE"), `${run.label}: 본문 간선을 고치고 해시는 그대로`);
+    const lineHash = await evaluate(run, { mutateFiles: rewrite((snapshot) => { snapshot.lines[0].contentSha256 = arbitrary; }) });
+    assert.ok(codes(lineHash).includes("REFRESH_GATE"), `${run.label}: 노선 contentSha256`);
+    const lineSet = await evaluate(run, { mutateFiles: rewrite((snapshot) => { snapshot.lines.pop(); }) });
+    assert.ok(codes(lineSet).includes("REFRESH_GATE"), `${run.label}: 노선 집합이 소유 규칙과 다름`);
+  }
+});
+
+test("F2 반증: 직전 snapshot 파일이 본문과 어긋나도 막는다(비교 기준을 선언값으로 믿지 않는다)", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    const path = `tools/datapack/sources/${run.capital.previous.snapshotId}.json`;
+    const result = await evaluate(run, { mutateFiles: (_head, base) => { const snapshot = JSON.parse(base.get(path)); snapshot.totalEdgeCount += 40; base.set(path, JSON.stringify(snapshot)); } });
+    assert.ok(codes(result).includes("REFRESH_GATE"), run.label);
+  }
+});
+
+// 경계: 이 단계의 snapshot 행 rawSha256은 커밋된 파일 바이트의 sha256이다. 수도권 topology는 그 파일 바이트가 곧 OCI에 게시되는 원본이고,
+// 병합 뒤 등록 workflow가 같은 바이트의 sha256을 영수증의 rawObjectSha256과 대조한다. 그 코드 근거가 사라지면 이 경계 설명이 거짓이 되므로 테스트로 고정한다.
+test("F2 경계: 등록 workflow의 코드가 snapshot 파일 바이트의 sha256을 OCI 영수증의 원본 sha와 대조한다", async () => {
+  const source = await readFile(new URL("../datapack/run-current-capital-route-topology-registration.mjs", import.meta.url), "utf8");
+  assert.match(source, /const rawSha256 = sha256\(admission\.topologyBytes\)/u, "게시할 원본은 보호 admission이 읽은 topology 파일 바이트");
+  assert.match(source, /sha256\(raw\) !== journal\.rawSha256/u, "게시 직전 원본 바이트 sha를 저널과 대조");
+  assert.match(source, /receipt\?\.rawObjectSha256 !== journal\.rawSha256/u, "OCI 영수증의 rawObjectSha256을 저널과 대조");
+  const contract = await readFile(new URL("./refresh-stage-contracts.mjs", import.meta.url), "utf8");
+  assert.match(contract, /원본 응답의 출처는 병합 뒤 등록 workflow가 OCI 원본으로 확인/u, "계약 주석이 경계를 밝힌다");
+  assert.match(contract, /requireCurrentSourceSeparatedCapitalTopology/u, "신원은 생산자의 검증 함수로 다시 계산한다");
 });
