@@ -5,8 +5,8 @@
 // "사람 커밋 없음"과 head 결속이 함께 깨진다. 그래서 갱신하지 않고 닫는다: PR 닫기(App 토큰) -> 브랜치 삭제 -> 해당 단계 workflow 재실행.
 // 닫힌 PR의 브랜치가 남으면 다음 실행의 직렬화 판정이 진행 중인 일로 오인하므로 브랜치를 지운다.
 // - 대상: App이 작성한 같은 저장소의 단계 claim 브랜치 PR만. 사람이 같은 접두사로 연 PR은 건드리지 않는다(정책이 이상으로 드러낸다).
-// - 후보 갱신 단계는 dispatch하지 않는다. dispatch에는 사람 역할 입력이 필수이고 정기 역할은 schedule 이벤트에서만 쓸 수 있으므로
-//   2시간 정기 실행이 다시 만든다.
+// - 후보 갱신 단계는 dispatch하지 않는다. 정기 역할은 schedule 이벤트와 스케줄러 App(easysubway-release-chain[bot])의 dispatch에서만 쓸 수 있고
+//   이 도구의 dispatch 행위자(github-actions[bot])는 사람 경로로 판정돼 입력 없이는 실패하므로, 정기 실행과 스케줄러가 다시 만든다.
 // - 루프 상한: 같은 단계의 PR이 24시간 안에 RECREATE_DAILY_LIMIT회 닫혔으면 더 닫지 않고 이상으로 보고한다(job 실패 -> #926).
 // - 읽기는 github.token, PR 닫기만 App 토큰이다. 쓰기가 실패하면 이후 쓰기를 하지 않고 그대로 실패한다.
 import { execFile } from "node:child_process";

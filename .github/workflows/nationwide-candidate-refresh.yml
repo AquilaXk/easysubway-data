@@ -5,24 +5,28 @@ name: Nationwide Candidate Refresh
 # 사람 dispatch는 2인 역할을 입력으로만 받는다. 정기 실행(#929 D3)은 정기 전용 고정 역할과 다음 sequence를 쓰고,
 # 저장소 변수 DATAPACK_SCHEDULED_CANDIDATE_REFRESH가 true일 때만 돈다. 후보 시계는 실행 시각이고,
 # release request에는 이 run 기록(gateRun)을 결속한다.
+# #1032: GitHub schedule은 몇 시간씩 밀리므로 외부 스케줄러 App(easysubway-release-chain[bot])이 입력 없이 workflow_dispatch로 깨울 수 있다.
+# 정기 역할은 schedule 이벤트와 이 App의 dispatch에서만 인정된다(plan이 github.triggering_actor로 판정하고 gateRun에 actor를 결속한다).
+# 사람 dispatch는 지금처럼 항상 돌고 2인 역할을 입력으로 받는다. 입력이 선택인 것은 App이 입력 없이 깨우기 때문이며, 사람 입력이 비면 plan이 실패한다.
 # #969: 정기 실행은 2시간마다 돌며, 후보가 읽은 입력 매니페스트가 지금 작업 트리와 다를 때(STALE)만 후보를 만든다. 같으면(CURRENT) 아무것도 하지 않는다.
-# 정기 역할이 schedule 이벤트 전용이라 push·workflow_run 트리거는 쓰지 않는다. 열린 후보 PR이 있으면 새로 만들지 않고, 원장을 쓰는 자동화 PR이 열려 있으면 기다린다.
+# 정기 역할이 schedule 이벤트와 스케줄러 App dispatch 전용이라 push·workflow_run 트리거는 쓰지 않는다. 열린 후보 PR이 있으면 새로 만들지 않고,
+# 원장을 쓰는 자동화 PR이 열려 있으면 기다린다. 기다림에는 상한(PT2H, #1032)이 있다: 멈춘 PR·claim은 기다리지 않고 경고로 남긴다.
 on:
   schedule:
     - cron: "29 */2 * * *"
   workflow_dispatch:
     inputs:
       releaseSequence:
-        description: 새 후보의 releaseSequence(커밋된 후보보다 커야 한다)
-        required: true
+        description: 새 후보의 releaseSequence(커밋된 후보보다 커야 한다). 사람 dispatch는 필수이고 스케줄러 App dispatch는 비운다
+        required: false
         type: string
       requestedBy:
-        description: 요청 역할(예 data-operator-lead)
-        required: true
+        description: 요청 역할(예 data-operator-lead). 사람 dispatch는 필수이고 스케줄러 App dispatch는 비운다
+        required: false
         type: string
       approvedBy:
-        description: 승인 역할(요청 역할과 달라야 한다, 예 data-release-authority)
-        required: true
+        description: 승인 역할(요청 역할과 달라야 한다, 예 data-release-authority). 사람 dispatch는 필수이고 스케줄러 App dispatch는 비운다
+        required: false
         type: string
 
 permissions: {}
@@ -34,7 +38,7 @@ concurrency:
 jobs:
   refresh:
     name: Nationwide candidate refresh
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.triggering_actor != 'easysubway-release-chain[bot]') || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -54,6 +58,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/nationwide-candidate-refresh-decision/${GITHUB_RUN_ID}"
@@ -61,7 +66,13 @@ jobs:
           git ls-remote --heads origin "refs/heads/automation/927-nationwide-candidate-refresh-*" > "${decision_root}/branches.txt"
           git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/automation-branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
-          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --actor "${ACTOR}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+      - name: Note candidate refresh proceeding past stuck source automation
+        if: ${{ steps.decision.outputs.expired_blockers != '' }}
+        env:
+          EXPIRED_BLOCKERS: ${{ steps.decision.outputs.expired_blockers }}
+        run: |
+          echo "::warning title=Nationwide candidate refresh::source-ledger automation ${EXPIRED_BLOCKERS} has been open longer than the wait limit, so the candidate refresh no longer waits for it. The owning workflow reports it; if it merges later the next run refreshes the candidate again."
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -124,9 +135,10 @@ jobs:
           REQUESTED_BY: ${{ inputs.requestedBy }}
           APPROVED_BY: ${{ inputs.approvedBy }}
           EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
-          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --event "${EVENT_NAME}" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --event "${EVENT_NAME}" --actor "${ACTOR}" --github-output "${GITHUB_OUTPUT}"
       - name: Record the candidate gate run
         if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         run: |
@@ -179,7 +191,7 @@ jobs:
           mkdir -p "${recheck_root}"
           git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${recheck_root}/automation-branches.txt" --pr-limit 1000 --output "${recheck_root}/prs.json"
-          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --max-age "PT2H" --github-output "${GITHUB_OUTPUT}"
       - name: Note candidate refresh superseded by pending source automation
         if: ${{ (steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED') && steps.recheck.outputs.idle == 'false' }}
         env:

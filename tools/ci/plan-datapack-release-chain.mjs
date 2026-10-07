@@ -3,6 +3,7 @@
 // - candidate-refresh: 전국 후보 갱신 workflow의 dispatch 입력을 검증하고 후보 시계(실행 시각)를 정한다.
 //   사람 dispatch(workflow_dispatch)는 2인 역할을 입력으로만 받는다. 이전 후보나 환경 변수에서 채우지 않는다.
 //   정기 이벤트(schedule, #929 D3)는 사람 입력 없이 정기 전용 고정 역할과 커밋된 후보 다음 sequence를 쓴다.
+//   외부 스케줄러 App이 시작한 workflow_dispatch(#1032)도 같다. 행위자는 GitHub 컨텍스트에서만 받고 입력으로 받지 않는다.
 // - gate-run: 후보를 만드는 이 run의 기록(release request gateRun)을 Actions 기본 환경 변수로 만든다.
 // - release-candidate-mode-args: main에 들어온 후보로 RC를 dispatch할 modeArgs를 만든다.
 //   release request가 build spec에 결속되지 않았거나 RC 증거 파일이 없으면 dispatch 전에 실패한다.
@@ -16,6 +17,7 @@ import {
   PERSON_ROLE_EVENT,
   SCHEDULED_RELEASE_ROLES,
   SCHEDULED_ROLE_EVENTS,
+  SCHEDULER_APP_LOGIN,
   gateRunFromEnvironment,
   gateRunRecordViolations,
   releaseRoleEventViolations,
@@ -41,13 +43,13 @@ function requireNationwide(buildSpec, code) {
   if (buildSpec?.productionScopeId !== NATIONWIDE_SCOPE_ID) fail(code, String(buildSpec?.productionScopeId));
 }
 
-export function planNationwideCandidateRefresh({ releaseSequence, requestedBy, approvedBy, committedBuildSpec, now, event }) {
+export function planNationwideCandidateRefresh({ releaseSequence, requestedBy, approvedBy, committedBuildSpec, now, event, actor }) {
   requireNationwide(committedBuildSpec, "CANDIDATE_REFRESH_SCOPE");
   const committed = committedBuildSpec.releaseSequence;
   if (!Number.isSafeInteger(committed) || committed < 1) fail("CANDIDATE_REFRESH_RELEASE_SEQUENCE", "committed sequence is invalid");
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CANDIDATE_REFRESH_CLOCK");
-  if (SCHEDULED_ROLE_EVENTS.includes(event)) {
-    // 정기 실행은 사람 입력을 받지 않는다. 입력이 섞이면 누가 무엇을 정했는지 흐려지므로 실패한다.
+  if (SCHEDULED_ROLE_EVENTS.includes(event) || (event === PERSON_ROLE_EVENT && actor === SCHEDULER_APP_LOGIN)) {
+    // 정기 실행과 스케줄러 App의 dispatch는 사람 입력을 받지 않는다. 입력이 섞이면 누가 무엇을 정했는지 흐려지므로 실패한다.
     if ([releaseSequence, requestedBy, approvedBy].some((value) => value !== undefined && value !== "")) {
       fail("CANDIDATE_REFRESH_SCHEDULED_INPUT", `${event} run takes no release sequence or role input`);
     }
@@ -62,7 +64,7 @@ export function planNationwideCandidateRefresh({ releaseSequence, requestedBy, a
     if (typeof role !== "string" || !ROLE.test(role)) fail("CANDIDATE_REFRESH_ROLE", JSON.stringify(role));
   }
   if (requestedBy.toLowerCase() === approvedBy.toLowerCase()) fail("CANDIDATE_REFRESH_TWO_PERSON_RULE", requestedBy);
-  const roleViolations = releaseRoleEventViolations({ requestedBy, approvedBy, event });
+  const roleViolations = releaseRoleEventViolations({ requestedBy, approvedBy, event, actor });
   if (roleViolations.length > 0) fail("CANDIDATE_REFRESH_ROLE_EVENT", roleViolations.join("; "));
   return { evaluatedAt: now.toISOString(), releaseSequence: Number(releaseSequence), requestedBy, approvedBy };
 }
@@ -135,12 +137,12 @@ function absoluteOutput(value) {
 export async function runPlanDatapackReleaseChain({ argv = process.argv.slice(2), repositoryRoot = ROOT, now = () => new Date(), env = process.env } = {}) {
   const [command, ...rest] = argv;
   if (command === "candidate-refresh") {
-    const values = options(rest, ["release-sequence", "requested-by", "approved-by", "event", "github-output"]);
+    const values = options(rest, ["release-sequence", "requested-by", "approved-by", "event", "github-output"], ["actor"]);
     const output = absoluteOutput(values["github-output"]);
     const committedBuildSpec = JSON.parse(await readFile(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.buildSpecPath), "utf8"));
     const plan = planNationwideCandidateRefresh({
       releaseSequence: values["release-sequence"], requestedBy: values["requested-by"], approvedBy: values["approved-by"],
-      committedBuildSpec, now: now(), event: values.event,
+      committedBuildSpec, now: now(), event: values.event, actor: values.actor,
     });
     await appendFile(output, [
       `evaluated_at=${plan.evaluatedAt}`,

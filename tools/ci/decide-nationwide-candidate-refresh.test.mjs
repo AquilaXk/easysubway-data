@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { buildCandidateInputManifest } from "../datapack/lib/candidate-input-bundle.mjs";
-import { CANDIDATE_REFRESH_CLAIM_PREFIX, decideNationwideCandidateRefresh, parseCandidateRefreshBranches } from "./decide-nationwide-candidate-refresh.mjs";
+import { CANDIDATE_INPUT_MANIFEST_PATH, buildCandidateInputManifest } from "../datapack/lib/candidate-input-bundle.mjs";
+import { CANDIDATE_REFRESH_CLAIM_PREFIX, decideNationwideCandidateRefresh, main, parseCandidateRefreshBranches } from "./decide-nationwide-candidate-refresh.mjs";
 
 // #969 P5: 전국 후보 갱신은 입력이 바뀌었을 때만 한다. 후보가 읽은 입력 매니페스트가 지금 작업 트리와 같으면 CURRENT다.
 // 매일 무조건 sequence를 올려 후보 PR을 만들던 정기 실행을 변경 판정(STALE)·열린 PR(OPEN_PR)·원장 쓰기 PR 대기로 바꾼다.
@@ -37,7 +40,18 @@ test("입력이 하나라도 다르거나 없으면 STALE이고 어느 경로가
 
 test("사람 dispatch는 CURRENT여도 FORCED로 진행한다(명시 요청)", async () => {
   assert.deepEqual(await run({ event: "workflow_dispatch" }), { state: "FORCED", cleanupBranches: [] });
+  assert.deepEqual(await run({ event: "workflow_dispatch", actor: "AquilaXk" }), { state: "FORCED", cleanupBranches: [] });
   assert.equal((await run({ event: "workflow_dispatch", readLocal: reader({ ...FILES, "a.json": "A2" }) })).state, "STALE");
+});
+
+// #1032: 스케줄러 App의 dispatch는 정기 실행의 대체 경로다. 2시간마다 깨워도 입력이 같으면 후보를 만들지 않는다(FORCED가 아니다).
+test("스케줄러 App의 dispatch는 정기 실행과 같이 판정한다: CURRENT는 아무것도 하지 않고 STALE만 진행한다", async () => {
+  const app = { event: "workflow_dispatch", actor: "easysubway-release-chain[bot]" };
+  assert.deepEqual(await run(app), { state: "CURRENT", cleanupBranches: [] });
+  assert.deepEqual(await run({ ...app, readLocal: reader({ ...FILES, "a.json": "A2" }) }), { state: "STALE", stalePaths: ["a.json"], cleanupBranches: [] });
+  assert.equal((await run({ ...app, pullRequests: [pr("OPEN", 1)], branches: [`${CANDIDATE_REFRESH_CLAIM_PREFIX}1`] })).state, "OPEN_PR");
+  // 비슷한 이름의 다른 행위자는 스케줄러가 아니다.
+  for (const actor of ["easysubway-release-chain", "github-actions[bot]", "", undefined]) assert.equal((await run({ event: "workflow_dispatch", actor })).state, "FORCED", String(actor));
 });
 
 test("이 workflow의 열린 PR이 있으면 CURRENT·STALE과 무관하게 OPEN_PR이고 dispatch도 새로 만들지 않는다", async () => {
@@ -96,4 +110,56 @@ test("후보 브랜치 목록은 후보 갱신 브랜치 ref만 받는다", () =
   assert.deepEqual(parseCandidateRefreshBranches(""), []);
   assert.deepEqual(parseCandidateRefreshBranches(`${sha40}\trefs/heads/${CANDIDATE_REFRESH_CLAIM_PREFIX}5\n`), [`${CANDIDATE_REFRESH_CLAIM_PREFIX}5`]);
   assert.throws(() => parseCandidateRefreshBranches(`${sha40}\trefs/heads/automation/other-1\n`), /CANDIDATE_REFRESH_BRANCH_INVALID/u);
+});
+
+// #1032: 원장 쓰기 자동화가 멈춰 있어도(사람 확인 대기 claim, 재생성 상한에 걸린 PR) 후보 갱신이 영구히 기다리지 않는다.
+// 서울 claim(2026-10-07 19:16Z)과 광주 PR #1019(19:19Z)가 후보를 3시간 넘게 막은 사례를 고정한다.
+const HOUR = 3_600_000;
+const NOW = new Date("2026-10-07T23:00:00.000Z");
+const ago = (milliseconds) => new Date(NOW.getTime() - milliseconds).toISOString();
+const GWANGJU_PR = ledgerWriter(1019, "automation/504-retained-gwangju-timetable-refresh-");
+const SEOUL_CLAIM = "automation/639-seoul-accessibility-refresh-37673242104";
+const STALE = { readLocal: reader({ ...FILES, "a.json": "A2" }) };
+const wait = (branchTimes) => ({ ledgerWriterWait: { maxAgeMs: 2 * HOUR, now: NOW, branchTimes } });
+
+test("대기 상한을 넘긴 원장 쓰기 PR·claim은 기다리지 않고 STALE로 후보를 만들며 무시한 대상을 남긴다", async () => {
+  const times = { [GWANGJU_PR.headRefName]: ago(3 * HOUR), [SEOUL_CLAIM]: ago(3.7 * HOUR) };
+  assert.deepEqual(await run({ ...STALE, pullRequests: [GWANGJU_PR], automationBranches: [SEOUL_CLAIM], ...wait(times) }), {
+    state: "STALE", stalePaths: ["a.json"], cleanupBranches: [],
+    expiredBlockers: [{ blocker: 1019, branch: GWANGJU_PR.headRefName, ageMs: 3 * HOUR }, { blocker: SEOUL_CLAIM, branch: SEOUL_CLAIM, ageMs: 3.7 * HOUR }],
+  });
+  // 상한 안의 대상이 하나라도 있으면 그것만 기다린다. 멈춘 대상은 expiredBlockers로만 남는다.
+  assert.deepEqual(await run({ ...STALE, pullRequests: [GWANGJU_PR], automationBranches: [SEOUL_CLAIM], ...wait({ ...times, [GWANGJU_PR.headRefName]: ago(20 * 60_000) }) }), {
+    state: "BLOCKED_BY_PENDING_PR", stalePaths: ["a.json"], blockedBy: [1019], cleanupBranches: [],
+    expiredBlockers: [{ blocker: SEOUL_CLAIM, branch: SEOUL_CLAIM, ageMs: 3.7 * HOUR }],
+  });
+});
+
+test("나이를 알 수 없는 대상은 기다리고, 상한 설정이 없으면 지금처럼 모두 기다린다", async () => {
+  assert.equal((await run({ ...STALE, pullRequests: [GWANGJU_PR], ...wait({}) })).state, "BLOCKED_BY_PENDING_PR");
+  assert.equal((await run({ ...STALE, pullRequests: [GWANGJU_PR] })).state, "BLOCKED_BY_PENDING_PR");
+  // CURRENT는 원래 기다리지 않으므로 expiredBlockers 계산 자체를 하지 않는다.
+  assert.deepEqual(await run({ pullRequests: [GWANGJU_PR], ...wait({ [GWANGJU_PR.headRefName]: ago(9 * HOUR) }) }), { state: "CURRENT", cleanupBranches: [] });
+});
+
+test("CLI는 git에서 읽은 브랜치 커밋 시각으로 상한을 적용하고 expired_blockers를 출력한다", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "decide-candidate-refresh-")); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.dirname(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH)), { recursive: true });
+  await writeFile(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH), `${JSON.stringify(manifest())}\n`);
+  for (const [name, text] of Object.entries({ ...FILES, "a.json": "A2" })) await writeFile(path.join(root, name), text);
+  const sha40 = "d".repeat(40);
+  const file = (name) => path.join(root, `args-${name}`);
+  await writeFile(file("prs.json"), JSON.stringify([GWANGJU_PR]));
+  await writeFile(file("branches.txt"), "");
+  await writeFile(file("automation.txt"), `${sha40}\trefs/heads/${GWANGJU_PR.headRefName}\n${sha40}\trefs/heads/${SEOUL_CLAIM}\n`);
+  const times = { [GWANGJU_PR.headRefName]: "2026-10-07T19:19:20+00:00", [SEOUL_CLAIM]: "2026-10-07T19:16:40+00:00" };
+  const runGit = async (args) => times[args.at(-1).replace("refs/remotes/origin/", "")] ?? "";
+  const args = ["--event", "workflow_dispatch", "--actor", "easysubway-release-chain[bot]", "--repository", REPOSITORY, "--prs", file("prs.json"), "--branches", file("branches.txt"), "--automation-branches", file("automation.txt"), "--github-output", file("out.txt")];
+  const result = await main(args, { repositoryRoot: root, log: () => {}, runGit, now: () => NOW });
+  assert.equal(result.state, "STALE");
+  const output = Object.fromEntries((await readFile(file("out.txt"), "utf8")).split("\n").filter(Boolean).map((line) => line.split(/=(.*)/su).slice(0, 2)));
+  assert.deepEqual(output, { state: "STALE", branch: "", stale_paths: "a.json", cleanup_branches: "", blocked_by: "", expired_blockers: `1019,${SEOUL_CLAIM}` });
+  // 방금 만든 대상은 상한 안이라 기다린다.
+  times[GWANGJU_PR.headRefName] = "2026-10-07T22:45:00+00:00";
+  assert.deepEqual((await main(args.slice(0, -2), { repositoryRoot: root, log: () => {}, runGit, now: () => NOW })).blockedBy, [1019]);
 });
