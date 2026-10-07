@@ -111,6 +111,12 @@ jobs:
           BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
         run: |
           echo "::notice title=Nationwide candidate refresh::candidate inputs changed (${STALE_PATHS}) but source-ledger automation pull request(s) ${BLOCKED_BY} are still open; the candidate is refreshed after they merge."
+      - name: Note candidate refresh waiting on capital topology registration
+        if: ${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_REGISTRATION' }}
+        env:
+          REGISTRATION_SNAPSHOT: ${{ steps.decision.outputs.registration_snapshot }}
+        run: |
+          echo "::notice title=Nationwide candidate refresh::capital topology admission ${REGISTRATION_SNAPSHOT} is not registered in the ledger yet; a candidate built before registration fails the candidate build tests, so the candidate is refreshed after the registration merges."
       - name: Remove stale candidate refresh branches named by the decision
         if: ${{ steps.decision.outputs.cleanup_branches != '' }}
         env:

@@ -17,6 +17,10 @@
 //                           기다림에는 상한이 있다(LEDGER_WRITER_WAIT_LIMIT, #1032): 브랜치 마지막 커밋이 그보다 오래된 PR·claim은 멈춘 것이라
 //                           기다리지 않고 후보를 만든다(STALE). 무시한 대상은 expiredBlockers로 남고 소유 workflow의 실패 보고(#926)가 사람에게 알린다.
 //                           그 대상이 나중에 병합돼 입력이 또 바뀌면 다음 판정이 다시 STALE이다. 나이를 알 수 없는 대상은 기다린다.
+//   BLOCKED_BY_PENDING_REGISTRATION   STALE이고 기다릴 원장 쓰기 자동화는 없는데, 보호 admission(inventory)의 수도권 topology snapshot이 아직 원장에 등록되지
+//                           않았다(#1032). 등록 전에 후보를 만들면 후보의 capitalTopologyAdmission(옛 reverification)이 inventory admission과 어긋나 PR CI의
+//                           후보 build 테스트가 실패하고, 그 후보 PR이 열려 있는 동안 후보 갱신이 막힌다. 등록 workflow가 끝나면 다음 판정이 진행한다.
+//                           등록이 멈추면 등록 workflow의 실패 보고와 admission 만료 경보가 사람에게 알린다.
 //
 // PR 없이 남았거나 닫힌 PR의 후보 브랜치는 이상이 아니라 정리 대상이다(cleanupBranches). 판정 불가 상태(중복 열린 PR, 브랜치 없는 열린 PR,
 // 잘못된 매니페스트)는 CANDIDATE_REFRESH_* 이상으로 실패한다.
@@ -29,6 +33,7 @@ import { pathToFileURL } from "node:url";
 
 import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, parseCandidateInputManifest } from "../datapack/lib/candidate-input-bundle.mjs";
 import { SCHEDULER_APP_LOGIN } from "../datapack/lib/scheduled-release-authority.mjs";
+import { capitalTopologyRegistrationState } from "./decide-capital-topology-registration.mjs";
 import {
   LEDGER_WRITER_WAIT_LIMIT, branchCommitTimes, ownPullRequestsByBranch, parseAutomationBranches, parsePrefixedBranches, pendingLedgerWriterBranches, pendingLedgerWriters, validRepository,
 } from "./automation-pr-state.mjs";
@@ -38,6 +43,8 @@ export const CANDIDATE_REFRESH_WORKFLOW = "nationwide-candidate-refresh.yml";
 export const CANDIDATE_REFRESH_CLAIM_PREFIX = REFRESH_CLAIM_PREFIXES[CANDIDATE_REFRESH_WORKFLOW];
 const EVENTS = Object.freeze(["schedule", "workflow_dispatch"]);
 const ROOT = path.resolve(import.meta.dirname, "../..");
+const SOURCE_INVENTORY_PATH = "tools/datapack/source-inventory.json";
+const SOURCE_SNAPSHOTS_PATH = "tools/datapack/release/source-snapshots.json";
 
 function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
@@ -48,7 +55,7 @@ export function parseCandidateRefreshBranches(text) {
   return parsePrefixedBranches(text, CANDIDATE_REFRESH_CLAIM_PREFIX, (detail) => fail("CANDIDATE_REFRESH_BRANCH_INVALID", detail));
 }
 
-export async function decideNationwideCandidateRefresh({ manifest, readLocal, pullRequests, branches, automationBranches, repository, event, actor, ledgerWriterWait } = {}) {
+export async function decideNationwideCandidateRefresh({ manifest, readLocal, pullRequests, branches, automationBranches, repository, event, actor, ledgerWriterWait, registration } = {}) {
   if (!Array.isArray(pullRequests) || !Array.isArray(branches) || !Array.isArray(automationBranches) || typeof readLocal !== "function"
     || !validRepository(repository) || !EVENTS.includes(event)) fail("CANDIDATE_REFRESH_INPUT_INVALID");
 
@@ -78,7 +85,12 @@ export async function decideNationwideCandidateRefresh({ manifest, readLocal, pu
   // 열린 PR뿐 아니라 PR 전의 claim 브랜치도 원장을 쓰는 중이다(#974 리뷰 F2).
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, ...(ledgerWriterWait ?? {}) });
   const blockedBy = [...pending.pullRequests, ...pending.branches];
-  const decision = blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", stalePaths, blockedBy, cleanupBranches } : { state: "STALE", stalePaths, cleanupBranches };
+  let decision = blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", stalePaths, blockedBy, cleanupBranches } : { state: "STALE", stalePaths, cleanupBranches };
+  // 기다릴 원장 쓰기 자동화가 없어도 보호 admission의 topology가 아직 등록되지 않았으면 후보를 만들지 않는다. registration을 주지 않으면 보지 않는다.
+  if (decision.state === "STALE" && registration !== undefined) {
+    const { registered, snapshotId } = capitalTopologyRegistrationState(registration);
+    if (!registered) decision = { state: "BLOCKED_BY_PENDING_REGISTRATION", stalePaths, registrationSnapshotId: snapshotId, cleanupBranches };
+  }
   return pending.expired?.length > 0 ? { ...decision, expiredBlockers: pending.expired } : decision;
 }
 
@@ -109,16 +121,19 @@ export async function main(argv, { repositoryRoot = ROOT, log = console.log, run
     maxAgeMs: isoDurationMs(LEDGER_WRITER_WAIT_LIMIT), now: now(),
     branchTimes: await branchCommitTimes({ branches: pendingLedgerWriterBranches({ pullRequests, automationBranches, repository: values.repository }), ...(runGit ? { runGit } : {}) }),
   };
+  // 보호 admission의 topology가 원장에 등록됐는지 보려고 inventory와 원장을 읽는다(#1032). 읽지 못하거나 이상하면 판정하지 않고 실패한다.
+  const readJson = async (relative) => JSON.parse(await readFile(path.resolve(repositoryRoot, relative), "utf8"));
+  const registration = { inventory: await readJson(SOURCE_INVENTORY_PATH), ledger: await readJson(SOURCE_SNAPSHOTS_PATH) };
   const result = await decideNationwideCandidateRefresh({
     manifest, readLocal: (relative) => readFile(path.resolve(repositoryRoot, relative)),
     pullRequests, branches: parseCandidateRefreshBranches(await readFile(values.branches, "utf8")), automationBranches,
-    repository: values.repository, event: values.event, actor: values.actor, ledgerWriterWait,
+    repository: values.repository, event: values.event, actor: values.actor, ledgerWriterWait, registration,
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {
     await appendFile(values.githubOutput, [
       `state=${result.state}`, `branch=${result.branch ?? ""}`, `stale_paths=${(result.stalePaths ?? []).join(",")}`, `cleanup_branches=${(result.cleanupBranches ?? []).join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`,
-      `expired_blockers=${(result.expiredBlockers ?? []).map(({ blocker }) => blocker).join(",")}`, "",
+      `expired_blockers=${(result.expiredBlockers ?? []).map(({ blocker }) => blocker).join(",")}`, `registration_snapshot=${result.registrationSnapshotId ?? ""}`, "",
     ].join("\n"));
   }
   return result;

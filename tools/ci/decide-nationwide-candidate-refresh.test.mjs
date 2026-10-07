@@ -142,11 +142,37 @@ test("나이를 알 수 없는 대상은 기다리고, 상한 설정이 없으�
   assert.deepEqual(await run({ pullRequests: [GWANGJU_PR], ...wait({ [GWANGJU_PR.headRefName]: ago(9 * HOUR) }) }), { state: "CURRENT", cleanupBranches: [] });
 });
 
+// #1032: 보호 admission의 topology가 원장에 등록되기 전에 후보를 만들면 후보의 capitalTopologyAdmission(옛 reverification)이 inventory admission과 어긋나
+// PR CI의 후보 build 테스트가 실패하고, 그 후보 PR이 열려 있는 동안 후보 갱신이 막힌다. 등록이 끝나기 전에는 후보를 만들지 않는다.
+const REGISTERED_INVENTORY = (snapshotId) => ({ sources: [{ id: "seoul-metro-route-map-positions", routeMapAdmissionEvidence: { currentTopologyAdmission: { status: "ADMITTED", topologySnapshotId: snapshotId, freshUntil: "2026-10-14T20:10:18.488Z" } } }] });
+const registration = (ledgerSnapshots) => ({ registration: { inventory: REGISTERED_INVENTORY("capital-route-topology-20261007"), ledger: ledgerSnapshots.map((snapshotId) => ({ sourceId: "capital-route-topology", snapshotId })) } });
+
+test("등록되지 않은 topology admission이 있으면 STALE이어도 후보를 만들지 않고 기다린다. 원장 쓰기 PR이 있으면 그 대기가 먼저다", async () => {
+  assert.deepEqual(await run({ ...STALE, ...registration(["capital-route-topology-20261005"]) }), {
+    state: "BLOCKED_BY_PENDING_REGISTRATION", stalePaths: ["a.json"], registrationSnapshotId: "capital-route-topology-20261007", cleanupBranches: [],
+  });
+  assert.equal((await run({ ...STALE, pullRequests: [GWANGJU_PR], ...registration(["capital-route-topology-20261005"]) })).state, "BLOCKED_BY_PENDING_PR");
+  // 등록됐으면 STALE로 진행한다. 입력이 같으면(CURRENT) 등록 여부를 보지 않는다.
+  assert.equal((await run({ ...STALE, ...registration(["capital-route-topology-20261005", "capital-route-topology-20261007"]) })).state, "STALE");
+  assert.equal((await run({ ...registration(["capital-route-topology-20261005"]) })).state, "CURRENT");
+  // 멈춘 원장 쓰기 대상을 기다리지 않는 규칙과 함께 쓰면 expiredBlockers가 유지된다.
+  const expired = await run({ ...STALE, pullRequests: [GWANGJU_PR], ...wait({ [GWANGJU_PR.headRefName]: ago(3 * HOUR) }), ...registration(["capital-route-topology-20261005"]) });
+  assert.equal(expired.state, "BLOCKED_BY_PENDING_REGISTRATION");
+  assert.deepEqual(expired.expiredBlockers.map(({ blocker }) => blocker), [1019]);
+  // 사람 dispatch의 FORCED는 입력이 같을 때의 명시 요청이므로 등록 대기를 하지 않는다.
+  assert.equal((await run({ event: "workflow_dispatch", ...registration(["capital-route-topology-20261005"]) })).state, "FORCED");
+});
+
 test("CLI는 git에서 읽은 브랜치 커밋 시각으로 상한을 적용하고 expired_blockers를 출력한다", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "decide-candidate-refresh-")); t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(path.dirname(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH)), { recursive: true });
   await writeFile(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH), `${JSON.stringify(manifest())}\n`);
   for (const [name, text] of Object.entries({ ...FILES, "a.json": "A2" })) await writeFile(path.join(root, name), text);
+  // #1032: 판정은 등록 여부를 보려고 저장소의 inventory와 원장을 읽는다.
+  await mkdir(path.join(root, "tools/datapack/release"), { recursive: true });
+  await writeFile(path.join(root, "tools/datapack/source-inventory.json"), JSON.stringify(REGISTERED_INVENTORY("capital-route-topology-20261007")));
+  const writeLedger = (snapshotIds) => writeFile(path.join(root, "tools/datapack/release/source-snapshots.json"), JSON.stringify(snapshotIds.map((snapshotId) => ({ sourceId: "capital-route-topology", snapshotId }))));
+  await writeLedger(["capital-route-topology-20261007"]);
   const sha40 = "d".repeat(40);
   const file = (name) => path.join(root, `args-${name}`);
   await writeFile(file("prs.json"), JSON.stringify([GWANGJU_PR]));
@@ -158,8 +184,17 @@ test("CLI는 git에서 읽은 브랜치 커밋 시각으로 상한을 적용하�
   const result = await main(args, { repositoryRoot: root, log: () => {}, runGit, now: () => NOW });
   assert.equal(result.state, "STALE");
   const output = Object.fromEntries((await readFile(file("out.txt"), "utf8")).split("\n").filter(Boolean).map((line) => line.split(/=(.*)/su).slice(0, 2)));
-  assert.deepEqual(output, { state: "STALE", branch: "", stale_paths: "a.json", cleanup_branches: "", blocked_by: "", expired_blockers: `1019,${SEOUL_CLAIM}` });
+  assert.deepEqual(output, { state: "STALE", branch: "", stale_paths: "a.json", cleanup_branches: "", blocked_by: "", expired_blockers: `1019,${SEOUL_CLAIM}`, registration_snapshot: "" });
   // 방금 만든 대상은 상한 안이라 기다린다.
   times[GWANGJU_PR.headRefName] = "2026-10-07T22:45:00+00:00";
   assert.deepEqual((await main(args.slice(0, -2), { repositoryRoot: root, log: () => {}, runGit, now: () => NOW })).blockedBy, [1019]);
+  // 등록되지 않은 admission은 상한을 넘긴 대상을 지나쳐도 후보를 막고 snapshot id를 출력한다.
+  times[GWANGJU_PR.headRefName] = "2026-10-07T19:19:20+00:00";
+  await writeLedger(["capital-route-topology-20261005"]);
+  await rm(file("out.txt"), { force: true });
+  const waiting = await main(args, { repositoryRoot: root, log: () => {}, runGit, now: () => NOW });
+  assert.equal(waiting.state, "BLOCKED_BY_PENDING_REGISTRATION");
+  const waitingOutput = Object.fromEntries((await readFile(file("out.txt"), "utf8")).split("\n").filter(Boolean).map((line) => line.split(/=(.*)/su).slice(0, 2)));
+  assert.equal(waitingOutput.state, "BLOCKED_BY_PENDING_REGISTRATION");
+  assert.equal(waitingOutput.registration_snapshot, "capital-route-topology-20261007");
 });

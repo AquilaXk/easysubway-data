@@ -164,3 +164,14 @@ test("상한을 넘겨 기다리지 않은 원장 쓰기 대상은 경고로 남
   assert.ok(names.indexOf("Decide whether the nationwide candidate must be refreshed") < names.indexOf("Note candidate refresh proceeding past stuck source automation"));
   assert.ok(names.indexOf("Note candidate refresh proceeding past stuck source automation") < names.indexOf("Validate candidate refresh inputs"));
 });
+
+// #1032: 보호 admission의 topology가 원장에 등록되기 전에는 후보를 만들지 않는다.
+test("등록 대기로 후보를 만들지 않는 실행은 이유를 notice로 남기고 아무것도 쓰지 않는다", () => {
+  const { block } = step("Note candidate refresh waiting on capital topology registration");
+  assert.equal(ifCondition(block), "${{ steps.decision.outputs.state == 'BLOCKED_BY_PENDING_REGISTRATION' }}");
+  assert.match(block, /::notice title=Nationwide candidate refresh::/u);
+  assert.match(block, /\n          REGISTRATION_SNAPSHOT: \$\{\{ steps\.decision\.outputs\.registration_snapshot \}\}\n/u);
+  assert.doesNotMatch(block, /exit 1/u);
+  // 후보를 만드는 step은 STALE·FORCED에서만 돈다(위 계약). 등록 대기 상태에서는 어느 것도 돌지 않는다.
+  assert.notEqual(ifCondition(step("Validate candidate refresh inputs").block).includes("BLOCKED_BY_PENDING_REGISTRATION"), true);
+});
