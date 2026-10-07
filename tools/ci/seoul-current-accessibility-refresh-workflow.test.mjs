@@ -12,7 +12,8 @@ test("pending full fan-in cannot reach a Seoul refresh side effect", () => {
     "Recover completed claimed refresh",
     "Create durable claim",
     "Validate provider configuration",
-    "Collect and bind current snapshot",
+    "Collect current snapshot",
+    "Publish and register Seoul accessibility snapshot",
     "Finalize claimed refresh branch",
     "Create draft pull request",
   ]) {
@@ -63,4 +64,27 @@ test("orphan claims are classified from run and publication evidence and cleaned
   assert.ok(order("Read due state") < order("Remove abandoned Seoul refresh claims named by the decision"));
   assert.ok(order("Remove abandoned Seoul refresh claims named by the decision") < order("Recover completed claimed refresh"));
   assert.ok(order("Remove abandoned Seoul refresh claims named by the decision") < order("Create durable claim"));
+});
+
+// #995 F1: 수집과 게시·등록을 다른 step으로 나눠야 claim 정리가 "게시 step까지 갔는지"로 판정할 수 있다.
+test("Seoul collection and publication are separate steps that share the observation name", () => {
+  const yml = readFileSync(workflowPath, "utf8");
+  const stepOf = (name) => {
+    const start = yml.indexOf(`      - name: ${name}\n`);
+    assert.notEqual(start, -1, `missing workflow step: ${name}`);
+    const end = yml.indexOf("\n      - name: ", start + 1);
+    return yml.slice(start, end === -1 ? yml.length : end);
+  };
+  const collect = stepOf("Collect current snapshot");
+  const publish = stepOf("Publish and register Seoul accessibility snapshot");
+  assert.match(collect, /run-current-seoul-accessibility-registration\.mjs --observation-name "refresh-\$\{GITHUB_RUN_ID\}" --receipt "\$\{SEOUL_REFRESH_RECEIPT\}" --request-attempts 1 --phase collect/);
+  assert.match(publish, /run-current-seoul-accessibility-registration\.mjs --observation-name "refresh-\$\{GITHUB_RUN_ID\}" --receipt "\$\{SEOUL_REFRESH_RECEIPT\}" --request-attempts 1 --phase publish/);
+  for (const body of [collect, publish]) {
+    assert.match(body, /DATA_GO_KR_SERVICE_KEY: \$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}/);
+    assert.match(body, /\[\[ "\$\(git rev-parse HEAD\)" == "\$\{SEOUL_REFRESH_MAIN_SHA\}" \]\]/);
+    assert.match(body, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'DUE' \|\| steps\.decision\.outputs\.state == 'EXPIRED' \}\}\n/);
+  }
+  const at = (name) => yml.indexOf(`      - name: ${name}\n`);
+  assert.ok(at("Create durable claim") < at("Collect current snapshot") && at("Collect current snapshot") < at("Publish and register Seoul accessibility snapshot") && at("Publish and register Seoul accessibility snapshot") < at("Finalize claimed refresh branch"));
+  assert.equal(yml.includes("Collect and bind current snapshot"), false);
 });

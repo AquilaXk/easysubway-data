@@ -145,3 +145,46 @@ test("계약 개정 trigger는 CURRENT여도 수집하고, 새 계약이 등록�
   await assert.rejects(runRetainedGwangjuTimetableRefresh({ repositoryRoot: root, operationRoot: path.join(root, "bad"), env, trigger: "SOMETIME",
     boundaries: { readDecision: async () => current } }), /trigger is invalid/);
 });
+
+// #995 F1: 수집과 게시를 workflow step으로 나누려면 controller가 두 단계로 실행돼야 한다. 게시 step이 시작됐는지가 claim 정리 판정의 근거다.
+test("collect 단계는 게시·등록 없이 수집·계약 준비까지만 하고, publish 단계가 같은 operation root에서 게시·등록한다", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "retained-phases-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const operationRoot = path.join(root, "operation");
+  const events = [];
+  const boundaries = {
+    readDecision: async () => due, preflightDue: async () => preflight,
+    collectKric: async ({ outputFile }) => {
+      events.push("collect"); await writeFile(outputFile, "raw");
+      return { capturedAt: "2040-12-31T00:00:00.000Z", rawFile: path.basename(outputFile), byteLength: 3, sha256: "a".repeat(64) };
+    },
+    buildObservation: async () => { events.push("observation"); return { observedAt: "2040-12-31T00:00:00.000Z" }; },
+    preparePublication: () => { events.push("publication-plan"); return { freshnessExpiresAt: "2041-01-08T00:00:00.000Z" }; },
+    collectKasi: async () => { events.push("kasi"); },
+    prepareContract: async ({ outputPath }) => { events.push("contract"); await writeFile(outputPath, "{}\n"); },
+    publish: async ({ receipt }) => { events.push(`publish:${receipt.sha256}`); },
+    register: async () => { events.push("register"); },
+  };
+  const clock = () => new Date("2041-01-01T00:00:00.000Z");
+  const collected = await runRetainedGwangjuTimetableRefresh({ repositoryRoot: root, operationRoot, env, clock, boundaries, phase: "collect" });
+  assert.equal(collected.state, "COLLECTED");
+  assert.deepEqual(events, ["collect", "observation", "publication-plan", "kasi", "contract"]);
+  events.length = 0;
+  const published = await runRetainedGwangjuTimetableRefresh({ repositoryRoot: root, operationRoot, env, clock, boundaries, phase: "publish" });
+  assert.equal(published.state, "REGISTERED");
+  assert.equal(published.freshnessExpiresAt, "2041-01-08T00:00:00.000Z");
+  assert.deepEqual(events, ["publication-plan", `publish:${"a".repeat(64)}`, "register"], "publish 단계는 수집을 다시 하지 않는다");
+});
+
+test("publish 단계는 collect 단계의 산출물이 없으면 게시하지 않고 실패한다. 알 수 없는 phase는 거부한다", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "retained-phases-missing-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  let effects = 0;
+  const effect = async () => { effects += 1; };
+  await assert.rejects(runRetainedGwangjuTimetableRefresh({
+    repositoryRoot: root, operationRoot: path.join(root, "never-collected"), env, phase: "publish",
+    boundaries: { readDecision: async () => due, preflightDue: async () => preflight, publish: effect, register: effect, collectKric: effect },
+  }), /ENOENT|collection receipt/u);
+  assert.equal(effects, 0);
+  await assert.rejects(runRetainedGwangjuTimetableRefresh({ repositoryRoot: root, operationRoot: path.join(root, "x"), env, phase: "both", boundaries: { readDecision: async () => due } }), /phase is invalid/);
+});

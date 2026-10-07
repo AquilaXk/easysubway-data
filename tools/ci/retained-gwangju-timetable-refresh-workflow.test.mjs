@@ -58,7 +58,8 @@ test("복구·claim·수집·PR step은 판정 state로만 열린다. CURRENT에
   const states = new Map([
     ["Recover completed retained timetable claim", "RECOVER_CLAIM"],
     ["Create retained timetable claim before provider access", "DUE"],
-    ["Refresh due retained Gwangju timetable", "DUE"],
+    ["Collect due retained Gwangju timetable", "DUE"],
+    ["Publish and register retained Gwangju timetable", "DUE"],
     ["Finalize retained timetable claim", "DUE"],
     ["Create retained timetable draft pull request", "DUE"],
   ]);
@@ -70,4 +71,22 @@ test("실패 보고는 마지막 step이고 이 workflow 이름으로 돈다", (
   assert.equal(ifCondition(report.block), "${{ failure() }}");
   assert.ok(report.block.includes('node tools/ci/report-refresh-failure.mjs --workflow retained-gwangju-timetable-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"'));
   assert.equal(yml.trimEnd().endsWith(report.block.trimEnd()), true);
+});
+
+// #995 F1: claim 정리는 만든 run이 게시 step까지 갔는지로 판정한다. 수집과 게시가 한 step이면 수집 실패도 게시 가능성으로 보이므로 step을 나눈다.
+test("수집과 게시·등록은 서로 다른 step이고 게시 step은 수집 step 뒤에서 같은 operation root를 쓴다", () => {
+  const collect = step("Collect due retained Gwangju timetable");
+  const publish = step("Publish and register retained Gwangju timetable");
+  const operation = '--operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation"';
+  assert.match(scriptOf(collect.block), new RegExp(`run-retained-gwangju-timetable-refresh\\.mjs ${operation.replaceAll("$", "\\$").replaceAll("{", "\\{").replaceAll("}", "\\}")} --phase collect`, "u"));
+  assert.match(scriptOf(publish.block), new RegExp(`run-retained-gwangju-timetable-refresh\\.mjs ${operation.replaceAll("$", "\\$").replaceAll("{", "\\{").replaceAll("}", "\\}")} --phase publish`, "u"));
+  for (const item of [collect, publish]) {
+    assert.match(item.block, /DATA_GO_KR_SERVICE_KEY: \$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}/u);
+    assert.match(item.block, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}/u);
+    assert.match(scriptOf(item.block), /\[\[ "\$\(git rev-parse HEAD\)" == "\$\{RETAINED_GWANGJU_MAIN_SHA\}" \]\]/u);
+  }
+  before("Create retained timetable claim before provider access", collect.name);
+  before(collect.name, publish.name);
+  before(publish.name, "Finalize retained timetable claim");
+  assert.equal(names().includes("Refresh due retained Gwangju timetable"), false);
 });

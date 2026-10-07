@@ -203,11 +203,11 @@ const claimRecord = (runId, { mergeBaseSha = sha, commitCount = 1, subjects = SU
 const topologyPr = (number, state, runId) => ({ number, state, isDraft: true, headRefName: `${PREFIX}${runId}`, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: repo } });
 const claimEvidence = (runId, overrides = {}) => ({
   branch: `${PREFIX}${runId}`, runId: String(runId),
-  run: { found: true, status: "completed", conclusion: "failure", workflowName: "Current Capital Topology Refresh", headBranch: "main" },
+  run: { found: true, status: "completed", conclusion: "failure", workflowName: "Current Capital Topology Refresh", headBranch: "main", steps: [] },
   commits: { aheadBy: 1, subjects: [SUBJECTS[0]], changedFiles: 0 }, artifacts: [], ...overrides,
 });
 const withOutput = (runId) => claimEvidence(runId, { commits: { aheadBy: 3, subjects: SUBJECTS, changedFiles: 6 } });
-const running = (runId) => claimEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "Current Capital Topology Refresh", headBranch: "main" } });
+const running = (runId) => claimEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "Current Capital Topology Refresh", headBranch: "main", steps: [] } });
 const setClaims = async (input, claims, ...evidence) => { await writeFile(input.claimsPath, JSON.stringify(claims)); await writeFile(input.claimEvidencePath, JSON.stringify(evidence)); };
 const topologyResult = { alertBeforePackExpiry: "PT6H", itxFreshUntil: "2026-08-30T16:00:00.000Z", itxRefreshRequired: false };
 

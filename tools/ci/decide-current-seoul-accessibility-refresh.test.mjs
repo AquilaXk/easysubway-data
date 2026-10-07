@@ -12,13 +12,14 @@ test("Seoul refresh decision distinguishes due states from the configured thresh
 const SEOUL_PREFIX = "automation/639-seoul-accessibility-refresh-";
 const CLAIM_SUBJECT = "Claim Seoul accessibility refresh";
 const claimRef = (runId) => `0123456789abcdef0123456789abcdef01234567\trefs/heads/${SEOUL_PREFIX}${runId}\n`;
+const NOT_PUBLISHED = [{ name: "Publish and register Seoul accessibility snapshot", status: "completed", conclusion: "skipped" }];
 const seoulEvidence = (runId, overrides = {}) => ({
   branch: `${SEOUL_PREFIX}${runId}`, runId: String(runId),
-  run: { found: true, status: "completed", conclusion: "failure", workflowName: "Seoul Current Accessibility Refresh", headBranch: "main" },
+  run: { found: true, status: "completed", conclusion: "failure", workflowName: "Seoul Current Accessibility Refresh", headBranch: "main", steps: NOT_PUBLISHED },
   commits: { aheadBy: 1, subjects: [CLAIM_SUBJECT], changedFiles: 0 }, artifacts: [], ...overrides,
 });
 const withOutput = (runId) => seoulEvidence(runId, { commits: { aheadBy: 2, subjects: [CLAIM_SUBJECT, "Refresh Seoul accessibility snapshot"], changedFiles: 4 } });
-const running = (runId) => seoulEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "Seoul Current Accessibility Refresh", headBranch: "main" } });
+const running = (runId) => seoulEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "Seoul Current Accessibility Refresh", headBranch: "main", steps: NOT_PUBLISHED } });
 const seoulPr = (number, state, runId, input) => ({ number, state, isDraft: true, headRefName: `${SEOUL_PREFIX}${runId}`, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false });
 const NOW = new Date("2026-08-30T07:00:00.000Z");
 test("Seoul refresh decision accepts only a same-repository main PR and recovers one claim that carries output", async () => { const { decideCurrentSeoulAccessibilityRefresh } = await load(); const input = await fixture(); await writeFile(input.prsPath, JSON.stringify([seoulPr(1, "OPEN", 1, input)])); await writeFile(input.claimsPath, claimRef(1)); assert.deepEqual(await decideCurrentSeoulAccessibilityRefresh({ ...input, now: NOW }), { state: "OPEN_PR", alertBeforePackExpiry: "PT6H", cleanupClaims: [] }); await writeFile(input.prsPath, "[]"); await writeFile(input.claimEvidencePath, JSON.stringify([withOutput(1)])); assert.deepEqual(await decideCurrentSeoulAccessibilityRefresh({ ...input, now: NOW }), { state: "RECOVER_CLAIM", alertBeforePackExpiry: "PT6H", branch: `${SEOUL_PREFIX}1`, cleanupClaims: [] }); });

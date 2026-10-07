@@ -19,13 +19,14 @@ const pullRequest = (state, name = branch, overrides = {}) => ({
   headRepository: { nameWithOwner: repository }, isCrossRepository: false, ...overrides,
 });
 // 만든 run이 끝났고(기본) 빈 claim뿐인 고아(#995). 기본값이 504 사례다.
+const NOT_PUBLISHED = [{ name: "Publish and register retained Gwangju timetable", status: "completed", conclusion: "skipped" }];
 const evidence = (name = branch, overrides = {}) => ({
   branch: name, runId: name.slice(name.lastIndexOf("-") + 1),
-  run: { found: true, status: "completed", conclusion: "failure", workflowName: "Retained Gwangju Timetable Refresh", headBranch: "main" },
+  run: { found: true, status: "completed", conclusion: "failure", workflowName: "Retained Gwangju Timetable Refresh", headBranch: "main", steps: NOT_PUBLISHED },
   commits: { aheadBy: 1, subjects: [CLAIM_SUBJECT], changedFiles: 0 }, artifacts: [], ...overrides,
 });
 const withOutput = (name = branch) => evidence(name, { commits: { aheadBy: 2, subjects: [CLAIM_SUBJECT, OUTPUT_SUBJECT], changedFiles: 2 } });
-const running = (name = branch) => evidence(name, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "Retained Gwangju Timetable Refresh", headBranch: "main" } });
+const running = (name = branch) => evidence(name, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "Retained Gwangju Timetable Refresh", headBranch: "main", steps: NOT_PUBLISHED } });
 const classify = (input) => classifyRetainedGwangjuRefreshDelivery({ repository, claims: [], pullRequests: [], claimEvidence: [], ...input });
 
 test("retained Gwangju recovery ignores fork PRs with the claim name but rejects same-repository PRs", () => {
@@ -54,8 +55,11 @@ test("a recoverable claim is recovered whether the source is DUE or CURRENT", ()
 test("an empty claim whose producer run finished is handed to cleanup, then the normal due state continues", () => {
   assert.deepEqual(classify({ decision: { state: "CURRENT" }, claims: [claim], claimEvidence: [evidence()] }), { state: "CURRENT", cleanupClaims: [branch] });
   assert.deepEqual(classify({ decision: { state: "DUE" }, claims: [claim], claimEvidence: [evidence()] }), { state: "DUE", cleanupClaims: [branch] });
-  // 끝나서 기록이 사라진 run(Not Found)도 같다.
-  assert.deepEqual(classify({ decision: { state: "CURRENT" }, claims: [claim], claimEvidence: [evidence(branch, { run: { found: false } })] }), { state: "CURRENT", cleanupClaims: [branch] });
+  // run 기록이 사라졌으면(Not Found) 게시 step까지 갔는지 알 수 없어 빈 claim도 지우지 않고 실패한다(#995 F1).
+  assert.throws(() => classify({ decision: { state: "CURRENT" }, claims: [claim], claimEvidence: [evidence(branch, { run: { found: false } })] }), /CLAIM_ORPHAN_RUN_UNAVAILABLE/);
+  // 게시 step이 시작된 run의 빈 claim은 지우지 않고 실패한다.
+  const published = { found: true, status: "completed", conclusion: "failure", workflowName: "Retained Gwangju Timetable Refresh", headBranch: "main", steps: [{ name: "Publish and register retained Gwangju timetable", status: "completed", conclusion: "failure" }] };
+  assert.throws(() => classify({ decision: { state: "CURRENT" }, claims: [claim], claimEvidence: [evidence(branch, { run: published })] }), /CLAIM_ORPHAN_PUBLISHED_UNREGISTERED/);
 });
 
 test("a claim whose producer run is still running waits, DUE or CURRENT", () => {

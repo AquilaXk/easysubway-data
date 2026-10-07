@@ -56,14 +56,15 @@ const SHA = "0123456789abcdef0123456789abcdef01234567";
 const NOW = new Date("2026-08-30T07:00:00.000Z");
 const ref = (runId) => `${SHA}\trefs/heads/${PREFIX}${runId}\n`;
 const kricPr = (number, state, runId, input) => ({ number, state, isDraft: true, headRefName: `${PREFIX}${runId}`, baseRefName: "main", headRepository: { nameWithOwner: input.repository }, isCrossRepository: false });
+const NOT_PUBLISHED = [{ name: "KRIC current facility refresh / Publish and register current snapshot", status: "completed", conclusion: "skipped" }];
 const kricEvidence = (runId, overrides = {}) => ({
   branch: `${PREFIX}${runId}`, runId: String(runId),
-  run: { found: true, status: "completed", conclusion: "failure", workflowName: "KRIC Current Facility Refresh", headBranch: "main" },
+  run: { found: true, status: "completed", conclusion: "failure", workflowName: "KRIC Current Facility Refresh", headBranch: "main", steps: NOT_PUBLISHED },
   commits: { aheadBy: 1, subjects: ["Claim KRIC facility refresh"], changedFiles: 0 }, artifacts: [], ...overrides,
 });
 const withOutput = (runId) => kricEvidence(runId, { commits: { aheadBy: 2, subjects: ["Claim KRIC facility refresh", "Refresh KRIC facility snapshot"], changedFiles: 3 } });
-const withReceipt = (runId) => kricEvidence(runId, { artifacts: [{ name: `kric-current-facility-refresh-${runId}`, expired: false }] });
-const running = (runId) => kricEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "KRIC Current Facility Refresh", headBranch: "main" } });
+const withReceipt = (runId) => kricEvidence(runId, { run: { found: true, status: "completed", conclusion: "failure", workflowName: "KRIC Current Facility Refresh", headBranch: "main", steps: [{ name: "KRIC current facility refresh / Publish and register current snapshot", status: "completed", conclusion: "failure" }] }, artifacts: [{ name: `kric-current-facility-refresh-${runId}`, expired: false }] });
+const running = (runId) => kricEvidence(runId, { run: { found: true, status: "in_progress", conclusion: null, workflowName: "KRIC Current Facility Refresh", headBranch: "main", steps: NOT_PUBLISHED } });
 const evidenceFile = (input, ...records) => writeFile(input.claimEvidencePath, JSON.stringify(records));
 
 test("KRIC refresh decision recovers exactly one durable remote claim that carries output or a receipt before provider work", async () => {
@@ -96,6 +97,17 @@ test("an empty claim without a receipt is handed to cleanup in every due state a
   }
   await evidenceFile(input);
   await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /CLAIM_ORPHAN_EVIDENCE_MISSING/);
+});
+
+// #995 F1: 게시 step이 시작된 run의 빈 claim은 보존 증거가 없으면 지우지 않고 실패한다(게시됐지만 등록되지 않은 상태일 수 있다).
+test("a published-but-unregistered claim without retained evidence fails instead of being cleaned", async () => {
+  const { decideCurrentKricFacilityRefresh } = await load();
+  const input = await fixture();
+  await writeFile(input.claimsPath, ref(126));
+  await evidenceFile(input, { ...withReceipt(126), artifacts: [] });
+  await assert.rejects(() => decideCurrentKricFacilityRefresh({ ...input, now: NOW }), /CLAIM_ORPHAN_PUBLISHED_UNREGISTERED/);
+  await evidenceFile(input, withReceipt(126));
+  assert.equal((await decideCurrentKricFacilityRefresh({ ...input, now: NOW })).state, "RECOVER_CLAIM");
 });
 
 test("terminal historical claims ignore merged history and fail closed on closed claims", async () => {

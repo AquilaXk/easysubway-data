@@ -148,8 +148,8 @@ test("KRIC refresh workflow classifies PR-less claims from run and publication e
   assert.ok(order("Remove abandoned claims named by the decision") < order("Create durable claim"));
 });
 
-// receipt artifact는 게시 뒤 실패한 run만 남긴다. 그래야 claim 판정이 "복구할 증거가 있는 claim"과 "빈 claim뿐인 고아"를 가른다.
-test("KRIC refresh workflow uploads the recovery artifact only when the run left a publication receipt", () => {
+// #995 F1: finalize phase가 raw object를 OCI에 게시하고 등록한다. 그 phase를 별도 step으로 둬야 claim 정리가 "게시 step까지 갔는지"로 판정할 수 있다.
+test("KRIC refresh workflow runs prepare and collect before a separate publish-and-register step", () => {
   const yml = readFileSync(workflowPath, "utf8");
   const stepOf = (name) => {
     const start = yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
@@ -157,35 +157,28 @@ test("KRIC refresh workflow uploads the recovery artifact only when the run left
     const end = yml.indexOf("\n      - name: ", start + 1);
     return yml.slice(start, end === -1 ? yml.length : end);
   };
-  const detect = stepOf("Detect retained publication receipt");
-  assert.match(detect, /\n        id: receipt\n/);
-  assert.match(detect, /\n        if: \$\{\{ always\(\) \}\}\n/);
-  assert.match(detect, /-f "\$\{KRIC_REFRESH_OPERATION_ROOT\}\/raw-receipt\.json"/);
-  assert.match(detect, /has_receipt=true/);
-  const upload = stepOf("Upload sanitized evidence");
-  assert.match(upload, /\n        if: \$\{\{ always\(\) && steps\.receipt\.outputs\.has_receipt == 'true' \}\}\n/);
-  assert.match(upload, /name: kric-current-facility-refresh-\$\{\{ github\.run_id \}\}/);
-  assert.ok(yml.indexOf("Detect retained publication receipt") < yml.indexOf("Upload sanitized evidence"));
+  const collect = stepOf("Collect current snapshot");
+  const publish = stepOf("Publish and register current snapshot");
+  assert.match(collect, /--phase prepare/);
+  assert.match(collect, /--phase collect/);
+  assert.doesNotMatch(collect, /--phase finalize/);
+  assert.match(publish, /--phase finalize --operation-root "\$\{KRIC_REFRESH_OPERATION_ROOT\}"/);
+  assert.match(publish, /cp "\$\{KRIC_REFRESH_OPERATION_ROOT\}\/receipt\.json" "\$\{KRIC_REFRESH_OPERATION_ROOT\}\/raw-receipt\.json"/);
+  assert.match(publish, /EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}/);
+  const at = (name) => yml.indexOf(`      - name: KRIC current facility refresh / ${name}\n`);
+  assert.ok(at("Create durable claim") < at("Collect current snapshot") && at("Collect current snapshot") < at("Publish and register current snapshot") && at("Publish and register current snapshot") < at("Finalize claimed refresh branch"));
+  assert.equal(yml.includes("Collect and bind current snapshot"), false);
 });
 
-test("KRIC refresh workflow closes out an expired claim explicitly instead of downloading forever", async () => {
-  const { ABANDONED_CLAIM_SUBJECT, KRIC_FACILITY_EVIDENCE_RETENTION_DAYS } = await import("./decide-current-kric-facility-refresh.mjs");
+// 게시된 뒤 등록 전에 실패한 run을 사람이 설명하려면 journal(단계 기록)과 decision이 항상 남아 있어야 한다.
+test("KRIC refresh workflow always uploads decision.json and journal.json (and raw-receipt.json when it exists)", () => {
   const yml = readFileSync(workflowPath, "utf8");
-  assert.equal((yml.match(/retention-days: (\d+)/g) ?? []).join(","), `retention-days: ${KRIC_FACILITY_EVIDENCE_RETENTION_DAYS}`);
-  assert.match(yml, /--json headSha,status,conclusion,event,workflowName,updatedAt/);
-  assert.match(yml, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{source_run_id\}\/artifacts\?per_page=100" > "\$\{claim_artifacts\}"/);
-  assert.match(yml, /classifyKricFacilityClaimEvidence/);
-  const recover = yml.slice(yml.indexOf("Recover claimed refresh"), yml.indexOf("Create durable claim"));
-  const classifyAt = recover.indexOf("classifyKricFacilityClaimEvidence");
-  const abandonAt = recover.indexOf(`git commit --allow-empty -m "${ABANDONED_CLAIM_SUBJECT}"`);
-  const downloadAt = recover.indexOf("gh run download");
-  assert.ok(classifyAt > 0 && abandonAt > classifyAt && downloadAt > abandonAt);
-  const abandon = recover.slice(recover.indexOf('if [[ "${evidence_state}" == "EXPIRED" ]]'), downloadAt);
-  assert.match(abandon, /git switch --detach "origin\/\$\{branch\}"/);
-  assert.match(abandon, /git push origin "HEAD:refs\/heads\/\$\{branch\}"/);
-  assert.match(abandon, /::error title=KRIC refresh claim abandoned::/);
-  assert.match(abandon, /GITHUB_STEP_SUMMARY/);
-  assert.match(abandon, /exit 1\n\s+fi/);
-  assert.doesNotMatch(abandon, /--force|\s-f\s|--delete|\+refs/);
-  assert.match(recover, /\[\[ "\$\{evidence_state\}" == "AVAILABLE" \]\] \|\| \{/);
+  const start = yml.indexOf("      - name: KRIC current facility refresh / Upload sanitized evidence\n");
+  const upload = yml.slice(start, yml.indexOf("\n      - name: ", start + 1));
+  assert.match(upload, /\n        if: \$\{\{ always\(\) \}\}\n/);
+  assert.match(upload, /decision\.json/);
+  assert.match(upload, /journal\.json/);
+  assert.match(upload, /raw-receipt\.json/);
+  assert.match(upload, /if-no-files-found: ignore/);
+  assert.equal(yml.includes("Detect retained publication receipt"), false);
 });
