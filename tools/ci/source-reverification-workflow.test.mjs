@@ -25,7 +25,7 @@ test("권한은 job에만 주고, 변수가 true일 때만 정기 실행이 돌�
   assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
   assert.match(yml, /\n    permissions:\n      actions: read\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
   assert.doesNotMatch(yml, /actions: write|gh workflow run|repository_dispatch/u);
-  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'workflow_dispatch' \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION == 'true'\) \}\}\n/u);
+  assert.match(yml, /\n    if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.triggering_actor != 'easysubway-release-chain\[bot\]' && !endsWith\(github\.triggering_actor, '\[bot\]'\)\) \|\| vars\.DATAPACK_SCHEDULED_SOURCE_REVERIFICATION == 'true'\) \}\}\n/u);
   assert.match(yml, /\n    environment: datapack-release-check\n/u);
   assert.match(yml, /\n    timeout-minutes: 90\n/u);
   assert.match(yml, /\nconcurrency:\n  group: source-reverification-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\n  cancel-in-progress: false\n/u);
