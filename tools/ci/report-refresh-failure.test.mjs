@@ -295,3 +295,49 @@ test("the default gh runner passes args and stdin to the resolved executable and
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// #995 F3: PR 없는 claim을 지울 때의 보고. 이미 실패로 기록된 run이어도 "claim을 지웠다"는 사실이 이슈에 남아야 하고,
+// producer run의 conclusion을 그대로 적는다(무조건 실패라고 쓰지 않는다).
+const orphanClaim = (overrides = {}) => ({ branch: "automation/636-current-topology-refresh-123", conclusion: "cancelled", reason: "EMPTY_CLAIM_NO_PUBLICATION", ...overrides });
+
+test("an orphan claim removal report opens an issue that states the run conclusion and the removed branch", () => {
+  const plan = planRefreshFailureReport({ repository, workflowFile, runId: "123", openIssues: [], now: start, orphan: orphanClaim() });
+  assert.equal(plan.action, "create");
+  assert.ok(plan.body.includes(runUrl(123)));
+  assert.ok(plan.body.includes("automation/636-current-topology-refresh-123"));
+  assert.match(plan.body, /conclusion: cancelled/u);
+  assert.match(plan.body, /EMPTY_CLAIM_NO_PUBLICATION/u);
+  assert.match(plan.body, /삭제/u);
+  assert.doesNotMatch(plan.body, /가 실패했다/u, "producer run의 conclusion을 그대로 적고 무조건 실패라고 쓰지 않는다");
+});
+
+test("a run already recorded as failed still gets one comment that records the claim removal, and the same removal is not repeated", async () => {
+  const github = fakeGitHub();
+  await report(github, 123, start);
+  const writesBefore = github.writes.length;
+  const orphanReport = (when) => { github.setClock(when); return reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => when, orphan: orphanClaim() }); };
+  const first = await orphanReport(new Date(start.getTime() + hours(1)));
+  assert.equal(first.action, "comment");
+  assert.equal(github.writes.length, writesBefore + 1);
+  const [comment] = github.issues[0].comments;
+  assert.ok(comment.body.includes("automation/636-current-topology-refresh-123"));
+  assert.match(comment.body, /conclusion: cancelled/u);
+  assert.match(comment.body, /삭제/u);
+  assert.equal((await orphanReport(new Date(start.getTime() + hours(2)))).action, "skip");
+  assert.equal(github.writes.length, writesBefore + 1);
+  // 같은 run의 다른 claim 삭제는 따로 기록한다.
+  const other = await reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => new Date(start.getTime() + hours(3)), orphan: orphanClaim({ branch: "automation/636-current-topology-refresh-124" }) });
+  assert.equal(other.action, "comment");
+});
+
+test("an orphan claim whose producer run succeeded is reported as succeeded, not failed", () => {
+  const plan = planRefreshFailureReport({ repository, workflowFile, runId: "124", openIssues: [], now: start, orphan: orphanClaim({ conclusion: "success" }) });
+  assert.match(plan.body, /conclusion: success/u);
+  assert.doesNotMatch(plan.body, /conclusion: (failure|cancelled)/u);
+});
+
+test("an invalid orphan description is rejected before any GitHub call", async () => {
+  for (const orphan of [{ branch: "main", conclusion: "failure", reason: "X" }, { branch: "automation/x-1", conclusion: 7, reason: "X" }, { branch: "automation/x-1", conclusion: "failure" }, "x"]) {
+    assert.throws(() => planRefreshFailureReport({ repository, workflowFile, runId: "1", openIssues: [], now: start, orphan }), /REFRESH_FAILURE_REPORT_ORPHAN/u, JSON.stringify(orphan));
+  }
+});

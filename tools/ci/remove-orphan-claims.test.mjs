@@ -17,7 +17,12 @@ const branchOf = (runId, workflow = GWANGJU) => `${CLAIM_OWNERS[workflow].prefix
 const pr = (number, state, headRefName, overrides = {}) => ({
   number, state, isDraft: false, headRefName, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY }, ...overrides,
 });
-const finishedRun = (workflow = GWANGJU, overrides = {}) => ({ status: "completed", conclusion: "failure", workflowName: CLAIM_OWNERS[workflow].workflowName, headBranch: "main", ...overrides });
+const publishStep = (workflow, conclusion) => (CLAIM_OWNERS[workflow].publicationSteps ? [{ name: CLAIM_OWNERS[workflow].publicationSteps[0], status: "completed", conclusion, number: 3 }] : []);
+// gh run view --json jobs 모양. 기본값은 게시 step이 건너뛰어진(수집 단계에서 실패한) run이다.
+const finishedRun = (workflow = GWANGJU, overrides = {}) => ({
+  status: "completed", conclusion: "failure", workflowName: CLAIM_OWNERS[workflow].workflowName, headBranch: "main",
+  jobs: [{ name: "refresh", steps: publishStep(workflow, "skipped") }], ...overrides,
+});
 
 /** gh·git·보고를 흉내 내고 호출 순서를 한 목록에 기록한다. */
 function harness({ prs = {}, runs = {}, remote = {}, compare = {}, reportError = null, deleteError = null } = {}) {
@@ -61,8 +66,8 @@ function harness({ prs = {}, runs = {}, remote = {}, compare = {}, reportError =
 }
 // 판정 시점의 ls-remote 출력(--refs). 기본값은 지금 원격과 같다.
 const refsOf = (remote) => Object.entries(remote).map(([name, sha]) => `${sha}\trefs/heads/${name}\n`).join("");
-const run = (claims, h, workflowFile = GWANGJU, { refsText = refsOf(h.remote) } = {}) => removeOrphanClaims({
-  workflowFile, repository: REPOSITORY, claims, refsText, runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log,
+const run = (claims, h, workflowFile = GWANGJU, { refsText = refsOf(h.remote), summaryFile } = {}) => removeOrphanClaims({
+  workflowFile, repository: REPOSITORY, claims, refsText, runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log, summaryFile,
 });
 
 test("PR 없는 고아는 보고(#926)한 뒤에 지운다. 지울 때 본 sha가 아니면 지우지 않는다(lease)", async () => {
@@ -241,4 +246,46 @@ test("병합된 PR의 남은 claim은 빈 claim 검사 없이 지운다", async 
   const h = harness({ prs: { [branch]: [pr(1, "MERGED", branch)] }, remote: { [branch]: SHA }, compare: { [branch]: { aheadBy: 3, changedFiles: 4, messages: ["a", "b", "c"] } } });
   assert.equal((await run([branch], h))[0].action, "removed_merged");
   assert.equal(h.events.some(([kind, second]) => kind === "gh" && second === "api"), false);
+});
+
+// #995 F3: 삭제할 때마다 남기는 기록. 보고가 건너뛰어져도(이미 기록된 run) 삭제 사실이 run 로그와 요약에 남는다.
+test("삭제할 때마다 notice와 step summary에 branch·producer run·conclusion·분류 reason·보고 action을 남긴다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "remove-claims-summary-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const summaryFile = path.join(directory, "summary.md");
+  const branch = branchOf(37399282636);
+  const h = harness({ runs: { 37399282636: finishedRun(GWANGJU, { conclusion: "cancelled" }) }, remote: { [branch]: SHA } });
+  await run([branch], h, GWANGJU, { summaryFile });
+  const notice = h.logs.find((line) => line.startsWith("::notice"));
+  assert.ok(notice, "notice 줄");
+  for (const expected of [branch, "37399282636", "conclusion=cancelled", "reason=PUBLISH_STEP_NOT_STARTED", "report=skip"]) assert.ok(notice.includes(expected), `${expected} in ${notice}`);
+  const { readFile } = await import("node:fs/promises");
+  const summary = await readFile(summaryFile, "utf8");
+  for (const expected of [branch, "37399282636", "cancelled", "PUBLISH_STEP_NOT_STARTED", "skip"]) assert.ok(summary.includes(expected), `${expected} in summary`);
+  assert.deepEqual(h.reports[0].orphan, { branch, conclusion: "cancelled", reason: "PUBLISH_STEP_NOT_STARTED" });
+});
+
+test("병합된 PR의 남은 claim 삭제도 notice에 남지만 보고에는 orphan 정보가 없다", async () => {
+  const branch = branchOf(46);
+  const h = harness({ prs: { [branch]: [pr(1, "MERGED", branch)] }, remote: { [branch]: SHA } });
+  await run([branch], h);
+  assert.ok(h.logs.some((line) => line.startsWith("::notice") && line.includes(branch) && line.includes("reason=MERGED_LEFTOVER")));
+  assert.deepEqual(h.reports, []);
+});
+
+test("게시 step이 시작된 run의 claim은 이 workflow의 판정을 거쳤어도 remover가 지우지 않는다", async () => {
+  const branch = branchOf(47);
+  const h = harness({ runs: { 47: finishedRun(GWANGJU, { jobs: [{ name: "refresh", steps: publishStep(GWANGJU, "failure") }] }) }, remote: { [branch]: SHA } });
+  await assert.rejects(run([branch], h), /CLAIM_ORPHAN_PUBLISHED_UNREGISTERED/u);
+  assert.deepEqual(h.reports, []);
+  assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+});
+
+test("자기 판정을 쓰는 등록·재확인 workflow의 reason은 OWNER_DECISION이다", async () => {
+  for (const workflow of ["current-capital-topology-registration.yml", "source-reverification.yml"]) {
+    const branch = branchOf(48, workflow);
+    const h = harness({ runs: { 48: finishedRun(workflow) }, remote: { [branch]: SHA }, compare: { [branch]: { aheadBy: 1, changedFiles: 0, messages: [CLAIM_OWNERS[workflow].claimSubject] } } });
+    await run([branch], h, workflow);
+    assert.equal(h.reports[0].orphan.reason, "OWNER_DECISION", workflow);
+  }
 });
