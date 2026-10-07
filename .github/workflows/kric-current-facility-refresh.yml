@@ -384,19 +384,28 @@ jobs:
             exit 1
           fi
 
-      - name: KRIC current facility refresh / Collect and bind current snapshot
+      - name: KRIC current facility refresh / Collect current snapshot
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
+          # #995: 준비와 공급자 수집까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
           [[ "$(git rev-parse HEAD)" == "${KRIC_REFRESH_MAIN_SHA}" ]] || {
             echo "KRIC refresh operation is not running from its claimed main" >&2
             exit 1
           }
           node tools/datapack/run-current-capital-facility-operation.mjs --phase prepare --operation-root "${KRIC_REFRESH_OPERATION_ROOT}" --expected-main-sha "${KRIC_REFRESH_MAIN_SHA}" --expected-facility-head-sha "${KRIC_REFRESH_MAIN_SHA}"
           node tools/datapack/run-current-capital-facility-operation.mjs --phase collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
+
+      - name: KRIC current facility refresh / Publish and register current snapshot
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          # #995: finalize phase가 raw object를 OCI에 게시하고 receipt를 쓴 뒤 등록한다. 이 step이 시작되면 게시됐을 수 있다(claim 정리가 이 step 이름으로 판정한다: claim-orphans.mjs).
           node tools/datapack/run-current-capital-facility-operation.mjs --phase finalize --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
           cp "${KRIC_REFRESH_OPERATION_ROOT}/receipt.json" "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json"
 
@@ -467,20 +476,8 @@ jobs:
             --title "Refresh KRIC facility snapshot" \
             --body "Refresh the due KRIC facility snapshot through the current OCI operation.\n\nRefs #629, #39, #29"
 
-      - name: KRIC current facility refresh / Detect retained publication receipt
-        id: receipt
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          # #995: 판정은 이 artifact의 유무로 claim을 복구할지(게시 receipt가 있다) 정리할지(빈 claim뿐이다) 정한다. 게시 receipt가 없으면 올리지 않는다.
-          if [[ -n "${KRIC_REFRESH_OPERATION_ROOT:-}" && -f "${KRIC_REFRESH_OPERATION_ROOT}/raw-receipt.json" ]]; then
-            echo "has_receipt=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "has_receipt=false" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: KRIC current facility refresh / Upload sanitized evidence
-        if: ${{ always() && steps.receipt.outputs.has_receipt == 'true' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: kric-current-facility-refresh-${{ github.run_id }}

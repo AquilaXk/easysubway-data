@@ -5,16 +5,22 @@
 // 남은 claim은 원장을 쓰는 다른 자동화를 모두 대기시키므로(ledger-writers-idle) 소유 workflow가 스스로 판정해 정리해야 한다.
 // 이 모듈은 그 판정을 한 곳에 둔다. 각 workflow의 판정(decide-*·classify*)이 가져다 쓴다.
 //
-// claim이 고아인 조건: 같은 저장소의 main 대상 PR이 어떤 상태로도 없다. 고아는 만든 run(브랜치 이름의 run id)과 게시 증거로 가른다.
+// claim이 고아인 조건: 같은 저장소의 main 대상 PR이 어떤 상태로도 없다. 고아는 만든 run(브랜치 이름의 run id)과 그 run의 step 기록으로 가른다.
 //   ACTIVE       만든 run이 아직 끝나지 않았다(completed가 아니다). 기다린다. 정상이다.
-//   RECOVERABLE  claim 뒤에 출력 커밋이 있거나(빈 claim 하나가 아니다) receipt artifact가 있다. 소유 workflow가 DUE·CURRENT와 무관하게 복구한다.
+//   RECOVERABLE  claim 뒤에 출력 커밋이 있거나, 게시 step이 시작된 run의 보존 증거(KRIC artifact)가 있다. 소유 workflow가 DUE·CURRENT와 무관하게 복구한다.
 //                복구 step이 형식을 검증하고 어긋나면 실패한다. 내용이 있는 브랜치는 이 모듈이 지우지 않는다.
-//   ABANDONED    run이 끝났거나 기록이 없고(Not Found) 빈 claim뿐이다. 게시된 것이 없다. 보고(#926)한 뒤 지운다(remove-orphan-claims.mjs).
-// 판정할 수 없는 상태(다른 workflow·main이 아닌 run을 가리키는 claim, 알 수 없는 run 상태, 어긋난 증거, 증거 없는 고아)는 이상이다.
-// 이상은 CLAIM_ORPHAN_* 코드로 실패해 실패 이슈로 드러난다. 추정하거나 성공으로 덮지 않는다.
+//   ABANDONED    빈 claim 하나뿐이고 만든 run이 OCI 게시 step까지 가지 않았다(수집 단계 실패 등). 게시된 것이 없다. 보고(#926)한 뒤 지운다(remove-orphan-claims.mjs).
+// 게시 step이 시작된 run은 OCI에 객체를 올렸을 수 있다. 출력 커밋도 보존 증거도 없으면 "게시됐지만 등록되지 않았을 수 있는" 상태라서 지우지 않고
+// CLAIM_ORPHAN_PUBLISHED_UNREGISTERED로 실패한다(사람이 볼 이상 상황이고, 실패한 job이 #926 보고로 드러난다).
+// run 기록이 없거나(Not Found) step 정보가 없으면 게시 step까지 갔는지 알 수 없으므로 빈 claim이라도 지우지 않고 실패한다.
+// 그 밖의 판정할 수 없는 상태(다른 workflow·main이 아닌 run을 가리키는 claim, 알 수 없는 run 상태, 어긋난 증거, 증거 없는 고아)도 CLAIM_ORPHAN_* 코드로 실패한다.
+// 추정하거나 성공으로 덮지 않는다.
+//
+// 게시 step(publicationSteps)은 workflow 파일의 step 이름과 같아야 한다(계약 테스트가 대조한다). collect·publish를 한 step에서 하면 수집 실패와
+// 게시 이후 실패를 가를 수 없으므로 광주·서울·KRIC은 두 step으로 나눠 두었다. 분리 전 합쳐진 step 이름도 표에 남겨 둔다(그 step이 시작된 옛 run은 게시된 것으로 본다).
 //
 // run 조회는 #987 리뷰 F1·#994의 상한 패턴을 따른다: 끝난 run 이력을 목록으로 받지 않고(`gh run list` 없음) 고아마다 `gh run view <id>` 한 번.
-// Not Found는 끝나서 사라진 run이고 그 밖의 gh 오류는 fail closed다. claim 브랜치는 MAX_CLAIM_BRANCHES(50)를 넘으면 gh를 부르기 전에 실패한다.
+// Not Found는 { found: false }로 수집하고 그 밖의 gh 오류는 fail closed다. claim 브랜치는 MAX_CLAIM_BRANCHES(50)를 넘으면 gh를 부르기 전에 실패한다.
 //
 // 증거 수집 사용: node tools/ci/claim-orphans.mjs --workflow <file> --repository <owner/repo> --refs <git ls-remote 출력> --prs <collect-automation-prs.mjs 출력> --output <path>
 import { readFile, writeFile } from "node:fs/promises";
@@ -25,21 +31,37 @@ import { MAX_CLAIM_BRANCHES } from "./collect-automation-prs.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { defaultRunGh } from "./report-refresh-failure.mjs";
 
-// claim 브랜치를 provider 접근 전에 만드는 갱신 workflow. receiptArtifact는 게시 뒤 실패한 run이 남기는 복구 증거 artifact 이름이다.
-// 출력 커밋이 증거인 workflow(광주·서울·topology)는 receiptArtifact가 없다. abandonedSubject는 소유 workflow가 "닫았다"고 남기는 커밋 제목이다.
+// claim 브랜치를 provider 접근 전에 만드는 갱신 workflow.
+// - publicationSteps: OCI 게시를 하는 step 이름(첫 이름이 현재, 나머지는 분리 전). null이면 이 workflow는 OCI에 게시하지 않는다. undefined면 이 workflow의 판정은 자기 의미를 쓴다(등록·재확인).
+// - receiptArtifact: 게시 step이 시작된 run이 남기는 보존 증거 artifact 이름(KRIC). 출력 커밋이 증거인 workflow(광주·서울·topology)는 없다.
+// - abandonedSubject: 소유 workflow가 "닫았다"고 남기는 커밋 제목.
 const owner = (workflowFile, workflowName, claimSubject, extra = {}) => Object.freeze({ prefix: REFRESH_CLAIM_PREFIXES[workflowFile], workflowName, claimSubject, ...extra });
 export const CLAIM_OWNERS = Object.freeze({
-  "retained-gwangju-timetable-refresh.yml": owner("retained-gwangju-timetable-refresh.yml", "Retained Gwangju Timetable Refresh", "Claim retained Gwangju timetable refresh"),
-  "seoul-current-accessibility-refresh.yml": owner("seoul-current-accessibility-refresh.yml", "Seoul Current Accessibility Refresh", "Claim Seoul accessibility refresh"),
+  "retained-gwangju-timetable-refresh.yml": owner("retained-gwangju-timetable-refresh.yml", "Retained Gwangju Timetable Refresh", "Claim retained Gwangju timetable refresh", {
+    publicationSteps: Object.freeze(["Publish and register retained Gwangju timetable", "Refresh due retained Gwangju timetable"]),
+  }),
+  "seoul-current-accessibility-refresh.yml": owner("seoul-current-accessibility-refresh.yml", "Seoul Current Accessibility Refresh", "Claim Seoul accessibility refresh", {
+    publicationSteps: Object.freeze(["Publish and register Seoul accessibility snapshot", "Collect and bind current snapshot"]),
+  }),
   "kric-current-facility-refresh.yml": owner("kric-current-facility-refresh.yml", "KRIC Current Facility Refresh", "Claim KRIC facility refresh", {
+    publicationSteps: Object.freeze(["KRIC current facility refresh / Publish and register current snapshot", "KRIC current facility refresh / Collect and bind current snapshot"]),
     abandonedSubject: "Abandon KRIC facility refresh claim",
     receiptArtifact: (runId) => `kric-current-facility-refresh-${runId}`,
   }),
-  "current-capital-topology-refresh.yml": owner("current-capital-topology-refresh.yml", "Current Capital Topology Refresh", "Claim current topology refresh"),
+  // 수도권 topology 갱신은 입력을 git 커밋으로만 남기고 OCI에 게시하지 않는다.
+  "current-capital-topology-refresh.yml": owner("current-capital-topology-refresh.yml", "Current Capital Topology Refresh", "Claim current topology refresh", { publicationSteps: null }),
   "current-capital-topology-registration.yml": owner("current-capital-topology-registration.yml", "Current Capital Topology Registration", "Claim capital topology registration", {
     receiptArtifact: (runId) => `current-capital-topology-registration-${runId}`,
   }),
   "source-reverification.yml": owner("source-reverification.yml", "Source Reverification", "Claim source reverification"),
+});
+
+// 분리 전 합쳐진 step에서 실패한 옛 run은 수집 단계 실패와 게시 이후 실패를 step으로 가를 수 없다. 로그로 게시 전 실패가 확인된 run만 여기에 둔다.
+// 근거는 값에 적는다. 새 run은 분리된 게시 step으로 판정하므로 이 표는 늘리지 않는다.
+export const VERIFIED_PRE_PUBLICATION_RUNS = Object.freeze({
+  "retained-gwangju-timetable-refresh.yml": Object.freeze({
+    "37399282636": "step log ends with KRIC_TIMETABLE_FILE_BODY 30.1s after the step started; collectKricNationwideTimetableFile is the controller's first call, before OCI publication (checked 2026-10-07)",
+  }),
 });
 
 // GitHub Actions run status. completed가 아닌 모든 상태는 아직 끝나지 않은 run이다.
@@ -79,7 +101,9 @@ function assertEvidence(claimOwner, evidence) {
   const { run, commits, artifacts } = evidence;
   if (!isObject(run) || typeof run.found !== "boolean") invalid(`${evidence.branch} run`);
   if (run.found && (!RUN_STATUSES.includes(run.status) || typeof run.workflowName !== "string" || typeof run.headBranch !== "string"
-    || !(run.conclusion === null || typeof run.conclusion === "string"))) invalid(`${evidence.branch} run state`);
+    || !(run.conclusion === null || typeof run.conclusion === "string")
+    || !Array.isArray(run.steps) || run.steps.some((item) => !isObject(item) || typeof item.name !== "string" || typeof item.status !== "string"
+      || !(item.conclusion === null || typeof item.conclusion === "string")))) invalid(`${evidence.branch} run state`);
   if (!isObject(commits) || !isCount(commits.aheadBy) || !isCount(commits.changedFiles)
     || !Array.isArray(commits.subjects) || commits.subjects.some((subject) => typeof subject !== "string")) invalid(`${evidence.branch} commits`);
   if (!Array.isArray(artifacts) || artifacts.some((artifact) => !isObject(artifact) || typeof artifact.name !== "string" || typeof artifact.expired !== "boolean")) invalid(`${evidence.branch} artifacts`);
@@ -94,6 +118,14 @@ export function assertClaimRunOwner(workflowFile, branch, run) {
   }
 }
 
+// 게시 step이 시작됐는가. 건너뛰어진(skipped) step과 시작되지 않은 step은 게시하지 않았다. 목록에 게시 step이 하나도 없으면 판단할 수 없다.
+function publicationStarted(claimOwner, claimRun, branch) {
+  const found = claimRun.steps.filter(({ name }) => claimOwner.publicationSteps.includes(name));
+  if (found.length === 0) fail("CLAIM_ORPHAN_STEPS_UNAVAILABLE", `${branch}: producer run has no ${claimOwner.publicationSteps[0]} step record`);
+  // 끝난 run에서 건너뛰어지지 않은 step은 실행됐다(성공·실패·취소·시간 초과). 취소된 run의 미시작 step도 시작된 것으로 본다(지우지 않는 쪽).
+  return found.some(({ conclusion }) => conclusion !== null && conclusion !== "skipped");
+}
+
 /**
  * PR 없는 claim 하나의 처지를 정한다.
  * @returns {{ branch: string, runId: string, kind: "ACTIVE"|"RECOVERABLE"|"ABANDONED", reason: string }}
@@ -105,14 +137,17 @@ export function classifyUnboundClaim(workflowFile, evidence) {
   assertClaimRunOwner(workflowFile, branch, run);
   if (run.found && run.status !== "completed") return result("ACTIVE", "RUN_IN_PROGRESS");
   if (claimOwner.abandonedSubject && commits.subjects.at(-1) === claimOwner.abandonedSubject) return result("ABANDONED", "CLAIM_CLOSED_OUT");
-  // 빈 claim 하나뿐인 브랜치만 "게시된 것이 없다"고 본다. 개수·제목·내용 중 하나라도 다르면 내용이 있는 브랜치라 지우지 않는다.
+  // 빈 claim 하나뿐인 브랜치만 "출력 커밋이 없다"고 본다. 개수·제목·내용 중 하나라도 다르면 내용이 있는 브랜치라 지우지 않는다.
+  // 빈 claim이라는 것만으로는 게시되지 않았다는 증거가 아니다. 게시는 출력 커밋보다 먼저 일어난다(아래 step 판정).
   const emptyClaim = commits.aheadBy === 1 && commits.subjects.length === 1 && commits.subjects[0] === claimOwner.claimSubject && commits.changedFiles === 0;
   if (!emptyClaim) return result("RECOVERABLE", "BRANCH_CARRIES_OUTPUT");
-  if (claimOwner.receiptArtifact) {
-    const name = claimOwner.receiptArtifact(runId);
-    if (artifacts.some((artifact) => artifact.name === name && artifact.expired === false)) return result("RECOVERABLE", "RECEIPT_ARTIFACT");
-  }
-  return result("ABANDONED", run.found ? "EMPTY_CLAIM_RUN_FINISHED" : "EMPTY_CLAIM_RUN_GONE");
+  if (claimOwner.publicationSteps === null) return result("ABANDONED", "EMPTY_CLAIM_NO_PUBLICATION");
+  if (!run.found) fail("CLAIM_ORPHAN_RUN_UNAVAILABLE", `${branch}: producer run ${runId} record is gone, so whether it reached publication is unknown; the claim is kept`);
+  if (!publicationStarted(claimOwner, run, branch)) return result("ABANDONED", "PUBLISH_STEP_NOT_STARTED");
+  if (VERIFIED_PRE_PUBLICATION_RUNS[workflowFile]?.[runId] && run.steps.every(({ name }) => name !== claimOwner.publicationSteps[0])) return result("ABANDONED", "VERIFIED_PRE_PUBLICATION");
+  const retained = claimOwner.receiptArtifact?.(runId);
+  if (retained && artifacts.some((artifact) => artifact.name === retained && artifact.expired === false)) return result("RECOVERABLE", "RETAINED_EVIDENCE");
+  return fail("CLAIM_ORPHAN_PUBLISHED_UNREGISTERED", `${branch}: producer run ${runId} started ${claimOwner.publicationSteps[0]} but left no output commit or retained evidence; the claim is kept for a human check`);
 }
 
 function boundBranches(workflowFile, repository, pullRequests) {
@@ -157,13 +192,18 @@ async function ghJson(runGh, args, describe) {
   }
 }
 
-/** claim을 만든 run 하나를 `gh run view <id>`로 조회한다. 기록이 없으면(Not Found) { found: false }, 그 밖의 gh 오류는 그대로 던진다. */
+/**
+ * claim을 만든 run 하나를 `gh run view <id>`로 조회한다. job의 step을 평탄화해 steps로 돌려준다(게시 step까지 갔는지 판정하는 근거).
+ * 기록이 없으면(Not Found) { found: false }, 그 밖의 gh 오류는 그대로 던진다.
+ */
 export async function lookupClaimRun(runGh, repository, runId) {
   try {
-    const run = await ghJson(runGh, ["run", "view", runId, "--repo", repository, "--json", "status,conclusion,workflowName,headBranch"], `run ${runId}`);
-    return { found: true, status: run?.status, conclusion: run?.conclusion ?? null, workflowName: run?.workflowName, headBranch: run?.headBranch };
+    const run = await ghJson(runGh, ["run", "view", runId, "--repo", repository, "--json", "status,conclusion,workflowName,headBranch,jobs"], `run ${runId}`);
+    const steps = (Array.isArray(run?.jobs) ? run.jobs : []).flatMap((job) => (Array.isArray(job?.steps) ? job.steps : []))
+      .map(({ name, status, conclusion }) => ({ name, status, conclusion: conclusion === "" ? null : (conclusion ?? null) }));
+    return { found: true, status: run?.status, conclusion: run?.conclusion ?? null, workflowName: run?.workflowName, headBranch: run?.headBranch, steps };
   } catch (error) {
-    // 기록이 없는 run은 끝나서 사라진 run이다. 그 밖의 오류(권한·서버·네트워크)는 추정하지 않고 실패한다.
+    // 기록이 없는 run은 { found: false }다. 권한·서버·네트워크 오류는 추정하지 않고 실패한다.
     if (isGhNotFound(error)) return { found: false };
     throw error;
   }

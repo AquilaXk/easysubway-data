@@ -155,15 +155,26 @@ jobs:
           set -euo pipefail
           [[ -n "${DATA_GO_KR_SERVICE_KEY:-}" && "${DATA_GO_KR_SERVICE_KEY}" != *$'\n'* && "${DATA_GO_KR_SERVICE_KEY}" != *$'\r'* ]] || { echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2; exit 1; }
           [[ -n "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL:-}" && "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" != *$'\n'* && "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" != *$'\r'* ]] || { echo "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL must be a nonempty single line" >&2; exit 1; }
-      - name: Collect and bind current snapshot
+      - name: Collect current snapshot
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
+          # #995: 공급자 수집과 observation 기록까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
           [[ "$(git rev-parse HEAD)" == "${SEOUL_REFRESH_MAIN_SHA}" ]] || { echo "Seoul refresh operation is not running from its claimed main" >&2; exit 1; }
-          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --request-attempts 1
+          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --request-attempts 1 --phase collect
+      - name: Publish and register Seoul accessibility snapshot
+        if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          # #995: 수집 step이 남긴 observation을 OCI에 게시하고 원장에 등록한다. 이 step이 시작되면 게시됐을 수 있다(claim 정리가 이 step 이름으로 판정한다: claim-orphans.mjs).
+          [[ "$(git rev-parse HEAD)" == "${SEOUL_REFRESH_MAIN_SHA}" ]] || { echo "Seoul refresh operation is not running from its claimed main" >&2; exit 1; }
+          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --request-attempts 1 --phase publish
       - name: Finalize claimed refresh branch
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:

@@ -148,15 +148,26 @@ jobs:
           git switch --detach "${main_sha}"
           printf 'RETAINED_GWANGJU_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
           printf 'RETAINED_GWANGJU_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
-      - name: Refresh due retained Gwangju timetable
+      - name: Collect due retained Gwangju timetable
         if: ${{ steps.decision.outputs.state == 'DUE' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
+          # #995: 수집·계약 준비까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
           [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its claimed main" >&2; exit 1; }
-          node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation"
+          node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation" --phase collect
+      - name: Publish and register retained Gwangju timetable
+        if: ${{ steps.decision.outputs.state == 'DUE' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+        run: |
+          set -euo pipefail
+          # #995: 수집 step이 남긴 파일을 OCI에 게시하고 원장에 등록한다. 이 step이 시작되면 게시됐을 수 있다(claim 정리가 이 step 이름으로 판정한다: claim-orphans.mjs).
+          [[ "$(git rev-parse HEAD)" == "${RETAINED_GWANGJU_MAIN_SHA}" ]] || { echo "retained timetable controller is not running from its claimed main" >&2; exit 1; }
+          node tools/datapack/run-retained-gwangju-timetable-refresh.mjs --operation-root "${RUNNER_TEMP}/retained-gwangju-timetable-refresh/${GITHUB_RUN_ID}/operation" --phase publish
       - name: Finalize retained timetable claim
         if: ${{ steps.decision.outputs.state == 'DUE' }}
         env:
