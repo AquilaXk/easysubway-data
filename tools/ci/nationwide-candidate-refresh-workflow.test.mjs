@@ -84,6 +84,16 @@ test("후보 생성·범위 검증·push·App 토큰·PR 생성은 STALE 또는 
   assert.equal(ifCondition(step("Remove the candidate refresh branch after a later failure").block), "${{ (failure() || cancelled()) && env.CANDIDATE_BRANCH != '' }}");
 });
 
+// #1047: 후보 입력 발행(OCI)에 쓰는 사전 인증 URL은 저장소 secret이 아니라 datapack-release-check environment의 secret이다.
+// job이 그 environment에 묶이지 않으면 값이 빈 문자열로 들어가 STALE 판정 뒤 발행 단계에서 실패한다(run 37737000536).
+// 최소 권한: secret은 후보 갱신 step의 env에서만 읽고, environment 승인 규칙은 없다(자동화가 막히지 않는다).
+test("job은 datapack-release-check environment에 묶이고 사전 인증 URL secret은 후보 갱신 step만 읽는다(#1047)", () => {
+  assert.equal((yml.match(/\n    environment: datapack-release-check\n/gu) ?? []).length, 1);
+  const references = yml.match(/secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/gu) ?? [];
+  assert.equal(references.length, 1);
+  assert.match(step("Refresh nationwide candidate").block, /\n          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}\n/u);
+});
+
 test("OPEN_PR이면 App 토큰 → required CI 보장 → 열린 PR 상한 검사 순서로 돈다", () => {
   assertOpenPullRequestSteps({ steps, file: FILE, decisionName: "Decide whether the nationwide candidate must be refreshed" });
 });
