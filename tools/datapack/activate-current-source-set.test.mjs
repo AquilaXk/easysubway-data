@@ -347,17 +347,23 @@ function expectedSourceRowsAfterTopologyRefresh({ previousPack, outputPack, inve
 
 /**
  * 접근성 증거 행의 snapshot 결속. 행은 inventory가 admission한 현재 snapshot을 가리키거나, 후보 갱신이 팩을 다시 만들기 전이라면
- * 이전 팩의 같은 원천 행이 가리키던 snapshot이고 거기서 현재 head까지 원장 경로의 모든 행이 내용상 같을 때만 허용한다.
+ * 출발점 snapshot이고 거기서 현재 head까지 원장 경로의 모든 행이 내용상 같을 때만 허용한다. 출발점은 이전 팩의 같은 원천 행이 가리키던 snapshot이거나
+ * 팩을 만드는 입력(inputRows)이 가리키는 snapshot이다. 입력은 다른 원천의 갱신(예 서울 접근성)이 그때의 head로 재결속하므로,
+ * KRIC 갱신이 연속 두 번이면 이전 팩에도 현재 head에도 없는 중간 사슬 구성원일 수 있다(#1048).
  * 내용이 바뀌었으면 현재 snapshot이어야 하고 아니면 실패한다(release 게이트 validate-candidate-source-set.mjs 114행은 head 일치를 엄격히 요구한다).
  * Incheon은 이 갱신의 대상이라 현재 snapshot만 허용한다.
  */
-function assertEvidenceRowsBoundToCurrentOrEquivalent({ rows, previousPack, currentSnapshotBySource, ledger }) {
+function assertEvidenceRowsBoundToCurrentOrEquivalent({ rows, previousPack, inputRows, currentSnapshotBySource, ledger }) {
   for (const { sourceId, sourceSnapshotId } of rows) {
     const current = currentSnapshotBySource.get(sourceId);
     if (sourceSnapshotId === current) continue;
     assert.notEqual(sourceId, "incheon-transit-accessibility", `${sourceId}: 현재 snapshot ${current}만 허용한다(${sourceSnapshotId})`);
-    assert.ok(evidenceSnapshotIds(evidenceRowsOf(previousPack, sourceId)).has(sourceSnapshotId),
-      `${sourceId}: 증거 행의 snapshot ${sourceSnapshotId}은 현재 snapshot도 이전 팩의 snapshot도 아니다`);
+    const starts = new Set([
+      ...evidenceSnapshotIds(evidenceRowsOf(previousPack, sourceId)),
+      ...evidenceSnapshotIds(inputRows.filter((row) => row?.sourceId === sourceId)),
+    ]);
+    assert.ok(starts.has(sourceSnapshotId),
+      `${sourceId}: 증거 행의 snapshot ${sourceSnapshotId}은 현재 snapshot도 이전 팩·입력의 snapshot도 아니다`);
     assertLagIsContentEquivalent({ ledger, sourceId, snapshotId: sourceSnapshotId, headSnapshotId: current, label: `${sourceId} 증거 행` });
   }
 }
@@ -1783,6 +1789,7 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
   assert.ok(accessibilityRows.length > 0);
   assertEvidenceRowsBoundToCurrentOrEquivalent({
     rows: accessibilityRows, previousPack: previousCapital, currentSnapshotBySource: currentAccessibilitySnapshotBySource,
+    inputRows: [...productionInput.facilityRows, ...productionInput.accessibilityStatusEvidence],
     ledger: await readJson("tools/datapack/release/source-snapshots.json"),
   });
   assert.equal(result.sourceSeparatedTopologyPath, currentTopologyPath);
@@ -3083,8 +3090,8 @@ test("접근성 증거 행은 현재 snapshot이거나 내용이 같은 이전 s
   });
   const previousPack = packOf(sourceRow("2026-10-02T00:00:00.000Z"), evidence("old", "2026-10-02T06:00:00.000Z"));
   const current = new Map([[SOURCE, "head"]]);
-  const check = ({ rows, ledger, prev = previousPack, currentMap = current }) =>
-    assertEvidenceRowsBoundToCurrentOrEquivalent({ rows, previousPack: prev, currentSnapshotBySource: currentMap, ledger });
+  const check = ({ rows, ledger, prev = previousPack, currentMap = current, inputRows = [] }) =>
+    assertEvidenceRowsBoundToCurrentOrEquivalent({ rows, previousPack: prev, inputRows, currentSnapshotBySource: currentMap, ledger });
   const equivalentLedger = [row("old", null), row("head", "old")];
 
   check({ rows: [evidence("head", "2026-10-07T00:00:00.000Z")], ledger: equivalentLedger }); // 현재 snapshot
@@ -3093,8 +3100,8 @@ test("접근성 증거 행은 현재 snapshot이거나 내용이 같은 이전 s
   assert.throws(() => check({ rows: [evidence("old", "2026-10-02T00:00:00.000Z")], ledger: [row("old", null), row("mid", "old", "c2"), row("head", "mid")] }), /LAG_CONTENT_CHANGED/u);
   assert.throws(() => check({ rows: [evidence("old", "2026-10-02T00:00:00.000Z")], ledger: [row("old", null), row("head", "old", "c1", "r2")] }), /LAG_CONTENT_CHANGED/u);
   // 현재도 이전 팩의 것도 아닌 snapshot(원장에 있어도, 없어도)을 가리킨다.
-  assert.throws(() => check({ rows: [evidence("unrelated", "2026-10-02T00:00:00.000Z")], ledger: [...equivalentLedger, row("unrelated", "head")] }), /현재 snapshot도 이전 팩의 snapshot도 아니다/u);
-  assert.throws(() => check({ rows: [evidence("ghost", "2026-10-02T00:00:00.000Z")], ledger: equivalentLedger }), /현재 snapshot도 이전 팩의 snapshot도 아니다/u);
+  assert.throws(() => check({ rows: [evidence("unrelated", "2026-10-02T00:00:00.000Z")], ledger: [...equivalentLedger, row("unrelated", "head")] }), /현재 snapshot도 이전 팩·입력의 snapshot도 아니다/u);
+  assert.throws(() => check({ rows: [evidence("ghost", "2026-10-02T00:00:00.000Z")], ledger: equivalentLedger }), /현재 snapshot도 이전 팩·입력의 snapshot도 아니다/u);
   // 이전 팩이 가리키던 snapshot이 원장에 없다.
   assert.throws(() => check({ rows: [evidence("old", "2026-10-02T00:00:00.000Z")], ledger: [row("head", null)] }), /LAG_NOT_IN_LEDGER/u);
   // Incheon은 현재 snapshot만 허용한다.
@@ -3102,4 +3109,31 @@ test("접근성 증거 행은 현재 snapshot이거나 내용이 같은 이전 s
   const incheonPrevious = { sourceInventory: [sourceRow("2026-08-28T00:00:00.000Z", incheon)], facilities: [evidence("old", "2026-08-28T00:00:00.000Z", incheon)], stationFacilityEvidence: [] };
   const incheonLedger = [{ ...row("old", null), sourceId: incheon }, { ...row("head", "old"), sourceId: incheon }];
   assert.throws(() => check({ rows: [evidence("old", "2026-08-28T00:00:00.000Z", incheon)], ledger: incheonLedger, prev: incheonPrevious, currentMap: new Map([[incheon, "head"]]) }), /현재 snapshot head만 허용한다/u);
+  assert.throws(() => check({ rows: [evidence("old", "2026-08-28T00:00:00.000Z", incheon)], inputRows: [evidence("old", "2026-08-28T00:00:00.000Z", incheon)], ledger: incheonLedger, prev: incheonPrevious, currentMap: new Map([[incheon, "head"]]) }), /현재 snapshot head만 허용한다/u, "입력이 가리켜도 Incheon은 현재 snapshot만 허용한다");
+});
+
+// #1048: KRIC 갱신 → 서울 접근성 갱신(입력을 그때의 head로 재결속) → KRIC 갱신 순서면, 두 번째 KRIC 갱신 PR에서 입력의 snapshot은 이전 팩에도 head에도 없는 중간 사슬 구성원이다.
+// 팩은 mid를 가리키지 않아도 mid부터 head까지 내용이 같으면 허용하고, 내용이 바뀌었으면 입력이 가리켜도 head와 같아야 한다.
+test("입력이 서울 갱신으로 재결속한 중간 사슬 snapshot이면 head까지 내용이 같을 때만 뒤처짐을 허용한다(#1048)", () => {
+  const SOURCE = "kric-station-convenience-standard";
+  const row = (snapshotId, previousSnapshotId, content = "c1", raw = "r1") => ({
+    sourceId: SOURCE, snapshotId, previousSnapshotId, contentSha256: content, rawReceipt: { snapshotRawSha256: raw },
+  });
+  const previousPack = packOf(sourceRow("2026-10-02T00:00:00.000Z"), evidence("old", "2026-10-02T06:00:00.000Z"));
+  const check = ({ rows, ledger, inputRows }) => assertEvidenceRowsBoundToCurrentOrEquivalent({
+    rows, previousPack, inputRows, currentSnapshotBySource: new Map([[SOURCE, "head"]]), ledger,
+  });
+  const at = (id) => evidence(id, "2026-10-07T18:51:21.362Z");
+  const chain = [row("old", null), row("mid", "old"), row("head", "mid")];
+  // 입력이 mid를 가리키고 팩은 old를 가리킨다. mid와 head의 내용이 같다.
+  check({ rows: [at("mid")], inputRows: [at("mid")], ledger: chain });
+  // head 행의 내용(정규화 내용, 원본 sha)이 바뀌었으면 입력이 mid를 가리켜도 거부한다.
+  assert.throws(() => check({ rows: [at("mid")], inputRows: [at("mid")], ledger: [row("old", null), row("mid", "old"), row("head", "mid", "c2")] }), /LAG_CONTENT_CHANGED/u);
+  assert.throws(() => check({ rows: [at("mid")], inputRows: [at("mid")], ledger: [row("old", null), row("mid", "old"), row("head", "mid", "c1", "r2")] }), /LAG_CONTENT_CHANGED/u);
+  // 입력이 가리키지 않는 중간 snapshot은 사슬 안이고 내용이 같아도 거부한다(이전 팩도 입력도 아니다).
+  assert.throws(() => check({ rows: [at("mid")], inputRows: [at("old")], ledger: chain }), /현재 snapshot도 이전 팩·입력의 snapshot도 아니다/u);
+  assert.throws(() => check({ rows: [at("mid")], inputRows: [], ledger: chain }), /현재 snapshot도 이전 팩·입력의 snapshot도 아니다/u);
+  // 입력이 가리켜도 원장에 없거나 head 사슬 밖이면 거부한다.
+  assert.throws(() => check({ rows: [at("ghost")], inputRows: [at("ghost")], ledger: chain }), /LAG_NOT_IN_LEDGER/u);
+  assert.throws(() => check({ rows: [at("side")], inputRows: [at("side")], ledger: [...chain, row("side", "old")] }), /LAG_OFF_CHAIN/u);
 });
