@@ -18,6 +18,7 @@ import {
 } from "./refresh-nationwide-candidate.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { rebindCurrentSeoulTransferSourceAdmission } from "./rebind-current-seoul-transfer-source-admission.mjs";
+import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import {
   rewriteSeoulTransferFixtureCanonicalPack,
   SEOUL_TRANSFER_REBIND_PAR_BASE_URL,
@@ -26,6 +27,10 @@ import {
 } from "./test-fixtures/seoul-transfer-rebind-repository.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+// #1038: 후보와 대조하는 입력(원장·inventory·ITX 계약 등)은 작업 트리가 아니라 후보가 고정한 바이트로 읽는다. 재결속 PR은 후보가 고정한
+// 선택된 원장 행을 다시 쓰므로 작업 트리와 대조하면 후보를 다시 만들기 전까지 항상 어긋난다(#943: PR CI는 후보 내부 일관성만 본다).
+// 고정 입력이 작업 트리와 같으면(일반 PR) 작업 공간이 저장소 루트 그대로다. 도구 코드는 계속 이 PR의 것(root)을 쓴다.
+const candidateWorkspace = candidateWorkspaceAccess();
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const VALID_ARGS = [
@@ -82,7 +87,7 @@ test("#929 D3 정기 역할 갱신은 그 run의 gate-run 파일 없이는 시�
 });
 
 test("#929 D3 결속 검증은 release request의 gateRun이 이번 run과 다르면 실패한다", async () => {
-  const state = await readNationwideCandidateRefreshState(root);
+  const state = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
   const gateRun = { repository: "AquilaXk/easysubway-data", workflowPath: ".github/workflows/nationwide-candidate-refresh.yml",
     runId: 1, runAttempt: 1, event: "workflow_dispatch", headSha: "a".repeat(40) };
   const base = { ...state, evaluatedAt: state.fanIn.evaluatedAt,
@@ -93,7 +98,7 @@ test("#929 D3 결속 검증은 release request의 gateRun이 이번 run과 다�
 });
 
 test("현재 커밋 후보는 refresh-nationwide-candidate로 재생성돼 결속 검증을 통과한다(#862)", async () => {
-  const state = await readNationwideCandidateRefreshState(root);
+  const state = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
   const violations = nationwideCandidateRefreshViolations({
     ...state,
     evaluatedAt: state.fanIn.evaluatedAt,
@@ -106,7 +111,7 @@ test("현재 커밋 후보는 refresh-nationwide-candidate로 재생성돼 결�
 });
 
 test("결속 검증은 fan-in head·시계·ledger 해시·request 결속이 하나라도 어긋나면 실패한다", async () => {
-  const committed = await readNationwideCandidateRefreshState(root);
+  const committed = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
   const consistent = () => {
     const state = structuredClone({ ...committed, buildSpecBytes: undefined });
     return state;
@@ -168,8 +173,9 @@ const CANDIDATE_INPUT_MANIFEST = "tools/datapack/release/nationwide-candidate-in
 async function copiedRepository(t) {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-refresh-"));
   t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const pinnedRoot = await candidateWorkspace.root();
   // 정책 sync는 ITX 승인 원천을 읽는다. 계약이 가리키는 원천·완결성 증거도 함께 복사한다.
-  const itxReference = JSON.parse(await readFile(path.join(root, ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
+  const itxReference = JSON.parse(await readFile(path.join(pinnedRoot, ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
   // 게이트 승격(#977)이면 승격 근거(영수증·정책·직전·기준선 원천)도 같은 루트에서 다시 계산할 수 있어야 한다.
   const gate = itxReference.promotion?.gate === undefined ? [] : [
     itxReference.promotion.gate.receiptPath,
@@ -187,7 +193,7 @@ async function copiedRepository(t) {
     ...gate,
   ])]) {
     await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true });
-    await cp(path.join(root, relative), path.join(repositoryRoot, relative));
+    await cp(path.join(pinnedRoot, relative), path.join(repositoryRoot, relative));
   }
   return repositoryRoot;
 }
@@ -378,7 +384,7 @@ async function withWallClock(t, instant) {
 }
 
 async function itxFreshUntilMillis() {
-  const reference = JSON.parse(await readFile(path.join(root, ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
+  const reference = JSON.parse(await readFile(path.join(await candidateWorkspace.root(), ITX_CONTRACT), "utf8")).sourceTimetableArtifact;
   const freshUntil = Date.parse(reference.freshUntil);
   assert.ok(Number.isFinite(freshUntil), "ITX freshUntil must be an instant");
   return freshUntil;

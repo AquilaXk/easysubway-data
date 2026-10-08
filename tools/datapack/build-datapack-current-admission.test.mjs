@@ -798,13 +798,16 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
 });
 
 test("registered Incheon accessibility projection binds the current candidate and every materialized row", async () => {
+  // #1038: 후보와 대조하는 spec·inventory·topology snapshot은 작업 트리가 아니라 후보가 고정한 바이트로 읽는다. 재결속 PR이 inventory를 다시 쓰므로
+  // 작업 트리 inventory를 후보 spec과 대조하면 후보를 다시 만들기 전까지 항상 어긋난다(#943). 고정 입력이 작업 트리와 같으면 저장소 루트 그대로다.
+  const { root: candidateRoot } = await candidatePinnedWorkspace();
   const [buildSpec, sourceInventory] = await Promise.all([
-    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(candidateRoot, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(candidateRoot, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
   ]);
   const topologySource = sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
   const topologySnapshot = await readFile(
-    path.join(root, topologySource.topologyAdmissionEvidence.snapshotPath),
+    path.join(candidateRoot, topologySource.topologyAdmissionEvidence.snapshotPath),
     "utf8",
   ).then(JSON.parse);
   const registeredNow = new Date(Math.min(
@@ -816,7 +819,7 @@ test("registered Incheon accessibility projection binds the current candidate an
     sourceInventory,
     topologySnapshot,
     topologyMode: "registered-topology-successor",
-    repositoryRoot: root,
+    repositoryRoot: candidateRoot,
     now: registeredNow,
   });
   const externalLegacyKey = structuredClone(buildSpec.networkEdgeEvidence);
@@ -861,13 +864,13 @@ test("registered Incheon accessibility projection binds the current candidate an
   );
   await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(absentProjection, {
     sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
-    repositoryRoot: root, now: registeredNow,
+    repositoryRoot: candidateRoot, now: registeredNow,
   }), /exactly one registered Incheon accessibility projection/);
   const duplicateProjection = structuredClone(buildSpec);
   duplicateProjection.sourceSnapshots.push(structuredClone(registered.projection));
   await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(duplicateProjection, {
     sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
-    repositoryRoot: root, now: registeredNow,
+    repositoryRoot: candidateRoot, now: registeredNow,
   }), /exactly one registered Incheon accessibility projection/);
 
   const byteHashDrift = structuredClone(sourceInventory);
@@ -875,35 +878,35 @@ test("registered Incheon accessibility projection binds the current candidate an
     .registrationEvidence.snapshotFileSha256 = "0".repeat(64);
   await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
     sourceInventory: byteHashDrift, topologySnapshot,
-    topologyMode: "registered-topology-successor", repositoryRoot: root, now: registeredNow,
+    topologyMode: "registered-topology-successor", repositoryRoot: candidateRoot, now: registeredNow,
   }), /sha256 must match tracked input bytes/);
   const normalizedSchemaDrift = structuredClone(sourceInventory);
   normalizedSchemaDrift.sources.find(({ id }) => id === "incheon-transit-accessibility")
     .registrationEvidence.normalizedSchemaFingerprint = "0".repeat(64);
   await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(buildSpec, {
     sourceInventory: normalizedSchemaDrift, topologySnapshot,
-    topologyMode: "registered-topology-successor", repositoryRoot: root, now: registeredNow,
+    topologyMode: "registered-topology-successor", repositoryRoot: candidateRoot, now: registeredNow,
   }), /registration evidence does not match tracked snapshot bytes/);
   const adminReviewDrift = structuredClone(buildSpec);
   adminReviewDrift.sourceSnapshots.find(({ sourceId }) => sourceId === "incheon-transit-accessibility")
     .adminReviewRecordHash = "0".repeat(64);
   await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(adminReviewDrift, {
     sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
-    repositoryRoot: root, now: registeredNow,
+    repositoryRoot: candidateRoot, now: registeredNow,
   }), /projection does not match tracked ledger/);
   const ociDrift = structuredClone(buildSpec);
   ociDrift.sourceSnapshots.find(({ sourceId }) => sourceId === "incheon-transit-accessibility")
     .rawObjectUri = "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/invalid.json";
   await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(ociDrift, {
     sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
-    repositoryRoot: root, now: registeredNow,
+    repositoryRoot: candidateRoot, now: registeredNow,
   }), /projection does not match tracked ledger/);
   const ledgerFreshnessDrift = structuredClone(buildSpec);
   ledgerFreshnessDrift.sourceSnapshots.find(({ sourceId }) => sourceId === "incheon-transit-accessibility")
     .freshnessExpiresAt = "2026-12-01T00:00:00.000Z";
   await assert.rejects(admittedRegisteredIncheonAccessibilityEvidence(ledgerFreshnessDrift, {
     sourceInventory, topologySnapshot, topologyMode: "registered-topology-successor",
-    repositoryRoot: root, now: registeredNow,
+    repositoryRoot: candidateRoot, now: registeredNow,
   }), /projection does not match tracked ledger/);
   const staleProjection = structuredClone(registered);
   staleProjection.projection.freshnessExpiresAt = "2026-08-01T00:00:00.000Z";
