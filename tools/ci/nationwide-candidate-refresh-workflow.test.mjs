@@ -84,6 +84,26 @@ test("후보 생성·범위 검증·push·App 토큰·PR 생성은 STALE 또는 
   assert.equal(ifCondition(step("Remove the candidate refresh branch after a later failure").block), "${{ (failure() || cancelled()) && env.CANDIDATE_BRANCH != '' }}");
 });
 
+// #1047: 후보 입력 발행(OCI)에 쓰는 사전 인증 URL은 저장소 secret이 아니라 datapack-release-check environment의 secret이다.
+// job이 그 environment에 묶이지 않으면 값이 빈 문자열로 들어가 STALE 판정 뒤 발행 단계에서 실패한다(run 37737000536).
+// 최소 권한: secret은 후보 갱신 step의 env에서만 읽고, environment 승인 규칙은 없다(자동화가 막히지 않는다).
+test("job은 datapack-release-check environment에 묶이고 읽는 secret 집합이 step별로 정확히 고정된다(#1047)", () => {
+  assert.equal((yml.match(/\n    environment: datapack-release-check\n/gu) ?? []).length, 1);
+  assert.match(step("Refresh nationwide candidate").block, /\n          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}\n/u);
+  // 같은 environment에는 DATA_GO_KR_SERVICE_KEY·EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY 등도 있다. job이 묶였다고 다른 step이 읽게 되면 안 되므로
+  // 워크플로우 전체가 읽는 secret을 step 이름별로 정확히 고정한다(최소 권한). GITHUB_TOKEN은 github.token이라 secrets 참조가 아니다.
+  const referenced = Object.fromEntries(steps()
+    .map(({ name, block }) => [name, [...new Set([...block.matchAll(/(?<![\w.-])secrets\.([A-Za-z_][A-Za-z0-9_]*)/gu)].map((match) => match[1]))].sort()])
+    .filter(([, names]) => names.length > 0));
+  assert.deepEqual(referenced, {
+    "Mint App token for the open refresh pull request": ["EASYSUBWAY_RELEASE_APP_CLIENT_ID", "EASYSUBWAY_RELEASE_APP_PRIVATE_KEY"],
+    "Refresh nationwide candidate": ["EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"],
+    "Mint App token for the candidate refresh pull request": ["EASYSUBWAY_RELEASE_APP_CLIENT_ID", "EASYSUBWAY_RELEASE_APP_PRIVATE_KEY"],
+  });
+  // job 밖(workflow 수준)에서는 secret을 읽지 않는다.
+  assert.equal(/secrets\./u.test(yml.slice(0, yml.indexOf("\njobs:"))), false);
+});
+
 test("OPEN_PR이면 App 토큰 → required CI 보장 → 열린 PR 상한 검사 순서로 돈다", () => {
   assertOpenPullRequestSteps({ steps, file: FILE, decisionName: "Decide whether the nationwide candidate must be refreshed" });
 });
