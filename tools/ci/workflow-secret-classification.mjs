@@ -36,74 +36,77 @@ export function classificationTable(contract) {
   return table;
 }
 
-const SECRET_REFERENCE = /(?<![\w.-])secrets\.([A-Za-z_][A-Za-z0-9_]*)/gu;
+const SECRET_REFERENCE = /(?<![\w.-])secrets\.([A-Za-z_]\w*)/gu;
 export const referencedSecrets = (text) => new Set([...text.matchAll(SECRET_REFERENCE)].map((match) => match[1]));
+
+const JOB_HEADER = /^ {2}([\w-]+):\s*$/u;
+
+function environmentOf(body) {
+  const at = body.findIndex((line) => line.startsWith("    environment:"));
+  if (at === -1) return null;
+  const block = [];
+  for (const line of body.slice(at + 1)) {
+    if (!line.startsWith("     ") || line.trim() === "") break;
+    block.push(line.trim());
+  }
+  return [body[at].slice("    environment:".length).trim(), ...block].join("\n");
+}
 
 /** `jobs:` 아래 job을 이름·environment 값(식 포함)·본문으로 나눈다. 들여쓰기 2칸이 job, 4칸이 job 속성이다. */
 export function parseWorkflow(text) {
   const lines = text.split("\n");
-  const jobsAt = lines.findIndex((line) => /^jobs:\s*$/u.test(line));
+  const jobsAt = lines.findIndex((line) => line.trimEnd() === "jobs:");
   if (jobsAt === -1) throw new Error("workflow에 jobs:가 없다");
-  const header = lines.slice(0, jobsAt).join("\n");
   const jobs = [];
-  let current = null;
   for (const line of lines.slice(jobsAt + 1)) {
-    const job = /^ {2}([A-Za-z0-9_-]+):\s*$/u.exec(line);
-    if (job) {
-      current = { name: job[1], lines: [] };
-      jobs.push(current);
-    } else if (current) current.lines.push(line);
+    const header = JOB_HEADER.exec(line);
+    if (header) jobs.push({ name: header[1], lines: [] });
+    else jobs.at(-1)?.lines.push(line);
   }
   return {
-    header,
-    jobs: jobs.map(({ name, lines: body }) => {
-      const at = body.findIndex((line) => /^ {4}environment:/u.test(line));
-      let environment = null;
-      if (at !== -1) {
-        const inline = body[at].replace(/^ {4}environment:\s*/u, "");
-        const block = [];
-        for (const line of body.slice(at + 1)) {
-          if (!/^ {5,}\S/u.test(line)) break;
-          block.push(line.trim());
-        }
-        environment = [inline, ...block].join("\n");
-      }
-      return { name, environment, text: body.join("\n") };
-    }),
+    header: lines.slice(0, jobsAt).join("\n"),
+    jobs: jobs.map(({ name, lines: body }) => ({ name, environment: environmentOf(body), text: body.join("\n") })),
   };
 }
 
-const mentions = (environmentText, name) =>
-  new RegExp(String.raw`(^|[^A-Za-z0-9_-])${name}([^A-Za-z0-9_-]|$)`, "u").test(environmentText);
+// environment 값(식 포함)을 이름 문자(영숫자, _, -) 밖에서 잘라 토큰으로 비교한다. 이름이 비슷한 environment(예 datapack-release-check-copy)는 다른 토큰이다.
+const mentions = (environmentText, name) => environmentText.split(/[^\w-]+/u).includes(name);
 
-/** 위반 목록: `secrets: inherit`, 분류되지 않은 이름, workflow 수준의 환경 전용 참조, environment에 묶이지 않은 job의 환경 전용 참조. */
-export function secretClassificationViolations(workflows, contract) {
-  const table = classificationTable(contract);
+const isInheritLine = (line) => {
+  const trimmed = line.trim();
+  return trimmed.startsWith("secrets:") && trimmed.slice("secrets:".length).trim() === "inherit";
+};
+
+function workflowViolations(file, text, table) {
   const violations = [];
-  for (const [file, text] of Object.entries(workflows)) {
-    if (/^\s*secrets:\s*inherit\s*$/mu.test(text)) violations.push(`${file}: secrets: inherit는 쓰지 않는다(넘기는 secret을 이름으로 적는다)`);
-    const { header, jobs } = parseWorkflow(text);
-    for (const secret of referencedSecrets(text)) {
-      if (!table.has(secret)) violations.push(`${file}: secret ${secret}이 ${CLASSIFICATION_PATH}에 분류되어 있지 않다`);
-    }
-    for (const secret of referencedSecrets(header)) {
-      if (table.get(secret)?.kind === "environment-only") violations.push(`${file}: workflow 수준에서 환경 범위 secret ${secret}을 읽는다(job environment가 적용되지 않는다)`);
-    }
-    for (const job of jobs) {
-      for (const secret of referencedSecrets(job.text)) {
-        const entry = table.get(secret);
-        if (entry?.kind !== "environment-only") continue;
-        const bound = job.environment !== null && entry.environments.some((name) => mentions(job.environment, name));
-        if (!bound) violations.push(`${file}: job ${job.name}이 환경 범위 secret ${secret}을 읽지만 ${entry.environments.join(" 또는 ")} environment에 묶여 있지 않다`);
-      }
+  if (text.split("\n").some(isInheritLine)) violations.push(`${file}: secrets: inherit는 쓰지 않는다(넘기는 secret을 이름으로 적는다)`);
+  const { header, jobs } = parseWorkflow(text);
+  for (const secret of referencedSecrets(text)) {
+    if (!table.has(secret)) violations.push(`${file}: secret ${secret}이 ${CLASSIFICATION_PATH}에 분류되어 있지 않다`);
+  }
+  for (const secret of referencedSecrets(header)) {
+    if (table.get(secret)?.kind === "environment-only") violations.push(`${file}: workflow 수준에서 환경 범위 secret ${secret}을 읽는다(job environment가 적용되지 않는다)`);
+  }
+  for (const job of jobs) {
+    for (const secret of referencedSecrets(job.text)) {
+      const entry = table.get(secret);
+      if (entry?.kind !== "environment-only") continue;
+      const bound = job.environment !== null && entry.environments.some((name) => mentions(job.environment, name));
+      if (!bound) violations.push(`${file}: job ${job.name}이 환경 범위 secret ${secret}을 읽지만 ${entry.environments.join(" 또는 ")} environment에 묶여 있지 않다`);
     }
   }
   return violations;
 }
 
+/** 위반 목록: `secrets: inherit`, 분류되지 않은 이름, workflow 수준의 환경 전용 참조, environment에 묶이지 않은 job의 환경 전용 참조. */
+export function secretClassificationViolations(workflows, contract) {
+  const table = classificationTable(contract);
+  return Object.entries(workflows).flatMap(([file, text]) => workflowViolations(file, text, table));
+}
+
 export function repositoryWorkflows(root = ROOT) {
   const directory = path.join(root, ".github/workflows");
-  return Object.fromEntries(readdirSync(directory).filter((file) => /\.ya?ml$/u.test(file)).sort()
+  return Object.fromEntries(readdirSync(directory).filter((file) => /\.ya?ml$/u.test(file)).sort((left, right) => left.localeCompare(right))
     .map((file) => [file, readFileSync(path.join(directory, file), "utf8")]));
 }
 
@@ -118,7 +121,7 @@ export function secretListDifferences(contract, actual) {
   };
   compare("저장소", contract.repositorySecrets, actual.repository);
   const names = new Set([...Object.keys(contract.environmentSecrets), ...Object.keys(actual.environments)]);
-  for (const environment of [...names].sort()) {
+  for (const environment of [...names].sort((left, right) => left.localeCompare(right))) {
     compare(`environment ${environment}`, contract.environmentSecrets[environment] ?? [], actual.environments[environment] ?? []);
   }
   const provisioned = new Set([...actual.repository, ...Object.values(actual.environments).flat()]);
@@ -139,8 +142,8 @@ export async function main({ root = ROOT, gh = ghJson, log = console.log } = {})
   const repository = contract.repository;
   const names = async (extra) => (await gh(["secret", "list", "-R", repository, "--json", "name", ...extra])).map(({ name }) => name);
   const { environments } = await gh(["api", `repos/${repository}/environments`]);
-  const actual = { repository: await names([]), environments: {} };
-  for (const { name } of environments) actual.environments[name] = await names(["--env", name]);
+  const [repositoryNames, ...environmentNames] = await Promise.all([names([]), ...environments.map(({ name }) => names(["--env", name]))]);
+  const actual = { repository: repositoryNames, environments: Object.fromEntries(environments.map(({ name }, index) => [name, environmentNames[index]])) };
   const differences = secretListDifferences(contract, actual);
   for (const line of differences) log(line);
   if (differences.length > 0) throw new Error(`${CLASSIFICATION_PATH}이 실제 secret 목록과 다르다(${differences.length}건)`);
@@ -148,5 +151,10 @@ export async function main({ root = ROOT, gh = ghJson, log = console.log } = {})
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((error) => { console.error(error.message); process.exitCode = 1; });
+  try {
+    await main();
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
 }
