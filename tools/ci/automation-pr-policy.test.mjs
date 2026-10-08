@@ -673,6 +673,13 @@ test("후보 게이트의 기대값은 build spec(후보 시계)·정기 역할 
 test("반증: 후보의 gateRun이 증거의 run·base와 다르거나 형식이 틀리거나 없으면 막는다", async () => {
   const run = async (gateRun) => gateCodes(gateInput("candidate-refresh", { ledger: BASE_LEDGER, candidate: { state: candidateState({ releaseRequest: { ...SCHEDULED, gateRun } }), violations: () => [] } }));
   assert.deepEqual(await run({ ...GATE_RUN }), []);
+  // #1032: 스케줄러 App이 시작한 dispatch run은 actor를 함께 결속한 형식이어야 한다.
+  assert.deepEqual(await run({ ...GATE_RUN, event: "workflow_dispatch", actor: "easysubway-release-chain[bot]" }), []);
+  for (const [name, gateRun] of Object.entries({
+    "dispatch without actor": { ...GATE_RUN, event: "workflow_dispatch" },
+    "actor on a schedule run": { ...GATE_RUN, actor: "easysubway-release-chain[bot]" },
+    "dispatch with empty actor": { ...GATE_RUN, event: "workflow_dispatch", actor: "" },
+  })) assert.ok((await run(gateRun)).includes("CANDIDATE_GATE"), name);
   for (const [name, gateRun] of Object.entries({
     "other run": { ...GATE_RUN, runId: 1 },
     "other base": { ...GATE_RUN, headSha: OTHER },

@@ -55,6 +55,16 @@ function admission(inventory) {
   return { snapshotId: value.topologySnapshotId, freshUntilMillis };
 }
 
+/**
+ * 보호 admission의 topology snapshot이 원장에 등록됐는지만 본다(#1032: 후보 갱신이 등록 전에는 후보를 만들지 않는 근거).
+ * 원장 head 여부·PR·claim은 보지 않는다(그 판정은 decideCapitalTopologyRegistration의 일이다). 이상한 admission은 REGISTRATION_ADMISSION_MISSING으로 실패한다.
+ */
+export function capitalTopologyRegistrationState({ inventory, ledger } = {}) {
+  if (!Array.isArray(ledger)) fail("REGISTRATION_INPUT_INVALID");
+  const { snapshotId } = admission(inventory);
+  return { registered: ledger.some((entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshotId), snapshotId };
+}
+
 // PR 없는 claim의 처지를 producer run(claim 브랜치 이름의 run id)으로 가린다(이슈 #973).
 //  - RECOVER: 같은 main에서 실패·취소·시간 초과로 끝났고 게시 receipt artifact를 남겼다. 그 증거로 PR만 다시 만든다.
 //  - RUNNING: 아직 도는 run이다. 건드리지 않고 기다린다.

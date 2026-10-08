@@ -101,7 +101,7 @@ test("재생성은 PR 닫기 -> 브랜치 삭제 -> workflow 재실행 순서이
   assert.equal(again.writes.filter(([kind]) => kind === "dispatch").length, 1);
 });
 
-test("후보 갱신 단계는 dispatch하지 않는다: 정기 역할은 schedule 이벤트에서만 쓸 수 있어 2시간 정기 실행이 다시 만든다", async () => {
+test("후보 갱신 단계는 dispatch하지 않는다: 정기 역할은 schedule 이벤트와 스케줄러 App dispatch에서만 쓸 수 있어 recreate(github-actions[bot])가 아니라 2시간 정기 실행이 다시 만든다", async () => {
   assert.deepEqual({ ...STAGE_REDISPATCH }, {
     registration: true, "derivative-rebinding": true, "candidate-refresh": false, "itx-promotion": true, "source-reverification": true,
     "gwangju-timetable-refresh": true, "capital-topology-refresh": true, "kric-facility-refresh": true, "seoul-accessibility-refresh": true,
@@ -111,12 +111,13 @@ test("후보 갱신 단계는 dispatch하지 않는다: 정기 역할은 schedul
   await recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer });
   assert.deepEqual(writer.writes, [["close", 1], ["delete", BRANCHES["candidate-refresh"]]]);
   // dispatch하는 workflow는 필수 입력이 없다(입력 없이 dispatch가 성립해야 한다).
+  // 후보 갱신은 입력이 선택(#1032: 스케줄러 App이 입력 없이 깨운다)이지만 recreate의 dispatch 행위자(github-actions[bot])는 App이 아니라 사람 경로로 판정돼 입력 없이는 실패한다.
   for (const [stage, workflow] of Object.entries(AUTOMATION_STAGE_WORKFLOWS)) {
     const yml = readFileSync(path.resolve(import.meta.dirname, "../../.github/workflows", workflow), "utf8");
     assert.match(yml, /\n  workflow_dispatch:/u, workflow);
     const inputs = /\n  workflow_dispatch:\n    inputs:\n([\s\S]*?)\n\npermissions:/u.exec(yml)?.[1] ?? "";
     const required = /required: true/u.test(inputs);
-    assert.equal(STAGE_REDISPATCH[stage], !required, `${stage}: redispatch only when dispatch needs no required input`);
+    assert.equal(STAGE_REDISPATCH[stage], !required && stage !== "candidate-refresh", `${stage}: redispatch only when dispatch needs no required input and github-actions[bot] may start it`);
   }
 });
 
