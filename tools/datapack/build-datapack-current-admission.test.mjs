@@ -343,6 +343,9 @@ test("candidate build spec release identity는 wall clock과 workflow run number
     assert.ok(row, `cited snapshot ${cited.snapshotId} must be a ledger row`);
     assert.equal(row.sourceId, cited.sourceId, cited.snapshotId);
     assert.equal(row.freshnessExpiresAt, cited.freshnessExpiresAt, cited.snapshotId);
+    // 인용 행은 그 원천의 원장 terminal head여야 한다. 한 단계 뒤처진 snapshot은 자기 행의 만료와 일치해도 통과하면 안 된다(#1053 리뷰 F2).
+    assert.equal(snapshots.some((other) => other.sourceId === cited.sourceId && other.previousSnapshotId === cited.snapshotId), false,
+      `${cited.sourceId}: ${cited.snapshotId}은 원장 terminal head가 아니다`);
   }
   const ledgerEarliest = Math.min(...buildSpec.sourceSnapshots.map(({ snapshotId }) => Date.parse(ledgerById.get(snapshotId).freshnessExpiresAt)));
   assert.equal(Date.parse(earliestCited.freshnessExpiresAt), ledgerEarliest);

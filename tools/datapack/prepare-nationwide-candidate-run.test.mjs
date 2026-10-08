@@ -646,37 +646,103 @@ const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze(Object.fromEntries(
   }),
 ));
 
+// #1053 리뷰 F1: 독립 증인은 데이터가 아니라 key 종류로 가른다. 두 집합은 서로소이고 합치면 후보 입력 key 전체다.
+// - 원장 선택 key: 반드시 원장 terminal head이고 fan-in 선택 행이 있어야 한다(fan-in 행이 없다고 다른 증인으로 넘어가지 않는다).
+// - 증거 선택 key: inventory의 지정된 증거 필드 하나만 대조한다. 다른 증거 객체의 snapshot은 증인이 아니다.
+const LEDGER_SELECTED_INPUT_KEYS = Object.freeze([
+  "busanAccessibility", "daeguAccessibility", "daejeonAccessibility", "gwangjuAccessibility", "kricConvenience",
+  "busanTimetable", "daeguTimetable1", "daeguTimetable2", "daeguTimetable3", "daejeonTimetable",
+  "daegyeongTimetable", "stationLinesTimetable",
+]);
+const EVIDENCE_SELECTED_INPUT_FIELDS = Object.freeze({
+  incheonTopology: "topologyAdmissionEvidence",
+  incheonLine1: "scheduleAdmissionEvidence",
+  incheonLine2: "scheduleAdmissionEvidence",
+  capitalTimetable: "capitalScheduleAdmissionEvidence",
+  korailTimetable: "korailScheduleAdmissionEvidence",
+  gwangjuTimetable: "retainedGwangjuProjectionEvidence",
+});
+
+function assertSelectedInputWitnesses({ key, entry, inputs }) {
+  const sourceRows = (sourceId) => inputs.sourceSnapshots.filter((row) => row.sourceId === sourceId);
+  const terminalHeads = (sourceId) => {
+    const rows = sourceRows(sourceId);
+    return rows.filter((row) => !rows.some((other) => other.previousSnapshotId === row.snapshotId)).map((row) => row.snapshotId);
+  };
+  if (LEDGER_SELECTED_INPUT_KEYS.includes(key)) {
+    assert.deepEqual(terminalHeads(entry.sourceId), [entry.snapshotId], `${key}: 원장 terminal head여야 한다`);
+    const fanInRows = inputs.fanIn.selectedSources.filter((row) => row.sourceId === entry.sourceId);
+    assert.equal(fanInRows.length, 1, `${key}: fan-in 선택 행`);
+    assert.equal(fanInRows[0].snapshotId, entry.snapshotId, `${key}: fan-in 선택`);
+    assert.equal(entry.freshnessExpiresAt, fanInRows[0].freshnessExpiresAt, `${key}: fan-in 만료`);
+    return;
+  }
+  const field = EVIDENCE_SELECTED_INPUT_FIELDS[key];
+  assert.ok(field, `${key}: 원장 선택도 증거 선택도 아닌 key`);
+  const source = inputs.sourceInventory.sources.find(({ id }) => id === entry.sourceId);
+  assert.equal(source?.[field]?.snapshotId, entry.snapshotId, `${key}: inventory ${field}`);
+  if (key === "gwangjuTimetable") {
+    // 광주 projection은 보관본 head에서 만든 것이다. 보관본 snapshot은 원장 terminal head여야 한다.
+    assert.deepEqual(terminalHeads(entry.sourceId), [entry.retainedSnapshotId], `${key}: 보관본 원장 terminal head`);
+  }
+}
+
+test("후보 입력 key는 원장 선택과 증거 선택으로 빠짐없이 나뉜다", () => {
+  const ledgerKeys = new Set(LEDGER_SELECTED_INPUT_KEYS);
+  const evidenceKeys = Object.keys(EVIDENCE_SELECTED_INPUT_FIELDS);
+  assert.equal(evidenceKeys.some((key) => ledgerKeys.has(key)), false);
+  assert.deepEqual([...ledgerKeys, ...evidenceKeys].sort(), Object.keys(COMMITTED_INPUT_SOURCE_PREFIXES).sort());
+});
+
 test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 18개를 고른다", async () => {
   const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputsWithinIncheonWindow());
   assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
   const inputs = await committedSelectionInputsWithinIncheonWindow();
-  const ledgerHead = (sourceId) => {
-    const rows = inputs.sourceSnapshots.filter((row) => row.sourceId === sourceId);
-    const heads = rows.filter((row) => !rows.some((other) => other.previousSnapshotId === row.snapshotId));
-    assert.equal(heads.length, 1, `${sourceId}: 원장 head`);
-    return heads[0].snapshotId;
-  };
   for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
     assert.equal(selected[key].snapshotId, snapshotId, key);
     assert.equal(selected[key].path, `tools/datapack/sources/${snapshotId}.json`, key);
     assert.ok(Buffer.isBuffer(selected[key].bytes), key);
-    // 매니페스트에서 유도한 값을 독립 증인과 대조한다(순환 검증 방지).
+    // 매니페스트에서 유도한 값을 key 종류별 독립 증인과 대조한다(순환 검증 방지).
     const pinned = committedInputManifest.files.find((entry) => entry.path === selected[key].path);
     assert.ok(pinned, `${key}: 후보 입력 매니페스트에 선택 경로가 있어야 한다`);
     assert.equal(sha256(selected[key].bytes), pinned.sha256, key);
-    const fanInRow = inputs.fanIn.selectedSources.find((row) => row.sourceId === selected[key].sourceId && row.snapshotId === snapshotId);
-    if (fanInRow) {
-      // 원장 선택 입력: fan-in 선택·원장 head와 같고 신선도 만료는 fan-in이 정한 값이다.
-      assert.equal(ledgerHead(selected[key].sourceId), snapshotId, `${key}: 원장 head`);
-      assert.equal(selected[key].freshnessExpiresAt, fanInRow.freshnessExpiresAt, key);
-    } else {
-      // 증거 선택 입력: 원천의 inventory admission evidence가 같은 snapshot을 가리킨다.
-      const source = inputs.sourceInventory.sources.find(({ id }) => id === selected[key].sourceId);
-      assert.ok(Object.values(source).some((value) => value?.snapshotId === snapshotId), `${key}: inventory evidence`);
-    }
+    assertSelectedInputWitnesses({ key, entry: selected[key], inputs });
   }
-  assert.equal(selected.kricConvenience.freshnessExpiresAt,
-    inputs.fanIn.selectedSources.find((row) => row.sourceId === "kric-station-convenience-standard").freshnessExpiresAt);
+});
+
+// 증인 자체의 반례: production 선택 검사를 거치지 않고 증인에 stale 선택을 직접 넣어 먼저 잡히는지 본다.
+test("증인은 원장 key가 stale snapshot을 고르거나 증거 key가 다른 증거 객체의 snapshot을 고르면 거부한다(#1053 리뷰 F1)", async () => {
+  const inputs = await committedSelectionInputsWithinIncheonWindow();
+  const selected = await resolveNationwideCandidateInputSnapshots(inputs);
+  for (const key of LEDGER_SELECTED_INPUT_KEYS) assert.doesNotThrow(() => assertSelectedInputWitnesses({ key, entry: selected[key], inputs }), key);
+  for (const key of Object.keys(EVIDENCE_SELECTED_INPUT_FIELDS)) assert.doesNotThrow(() => assertSelectedInputWitnesses({ key, entry: selected[key], inputs }), key);
+
+  // 원장 key가 head의 직전 snapshot을 고른다. 원장 행에 뒤따르는 행이 있으므로 head가 아니다.
+  const stale = (sourceId) => {
+    const rows = inputs.sourceSnapshots.filter((row) => row.sourceId === sourceId);
+    const head = rows.find((row) => !rows.some((other) => other.previousSnapshotId === row.snapshotId));
+    return rows.find((row) => row.snapshotId === head.previousSnapshotId);
+  };
+  const predecessor = stale("kric-station-convenience-standard");
+  assert.ok(predecessor, "kric 원장에는 head 직전 행이 있다");
+  assert.throws(() => assertSelectedInputWitnesses({ key: "kricConvenience", entry: { ...selected.kricConvenience, snapshotId: predecessor.snapshotId }, inputs }),
+    /원장 terminal head여야 한다/u);
+  // 원장 key는 fan-in 행이 없다고 다른 증인으로 넘어가지 않는다.
+  const noFanIn = { ...inputs, fanIn: { ...inputs.fanIn, selectedSources: inputs.fanIn.selectedSources.filter((row) => row.sourceId !== "busan-transportation-accessibility") } };
+  assert.throws(() => assertSelectedInputWitnesses({ key: "busanAccessibility", entry: selected.busanAccessibility, inputs: noFanIn }), /fan-in 선택 행/u);
+
+  // 증거 key가 같은 원천의 다른 증거 객체의 snapshot을 고른다(지정 필드 하나만 증인이다).
+  const other = { ...inputs, sourceInventory: structuredClone(inputs.sourceInventory) };
+  const station = other.sourceInventory.sources.find(({ id }) => id === "incheon-transit-station-info");
+  station.routeMapAdmissionEvidence = { ...station.routeMapAdmissionEvidence, snapshotId: "incheon-transit-station-info-other-evidence" };
+  assert.throws(() => assertSelectedInputWitnesses({
+    key: "incheonTopology", entry: { ...selected.incheonTopology, snapshotId: "incheon-transit-station-info-other-evidence" }, inputs: other,
+  }), /inventory topologyAdmissionEvidence/u);
+  const capitalOther = { ...inputs, sourceInventory: structuredClone(inputs.sourceInventory) };
+  const kric = capitalOther.sourceInventory.sources.find(({ id }) => id === "kric-nationwide-timetable-file");
+  assert.throws(() => assertSelectedInputWitnesses({
+    key: "capitalTimetable", entry: { ...selected.capitalTimetable, snapshotId: kric.korailScheduleAdmissionEvidence.snapshotId }, inputs: capitalOther,
+  }), /inventory capitalScheduleAdmissionEvidence/u);
 });
 
 test("원장 head가 새 snapshot으로 이어지면 코드 수정 없이 새 입력을 고른다", async () => {
