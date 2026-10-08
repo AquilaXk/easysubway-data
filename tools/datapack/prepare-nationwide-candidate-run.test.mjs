@@ -601,39 +601,82 @@ async function committedSelectionInputsWithinIncheonWindow() {
   return committedSelectionInputs();
 }
 
-// 2026-10-02~10-06 공식 도구로 등록한 원장 head(커밋된 후보 seq128이 고른 입력)다.
-const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze({
-  incheonTopology: "incheon-transit-station-info-20261005",
-  incheonLine1: "incheon-line1-train-timetable-20261006",
-  incheonLine2: "incheon-line2-train-timetable-20261006",
-  busanAccessibility: "busan-transportation-accessibility-ba05d3ff5501f5e47c0d0398fd03f084a74aede650465895503057881dd27a3e-20261002",
-  daeguAccessibility: "daegu-transportation-accessibility-02226d92d934146e631e719848a902d1c9f496589b5370c92fbde41d1181a96b-20261002",
-  daejeonAccessibility: "daejeon-transportation-accessibility-31c1c0ad91394bddf84984f7928d70e21b83ef97b4db9aec34afeb5f51ea7f50-20261006",
-  gwangjuAccessibility: "gwangju-transportation-accessibility-c4b89c365595417410764012ac661e95f28cde64f8ea6d968d4ace7e0172b91e-20261006",
-  kricConvenience: "kric-station-convenience-standard-20261002T061440559Z",
-  busanTimetable: "busan-transportation-timetable-20261002",
-  daeguTimetable1: "daegu-line1-train-timetable-c38d72421c301e4f5041890d10dfcd30e5f1ad146f5537630dea7a3d0d81c132",
-  daeguTimetable2: "daegu-line2-train-timetable-9e9293cd0c079e1457545d27f236ace6521661dbf4d2035151822ebeb50056e0",
-  daeguTimetable3: "daegu-line3-train-timetable-ccb59b52812700f4682f4802275b576d920ec2909723577e792fd93c9ceef508",
-  daejeonTimetable: "daejeon-train-timetable-20261002",
-  capitalTimetable: "kric-nationwide-timetable-file-capital-dec3ef2fdb5318efd9cff47c6b012e88c80c34f7b4866106eabbed6e1e7bdd00",
+// #1053: 후보 입력 18개의 snapshot id는 커밋된 후보가 고정한 입력 매니페스트(nationwide-candidate-input-manifest.json)에서 유도한다.
+// 예전에는 seq128의 id를 하드코딩했다. 후보를 다시 만들 때마다 사람이 고쳐야 해서 자동 후보 PR이 required-pr에서 항상 막혔다.
+// "원천 id가 바뀌면 드러나게 한다"는 의도는 이제 다음에서 보장된다.
+//   1) 바뀐 id는 후보 PR diff(매니페스트·fan-in·원장)와 자동 병합 증거 블록에 드러난다.
+//   2) 유도한 값은 선택 함수와 독립인 증인과 대조한다: 원장 head(원장 선택 입력)와 inventory admission evidence(증거 선택 입력).
+//      선택 함수 결과가 매니페스트와 어긋나거나 head·증거와 어긋나면 실패하므로 매니페스트만 믿는 순환 검증이 아니다.
+//   3) release의 head 일치 검사(validate-candidate-source-set.mjs 114행)는 그대로다.
+// 키는 시간에 따라 변하지 않는 선택 구조(키 → 원천 snapshot 파일 접두사)이고, snapshot id 자체는 어디에도 적지 않는다.
+const COMMITTED_INPUT_SOURCE_PREFIXES = Object.freeze({
+  incheonTopology: "incheon-transit-station-info-",
+  incheonLine1: "incheon-line1-train-timetable-",
+  incheonLine2: "incheon-line2-train-timetable-",
+  busanAccessibility: "busan-transportation-accessibility-",
+  daeguAccessibility: "daegu-transportation-accessibility-",
+  daejeonAccessibility: "daejeon-transportation-accessibility-",
+  gwangjuAccessibility: "gwangju-transportation-accessibility-",
+  kricConvenience: "kric-station-convenience-standard-",
+  busanTimetable: "busan-transportation-timetable-",
+  daeguTimetable1: "daegu-line1-train-timetable-",
+  daeguTimetable2: "daegu-line2-train-timetable-",
+  daeguTimetable3: "daegu-line3-train-timetable-",
+  daejeonTimetable: "daejeon-train-timetable-",
+  capitalTimetable: "kric-nationwide-timetable-file-capital-",
   // #903: 코레일 6개 노선 projection, 대경선 계획 시각표, KRIC 역별 시간표 5개 노선
-  korailTimetable: "kric-nationwide-timetable-file-korail-c186585ec0750b5b2bdbcc27fc38a4a2fa293034c43010b88386e0377c8242de",
-  daegyeongTimetable: "korail-metropolitan-planned-timetable-837fc86016bbcfa2d5cb618988c552599b38f83f6ec0878187ac5ff604ac9e58",
-  stationLinesTimetable: "kric-subway-timetable-station-lines-20261003",
-  // #913: 광주 1호선은 KRIC 보관본 head(10-03 계약 개정 재등록)의 계약 노선 projection이다.
-  gwangjuTimetable: "kric-nationwide-timetable-file-gwangju-2aa05663ceb6fcafb041214242db23a8f04cd46752404963edf62a98cee30a70",
+  korailTimetable: "kric-nationwide-timetable-file-korail-",
+  daegyeongTimetable: "korail-metropolitan-planned-timetable-",
+  stationLinesTimetable: "kric-subway-timetable-station-lines-",
+  // #913: 광주 1호선은 KRIC 보관본 head의 계약 노선 projection이다.
+  gwangjuTimetable: "kric-nationwide-timetable-file-gwangju-",
 });
+
+const SOURCE_SNAPSHOT_FILE = /^tools\/datapack\/sources\/(.+)\.json$/u;
+const committedInputManifest = parseCandidateInputManifest(await readFile(path.join(root, CANDIDATE_INPUT_MANIFEST_PATH)));
+
+// 접두사마다 커밋된 후보 입력 파일이 정확히 하나여야 한다(.receipt.json은 snapshot이 아니다).
+const COMMITTED_INPUT_SNAPSHOT_IDS = Object.freeze(Object.fromEntries(
+  Object.entries(COMMITTED_INPUT_SOURCE_PREFIXES).map(([key, prefix]) => {
+    const ids = committedInputManifest.files
+      .map(({ path: relative }) => SOURCE_SNAPSHOT_FILE.exec(relative)?.[1])
+      .filter((id) => id !== undefined && id.startsWith(prefix) && !id.endsWith(".receipt"));
+    assert.equal(ids.length, 1, `${key}: 후보 입력 매니페스트에 ${prefix}* snapshot이 정확히 하나여야 한다(${ids.join(", ")})`);
+    return [key, ids[0]];
+  }),
+));
 
 test("후보 입력 선택은 커밋된 원장 head·inventory evidence에서 현재 입력 18개를 고른다", async () => {
   const selected = await resolveNationwideCandidateInputSnapshots(await committedSelectionInputsWithinIncheonWindow());
   assert.deepEqual(Object.keys(selected).sort(), Object.keys(COMMITTED_INPUT_SNAPSHOT_IDS).sort());
+  const inputs = await committedSelectionInputsWithinIncheonWindow();
+  const ledgerHead = (sourceId) => {
+    const rows = inputs.sourceSnapshots.filter((row) => row.sourceId === sourceId);
+    const heads = rows.filter((row) => !rows.some((other) => other.previousSnapshotId === row.snapshotId));
+    assert.equal(heads.length, 1, `${sourceId}: 원장 head`);
+    return heads[0].snapshotId;
+  };
   for (const [key, snapshotId] of Object.entries(COMMITTED_INPUT_SNAPSHOT_IDS)) {
     assert.equal(selected[key].snapshotId, snapshotId, key);
     assert.equal(selected[key].path, `tools/datapack/sources/${snapshotId}.json`, key);
     assert.ok(Buffer.isBuffer(selected[key].bytes), key);
+    // 매니페스트에서 유도한 값을 독립 증인과 대조한다(순환 검증 방지).
+    const pinned = committedInputManifest.files.find((entry) => entry.path === selected[key].path);
+    assert.ok(pinned, `${key}: 후보 입력 매니페스트에 선택 경로가 있어야 한다`);
+    assert.equal(sha256(selected[key].bytes), pinned.sha256, key);
+    const fanInRow = inputs.fanIn.selectedSources.find((row) => row.sourceId === selected[key].sourceId && row.snapshotId === snapshotId);
+    if (fanInRow) {
+      // 원장 선택 입력: fan-in 선택·원장 head와 같고 신선도 만료는 fan-in이 정한 값이다.
+      assert.equal(ledgerHead(selected[key].sourceId), snapshotId, `${key}: 원장 head`);
+      assert.equal(selected[key].freshnessExpiresAt, fanInRow.freshnessExpiresAt, key);
+    } else {
+      // 증거 선택 입력: 원천의 inventory admission evidence가 같은 snapshot을 가리킨다.
+      const source = inputs.sourceInventory.sources.find(({ id }) => id === selected[key].sourceId);
+      assert.ok(Object.values(source).some((value) => value?.snapshotId === snapshotId), `${key}: inventory evidence`);
+    }
   }
-  assert.equal(selected.kricConvenience.freshnessExpiresAt, "2026-12-31T06:14:40.559Z");
+  assert.equal(selected.kricConvenience.freshnessExpiresAt,
+    inputs.fanIn.selectedSources.find((row) => row.sourceId === "kric-station-convenience-standard").freshnessExpiresAt);
 });
 
 test("원장 head가 새 snapshot으로 이어지면 코드 수정 없이 새 입력을 고른다", async () => {
