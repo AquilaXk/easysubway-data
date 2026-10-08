@@ -1787,11 +1787,34 @@ test("topology-only refresh projects fresh Incheon inputs without relabelling pr
     ...capital.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType)),
   ].filter(({ sourceId }) => currentAccessibilitySnapshotBySource.has(sourceId));
   assert.ok(accessibilityRows.length > 0);
+  const inputRows = [...productionInput.facilityRows, ...productionInput.accessibilityStatusEvidence];
+  const ledger = await readJson("tools/datapack/release/source-snapshots.json");
   assertEvidenceRowsBoundToCurrentOrEquivalent({
-    rows: accessibilityRows, previousPack: previousCapital, currentSnapshotBySource: currentAccessibilitySnapshotBySource,
-    inputRows: [...productionInput.facilityRows, ...productionInput.accessibilityStatusEvidence],
-    ledger: await readJson("tools/datapack/release/source-snapshots.json"),
+    rows: accessibilityRows, previousPack: previousCapital, currentSnapshotBySource: currentAccessibilitySnapshotBySource, inputRows, ledger,
   });
+  // #1048 리뷰 F1: 위 호출은 증거 행이 입력에서 오므로 inputRows가 비어도 현재 snapshot이면 통과한다. 넓힌 출발점을 실제 데이터로 통과시키는 반례:
+  // 원장에 KRIC 후속 snapshot(내용 같음)이 한 칸 더 붙어 head가 앞서가면, 입력이 가리키는 snapshot은 이전 팩에도 head에도 없는 중간 사슬이 된다
+  // (KRIC → 서울 → KRIC 순서의 2차 갱신 PR과 같다). 입력이 출발점으로 인정돼야 통과하고, 후속 snapshot의 내용이 바뀌면 입력이 가리켜도 거부한다.
+  // inputRows 없이 부르면 이 호출이 실패한다.
+  const kricSourceId = "kric-station-convenience-standard";
+  const kricRows = accessibilityRows.filter(({ sourceId }) => sourceId === kricSourceId);
+  assert.ok(kricRows.length > 0);
+  const kricHead = ledger.find(({ snapshotId }) => snapshotId === currentAccessibilitySnapshotBySource.get(kricSourceId));
+  assert.ok(kricHead);
+  const advanced = (changes = {}) => {
+    const successor = { ...structuredClone(kricHead), snapshotId: `${kricHead.snapshotId}-next`, previousSnapshotId: kricHead.snapshotId, ...changes };
+    return { ledger: [...ledger, successor], currentSnapshotBySource: new Map([[kricSourceId, successor.snapshotId]]) };
+  };
+  const lagging = (inputRowsForCheck, scenario) => assertEvidenceRowsBoundToCurrentOrEquivalent({
+    rows: kricRows, previousPack: previousCapital, inputRows: inputRowsForCheck, ...scenario,
+  });
+  const previousKricIds = evidenceSnapshotIds(evidenceRowsOf(previousCapital, kricSourceId));
+  if (kricRows.some(({ sourceSnapshotId }) => !previousKricIds.has(sourceSnapshotId))) {
+    // 행이 이전 팩 snapshot과 다르면(서울 갱신이 입력을 재결속한 상태) 출발점은 입력뿐이다.
+    assert.throws(() => lagging([], advanced()), /현재 snapshot도 이전 팩·입력의 snapshot도 아니다/u);
+  }
+  assert.doesNotThrow(() => lagging(inputRows, advanced()));
+  assert.throws(() => lagging(inputRows, advanced({ contentSha256: "f".repeat(64) })), /LAG_CONTENT_CHANGED/u);
   assert.equal(result.sourceSeparatedTopologyPath, currentTopologyPath);
   assert.deepEqual(result.sourceSeparatedTopologyBytes, currentTopologyBytes);
   const incheon = result.sourceInventory.sources
