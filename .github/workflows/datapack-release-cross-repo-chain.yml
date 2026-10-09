@@ -21,8 +21,9 @@ jobs:
   identify:
     # RC run은 RC chain이 GITHUB_TOKEN으로 dispatch한다(행위자 github-actions[bot]). 수동 dispatch는 저장소 소유자만 인정한다.
     # 환경 승인을 없앤 대신, 쓰기 권한이 있는 다른 계정이 직접 띄운 RC로 발행·배포 체인이 시작되지 않게 막는다.
+    # 행위자는 workflow_run 이벤트 값이 아니라 API로 다시 읽은 run의 triggering_actor로 판정한다(이벤트 값을 신뢰 근거로 쓰지 않는다).
     name: Identify the release-candidate run
-    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' && (github.event.workflow_run.triggering_actor.login == 'github-actions[bot]' || github.event.workflow_run.triggering_actor.login == 'AquilaXk') }}
+    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -49,6 +50,14 @@ jobs:
           set -euo pipefail
           [[ "${RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "workflow_run id is invalid" >&2; exit 1; }
           [[ "${RUN_HEAD_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo "workflow_run head_sha is invalid" >&2; exit 1; }
+          actor="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.triggering_actor.login')"
+          case "${actor}" in
+            "github-actions[bot]"|"AquilaXk") ;;
+            *)
+              echo "rc=false" >> "${GITHUB_OUTPUT}"
+              echo "Data Pack Release run ${RUN_ID}는 허용되지 않은 행위자가 dispatch해 체인을 시작하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
+              exit 0 ;;
+          esac
           # RC run만 easysubway-datapack-candidate-<run> artifact를 만든다(hub promotion이 받는 후보 artifact).
           name="easysubway-datapack-candidate-${RUN_ID}"
           response="${RUNNER_TEMP}/${name}.json"

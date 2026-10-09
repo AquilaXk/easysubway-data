@@ -574,6 +574,13 @@ const STAGES = Object.freeze({
 // 단계별로 꼭 필요한 공개 URL. 비어 있으면 검증을 건너뛰지 않고 환경 오류로 멈춘다.
 const REQUIRED_CONTEXT = Object.freeze({ publish: ["manifestUrl"], verify: ["apiBaseUrl", "manifestUrl"], rollback: ["apiBaseUrl"] });
 
+// 검증·롤백에 필요한 공개 URL은 발행 전에 확인한다. 발행·배포 뒤에야 설정 오류를 알면 검증도 롤백도 못 한 채 새 release가 남는다.
+function requirePlanContext(context) {
+  for (const key of ["apiBaseUrl", "manifestUrl"]) {
+    if (!context[key]) fail("CHAIN_ENV_INVALID", `plan requires ${key} (CHAIN_API_BASE_URL and CHAIN_DATAPACK_BASE_URL) before any publish`);
+  }
+}
+
 export async function runChainStage({ stage, statePath, env = process.env, repositoryRoot = process.cwd(), gh } = {}) {
   if (stage === "plan") {
     const runId = requiredEnv(env, "RC_RUN_ID", DECIMAL);
@@ -583,10 +590,7 @@ export async function runChainStage({ stage, statePath, env = process.env, repos
     if (requiredEnv(env, "GITHUB_SHA", SHA) !== sha || await mainSha(context, REPOSITORIES.data, context.tokens.data) !== sha) {
       fail("CHAIN_MAIN_MOVED", `data main is not the release candidate commit ${sha}`);
     }
-    // 검증·롤백에 필요한 공개 URL은 발행 전에 확인한다. 발행·배포 뒤에야 설정 오류를 알면 검증도 롤백도 못 한 채 새 release가 남는다.
-    for (const key of ["apiBaseUrl", "manifestUrl"]) {
-      if (!context[key]) fail("CHAIN_ENV_INVALID", `plan requires ${key} (CHAIN_API_BASE_URL and CHAIN_DATAPACK_BASE_URL) before any publish`);
-    }
+    requirePlanContext(context);
     const state = { schemaVersion: 1, rc: { runId, sha }, startedAt: new Date().toISOString() };
     await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
     await summary(env, [`체인 시작: RC run ${runId} (${sha})`]);

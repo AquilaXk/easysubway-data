@@ -14,8 +14,7 @@ const RC_GUARD = "    if: ${{ "
   + "github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' "
   + "&& github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository "
   + "&& github.event.workflow_run.path == '.github/workflows/datapack-release.yml' "
-  + "&& github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' "
-  + "&& (github.event.workflow_run.triggering_actor.login == 'github-actions[bot]' || github.event.workflow_run.triggering_actor.login == 'AquilaXk') }}";
+  + "&& github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' }}";
 const FAILURE_GUARD = "    if: ${{ "
   + "vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && "
   + "github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'workflow_dispatch' "
@@ -173,11 +172,22 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
     id: 11269456267, name: `easysubway-datapack-candidate-${runId}`, expired: false,
     workflow_run: { id: runId, head_sha: headSha }, ...overrides,
   });
-  const gh = (payload) => `cat <<'JSON'\n${JSON.stringify(payload)}\nJSON`;
+  // 가짜 gh: run 조회는 행위자를, artifact 조회는 payload를 답한다. 행위자 판정은 이벤트 값이 아니라 이 API 응답이 근거다.
+  const ghAs = (actor, payload) => `if [[ "$*" == *"/artifacts"* ]]; then cat <<'JSON'\n${JSON.stringify(payload)}\nJSON\nelse echo '${actor}'; fi`;
+  const gh = (payload) => ghAs("github-actions[bot]", payload);
   const candidate = await runStep("Identify the release-candidate run", env, gh({ total_count: 1, artifacts: [artifact()] }));
   assert.equal(candidate.status, 0, candidate.stderr);
   assert.equal(candidate.output, "rc=true\n");
   assert.match(candidate.summary, /37109648483/u);
+  const owner = await runStep("Identify the release-candidate run", env, ghAs("AquilaXk", { total_count: 1, artifacts: [artifact()] }));
+  assert.equal(owner.output, "rc=true\n");
+  // 허용 목록 밖 행위자(유사 이름·대소문자·빈 값 포함)가 dispatch한 RC는 후보 artifact가 완전해도 체인을 시작하지 않는다.
+  for (const actor of ["write-collaborator", "AquilaXk-evil", "aquilaxk", "github-actions", "github-actions[bot]x", "easysubway-release-chain[bot]", ""]) {
+    const denied = await runStep("Identify the release-candidate run", env, ghAs(actor, { total_count: 1, artifacts: [artifact()] }));
+    assert.equal(denied.status, 0, `${actor}: ${denied.stderr}`);
+    assert.equal(denied.output, "rc=false\n", actor);
+    assert.match(denied.summary, /허용되지 않은 행위자/u, actor);
+  }
   const exploratory = await runStep("Identify the release-candidate run", env, gh({ total_count: 0, artifacts: [] }));
   assert.equal(exploratory.status, 0, exploratory.stderr);
   assert.equal(exploratory.output, "rc=false\n");
