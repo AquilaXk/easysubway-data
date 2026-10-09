@@ -5,21 +5,97 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { parseCurrentMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { collectDaeguAccessibility } from "./collect-daegu-accessibility.mjs";
+import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { collectDaejeonAccessibility } from "./collect-daejeon-accessibility.mjs";
 import { collectGwangjuAccessibility } from "./collect-gwangju-accessibility.mjs";
 import { collectGwangjuRouteTopology } from "./collect-gwangju-route-topology.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
+import { loadCurrentMolitObservation } from "./current-molit-observation.mjs";
 import {
   buildRegionalAccessibilityRegistrationOutputs,
   prepareRegionalAccessibilityRegistration,
   registerRegionalAccessibility,
+  replay,
 } from "./register-regional-accessibility.mjs";
 
 const SOURCE_ID = "gwangju-transportation-accessibility";
 const TOPOLOGY_ID = "gwangju-transportation-route-topology";
+const root = path.resolve(import.meta.dirname, "../..");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const downloadProvenanceOf = (files) => files.map(([datasetId, bytes]) => ({
+  datasetId, detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,
+  downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_0000000${datasetId}&fileDetailSn=1&insertDataPrcus=N`,
+  rawSha256: sha(bytes),
+}));
 
 test("regional accessibility registrar replays retained raw input and commits four source outputs", async (t) => {
+  await registrarScenario(t, { downloadMode: false });
+});
+
+// #1076: --download 모드 수집기는 snapshot에 downloadProvenance를 싣는다. 재생이 이를 빼면 등록이 항상 replay mismatch로 멈춘다.
+test("regional accessibility registrar replays a --download snapshot with its downloadProvenance and commits four source outputs", async (t) => {
+  await registrarScenario(t, { downloadMode: true });
+});
+
+test("regional accessibility registrar rejects a --download snapshot whose downloadProvenance no longer matches the retained raw", async (t) => {
+  await registrarScenario(t, { downloadMode: true, tamperProvenance: true });
+});
+
+test("regional accessibility registrar rejects a --download snapshot whose downloadProvenance entries are reordered", async (t) => {
+  await registrarScenario(t, { downloadMode: true, swapProvenance: true });
+});
+
+// #1076 F1: 대전·대구 분기도 downloadProvenance를 수집기에 넘겨야 같은 snapshot이 재생된다. 인자를 지우면 이 테스트가 RED가 된다.
+test("regional accessibility replay forwards downloadProvenance for Daejeon --download snapshots", async () => {
+  const dir = "tools/datapack";
+  const [elevatorBytes, escalatorBytes, topologySnapshot, molit] = await Promise.all([
+    readFile(path.join(root, dir, "fixtures/daejeon-accessibility-raw/data-go-15041384.csv")),
+    readFile(path.join(root, dir, "fixtures/daejeon-accessibility-raw/data-go-15041361.csv")),
+    readFile(path.join(root, dir, "sources/daejeon-route-topology-20260720.json"), "utf8").then(JSON.parse),
+    loadCurrentMolitObservation({ repositoryRoot: root }),
+  ]);
+  const snapshotId = "daejeon-station-distance-fare-fixture-accessibility";
+  const topologySource = { id: topologySnapshot.sourceId, topologyAdmissionEvidence: {
+    snapshotId, snapshotPath: `${dir}/sources/${snapshotId}.json`, capturedAt: topologySnapshot.observedAt,
+    stationCount: topologySnapshot.stationNumbers.length, edgeCount: topologySnapshot.rowCount,
+    excludedTransferCount: topologySnapshot.excludedTransferCount, rawSha256: topologySnapshot.rawSha256, contentSha256: topologySnapshot.contentSha256,
+  } };
+  const now = new Date("2026-07-24T02:00:00.000Z");
+  const downloadProvenance = downloadProvenanceOf([["15041384", elevatorBytes], ["15041361", escalatorBytes]]);
+  const snapshot = collectDaejeonAccessibility({
+    elevatorBytes, escalatorBytes, topologySnapshot, topologySource, now, downloadProvenance,
+    canonicalStationMappings: parseCurrentMolitDaejeonStationMappings(molit.observation.normalizedProjection, molit.current.rawSha256),
+  });
+  assert.deepEqual(snapshot.downloadProvenance, downloadProvenance);
+  const topology = [{ source: topologySource, snapshot: topologySnapshot }];
+  assert.deepEqual(await replay(snapshot, topology, molit), snapshot);
+  await assert.rejects(replay({ ...snapshot, downloadProvenance: [...downloadProvenance].reverse() }, topology, molit), /15041384 download provenance is invalid/);
+  await assert.rejects(replay({ ...snapshot, downloadProvenance: [{ ...downloadProvenance[0], rawSha256: "0".repeat(64) }, downloadProvenance[1]] }, topology, molit),
+    /download provenance sha256 mismatch/);
+});
+
+test("regional accessibility replay forwards downloadProvenance for Daegu --download snapshots", async () => {
+  const dir = "tools/datapack";
+  const facilitiesBytes = await readFile(path.join(root, dir, "fixtures/daegu-accessibility-raw/data-go-15149872.csv"));
+  const topology = await Promise.all(DAEGU_LINES.map(async ({ lineNumber }) => ({
+    source: { id: `daegu-line${lineNumber}-route-topology` },
+    snapshot: JSON.parse(await readFile(path.join(root, dir, `sources/daegu-line${lineNumber}-route-topology-20260721.json`), "utf8")),
+  })));
+  const downloadProvenance = downloadProvenanceOf([["15149872", facilitiesBytes]]);
+  const snapshot = collectDaeguAccessibility({
+    facilitiesBytes, topologySnapshots: Object.fromEntries(DAEGU_LINES.map(({ lineNumber }, index) => [lineNumber, topology[index].snapshot])),
+    now: new Date("2026-07-24T01:00:00.000Z"), downloadProvenance,
+  });
+  assert.deepEqual(snapshot.downloadProvenance, downloadProvenance);
+  assert.deepEqual(await replay(snapshot, topology, null), snapshot);
+  await assert.rejects(replay({ ...snapshot, downloadProvenance: [{ ...downloadProvenance[0], rawSha256: "0".repeat(64) }] }, topology, null),
+    /download provenance sha256 mismatch/);
+});
+
+async function registrarScenario(t, { downloadMode, tamperProvenance = false, swapProvenance = false }) {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "regional-accessibility-register-"));
   t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
   // 신뢰 루트는 변경하지 않는 기존 정책 fixture이고, 새 source만 작은 독립 입력이다.
@@ -43,7 +119,9 @@ test("regional accessibility registrar replays retained raw input and commits fo
     .map((id) => ({ id, sourceIds: predecessorPolicy.sources.filter((entry) => entry.sourceClassId === id)
       .map((entry) => entry.sourceId), basisField: "retrievedAt", reverificationCadence: "P90D" }));
   const freshnessBytes = Buffer.from(JSON.stringify({ sourceClasses }));
-  const snapshot = collectGwangjuAccessibility({ elevatorBytes, escalatorBytes, topologySnapshot, topologySource, now });
+  const downloadProvenance = downloadMode ? downloadProvenanceOf([["15041385", elevatorBytes], ["15041362", escalatorBytes]]) : undefined;
+  const snapshot = collectGwangjuAccessibility({ elevatorBytes, escalatorBytes, topologySnapshot, topologySource, now, downloadProvenance });
+  assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), downloadMode);
   const source = inventory.sources.find(({ id }) => id === SOURCE_ID);
   const termsHash = sha(canonicalJson(source.license));
   const governance = {
@@ -65,6 +143,15 @@ test("regional accessibility registrar replays retained raw input and commits fo
   await mkdir(path.dirname(topologyPath), { recursive: true }); await writeFile(topologyPath, topologyBytes);
   await mkdir(path.join(fixtureRoot, "tools/datapack"), { recursive: true });
   await writeFile(path.join(fixtureRoot, "tools/datapack/source-candidates.json"), JSON.stringify(candidates));
+  if (tamperProvenance || swapProvenance) {
+    const tampered = tamperProvenance
+      ? { ...snapshot, downloadProvenance: snapshot.downloadProvenance.map((entry, index) => (index === 0 ? { ...entry, rawSha256: "0".repeat(64) } : entry)) }
+      : { ...snapshot, downloadProvenance: [...snapshot.downloadProvenance].reverse() };
+    await writeFile(snapshotPath, JSON.stringify(tampered));
+    await assert.rejects(prepareRegionalAccessibilityRegistration({ repositoryRoot: fixtureRoot, snapshotPath, now }),
+      tamperProvenance ? /download provenance sha256 mismatch/ : /15041385 download provenance is invalid/);
+    return;
+  }
   await writeFile(snapshotPath, JSON.stringify(snapshot));
   await assert.rejects(prepareRegionalAccessibilityRegistration({ repositoryRoot: fixtureRoot, snapshotPath, now }), /recorded governance/);
   candidates.candidates[0].registrationMetadata = { governance };
@@ -95,7 +182,7 @@ test("regional accessibility registrar replays retained raw input and commits fo
   assert.equal(registeredPolicy.registrationLineage.predecessorPolicySha256, sha(governanceBytes));
   assert.deepEqual(registeredPolicy.registrationLineage.addedSourceIds, [SOURCE_ID]);
   assert.deepEqual(registeredPolicy.sources.slice(0, -1), predecessorPolicy.sources);
-});
+}
 
 // 실제 카탈로그·ledger·파일 날짜와 무관한 두 역짜리 TEST_ONLY 등록 입력이다.
 async function independentFixture(now) {

@@ -433,26 +433,29 @@ async function loadTopologies(root, inventory, ids) {
     return { source, evidence, snapshot, path: absolute, bytes };
   }));
 }
-async function replay(snapshot, topology, molit) {
+export async function replay(snapshot, topology, molit) {
   const raw = (id) => Buffer.from(one(snapshot.rawSources,
     (row) => row.datasetId === id, "retained raw").bytesBase64, "base64");
   const now = new Date(snapshot.capturedAt);
+  // --download 모드 수집기는 snapshot에 downloadProvenance를 싣는다. 재생도 같은 값을 넘겨야 같은 snapshot이 나오고,
+  // 수집기가 retained raw 바이트와 다시 대조해 변조·순서 오류를 거부한다. 없으면(파일 입력 모드) 넘기지 않는다.
+  const { downloadProvenance } = snapshot;
   const selected = { topologySnapshot: topology[0].snapshot, topologySource: topology[0].source, now };
   if (snapshot.sourceId === "gwangju-transportation-accessibility") {
     return collectGwangjuAccessibility({
-      elevatorBytes: raw("15041385"), escalatorBytes: raw("15041362"), ...selected,
+      elevatorBytes: raw("15041385"), escalatorBytes: raw("15041362"), ...selected, downloadProvenance,
     });
   }
   if (snapshot.sourceId === "daejeon-transportation-accessibility") {
     return collectDaejeonAccessibility({
-      elevatorBytes: raw("15041384"), escalatorBytes: raw("15041361"), ...selected,
+      elevatorBytes: raw("15041384"), escalatorBytes: raw("15041361"), ...selected, downloadProvenance,
       canonicalStationMappings: parseCurrentMolitDaejeonStationMappings(
         molit.observation.normalizedProjection, molit.current.rawSha256),
     });
   }
   if (snapshot.sourceId === "daegu-transportation-accessibility") {
     return collectDaeguAccessibility({
-      facilitiesBytes: raw("15149872"), now,
+      facilitiesBytes: raw("15149872"), now, downloadProvenance,
       topologySnapshots: Object.fromEntries(DAEGU_LINES.map(({ lineNumber }) => [lineNumber,
         one(topology, ({ source }) => source.id === `daegu-line${lineNumber}-route-topology`, "Daegu topology").snapshot,
       ])),
