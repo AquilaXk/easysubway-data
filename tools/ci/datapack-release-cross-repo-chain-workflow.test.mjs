@@ -173,7 +173,7 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
     workflow_run: { id: runId, head_sha: headSha }, ...overrides,
   });
   // 가짜 gh: run 조회는 행위자를, artifact 조회는 payload를 답한다. 행위자 판정은 이벤트 값이 아니라 이 API 응답이 근거다.
-  const ghAs = (actor, payload) => `if [[ "$*" == *"/artifacts"* ]]; then cat <<'JSON'\n${JSON.stringify(payload)}\nJSON\nelse echo '${actor}'; fi`;
+  const ghAs = (actor, payload) => `case "$*" in\n*"/artifacts"*) cat <<'JSON'\n${JSON.stringify(payload)}\nJSON\n;;\n*) echo '${actor}' ;;\nesac`;
   const gh = (payload) => ghAs("github-actions[bot]", payload);
   const candidate = await runStep("Identify the release-candidate run", env, gh({ total_count: 1, artifacts: [artifact()] }));
   assert.equal(candidate.status, 0, candidate.stderr);
