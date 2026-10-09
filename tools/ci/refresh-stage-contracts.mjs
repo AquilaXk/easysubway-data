@@ -13,7 +13,9 @@
 // `rawSha256 = sha256(admission.topologyBytes)`를 게시하고 `sha256(raw) !== journal.rawSha256`·`receipt.rawObjectSha256 !== journal.rawSha256`를 대조한다), 이 단계가 증거 행에 싣는
 // rawSha256은 그 파일 바이트의 sha256이다. 즉 이 단계가 증명하는 것은 "본문이 생산자 규칙으로 자기 일관적이고 직전과 비교한 변화가 한도 안"이며, 노선별 provider 원본 sha(line.rawSha256)의
 // 출처 확인은 이 단계의 몫이 아니다.
-// 관측된 적 없는 경로(reviewed pack, ITX 입력)는 허용하지 않는다. 이런 변경은 emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다.
+// reviewed pack은 #1062부터 바뀌면 허용한다(0 또는 1개). 입력 파일이 옮겨 간 KRIC·서울 증거 표식을 pack이 따라가는 갱신(2026-10-09 실패 run 37865886911·37866515161)에서 바뀌고,
+// canonical pack과 같은 구조 diff 규칙(출처 표식만, 값은 입력 파일·원장·새 snapshot에 결속)으로 본다.
+// 관측된 적 없는 경로(ITX 입력 등)는 허용하지 않는다. 이런 변경은 emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다.
 // 브랜치도 PR도 만들어지지 않는다(workflow가 그 파일을 스테이징해도 증거 본문을 만들지 못한다). 허용하려면 이 표에 규칙을 더하는 코드 변경이 필요하다(fail closed).
 //
 // 게이트 재계산(evaluateRefreshStage)이 돌려주는 위반 코드:
@@ -21,10 +23,11 @@
 //                   수도권 topology 단계는 원장이 한 글자도 바뀌면 안 된다.
 //   INVENTORY_GATE  inventory가 소유 항목·소유 필드 밖에서 바뀌었다(inventoryScopeViolations). 증거 전후 변화가 정책 한도를 넘었다.
 //   REFRESH_GATE    inventory 증거·snapshot 파일·원장 행·입력 파일이 서로 결속되지 않았다. topology는 제거가 있거나(자동 경로 불허) snapshot 신원이 본문과 다르다.
-//   PACK_CONTENT    canonical pack이 출처 표식(sourceSnapshotId·updatedAt·lastVerifiedAt·reviewedAt) 밖에서 바뀌었거나 표식 값이 새 snapshot·증거 시각과 다르다.
+//   PACK_CONTENT    canonical·reviewed pack이 출처 표식(sourceSnapshotId·updatedAt·lastVerifiedAt·reviewedAt, KRIC·서울 증거 행은 verifiedAt·retrievedAt·evidenceHash 포함) 밖에서 바뀌었거나 표식 값이 새 snapshot·증거 시각·입력 파일과 다르다.
 import { createHash } from "node:crypto";
 
 import { compareCapitalRouteTopologies, requireCurrentSourceSeparatedCapitalTopology } from "../datapack/collect-capital-route-topology.mjs";
+import { latestEvidenceObservedDates } from "../datapack/import-official-sources.mjs";
 import { materializeAccessibilitySourceInput, seoulEdgeEvidenceHash, seoulStatusEvidenceHash } from "../datapack/materialize-accessibility-source-input.mjs";
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
@@ -34,11 +37,12 @@ const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const SEOUL_INPUT_PATH = "tools/datapack/inputs/capital-pilot-production-source-input.json";
 const CANONICAL_PACK_PATH = "tools/datapack/release/capital-production-canonical-pack.json";
+const REVIEWED_PACK_PATH = "tools/datapack/release/capital-production-reviewed-pack.json";
 const SNAPSHOT_DIR = "tools/datapack/sources";
 
 const escapeRegex = (text) => text.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-const exact = (path, status) => Object.freeze({ id: path, regex: new RegExp(`^${escapeRegex(path)}$`, "u"), status });
-const family = (id, regex, status) => Object.freeze({ id, regex, status });
+const exact = (path, status, { optional = false } = {}) => Object.freeze({ id: path, regex: new RegExp(`^${escapeRegex(path)}$`, "u"), status, optional });
+const family = (id, regex, status) => Object.freeze({ id, regex, status, optional: false });
 const D8 = String.raw`[0-9]{8}`;
 const STAMP = String.raw`[0-9]{8}T[0-9]{9}Z`;
 const snapshotFamily = (name, stamp, status = "added") => family(name, new RegExp(String.raw`^${escapeRegex(SNAPSHOT_DIR)}/${escapeRegex(name)}-${stamp}\.json$`, "u"), status);
@@ -108,6 +112,8 @@ export const REFRESH_STAGES = Object.freeze({
       family("capital-topology-reverification", new RegExp(String.raw`^tools/datapack/release/capital-topology-reverification-${D8}\.json$`, "u"), "added"),
       exact(INVENTORY_PATH, "modified"),
       exact(CANONICAL_PACK_PATH, "modified"),
+      // #1062: 입력 파일이 옮겨 간 KRIC·서울 증거 표식을 pack이 따라가는 갱신에서만 바뀐다(바뀌지 않는 갱신도 있다). 있으면 정확히 하나이고 canonical pack과 같은 구조 diff 규칙을 쓴다.
+      exact(REVIEWED_PACK_PATH, "modified", { optional: true }),
     ]),
   }),
   "kric-facility-refresh": Object.freeze({
@@ -149,7 +155,10 @@ export function refreshPathShapeViolation(stage, paths) {
   if (new Set(paths).size !== paths.length) return "같은 경로가 둘 이상이다";
   const outside = paths.filter((entry) => ruleOf(stage, entry) === null);
   if (outside.length > 0) return `허용 밖 경로: ${shown(outside)}`;
-  const missing = REFRESH_STAGES[stage].rules.filter((rule) => paths.filter((entry) => rule.regex.test(entry)).length !== 1);
+  const missing = REFRESH_STAGES[stage].rules.filter((rule) => {
+    const count = paths.filter((entry) => rule.regex.test(entry)).length;
+    return rule.optional ? count > 1 : count !== 1;
+  });
   if (missing.length > 0) return `정확히 하나여야 하는 경로 종류가 아니다: ${missing.map(({ id }) => id).join(", ")}`;
   if (stage === "capital-topology-refresh") {
     const capital = paths.find((entry) => ruleOf(stage, entry)?.id === "capital-route-topology");
@@ -413,16 +422,126 @@ function verifyGwangju({ spec, rows, newLedgerRows, headInventory, violate }) {
 export const PACK_STAMP_KEYS = Object.freeze(["sourceSnapshotId", "updatedAt", "lastVerifiedAt", "reviewedAt"]);
 const PACK_TIME_KEYS = Object.freeze(["updatedAt", "lastVerifiedAt", "reviewedAt"]);
 
+// #1062: pack이 입력 파일을 따라 옮기는 KRIC·서울 증거 행. 표(pack) -> 입력 파일의 같은 신원 행 목록.
+const FOLLOW_SOURCE_IDS = Object.freeze([KRIC_SOURCE_ID, "seoul-metro-accessibility"]);
+const FOLLOW_TABLES = Object.freeze({ facilities: "facilityRows", networkEdges: "routeEdges", stationFacilityEvidence: "accessibilityStatusEvidence" });
+const FOLLOW_ROW_KEYS = Object.freeze(["sourceSnapshotId", "verifiedAt", "retrievedAt", "lastVerifiedAt", "evidenceHash"]);
+const evidenceKey = (row) => [row.stationId, row.lineId, row.facilityType, row.sourceId].join("\u0000");
+const FOLLOW_IDENTITY = Object.freeze({
+  facilities: (row) => row.id,
+  networkEdges: (row) => row.id,
+  stationFacilityEvidence: evidenceKey,
+});
+
+/**
+ * pack의 KRIC·서울 증거 행이 따라가는 근거를 읽는다: head 입력 파일, head 원장 계보, head inventory 관측일.
+ * 읽지 못해도 던지지 않는다. 근거가 필요한 행이 실제로 바뀌었을 때만 그 사유가 위반이 된다(바뀌지 않은 갱신은 이 근거를 보지 않는다).
+ */
+async function loadFollowContext({ files, headInventory }) {
+  try {
+    const input = JSON.parse(await files.readTree(SEOUL_INPUT_PATH));
+    const ledger = JSON.parse(await files.readTree(LEDGER_PATH));
+    if (!isObject(input) || !Array.isArray(ledger)) throw new Error("입력 파일 또는 원장의 형식이 다르다");
+    const lineage = new Map(FOLLOW_SOURCE_IDS.map((id) => [id, new Map()]));
+    for (const row of ledger) {
+      const order = lineage.get(row?.sourceId);
+      if (order !== undefined && typeof row.snapshotId === "string") order.set(row.snapshotId, order.size);
+    }
+    const identities = {};
+    for (const [table, inputTable] of Object.entries(FOLLOW_TABLES)) {
+      const rows = input[inputTable];
+      if (!Array.isArray(rows)) throw new Error(`입력 파일의 ${inputTable}가 목록이 아니다`);
+      identities[table] = new Map();
+      for (const row of rows) {
+        if (!isObject(row) || !FOLLOW_SOURCE_IDS.includes(row.sourceId)) continue;
+        const key = FOLLOW_IDENTITY[table](row);
+        identities[table].set(key, identities[table].has(key) ? null : row);
+      }
+    }
+    const observed = new Map();
+    for (const id of FOLLOW_SOURCE_IDS) {
+      const date = entryOf(headInventory, id)?.observedDataUpdatedAt;
+      if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(date)) observed.set(id, date);
+    }
+    return { lineage, identities, observed };
+  } catch (error) {
+    return { error: `KRIC·서울 증거 표식의 근거(입력 파일 ${SEOUL_INPUT_PATH}, 원장 계보, inventory 관측일)를 읽을 수 없다: ${message(error)}` };
+  }
+}
+
+/** 입력 파일 행(시설 id·간선 id·증거 신원)의 값을 pack 행의 표식 키 이름으로 옮긴다. 시설의 lastVerifiedAt은 입력 행의 verifiedAt이다(생산 pack 규칙). */
+const followValue = (table, twin, key) => (table === "facilities" && key === "lastVerifiedAt" ? twin.verifiedAt : twin[key]);
+
+/** 시설 존재(EXISTS) 증거는 입력 파일의 증거 행이 아니라 같은 pack의 같은 시설 행에서 파생된다(import-official-sources의 stationFacilityEvidenceRows). */
+const derivesFromFacility = (row) => row.sourceId === KRIC_SOURCE_ID && row.evidenceKind === "EXISTS" && row.facilityType !== "ACCESSIBILITY_STATUS_PROBE";
+
+function followRowViolations({ x, y, table, follow, head }) {
+  if (follow === null || follow.error !== undefined) return [follow?.error ?? "KRIC·서울 증거 표식이 바뀌었는데 근거 정보가 주어지지 않았다"];
+  const reasons = [];
+  const xKeys = Object.keys(x);
+  const yKeys = Object.keys(y);
+  if (xKeys.length !== yKeys.length || xKeys.some((key) => !Object.hasOwn(y, key))) return ["키 구성이 바뀌었다"];
+  const changed = xKeys.filter((key) => !sameJson(x[key], y[key]));
+  const outside = changed.filter((key) => !FOLLOW_ROW_KEYS.includes(key));
+  if (outside.length > 0) return [`표식 키가 아닌 값이 바뀌었다: ${outside.join(", ")}`];
+  if (!changed.includes("sourceSnapshotId")) return [`snapshot id가 그대로인데 표식(${changed.join(", ")})만 바뀌었다`];
+  if (changed.some((key) => typeof x[key] !== "string" || typeof y[key] !== "string")) return ["표식 값이 문자열이 아니다"];
+
+  const order = follow.lineage.get(x.sourceId);
+  const [from, to] = [order.get(x.sourceSnapshotId), order.get(y.sourceSnapshotId)];
+  if (to === undefined) reasons.push(`새 snapshot(${y.sourceSnapshotId})이 head 원장 계보의 ${x.sourceId} snapshot이 아니다`);
+  if (from === undefined) reasons.push(`직전 snapshot(${x.sourceSnapshotId})이 head 원장 계보의 ${x.sourceId} snapshot이 아니다`);
+  if (from !== undefined && to !== undefined && from >= to) reasons.push(`직전 snapshot(${x.sourceSnapshotId})이 새 snapshot(${y.sourceSnapshotId})보다 앞서지 않는다`);
+
+  let twin;
+  let twinLabel;
+  if (table === "stationFacilityEvidence" && derivesFromFacility(y)) {
+    const matches = (head.packs ?? []).flatMap((pack) => pack.facilities ?? [])
+      .filter((facility) => facility?.stationId === y.stationId && facility.lineId === y.lineId && facility.type === y.facilityType && facility.providerRecordHash === y.providerRecordHash);
+    twin = matches.length === 1 ? matches[0] : null;
+    twinLabel = "같은 pack의 같은 시설 행";
+  } else {
+    twin = follow.identities[table].get(FOLLOW_IDENTITY[table](y));
+    twinLabel = `입력 파일 ${FOLLOW_TABLES[table]}의 같은 신원 행`;
+  }
+  if (twin === undefined || twin === null) return [...reasons, `${twinLabel}이 없거나 둘 이상이다`];
+  for (const key of FOLLOW_ROW_KEYS.filter((entry) => Object.hasOwn(y, entry))) {
+    const expected = table === "stationFacilityEvidence" && twinLabel.startsWith("같은 pack") ? twin[key] : followValue(table, twin, key);
+    if (typeof expected !== "string") { if (changed.includes(key)) reasons.push(`${key}: ${twinLabel}에 근거 값이 없다`); continue; }
+    if (y[key] !== expected) reasons.push(`${key}(${y[key]})가 ${twinLabel}(${expected})과 다르다`);
+  }
+  return reasons;
+}
+
+function followInventoryViolations({ x, y, follow, pack }) {
+  if (follow === null || follow.error !== undefined) return [follow?.error ?? "KRIC·서울 증거 표식이 바뀌었는데 근거 정보가 주어지지 않았다"];
+  const keys = new Set([...Object.keys(x), ...Object.keys(y)]);
+  const outside = [...keys].filter((key) => key !== "updatedAt" && !sameJson(x[key], y[key]));
+  if (outside.length > 0) return [`원천 목록 항목은 updatedAt만 바뀔 수 있다: ${outside.join(", ")}`];
+  const observed = follow.observed.get(x.id);
+  if (observed === undefined) return [`inventory에 ${x.id}의 관측일이 없다`];
+  const evidenceDate = latestEvidenceObservedDates([...(pack?.facilities ?? []), ...(pack?.stationFacilityEvidence ?? [])]).get(x.id);
+  const expected = `${evidenceDate !== undefined && evidenceDate < observed ? evidenceDate : observed}T00:00:00.000Z`;
+  return y.updatedAt === expected ? [] : [`updatedAt(${String(y.updatedAt)})이 inventory 관측일과 pack 증거의 가장 늦은 관측일로 정해지는 값(${expected})과 다르다`];
+}
+
 /**
  * 갱신이 pack에서 바꾸는 것은 출처 표식 키 4개뿐이다(기록된 갱신 커밋 ab90519c9 등). base와 head를 구조로 비교해
  * 표식 밖의 키·값·키 구성·배열 길이와 순서가 한 글자라도 다르면 위반으로 모은다. 표식 값도 믿지 않는다.
  *  - sourceSnapshotId: 직전 snapshot id에서 같은 원천의 새 snapshot id로 바뀐 것이어야 한다(원천마다 쌍이 정해져 있다).
  *  - updatedAt·lastVerifiedAt·reviewedAt: 그 원천의 증거 시각(capturedAt)과 정확히 같아야 한다.
  *  - sourceInventory 항목은 snapshot id를 갖지 않으므로 항목 id가 소유 원천이고 updatedAt만 그 원천의 증거 시각으로 바뀔 수 있다.
- * @param {{ base: unknown, head: unknown, sources: { id: string, before: string, after: string, at: string }[] }} input
+ *
+ * #1062: pack은 production 입력 파일에서 만들어지므로, 서울 접근성 갱신이 입력 파일의 KRIC·서울 증거 행을 새 snapshot으로 옮기면 다음 topology 활성화가
+ * pack의 KRIC·서울 증거 행을 따라 옮긴다(시설 4종 표식 + 간선·증거 행의 표식 + 원천 목록의 updatedAt). 이 행들은 follow 규칙(followRowViolations)으로만 바뀔 수 있다.
+ *  - 바뀌는 키는 sourceSnapshotId·verifiedAt·retrievedAt·lastVerifiedAt·evidenceHash뿐이고 그 밖의 키·값·키 구성은 그대로여야 한다.
+ *  - 새 값은 head 입력 파일의 같은 신원 행(시설 id, 간선 id, 증거 (역·노선·시설종류·원천))과 정확히 같다. 시설 존재(EXISTS) 증거는 같은 pack의 같은 시설 행을 따른다.
+ *  - 새 snapshot은 head 원장 계보의 같은 원천 snapshot이고, 직전 값은 같은 원천의 더 앞선 snapshot이다(되돌림 불가).
+ *  - sourceInventory의 updatedAt은 inventory 관측일과 pack이 싣는 증거의 가장 늦은 관측일 중 이른 날의 자정이다(packSourceInventoryEntry와 같은 규칙).
+ * @param {{ base: unknown, head: unknown, sources: { id: string, before: string, after: string, at: string }[], follow?: object|null }} input
  * @returns {string[]} 위반 사유(없으면 빈 배열)
  */
-export function packContentViolations({ base, head, sources }) {
+export function packContentViolations({ base, head, sources, follow = null }) {
   const problems = [];
   const problem = (where, detail) => { if (problems.length < 50) problems.push(`${where}: ${detail}`); };
   const pairs = sources.map(({ before, after, at }) => ({ before, after, at }));
@@ -440,6 +559,17 @@ export function packContentViolations({ base, head, sources }) {
       return;
     }
     if (isObject(x) && isObject(y)) {
+      const table = parts.at(-2);
+      if (typeof x.sourceId === "string" && FOLLOW_SOURCE_IDS.includes(x.sourceId) && Object.hasOwn(FOLLOW_TABLES, table)) {
+        if (sameJson(x, y)) return;
+        for (const reason of followRowViolations({ x, y, table, follow, head })) problem(pathOf(parts), reason);
+        return;
+      }
+      if (table === "sourceInventory" && typeof x.id === "string" && FOLLOW_SOURCE_IDS.includes(x.id)) {
+        if (sameJson(x, y)) return;
+        for (const reason of followInventoryViolations({ x, y, follow, pack: head.packs?.[Number(/^\[(\d+)\]$/u.exec(parts[2] ?? "")?.[1])] })) problem(pathOf(parts), reason);
+        return;
+      }
       const xKeys = Object.keys(x);
       const yKeys = Object.keys(y);
       if (xKeys.length !== yKeys.length || xKeys.some((key) => !Object.hasOwn(y, key))) { problem(pathOf(parts), "키 구성이 바뀌었다"); return; }
@@ -586,13 +716,18 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
       after: { snapshotId: after.snapshotId, rawSha256: after.rawSha256, contentSha256: after.rowsSha256, rows: after.rowCount, coverage: after.departureCount },
     }));
   }
-  try {
-    const basePack = JSON.parse(await files.readBase(baseSha, CANONICAL_PACK_PATH));
-    const headPack = JSON.parse(await files.readTree(CANONICAL_PACK_PATH));
-    const problems = packContentViolations({ base: basePack, head: headPack, sources: packSources });
-    if (problems.length > 0) violate("PACK_CONTENT", `canonical pack이 출처 표식 밖에서 바뀌었거나 표식 값이 새 snapshot과 다르다(${problems.length}건): ${problems.slice(0, 6).join(" | ")}`);
-  } catch (error) {
-    violate("PACK_CONTENT", `canonical pack을 비교하지 못했다: ${message(error)}`);
+  const follow = await loadFollowContext({ files, headInventory });
+  // canonical pack은 항상, reviewed pack은 바뀐 경로로 주장될 때만 같은 규칙으로 본다(#1062).
+  const packChecks = [["canonical pack", CANONICAL_PACK_PATH], ...(paths.includes(REVIEWED_PACK_PATH) ? [["reviewed pack", REVIEWED_PACK_PATH]] : [])];
+  for (const [label, packPath] of packChecks) {
+    try {
+      const basePack = JSON.parse(await files.readBase(baseSha, packPath));
+      const headPack = JSON.parse(await files.readTree(packPath));
+      const problems = packContentViolations({ base: basePack, head: headPack, sources: packSources, follow });
+      if (problems.length > 0) violate("PACK_CONTENT", `${label}이 출처 표식 밖에서 바뀌었거나 표식 값이 새 snapshot과 다르다(${problems.length}건): ${problems.slice(0, 6).join(" | ")}`);
+    } catch (error) {
+      violate("PACK_CONTENT", `${label}을 비교하지 못했다: ${message(error)}`);
+    }
   }
   return rows;
 }

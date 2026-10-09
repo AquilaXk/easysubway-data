@@ -205,3 +205,54 @@ export function recordedTrees(run, { mutateInventory = () => {}, mutateLedger = 
   return { base, head };
 }
 
+// ---------------------------------------------------------------------------
+// #1062: reviewed pack과 KRIC·서울 증거 재결속의 실제 재생 fixture.
+// 2026-10-09T00:39Z·00:47Z 실패 run(37865886911·37866515161)과 같은 입력으로 base ad1455fb0 위에서 활성화를 다시 실행한 결과에서 바뀐 행(전·후),
+// 입력 파일의 같은 신원 행, 원장 계보, inventory 관측일만 담았다.
+// ---------------------------------------------------------------------------
+export const REVIEWED_PACK_PATH = "tools/datapack/release/capital-production-reviewed-pack.json";
+export const REPLAY = JSON.parse(readFileSync(new URL("./topology-reviewed-pack-replay-20261009.json", import.meta.url), "utf8"));
+const FOLLOW_TABLES = ["facilities", "networkEdges", "stationFacilityEvidence"];
+
+const replaySide = (name, side) => {
+  const changed = REPLAY.packs[name];
+  return {
+    ...Object.fromEntries(FOLLOW_TABLES.map((table) => [table, changed[table].map((entry) => structuredClone(entry[side]))])),
+    sourceInventory: changed.sourceInventory.map((entry) => structuredClone(entry[side])),
+  };
+};
+
+/** 활성화 결과를 합성한다: reviewed pack을 더하고, canonical pack에 같은 행을 싣고, 입력 파일·원장·inventory 관측일을 맞춘다. */
+export function replayMutations({ reviewed = () => {}, canonical = () => {}, input = () => {}, ledger = () => {}, inventory = () => {}, files = () => {} } = {}) {
+  const observed = (inv) => {
+    for (const [id, observedDataUpdatedAt] of Object.entries(REPLAY.inventoryObservedDataUpdatedAt)) inv.sources.push({ id, observedDataUpdatedAt, productionUseAllowed: true, datasetUrl: `https://example.test/${id}` });
+  };
+  return {
+    mutateBaseInventory: observed,
+    mutateInventory: (inv) => { observed(inv); inventory(inv); },
+    mutateBasePack: (pack) => {
+      const rows = replaySide("canonical", "before");
+      for (const table of FOLLOW_TABLES) pack.packs[0][table] = [...(pack.packs[0][table] ?? []), ...rows[table]];
+      pack.packs[0].sourceInventory.push(...rows.sourceInventory);
+    },
+    mutatePack: (pack) => {
+      const rows = replaySide("canonical", "after");
+      for (const table of FOLLOW_TABLES) pack.packs[0][table] = [...(pack.packs[0][table] ?? []), ...rows[table]];
+      pack.packs[0].sourceInventory.push(...rows.sourceInventory);
+      canonical(pack);
+    },
+    mutateFiles: (head, base) => {
+      for (const [tree, side] of [[base, "before"], [head, "after"]]) tree.set(REVIEWED_PACK_PATH, JSON.stringify({ packs: [replaySide("reviewed", side)] }));
+      const headReviewed = JSON.parse(head.get(REVIEWED_PACK_PATH));
+      reviewed(headReviewed);
+      head.set(REVIEWED_PACK_PATH, JSON.stringify(headReviewed));
+      const twins = structuredClone(REPLAY.inputTwins);
+      input(twins);
+      for (const tree of [base, head]) tree.set(INPUT_PATH, JSON.stringify(twins));
+      const lineage = structuredClone(REPLAY.ledgerLineage);
+      ledger(lineage);
+      for (const tree of [base, head]) tree.set(LEDGER_PATH, JSON.stringify(lineage));
+      files(head, base);
+    },
+  };
+}

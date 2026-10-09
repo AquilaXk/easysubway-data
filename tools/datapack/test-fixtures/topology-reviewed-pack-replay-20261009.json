@@ -1,0 +1,2040 @@
+{
+ "replayOf": "AquilaXk/easysubway-data actions runs 37865886911 and 37866515161 (current-capital-topology-refresh), reproduced on base ad1455fb0 with capital-route-topology-20261009",
+ "packs": {
+  "reviewed": {
+   "facilities": [
+    {
+     "index": 0,
+     "before": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-0f3d70235605c37c",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내반월방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "KR:4:448:EV:0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "151bc7d150c6bb7b77730948b38070ce7e9850152370557465fedcdfecca597d",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-0f3d70235605c37c",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내반월방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "KR:4:448:EV:0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "d67eeff0667329980483c94d3b5b04ca3f4fc1b41da025d7b9ba7c703f1d1aa0",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    },
+    {
+     "index": 1,
+     "before": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-90f52472eca6d3de",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내한대앞방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "KR:4:448:EV:90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "providerRecordHash": "90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "a9a7804daad80b00aa6b4abc100edd4cebb5335af85c9bcad063d55702820091",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-90f52472eca6d3de",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내한대앞방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "KR:4:448:EV:90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "providerRecordHash": "90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "4b5440a9f6aea9ddd34305d0dec070c3bc8408b4f831ac0a0981f37ecca6b39a",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    },
+    {
+     "index": 2,
+     "before": {
+      "id": "facility-station-sadang-elevator-kric-standard-35f2eec06ae7830b",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "B1",
+      "floorTo": "",
+      "description": "9,10번출구사이",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "S1:4:433:EV:35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "e777a2080f2525c65041e5df767f5f464e55a3d987808350db198d990c3a3b77",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sadang-elevator-kric-standard-35f2eec06ae7830b",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "B1",
+      "floorTo": "",
+      "description": "9,10번출구사이",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "S1:4:433:EV:35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "e10945c40dbccd422fdb50f372ccf5ee1c719a550b1649c92cc78de23c80a7f8",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    },
+    {
+     "index": 3,
+     "before": {
+      "id": "facility-station-sadang-elevator-kric-standard-d3bbeb9a4c8c231f",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "B3",
+      "floorTo": "",
+      "description": "총신대입구방면9-2",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "S1:4:433:EV:d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "providerRecordHash": "d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "00dbbdf9fa3c50b86cac78c1a0df77cb80d27ae9ed424cf781f03d4ae8a96269",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sadang-elevator-kric-standard-d3bbeb9a4c8c231f",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "B3",
+      "floorTo": "",
+      "description": "총신대입구방면9-2",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "S1:4:433:EV:d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "providerRecordHash": "d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "8a4e58c563f247f499b9c314574c2e778253eab70381a8129efee2c98c5dd836",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    }
+   ],
+   "networkEdges": [
+    {
+     "index": 0,
+     "before": {
+      "id": "edge-entry-sangnoksu-seoul-4",
+      "fromNodeId": "station-sangnoksu",
+      "toNodeId": "station-sangnoksu:seoul-4",
+      "durationSeconds": 90,
+      "distanceMeters": 0,
+      "edgeType": "ENTRY",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "NO_OFFICIAL_FEED",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "evidenceHash": "f6165e3a2fabfacabbad043653f555a8e193f4ad8a7c90dc1bd6b471077e7180"
+     },
+     "after": {
+      "id": "edge-entry-sangnoksu-seoul-4",
+      "fromNodeId": "station-sangnoksu",
+      "toNodeId": "station-sangnoksu:seoul-4",
+      "durationSeconds": 90,
+      "distanceMeters": 0,
+      "edgeType": "ENTRY",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "NO_OFFICIAL_FEED",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+      "evidenceHash": "ef7bdd41e446dc96c1320dd344a192bc4c557fdc02ed9db5a7c50c977693f27c"
+     }
+    },
+    {
+     "index": 1,
+     "before": {
+      "id": "edge-exit-sangnoksu-seoul-4",
+      "fromNodeId": "station-sangnoksu:seoul-4",
+      "toNodeId": "station-sangnoksu",
+      "durationSeconds": 60,
+      "distanceMeters": 0,
+      "edgeType": "EXIT",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "NO_OFFICIAL_FEED",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "evidenceHash": "55ad6d6b8f358a63facd8c1f704f4a20bcda0dfeaba11303884fa583a66b9779"
+     },
+     "after": {
+      "id": "edge-exit-sangnoksu-seoul-4",
+      "fromNodeId": "station-sangnoksu:seoul-4",
+      "toNodeId": "station-sangnoksu",
+      "durationSeconds": 60,
+      "distanceMeters": 0,
+      "edgeType": "EXIT",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "NO_OFFICIAL_FEED",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+      "evidenceHash": "7da76adc92bd8122230eb73765c8eaa601966dee3145ec03eff1be123a9611f9"
+     }
+    },
+    {
+     "index": 2,
+     "before": {
+      "id": "edge-entry-sadang-seoul-4",
+      "fromNodeId": "station-sadang",
+      "toNodeId": "station-sadang:seoul-4",
+      "durationSeconds": 90,
+      "distanceMeters": 0,
+      "edgeType": "ENTRY",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "UNKNOWN",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "evidenceHash": "9d136c9e4f5d2bcebb3abdd06d85f25fc082d2be653c1e11d9a2c0bcbf91fb81"
+     },
+     "after": {
+      "id": "edge-entry-sadang-seoul-4",
+      "fromNodeId": "station-sadang",
+      "toNodeId": "station-sadang:seoul-4",
+      "durationSeconds": 90,
+      "distanceMeters": 0,
+      "edgeType": "ENTRY",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "UNKNOWN",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+      "evidenceHash": "93a9c559443b5a95211d083e2606464269b3bfb94c7c37b51322381b83afe139"
+     }
+    },
+    {
+     "index": 3,
+     "before": {
+      "id": "edge-exit-sadang-seoul-4",
+      "fromNodeId": "station-sadang:seoul-4",
+      "toNodeId": "station-sadang",
+      "durationSeconds": 60,
+      "distanceMeters": 0,
+      "edgeType": "EXIT",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "UNKNOWN",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-02T06:11:20.173Z",
+      "evidenceHash": "f9b7dad341ad7475acb78dca1dcceb01e22dbca51a609a7671af2aa90423ed2d"
+     },
+     "after": {
+      "id": "edge-exit-sadang-seoul-4",
+      "fromNodeId": "station-sadang:seoul-4",
+      "toNodeId": "station-sadang",
+      "durationSeconds": 60,
+      "distanceMeters": 0,
+      "edgeType": "EXIT",
+      "servicePattern": "",
+      "includesStairs": false,
+      "stairAccessState": "UNKNOWN",
+      "accessibilityStatus": "UNKNOWN",
+      "reliabilityScore": 90,
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "verificationStatus": "NOT_VERIFIED",
+      "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+      "evidenceHash": "ee9ca77de21ae72bbfa967f23780efa18c9bfa7af137c14efc34d98704678958"
+     }
+    }
+   ],
+   "stationFacilityEvidence": [
+    {
+     "index": 0,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "evidenceHash": "e777a2080f2525c65041e5df767f5f464e55a3d987808350db198d990c3a3b77",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "evidenceHash": "e10945c40dbccd422fdb50f372ccf5ee1c719a550b1649c92cc78de23c80a7f8",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     }
+    },
+    {
+     "index": 1,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "evidenceHash": "151bc7d150c6bb7b77730948b38070ce7e9850152370557465fedcdfecca597d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "evidenceHash": "d67eeff0667329980483c94d3b5b04ca3f4fc1b41da025d7b9ba7c703f1d1aa0",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     }
+    },
+    {
+     "index": 2,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "41cd61d51433bcf87dede5e2dacaf10617f6ec38e102c1c3c879c3b092e6a235",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "a9a66267b443d9546b250bfd5ac2c0a334aeb00ad843ccfbc6f36f6a1bbc3232",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 3,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "856687b5712e6f078fa37baf544950333fdaa88b3def986b5e59db4624ce848f",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "0d8df3166ba3a5be61acd6d5e3a71fdc6ebce24e338eb3bc8990bbc882f76d58",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 4,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "7baf48bb7414641019aa21a7f846f3006f328a37a4917b38a287417bc45b57fb",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "5a65e5849ad4ab5ee328b954569f7e8e0a068ebf33b7a831d46181f6f448065e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 5,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "75321796d5afc11963e8365cdc5f6c2e34ac7ade4059b04bdd81e0b4d4587742",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "71a0a674bbc19e80ba0eff9c596a02107f5e18557b900edd2c6a02b128f1dec4",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 6,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "evidenceHash": "422d3747edd00d1300050a74e205c816d1e188817a7674579b7121fc64651698",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_COVERED",
+      "operationalStatus": "NOT_COVERED",
+      "statusMeaning": "FEED_ABSENCE_RECORD",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:11:20.173Z",
+      "retrievedAt": "2026-10-02T06:11:20.173Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "evidenceHash": "c6f94da3b3c89f2f9094e685a197f089de63f9e74af7e536c8a1b46431d39353",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_COVERED",
+      "operationalStatus": "NOT_COVERED",
+      "statusMeaning": "FEED_ABSENCE_RECORD",
+      "confidence": 100,
+      "verifiedAt": "2026-10-08T17:29:53.869Z",
+      "retrievedAt": "2026-10-08T17:29:53.869Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED"
+     }
+    },
+    {
+     "index": 7,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "evidenceHash": "8ff26b67c0f181c6385f23170f1a802f24dbce14c19b264a35308261cd22a97d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "AVAILABLE",
+      "statusMeaning": "REALTIME_OPERATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:11:20.173Z",
+      "retrievedAt": "2026-10-02T06:11:20.173Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "STATUS_PROBE_NOT_ROUTE_EVIDENCE"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "evidenceHash": "036c2e63f645167ed312bf42767b431ad970fbacd271d7d253a39cc44776b58a",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "AVAILABLE",
+      "statusMeaning": "REALTIME_OPERATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-08T17:29:53.869Z",
+      "retrievedAt": "2026-10-08T17:29:53.869Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "STATUS_PROBE_NOT_ROUTE_EVIDENCE"
+     }
+    }
+   ],
+   "sourceInventory": [
+    {
+     "index": 3,
+     "before": {
+      "id": "seoul-metro-accessibility",
+      "owner": "서울특별시",
+      "url": "https://www.data.go.kr/data/15143843/openapi.do",
+      "license": "공공데이터포털 이용허락범위 제한 없음",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "realtime",
+      "updatedAt": "2026-10-02T00:00:00.000Z",
+      "fields": [
+       "bgngFlr",
+       "bgngFlrGrndUdgdSe",
+       "crtrYmd",
+       "dtlPstn",
+       "elvtrSn",
+       "endFlr",
+       "endFlrGrndUdgdSe",
+       "fcltNm",
+       "fcltNo",
+       "lineNm",
+       "mngNo",
+       "oprtngSitu",
+       "pscpNope",
+       "pscpWht",
+       "stnCd",
+       "stnNm",
+       "stnNo",
+       "vcntEntrcNo"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     },
+     "after": {
+      "id": "seoul-metro-accessibility",
+      "owner": "서울특별시",
+      "url": "https://www.data.go.kr/data/15143843/openapi.do",
+      "license": "공공데이터포털 이용허락범위 제한 없음",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "realtime",
+      "updatedAt": "2026-10-08T00:00:00.000Z",
+      "fields": [
+       "bgngFlr",
+       "bgngFlrGrndUdgdSe",
+       "crtrYmd",
+       "dtlPstn",
+       "elvtrSn",
+       "endFlr",
+       "endFlrGrndUdgdSe",
+       "fcltNm",
+       "fcltNo",
+       "lineNm",
+       "mngNo",
+       "oprtngSitu",
+       "pscpNope",
+       "pscpWht",
+       "stnCd",
+       "stnNm",
+       "stnNo",
+       "vcntEntrcNo"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     }
+    },
+    {
+     "index": 4,
+     "before": {
+      "id": "kric-station-convenience-standard",
+      "owner": "국가철도공단",
+      "url": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
+      "license": "공공누리 1유형",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "daily",
+      "updatedAt": "2026-10-02T00:00:00.000Z",
+      "fields": [
+       "dtlLoc",
+       "grndDvCd",
+       "gubun",
+       "imgPath",
+       "mlFmlDvCd",
+       "stinFlor",
+       "trfcWeakDvCd"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro",
+        "korail"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     },
+     "after": {
+      "id": "kric-station-convenience-standard",
+      "owner": "국가철도공단",
+      "url": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
+      "license": "공공누리 1유형",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "daily",
+      "updatedAt": "2026-10-07T00:00:00.000Z",
+      "fields": [
+       "dtlLoc",
+       "grndDvCd",
+       "gubun",
+       "imgPath",
+       "mlFmlDvCd",
+       "stinFlor",
+       "trfcWeakDvCd"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro",
+        "korail"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "canonical": {
+   "facilities": [
+    {
+     "index": 0,
+     "before": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-0f3d70235605c37c",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내반월방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "KR:4:448:EV:0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "151bc7d150c6bb7b77730948b38070ce7e9850152370557465fedcdfecca597d",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-0f3d70235605c37c",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내반월방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "KR:4:448:EV:0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "d67eeff0667329980483c94d3b5b04ca3f4fc1b41da025d7b9ba7c703f1d1aa0",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    },
+    {
+     "index": 1,
+     "before": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-90f52472eca6d3de",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내한대앞방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "KR:4:448:EV:90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "providerRecordHash": "90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "a9a7804daad80b00aa6b4abc100edd4cebb5335af85c9bcad063d55702820091",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sangnoksu-elevator-kric-standard-90f52472eca6d3de",
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "상록수역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "1F",
+      "floorTo": "",
+      "description": "(1층)표내는곳내한대앞방향계단옆",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "KR:4:448:EV:90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "providerRecordHash": "90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "4b5440a9f6aea9ddd34305d0dec070c3bc8408b4f831ac0a0981f37ecca6b39a",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    },
+    {
+     "index": 2,
+     "before": {
+      "id": "facility-station-sadang-elevator-kric-standard-35f2eec06ae7830b",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "B1",
+      "floorTo": "",
+      "description": "9,10번출구사이",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "S1:4:433:EV:35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "e777a2080f2525c65041e5df767f5f464e55a3d987808350db198d990c3a3b77",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sadang-elevator-kric-standard-35f2eec06ae7830b",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 1",
+      "status": "UNKNOWN",
+      "floorFrom": "B1",
+      "floorTo": "",
+      "description": "9,10번출구사이",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "S1:4:433:EV:35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "e10945c40dbccd422fdb50f372ccf5ee1c719a550b1649c92cc78de23c80a7f8",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    },
+    {
+     "index": 3,
+     "before": {
+      "id": "facility-station-sadang-elevator-kric-standard-d3bbeb9a4c8c231f",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "B3",
+      "floorTo": "",
+      "description": "총신대입구방면9-2",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerFacilityRef": "S1:4:433:EV:d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "providerRecordHash": "d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "evidenceHash": "00dbbdf9fa3c50b86cac78c1a0df77cb80d27ae9ed424cf781f03d4ae8a96269",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-02T06:14:40.559Z"
+     },
+     "after": {
+      "id": "facility-station-sadang-elevator-kric-standard-d3bbeb9a4c8c231f",
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "exitId": null,
+      "type": "ELEVATOR",
+      "name": "사당역 ELEVATOR 2",
+      "status": "UNKNOWN",
+      "floorFrom": "B3",
+      "floorTo": "",
+      "description": "총신대입구방면9-2",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerFacilityRef": "S1:4:433:EV:d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "providerRecordHash": "d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "evidenceHash": "8a4e58c563f247f499b9c314574c2e778253eab70381a8129efee2c98c5dd836",
+      "confidence": 100,
+      "derivationKind": "OFFICIAL",
+      "lastVerifiedAt": "2026-10-07T18:51:21.362Z"
+     }
+    }
+   ],
+   "networkEdges": [],
+   "stationFacilityEvidence": [
+    {
+     "index": 0,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "evidenceHash": "e777a2080f2525c65041e5df767f5f464e55a3d987808350db198d990c3a3b77",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+      "evidenceHash": "e10945c40dbccd422fdb50f372ccf5ee1c719a550b1649c92cc78de23c80a7f8",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     }
+    },
+    {
+     "index": 1,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "evidenceHash": "151bc7d150c6bb7b77730948b38070ce7e9850152370557465fedcdfecca597d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ELEVATOR",
+      "evidenceKind": "EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+      "evidenceHash": "d67eeff0667329980483c94d3b5b04ca3f4fc1b41da025d7b9ba7c703f1d1aa0",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+     }
+    },
+    {
+     "index": 2,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "41cd61d51433bcf87dede5e2dacaf10617f6ec38e102c1c3c879c3b092e6a235",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "a9a66267b443d9546b250bfd5ac2c0a334aeb00ad843ccfbc6f36f6a1bbc3232",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 3,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "856687b5712e6f078fa37baf544950333fdaa88b3def986b5e59db4624ce848f",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "evidenceHash": "0d8df3166ba3a5be61acd6d5e3a71fdc6ebce24e338eb3bc8990bbc882f76d58",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 4,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "7baf48bb7414641019aa21a7f846f3006f328a37a4917b38a287417bc45b57fb",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ESCALATOR",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "5a65e5849ad4ab5ee328b954569f7e8e0a068ebf33b7a831d46181f6f448065e",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 5,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "75321796d5afc11963e8365cdc5f6c2e34ac7ade4059b04bdd81e0b4d4587742",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:14:40.559Z",
+      "retrievedAt": "2026-10-02T06:14:40.559Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "WHEELCHAIR_LIFT",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "kric-station-convenience-standard",
+      "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "evidenceHash": "71a0a674bbc19e80ba0eff9c596a02107f5e18557b900edd2c6a02b128f1dec4",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_INSTALLED",
+      "operationalStatus": "NOT_APPLICABLE",
+      "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+      "confidence": 100,
+      "verifiedAt": "2026-10-07T18:51:21.362Z",
+      "retrievedAt": "2026-10-07T18:51:21.362Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED"
+     }
+    },
+    {
+     "index": 6,
+     "before": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "evidenceHash": "422d3747edd00d1300050a74e205c816d1e188817a7674579b7121fc64651698",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_COVERED",
+      "operationalStatus": "NOT_COVERED",
+      "statusMeaning": "FEED_ABSENCE_RECORD",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:11:20.173Z",
+      "retrievedAt": "2026-10-02T06:11:20.173Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED"
+     },
+     "after": {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+      "evidenceHash": "c6f94da3b3c89f2f9094e685a197f089de63f9e74af7e536c8a1b46431d39353",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_COVERED",
+      "operationalStatus": "NOT_COVERED",
+      "statusMeaning": "FEED_ABSENCE_RECORD",
+      "confidence": 100,
+      "verifiedAt": "2026-10-08T17:29:53.869Z",
+      "retrievedAt": "2026-10-08T17:29:53.869Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED"
+     }
+    },
+    {
+     "index": 7,
+     "before": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "evidenceHash": "8ff26b67c0f181c6385f23170f1a802f24dbce14c19b264a35308261cd22a97d",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "AVAILABLE",
+      "statusMeaning": "REALTIME_OPERATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-02T06:11:20.173Z",
+      "retrievedAt": "2026-10-02T06:11:20.173Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "STATUS_PROBE_NOT_ROUTE_EVIDENCE"
+     },
+     "after": {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+      "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+      "evidenceHash": "036c2e63f645167ed312bf42767b431ad970fbacd271d7d253a39cc44776b58a",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "AVAILABLE",
+      "statusMeaning": "REALTIME_OPERATION",
+      "confidence": 100,
+      "verifiedAt": "2026-10-08T17:29:53.869Z",
+      "retrievedAt": "2026-10-08T17:29:53.869Z",
+      "strictRouteEligible": false,
+      "strictRouteEligibleReason": "STATUS_PROBE_NOT_ROUTE_EVIDENCE"
+     }
+    }
+   ],
+   "sourceInventory": [
+    {
+     "index": 4,
+     "before": {
+      "id": "seoul-metro-accessibility",
+      "owner": "서울특별시",
+      "url": "https://www.data.go.kr/data/15143843/openapi.do",
+      "license": "공공데이터포털 이용허락범위 제한 없음",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "realtime",
+      "updatedAt": "2026-10-02T00:00:00.000Z",
+      "fields": [
+       "bgngFlr",
+       "bgngFlrGrndUdgdSe",
+       "crtrYmd",
+       "dtlPstn",
+       "elvtrSn",
+       "endFlr",
+       "endFlrGrndUdgdSe",
+       "fcltNm",
+       "fcltNo",
+       "lineNm",
+       "mngNo",
+       "oprtngSitu",
+       "pscpNope",
+       "pscpWht",
+       "stnCd",
+       "stnNm",
+       "stnNo",
+       "vcntEntrcNo"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     },
+     "after": {
+      "id": "seoul-metro-accessibility",
+      "owner": "서울특별시",
+      "url": "https://www.data.go.kr/data/15143843/openapi.do",
+      "license": "공공데이터포털 이용허락범위 제한 없음",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "realtime",
+      "updatedAt": "2026-10-08T00:00:00.000Z",
+      "fields": [
+       "bgngFlr",
+       "bgngFlrGrndUdgdSe",
+       "crtrYmd",
+       "dtlPstn",
+       "elvtrSn",
+       "endFlr",
+       "endFlrGrndUdgdSe",
+       "fcltNm",
+       "fcltNo",
+       "lineNm",
+       "mngNo",
+       "oprtngSitu",
+       "pscpNope",
+       "pscpWht",
+       "stnCd",
+       "stnNm",
+       "stnNo",
+       "vcntEntrcNo"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     }
+    },
+    {
+     "index": 5,
+     "before": {
+      "id": "kric-station-convenience-standard",
+      "owner": "국가철도공단",
+      "url": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
+      "license": "공공누리 1유형",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "daily",
+      "updatedAt": "2026-10-02T00:00:00.000Z",
+      "fields": [
+       "dtlLoc",
+       "grndDvCd",
+       "gubun",
+       "imgPath",
+       "mlFmlDvCd",
+       "stinFlor",
+       "trfcWeakDvCd"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro",
+        "korail"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     },
+     "after": {
+      "id": "kric-station-convenience-standard",
+      "owner": "국가철도공단",
+      "url": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
+      "license": "공공누리 1유형",
+      "licenseStatus": "redistributable",
+      "redistributionAllowed": true,
+      "updateFrequency": "daily",
+      "updatedAt": "2026-10-07T00:00:00.000Z",
+      "fields": [
+       "dtlLoc",
+       "grndDvCd",
+       "gubun",
+       "imgPath",
+       "mlFmlDvCd",
+       "stinFlor",
+       "trfcWeakDvCd"
+      ],
+      "coverageScope": {
+       "regionIds": [
+        "capital"
+       ],
+       "operatorIds": [
+        "seoul-metro",
+        "korail"
+       ],
+       "sourceDomains": [
+        "accessibility_facilities"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ },
+ "inputTwins": {
+  "facilityRows": [
+   {
+    "sourceId": "kric-station-convenience-standard",
+    "id": "facility-station-sangnoksu-elevator-kric-standard-0f3d70235605c37c",
+    "station": {
+     "sourceId": "molit-urban-rail-full-route",
+     "sourceStationCode": "MOLIT-SEOUL-4-448",
+     "lineId": "seoul-4"
+    },
+    "type": "ELEVATOR",
+    "name": "상록수역 ELEVATOR 1",
+    "status": "UNKNOWN",
+    "statusMeaning": "STATIC_LOCATION",
+    "operationalStatus": "UNKNOWN",
+    "installationStatus": "INSTALLED",
+    "providerFacilityRef": "KR:4:448:EV:0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "floorFrom": "1F",
+    "floorTo": "",
+    "description": "(1층)표내는곳내반월방향계단옆",
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "0f3d70235605c37c3308e46eee75be660c46d97f73d8914be9ce0bbd61a741c6",
+    "evidenceHash": "d67eeff0667329980483c94d3b5b04ca3f4fc1b41da025d7b9ba7c703f1d1aa0",
+    "confidence": 100
+   },
+   {
+    "sourceId": "kric-station-convenience-standard",
+    "id": "facility-station-sangnoksu-elevator-kric-standard-90f52472eca6d3de",
+    "station": {
+     "sourceId": "molit-urban-rail-full-route",
+     "sourceStationCode": "MOLIT-SEOUL-4-448",
+     "lineId": "seoul-4"
+    },
+    "type": "ELEVATOR",
+    "name": "상록수역 ELEVATOR 2",
+    "status": "UNKNOWN",
+    "statusMeaning": "STATIC_LOCATION",
+    "operationalStatus": "UNKNOWN",
+    "installationStatus": "INSTALLED",
+    "providerFacilityRef": "KR:4:448:EV:90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "floorFrom": "1F",
+    "floorTo": "",
+    "description": "(1층)표내는곳내한대앞방향계단옆",
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "90f52472eca6d3de9b1f23fa6222cd16ed4df0d55a59fcc524112cabba11b15d",
+    "evidenceHash": "4b5440a9f6aea9ddd34305d0dec070c3bc8408b4f831ac0a0981f37ecca6b39a",
+    "confidence": 100
+   },
+   {
+    "sourceId": "kric-station-convenience-standard",
+    "id": "facility-station-sadang-elevator-kric-standard-35f2eec06ae7830b",
+    "station": {
+     "sourceId": "molit-urban-rail-full-route",
+     "sourceStationCode": "MOLIT-SEOUL-4-433",
+     "lineId": "seoul-4"
+    },
+    "type": "ELEVATOR",
+    "name": "사당역 ELEVATOR 1",
+    "status": "UNKNOWN",
+    "statusMeaning": "STATIC_LOCATION",
+    "operationalStatus": "UNKNOWN",
+    "installationStatus": "INSTALLED",
+    "providerFacilityRef": "S1:4:433:EV:35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "floorFrom": "B1",
+    "floorTo": "",
+    "description": "9,10번출구사이",
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "35f2eec06ae7830b4fba354ee9ae7cf6635ff80d6c7387be7d610747312e7880",
+    "evidenceHash": "e10945c40dbccd422fdb50f372ccf5ee1c719a550b1649c92cc78de23c80a7f8",
+    "confidence": 100
+   },
+   {
+    "sourceId": "kric-station-convenience-standard",
+    "id": "facility-station-sadang-elevator-kric-standard-d3bbeb9a4c8c231f",
+    "station": {
+     "sourceId": "molit-urban-rail-full-route",
+     "sourceStationCode": "MOLIT-SEOUL-4-433",
+     "lineId": "seoul-4"
+    },
+    "type": "ELEVATOR",
+    "name": "사당역 ELEVATOR 2",
+    "status": "UNKNOWN",
+    "statusMeaning": "STATIC_LOCATION",
+    "operationalStatus": "UNKNOWN",
+    "installationStatus": "INSTALLED",
+    "providerFacilityRef": "S1:4:433:EV:d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "floorFrom": "B3",
+    "floorTo": "",
+    "description": "총신대입구방면9-2",
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "d3bbeb9a4c8c231f99205d9b8e8384eb2af11efc4a3a0f4982cfcd6f9516b62e",
+    "evidenceHash": "8a4e58c563f247f499b9c314574c2e778253eab70381a8129efee2c98c5dd836",
+    "confidence": 100
+   }
+  ],
+  "routeEdges": [
+   {
+    "id": "edge-entry-sangnoksu-seoul-4",
+    "sourceId": "seoul-metro-accessibility",
+    "from": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "448",
+     "lineId": "seoul-4",
+     "nodeKind": "STATION"
+    },
+    "to": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "448",
+     "lineId": "seoul-4"
+    },
+    "durationSeconds": 90,
+    "distanceMeters": 0,
+    "edgeType": "ENTRY",
+    "servicePattern": "",
+    "includesStairs": false,
+    "stairAccessState": "UNKNOWN",
+    "accessibilityStatus": "NO_OFFICIAL_FEED",
+    "reliabilityScore": 90,
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "verificationStatus": "NOT_VERIFIED",
+    "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+    "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+    "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+    "evidenceHash": "ef7bdd41e446dc96c1320dd344a192bc4c557fdc02ed9db5a7c50c977693f27c"
+   },
+   {
+    "id": "edge-exit-sangnoksu-seoul-4",
+    "sourceId": "seoul-metro-accessibility",
+    "from": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "448",
+     "lineId": "seoul-4"
+    },
+    "to": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "448",
+     "lineId": "seoul-4",
+     "nodeKind": "STATION"
+    },
+    "durationSeconds": 60,
+    "distanceMeters": 0,
+    "edgeType": "EXIT",
+    "servicePattern": "",
+    "includesStairs": false,
+    "stairAccessState": "UNKNOWN",
+    "accessibilityStatus": "NO_OFFICIAL_FEED",
+    "reliabilityScore": 90,
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "verificationStatus": "NOT_VERIFIED",
+    "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+    "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+    "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+    "evidenceHash": "7da76adc92bd8122230eb73765c8eaa601966dee3145ec03eff1be123a9611f9"
+   },
+   {
+    "id": "edge-entry-sadang-seoul-4",
+    "sourceId": "seoul-metro-accessibility",
+    "from": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "433",
+     "lineId": "seoul-4",
+     "nodeKind": "STATION"
+    },
+    "to": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "433",
+     "lineId": "seoul-4"
+    },
+    "durationSeconds": 90,
+    "distanceMeters": 0,
+    "edgeType": "ENTRY",
+    "servicePattern": "",
+    "includesStairs": false,
+    "stairAccessState": "UNKNOWN",
+    "accessibilityStatus": "UNKNOWN",
+    "reliabilityScore": 90,
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "verificationStatus": "NOT_VERIFIED",
+    "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+    "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+    "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+    "evidenceHash": "93a9c559443b5a95211d083e2606464269b3bfb94c7c37b51322381b83afe139"
+   },
+   {
+    "id": "edge-exit-sadang-seoul-4",
+    "sourceId": "seoul-metro-accessibility",
+    "from": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "433",
+     "lineId": "seoul-4"
+    },
+    "to": {
+     "sourceId": "seoulmetro-station-line-info",
+     "sourceStationCode": "433",
+     "lineId": "seoul-4",
+     "nodeKind": "STATION"
+    },
+    "durationSeconds": 60,
+    "distanceMeters": 0,
+    "edgeType": "EXIT",
+    "servicePattern": "",
+    "includesStairs": false,
+    "stairAccessState": "UNKNOWN",
+    "accessibilityStatus": "UNKNOWN",
+    "reliabilityScore": 90,
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "verificationStatus": "NOT_VERIFIED",
+    "lastVerifiedAt": "2026-10-08T17:29:53.869Z",
+    "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+    "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+    "evidenceHash": "ee9ca77de21ae72bbfa967f23780efa18c9bfa7af137c14efc34d98704678958"
+   }
+  ],
+  "accessibilityStatusEvidence": [
+   {
+    "stationId": "station-sangnoksu",
+    "lineId": "seoul-4",
+    "facilityType": "ESCALATOR",
+    "evidenceKind": "NOT_EXISTS",
+    "sourceId": "kric-station-convenience-standard",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+    "evidenceHash": "a9a66267b443d9546b250bfd5ac2c0a334aeb00ad843ccfbc6f36f6a1bbc3232",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "installationStatus": "NOT_INSTALLED",
+    "operationalStatus": "NOT_APPLICABLE",
+    "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+    "confidence": 100,
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED",
+    "note": "KRIC stationCnvFacl exhaustive tuple query에 해당 facility code가 없다."
+   },
+   {
+    "stationId": "station-sangnoksu",
+    "lineId": "seoul-4",
+    "facilityType": "WHEELCHAIR_LIFT",
+    "evidenceKind": "NOT_EXISTS",
+    "sourceId": "kric-station-convenience-standard",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+    "evidenceHash": "0d8df3166ba3a5be61acd6d5e3a71fdc6ebce24e338eb3bc8990bbc882f76d58",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "installationStatus": "NOT_INSTALLED",
+    "operationalStatus": "NOT_APPLICABLE",
+    "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+    "confidence": 100,
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED",
+    "note": "KRIC stationCnvFacl exhaustive tuple query에 해당 facility code가 없다."
+   },
+   {
+    "stationId": "station-sadang",
+    "lineId": "seoul-4",
+    "facilityType": "ESCALATOR",
+    "evidenceKind": "NOT_EXISTS",
+    "sourceId": "kric-station-convenience-standard",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+    "evidenceHash": "5a65e5849ad4ab5ee328b954569f7e8e0a068ebf33b7a831d46181f6f448065e",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "installationStatus": "NOT_INSTALLED",
+    "operationalStatus": "NOT_APPLICABLE",
+    "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+    "confidence": 100,
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED",
+    "note": "KRIC stationCnvFacl exhaustive tuple query에 해당 facility code가 없다."
+   },
+   {
+    "stationId": "station-sadang",
+    "lineId": "seoul-4",
+    "facilityType": "WHEELCHAIR_LIFT",
+    "evidenceKind": "NOT_EXISTS",
+    "sourceId": "kric-station-convenience-standard",
+    "sourceSnapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+    "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+    "evidenceHash": "71a0a674bbc19e80ba0eff9c596a02107f5e18557b900edd2c6a02b128f1dec4",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "installationStatus": "NOT_INSTALLED",
+    "operationalStatus": "NOT_APPLICABLE",
+    "statusMeaning": "EXHAUSTIVE_LIST_ABSENCE",
+    "confidence": 100,
+    "verifiedAt": "2026-10-07T18:51:21.362Z",
+    "retrievedAt": "2026-10-07T18:51:21.362Z",
+    "strictRouteEligibleReason": "FACILITY_NOT_INSTALLED",
+    "note": "KRIC stationCnvFacl exhaustive tuple query에 해당 facility code가 없다."
+   },
+   {
+    "stationId": "station-sangnoksu",
+    "lineId": "seoul-4",
+    "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+    "evidenceKind": "NOT_EXISTS",
+    "sourceId": "seoul-metro-accessibility",
+    "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+    "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
+    "evidenceHash": "c6f94da3b3c89f2f9094e685a197f089de63f9e74af7e536c8a1b46431d39353",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "installationStatus": "NOT_COVERED",
+    "operationalStatus": "NOT_COVERED",
+    "statusMeaning": "FEED_ABSENCE_RECORD",
+    "confidence": 100,
+    "verifiedAt": "2026-10-08T17:29:53.869Z",
+    "retrievedAt": "2026-10-08T17:29:53.869Z",
+    "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED",
+    "note": "서울교통공사 운행상황 feed의 구조적 미커버."
+   },
+   {
+    "stationId": "station-sadang",
+    "lineId": "seoul-4",
+    "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+    "evidenceKind": "EXISTS",
+    "sourceId": "seoul-metro-accessibility",
+    "sourceSnapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+    "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
+    "evidenceHash": "036c2e63f645167ed312bf42767b431ad970fbacd271d7d253a39cc44776b58a",
+    "provenanceKind": "OFFICIAL_SOURCE",
+    "installationStatus": "INSTALLED",
+    "operationalStatus": "AVAILABLE",
+    "statusMeaning": "REALTIME_OPERATION",
+    "confidence": 100,
+    "verifiedAt": "2026-10-08T17:29:53.869Z",
+    "retrievedAt": "2026-10-08T17:29:53.869Z",
+    "strictRouteEligibleReason": "STATUS_PROBE_NOT_ROUTE_EVIDENCE",
+    "note": "서울교통공사 전체 승강기 운행상황 snapshot 실측."
+   }
+  ]
+ },
+ "ledgerLineage": [
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-capital-admission-20260712"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260728"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20260728"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260728T184503338Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20260813T213842955Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260813T200604805Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260816T015619375Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20260822T094318289Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260827T101034357Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260828T141640087Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260830T022401673Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20260830T173929300Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260901T081638049Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260902T200616033Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20260902T200616033Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20260904T043909603Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20260904T172912421Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20261001T042552955Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20261001T050747096Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20261002T061120173Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20261002T061440559Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20261007T185121362Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20261007T230514486Z"
+  },
+  {
+   "sourceId": "seoul-metro-accessibility",
+   "snapshotId": "seoul-metro-accessibility-20261008T172953869Z"
+  },
+  {
+   "sourceId": "kric-station-convenience-standard",
+   "snapshotId": "kric-station-convenience-standard-20261008T191334869Z"
+  }
+ ],
+ "inventoryObservedDataUpdatedAt": {
+  "kric-station-convenience-standard": "2026-10-08",
+  "seoul-metro-accessibility": "2026-10-08"
+ }
+}
