@@ -437,15 +437,19 @@ const FOLLOW_IDENTITY = Object.freeze({
  * pack의 KRIC·서울 증거 행이 따라가는 근거를 읽는다: head 입력 파일, head 원장 계보, head inventory 관측일.
  * 읽지 못해도 던지지 않는다. 근거가 필요한 행이 실제로 바뀌었을 때만 그 사유가 위반이 된다(바뀌지 않은 갱신은 이 근거를 보지 않는다).
  */
-async function loadFollowContext({ files, headInventory }) {
+async function loadFollowContext({ files, headInventory, baseSha }) {
   try {
-    const input = JSON.parse(await files.readTree(SEOUL_INPUT_PATH));
-    const ledger = JSON.parse(await files.readTree(LEDGER_PATH));
+    // 근거가 되는 입력 파일과 원장은 이 갱신이 바꿀 수 없다. 경로 규칙이 먼저 막지만 이 함수 단독으로도 head가 base와 바이트로 같을 때만 믿는다.
+    const [inputText, ledgerText] = [await files.readTree(SEOUL_INPUT_PATH), await files.readTree(LEDGER_PATH)];
+    if (inputText !== await files.readBase(baseSha, SEOUL_INPUT_PATH)) throw new Error(`head의 입력 파일이 base와 다르다(${SEOUL_INPUT_PATH})`);
+    if (ledgerText !== await files.readBase(baseSha, LEDGER_PATH)) throw new Error(`head의 원장이 base와 다르다(${LEDGER_PATH})`);
+    const input = JSON.parse(inputText);
+    const ledger = JSON.parse(ledgerText);
     if (!isObject(input) || !Array.isArray(ledger)) throw new Error("입력 파일 또는 원장의 형식이 다르다");
     const lineage = new Map(FOLLOW_SOURCE_IDS.map((id) => [id, new Map()]));
     for (const row of ledger) {
       const order = lineage.get(row?.sourceId);
-      if (order !== undefined && typeof row.snapshotId === "string") order.set(row.snapshotId, order.size);
+      if (order !== undefined && typeof row.snapshotId === "string") order.set(row.snapshotId, { index: order.size, times: [row.retrievedAt, row.sourceUpdatedAt] });
     }
     const identities = {};
     for (const [table, inputTable] of Object.entries(FOLLOW_TABLES)) {
@@ -491,7 +495,13 @@ function followRowViolations({ x, y, table, follow, head }) {
   const [from, to] = [order.get(x.sourceSnapshotId), order.get(y.sourceSnapshotId)];
   if (to === undefined) reasons.push(`새 snapshot(${y.sourceSnapshotId})이 head 원장 계보의 ${x.sourceId} snapshot이 아니다`);
   if (from === undefined) reasons.push(`직전 snapshot(${x.sourceSnapshotId})이 head 원장 계보의 ${x.sourceId} snapshot이 아니다`);
-  if (from !== undefined && to !== undefined && from >= to) reasons.push(`직전 snapshot(${x.sourceSnapshotId})이 새 snapshot(${y.sourceSnapshotId})보다 앞서지 않는다`);
+  if (from !== undefined && to !== undefined && from.index >= to.index) reasons.push(`직전 snapshot(${x.sourceSnapshotId})이 새 snapshot(${y.sourceSnapshotId})보다 앞서지 않는다`);
+  // 시각은 새 snapshot의 원장 행 시각(retrievedAt 또는 sourceUpdatedAt)이어야 한다. 입력 파일 행이 가리키는 snapshot이 원천 head보다 한 갱신 늦을 수 있어(서울 갱신이 따라간 KRIC 등) head 여부는 요구하지 않는다.
+  if (to !== undefined) {
+    for (const key of ["verifiedAt", "retrievedAt", "lastVerifiedAt"].filter((entry) => changed.includes(entry))) {
+      if (!to.times.includes(y[key])) reasons.push(`${key}(${y[key]})가 새 snapshot의 원장 행 시각(${to.times.join(", ")})이 아니다`);
+    }
+  }
 
   let twin;
   let twinLabel;
@@ -716,7 +726,7 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
       after: { snapshotId: after.snapshotId, rawSha256: after.rawSha256, contentSha256: after.rowsSha256, rows: after.rowCount, coverage: after.departureCount },
     }));
   }
-  const follow = await loadFollowContext({ files, headInventory });
+  const follow = await loadFollowContext({ files, headInventory, baseSha });
   // canonical pack은 항상, reviewed pack은 바뀐 경로로 주장될 때만 같은 규칙으로 본다(#1062).
   const packChecks = [["canonical pack", CANONICAL_PACK_PATH], ...(paths.includes(REVIEWED_PACK_PATH) ? [["reviewed pack", REVIEWED_PACK_PATH]] : [])];
   for (const [label, packPath] of packChecks) {

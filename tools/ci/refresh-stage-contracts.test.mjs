@@ -758,3 +758,35 @@ test("#1062 대조: reviewed pack이 경로에 없으면(바뀌지 않음) 기�
   const sameBytes = await evaluate(topologyRun, replayMutations({ files: (head, base) => { head.set(REVIEWED_PACK_PATH, base.get(REVIEWED_PACK_PATH)); } }), { paths: replayPaths });
   assert.deepEqual(sameBytes.violations, [], "내용이 같은 경로 주장은 위반이 아니다(경로 계약은 git diff가 정한다)");
 });
+
+// #1063 리뷰 F1: 근거(입력 파일·원장)는 head가 base와 바이트로 같을 때만 믿는다. 경로 규칙과 별개로 이 함수 단독으로도 막혀야 한다.
+test("#1062 반증: 입력 파일을 함께 바꾼 PR(입력 행과 pack 표식을 같이 위조)은 head 입력 파일이 base와 달라 PACK_CONTENT", async () => {
+  const forged = "7".repeat(64);
+  const factoryId = REPLAY.packs.reviewed.facilities[0].after.id;
+  const result = await replay({
+    reviewed: (pack) => { pack.packs[0].facilities[0].evidenceHash = forged; },
+    canonical: (pack) => { pack.packs[0].facilities.find((row) => row.id === factoryId).evidenceHash = forged; },
+    files: (head) => {
+      const input = JSON.parse(head.get(INPUT_PATH));
+      input.facilityRows.find((row) => row.id === factoryId).evidenceHash = forged;
+      head.set(INPUT_PATH, JSON.stringify(input));
+    },
+  });
+  assert.ok(codes(result).includes("PACK_CONTENT"));
+  assert.match(details(result), /head의 입력 파일이 base와 다르다/u);
+  // 대조: 위조 없이 입력 파일 바이트가 같으면 통과한다.
+  assert.deepEqual((await replay()).violations, []);
+  const ledgerChanged = await replay({ files: (head) => { head.set(LEDGER_PATH, JSON.stringify([...JSON.parse(head.get(LEDGER_PATH)), { snapshotId: "x", sourceId: "x" }])); } });
+  assert.notDeepEqual(ledgerChanged.violations, [], "원장이 head에서 바뀌면 막힌다");
+});
+
+// #1063 리뷰 F2: 새 snapshot과 시각은 원장 행으로 대조한다. 입력 파일 행이 가리키는 snapshot이 원천 head보다 한 갱신 늦을 수 있어(실제 재생: KRIC) head 여부는 요구하지 않는다.
+test("#1062 반증: 표식 시각이 새 snapshot의 원장 행 시각과 다르면 PACK_CONTENT, 원천 head보다 앞선 snapshot이라도 입력 파일이 가리키면 통과한다", async () => {
+  const kricAfter = REPLAY.packs.reviewed.facilities[0].after.sourceSnapshotId;
+  const kric = REPLAY.ledgerLineage.filter((row) => row.sourceId === FOLLOW_KRIC);
+  assert.notEqual(kric.at(-1).snapshotId, kricAfter, "실제 재생에서 pack이 따라가는 KRIC snapshot은 원장 head가 아니다");
+  assert.deepEqual((await replay()).violations, []);
+  const skewed = await replay({ ledger: (lineage) => { const row = lineage.find((entry) => entry.snapshotId === kricAfter); row.retrievedAt = "2026-10-01T00:00:00.000Z"; row.sourceUpdatedAt = "2026-10-01T00:00:00.000Z"; } });
+  assert.ok(codes(skewed).includes("PACK_CONTENT"));
+  assert.match(details(skewed), /새 snapshot의 원장 행 시각/u);
+});

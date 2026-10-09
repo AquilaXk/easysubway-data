@@ -1934,103 +1934,153 @@
  "ledgerLineage": [
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-capital-admission-20260712"
+   "snapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+   "retrievedAt": "2026-07-12T00:00:00Z",
+   "sourceUpdatedAt": "2026-07-12T00:00:00Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260728"
+   "snapshotId": "kric-station-convenience-standard-20260728",
+   "retrievedAt": "2026-07-28T12:42:27.741Z",
+   "sourceUpdatedAt": "2026-07-28T12:42:27.741Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20260728"
+   "snapshotId": "seoul-metro-accessibility-20260728",
+   "retrievedAt": "2026-07-28T15:35:25.704Z",
+   "sourceUpdatedAt": "2026-07-28T15:35:25.704Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260728T184503338Z"
+   "snapshotId": "kric-station-convenience-standard-20260728T184503338Z",
+   "retrievedAt": "2026-07-28T18:45:03.338Z",
+   "sourceUpdatedAt": "2026-07-28T18:45:03.338Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20260813T213842955Z"
+   "snapshotId": "seoul-metro-accessibility-20260813T213842955Z",
+   "retrievedAt": "2026-08-13T21:38:42.955Z",
+   "sourceUpdatedAt": "2026-08-13T21:38:42.955Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260813T200604805Z"
+   "snapshotId": "kric-station-convenience-standard-20260813T200604805Z",
+   "retrievedAt": "2026-08-13T20:06:04.805Z",
+   "sourceUpdatedAt": "2026-08-13T20:06:04.805Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260816T015619375Z"
+   "snapshotId": "kric-station-convenience-standard-20260816T015619375Z",
+   "retrievedAt": "2026-08-16T01:56:19.375Z",
+   "sourceUpdatedAt": "2026-08-16T01:56:19.375Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20260822T094318289Z"
+   "snapshotId": "seoul-metro-accessibility-20260822T094318289Z",
+   "retrievedAt": "2026-08-22T09:43:18.289Z",
+   "sourceUpdatedAt": "2026-08-22T09:43:18.289Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260827T101034357Z"
+   "snapshotId": "kric-station-convenience-standard-20260827T101034357Z",
+   "retrievedAt": "2026-08-27T10:10:34.357Z",
+   "sourceUpdatedAt": "2026-08-27T10:10:34.357Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260828T141640087Z"
+   "snapshotId": "kric-station-convenience-standard-20260828T141640087Z",
+   "retrievedAt": "2026-08-28T14:16:40.087Z",
+   "sourceUpdatedAt": "2026-08-28T14:16:40.087Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260830T022401673Z"
+   "snapshotId": "kric-station-convenience-standard-20260830T022401673Z",
+   "retrievedAt": "2026-08-30T02:24:01.673Z",
+   "sourceUpdatedAt": "2026-08-30T02:24:01.673Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20260830T173929300Z"
+   "snapshotId": "seoul-metro-accessibility-20260830T173929300Z",
+   "retrievedAt": "2026-08-30T17:39:29.300Z",
+   "sourceUpdatedAt": "2026-08-30T17:39:29.300Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260901T081638049Z"
+   "snapshotId": "kric-station-convenience-standard-20260901T081638049Z",
+   "retrievedAt": "2026-09-01T08:16:38.049Z",
+   "sourceUpdatedAt": "2026-09-01T08:16:38.049Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260902T200616033Z"
+   "snapshotId": "kric-station-convenience-standard-20260902T200616033Z",
+   "retrievedAt": "2026-09-02T20:06:16.033Z",
+   "sourceUpdatedAt": "2026-09-02T20:06:16.033Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20260902T200616033Z"
+   "snapshotId": "seoul-metro-accessibility-20260902T200616033Z",
+   "retrievedAt": "2026-09-02T20:06:16.033Z",
+   "sourceUpdatedAt": "2026-09-02T20:06:16.033Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20260904T043909603Z"
+   "snapshotId": "kric-station-convenience-standard-20260904T043909603Z",
+   "retrievedAt": "2026-09-04T04:39:09.603Z",
+   "sourceUpdatedAt": "2026-09-04T04:39:09.603Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20260904T172912421Z"
+   "snapshotId": "seoul-metro-accessibility-20260904T172912421Z",
+   "retrievedAt": "2026-09-04T17:29:12.421Z",
+   "sourceUpdatedAt": "2026-09-04T17:29:12.421Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20261001T042552955Z"
+   "snapshotId": "seoul-metro-accessibility-20261001T042552955Z",
+   "retrievedAt": "2026-10-01T04:25:52.955Z",
+   "sourceUpdatedAt": "2026-10-01T04:25:52.955Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20261001T050747096Z"
+   "snapshotId": "kric-station-convenience-standard-20261001T050747096Z",
+   "retrievedAt": "2026-10-01T05:07:47.096Z",
+   "sourceUpdatedAt": "2026-10-01T05:07:47.096Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20261002T061120173Z"
+   "snapshotId": "seoul-metro-accessibility-20261002T061120173Z",
+   "retrievedAt": "2026-10-02T06:11:20.173Z",
+   "sourceUpdatedAt": "2026-10-02T06:11:20.173Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20261002T061440559Z"
+   "snapshotId": "kric-station-convenience-standard-20261002T061440559Z",
+   "retrievedAt": "2026-10-02T06:14:40.559Z",
+   "sourceUpdatedAt": "2026-10-02T06:14:40.559Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20261007T185121362Z"
+   "snapshotId": "kric-station-convenience-standard-20261007T185121362Z",
+   "retrievedAt": "2026-10-07T18:51:21.362Z",
+   "sourceUpdatedAt": "2026-10-07T18:51:21.362Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20261007T230514486Z"
+   "snapshotId": "seoul-metro-accessibility-20261007T230514486Z",
+   "retrievedAt": "2026-10-07T23:05:14.486Z",
+   "sourceUpdatedAt": "2026-10-07T23:05:14.486Z"
   },
   {
    "sourceId": "seoul-metro-accessibility",
-   "snapshotId": "seoul-metro-accessibility-20261008T172953869Z"
+   "snapshotId": "seoul-metro-accessibility-20261008T172953869Z",
+   "retrievedAt": "2026-10-08T17:29:53.869Z",
+   "sourceUpdatedAt": "2026-10-08T17:29:53.869Z"
   },
   {
    "sourceId": "kric-station-convenience-standard",
-   "snapshotId": "kric-station-convenience-standard-20261008T191334869Z"
+   "snapshotId": "kric-station-convenience-standard-20261008T191334869Z",
+   "retrievedAt": "2026-10-08T19:13:34.869Z",
+   "sourceUpdatedAt": "2026-10-08T19:13:34.869Z"
   }
  ],
  "inventoryObservedDataUpdatedAt": {
