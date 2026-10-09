@@ -195,7 +195,7 @@ class World {
       if (!run) throw new Error(`gh: not found ${endpoint}`);
       if (run.pendingReads > 0) {
         run.pendingReads -= 1;
-        return { ...run, status: "in_progress", conclusion: null };
+        return { ...run, status: run.pendingStatus ?? "in_progress", conclusion: null };
       }
       return { ...run };
     }
@@ -367,6 +367,24 @@ test("hub 게이트: dispatch한 run이 제한 시간 안에 끝나지 않으면
   seedHub(world, { compat: () => ({ pendingReads: 100000 }) });
   installCompatArtifacts(world);
   await rejectsWith(hubGatesStage(world.context(), initialState()), "RUN_TIMEOUT");
+});
+
+test("제한 시간을 넘긴 run은 아직 시작하지 않았을 때만 취소하고, 이미 실행 중이면 건드리지 않는다", async () => {
+  // 러너가 없어 queued로 남은 DEPLOY가 나중에 갑자기 실행되는 일이 없도록 시작 전 run은 취소한다.
+  const queued = new World();
+  seedHub(queued, { compat: () => ({ pendingReads: 100000, pendingStatus: "queued" }) });
+  installCompatArtifacts(queued);
+  await rejectsWith(hubGatesStage(queued.context(), initialState()), "RUN_TIMEOUT");
+  assert.equal(queued.cancelled.length, 1);
+  assert.equal(queued.cancelled[0].repo, HUB);
+  assert.equal(queued.cancelled[0].token, "hub-token");
+
+  // 이미 실행 중인 run(예: 트래픽 전환 중인 DEPLOY)은 취소하지 않는다.
+  const running = new World();
+  seedHub(running, { compat: () => ({ pendingReads: 100000 }) });
+  installCompatArtifacts(running);
+  await rejectsWith(hubGatesStage(running.context(), initialState()), "RUN_TIMEOUT");
+  assert.equal(running.cancelled.length, 0);
 });
 
 test("dispatch한 run이 목록에 나타나지 않으면 RUN_NOT_FOUND로 실패한다", async () => {

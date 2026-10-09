@@ -39,6 +39,7 @@ function fail(code, detail = "") {
   throw new ChainError(code, detail);
 }
 
+const NOT_STARTED = new Set(["queued", "waiting", "pending", "requested"]);
 const SHA = /^[0-9a-f]{40}$/u;
 const DECIMAL = /^[1-9]\d{0,19}$/u;
 const DIGEST = /^sha256:([0-9a-f]{64})$/u;
@@ -220,7 +221,15 @@ async function waitForRun(ctx, { repo, runId, token, timeoutMs }) {
   for (;;) {
     const run = await ctx.gh.api(`repos/${repo}/actions/runs/${runId}`, { token });
     if (run?.status === "completed") return run;
-    if (clock.now() >= deadline) fail("RUN_TIMEOUT", `${repo} run ${runId} did not finish in ${Math.round(timeoutMs / 1000)}s`);
+    if (clock.now() >= deadline) {
+      const detail = `${repo} run ${runId} did not finish in ${Math.round(timeoutMs / 1000)}s`;
+      // 시작하지 못한 run(러너 없음 등)은 나중에 갑자기 실행되지 않도록 취소한다. 이미 실행 중인 run(트래픽 전환 중인 DEPLOY 등)은 건드리지 않는다.
+      if (NOT_STARTED.has(run?.status)) {
+        await ctx.gh.cancel({ repo, runId, token });
+        fail("RUN_TIMEOUT", `${detail}; it never started (${run.status}) and was cancelled`);
+      }
+      fail("RUN_TIMEOUT", `${detail}; it is still running and was left as is`);
+    }
     await clock.sleep(ctx.pollMs);
   }
 }
