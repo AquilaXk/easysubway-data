@@ -181,17 +181,25 @@ test("PR-less claims are classified from run and publication evidence before any
 // #1064: 실패한 run이 자기 빈 claim을 같은 run에서 지운다. 반복 실패하는 topology 갱신이 후보 갱신의 원장 writer 대기를 매 주기 새로 걸지 못하게 한다.
 test("a failed run removes its own empty claim before the final failure report", () => {
   const release = stepBody("Remove this failed run's empty topology claim");
-  assert.match(release, /if: \$\{\{ failure\(\) && env\.TOPOLOGY_BRANCH != '' \}\}/);
+  assert.match(release, /if: \$\{\{ failure\(\) && env\.TOPOLOGY_BRANCH != '' && env\.TOPOLOGY_CLAIM_SHA != '' \}\}/);
   assert.ok(yml.indexOf("Remove this failed run's empty topology claim") < yml.indexOf("Report refresh failure as an issue"), "정리 step의 실패도 마지막 실패 보고가 덮는다");
   assert.equal(yml.trimEnd().lastIndexOf("\n      - name: "), yml.lastIndexOf("\n      - name: Report refresh failure as an issue"), "실패 보고가 마지막 step이다");
   assert.match(release, /GH_TOKEN: \$\{\{ github\.token \}\}/);
   assert.match(release, /gh auth setup-git/);
   assert.match(release, /git ls-remote origin "refs\/heads\/\$\{TOPOLOGY_BRANCH\}"/);
-  assert.match(release, /node tools\/ci\/remove-orphan-claims\.mjs --workflow current-capital-topology-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{TOPOLOGY_BRANCH\}" --refs "\$\{claim_refs\}" --self-run-id "\$\{GITHUB_RUN_ID\}"/);
+  assert.match(release, /node tools\/ci\/remove-orphan-claims\.mjs --workflow current-capital-topology-refresh\.yml --repository "\$\{GITHUB_REPOSITORY\}" --claims "\$\{TOPOLOGY_BRANCH\}" --refs "\$\{claim_refs\}" --self-run-id "\$\{GITHUB_RUN_ID\}" --expected-sha "\$\{TOPOLOGY_CLAIM_SHA\}"/);
 });
 test("the self-run claim release leaves deletion rules to the tool", () => {
   const release = stepBody("Remove this failed run's empty topology claim");
   // 도구가 빈 claim 하나(출력·PR 없음)만 지운다. workflow는 claim 브랜치를 알 때만 부르고 직접 지우지 않는다.
   assert.doesNotMatch(release, /--force|git push|git branch -D|gh api -X DELETE/);
   assert.doesNotMatch(release, /continue-on-error/);
+});
+test("the claim commit sha is recorded when a claim is created or reused", () => {
+  const create = stepBody("Create durable claim before provider access");
+  const reuse = stepBody("Reuse an exact empty claim after provider failure");
+  assert.match(create, /git commit --allow-empty -m "Claim current topology refresh"\n[\s\S]*claim_sha="\$\(git rev-parse HEAD\)"/);
+  assert.match(create, /printf 'TOPOLOGY_CLAIM_SHA=%s\\n' "\$\{claim_sha\}"\n[\s\S]*\} >> "\$\{GITHUB_ENV\}"/);
+  assert.match(reuse, /claim_sha="\$\(git rev-parse "origin\/\$\{branch\}"\)"/);
+  assert.match(reuse, /printf 'TOPOLOGY_CLAIM_SHA=%s\\n' "\$\{claim_sha\}"\n[\s\S]*\} >> "\$\{GITHUB_ENV\}"/);
 });

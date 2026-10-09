@@ -353,7 +353,8 @@ const topologyHarness = (runId, overrides = {}, harnessOptions = {}) => {
   return { branch, h, ...overrides };
 };
 const runSelf = (branch, h, selfRunId, options = {}) => removeOrphanClaims({
-  workflowFile: TOPOLOGY, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log, selfRunId, ...options,
+  workflowFile: TOPOLOGY, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log, selfRunId,
+  ...(selfRunId === undefined ? {} : { expectedSha: SHA }), ...options,
 });
 
 test("#1064 자기 run의 빈 claim: run 기록이 진행 중이어도 보고한 뒤 지운다(lease)", async () => {
@@ -405,7 +406,7 @@ test("#1064 반증: 자기 run의 claim이어도 출력이 있거나 PR이 있�
 test("#1064 반증: OCI에 게시하는 workflow는 자기 run 예외를 쓸 수 없다", async () => {
   const branch = branchOf(5006);
   const h = harness({ runs: { 5006: finishedRun(GWANGJU, { status: "in_progress", conclusion: null }) }, remote: { [branch]: SHA } });
-  await assert.rejects(removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log, selfRunId: "5006" }), /CLAIM_ORPHAN_REMOVE_REFUSED.*publishes/u);
+  await assert.rejects(removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log, selfRunId: "5006", expectedSha: SHA }), /CLAIM_ORPHAN_REMOVE_REFUSED.*publishes/u);
   assert.deepEqual(h.reports, []);
   assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
 });
@@ -423,6 +424,8 @@ test("#1064 이전 run이 만든 claim(재사용된 claim)은 끝난 run이면 -
   const branch = branchOf(5009, TOPOLOGY);
   const h = harness({ runs: { 5009: finishedRun(TOPOLOGY) }, remote: { [branch]: SHA }, compare: { [branch]: { aheadBy: 1, changedFiles: 0, messages: [CLAIM_OWNERS[TOPOLOGY].claimSubject] } } });
   assert.equal((await runSelf(branch, h, "5010"))[0].action, "removed_orphan");
+  // 재사용 claim은 다른 run이 만들었으므로 삭제 기록(orphan)을 남긴다. 자기 run 판정(AND)이 OR로 바뀌면 이 기록이 사라진다.
+  assert.deepEqual(h.reports, [{ workflowFile: TOPOLOGY, repository: REPOSITORY, runId: "5009", orphan: { branch, conclusion: "failure", reason: "EMPTY_CLAIM_NO_PUBLICATION" } }]);
 });
 
 test("#1064 CLI는 --self-run-id를 받고 숫자가 아니거나 중복이면 실패한다", async () => {
@@ -432,9 +435,39 @@ test("#1064 CLI는 --self-run-id를 받고 숫자가 아니거나 중복이면 �
   await writeFile(refsFile, refsOf(h.remote));
   const base = ["--workflow", TOPOLOGY, "--repository", REPOSITORY, "--claims", branch, "--refs", refsFile];
   const dependencies = { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log };
-  assert.equal((await main([...base, "--self-run-id", "5011"], dependencies))[0].action, "removed_orphan");
+  const sha = ["--expected-sha", SHA];
+  assert.equal((await main([...base, "--self-run-id", "5011", ...sha], dependencies))[0].action, "removed_orphan");
   for (const bad of [["--self-run-id", "abc"], ["--self-run-id", "0"], ["--self-run-id", "5011", "--self-run-id", "5011"]]) {
-    await assert.rejects(main([...base, ...bad], dependencies), /CLAIM_ORPHAN_INPUT_INVALID/u, bad.join(" "));
+    await assert.rejects(main([...base, ...bad, ...sha], dependencies), /CLAIM_ORPHAN_INPUT_INVALID/u, bad.join(" "));
   }
+  await rm(directory, { recursive: true, force: true });
+});
+
+// #1063 리뷰 F1(#1065): 자기 run 모드는 claim을 만들 때 기록한 sha와 ls-remote sha가 정확히 같을 때만 지운다. 이 run이 이미 올린 출력 커밋이 compare API 지연으로 안 보여도 sha가 다르다.
+const CLAIM_SHA = SHA;
+test("#1064 자기 run 모드는 claim 생성 때 기록한 sha(--expected-sha)와 원격 sha가 같을 때만 지운다", async () => {
+  const { branch, h } = topologyHarness(5101);
+  const result = await runSelf(branch, h, "5101", { expectedSha: CLAIM_SHA });
+  assert.equal(result[0].action, "removed_orphan");
+  const pushed = topologyHarness(5102, {}, { remote: { [branchOf(5102, TOPOLOGY)]: "e".repeat(40) } });
+  await assert.rejects(runSelf(pushed.branch, pushed.h, "5102", { expectedSha: CLAIM_SHA }), /CLAIM_ORPHAN_REMOVE_REFUSED.*differs from the recorded claim commit/u);
+  assert.deepEqual(pushed.h.reports, []);
+  assert.equal(pushed.h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  const missing = topologyHarness(5103);
+  await assert.rejects(runSelf(missing.branch, missing.h, "5103", { expectedSha: undefined }), /CLAIM_ORPHAN_INPUT_INVALID.*expected sha/u, "자기 run 모드는 기록한 sha가 필수다");
+  assert.equal(missing.h.events.length, 0);
+  await assert.rejects(runSelf(missing.branch, missing.h, "5103", { expectedSha: "abc" }), /CLAIM_ORPHAN_INPUT_INVALID.*expected sha/u);
+});
+
+test("#1064 CLI는 --expected-sha를 받고 --self-run-id가 있으면 필수다", async () => {
+  const { branch, h } = topologyHarness(5104);
+  const directory = await mkdtemp(path.join(tmpdir(), "remove-claims-sha-"));
+  const refsFile = path.join(directory, "claims.txt");
+  await writeFile(refsFile, refsOf(h.remote));
+  const base = ["--workflow", TOPOLOGY, "--repository", REPOSITORY, "--claims", branch, "--refs", refsFile];
+  const dependencies = { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log };
+  await assert.rejects(main([...base, "--self-run-id", "5104"], dependencies), /CLAIM_ORPHAN_INPUT_INVALID.*expected sha/u);
+  await assert.rejects(main([...base, "--expected-sha", CLAIM_SHA], dependencies), /CLAIM_ORPHAN_REMOVE_REFUSED.*still in_progress/u, "--self-run-id 없이는 진행 중인 run의 claim을 지우지 않는다");
+  assert.equal((await main([...base, "--self-run-id", "5104", "--expected-sha", CLAIM_SHA], dependencies))[0].action, "removed_orphan");
   await rm(directory, { recursive: true, force: true });
 });
