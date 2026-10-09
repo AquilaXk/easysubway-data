@@ -4,9 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { DAEGU_LINES, runDaeguSourceCollector } from "./collect-daegu-datapack-sources.mjs";
+import { DAEGU_LINES, daeguSourceSnapshotIdentity, runDaeguSourceCollector } from "./collect-daegu-datapack-sources.mjs";
 import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
 import { prepareDaeguSourceRegistration } from "./register-daegu-datapack-sources.mjs";
+import { ledgerHead } from "../ci/decide-source-reverification.mjs";
 import { RECIPE_STEPS } from "./run-source-reverification.mjs";
 
 // #1080: 대구 recipe의 수집 → 등록 명령 체인을 끝까지 잇는다.
@@ -42,7 +43,15 @@ async function runChain(temporary) {
   const ctx = {
     recipeId: "daegu-sources", repositoryRoot: root, operationDir, env: {}, shared: new Map(), lib: {}, now: () => NOW,
     head: async () => HEAD, originMain: async () => "b".repeat(40),
-    readJson: async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8")),
+    // 등록 뒤 verify 단계가 읽는 등록 출력: 등록기 준비 단계가 만든 snapshot 여섯 개를 원장 head와 snapshot 파일로 내놓는다(저장소에는 쓰지 않는다).
+    readJson: async (relative) => {
+      const registered = prepared.flatMap(({ snapshots }) => snapshots);
+      const found = registered.find((snapshot) => relative === `tools/datapack/sources/${daeguSourceSnapshotIdentity(snapshot)}.json`);
+      const real = found ? null : JSON.parse(await readFile(path.join(root, relative), "utf8"));
+      if (found) return found;
+      if (relative !== "tools/datapack/release/source-snapshots.json") return real;
+      return [...real, ...registered.map((snapshot) => ({ sourceId: snapshot.sourceId, snapshotId: daeguSourceSnapshotIdentity(snapshot), previousSnapshotId: ledgerHead(real, snapshot.sourceId).snapshotId }))];
+    },
     file: (name) => path.join(operationDir, name),
     execute: async (script, args) => {
       calls.push({ script, args });

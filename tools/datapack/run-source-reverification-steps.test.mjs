@@ -32,14 +32,17 @@ test.before(async () => { temporary = await mkdtemp(path.join(os.tmpdir(), "reve
 test.after(async () => { await rm(temporary, { recursive: true, force: true }); });
 
 const FAKE_EFFECTS = {
-  // --download 수집기처럼 snapshot 여섯 개만 쓰고 원본은 rawSources(base64)에 둔다. 원본 CSV 9개는 노선당 topology 1개·시각표 2개에 나뉜다(#1080).
+  // --download 수집기처럼 snapshot 여섯 개만 쓰고 원본은 rawSources(base64)에 두며 데이터셋마다 downloadProvenance를 싣는다. 원본 CSV 9개는 노선당 topology 1개·시간표 2개에 나뉜다(#1080).
   async "collect-daegu-datapack-sources.mjs"(args) {
     const directory = args[args.indexOf("--output-dir") + 1];
     const raw = (datasetId) => { const bytes = Buffer.from(`csv-${datasetId}`); return { datasetId, rawSha256: createHash("sha256").update(bytes).digest("hex"), bytesBase64: bytes.toString("base64") }; };
+    const provenance = (rawSources) => rawSources.map(({ datasetId, rawSha256 }) => ({ datasetId, rawSha256 }));
+    const write = (sourceId, rawSources) => writeFile(path.join(directory, `${sourceId}-fake.json`), `${JSON.stringify({
+      sourceId, capturedAt: "2026-10-07T01:02:03.456Z", rawSources, downloadProvenance: provenance(rawSources), rawSha256: `raw-${sourceId}`, contentSha256: `content-${sourceId}`,
+    })}\n`);
     for (const { lineNumber, intervalDatasetId, upDatasetId, downDatasetId } of DAEGU_LINES) {
-      const capturedAt = "2026-10-07T01:02:03.456Z";
-      await writeFile(path.join(directory, `topology-${lineNumber}.json`), `${JSON.stringify({ capturedAt, rawSources: [raw(intervalDatasetId)] })}\n`);
-      await writeFile(path.join(directory, `timetable-${lineNumber}.json`), `${JSON.stringify({ capturedAt, rawSources: [raw(upDatasetId), raw(downDatasetId)] })}\n`);
+      await write(`daegu-line${lineNumber}-route-topology`, [raw(intervalDatasetId)]);
+      await write(`daegu-line${lineNumber}-train-timetable`, [raw(upDatasetId), raw(downDatasetId)]);
     }
   },
 };
@@ -53,7 +56,32 @@ const fakeLib = {
   collectKasiHolidayCalendarWindowFiles: async ({ outputDirectory }) => { await mkdir(outputDirectory); },
 };
 
-async function record(recipeId, { shared = new Map(), env = { DATA_GO_KR_SERVICE_KEY: "service-key-value" } } = {}) {
+// 대구 verify 단계가 읽는 "등록 출력"을 수집 snapshot에서 만든다: 원장 head 행과 그 snapshot 파일(등록기는 downloadProvenance 없이 같은 원천·시각·원본·내용으로 다시 만든다, 수집→등록 일치는 daegu-chain 테스트가 실제 등록기로 고정한다).
+const LEDGER = "tools/datapack/release/source-snapshots.json";
+function daeguRegistrationOverlay(operationDir, { mutate = (snapshot) => snapshot } = {}) {
+  const read = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
+  const collected = async () => Promise.all((await readdir(path.join(operationDir, "collected"))).map(async (name) => JSON.parse(await readFile(path.join(operationDir, "collected", name), "utf8"))));
+  return async (relative) => {
+    if (relative === LEDGER) {
+      const ledger = await read(relative);
+      const rows = (await collected()).map(({ sourceId }) => ({ sourceId, snapshotId: `${sourceId}-registered`, previousSnapshotId: ledgerHeadId(ledger, sourceId) }));
+      return [...ledger, ...rows];
+    }
+    const match = /^tools\/datapack\/sources\/(.+)-registered\.json$/u.exec(relative);
+    if (match) {
+      const { downloadProvenance, ...snapshot } = (await collected()).find(({ sourceId }) => sourceId === match[1]);
+      return mutate(snapshot);
+    }
+    return read(relative);
+  };
+}
+const ledgerHeadId = (ledger, sourceId) => {
+  const rows = ledger.filter((row) => row.sourceId === sourceId);
+  const referenced = new Set(rows.map((row) => row.previousSnapshotId));
+  return rows.find((row) => !referenced.has(row.snapshotId)).snapshotId;
+};
+
+async function record(recipeId, { shared = new Map(), env = { DATA_GO_KR_SERVICE_KEY: "service-key-value" }, mutateRegistered } = {}) {
   const operationDir = path.join(temporary, `${recipeId}-${Math.random().toString(16).slice(2)}`);
   await mkdir(operationDir, { recursive: true });
   const calls = [];
@@ -61,7 +89,9 @@ async function record(recipeId, { shared = new Map(), env = { DATA_GO_KR_SERVICE
     recipeId, repositoryRoot: root, operationDir, env, shared, lib: fakeLib, now: () => NOW,
     execute: async (script, args, { env: extra = {} } = {}) => { calls.push({ script, args, env: extra }); await FAKE_EFFECTS[script]?.(args); return { stdout: "" }; },
     head: async () => HEAD, originMain: async () => MAIN,
-    readJson: async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8")),
+    readJson: recipeId === "daegu-sources"
+      ? daeguRegistrationOverlay(operationDir, { mutate: mutateRegistered })
+      : async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8")),
     file: (name) => path.join(operationDir, name),
   };
   for (const recipeStep of RECIPE_STEPS[recipeId]) await recipeStep.run(ctx);
@@ -143,7 +173,7 @@ async function daeguWithTamperedSnapshot(mutate) {
   FAKE_EFFECTS["collect-daegu-datapack-sources.mjs"] = async (args) => {
     await original(args);
     const directory = args[args.indexOf("--output-dir") + 1];
-    const file = path.join(directory, "timetable-1.json");
+    const file = path.join(directory, "daegu-line1-train-timetable-fake.json");
     await writeFile(file, `${JSON.stringify(mutate(JSON.parse(await readFile(file, "utf8"))))}\n`);
   };
   try {
@@ -164,9 +194,31 @@ test("대구 snapshot의 downloadProvenance sha가 보관 원본과 다르면 �
   }), /download provenance of dataset \d+ does not match/u);
 });
 
+// F1(#1081): --download 수집기는 항상 데이터셋마다 provenance를 쓴다. 없으면 다운로드 증거 없는 snapshot이라 비교를 건너뛰지 않고 실패한다.
+test("대구 snapshot에서 downloadProvenance를 지우거나 비우거나 한 데이터셋만 빼면 등록하지 않고 실패한다", async () => {
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { delete snapshot.downloadProvenance; return snapshot; }), /lacks the download provenance of dataset \d+/u);
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.downloadProvenance = []; return snapshot; }), /lacks the download provenance of dataset \d+/u);
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.downloadProvenance.pop(); return snapshot; }), /lacks the download provenance of dataset \d+/u);
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.downloadProvenance = "not-an-array"; return snapshot; }), /lacks the download provenance of dataset \d+/u);
+});
+
+// F4(#1081): 빈 rawSources 가드는 뒤의 누락 검사에 가려지지 않도록 고유 메시지를 단언한다.
+test("대구 snapshot의 rawSources가 비었거나 배열이 아니면 고유 메시지로 실패한다", async () => {
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources = []; return snapshot; }), /retains no raw source: daegu-line1-train-timetable-fake\.json/u);
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources = null; return snapshot; }), /retains no raw source/u);
+});
+
 test("대구 snapshot이 아홉 데이터셋을 정확히 한 번씩 보관하지 않으면 등록하지 않고 실패한다", async () => {
-  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources.pop(); return snapshot; }), /do not retain datasets/u);
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources.pop(); snapshot.downloadProvenance.pop(); return snapshot; }), /do not retain datasets/u);
   await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources.push(snapshot.rawSources[0]); return snapshot; }), /unexpected or repeated dataset/u);
+});
+
+// F2(#1081): 등록 출력(원장 head의 snapshot)이 수집 입력과 시각·원본·내용이 다르면 커밋 전에 멈춘다.
+test("대구 등록 출력의 capturedAt·rawSha256·contentSha256이 수집 snapshot과 다르면 verify 단계가 실패한다", async () => {
+  await record("daegu-sources"); // 일치하면 통과
+  for (const key of ["capturedAt", "rawSha256", "contentSha256"]) {
+    await assert.rejects(record("daegu-sources", { mutateRegistered: (snapshot) => ({ ...snapshot, [key]: "changed" }) }), new RegExp(`differs from the collected one in ${key}`, "u"));
+  }
 });
 
 test("대구 snapshot의 capturedAt이 서로 다르거나 정규형이 아니면 등록하지 않고 실패한다", async () => {
