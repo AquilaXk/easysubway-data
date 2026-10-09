@@ -17,7 +17,7 @@ import { main as policyMain } from "./automation-pr-policy.mjs";
 import { buildRefreshPullRequest, main } from "./refresh-automation-pr.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { REFRESH_STAGES, evaluateRefreshStage } from "./refresh-stage-contracts.mjs";
-import { INVENTORY_PATH, LEDGER_PATH, POLICY, RECORDED, filenames, recordedTrees, runsOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
+import { INVENTORY_PATH, LEDGER_PATH, POLICY, RECORDED, REVIEWED_PACK_PATH, filenames, recordedTrees, replayMutations, runsOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
 
 // #1012: 정기 갱신 4종의 증거 블록·PR 본문·emitter. 증거는 기록된 실제 갱신 PR의 base·head에서 만든다.
 const RUN_URL = "https://github.com/AquilaXk/easysubway-data/actions/runs/123";
@@ -179,7 +179,8 @@ test("emitter 반증: 허용 밖 변경·소유하지 않은 항목·원장 변�
     ["kric-facility-refresh", { mutateFiles: (head) => { head.set(".github/workflows/ci.yml", "name: x\n"); } }, /허용 밖 경로/u],
     ["seoul-accessibility-refresh", { mutateFiles: (head) => { head.set("tools/datapack/source-governance-policy.json", "{}\n"); } }, /허용 밖 경로/u],
     // 리뷰 F5: 관측된 적 없는 경로는 사람 경로가 아니라 push 전 거부(본문 없음, workflow 실패)다.
-    ["capital-topology-refresh", { mutateFiles: (head) => { head.set("tools/datapack/release/capital-production-reviewed-pack.json", "{}\n"); } }, /AUTOMATION_PR_PATHS: 허용 밖 경로: tools\/datapack\/release\/capital-production-reviewed-pack\.json/u],
+    // #1062: reviewed pack은 바뀐 파일(modified)로만 허용한다. base에 없던 파일을 새로 더하면 변경 종류가 달라 거부한다.
+    ["capital-topology-refresh", { mutateFiles: (head) => { head.set("tools/datapack/release/capital-production-reviewed-pack.json", "{}\n"); } }, /AUTOMATION_PR_PATHS: tools\/datapack\/release\/capital-production-reviewed-pack\.json의 변경 종류\(added\)가 modified가 아니다/u],
     ["capital-topology-refresh", { mutateFiles: (head) => { head.set("tools/datapack/itx-current-network-edge-admission-20261007.json", "{}\n"); } }, /AUTOMATION_PR_PATHS: 허용 밖 경로: tools\/datapack\/itx-current-network-edge-admission-20261007\.json/u],
   ];
   for (const [stage, mutations, pattern] of cases) {
@@ -291,5 +292,25 @@ test("CI 게이트 명령(prepare·gates)이 emitter가 만든 증거를 4종 �
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+// #1062: 실패한 실제 활성화 결과(reviewed·canonical pack의 KRIC·서울 증거 재결속)에서 emitter가 증거 블록을 만들고, 내용을 바꾼 reviewed pack은 본문을 만들지 않는다.
+test("emitter #1062 재생: reviewed pack을 따라 옮긴 실제 활성화 결과에서 증거 블록을 만들고 reviewed pack 내용 변경은 PACK_CONTENT로 실패한다", async () => {
+  const run = runsOf("capital-topology-refresh")[0];
+  const withReviewed = (options = {}) => repositoryOf(run, replayMutations(options));
+  const { root, baseSha, headSha } = withReviewed();
+  try {
+    const { body } = await buildRefreshPullRequest({ stage: run.stage, repositoryRoot: root, baseSha, headSha, runUrl: RUN_URL, summary: SUMMARY, refs: REFS });
+    const parsed = parseAutomationPrEvidence(body, { headSha });
+    assert.deepEqual(parsed.steps[0].paths, [...filenames(run), REVIEWED_PACK_PATH].sort(), "증거 경로에 reviewed pack이 들어간다");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+  const bad = withReviewed({ reviewed: (pack) => { pack.packs[0].facilities[0].status = "AVAILABLE"; } });
+  try {
+    await assert.rejects(buildRefreshPullRequest({ stage: run.stage, repositoryRoot: bad.root, baseSha: bad.baseSha, headSha: bad.headSha, runUrl: RUN_URL, summary: SUMMARY, refs: REFS }), /AUTOMATION_PR_PACK_CONTENT: reviewed pack이 출처 표식 밖에서 바뀌었/u);
+  } finally {
+    rmSync(bad.root, { recursive: true, force: true });
   }
 });

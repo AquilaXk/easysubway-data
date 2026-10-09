@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { INVENTORY_PATH, LEDGER_PATH, PACK_STAMP_KEYS, POLICY, RECORDED, buildCapitalSnapshot, packSourcesOf, filenames, recordedTrees, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
+import { INPUT_PATH, INVENTORY_PATH, LEDGER_PATH, PACK_STAMP_KEYS, POLICY, RECORDED, REPLAY, REVIEWED_PACK_PATH, buildCapitalSnapshot, packSourcesOf, filenames, recordedTrees, replayMutations, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
 
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import {
@@ -112,7 +112,11 @@ test("반증: 수도권 topology 단계는 날짜 표식이 서로 맞지 않거
   assert.notEqual(refreshPathShapeViolation(run.stage, paths.map((entry) => (entry === reverification ? entry.replace(/\d{8}\.json$/u, "20990101.json") : entry)).sort()), null, "재검증 기록의 날짜가 topology와 다르다");
   assert.notEqual(refreshPathShapeViolation(run.stage, [...paths, "tools/datapack/sources/capital-route-topology-20990101.json"].sort()), null, "topology 파일이 둘");
   assert.notEqual(refreshPathShapeViolation(run.stage, [...paths, "tools/datapack/itx-current-network-edge-admission-20261007.json"].sort()), null, "ITX 입력은 관측된 적 없어 허용하지 않는다");
-  assert.notEqual(refreshPathShapeViolation(run.stage, [...paths, "tools/datapack/release/capital-production-reviewed-pack.json"].sort()), null, "reviewed pack은 관측된 적 없어 허용하지 않는다");
+  assert.equal(refreshPathShapeViolation(run.stage, [...paths, REVIEWED_PACK_PATH].sort()), null, "reviewed pack은 바뀌면 허용 경로다(#1062)");
+  assert.equal(refreshPathShapeViolation(run.stage, paths), null, "reviewed pack이 안 바뀐 실제 갱신(#965·#1003)도 그대로 통과한다");
+  assert.notEqual(refreshPathShapeViolation(run.stage, [...paths, REVIEWED_PACK_PATH, REVIEWED_PACK_PATH].sort()), null, "reviewed pack 중복");
+  assert.notEqual(refreshFileViolation(run.stage, [...run.files, { filename: REVIEWED_PACK_PATH, status: "added" }]), null, "reviewed pack은 modified만 허용한다");
+  assert.equal(refreshFileViolation(run.stage, [...run.files, { filename: REVIEWED_PACK_PATH, status: "modified" }]), null, "reviewed pack modified");
 });
 
 // ---------------------------------------------------------------------------
@@ -613,7 +617,8 @@ test("F5: 계약 주석이 허용 밖 경로의 실제 동작(push 전 실패, #
   const text = await readFile(new URL("./refresh-stage-contracts.mjs", import.meta.url), "utf8");
   const header = text.slice(0, text.indexOf("import "));
   assert.doesNotMatch(header, /workflow가 만들 수는 있지만 자동 병합 대상이 아니라 사람 경로로 보낸다/u);
-  assert.match(header, /관측된 적 없는 경로\(reviewed pack, ITX 입력\)는 허용하지 않는다\. 이런 변경은 emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다/u);
+  assert.match(header, /관측된 적 없는 경로\(ITX 입력 등\)는 허용하지 않는다\. 이런 변경은 emitter가 push 전에 거부해 workflow가 실패하고 #926 실패 보고로 드러난다/u);
+  assert.match(header, /reviewed pack은 #1062부터 바뀌면 허용한다/u);
   assert.match(header, /브랜치도 PR도 만들어지지 않는다/u);
 });
 
@@ -639,4 +644,149 @@ test("F1·F4·F3 보강 반증: sourceInventory의 updatedAt 외 표식, 역만 
     mutateInput: (input) => { input.facilityRows = [stamped(newId, newAt, "2".repeat(64))]; },
   });
   assert.match(details(unknown), /facilityRows 목록의 evidenceHash 계산 방식을 알 수 없다/u);
+});
+
+// ---------------------------------------------------------------------------
+// #1062: reviewed pack과 KRIC·서울 증거 재결속.
+// ground truth: 2026-10-09T00:39Z·00:47Z 실패 run(37865886911·37866515161)과 같은 입력으로 base ad1455fb0 위에서 활성화를 다시 실행한 결과다.
+// 활성화 결과의 reviewed pack 변화 66건과 canonical pack 변화는 모두 출처 표식 키다. 값은 production 입력 파일의 같은 신원 행과 같다.
+// 아래 fixture는 그 변화 행(전·후), 입력 파일의 같은 신원 행, 원장 계보, inventory 관측일만 담는다.
+// ---------------------------------------------------------------------------
+const FOLLOW_KRIC = "kric-station-convenience-standard";
+const FOLLOW_SEOUL = "seoul-metro-accessibility";
+const [topologyRun] = runsOf("capital-topology-refresh");
+const replayPaths = [...filenames(topologyRun), REVIEWED_PACK_PATH].sort();
+const replay = (options = {}) => evaluate(topologyRun, replayMutations(options), { paths: replayPaths });
+const replayCases = (result) => ({ codes: codes(result), text: details(result) });
+
+test("#1062 재생: 실패한 실제 활성화 결과(reviewed·canonical pack의 KRIC·서울 증거 재결속)는 위반 없이 통과한다", async () => {
+  const result = await replay();
+  assert.deepEqual(result.violations, []);
+  assert.equal(REPLAY.packs.reviewed.facilities.length + REPLAY.packs.reviewed.networkEdges.length + REPLAY.packs.reviewed.stationFacilityEvidence.length + REPLAY.packs.reviewed.sourceInventory.length, 18, "실제 변화 행 18개(값 66건)");
+});
+
+test("#1062 반증: reviewed pack의 내용(시설 상태·간선 접근성·키 구성·배열 길이)이 바뀌면 PACK_CONTENT", async () => {
+  const cases = {
+    "시설 상태": (pack) => { pack.packs[0].facilities[0].status = "AVAILABLE"; },
+    "시설 설명": (pack) => { pack.packs[0].facilities[0].description = "바뀜"; },
+    "간선 계단 정보": (pack) => { pack.packs[0].networkEdges[0].stairAccessState = "STEP_FREE"; },
+    "간선 접근성 상태": (pack) => { pack.packs[0].networkEdges[0].accessibilityStatus = "AVAILABLE"; },
+    "증거 종류": (pack) => { pack.packs[0].stationFacilityEvidence[0].evidenceKind = "NOT_EXISTS"; },
+    "제공처 기록 해시": (pack) => { pack.packs[0].facilities[0].providerRecordHash = "9".repeat(64); },
+    "새 키": (pack) => { pack.packs[0].facilities[0].extra = true; },
+    "키 삭제": (pack) => { delete pack.packs[0].networkEdges[0].lastVerifiedAt; },
+    "행 삭제": (pack) => { pack.packs[0].facilities.pop(); },
+    "행 추가": (pack) => { pack.packs[0].stationFacilityEvidence.push(structuredClone(pack.packs[0].stationFacilityEvidence[0])); },
+    "순서 변경": (pack) => { pack.packs[0].facilities.reverse(); },
+    "pack 하나 추가": (pack) => { pack.packs.push(structuredClone(pack.packs[0])); },
+  };
+  for (const [label, mutate] of Object.entries(cases)) {
+    const { codes: found, text } = replayCases(await replay({ reviewed: mutate }));
+    assert.ok(found.includes("PACK_CONTENT"), `${label}: ${text}`);
+  }
+});
+
+test("#1062 반증: KRIC·서울 증거 표식은 입력 파일의 같은 신원 행·원장 계보와 어긋나면 PACK_CONTENT", async () => {
+  const cases = {
+    "evidenceHash가 입력 행과 다름": (pack) => { pack.packs[0].facilities[0].evidenceHash = "7".repeat(64); },
+    "verifiedAt이 입력 행과 다름": (pack) => { pack.packs[0].facilities[0].verifiedAt = "1999-01-01T00:00:00.000Z"; },
+    "retrievedAt이 입력 행과 다름": (pack) => { pack.packs[0].facilities[1].retrievedAt = "1999-01-01T00:00:00.000Z"; },
+    "lastVerifiedAt이 입력 행의 verifiedAt과 다름": (pack) => { pack.packs[0].facilities[2].lastVerifiedAt = "1999-01-01T00:00:00.000Z"; },
+    "간선 evidenceHash가 입력 행과 다름": (pack) => { pack.packs[0].networkEdges[0].evidenceHash = "7".repeat(64); },
+    "간선 lastVerifiedAt이 입력 행과 다름": (pack) => { pack.packs[0].networkEdges[1].lastVerifiedAt = "1999-01-01T00:00:00.000Z"; },
+    "상태 증거 evidenceHash가 입력 행과 다름": (pack) => { pack.packs[0].stationFacilityEvidence[2].evidenceHash = "7".repeat(64); },
+    "EXISTS 행이 같은 시설의 표식과 다름": (pack) => { pack.packs[0].stationFacilityEvidence[0].evidenceHash = "7".repeat(64); },
+    "snapshot id가 입력 행과 다름": (pack) => { pack.packs[0].facilities[0].sourceSnapshotId = "kric-station-convenience-standard-20261008T191334869Z"; },
+    "snapshot id가 원장 계보 밖": (pack) => { pack.packs[0].facilities[0].sourceSnapshotId = "kric-station-convenience-standard-20990101T000000000Z"; },
+    "다른 원천의 snapshot으로 바뀜": (pack) => { pack.packs[0].facilities[0].sourceSnapshotId = REPLAY.packs.reviewed.networkEdges[0].after.sourceSnapshotId; },
+    "원천 id가 바뀜": (pack) => { pack.packs[0].facilities[0].sourceId = FOLLOW_SEOUL; },
+    "표식 키 하나만 바뀌고 snapshot id는 그대로": (pack) => { pack.packs[0].facilities[0].sourceSnapshotId = REPLAY.packs.reviewed.facilities[0].before.sourceSnapshotId; },
+    "sourceInventory 갱신일이 증거 관측일과 다름": (pack) => { pack.packs[0].sourceInventory[1].updatedAt = "2026-10-08T00:00:00.000Z"; },
+    "sourceInventory 갱신일이 시각 성분을 가짐": (pack) => { pack.packs[0].sourceInventory[0].updatedAt = "2026-10-08T17:29:53.869Z"; },
+  };
+  for (const [label, mutate] of Object.entries(cases)) {
+    const { codes: found, text } = replayCases(await replay({ reviewed: mutate }));
+    assert.ok(found.includes("PACK_CONTENT"), `${label}: ${text}`);
+  }
+  // canonical pack도 같은 규칙이다.
+  const canonicalCases = {
+    "시설 evidenceHash": (pack) => { pack.packs[0].facilities[0].evidenceHash = "7".repeat(64); },
+    "시설 상태": (pack) => { pack.packs[0].facilities[0].status = "AVAILABLE"; },
+    "snapshot id": (pack) => { pack.packs[0].stationFacilityEvidence.find((row) => row.sourceId === FOLLOW_KRIC).sourceSnapshotId = "kric-station-convenience-standard-20990101T000000000Z"; },
+  };
+  for (const [label, mutate] of Object.entries(canonicalCases)) {
+    const { codes: found, text } = replayCases(await replay({ canonical: mutate }));
+    assert.ok(found.includes("PACK_CONTENT"), `canonical ${label}: ${text}`);
+  }
+});
+
+test("#1062 반증: 입력 파일·원장 계보가 증거를 뒷받침하지 못하면 PACK_CONTENT(fail closed)", async () => {
+  const cases = {
+    "입력 파일 없음": { files: (head) => { head.delete(INPUT_PATH); } },
+    "입력 파일이 JSON이 아님": { files: (head) => { head.set(INPUT_PATH, "{ not json"); } },
+    "같은 신원의 입력 행 없음": { input: (twins) => { twins.facilityRows.pop(); } },
+    "입력 행의 신원이 둘": { input: (twins) => { twins.routeEdges.push(structuredClone(twins.routeEdges[0])); } },
+    "원장 계보에 새 snapshot 없음": { ledger: (lineage) => { lineage.splice(lineage.findIndex((row) => row.snapshotId === REPLAY.packs.reviewed.facilities[0].after.sourceSnapshotId), 1); } },
+    "원장 계보에 직전 snapshot 없음": { ledger: (lineage) => { lineage.splice(lineage.findIndex((row) => row.snapshotId === REPLAY.packs.reviewed.facilities[0].before.sourceSnapshotId), 1); } },
+    "직전이 새 snapshot보다 뒤(되돌림)": { ledger: (lineage) => { lineage.reverse(); } },
+    "원장 파일이 JSON이 아님": { files: (head, base) => { head.set(LEDGER_PATH, "{ not json"); base.set(LEDGER_PATH, "{ not json"); } },
+    "inventory에 원천이 없음": { inventory: (inv) => { inv.sources = inv.sources.filter((source) => source.id !== FOLLOW_KRIC); } },
+  };
+  for (const [label, options] of Object.entries(cases)) {
+    const { codes: found, text } = replayCases(await replay(options));
+    assert.ok(found.includes("PACK_CONTENT") || found.includes("LEDGER_GATE") || found.includes("INVENTORY_GATE"), `${label}: ${text}`);
+    assert.notDeepEqual(found, [], label);
+  }
+  const pending = await replay({ files: (head) => { head.delete(INPUT_PATH); } });
+  assert.match(details(pending), /입력 파일/u, "입력 파일을 읽을 수 없다는 사유가 드러난다");
+});
+
+test("#1062 반증: reviewed pack 파일을 읽을 수 없거나 JSON이 아니거나 base에 없으면 PACK_CONTENT(fail closed)", async () => {
+  for (const [label, files] of Object.entries({
+    "head에 없음": (head) => { head.delete(REVIEWED_PACK_PATH); },
+    "JSON 아님": (head) => { head.set(REVIEWED_PACK_PATH, "{ not json"); },
+    "base에 없음": (_head, base) => { base.delete(REVIEWED_PACK_PATH); },
+  })) {
+    const { codes: found, text } = replayCases(await replay({ files }));
+    assert.ok(found.includes("PACK_CONTENT"), `${label}: ${text}`);
+  }
+});
+
+test("#1062 대조: reviewed pack이 경로에 없으면(바뀌지 않음) 기존 실제 갱신처럼 통과하고, 경로에만 있고 내용이 같으면 통과한다", async () => {
+  const unchanged = await evaluate(topologyRun);
+  assert.deepEqual(unchanged.violations, []);
+  const sameBytes = await evaluate(topologyRun, replayMutations({ files: (head, base) => { head.set(REVIEWED_PACK_PATH, base.get(REVIEWED_PACK_PATH)); } }), { paths: replayPaths });
+  assert.deepEqual(sameBytes.violations, [], "내용이 같은 경로 주장은 위반이 아니다(경로 계약은 git diff가 정한다)");
+});
+
+// #1063 리뷰 F1: 근거(입력 파일·원장)는 head가 base와 바이트로 같을 때만 믿는다. 경로 규칙과 별개로 이 함수 단독으로도 막혀야 한다.
+test("#1062 반증: 입력 파일을 함께 바꾼 PR(입력 행과 pack 표식을 같이 위조)은 head 입력 파일이 base와 달라 PACK_CONTENT", async () => {
+  const forged = "7".repeat(64);
+  const factoryId = REPLAY.packs.reviewed.facilities[0].after.id;
+  const result = await replay({
+    reviewed: (pack) => { pack.packs[0].facilities[0].evidenceHash = forged; },
+    canonical: (pack) => { pack.packs[0].facilities.find((row) => row.id === factoryId).evidenceHash = forged; },
+    files: (head) => {
+      const input = JSON.parse(head.get(INPUT_PATH));
+      input.facilityRows.find((row) => row.id === factoryId).evidenceHash = forged;
+      head.set(INPUT_PATH, JSON.stringify(input));
+    },
+  });
+  assert.ok(codes(result).includes("PACK_CONTENT"));
+  assert.match(details(result), /head의 입력 파일이 base와 다르다/u);
+  // 대조: 위조 없이 입력 파일 바이트가 같으면 통과한다.
+  assert.deepEqual((await replay()).violations, []);
+  const ledgerChanged = await replay({ files: (head) => { head.set(LEDGER_PATH, JSON.stringify([...JSON.parse(head.get(LEDGER_PATH)), { snapshotId: "x", sourceId: "x" }])); } });
+  assert.notDeepEqual(ledgerChanged.violations, [], "원장이 head에서 바뀌면 막힌다");
+});
+
+// #1063 리뷰 F2: 새 snapshot과 시각은 원장 행으로 대조한다. 입력 파일 행이 가리키는 snapshot이 원천 head보다 한 갱신 늦을 수 있어(실제 재생: KRIC) head 여부는 요구하지 않는다.
+test("#1062 반증: 표식 시각이 새 snapshot의 원장 행 시각과 다르면 PACK_CONTENT, 원천 head보다 앞선 snapshot이라도 입력 파일이 가리키면 통과한다", async () => {
+  const kricAfter = REPLAY.packs.reviewed.facilities[0].after.sourceSnapshotId;
+  const kric = REPLAY.ledgerLineage.filter((row) => row.sourceId === FOLLOW_KRIC);
+  assert.notEqual(kric.at(-1).snapshotId, kricAfter, "실제 재생에서 pack이 따라가는 KRIC snapshot은 원장 head가 아니다");
+  assert.deepEqual((await replay()).violations, []);
+  const skewed = await replay({ ledger: (lineage) => { const row = lineage.find((entry) => entry.snapshotId === kricAfter); row.retrievedAt = "2026-10-01T00:00:00.000Z"; row.sourceUpdatedAt = "2026-10-01T00:00:00.000Z"; } });
+  assert.ok(codes(skewed).includes("PACK_CONTENT"));
+  assert.match(details(skewed), /새 snapshot의 원장 행 시각/u);
 });
