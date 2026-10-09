@@ -670,6 +670,7 @@
     {"path":"tools/ci/check-scheduler-heartbeat.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/external-scheduler-gate.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/refresh-stage-contracts.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":120},
+    {"path":"tools/ci/documentation-fragment-automation-disjoint.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/refresh-stage-cross-source-replay.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":1500},
     {"path":"tools/ci/refresh-automation-pr.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":2500},
     {"path":"tools/ci/refresh-automation-pr-workflows.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":40},
