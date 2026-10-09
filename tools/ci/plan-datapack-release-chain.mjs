@@ -113,6 +113,16 @@ export async function readReleaseCandidateModeArgs({ repositoryRoot = ROOT, gate
   };
 }
 
+// data#1084: 승격까지 끝난 후보를 production-publish로 보낼 modeArgs. RC와 같은 저장소 파일·같은 결속 검증을 거치고,
+// 후보 RC run과 hub 승격 run의 정확한 id만 더한다. 파일에 없는 값은 입력으로 받지 않는다.
+export async function readProductionPublishModeArgs({ repositoryRoot = ROOT, gateRunRecord, candidateRunId, promotionRunId } = {}) {
+  for (const value of [candidateRunId, promotionRunId]) {
+    if (typeof value !== "string" || !/^[1-9][0-9]*$/u.test(value)) fail("PRODUCTION_PUBLISH_RUN_ID", String(value));
+  }
+  const modeArgs = await readReleaseCandidateModeArgs({ repositoryRoot, gateRunRecord });
+  return { ...modeArgs, candidateRunId, promotionRunId };
+}
+
 function options(argv, names, optionalNames = []) {
   const values = {};
   if (argv.length % 2 !== 0 || argv.length < names.length * 2 || argv.length > (names.length + optionalNames.length) * 2) {
@@ -165,6 +175,17 @@ export async function runPlanDatapackReleaseChain({ argv = process.argv.slice(2)
       ? undefined
       : JSON.parse(await readFile(absoluteOutput(values["gate-run-record"]), "utf8"));
     const modeArgs = await readReleaseCandidateModeArgs({ repositoryRoot, gateRunRecord });
+    await writeFile(absoluteOutput(values.output), `${JSON.stringify(modeArgs)}\n`, { flag: "wx" });
+    return modeArgs;
+  }
+  if (command === "production-publish-mode-args") {
+    const values = options(rest, ["output", "candidate-run-id", "promotion-run-id"], ["gate-run-record"]);
+    const gateRunRecord = values["gate-run-record"] === undefined
+      ? undefined
+      : JSON.parse(await readFile(absoluteOutput(values["gate-run-record"]), "utf8"));
+    const modeArgs = await readProductionPublishModeArgs({
+      repositoryRoot, gateRunRecord, candidateRunId: values["candidate-run-id"], promotionRunId: values["promotion-run-id"],
+    });
     await writeFile(absoluteOutput(values.output), `${JSON.stringify(modeArgs)}\n`, { flag: "wx" });
     return modeArgs;
   }

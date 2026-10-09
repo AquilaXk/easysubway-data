@@ -26,7 +26,8 @@ on:
   pull_request_review:
     types: [submitted]
   workflow_run:
-    workflows: [CI]
+    # 발행 체인(RC chain·cross-repo chain)이 끝나면 잠금이 풀린 시점에 큐가 다시 판정한다(data#1084).
+    workflows: [CI, "Data Pack Release Candidate Chain", "Data Pack Release Cross-Repository Chain"]
     types: [completed]
   push:
     branches: [main]
@@ -63,8 +64,33 @@ jobs:
       EVENT_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
     steps:
 
+      # 데이터팩 발행 체인(data#1084)은 RC부터 발행까지 data main이 움직이지 않아야 한다(production-publish는 candidate head_sha == main을 요구한다).
+      # 잠금은 변수·라벨이 아니라 체인 workflow의 진행 중 run이다. 체인이 죽어도 run이 끝나면 자동으로 풀리고, 잔존 상태를 복구할 일이 없다.
+      # 조회가 실패하거나 응답이 숫자가 아니면 unknown이다: 모르는 잠금은 열린 잠금이 아니므로 병합하지 않는다.
+      - name: Check the data pack release chain lock
+        id: chain-lock
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          locked=false
+          for workflow in datapack-release-candidate-chain.yml datapack-release-cross-repo-chain.yml; do
+            if ! active="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?per_page=30" --jq '[.workflow_runs[] | select(.status != "completed")] | length')" \
+              || [[ ! "${active}" =~ ^[0-9]+$ ]]; then
+              locked=unknown
+              break
+            fi
+            if [[ "${active}" -gt 0 ]]; then
+              locked=true
+            fi
+          done
+          echo "locked=${locked}" >> "${GITHUB_OUTPUT}"
+
       - name: Coordinate eligible pull requests
         shell: bash
+        env:
+          CHAIN_LOCKED: ${{ steps.chain-lock.outputs.locked }}
         run: |
           # shellcheck disable=SC2016
           set -euo pipefail
@@ -148,6 +174,13 @@ jobs:
             --limit 1000 --json number,createdAt,isDraft \
             --jq '[.[] | select(.isDraft == false)] | [sort_by(.createdAt)[].number]')"
 
+          # chain-lock-begin
+          # 발행 체인이 진행 중이거나 잠금을 알 수 없으면 병합하지 않고 정상 종료한다. 체인 workflow가 끝나면 큐가 다시 깨어난다.
+          if [[ "${CHAIN_LOCKED}" != false ]]; then
+            echo "데이터팩 발행 체인 잠금(${CHAIN_LOCKED:-unknown}): 이번 실행은 병합하지 않는다."
+            exit 0
+          fi
+          # chain-lock-end
           # 큐는 strict FIFO가 아니라 best-effort FIFO다. 오래된 순으로 후보를 훑되 병합할 수
           # 없는 후보는 사유를 남기고 건너뛴다. head 하나만 처리하면 그 한 건이 막혔을 때 뒤의
           # PR이 전부 굶는다. 건너뛰기는 병합을 하지 않는 방향이라 게이트를 약화시키지 않으며,

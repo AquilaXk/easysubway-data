@@ -23,6 +23,13 @@ export const REFRESH_WORKFLOWS = Object.freeze({
   "source-reverification.yml": "P7D 원천 재확인(코레일·광주·부산·대전·대구 topology, KRIC 시간표 projection)",
 });
 
+// 정기 원천 갱신과 구조가 다른 workflow(발행·배포 체인)는 REFRESH_WORKFLOWS의 구조 계약 대상이 아니라 따로 등록한다(data#1084).
+// 이슈 제목 규칙("원천 자동 갱신 실패")은 같아서 admin 자동화 상태가 같은 경로로 찾는다.
+export const CHAIN_WORKFLOWS = Object.freeze({
+  "datapack-release-cross-repo-chain.yml": "데이터팩 발행·배포 체인(RC 이후 호환성·승격·발행·배포·검증)",
+});
+const REPORTABLE_WORKFLOWS = Object.freeze({ ...REFRESH_WORKFLOWS, ...CHAIN_WORKFLOWS });
+
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const RUN_ID = /^[1-9]\d{0,19}$/u;
 export const COMMENT_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -42,7 +49,7 @@ export function refreshFailureMarker(workflowFile) {
 }
 
 function validated({ repository, workflowFile, runId }) {
-  if (!Object.hasOwn(REFRESH_WORKFLOWS, workflowFile ?? "")) fail("WORKFLOW");
+  if (!Object.hasOwn(REPORTABLE_WORKFLOWS, workflowFile ?? "")) fail("WORKFLOW");
   if (typeof repository !== "string" || !REPOSITORY.test(repository)) fail("REPOSITORY");
   if (typeof runId !== "string" || !RUN_ID.test(runId)) fail("RUN_ID");
   return { repository, workflowFile, runId, runUrl: `https://github.com/${repository}/actions/runs/${runId}` };
@@ -126,7 +133,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
   if (!Array.isArray(openIssues)) fail("ISSUES");
   const marker = refreshFailureMarker(input.workflowFile);
-  const label = REFRESH_WORKFLOWS[input.workflowFile];
+  const label = REPORTABLE_WORKFLOWS[input.workflowFile];
   const title = `[Fix] 원천 자동 갱신 실패: ${label} (${input.workflowFile})`;
   // 이 도구(workflow 토큰)가 만든, 제목 규칙이 같은 이슈만 센다. 사람이 표지를 인용한 이슈는 무시한다.
   const matching = openIssues.filter((issue) => {

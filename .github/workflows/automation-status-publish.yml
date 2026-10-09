@@ -1,0 +1,58 @@
+name: Automation Status Publish
+
+# backend admin "자동화 상태" 화면(backend#500)에 GitHub 자동화 상태 snapshot을 게시한다(data#1084, QA 결정 2026-10-09: 사람은 이상이 날 때만 admin에서 확인).
+# - push 방식이다. 이 workflow가 상태를 읽어 workflow 서비스 토큰(Bearer)으로 backend에 보낸다. backend가 GitHub를 호출하지 않으므로
+#   prod에 GitHub 토큰이 생기지 않고, 새 장기 비밀도 없다(기존 EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN 재사용).
+# - 15분마다와 발행·RC 체인이 끝날 때 돈다. 게시가 멈추면 admin이 "마지막 갱신 N분 전"으로 드러낸다. 읽지 못한 값은 채우지 않고 실패한다.
+# - 읽기 권한만 쓴다: data는 GITHUB_TOKEN(actions·issues·pull-requests·contents read), hub·platform run 조회는 App 토큰(actions read).
+# - 저장소 변수 DATAPACK_AUTOMATION_STATUS_PUBLISH가 true일 때만 정기 실행이 돈다(기본 꺼짐, backend 수신 API 배포 뒤 켠다). 사람 dispatch는 항상 돈다.
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_run:
+    workflows: ["Data Pack Release Cross-Repository Chain", "Data Pack Release Candidate Chain"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: automation-status-publish
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish the automation status
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_AUTOMATION_STATUS_PUBLISH == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production-datapack
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Create the hub and platform read token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway,easysubway-platform
+          permission-actions: read
+      - name: Collect and publish the automation status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_READ_TOKEN: ${{ steps.read-token.outputs.token }}
+          DEPLOY_PUBLIC_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
+          CHAIN_DATAPACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+          EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: ${{ secrets.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN }}
+        run: node tools/ci/build-automation-status.mjs --output "${RUNNER_TEMP}/automation-status.json"

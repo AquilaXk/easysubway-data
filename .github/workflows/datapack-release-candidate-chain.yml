@@ -3,6 +3,8 @@ name: Data Pack Release Candidate Chain
 # 후보 spec 또는 release request가 main에 들어오면 release-candidate(RC)를 실행한다(#927, #870).
 # hub promotion은 후보 run의 event가 workflow_dispatch여야 받으므로 push에서 직접 RC를 돌리지 않고 dispatch한다.
 # modeArgs는 저장소 파일에서만 만든다. release request가 spec에 결속되지 않으면 dispatch하지 않고 실패한다.
+# RC가 끝날 때까지 이 job을 유지한다(data#1084). 이 job이 진행 중인 동안 automerge-queue가 병합을 미루므로, RC부터 발행 체인까지
+# data main이 RC 커밋에서 움직이지 않는다(발행은 candidate head_sha == main을 요구한다).
 on:
   push:
     branches: [main]
@@ -23,7 +25,7 @@ jobs:
     name: Release candidate chain
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -82,6 +84,7 @@ jobs:
           fi
           node tools/ci/plan-datapack-release-chain.mjs "${args[@]}"
       - name: Dispatch release candidate
+        id: dispatch
         if: ${{ steps.supersede.outputs.current == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,3 +113,22 @@ jobs:
             exit 1
           fi
           echo "rc_run_id=${rc_run_id}" >> "${GITHUB_OUTPUT}"
+      - name: Hold the merge lock until the release candidate run finishes
+        if: ${{ steps.supersede.outputs.current == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_RUN_ID: ${{ steps.dispatch.outputs.rc_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${RC_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "the dispatched RC run id is invalid" >&2; exit 1; }
+          # RC의 성공·실패는 여기서 판정하지 않는다. 성공은 발행 체인이, 실패는 체인의 실패 보고 job이 이어받는다. 이 step은 잠금 구간만 유지한다.
+          for _ in $(seq 1 360); do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RC_RUN_ID}" --jq '.status')"
+            if [[ "${status}" == "completed" ]]; then
+              echo "release-candidate run ${RC_RUN_ID} finished; the merge lock is released."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "release-candidate run ${RC_RUN_ID} did not finish within 60 minutes" >&2
+          exit 1

@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  CHAIN_WORKFLOWS,
   COMMENT_INTERVAL_MS,
   GH_CANDIDATES,
   REFRESH_WORKFLOWS,
@@ -357,4 +358,18 @@ test("an orphan removal already written in the issue body is not repeated as a c
   github.setClock(new Date(start.getTime() + hours(2)));
   const other = await reportRefreshFailure({ argv: ["--workflow", workflowFile, "--repository", repository, "--run-id", "123"], runGh: github.runGh, now: () => new Date(start.getTime() + hours(2)), orphan: orphanClaim({ branch: "automation/636-current-topology-refresh-124" }) });
   assert.equal(other.action, "comment");
+});
+
+test("데이터팩 발행·배포 체인도 같은 실패 이슈 경로(#926)로 보고하고 admin이 찾는 제목 규칙을 유지한다 (data#1084)", () => {
+  assert.deepEqual(Object.keys(CHAIN_WORKFLOWS), ["datapack-release-cross-repo-chain.yml"]);
+  // 구조 계약(permissions {}, 단일 job)이 다른 workflow라 정기 갱신 목록(REFRESH_WORKFLOWS)에는 넣지 않는다.
+  assert.equal(Object.hasOwn(REFRESH_WORKFLOWS, "datapack-release-cross-repo-chain.yml"), false);
+  const plan = planRefreshFailureReport({
+    repository, workflowFile: "datapack-release-cross-repo-chain.yml", runId: "37900000001", openIssues: [], now: start,
+  });
+  assert.equal(plan.action, "create");
+  assert.equal(plan.title, `[Fix] 원천 자동 갱신 실패: ${CHAIN_WORKFLOWS["datapack-release-cross-repo-chain.yml"]} (datapack-release-cross-repo-chain.yml)`);
+  assert.match(plan.title, /원천 자동 갱신 실패/u);
+  assert.match(plan.body, new RegExp(refreshFailureMarker("datapack-release-cross-repo-chain.yml").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  assert.throws(() => planRefreshFailureReport({ repository, workflowFile: "other.yml", runId: "1", openIssues: [], now: start }), /WORKFLOW/u);
 });

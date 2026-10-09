@@ -72,6 +72,59 @@ test("request key, evidence hash, approval run/reviewer mismatch를 거부한다
   }
 });
 
+const RELEASE_CHAIN_APP = "easysubway-release-chain[bot]";
+
+function asAutomatedRequest(fixture, { approvalJson = "[]", requestedBy = RELEASE_CHAIN_APP, reviewer = RELEASE_CHAIN_APP, contractVersion = "datapack-promotion-v3" } = {}) {
+  const approvalBytes = Buffer.from(approvalJson);
+  writeFileSync(fixture.approvalPath, approvalBytes);
+  fixture.request.requestedBy = requestedBy;
+  fixture.request.approval = { workflowRunId: "456", environment: "datapack-promotion", reviewer, approvalEvidenceSha256: sha256(approvalBytes) };
+  fixture.request.contractVersion = contractVersion;
+  writeRequest(fixture);
+}
+
+// hub #3030과 같은 규칙이다. publish는 hub가 만든 승격 request를 이 검증기로 다시 검증한다(data#1084).
+// Break caught: an empty approval record must be accepted only as the automated v3 contract requested by the release chain App.
+test("validator는 승인 기록이 비어 있는 v3 request를 릴리스 체인 App 요청일 때만 수용한다", () => {
+  const fixture = createFixture();
+  try {
+    asAutomatedRequest(fixture);
+    const result = run(fixture);
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("validator는 v3/v2 혼합·사람 요청자·승인 기록 불일치를 거부한다", () => {
+  for (const [name, options] of [
+    ["empty approvals with a person requester", { requestedBy: "AquilaXk" }],
+    ["empty approvals with a person reviewer", { reviewer: "AquilaXk" }],
+    ["empty approvals but the v2 contract", { contractVersion: "datapack-promotion-v2" }],
+    ["one human approval but the v3 contract", { approvalJson: JSON.stringify([approvedReview()]) }],
+    ["two approvals under the v3 contract", { approvalJson: JSON.stringify([approvedReview(), approvedReview()]) }],
+    ["non-array approval evidence", { approvalJson: "{}" }],
+    ["unknown contract version", { contractVersion: "datapack-promotion-v4" }],
+  ]) {
+    const fixture = createFixture();
+    try {
+      asAutomatedRequest(fixture, options);
+      assert.notEqual(run(fixture).status, 0, name);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+});
+
+test("validator는 사람 승인 1건 v2 request를 그대로 수용한다", () => {
+  const fixture = createFixture();
+  try {
+    assert.equal(run(fixture).status, 0);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("validator도 inventory 구조를 독립적으로 fail closed한다", () => {
   for (const entries of [
     [],

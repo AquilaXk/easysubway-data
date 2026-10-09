@@ -1,5 +1,9 @@
 name: Data Pack Release
 
+# run 목록 API는 workflow_dispatch 입력을 주지 않는다. mode를 run 이름에 남겨 RC·발행 run을 구분한다(data#1084).
+# 발행 체인(datapack-release-cross-repo-chain.yml)과 admin 자동화 상태가 display_title을 정확히 비교한다.
+run-name: ${{ github.workflow }} (${{ inputs.mode || github.event_name }})
+
 on:
   push:
     branches:
