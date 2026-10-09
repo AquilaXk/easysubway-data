@@ -110,6 +110,14 @@ async function gateRunArgs(t, request) {
   return { gateRunPath };
 }
 
+// 커밋된 후보를 그대로 다시 갱신하는 호출 인자: 후보 시계(fan-in)·sequence(build spec)·승인 역할(release request)과 그 request가 결속한 gateRun.
+async function committedCandidateArgs(t, { fanIn, request, buildSpec }) {
+  return {
+    evaluatedAt: fanIn.evaluatedAt, releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy, approvedBy: request.approvedBy, ...(await gateRunArgs(t, request)),
+  };
+}
+
 test("#1069 커밋된 후보는 정기 역할이면 gateRun을 결속하고 사람 역할이면 결속하지 않는다", async () => {
   const { releaseRequest } = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
   const scheduled = releaseRequest.requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && releaseRequest.approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy;
@@ -252,11 +260,7 @@ test("전국 후보 갱신은 결속 검증이 실패해도 출력을 되돌리�
   const steps = [];
   await assert.rejects(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
-    ...(await gateRunArgs(t, request)),
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => {
       steps.push(name);
@@ -285,11 +289,7 @@ test("#942 전국 후보 갱신은 결속 검증 뒤 입력 매니페스트를 �
   const steps = [];
   await assert.rejects(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
-    ...(await gateRunArgs(t, request)),
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => {
       steps.push(name);
@@ -310,11 +310,7 @@ test("#862 전국 후보 갱신은 spec·scope·request·hash를 build-nationwid
   const steps = [];
   await assert.doesNotReject(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
-    ...(await gateRunArgs(t, request)),
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => { steps.push(name); },
   }));
@@ -342,11 +338,7 @@ test("#866 전국 후보 갱신은 마지막 단계에서 route-edge 정책을 �
   const steps = [];
   const result = await refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
-    ...(await gateRunArgs(t, request)),
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async (context) => {
       steps.push(context.name);
@@ -368,11 +360,7 @@ test("#866 route-edge 정책 sync가 실패하면 정책을 포함한 모든 출
   const steps = [];
   await assert.rejects(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
-    ...(await gateRunArgs(t, request)),
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async (context) => {
       steps.push(context.name);
@@ -460,11 +448,7 @@ test("#866 F1 벽시계가 ITX freshUntil 이후여도 후보 시계가 신선�
   await withWallClock(t, new Date(freshUntil + DAY_MS).toISOString());
   await refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
-    ...(await gateRunArgs(t, request)),
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async (context) => {
       if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
