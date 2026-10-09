@@ -9,7 +9,7 @@ import test from "node:test";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import { eventBaseSha, prBaseCanonicalPackReader, priorCanonicalPackBytes, runBaseSha } from "./test-fixtures/pr-base-pack.mjs";
-import { CANONICAL_PACK_PATH, recordedTrees, replayMutations, runsOf } from "./test-fixtures/refresh-recorded-runs.mjs";
+import { CANONICAL_PACK_PATH, INVENTORY_PATH, recordedTrees, replayMutations, runsOf } from "./test-fixtures/refresh-recorded-runs.mjs";
 import {
   validateProductionTransferArtifacts,
   validateTransferAdmissionEvidence,
@@ -62,7 +62,7 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 // 다시 쓰므로 작업 트리 바이트를 선언한다(#954: 둘을 섞지 않는다). 선언한 sha와 맞는 바이트를 고르고, 어느 쪽과도 맞지 않으면 실패한다.
 // #1067: 수도권 topology 갱신 PR은 pack의 출처 표식만 바꾸고 applicability는 마지막 파생 재결속의 pack(= PR base)을 선언한다.
 // 작업 트리·고정 입력이 모두 맞지 않을 때만 readBase로 PR base 바이트를 읽는다. readBase는 base->head 차이가 출처 표식뿐일 때만 바이트를 주고,
-// 아니면 던지고, base를 알 수 없으면 null이다. 일반 PR은 앞의 두 곳에서 끝나 base를 읽지 않는다.
+// 아니면 던지고, 이 helper의 기본값(읽기 없음)과 null은 base를 쓰지 않는다는 뜻이다. 실제 읽기(prBaseCanonicalPackReader)는 base를 정할 수 없으면 던진다. 일반 PR은 앞의 두 곳에서 끝나 base를 읽지 않는다.
 async function declaredBytes({ label, relative, readPinned, workingTree, matches, readBase = async () => null }) {
   for (const read of [() => workingTree(relative), () => readPinned(relative)]) {
     const bytes = await read();
@@ -128,6 +128,8 @@ function memoryRepo(commits) {
   return {
     fetched: [],
     async ensureHistory(sha, depth) { this.fetched.push([sha, depth]); },
+    async mergeBase(depth) { this.mergeBaseDepths.push(depth); return commits[0].sha; },
+    mergeBaseDepths: [],
     async firstParents(sha, limit) { const index = commits.findIndex((commit) => commit.sha === sha); return commits.slice(index, index + limit).map((commit) => commit.sha); },
     async blobOid(commit, relative) {
       const text = content(commit, relative);
@@ -194,17 +196,50 @@ test("#1067 반증: 표식 밖(값·키·계보)이 바뀐 이력이나 작업 �
       baseSha: COMMITS[2], declaredSha256: own.declared, repo: memoryRepo([{ sha: COMMITS[2], files: own.base }]), readWorking: async (relative) => own.head.get(relative),
     }), /출처 표식 밖이 바뀌었다/u, `작업 트리: ${label}`);
   }
-  // 등록 커밋이 pack도 몰래 바꿨다(표식 밖 값 변경).
-  const sneaky = refreshHistory({}, { registrationAlsoChangesPack: "{\"packs\":[]}" });
-  await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: sneaky.declared, repo: sneaky.repo, readWorking: sneaky.readWorking }), /비교하지 못했다|출처 표식 밖이 바뀌었다/u);
+  // 등록 커밋이 구조가 유효한 pack의 표식 밖 값 하나를 몰래 바꿨다. 이력 중간 검사만이 이 사유로 거부한다(작업 트리는 등록 커밋과 같다).
+  const mutated = refreshHistory();
+  const sneakyPack = JSON.parse(mutated.head.get(CANONICAL_PACK_PATH));
+  sneakyPack.packs[0].stations[0].nameKo = "몰래 바뀜";
+  const sneaky = refreshHistory({}, { registrationAlsoChangesPack: JSON.stringify(sneakyPack) });
+  await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: sneaky.declared, repo: sneaky.repo, readWorking: sneaky.readWorking }),
+    new RegExp(`pack이 ${COMMITS[1]}에서 ${COMMITS[0]}로 바뀔 때 출처 표식 밖이 바뀌었다`, "u"));
   // 선언이 이력에 없다.
   const { repo, readWorking } = refreshHistory();
-  await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: "9".repeat(64), repo, readWorking }), /이력 \d+개 안에 없다/u);
+  await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: "9".repeat(64), repo, readWorking }), /선언이 이력에 없다/u);
   await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: "not-a-sha", repo, readWorking }), /형식이 다르다/u);
   await assert.rejects(priorCanonicalPackBytes({ baseSha: "5".repeat(40), declaredSha256: "9".repeat(64), repo, readWorking }), /이력을 읽지 못했다/u);
 });
 
-test("#1067 base 커밋은 CI 이벤트에서만 정한다(pull_request는 base.sha, push는 before, 그 밖은 없음)", async () => {
+test("#1067 이력 상한: 상한을 넘으면 상한 때문이라고 말하고, 상한 안에서 선언이 아예 없으면 선언이 없다고 말한다", async () => {
+  const { repo, readWorking, declared } = refreshHistory();
+  // 선언된 pack(P0)은 COMMITS[2]에 있다. 상한 2는 [0], [1]만 읽으므로 찾지 못하고 이력이 상한에서 잘렸다고 알린다.
+  await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: declared, repo, readWorking, depth: 2 }), /상한 2커밋 안에서 찾지 못했다/u);
+  assert.deepEqual(repo.fetched.at(-1), [COMMITS[0], 2], "상한을 그대로 fetch에 쓴다");
+  // 상한 3이면 찾는다(경계).
+  assert.equal((await priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: declared, repo, readWorking, depth: 3 })).toString("utf8"), refreshHistory().base.get(CANONICAL_PACK_PATH));
+  // 상한보다 짧은 이력에서 없으면 상한 탓이 아니다.
+  await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: "9".repeat(64), repo, readWorking, depth: 10 }), (error) => /선언이 이력에 없다/u.test(error.message) && !/상한/u.test(error.message));
+});
+
+test("#1067 pack이 같은 인접 커밋은 다시 검사하지 않는다(증거 없는 인벤토리의 변경 없는 커밋이 유효한 이력을 거부하지 않는다)", async () => {
+  const { base, head } = refreshHistory();
+  const stripped = new Map(head);
+  stripped.set(INVENTORY_PATH, JSON.stringify({ sources: [] }));
+  // [base: 전체 증거] <- [pack 그대로, 증거 없음] <- [갱신 결과 P1] <- [선언된 P0]. 가운데 둘은 pack이 같아 건너뛰어야 한다.
+  const commits = [
+    { sha: COMMITS[0], files: head },
+    { sha: COMMITS[1], files: stripped },
+    { sha: COMMITS[2], files: head },
+    { sha: COMMITS[3], files: base },
+  ];
+  const bytes = await priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: sha256(base.get(CANONICAL_PACK_PATH)), repo: memoryRepo(commits), readWorking: async (relative) => head.get(relative) });
+  assert.equal(bytes.toString("utf8"), base.get(CANONICAL_PACK_PATH));
+  // 대조: pack이 바뀌는 단계에서 증거가 없으면 거부한다(건너뛰기가 아니라 같은 pack일 때만 건너뛴다).
+  const hopWithoutEvidence = [{ sha: COMMITS[0], files: head }, { sha: COMMITS[1], files: stripped }, { sha: COMMITS[2], files: base }];
+  await assert.rejects(priorCanonicalPackBytes({ baseSha: COMMITS[0], declaredSha256: sha256(base.get(CANONICAL_PACK_PATH)), repo: memoryRepo(hopWithoutEvidence), readWorking: async (relative) => head.get(relative) }), /scheduleAdmissionEvidence|topologyAdmissionEvidence/u);
+});
+
+test("#1067 base 커밋은 이벤트의 PR base·push before에서, 없으면 main과의 merge-base에서 정하고, 그래도 못 정하면 던진다", async () => {
   const sha = "a".repeat(40);
   assert.equal(eventBaseSha({ pull_request: { base: { sha } } }), sha);
   assert.equal(eventBaseSha({ before: sha }), sha, "push");
@@ -212,10 +247,23 @@ test("#1067 base 커밋은 CI 이벤트에서만 정한다(pull_request는 base.
   assert.equal(eventBaseSha({ pull_request: { base: { sha: "main" } } }), null, "sha가 아님");
   assert.equal(eventBaseSha({ pull_request: {}, before: sha }), null, "pull_request 이벤트는 before를 보지 않는다");
   assert.equal(eventBaseSha({}), null);
-  assert.equal(await runBaseSha({ env: {} }), null, "이벤트가 없는 로컬 실행");
-  assert.equal(await runBaseSha({ env: { GITHUB_EVENT_PATH: "/event.json" }, readText: async () => JSON.stringify({ pull_request: { base: { sha } } }) }), sha);
-  await assert.rejects(runBaseSha({ env: { GITHUB_EVENT_PATH: "/event.json" }, readText: async () => "{ not json" }), "읽은 이벤트가 깨졌으면 숨기지 않고 던진다");
-  assert.equal(await prBaseCanonicalPackReader({ declaredSha256: "9".repeat(64), env: {} })(), null, "base를 알 수 없으면 null");
+  const mergeBaseSha = "b".repeat(40);
+  const calls = [];
+  const mergeBase = async () => { calls.push("merge-base"); return mergeBaseSha; };
+  const eventFile = (event) => ({ env: { GITHUB_EVENT_PATH: "/event.json" }, readText: async () => JSON.stringify(event) });
+  assert.equal(await runBaseSha({ ...eventFile({ pull_request: { base: { sha } } }), mergeBase }), sha);
+  assert.equal(await runBaseSha({ ...eventFile({ before: sha }), mergeBase }), sha);
+  assert.deepEqual(calls, [], "이벤트에 base가 있으면 merge-base를 계산하지 않는다");
+  // workflow_dispatch(automerge coordinator가 BEHIND PR에 required context를 붙일 때): PR base도 push before도 없다.
+  const dispatch = { inputs: {}, ref: "refs/heads/automation/636-current-topology-refresh-1", repository: { full_name: "AquilaXk/easysubway-data" }, workflow: ".github/workflows/ci.yml", sender: { login: "easysubway-release-chain[bot]" } };
+  assert.equal(await runBaseSha({ ...eventFile(dispatch), mergeBase }), mergeBaseSha);
+  assert.equal(await runBaseSha({ ...eventFile({ before: "0".repeat(40) }), mergeBase }), mergeBaseSha, "새 브랜치 push");
+  assert.equal(await runBaseSha({ env: {}, mergeBase }), mergeBaseSha, "이벤트 없는 로컬 실행");
+  assert.deepEqual(calls, ["merge-base", "merge-base", "merge-base"]);
+  await assert.rejects(runBaseSha({ ...eventFile(dispatch) }), /base 커밋을 정할 수 없다/u, "merge-base 계산기가 없으면 던진다");
+  await assert.rejects(runBaseSha({ ...eventFile(dispatch), mergeBase: async () => { throw new Error("공통 조상이 상한 안에 없다"); } }), /공통 조상이 상한 안에 없다/u, "merge-base를 못 구하면 숨기지 않는다");
+  await assert.rejects(runBaseSha({ ...eventFile(dispatch), mergeBase: async () => "main" }), /40자리 sha가 아니다/u);
+  await assert.rejects(runBaseSha({ ...eventFile({}), readText: async () => "{ not json", mergeBase }), "읽은 이벤트가 깨졌으면 숨기지 않고 던진다");
 });
 
 test("#1067 prBaseCanonicalPackReader는 이벤트 파일의 base 커밋에서 갱신 전 pack을 읽는다", async (t) => {
@@ -228,6 +276,11 @@ test("#1067 prBaseCanonicalPackReader는 이벤트 파일의 base 커밋에서 �
   assert.equal(bytes.toString("utf8"), base.get(CANONICAL_PACK_PATH));
   await writeFile(eventPath, JSON.stringify({ pull_request: { base: { sha: "5".repeat(40) } } }));
   await assert.rejects(prBaseCanonicalPackReader({ declaredSha256: declared, env: { GITHUB_EVENT_PATH: eventPath }, repo, readWorking })(), /이력을 읽지 못했다/u, "알 수 없는 base 커밋은 숨기지 않고 실패한다");
+  // workflow_dispatch 이벤트: base가 없어 merge-base로 정하고(상한 400), 같은 이력에서 선언된 pack을 찾는다.
+  await writeFile(eventPath, JSON.stringify({ inputs: {}, ref: "refs/heads/automation/636-current-topology-refresh-1" }));
+  const viaDispatch = await prBaseCanonicalPackReader({ declaredSha256: declared, env: { GITHUB_EVENT_PATH: eventPath }, repo, readWorking })();
+  assert.equal(viaDispatch.toString("utf8"), base.get(CANONICAL_PACK_PATH));
+  assert.deepEqual(repo.mergeBaseDepths, [400]);
 });
 
 async function activeTransferInputs() {

@@ -13,7 +13,7 @@ import { packMarkerOnlyViolations } from "../../ci/refresh-stage-contracts.mjs";
 //
 // 선언된 pack은 PR base의 first-parent 이력에서 sha256이 정확히 같은 pack으로만 찾는다. 찾은 시점부터 base까지 pack이 바뀐 커밋마다,
 // 그리고 base에서 작업 트리까지, 갱신 단계 게이트와 같은 규칙(packMarkerOnlyViolations)으로 바뀐 것이 출처 표식뿐이어야 한다.
-// 표식 밖의 값이 바뀐 이력, 이력에 없는 선언, base를 알 수 없는 실행(CI 이벤트 없음)은 바이트를 주지 않는다(추정·낡은 값 대체 없음).
+// 표식 밖의 값이 바뀐 이력, 이력에 없는 선언, 상한을 넘은 이력, base를 정할 수 없는 실행은 바이트를 주지 않는다(추정·낡은 값 대체 없음).
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, "../../..");
 const CANONICAL_PACK_PATH = "tools/datapack/release/capital-production-canonical-pack.json";
@@ -31,10 +31,20 @@ export function eventBaseSha(event) {
   return typeof sha === "string" && SHA1.test(sha) && !ZERO_SHA1.test(sha) ? sha : null;
 }
 
-/** GITHUB_EVENT_PATH의 이벤트로 base 커밋을 정한다. 이벤트가 없으면(로컬 실행) null이다. 읽거나 해석하지 못하면 던진다. */
-export async function runBaseSha({ env = process.env, readText = (file) => readFile(file, "utf8") } = {}) {
-  if (!env.GITHUB_EVENT_PATH) return null;
-  return eventBaseSha(JSON.parse(await readText(env.GITHUB_EVENT_PATH)));
+/**
+ * 이 실행의 base 커밋. pull_request는 base.sha, push는 before다. 이벤트에 base가 없으면(workflow_dispatch: automerge coordinator가 BEHIND PR에
+ * required context를 붙일 때 쓰는 경로, 새 브랜치 push, 이벤트 없는 로컬 실행) main과 HEAD의 merge-base를 쓴다(mergeBase가 fetch 뒤 계산한다).
+ * 그래도 정할 수 없으면 숨기지 않고 던진다.
+ */
+export async function runBaseSha({ env = process.env, readText = (file) => readFile(file, "utf8"), mergeBase } = {}) {
+  if (env.GITHUB_EVENT_PATH) {
+    const sha = eventBaseSha(JSON.parse(await readText(env.GITHUB_EVENT_PATH)));
+    if (sha !== null) return sha;
+  }
+  if (typeof mergeBase !== "function") throw new Error("이 실행의 base 커밋을 정할 수 없다: 이벤트에 PR base·push before가 없고 merge-base 계산기도 없다");
+  const sha = await mergeBase();
+  if (!SHA1.test(sha ?? "")) throw new Error(`이 실행의 base 커밋(main과 HEAD의 merge-base)이 40자리 sha가 아니다: ${String(sha)}`);
+  return sha;
 }
 
 /**
@@ -43,10 +53,20 @@ export async function runBaseSha({ env = process.env, readText = (file) => readF
  */
 export function gitRepo({ root = ROOT, git = gitBuffer } = {}) {
   const text = async (args) => (await git(root, args)).toString("utf8").trim();
+  // 이력을 깊게 받는 fetch(--depth, --filter)는 저장소를 shallow·partial로 바꾼다. 이미 shallow인 checkout(CI)에서만 하고, 전체 이력을 가진 개발 저장소는 건드리지 않는다.
+  const isShallow = async () => (await text(["rev-parse", "--is-shallow-repository"])) === "true";
   return {
     async ensureHistory(sha, depth) {
       if (!SHA1.test(sha)) throw new Error(`base 커밋이 40자리 sha가 아니다: ${String(sha)}`);
+      if (!(await isShallow())) return;
       await git(root, ["fetch", "--no-tags", `--depth=${depth}`, "--filter=blob:none", "origin", sha]);
+    },
+    // origin/main과 HEAD의 이력을 받아 merge-base를 구한다. 상한 안에서 공통 조상이 없으면 git이 실패해 그대로 던진다.
+    async mergeBase(depth) {
+      const deepen = (await isShallow()) ? [`--depth=${depth}`, "--filter=blob:none"] : [];
+      await git(root, ["fetch", "--no-tags", ...deepen, "origin", "+refs/heads/main:refs/remotes/origin/main"]);
+      if (deepen.length > 0) await git(root, ["fetch", "--no-tags", ...deepen, "origin", await text(["rev-parse", "HEAD"])]);
+      return text(["merge-base", "origin/main", "HEAD"]);
     },
     async firstParents(sha, limit) {
       return (await text(["rev-list", "--first-parent", "-n", String(limit), sha])).split("\n").filter(Boolean);
@@ -91,7 +111,10 @@ export async function priorCanonicalPackBytes({ baseSha, declaredSha256, repo, r
     }
     if (shaOfOid.get(oid) === declaredSha256) { found = oids.length - 1; break; }
   }
-  if (found < 0) throw new Error(`선언된 pack(${declaredSha256})이 base(${baseSha})의 first-parent 이력 ${oids.length}개 안에 없다`);
+  if (found < 0 && oids.length >= depth) {
+    throw new Error(`선언된 pack(${declaredSha256})을 base(${baseSha})의 first-parent 이력 상한 ${depth}커밋 안에서 찾지 못했다(이력이 상한에서 잘렸다. 파생 재결속이 밀렸거나 상한을 올려야 한다)`);
+  }
+  if (found < 0) throw new Error(`선언된 pack(${declaredSha256})이 base(${baseSha})의 first-parent 이력 ${oids.length}커밋 어디에도 없다(선언이 이력에 없다)`);
   // 선언 시점부터 base까지: pack이 바뀐 커밋은 모두 출처 표식 변경뿐이어야 한다.
   for (let index = found; index > 0; index -= 1) {
     if (oids[index] === oids[index - 1]) continue;
@@ -108,10 +131,10 @@ export async function priorCanonicalPackBytes({ baseSha, declaredSha256, repo, r
   return Buffer.from(foundBytes);
 }
 
-/** declaredBytes의 readBase 자리에 넣는 읽기. base를 알 수 없으면 null이다. */
+/** declaredBytes의 readBase 자리에 넣는 읽기. base를 정할 수 없으면 사유와 함께 던진다. */
 export function prBaseCanonicalPackReader({ declaredSha256, env = process.env, repo = gitRepo(), readWorking } = {}) {
   return async () => {
-    const baseSha = await runBaseSha({ env });
-    return baseSha === null ? null : priorCanonicalPackBytes({ baseSha, declaredSha256, repo, ...(readWorking === undefined ? {} : { readWorking }) });
+    const baseSha = await runBaseSha({ env, mergeBase: () => repo.mergeBase(PACK_HISTORY_DEPTH) });
+    return priorCanonicalPackBytes({ baseSha, declaredSha256, repo, ...(readWorking === undefined ? {} : { readWorking }) });
   };
 }

@@ -708,7 +708,6 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
     after: { snapshotId: stationAfter.snapshotId, rawSha256: stationAfter.rawSha256, contentSha256: stationAfter.contentSha256, rows: stationAfter.edgeCount, coverage: stationAfter.stationCount },
   }));
 
-  const packSources = [{ id: "incheon-transit-station-info", before: stationBefore.snapshotId, after: stationAfter.snapshotId, at: stationAfter.capturedAt }];
   for (const [sourceId, linePath] of Object.entries(linePaths)) {
     const before = entryOf(baseInventory, sourceId)?.scheduleAdmissionEvidence;
     const after = entryOf(headInventory, sourceId)?.scheduleAdmissionEvidence;
@@ -719,13 +718,14 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
     if (lineDoc !== null) bind(violate, lineDoc.sourceId === sourceId && lineDoc.rawSha256 === after.rawSha256, `${sourceId}: snapshot 파일의 sourceId·rawSha256이 증거와 다르다`);
     if ([before.rowCount, before.departureCount, after.rowCount, after.departureCount].some((value) => countOf(value) === null)
       || !HEX64.test(after.rawSha256 ?? "") || !HEX64.test(after.rowsSha256 ?? "")) { violate("REFRESH_GATE", `${sourceId}: 시간표 증거의 수치·sha 형식이 다르다`); continue; }
-    packSources.push({ id: sourceId, before: before.snapshotId, after: after.snapshotId, at: after.capturedAt });
     rows.push(evidenceDeltaRow({
       sourceId, policy, violate, identityChanged: before.rawSha256 !== after.rawSha256 || before.rowsSha256 !== after.rowsSha256,
       before: { snapshotId: before.snapshotId, rawSha256: before.rawSha256, contentSha256: before.rowsSha256, rows: before.rowCount, coverage: before.departureCount },
       after: { snapshotId: after.snapshotId, rawSha256: after.rawSha256, contentSha256: after.rowsSha256, rows: after.rowCount, coverage: after.departureCount },
     }));
   }
+  // pack 표식 규칙이 쓰는 원천 쌍은 packMarkerOnlyViolations와 같은 함수로 읽는다. 증거가 없는 원천은 위 검사가 이미 위반으로 남겼다.
+  const { sources: packSources } = topologyPackSources(baseInventory, headInventory);
   const follow = await loadFollowContext({ files, headInventory, baseSha });
   // canonical pack은 항상, reviewed pack은 바뀐 경로로 주장될 때만 같은 규칙으로 본다(#1062).
   const packChecks = [["canonical pack", CANONICAL_PACK_PATH], ...(paths.includes(REVIEWED_PACK_PATH) ? [["reviewed pack", REVIEWED_PACK_PATH]] : [])];
@@ -742,10 +742,29 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
   return rows;
 }
 
+// 수도권 topology 갱신이 pack 표식을 따라 옮기는 원천: 역 정보 topology 증거와 인천 1·2호선 시간표 증거. verifyTopology와 packMarkerOnlyViolations가 이 목록 하나를 쓴다.
+const PACK_SOURCE_EVIDENCE = Object.freeze([
+  ["incheon-transit-station-info", "topologyAdmissionEvidence"],
+  ["incheon-line1-train-timetable", "scheduleAdmissionEvidence"],
+  ["incheon-line2-train-timetable", "scheduleAdmissionEvidence"],
+]);
+
+/** base·head inventory 증거에서 packContentViolations의 원천 쌍(직전 snapshot -> 새 snapshot, 새 증거 시각)을 읽는다. 증거가 없는 원천은 missing에 사유로 남긴다. */
+function topologyPackSources(baseInventory, headInventory) {
+  const sources = [];
+  const missing = [];
+  for (const [id, key] of PACK_SOURCE_EVIDENCE) {
+    const [before, after] = [entryOf(baseInventory, id)?.[key], entryOf(headInventory, id)?.[key]];
+    if (!isObject(before) || !isObject(after)) { missing.push(`${id}의 ${key}가 base 또는 head에 없다`); continue; }
+    sources.push({ id, before: before.snapshotId, after: after.snapshotId, at: after.capturedAt });
+  }
+  return { sources, missing };
+}
+
 /**
  * #1067: base->head canonical pack(또는 packPath)이 수도권 topology 갱신이 허용하는 출처 표식 변경뿐인지 단독으로 판정한다.
- * verifyTopology가 pack에 거는 규칙(packContentViolations + 입력 파일·원장 근거)과 같은 판정이다. 원천 쌍은 base·head inventory 증거에서 읽는다
- * (역 정보 topologyAdmissionEvidence, 인천 1·2호선 scheduleAdmissionEvidence).
+ * verifyTopology가 pack에 거는 규칙(packContentViolations + 입력 파일·원장 근거)과 같은 판정이다. 원천 쌍은 verifyTopology와 같은 함수(topologyPackSources)로
+ * base·head inventory 증거에서 읽는다.
  * 갱신 PR의 계약 테스트가 applicability가 선언한 갱신 전 pack을 PR base에서 읽어도 되는지 정하는 데 쓴다. 예외를 던지지 않고 사유를 돌려준다.
  * @param {{ baseSha: string, files: { readTree: (relative: string) => Promise<string>, readBase: (sha: string, relative: string) => Promise<string> }, packPath?: string }} input
  * @returns {Promise<string[]>} 위반 사유(없으면 빈 배열)
@@ -754,15 +773,8 @@ export async function packMarkerOnlyViolations({ baseSha, files, packPath = CANO
   try {
     const baseInventory = JSON.parse(await files.readBase(baseSha, INVENTORY_PATH));
     const headInventory = JSON.parse(await files.readTree(INVENTORY_PATH));
-    const sources = [];
-    const station = [entryOf(baseInventory, "incheon-transit-station-info")?.topologyAdmissionEvidence, entryOf(headInventory, "incheon-transit-station-info")?.topologyAdmissionEvidence];
-    if (!station.every(isObject)) return ["incheon-transit-station-info의 topologyAdmissionEvidence가 base 또는 head에 없다"];
-    sources.push({ id: "incheon-transit-station-info", before: station[0].snapshotId, after: station[1].snapshotId, at: station[1].capturedAt });
-    for (const sourceId of ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
-      const line = [entryOf(baseInventory, sourceId)?.scheduleAdmissionEvidence, entryOf(headInventory, sourceId)?.scheduleAdmissionEvidence];
-      if (!line.every(isObject)) return [`${sourceId}의 scheduleAdmissionEvidence가 base 또는 head에 없다`];
-      sources.push({ id: sourceId, before: line[0].snapshotId, after: line[1].snapshotId, at: line[1].capturedAt });
-    }
+    const { sources, missing } = topologyPackSources(baseInventory, headInventory);
+    if (missing.length > 0) return missing;
     const follow = await loadFollowContext({ files, headInventory, baseSha });
     const base = JSON.parse(await files.readBase(baseSha, packPath));
     const head = JSON.parse(await files.readTree(packPath));
