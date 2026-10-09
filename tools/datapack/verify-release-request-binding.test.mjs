@@ -235,8 +235,14 @@ test("#929 D3 정기 역할 release request는 그 후보를 만든 정기 run(g
   assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun }, spec: { builderGitSha: "b".repeat(40) } }))
     .some((violation) => /gateRun headSha/u.test(violation) && /builderGitSha/u.test(violation)));
   assert.ok(releaseRequestBindingViolations(boundPair({ request: scheduled })).some((violation) => /gateRun is required/u.test(violation)));
-  assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "workflow_dispatch" } } }))
-    .some((violation) => /only for the schedule event/u.test(violation)));
+  // #1032: 정기 역할은 스케줄러 App이 시작한 workflow_dispatch에서도 인정한다. 사람이 시작한 dispatch나 actor 없는 dispatch는 거부한다.
+  assert.deepEqual(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "workflow_dispatch", actor: "easysubway-release-chain[bot]" } }, spec })), []);
+  assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "workflow_dispatch", actor: "AquilaXk" } }, spec }))
+    .some((violation) => /scheduler App/u.test(violation)));
+  assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "workflow_dispatch" } }, spec }))
+    .some((violation) => /gateRun keys/u.test(violation)));
+  assert.ok(releaseRequestBindingViolations(boundPair({ request: { ...scheduled, gateRun: { ...gateRun, event: "push" } }, spec }))
+    .some((violation) => /only for the schedule event or/u.test(violation)));
   assert.ok(releaseRequestBindingViolations(boundPair({ request: { gateRun } }))
     .some((violation) => /person roles require workflow_dispatch/u.test(violation)));
 });

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   REGISTRATION_CLAIM_PREFIX,
+  capitalTopologyRegistrationState,
   decideCapitalTopologyRegistration,
   parseRegistrationClaims,
 } from "./decide-capital-topology-registration.mjs";
@@ -164,4 +165,15 @@ test("PR·run 목록이 조회 상한과 같은 개수면 잘린 것으로 보�
   assert.throws(() => decide({ limits: { pullRequests: 0, runs: 2 } }), /REGISTRATION_INPUT_INVALID/u);
   assert.throws(() => decide({ limits: undefined }), /REGISTRATION_INPUT_INVALID/u);
   assert.throws(() => decide({ artifacts: null }), /REGISTRATION_INPUT_INVALID/u);
+});
+
+// #1032: 후보 갱신은 보호 admission의 topology가 원장에 등록되기 전에는 후보를 만들지 않는다(등록 전 후보는 PR CI의 후보 build가 옛 reverification과 어긋나 실패한다).
+test("보호 admission의 topology snapshot이 원장에 있는지만 읽는다: 있으면 registered, 없으면 아니다. 이상한 admission은 실패한다", () => {
+  assert.deepEqual(capitalTopologyRegistrationState({ inventory: inventory(), ledger: [row(PREVIOUS)] }), { registered: false, snapshotId: SNAPSHOT });
+  assert.deepEqual(capitalTopologyRegistrationState({ inventory: inventory(), ledger: [row(PREVIOUS), row(SNAPSHOT)] }), { registered: true, snapshotId: SNAPSHOT });
+  // 원장 head가 아니어도 등록은 된 것이다(head 판정은 등록 workflow의 일이다). 다른 원천의 같은 snapshot id는 등록이 아니다.
+  assert.equal(capitalTopologyRegistrationState({ inventory: inventory(), ledger: [row(SNAPSHOT), row("capital-route-topology-20261009")] }).registered, true);
+  assert.equal(capitalTopologyRegistrationState({ inventory: inventory(), ledger: [row(SNAPSHOT, "other-source")] }).registered, false);
+  assert.throws(() => capitalTopologyRegistrationState({ inventory: { sources: [{ id: "seoul-metro-route-map-positions" }] }, ledger: [] }), /REGISTRATION_ADMISSION_MISSING/u);
+  assert.throws(() => capitalTopologyRegistrationState({ inventory: inventory(), ledger: {} }), /REGISTRATION_INPUT_INVALID/u);
 });

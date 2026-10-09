@@ -152,7 +152,7 @@ function sameRegions(value, expected, label) {
   }
 }
 
-function validateAdmissionProjection({ projection, source, head }) {
+export function validateAdmissionProjection({ projection, source, head }) {
   const hasGeneric = Object.hasOwn(projection, "adminReviewRecordHash");
   const hasNative = Object.hasOwn(projection, "admissionRecordSha256s");
   if (hasGeneric && hasNative) throw new Error("candidate source admission projection is mixed");

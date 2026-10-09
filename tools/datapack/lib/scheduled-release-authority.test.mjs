@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -6,6 +8,7 @@ import {
   GATE_RUN_WORKFLOW_PATH,
   SCHEDULED_RELEASE_ROLES,
   SCHEDULED_ROLE_EVENTS,
+  SCHEDULER_APP_LOGIN,
   gateRunFromEnvironment,
   gateRunRecordViolations,
   releaseRoleEventViolations,
@@ -21,6 +24,8 @@ const scheduledRun = () => ({
   event: "schedule",
   headSha,
 });
+// #1032: 외부 스케줄러 App이 workflow_dispatch로 깨운 run. 정기 역할은 이 run에서도 쓸 수 있다.
+const dispatchedRun = (actor = SCHEDULER_APP_LOGIN) => ({ ...scheduledRun(), event: "workflow_dispatch", actor });
 const request = (overrides = {}) => ({
   requestedBy: SCHEDULED_RELEASE_ROLES.requestedBy,
   approvedBy: SCHEDULED_RELEASE_ROLES.approvedBy,
@@ -37,14 +42,27 @@ test("the scheduled roles are two distinct fixed labels that no person label can
   assert.ok(Object.isFrozen(SCHEDULED_RELEASE_ROLES));
 });
 
-test("scheduled roles are allowed only for the schedule event and only as the exact pair", () => {
+test("the scheduler App login is the dispatcher of the external scheduler heartbeat policy (#1032)", () => {
+  const heartbeat = JSON.parse(readFileSync(path.resolve(import.meta.dirname, "../../../release/product-gates/external-scheduler-heartbeat.json"), "utf8"));
+  assert.equal(SCHEDULER_APP_LOGIN, heartbeat.dispatcher.login);
+  assert.equal(SCHEDULER_APP_LOGIN, "easysubway-release-chain[bot]");
+});
+
+test("scheduled roles are allowed only for the schedule event or a workflow_dispatch started by the scheduler App, and only as the exact pair", () => {
   const { requestedBy, approvedBy } = SCHEDULED_RELEASE_ROLES;
   assert.deepEqual(SCHEDULED_ROLE_EVENTS, ["schedule"]);
   assert.deepEqual(releaseRoleEventViolations({ requestedBy, approvedBy, event: "schedule" }), []);
   // #931 리뷰 F3: 후보 갱신 workflow에는 workflow_run 트리거가 없다. 만드는 쪽이 없는 이벤트는 받지 않는다.
-  for (const event of ["workflow_run", "workflow_dispatch", "push", "pull_request", undefined]) {
-    assert.match(releaseRoleEventViolations({ requestedBy, approvedBy, event }).join(";"), /only for the schedule event/u, String(event));
+  for (const event of ["workflow_run", "push", "pull_request", undefined]) {
+    assert.match(releaseRoleEventViolations({ requestedBy, approvedBy, event, actor: SCHEDULER_APP_LOGIN }).join(";"), /only for the schedule event or/u, String(event));
   }
+  // #1032: 사람이 정기 역할을 입력으로 넣은 dispatch는 거부하고, 스케줄러 App의 dispatch만 받는다.
+  assert.deepEqual(releaseRoleEventViolations({ requestedBy, approvedBy, event: "workflow_dispatch", actor: SCHEDULER_APP_LOGIN }), []);
+  for (const actor of ["AquilaXk", "github-actions[bot]", "easysubway-release-chain", "EASYSUBWAY-RELEASE-CHAIN[BOT]", "", undefined]) {
+    assert.match(releaseRoleEventViolations({ requestedBy, approvedBy, event: "workflow_dispatch", actor }).join(";"), /scheduler App/u, String(actor));
+  }
+  // schedule 이벤트의 actor는 cron을 마지막으로 고친 사람이라 보지 않는다.
+  assert.deepEqual(releaseRoleEventViolations({ requestedBy, approvedBy, event: "schedule", actor: "AquilaXk" }), []);
   assert.match(releaseRoleEventViolations({ requestedBy, approvedBy: "data-release-authority", event: "schedule" }).join(";"),
     /exact pair/u);
   assert.match(releaseRoleEventViolations({ requestedBy: "data-operator-lead", approvedBy: "DATAPACK-RELEASE-GATES", event: "workflow_dispatch" }).join(";"),
@@ -60,15 +78,30 @@ test("person roles are refused on the schedule event and on any non-dispatch eve
   }
 });
 
+test("a person role request cannot come from the scheduler App (#1032)", () => {
+  const person = { requestedBy: "data-operator-lead", approvedBy: "data-release-authority" };
+  assert.match(releaseRoleEventViolations({ ...person, event: "workflow_dispatch", actor: SCHEDULER_APP_LOGIN }).join(";"), /person roles cannot be requested by the scheduler App/u);
+  assert.deepEqual(releaseRoleEventViolations({ ...person, event: "workflow_dispatch", actor: "AquilaXk" }), []);
+  assert.match(scheduledAuthorityViolations({ ...person, gateRun: dispatchedRun() }).join(";"), /person roles cannot be requested by the scheduler App/u);
+  assert.deepEqual(scheduledAuthorityViolations({ ...person, gateRun: dispatchedRun("AquilaXk") }), []);
+});
+
 test("a scheduled release request must bind the exact gate run that produced it", () => {
   assert.deepEqual(scheduledAuthorityViolations(request()), []);
+  // #1032: 스케줄러 App이 dispatch한 run은 actor를 함께 결속한다. 사람 dispatch의 정기 역할은 거부된다.
+  assert.deepEqual(scheduledAuthorityViolations(request({ gateRun: dispatchedRun() })), []);
+  assert.match(scheduledAuthorityViolations(request({ gateRun: dispatchedRun("AquilaXk") })).join(";"), /scheduler App/u);
+  const { actor: _actor, ...withoutActor } = dispatchedRun();
+  assert.match(scheduledAuthorityViolations(request({ gateRun: withoutActor })).join(";"), /gateRun keys/u);
+  assert.match(scheduledAuthorityViolations(request({ gateRun: { ...scheduledRun(), actor: SCHEDULER_APP_LOGIN } })).join(";"), /gateRun keys/u);
+  assert.match(scheduledAuthorityViolations(request({ gateRun: dispatchedRun("") })).join(";"), /gateRun actor/u);
   assert.match(scheduledAuthorityViolations(request({ gateRun: undefined })).join(";"), /gateRun is required/u);
   const tampered = [
     [{ workflowPath: ".github/workflows/datapack-release.yml" }, /workflowPath/u],
     [{ repository: "someone/else" }, /repository/u],
     [{ runId: "37200000001" }, /runId/u],
     [{ runAttempt: 0 }, /runAttempt/u],
-    [{ event: "workflow_dispatch" }, /only for the schedule event/u],
+    [{ event: "workflow_dispatch" }, /gateRun keys/u],
     [{ headSha: "abc" }, /headSha/u],
     [{ extra: true }, /gateRun keys/u],
   ];
@@ -81,7 +114,7 @@ test("a scheduled release request must bind the exact gate run that produced it"
 test("a person release request may omit the gate run, but a bound gate run must be a workflow_dispatch run", () => {
   const person = { requestedBy: "data-operator-lead", approvedBy: "data-release-authority" };
   assert.deepEqual(scheduledAuthorityViolations(person), []);
-  assert.deepEqual(scheduledAuthorityViolations({ ...person, gateRun: { ...scheduledRun(), event: "workflow_dispatch" } }), []);
+  assert.deepEqual(scheduledAuthorityViolations({ ...person, gateRun: { ...scheduledRun(), event: "workflow_dispatch", actor: "AquilaXk" } }), []);
   assert.match(scheduledAuthorityViolations({ ...person, gateRun: scheduledRun() }).join(";"), /person roles require workflow_dispatch/u);
 });
 
@@ -95,6 +128,10 @@ test("the gate run is read only from the GitHub Actions environment of the refre
     GITHUB_SHA: headSha,
   };
   assert.deepEqual(gateRunFromEnvironment(env), scheduledRun());
+  // #1032: dispatch run은 시작한 행위자(GITHUB_TRIGGERING_ACTOR)를 gateRun에 담는다. 행위자가 없으면 만들지 않는다.
+  assert.deepEqual(gateRunFromEnvironment({ ...env, GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_TRIGGERING_ACTOR: SCHEDULER_APP_LOGIN }), dispatchedRun());
+  assert.throws(() => gateRunFromEnvironment({ ...env, GITHUB_EVENT_NAME: "workflow_dispatch" }), /SCHEDULED_AUTHORITY_GATE_RUN.*gateRun actor/u);
+  assert.deepEqual(gateRunFromEnvironment({ ...env, GITHUB_TRIGGERING_ACTOR: "AquilaXk" }), scheduledRun());
   for (const [key, value] of [
     ["GITHUB_WORKFLOW_REF", `${GATE_RUN_REPOSITORY}/${GATE_RUN_WORKFLOW_PATH}@refs/heads/feature`],
     ["GITHUB_WORKFLOW_REF", `${GATE_RUN_REPOSITORY}/.github/workflows/other.yml@refs/heads/main`],
@@ -123,6 +160,25 @@ test("the recorded gate run must match the GitHub run record and have succeeded 
   ]) {
     assert.match(gateRunRecordViolations({ gateRun: scheduledRun(), run: { ...run, ...override }, candidateClock }).join(";"), expected, JSON.stringify(override));
   }
+});
+
+test("a dispatched gate run must have been started and run by the scheduler App in the GitHub run record (#1032)", () => {
+  const run = {
+    id: 37200000001, run_attempt: 1, event: "workflow_dispatch", head_sha: headSha, head_branch: "main",
+    path: `${GATE_RUN_WORKFLOW_PATH}@refs/heads/main`, conclusion: "success", status: "completed",
+    repository: { full_name: GATE_RUN_REPOSITORY }, head_repository: { full_name: GATE_RUN_REPOSITORY },
+    run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
+    actor: { login: SCHEDULER_APP_LOGIN }, triggering_actor: { login: SCHEDULER_APP_LOGIN },
+  };
+  const candidateClock = "2026-10-04T22:23:31.456Z";
+  assert.deepEqual(gateRunRecordViolations({ gateRun: dispatchedRun(), run, candidateClock }), []);
+  // 사람이 같은 run을 재실행하면 triggering_actor가 사람이 된다. 행위자를 속인 기록도 거부한다.
+  for (const override of [{ triggering_actor: { login: "AquilaXk" } }, { actor: { login: "AquilaXk" } }, { triggering_actor: undefined }, { actor: undefined }]) {
+    assert.match(gateRunRecordViolations({ gateRun: dispatchedRun(), run: { ...run, ...override }, candidateClock }).join(";"), /actor/u, JSON.stringify(override));
+  }
+  assert.match(gateRunRecordViolations({ gateRun: dispatchedRun("AquilaXk"), run, candidateClock }).join(";"), /actor/u);
+  // schedule run의 행위자는 cron을 마지막으로 고친 사람이라 대조하지 않는다.
+  assert.deepEqual(gateRunRecordViolations({ gateRun: scheduledRun(), run: { ...run, event: "schedule", actor: { login: "AquilaXk" } }, candidateClock }), []);
 });
 
 test("#931 F2 an old successful run cannot be replayed for a different candidate", () => {

@@ -6,12 +6,21 @@
 // - approvedBy:  datapack-release-gates      (승인 근거 = 그 run이 통과한 게이트들)
 // 이 라벨은 schedule 이벤트에서만 쓸 수 있고(후보 갱신 workflow에는 다른 자동 트리거가 없다), release request에는 그 후보를 만든 run(gateRun)을
 // 반드시 결속한다. RC chain은 GitHub run 기록과 gateRun을 대조한 뒤에만 RC를 dispatch한다.
+//
+// #1032: GitHub schedule은 몇 시간씩 밀려(2시간 cron이 6~7시간 간격) 후보 갱신이 늦는다. 외부 스케줄러(OCI k3s CronJob)가 App으로
+// workflow_dispatch해도 같은 정기 역할을 쓴다. 이 라벨은 사람 승인을 대신하므로 사람이 입력으로 넣을 수 없어야 한다. 그래서
+// - 정기 역할은 schedule 이벤트이거나, 스케줄러 App(SCHEDULER_APP_LOGIN)이 시작한 workflow_dispatch에서만 인정한다.
+// - dispatch run의 gateRun에는 시작한 행위자(actor)를 결속하고, GitHub run 기록의 actor·triggering_actor가 둘 다 그 App이어야 한다
+//   (사람이 같은 run을 재실행하면 triggering_actor가 사람이 되어 거부된다).
+// - 스케줄러 App은 사람 역할(2인 승인)을 대신 요청할 수 없다.
 export const SCHEDULED_RELEASE_ROLES = Object.freeze({
   requestedBy: "datapack-scheduled-refresh",
   approvedBy: "datapack-release-gates",
 });
 export const SCHEDULED_ROLE_EVENTS = Object.freeze(["schedule"]);
 export const PERSON_ROLE_EVENT = "workflow_dispatch";
+// 외부 스케줄러 App. release/product-gates/external-scheduler-heartbeat.json의 dispatcher.login과 같아야 한다(계약 테스트가 대조한다).
+export const SCHEDULER_APP_LOGIN = "easysubway-release-chain[bot]";
 export const GATE_RUN_REPOSITORY = "AquilaXk/easysubway-data";
 export const GATE_RUN_WORKFLOW_PATH = ".github/workflows/nationwide-candidate-refresh.yml";
 
@@ -25,17 +34,18 @@ function isExactScheduledPair({ requestedBy, approvedBy }) {
   return requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy;
 }
 
-export function releaseRoleEventViolations({ requestedBy, approvedBy, event }) {
+export function releaseRoleEventViolations({ requestedBy, approvedBy, event, actor }) {
   const scheduled = isExactScheduledPair({ requestedBy, approvedBy });
   if (!scheduled && (isReserved(requestedBy) || isReserved(approvedBy))) {
     return ["scheduled roles must be used as the exact pair (requestedBy datapack-scheduled-refresh, approvedBy datapack-release-gates)"];
   }
   if (scheduled) {
-    return SCHEDULED_ROLE_EVENTS.includes(event)
-      ? []
-      : [`scheduled roles are allowed only for the schedule event (event: ${String(event)})`];
+    if (SCHEDULED_ROLE_EVENTS.includes(event)) return [];
+    if (event !== PERSON_ROLE_EVENT) return [`scheduled roles are allowed only for the schedule event or a scheduler App workflow_dispatch (event: ${String(event)})`];
+    return actor === SCHEDULER_APP_LOGIN ? [] : [`scheduled roles on workflow_dispatch require the scheduler App ${SCHEDULER_APP_LOGIN} as actor (actor: ${String(actor)})`];
   }
-  // 사람 역할: 로컬 실행(event 없음)과 사람 dispatch만 받는다.
+  // 사람 역할: 로컬 실행(event 없음)과 사람 dispatch만 받는다. 스케줄러 App은 사람 승인을 대신할 수 없다.
+  if (actor === SCHEDULER_APP_LOGIN) return ["person roles cannot be requested by the scheduler App"];
   return event === undefined || event === null || event === PERSON_ROLE_EVENT
     ? []
     : [`person roles require workflow_dispatch (event: ${String(event)})`];
@@ -44,9 +54,11 @@ export function releaseRoleEventViolations({ requestedBy, approvedBy, event }) {
 export function gateRunViolations(gateRun) {
   if (!gateRun || typeof gateRun !== "object" || Array.isArray(gateRun)) return ["gateRun must be an object"];
   const violations = [];
+  // #1032: workflow_dispatch run은 시작한 행위자(actor)를 함께 결속한다. 다른 이벤트에는 actor가 없다.
+  const expectedKeys = gateRun.event === PERSON_ROLE_EVENT ? [...GATE_RUN_KEYS, "actor"] : GATE_RUN_KEYS;
   const keys = Object.keys(gateRun);
-  if (keys.length !== GATE_RUN_KEYS.length || !GATE_RUN_KEYS.every((key) => keys.includes(key))) {
-    violations.push(`gateRun keys must be ${GATE_RUN_KEYS.join(",")}`);
+  if (keys.length !== expectedKeys.length || !expectedKeys.every((key) => keys.includes(key))) {
+    violations.push(`gateRun keys must be ${expectedKeys.join(",")}`);
   }
   if (gateRun.repository !== GATE_RUN_REPOSITORY) violations.push(`gateRun repository must be ${GATE_RUN_REPOSITORY}`);
   if (gateRun.workflowPath !== GATE_RUN_WORKFLOW_PATH) violations.push(`gateRun workflowPath must be ${GATE_RUN_WORKFLOW_PATH}`);
@@ -54,6 +66,7 @@ export function gateRunViolations(gateRun) {
   if (!positiveInteger(gateRun.runAttempt)) violations.push("gateRun runAttempt must be a positive integer");
   if (typeof gateRun.event !== "string" || gateRun.event === "") violations.push("gateRun event is required");
   if (!/^[a-f0-9]{40}$/u.test(gateRun.headSha ?? "")) violations.push("gateRun headSha must be a 40-hex commit");
+  if (gateRun.event === PERSON_ROLE_EVENT && (typeof gateRun.actor !== "string" || gateRun.actor === "")) violations.push("gateRun actor is required for a workflow_dispatch run");
   return violations;
 }
 
@@ -64,7 +77,7 @@ export function scheduledAuthorityViolations(releaseRequest) {
   const scheduled = isExactScheduledPair({ requestedBy, approvedBy });
   if (scheduled && gateRun === undefined) return ["gateRun is required for scheduled roles"];
   const violations = gateRun === undefined ? [] : gateRunViolations(gateRun);
-  violations.push(...releaseRoleEventViolations({ requestedBy, approvedBy, event: gateRun?.event }));
+  violations.push(...releaseRoleEventViolations({ requestedBy, approvedBy, event: gateRun?.event, actor: gateRun?.actor }));
   return violations;
 }
 
@@ -85,6 +98,8 @@ export function gateRunFromEnvironment(env = process.env) {
     runAttempt,
     event: env.GITHUB_EVENT_NAME,
     headSha: env.GITHUB_SHA,
+    // dispatch run만 시작한 행위자를 담는다(GitHub Actions 기본 환경 변수 GITHUB_TRIGGERING_ACTOR). schedule의 행위자는 cron을 마지막으로 고친 사람이라 담지 않는다.
+    ...(env.GITHUB_EVENT_NAME === PERSON_ROLE_EVENT ? { actor: env.GITHUB_TRIGGERING_ACTOR } : {}),
   };
   const violations = gateRunViolations(gateRun);
   if (violations.length > 0) fail(violations.join("; "));
@@ -108,6 +123,11 @@ export function gateRunRecordViolations({ gateRun, run, candidateClock }) {
   expect("repository", run?.repository?.full_name, gateRun?.repository);
   expect("head_repository", run?.head_repository?.full_name, gateRun?.repository);
   expect("conclusion", run?.conclusion, "success");
+  // #1032: dispatch run은 처음 시작한 행위자(actor)와 지금 실행한 행위자(triggering_actor, 재실행이면 재실행한 사람)가 모두 gateRun에 결속한 행위자여야 한다.
+  if (gateRun?.event === PERSON_ROLE_EVENT) {
+    expect("actor", run?.actor?.login, gateRun?.actor);
+    expect("triggering_actor", run?.triggering_actor?.login, gateRun?.actor);
+  }
   const startedAt = typeof run?.run_started_at === "string" ? Date.parse(run.run_started_at) : Number.NaN;
   const updatedAt = typeof run?.updated_at === "string" ? Date.parse(run.updated_at) : Number.NaN;
   const clock = typeof candidateClock === "string" && Number.isFinite(Date.parse(candidateClock))
