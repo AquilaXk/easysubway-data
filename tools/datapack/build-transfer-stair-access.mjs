@@ -375,7 +375,7 @@ function groupPaths(rows) {
 
 // 방면은 원천의 "<노선> <역> 방면" 표기에서만 읽는다. 역은 같은 노선 완행 인접 역 이름과 정확히 같아야 한다.
 function resolveDirections({ entry, mapping, stations, linesAtStation, tableLines, neighbors }) {
-  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines });
+  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations });
   if (lines.reason) return { reason: lines.reason };
   const { from, to } = lines;
   const toLineId = lines.toLineId;
