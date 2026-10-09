@@ -253,6 +253,7 @@ test("committed release candidate files produce the fixed RC modeArgs with a nat
   });
   if (gateRunRecord !== undefined) {
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u, "gateRun이 결속된 후보는 기록 없이 시작하지 않는다");
+    await assertShiftedGateRunRecordsRejected({ repositoryRoot, gateRun, valid: gateRunRecord });
   }
   const { releaseRequestId, ...fixed } = await readReleaseCandidateModeArgs({ repositoryRoot, ...(gateRunRecord === undefined ? {} : { gateRunRecord }) });
   assert.match(releaseRequestId, /^release-request-nationwide-candidate-\d{8}-seq[1-9]\d*$/u);
@@ -470,6 +471,26 @@ function gateRunRecordFor(gateRun, { startedAt = "2026-10-04T22:23:10Z", updated
   };
 }
 
+// 유효한 기록에서 필드 하나만 어긋나게 한 기록은 모두 거부돼야 한다. 기대값이 gateRun에서 유도한 기록과 같은 근거에서 나오지 않도록, 어긋남은 독립적으로 만든다
+// (다른 head_sha, 다른 run id, 후보 시계를 덮지 않는 run 창, dispatch run이면 다른 행위자).
+async function assertShiftedGateRunRecordsRejected({ repositoryRoot, gateRun, valid }) {
+  const minute = 60_000;
+  const shift = (iso, milliseconds) => new Date(Date.parse(iso) + milliseconds).toISOString();
+  const cases = [
+    ["head_sha", { head_sha: gateRun.headSha.replace(/^./u, (first) => (first === "f" ? "e" : "f")) }, /head_sha/u],
+    ["id", { id: valid.id + 1 }, /gate run id mismatch/u],
+    ["후보 시계 뒤에 시작한 run 창", { run_started_at: shift(valid.updated_at, minute), updated_at: shift(valid.updated_at, 2 * minute) }, /candidate clock/u],
+    ["후보 시계 전에 끝난 run 창", { run_started_at: shift(valid.run_started_at, -120 * minute), updated_at: shift(valid.run_started_at, -60 * minute) }, /candidate clock/u],
+    ...(gateRun.event === "workflow_dispatch" ? [
+      ["actor", { actor: { login: "someone-else" } }, /actor/u],
+      ["triggering_actor", { triggering_actor: { login: "someone-else" } }, /actor/u],
+    ] : []),
+  ];
+  for (const [label, override, expected] of cases) {
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot, gateRunRecord: { ...valid, ...override } }), new RegExp(`RELEASE_CANDIDATE_GATE_RUN[\\s\\S]*${expected.source}`, "u"), label);
+  }
+}
+
 test("#929 D3 a scheduled run derives the fixed roles and the next sequence and takes no person input", () => {
   assert.throws(() => planNationwideCandidateRefresh({
     releaseSequence: "", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event: "workflow_run",
@@ -579,6 +600,7 @@ test("#929 D3 a scheduled-role candidate is dispatched to RC only after its gate
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, conclusion: "failure" } }),
       /RELEASE_CANDIDATE_GATE_RUN[\s\S]*conclusion/u);
     assert.equal((await readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: record })).allowGaps, "false");
+    await assertShiftedGateRunRecordsRejected({ repositoryRoot: root, gateRun: GATE_RUN, valid: record });
     const recordPath = path.join(root, "record.json");
     await writeFile(recordPath, JSON.stringify(record));
     const output = path.join(root, "mode-args.json");
@@ -607,6 +629,7 @@ test("#1032 a candidate made by a scheduler App dispatch is sent to RC only when
   try {
     const record = gateRunRecordFor(dispatchedRun);
     assert.equal((await readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: record })).allowGaps, "false");
+    await assertShiftedGateRunRecordsRejected({ repositoryRoot: root, gateRun: dispatchedRun, valid: record });
     for (const override of [{ triggering_actor: { login: "AquilaXk" } }, { actor: { login: "AquilaXk" } }]) {
       await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, ...override } }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*actor/u, JSON.stringify(override));
     }

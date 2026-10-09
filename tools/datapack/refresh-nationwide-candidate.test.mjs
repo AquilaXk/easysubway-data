@@ -118,11 +118,53 @@ async function committedCandidateArgs(t, { fanIn, request, buildSpec }) {
   };
 }
 
-test("#1069 커밋된 후보는 정기 역할이면 gateRun을 결속하고 사람 역할이면 결속하지 않는다", async () => {
+// 후보의 역할 쌍은 사람 역할 둘(정기 역할을 하나도 쓰지 않음)이거나 정기 역할 둘 모두여야 한다. 한쪽만 정기 역할인 쌍은 어느 쪽도 아니다.
+function candidateRoleKind({ requestedBy, approvedBy }) {
+  const scheduled = Object.values(SCHEDULED_RELEASE_ROLES);
+  const [first, second] = [requestedBy, approvedBy].map((role) => scheduled.includes(role));
+  if (first && second && requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy) return "scheduled";
+  if (!first && !second) return "person";
+  throw new Error(`정기 역할과 사람 역할이 섞인 후보 역할 쌍이다: ${requestedBy} / ${approvedBy}`);
+}
+
+test("#1069 후보 역할 쌍은 정기 역할 둘 또는 사람 역할 둘이어야 하고, 정기 역할이면 gateRun을 결속하고 사람 역할이면 결속하지 않는다", async () => {
+  const [requestedBy, approvedBy] = [SCHEDULED_RELEASE_ROLES.requestedBy, SCHEDULED_RELEASE_ROLES.approvedBy];
+  assert.equal(candidateRoleKind({ requestedBy, approvedBy }), "scheduled");
+  assert.equal(candidateRoleKind({ requestedBy: "data-operator-lead", approvedBy: "data-release-authority" }), "person");
+  for (const mixed of [
+    { requestedBy, approvedBy: "data-release-authority" },
+    { requestedBy: "data-operator-lead", approvedBy },
+    { requestedBy: approvedBy, approvedBy: requestedBy },
+    { requestedBy: approvedBy, approvedBy: "data-release-authority" },
+  ]) assert.throws(() => candidateRoleKind(mixed), /섞인 후보 역할 쌍/u, JSON.stringify(mixed));
   const { releaseRequest } = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
-  const scheduled = releaseRequest.requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && releaseRequest.approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy;
-  assert.equal(Object.hasOwn(releaseRequest, "gateRun"), scheduled, "gateRun은 정기 역할 후보에만 있다");
-  if (scheduled) assert.equal(releaseRequest.gateRun.workflowPath, ".github/workflows/nationwide-candidate-refresh.yml");
+  const kind = candidateRoleKind(releaseRequest);
+  assert.equal(Object.hasOwn(releaseRequest, "gateRun"), kind === "scheduled", "gateRun은 정기 역할 후보에만 있다");
+  if (kind === "scheduled") assert.equal(releaseRequest.gateRun.workflowPath, ".github/workflows/nationwide-candidate-refresh.yml");
+});
+
+test("#1069 결속 검증은 request에 결속한 gateRun과 한 필드라도 다른 run 기록을 거부하고, 같으면 거부하지 않는다", async () => {
+  const state = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
+  const bound = {
+    repository: "AquilaXk/easysubway-data", workflowPath: ".github/workflows/nationwide-candidate-refresh.yml",
+    runId: 37200000001, runAttempt: 1, event: "workflow_dispatch", headSha: "a".repeat(40), actor: "operator-a",
+  };
+  const evaluate = (gateRun) => nationwideCandidateRefreshViolations({
+    ...state, evaluatedAt: state.fanIn.evaluatedAt, requestedBy: state.releaseRequest.requestedBy, approvedBy: state.releaseRequest.approvedBy,
+    releaseRequest: { ...state.releaseRequest, gateRun: bound }, gateRun,
+  }).filter((violation) => /gateRun mismatch/u.test(violation));
+  assert.deepEqual(evaluate(structuredClone(bound)), [], "같은 gateRun은 거부하지 않는다");
+  // 한 필드만 다르다. runId·actor·headSha는 문자열 길이가 같아 길이 비교로는 구별되지 않는다.
+  const others = {
+    repository: "AquilaXk/easysubway-datb", workflowPath: ".github/workflows/nationwide-candidate-refresh.ymm",
+    runId: bound.runId + 1, runAttempt: 2, event: "workflow_dispatcm", headSha: "b".repeat(40), actor: "operator-b",
+  };
+  for (const [field, other] of Object.entries(others)) {
+    assert.equal(evaluate({ ...bound, [field]: other }).length, 1, `${field}이 다르면 거부한다`);
+  }
+  const { actor: _actor, ...withoutActor } = bound;
+  assert.equal(evaluate(withoutActor).length, 1, "필드가 빠져도 거부한다");
+  assert.equal(evaluate({ ...bound, extra: true }).length, 1, "필드가 늘어도 거부한다");
 });
 
 test("현재 커밋 후보는 refresh-nationwide-candidate로 재생성돼 결속 검증을 통과한다(#862)", async () => {
