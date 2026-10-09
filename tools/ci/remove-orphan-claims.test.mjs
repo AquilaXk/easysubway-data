@@ -337,3 +337,104 @@ test("Abandon 커밋을 쓰지 않는 workflow의 claim은 같은 모양이어�
     assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
   }
 });
+
+// #1064: 실패한 topology run이 자기 claim을 같은 run에서 지운다. 반복 실패하는 원장 writer가 후보 갱신을 매 주기 막지 못하게 한다.
+// 자기 run은 실패 step(`failure()`)에서만 이 도구를 부르므로 gh 기록상 아직 끝나지 않았어도 끝난 것으로 본다(--self-run-id).
+// 이 예외는 OCI에 게시하지 않는 workflow(publicationSteps null)의 빈 claim에만 적용된다. 빈 claim 하나가 "출력도 게시도 없다"는 전체 증거다.
+const TOPOLOGY = "current-capital-topology-refresh.yml";
+const topologyHarness = (runId, overrides = {}, harnessOptions = {}) => {
+  const branch = branchOf(runId, TOPOLOGY);
+  const h = harness({
+    runs: { [runId]: finishedRun(TOPOLOGY, { status: "in_progress", conclusion: null }) },
+    remote: { [branch]: SHA },
+    compare: { [branch]: { aheadBy: 1, changedFiles: 0, messages: [CLAIM_OWNERS[TOPOLOGY].claimSubject] } },
+    ...harnessOptions,
+  });
+  return { branch, h, ...overrides };
+};
+const runSelf = (branch, h, selfRunId, options = {}) => removeOrphanClaims({
+  workflowFile: TOPOLOGY, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log, selfRunId, ...options,
+});
+
+test("#1064 자기 run의 빈 claim: run 기록이 진행 중이어도 보고한 뒤 지운다(lease)", async () => {
+  const { branch, h } = topologyHarness(5001);
+  const result = await runSelf(branch, h, "5001");
+  assert.deepEqual(result, [{ branch, action: "removed_orphan", reported: "skip" }]);
+  // 삭제 댓글을 쌓지 않는다: orphan 없이 run 실패 보고(그 run을 기록)만 확인한다.
+  assert.deepEqual(h.reports, [{ workflowFile: TOPOLOGY, repository: REPOSITORY, runId: "5001" }]);
+  const order = h.events.map(([kind, second]) => `${kind}:${second}`);
+  assert.ok(order.indexOf("report:5001") < order.indexOf("git:push"), "보고가 삭제보다 먼저다");
+  assert.deepEqual(h.events.at(-1), ["git", "push", `--force-with-lease=refs/heads/${branch}:${SHA}`, "origin", `:refs/heads/${branch}`]);
+  assert.equal(h.events.some(([kind, second]) => kind === "gh" && second === "run"), false, "자기 run은 gh run view로 조회하지 않는다");
+});
+
+test("#1064 반증: --self-run-id가 없으면 진행 중인 run의 claim은 지금처럼 지우지 않는다", async () => {
+  const { branch, h } = topologyHarness(5002);
+  await assert.rejects(runSelf(branch, h, undefined), /CLAIM_ORPHAN_REMOVE_REFUSED.*producer run 5002 is still in_progress/u);
+  assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+});
+
+test("#1064 반증: 자기 run이 만든 claim이 아니면(다른 run이 진행 중) 지우지 않는다", async () => {
+  const { branch, h } = topologyHarness(5003);
+  await assert.rejects(runSelf(branch, h, "5004"), /CLAIM_ORPHAN_REMOVE_REFUSED.*producer run 5003 is still in_progress/u);
+  assert.deepEqual(h.reports, []);
+  assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+});
+
+test("#1064 반증: 자기 run의 claim이어도 출력이 있거나 PR이 있거나 제목이 다르면 지우지 않는다", async () => {
+  const branch = branchOf(5005, TOPOLOGY);
+  const subject = CLAIM_OWNERS[TOPOLOGY].claimSubject;
+  for (const carried of [
+    { aheadBy: 3, changedFiles: 4, messages: [subject, "Register current topology inputs", "Activate current topology inputs"] },
+    { aheadBy: 2, changedFiles: 4, messages: [subject, "Register current topology inputs"] },
+    { aheadBy: 1, changedFiles: 1, messages: [subject] },
+    { aheadBy: 1, changedFiles: 0, messages: ["someone else"] },
+  ]) {
+    const { h } = topologyHarness(5005, {}, { compare: { [branch]: carried } });
+    await assert.rejects(runSelf(branch, h, "5005"), /CLAIM_ORPHAN_REMOVE_REFUSED.*not an empty or closed-out claim/u, JSON.stringify(carried));
+    assert.deepEqual(h.reports, []);
+    assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  }
+  for (const state of ["OPEN", "CLOSED"]) {
+    const { h } = topologyHarness(5005, {}, { prs: { [branch]: [pr(7, state, branch)] } });
+    await assert.rejects(runSelf(branch, h, "5005"), /CLAIM_ORPHAN_REMOVE_REFUSED/u, state);
+    assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  }
+});
+
+test("#1064 반증: OCI에 게시하는 workflow는 자기 run 예외를 쓸 수 없다", async () => {
+  const branch = branchOf(5006);
+  const h = harness({ runs: { 5006: finishedRun(GWANGJU, { status: "in_progress", conclusion: null }) }, remote: { [branch]: SHA } });
+  await assert.rejects(removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log, selfRunId: "5006" }), /CLAIM_ORPHAN_REMOVE_REFUSED.*publishes/u);
+  assert.deepEqual(h.reports, []);
+  assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+});
+
+test("#1064 반증: 보고가 실패하거나 lease가 어긋나면 자기 run의 claim도 지우지 않는다", async () => {
+  const failing = topologyHarness(5007, {}, { reportError: new Error("REFRESH_FAILURE_REPORT_DUPLICATE_ISSUES: x") });
+  await assert.rejects(runSelf(failing.branch, failing.h, "5007"), /DUPLICATE_ISSUES/u);
+  assert.equal(failing.h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  const moved = topologyHarness(5008);
+  await assert.rejects(runSelf(moved.branch, moved.h, "5008", { refsText: refsOf({ [moved.branch]: "d".repeat(40) }) }), /CLAIM_ORPHAN_REMOVE_REFUSED.*moved since classification/u);
+  assert.equal(moved.h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+});
+
+test("#1064 이전 run이 만든 claim(재사용된 claim)은 끝난 run이면 --self-run-id 없이도 지운다", async () => {
+  const branch = branchOf(5009, TOPOLOGY);
+  const h = harness({ runs: { 5009: finishedRun(TOPOLOGY) }, remote: { [branch]: SHA }, compare: { [branch]: { aheadBy: 1, changedFiles: 0, messages: [CLAIM_OWNERS[TOPOLOGY].claimSubject] } } });
+  assert.equal((await runSelf(branch, h, "5010"))[0].action, "removed_orphan");
+});
+
+test("#1064 CLI는 --self-run-id를 받고 숫자가 아니거나 중복이면 실패한다", async () => {
+  const { branch, h } = topologyHarness(5011);
+  const directory = await mkdtemp(path.join(tmpdir(), "remove-claims-self-"));
+  const refsFile = path.join(directory, "claims.txt");
+  await writeFile(refsFile, refsOf(h.remote));
+  const base = ["--workflow", TOPOLOGY, "--repository", REPOSITORY, "--claims", branch, "--refs", refsFile];
+  const dependencies = { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log };
+  assert.equal((await main([...base, "--self-run-id", "5011"], dependencies))[0].action, "removed_orphan");
+  for (const bad of [["--self-run-id", "abc"], ["--self-run-id", "0"], ["--self-run-id", "5011", "--self-run-id", "5011"]]) {
+    await assert.rejects(main([...base, ...bad], dependencies), /CLAIM_ORPHAN_INPUT_INVALID/u, bad.join(" "));
+  }
+  await rm(directory, { recursive: true, force: true });
+});

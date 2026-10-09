@@ -398,6 +398,20 @@ jobs:
             ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/itx-completeness.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: Remove this failed run's empty topology claim
+        if: ${{ failure() && env.TOPOLOGY_BRANCH != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # #1064: topology 갱신은 OCI에 게시하지 않으므로 출력 없는 빈 claim 하나는 게시도 출력도 없다는 전체 증거다. 실패한 run이 다음 실행까지 claim을 남기면
+          # 후보 갱신의 원장 writer 대기(PT2H)가 실패 주기마다 새로 걸려 후보가 매 주기 막힌다. 도구가 #926 실패 보고를 먼저 확인하고, 빈 claim이고 PR이 없을 때만 지운다.
+          # 출력 커밋이 있는 claim(RECOVER_CLAIM 대상)과 PR이 있는 claim은 도구가 거부해 그대로 남는다. 실패 보고 step은 계속 마지막이라 이 step의 실패도 보고된다.
+          gh auth setup-git
+          claim_refs="${RUNNER_TEMP}/current-capital-topology-refresh/own-claim-refs.txt"
+          mkdir -p "$(dirname "${claim_refs}")"
+          git ls-remote origin "refs/heads/${TOPOLOGY_BRANCH}" > "${claim_refs}"
+          node tools/ci/remove-orphan-claims.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --claims "${TOPOLOGY_BRANCH}" --refs "${claim_refs}" --self-run-id "${GITHUB_RUN_ID}"
       - name: Report refresh failure as an issue
         if: ${{ failure() }}
         env:

@@ -12,7 +12,12 @@
 //  - 만든 run이 아직 끝나지 않았거나 다른 workflow의 run을 가리킨다.
 //  - 브랜치가 빈 claim 하나(ahead_by 1, 제목 일치, 변경 파일 0)도, Abandon 커밋으로 닫은 claim(claim + Abandon 두 커밋, 변경 파일 0, abandonedSubject를 쓰는 workflow만)도 아니다. 보고 전과 push 직전에 두 번 확인한다.
 //
-// 사용: node tools/ci/remove-orphan-claims.mjs --workflow <file> --repository <owner/repo> --claims <claim 브랜치를 쉼표로 이은 목록> --refs <판정 시점의 git ls-remote 출력 파일>
+// #1064: 실패한 run이 자기 claim을 같은 run에서 지운다(--self-run-id <GITHUB_RUN_ID>). 반복 실패하는 원장 writer가 다음 실행까지 claim을 남겨 후보 갱신을 막지 않게 한다.
+// 호출하는 step은 `failure()`일 때만 부르므로 gh 기록상 아직 끝나지 않은 자기 run을 끝난(failure) run으로 본다. 이 예외는 claim을 만든 run이 자기 run일 때만,
+// OCI에 게시하지 않는 workflow(publicationSteps null)에서만 쓴다. 빈 claim 하나(ahead 1, 제목 일치, 변경 파일 0, PR 없음)가 "게시도 출력도 없다"는 전체 증거라서다.
+// 나머지 guard(보고 먼저, 보고 실패 시 삭제 안 함, lease, push 직전 재확인)는 그대로다.
+//
+// 사용: node tools/ci/remove-orphan-claims.mjs --workflow <file> --repository <owner/repo> --claims <claim 브랜치를 쉼표로 이은 목록> --refs <판정 시점의 git ls-remote 출력 파일> [--self-run-id <run id>]
 // git push 인증은 호출하는 step이 먼저 `gh auth setup-git`으로 준비한다.
 import { execFile } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
@@ -71,8 +76,16 @@ async function claimPullRequest(runGh, { workflowFile, repository, branch }) {
 // 지우기 전 확인(보고 전·push 직전 두 번): 만든 run이 끝났고 이 workflow의 main run이어야 하고, 브랜치는 출력이 없는 빈 claim 하나여야 한다.
 // 판정(소유 workflow)이 정리 대상으로 알린 뒤 상황이 바뀌었을 때를 막는다. 공유 판정을 쓰는 workflow는 같은 분류가 여전히 ABANDONED여야 한다
 // (게시 step이 시작된 run의 claim은 소유 판정을 거쳤어도 지우지 않는다). 분류 근거(reason)를 돌려준다.
-async function assertStillRemovable({ workflowFile, repository, branch, runId, runGh }) {
-  const claimRun = await lookupClaimRun(runGh, repository, runId);
+async function assertStillRemovable({ workflowFile, repository, branch, runId, runGh, selfRunId }) {
+  let claimRun;
+  if (selfRunId !== undefined && selfRunId === runId) {
+    // 자기 run: 실패 step이 부르므로 끝난 failure run으로 본다. 게시하는 workflow는 빈 claim만으로 미게시를 증명할 수 없어 거부한다.
+    const owner = CLAIM_OWNERS[workflowFile];
+    if (owner.publicationSteps !== null) fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} belongs to a workflow that publishes, so its own run cannot vouch that nothing was published`);
+    claimRun = { found: true, status: "completed", conclusion: "failure", workflowName: owner.workflowName, headBranch: "main", steps: [] };
+  } else {
+    claimRun = await lookupClaimRun(runGh, repository, runId);
+  }
   assertClaimRunOwner(workflowFile, branch, claimRun);
   if (claimRun.found && claimRun.status !== "completed") fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} producer run ${runId} is still ${claimRun.status}`);
   const commits = await lookupClaimCommits(runGh, repository, branch);
@@ -94,7 +107,7 @@ async function recordRemoval({ log, summaryFile, workflowFile, branch, runId, co
   }
 }
 
-async function removeOne({ workflowFile, repository, branch, runId, classifiedSha, runGh, runGit, report, log, summaryFile }) {
+async function removeOne({ workflowFile, repository, branch, runId, classifiedSha, runGh, runGit, report, log, summaryFile, selfRunId }) {
   const sha = await remoteSha(runGit, branch);
   if (sha === null) return { branch, action: "absent", reported: null };
   if (sha !== classifiedSha) fail("CLAIM_ORPHAN_REMOVE_REFUSED", `${branch} moved since classification (${classifiedSha} -> ${sha})`);
@@ -104,10 +117,13 @@ async function removeOne({ workflowFile, repository, branch, runId, classifiedSh
   let removal = { conclusion: null, reason: "MERGED_LEFTOVER" };
   let reported = null;
   if (!merged) {
-    removal = await assertStillRemovable({ workflowFile, repository, branch, runId, runGh });
+    removal = await assertStillRemovable({ workflowFile, repository, branch, runId, runGh, selfRunId });
     // 보고가 먼저다. 보고가 실패하면 지우지 않는다. 병합된 PR의 남은 claim은 끝난 일이라 보고하지 않는다.
-    reported = (await report({ workflowFile, repository, runId, orphan: { branch, conclusion: removal.conclusion ?? "unknown", reason: removal.reason } }))?.action ?? null;
-    await assertStillRemovable({ workflowFile, repository, branch, runId, runGh });
+    // 자기 run(--self-run-id)은 삭제 사실을 따로 댓글로 남기지 않고 run 실패 보고(그 run을 기록)만 확인한다. 실패 주기마다 같은 이슈에 삭제 댓글이 쌓이지 않게 한다.
+    // 삭제 사실은 notice와 step summary에 남는다.
+    const ownRun = selfRunId !== undefined && selfRunId === runId;
+    reported = (await report({ workflowFile, repository, runId, ...(ownRun ? {} : { orphan: { branch, conclusion: removal.conclusion ?? "unknown", reason: removal.reason } }) }))?.action ?? null;
+    await assertStillRemovable({ workflowFile, repository, branch, runId, runGh, selfRunId });
   }
   await runGit(["push", `--force-with-lease=refs/heads/${branch}:${classifiedSha}`, "origin", `:refs/heads/${branch}`]);
   await recordRemoval({ log, summaryFile, workflowFile, branch, runId, conclusion: removal.conclusion, reason: removal.reason, reported });
@@ -121,18 +137,19 @@ async function removeOne({ workflowFile, repository, branch, runId, classifiedSh
  */
 export async function removeOrphanClaims({
   workflowFile, repository, claims, refsText, runGh = defaultRunGh, runGit = defaultRunGit, report = (input) => defaultReport(input, runGh), log = console.log,
-  summaryFile = process.env.GITHUB_STEP_SUMMARY,
+  summaryFile = process.env.GITHUB_STEP_SUMMARY, selfRunId,
 } = {}) {
   if (!Object.hasOwn(CLAIM_OWNERS, workflowFile ?? "") || !Array.isArray(claims) || claims.length === 0 || new Set(claims).size !== claims.length) {
     fail("CLAIM_ORPHAN_INPUT_INVALID", "workflow or claim list");
   }
+  if (selfRunId !== undefined && !/^[1-9]\d*$/u.test(selfRunId)) fail("CLAIM_ORPHAN_INPUT_INVALID", "self run id");
   const runIds = claims.map((branch) => claimRunId(workflowFile, branch));
   const shas = classifiedShas(refsText);
   for (const branch of claims) if (!shas.has(branch)) fail("CLAIM_ORPHAN_INPUT_INVALID", `${branch} is not in the classification refs`);
   const results = [];
   for (const [index, branch] of claims.entries()) {
     // 삭제는 claim마다 순차로 하고 하나가 실패하면 거기서 멈춘다.
-    const result = await removeOne({ workflowFile, repository, branch, runId: runIds[index], classifiedSha: shas.get(branch), runGh, runGit, report, log, summaryFile }); // NOSONAR
+    const result = await removeOne({ workflowFile, repository, branch, runId: runIds[index], classifiedSha: shas.get(branch), runGh, runGit, report, log, summaryFile, selfRunId }); // NOSONAR
     log(JSON.stringify(result));
     results.push(result);
   }
@@ -140,15 +157,15 @@ export async function removeOrphanClaims({
 }
 
 function parseArgs(argv) {
-  const keys = new Map([["--workflow", "workflowFile"], ["--repository", "repository"], ["--claims", "claims"], ["--refs", "refs"]]);
+  const keys = new Map([["--workflow", "workflowFile"], ["--repository", "repository"], ["--claims", "claims"], ["--refs", "refs"], ["--self-run-id", "selfRunId"]]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const key = keys.get(argv[index]);
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("CLAIM_ORPHAN_INPUT_INVALID", `argument ${String(argv[index])}`);
     values[key] = argv[index + 1];
   }
-  for (const key of keys.values()) if (!Object.hasOwn(values, key)) fail("CLAIM_ORPHAN_INPUT_INVALID", `missing ${key}`);
-  return { workflowFile: values.workflowFile, repository: values.repository, claims: values.claims.split(",").filter(Boolean), refsFile: values.refs };
+  for (const key of keys.values()) if (key !== "selfRunId" && !Object.hasOwn(values, key)) fail("CLAIM_ORPHAN_INPUT_INVALID", `missing ${key}`);
+  return { workflowFile: values.workflowFile, repository: values.repository, claims: values.claims.split(",").filter(Boolean), refsFile: values.refs, ...(values.selfRunId === undefined ? {} : { selfRunId: values.selfRunId }) };
 }
 
 export async function main(argv, dependencies = {}) {
