@@ -248,13 +248,9 @@ test("committed release candidate files produce the fixed RC modeArgs with a nat
   const request = JSON.parse(readFileSync(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.releaseRequestPath), "utf8"));
   const { publishedAt } = JSON.parse(readFileSync(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.buildSpecPath), "utf8"));
   const { gateRun } = request;
-  const gateRunRecord = gateRun === undefined ? undefined : {
-    id: gateRun.runId, run_attempt: gateRun.runAttempt, event: gateRun.event, head_sha: gateRun.headSha, head_branch: "main",
-    path: `${gateRun.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: gateRun.repository },
-    head_repository: { full_name: gateRun.repository },
-    run_started_at: new Date(Date.parse(publishedAt) - 60_000).toISOString(), updated_at: new Date(Date.parse(publishedAt) + 60_000).toISOString(),
-    ...(gateRun.actor === undefined ? {} : { actor: { login: gateRun.actor }, triggering_actor: { login: gateRun.actor } }),
-  };
+  const gateRunRecord = gateRun === undefined ? undefined : gateRunRecordFor(gateRun, {
+    startedAt: new Date(Date.parse(publishedAt) - 60_000).toISOString(), updatedAt: new Date(Date.parse(publishedAt) + 60_000).toISOString(),
+  });
   if (gateRunRecord !== undefined) {
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u, "gateRun이 결속된 후보는 기록 없이 시작하지 않는다");
   }
@@ -464,6 +460,16 @@ const GATE_RUN = Object.freeze({
   runId: 37200000001, runAttempt: 1, event: "schedule", headSha: "a".repeat(40),
 });
 
+// GitHub run 기록(GET /repos/{repo}/actions/runs/{id})을 gateRun에서 만든다. dispatch run은 처음 시작한 행위자와 지금 실행한 행위자를 모두 gateRun의 actor로 담는다.
+function gateRunRecordFor(gateRun, { startedAt = "2026-10-04T22:23:10Z", updatedAt = "2026-10-04T22:41:02Z" } = {}) {
+  return {
+    id: gateRun.runId, run_attempt: gateRun.runAttempt ?? 1, event: gateRun.event, head_sha: gateRun.headSha, head_branch: "main",
+    path: `${gateRun.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: gateRun.repository },
+    head_repository: { full_name: gateRun.repository }, run_started_at: startedAt, updated_at: updatedAt,
+    ...(gateRun.actor === undefined ? {} : { actor: { login: gateRun.actor }, triggering_actor: { login: gateRun.actor } }),
+  };
+}
+
 test("#929 D3 a scheduled run derives the fixed roles and the next sequence and takes no person input", () => {
   assert.throws(() => planNationwideCandidateRefresh({
     releaseSequence: "", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event: "workflow_run",
@@ -566,11 +572,7 @@ test("#929 D3 a scheduled-role candidate is dispatched to RC only after its gate
   };
   const { root } = await releaseRepository(scheduled);
   try {
-    const record = {
-      id: GATE_RUN.runId, run_attempt: 1, event: "schedule", head_sha: GATE_RUN.headSha, head_branch: "main",
-      path: `${GATE_RUN.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: GATE_RUN.repository },
-      head_repository: { full_name: GATE_RUN.repository }, run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
-    };
+    const record = gateRunRecordFor(GATE_RUN);
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, updated_at: "2026-10-04T22:23:20Z" } }),
       /RELEASE_CANDIDATE_GATE_RUN[\s\S]*candidate clock/u);
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u);
@@ -603,12 +605,7 @@ test("#1032 a candidate made by a scheduler App dispatch is sent to RC only when
   };
   const { root } = await releaseRepository(scheduled);
   try {
-    const record = {
-      id: GATE_RUN.runId, run_attempt: 1, event: "workflow_dispatch", head_sha: GATE_RUN.headSha, head_branch: "main",
-      path: `${GATE_RUN.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: GATE_RUN.repository },
-      head_repository: { full_name: GATE_RUN.repository }, run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
-      actor: { login: "easysubway-release-chain[bot]" }, triggering_actor: { login: "easysubway-release-chain[bot]" },
-    };
+    const record = gateRunRecordFor(dispatchedRun);
     assert.equal((await readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: record })).allowGaps, "false");
     for (const override of [{ triggering_actor: { login: "AquilaXk" } }, { actor: { login: "AquilaXk" } }]) {
       await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, ...override } }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*actor/u, JSON.stringify(override));
