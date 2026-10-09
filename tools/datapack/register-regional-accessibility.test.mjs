@@ -20,6 +20,19 @@ const TOPOLOGY_ID = "gwangju-transportation-route-topology";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 test("regional accessibility registrar replays retained raw input and commits four source outputs", async (t) => {
+  await registrarScenario(t, { downloadMode: false });
+});
+
+// #1076: --download 모드 수집기는 snapshot에 downloadProvenance를 싣는다. 재생이 이를 빼면 등록이 항상 replay mismatch로 멈춘다.
+test("regional accessibility registrar replays a --download snapshot with its downloadProvenance and commits four source outputs", async (t) => {
+  await registrarScenario(t, { downloadMode: true });
+});
+
+test("regional accessibility registrar rejects a --download snapshot whose downloadProvenance no longer matches the retained raw", async (t) => {
+  await registrarScenario(t, { downloadMode: true, tamperProvenance: true });
+});
+
+async function registrarScenario(t, { downloadMode, tamperProvenance = false }) {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "regional-accessibility-register-"));
   t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
   // 신뢰 루트는 변경하지 않는 기존 정책 fixture이고, 새 source만 작은 독립 입력이다.
@@ -43,7 +56,13 @@ test("regional accessibility registrar replays retained raw input and commits fo
     .map((id) => ({ id, sourceIds: predecessorPolicy.sources.filter((entry) => entry.sourceClassId === id)
       .map((entry) => entry.sourceId), basisField: "retrievedAt", reverificationCadence: "P90D" }));
   const freshnessBytes = Buffer.from(JSON.stringify({ sourceClasses }));
-  const snapshot = collectGwangjuAccessibility({ elevatorBytes, escalatorBytes, topologySnapshot, topologySource, now });
+  const downloadProvenance = downloadMode ? [["15041385", elevatorBytes], ["15041362", escalatorBytes]].map(([datasetId, bytes]) => ({
+    datasetId, detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,
+    downloadUrl: `https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_0000000${datasetId}&fileDetailSn=1&insertDataPrcus=N`,
+    rawSha256: sha(bytes),
+  })) : undefined;
+  const snapshot = collectGwangjuAccessibility({ elevatorBytes, escalatorBytes, topologySnapshot, topologySource, now, downloadProvenance });
+  assert.equal(Object.hasOwn(snapshot, "downloadProvenance"), downloadMode);
   const source = inventory.sources.find(({ id }) => id === SOURCE_ID);
   const termsHash = sha(canonicalJson(source.license));
   const governance = {
@@ -65,6 +84,12 @@ test("regional accessibility registrar replays retained raw input and commits fo
   await mkdir(path.dirname(topologyPath), { recursive: true }); await writeFile(topologyPath, topologyBytes);
   await mkdir(path.join(fixtureRoot, "tools/datapack"), { recursive: true });
   await writeFile(path.join(fixtureRoot, "tools/datapack/source-candidates.json"), JSON.stringify(candidates));
+  if (tamperProvenance) {
+    const tampered = { ...snapshot, downloadProvenance: snapshot.downloadProvenance.map((entry, index) => (index === 0 ? { ...entry, rawSha256: "0".repeat(64) } : entry)) };
+    await writeFile(snapshotPath, JSON.stringify(tampered));
+    await assert.rejects(prepareRegionalAccessibilityRegistration({ repositoryRoot: fixtureRoot, snapshotPath, now }), /download provenance sha256 mismatch/);
+    return;
+  }
   await writeFile(snapshotPath, JSON.stringify(snapshot));
   await assert.rejects(prepareRegionalAccessibilityRegistration({ repositoryRoot: fixtureRoot, snapshotPath, now }), /recorded governance/);
   candidates.candidates[0].registrationMetadata = { governance };
@@ -95,7 +120,7 @@ test("regional accessibility registrar replays retained raw input and commits fo
   assert.equal(registeredPolicy.registrationLineage.predecessorPolicySha256, sha(governanceBytes));
   assert.deepEqual(registeredPolicy.registrationLineage.addedSourceIds, [SOURCE_ID]);
   assert.deepEqual(registeredPolicy.sources.slice(0, -1), predecessorPolicy.sources);
-});
+}
 
 // 실제 카탈로그·ledger·파일 날짜와 무관한 두 역짜리 TEST_ONLY 등록 입력이다.
 async function independentFixture(now) {
