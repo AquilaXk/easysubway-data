@@ -743,6 +743,36 @@ async function verifyTopology({ paths, baseSha, policy, baseInventory, headInven
 }
 
 /**
+ * #1067: base->head canonical pack(또는 packPath)이 수도권 topology 갱신이 허용하는 출처 표식 변경뿐인지 단독으로 판정한다.
+ * verifyTopology가 pack에 거는 규칙(packContentViolations + 입력 파일·원장 근거)과 같은 판정이다. 원천 쌍은 base·head inventory 증거에서 읽는다
+ * (역 정보 topologyAdmissionEvidence, 인천 1·2호선 scheduleAdmissionEvidence).
+ * 갱신 PR의 계약 테스트가 applicability가 선언한 갱신 전 pack을 PR base에서 읽어도 되는지 정하는 데 쓴다. 예외를 던지지 않고 사유를 돌려준다.
+ * @param {{ baseSha: string, files: { readTree: (relative: string) => Promise<string>, readBase: (sha: string, relative: string) => Promise<string> }, packPath?: string }} input
+ * @returns {Promise<string[]>} 위반 사유(없으면 빈 배열)
+ */
+export async function packMarkerOnlyViolations({ baseSha, files, packPath = CANONICAL_PACK_PATH }) {
+  try {
+    const baseInventory = JSON.parse(await files.readBase(baseSha, INVENTORY_PATH));
+    const headInventory = JSON.parse(await files.readTree(INVENTORY_PATH));
+    const sources = [];
+    const station = [entryOf(baseInventory, "incheon-transit-station-info")?.topologyAdmissionEvidence, entryOf(headInventory, "incheon-transit-station-info")?.topologyAdmissionEvidence];
+    if (!station.every(isObject)) return ["incheon-transit-station-info의 topologyAdmissionEvidence가 base 또는 head에 없다"];
+    sources.push({ id: "incheon-transit-station-info", before: station[0].snapshotId, after: station[1].snapshotId, at: station[1].capturedAt });
+    for (const sourceId of ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]) {
+      const line = [entryOf(baseInventory, sourceId)?.scheduleAdmissionEvidence, entryOf(headInventory, sourceId)?.scheduleAdmissionEvidence];
+      if (!line.every(isObject)) return [`${sourceId}의 scheduleAdmissionEvidence가 base 또는 head에 없다`];
+      sources.push({ id: sourceId, before: line[0].snapshotId, after: line[1].snapshotId, at: line[1].capturedAt });
+    }
+    const follow = await loadFollowContext({ files, headInventory, baseSha });
+    const base = JSON.parse(await files.readBase(baseSha, packPath));
+    const head = JSON.parse(await files.readTree(packPath));
+    return packContentViolations({ base, head, sources, follow });
+  } catch (error) {
+    return [`pack을 base와 비교하지 못했다: ${message(error)}`];
+  }
+}
+
+/**
  * 단계 하나의 게이트를 base·head 두 판본에서 다시 계산한다. 예외를 던지지 않고(알 수 없는 단계만 예외) 모든 어긋남을 위반으로 돌려준다.
  * @param {{ stage: string, paths: string[], baseSha: string, policy: object, files: { readTree: (relative: string) => Promise<string>, readBase: (sha: string, relative: string) => Promise<string> } }} input
  * @returns {Promise<{ rows: object[], violations: { code: string, detail: string }[] }>}
