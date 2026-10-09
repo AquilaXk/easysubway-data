@@ -264,6 +264,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/846",
       "title": "[Fix] 원천 인벤토리 변경 뒤 fan-in·소유권 원장 고정값 재생성과 드리프트 검사"
     },
+    "data1084": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1084",
+      "title": "[Feat] 데이터팩 RC 이후 호환성·승격·발행·배포·검증·롤백 체인 전체 자동화"
+    },
     "data870": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/870",
       "title": "[Refactor] 데이터 파이프라인 운영 방식 전환: 자동 갱신·개발/발행 게이트 분리·생성 산출물 축소"
@@ -425,6 +429,10 @@
     {"path":"tools/ci/capital-live-chain-removal.test.mjs","semanticOwner":"data862","classes":["required-pr"],"durationMs":1000},
     {"path":"tools/ci/current-capital-topology-refresh-workflow.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":4},
     {"path":"tools/ci/datapack-release-cross-repo-chain-workflow.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":60},
+    {"path":"tools/ci/datapack-release-chain.test.mjs","semanticOwner":"data1084","classes":["required-pr"],"durationMs":200},
+    {"path":"tools/ci/datapack-release-chain-lock.test.mjs","semanticOwner":"data1084","classes":["required-pr"],"durationMs":1500},
+    {"path":"tools/ci/build-automation-status.test.mjs","semanticOwner":"data1084","classes":["required-pr"],"durationMs":100},
+    {"path":"tools/ci/automation-status-publish-workflow.test.mjs","semanticOwner":"data1084","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/data-test-discovery.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":31},
     {"path":"tools/ci/decide-current-capital-topology-refresh.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":178},
     {"path":"tools/ci/decide-current-kric-facility-refresh.test.mjs","semanticOwner":"data629","classes":["required-pr"],"durationMs":35},

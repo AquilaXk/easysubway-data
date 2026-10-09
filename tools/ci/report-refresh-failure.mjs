@@ -23,6 +23,16 @@ export const REFRESH_WORKFLOWS = Object.freeze({
   "source-reverification.yml": "P7D 원천 재확인(코레일·광주·부산·대전·대구 topology, KRIC 시간표 projection)",
 });
 
+// 정기 원천 갱신과 구조가 다른 workflow(발행·배포 체인)는 REFRESH_WORKFLOWS의 구조 계약 대상이 아니라 따로 등록한다(data#1084).
+// 이슈 제목 규칙("원천 자동 갱신 실패")은 같아서 admin 자동화 상태가 같은 경로로 찾는다.
+export const CHAIN_WORKFLOWS = Object.freeze({
+  "datapack-release-cross-repo-chain.yml": "데이터팩 발행·배포 체인(RC 이후 호환성·승격·발행·배포·검증)",
+});
+// 롤백은 서버의 활성 pair만 되돌리고 공개 manifest는 새 release 번호에 남긴다. 이슈가 복구 완료처럼 읽히지 않도록 체인 실패에는 이 사실을 항상 적는다.
+export const CHAIN_ROLLBACK_NOTE = "- 검증 실패로 롤백했다면 서버의 활성 FINAL은 직전 release이지만 공개 manifest(catalog/current.json)는 새 release 번호에 남는다. 실패 run 요약과 chain-state artifact의 `rollback.manifestMismatch`를 확인하고 공개 manifest를 정리해야 복구가 끝난다.";
+const chainNote = (workflowFile) => (Object.hasOwn(CHAIN_WORKFLOWS, workflowFile) ? [CHAIN_ROLLBACK_NOTE] : []);
+const REPORTABLE_WORKFLOWS = Object.freeze({ ...REFRESH_WORKFLOWS, ...CHAIN_WORKFLOWS });
+
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const RUN_ID = /^[1-9]\d{0,19}$/u;
 export const COMMENT_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -42,7 +52,7 @@ export function refreshFailureMarker(workflowFile) {
 }
 
 function validated({ repository, workflowFile, runId }) {
-  if (!Object.hasOwn(REFRESH_WORKFLOWS, workflowFile ?? "")) fail("WORKFLOW");
+  if (!Object.hasOwn(REPORTABLE_WORKFLOWS, workflowFile ?? "")) fail("WORKFLOW");
   if (typeof repository !== "string" || !REPOSITORY.test(repository)) fail("REPOSITORY");
   if (typeof runId !== "string" || !RUN_ID.test(runId)) fail("RUN_ID");
   return { repository, workflowFile, runId, runUrl: `https://github.com/${repository}/actions/runs/${runId}` };
@@ -126,7 +136,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
   if (!Array.isArray(openIssues)) fail("ISSUES");
   const marker = refreshFailureMarker(input.workflowFile);
-  const label = REFRESH_WORKFLOWS[input.workflowFile];
+  const label = REPORTABLE_WORKFLOWS[input.workflowFile];
   const title = `[Fix] 원천 자동 갱신 실패: ${label} (${input.workflowFile})`;
   // 이 도구(workflow 토큰)가 만든, 제목 규칙이 같은 이슈만 센다. 사람이 표지를 인용한 이슈는 무시한다.
   const matching = openIssues.filter((issue) => {
@@ -161,6 +171,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
         `\`${input.workflowFile}\`가 다시 실패했다. 이전 데이터로 대체하지 않았다.`,
         "",
         `- 실패 run: ${input.runUrl}`,
+        ...chainNote(input.workflowFile),
         "- 같은 workflow의 실패는 하루에 한 번만 댓글로 알린다. 그 사이 실패 run은 이슈 본문 상태 블록에 쌓인다.",
         ...(duplicateNumbers.length > 0
           ? [`- 같은 workflow의 실패 이슈가 더 있다: ${duplicateNumbers.map((number) => `#${number}`).join(", ")}. 이 이슈만 남기고 닫아야 보고 단계가 성공한다.`]
@@ -180,6 +191,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       ...(orphan
         ? [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`의 run이 PR 없는 claim 브랜치를 남겼고, 자동으로 삭제했다. 이전 데이터로 대체하지 않았다.`, ...orphanLines(input, orphan), orphanMarker(orphan.branch)]
         : [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`가 실패했다. 이전 데이터로 대체하지 않았다.`, `- 실패 run: ${input.runUrl}`]),
+      ...chainNote(input.workflowFile),
       "- 이 이슈는 workflow가 만들었다. 같은 workflow가 다시 실패하면 아래 상태 블록에 run을 쌓고, 하루에 한 번 댓글로 알린다.",
       "",
       "### 완료 조건",

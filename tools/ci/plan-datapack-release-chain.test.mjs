@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   RELEASE_CANDIDATE_PATHS,
   planNationwideCandidateRefresh,
+  readProductionPublishModeArgs,
   readReleaseCandidateModeArgs,
   runPlanDatapackReleaseChain,
 } from "./plan-datapack-release-chain.mjs";
@@ -695,4 +696,66 @@ test("#931 F1 the chain dispatches RC only for the verified commit and fails whe
   assert.match(otherCommit.stderr, /not the verified/u);
   assert.match(otherCommit.log, /^cancel 222$/mu);
   assert.doesNotMatch(stepBody(yml, "Dispatch release candidate"), /\|\| true/u);
+});
+
+// ---------- data#1084: production-publish modeArgs ----------
+
+test("production-publish modeArgs are the bound release-candidate modeArgs plus the exact candidate and promotion run ids", async () => {
+  const { root, spec } = await releaseRepository();
+  try {
+    assert.deepEqual(await readProductionPublishModeArgs({ repositoryRoot: root, candidateRunId: "7001", promotionRunId: "8002" }), {
+      buildSpecPath: "tools/datapack/release/candidate-build-spec.json",
+      releaseRequestId: `release-request-${spec.candidateId}`,
+      releaseRequestPath: "tools/datapack/release/release-request.json",
+      androidEvidencePath: "tools/datapack/release/android-evidence-summary.json",
+      strictRouteRegressionPath: "tools/datapack/release/strict-route-regression-report.json",
+      allowGaps: "false",
+      sourceGovernanceEvaluationAt: "",
+      candidateRunId: "7001",
+      promotionRunId: "8002",
+    });
+    for (const [candidateRunId, promotionRunId] of [["0", "1"], ["1", "0"], ["01", "2"], ["1", "-2"], ["1", "2;rm"], [undefined, "2"], ["1", 2], ["", "2"]]) {
+      await assert.rejects(readProductionPublishModeArgs({ repositoryRoot: root, candidateRunId, promotionRunId }),
+        /PRODUCTION_PUBLISH_RUN_ID/u, JSON.stringify([candidateRunId, promotionRunId]));
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("production-publish modeArgs are refused when the release request is not bound to the committed spec (same gate as the RC)", async () => {
+  const { root } = await releaseRepository((files) => {
+    const request = JSON.parse(files[RELEASE_CANDIDATE_PATHS.releaseRequestPath]);
+    request.buildSpecSha256 = "0".repeat(64);
+    return { ...files, [RELEASE_CANDIDATE_PATHS.releaseRequestPath]: Buffer.from(`${JSON.stringify(request)}\n`) };
+  });
+  try {
+    await assert.rejects(readProductionPublishModeArgs({ repositoryRoot: root, candidateRunId: "7001", promotionRunId: "8002" }),
+      /RELEASE_CANDIDATE_BINDING[\s\S]*buildSpecSha256/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("CLI writes the production-publish modeArgs to an absolute file and rejects relative output or missing ids", async () => {
+  const { root, spec } = await releaseRepository();
+  try {
+    const output = path.join(root, "publish-mode-args.json");
+    await runPlanDatapackReleaseChain({
+      argv: ["production-publish-mode-args", "--output", output, "--candidate-run-id", "7001", "--promotion-run-id", "8002"],
+      repositoryRoot: root,
+    });
+    const written = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(written.releaseRequestId, `release-request-${spec.candidateId}`);
+    assert.equal(written.candidateRunId, "7001");
+    assert.equal(written.promotionRunId, "8002");
+    await assert.rejects(runPlanDatapackReleaseChain({
+      argv: ["production-publish-mode-args", "--output", "relative.json", "--candidate-run-id", "1", "--promotion-run-id", "2"], repositoryRoot: root,
+    }), /PLAN_RELEASE_CHAIN_ARGUMENTS/u);
+    await assert.rejects(runPlanDatapackReleaseChain({
+      argv: ["production-publish-mode-args", "--output", path.join(root, "other.json"), "--candidate-run-id", "1"], repositoryRoot: root,
+    }), /PLAN_RELEASE_CHAIN_ARGUMENTS/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

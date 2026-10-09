@@ -1,28 +1,36 @@
 name: Data Pack Release Cross-Repository Chain
 
-# release-candidate(RC)가 성공하면 hub 호환성 검증(release-artifacts.yml)을 dispatch한다(#932, #870).
-# GITHUB_TOKEN은 다른 저장소 workflow를 dispatch할 수 없으므로 레포 간 실행 권한 GitHub App(QA 승인 2026-10-04)의
-# 토큰을 쓴다. 토큰은 hub 저장소 한 곳, actions write 권한으로만 발급한다. App 자격 증명이 없으면 실패한다.
-# 기본은 꺼짐이다. 저장소 변수 DATAPACK_CROSS_REPO_CHAIN_ENABLED가 true일 때만 job이 실행된다(App 등록·QA 승인 뒤 메인 세션이 켠다).
+# release-candidate(RC)가 성공하면 사람 없이 끝까지 잇는다(data#1084, #870, QA 결정 2026-10-09):
+#   hub 호환성(release-artifacts.yml) → hub 승격(datapack-promotion.yml) → data production-publish → platform 배포(PREVIEW → DEPLOY) → 공개 검증
+#   검증이 실패하면 직전 활성 release로 PREVIEW → DEPLOY를 다시 실행(전진 재활성화)하고 이상으로 드러낸다.
+# 각 단계의 판정·dispatch·대기는 tools/ci/datapack-release-chain.mjs가 한다(순수 판정은 단위 테스트로 고정). 한 단계라도 어긋나면 이후는 건너뛰고
+# job이 실패해 #926 실패 이슈(report-refresh-failure)로 드러난다. 추정치·옛 값으로 성공 처리하지 않는다.
+# GITHUB_TOKEN은 다른 저장소 workflow를 dispatch할 수 없으므로 레포 간 실행 권한 GitHub App(QA 승인 2026-10-04)의 토큰을 단계마다
+# 저장소·권한을 줄여 발급한다: hub는 actions write·contents read, platform은 actions write, backend는 actions read·contents read.
+# data 안의 발행 dispatch는 GITHUB_TOKEN(actions: write)으로 한다.
+# 기본은 꺼짐이다. 저장소 변수 DATAPACK_CROSS_REPO_CHAIN_ENABLED가 true일 때만 job이 실행된다(설정 변경 뒤 메인 세션이 마지막에 켠다).
+# 체인 진행 중에는 automerge-queue가 병합을 미룬다(이 workflow와 RC chain의 queued·in_progress run이 잠금이다, 변수·라벨 없음).
 on:
   workflow_run:
     workflows: ["Data Pack Release"]
     types: [completed]
 
-permissions:
-  actions: read
-  contents: read
-
-concurrency:
-  group: datapack-release-cross-repo-chain-${{ github.event.workflow_run.id }}
-  cancel-in-progress: false
+permissions: {}
 
 jobs:
-  compatibility:
-    name: Dispatch hub data pack compatibility
-    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' }}
+  identify:
+    # RC run은 RC chain이 GITHUB_TOKEN으로 dispatch한다(행위자 github-actions[bot]). 수동 dispatch는 저장소 소유자만 인정한다.
+    # 환경 승인을 없앤 대신, 쓰기 권한이 있는 다른 계정이 직접 띄운 RC로 발행·배포 체인이 시작되지 않게 막는다.
+    # 행위자는 workflow_run 이벤트 값이 아니라 API로 다시 읽은 run의 triggering_actor로 판정한다(이벤트 값을 신뢰 근거로 쓰지 않는다).
+    name: Identify the release-candidate run
+    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      rc: ${{ steps.rc.outputs.rc }}
     env:
       RUN_ID: ${{ github.event.workflow_run.id }}
       RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -42,6 +50,14 @@ jobs:
           set -euo pipefail
           [[ "${RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "workflow_run id is invalid" >&2; exit 1; }
           [[ "${RUN_HEAD_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo "workflow_run head_sha is invalid" >&2; exit 1; }
+          actor="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.triggering_actor.login')"
+          case "${actor}" in
+            "github-actions[bot]"|"AquilaXk") ;;
+            *)
+              echo "rc=false" >> "${GITHUB_OUTPUT}"
+              echo "Data Pack Release run ${RUN_ID}는 허용되지 않은 행위자가 dispatch해 체인을 시작하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
+              exit 0 ;;
+          esac
           # RC run만 easysubway-datapack-candidate-<run> artifact를 만든다(hub promotion이 받는 후보 artifact).
           name="easysubway-datapack-candidate-${RUN_ID}"
           response="${RUNNER_TEMP}/${name}.json"
@@ -49,15 +65,41 @@ jobs:
           total="$(node -e 'const p = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); if (!Number.isSafeInteger(p.total_count)) process.exit(1); process.stdout.write(String(p.total_count));' "${response}")"
           if [[ "${total}" == "0" ]]; then
             echo "rc=false" >> "${GITHUB_OUTPUT}"
-            echo "Data Pack Release run ${RUN_ID}에 RC 후보 artifact가 없어 hub 호환성 검증을 dispatch하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
+            echo "Data Pack Release run ${RUN_ID}에 RC 후보 artifact가 없어 체인을 시작하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
           # publish 경로와 같은 검증기: 정확히 하나, 같은 run id·head sha, 만료되지 않음. 어긋나면 실패한다.
           node tools/ci/require-workflow-artifact.mjs "${response}" "${name}" "${RUN_ID}" "${RUN_HEAD_SHA}"
           echo "rc=true" >> "${GITHUB_OUTPUT}"
-          echo "Data Pack Release run ${RUN_ID}(head ${RUN_HEAD_SHA})은 RC 후보 artifact가 있어 hub 호환성 검증을 dispatch한다." >> "${GITHUB_STEP_SUMMARY}"
+          echo "Data Pack Release run ${RUN_ID}(head ${RUN_HEAD_SHA})은 RC 후보 artifact가 있어 발행·배포 체인을 시작한다." >> "${GITHUB_STEP_SUMMARY}"
+
+  chain:
+    name: Release chain
+    needs: identify
+    if: ${{ needs.identify.outputs.rc == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    # 체인은 한 번에 하나다. 잠금 구간(automerge-queue의 병합 보류)은 이 job이 queued·in_progress인 동안이다.
+    concurrency:
+      group: datapack-release-chain
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+    env:
+      RC_RUN_ID: ${{ github.event.workflow_run.id }}
+      RC_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+      CHAIN_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
+      CHAIN_DATAPACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
       - name: Require cross-repository dispatch app credentials
-        if: ${{ steps.rc.outputs.rc == 'true' }}
         env:
           APP_CLIENT_ID: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           APP_PRIVATE_KEY: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -70,9 +112,12 @@ jobs:
             echo "cross-repository dispatch app credentials are missing: ${missing[*]}" >&2
             exit 1
           fi
-      - name: Create the hub dispatch token
-        id: app-token
-        if: ${{ steps.rc.outputs.rc == 'true' }}
+      - name: Plan the chain from the release candidate commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/datapack-release-chain.mjs plan --state "${RUNNER_TEMP}/chain-state.json"
+      - name: Create the hub token
+        id: hub-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
@@ -80,11 +125,99 @@ jobs:
           owner: AquilaXk
           repositories: easysubway
           permission-actions: write
-      - name: Dispatch hub data pack compatibility
-        if: ${{ steps.rc.outputs.rc == 'true' }}
+          permission-contents: read
+      - name: Run the hub compatibility and promotion gates
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          gh workflow run release-artifacts.yml --repo AquilaXk/easysubway --ref main -f android_rc_signing_mode=ci-self-signed -f datapack_candidate_run_id="${RUN_ID}"
-          echo "hub release-artifacts.yml을 datapack_candidate_run_id=${RUN_ID}로 dispatch했다." >> "${GITHUB_STEP_SUMMARY}"
+          GH_TOKEN: ${{ github.token }}
+          HUB_TOKEN: ${{ steps.hub-token.outputs.token }}
+        run: node tools/ci/datapack-release-chain.mjs hub-gates --state "${RUNNER_TEMP}/chain-state.json"
+      - name: Publish the data pack to production
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/datapack-release-chain.mjs publish --state "${RUNNER_TEMP}/chain-state.json"
+      - name: Create the platform token
+        id: platform-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-platform
+          permission-actions: write
+      - name: Create the backend read token
+        id: backend-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-backend
+          permission-actions: read
+          permission-contents: read
+      - name: Select the deploy inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM_TOKEN: ${{ steps.platform-token.outputs.token }}
+          BACKEND_TOKEN: ${{ steps.backend-token.outputs.token }}
+        run: node tools/ci/datapack-release-chain.mjs select-deploy --state "${RUNNER_TEMP}/chain-state.json"
+      - name: Deploy the release (PREVIEW then DEPLOY)
+        id: deploy
+        env:
+          PLATFORM_TOKEN: ${{ steps.platform-token.outputs.token }}
+        run: node tools/ci/datapack-release-chain.mjs deploy --state "${RUNNER_TEMP}/chain-state.json"
+      - name: Verify the public release
+        id: verify
+        run: node tools/ci/datapack-release-chain.mjs verify --state "${RUNNER_TEMP}/chain-state.json"
+      # 검증 실패(배포는 성공)일 때만 직전 활성 release로 되돌린다. DEPLOY 자체가 실패하면 활성 상태를 알 수 없어 되돌리지 않고 이상으로 드러낸다.
+      - name: Create the platform token for the rollback
+        id: platform-token-rollback
+        if: ${{ failure() && steps.deploy.outcome == 'success' && steps.verify.outcome == 'failure' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
+          owner: AquilaXk
+          repositories: easysubway-platform
+          permission-actions: write
+      - name: Roll back to the previous active release
+        if: ${{ failure() && steps.deploy.outcome == 'success' && steps.verify.outcome == 'failure' }}
+        env:
+          PLATFORM_TOKEN: ${{ steps.platform-token-rollback.outputs.token }}
+        run: node tools/ci/datapack-release-chain.mjs rollback --state "${RUNNER_TEMP}/chain-state.json"
+      - name: Upload the chain state
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: easysubway-datapack-chain-state-${{ github.run_id }}
+          path: ${{ runner.temp }}/chain-state.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Report the chain failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
+
+  report-release-failure:
+    name: Report a failed release-candidate or production-publish run
+    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && (github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' || github.event.workflow_run.display_title == 'Data Pack Release (production-publish)') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    env:
+      FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      # 실패한 release run 자체를 체인 실패 이슈에 쌓는다. 같은 run은 다시 쓰지 않는다.
+      - name: Report the failed release run as an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository "${GITHUB_REPOSITORY}" --run-id "${FAILED_RUN_ID}"

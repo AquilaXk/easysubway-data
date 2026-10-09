@@ -157,7 +157,7 @@ export function automationStageForBranch(ref) {
 }
 
 const sameIdentity = (user, expected) => isObject(user) && user.login === expected.login && user.id === expected.id && user.type === expected.type;
-const trustedCommitIdentity = (user) => TRUSTED_COMMIT_IDENTITIES.some((expected) => sameIdentity(user, expected));
+export const trustedCommitIdentity = (user) => TRUSTED_COMMIT_IDENTITIES.some((expected) => sameIdentity(user, expected));
 export const isAutomationApp = (user) => sameIdentity(user, AUTOMATION_PR_APP);
 
 function canonicalJson(value) {

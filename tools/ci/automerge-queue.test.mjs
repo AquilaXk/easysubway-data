@@ -75,8 +75,8 @@ test('코디네이터는 기본 토큰이 github.token이고 AUTOMERGE_PAT는 �
   // 라벨 트리거는 base 저장소 권한으로 도는 pull_request_target이어야 한다.
   assert.ok(workflow.includes("github.event_name != 'pull_request_target'"));
   assert.ok(!workflow.includes('  pull_request:\n'));
-  // workflow_run 트리거는 이 저장소의 CI 워크플로 이름과 일치해야 한다.
-  assert.ok(workflow.includes('workflows: [CI]'));
+  // workflow_run 트리거는 이 저장소의 CI 워크플로 이름과 일치해야 한다. 발행 체인 workflow(data#1084)가 끝나도 큐가 깨어난다.
+  assert.ok(workflow.includes('workflows: [CI, "Data Pack Release Candidate Chain", "Data Pack Release Cross-Repository Chain"]'));
 });
 
 test('병합 예약과 update-branch만 AUTOMERGE_PAT 병합 토큰을 쓰고 나머지는 github.token을 유지한다', async () => {
