@@ -193,6 +193,7 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
     "datapack-expiry-alert.yml",
     "itx-current-promotion.yml",
     "kric-current-facility-refresh.yml",
+    "nationwide-candidate-refresh.yml",
     "retained-gwangju-timetable-refresh.yml",
     "seoul-current-accessibility-refresh.yml",
     "source-derivative-rebinding.yml",
@@ -207,7 +208,7 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
   // 정기 주기의 두 배보다 크게 잡아 스케줄러가 한 번 늦은 것만으로는 알리지 않는다(2시간 workflow는 5시간).
   const maxAge = Object.fromEntries(actual.workflows.filter(({ runName }) => runName === undefined).map((item) => [item.workflow, parseMaxAge(item.maxAge)]));
   const hours = (value) => value * 3_600_000;
-  for (const workflow of ["current-capital-topology-refresh.yml", "current-capital-topology-registration.yml", "kric-current-facility-refresh.yml", "retained-gwangju-timetable-refresh.yml", "seoul-current-accessibility-refresh.yml", "source-reverification.yml"]) {
+  for (const workflow of ["current-capital-topology-refresh.yml", "current-capital-topology-registration.yml", "kric-current-facility-refresh.yml", "nationwide-candidate-refresh.yml", "retained-gwangju-timetable-refresh.yml", "seoul-current-accessibility-refresh.yml", "source-reverification.yml"]) {
     assert.equal(maxAge[workflow], hours(5), workflow);
   }
   const expiry = Object.fromEntries(actual.workflows.filter(({ workflow }) => workflow === "datapack-expiry-alert.yml").map((item) => [item.runName, parseMaxAge(item.maxAge)]));

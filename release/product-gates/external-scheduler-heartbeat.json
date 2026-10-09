@@ -9,6 +9,7 @@
     { "workflow": "datapack-expiry-alert.yml", "runName": "Data Pack Expiry Alert (provider-approval)", "maxAge": "PT27H" },
     { "workflow": "itx-current-promotion.yml", "maxAge": "PT27H" },
     { "workflow": "kric-current-facility-refresh.yml", "maxAge": "PT5H" },
+    { "workflow": "nationwide-candidate-refresh.yml", "maxAge": "PT5H" },
     { "workflow": "retained-gwangju-timetable-refresh.yml", "maxAge": "PT5H" },
     { "workflow": "seoul-current-accessibility-refresh.yml", "maxAge": "PT5H" },
     { "workflow": "source-derivative-rebinding.yml", "maxAge": "PT13H" },
