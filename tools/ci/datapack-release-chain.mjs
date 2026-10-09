@@ -5,6 +5,7 @@
 // - 모든 단계는 fail-closed다: 알 수 없거나 어긋나면 추정하지 않고 ChainError(코드)로 멈춘다. 실패를 성공·옛 값으로 덮지 않는다.
 // - 토큰은 호출마다 명시적으로 넘기고(저장소별 최소 권한), 로그·상태 파일에 남기지 않는다.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -39,9 +40,9 @@ function fail(code, detail = "") {
 }
 
 const SHA = /^[0-9a-f]{40}$/u;
-const DECIMAL = /^[1-9][0-9]{0,19}$/u;
+const DECIMAL = /^[1-9]\d{0,19}$/u;
 const DIGEST = /^sha256:([0-9a-f]{64})$/u;
-const DEPLOY_RUN_NAME = /^(PREVIEW|DEPLOY) backend=([1-9][0-9]*)\/([1-9][0-9]*) data=([1-9][0-9]*)\/([1-9][0-9]*)$/u;
+const DEPLOY_RUN_NAME = /^(PREVIEW|DEPLOY) backend=([1-9]\d*)\/([1-9]\d*) data=([1-9]\d*)\/([1-9]\d*)$/u;
 
 // ---------- 순수 판정 ----------
 
@@ -136,11 +137,26 @@ function requirePositive(value, label) {
 
 // ---------- GitHub 호출 ----------
 
+// gh는 고정 경로의 실행 파일만 쓴다(PATH 탐색 없음). 토큰은 호출마다 명시적으로 넘기고 환경에는 HOME 외에 아무것도 상속하지 않는다.
+const GH_EXECUTABLES = Object.freeze(["/usr/bin/gh", "/usr/local/bin/gh", "/opt/homebrew/bin/gh"]);
+
+function ghExecutable() {
+  const found = GH_EXECUTABLES.find((candidate) => existsSync(candidate));
+  if (found === undefined) throw new ChainError("GH_NOT_FOUND", GH_EXECUTABLES.join(", "));
+  return found;
+}
+
+function withoutTrailingSlashes(url) {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end -= 1;
+  return url.slice(0, end);
+}
+
 function execGh(args, token) {
   if (typeof token !== "string" || token === "") return Promise.reject(new ChainError("TOKEN_MISSING", "a repository token is required"));
   return new Promise((resolve, reject) => {
-    const child = spawn("gh", args, {
-      env: { PATH: process.env.PATH, HOME: process.env.HOME, GH_TOKEN: token, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
+    const child = spawn(ghExecutable(), args, {
+      env: { HOME: process.env.HOME, GH_TOKEN: token, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const out = [];
@@ -344,7 +360,7 @@ export async function selectDeployInputsStage(ctx, state) {
   }
   const previousBackend = await previousArtifact(ctx, {
     repo: REPOSITORIES.backend, token: backendToken, artifactId: active.backendArtifactId, runId: active.backendRunId,
-    namePattern: /^easysubway-backend-release-[0-9a-f]{40}-[1-9][0-9]*$/u,
+    namePattern: /^easysubway-backend-release-[0-9a-f]{40}-[1-9]\d*$/u,
   });
   const previousData = await previousArtifact(ctx, {
     repo: REPOSITORIES.data, token: ctx.tokens.data, artifactId: active.dataArtifactId, runId: active.dataRunId,
@@ -488,7 +504,7 @@ export async function buildContext(env, { repositoryRoot, gh = createGh() } = {}
   const tokens = {
     data: env.GH_TOKEN, hub: env.HUB_TOKEN, platform: env.PLATFORM_TOKEN, backend: env.BACKEND_TOKEN,
   };
-  const publicBase = (name) => requiredEnv(env, name, /^https:\/\/[^\s/]+(\/[^\s?#]*)?$/u).replace(/\/+$/u, "");
+  const publicBase = (name) => withoutTrailingSlashes(requiredEnv(env, name, /^https:\/\/[^\s/]+(\/[^\s?#]*)?$/u));
   const context = {
     gh, tokens, now: () => Date.now(), sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), pollMs: 10_000,
     timeouts: { compat: 8 * 60_000, promotion: 8 * 60_000, publish: 25 * 60_000, preview: 8 * 60_000, deploy: 12 * 60_000, discover: 120_000 },

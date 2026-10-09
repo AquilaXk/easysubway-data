@@ -55,4 +55,4 @@ jobs:
           DEPLOY_PUBLIC_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
           CHAIN_DATAPACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
           EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: ${{ secrets.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN }}
-        run: node tools/ci/build-automation-status.mjs --output "${RUNNER_TEMP}/automation-status.json"
+        run: node tools/ci/build-automation-status.mjs

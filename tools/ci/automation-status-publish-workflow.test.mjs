@@ -41,6 +41,6 @@ test("서비스 토큰은 게시 step의 env로만 들어가고 run 스크립트
   assert.match(publish, /CHAIN_DATAPACK_BASE_URL: \$\{\{ vars\.OCI_SERVER_ROUTE_PUBLIC_BASE_URL \}\}/u);
   assert.match(publish, /APP_READ_TOKEN: \$\{\{ steps\.read-token\.outputs\.token \}\}/u);
   const run = publish.split("\n        run: ")[1];
-  assert.equal(run.trim(), 'node tools/ci/build-automation-status.mjs --output "${RUNNER_TEMP}/automation-status.json"');
+  assert.equal(run.trim(), "node tools/ci/build-automation-status.mjs");
   assert.ok(yml.trimEnd().endsWith(publish.trimEnd()), "publishing is the last step");
 });

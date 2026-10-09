@@ -117,7 +117,7 @@ export async function readReleaseCandidateModeArgs({ repositoryRoot = ROOT, gate
 // 후보 RC run과 hub 승격 run의 정확한 id만 더한다. 파일에 없는 값은 입력으로 받지 않는다.
 export async function readProductionPublishModeArgs({ repositoryRoot = ROOT, gateRunRecord, candidateRunId, promotionRunId } = {}) {
   for (const value of [candidateRunId, promotionRunId]) {
-    if (typeof value !== "string" || !/^[1-9][0-9]*$/u.test(value)) fail("PRODUCTION_PUBLISH_RUN_ID", String(value));
+    if (typeof value !== "string" || !/^[1-9]\d*$/u.test(value)) fail("PRODUCTION_PUBLISH_RUN_ID", String(value));
   }
   const modeArgs = await readReleaseCandidateModeArgs({ repositoryRoot, gateRunRecord });
   return { ...modeArgs, candidateRunId, promotionRunId };

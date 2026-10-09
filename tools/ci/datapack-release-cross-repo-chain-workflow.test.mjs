@@ -82,7 +82,9 @@ function jobBlock(name) {
 test("the chain reacts only to a main workflow_dispatch Data Pack Release run of this repository, by its mode (#932, data#1084)", () => {
   assert.match(yml, /^on:\n  workflow_run:\n    workflows: \["Data Pack Release"\]\n    types: \[completed\]\n/mu);
   assert.doesNotMatch(yml, /\n  (schedule|push|pull_request|workflow_dispatch):/u);
-  assert.match(yml, /\npermissions:\n  actions: read\n  contents: read\n/u);
+  // 읽기 권한도 workflow 전체가 아니라 job마다 준다(SonarCloud githubactions:S8264).
+  assert.match(yml, /\npermissions: \{\}\n/u);
+  assert.match(jobBlock("identify"), /\n    permissions:\n      actions: read\n      contents: read\n/u);
   // App 토큰 경로 앞의 유일한 장벽이므로 guard 전체를 정확히 고정한다(&&를 ||로 바꾸는 변이가 잡혀야 한다).
   assert.deepEqual(yml.split("\n").filter((line) => line.startsWith("    if: ")), [RC_GUARD, CHAIN_GUARD, FAILURE_GUARD]);
   assert.match(jobBlock("identify"), new RegExp(`\\n${RC_GUARD.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\n`, "u"));

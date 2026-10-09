@@ -5,7 +5,9 @@
 // - 읽지 못한 값은 빈 값·옛 값으로 채우지 않는다. 한 곳이라도 조회가 실패하면 전체가 실패한다(게시 안 됨 -> admin이 낡음으로 표시).
 // - 시간이 지나며 변하는 판정(만료 임박 등)은 snapshot에 넣지 않고 backend가 렌더 시각으로 계산한다.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { AUTOMATION_STAGE_PREFIXES, automationStageForBranch, readPages } from "./automation-pr-policy.mjs";
@@ -37,7 +39,21 @@ function statusError(code, detail = "") {
 }
 
 const instant = (value) => (typeof value === "string" ? Date.parse(value) : Number.NaN);
-const newest = (left, right) => (left.created_at !== right.created_at ? (left.created_at < right.created_at ? 1 : -1) : right.id - left.id);
+function newest(left, right) {
+  if (left.created_at === right.created_at) return right.id - left.id;
+  return left.created_at < right.created_at ? 1 : -1;
+}
+
+function withoutTrailingSlashes(url) {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end -= 1;
+  return url.slice(0, end);
+}
+
+function stuckReason({ behind, ageHours }) {
+  if (behind) return "BEHIND";
+  return ageHours >= STUCK_PULL_AGE_HOURS ? "OLD" : null;
+}
 
 function activeDatapackOf(manifest) {
   const published = instant(manifest?.publishedAt);
@@ -56,7 +72,8 @@ function summarizeStage(stage, runs) {
   if (!Array.isArray(runs)) throw statusError("RUNS_INVALID", stage.id);
   const matching = runs.filter((run) => (stage.title === undefined || run.display_title === stage.title)
     && (stage.event === undefined || run.event === stage.event)
-    && (stage.deployMode === undefined || parseDeployRunName(run.display_title)?.mode === stage.deployMode)).sort(newest);
+    && (stage.deployMode === undefined || parseDeployRunName(run.display_title)?.mode === stage.deployMode));
+  matching.sort(newest);
   const success = matching.find((run) => run.status === "completed" && run.conclusion === "success");
   return {
     id: stage.id,
@@ -81,9 +98,10 @@ export function buildAutomationStatus({ now, manifest, stageRuns = {}, issues = 
   const behindNumbers = new Set([...behind.actions, ...behind.anomalies].map((item) => item.number));
   const automationPulls = openPulls.filter((pull) => automationStageForBranch(pull?.head?.ref) !== null);
   const pulls = [];
-  for (const pull of automationPulls.sort((left, right) => left.number - right.number)) {
+  const orderedPulls = automationPulls.toSorted((left, right) => left.number - right.number);
+  for (const pull of orderedPulls) {
     const ageHours = (now.getTime() - instant(pull.created_at)) / 3_600_000;
-    const reason = behindNumbers.has(pull.number) ? "BEHIND" : ageHours >= STUCK_PULL_AGE_HOURS ? "OLD" : null;
+    const reason = stuckReason({ behind: behindNumbers.has(pull.number), ageHours });
     if (reason !== null) {
       pulls.push({ number: pull.number, title: pull.title, url: pull.html_url, branch: pull.head.ref, stage: automationStageForBranch(pull.head.ref), createdAt: pull.created_at, reason });
     }
@@ -153,7 +171,7 @@ export async function postAutomationStatus({ snapshot, apiBaseUrl, token, fetchI
   }
   const body = JSON.stringify(snapshot);
   if (Buffer.byteLength(body) >= SNAPSHOT_MAX_BYTES) throw statusError("SNAPSHOT_TOO_LARGE", `${Buffer.byteLength(body)} bytes`);
-  const response = await fetchImpl(`${apiBaseUrl.replace(/\/+$/u, "")}/admin/api/datapack/automation-status`, {
+  const response = await fetchImpl(`${withoutTrailingSlashes(apiBaseUrl)}/admin/api/datapack/automation-status`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body,
@@ -164,10 +182,19 @@ export async function postAutomationStatus({ snapshot, apiBaseUrl, token, fetchI
 
 // ---------- CLI ----------
 
+// gh는 고정 경로의 실행 파일만 쓴다(PATH 탐색 없음). 토큰은 호출마다 명시적으로 넘기고 환경에는 HOME 외에 아무것도 상속하지 않는다.
+const GH_EXECUTABLES = Object.freeze(["/usr/bin/gh", "/usr/local/bin/gh", "/opt/homebrew/bin/gh"]);
+
+function ghExecutable() {
+  const found = GH_EXECUTABLES.find((candidate) => existsSync(candidate));
+  if (found === undefined) throw statusError("GH_NOT_FOUND", GH_EXECUTABLES.join(", "));
+  return found;
+}
+
 function execGh(args, token) {
   if (typeof token !== "string" || token === "") return Promise.reject(statusError("TOKEN_MISSING"));
   return new Promise((resolve, reject) => {
-    const child = spawn("gh", args, { env: { PATH: process.env.PATH, HOME: process.env.HOME, GH_TOKEN: token, GH_PROMPT_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(ghExecutable(), args, { env: { HOME: process.env.HOME, GH_TOKEN: token, GH_PROMPT_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"] });
     const out = [];
     const err = [];
     child.stdout.on("data", (chunk) => out.push(chunk));
@@ -189,7 +216,7 @@ async function main(env = process.env) {
   const dataApi = ghApi(env.GH_TOKEN);
   const appApi = ghApi(env.APP_READ_TOKEN);
   const manifestBase = env.CHAIN_DATAPACK_BASE_URL;
-  if (typeof manifestBase !== "string" || !/^https:\/\//u.test(manifestBase)) throw statusError("ENV_INVALID", "CHAIN_DATAPACK_BASE_URL");
+  if (typeof manifestBase !== "string" || !manifestBase.startsWith("https://")) throw statusError("ENV_INVALID", "CHAIN_DATAPACK_BASE_URL");
   const collected = await collectAutomationStatus({
     now: new Date(),
     repositories,
@@ -199,14 +226,17 @@ async function main(env = process.env) {
       "--json", "number,title,url,createdAt,author",
     ], env.GH_TOKEN)),
     fetchManifest: async () => {
-      const response = await fetch(`${manifestBase.replace(/\/+$/u, "")}/catalog/current.json`, { signal: AbortSignal.timeout(20_000) });
+      const response = await fetch(`${withoutTrailingSlashes(manifestBase)}/catalog/current.json`, { signal: AbortSignal.timeout(20_000) });
       if (!response.ok) throw statusError("MANIFEST_INVALID", `manifest request answered ${response.status}`);
       return response.json();
     },
   });
   const snapshot = buildAutomationStatus(collected);
-  const output = process.argv[2] === "--output" ? process.argv[3] : undefined;
-  if (output !== undefined) await writeFile(output, `${JSON.stringify(snapshot, null, 2)}\n`);
+  // 결과 사본은 러너 임시 디렉터리의 고정 이름 파일에만 쓴다(경로를 입력으로 받지 않는다).
+  const tempDirectory = env.RUNNER_TEMP;
+  if (typeof tempDirectory === "string" && path.isAbsolute(tempDirectory)) {
+    await writeFile(path.join(tempDirectory, "automation-status.json"), `${JSON.stringify(snapshot, null, 2)}\n`);
+  }
   if (env.AUTOMATION_STATUS_DRY_RUN === "true") return snapshot;
   await postAutomationStatus({ snapshot, apiBaseUrl: env.DEPLOY_PUBLIC_API_BASE_URL, token: env.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN });
   return snapshot;
