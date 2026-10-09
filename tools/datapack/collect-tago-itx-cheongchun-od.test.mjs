@@ -1228,29 +1228,51 @@ test("재시도 시간 예산은 요청 단위 한도(5회)와 함께 쓰이며 
   assert.deepEqual(delays, BACKOFF);
 });
 
-test("재시도 유무와 관계없이 정상 응답의 rawResponseSha256·pageCount·evidenceHash는 같다 (F2)", async () => {
-  const clean = await collectTagoItxCheongchunRoster(rosterInput({ fetchImpl: realRosterFetch(), waitImpl: async () => {} }));
-  const retried = await collectTagoItxCheongchunRoster(rosterInput({
-    waitImpl: async () => {},
-    fetchImpl: realRosterFetch({ failures: {
-      GetVhcleKndList: ["99", "503"], GetCtyCodeList: ["99", "throw"], GetCtyAcctoTrainSttnList: ["99", "99"], GetStrtpntAlocFndTrainInfo: ["99", "503", "throw"],
-    } }),
-  }));
-  const pick = ({ operation, pageCount, rawResponseSha256 }) => ({ operation, pageCount, rawResponseSha256 });
-  assert.deepEqual(retried.operations.map(pick), clean.operations.map(pick));
-  // evidenceHash는 요청 수(requestCount·quotaSummary)를 포함하는 기존 계약이라 시도 수가 다르면 값이 다르다(재시도가 증거에 드러나는 유일한 곳).
-  // 시도 수 필드만 같은 값으로 맞추면 나머지 증거 전체가 같아 해시가 정확히 같아야 한다: 실패 본문이 어디에도 섞이지 않았다는 뜻이다.
-  const normalized = (artifact) => {
-    const copy = structuredClone(artifact);
-    delete copy.evidenceHash;
-    for (const operation of copy.operations) operation.requestCount = 0;
-    copy.quotaSummary = {};
-    return { copy, hash: sha256(JSON.stringify(copy)) };
+test("재시도 유무와 관계없이 정상 응답의 rawResponseSha256·pageCount·evidenceHash는 서버가 준 정상 본문만으로 정해진다 (F2)", async () => {
+  // 독립 oracle: fetch가 실제로 돌려준 정상(00) 본문의 sha256을 직접 기록하고, 단일 페이지 operation의 기대값 sha256(bodySha)를 여기서 계산한다.
+  const withServedBodies = (inner) => {
+    const served = [];
+    const fetchImpl = async (url) => {
+      const response = await inner(url);
+      const text = await response.clone().text();
+      if (response.status === 200 && JSON.parse(text)?.response?.header?.resultCode === "00") {
+        served.push({ operation: new URL(url).pathname.split("/").at(-1), bodySha256: sha256(text) });
+      }
+      return response;
+    };
+    return { served, fetchImpl };
   };
-  assert.deepEqual(normalized(retried).copy, normalized(clean).copy);
-  assert.equal(normalized(retried).hash, normalized(clean).hash);
-  assert.equal(retried.evidenceHash === clean.evidenceHash, false, "시도 수가 다르면 evidenceHash도 다르다");
-  assert.ok(retried.quotaSummary.actualRequestCount > clean.quotaSummary.actualRequestCount);
+  const failures = {
+    GetVhcleKndList: ["99", "503"], GetCtyCodeList: ["99", "throw"], GetCtyAcctoTrainSttnList: ["99", "99"], GetStrtpntAlocFndTrainInfo: ["99", "503", "throw"],
+  };
+  for (const [label, scenario] of [["clean", {}], ["retried", failures]]) {
+    const { served, fetchImpl } = withServedBodies(realRosterFetch({ failures: scenario }));
+    const artifact = await collectTagoItxCheongchunRoster(rosterInput({ fetchImpl, waitImpl: async () => {} }));
+    // 증거의 operation 순서(등급, 도시, 역…, OD…)에 맞춰 기대 해시를 만든다.
+    const expectedByOperation = new Map();
+    for (const { operation, bodySha256 } of served) {
+      expectedByOperation.set(operation, [...(expectedByOperation.get(operation) ?? []), sha256(bodySha256)]);
+    }
+    assert.equal(expectedByOperation.get("GetVhcleKndList")[0], sha256(REAL.sha256.gradeList), label);
+    assert.equal(expectedByOperation.get("GetCtyCodeList")[0], sha256(REAL.sha256.cityCodeList), label);
+    const cursor = new Map();
+    for (const operation of artifact.operations) {
+      const index = cursor.get(operation.operation) ?? 0;
+      cursor.set(operation.operation, index + 1);
+      assert.equal(operation.rawResponseSha256, expectedByOperation.get(operation.operation)[index], `${label} ${operation.operation}`);
+      assert.equal(operation.pageCount, 1, `${label} ${operation.operation}`);
+    }
+    // 실패한 시도의 본문(99)은 어떤 해시에도 들어가지 않는다.
+    assert.equal(JSON.stringify(artifact).includes(REAL.sha256.unknownError99), false, label);
+    assert.equal(JSON.stringify(artifact).includes(sha256(REAL.sha256.unknownError99)), false, label);
+    // evidenceHash는 자기 자신을 뺀 증거의 sha256이다(요청 수는 실제 시도 수를 반영한다).
+    const { evidenceHash, ...rest } = artifact;
+    assert.equal(evidenceHash, sha256(JSON.stringify(rest)), label);
+    if (label === "retried") {
+      const attempts = artifact.operations.reduce((sum, { requestCount }) => sum + requestCount, 0);
+      assert.equal(attempts, artifact.operations.length + 9, "재시도 9번(등급 2 + 도시 2 + 역 2 + OD 3)이 requestCount에 드러난다");
+    }
+  }
 });
 
 test("HTTP 408은 1초 대기 뒤 같은 요청을 다시 보낸다 (F3)", async () => {
