@@ -11,7 +11,12 @@ const FRAGMENT_PATH = "contracts/documentation/documentation-fragment.json";
 test("자동 갱신 단계 허용 경로는 fragment에 등록된 TRACKED resource와 겹치지 않는다", async () => {
   const fragment = JSON.parse(await readFile(new URL(`../../${FRAGMENT_PATH}`, import.meta.url), "utf8"));
   const prefix = `${fragment.repository}:`;
-  const tracked = fragment.resources.filter(({ sourceSurface }) => sourceSurface === "TRACKED").map(({ resource }) => resource.slice(prefix.length));
+  const tracked = fragment.resources
+    .filter(({ sourceSurface }) => sourceSurface === "TRACKED")
+    .map(({ resource }) => {
+      assert.ok(resource.startsWith(prefix), `TRACKED resource는 ${prefix} 접두사를 가진다: ${resource}`);
+      return resource.slice(prefix.length);
+    });
   assert.ok(tracked.length > 0, "fragment에 TRACKED resource가 있다");
 
   const collisions = [];
