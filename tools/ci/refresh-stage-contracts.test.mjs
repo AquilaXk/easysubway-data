@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { INPUT_PATH, INVENTORY_PATH, LEDGER_PATH, PACK_STAMP_KEYS, POLICY, RECORDED, REPLAY, REVIEWED_PACK_PATH, buildCapitalSnapshot, packSourcesOf, filenames, recordedTrees, replayMutations, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
+import { CANONICAL_PACK_PATH, INPUT_PATH, INVENTORY_PATH, LEDGER_PATH, PACK_STAMP_KEYS, POLICY, RECORDED, REPLAY, REVIEWED_PACK_PATH, buildCapitalSnapshot, packSourcesOf, filenames, recordedTrees, replayMutations, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
 
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import {
@@ -10,6 +10,7 @@ import {
   REFRESH_STAGE_IDS,
   evaluateRefreshStage,
   isRefreshStage,
+  packMarkerOnlyViolations,
   refreshFileViolation,
   refreshPathShapeViolation,
 } from "./refresh-stage-contracts.mjs";
@@ -789,4 +790,48 @@ test("#1062 반증: 표식 시각이 새 snapshot의 원장 행 시각과 다르
   const skewed = await replay({ ledger: (lineage) => { const row = lineage.find((entry) => entry.snapshotId === kricAfter); row.retrievedAt = "2026-10-01T00:00:00.000Z"; row.sourceUpdatedAt = "2026-10-01T00:00:00.000Z"; } });
   assert.ok(codes(skewed).includes("PACK_CONTENT"));
   assert.match(details(skewed), /새 snapshot의 원장 행 시각/u);
+});
+
+// ---------------------------------------------------------------------------
+// #1067: base->head canonical pack이 출처 표식만 바뀌었는지 단독으로 판정한다.
+// 갱신 PR의 계약 테스트가 "applicability가 선언한 갱신 전 pack"을 PR base에서 읽어도 되는지 이 판정으로 정한다.
+// 같은 판정(packContentViolations)을 쓰는 evaluateRefreshStage의 PACK_CONTENT와 어긋나면 안 된다.
+// ---------------------------------------------------------------------------
+const markerOnly = (run, mutations = {}) => packMarkerOnlyViolations({ baseSha: run.baseSha, files: filesOf(run, recordedTrees(run, mutations)) });
+
+test("#1067 base->head canonical pack이 출처 표식만 바뀌면 위반이 없다(기록된 갱신 PR과 KRIC·서울 증거 재결속 재생)", async () => {
+  for (const run of runsOf("capital-topology-refresh")) assert.deepEqual(await markerOnly(run), [], run.label);
+  assert.deepEqual(await markerOnly(topologyRun, replayMutations()), [], "#1062 재생");
+});
+
+test("#1067 반증: 표식 밖 값 변경·표식 값 불일치·키 구성 변경은 위반이고 evaluateRefreshStage의 PACK_CONTENT와 같은 판정이다", async () => {
+  for (const run of runsOf("capital-topology-refresh")) {
+    for (const [label, mutate] of Object.entries(packCases(run))) {
+      const found = await markerOnly(run, { mutatePack: mutate });
+      assert.notDeepEqual(found, [], `${run.label}: ${label}`);
+      assert.ok(codes(await evaluate(run, { mutatePack: mutate })).includes("PACK_CONTENT"), `${run.label}: ${label}: 단계 게이트와 같은 판정`);
+    }
+  }
+  for (const [label, mutate] of Object.entries({
+    "KRIC 시설 상태": (pack) => { pack.packs[0].facilities[0].status = "AVAILABLE"; },
+    "KRIC 시설 evidenceHash가 입력 행과 다름": (pack) => { pack.packs[0].facilities[0].evidenceHash = "7".repeat(64); },
+    "KRIC snapshot id가 원장 계보 밖": (pack) => { pack.packs[0].stationFacilityEvidence.find((row) => row.sourceId === FOLLOW_KRIC).sourceSnapshotId = "kric-station-convenience-standard-20990101T000000000Z"; },
+  })) {
+    const found = await markerOnly(topologyRun, replayMutations({ canonical: mutate }));
+    assert.notDeepEqual(found, [], label);
+  }
+});
+
+test("#1067 반증: 근거를 읽을 수 없으면 위반이다(fail closed)", async () => {
+  const cases = {
+    "head pack 없음": { mutateFiles: (head) => { head.delete(CANONICAL_PACK_PATH); } },
+    "head pack이 JSON 아님": { mutateFiles: (head) => { head.set(CANONICAL_PACK_PATH, "{ not json"); } },
+    "base pack 없음": { mutateFiles: (_head, base) => { base.delete(CANONICAL_PACK_PATH); } },
+    "head inventory 없음": { mutateFiles: (head) => { head.delete(INVENTORY_PATH); } },
+    "base inventory에 시간표 증거 없음": { mutateBaseInventory: (inventory) => { inventory.sources = inventory.sources.filter((entry) => entry.id !== "incheon-line1-train-timetable"); } },
+    "head inventory에 역 정보 증거 없음": { mutateInventory: (inventory) => { inventory.sources = inventory.sources.filter((entry) => entry.id !== "incheon-transit-station-info"); } },
+  };
+  for (const [label, mutations] of Object.entries(cases)) {
+    assert.notDeepEqual(await markerOnly(topologyRun, mutations), [], label);
+  }
 });
