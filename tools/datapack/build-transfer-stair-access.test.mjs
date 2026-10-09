@@ -394,6 +394,46 @@ test("서식을 완화해도 방면 역이 이웃 역과 정확히 하나로 맞
   }
 });
 
+test("이웃 역 둘이 같은 이름으로 정규화되면 방면 역을 고르지 않고 제외한다 (#1025 리뷰 F1)", () => {
+  // 정본 '을지로3가'와 '을지로 3가'는 정규화하면 같은 이름이다. 이웃 둘이 모두 맞으면 첫 번째를 고르지 않고 DIRECTION_NAME_UNRESOLVED다.
+  const catalog = sadangCatalog();
+  catalog.stations = catalog.stations.map((station) => {
+    if (station.id === "station-bangbae") return { ...station, nameKo: "을지로3가" };
+    if (station.id === "station-nakseongdae") return { ...station, nameKo: "을지로 3가" };
+    return station;
+  });
+  const rows = sadangRows().map((row) => ({
+    ...row,
+    MV_CONT_DTL: row.MV_CONT_DTL.replaceAll("방배", "을지로3가").replaceAll("낙성대", "을지로 3가"),
+    CHTN_MV_CONT: row.CHTN_MV_CONT.replaceAll("방배", "을지로3가").replaceAll("낙성대", "을지로 3가"),
+  }));
+  const result = derive({ rows, catalog });
+  // 2호선 출발 경로 4개의 첫 단계와 4호선 출발 경로 4개의 마지막 단계가 모호한 이름이다.
+  assert.equal(result.summary.excludedPathsByReason.DIRECTION_NAME_UNRESOLVED, 8);
+  assert.equal(result.summary.mappedPathCount, 0);
+  assert.equal(edgeState(result, EDGE_2_4).state, "UNKNOWN");
+  assert.equal(edgeState(result, EDGE_4_2).state, "UNKNOWN");
+  assert.equal(result.evidenceRows.length, 0);
+});
+
+test("노선 표기가 없는 여러 단어 방면은 첫 단어를 노선으로 읽지 않고 서식 미지원으로 제외한다 (#1025 리뷰 F3)", () => {
+  // '을지로 3가 방면'의 첫 단어 '을지로'는 노선 표기가 아니다. 노선 불일치가 아니라 서식 미지원이어야 한다.
+  // 첫 단어와 역명을 이어 붙인 '을지로3가'가 정본 역 이름일 때 노선 표기 없는 방면으로 본다.
+  const lineless = derive({
+    rows: sadangRows().map((row) => (row.CHTN_MV_CONT === "4호선 남태령 방면" ? { ...row, CHTN_MV_CONT: "을지로 3가 방면" } : row)),
+    catalog: sadangCatalog({ extraStations: [{ id: "station-euljiro3ga", nameKo: "을지로3가", nameSub: "" }] }),
+  });
+  assert.equal(lineless.summary.excludedPathsByReason.DIRECTION_FORMAT_UNSUPPORTED, 4);
+  assert.equal(lineless.summary.excludedPathsByReason.FROM_LINE_MISMATCH, undefined);
+  assert.equal(lineless.summary.excludedPathsByReason.TO_LINE_UNRESOLVED, undefined);
+  // 고정 노선 표기이지만 그 역에 없는 노선이면 지금처럼 노선 불일치·도착 노선 미해결이다.
+  const wrongLine = derive({ rows: sadangRows().map((row) => (row.CHTN_MV_CONT === "4호선 남태령 방면"
+    ? { ...row, CHTN_MV_CONT: "5호선 남태령 방면" } : row)) });
+  assert.equal(wrongLine.summary.excludedPathsByReason.FROM_LINE_MISMATCH, 2);
+  assert.equal(wrongLine.summary.excludedPathsByReason.TO_LINE_UNRESOLVED, 2);
+  assert.equal(wrongLine.summary.excludedPathsByReason.DIRECTION_FORMAT_UNSUPPORTED, undefined);
+});
+
 test("parseDirection은 '<노선> <역> 방면' 표기의 서식 차이만 읽고 그 밖은 null이다 (#1025)", () => {
   for (const [value, expected] of [
     ["4호선 남태령 방면", { lineToken: "4호선", stationName: "남태령" }],
@@ -405,7 +445,7 @@ test("parseDirection은 '<노선> <역> 방면' 표기의 서식 차이만 읽�
   ]) {
     assert.deepEqual(parseDirection(value), expected, value);
   }
-  for (const value of ["", null, undefined, "4호선 남태령", "남태령 방면", "방면", "4호선 방면", "4호선 남태령(종착역)", "4호선 금정 도착", "서울역 종착역 승강장"]) {
+  for (const value of ["", null, undefined, "4호선 남태령", "남태령 방면", "방면", "4호선 방면", "4호선 남태령(종착역)", "4호선 금정 도착", "서울역 종착역 승강장", "국회의사당  방면"]) {
     assert.equal(parseDirection(value), null, String(value));
   }
 });

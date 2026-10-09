@@ -205,7 +205,7 @@ function groupSequences(rows) {
 }
 
 function resolveKey({ entry, mapping, stations, linesAtStation, tableLines, neighbors }) {
-  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines });
+  const lines = resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations });
   if (lines.reason) return { reason: lines.reason };
   const { from, to } = lines;
   const toLineId = lines.toLineId;
