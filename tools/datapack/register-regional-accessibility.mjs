@@ -433,7 +433,7 @@ async function loadTopologies(root, inventory, ids) {
     return { source, evidence, snapshot, path: absolute, bytes };
   }));
 }
-async function replay(snapshot, topology, molit) {
+export async function replay(snapshot, topology, molit) {
   const raw = (id) => Buffer.from(one(snapshot.rawSources,
     (row) => row.datasetId === id, "retained raw").bytesBase64, "base64");
   const now = new Date(snapshot.capturedAt);
