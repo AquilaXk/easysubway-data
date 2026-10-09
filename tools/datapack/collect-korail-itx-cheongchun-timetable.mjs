@@ -2356,6 +2356,7 @@ function completenessFailureReason(error) {
   const message = error instanceof Error ? error.message : "";
   for (const code of [
     "TAGO_QUOTA_BUDGET_EXHAUSTED",
+    "TAGO_RETRY_TIME_BUDGET_EXHAUSTED",
     "TAGO_OD_DUPLICATE",
     "TAGO_OD_PAIR_COVERAGE_INCOMPLETE",
     "TAGO_OD_TIME_CONFLICT",

@@ -1054,6 +1054,18 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     assert.equal(artifact.serviceDays[0].failureStage, "OD_MATERIALIZATION");
   });
 
+  await context.test("재시도 시간 예산 소진은 ROSTER 단계 MISSING 증거로 남는다 (data#1089)", async () => {
+    const artifact = await collectKorailItxCheongchunCompleteness({
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
+      now: new Date("2026-07-14T00:00:00.000Z"),
+      collectRosterImpl: async () => { throw new Error("TAGO_RETRY_TIME_BUDGET_EXHAUSTED"); },
+      collectTimetableImpl: async () => assert.fail("must not run"),
+    });
+    assert.equal(artifact.validationStatus, "MISSING");
+    assert.equal(artifact.serviceDays[0].failureReasonCode, "TAGO_RETRY_TIME_BUDGET_EXHAUSTED");
+    assert.equal(artifact.serviceDays[0].failureStage, "ROSTER");
+  });
+
   await context.test("불완전한 OD count는 OD materialization 단계로 기록", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
       serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,

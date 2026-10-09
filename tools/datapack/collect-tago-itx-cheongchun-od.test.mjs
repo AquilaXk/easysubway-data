@@ -1179,6 +1179,129 @@ test("TAGO 일일 요청 예산이 바닥나면 재시도하지 않고 예산 �
   assert.equal(calls.length, 3, "예산 3건: 등급 1 + 도시 코드 2(첫 시도와 재시도 1)");
 });
 
+test("재시도 대기 합계는 run 단위 5분 예산을 넘지 않고, 넘기 전에 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 수집을 멈춘다 (F1)", async () => {
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const delays = [];
+  const calls = [];
+  // 장애가 계속되는 공급자: 카탈로그는 정상이고 모든 OD 요청이 99다. 운행일 3개가 같은 requestBudget(= 같은 run)을 쓴다.
+  const outage = realRosterFetch({ calls, failures: { GetStrtpntAlocFndTrainInfo: Array(1000).fill("99") } });
+  const outcomes = [];
+  for (let day = 0; day < 3; day += 1) {
+    try {
+      outcomes.push(await collectTagoItxCheongchunRoster(rosterInput({
+        requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); }, fetchImpl: outage,
+      })));
+    } catch (error) {
+      outcomes.push(error);
+    }
+  }
+  // 1·2일차: 예산 안에서 OD마다 5번 재시도한 뒤 OD 실패(MISSING 증거)로 남는다. 3일차: 예산이 닿기 전에 수집을 멈춘다.
+  for (const artifact of outcomes.slice(0, 2)) {
+    assert.equal(artifact.completedOdCount, 0);
+    assert.equal(artifact.failedOdCount, 2);
+    assert.ok(artifact.failedOds.every(({ reasonCode }) => reasonCode === "PROVIDER_RESULT_FAILURE"));
+  }
+  assert.ok(outcomes[2] instanceof Error);
+  assert.equal(outcomes[2].message, "TAGO_RETRY_TIME_BUDGET_EXHAUSTED");
+  const total = delays.reduce((sum, value) => sum + value, 0);
+  assert.ok(total <= 300_000, `waited ${total}ms`);
+  // 1·2일차 4요청×31초씩 248초, 3일차는 31초 + 15초(1+2+4+8)까지 기다리다 다음 16초가 예산을 넘는 순간 멈춘다.
+  assert.equal(total, 294_000);
+  // 최악 시간 상한: 시도 수 × 15초(요청 timeout) + 대기 합계가 가장 짧은 workflow timeout(45분)보다 짧다.
+  const odAttempts = calls.filter((operation) => operation === "GetStrtpntAlocFndTrainInfo").length;
+  assert.ok(odAttempts * 15_000 + total < 45 * 60_000);
+  // 같은 run의 이후 호출도 남은 예산(6초)만 쓰고 합계는 끝까지 5분을 넘지 않는다.
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); }, fetchImpl: outage,
+  })), /TAGO_RETRY_TIME_BUDGET_EXHAUSTED/);
+  assert.ok(delays.reduce((sum, value) => sum + value, 0) <= 300_000);
+});
+
+test("재시도 시간 예산은 요청 단위 한도(5회)와 함께 쓰이며 예산 안에서는 기존 동작과 같다", async () => {
+  const delays = [];
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+    requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: realRosterFetch({ failures: { GetCtyCodeList: ["99", "99", "99", "99", "99"] } }),
+  }));
+  assert.equal(artifact.completedOdCount, 2);
+  assert.deepEqual(delays, BACKOFF);
+});
+
+test("재시도 유무와 관계없이 정상 응답의 rawResponseSha256·pageCount·evidenceHash는 같다 (F2)", async () => {
+  const clean = await collectTagoItxCheongchunRoster(rosterInput({ fetchImpl: realRosterFetch(), waitImpl: async () => {} }));
+  const retried = await collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async () => {},
+    fetchImpl: realRosterFetch({ failures: {
+      GetVhcleKndList: ["99", "503"], GetCtyCodeList: ["99", "throw"], GetCtyAcctoTrainSttnList: ["99", "99"], GetStrtpntAlocFndTrainInfo: ["99", "503", "throw"],
+    } }),
+  }));
+  const pick = ({ operation, pageCount, rawResponseSha256 }) => ({ operation, pageCount, rawResponseSha256 });
+  assert.deepEqual(retried.operations.map(pick), clean.operations.map(pick));
+  // evidenceHash는 요청 수(requestCount·quotaSummary)를 포함하는 기존 계약이라 시도 수가 다르면 값이 다르다(재시도가 증거에 드러나는 유일한 곳).
+  // 시도 수 필드만 같은 값으로 맞추면 나머지 증거 전체가 같아 해시가 정확히 같아야 한다: 실패 본문이 어디에도 섞이지 않았다는 뜻이다.
+  const normalized = (artifact) => {
+    const copy = structuredClone(artifact);
+    delete copy.evidenceHash;
+    for (const operation of copy.operations) operation.requestCount = 0;
+    copy.quotaSummary = {};
+    return { copy, hash: sha256(JSON.stringify(copy)) };
+  };
+  assert.deepEqual(normalized(retried).copy, normalized(clean).copy);
+  assert.equal(normalized(retried).hash, normalized(clean).hash);
+  assert.equal(retried.evidenceHash === clean.evidenceHash, false, "시도 수가 다르면 evidenceHash도 다르다");
+  assert.ok(retried.quotaSummary.actualRequestCount > clean.quotaSummary.actualRequestCount);
+});
+
+test("HTTP 408은 1초 대기 뒤 같은 요청을 다시 보낸다 (F3)", async () => {
+  const delays = [];
+  const calls = [];
+  let first = true;
+  const base = realRosterFetch({ calls });
+  const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      if (new URL(url).pathname.endsWith("GetVhcleKndList") && first) { first = false; return new Response("timeout", { status: 408 }); }
+      return base(url);
+    },
+  }));
+  assert.equal(artifact.completedOdCount, 2);
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(calls.filter((operation) => operation === "GetVhcleKndList").length, 1, "408 이후 재시도 한 번만 base에 도달");
+  assert.equal(artifact.operations.find(({ operation }) => operation === "GetVhcleKndList").requestCount, 2);
+});
+
+test("본문을 읽다가 timeout·연결 끊김이 나도 같은 요청을 재시도하고, 끝까지 실패하면 transport failure다 (F4)", async () => {
+  const bodyFailure = (kind) => ({
+    ok: true, status: 200, headers: new Headers({ "content-type": "application/json" }),
+    body: null,
+    text: async () => { throw Object.assign(new Error("The operation was aborted due to timeout"), { name: kind }); },
+  });
+  for (const kind of ["TimeoutError", "AbortError"]) {
+    const delays = [];
+    const base = realRosterFetch();
+    let failures = 2;
+    const artifact = await collectTagoItxCheongchunRoster(rosterInput({
+      waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+      fetchImpl: async (url) => {
+        if (new URL(url).pathname.endsWith("GetCtyCodeList") && failures > 0) { failures -= 1; return bodyFailure(kind); }
+        return base(url);
+      },
+    }));
+    assert.equal(artifact.completedOdCount, 2, kind);
+    assert.deepEqual(delays, [1_000, 2_000], kind);
+    assert.equal(artifact.operations.find(({ operation }) => operation === "GetCtyCodeList").requestCount, 3, kind);
+  }
+  const delays = [];
+  const attempts = [];
+  await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => { attempts.push(url); return bodyFailure("TimeoutError"); },
+  })), /^Error: TAGO transport failure$/);
+  assert.equal(attempts.length, 6);
+  assert.deepEqual(delays, BACKOFF);
+});
+
 test("TAGO OD 단독 probe도 resultCode 99를 같은 규칙으로 재시도한다", async () => {
   const delays = [];
   const failures = { GetVhcleKndList: ["99"] };
