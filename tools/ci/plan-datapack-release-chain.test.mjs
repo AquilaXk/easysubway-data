@@ -243,7 +243,19 @@ test("the seq126 candidate produces exactly the modeArgs of the manual RC run 37
 
 test("committed release candidate files produce the fixed RC modeArgs with a nationwide approval id (F3)", async () => {
   const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
-  const { releaseRequestId, ...fixed } = await readReleaseCandidateModeArgs({ repositoryRoot });
+  // #1069: 정기 역할 후보의 release request는 만든 workflow run(gateRun)을 결속하고, RC 계획은 그 run 기록 없이는 시작하지 않는다.
+  // 기록은 커밋된 gateRun과 후보 시계에서 유도한다(run 창이 후보 시계를 덮고 gateRun의 모든 필드가 맞는 성공 기록). 사람 역할 후보는 기록이 필요 없다.
+  const request = JSON.parse(readFileSync(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.releaseRequestPath), "utf8"));
+  const { publishedAt } = JSON.parse(readFileSync(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.buildSpecPath), "utf8"));
+  const { gateRun } = request;
+  const gateRunRecord = gateRun === undefined ? undefined : gateRunRecordFor(gateRun, {
+    startedAt: new Date(Date.parse(publishedAt) - 60_000).toISOString(), updatedAt: new Date(Date.parse(publishedAt) + 60_000).toISOString(),
+  });
+  if (gateRunRecord !== undefined) {
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u, "gateRun이 결속된 후보는 기록 없이 시작하지 않는다");
+    await assertShiftedGateRunRecordsRejected({ repositoryRoot, gateRun, valid: gateRunRecord });
+  }
+  const { releaseRequestId, ...fixed } = await readReleaseCandidateModeArgs({ repositoryRoot, ...(gateRunRecord === undefined ? {} : { gateRunRecord }) });
   assert.match(releaseRequestId, /^release-request-nationwide-candidate-\d{8}-seq[1-9]\d*$/u);
   const { releaseRequestId: _manual, ...manualFixed } = JSON.parse(RUN_37109648483_MODE_ARGS);
   assert.deepEqual(fixed, manualFixed);
@@ -449,6 +461,36 @@ const GATE_RUN = Object.freeze({
   runId: 37200000001, runAttempt: 1, event: "schedule", headSha: "a".repeat(40),
 });
 
+// GitHub run 기록(GET /repos/{repo}/actions/runs/{id})을 gateRun에서 만든다. dispatch run은 처음 시작한 행위자와 지금 실행한 행위자를 모두 gateRun의 actor로 담는다.
+function gateRunRecordFor(gateRun, { startedAt = "2026-10-04T22:23:10Z", updatedAt = "2026-10-04T22:41:02Z" } = {}) {
+  return {
+    id: gateRun.runId, run_attempt: gateRun.runAttempt ?? 1, event: gateRun.event, head_sha: gateRun.headSha, head_branch: "main",
+    path: `${gateRun.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: gateRun.repository },
+    head_repository: { full_name: gateRun.repository }, run_started_at: startedAt, updated_at: updatedAt,
+    ...(gateRun.actor === undefined ? {} : { actor: { login: gateRun.actor }, triggering_actor: { login: gateRun.actor } }),
+  };
+}
+
+// 유효한 기록에서 필드 하나만 어긋나게 한 기록은 모두 거부돼야 한다. 기대값이 gateRun에서 유도한 기록과 같은 근거에서 나오지 않도록, 어긋남은 독립적으로 만든다
+// (다른 head_sha, 다른 run id, 후보 시계를 덮지 않는 run 창, dispatch run이면 다른 행위자).
+async function assertShiftedGateRunRecordsRejected({ repositoryRoot, gateRun, valid }) {
+  const minute = 60_000;
+  const shift = (iso, milliseconds) => new Date(Date.parse(iso) + milliseconds).toISOString();
+  const cases = [
+    ["head_sha", { head_sha: gateRun.headSha.replace(/^./u, (first) => (first === "f" ? "e" : "f")) }, /head_sha/u],
+    ["id", { id: valid.id + 1 }, /gate run id mismatch/u],
+    ["후보 시계 뒤에 시작한 run 창", { run_started_at: shift(valid.updated_at, minute), updated_at: shift(valid.updated_at, 2 * minute) }, /candidate clock/u],
+    ["후보 시계 전에 끝난 run 창", { run_started_at: shift(valid.run_started_at, -120 * minute), updated_at: shift(valid.run_started_at, -60 * minute) }, /candidate clock/u],
+    ...(gateRun.event === "workflow_dispatch" ? [
+      ["actor", { actor: { login: "someone-else" } }, /actor/u],
+      ["triggering_actor", { triggering_actor: { login: "someone-else" } }, /actor/u],
+    ] : []),
+  ];
+  for (const [label, override, expected] of cases) {
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot, gateRunRecord: { ...valid, ...override } }), new RegExp(`RELEASE_CANDIDATE_GATE_RUN[\\s\\S]*${expected.source}`, "u"), label);
+  }
+}
+
 test("#929 D3 a scheduled run derives the fixed roles and the next sequence and takes no person input", () => {
   assert.throws(() => planNationwideCandidateRefresh({
     releaseSequence: "", requestedBy: "", approvedBy: "", committedBuildSpec: committedSpec, now, event: "workflow_run",
@@ -551,17 +593,14 @@ test("#929 D3 a scheduled-role candidate is dispatched to RC only after its gate
   };
   const { root } = await releaseRepository(scheduled);
   try {
-    const record = {
-      id: GATE_RUN.runId, run_attempt: 1, event: "schedule", head_sha: GATE_RUN.headSha, head_branch: "main",
-      path: `${GATE_RUN.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: GATE_RUN.repository },
-      head_repository: { full_name: GATE_RUN.repository }, run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
-    };
+    const record = gateRunRecordFor(GATE_RUN);
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, updated_at: "2026-10-04T22:23:20Z" } }),
       /RELEASE_CANDIDATE_GATE_RUN[\s\S]*candidate clock/u);
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u);
     await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, conclusion: "failure" } }),
       /RELEASE_CANDIDATE_GATE_RUN[\s\S]*conclusion/u);
     assert.equal((await readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: record })).allowGaps, "false");
+    await assertShiftedGateRunRecordsRejected({ repositoryRoot: root, gateRun: GATE_RUN, valid: record });
     const recordPath = path.join(root, "record.json");
     await writeFile(recordPath, JSON.stringify(record));
     const output = path.join(root, "mode-args.json");
@@ -588,13 +627,9 @@ test("#1032 a candidate made by a scheduler App dispatch is sent to RC only when
   };
   const { root } = await releaseRepository(scheduled);
   try {
-    const record = {
-      id: GATE_RUN.runId, run_attempt: 1, event: "workflow_dispatch", head_sha: GATE_RUN.headSha, head_branch: "main",
-      path: `${GATE_RUN.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: GATE_RUN.repository },
-      head_repository: { full_name: GATE_RUN.repository }, run_started_at: "2026-10-04T22:23:10Z", updated_at: "2026-10-04T22:41:02Z",
-      actor: { login: "easysubway-release-chain[bot]" }, triggering_actor: { login: "easysubway-release-chain[bot]" },
-    };
+    const record = gateRunRecordFor(dispatchedRun);
     assert.equal((await readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: record })).allowGaps, "false");
+    await assertShiftedGateRunRecordsRejected({ repositoryRoot: root, gateRun: dispatchedRun, valid: record });
     for (const override of [{ triggering_actor: { login: "AquilaXk" } }, { actor: { login: "AquilaXk" } }]) {
       await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot: root, gateRunRecord: { ...record, ...override } }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*actor/u, JSON.stringify(override));
     }

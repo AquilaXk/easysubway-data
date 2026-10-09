@@ -421,8 +421,13 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   const prep = JSON.parse(prepRaw);
   assert.match(prep.builderIdentity.gitSha, /^[0-9a-f]{40}$/);
   assert.notStrictEqual(prep.builderIdentity.gitSha, "d7fe7773528239e27e3788679d1b46b813cce046");
-  assert.strictEqual(prep.authority.requestedBy, "data-operator-lead");
-  assert.strictEqual(prep.authority.approvedBy, "data-release-authority");
+  // #1069: 이 호출이 만든 준비 결과는 넘긴 승인 역할을 담고, 커밋된 준비 산출물은 같은 후보의 release request가 결속한 역할을 담는다.
+  // 후보는 사람 역할(seq128 이전)이나 정기 역할(datapack-scheduled-refresh)로 만들어지므로 커밋된 역할을 상수로 박지 않는다.
+  assert.strictEqual(result.preparation.authority.requestedBy, "data-operator-lead");
+  assert.strictEqual(result.preparation.authority.approvedBy, "data-release-authority");
+  const committedRequest = JSON.parse((await pinnedRead("tools/datapack/release/release-request.json")).toString("utf8"));
+  assert.strictEqual(prep.authority.requestedBy, committedRequest.requestedBy);
+  assert.strictEqual(prep.authority.approvedBy, committedRequest.approvedBy);
 
   // 3. 준비 결과가 후보 생성기에 넘길 팩·입력 파일을 정확히 가리킨다.
   assert.strictEqual(prep.materialization.fixturePath, result.nationwidePackRelPath);

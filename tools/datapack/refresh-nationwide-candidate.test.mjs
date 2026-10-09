@@ -16,6 +16,7 @@ import {
   runNationwideCandidateRefreshStep,
   runNodeScript,
 } from "./refresh-nationwide-candidate.mjs";
+import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { rebindCurrentSeoulTransferSourceAdmission } from "./rebind-current-seoul-transfer-source-admission.mjs";
 import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
@@ -97,6 +98,75 @@ test("#929 D3 결속 검증은 release request의 gateRun이 이번 run과 다�
   assert.ok(nationwideCandidateRefreshViolations(bound).some((violation) => /gateRun mismatch/.test(violation)));
 });
 
+// #1069: 정기 역할 후보(datapack-scheduled-refresh)의 release request에는 그 후보를 만든 workflow run 기록(gateRun)이 결속된다.
+// 커밋된 후보를 다시 검증하는 테스트는 같은 gateRun을 갱신 run 기록으로 넘긴다. 사람 역할 후보는 gateRun이 없어 아무것도 넘기지 않는다.
+// 결속이 어긋나면 잡는 반례는 "#929 D3 결속 검증은 release request의 gateRun이 이번 run과 다르면 실패한다"가 맡는다.
+async function gateRunArgs(t, request) {
+  if (request.gateRun === undefined) return {};
+  const directory = await mkdtemp(path.join(os.tmpdir(), "nationwide-candidate-gate-run-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const gateRunPath = path.join(directory, "gate-run.json");
+  await writeFile(gateRunPath, jsonBytes(request.gateRun));
+  return { gateRunPath };
+}
+
+// 커밋된 후보를 그대로 다시 갱신하는 호출 인자: 후보 시계(fan-in)·sequence(build spec)·승인 역할(release request)과 그 request가 결속한 gateRun.
+async function committedCandidateArgs(t, { fanIn, request, buildSpec }) {
+  return {
+    evaluatedAt: fanIn.evaluatedAt, releaseSequence: buildSpec.releaseSequence,
+    requestedBy: request.requestedBy, approvedBy: request.approvedBy, ...(await gateRunArgs(t, request)),
+  };
+}
+
+// 후보의 역할 쌍은 사람 역할 둘(정기 역할을 하나도 쓰지 않음)이거나 정기 역할 둘 모두여야 한다. 한쪽만 정기 역할인 쌍은 어느 쪽도 아니다.
+function candidateRoleKind({ requestedBy, approvedBy }) {
+  const scheduled = Object.values(SCHEDULED_RELEASE_ROLES);
+  const [first, second] = [requestedBy, approvedBy].map((role) => scheduled.includes(role));
+  if (first && second && requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy) return "scheduled";
+  if (!first && !second) return "person";
+  throw new Error(`정기 역할과 사람 역할이 섞인 후보 역할 쌍이다: ${requestedBy} / ${approvedBy}`);
+}
+
+test("#1069 후보 역할 쌍은 정기 역할 둘 또는 사람 역할 둘이어야 하고, 정기 역할이면 gateRun을 결속하고 사람 역할이면 결속하지 않는다", async () => {
+  const [requestedBy, approvedBy] = [SCHEDULED_RELEASE_ROLES.requestedBy, SCHEDULED_RELEASE_ROLES.approvedBy];
+  assert.equal(candidateRoleKind({ requestedBy, approvedBy }), "scheduled");
+  assert.equal(candidateRoleKind({ requestedBy: "data-operator-lead", approvedBy: "data-release-authority" }), "person");
+  for (const mixed of [
+    { requestedBy, approvedBy: "data-release-authority" },
+    { requestedBy: "data-operator-lead", approvedBy },
+    { requestedBy: approvedBy, approvedBy: requestedBy },
+    { requestedBy: approvedBy, approvedBy: "data-release-authority" },
+  ]) assert.throws(() => candidateRoleKind(mixed), /섞인 후보 역할 쌍/u, JSON.stringify(mixed));
+  const { releaseRequest } = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
+  const kind = candidateRoleKind(releaseRequest);
+  assert.equal(Object.hasOwn(releaseRequest, "gateRun"), kind === "scheduled", "gateRun은 정기 역할 후보에만 있다");
+  if (kind === "scheduled") assert.equal(releaseRequest.gateRun.workflowPath, ".github/workflows/nationwide-candidate-refresh.yml");
+});
+
+test("#1069 결속 검증은 request에 결속한 gateRun과 한 필드라도 다른 run 기록을 거부하고, 같으면 거부하지 않는다", async () => {
+  const state = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
+  const bound = {
+    repository: "AquilaXk/easysubway-data", workflowPath: ".github/workflows/nationwide-candidate-refresh.yml",
+    runId: 37200000001, runAttempt: 1, event: "workflow_dispatch", headSha: "a".repeat(40), actor: "operator-a",
+  };
+  const evaluate = (gateRun) => nationwideCandidateRefreshViolations({
+    ...state, evaluatedAt: state.fanIn.evaluatedAt, requestedBy: state.releaseRequest.requestedBy, approvedBy: state.releaseRequest.approvedBy,
+    releaseRequest: { ...state.releaseRequest, gateRun: bound }, gateRun,
+  }).filter((violation) => /gateRun mismatch/u.test(violation));
+  assert.deepEqual(evaluate(structuredClone(bound)), [], "같은 gateRun은 거부하지 않는다");
+  // 한 필드만 다르다. runId·actor·headSha는 문자열 길이가 같아 길이 비교로는 구별되지 않는다.
+  const others = {
+    repository: "AquilaXk/easysubway-datb", workflowPath: ".github/workflows/nationwide-candidate-refresh.ymm",
+    runId: bound.runId + 1, runAttempt: 2, event: "workflow_dispatcm", headSha: "b".repeat(40), actor: "operator-b",
+  };
+  for (const [field, other] of Object.entries(others)) {
+    assert.equal(evaluate({ ...bound, [field]: other }).length, 1, `${field}이 다르면 거부한다`);
+  }
+  const { actor: _actor, ...withoutActor } = bound;
+  assert.equal(evaluate(withoutActor).length, 1, "필드가 빠져도 거부한다");
+  assert.equal(evaluate({ ...bound, extra: true }).length, 1, "필드가 늘어도 거부한다");
+});
+
 test("현재 커밋 후보는 refresh-nationwide-candidate로 재생성돼 결속 검증을 통과한다(#862)", async () => {
   const state = await readNationwideCandidateRefreshState(await candidateWorkspace.root());
   const violations = nationwideCandidateRefreshViolations({
@@ -104,6 +174,7 @@ test("현재 커밋 후보는 refresh-nationwide-candidate로 재생성돼 결�
     evaluatedAt: state.fanIn.evaluatedAt,
     requestedBy: state.releaseRequest.requestedBy,
     approvedBy: state.releaseRequest.approvedBy,
+    gateRun: state.releaseRequest.gateRun,
   });
   assert.deepEqual(violations, []);
   assert.equal(state.buildSpec.facilityEvidenceLedgerHash, state.ledgerHashes.facilityEvidenceLedgerHash);
@@ -125,6 +196,7 @@ test("결속 검증은 fan-in head·시계·ledger 해시·request 결속이 하
       evaluatedAt: overrides.evaluatedAt ?? state.fanIn.evaluatedAt,
       requestedBy: overrides.requestedBy ?? state.releaseRequest.requestedBy,
       approvedBy: state.releaseRequest.approvedBy,
+      gateRun: state.releaseRequest.gateRun,
     });
   };
   assert.deepEqual(evaluate(consistent()), []);
@@ -230,10 +302,7 @@ test("전국 후보 갱신은 결속 검증이 실패해도 출력을 되돌리�
   const steps = [];
   await assert.rejects(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => {
       steps.push(name);
@@ -262,10 +331,7 @@ test("#942 전국 후보 갱신은 결속 검증 뒤 입력 매니페스트를 �
   const steps = [];
   await assert.rejects(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => {
       steps.push(name);
@@ -286,10 +352,7 @@ test("#862 전국 후보 갱신은 spec·scope·request·hash를 build-nationwid
   const steps = [];
   await assert.doesNotReject(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async ({ name }) => { steps.push(name); },
   }));
@@ -317,10 +380,7 @@ test("#866 전국 후보 갱신은 마지막 단계에서 route-edge 정책을 �
   const steps = [];
   const result = await refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async (context) => {
       steps.push(context.name);
@@ -342,10 +402,7 @@ test("#866 route-edge 정책 sync가 실패하면 정책을 포함한 모든 출
   const steps = [];
   await assert.rejects(refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async (context) => {
       steps.push(context.name);
@@ -407,6 +464,7 @@ test("#866 F1 후보 시계가 ITX freshUntil 이후면 벽시계가 신선해�
     releaseSequence: buildSpec.releaseSequence,
     requestedBy: request.requestedBy,
     approvedBy: request.approvedBy,
+    ...(await gateRunArgs(t, request)),
     assertCleanWorktree: async () => {},
     runStep: async (context) => {
       steps.push(context.name);
@@ -432,10 +490,7 @@ test("#866 F1 벽시계가 ITX freshUntil 이후여도 후보 시계가 신선�
   await withWallClock(t, new Date(freshUntil + DAY_MS).toISOString());
   await refreshNationwideCandidate({
     repositoryRoot,
-    evaluatedAt: fanIn.evaluatedAt,
-    releaseSequence: buildSpec.releaseSequence,
-    requestedBy: request.requestedBy,
-    approvedBy: request.approvedBy,
+    ...(await committedCandidateArgs(t, { fanIn, request, buildSpec })),
     assertCleanWorktree: async () => {},
     runStep: async (context) => {
       if (context.name === "route edge policy sync") await runNationwideCandidateRefreshStep(context);
