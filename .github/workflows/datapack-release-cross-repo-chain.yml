@@ -19,8 +19,10 @@ permissions: {}
 
 jobs:
   identify:
+    # RC run은 RC chain이 GITHUB_TOKEN으로 dispatch한다(행위자 github-actions[bot]). 수동 dispatch는 저장소 소유자만 인정한다.
+    # 환경 승인을 없앤 대신, 쓰기 권한이 있는 다른 계정이 직접 띄운 RC로 발행·배포 체인이 시작되지 않게 막는다.
     name: Identify the release-candidate run
-    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' }}
+    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' && (github.event.workflow_run.triggering_actor.login == 'github-actions[bot]' || github.event.workflow_run.triggering_actor.login == 'AquilaXk') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

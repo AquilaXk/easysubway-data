@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  CHAIN_ROLLBACK_NOTE,
   CHAIN_WORKFLOWS,
   COMMENT_INTERVAL_MS,
   GH_CANDIDATES,
@@ -372,4 +373,17 @@ test("데이터팩 발행·배포 체인도 같은 실패 이슈 경로(#926)로
   assert.match(plan.title, /원천 자동 갱신 실패/u);
   assert.match(plan.body, new RegExp(refreshFailureMarker("datapack-release-cross-repo-chain.yml").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   assert.throws(() => planRefreshFailureReport({ repository, workflowFile: "other.yml", runId: "1", openIssues: [], now: start }), /WORKFLOW/u);
+});
+
+test("체인 실패 이슈는 롤백 뒤 공개 manifest와 서버 활성 FINAL이 어긋난다는 사실을 본문과 재알림 댓글에 적고, 정기 갱신 이슈에는 적지 않는다 (data#1084 F7)", () => {
+  const chain = planRefreshFailureReport({ repository, workflowFile: "datapack-release-cross-repo-chain.yml", runId: "37900000001", openIssues: [], now: start });
+  assert.ok(chain.body.includes(CHAIN_ROLLBACK_NOTE));
+  assert.match(CHAIN_ROLLBACK_NOTE, /rollback\.manifestMismatch/u);
+  const [workflowFile] = Object.keys(REFRESH_WORKFLOWS);
+  const refresh = planRefreshFailureReport({ repository, workflowFile, runId: "37900000002", openIssues: [], now: start });
+  assert.equal(refresh.body.includes(CHAIN_ROLLBACK_NOTE), false);
+  const created = { number: 5, title: chain.title, body: chain.body, author: { login: "app/github-actions" }, createdAt: "2026-10-01T00:00:00.000Z", comments: [] };
+  const again = planRefreshFailureReport({ repository, workflowFile: "datapack-release-cross-repo-chain.yml", runId: "37900000003", openIssues: [created], now: new Date("2026-10-09T00:00:00.000Z") });
+  assert.equal(again.action, "comment");
+  assert.ok(again.body.includes(CHAIN_ROLLBACK_NOTE));
 });

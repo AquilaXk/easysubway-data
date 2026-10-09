@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   ChainError,
+  DATA_DISPATCH_ACTOR,
   RELEASE_CHAIN_APP,
   assertBackendNotOlder,
   deployStage,
@@ -12,6 +16,7 @@ import {
   publishStage,
   requireReleaseArtifact,
   rollbackStage,
+  runChainStage,
   selectActiveRelease,
   selectBackendProducerRun,
   selectDeployInputsStage,
@@ -55,6 +60,7 @@ test("deploy run-name은 platform 고정 형식으로만 해석되고 형식이 
 
 const deployRun = (id, title, conclusion = "success", extra = {}) => ({
   id, display_title: title, status: "completed", conclusion, event: "workflow_dispatch", head_branch: "main",
+  triggering_actor: { login: RELEASE_CHAIN_APP },
   created_at: `2026-10-09T${String(10 + (id % 10)).padStart(2, "0")}:00:00Z`, ...extra,
 });
 const ACTIVE = { backendRunId: "100", backendArtifactId: "101", dataRunId: "200", dataArtifactId: "201" };
@@ -415,7 +421,7 @@ function publishWorld({ behavior = () => ({}), manifest = { releaseSequence: 130
   const world = new World();
   world.script(`${DATA}|datapack-release.yml|production-publish`, (inputs, w) => {
     const outcome = behavior(inputs, w) ?? {};
-    return { head_sha: w.refs[DATA], display_title: "Data Pack Release (production-publish)", ...outcome };
+    return { head_sha: w.refs[DATA], display_title: "Data Pack Release (production-publish)", triggering_actor: { login: "github-actions[bot]" }, ...outcome };
   });
   const dispatch = world.dispatch.bind(world);
   world.dispatch = async (options) => {
@@ -679,4 +685,80 @@ test("롤백: 롤백 DEPLOY가 실패하거나 readiness가 돌아오지 않으�
     apiBaseUrl: "https://api.example.invalid", readinessChecks: 3, readinessIntervalMs: 1000,
     fetchStatus: async () => ({ status: 503 }),
   }), state2), "ROLLBACK_FAILED");
+});
+
+// ---------- 리뷰 반영 (data#1084 F2·F4·F5·F7, platform#242 F3) ----------
+
+test("활성 release: 허용 목록 밖 행위자·행위자 불명 run의 제목은 근거로 쓰지 않고, 허용 행위자의 run만 고른다", () => {
+  const forged = { backendRunId: "900", backendArtifactId: "901", dataRunId: "902", dataArtifactId: "903" };
+  const runs = [
+    deployRun(1, formatDeployRunName("DEPLOY", ACTIVE), "success", { created_at: "2026-10-08T00:00:00Z" }),
+    deployRun(2, formatDeployRunName("DEPLOY", forged), "success", { created_at: "2026-10-09T00:00:00Z", triggering_actor: { login: "write-collaborator" } }),
+    deployRun(3, formatDeployRunName("DEPLOY", forged), "success", { created_at: "2026-10-09T00:01:00Z", triggering_actor: { login: "AquilaXk-evil" } }),
+    deployRun(4, formatDeployRunName("DEPLOY", forged), "success", { created_at: "2026-10-09T00:02:00Z", triggering_actor: undefined }),
+  ];
+  assert.deepEqual(selectActiveRelease(runs), { runId: 1, ...ACTIVE });
+  // 수동 bootstrap 배포(저장소 소유자)는 인정한다.
+  const manual = deployRun(5, formatDeployRunName("DEPLOY", ACTIVE), "success", { triggering_actor: { login: "AquilaXk" } });
+  assert.equal(selectActiveRelease([manual]).runId, 5);
+  // 허용 행위자의 run이 하나도 없으면 활성 release를 알 수 없다.
+  assert.throws(() => selectActiveRelease(runs.slice(1)), (error) => error instanceof ChainError && error.code === "ACTIVE_RELEASE_UNKNOWN");
+  // 허용 행위자의 최신 DEPLOY가 실패했다면, 위조 제목이 성공이어도 불확실로 멈춘다.
+  const failedLatest = [deployRun(6, formatDeployRunName("DEPLOY", ACTIVE), "failure", { created_at: "2026-10-09T05:00:00Z" }), runs[1]];
+  assert.throws(() => selectActiveRelease(failedLatest), (error) => error instanceof ChainError && error.code === "ACTIVE_RELEASE_UNCERTAIN");
+  // 진행 중 run은 행위자와 상관없이 배포 중으로 본다.
+  const inFlight = deployRun(7, "PREVIEW backend=1/2 data=3/4", null, { status: "in_progress", triggering_actor: { login: "write-collaborator" } });
+  assert.throws(() => selectActiveRelease([runs[0], inFlight]), (error) => error instanceof ChainError && error.code === "DEPLOY_IN_FLIGHT");
+});
+
+test("발행: github-actions[bot]이 dispatch한 production-publish run만 인정하고 다른 행위자의 같은 제목 run은 찾지 못한다", async () => {
+  assert.equal(DATA_DISPATCH_ACTOR, "github-actions[bot]");
+  const { world, publishContext } = publishWorld({ behavior: () => ({ triggering_actor: { login: "write-collaborator" } }) });
+  await rejectsWith(publishStage(publishContext(), afterHub()), "RUN_NOT_FOUND");
+  assert.equal(world.dispatches.length, 1);
+});
+
+test("발행: modeArgs가 후보 run id 또는 승격 run id 중 하나라도 어긋나면 dispatch하지 않는다", async () => {
+  for (const [label, override] of [["candidate only wrong", { candidateRunId: "9999" }], ["promotion only wrong", { promotionRunId: "9999" }], ["both wrong", { candidateRunId: "1", promotionRunId: "2" }], ["missing", { candidateRunId: undefined }]]) {
+    const { world, publishContext } = publishWorld();
+    const base = modeArgsFor({});
+    await rejectsWith(publishStage(publishContext({ readModeArgs: async (ids) => ({ ...(await base(ids)), ...override }) }), afterHub()), "CHAIN_STATE_INVALID");
+    assert.equal(world.dispatches.length, 0, label);
+  }
+});
+
+async function planOnce(env, { mainSha = RC_SHA } = {}) {
+  const dir = await mkdtemp(path.join(tmpdir(), "chain-plan-"));
+  const statePath = path.join(dir, "state.json");
+  const requested = [];
+  const gh = { api: async (endpoint) => { requested.push(endpoint); return { object: { sha: mainSha } }; }, dispatch: async () => { throw new Error("plan must not dispatch"); }, cancel: async () => {} };
+  const base = { RC_RUN_ID: "7001", RC_RUN_SHA: RC_SHA, GITHUB_SHA: RC_SHA, GH_TOKEN: "t", CHAIN_API_BASE_URL: "https://api.example.invalid", CHAIN_DATAPACK_BASE_URL: "https://packs.example.invalid" };
+  return { statePath, requested, run: () => runChainStage({ stage: "plan", statePath, env: { ...base, ...env }, repositoryRoot: process.cwd(), gh }) };
+}
+
+test("계획: 검증·롤백에 필요한 공개 URL이 없거나 형식이 틀리면 발행 전에 CHAIN_ENV_INVALID로 멈추고 state를 쓰지 않는다", async () => {
+  const ok = await planOnce({});
+  assert.equal((await ok.run()).rc.runId, "7001");
+  for (const [label, env] of [
+    ["api url unset", { CHAIN_API_BASE_URL: undefined }], ["api url empty", { CHAIN_API_BASE_URL: "" }], ["api url malformed", { CHAIN_API_BASE_URL: "http://insecure.example.invalid" }],
+    ["datapack url unset", { CHAIN_DATAPACK_BASE_URL: undefined }], ["datapack url empty", { CHAIN_DATAPACK_BASE_URL: "" }], ["datapack url malformed", { CHAIN_DATAPACK_BASE_URL: "not a url" }],
+  ]) {
+    const planned = await planOnce(env);
+    await rejectsWith(planned.run(), "CHAIN_ENV_INVALID");
+    await assert.rejects(readFile(planned.statePath, "utf8"), { code: "ENOENT" }, label);
+  }
+});
+
+test("롤백: 성공해도 공개 manifest 번호와 서버 활성 FINAL이 어긋난 사실을 결과에 남기고 ok만으로 복구 완료처럼 읽히지 않게 한다", async () => {
+  const world = deployWorld();
+  let state = await selectDeployInputsStage(world.context(), afterPublish());
+  state = await deployStage(world.context(), state);
+  const rolledBack = await rollbackStage(world.context({ apiBaseUrl: "https://api.example.invalid", readinessChecks: 1, readinessIntervalMs: 1, fetchStatus: async () => ({ status: 200 }) }), state);
+  assert.equal(rolledBack.rollback.ok, true);
+  assert.deepEqual(rolledBack.rollback.manifestMismatch, {
+    publicManifestReleaseSequence: 130,
+    restoredDataRunId: state.deploy.previous.data_run_id,
+    restoredDataArtifactId: state.deploy.previous.data_artifact_id,
+    detail: "공개 manifest는 롤백한 새 release 번호를 가리키고, 서버의 활성 FINAL은 직전 release다. 롤백만으로 복구가 끝나지 않았다.",
+  });
 });

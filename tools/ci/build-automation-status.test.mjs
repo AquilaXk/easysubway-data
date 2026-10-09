@@ -18,8 +18,15 @@ const run = (id, overrides = {}) => ({
   created_at: hoursAgo(2), updated_at: hoursAgo(1.9), event: "workflow_dispatch", head_branch: "main", display_title: "t", ...overrides,
 });
 
+const REPOSITORY = "AquilaXk/easysubway-data";
+const APP_USER = { login: "easysubway-release-chain[bot]", id: 337648189, type: "Bot" };
+const ownPull = (number, ref, createdHoursAgo, overrides = {}) => ({
+  number, title: `PR ${number}`, html_url: `https://github.com/${REPOSITORY}/pull/${number}`,
+  created_at: hoursAgo(createdHoursAgo), head: { ref, repo: { full_name: REPOSITORY } }, user: APP_USER, ...overrides,
+});
+
 const emptyInputs = () => ({
-  now, manifest, stageRuns: {}, issues: [], openPulls: [], claimRefs: [], behind: { actions: [], anomalies: [] },
+  now, repository: REPOSITORY, manifest, stageRuns: {}, issues: [], openPulls: [], claimRefs: [], behind: { actions: [], anomalies: [] },
 });
 
 test("스냅샷은 활성 데이터팩과 모든 단계를 담고, 기록이 없는 단계는 latest null로 드러낸다", () => {
@@ -99,7 +106,7 @@ test("진행 중인 run은 inFlight이고 후보~배포가 진행 중이면 cand
   // 열린 후보 갱신 PR도 후보가 오고 있다는 뜻이다.
   const openCandidatePr = buildAutomationStatus({
     ...emptyInputs(),
-    openPulls: [{ number: 5, title: "candidate", html_url: "https://github.com/AquilaXk/easysubway-data/pull/5", created_at: hoursAgo(1), head: { ref: "automation/927-nationwide-candidate-refresh-1" } }],
+    openPulls: [ownPull(5, "automation/927-nationwide-candidate-refresh-1", 1)],
   });
   assert.equal(openCandidatePr.candidateInFlight, true);
 });
@@ -125,10 +132,7 @@ test("열린 실패 이슈는 자동화 실패 제목만, 최근 순으로 담�
 });
 
 test("막힌 자동화: 뒤처진 PR, 오래 열린 PR, 주인 없는 claim, BEHIND 상한 도달을 구분해 담는다", () => {
-  const pull = (number, ref, createdHoursAgo) => ({
-    number, title: `PR ${number}`, html_url: `https://github.com/AquilaXk/easysubway-data/pull/${number}`,
-    created_at: hoursAgo(createdHoursAgo), head: { ref }, user: { login: "easysubway-release-chain[bot]" },
-  });
+  const pull = (number, ref, createdHoursAgo) => ownPull(number, ref, createdHoursAgo);
   const snapshot = buildAutomationStatus({
     ...emptyInputs(),
     openPulls: [
@@ -227,4 +231,60 @@ test("게시: backend 주소와 서비스 토큰이 있어야 하고, 응답이 
   await assert.rejects(postAutomationStatus({ snapshot, apiBaseUrl: "http://api.example.invalid", token: "t", fetchImpl: fetchOk }), /STATUS_POST_ARGUMENTS/u);
   await assert.rejects(postAutomationStatus({ snapshot: { ...snapshot, padding: "x".repeat(SNAPSHOT_MAX_BYTES) }, apiBaseUrl: "https://api.example.invalid", token: "t", fetchImpl: fetchOk }), /STATUS_SNAPSHOT_TOO_LARGE/u);
   assert.equal(STATUS_STAGES.length, 9);
+});
+
+test("fork PR·사람·위장 계정이 자동화 브랜치 이름을 써도 자동화 PR로 세지 않고 snapshot에 싣지 않는다", () => {
+  const branch = "automation/927-nationwide-candidate-refresh-1";
+  const html = '<img src=x onerror=alert(1)>';
+  const impostors = [
+    ownPull(21, branch, 9, { title: html, head: { ref: branch, repo: { full_name: "attacker/easysubway-data" } } }),
+    ownPull(22, branch, 9, { title: html, head: { ref: branch, repo: null } }),
+    ownPull(23, branch, 9, { title: html, user: { login: "AquilaXk", id: 1, type: "User" } }),
+    ownPull(24, branch, 9, { title: html, user: { login: "easysubway-release-chain[bot]", id: 1, type: "Bot" } }),
+    ownPull(25, branch, 9, { title: html, user: { login: "easysubway-release-chain[bot]", id: 337648189, type: "User" } }),
+    ownPull(26, branch, 9, { title: html, user: undefined }),
+  ];
+  const snapshot = buildAutomationStatus({ ...emptyInputs(), openPulls: impostors });
+  assert.deepEqual(snapshot.stuck.pulls, []);
+  assert.equal(snapshot.candidateInFlight, false, "위장 PR이 만료 임박 알림을 잠재우면 안 된다");
+  const claim = { branch, committedAt: hoursAgo(5) };
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), openPulls: impostors, claimRefs: [claim] }).stuck.claims, [claim], "위장 PR이 낡은 claim을 가리면 안 된다");
+  // github-actions[bot]이 만든 자기 저장소 PR은 자동화 PR이다.
+  const actionsPull = ownPull(30, branch, 9, { user: { login: "github-actions[bot]", id: 41898282, type: "Bot" } });
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), openPulls: [actionsPull] }).stuck.pulls.map((item) => item.number), [30]);
+});
+
+test("fork PR이 같은 이름의 claim 브랜치를 열린 PR로 가장해 낡은 claim을 가리지 못한다", async () => {
+  const branch = "automation/636-current-topology-refresh-90";
+  const forkPull = ownPull(40, branch, 5, { head: { ref: branch, repo: { full_name: "attacker/easysubway-data" } } });
+  const apis = {
+    data: async (endpoint) => {
+      if (endpoint.includes("/pulls?")) return [forkPull];
+      if (endpoint.includes("matching-refs")) return [{ ref: `refs/heads/${branch}`, object: { sha: "a".repeat(40) } }];
+      if (endpoint.includes("/commits/")) return { commit: { committer: { date: hoursAgo(5) } } };
+      if (endpoint.includes("/actions/workflows/")) return { workflow_runs: [] };
+      throw new Error(`unexpected ${endpoint}`);
+    },
+  };
+  apis.hub = apis.data;
+  apis.platform = apis.data;
+  const collected = await collectAutomationStatus({
+    now, repositories: { data: REPOSITORY, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" }, apis,
+    listFailureIssues: async () => [], fetchManifest: async () => manifest, planBehind: async () => ({ actions: [], anomalies: [] }),
+  });
+  assert.deepEqual(collected.claimRefs, [{ branch, committedAt: hoursAgo(5) }]);
+  assert.equal(collected.repository, REPOSITORY);
+});
+
+test("snapshot에 실리는 PR 제목은 제어·양방향 문자를 지우고 길이를 제한하며, 잘못된 URL·제목은 만들어 내지 않고 실패한다", () => {
+  const branch = "automation/636-current-topology-refresh-100";
+  const dirty = `\u202Eevil\u0000 ${"가".repeat(300)}\n\u2066x`;
+  const [item] = buildAutomationStatus({ ...emptyInputs(), openPulls: [ownPull(50, branch, 9, { title: dirty })] }).stuck.pulls;
+  assert.ok(!/[\p{Cc}\p{Cf}]/u.test(item.title));
+  assert.equal([...item.title].length, 120);
+  assert.ok(item.title.startsWith("evil "));
+  for (const bad of [{ html_url: "https://evil.example/pull/50" }, { html_url: "javascript:alert(1)" }, { html_url: undefined }, { title: undefined }, { title: "\u202E\u200B" }]) {
+    assert.throws(() => buildAutomationStatus({ ...emptyInputs(), openPulls: [ownPull(50, branch, 9, bad)] }), /STATUS_PULL_INVALID/u, JSON.stringify(bad));
+  }
+  assert.throws(() => buildAutomationStatus({ ...emptyInputs(), repository: undefined }), /STATUS_ENV_INVALID/u);
 });

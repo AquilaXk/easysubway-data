@@ -18,6 +18,10 @@ export const REPOSITORIES = Object.freeze({
   platform: "AquilaXk/easysubway-platform",
   backend: "AquilaXk/easysubway-backend",
 });
+/** platform 배포 workflow를 실행할 수 있는 행위자(릴리스 체인 App, 수동 bootstrap용 저장소 소유자). platform의 행위자 게이트와 같은 목록이다. */
+export const PLATFORM_DEPLOY_ACTORS = Object.freeze([RELEASE_CHAIN_APP, "AquilaXk"]);
+/** data 저장소 안에서 GITHUB_TOKEN으로 dispatch한 run의 행위자. 발행 run은 이 행위자의 것만 인정한다. */
+export const DATA_DISPATCH_ACTOR = "github-actions[bot]";
 export const PROMOTION_ISSUE_REF = "AquilaXk/easysubway#2705";
 export const RC_RUN_NAME = "Data Pack Release (release-candidate)";
 export const PUBLISH_RUN_NAME = "Data Pack Release (production-publish)";
@@ -79,6 +83,9 @@ export function selectActiveRelease(runs) {
   if (!Array.isArray(runs)) fail("ACTIVE_RELEASE_UNKNOWN", "deploy run list is not an array");
   if (runs.some((run) => run?.status !== "completed")) fail("DEPLOY_IN_FLIGHT", "a deploy run is queued or running");
   for (const run of [...runs].sort(byNewest)) {
+    // run-name은 dispatch 입력에서 만들어지는 인증되지 않은 기록이다. 허용 목록 밖 행위자의 run은 행위자 게이트에서 막혀 배포하지 못했으므로
+    // 어떤 제목이든 활성 release의 근거로 쓰지 않는다. 행위자를 알 수 없는 run도 같다.
+    if (!PLATFORM_DEPLOY_ACTORS.includes(run.triggering_actor?.login)) continue;
     if (run.event !== "workflow_dispatch" || run.head_branch !== "main") {
       fail("ACTIVE_RELEASE_UNCERTAIN", `deploy run ${run.id} is not a main workflow_dispatch run`);
     }
@@ -304,7 +311,7 @@ export async function publishStage(ctx, state) {
   const publishRun = await dispatchAndFind(ctx, {
     repo: REPOSITORIES.data, workflow: "datapack-release.yml", token,
     inputs: { mode: "production-publish", targetChannel: "production", modeArgs: JSON.stringify(modeArgs) },
-    match: (run) => run.display_title === PUBLISH_RUN_NAME,
+    match: (run) => run.display_title === PUBLISH_RUN_NAME && run.triggering_actor?.login === DATA_DISPATCH_ACTOR,
   });
   if (publishRun.head_sha !== state.rc.sha) {
     // 검증한 커밋이 아닌 main으로 발행되려는 run은 즉시 취소한다(RC chain과 같은 규칙).
@@ -483,7 +490,20 @@ export async function rollbackStage(ctx, state) {
   try {
     const done = await runDeployPair(ctx, state.deploy.previous, null);
     await checkReadiness(ctx, { code: "ROLLBACK_READINESS_FAILED" });
-    return { ...state, rollback: { ok: true, previewRunId: done.PREVIEW, deployRunId: done.DEPLOY } };
+    // 롤백은 서버의 활성 pair만 직전 release로 되돌린다. 공개 manifest(catalog/current.json)는 새 release 번호에 머무는 것이 설계다(되돌리지 않는다).
+    // 복구가 끝난 것처럼 읽히지 않도록 이 불일치를 결과에 그대로 적는다. 사람이 manifest를 정리해야 끝난다.
+    return {
+      ...state,
+      rollback: {
+        ok: true, previewRunId: done.PREVIEW, deployRunId: done.DEPLOY,
+        manifestMismatch: {
+          publicManifestReleaseSequence: state.publish?.releaseSequence ?? null,
+          restoredDataRunId: state.deploy.previous.data_run_id,
+          restoredDataArtifactId: state.deploy.previous.data_artifact_id,
+          detail: "공개 manifest는 롤백한 새 release 번호를 가리키고, 서버의 활성 FINAL은 직전 release다. 롤백만으로 복구가 끝나지 않았다.",
+        },
+      },
+    };
   } catch (error) {
     if (error instanceof ChainError) fail("ROLLBACK_FAILED", `${error.code}: ${error.detail}`);
     throw error;
@@ -563,6 +583,10 @@ export async function runChainStage({ stage, statePath, env = process.env, repos
     if (requiredEnv(env, "GITHUB_SHA", SHA) !== sha || await mainSha(context, REPOSITORIES.data, context.tokens.data) !== sha) {
       fail("CHAIN_MAIN_MOVED", `data main is not the release candidate commit ${sha}`);
     }
+    // 검증·롤백에 필요한 공개 URL은 발행 전에 확인한다. 발행·배포 뒤에야 설정 오류를 알면 검증도 롤백도 못 한 채 새 release가 남는다.
+    for (const key of ["apiBaseUrl", "manifestUrl"]) {
+      if (!context[key]) fail("CHAIN_ENV_INVALID", `plan requires ${key} (CHAIN_API_BASE_URL and CHAIN_DATAPACK_BASE_URL) before any publish`);
+    }
     const state = { schemaVersion: 1, rc: { runId, sha }, startedAt: new Date().toISOString() };
     await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
     await summary(env, [`체인 시작: RC run ${runId} (${sha})`]);
@@ -578,7 +602,7 @@ export async function runChainStage({ stage, statePath, env = process.env, repos
     }
     const next = await run(context, state);
     await writeFile(statePath, `${JSON.stringify(next, null, 2)}\n`);
-    await summary(env, [`- ${stage}: 통과`]);
+    await summary(env, [`- ${stage}: 통과`, ...(next.rollback?.manifestMismatch ? [`  - 주의: ${next.rollback.manifestMismatch.detail} (공개 manifest 번호 ${String(next.rollback.manifestMismatch.publicManifestReleaseSequence)})`] : [])]);
     return next;
   } catch (error) {
     if (error instanceof ChainError) {

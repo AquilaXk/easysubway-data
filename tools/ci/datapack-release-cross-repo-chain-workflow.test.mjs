@@ -14,7 +14,8 @@ const RC_GUARD = "    if: ${{ "
   + "github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' "
   + "&& github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository "
   + "&& github.event.workflow_run.path == '.github/workflows/datapack-release.yml' "
-  + "&& github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' }}";
+  + "&& github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' "
+  + "&& (github.event.workflow_run.triggering_actor.login == 'github-actions[bot]' || github.event.workflow_run.triggering_actor.login == 'AquilaXk') }}";
 const FAILURE_GUARD = "    if: ${{ "
   + "vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && "
   + "github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'workflow_dispatch' "

@@ -10,7 +10,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { AUTOMATION_STAGE_PREFIXES, automationStageForBranch, readPages } from "./automation-pr-policy.mjs";
+import { AUTOMATION_STAGE_PREFIXES, automationStageForBranch, readPages, trustedCommitIdentity } from "./automation-pr-policy.mjs";
 import { planBehindRecreation } from "./automation-pr-recreate.mjs";
 import { parseDeployRunName } from "./datapack-release-chain.mjs";
 
@@ -20,6 +20,8 @@ const STALE_CLAIM_AGE_HOURS = 2;
 const FAILURE_ISSUE_LIMIT = 20;
 const FAILURE_TITLE = "원천 자동 갱신 실패";
 const BOT_LOGINS = new Set(["app/github-actions", "github-actions[bot]"]);
+const PULL_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d{0,9}$/u;
+const PULL_TITLE_MAX_CHARS = 120;
 const IN_FLIGHT_STAGES = new Set(["candidate", "rc", "compat", "promotion", "publish", "deploy"]);
 
 export const STATUS_STAGES = Object.freeze([
@@ -48,6 +50,22 @@ function withoutTrailingSlashes(url) {
   let end = url.length;
   while (end > 0 && url[end - 1] === "/") end -= 1;
   return url.slice(0, end);
+}
+
+/**
+ * 이 저장소의 자동화가 만든 PR만 자동화 PR로 센다. 저장소가 공개라 fork PR도 pulls 목록에 나오고, head 브랜치 이름은 누구나 흉내 낼 수 있다.
+ * head 저장소가 이 저장소이고 작성자가 릴리스 체인 App 또는 github-actions[bot](login·id·type 모두 일치)일 때만 인정한다.
+ */
+export function isOwnAutomationPull(pull, repository) {
+  return pull?.head?.repo?.full_name === repository && trustedCommitIdentity(pull.user) && automationStageForBranch(pull.head.ref) !== null;
+}
+
+// snapshot에 실리는 PR 제목은 화면에 그대로 보이므로 제어·서식(양방향 제어 포함) 문자를 지우고 길이를 제한한다.
+function displayTitle(value, number) {
+  if (typeof value !== "string") throw statusError("PULL_INVALID", `PR ${number} has no title`);
+  const cleaned = [...value.replaceAll(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").replaceAll(/\s+/gu, " ").trim()].slice(0, PULL_TITLE_MAX_CHARS).join("");
+  if (cleaned === "") throw statusError("PULL_INVALID", `PR ${number} title is empty after cleaning`);
+  return cleaned;
 }
 
 function stuckReason({ behind, ageHours }) {
@@ -84,8 +102,9 @@ function summarizeStage(stage, runs) {
   };
 }
 
-export function buildAutomationStatus({ now, manifest, stageRuns = {}, issues = [], openPulls = [], claimRefs = [], behind = { actions: [], anomalies: [] } }) {
+export function buildAutomationStatus({ now, repository, manifest, stageRuns = {}, issues = [], openPulls = [], claimRefs = [], behind = { actions: [], anomalies: [] } }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw statusError("CLOCK");
+  if (typeof repository !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) throw statusError("ENV_INVALID", "repository");
   const activeDatapack = activeDatapackOf(manifest);
   const stages = STATUS_STAGES.map((stage) => summarizeStage(stage, stageRuns[stage.id] ?? []));
 
@@ -96,17 +115,18 @@ export function buildAutomationStatus({ now, manifest, stageRuns = {}, issues = 
     .map((issue) => ({ number: issue.number, title: issue.title, url: issue.url, createdAt: issue.createdAt }));
 
   const behindNumbers = new Set([...behind.actions, ...behind.anomalies].map((item) => item.number));
-  const automationPulls = openPulls.filter((pull) => automationStageForBranch(pull?.head?.ref) !== null);
+  const automationPulls = openPulls.filter((pull) => isOwnAutomationPull(pull, repository));
   const pulls = [];
   const orderedPulls = automationPulls.toSorted((left, right) => left.number - right.number);
   for (const pull of orderedPulls) {
     const ageHours = (now.getTime() - instant(pull.created_at)) / 3_600_000;
     const reason = stuckReason({ behind: behindNumbers.has(pull.number), ageHours });
     if (reason !== null) {
-      pulls.push({ number: pull.number, title: pull.title, url: pull.html_url, branch: pull.head.ref, stage: automationStageForBranch(pull.head.ref), createdAt: pull.created_at, reason });
+      if (!Number.isSafeInteger(pull.number) || !PULL_URL.test(pull.html_url ?? "")) throw statusError("PULL_INVALID", `PR ${String(pull.number)} has an invalid number or url`);
+      pulls.push({ number: pull.number, title: displayTitle(pull.title, pull.number), url: pull.html_url, branch: pull.head.ref, stage: automationStageForBranch(pull.head.ref), createdAt: pull.created_at, reason });
     }
   }
-  const openBranches = new Set(openPulls.map((pull) => pull?.head?.ref));
+  const openBranches = new Set(automationPulls.map((pull) => pull.head.ref));
   const claims = claimRefs
     .filter((claim) => !openBranches.has(claim.branch) && (now.getTime() - instant(claim.committedAt)) / 3_600_000 >= STALE_CLAIM_AGE_HOURS)
     .map((claim) => ({ branch: claim.branch, committedAt: claim.committedAt }));
@@ -150,7 +170,7 @@ export async function collectAutomationStatus({ now, repositories, apis, listFai
   const refs = await apis.data(`repos/${dataRepository}/git/matching-refs/heads/automation/`);
   if (!Array.isArray(refs)) throw statusError("REFS_INVALID", "automation refs response is not a list");
   const prefixes = Object.values(AUTOMATION_STAGE_PREFIXES);
-  const openBranches = new Set(openPulls.map((pull) => pull?.head?.ref));
+  const openBranches = new Set(openPulls.filter((pull) => isOwnAutomationPull(pull, dataRepository)).map((pull) => pull.head.ref));
   const claimRefs = [];
   for (const ref of refs) {
     const branch = typeof ref?.ref === "string" ? ref.ref.replace(/^refs\/heads\//u, "") : "";
@@ -160,7 +180,7 @@ export async function collectAutomationStatus({ now, repositories, apis, listFai
     if (!Number.isFinite(instant(committedAt))) throw statusError("REFS_INVALID", `claim ${branch} has no commit date`);
     claimRefs.push({ branch, committedAt });
   }
-  return { now, manifest, stageRuns, issues, openPulls, behind, claimRefs };
+  return { now, repository: dataRepository, manifest, stageRuns, issues, openPulls, behind, claimRefs };
 }
 
 // ---------- 게시 ----------
