@@ -14,6 +14,16 @@ const NON_PAGINATED_OPERATIONS = new Set(["GetVhcleKndList", "GetCtyCodeList"]);
 const PAGINATED_OPERATIONS = new Set(["GetCtyAcctoTrainSttnList", "GetStrtpntAlocFndTrainInfo"]);
 const TAGO_DAILY_REQUEST_LIMIT = 10_000;
 const TAGO_MAX_RETRY_AFTER_SECONDS = 60;
+// 일시 오류(resultCode 99, HTTP 408·5xx, 전송 오류)는 같은 요청을 지수 백오프(1·2·4·8·16초)로 최대 5번 다시 보낸다(data#1089).
+// 같은 원천에 같은 요청을 다시 보낼 뿐이라 fallback이 아니며, 한도를 다 쓰고도 실패하면 기존처럼 오류로 끝난다.
+// 한 요청(페이지) 안에서 세 종류가 한도를 함께 쓴다. 시도마다 requestBudget(일일 10,000건)을 차감한다.
+const TAGO_TRANSIENT_RETRY_LIMIT = 5;
+const TAGO_TRANSIENT_RESULT_CODE = "99";
+// run 전체(같은 requestBudget을 쓰는 운행일들)의 재시도 대기 합계 상한. 장애가 계속돼도 workflow timeout(45분 이상)을 넘지 않게 한다.
+// 최악 시간 = 대기 5분 + 시도 수(대기 횟수 + 영향받은 요청 수, 약 70) × 요청 timeout 15초 ≈ 22분. 넘기 전에 일자 수집을 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 멈춘다.
+const TAGO_RETRY_WAIT_BUDGET_MILLISECONDS = 300_000;
+const TAGO_RETRY_TIME_BUDGET_EXHAUSTED = "TAGO_RETRY_TIME_BUDGET_EXHAUSTED";
+const transientBackoffMilliseconds = (retryIndex) => 1_000 * 2 ** retryIndex;
 const tagoRateLimitStates = new WeakMap();
 export const ITX_ADMISSION_LOOKAHEAD_DAYS = 14;
 const CANONICAL_STATIONS = Object.freeze({
@@ -588,24 +598,43 @@ async function fetchAll(
     for (const [name, value] of Object.entries({ serviceKey: key, _type: "json", ...pagination, ...query })) {
       url.searchParams.set(name, String(value));
     }
-    const fetched = await fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl, rateLimitState);
-    const response = fetched.response;
-    requestCount += fetched.attemptCount;
-    if (!response.ok) {
-      if (response.body) await response.body.cancel().catch(() => {});
-      throw new Error(`TAGO ${operation} HTTP ${response.status}`);
+    const retryState = { used: 0 };
+    let raw;
+    let root;
+    let code;
+    while (true) {
+      const fetched = await fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl, rateLimitState, retryState);
+      const response = fetched.response;
+      requestCount += fetched.attemptCount;
+      if (!response.ok) {
+        if (response.body) await response.body.cancel().catch(() => {});
+        throw new Error(`TAGO ${operation} HTTP ${response.status}`);
+      }
+      const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+      if (contentType !== "application/json") {
+        if (response.body) await response.body.cancel().catch(() => {});
+        throw new Error(`TAGO ${operation} schema mismatch: content-type`);
+      }
+      try {
+        raw = await response.text();
+      } catch (error) {
+        // 본문을 읽다가 timeout·연결 끊김이 나면 전송 오류와 같은 재시도 대상이다(data#1089). 한도를 다 쓰면 transport failure다.
+        if (retryState.used >= TAGO_TRANSIENT_RETRY_LIMIT) throw new Error("TAGO transport failure", { cause: error });
+        await waitForTransientRetry(retryState, rateLimitState, waitImpl);
+        continue;
+      }
+      let json;
+      try { json = JSON.parse(raw); } catch { throw new Error(`TAGO ${operation} schema mismatch: invalid JSON`); }
+      root = json.response ?? json;
+      code = String(root?.header?.resultCode ?? "");
+      if (code === TAGO_TRANSIENT_RESULT_CODE && retryState.used < TAGO_TRANSIENT_RETRY_LIMIT) {
+        // 실패한 시도의 본문은 증거 해시에 넣지 않는다. 시도 자체는 요청 수와 provider capture에 남는다.
+        await waitForTransientRetry(retryState, rateLimitState, waitImpl);
+        continue;
+      }
+      break;
     }
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
-    if (contentType !== "application/json") {
-      if (response.body) await response.body.cancel().catch(() => {});
-      throw new Error(`TAGO ${operation} schema mismatch: content-type`);
-    }
-    const raw = await response.text();
     rawHashes.push(sha256(raw));
-    let json;
-    try { json = JSON.parse(raw); } catch { throw new Error(`TAGO ${operation} schema mismatch: invalid JSON`); }
-    const root = json.response ?? json;
-    const code = String(root?.header?.resultCode ?? "");
     if (code !== "00") throw new Error(`TAGO ${operation} provider resultCode ${safeCode(code)}`);
     const body = root?.body;
     if (!body || typeof body !== "object") throw new Error(`TAGO ${operation} schema mismatch: body`);
@@ -642,9 +671,8 @@ async function fetchAll(
   return { operation, endpoint: `${BASE}/${operation}`, pageCount: rawHashes.length, requestCount, totalCount, rawResponseSha256: sha256(rawHashes.join("|")), rows: all };
 }
 
-async function fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl, rateLimitState) {
+async function fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl, rateLimitState, retryState) {
   let attemptCount = 0;
-  let ordinaryRetryCount = 0;
   while (true) {
     let response;
     try {
@@ -661,9 +689,8 @@ async function fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl
     } catch (error) {
       if (error instanceof Error && error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED") throw error;
       attemptCount += 1;
-      if (ordinaryRetryCount === 2) throw new Error("TAGO transport failure", { cause: error });
-      await waitImpl(250 * 2 ** ordinaryRetryCount);
-      ordinaryRetryCount += 1;
+      if (retryState.used >= TAGO_TRANSIENT_RETRY_LIMIT) throw new Error("TAGO transport failure", { cause: error });
+      await waitForTransientRetry(retryState, rateLimitState, waitImpl);
       continue;
     }
     if (response.status === 429) {
@@ -680,10 +707,9 @@ async function fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl
       continue;
     }
     const retryable = response.status === 408 || response.status >= 500;
-    if (!retryable || ordinaryRetryCount === 2) return { response, attemptCount };
+    if (!retryable || retryState.used >= TAGO_TRANSIENT_RETRY_LIMIT) return { response, attemptCount };
     if (response.body) await response.body.cancel().catch(() => {});
-    await waitImpl(250 * 2 ** ordinaryRetryCount);
-    ordinaryRetryCount += 1;
+    await waitForTransientRetry(retryState, rateLimitState, waitImpl);
   }
 }
 
@@ -696,11 +722,20 @@ class TagoRateLimitedError extends Error {
   }
 }
 
+// 일시 오류 재시도 대기: 한 요청 안의 횟수(retryState)와 run 전체의 대기 시간 예산(rateLimitState.retryWaitMs)을 함께 차감한다.
+async function waitForTransientRetry(retryState, rateLimitState, waitImpl) {
+  const delay = transientBackoffMilliseconds(retryState.used);
+  if (rateLimitState.retryWaitMs + delay > TAGO_RETRY_WAIT_BUDGET_MILLISECONDS) throw new Error(TAGO_RETRY_TIME_BUDGET_EXHAUSTED);
+  rateLimitState.retryWaitMs += delay;
+  retryState.used += 1;
+  await waitImpl(delay);
+}
+
 function tagoRateLimitState(requestBudget) {
-  if (!requestBudget) return { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0 };
+  if (!requestBudget) return { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0, retryWaitMs: 0 };
   let state = tagoRateLimitStates.get(requestBudget);
   if (!state) {
-    state = { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0 };
+    state = { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0, retryWaitMs: 0 };
     tagoRateLimitStates.set(requestBudget, state);
   }
   return state;
@@ -722,7 +757,7 @@ function rateLimitError(state) {
 
 function isFatalTagoRosterError(error) {
   return error instanceof TagoRateLimitedError
-    || (error instanceof Error && error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED");
+    || (error instanceof Error && (error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED" || error.message === TAGO_RETRY_TIME_BUDGET_EXHAUSTED));
 }
 
 function uniqueStation(rows, name) {
