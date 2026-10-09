@@ -47,6 +47,16 @@ export const TRANSFER_STAIR_LINE_TABLE = Object.freeze([
 ]);
 
 
+const stationNameSets = new WeakMap();
+function stationNameSet(stations) {
+  if (!stationNameSets.has(stations)) {
+    stationNameSets.set(stations, new Set([...stations.values()].flatMap((station) => [station.nameKo, ...subNamed(station)]).map(normalizeStationName)));
+  }
+  return stationNameSets.get(stations);
+}
+
+const KNOWN_DIRECTION_LINE_TOKENS = new Set(TRANSFER_STAIR_LINE_TABLE.flatMap(({ directionTokens }) => directionTokens));
+
 function line(lineName, providerLines, directionTokens) {
   return Object.freeze({
     lineName,
@@ -144,8 +154,15 @@ export function subNamed(station) {
 }
 
 
+// 원천의 "<노선> <역> 방면" 표기를 읽는다. 같은 표기의 서식 차이만 받는다(#1025).
+// - 끝의 "승강장" 접미: "4호선 고잔 방면 승강장"
+// - 역명에 붙은 "방면": "경의중앙선 양원방면"
+// - 공백이 든 역명: "3호선 을지로 3가 방면"
+// 읽은 역명은 directionStation이 완행 이웃 역 이름과 정확히 하나가 맞을 때만 방면 역으로 인정한다.
+// 종착역 표기, 노선 표기가 없는 방면, "도착" 표기는 읽지 않는다(null).
 export function parseDirection(value) {
-  const match = /^(\S+) (\S+) 방면$/u.exec(String(value ?? "").trim());
+  const text = String(value ?? "").trim().replace(/ 승강장$/u, "");
+  const match = /^(\S+) (\S.*?) ?방면$/u.exec(text);
   return match ? { lineToken: match[1], stationName: match[2] } : null;
 }
 
@@ -177,10 +194,17 @@ export function sequenceSha256(rows) {
 
 // 시퀀스의 첫·마지막 단계 방면 표기를 노선 토큰 표로 해석한다. 출발 노선은 행의 노선과 같아야 하고, 도착 노선은 하나로 정해지며 출발 노선과 달라야 한다.
 // 성공하면 { from, to, toLineId }, 아니면 { reason }이다.
-export function resolveDirectionLines({ entry, mapping, linesAtStation, tableLines }) {
+export function resolveDirectionLines({ entry, mapping, linesAtStation, tableLines, stations }) {
   const from = parseDirection(entry.rows[0].CHTN_MV_CONT);
   const to = parseDirection(entry.rows.at(-1).CHTN_MV_CONT);
   if (!from || !to) return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
+  // 첫 단어가 고정 노선 표기가 아니고, 첫 단어와 역명을 이어 붙인 이름이 정본 역 이름이면 노선 표기 없는 방면이다
+  // ("을지로 3가 방면"의 "을지로"). 노선 불일치로 읽지 않는다(#1025). 표에 없는 노선 표기는 기존대로 노선 해석 단계에서 제외된다.
+  const names = stationNameSet(stations);
+  if ([from, to].some(({ lineToken, stationName }) => !KNOWN_DIRECTION_LINE_TOKENS.has(lineToken)
+    && names.has(normalizeStationName(`${lineToken}${stationName}`)))) {
+    return { reason: "DIRECTION_FORMAT_UNSUPPORTED" };
+  }
   const stationLines = linesAtStation.get(mapping.stationId) ?? [];
   const linesForToken = (token) => tableLines
     .filter(({ directionTokens, lineId }) => directionTokens.includes(token) && stationLines.includes(lineId))

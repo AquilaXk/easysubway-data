@@ -44,6 +44,9 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+    # #1047: 후보 입력 발행(OCI) 사전 인증 URL은 이 environment의 secret이다. 묶지 않으면 값이 비어 STALE 판정 뒤 발행 step이 실패한다.
+    # secret은 후보를 만드는 step의 env에서만 읽는다. 이 environment에는 승인 규칙이 없어 정기 실행이 막히지 않는다.
+    environment: datapack-release-check
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
