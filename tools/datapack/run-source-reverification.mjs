@@ -25,6 +25,7 @@ import { promisify } from "node:util";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "../ci/source-ledger-gate.mjs";
 import { ledgerHead } from "../ci/decide-source-reverification.mjs";
 import { isSourceReverificationAllowedPath, SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS } from "../ci/source-reverification-paths.mjs";
+import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -303,6 +304,32 @@ async function daeguCapturedAt(directory) {
   return capturedAt;
 }
 
+// --download 수집기는 snapshot 여섯 개만 쓰고 원본 CSV는 각 snapshot의 rawSources(base64)에만 둔다.
+// 등록기는 <input-dir>/data-go-<datasetId>.csv 아홉 개를 읽으므로(#1080), snapshot에 보관된 원본을 sha256으로 다시 대조해 그 이름으로 복원한다.
+// 노선별 데이터셋 아홉 개가 정확히 한 번씩 나와야 하고, downloadProvenance가 있으면 그 sha와 보관 바이트가 같아야 한다. 어긋나면 등록하지 않고 멈춘다.
+const DAEGU_DATASET_IDS = Object.freeze(DAEGU_LINES.flatMap(({ intervalDatasetId, upDatasetId, downDatasetId }) => [intervalDatasetId, upDatasetId, downDatasetId]));
+
+async function restoreDaeguRawFiles(collectedDirectory, rawDirectory) {
+  const names = (await readdir(collectedDirectory)).filter((name) => name.endsWith(".json") && !name.startsWith(".")).sort(compare);
+  const restored = new Map();
+  for (const name of names) {
+    const snapshot = JSON.parse(await readFile(path.join(collectedDirectory, name), "utf8"));
+    const provenance = new Map((snapshot.downloadProvenance ?? []).map((entry) => [entry?.datasetId, entry]));
+    if (!Array.isArray(snapshot.rawSources) || snapshot.rawSources.length === 0) fail(`the Daegu snapshot retains no raw source: ${name}`);
+    for (const { datasetId, rawSha256, bytesBase64 } of snapshot.rawSources) {
+      const bytes = Buffer.from(typeof bytesBase64 === "string" ? bytesBase64 : "", "base64");
+      if (!DAEGU_DATASET_IDS.includes(datasetId) || restored.has(datasetId)) fail(`the Daegu snapshots retain an unexpected or repeated dataset: ${String(datasetId)}`);
+      if (bytes.byteLength === 0 || sha256(bytes) !== rawSha256) fail(`the retained raw bytes of dataset ${datasetId} do not match their rawSha256`);
+      if (provenance.size > 0 && provenance.get(datasetId)?.rawSha256 !== rawSha256) fail(`the download provenance of dataset ${datasetId} does not match the retained raw bytes`);
+      restored.set(datasetId, bytes);
+    }
+  }
+  const missing = DAEGU_DATASET_IDS.filter((datasetId) => !restored.has(datasetId));
+  if (missing.length > 0) fail(`the Daegu snapshots do not retain datasets: ${missing.join(", ")}`);
+  await mkdir(rawDirectory);
+  for (const [datasetId, bytes] of restored) await writeFile(path.join(rawDirectory, `data-go-${datasetId}.csv`), bytes, { flag: "wx" });
+}
+
 const DAEGU_SOURCE_IDS = Object.freeze([1, 2, 3].flatMap((line) => [`daegu-line${line}-route-topology`, `daegu-line${line}-train-timetable`]));
 
 export const RECIPE_STEPS = Object.freeze({
@@ -364,9 +391,12 @@ export const RECIPE_STEPS = Object.freeze({
       ctx.shared.set("daegu", { capturedAt: await daeguCapturedAt(ctx.file("collected")) });
       await writeFile(ctx.file("receipts.json"), jsonText(Object.fromEntries(DAEGU_SOURCE_IDS.map((sourceId) => [sourceId, ctx.file(`receipts/${sourceId}.json`)]))), { flag: "wx" });
     }),
+    step("raw", "glue", async (ctx) => {
+      await restoreDaeguRawFiles(ctx.file("collected"), ctx.file("raw"));
+    }),
     step("register", "register", async (ctx) => {
       await registerWithHead(ctx, "register-daegu-datapack-sources.mjs", [
-        "publish-register", "--input-dir", ctx.file("collected"), "--captured-at", ctx.shared.get("daegu").capturedAt, "--receipts", ctx.file("receipts.json"),
+        "publish-register", "--input-dir", ctx.file("raw"), "--captured-at", ctx.shared.get("daegu").capturedAt, "--receipts", ctx.file("receipts.json"),
       ]);
     }),
   ],

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { RECIPE_STEPS } from "./run-source-reverification.mjs";
 import { prepareKorailTimetableRegistration } from "./register-korail-timetable.mjs";
 import { prepareKorailTopologyRegistration } from "./register-korail-route-topology.mjs";
@@ -30,9 +32,15 @@ test.before(async () => { temporary = await mkdtemp(path.join(os.tmpdir(), "reve
 test.after(async () => { await rm(temporary, { recursive: true, force: true }); });
 
 const FAKE_EFFECTS = {
+  // --download 수집기처럼 snapshot 여섯 개만 쓰고 원본은 rawSources(base64)에 둔다. 원본 CSV 9개는 노선당 topology 1개·시각표 2개에 나뉜다(#1080).
   async "collect-daegu-datapack-sources.mjs"(args) {
     const directory = args[args.indexOf("--output-dir") + 1];
-    for (const name of ["a", "b", "c", "d", "e", "f"]) await writeFile(path.join(directory, `${name}.json`), `${JSON.stringify({ capturedAt: "2026-10-07T01:02:03.456Z" })}\n`);
+    const raw = (datasetId) => { const bytes = Buffer.from(`csv-${datasetId}`); return { datasetId, rawSha256: createHash("sha256").update(bytes).digest("hex"), bytesBase64: bytes.toString("base64") }; };
+    for (const { lineNumber, intervalDatasetId, upDatasetId, downDatasetId } of DAEGU_LINES) {
+      const capturedAt = "2026-10-07T01:02:03.456Z";
+      await writeFile(path.join(directory, `topology-${lineNumber}.json`), `${JSON.stringify({ capturedAt, rawSources: [raw(intervalDatasetId)] })}\n`);
+      await writeFile(path.join(directory, `timetable-${lineNumber}.json`), `${JSON.stringify({ capturedAt, rawSources: [raw(upDatasetId), raw(downDatasetId)] })}\n`);
+    }
   },
 };
 
@@ -118,11 +126,47 @@ test("대구 여섯 원천은 --download로 한 번에 받고 snapshot의 captur
   const file = (name) => path.join(operationDir, name);
   assert.deepEqual(calls.map(({ script }) => script), ["collect-daegu-datapack-sources.mjs", "register-daegu-datapack-sources.mjs"]);
   assert.deepEqual(calls[0].args, ["--download", "--output-dir", file("collected")]);
-  assert.deepEqual(calls[1].args, ["publish-register", "--input-dir", file("collected"), "--captured-at", NOW.toISOString(), "--receipts", file("receipts.json"), "--expected-head", HEAD]);
+  assert.deepEqual(calls[1].args, ["publish-register", "--input-dir", file("raw"), "--captured-at", NOW.toISOString(), "--receipts", file("receipts.json"), "--expected-head", HEAD]);
   const receipts = JSON.parse(await readFile(file("receipts.json"), "utf8"));
   assert.deepEqual(Object.keys(receipts).sort(), [1, 2, 3].flatMap((line) => [`daegu-line${line}-route-topology`, `daegu-line${line}-train-timetable`]).sort());
   for (const [sourceId, receiptPath] of Object.entries(receipts)) assert.equal(receiptPath, file(`receipts/${sourceId}.json`));
   assert.deepEqual(await readdir(file("receipts")), []);
+  // 등록기가 읽는 원본 CSV 9개가 snapshot에 보관된 바이트 그대로 --input-dir에 있다.
+  const datasetIds = DAEGU_LINES.flatMap(({ intervalDatasetId, upDatasetId, downDatasetId }) => [intervalDatasetId, upDatasetId, downDatasetId]);
+  assert.deepEqual((await readdir(file("raw"))).sort(), datasetIds.map((id) => `data-go-${id}.csv`).sort());
+  for (const id of datasetIds) assert.equal(await readFile(file(`raw/data-go-${id}.csv`), "utf8"), `csv-${id}`);
+});
+
+// 보관된 원본이 어긋난 snapshot은 등록으로 넘기지 않는다(#1080). 수집기 산출물을 바꿔 raw 복원 단계가 거부하는지 본다.
+async function daeguWithTamperedSnapshot(mutate) {
+  const original = FAKE_EFFECTS["collect-daegu-datapack-sources.mjs"];
+  FAKE_EFFECTS["collect-daegu-datapack-sources.mjs"] = async (args) => {
+    await original(args);
+    const directory = args[args.indexOf("--output-dir") + 1];
+    const file = path.join(directory, "timetable-1.json");
+    await writeFile(file, `${JSON.stringify(mutate(JSON.parse(await readFile(file, "utf8"))))}\n`);
+  };
+  try {
+    return await record("daegu-sources");
+  } finally {
+    FAKE_EFFECTS["collect-daegu-datapack-sources.mjs"] = original;
+  }
+}
+
+test("대구 snapshot의 보관 원본이 rawSha256과 다르면 등록하지 않고 실패한다", async () => {
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources[0].bytesBase64 = Buffer.from("tampered").toString("base64"); return snapshot; }), /do not match their rawSha256/u);
+});
+
+test("대구 snapshot의 downloadProvenance sha가 보관 원본과 다르면 등록하지 않고 실패한다", async () => {
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => {
+    snapshot.downloadProvenance = snapshot.rawSources.map(({ datasetId }) => ({ datasetId, rawSha256: "0".repeat(64) }));
+    return snapshot;
+  }), /download provenance of dataset \d+ does not match/u);
+});
+
+test("대구 snapshot이 아홉 데이터셋을 정확히 한 번씩 보관하지 않으면 등록하지 않고 실패한다", async () => {
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources.pop(); return snapshot; }), /do not retain datasets/u);
+  await assert.rejects(daeguWithTamperedSnapshot((snapshot) => { snapshot.rawSources.push(snapshot.rawSources[0]); return snapshot; }), /unexpected or repeated dataset/u);
 });
 
 test("대구 snapshot의 capturedAt이 서로 다르거나 정규형이 아니면 등록하지 않고 실패한다", async () => {
