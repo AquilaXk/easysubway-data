@@ -243,7 +243,22 @@ test("the seq126 candidate produces exactly the modeArgs of the manual RC run 37
 
 test("committed release candidate files produce the fixed RC modeArgs with a nationwide approval id (F3)", async () => {
   const repositoryRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
-  const { releaseRequestId, ...fixed } = await readReleaseCandidateModeArgs({ repositoryRoot });
+  // #1069: 정기 역할 후보의 release request는 만든 workflow run(gateRun)을 결속하고, RC 계획은 그 run 기록 없이는 시작하지 않는다.
+  // 기록은 커밋된 gateRun과 후보 시계에서 유도한다(run 창이 후보 시계를 덮고 gateRun의 모든 필드가 맞는 성공 기록). 사람 역할 후보는 기록이 필요 없다.
+  const request = JSON.parse(readFileSync(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.releaseRequestPath), "utf8"));
+  const { publishedAt } = JSON.parse(readFileSync(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.buildSpecPath), "utf8"));
+  const { gateRun } = request;
+  const gateRunRecord = gateRun === undefined ? undefined : {
+    id: gateRun.runId, run_attempt: gateRun.runAttempt, event: gateRun.event, head_sha: gateRun.headSha, head_branch: "main",
+    path: `${gateRun.workflowPath}@refs/heads/main`, conclusion: "success", repository: { full_name: gateRun.repository },
+    head_repository: { full_name: gateRun.repository },
+    run_started_at: new Date(Date.parse(publishedAt) - 60_000).toISOString(), updated_at: new Date(Date.parse(publishedAt) + 60_000).toISOString(),
+    ...(gateRun.actor === undefined ? {} : { actor: { login: gateRun.actor }, triggering_actor: { login: gateRun.actor } }),
+  };
+  if (gateRunRecord !== undefined) {
+    await assert.rejects(readReleaseCandidateModeArgs({ repositoryRoot }), /RELEASE_CANDIDATE_GATE_RUN[\s\S]*record is required/u, "gateRun이 결속된 후보는 기록 없이 시작하지 않는다");
+  }
+  const { releaseRequestId, ...fixed } = await readReleaseCandidateModeArgs({ repositoryRoot, ...(gateRunRecord === undefined ? {} : { gateRunRecord }) });
   assert.match(releaseRequestId, /^release-request-nationwide-candidate-\d{8}-seq[1-9]\d*$/u);
   const { releaseRequestId: _manual, ...manualFixed } = JSON.parse(RUN_37109648483_MODE_ARGS);
   assert.deepEqual(fixed, manualFixed);
