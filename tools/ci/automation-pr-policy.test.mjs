@@ -1347,7 +1347,9 @@ test("CLI prepare: 갱신 PR은 대상이고 증거의 base sha를 내보낸다.
     const pullFile = path.join(dir, "pull.json");
     const output = path.join(dir, "out.txt");
     await writeFile(pullFile, JSON.stringify(input.pull));
-    await main(["prepare", "--pull-request", pullFile, "--github-output", output]);
+    // log를 주입한다: 기본 log는 process.stdout에 직접 쓰고, 테스트 child의 stdout은 node test runner의 결과 전송 통로라 마지막 test 끝에서 raw 쓰기가 끼면
+    // 간헐적으로 "Unable to deserialize cloned data"로 파일 전체가 실패한다(#1108, #1098·#1106 CI).
+    await main(["prepare", "--pull-request", pullFile, "--github-output", output], { log: () => {} });
     assert.equal(await readFile(output, "utf8"), `applicable=true\nbase_sha=${run.baseSha}\n`);
     const crossed = { ...input.pull, head: { ...input.pull.head, ref: refreshBranch("seoul-accessibility-refresh") } };
     await writeFile(pullFile, JSON.stringify(crossed));
