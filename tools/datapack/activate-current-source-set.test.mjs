@@ -2363,7 +2363,7 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
   assert.equal(currentTopology.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
   const positionSnapshotBytes = await collectPositionSnapshotBytes(sourceInventory);
   const layoutTopologySnapshotBytesById = await collectLayoutTopologySnapshotBytes(sourceInventory);
-  // #938: 수집 시각이 컷오버(2026-10-03T00:00Z) 전이면 P1D, 뒤면 P7D 창이다. 기대 freshUntil은 리터럴로 고정한다.
+  // #938: 수집 시각이 컷오버(2026-10-03T00:00Z) 전이면 P1D, 뒤면 P7D 창이다. legacy P1D 사례의 기대 freshUntil은 리터럴로 고정한다.
   // P7D 경계 사례는 빌드 시각을 freshUntil과 같게 두어, 창 끝 시각에 정확히 만료로 판정되는지 본다.
   const legacyBuildNow = new Date(Date.parse(currentTopology.capturedAt) + 1_000).toISOString();
   // P7D 경계 사례의 빌드 시각은 현재 topology 데이터와 상대적으로 정한다(#1108). 자동 갱신 PR이 topology를 다시 수집하면 currentTopology.capturedAt이 뒤로 가므로
@@ -2386,6 +2386,7 @@ test("stale Incheon input은 current topology materialization 전에 fail-closed
     assert.ok(Date.parse(buildNow) < Date.parse(currentTopology.freshUntil), name);
     assert.ok(Date.parse(freshUntil) <= Date.parse(buildNow), name);
     if (name === "post-cutover P7D boundary") {
+      // 아래 세 단언은 production 동작이 아니라 사례 구성(컷오버 이후·7일 창·창 끝 빌드 시각)을 지킨다. 경계 만료 판정은 뒤의 assert.throws가 검증한다.
       assert.ok(Date.parse(capturedAt) >= CUTOVER_MS, "capturedAt must be on or after the cutover");
       assert.equal(Date.parse(freshUntil) - Date.parse(capturedAt), P7D_MS, "P7D window");
       assert.equal(freshUntil, buildNow, "the build clock sits exactly on the window end");
