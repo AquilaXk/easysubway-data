@@ -348,7 +348,7 @@
   },
   "freshness": {
     "status": "MISSING",
-    "nextReviewAt": "2026-10-12T00:00:00+09:00",
+    "nextReviewAt": "2026-10-18T00:00:00+09:00",
     "eventTrigger": "Korail station row 시각 값 제공 또는 다른 공식 station-level timetable 발견"
   },
   "claimGate": {
@@ -365,20 +365,26 @@
   "sourceTimetableArtifact": {
     "status": "ADMITTED",
     "admissionEligible": true,
-    "artifactId": "itx-cheongchun-source-timetable-20261004151519524",
-    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20261004151519524.json",
-    "sha256": "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189",
-    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20261004151519524-completeness-evidence.json",
-    "completenessEvidenceSha256": "530d39e5f1be5cc9ea2f1724e470eb04a8567e87db56fef959b2737933cd3489",
+    "artifactId": "itx-cheongchun-source-timetable-20261010151222895",
+    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20261010151222895.json",
+    "sha256": "0126ba241e0975e7cb3c292c3def245c7c8c78228a811610052fa2d46f8acb5a",
+    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20261010151222895-completeness-evidence.json",
+    "completenessEvidenceSha256": "95ecb73772d258549d917a055015bf686f5d4872af4970946d62a0cfd24f93be",
     "schemaVersion": 1,
-    "freshUntil": "2026-10-12T00:00:00+09:00",
+    "freshUntil": "2026-10-18T00:00:00+09:00",
     "policyVersion": "itx-snapshot-anomaly-v1",
     "promotion": {
-      "mode": "CURRENT_CANDIDATE_OWNER_APPROVED",
-      "previousArtifactSha256": "11ba30b4306ec2a5deca909934ab1d9d0a7aef71d6b62a964c8cc6f55ea81658",
-      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260930163854026.json",
-      "approvalUrl": "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-5981684543",
-      "approvedArtifactSha256": "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189"
+      "mode": "CURRENT_CANDIDATE_GATE_PASSED",
+      "previousArtifactSha256": "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189",
+      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20261004151519524.json",
+      "gate": {
+        "policyId": "itx-promotion-gate-v1",
+        "receiptPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20261010151222895-promotion-gate.json",
+        "receiptSha256": "d1215d88c420d6c04777c431d5532d129dd96fa444d207fe48e774c8701bb477"
+      },
+      "gatedArtifactSha256": "0126ba241e0975e7cb3c292c3def245c7c8c78228a811610052fa2d46f8acb5a",
+      "baselineArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20261004151519524.json",
+      "baselineArtifactSha256": "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189"
     }
   }
 }
