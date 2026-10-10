@@ -138,6 +138,43 @@ test("같은 KST 날 다른 workflow가 이미 ITX를 수집했으면 수집할 
   assert.throws(() => decide({ now: kst("2026-10-10"), itxCollectedToday: "yes" }), /ITX_PROMOTION_INPUT_INVALID/u);
 });
 
+// #1127: 하루 한 번만 받을 수 있는 수집분이 승격 PR과 함께 사라졌을 때, 보관 capture를 재생해 승격한다. 재생은 공급자를 부르지 않는다.
+test("재생 요청은 수집할 때가 아니어도, 같은 KST 날 이미 수집했어도 COLLECT로 진행한다 (공급자 호출 없음)", () => {
+  const notDue = decide({ now: kst("2026-10-06"), replayRunId: "38062621511" });
+  assert.deepEqual(
+    (({ state, reason, replayRunId }) => ({ state, reason, replayRunId }))(notDue),
+    { state: "COLLECT", reason: "REPLAY", replayRunId: "38062621511" },
+  );
+  const collectedToday = decide({ now: kst("2026-10-10"), itxCollectedToday: true, replayRunId: "38062621511" });
+  assert.deepEqual(
+    (({ state, reason, replayRunId }) => ({ state, reason, replayRunId }))(collectedToday),
+    { state: "COLLECT", reason: "REPLAY", replayRunId: "38062621511" },
+  );
+  // 재생이 아니면 같은 조건은 그대로 WAIT이다.
+  assert.equal(decide({ now: kst("2026-10-10"), itxCollectedToday: true }).reason, "ITX_COLLECTED_TODAY");
+  assert.equal(decide({ now: kst("2026-10-10") }).replayRunId, undefined);
+});
+
+test("재생 요청도 열린 PR·중복·닫힌 PR·고아 브랜치·대기 PR 판정은 그대로 받는다", () => {
+  const replayRunId = "38062621511";
+  assert.equal(decide({ replayRunId, pullRequests: [pr()], branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }).state, "OPEN_PR");
+  assert.throws(() => decide({ replayRunId, pullRequests: [pr(), pr({ number: 991, headRefName: `${ITX_PROMOTION_CLAIM_PREFIX}124` })], branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }, { branch: `${ITX_PROMOTION_CLAIM_PREFIX}124` }] }), /ITX_PROMOTION_PR_DUPLICATE/u);
+  assert.throws(() => decide({ replayRunId, pullRequests: [pr({ state: "CLOSED" })], branches: [] }), /ITX_PROMOTION_PR_CLOSED/u);
+  assert.throws(() => decide({ replayRunId, branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }), /ITX_PROMOTION_ORPHAN_BRANCH/u);
+  const other = pr({ number: 980, headRefName: "automation/456-capital-topology-registration-55" });
+  assert.deepEqual(
+    (({ state, blockedBy }) => ({ state, blockedBy }))(decide({ now: kst("2026-10-06"), pullRequests: [other], replayRunId })),
+    { state: "BLOCKED_BY_PENDING_PR", blockedBy: [980] },
+  );
+});
+
+test("재생 요청의 run id는 양의 정수 문자열만 받는다. 아니면 추정하지 않고 실패한다", () => {
+  for (const replayRunId of ["0", "-1", "01", "12a", " 123", "1.5", 123, null]) {
+    assert.throws(() => decide({ replayRunId }), /ITX_PROMOTION_INPUT_INVALID/u, String(replayRunId));
+  }
+  assert.throws(() => decide({ replayRunId: "9".repeat(20) }), /ITX_PROMOTION_INPUT_INVALID/u);
+});
+
 test("열린 승격 PR이 있으면 새로 수집하지 않고 그 PR을 돌려준다", () => {
   const result = decide({ now: kst("2026-10-11"), pullRequests: [pr()], branches: [{ sha: "a".repeat(40), branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] });
   assert.deepEqual({ state: result.state, branch: result.branch, number: result.number }, { state: "OPEN_PR", branch: `${ITX_PROMOTION_CLAIM_PREFIX}123`, number: 990 });
@@ -275,7 +312,7 @@ test("CLI는 판정을 GITHUB_OUTPUT에 쓴다", async () => {
     ], { now: kst("2026-10-10"), log: (line) => logs.push(line) });
     assert.equal(result.state, "COLLECT");
     assert.deepEqual((await readFile(output, "utf8")).trim().split("\n"), [
-      "state=COLLECT", "reason=SAFETY_LEAD", "branch=", "pr_number=", "blocked_by=", "days_until_expiry=2", "lapsed=false",
+      "state=COLLECT", "reason=SAFETY_LEAD", "branch=", "pr_number=", "blocked_by=", "days_until_expiry=2", "lapsed=false", "replay_run_id=",
     ]);
     assert.equal(logs.length, 1);
     const waiting = await main([
@@ -288,6 +325,22 @@ test("CLI는 판정을 GITHUB_OUTPUT에 쓴다", async () => {
       "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "maybe",
     ], { now: kst("2026-10-10"), log: () => {} }), /ITX_PROMOTION_INPUT_INVALID/u);
     await assert.rejects(main(["--contract", path.join(dir, "contract.json")], { now: kst("2026-10-10") }), /ITX_PROMOTION_INPUT_INVALID/u);
+    // #1127: --replay-run-id는 재생 모드를 연다. 빈 문자열은 입력 없음(정기 실행)과 같다.
+    const replaying = await main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "true", "--replay-run-id", "38062621511", "--github-output", output,
+    ], { now: kst("2026-10-10"), log: () => {} });
+    assert.deepEqual({ state: replaying.state, reason: replaying.reason }, { state: "COLLECT", reason: "REPLAY" });
+    assert.match(await readFile(output, "utf8"), /state=COLLECT\nreason=REPLAY\nbranch=\npr_number=\nblocked_by=\ndays_until_expiry=2\nlapsed=false\nreplay_run_id=38062621511\n$/u);
+    const empty = await main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "true", "--replay-run-id", "",
+    ], { now: kst("2026-10-10"), log: () => {} });
+    assert.equal(empty.reason, "ITX_COLLECTED_TODAY");
+    await assert.rejects(main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--replay-run-id", "abc",
+    ], { now: kst("2026-10-10"), log: () => {} }), /ITX_PROMOTION_INPUT_INVALID/u);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

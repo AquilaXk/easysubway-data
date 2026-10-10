@@ -13,6 +13,10 @@ const { yml, steps, step } = loadWorkflow(path.resolve(import.meta.dirname, "../
 // 주석은 설명이다. 동작을 보는 단언은 주석을 뺀 본문에만 건다.
 const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
 const COLLECT = "${{ steps.decision.outputs.state == 'COLLECT' }}";
+// #1127: 공급자를 부르는 step은 재생 요청이 없을 때만, 보관 capture를 되살리는 step은 재생 요청이 있을 때만 돈다.
+const COLLECT_LIVE = "${{ steps.decision.outputs.state == 'COLLECT' && steps.decision.outputs.replay_run_id == '' }}";
+const COLLECT_REPLAY = "${{ steps.decision.outputs.state == 'COLLECT' && steps.decision.outputs.replay_run_id != '' }}";
+const RESTORE_STEPS = ["Download retained ITX collection evidence", "Restore retained ITX collection evidence"];
 const DECISION = "Decide whether ITX promotion is due";
 
 // F5 → #979 → #980 F1: 원장 대조·첫 dispatch 확인은 #981로 분리했고 변수 켜기의 선행 조건이 아니다. 변수는 코드가 켜지 않고 QA 보고 뒤 별도 설정 변경으로 켠다.
@@ -26,7 +30,7 @@ test("정기 실행 변수는 코드가 켜지 않고 QA 보고 뒤 별도 설�
 });
 
 test("트리거: 매일 03:00 KST 정기 실행과 사람 dispatch(force 입력). push 트리거는 없다", () => {
-  assert.match(yml, /^on:\n  schedule:\n    - cron: "0 18 \* \* \*"\n  workflow_dispatch:\n    inputs:\n      force_collect:\n        description: [^\n]+\n        required: false\n        default: false\n        type: boolean\n/mu);
+  assert.match(yml, /^on:\n  schedule:\n    - cron: "0 18 \* \* \*"\n  workflow_dispatch:\n    inputs:\n      force_collect:\n        description: [^\n]+\n        required: false\n        default: false\n        type: boolean\n      replay_run_id:\n        description: [^\n]+\n        required: false\n        default: ""\n        type: string\n\npermissions: \{\}/mu);
   assert.doesNotMatch(code, /\n  push:|\n  pull_request:|\n  pull_request_target:|\n  workflow_run:/u);
 });
 
@@ -58,12 +62,13 @@ test("판정 step이 공급자 접근·쓰기보다 먼저 돌고 PR·브랜치 
   assert.match(block, /\n        id: decision\n/u);
   assert.match(block, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
   assert.match(block, /FORCE_COLLECT: \$\{\{ inputs\.force_collect \}\}/u);
+  assert.match(block, /REPLAY_RUN_ID: \$\{\{ inputs\.replay_run_id \}\}/u);
   // #993: PR 이력 전체(--state all --limit 1000)를 받지 않는다. 열린 PR 전체와 claim 브랜치별 PR만 수집기로 받는다.
   assert.match(block, /node tools\/ci\/collect-automation-prs\.mjs --repository "\$\{GITHUB_REPOSITORY\}" --refs "[^"]+" --pr-limit 1000 --output "[^"]+"/u);
   assert.doesNotMatch(block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/977-itx-promotion-\*" > /u);
   assert.match(block, /node tools\/ci\/decide-itx-current-promotion\.mjs --contract tools\/datapack\/itx-cheongchun-coverage-contract\.json /u);
-  assert.match(block, /--repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --force "\$\{force\}" --itx-collected-today "\$\{itx_collected\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /--repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --force "\$\{force\}" --itx-collected-today "\$\{itx_collected\}" --replay-run-id "\$\{REPLAY_RUN_ID\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
   // F4: 같은 KST 날 다른 workflow가 이미 ITX를 수집했는지 공급자 호출 전에 본다. 수집했다면 WAIT로 정상 종료한다.
   assert.match(block, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
   assert.match(block, /itx_collected="\$\(node tools\/ci\/guard-itx-current-collection-budget\.mjs --probe\)"/u);
@@ -73,8 +78,6 @@ test("판정 step이 공급자 접근·쓰기보다 먼저 돌고 PR·브랜치 
 test("수집·게이트·승격·브랜치·PR 생성은 모두 COLLECT일 때만 돈다", () => {
   for (const name of [
     "Prepare current ITX promotion",
-    "Guard KST quota window",
-    "Collect current ITX timetable",
     "Replay retained capture offline",
     "Evaluate promotion gate",
     "Verify pinned Mobile fixture ref exists",
@@ -88,10 +91,42 @@ test("수집·게이트·승격·브랜치·PR 생성은 모두 COLLECT일 때�
   }
 });
 
+test("공급자를 부르는 step(예산 가드·수집)은 재생 요청이 없을 때만, 증거를 되살리는 step은 재생 요청이 있을 때만 돈다 (#1127)", () => {
+  for (const name of ["Guard KST quota window", "Collect current ITX timetable"]) assert.equal(ifCondition(step(name).block), COLLECT_LIVE, name);
+  for (const name of RESTORE_STEPS) assert.equal(ifCondition(step(name).block), COLLECT_REPLAY, name);
+  // 재생 run은 collector step이 skipped라 하루 한 번 예산 집계에 들어가지 않는다. 복원 step 이름은 collector 등록 이름과 다르다.
+  assert.ok(!RESTORE_STEPS.includes("Collect current ITX timetable"));
+});
+
+test("재생 요청은 원본 run의 artifact를 같은 저장소·run id·이름으로만 받고 공급자 키를 쓰지 않는다 (#1127)", () => {
+  const download = step("Download retained ITX collection evidence").block;
+  assert.match(download, /uses: actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/u);
+  assert.match(download, /repository: \$\{\{ github\.repository \}\}\n          run-id: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n          name: itx-current-promotion-\$\{\{ steps\.decision\.outputs\.replay_run_id \}\}\n/u);
+  assert.match(download, /github-token: \$\{\{ github\.token \}\}/u);
+  const restore = step("Restore retained ITX collection evidence").block;
+  // run id는 판정 step이 검증한 output만 env로 받는다. workflow 입력을 곧바로 쓰지 않는다.
+  assert.match(restore, /REPLAY_RUN_ID: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}/u);
+  assert.doesNotMatch(restore, /inputs\.replay_run_id/u);
+  assert.match(restore, /node tools\/ci\/restore-itx-replay-evidence\.mjs --source-run-id "\$\{REPLAY_RUN_ID\}" --repository "\$\{GITHUB_REPOSITORY\}" --run "[^"]+" --jobs "[^"]+" --artifact-dir "[^"]+" --contract tools\/datapack\/itx-cheongchun-coverage-contract\.json --output-root "\$\{ITX_OPERATION_ROOT\}"/u);
+  assert.doesNotMatch(restore, /DATA_GO_KR_SERVICE_KEY|run-current-itx-collection|continue-on-error|\|\| true/u);
+  // 복원이 끝난 뒤에야 오프라인 replay가 돈다. 복원 step은 같은 위치에 후보·완전성·capture를 쓰므로 수집 step과 같은 입력을 만든다.
+  const names = steps().map(({ name }) => name);
+  assert.ok(names.indexOf("Collect current ITX timetable") < names.indexOf(RESTORE_STEPS[0]));
+  assert.ok(names.indexOf(RESTORE_STEPS[0]) < names.indexOf(RESTORE_STEPS[1]));
+  assert.ok(names.indexOf(RESTORE_STEPS[1]) < names.indexOf("Replay retained capture offline"));
+});
+
+test("재생 요청은 공급자 키 형식 검사를 건너뛰고 평소 수집은 그대로 검사한다 (#1127)", () => {
+  const prepare = step("Prepare current ITX promotion").block;
+  assert.match(prepare, /REPLAY_RUN_ID: \$\{\{ steps\.decision\.outputs\.replay_run_id \}\}/u);
+  assert.match(prepare, /if \[\[ -z "\$\{REPLAY_RUN_ID\}" && \( -z "\$\{DATA_GO_KR_SERVICE_KEY:-\}"/u);
+  assert.match(prepare, /nonempty single line/u);
+});
+
 test("순서: 준비 -> 예산 가드 -> 수집 -> 오프라인 replay -> 게이트 -> fixture 확인·checkout·stage -> 승격(--rebind) -> App 토큰 -> 커밋·PR", () => {
   const names = steps().map(({ name }) => name);
   const order = [
-    DECISION, "Prepare current ITX promotion", "Guard KST quota window", "Collect current ITX timetable", "Replay retained capture offline",
+    DECISION, "Prepare current ITX promotion", "Guard KST quota window", "Collect current ITX timetable", ...RESTORE_STEPS, "Replay retained capture offline",
     "Evaluate promotion gate", "Verify pinned Mobile fixture ref exists", "Checkout pinned Mobile input fixture", "Stage pinned Mobile input fixture",
     "Promote the gated candidate", "Mint App token for the promotion pull request",
     "Commit exactly the promotion and rebinding outputs and open draft PR",
@@ -190,7 +225,7 @@ test("수집할 때가 아니거나 다른 자동화 PR 때문에 기다리는 �
 
 test("공급자 호출 전 판정이 WAIT·OPEN_PR·BLOCKED인 실행은 collector step이 skipped라 예산을 쓰지 않는다", () => {
   // 가드는 collector step이 skipped인 앞선 실행을 소비로 세지 않는다. 그 skipped는 COLLECT 조건에서 나온다.
-  assert.equal(ifCondition(step("Collect current ITX timetable").block), COLLECT);
+  assert.equal(ifCondition(step("Collect current ITX timetable").block), COLLECT_LIVE);
 });
 
 test("증거 artifact는 수집을 시도한 실행에서 항상 올리고 비밀·키를 담지 않는다", () => {

@@ -12,6 +12,8 @@
 //   SAFETY_LEAD  만료까지 2일 이하다. 이득이 작아도 수집한다. 그날 실패해도 하루 재시도 여유가 남는다.
 //   BEST_DAY     오늘이 최대 확보일(7일)이고 이번 수집이 만료를 3일 이상 늘린다.
 //   FORCED       사람 dispatch가 force를 줬다(수집할 때가 아니어도 수집한다). 열린 PR·대기·이상 규칙은 그대로다.
+//   REPLAY       이전 run이 받아 둔 수집분(보관 capture)을 다시 승격한다(#1127). 공급자를 부르지 않으므로 하루 한 번 제한(ITX_COLLECTED_TODAY)과
+//                수집 시점 규칙을 보지 않는다. 열린 PR·중복·닫힌 PR·고아 브랜치·대기 PR 규칙은 그대로다. 복원 가능 여부는 후속 step이 검증한다.
 // 결과는 대개 주 3회(금·토·일)다. 시뮬레이션 테스트가 끊김 없음과 실패 한 번 내성을 고정한다.
 //
 //   OPEN_PR                 이 workflow의 열린 승격 PR이 있다. 새로 수집하지 않고 CI·방치 상한만 본다.
@@ -22,7 +24,8 @@
 // 판정할 수 없는 상태(PR 중복·PR 없는 브랜치·닫힌 PR·잘못된 입력)는 실패해 실패 이슈로 드러난다. 추정하지 않는다.
 //
 // 사용: node tools/ci/decide-itx-current-promotion.mjs --contract <coverage contract> --prs <collect-automation-prs.mjs 출력>
-//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--itx-collected-today true|false] [--github-output <path>]
+//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--itx-collected-today true|false]
+//   [--replay-run-id <재생할 원본 run id>] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -74,10 +77,15 @@ function admittedFreshUntilDay(contract) {
   return { millis, day: kstDay(new Date(millis)) };
 }
 
-export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false, itxCollectedToday = false } = {}) {
+// GitHub run id는 안전한 양의 정수다. 앞자리 0·부호·공백을 받지 않는다.
+const RUN_ID = /^[1-9][0-9]{0,15}$/u;
+
+export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false, itxCollectedToday = false, replayRunId } = {}) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(pullRequests) || !Array.isArray(branches)
     || !validRepository(repository) || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1
-    || typeof force !== "boolean" || typeof itxCollectedToday !== "boolean") fail("ITX_PROMOTION_INPUT_INVALID");
+    || typeof force !== "boolean" || typeof itxCollectedToday !== "boolean"
+    || (replayRunId !== undefined && !(typeof replayRunId === "string" && RUN_ID.test(replayRunId)))
+    || (replayRunId !== undefined && !Number.isSafeInteger(Number(replayRunId)))) fail("ITX_PROMOTION_INPUT_INVALID");
   const { millis: freshUntilMillis, day: expiryDay } = admittedFreshUntilDay(contract);
   const today = kstDay(now);
   const daysUntilExpiry = expiryDay - today;
@@ -87,7 +95,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   if (pullRequests.filter(({ state }) => state === "OPEN").length >= limits.pullRequests) fail("ITX_PROMOTION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
 
   const own = ownPullRequestsByBranch(pullRequests, ITX_PROMOTION_CLAIM_PREFIX, repository, (branch) => fail("ITX_PROMOTION_PR_DUPLICATE", branch));
-  const base = { daysUntilExpiry, lapsed, freshUntil: contract.sourceTimetableArtifact.freshUntil };
+  const base = { daysUntilExpiry, lapsed, freshUntil: contract.sourceTimetableArtifact.freshUntil, ...(replayRunId === undefined ? {} : { replayRunId }) };
   const open = [...own.values()].filter(({ state }) => state === "OPEN");
   if (open.length > 1) fail("ITX_PROMOTION_PR_DUPLICATE", open.map(({ number }) => `#${number}`).join(", "));
   const closed = [...own.values()].filter(({ state }) => state === "CLOSED");
@@ -101,7 +109,9 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
 
   const projectedDay = kstDay(weekdayFreshUntilIfCollected(now));
   let reason = null;
-  if (lapsed) reason = "EXPIRED";
+  // #1127: 재생은 이미 받은 응답을 다시 쓰므로 수집 시점 규칙과 하루 한 번 제한을 보지 않는다.
+  if (replayRunId !== undefined) reason = "REPLAY";
+  else if (lapsed) reason = "EXPIRED";
   else if (daysUntilExpiry <= ITX_PROMOTION_SAFETY_LEAD_DAYS) reason = "SAFETY_LEAD";
   else if (projectedDay - today >= ITX_PROMOTION_BEST_EXTENSION_DAYS && projectedDay - expiryDay >= ITX_PROMOTION_MIN_GAIN_DAYS) reason = "BEST_DAY";
   // 사람 dispatch의 force만 수집할 때가 아닌 날에도 수집하게 한다(예: 후속 단계가 새 수집분을 기다릴 때). 이유를 덮어쓰지 않는다.
@@ -109,7 +119,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   if (reason === null) return { ...base, state: "WAIT", reason: "NOT_DUE" };
 
   // 같은 KST 날 다른 workflow(topology 갱신·수동 수집)가 이미 공급자를 불렀다면 오늘은 수집할 수 없다. 이상이 아니라 대기다(내일 다시 판정한다).
-  if (itxCollectedToday) return { ...base, state: "WAIT", reason: "ITX_COLLECTED_TODAY" };
+  if (itxCollectedToday && replayRunId === undefined) return { ...base, state: "WAIT", reason: "ITX_COLLECTED_TODAY" };
   const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, ITX_PROMOTION_WORKFLOW);
   if (blockedBy.length > 0) {
     // 대기는 이상이 아니다. 하지만 만료 1일 전까지 풀리지 않으면 재시도 여유가 없으므로 이상으로 드러낸다.
@@ -121,7 +131,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
 
 function parseArgs(argv) {
   const keys = new Map([
-    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--force", "force"], ["--itx-collected-today", "itxCollectedToday"], ["--github-output", "githubOutput"],
+    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--force", "force"], ["--itx-collected-today", "itxCollectedToday"], ["--replay-run-id", "replayRunId"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -154,12 +164,14 @@ export async function main(argv, { now = new Date(), log = console.log } = {}) {
     limits: { pullRequests: Number(values.prLimit) },
     force: booleanOption(values.force, "--force"),
     itxCollectedToday: booleanOption(values.itxCollectedToday, "--itx-collected-today"),
+    // 빈 문자열은 입력 없음(정기 실행·재생이 아닌 dispatch)이다.
+    replayRunId: values.replayRunId === "" ? undefined : values.replayRunId,
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {
     await appendFile(values.githubOutput, [
       `state=${result.state}`, `reason=${result.reason}`, `branch=${result.branch ?? ""}`, `pr_number=${result.number ?? ""}`,
-      `blocked_by=${(result.blockedBy ?? []).join(",")}`, `days_until_expiry=${result.daysUntilExpiry}`, `lapsed=${result.lapsed}`, "",
+      `blocked_by=${(result.blockedBy ?? []).join(",")}`, `days_until_expiry=${result.daysUntilExpiry}`, `lapsed=${result.lapsed}`, `replay_run_id=${result.replayRunId ?? ""}`, "",
     ].join("\n"));
   }
   return result;
