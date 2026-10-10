@@ -420,3 +420,14 @@ async function withOutput(run) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-file-test-"));
   try { await run({ root, output: path.join(root, "kric-nationwide-timetable-file-test.xlsx") }); } finally { await rm(root, { recursive: true, force: true }); }
 }
+
+test("#1099 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류 코드로 실패한다", async () => {
+  await withOutput(async ({ output }) => {
+    let calls = 0;
+    await assert.rejects(collectKricNationwideTimetableFile({
+      outputFile: output, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+      fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+    }), /KRIC_TIMETABLE_FILE_HTTP/);
+    assert.equal(calls, 2);
+  });
+});

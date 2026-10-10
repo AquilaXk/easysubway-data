@@ -5,12 +5,16 @@
 //   - 전송 오류: 연결·헤더·본문 수신 timeout, 소켓 끊김, DNS 일시 실패(고정된 공식 호스트라 ENOTFOUND도 일시로 본다)
 // 쿼터 오류(HTTP 429, 공급자 resultCode 22·23 등)와 인증 오류(401·403), 스키마·내용 오류는 재시도하지 않는다. 호출자가 그 판단을 그대로 한다.
 //
-// 재시도는 fallback이 아니다: 같은 원천에 같은 요청을 다시 보낼 뿐이고, 요청당 최대 5번(대기 1·2·4·8·16초)과 실행(프로세스) 단위 대기 5분 예산을
+// 재시도는 fallback이 아니다: 같은 원천에 같은 요청을 다시 보낼 뿐이고, 요청당 최대 5번(대기 1·2·4·8·16초)과 실행(프로세스) 단위 재시도 시간 예산 5분을
 // 다 쓰고도 실패하면 마지막 오류(또는 마지막 응답)를 호출자의 기존 오류 경로로 그대로 넘긴다. 이전·추정 데이터로 채우지 않는다.
+//
+// 재시도 시간 예산은 대기(sleep)뿐 아니라 일시 오류로 끝난 시도가 쓴 경과 시간(벽시계)도 센다. 요청 timeout이 30초인 공급자가 느려져
+// "한 번 timeout 뒤 성공"이 수백 번 이어져도 재시도가 쓰는 시간이 5분을 넘지 않는다. 예산을 넘기는 순간 재시도를 멈추므로 재시도 때문에 늘어나는
+// 실행 시간은 예산(5분) + 마지막 시도 하나다. 정상으로 끝난 시도의 시간은 세지 않는다.
 //
 // 재시도 단위는 호출자가 정한다: attempt가 "요청 + 본문 읽기"까지 하면 본문 수신 중 timeout도 같은 요청을 다시 보낸다.
 export const TRANSIENT_RETRY_LIMIT = 5;
-export const TRANSIENT_RETRY_WAIT_BUDGET_MS = 300_000;
+export const TRANSIENT_RETRY_BUDGET_MS = 300_000;
 export const TRANSIENT_RETRY_BUDGET_EXHAUSTED = "TRANSIENT_RETRY_BUDGET_EXHAUSTED";
 const CAUSE_DEPTH = 4;
 const TRANSIENT_ERROR_NAMES = new Set(["TimeoutError", "AbortError"]);
@@ -26,10 +30,11 @@ function invalid(detail) {
 
 export const transientBackoffMs = (retryIndex) => 1_000 * 2 ** retryIndex;
 
-/** 대기 시간 예산. 같은 예산을 쓰는 요청들이 나눠 쓴다. */
-export function createTransientRetryBudget(waitBudgetMs = TRANSIENT_RETRY_WAIT_BUDGET_MS) {
-  if (!Number.isSafeInteger(waitBudgetMs) || waitBudgetMs < 1) throw invalid("waitBudgetMs must be a positive integer");
-  return { waitBudgetMs, waitedMs: 0 };
+/** 재시도 시간 예산(대기 + 일시 오류로 끝난 시도의 경과 시간). 같은 예산을 쓰는 요청들이 나눠 쓴다. now는 시계(테스트용 주입)다. */
+export function createTransientRetryBudget(limitMs = TRANSIENT_RETRY_BUDGET_MS, { now = Date.now } = {}) {
+  if (!Number.isSafeInteger(limitMs) || limitMs < 1) throw invalid("limitMs must be a positive integer");
+  if (typeof now !== "function") throw invalid("now must be a function");
+  return { limitMs, spentMs: 0, now };
 }
 
 // 예산을 주지 않은 재시도는 수집기 실행(프로세스) 하나가 예산 하나를 나눠 쓴다.
@@ -76,9 +81,10 @@ const defaultSleep = (milliseconds) => new Promise((resolve) => { setTimeout(res
  * attempt를 실행하고 일시 오류면 같은 요청을 다시 보낸다.
  * @param {(context: { attemptNumber: number }) => Promise<T>} attempt 요청(과 본문 읽기) 한 번. 1부터 센다.
  * @param {object} [options]
- * @param {(result: T) => boolean} [options.isTransientResult] 반환값이 일시 상태(예: 5xx 응답)인가. 한도를 다 쓰면 마지막 결과를 그대로 돌려준다.
+ * @param {(result: T) => boolean} [options.isTransientResult] 반환값이 일시 상태(예: 5xx 응답)인가. 한도나 예산을 다 쓰면 마지막 결과를 그대로 돌려준다.
  * @param {(error: unknown) => boolean} [options.isTransientError] 던져진 오류가 일시 오류인가. 한도를 다 쓰면 마지막 오류를 그대로 던진다.
- * @param {{ waitBudgetMs: number, waitedMs: number }} [options.budget] 대기 시간 예산. 넘기면 TRANSIENT_RETRY_BUDGET_EXHAUSTED로 멈춘다.
+ * @param {{ limitMs: number, spentMs: number, now: () => number }} [options.budget] 재시도 시간 예산. 넘기는 재시도는 하지 않는다:
+ *   오류였으면 TRANSIENT_RETRY_BUDGET_EXHAUSTED(cause = 마지막 오류)를 던지고, 일시 상태 결과였으면 마지막 결과를 그대로 돌려준다.
  * @param {(event: { retryIndex: number, delayMs: number, error?: unknown }) => void} [options.onRetry] 재시도 직전 알림.
  */
 export async function withTransientRetry(attempt, {
@@ -86,24 +92,28 @@ export async function withTransientRetry(attempt, {
 } = {}) {
   if (typeof attempt !== "function" || typeof isTransientResult !== "function" || typeof isTransientError !== "function"
     || typeof sleep !== "function" || typeof onRetry !== "function") throw invalid("attempt and the option callbacks must be functions");
-  if (!Number.isSafeInteger(budget?.waitBudgetMs) || budget.waitBudgetMs < 1 || !Number.isSafeInteger(budget.waitedMs) || budget.waitedMs < 0) {
+  if (!Number.isSafeInteger(budget?.limitMs) || budget.limitMs < 1 || !Number.isFinite(budget.spentMs) || budget.spentMs < 0 || typeof budget.now !== "function") {
     throw invalid("budget must come from createTransientRetryBudget");
   }
   for (let retryIndex = 0; ; retryIndex += 1) {
+    const startedAt = budget.now();
     let transient;
     try {
       const result = await attempt({ attemptNumber: retryIndex + 1 }); // NOSONAR -- 재시도는 앞 시도가 끝난 뒤 순서대로 한다
       if (retryIndex >= TRANSIENT_RETRY_LIMIT || !isTransientResult(result)) return result;
-      transient = { error: undefined };
+      transient = { result };
     } catch (error) {
       if (retryIndex >= TRANSIENT_RETRY_LIMIT || !isTransientError(error)) throw error;
       transient = { error };
     }
+    // 일시 오류로 끝난 시도가 쓴 시간도 예산에서 쓴다(벽시계). 시계가 거꾸로 가도 줄지 않는다.
+    budget.spentMs += Math.max(0, budget.now() - startedAt);
     const delayMs = transientBackoffMs(retryIndex);
-    if (budget.waitedMs + delayMs > budget.waitBudgetMs) {
-      throw Object.assign(new Error(`${TRANSIENT_RETRY_BUDGET_EXHAUSTED}: the retry wait budget of ${budget.waitBudgetMs} ms is used up`, { cause: transient.error }), { code: TRANSIENT_RETRY_BUDGET_EXHAUSTED });
+    if (budget.spentMs + delayMs > budget.limitMs) {
+      if (Object.hasOwn(transient, "result")) return transient.result;
+      throw Object.assign(new Error(`${TRANSIENT_RETRY_BUDGET_EXHAUSTED}: the retry time budget of ${budget.limitMs} ms is used up`, { cause: transient.error }), { code: TRANSIENT_RETRY_BUDGET_EXHAUSTED });
     }
-    budget.waitedMs += delayMs;
+    budget.spentMs += delayMs;
     onRetry({ retryIndex, delayMs, ...(transient.error === undefined ? {} : { error: transient.error }) });
     await sleep(delayMs); // NOSONAR -- 위와 같다
   }

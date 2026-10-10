@@ -551,3 +551,12 @@ test("부산 topology collector는 인증·쿼터·형식 오류를 재시도하
     assert.equal(calls, 1, code);
   }
 });
+
+test("부산 topology collector는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류와 원본 증거로 끝난다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(collect({
+    sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { calls += 1; return response("busy", { status: 503, contentType: "text/plain" }); },
+  }), /HTTP 503.*rawSha256=[a-f0-9]{64}/);
+  assert.equal(calls, 2);
+});

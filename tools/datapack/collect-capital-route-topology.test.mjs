@@ -863,3 +863,12 @@ test("서해선 splice endpoint가 각 공식 입력에 없으면 거부한다",
     /서해선 splice endpoint missing: 부천종합운동장-소사/,
   );
 });
+
+test("Capital topology는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(collectMolitFullRouteCsv({
+    sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+  }), /MOLIT full-route detail HTTP 503/);
+  assert.equal(calls, 2);
+});

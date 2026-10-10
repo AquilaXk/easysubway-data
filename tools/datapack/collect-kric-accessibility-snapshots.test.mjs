@@ -690,7 +690,7 @@ test("DNS 일시 실패·5xx·본문 timeout 뒤 같은 요청이 성공하면 �
   });
   assert.equal(calls, 4);
   assert.deepEqual(waits, [1_000, 2_000, 4_000]);
-  assert.equal(budget.waitedMs, 7_000);
+  assert.ok(budget.spentMs >= 7_000 && budget.spentMs < 7_500, "대기 합계 7초 + 시도 경과(테스트에서는 ~0ms)");
   assert.equal(snapshots.length, 1);
   assert.equal(snapshots[0].queries[0].rows.length, 1);
 });
@@ -902,3 +902,13 @@ function response(status, body, resultCode = "00") {
 function hashForTest(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
+
+test("HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 코드로 실패한다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(collectKricAccessibilitySnapshots({
+    roster: roster.slice(0, 1), operations: [operation], serviceKey: "key",
+    retrySleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { calls += 1; return response(503, []); },
+  }), { message: "KRIC accessibility HTTP 503: kric-station-elevator/S1/2/202" });
+  assert.equal(calls, 2);
+});

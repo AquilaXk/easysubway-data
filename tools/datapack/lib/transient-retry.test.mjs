@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   TRANSIENT_RETRY_BUDGET_EXHAUSTED,
   TRANSIENT_RETRY_LIMIT,
-  TRANSIENT_RETRY_WAIT_BUDGET_MS,
+  TRANSIENT_RETRY_BUDGET_MS,
   createTransientRetryBudget,
   isTransientStatus,
   isTransientTransportError,
@@ -20,7 +20,7 @@ const wrapped = (code) => Object.assign(new TypeError("fetch failed"), { cause: 
 
 test("정책 상수는 TAGO와 같다: 5번 재시도, 1·2·4·8·16초, 실행당 대기 5분", () => {
   assert.equal(TRANSIENT_RETRY_LIMIT, 5);
-  assert.equal(TRANSIENT_RETRY_WAIT_BUDGET_MS, 300_000);
+  assert.equal(TRANSIENT_RETRY_BUDGET_MS, 300_000);
   assert.deepEqual([0, 1, 2, 3, 4].map(transientBackoffMs), [1_000, 2_000, 4_000, 8_000, 16_000]);
 });
 
@@ -55,9 +55,12 @@ test("인증서·URL·형식 오류와 알 수 없는 오류는 일시 오류가
   assert.equal(isTransientTransportError(hostile), false);
 });
 
-function harness(budget = createTransientRetryBudget()) {
+// 시계를 직접 굴린다: sleep은 시계를 그만큼 앞으로 보내고, attempt는 spend(ms)로 시도에 걸린 시간을 흉내 낸다.
+function harness(limitMs) {
+  const clock = { time: 0 };
+  const budget = createTransientRetryBudget(limitMs, { now: () => clock.time });
   const waits = [];
-  return { waits, budget, sleep: async (ms) => { waits.push(ms); } };
+  return { waits, budget, clock, spend: (ms) => { clock.time += ms; }, sleep: async (ms) => { waits.push(ms); clock.time += ms; } };
 }
 
 test("일시 오류 두 번 뒤 성공하면 그 결과를 돌려주고 1·2초 대기한다", async () => {
@@ -73,7 +76,7 @@ test("일시 오류 두 번 뒤 성공하면 그 결과를 돌려주고 1·2초 
   assert.equal(result, "ok");
   assert.deepEqual(attempts, [1, 2, 3]);
   assert.deepEqual(waits, [1_000, 2_000]);
-  assert.equal(budget.waitedMs, 3_000);
+  assert.equal(budget.spentMs, 3_000);
 });
 
 test("일시 오류가 끝까지 이어지면 첫 시도 + 재시도 5번 뒤 마지막 오류를 그대로 던진다", async () => {
@@ -114,27 +117,73 @@ test("일시 상태 결과(5xx 응답)는 다시 요청하고, 한도를 다 쓰
   assert.deepEqual(quota.waits, []);
 });
 
-test("대기 시간 예산은 같은 budget을 쓰는 요청들이 나눠 쓰고, 넘기는 대기는 하지 않고 TRANSIENT_RETRY_BUDGET_EXHAUSTED로 멈춘다", async () => {
-  const budget = createTransientRetryBudget(40_000);
-  const waits = [];
-  const sleep = async (ms) => { waits.push(ms); };
+test("재시도 시간 예산은 같은 budget을 쓰는 요청들이 나눠 쓰고, 넘기는 재시도는 하지 않고 TRANSIENT_RETRY_BUDGET_EXHAUSTED로 멈춘다", async () => {
+  const { budget, waits, sleep } = harness(40_000);
   const failing = () => withTransientRetry(async () => { throw wrapped("ETIMEDOUT"); }, { budget, sleep });
   // 요청 1: 1+2+4+8+16 = 31초, 요청 2: 1+2+4 = 7초까지 가능하고 다음 8초는 예산(40초)을 넘는다.
   await assert.rejects(failing(), /ETIMEDOUT|fetch failed/u);
-  assert.equal(budget.waitedMs, 31_000);
+  assert.equal(budget.spentMs, 31_000);
   await assert.rejects(failing(), (error) => error.code === TRANSIENT_RETRY_BUDGET_EXHAUSTED && /budget/u.test(error.message) && isTransientTransportError(error.cause));
   assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000, 1_000, 2_000, 4_000]);
-  assert.equal(budget.waitedMs, 38_000);
-  assert.ok(budget.waitedMs <= 40_000);
+  assert.equal(budget.spentMs, 38_000);
+  assert.ok(budget.spentMs <= 40_000);
+});
+
+// #1099 리뷰 F1: 일시 상태(HTTP 503)에서 예산이 소진돼도 마지막 응답을 잃지 않는다. 호출자의 기존 HTTP 오류 경로가 상태 코드를 드러낸다.
+test("일시 상태 결과로 예산이 소진되면 오류로 바꾸지 않고 마지막 응답을 그대로 돌려준다", async () => {
+  const { budget, waits, sleep } = harness(2_500);
+  let calls = 0;
+  const last = await withTransientRetry(async () => ({ status: 503, calls: (calls += 1) }), { budget, sleep, isTransientResult: ({ status }) => isTransientStatus(status) });
+  assert.deepEqual(last, { status: 503, calls: 2 }, "1초 대기 뒤 두 번째 시도의 응답이 마지막이고, 다음 2초 대기는 예산(2.5초)을 넘어 하지 않는다");
+  assert.deepEqual(waits, [1_000]);
+  assert.equal(budget.spentMs, 1_000);
+});
+
+// #1099 리뷰 F2: 예산은 대기뿐 아니라 일시 오류로 끝난 시도의 경과 시간(벽시계)도 센다.
+test("느린 시도의 경과 시간도 예산을 쓰고, 재시도로 늘어나는 총 시간은 예산 + 마지막 시도 하나를 넘지 않는다", async () => {
+  const { budget, clock, spend, sleep } = harness(300_000);
+  const started = clock.time;
+  let calls = 0;
+  // 요청 timeout 100초짜리 시도가 계속 실패하는 공급자.
+  await assert.rejects(withTransientRetry(async () => { calls += 1; spend(100_000); throw wrapped("UND_ERR_HEADERS_TIMEOUT"); }, { budget, sleep }), (error) => error.code === TRANSIENT_RETRY_BUDGET_EXHAUSTED);
+  assert.equal(calls, 3, "100+1, 100+2 초를 쓰고 세 번째 시도가 끝난 시점(303초)에 예산을 넘어 멈춘다");
+  assert.equal(clock.time - started, 100_000 + 1_000 + 100_000 + 2_000 + 100_000);
+  assert.ok(budget.spentMs <= 300_000 + 100_000, "넘긴 양은 마지막 시도 하나 이내다");
+});
+
+test("한 번 timeout 뒤 성공이 이어지는 느린 공급자도 한 실행의 재시도 시간은 예산에서 멈춘다(느린 회복 수백 번이 45분을 넘기지 않는다)", async () => {
+  const { budget, clock, spend, sleep } = harness(300_000);
+  const started = clock.time;
+  let requests = 0;
+  const failure = async () => {
+    let first = true;
+    return withTransientRetry(async () => { if (first) { first = false; spend(30_000); throw wrapped("UND_ERR_CONNECT_TIMEOUT"); } spend(500); return "ok"; }, { budget, sleep });
+  };
+  let exhausted = null;
+  for (; requests < 1_000 && exhausted === null; requests += 1) {
+    try { await failure(); } catch (error) { exhausted = error; }
+  }
+  assert.equal(exhausted?.code, TRANSIENT_RETRY_BUDGET_EXHAUSTED);
+  // 요청 하나가 재시도 한 번에 30초(시도) + 1초(대기)를 쓰므로 예산 300초 안에서 9번 회복하고 10번째에서 멈춘다.
+  assert.equal(requests, 10);
+  const retryTime = clock.time - started - 9 * 500; // 성공한 시도의 시간은 재시도 예산이 아니다
+  assert.ok(retryTime <= 300_000 + 30_000, `재시도로 쓴 시간 ${retryTime}ms`);
+  assert.ok(budget.spentMs <= 300_000 + 30_000, "예산을 넘긴 양은 멈추게 한 시도 하나(30초) 이내다");
+});
+
+test("시계가 거꾸로 가도 예산은 줄지 않는다", async () => {
+  const { budget, clock, sleep } = harness(10_000);
+  await withTransientRetry(async ({ attemptNumber }) => { if (attemptNumber === 1) { clock.time -= 5_000; throw wrapped("ETIMEDOUT"); } }, { budget, sleep });
+  assert.equal(budget.spentMs, 1_000);
 });
 
 test("기본 예산은 실행(프로세스) 단위 5분이다. 직접 만든 예산은 서로 독립이다", async () => {
   const first = createTransientRetryBudget();
   const second = createTransientRetryBudget();
-  assert.equal(first.waitBudgetMs, 300_000);
+  assert.equal(first.limitMs, 300_000);
   await withTransientRetry(async ({ attemptNumber }) => { if (attemptNumber === 1) throw wrapped("ETIMEDOUT"); }, { budget: first, sleep: async () => {} });
-  assert.equal(first.waitedMs, 1_000);
-  assert.equal(second.waitedMs, 0);
+  assert.ok(first.spentMs >= 1_000 && first.spentMs < 1_500);
+  assert.equal(second.spentMs, 0);
   // 예산을 주지 않으면 실행 전체가 하나를 공유한다.
   const shared = [];
   await withTransientRetry(async ({ attemptNumber }) => { if (attemptNumber === 1) throw wrapped("ETIMEDOUT"); }, { sleep: async (ms) => { shared.push(ms); } });
@@ -152,7 +201,7 @@ test("onRetry는 재시도마다 순번·대기·원인을 알려준다", async 
 
 test("잘못된 인자는 거부한다", async () => {
   await assert.rejects(withTransientRetry("not a function"), /TRANSIENT_RETRY_ARGUMENTS/u);
-  await assert.rejects(withTransientRetry(async () => {}, { budget: { waitBudgetMs: -1, waitedMs: 0 } }), /TRANSIENT_RETRY_ARGUMENTS/u);
+  await assert.rejects(withTransientRetry(async () => {}, { budget: { limitMs: -1, spentMs: 0, now: Date.now } }), /TRANSIENT_RETRY_ARGUMENTS/u);
   assert.throws(() => createTransientRetryBudget(0), /TRANSIENT_RETRY_ARGUMENTS/u);
   assert.throws(() => createTransientRetryBudget(1.5), /TRANSIENT_RETRY_ARGUMENTS/u);
 });
@@ -166,9 +215,4 @@ test("unwrapTransientRetryFailure는 예산 소진 오류만 마지막 시도의
   const plain = new Error("plain");
   assert.equal(unwrapTransientRetryFailure(plain), plain);
   assert.equal(unwrapTransientRetryFailure(undefined), undefined);
-  // 결과(오류 없음)로 예산이 소진되면 되돌릴 원인이 없으므로 그대로 둔다.
-  const byResult = await withTransientRetry(async () => ({ status: 503 }), { budget: createTransientRetryBudget(1_000), sleep: async () => {}, isTransientResult: () => true })
-    .then(() => null, (error) => error);
-  assert.equal(byResult.code, TRANSIENT_RETRY_BUDGET_EXHAUSTED);
-  assert.equal(unwrapTransientRetryFailure(byResult), byResult);
 });

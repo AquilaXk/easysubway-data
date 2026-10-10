@@ -382,3 +382,10 @@ test("인증·쿼터·내용 오류(HTTP 401·403·404·429, 허용 밖 content-
   await assert.rejects(downloadDataGoFile(html.fetchImpl, "15065526", retryFast()), /file content-type is not allowed/);
   assert.equal(html.counts.total, 1);
 });
+
+test("FILE 요청이 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  const { fetchImpl } = await realPortal();
+  const busy = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
+  await assert.rejects(downloadDataGoFile(busy.fetchImpl, "15065526", { sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500) }), /15065526 file HTTP 503/);
+  assert.equal(busy.counts.total, 2);
+});

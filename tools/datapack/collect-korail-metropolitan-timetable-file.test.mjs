@@ -158,3 +158,14 @@ async function withParent(run) {
   const parent = await mkdtemp(path.join(os.tmpdir(), "korail-file-test-"));
   try { await run(parent); } finally { await rm(parent, { recursive: true, force: true }); }
 }
+
+test("HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류 코드로 실패한다(#1099 리뷰 F1)", async () => {
+  await withDirectory(async (outputDirectory) => {
+    let calls = 0;
+    await assert.rejects(collectKorailMetropolitanTimetableFile({
+      url: URL, expectedSha256: SHA256, outputDirectory, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+      fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+    }), /KORAIL_METROPOLITAN_TIMETABLE_FILE_HTTP$/);
+    assert.equal(calls, 2);
+  });
+});

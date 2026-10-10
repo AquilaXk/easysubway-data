@@ -612,7 +612,7 @@ test("KASI 연결 타임아웃이 두 번 이어져도 같은 요청을 다시 �
   assert.deepEqual([...holidays], ["20260717"]);
   assert.equal(calls, 3);
   assert.deepEqual(waits, [1_000, 2_000]);
-  assert.equal(budget.waitedMs, 3_000);
+  assert.ok(budget.spentMs >= 3_000 && budget.spentMs < 3_500, "대기 합계 3초 + 시도 경과(테스트에서는 ~0ms)");
 });
 
 test("KASI HTTP 5xx와 resultCode 99는 같은 요청을 다시 보낸 뒤 성공하면 그 결과를 쓴다", async () => {
@@ -802,4 +802,19 @@ test("#919 전국 후보 공휴일 목록(HOLIDAYS_2026)은 KASI 2026년 특일 
   const kasiHolidays = retained.months.flatMap((entry) => parseRetainedKasiHolidayMonth(entry).holidayDates).sort();
   assert.deepEqual([...HOLIDAYS_2026], kasiHolidays);
   assert.equal(kasiHolidays.length, 22);
+});
+
+// #1099 리뷰 F1: 일시 상태(HTTP 503)에서 재시도 예산이 소진돼도 NETWORK_UNKNOWN이 아니라 마지막 응답의 HTTP 분류를 남긴다.
+test("KASI HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 KASI_HTTP 분류와 시도 수를 남긴다", async () => {
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    serviceKey: "test-key", year: 2026, months: [7],
+    fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+  }), (error) => {
+    assert.equal(error.failureCategory, "KASI_HTTP");
+    assert.equal(error.attemptCount, 2);
+    assert.match(error.message, /HTTP_503$/);
+    return true;
+  });
+  assert.equal(calls, 2);
 });

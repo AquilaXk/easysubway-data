@@ -325,3 +325,12 @@ test("광주 topology collector는 429를 기존처럼 한 번만 다시 요청�
     assert.equal(rejectedCalls, status === 429 ? 2 : 1, String(status));
   }
 });
+
+test("광주 topology collector는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(collectGwangjuRouteTopology({
+    stationScope, sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { calls += 1; return new Response("down", { status: 503 }); },
+  }), /Gwangju route topology HTTP 503/);
+  assert.equal(calls, 2);
+});
