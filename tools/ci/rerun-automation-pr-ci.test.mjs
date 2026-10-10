@@ -73,7 +73,7 @@ test("첫 시도에서 실패한 자동화 PR CI는 실패한 job만 한 번 다
   const [{ number, body }] = state.comments;
   assert.equal(number, PULL_NUMBER);
   assert.ok(body.startsWith(rerunMarker(RUN_ID)), "표식이 본문 맨 앞이다");
-  assert.match(body, /시도 1.*2/u);
+  assert.match(body, /시도 1에서 2로/u);
   assert.match(body, /Data contracts \(shard 4\/4\)/u);
   assert.match(body, new RegExp(`actions/runs/${RUN_ID}/job/11`, "u"));
   assert.doesNotMatch(body, /shard 1\/4/u, "성공한 job은 적지 않는다");
@@ -180,12 +180,15 @@ test("재실행 요청이 실패하면 코멘트를 남기지 않고 오류를 �
 });
 
 test("코멘트에 적는 job 이름은 제어 문자를 지우고 개수를 제한한다", async () => {
-  const many = Array.from({ length: RERUN_COMMENT_JOB_LIMIT + 5 }, (_, index) => job(`Job ${index}‮\n<!-- x -->`, "failure", 100 + index));
+  const many = Array.from({ length: RERUN_COMMENT_JOB_LIMIT + 5 }, (_, index) => job(`Job ${index}\u202e\n<!-- x --> [y](http://evil) \`z\``, "failure", 100 + index));
   const { state, input } = fixture({ jobs: many });
   const result = await rerunAutomationPullRequestCi(input);
   assert.equal(result.failedJobs.length, RERUN_COMMENT_JOB_LIMIT + 5);
   const [{ body }] = state.comments;
-  assert.doesNotMatch(body, /‮/u);
+  assert.doesNotMatch(body, /\u202e/u);
+  const jobLines = body.split("\n").filter((line) => line.startsWith("- [Job "));
+  for (const line of jobLines) assert.match(line, /^- \[Job \d+ +!-- x -- +y +\(http:\/\/evil\) +z\]\(https:\/\/github\.com\/[^)\s]+\)$/u, "링크 문자와 HTML 표지가 지워진 이름이다");
+  assert.doesNotMatch(body.replace(rerunMarker(RUN_ID), ""), /<|>/u);
   assert.equal(body.split("\n").filter((line) => line.startsWith("- [Job ")).length, RERUN_COMMENT_JOB_LIMIT);
   assert.match(body, /외 5개/u);
   assert.equal(body.split(rerunMarker(RUN_ID)).length, 2, "job 이름이 표식을 흉내 내도 표식은 맨 앞 하나뿐이다");
