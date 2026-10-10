@@ -11,6 +11,12 @@ name: ITX Current Promotion
 #   5권역 alignment fixture를 새 팩에 맞춘다(후보 build spec·입력 manifest pin은 게시된 입력을 가리키므로 건드리지 않고 병합 뒤 후보 준비가 다시 묶는다). mobile 커밋·workflow pin은 승격마다 바뀌지 않는다(CI가 입력 팩에서 출력 팩을 파생해 증거와 대조).
 #   그래서 승격 PR 하나가 사람 손 없이 required CI를 통과한다. raw capture 원장(OCI 발행) 대조와 첫 실제 dispatch 확인은 #981로 분리했고 변수 켜기의 선행 조건이 아니다.
 #   DATAPACK_SCHEDULED_ITX_PROMOTION은 코드가 켜지 않는다. QA 보고 뒤 별도 설정 변경으로만 켠다.
+# - 보관 capture 재생(#1127): 공급자 호출은 KST 하루 한 번이라, 그날 받은 수집분이 승격 PR과 함께 사라지면(PR이 닫히고 브랜치가 지워진 경우) 다음 수집 가능 시각까지 기다려야 한다.
+#   replay_run_id에 이전 run id를 주면 그 run의 artifact(itx-current-promotion-<run id>)에서 후보·완전성 증거·raw capture를 되살려
+#   공급자를 부르지 않고 같은 오프라인 replay -> 게이트 -> 승격 -> PR 단계를 거친다. 되살리기는 restore-itx-replay-evidence.mjs가 원본 run(이 workflow의 main run,
+#   수집기 또는 복원 step 성공, 게이트 PASS)과 영수증·capture·후보·완전성 sha256 일치, 이미 승격되지 않았고 신선도가 지나지 않았음을 확인한다. 하나라도 어긋나면 실패한다.
+#   재생 run은 collector step을 실행하지 않으므로 하루 한 번 예산에 들어가지 않고, 같은 artifact를 다시 올려 다음 재생의 원본이 된다.
+#   뒤처진 승격 PR을 닫는 automation-pr-behind-recreate도 이 입력으로 최신 main 위에 PR을 다시 만든다.
 # - 수동 승인 경로(collect-korail-itx-cheongchun-timetable --promote-candidate --approval-url ... --approved-sha256 ...)는 override로 그대로 있다. 이 workflow는 쓰지 않는다.
 #   수동 승격도 같은 재결속을 탄다: 고정 입력 fixture를 apps/mobile에 stage한 뒤(ci.yml의 Stage pinned Mobile fixture와 같은 절차) 같은 명령에 --rebind를 붙인다.
 #   --rebind 없이 승격하면 파생 결속이 어긋나 required CI의 fixture 파생 step이 ITX_FIXTURE_DERIVATION_MISMATCH로 실패한다. 이때는 node tools/datapack/rebind-itx-promotion.mjs
@@ -25,6 +31,11 @@ on:
         required: false
         default: false
         type: boolean
+      replay_run_id:
+        description: Replay the retained capture of this earlier run id instead of calling the provider
+        required: false
+        default: ""
+        type: string
 
 permissions: {}
 
@@ -66,6 +77,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
           FORCE_COLLECT: ${{ inputs.force_collect }}
+          REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
         run: |
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/itx-current-promotion-decision/${GITHUB_RUN_ID}"
@@ -76,7 +88,7 @@ jobs:
           if [[ "${FORCE_COLLECT}" == "true" ]]; then force=true; fi
           # 같은 KST 날 topology 갱신·수동 수집이 이미 ITX 공급자를 불렀다면 공급자 호출은 하루 한 번이라 오늘은 수집하지 않고 정상 종료한다.
           itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"
-          node tools/ci/decide-itx-current-promotion.mjs --contract tools/datapack/itx-cheongchun-coverage-contract.json --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --force "${force}" --itx-collected-today "${itx_collected}" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/decide-itx-current-promotion.mjs --contract tools/datapack/itx-cheongchun-coverage-contract.json --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --force "${force}" --itx-collected-today "${itx_collected}" --replay-run-id "${REPLAY_RUN_ID}" --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -125,26 +137,49 @@ jobs:
         if: ${{ steps.decision.outputs.state == 'COLLECT' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          REPLAY_RUN_ID: ${{ steps.decision.outputs.replay_run_id }}
         run: |
           set -euo pipefail
-          if [[ -z "${DATA_GO_KR_SERVICE_KEY:-}" || "${DATA_GO_KR_SERVICE_KEY}" == *$'\n'* || "${DATA_GO_KR_SERVICE_KEY}" == *$'\r'* ]]; then
+          # 재생은 공급자를 부르지 않으므로 키 검사도 하지 않는다. 보관 capture에서 다시 계산할 역 카탈로그 팩만 만든다.
+          if [[ -z "${REPLAY_RUN_ID}" && ( -z "${DATA_GO_KR_SERVICE_KEY:-}" || "${DATA_GO_KR_SERVICE_KEY}" == *$'\n'* || "${DATA_GO_KR_SERVICE_KEY}" == *$'\r'* ) ]]; then
             echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2
             exit 1
           fi
           node tools/datapack/emit-station-catalog-pack.mjs --output "${ITX_OPERATION_ROOT}/station-catalog-pack" --catalog-pack-id "itx-current-station-catalog-v1"
       - name: Guard KST quota window
-        if: ${{ steps.decision.outputs.state == 'COLLECT' }}
+        if: ${{ steps.decision.outputs.state == 'COLLECT' && steps.decision.outputs.replay_run_id == '' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node tools/ci/guard-itx-current-collection-budget.mjs --output "${ITX_OPERATION_ROOT}/freshness.json"
       - name: Collect current ITX timetable
-        if: ${{ steps.decision.outputs.state == 'COLLECT' }}
+        if: ${{ steps.decision.outputs.state == 'COLLECT' && steps.decision.outputs.replay_run_id == '' }}
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
         run: |
           set -euo pipefail
           # 공급자 호출은 이 step 한 번뿐이다. 실패(MISSING)하면 이 step이 실패하고 이전 데이터로 대체하지 않는다.
           node tools/datapack/run-current-itx-collection.mjs --output "${ITX_OPERATION_ROOT}/itx-result.json" --completeness-output "${ITX_OPERATION_ROOT}/itx-completeness.json" --station-catalog-pack "${ITX_OPERATION_ROOT}/station-catalog-pack" --freshness-output "${ITX_OPERATION_ROOT}/freshness.json"
+      - name: Download retained ITX collection evidence
+        if: ${{ steps.decision.outputs.state == 'COLLECT' && steps.decision.outputs.replay_run_id != '' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.decision.outputs.replay_run_id }}
+          name: itx-current-promotion-${{ steps.decision.outputs.replay_run_id }}
+          path: ${{ runner.temp }}/itx-replay-source/${{ github.run_id }}/artifact
+          github-token: ${{ github.token }}
+      - name: Restore retained ITX collection evidence
+        if: ${{ steps.decision.outputs.state == 'COLLECT' && steps.decision.outputs.replay_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPLAY_RUN_ID: ${{ steps.decision.outputs.replay_run_id }}
+        run: |
+          set -euo pipefail
+          # 공급자 호출은 없다. 원본 run 메타데이터를 읽고, 그 run이 실제로 수집·게이트 통과한 증거만 작업 위치로 되살린다. 어긋나면 이 step이 실패한다.
+          source_root="${RUNNER_TEMP}/itx-replay-source/${GITHUB_RUN_ID}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPLAY_RUN_ID}" > "${source_root}/run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPLAY_RUN_ID}/jobs?filter=all&per_page=100" > "${source_root}/jobs.json"
+          node tools/ci/restore-itx-replay-evidence.mjs --source-run-id "${REPLAY_RUN_ID}" --repository "${GITHUB_REPOSITORY}" --run "${source_root}/run.json" --jobs "${source_root}/jobs.json" --artifact-dir "${source_root}/artifact" --contract tools/datapack/itx-cheongchun-coverage-contract.json --output-root "${ITX_OPERATION_ROOT}"
       - name: Replay retained capture offline
         if: ${{ steps.decision.outputs.state == 'COLLECT' }}
         run: |

@@ -280,6 +280,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1102",
       "title": "[Fix] 원천 재확인에서 recipe 하나의 실패가 나머지 recipe의 등록 결과까지 버리는 문제"
     },
+    "data1127": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1127",
+      "title": "[CI] 하루 한 번 수집분 보관 capture 재생 승격 경로와 뒤처진 승격 PR 재생성 시 수집분 소실 방지"
+    },
     "data870": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/870",
       "title": "[Refactor] 데이터 파이프라인 운영 방식 전환: 자동 갱신·개발/발행 게이트 분리·생성 산출물 축소"
@@ -692,6 +696,7 @@
     {"path":"tools/ci/retained-gwangju-timetable-refresh-workflow.test.mjs","semanticOwner":"data995","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/decide-itx-current-promotion.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":120},
     {"path":"tools/ci/itx-current-promotion-workflow.test.mjs","semanticOwner":"data977","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/restore-itx-replay-evidence.test.mjs","semanticOwner":"data1127","classes":["required-pr"],"durationMs":120},
     {"path":"tools/ci/check-scheduler-heartbeat.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/external-scheduler-gate.test.mjs","semanticOwner":"data1001","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/refresh-stage-contracts.test.mjs","semanticOwner":"data1012","classes":["required-pr"],"durationMs":120},
