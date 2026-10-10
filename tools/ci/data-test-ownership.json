@@ -280,6 +280,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1102",
       "title": "[Fix] 원천 재확인에서 recipe 하나의 실패가 나머지 recipe의 등록 결과까지 버리는 문제"
     },
+    "data1115": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1115",
+      "title": "[CI] 자동화 PR의 required CI가 일시 오류로 실패하면 실패한 job을 한 번 자동 재실행"
+    },
     "data1127": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1127",
       "title": "[CI] 하루 한 번 수집분 보관 capture 재생 승격 경로와 뒤처진 승격 PR 재생성 시 수집분 소실 방지"
