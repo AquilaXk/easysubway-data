@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
 
 export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
   "daejeon-train-timetable": Object.freeze({
@@ -29,6 +30,8 @@ export async function probeDaejeonCoverageApi({
   query,
   captureRows = false,
   fetchImpl = fetch,
+  sleepImpl,
+  retryBudget,
   now = new Date(),
 } = {}) {
   const operation = DAEJEON_COVERAGE_OPERATIONS[sourceId];
@@ -40,9 +43,8 @@ export async function probeDaejeonCoverageApi({
   validateOperationQuery(sourceId, requestQuery, query !== undefined);
   for (const [name, value] of Object.entries(requestQuery)) url.searchParams.set(name, value);
 
-  const response = await fetchWithRetry(url, fetchImpl);
+  const { response, responseBytes } = await fetchWithRetry(url, fetchImpl, { sleepImpl, retryBudget });
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
-  const responseBytes = Buffer.from(await response.arrayBuffer());
   const raw = responseBytes.toString("utf8");
   if (!response.ok) {
     throw new Error(`Daejeon coverage API HTTP ${response.status}; observedAt=${now.toISOString()}; `
@@ -85,19 +87,29 @@ export async function probeDaejeonCoverageApi({
   };
 }
 
-async function fetchWithRetry(url, fetchImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await fetchImpl(url, {
+// data.go.kr 공통 오류 envelope의 resultCode 99(UNKNOWN_ERROR)는 TAGO와 같은 일시 오류다. 다른 resultCode(22·23 쿼터, 30 인증 등)는 재시도하지 않는다.
+const TRANSIENT_PROVIDER_RESULT_CODE = "99";
+
+// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, resultCode 99, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
+// 인증·쿼터·형식 오류는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(HTTP 오류·provider 오류)이나 전송 오류를 기존 오류와 원문 해시 진단으로 드러낸다.
+async function fetchWithRetry(url, fetchImpl, { sleepImpl, retryBudget }) {
+  try {
+    return await withTransientRetry(async () => {
+      const response = await fetchImpl(url, {
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
         headers: { accept: "application/xml,text/xml" },
       });
-    } catch (error) {
-      if (attempt === 1) throw new Error("Daejeon coverage API transport failure", { cause: error });
-    }
+      return { response, responseBytes: Buffer.from(await response.arrayBuffer()) };
+    }, {
+      isTransientResult: ({ response, responseBytes }) => isTransientStatus(response.status)
+        || (response.ok && xmlScalar(responseBytes.toString("utf8"), "resultCode") === TRANSIENT_PROVIDER_RESULT_CODE),
+      sleep: sleepImpl,
+      budget: retryBudget,
+    });
+  } catch (error) {
+    throw new Error("Daejeon coverage API transport failure", { cause: unwrapTransientRetryFailure(error) });
   }
-  throw new Error("Daejeon coverage API transport failure");
 }
 
 function parseXmlEvidence(raw, expectedFields, validateItem) {

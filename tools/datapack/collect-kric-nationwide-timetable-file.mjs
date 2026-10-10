@@ -5,6 +5,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
 
+import { isTransientStatus, isTransientTransportError, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+
 export const KRIC_NATIONWIDE_TIMETABLE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=900&operation=1";
 export const KRIC_CURRENT_STATION_LINE_FILE_URL = "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=1294&operation=1";
 export const DEFAULT_MAXIMUM_BYTES = 128 * 1024 * 1024;
@@ -60,24 +62,24 @@ export function parseKricCurrentStationLineWorkbook(bytes, { maximumInflatedByte
 
 export async function collectKricNationwideTimetableFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
-  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS, sleepImpl, retryBudget,
 } = {}) {
   return collectKricFile({
-    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
+    profile: TIMETABLE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget,
   });
 }
 
 export async function collectKricCurrentStationLineFile({
   outputFile, fetchImpl = fetch, maximumBytes = DEFAULT_MAXIMUM_BYTES, now = new Date(), beforePublish = async () => {},
-  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS, sleepImpl, retryBudget,
 } = {}) {
   return collectKricFile({
-    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
+    profile: CURRENT_STATION_LINE_PROFILE, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget,
   });
 }
 
 async function collectKricFile({
-  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs,
+  profile, outputFile, fetchImpl, maximumBytes, now, beforePublish, headerTimeoutMs, bodyTimeoutMs, sleepImpl, retryBudget,
 }) {
   const maximum = positiveSafeInteger(maximumBytes, "maximumBytes");
   const headerTimeout = positiveSafeInteger(headerTimeoutMs, "headerTimeoutMs");
@@ -87,9 +89,9 @@ async function collectKricFile({
   const parentIdentity = await assertRegularDirectory(parent, "output parent");
   await assertAbsent(output);
 
-  const response = await fetchResponseHeaders(fetchImpl, profile.url, headerTimeout);
-  const declaredLength = validateResponse(response, maximum, profile.url);
-  const bytes = await readBoundedBody(response.body, maximum, bodyTimeout);
+  const { bytes, declaredLength } = await downloadWithTransientRetry({
+    fetchImpl, profile, maximum, headerTimeout, bodyTimeout, sleepImpl, retryBudget,
+  });
   validateXlsxBytes(bytes, declaredLength);
 
   const receipt = Object.freeze({
@@ -106,6 +108,33 @@ async function collectKricFile({
   return receipt;
 }
 
+// 헤더 단계의 TIMEOUT은 일시 오류다. 본문 한도(BODY_TIMEOUT_MS)를 넘긴 TIMEOUT은 처리량 하한을 못 지킨 것이라 재시도하지 않는다(재시도하면 한도가 6배가 돼 workflow timeout 45분을 넘길 수 있다).
+function isTransientKricFailure(error) {
+  if (error?.message === "KRIC_TIMETABLE_FILE_TIMEOUT") return error.bodyDeadline !== true;
+  return isTransientTransportError(error);
+}
+
+// 요청(헤더)과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·헤더 timeout, 소켓 끊김, 본문 수신 중 연결 끊김)면 같은 요청을 다시 보낸다(#1099).
+// 인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·TIMEOUT·BODY)로 실패한다.
+async function downloadWithTransientRetry({ fetchImpl, profile, maximum, headerTimeout, bodyTimeout, sleepImpl, retryBudget }) {
+  let outcome;
+  try {
+    outcome = await withTransientRetry(async () => {
+      const response = await fetchResponseHeaders(fetchImpl, profile.url, headerTimeout);
+      if (isTransientStatus(response?.status)) {
+        try { await response.body?.cancel(); } catch { /* best effort */ }
+        return { response, bytes: null };
+      }
+      const declaredLength = validateResponse(response, maximum, profile.url);
+      return { response, declaredLength, bytes: await readBoundedBody(response.body, maximum, bodyTimeout) };
+    }, { isTransientResult: ({ bytes }) => bytes === null, isTransientError: isTransientKricFailure, sleep: sleepImpl, budget: retryBudget });
+  } catch (error) {
+    throw unwrapTransientRetryFailure(error);
+  }
+  if (outcome.bytes === null) validateResponse(outcome.response, maximum, profile.url);
+  return outcome;
+}
+
 // 연결·헤더 한도는 응답 헤더가 오면 끝난다. 본문 수신은 별도 한도(readBoundedBody)를 받는다. 한 signal을 본문까지 붙이면 큰 파일이 중간에 끊긴다(#995).
 async function fetchResponseHeaders(fetchImpl, url, headerTimeoutMs) {
   const controller = new AbortController();
@@ -114,8 +143,9 @@ async function fetchResponseHeaders(fetchImpl, url, headerTimeoutMs) {
     return await fetchImpl(url, {
       method: "GET", redirect: "error", signal: controller.signal, headers: { "accept-encoding": "identity" },
     });
-  } catch {
-    return fail(controller.signal.aborted ? "TIMEOUT" : "TRANSPORT");
+  } catch (error) {
+    // 원인을 남겨 재시도 정책이 전송 오류의 종류를 알아볼 수 있게 한다. 메시지는 기존 코드 그대로다.
+    throw Object.assign(new Error(`KRIC_TIMETABLE_FILE_${controller.signal.aborted ? "TIMEOUT" : "TRANSPORT"}`), { cause: error });
   } finally {
     clearTimeout(headerTimer);
   }
@@ -159,7 +189,7 @@ async function readNextChunk(reader, deadline) {
   const next = await Promise.race([reader.read(), deadline.promise]);
   if (next === deadline.expired) {
     reader.cancel().catch(() => {});
-    fail("TIMEOUT");
+    throw Object.assign(new Error("KRIC_TIMETABLE_FILE_TIMEOUT"), { bodyDeadline: true });
   }
   return next;
 }
@@ -184,7 +214,8 @@ async function readBoundedBody(body, maximumBytes, timeoutMs) {
     }
   } catch (error) {
     if (READ_FAILURES.has(error?.message)) throw error;
-    return fail("BODY");
+    // 원인을 남겨 재시도 정책이 본문 수신 중 연결 끊김을 알아볼 수 있게 한다. 메시지는 기존 코드 그대로다.
+    throw Object.assign(new Error("KRIC_TIMETABLE_FILE_BODY"), { cause: error });
   } finally {
     deadline.clear();
   }

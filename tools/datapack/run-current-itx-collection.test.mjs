@@ -357,6 +357,37 @@ test("KASI 실패 receipt는 output parent 교체 뒤에도 bound directory에�
   await assert.rejects(lstat(path.join(parent, "completeness.json")));
 });
 
+// #1099: KASI는 일시 오류를 첫 시도 뒤 최대 5번 다시 보내므로 실패 receipt는 최대 6번 시도까지 담는다.
+test("KASI 실패 receipt는 재시도한 최대 여섯 번의 시도 번호와 closed phase를 담고 범위를 벗어난 값은 닫는다", async () => {
+  const run = async (failure) => {
+    const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-retry-receipt-"));
+    const freshnessOutput = path.join(dir, "freshness.json");
+    await assert.rejects(runCurrentItxCollectionCli({
+      argv: ["--output", path.join(dir, "result.json"), "--completeness-output", path.join(dir, "completeness.json"), "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
+      env: VALID_ENV,
+      fetchPublicHolidays: async () => { throw failure; },
+      collectImpl: async () => ({ exitCode: 0 }),
+    }), (error) => error === failure);
+    return JSON.parse(await readFile(freshnessOutput, "utf8"));
+  };
+  const phase = (attemptCount, failurePhase = "DNS_LOOKUP") => ({ attemptCount, failurePhase, ipv4AttemptCount: 0, ipv6AttemptCount: 0, address: "198.51.100.7" });
+  const sixAttempts = await run(Object.assign(new Error("KASI connect timeout secret-key"), {
+    failureCategory: "NETWORK_CONNECT_TIMEOUT", attemptCount: 6, transportAttempts: [1, 2, 3, 4, 5, 6].map((count) => phase(count)),
+  }));
+  assert.equal(sixAttempts.attemptCount, 6);
+  assert.deepEqual(sixAttempts.transportAttempts, [1, 2, 3, 4, 5, 6].map((attemptCount) => ({ attemptCount, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 })));
+  // 진단은 전송 오류로 끝난 시도만 담으므로 번호가 연속이 아닐 수 있다(1번은 HTTP 5xx, 3번과 5번만 전송 오류).
+  const sparse = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 5, transportAttempts: [phase(3, "TLS_HANDSHAKE"), phase(5, "RESPONSE_HEADERS")] }));
+  assert.deepEqual(sparse.transportAttempts.map(({ attemptCount }) => attemptCount), [3, 5]);
+  // 순서가 거꾸로이거나 범위(1~6) 밖이면 자리 번호로 닫고, 시도는 6번을 넘을 수 없다.
+  const disordered = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 7, transportAttempts: [phase(4), phase(2), phase(9)] }));
+  assert.equal(disordered.attemptCount, 1);
+  assert.deepEqual(disordered.transportAttempts.map(({ attemptCount }) => attemptCount), [4, 5, 6]);
+  const tooMany = await run(Object.assign(new Error("x"), { failureCategory: "NETWORK_SOCKET", attemptCount: 6, transportAttempts: [1, 2, 3, 4, 5, 6, 7].map((count) => phase(count)) }));
+  assert.equal(Object.hasOwn(tooMany, "transportAttempts"), false);
+  assert.doesNotMatch(JSON.stringify([sixAttempts, sparse, disordered, tooMany]), /198\.51\.100|secret-key|address/);
+});
+
 test("14일 bounded 창의 모든 토요일이 공휴일이면 day7 evidence 없이 collector 전에 fail closed한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-holiday-saturday-"));
   const output = path.join(dir, "result.json");

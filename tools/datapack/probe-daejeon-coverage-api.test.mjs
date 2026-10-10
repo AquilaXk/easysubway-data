@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 import { SOURCE_REGISTRATION_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import {
   DAEJEON_COVERAGE_OPERATIONS,
@@ -15,6 +16,9 @@ import {
   prepareDaejeonTimetableRegistration,
   registerDaejeonTimetable,
 } from "./register-daejeon-timetable.mjs";
+
+// #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
 
 test("Daejeon probe는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
@@ -485,6 +489,7 @@ test("대전 coverage probe는 provider/schema 오류를 fail closed한다", asy
     await assert.rejects(probeDaejeonCoverageApi({
       sourceId: "daejeon-train-timetable",
       serviceKey: "key",
+      ...retryFast(),
       fetchImpl: async () => new Response("<response><header><resultCode>99</resultCode></header><body/></response>", {
         status: 200,
         headers: { "content-type": "application/xml" },
@@ -570,3 +575,80 @@ function receiptFor(prepared, now) {
     contentType: "application/json",
   };
 }
+
+const distanceFareXml = "<?xml version=\"1.0\"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><distfloat>9.8</distfloat><fee>1200</fee><min>19</min><sec>50</sec></item></items></body></response>";
+const xmlResponse = (body, status = 200) => new Response(body, { status, headers: { "content-type": "application/xml" } });
+
+test("대전 coverage probe는 HTTP 5xx·resultCode 99·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 원문으로 증거를 만든다", async () => {
+  const outcomes = [
+    () => xmlResponse("busy", 503),
+    () => xmlResponse("<response><header><resultCode>99</resultCode><resultMsg>UNKNOWN_ERROR.</resultMsg></header></response>"),
+    () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
+    () => ({ ok: true, status: 200, headers: new Headers({ "content-type": "application/xml" }), arrayBuffer: async () => { throw Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }); } }),
+  ];
+  let calls = 0;
+  const waits = [];
+  const evidence = await probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(waits),
+    fetchImpl: async () => { calls += 1; const next = outcomes.shift(); return next === undefined ? xmlResponse(distanceFareXml) : next(); },
+  });
+  assert.equal(calls, 5);
+  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000]);
+  assert.equal(evidence.rowCount, 1);
+  // 실패한 시도의 본문은 증거에 들어가지 않는다: 보존 원문은 성공한 응답 그대로다.
+  assert.equal(Buffer.from(evidence.rawResponseBase64, "base64").toString("utf8"), distanceFareXml);
+  assert.equal(evidence.rawSha256, createHash("sha256").update(distanceFareXml).digest("hex"));
+});
+
+test("대전 coverage probe는 일시 오류가 한도(5번)를 넘으면 기존 오류로 끝난다", async () => {
+  const waits = [];
+  let calls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(waits),
+    fetchImpl: async () => { calls += 1; return xmlResponse("busy", 503); },
+  }), /Daejeon coverage API HTTP 503; observedAt=.*rawSha256=[a-f0-9]{64}/);
+  assert.equal(calls, 6);
+  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+
+  let transportCalls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(),
+    fetchImpl: async () => { transportCalls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
+  }), /Daejeon coverage API transport failure/);
+  assert.equal(transportCalls, 6);
+
+  let budgetCalls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { budgetCalls += 1; throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
+  }), /Daejeon coverage API transport failure/);
+  assert.equal(budgetCalls, 2);
+});
+
+test("대전 coverage probe는 인증·쿼터·형식 오류를 재시도하지 않는다(HTTP 401·403·404·429, resultCode 22·23·30·31)", async () => {
+  for (const status of [401, 403, 404, 429]) {
+    let calls = 0;
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(),
+      fetchImpl: async () => { calls += 1; return xmlResponse("denied", status); },
+    }), new RegExp(`HTTP ${status}`));
+    assert.equal(calls, 1, String(status));
+  }
+  for (const code of ["22", "23", "30", "31"]) {
+    let calls = 0;
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-station-distance-fare", serviceKey: "key", ...retryFast(),
+      fetchImpl: async () => { calls += 1; return xmlResponse(`<response><header><resultCode>${code}</resultCode></header><body/></response>`); },
+    }), new RegExp(`provider resultCode ${code}`));
+    assert.equal(calls, 1, code);
+  }
+});
+
+test("대전 coverage probe는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(probeDaejeonCoverageApi({
+    sourceId: "daejeon-station-distance-fare", serviceKey: "key", sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { calls += 1; return xmlResponse("busy", 503); },
+  }), /Daejeon coverage API HTTP 503; observedAt=.*rawSha256=[a-f0-9]{64}/);
+  assert.equal(calls, 2);
+});

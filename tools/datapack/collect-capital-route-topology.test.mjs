@@ -24,8 +24,12 @@ import {
   requireCurrentSourceSeparatedCapitalTopology,
   resolveDataGoDownloadUrl,
 } from "./collect-capital-route-topology.mjs";
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const execFileAsync = promisify(execFile);
+
+// #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
 
 function topologyLine(lineId, scope, edges) {
   return {
@@ -104,6 +108,7 @@ test("Capital topology rejected fetch exposes only closed source transport ident
     () => collectCapitalRouteTopology({
       useLocalFiles: false,
       sources: [LINE_SOURCES[0]],
+      ...retryFast(),
       fetchImpl: async (_url, init) => {
         calls += 1;
         assert.ok(init.signal instanceof AbortSignal);
@@ -118,7 +123,8 @@ test("Capital topology rejected fetch exposes only closed source transport ident
       return true;
     },
   );
-  assert.equal(calls, 1);
+  // ENOTFOUND는 고정된 공식 호스트의 DNS 일시 실패라 같은 요청을 첫 시도 + 5번 보낸 뒤에야 닫힌 식별자로 실패한다(#1099).
+  assert.equal(calls, 6);
 });
 
 test("Capital topology native HTTPS drains redirects with closed identity-encoded failures", async () => {
@@ -147,6 +153,7 @@ test("Capital topology native HTTPS drains redirects with closed identity-encode
       useLocalFiles: false,
       sources: [LINE_SOURCES[0]],
       httpsRequestImpl,
+      ...retryFast(),
     }),
     (error) => {
       assert.equal(error.message, "capital topology transport NETWORK_SOCKET: line1/15041460");
@@ -155,7 +162,7 @@ test("Capital topology native HTTPS drains redirects with closed identity-encode
       return true;
     },
   );
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 6);
   assert.equal(calls[0].options.headers["Accept-Encoding"], "identity");
   assert.ok(calls[0].options.signal instanceof AbortSignal);
 });
@@ -186,6 +193,7 @@ test("Capital topology secondary MOLIT fetch uses the same closed transport iden
     () => collectCapitalRouteTopology({
       useLocalFiles: false,
       sources: [source],
+      ...retryFast(),
       fetchImpl: async () => {
         calls += 1;
         if (calls === 1) return new Response("primary bytes");
@@ -203,7 +211,76 @@ test("Capital topology secondary MOLIT fetch uses the same closed transport iden
       return true;
     },
   );
-  assert.equal(calls, 2);
+  assert.equal(calls, 7, "primary 1회 + secondary 첫 시도와 5번 재시도");
+});
+
+test("Capital topology는 HTTP 5xx·연결 timeout·본문 수신 오류 뒤 같은 요청이 성공하면 그 CSV로 수집한다(#1099)", async () => {
+  const waits = [];
+  const outcomes = [
+    () => new Response("busy", { status: 503 }),
+    () => { throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); },
+    () => ({ ok: true, status: 200, arrayBuffer: async () => { throw Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }); } }),
+  ];
+  let calls = 0;
+  const csv = Buffer.from("노선,역\n1,a\n");
+  const result = await collectMolitFullRouteCsv({
+    ...retryFast(waits),
+    fetchImpl: async (url) => {
+      calls += 1;
+      if (new URL(url).pathname.endsWith("fileData.do")) return new Response('<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>');
+      const next = outcomes.shift();
+      return next === undefined ? new Response(csv) : next();
+    },
+  });
+  assert.equal(result.toString("utf8"), csv.toString("utf8"));
+  assert.equal(calls, 5);
+  assert.deepEqual(waits, [1_000, 2_000, 4_000]);
+});
+
+test("Capital topology는 일시 오류가 한도(5번)를 넘으면 기존 HTTP 오류로 끝나고 인증·내용 오류는 재시도하지 않는다(#1099)", async () => {
+  const html = '<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_123&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>';
+  const respondWith = (status) => {
+    const requests = { detail: 0, file: 0 };
+    return {
+      requests,
+      fetchImpl: async (url) => {
+        if (new URL(url).pathname.endsWith("fileData.do")) { requests.detail += 1; return new Response(html); }
+        requests.file += 1;
+        return new Response("body", { status });
+      },
+    };
+  };
+  const waits = [];
+  const exhausted = respondWith(503);
+  await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(waits), fetchImpl: exhausted.fetchImpl }), /MOLIT full-route CSV HTTP 503/);
+  assert.equal(exhausted.requests.file, 6);
+  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+  for (const status of [401, 403, 404, 429]) {
+    const denied = respondWith(status);
+    await assert.rejects(collectMolitFullRouteCsv({ ...retryFast(), fetchImpl: denied.fetchImpl }), new RegExp(`MOLIT full-route CSV HTTP ${status}`));
+    assert.equal(denied.requests.file, 1, String(status));
+  }
+});
+
+test("Capital topology의 data.go.kr 상세→FILE 다운로드도 각 요청을 일시 오류에서 다시 보낸다(#1099)", async () => {
+  const source = LINE_SOURCES.find(({ resolveDownloadFromDetail }) => resolveDownloadFromDetail === true);
+  assert.ok(source, "상세 페이지에서 FILE을 풀어 받는 source가 있다");
+  const detailHtml = '<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_555&amp;fileDetailSn=1&amp;insertDataPrcus=N">다운로드</a>';
+  const attempts = { detail: 0, file: 0 };
+  const waits = [];
+  await assert.rejects(collectCapitalRouteTopology({
+    useLocalFiles: false, sources: [source], ...retryFast(waits),
+    fetchImpl: async (url) => {
+      if (new URL(url).pathname.endsWith("fileData.do")) {
+        attempts.detail += 1;
+        return attempts.detail < 3 ? new Response("busy", { status: 502 }) : new Response(detailHtml);
+      }
+      attempts.file += 1;
+      return attempts.file < 3 ? new Response("busy", { status: 503 }) : new Response("not a valid topology csv");
+    },
+  }), (error) => !/transport/u.test(error.message));
+  assert.deepEqual(attempts, { detail: 3, file: 3 });
+  assert.deepEqual(waits, [1_000, 2_000, 1_000, 2_000]);
 });
 
 test("서해선 병합기는 코레일 전체 파일에서 서해선 행만 사용한다", () => {
@@ -785,4 +862,13 @@ test("서해선 splice endpoint가 각 공식 입력에 없으면 거부한다",
     }),
     /서해선 splice endpoint missing: 부천종합운동장-소사/,
   );
+});
+
+test("Capital topology는 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  let calls = 0;
+  await assert.rejects(collectMolitFullRouteCsv({
+    sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500),
+    fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+  }), /MOLIT full-route detail HTTP 503/);
+  assert.equal(calls, 2);
 });

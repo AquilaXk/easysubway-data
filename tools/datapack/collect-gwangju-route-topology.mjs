@@ -4,6 +4,7 @@ import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
 
 const SOURCE_ID = "gwangju-transportation-route-topology";
 export const GWANGJU_ROUTE_TOPOLOGY_ENDPOINT =
@@ -12,6 +13,7 @@ export const GWANGJU_ROUTE_TOPOLOGY_ENDPOINT =
 export async function collectGwangjuRouteTopology({
   fetchImpl = fetch,
   sleepImpl = sleep,
+  retryBudget,
   now = new Date(),
   stationScope,
   onRawResponse = undefined,
@@ -29,9 +31,8 @@ export async function collectGwangjuRouteTopology({
   for (const { providerStationId: stationId } of scopeInput) {
     const url = new URL(GWANGJU_ROUTE_TOPOLOGY_ENDPOINT);
     url.searchParams.set("station_id", String(stationId));
-    const response = await fetchWithRetry(url, fetchImpl, sleepImpl);
+    const { response, bytes } = await fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget);
     if (!response.ok) throw new Error(`Gwangju route topology HTTP ${response.status}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
     responses.push(sha256(bytes));
     // OCI 등록 시 재호출하지 않고 수집 당시 원문과 파생 topology를 함께 결속한다.
     const rawResponse = { providerStationId: stationId, bytesBase64: bytes.toString("base64") };
@@ -178,33 +179,40 @@ function validDate(value, label) {
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
-async function fetchWithRetry(url, fetchImpl, sleepImpl) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
+// 429는 기존처럼 한 번만 다시 요청한다(쿼터 신호라 반복하지 않는다). 인증·형식 오류는 재시도하지 않는다.
+// 한도를 다 쓰면 마지막 응답(HTTP 오류)이나 전송 오류를 기존 오류로 드러낸다.
+async function fetchWithRetry(url, fetchImpl, sleepImpl, retryBudget) {
+  let rateLimitRetried = false;
+  while (true) {
+    let outcome;
     try {
-      const response = await fetchImpl(url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/json" },
-      });
-      if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
-        await sleepImpl(250);
-        continue;
-      }
-      return response;
+      outcome = await withTransientRetry(async () => {
+        const response = await fetchImpl(url, {
+          redirect: "error",
+          signal: AbortSignal.timeout(15_000),
+          headers: { accept: "application/json" },
+        });
+        return { response, bytes: Buffer.from(await response.arrayBuffer()) };
+      }, { isTransientResult: ({ response }) => isTransientStatus(response.status), sleep: sleepImpl, budget: retryBudget });
     } catch (error) {
-      if (attempt === 1) {
-        const code = error?.code ?? error?.cause?.code ?? "UNKNOWN";
-        throw new Error(`Gwangju route topology transport failure; code=${safeToken(String(code))}`);
-      }
+      const failure = unwrapTransientRetryFailure(error);
+      const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
+      throw new Error(`Gwangju route topology transport failure; code=${safeToken(String(code))}`);
     }
+    if (outcome.response.status === 429 && !rateLimitRetried) {
+      rateLimitRetried = true;
+      await sleepImpl(250);
+      continue;
+    }
+    return outcome;
   }
-  throw new Error("Gwangju route topology transport failure");
 }
 
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
 
 export async function runGwangjuRouteTopologyCollector(args = process.argv.slice(2), {
-  repositoryRoot = path.resolve(import.meta.dirname, "../.."), fetchImpl = fetch, sleepImpl = sleep, now = new Date(),
+  repositoryRoot = path.resolve(import.meta.dirname, "../.."), fetchImpl = fetch, sleepImpl = sleep, retryBudget, now = new Date(),
 } = {}) {
   if (args.length !== 4 || args[0] !== "--inventory" || args[2] !== "--output" || !path.isAbsolute(args[3])) {
     throw new Error("usage: collect-gwangju-route-topology.mjs --inventory <repository-relative.json> --output <absolute.json>");
@@ -233,6 +241,7 @@ export async function runGwangjuRouteTopologyCollector(args = process.argv.slice
       stationScope: seed.scope,
       fetchImpl,
       sleepImpl,
+      retryBudget,
       now,
       onRawResponse: async (response) => { rawResponses.push(response); },
     });
