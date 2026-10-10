@@ -18400,7 +18400,7 @@ async function writeCurrentItxReleaseInputs(
     verifiedAt: candidateTopology.capturedAt,
     freshUntil: candidateTopology.freshUntil,
   }]));
-  const sourceObservedAt = source.observedAt;
+  let sourceObservedAt = source.observedAt;
   const sourceFreshUntil = source.freshUntil;
   const incheonSources = currentInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
   if (incheonSources.length !== 1) throw new Error("fixture current Incheon topology admission is required");
@@ -18458,17 +18458,29 @@ async function writeCurrentItxReleaseInputs(
     }
     return capturedAt;
   });
-  const buildNow = new Date(Math.max(...[
-    sourceObservedAt,
+  const clockMillis = (value) => {
+    const timestamp = typeof value === "string" ? Date.parse(value) : Number.NaN;
+    if (Number.isNaN(timestamp)) throw new Error("fixture current build clock input is invalid");
+    return timestamp;
+  };
+  const pinnedBuildMillis = Math.max(...[
     candidateTopology.capturedAt,
     currentIncheonCapturedAt,
     currentIncheonAccessibilityCapturedAt,
     ...currentIncheonTimetableCapturedAts,
-  ].map((value) => {
-    const timestamp = typeof value === "string" ? Date.parse(value) : Number.NaN;
-    if (Number.isNaN(timestamp)) throw new Error("fixture current build clock input is invalid");
-    return timestamp;
-  })) + 1_000).toISOString();
+  ].map(clockMillis)) + 1_000;
+  // 이 합성 후보는 후보가 고정한 inventory(seq 발행 시점)에 현재 ITX 원천을 얹는다. 고정된 인천 시간표 증거는 P1D라서 만료 뒤에 build할 수 없는데,
+  // 새 ITX 승격은 그 만료보다 늦게 관측될 수 있다(#1132). 그러면 관측 시각을 고정 원천 직후로 당겨 합성 관측이 고정 원천의 신선 구간 안에 머물게 한다.
+  // 서비스 일자(오늘~13일)와 freshUntil은 관측 시각이 아니라 일자에서 정해지므로 그대로 유효하다. 운영 후보 재생성은 같은 시점에 P1D 증거도 함께 갱신한다.
+  const pinnedTimetableExpiryMillis = Math.min(...incheonTimetableSources.map(({ id, scheduleAdmissionEvidence }) => {
+    if (scheduleAdmissionEvidence?.freshUntil === undefined) throw new Error(`fixture current ${id} timetable admission freshness is invalid`);
+    return clockMillis(scheduleAdmissionEvidence.freshUntil);
+  }));
+  if (clockMillis(sourceObservedAt) + 1_000 >= pinnedTimetableExpiryMillis) {
+    sourceObservedAt = new Date(pinnedBuildMillis - 1_000).toISOString();
+    completeness.observedAt = sourceObservedAt;
+  }
+  const buildNow = new Date(Math.max(pinnedBuildMillis, clockMillis(sourceObservedAt) + 1_000)).toISOString();
   Object.assign(completeness.sourceTimetableArtifact, {
     artifactId: sourceArtifactId,
     freshUntil: sourceFreshUntil,
