@@ -13,7 +13,8 @@
 //   BEST_DAY     오늘이 최대 확보일(7일)이고 이번 수집이 만료를 3일 이상 늘린다.
 //   FORCED       사람 dispatch가 force를 줬다(수집할 때가 아니어도 수집한다). 열린 PR·대기·이상 규칙은 그대로다.
 //   REPLAY       이전 run이 받아 둔 수집분(보관 capture)을 다시 승격한다(#1127). 공급자를 부르지 않으므로 하루 한 번 제한(ITX_COLLECTED_TODAY)과
-//                수집 시점 규칙을 보지 않는다. 열린 PR·중복·닫힌 PR·고아 브랜치·대기 PR 규칙은 그대로다. 복원 가능 여부는 후속 step이 검증한다.
+//                수집 시점 규칙을 보지 않는다. 열린 PR·중복·닫힌 PR·고아 브랜치 규칙은 그대로다.
+//                대기 PR이 있으면 기다리지 않고 ITX_PROMOTION_REPLAY_BLOCKED로 실패한다(재생 요청은 이 dispatch에만 있다). 복원 가능 여부는 후속 step이 검증한다.
 // 결과는 대개 주 3회(금·토·일)다. 시뮬레이션 테스트가 끊김 없음과 실패 한 번 내성을 고정한다.
 //
 //   OPEN_PR                 이 workflow의 열린 승격 PR이 있다. 새로 수집하지 않고 CI·방치 상한만 본다.
@@ -122,6 +123,8 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   if (itxCollectedToday && replayRunId === undefined) return { ...base, state: "WAIT", reason: "ITX_COLLECTED_TODAY" };
   const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, ITX_PROMOTION_WORKFLOW);
   if (blockedBy.length > 0) {
+    // 재생은 이 dispatch의 replay_run_id에만 실려 있다. 기다리다 blocked-redispatch가 입력 없이 다시 돌리면 ITX_COLLECTED_TODAY로 대기해 수집분을 잃으므로 조용히 기다리지 않고 실패로 드러낸다(같은 입력으로 다시 dispatch하면 된다).
+    if (replayRunId !== undefined) fail("ITX_PROMOTION_REPLAY_BLOCKED", `replay of run ${replayRunId} is blocked by ${blockedBy.map((number) => `#${number}`).join(", ")}; dispatch again with the same replay_run_id once they are merged or closed`);
     // 대기는 이상이 아니다. 하지만 만료 1일 전까지 풀리지 않으면 재시도 여유가 없으므로 이상으로 드러낸다.
     if (daysUntilExpiry <= 1) fail("ITX_PROMOTION_BLOCKED_NEAR_EXPIRY", `blocked by ${blockedBy.map((number) => `#${number}`).join(", ")} with ${daysUntilExpiry} day(s) left`);
     return { ...base, state: "BLOCKED_BY_PENDING_PR", reason, blockedBy };
