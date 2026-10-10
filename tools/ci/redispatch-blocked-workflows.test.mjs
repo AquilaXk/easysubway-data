@@ -16,7 +16,7 @@ import {
 const REPOSITORY = "AquilaXk/easysubway-data";
 const NOW = new Date("2026-10-10T00:10:00.000Z");
 const SCHEDULER = "easysubway-release-chain[bot]";
-const NOTE_STEPS = Object.fromEntries(REDISPATCH_TARGETS.map(({ workflow, noteStep }) => [workflow, noteStep]));
+const NOTE_STEPS = Object.fromEntries(REDISPATCH_TARGETS.map(({ workflow, noteSteps }) => [workflow, noteSteps]));
 
 const pull = (number, headRefName, state = "OPEN") => ({
   number, state, headRefName, baseRefName: "main", isCrossRepository: false, headRepository: { nameWithOwner: REPOSITORY },
@@ -24,10 +24,11 @@ const pull = (number, headRefName, state = "OPEN") => ({
 const run = (id, createdAt, { event = "workflow_dispatch", actor = SCHEDULER, status = "completed", conclusion = "success", branch = "main" } = {}) => ({
   id, event, status, conclusion: status === "completed" ? conclusion : null, head_branch: branch, created_at: createdAt, actor: { login: actor },
 });
-const jobsWith = (workflow, { blocked }) => ({
+// blocked: 그 run이 쓰지 않고 끝났는가. note: 몇 번째 note step이 실행됐는가(0 = waiting, 1·2 = superseded).
+const jobsWith = (workflow, { blocked, note = 0 }) => ({
   jobs: [{ id: 1, steps: [
     { name: "Decide", conclusion: "success" },
-    { name: NOTE_STEPS[workflow], conclusion: blocked ? "success" : "skipped" },
+    ...NOTE_STEPS[workflow].map((name, index) => ({ name, conclusion: blocked && index === note ? "success" : "skipped" })),
   ] }],
 });
 
@@ -186,27 +187,138 @@ test("다시 깨운 run이 또 막혀도 상한(24시간 3회)까지만 반복�
     redispatched(9301, "2026-10-09T21:40:00Z"),
     run(ITX_BLOCKED_RUN, "2026-10-09T18:00:04Z"),
   ];
-  const { state, input } = fixture({ runs: { [ITX]: runs }, jobs: { 9303: jobsWith(ITX, { blocked: true }) } });
+  // 각 재dispatch의 바로 앞 run이 쓰지 않고 끝났다 = 막힘 -> 재dispatch -> 막힘 루프.
+  const jobs = { 9303: jobsWith(ITX, { blocked: true }), 9302: jobsWith(ITX, { blocked: true }), 9301: jobsWith(ITX, { blocked: true }), [ITX_BLOCKED_RUN]: jobsWith(ITX, { blocked: true }) };
+  const { state, input } = fixture({ runs: { [ITX]: runs }, jobs });
   await assert.rejects(runRedispatch(input), /REDISPATCH_LIMIT: itx-current-promotion\.yml .*3/u);
   assert.deepEqual(state.dispatched, []);
   // 24시간보다 오래된 재dispatch는 세지 않는다.
-  const aged = fixture({ runs: { [ITX]: [redispatched(9303, "2026-10-09T23:40:00Z"), redispatched(9302, "2026-10-09T22:40:00Z"), redispatched(9301, "2026-10-08T23:00:00Z")] }, jobs: { 9303: jobsWith(ITX, { blocked: true }) } });
+  const aged = fixture({ runs: { [ITX]: [redispatched(9303, "2026-10-09T23:40:00Z"), redispatched(9302, "2026-10-09T22:40:00Z"), redispatched(9301, "2026-10-08T23:00:00Z")] }, jobs: { 9303: jobsWith(ITX, { blocked: true }), 9302: jobsWith(ITX, { blocked: true }), 9301: jobsWith(ITX, { blocked: true }) } });
   await runRedispatch(aged.input);
   assert.deepEqual(aged.state.dispatched, [ITX]);
 });
 
-test("상한에 닿은 workflow가 있어도 다른 workflow의 재dispatch는 끝낸 뒤 실패한다", async () => {
+// #1097 리뷰 F3: 상한은 막힘 -> 재dispatch -> 막힘 루프만 센다. 정상 dispatch(일을 한 run 뒤, 뒤처진 PR 재생성 경로)가 하루에 몰려도 거짓 경보를 내지 않는다.
+test("상한은 막힌 run 바로 뒤의 github-actions[bot] dispatch만 센다(일을 한 run 뒤의 dispatch는 세지 않는다)", async () => {
+  const redispatched = (id, at) => run(id, at, { actor: REDISPATCH_ACTOR });
+  const runs = [
+    redispatched(9304, "2026-10-09T23:50:00Z"),
+    redispatched(9303, "2026-10-09T23:40:00Z"),
+    redispatched(9302, "2026-10-09T22:40:00Z"),
+    redispatched(9301, "2026-10-09T21:40:00Z"),
+    run(ITX_BLOCKED_RUN, "2026-10-09T18:00:04Z"),
+  ];
+  // 9304만 막혔고(최신), 나머지 dispatch의 앞 run은 모두 정상 실행(일을 했거나 NOT_DUE)이었다.
+  const jobs = { 9304: jobsWith(ITX, { blocked: true }), 9303: jobsWith(ITX, { blocked: false }), 9302: jobsWith(ITX, { blocked: false }), 9301: jobsWith(ITX, { blocked: false }), [ITX_BLOCKED_RUN]: jobsWith(ITX, { blocked: false }) };
+  const { state, input } = fixture({ runs: { [ITX]: runs }, jobs });
+  const result = await runRedispatch(input);
+  assert.deepEqual(state.dispatched, [ITX]);
+  assert.equal(result.find(({ workflow }) => workflow === ITX).action, "DISPATCH");
+  // 앞 run이 success가 아니면(실패·취소) 막힘 루프가 아니다.
+  const failedBefore = fixture({ runs: { [ITX]: [redispatched(9304, "2026-10-09T23:50:00Z"), run(9303, "2026-10-09T23:40:00Z", { conclusion: "failure" }), redispatched(9302, "2026-10-09T22:40:00Z"), run(9301, "2026-10-09T21:40:00Z", { conclusion: "cancelled" })] }, jobs: { 9304: jobsWith(ITX, { blocked: true }) } });
+  await runRedispatch(failedBefore.input);
+  assert.deepEqual(failedBefore.state.dispatched, [ITX]);
+});
+
+test("상한에 닿은 workflow가 있어도 다음 우선순위 workflow의 재dispatch는 끝낸 뒤 실패한다", async () => {
   const redispatched = (id, at) => run(id, at, { actor: REDISPATCH_ACTOR });
   const blockedRun = 37990000003;
+  const itxBlocked = (id) => [id, jobsWith(ITX, { blocked: true })];
   const { state, input } = fixture({
     runs: {
-      [ITX]: [redispatched(9303, "2026-10-09T23:40:00Z"), redispatched(9302, "2026-10-09T22:40:00Z"), redispatched(9301, "2026-10-09T21:40:00Z")],
+      [ITX]: [redispatched(9303, "2026-10-09T23:40:00Z"), redispatched(9302, "2026-10-09T22:40:00Z"), redispatched(9301, "2026-10-09T21:40:00Z"), run(ITX_BLOCKED_RUN, "2026-10-09T18:00:04Z")],
       [REVERIFICATION]: [run(blockedRun, "2026-10-09T17:23:00Z")],
     },
-    jobs: { 9303: jobsWith(ITX, { blocked: true }), [blockedRun]: jobsWith(REVERIFICATION, { blocked: true }) },
+    jobs: { ...Object.fromEntries([9303, 9302, 9301, ITX_BLOCKED_RUN].map(itxBlocked)), [blockedRun]: jobsWith(REVERIFICATION, { blocked: true }) },
   });
   await assert.rejects(runRedispatch(input), /REDISPATCH_LIMIT: itx-current-promotion\.yml/u);
   assert.deepEqual(state.dispatched, [REVERIFICATION]);
+});
+
+// #1097 리뷰 F1: 한 sweep은 쓰기 workflow를 최대 하나만 깨운다. 병합 하나가 여러 대상을 한꺼번에 풀어도 우선순위(ITX > 재확인 > 등록 > 재결속)대로 하나씩 처리한다.
+const REGISTRATION = "current-capital-topology-registration.yml";
+const REBINDING = "source-derivative-rebinding.yml";
+const allBlocked = () => {
+  const ids = { [ITX]: 41000, [REVERIFICATION]: 42000, [REGISTRATION]: 43000, [REBINDING]: 44000 };
+  return {
+    runs: Object.fromEntries(Object.entries(ids).map(([workflow, id]) => [workflow, [run(id, "2026-10-09T18:00:04Z")]])),
+    jobs: Object.fromEntries(Object.entries(ids).map(([workflow, id]) => [id, jobsWith(workflow, { blocked: true })])),
+  };
+};
+
+test("우선순위 표는 ITX > 원천 재확인 > 수도권 등록 > 파생 재결속이다", () => {
+  assert.deepEqual(REDISPATCH_TARGETS.map(({ workflow }) => workflow), [ITX, REVERIFICATION, REGISTRATION, REBINDING]);
+});
+
+test("모든 대상이 한꺼번에 풀려도 sweep 하나는 우선순위가 가장 높은 workflow 하나만 dispatch하고 나머지는 미룬다", async () => {
+  const { state, input } = fixture(allBlocked());
+  const result = await runRedispatch(input);
+  assert.deepEqual(state.dispatched, [ITX]);
+  assert.deepEqual(result.map(({ workflow, action, reason, by }) => ({ workflow, action, reason, by })), [
+    { workflow: ITX, action: "DISPATCH", reason: undefined, by: undefined },
+    { workflow: REVERIFICATION, action: "DEFER", reason: "ANOTHER_DISPATCHED", by: ITX },
+    { workflow: REGISTRATION, action: "DEFER", reason: "ANOTHER_DISPATCHED", by: ITX },
+    { workflow: REBINDING, action: "DEFER", reason: "ANOTHER_DISPATCHED", by: ITX },
+  ]);
+  // 다음 sweep: 먼저 dispatch한 run이 아직 진행 중이면 아무것도 깨우지 않는다.
+  const second = await runRedispatch(input);
+  assert.deepEqual(state.dispatched, [ITX]);
+  assert.deepEqual(second.filter(({ action }) => action === "DEFER").map(({ workflow, reason, by }) => ({ workflow, reason, by })), [
+    { workflow: REVERIFICATION, reason: "RUN_ACTIVE", by: ITX },
+    { workflow: REGISTRATION, reason: "RUN_ACTIVE", by: ITX },
+    { workflow: REBINDING, reason: "RUN_ACTIVE", by: ITX },
+  ]);
+  // 그 run이 PR 없이 끝나면(정상 완료, 막히지 않음) 다음 우선순위가 이어서 처리된다.
+  state.runs[ITX][0] = { ...state.runs[ITX][0], status: "completed", conclusion: "success" };
+  input.api = ((original) => async (endpoint) => {
+    const match = /\/runs\/(\d+)\/jobs/u.exec(endpoint);
+    if (match && Number(match[1]) === state.runs[ITX][0].id) return jobsWith(ITX, { blocked: false });
+    return original(endpoint);
+  })(input.api);
+  await runRedispatch(input);
+  assert.deepEqual(state.dispatched, [ITX, REVERIFICATION]);
+});
+
+test("진행 중인 대상 run이 하나라도 있으면(다른 대상의 run이어도) 아무것도 dispatch하지 않는다", async () => {
+  const fixtureInput = allBlocked();
+  delete fixtureInput.runs[ITX];
+  fixtureInput.runs[ITX] = [run(41500, "2026-10-10T00:05:00Z", { status: "in_progress" })];
+  const { state, input } = fixture(fixtureInput);
+  const result = await runRedispatch(input);
+  assert.deepEqual(state.dispatched, []);
+  assert.deepEqual(result.filter(({ action }) => action === "DEFER").map(({ workflow, by }) => [workflow, by]), [[REVERIFICATION, ITX], [REGISTRATION, ITX], [REBINDING, ITX]]);
+});
+
+test("우선순위가 높은 대상이 아직 차단 중이면 다음 우선순위 대상이 dispatch된다", async () => {
+  const { state, input } = fixture({ ...allBlocked(), pullRequests: [pull(1088, "automation/969-derivative-rebinding-37962000000", "OPEN")] });
+  // 열린 재결속 PR은 ITX·재확인·등록을 막는다(재결속 자신은 막지 않는다).
+  const result = await runRedispatch(input);
+  assert.deepEqual(state.dispatched, [REBINDING]);
+  assert.deepEqual(result.map(({ workflow, action }) => [workflow, action]), [[ITX, "WAIT"], [REVERIFICATION, "WAIT"], [REGISTRATION, "WAIT"], [REBINDING, "DISPATCH"]]);
+});
+
+// #1097 리뷰 F2: 재확인·재결속이 push 직전 재확인에서 새 원장 쓰기 자동화를 만나거나 main이 움직여 올리지 않고 끝나도 같은 슬롯 손실이다.
+test("superseded note로 쓰지 않고 끝난 재확인·재결속 run도 막힌 run으로 보고 차단이 풀리면 다시 dispatch한다", async () => {
+  for (const [workflow, id] of [[REVERIFICATION, 42000], [REBINDING, 44000]]) {
+    for (const note of [1, 2]) {
+      const { state, input } = fixture({ runs: { [workflow]: [run(id, "2026-10-09T17:23:00Z")] }, jobs: { [id]: jobsWith(workflow, { blocked: true, note }) } });
+      await runRedispatch(input);
+      assert.deepEqual(state.dispatched, [workflow], `${workflow} note ${note}`);
+    }
+  }
+  // superseded 뒤에도 그 원장 쓰기 PR이 아직 열려 있으면 기다린다.
+  const waiting = fixture({
+    runs: { [REVERIFICATION]: [run(42000, "2026-10-09T17:23:00Z")] },
+    jobs: { 42000: jobsWith(REVERIFICATION, { blocked: true, note: 1 }) },
+    pullRequests: [pull(1083, "automation/629-kric-facility-refresh-37989000000")],
+  });
+  const result = await runRedispatch(waiting.input);
+  assert.deepEqual(waiting.state.dispatched, []);
+  assert.deepEqual(result.find(({ workflow }) => workflow === REVERIFICATION), { workflow: REVERIFICATION, action: "WAIT", blockedBy: [1083] });
+  // 일을 한 run·이미 최신인 run(note가 모두 건너뜀)은 막힌 run이 아니다.
+  const done = fixture({ runs: { [REVERIFICATION]: [run(42000, "2026-10-09T17:23:00Z")] }, jobs: { 42000: jobsWith(REVERIFICATION, { blocked: false }) } });
+  await runRedispatch(done.input);
+  assert.deepEqual(done.state.dispatched, []);
 });
 
 test("후보 갱신은 대상이 아니다: github.token dispatch는 정기 역할을 받지 못하고 스케줄러가 2시간마다 다시 깨운다", () => {
@@ -289,11 +401,23 @@ test("대상 표는 workflow 파일의 note step과 판정 도구가 쓰는 차�
     "source-reverification.yml": ["decide-source-reverification.mjs", "pendingLedgerWriters"],
     "source-derivative-rebinding.yml": ["decide-derivative-rebinding.mjs", "pendingLedgerWriters"],
   };
-  for (const { workflow, noteStep, blockers } of REDISPATCH_TARGETS) {
+  for (const { workflow, noteSteps, blockers } of REDISPATCH_TARGETS) {
     const yml = readFileSync(path.join(root, ".github/workflows", workflow), "utf8");
-    const block = yml.split("\n      - name: ").slice(1).find((candidate) => candidate.split("\n")[0] === noteStep);
-    assert.ok(block, `${workflow}: step "${noteStep}"`);
-    assert.match(block, /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'BLOCKED_BY_PENDING_PR' \}\}\n/u, `${workflow}: note step runs only for BLOCKED_BY_PENDING_PR`);
+    const blocks = yml.split("\n      - name: ").slice(1);
+    const find = (name) => blocks.find((candidate) => candidate.split("\n")[0] === name);
+    const [waiting, ...superseded] = noteSteps;
+    assert.ok(find(waiting), `${workflow}: step "${waiting}"`);
+    assert.match(find(waiting), /\n        if: \$\{\{ steps\.decision\.outputs\.state == 'BLOCKED_BY_PENDING_PR' \}\}\n/u, `${workflow}: waiting note runs only for BLOCKED_BY_PENDING_PR`);
+    // superseded note: 쓰지 않고 끝났다는 알림이다. push 직전 재확인(idle == 'false')이나 main 이동(pushed == 'false') 조건이다.
+    for (const name of superseded) {
+      const block = find(name);
+      assert.ok(block, `${workflow}: step "${name}"`);
+      assert.match(block, /\n        if: \$\{\{ [^\n]*(?:steps\.recheck\.outputs\.idle == 'false'|steps\.push\.outputs\.pushed == 'false')[^\n]* \}\}\n/u, `${workflow}: "${name}" condition`);
+      assert.match(block, /nothing was pushed|was dropped/u, `${workflow}: "${name}" says nothing was pushed`);
+    }
+    // 이 workflow에서 쓰지 않고 끝나는 note는 표가 전부 알고 있어야 한다: 'nothing was pushed'/'dropped' 계열 note step 수와 표가 같다.
+    const droppedNotes = blocks.filter((block) => /\n        if: [^\n]*(?:steps\.recheck\.outputs\.idle == 'false'|steps\.push\.outputs\.pushed == 'false')/u.test(block)).map((block) => block.split("\n")[0]);
+    assert.deepEqual(droppedNotes.sort(), [...superseded].sort(), `${workflow}: every note that ends a run without writing is in the table`);
     const [decideFile, fn] = decideFiles[workflow];
     const decide = readFileSync(path.join(root, "tools/ci", decideFile), "utf8");
     assert.match(decide, new RegExp(String.raw`${fn}\(`, "u"), `${workflow}: ${decideFile} blocks on ${fn}`);

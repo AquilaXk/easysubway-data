@@ -4,7 +4,10 @@ name: Automation Blocked Redispatch
 # - 정기 workflow 넷(ITX 승격·등록·재확인·재결속)은 다른 원장 쓰기 자동화 PR이 열려 있으면 BLOCKED_BY_PENDING_PR로 끝난다. 이 종료는 success라
 #   다음 주기까지 아무도 다시 깨우지 않는다(ITX는 24시간 뒤). 이 workflow가 그 막힌 run을 찾아, 판정 도구와 같은 함수로 차단 대상이 비었는지 다시 계산하고
 #   비었으면 github.token으로 한 번 dispatch한다. 또 막히면 재dispatch된 run이 다시 막힌 run이 되어 같은 절차를 탄다. 직렬화(쓰기 workflow 사이의 순서)는 그대로다.
-# - 상한: 진행 중인 run이 있으면 기다리고, 같은 workflow를 24시간 안에 3번 넘게 깨우지 않는다. 상한에 닿으면 job이 실패해 실패 이슈(#926)로 admin에 드러난다.
+# - 한 번의 sweep은 쓰기 workflow를 최대 하나만 깨운다(우선순위: ITX > 원천 재확인 > 수도권 등록 > 파생 재결속). 대상 중 하나라도 진행 중이면 아무것도 깨우지 않고,
+#   다음 대상은 그 run이 끝난 뒤의 sweep이 처리한다. 병합 하나가 여러 대상을 한꺼번에 풀어도 cron 오프셋이 두던 쓰기 workflow 사이의 간격이 유지된다.
+# - 쓰지 않고 끝난 run에는 차단 대기뿐 아니라 push 직전 재확인에서 새 원장 쓰기 자동화를 만나거나 main이 움직여 올리지 않은 superseded 종료도 포함한다.
+# - 상한: 진행 중인 run이 있으면 기다리고, 같은 workflow를 24시간 안에 막힌 run 바로 뒤에 3번 넘게 깨우지 않는다(막힘 -> 재dispatch -> 막힘 루프만 센다). 상한에 닿으면 job이 실패해 실패 이슈(#926)로 admin에 드러난다.
 # - 후보 갱신은 대상이 아니다. github.token dispatch는 정기 역할을 받지 못하고 스케줄러가 2시간마다 다시 깨운다.
 # - 15분마다와 Automerge Queue 완료(병합은 github.token이라 PR closed·push 이벤트가 없다)에서 돈다. 읽기는 API뿐이고 쓰기는 workflow dispatch(actions: write) 하나다.
 #   PR 코드는 가져오거나 실행하지 않는다. 재dispatch된 workflow의 정기 실행 변수(DATAPACK_SCHEDULED_*)는 그대로 지켜진다(봇 dispatch는 변수가 true일 때만 실행).
