@@ -148,26 +148,28 @@ function sourceName(value, sourceId) {
   return cleaned;
 }
 
+function* freshUntilValues(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) yield* freshUntilValues(item);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "freshUntil") yield child;
+    else yield* freshUntilValues(child);
+  }
+}
+
 /** 원천 항목 아래 근거 중 가장 이른 freshUntil과 그 근거 종류(원천 항목 아래 최상위 키). 근거가 없으면 null이다. */
 function earliestFreshness(source) {
   let best = null;
-  const visit = (value, evidence) => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item, evidence);
-      return;
-    }
-    if (value === null || typeof value !== "object") return;
-    for (const [key, child] of Object.entries(value)) {
-      if (key !== "freshUntil") {
-        visit(child, evidence);
-        continue;
-      }
-      const millis = typeof child === "string" && UTC_INSTANT.test(child) ? Date.parse(child) : Number.NaN;
+  for (const [evidence, value] of Object.entries(source)) {
+    for (const raw of freshUntilValues(value)) {
+      const millis = typeof raw === "string" && UTC_INSTANT.test(raw) ? Date.parse(raw) : Number.NaN;
       if (!Number.isFinite(millis)) throw inventoryError(`source ${source.id} ${evidence} freshUntil is not a UTC instant`);
       if (best === null || millis < best.millis) best = { millis, evidence };
     }
-  };
-  for (const [key, value] of Object.entries(source)) visit(value, key);
+  }
   return best;
 }
 
@@ -190,37 +192,45 @@ function refreshStateOf(stage, refreshRuns, stuck) {
   return blocked ? "BLOCKED" : "OK";
 }
 
+const compareText = (left, right) => (left < right ? -1 : Number(left > right));
+const byExpiry = (left, right) => Date.parse(left.freshUntil) - Date.parse(right.freshUntil) || compareText(left.sourceId, right.sourceId);
+
+/** 원천 하나의 목록 항목. 대상이 아니면(사용 불가, 근거 없음, 오래전 만료) null이고, 값이 어긋나면 채우지 않고 실패한다. */
+function expiringSourceOf(source, { now, refreshStages, refreshRuns, stuck }) {
+  if (source.productionUseAllowed !== true) return null;
+  const freshness = earliestFreshness(source);
+  if (freshness === null) return null;
+  if (!SOURCE_ID.test(source.id)) throw inventoryError(`source id ${source.id} does not match the snapshot contract`);
+  if (!EVIDENCE_KEY.test(freshness.evidence)) throw inventoryError(`source ${source.id} evidence key ${freshness.evidence} does not match the snapshot contract`);
+  if (freshness.millis <= now.getTime() - EXPIRED_SOURCE_GRACE_MS) return null;
+  const refreshStage = refreshStages.get(source.id);
+  return {
+    sourceId: source.id,
+    name: sourceName(source.displayName, source.id),
+    evidence: freshness.evidence,
+    freshUntil: new Date(freshness.millis).toISOString(),
+    refreshStage: refreshStage ?? null,
+    refreshState: refreshStateOf(refreshStage, refreshRuns, stuck),
+  };
+}
+
 /**
  * 곧 만료되는 원천 근거를 만료가 이른 순서(같은 시각이면 sourceId 순)로 최대 EXPIRING_SOURCE_LIMIT개 만든다.
  * 사용 가능한(productionUseAllowed) 원천만 대상이고, 만료된 지 EXPIRED_SOURCE_GRACE_MS가 지난 근거는 뺀다. 값이 어긋나면 채우지 않고 실패한다.
  */
 function buildExpiringSources({ inventory, now, refreshRuns, stuck }) {
   if (inventory === null || typeof inventory !== "object" || !Array.isArray(inventory.sources)) throw inventoryError("inventory has no sources array");
-  const refreshStages = sourceRefreshStages();
+  const context = { now, refreshStages: sourceRefreshStages(), refreshRuns, stuck };
   const seen = new Set();
   const candidates = [];
   for (const source of inventory.sources) {
     if (source === null || typeof source !== "object" || typeof source.id !== "string") throw inventoryError("an inventory source has no id");
     if (seen.has(source.id)) throw inventoryError(`duplicate source id ${source.id}`);
     seen.add(source.id);
-    if (source.productionUseAllowed !== true) continue;
-    const freshness = earliestFreshness(source);
-    if (freshness === null) continue;
-    if (!SOURCE_ID.test(source.id)) throw inventoryError(`source id ${source.id} does not match the snapshot contract`);
-    if (!EVIDENCE_KEY.test(freshness.evidence)) throw inventoryError(`source ${source.id} evidence key ${freshness.evidence} does not match the snapshot contract`);
-    if (freshness.millis <= now.getTime() - EXPIRED_SOURCE_GRACE_MS) continue;
-    const refreshStage = refreshStages.get(source.id);
-    candidates.push({
-      sourceId: source.id,
-      name: sourceName(source.displayName, source.id),
-      evidence: freshness.evidence,
-      freshUntil: new Date(freshness.millis).toISOString(),
-      refreshStage: refreshStage ?? null,
-      refreshState: refreshStateOf(refreshStage, refreshRuns, stuck),
-    });
+    const candidate = expiringSourceOf(source, context);
+    if (candidate !== null) candidates.push(candidate);
   }
-  const byExpiry = (left, right) => Date.parse(left.freshUntil) - Date.parse(right.freshUntil) || (left.sourceId < right.sourceId ? -1 : left.sourceId > right.sourceId ? 1 : 0);
-  return candidates.sort(byExpiry).slice(0, EXPIRING_SOURCE_LIMIT);
+  return candidates.toSorted(byExpiry).slice(0, EXPIRING_SOURCE_LIMIT);
 }
 
 /**
@@ -300,7 +310,17 @@ function runsEndpoint(repository, stage) {
 
 /** 근거를 갱신하는 단계 id -> 그 단계 workflow. 곧 만료되는 원천 근거의 갱신 작업 상태를 읽는 데 쓴다. */
 export function refreshWorkflowsOf(refreshStages = new Set(sourceRefreshStages().values())) {
-  return Object.fromEntries([...refreshStages].sort().map((stage) => [stage, AUTOMATION_STAGE_WORKFLOWS[stage]]));
+  return Object.fromEntries([...refreshStages].toSorted(compareText).map((stage) => [stage, AUTOMATION_STAGE_WORKFLOWS[stage]]));
+}
+
+/** 갱신 단계마다 그 workflow의 끝난 run 목록(최근 10개, main)을 읽는다. 응답이 목록이 아니면 채우지 않고 실패한다. */
+async function collectRefreshRuns({ refreshWorkflows, api, repository }) {
+  const entries = await Promise.all(Object.entries(refreshWorkflows).map(async ([stage, workflow]) => {
+    const response = await api(`repos/${repository}/actions/workflows/${workflow}/runs?per_page=10&status=completed&branch=main`);
+    if (!Array.isArray(response?.workflow_runs)) throw statusError("RUNS_INVALID", `${stage} refresh response is not a run list`);
+    return [stage, response.workflow_runs];
+  }));
+  return Object.fromEntries(entries);
 }
 
 export async function collectAutomationStatus({ now, repositories, apis, listFailureIssues, fetchManifest, planBehind = planBehindRecreation, refreshWorkflows }) {
@@ -310,12 +330,7 @@ export async function collectAutomationStatus({ now, repositories, apis, listFai
     if (!Array.isArray(response?.workflow_runs)) throw statusError("RUNS_INVALID", `${stage.id} response is not a run list`);
     stageRuns[stage.id] = response.workflow_runs;
   }
-  const refreshRuns = refreshWorkflows === undefined ? undefined : {};
-  for (const [stage, workflow] of Object.entries(refreshWorkflows ?? {})) {
-    const response = await apis.data(`repos/${repositories.data}/actions/workflows/${workflow}/runs?per_page=10&status=completed&branch=main`);
-    if (!Array.isArray(response?.workflow_runs)) throw statusError("RUNS_INVALID", `${stage} refresh response is not a run list`);
-    refreshRuns[stage] = response.workflow_runs;
-  }
+  const refreshRuns = refreshWorkflows === undefined ? undefined : await collectRefreshRuns({ refreshWorkflows, api: apis.data, repository: repositories.data });
   const manifest = await fetchManifest();
   const issues = await listFailureIssues();
   const dataRepository = repositories.data;
