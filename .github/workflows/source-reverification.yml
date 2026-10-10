@@ -6,6 +6,7 @@ name: Source Reverification
 # - 결과는 App 토큰 PR 하나다. 본문에 source-reverification 증거 블록이 붙고, 원장 변화 게이트(SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA)를 통과해야 한다.
 # - 정기 실행은 저장소 변수 DATAPACK_SCHEDULED_SOURCE_REVERIFICATION이 true일 때만 돈다(기본 꺼짐). 사람 dispatch는 항상 돈다.
 # - 이상(수집 실패·등록 실패·sha 드리프트·수치 급변·판정 불가·CI 실패·방치)은 job을 실패시키고 실패 이슈(#926 경로)로 드러난다. 이전 데이터로 대체하지 않는다.
+# - recipe 하나가 실패해도 나머지 recipe의 등록은 PR로 올라간다(#1102). 의존 묶음(topology와 그에 결속되는 recipe)은 전부 등록되거나 전부 되돌려지고, 실패한 recipe는 PR 뒤 마지막 step이 job을 실패시켜 드러낸다.
 on:
   schedule:
     - cron: "23 */2 * * *"
@@ -221,6 +222,13 @@ jobs:
           node tools/ci/automation-pr-evidence.mjs source-reverification-body --gate "${REVERIFICATION_GATE}" --result "${REVERIFICATION_RESULT}" --base-sha "${REVERIFICATION_MAIN_SHA}" --head-sha "${REVERIFICATION_HEAD_SHA}" --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --output "${body}"
           # #939: App이 연 PR이라야 pull_request CI가 required check로 붙는다(GITHUB_TOKEN PR은 action_required, dispatch CI는 인정 안 됨).
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${REVERIFICATION_BRANCH}" --title "[Data] P7D 원천을 만료 전에 다시 확인해 등록" --body-file "${body}"
+      - name: Report recipes that failed
+        if: ${{ always() && steps.reverify.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          # #1102: recipe 하나가 실패해도 나머지 recipe의 등록은 위에서 PR로 올라갔다. 등록하지 못한 recipe가 있으면 여기서 job을 실패시켜 실패 이슈(#926)로 드러낸다.
+          # 의존 묶음의 일부만 등록된 상태는 만들지 않는다(controller가 묶음 단위로 되돌린다). 실패한 recipe는 원장이 그대로라 다음 정기 실행이 다시 시도한다.
+          node tools/ci/source-reverification-failures.mjs --result "${REVERIFICATION_RESULT}"
       - name: Remove this run's claim unless it became a pull request
         if: ${{ always() && env.REVERIFICATION_BRANCH != '' && steps.create-pr.outcome != 'success' }}
         env:
