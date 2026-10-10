@@ -38,9 +38,14 @@ function stageInputFixture(destination) {
 // 시나리오: 수집 시각이 직전 수집의 7일 뒤인 경우(기본), 운행일은 7일 뒤지만 수집 시각이 다른 원천의 신선도 시계와 같은 날인 경우(build 시계가
 // 원천들의 수집 시각 최댓값에 묶인 테스트까지 함께 돌려 보는 전체 시뮬레이션이 쓴다), 그리고 운행역이 바뀐 경우 둘(#980 F3).
 // 운행역이 바뀐 수집은 자동 게이트가 막으므로 사람 승인 경로(OWNER_APPROVED)로 승격하고, 같은 재결속 도구가 그 승격도 처리해야 한다.
+// "현재 원천들과 같은 날" 시각은 리터럴 날짜로 고정하지 않고 현재 ITX 증거의 수집 시각에서 상대값으로 구한다.
+// 리터럴이면 승격이 ITX 증거를 새로 수집할 때마다 운행일이 밀려 "오늘~13일" 승격 창을 벗어난다(#1108, #1124).
+// 현재 수집 시각 1시간 뒤는 같은 KST 날(자정 직전이면 다음 날) 안에 있고, 운행일(수집 시각 이후 최대 6일)을 7일 옮겨도 창 안에 남는다.
+const currentItxObservedAt = Date.parse(json(path.join(root, json(path.join(root, CONTRACT)).sourceTimetableArtifact.completenessEvidencePath)).observedAt);
+const SAME_DAY_AS_CURRENT_SOURCES_MS = 60 * 60 * 1000;
 const SCENARIOS = [
   { label: "수집 시각이 직전 수집 7일 뒤", synthesisOptions: {} },
-  { label: "수집 시각이 현재 원천들과 같은 날", synthesisOptions: { observedAtOverride: Date.parse("2026-10-06T08:00:00.000Z") } },
+  { label: "수집 시각이 현재 원천들과 같은 날", synthesisOptions: { observedAtOverride: currentItxObservedAt + SAME_DAY_AS_CURRENT_SOURCES_MS } },
   { label: "운행역 하나가 빠진 수집(사람 승인 승격)", synthesisOptions: { topologyChange: "remove-served-station" } },
   { label: "운행역 하나가 늘어난 수집(사람 승인 승격)", synthesisOptions: { topologyChange: "add-served-station" } },
 ];
