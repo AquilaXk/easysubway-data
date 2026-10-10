@@ -121678,5 +121678,49 @@
       "rowDelta": 0,
       "coverageDelta": 0
     }
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "sourceId": "daejeon-station-distance-fare",
+    "snapshotId": "daejeon-station-distance-fare-3271e0c1409a6d173f96392317e92882d692161d645338028c4bcf601a3bcc4b",
+    "previousSnapshotId": "daejeon-station-distance-fare-7de53db4703ff14bd97d062e5636c33e449864c90a25c85a55118edb43a6d881",
+    "capturedAt": "2026-10-10T19:19:53.926Z",
+    "retrievedAt": "2026-10-10T19:19:53.926Z",
+    "sourceUpdatedAt": null,
+    "provider": "대전교통공사",
+    "rowCount": 42,
+    "coverageCount": 22,
+    "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
+    "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
+    "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/daejeon-station-distance-fare/20261010/3271e0c1409a6d173f96392317e92882d692161d645338028c4bcf601a3bcc4b.json",
+    "rawObjectSha256": "3271e0c1409a6d173f96392317e92882d692161d645338028c4bcf601a3bcc4b",
+    "rawReceiptSha256": "692ddee18c23d50351f876a362c08e62e83a22f387b3aa6935007ef138c26ee2",
+    "byteSize": 30122,
+    "freshUntil": "2026-10-17T19:19:53.926Z",
+    "freshnessExpiresAt": "2026-10-17T19:19:53.926Z",
+    "rawRetentionExpiresAt": "2027-01-08T19:19:53.926Z",
+    "governancePolicyVersion": "2026-08-29",
+    "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+    "schemaFingerprint": "e4def6342dde770cfc8b791e1107276cf75e52496bdcda279398711602a71e07",
+    "redactedRequestFingerprint": "817e7a909294a517d1656de27d11aac3ded438ccdc2f4a9a72b5f82dab753b01",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "admissionEvidence": {
+      "licenseEvidenceHash": "8790a427f3f87892951d529c118cffa50b3ecc517f829b4fc46b382647bb034d"
+    },
+    "diffSummary": {
+      "status": "NO_CHANGE",
+      "rawHashChanged": false,
+      "schemaHashChanged": false,
+      "requestHashChanged": false,
+      "sourceUpdatedAtChanged": false,
+      "rowDelta": 0,
+      "coverageDelta": 0
+    }
   }
 ]
