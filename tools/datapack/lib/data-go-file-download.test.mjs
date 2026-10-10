@@ -13,6 +13,10 @@ import {
   resolveDataGoFileDownload,
   verifyDataGoDownloadProvenance,
 } from "./data-go-file-download.mjs";
+import { createTransientRetryBudget } from "./transient-retry.mjs";
+
+// #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
 
 const fixtureDir = path.resolve(import.meta.dirname, "../fixtures/data-go-file-download");
 const read = (name) => readFile(path.join(fixtureDir, name), "utf8");
@@ -117,7 +121,7 @@ test("해석 단계의 모든 실패(HTTP·형식·불일치)는 명시적 오�
   };
   await assert.rejects(resolveDataGoFileDownload((await realPortal({ pages: {} })).fetchImpl, "15065526"),
     /15065526 detail HTTP 404/);
-  await assert.rejects(resolveDataGoFileDownload((await realPortal({ selects: {} })).fetchImpl, "15065526"),
+  await assert.rejects(resolveDataGoFileDownload((await realPortal({ selects: {} })).fetchImpl, "15065526", retryFast()),
     /15065526 download lookup HTTP 500/);
   await assert.rejects(resolveDataGoFileDownload((await realPortal({
     selects: { 15065526: "<html>login</html>" },
@@ -156,7 +160,7 @@ test("다운로드 본문이 비었거나 오류 페이지거나 HTTP 오류면 
   })).fetchImpl, "15065526"), /15065526 file content-type is not allowed/);
   await assert.rejects(downloadDataGoFile((await realPortal({
     files: { FILE_000000003042523: { body: "x", status: 503 } },
-  })).fetchImpl, "15065526"), /15065526 file HTTP 503/);
+  })).fetchImpl, "15065526", retryFast()), /15065526 file HTTP 503/);
   await assert.rejects(downloadDataGoFile((await realPortal({ files: {} })).fetchImpl, "15065526"),
     /15065526 file HTTP 404/);
 });
@@ -303,4 +307,85 @@ test("발췌 fixture HTML은 문서 언어를 선언한다(정적 분석 접근�
   for (const name of ["detail-15065526.html", "detail-15149872.html"]) {
     assert.match(await read(name), /<html lang="ko">/u, name);
   }
+});
+
+const brokenStream = (code) => new Response(new ReadableStream({
+  start(controller) { controller.error(Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("transport"), { code }) })); },
+}), { status: 200, headers: { "content-type": "application/octet-stream" } });
+
+// 포털 fetch를 감싸 처음 몇 번은 지정한 일시 오류를 내고 이후에는 원래 응답을 돌려준다.
+function flaky(fetchImpl, { match, failures }) {
+  const pending = [...failures];
+  const counts = { total: 0 };
+  return {
+    counts,
+    fetchImpl: async (url, init) => {
+      if (match(new URL(url))) {
+        counts.total += 1;
+        const next = pending.shift();
+        if (next !== undefined) return next();
+      }
+      return fetchImpl(url, init);
+    },
+  };
+}
+
+test("detail·lookup·FILE 요청이 HTTP 5xx·연결 timeout·본문 수신 오류를 만나도 같은 요청을 다시 보내 다운로드를 끝낸다", async () => {
+  const { fetchImpl } = await realPortal();
+  const connectTimeout = () => { throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) }); };
+  const waits = [];
+  let current = fetchImpl;
+  const cases = [
+    [(url) => url.pathname.endsWith("/fileData.do"), [() => new Response("busy", { status: 503 }), connectTimeout]],
+    [(url) => url.pathname === "/tcs/dss/selectFileDataDownload.do", [() => new Response("{}", { status: 502 })]],
+    [(url) => url.pathname === "/cmm/cmm/fileDownload.do", [() => brokenStream("UND_ERR_BODY_TIMEOUT"), () => brokenStream("ECONNRESET")]],
+  ];
+  const counters = cases.map(([match, failures]) => {
+    const wrapped = flaky(current, { match, failures });
+    current = wrapped.fetchImpl;
+    return wrapped.counts;
+  });
+  const downloaded = await downloadDataGoFile(current, "15065526", retryFast(waits));
+  assert.equal(Buffer.from(downloaded.bytes).toString("utf8"), "상선,csv\n1,2\n");
+  assert.equal(downloaded.rawSha256, sha256(Buffer.from("상선,csv\n1,2\n")));
+  assert.deepEqual(counters.map(({ total }) => total), [3, 2, 3]);
+  assert.deepEqual(waits, [1_000, 2_000, 1_000, 1_000, 2_000]);
+});
+
+test("일시 오류가 한도(5번)를 넘으면 기존 오류로 끝난다", async () => {
+  const { fetchImpl } = await realPortal();
+  const waits = [];
+  const always = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
+  await assert.rejects(downloadDataGoFile(always.fetchImpl, "15065526", retryFast(waits)), /15065526 file HTTP 503/);
+  assert.equal(always.counts.total, 6);
+  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+
+  const transport = flaky(fetchImpl, { match: (url) => url.pathname.endsWith("/fileData.do"), failures: Array.from({ length: 10 }, () => () => { throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); }) });
+  await assert.rejects(resolveDataGoFileDownload(transport.fetchImpl, "15065526", retryFast()), (error) => error.code === "ECONNRESET");
+  assert.equal(transport.counts.total, 6);
+
+  const budgeted = flaky(fetchImpl, { match: (url) => url.pathname.endsWith("/fileData.do"), failures: Array.from({ length: 10 }, () => () => { throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); }) });
+  await assert.rejects(resolveDataGoFileDownload(budgeted.fetchImpl, "15065526", { sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500) }), (error) => error.code === "ECONNRESET");
+  assert.equal(budgeted.counts.total, 2);
+});
+
+test("인증·쿼터·내용 오류(HTTP 401·403·404·429, 허용 밖 content-type, 빈 본문)는 재시도하지 않는다", async () => {
+  const { fetchImpl } = await realPortal();
+  for (const status of [401, 403, 404, 429]) {
+    const denied = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: [() => new Response("denied", { status })] });
+    const waits = [];
+    await assert.rejects(downloadDataGoFile(denied.fetchImpl, "15065526", retryFast(waits)), new RegExp(`15065526 file HTTP ${status}`));
+    assert.equal(denied.counts.total, 1, String(status));
+    assert.deepEqual(waits, []);
+  }
+  const html = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: [() => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } })] });
+  await assert.rejects(downloadDataGoFile(html.fetchImpl, "15065526", retryFast()), /file content-type is not allowed/);
+  assert.equal(html.counts.total, 1);
+});
+
+test("FILE 요청이 HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 HTTP 오류로 끝난다(#1099 리뷰 F1)", async () => {
+  const { fetchImpl } = await realPortal();
+  const busy = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
+  await assert.rejects(downloadDataGoFile(busy.fetchImpl, "15065526", { sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500) }), /15065526 file HTTP 503/);
+  assert.equal(busy.counts.total, 2);
 });

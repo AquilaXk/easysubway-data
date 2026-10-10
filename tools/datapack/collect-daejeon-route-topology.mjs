@@ -16,6 +16,8 @@ export const DAEJEON_LINE1_STATION_NUMBERS = Object.freeze(
 export async function collectDaejeonRouteTopology({
   serviceKey,
   fetchImpl = fetch,
+  sleepImpl,
+  retryBudget,
   now = new Date(),
 } = {}) {
   normalizeDataGoKrServiceKey(serviceKey);
@@ -31,6 +33,8 @@ export async function collectDaejeonRouteTopology({
         query: { strstnno: fromStationNumber, endstnno: toStationNumber },
         captureRows: true,
         fetchImpl,
+        sleepImpl,
+        retryBudget,
         now,
       });
       if (evidence.rowCount !== 1 || evidence.rows.length !== 1) {

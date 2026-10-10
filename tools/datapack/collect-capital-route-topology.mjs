@@ -58,6 +58,7 @@ import {
   parseCapitalLine1RouteTopology,
 } from "./collect-capital-line1-route-topology.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
 
 export { decodeOfficialCsv, normalizeStationName };
 
@@ -1145,12 +1146,14 @@ const MOLIT_FULL_ROUTE_HEADER = Object.freeze([
   "역명",
 ]);
 
-export async function collectMolitFullRouteCsv({ fetchImpl = fetch } = {}) {
-  const page = await fetchImpl(MOLIT_FULL_ROUTE_DETAIL_URL, {
-    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
-  });
+export async function collectMolitFullRouteCsv({ fetchImpl = fetch, sleepImpl, retryBudget } = {}) {
+  const retry = { sleepImpl, retryBudget };
+  const { response: page, value: html } = await getWithTransientRetry(
+    () => fetchImpl(MOLIT_FULL_ROUTE_DETAIL_URL, { headers: { "User-Agent": "easysubway-datapack-collector/1.0" } }),
+    (response) => response.text(),
+    retry,
+  );
   if (!page.ok) throw new Error(`MOLIT full-route detail HTTP ${page.status}`);
-  const html = await page.text();
   const direct = html.match(/\/cmm\/cmm\/fileDownload\.do\?[^"'<>\s]+/u)?.[0]
     ?.replaceAll("&amp;", "&");
   const args = html.match(/(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?/u);
@@ -1163,14 +1166,35 @@ export async function collectMolitFullRouteCsv({ fetchImpl = fetch } = {}) {
     || downloadUrl.pathname !== "/cmm/cmm/fileDownload.do") {
     throw new Error("MOLIT full-route public download link is invalid");
   }
-  const response = await fetchImpl(downloadUrl, {
-    headers: {
-      "User-Agent": "easysubway-datapack-collector/1.0",
-      Referer: MOLIT_FULL_ROUTE_DETAIL_URL,
-    },
-  });
+  const { response, value } = await getWithTransientRetry(
+    () => fetchImpl(downloadUrl, {
+      headers: {
+        "User-Agent": "easysubway-datapack-collector/1.0",
+        Referer: MOLIT_FULL_ROUTE_DETAIL_URL,
+      },
+    }),
+    async (fileResponse) => Buffer.from(await fileResponse.arrayBuffer()),
+    retry,
+  );
   if (!response.ok) throw new Error(`MOLIT full-route CSV HTTP ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  return value;
+}
+
+// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
+// 인증·쿼터·내용 오류(HTTP 4xx)는 재시도하지 않는다. 한도를 다 쓰면 마지막 응답(호출자가 기존 HTTP 오류로 던진다)이나 마지막 전송 오류를 돌려준다.
+async function getWithTransientRetry(request, read, { sleepImpl, retryBudget } = {}) {
+  try {
+    return await withTransientRetry(async () => {
+      const response = await request();
+      if (!response.ok) {
+        try { await response.body?.cancel(); } catch { /* best effort */ }
+        return { response };
+      }
+      return { response, value: await read(response) };
+    }, { isTransientResult: ({ response }) => isTransientStatus(response.status), sleep: sleepImpl, budget: retryBudget });
+  } catch (error) {
+    throw unwrapTransientRetryFailure(error);
+  }
 }
 
 /**
@@ -1663,14 +1687,17 @@ export async function collectCapitalRouteTopology({
   useLocalFiles = true,
   sources = LINE_SOURCES,
   requestTimeoutMs = CAPITAL_TOPOLOGY_REQUEST_TIMEOUT_MS,
+  sleepImpl,
+  retryBudget,
 } = {}) {
+  const retry = { sleepImpl, retryBudget };
   const captured = validDate(now, "now");
   requireCapitalTopologyRequestTimeout(requestTimeoutMs);
   const lines = [];
   const detailDownloads = new Map();
   const downloadDetailFile = (detailUrl) => {
     if (!detailDownloads.has(detailUrl)) {
-      detailDownloads.set(detailUrl, downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs));
+      detailDownloads.set(detailUrl, downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs, retry));
     }
     return detailDownloads.get(detailUrl);
   };
@@ -1680,7 +1707,7 @@ export async function collectCapitalRouteTopology({
           bytes: await readFile(path.resolve(root, source.localCsv)),
           downloadUrl: source.downloadUrl,
         }
-      : await downloadBytes(fetchImpl, source, requestTimeoutMs, downloadDetailFile);
+      : await downloadBytes(fetchImpl, source, requestTimeoutMs, downloadDetailFile, retry);
     let secondary = null;
     if (source.kind === "seohae-merged") {
       if (typeof source.localMolitCsv !== "string" || source.localMolitCsv.length === 0) {
@@ -1765,20 +1792,24 @@ export async function collectCapitalRouteTopology({
 }
 
 async function downloadBytes(fetchImpl, source, requestTimeoutMs, downloadDetailFile = (detailUrl) =>
-  downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs)) {
+  downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs), retry = {}) {
   return withCapitalTopologyTransportIdentity(source, async () => {
     if (source.resolveDownloadFromDetail === true) {
       return downloadDetailFile(source.downloadUrl);
     }
-    const response = await requestCapitalTopologyGet(fetchImpl, source.downloadUrl, {
-      headers: {
-        "User-Agent": "easysubway-datapack-collector/1.0",
-        Referer: source.detailUrl,
-      },
-    }, requestTimeoutMs);
+    const { response, value } = await getWithTransientRetry(
+      () => requestCapitalTopologyGet(fetchImpl, source.downloadUrl, {
+        headers: {
+          "User-Agent": "easysubway-datapack-collector/1.0",
+          Referer: source.detailUrl,
+        },
+      }, requestTimeoutMs),
+      async (fileResponse) => Buffer.from(await fileResponse.arrayBuffer()),
+      retry,
+    );
     if (!response.ok) throw new Error(`${source.slug} CSV HTTP ${response.status}`);
     return {
-      bytes: Buffer.from(await response.arrayBuffer()),
+      bytes: value,
       downloadUrl: source.downloadUrl,
     };
   });
@@ -1835,21 +1866,29 @@ function capitalTopologyTransportCode(error) {
   return rejectedFetch ? "NETWORK_UNKNOWN" : null;
 }
 
-async function downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs) {
-  const detailResponse = await requestCapitalTopologyGet(fetchImpl, detailUrl, {
-    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
-  }, requestTimeoutMs);
+async function downloadDataGoDetailFile(fetchImpl, detailUrl, requestTimeoutMs, retry = {}) {
+  const { response: detailResponse, value: detailHtml } = await getWithTransientRetry(
+    () => requestCapitalTopologyGet(fetchImpl, detailUrl, {
+      headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
+    }, requestTimeoutMs),
+    (response) => response.text(),
+    retry,
+  );
   if (!detailResponse.ok) throw new Error(`data.go.kr detail HTTP ${detailResponse.status}`);
-  const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), detailUrl);
-  const fileResponse = await requestCapitalTopologyGet(fetchImpl, downloadUrl, {
-    headers: {
-      "User-Agent": "easysubway-datapack-collector/1.0",
-      Referer: detailUrl,
-    },
-  }, requestTimeoutMs);
+  const downloadUrl = resolveDataGoDownloadUrl(detailHtml, detailUrl);
+  const { response: fileResponse, value: bytes } = await getWithTransientRetry(
+    () => requestCapitalTopologyGet(fetchImpl, downloadUrl, {
+      headers: {
+        "User-Agent": "easysubway-datapack-collector/1.0",
+        Referer: detailUrl,
+      },
+    }, requestTimeoutMs),
+    async (response) => Buffer.from(await response.arrayBuffer()),
+    retry,
+  );
   if (!fileResponse.ok) throw new Error(`data.go.kr file HTTP ${fileResponse.status}`);
   return {
-    bytes: Buffer.from(await fileResponse.arrayBuffer()),
+    bytes,
     downloadUrl,
   };
 }

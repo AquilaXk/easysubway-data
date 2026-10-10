@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { isTransientStatus, withTransientRetry } from "./lib/transient-retry.mjs";
 
 export const KRIC_APPROVED_ACCESSIBILITY_OPERATIONS = Object.freeze([
   {
@@ -107,6 +108,8 @@ async function collectKricAccessibilitySnapshotResults({
   requestTimeoutMs = 30_000,
   requestIntervalMs = 0,
   delayImpl = delay,
+  retrySleepImpl,
+  retryBudget,
   retainRawResponses = false,
   allowTerminalResult03 = false,
 } = {}) {
@@ -134,7 +137,7 @@ async function collectKricAccessibilitySnapshotResults({
       const providerKey = [tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0");
       if (!responsesByProviderTuple.has(providerKey)) {
         const requested = await requestRows({
-          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
+          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget,
         });
         responsesByProviderTuple.set(providerKey, requested);
         if (retainRawResponses) rawResponses.push(requested.rawResponse);
@@ -343,6 +346,8 @@ export async function collectKricAccessibilityProviderTupleEvidence({
   requestTimeoutMs = 30_000,
   requestIntervalMs = 0,
   delayImpl = delay,
+  retrySleepImpl,
+  retryBudget,
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
   if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
@@ -365,7 +370,7 @@ export async function collectKricAccessibilityProviderTupleEvidence({
     const queries = [];
     for (const tuple of providerTuples) {
       const response = await requestRows({
-        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
+        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget,
       });
       if (response.rows.length === 0) {
         throw new Error(`KRIC provider tuple probe empty response: ${operation.sourceId}/${providerTuple(tuple)}`);
@@ -715,30 +720,38 @@ function validateOperation(operation) {
   }
 }
 
-async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest }) {
+// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김, DNS 일시 실패)면 같은 요청을 다시 보낸다(#1099).
+// 인증·쿼터·형식 오류와 공급자 resultCode는 재시도하지 않는다. 한도를 다 쓰면 기존 분류(NETWORK_*·HTTP·schema)로 실패한다.
+async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest, retrySleepImpl, retryBudget }) {
   const requestIdentity = `${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`;
   const url = new URL(operation.endpoint);
   url.searchParams.set("serviceKey", serviceKey);
   url.searchParams.set("format", "json");
   for (const field of ["railOprIsttCd", "lnCd", "stinCd"]) url.searchParams.set(field, tuple[field]);
-  let response;
   await paceRequest();
+  let outcome;
   try {
-    response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
+    outcome = await withTransientRetry(async () => {
+      const received = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
+      if (!received?.ok) return { response: received };
+      try {
+        return { response: received, payload: await received.json() };
+      } catch (error) {
+        if (classifyKricTransportFailure(error) != null) throw error;
+        return { response: received, schemaInvalid: true };
+      }
+    }, {
+      isTransientResult: ({ response: received, schemaInvalid }) => schemaInvalid !== true && isTransientStatus(received?.status),
+      sleep: retrySleepImpl,
+      budget: retryBudget,
+    });
   } catch (error) {
     throw new Error(`KRIC accessibility request failed: ${classifyKricTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${requestIdentity}`);
   }
+  const { response } = outcome;
   if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${requestIdentity}`);
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    const transportFailure = classifyKricTransportFailure(error);
-    if (transportFailure != null) {
-      throw new Error(`KRIC accessibility request failed: ${transportFailure}: ${requestIdentity}`);
-    }
-    throw new Error(`KRIC accessibility schema invalid: ${requestIdentity}`);
-  }
+  if (outcome.schemaInvalid === true) throw new Error(`KRIC accessibility schema invalid: ${requestIdentity}`);
+  let { payload } = outcome;
   const rawResponseBytes = Buffer.from(JSON.stringify(payload));
   if (containsStringValue(payload, serviceKey)) {
     throw new Error(`KRIC accessibility credential reflection rejected: ${requestIdentity}`);

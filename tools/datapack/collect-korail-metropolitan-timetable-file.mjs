@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
 
 export const REQUEST_TIMEOUT_MS = 30_000;
 export const MAXIMUM_BYTES = 128 * 1024 * 1024;
@@ -25,17 +26,12 @@ export function validateKorailTimetableFileReceipt(receipt, { rawSha256, rawByte
   return structuredClone(receipt);
 }
 
-export async function collectKorailMetropolitanTimetableFile({ url, expectedSha256, outputDirectory, fetchImpl = fetch } = {}) {
+export async function collectKorailMetropolitanTimetableFile({ url, expectedSha256, outputDirectory, fetchImpl = fetch, sleepImpl, retryBudget } = {}) {
   const officialUrl = officialKorailUrl(url);
   const expected = sha256(expectedSha256);
   const output = absoluteOutputDirectory(outputDirectory);
   try { await mkdir(output); } catch { fail("OUTPUT_DIRECTORY"); }
-  let response;
-  try {
-    response = await fetchImpl(officialUrl, { method: "GET", redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  } catch { fail("TRANSPORT"); }
-  validateResponse(response);
-  const bytes = await readBounded(response.body);
+  const bytes = await downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, retryBudget });
   if (bytes.length < 4 || !bytes.subarray(0, 4).equals(XLSX_SIGNATURE)) fail("XLSX");
   const digest = createHash("sha256").update(bytes).digest("hex");
   if (digest !== expected) fail("SHA256");
@@ -55,6 +51,32 @@ export async function collectKorailMetropolitanTimetableFile({ url, expectedSha2
     await writeFile(path.join(output, "receipt.json"), JSON.stringify(receipt), { flag: "wx" });
   } catch { fail("OUTPUT"); }
   return receipt;
+}
+
+// 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
+// 인증·형식·내용 오류는 재시도하지 않는다. 한도를 다 쓰면 기존 오류 코드(HTTP·TRANSPORT·BODY)로 실패한다.
+async function downloadWithTransientRetry(fetchImpl, officialUrl, { sleepImpl, retryBudget }) {
+  let outcome;
+  try {
+    outcome = await withTransientRetry(async () => {
+      let response;
+      try {
+        response = await fetchImpl(officialUrl, { method: "GET", redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      } catch (error) {
+        throw Object.assign(new Error("KORAIL_METROPOLITAN_TIMETABLE_FILE_TRANSPORT"), { cause: error });
+      }
+      if (isTransientStatus(response?.status)) {
+        try { await response.body?.cancel(); } catch { /* best effort */ }
+        return { response, bytes: null };
+      }
+      validateResponse(response);
+      return { response, bytes: await readBounded(response.body) };
+    }, { isTransientResult: ({ bytes }) => bytes === null, sleep: sleepImpl, budget: retryBudget });
+  } catch (error) {
+    throw unwrapTransientRetryFailure(error);
+  }
+  if (outcome.bytes === null) validateResponse(outcome.response);
+  return outcome.bytes;
 }
 
 function officialKorailUrl(value) {
@@ -97,7 +119,8 @@ async function readBounded(body) {
     }
   } catch (error) {
     if (error?.message === "KORAIL_METROPOLITAN_TIMETABLE_FILE_BODY") throw error;
-    fail("BODY");
+    // 원인을 남겨 재시도 정책이 본문 수신 중 timeout·연결 끊김을 알아볼 수 있게 한다. 메시지는 기존 코드 그대로다.
+    throw Object.assign(new Error("KORAIL_METROPOLITAN_TIMETABLE_FILE_BODY"), { cause: error });
   }
 }
 
