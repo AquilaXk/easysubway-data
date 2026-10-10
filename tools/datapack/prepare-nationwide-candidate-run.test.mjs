@@ -399,7 +399,49 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // #919: 부산 40·대구 노선별 40(×3)·대전 32, 모두 192행의 KASI 공휴일 예외를 더한다.
   // #938: 광주 보관본 계약 창이 20261004~20261011로 옮겨 10-03(토→휴일) 예외 2행이 창 밖으로 빠진다.
   // #971: 광주 보관본 계약 창이 20261006~20261013으로 옮겨 10-05(대체공휴일) 예외 4행이 창 밖으로 빠진다.
-  assert.strictEqual(pack.serviceCalendarDates.length, 392);
+  // #1140: 개수를 현재 데이터에 묶은 리터럴(392)은 서비스 창이 하루씩 이동할 때마다 깨진다. 두 부분으로 나눠 독립적으로 유도한다.
+  // (1) 연간 창(20260101~20261231) 서비스: 후보 시각과 무관한 2026년 공휴일 예외라 원천별 개수가 고정이다.
+  //     인천 1·2호선 38×2, KRIC 수도권·코레일·역별 88+32, KASI 공휴일(부산·대구·대전) 192.
+  // (2) 이동 창 서비스(광주 보관본·코레일 계획): 예외는 평일 공휴일 하루당 평일 제거·휴일 추가 2행이고,
+  //     창 밖 날짜는 싣지 않는다. 평일 공휴일 날짜는 연간 KASI 부산 평일 서비스의 제거 예외에서 유도한다.
+  const calendarById = new Map(pack.serviceCalendars.map((calendar) => [calendar.serviceId, calendar]));
+  const isYearWide = ({ serviceId }) => {
+    const calendar = calendarById.get(serviceId);
+    return calendar.startDate === "20260101" && calendar.endDate === "20261231";
+  };
+  const yearWideDates = pack.serviceCalendarDates.filter(isYearWide);
+  const movingDates = pack.serviceCalendarDates.filter((row) => !isYearWide(row));
+  const countBySource = (rows) => Object.fromEntries(
+    [...new Set(rows.map(({ sourceId }) => sourceId ?? "kasi-public-holiday"))].sort()
+      .map((key) => [key, rows.filter(({ sourceId }) => (sourceId ?? "kasi-public-holiday") === key).length]),
+  );
+  assert.deepEqual(countBySource(yearWideDates), {
+    "incheon-line1-train-timetable": 38,
+    "incheon-line2-train-timetable": 38,
+    "kasi-public-holiday": 192,
+    "kric-nationwide-timetable-file": 88,
+    "kric-subway-timetable-station-lines": 32,
+  });
+  const weekdayHolidays = pack.serviceCalendarDates
+    .filter(({ serviceId, exceptionType }) => serviceId === "busan-weekday-2026" && exceptionType === 2)
+    .map(({ date }) => date);
+  assert.ok(weekdayHolidays.includes("20261009"), "KASI 평일 공휴일에 한글날(20261009)이 있어야 한다");
+  const movingServiceIds = [...new Set(pack.serviceCalendars.filter((calendar) => !isYearWide(calendar)).map(({ serviceId }) => serviceId))];
+  assert.ok(movingServiceIds.includes("service-S2901-평일"));
+  assert.deepEqual(
+    Object.fromEntries(movingServiceIds.map((serviceId) => [serviceId, movingDates.filter((row) => row.serviceId === serviceId).length])),
+    Object.fromEntries(movingServiceIds.map((serviceId) => {
+      const { startDate, endDate } = calendarById.get(serviceId);
+      const holidaysInWindow = weekdayHolidays.filter((date) => date >= startDate && date <= endDate).length;
+      // 광주 보관본은 평일·휴일 서비스가 각각 제거·추가 예외 1행씩을 받고 토요일 서비스는 받지 않는다. 코레일 계획 서비스도 같은 방식이다.
+      return [serviceId, serviceId === "service-S2901-토요일" ? 0 : holidaysInWindow];
+    })),
+  );
+  for (const row of movingDates) {
+    const { startDate, endDate } = calendarById.get(row.serviceId);
+    assert.ok(row.date >= startDate && row.date <= endDate, `${row.serviceId} 예외 ${row.date}가 서비스 창 ${startDate}~${endDate} 밖이다`);
+  }
+  assert.strictEqual(pack.serviceCalendarDates.length, yearWideDates.length + movingDates.length);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
