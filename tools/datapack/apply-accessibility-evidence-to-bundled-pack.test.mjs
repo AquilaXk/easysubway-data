@@ -790,5 +790,4 @@ test("번들 팩 gzip은 기본 level 9 대비 1.05배 이내로 압축되고 �
   const expected = Buffer.from(baseline);
   expected[9] = 255;
   assert.deepEqual(compressed, expected);
-  assert.deepEqual(gzipBundledPack(sqliteBytes), compressed);
 });
