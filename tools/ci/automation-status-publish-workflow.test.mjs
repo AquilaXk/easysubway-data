@@ -44,3 +44,17 @@ test("서비스 토큰은 게시 step의 env로만 들어가고 run 스크립트
   assert.equal(run.trim(), "node tools/ci/build-automation-status.mjs");
   assert.ok(yml.trimEnd().endsWith(publish.trimEnd()), "publishing is the last step");
 });
+
+test("곧 만료되는 원천 근거 게시는 변수 DATAPACK_AUTOMATION_STATUS_FRESHNESS를 env로만 받고 기본 꺼짐이다(backend 배포 전에는 필드를 보내지 않는다)", () => {
+  const publish = stepBody("Collect and publish the automation status");
+  assert.match(publish, /\n          AUTOMATION_STATUS_SOURCE_FRESHNESS: \$\{\{ vars\.DATAPACK_AUTOMATION_STATUS_FRESHNESS \}\}\n/u);
+  assert.equal(yml.split("DATAPACK_AUTOMATION_STATUS_FRESHNESS").length - 1, 2, "header 한 줄과 env 한 곳뿐이다");
+  const header = yml.split("\n").filter((line) => line.startsWith("#")).join("\n");
+  assert.match(header, /DATAPACK_AUTOMATION_STATUS_FRESHNESS[^\n]*기본 꺼짐/u);
+  assert.match(header, /backend#507/u);
+  assert.match(header, /QA 보고 뒤[^\n]*설정 변경/u);
+  const code = yml.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
+  assert.doesNotMatch(code, /gh variable|actions\/variables/u);
+  assert.equal(publish.split("\n        run: ")[1].trim(), "node tools/ci/build-automation-status.mjs");
+});
+

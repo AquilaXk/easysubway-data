@@ -6,6 +6,8 @@ name: Automation Status Publish
 # - 15분마다와 발행·RC 체인이 끝날 때 돈다. 게시가 멈추면 admin이 "마지막 갱신 N분 전"으로 드러낸다. 읽지 못한 값은 채우지 않고 실패한다.
 # - 읽기 권한만 쓴다: data는 GITHUB_TOKEN(actions·issues·pull-requests·contents read), hub·platform run 조회는 App 토큰(actions read).
 # - 저장소 변수 DATAPACK_AUTOMATION_STATUS_PUBLISH가 true일 때만 정기 실행이 돈다(기본 꺼짐, backend 수신 API 배포 뒤 켠다). 사람 dispatch는 항상 돈다.
+# - 저장소 변수 DATAPACK_AUTOMATION_STATUS_FRESHNESS가 true일 때만 snapshot에 곧 만료되는 원천 근거(expiringSources, data#1116)를 싣는다(기본 꺼짐, 코드가 켜지 않는다).
+#   backend(backend#507)가 선택 필드로 받아 배포되기 전에 보내면 게시가 400으로 실패하므로, 변수는 QA 보고 뒤 backend 배포를 확인하고 별도 설정 변경으로만 켠다.
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"
@@ -52,6 +54,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           APP_READ_TOKEN: ${{ steps.read-token.outputs.token }}
+          AUTOMATION_STATUS_SOURCE_FRESHNESS: ${{ vars.DATAPACK_AUTOMATION_STATUS_FRESHNESS }}
           DEPLOY_PUBLIC_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
           CHAIN_DATAPACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
           EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: ${{ secrets.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN }}

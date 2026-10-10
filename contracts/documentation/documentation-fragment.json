@@ -2,9 +2,9 @@
   "$schema": "https://raw.githubusercontent.com/AquilaXk/easysubway/32ce139789b97ce1f0c9bb059966cfc19f497480/contracts/documentation/documentation-fragment.schema.json",
   "schemaVersion": 1,
   "repository": "AquilaXk/easysubway-data",
-  "sourceSha": "d9fb055eea83b696d3fb02fe5f045c987a1d342f",
+  "sourceSha": "dfd2505b76f114d492ccb11d2d42cca6d57696e4",
   "status": "ACTIVE",
-  "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
+  "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
   "verificationEvidence": [
     "https://github.com/AquilaXk/easysubway-data/issues/1060",
     "https://github.com/AquilaXk/easysubway-data/issues/237",
@@ -39,7 +39,7 @@
       "documentationFamily": "QUALITY_TEST",
       "kindCandidate": "DATA_REQUIRED_CI_WORKFLOW",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:.github/workflows/ci.yml:be2064b65ae656188a36a59ac785c1df9c4699f8",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:.github/workflows/ci.yml:be2064b65ae656188a36a59ac785c1df9c4699f8",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/25",
@@ -63,8 +63,8 @@
       "reviewTrigger": [
         "event:workflow-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:.github/workflows/ci.yml:be2064b65ae656188a36a59ac785c1df9c4699f8",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:.github/workflows/ci.yml:be2064b65ae656188a36a59ac785c1df9c4699f8",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/25"
@@ -89,7 +89,7 @@
       "documentationFamily": "RELEASE_CHANGE",
       "kindCandidate": "DATAPACK_IMMUTABLE_RELEASE_WORKFLOW",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:.github/workflows/datapack-release.yml:0eb415df67094594437d552eb40bffa8cb7d20c1",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:.github/workflows/datapack-release.yml:0eb415df67094594437d552eb40bffa8cb7d20c1",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/54",
@@ -114,8 +114,8 @@
       "reviewTrigger": [
         "event:release-workflow-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:.github/workflows/datapack-release.yml:0eb415df67094594437d552eb40bffa8cb7d20c1",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:.github/workflows/datapack-release.yml:0eb415df67094594437d552eb40bffa8cb7d20c1",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/54"
@@ -140,7 +140,7 @@
       "documentationFamily": "PRODUCT",
       "kindCandidate": "DATA_PRODUCT_README",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/38",
@@ -167,8 +167,8 @@
       "reviewTrigger": [
         "event:source-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:README.md:7e9e4208607c224bb8a04852be26daf2ac93b438",
       "verificationMethod": "owner-review",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/38"
@@ -193,7 +193,7 @@
       "documentationFamily": "ARCHITECTURE",
       "kindCandidate": "THREE_ARTIFACT_COMPONENT_BOUNDARY",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/41",
@@ -218,8 +218,8 @@
       "reviewTrigger": [
         "event:artifact-boundary-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:contracts/datapack/bundle-component-contract.json:854a53ccf773a00b3c69bbd0b336854061cb06f2",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/41"
@@ -244,7 +244,7 @@
       "documentationFamily": "GOVERNANCE_EVIDENCE",
       "kindCandidate": "DATAPACK_MOBILE_COMPATIBILITY_MATRIX",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/54",
@@ -268,8 +268,8 @@
       "reviewTrigger": [
         "event:compatibility-contract-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:contracts/datapack/compatibility-matrix.json:6fbf25901c16c019c4f9cf6ea3da2975caf5c480",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/54"
@@ -294,7 +294,7 @@
       "documentationFamily": "API_CONTRACT",
       "kindCandidate": "SIGNED_DATAPACK_MANIFEST_SCHEMA",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/38",
@@ -319,8 +319,8 @@
       "reviewTrigger": [
         "event:manifest-schema-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:contracts/datapack/datapack-manifest.schema.json:6fd7d44ddd72c70fce266663977deecbe6401d91",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/38"
@@ -345,7 +345,7 @@
       "documentationFamily": "ENGINEERING",
       "kindCandidate": "DETERMINISTIC_DATAPACK_BUILDER",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/datapack/build-datapack.mjs:6cbd2b87f911f0b0ce43be73fb4b291f47a6348b",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/datapack/build-datapack.mjs:6cbd2b87f911f0b0ce43be73fb4b291f47a6348b",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/51",
@@ -369,8 +369,8 @@
       "reviewTrigger": [
         "event:builder-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/datapack/build-datapack.mjs:6cbd2b87f911f0b0ce43be73fb4b291f47a6348b",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/datapack/build-datapack.mjs:6cbd2b87f911f0b0ce43be73fb4b291f47a6348b",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/51"
@@ -395,7 +395,7 @@
       "documentationFamily": "OPERATIONS_RELIABILITY",
       "kindCandidate": "SOURCE_ADMISSION_OPERATION_CONTRACT",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/28",
@@ -419,8 +419,8 @@
       "reviewTrigger": [
         "event:source-admission-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/datapack/source-admission-runbook.json:86e4b668413bf91b90b4fb9976b485cdd7c56815",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/28"
@@ -445,7 +445,7 @@
       "documentationFamily": "SECURITY_PRIVACY",
       "kindCandidate": "SOURCE_GOVERNANCE_LICENSE_RETENTION_POLICY",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/datapack/source-governance-policy.json:cdacd5175884ae86677c65fa8d249a7da1d23990",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/datapack/source-governance-policy.json:cdacd5175884ae86677c65fa8d249a7da1d23990",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/29",
@@ -469,8 +469,8 @@
       "reviewTrigger": [
         "event:source-governance-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/datapack/source-governance-policy.json:cdacd5175884ae86677c65fa8d249a7da1d23990",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/datapack/source-governance-policy.json:cdacd5175884ae86677c65fa8d249a7da1d23990",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/29"
@@ -495,7 +495,7 @@
       "documentationFamily": "USER_SUPPORT_LEGAL_PUBLIC",
       "kindCandidate": "ROUTE_MAP_LICENSE_DECISION",
       "sourceSurface": "TRACKED",
-      "canonicalIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
+      "canonicalIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
       "status": "ACTIVE",
       "ownerRepository": "AquilaXk/easysubway-data",
       "ownerIssue": "https://github.com/AquilaXk/easysubway-data/issues/21",
@@ -519,8 +519,8 @@
       "reviewTrigger": [
         "event:license-decision-change"
       ],
-      "lastVerifiedAt": "2026-10-10T04:45:05.364Z",
-      "lastVerifiedIdentity": "git:d9fb055eea83b696d3fb02fe5f045c987a1d342f:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
+      "lastVerifiedAt": "2026-10-10T14:17:38.500Z",
+      "lastVerifiedIdentity": "git:dfd2505b76f114d492ccb11d2d42cca6d57696e4:tools/route-map/route-map-license-decision.json:272a4bdb05f2bdefb51256ceeed67561d95d8759",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
         "https://github.com/AquilaXk/easysubway-data/issues/21"
