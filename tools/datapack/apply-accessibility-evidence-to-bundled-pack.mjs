@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { gunzipSync, gzipSync, constants as zlibConstants } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
@@ -53,6 +53,13 @@ const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
   "serviceCalendars", "serviceCalendarDates", "transitRoutes", "transitTrips",
   "transitStopTimes", "officialOdFareQuotes",
 ]);
+
+/** 번들 팩 gzip: level 9·mtime 0·OS 표지 255. 같은 입력이면 같은 바이트(Node 24.19.0 번들 zlib). */
+export function gzipBundledPack(sqliteBytes) {
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  gzipBytes[9] = 255;
+  return gzipBytes;
+}
 
 class StaleAccessibilityEvidenceError extends Error {}
 
@@ -680,8 +687,7 @@ async function stripLegacyCore({ check }) {
       }
       return;
     }
-    const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
-    gzipBytes[9] = 255;
+    const gzipBytes = gzipBundledPack(sqliteBytes);
     const index = JSON.parse(await readFile(indexPath, "utf8"));
     const entry = index.packs.find(({ id }) => id === "core");
     if (!entry) throw new Error("core pack index entry is missing");
@@ -948,8 +954,7 @@ async function main() {
     applyEvidenceIfStale(sqlitePath, pack);
     assertEvidence(sqlitePath, pack);
     const sqliteBytes = await readFile(sqlitePath);
-    const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0, strategy: zlibConstants.Z_RLE });
-    gzipBytes[9] = 255;
+    const gzipBytes = gzipBundledPack(sqliteBytes);
     const index = JSON.parse(await readFile(indexPath, "utf8"));
     const entry = index.packs.find(({ id }) => id === "capital");
     if (!entry) throw new Error("capital pack index entry is missing");

@@ -7,6 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import {
   accessibilityIndexMetadata,
@@ -16,6 +17,7 @@ import {
   stripLegacyCoreClaims,
   syncAccessibilityEdges,
   currentCandidateReleaseSnapshots,
+  gzipBundledPack,
   overlayReviewedSourcesOnCanonicalRoster,
   syncReleaseEvidence,
   syncCanonicalFixture,
@@ -765,4 +767,28 @@ test("canonical sync retains dynamic station facilities and preserves proven ele
   ];
   const syncedStandard = syncCanonicalFixture(canonicalWithStandardExit, reviewedPack);
   assert.equal(syncedStandard.packs[0].stationExits[0].hasElevatorConnection, true);
+});
+
+// #1000: Z_RLE는 거리 1 반복만 찾아 SQLite 페이지·인덱스에서 LZ77 일치를 쓰지 못해 번들 팩을 다시 키웠다(#998).
+test("번들 팩 gzip은 기본 level 9 대비 1.05배 이내로 압축되고 결정성 규약을 유지한다", () => {
+  const database = new DatabaseSync(":memory:");
+  database.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT); CREATE INDEX t_a ON t (a);");
+  const insert = database.prepare("INSERT INTO t (a, b) VALUES (?, ?)");
+  for (let index = 0; index < 4000; index += 1) insert.run(`station-${index % 400}`, `seoul-metro-line-${index % 9}-platform-${index}`);
+  const sqliteBytes = Buffer.from(database.serialize());
+  database.close();
+
+  const compressed = gzipBundledPack(sqliteBytes);
+  const baseline = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  assert.ok(
+    compressed.length <= baseline.length * 1.05,
+    `compressed ${compressed.length} B exceeds 1.05x of default level 9 ${baseline.length} B`,
+  );
+  assert.equal(createHash("sha256").update(gunzipSync(compressed)).digest("hex"), createHash("sha256").update(sqliteBytes).digest("hex"));
+  assert.deepEqual([...compressed.subarray(0, 8)], [0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0]);
+  assert.equal(compressed[9], 255);
+  const expected = Buffer.from(baseline);
+  expected[9] = 255;
+  assert.deepEqual(compressed, expected);
+  assert.deepEqual(gzipBundledPack(sqliteBytes), compressed);
 });
