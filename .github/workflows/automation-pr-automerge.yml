@@ -13,7 +13,7 @@ name: Automation PR Automerge
 # - 저장소 변수 DATAPACK_AUTOMATION_AUTOMERGE가 true일 때만 돈다(기본 꺼짐, 코드가 켜지 않는다). 변수는 QA 보고 뒤 별도 설정 변경으로만 켠다.
 #   꺼져 있으면 코디네이터도 자동화 경로를 인정하지 않는다.
 # - 재실행 변수 DATAPACK_AUTOMATION_CI_RERUN이 true이면 CI 첫 시도(run_attempt 1)의 failure 완료는 건너뛴다(#1115): automation-pr-ci-rerun.yml이 실패한 job을 한 번 다시 실행하고,
-#   일시 오류로 풀리면 두 번째 시도의 성공 완료에서 이 workflow가 이어진다. 두 번째 시도도 실패하면 건너뛰지 않으므로 지금처럼 AUTOMATION_PR_CI 위반으로 실패해 실패 이슈(#926)가 된다.
+#   일시 오류로 풀리면 두 번째 시도의 성공 완료에서 이 workflow가 이어진다. 재실행하지 않기로 한 실패는 그 workflow가 실패해 실패 이슈로 드러난다. 두 번째 시도도 실패하면 건너뛰지 않으므로 지금처럼 AUTOMATION_PR_CI 위반으로 실패해 실패 이슈(#926)가 된다.
 on:
   workflow_run:
     workflows: [CI]
