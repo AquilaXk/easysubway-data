@@ -41,9 +41,10 @@ export const rerunMarker = (runId) => `<!-- Automation CI rerun: ${runId} -->`;
 const isBotComment = (comment) => comment?.user?.login === AUTOMATION_PR_ACTIONS_BOT.login
   && comment.user.id === AUTOMATION_PR_ACTIONS_BOT.id && comment.user.type === AUTOMATION_PR_ACTIONS_BOT.type;
 
-// job 이름은 PR head의 ci.yml이 정한다. 코멘트에 그대로 넣기 전에 제어·서식(양방향 제어 포함) 문자와 HTML 주석 표지를 지우고 길이를 제한한다.
+// job 이름은 PR head의 ci.yml이 정한다. 코멘트에 그대로 넣기 전에 제어·서식(양방향 제어 포함) 문자와 HTML 표지(<, >)·마크다운 링크 문자([, ], `)를 지우고 길이를 제한한다.
+// 표식 주석(<!-- ... -->)을 흉내 내거나 링크를 닫을 수 없게 문자 자체를 없앤다.
 function displayName(value) {
-  const cleaned = String(value ?? "").replaceAll(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").replaceAll(/<!--|-->/gu, " ").replaceAll(/\s+/gu, " ").trim();
+  const cleaned = String(value ?? "").replaceAll(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}<>[\]`]/gu, " ").replaceAll(/\s+/gu, " ").trim();
   return [...cleaned].slice(0, JOB_NAME_MAX_CHARS).join("") || "(이름 없음)";
 }
 
@@ -51,7 +52,7 @@ function commentBody({ runId, runUrl, failed }) {
   const shown = failed.slice(0, RERUN_COMMENT_JOB_LIMIT);
   return [
     rerunMarker(runId),
-    `CI가 첫 시도에서 실패해 실패한 job만 한 번 다시 실행했습니다(시도 1 -> 2, [run ${runId}](${runUrl})).`,
+    `CI가 첫 시도에서 실패해 실패한 job만 한 번 다시 실행했습니다([run ${runId}](${runUrl}), 시도 1에서 2로).`,
     "",
     "첫 시도에서 실패한 job",
     ...shown.map((item) => `- [${displayName(item.name)}](${item.html_url})`),
