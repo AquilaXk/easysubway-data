@@ -42,6 +42,9 @@ function stageInputFixture(destination) {
 // 리터럴이면 승격이 ITX 증거를 새로 수집할 때마다 운행일이 밀려 "오늘~13일" 승격 창을 벗어난다(#1108, #1124).
 // 현재 수집 시각 1시간 뒤는 같은 KST 날(자정 직전이면 다음 날) 안에 있고, 운행일(수집 시각 이후 최대 6일)을 7일 옮겨도 창 안에 남는다.
 const currentItxObservedAt = Date.parse(json(path.join(root, json(path.join(root, CONTRACT)).sourceTimetableArtifact.completenessEvidencePath)).observedAt);
+assert.ok(Number.isFinite(currentItxObservedAt), "현재 ITX 완결성 증거의 observedAt을 읽지 못했다(파일·형식 확인 필요)");
+// 기준은 현재 ITX 증거의 수집 시각이다. ITX는 하루 1회 수집되는 가장 짧은 주기 원천이라 대개 현재 원천들 중 가장 최신이고,
+// 그때 "현재 원천들과 같은 날"과 같은 뜻이 된다. 다른 원천이 더 최신이어도 사례가 확인하는 승격 창 판정은 ITX 수집 시각 기준이다.
 const SAME_DAY_AS_CURRENT_SOURCES_MS = 60 * 60 * 1000;
 const SCENARIOS = [
   { label: "수집 시각이 직전 수집 7일 뒤", synthesisOptions: {} },
