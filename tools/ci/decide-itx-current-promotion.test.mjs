@@ -155,17 +155,16 @@ test("재생 요청은 수집할 때가 아니어도, 같은 KST 날 이미 수�
   assert.equal(decide({ now: kst("2026-10-10") }).replayRunId, undefined);
 });
 
-test("재생 요청도 열린 PR·중복·닫힌 PR·고아 브랜치·대기 PR 판정은 그대로 받는다", () => {
+test("재생 요청도 열린 PR·중복·닫힌 PR·고아 브랜치 판정은 그대로 받고, 대기 PR이 있으면 기다리지 않고 실패한다", () => {
   const replayRunId = "38062621511";
   assert.equal(decide({ replayRunId, pullRequests: [pr()], branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }).state, "OPEN_PR");
   assert.throws(() => decide({ replayRunId, pullRequests: [pr(), pr({ number: 991, headRefName: `${ITX_PROMOTION_CLAIM_PREFIX}124` })], branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }, { branch: `${ITX_PROMOTION_CLAIM_PREFIX}124` }] }), /ITX_PROMOTION_PR_DUPLICATE/u);
   assert.throws(() => decide({ replayRunId, pullRequests: [pr({ state: "CLOSED" })], branches: [] }), /ITX_PROMOTION_PR_CLOSED/u);
   assert.throws(() => decide({ replayRunId, branches: [{ branch: `${ITX_PROMOTION_CLAIM_PREFIX}123` }] }), /ITX_PROMOTION_ORPHAN_BRANCH/u);
   const other = pr({ number: 980, headRefName: "automation/456-capital-topology-registration-55" });
-  assert.deepEqual(
-    (({ state, blockedBy }) => ({ state, blockedBy }))(decide({ now: kst("2026-10-06"), pullRequests: [other], replayRunId })),
-    { state: "BLOCKED_BY_PENDING_PR", blockedBy: [980] },
-  );
+  // 재생 요청은 기다리지 않고 실패한다: 기다리는 동안 입력 없이 다시 도는 실행은 ITX_COLLECTED_TODAY로 끝나 수집분을 잃는다.
+  assert.throws(() => decide({ now: kst("2026-10-06"), pullRequests: [other], replayRunId }), /ITX_PROMOTION_REPLAY_BLOCKED: replay of run 38062621511 is blocked by #980/u);
+  assert.equal(decide({ now: kst("2026-10-06"), pullRequests: [other], force: true }).state, "BLOCKED_BY_PENDING_PR");
 });
 
 test("재생 요청의 run id는 양의 정수 문자열만 받는다. 아니면 추정하지 않고 실패한다", () => {
