@@ -1,4 +1,5 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { isTransientStatus, withTransientRetry } from "./lib/transient-retry.mjs";
 import { request as httpsRequest } from "node:https";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -127,6 +128,8 @@ export async function fetchKasiPublicHolidayCalendarObservation({
   months,
   fetchImpl,
   httpsRequestImpl = httpsRequest,
+  sleepImpl,
+  retryBudget,
 } = {}) {
   const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey, { label: "DATA_GO_KR_SERVICE_KEY" });
   if (!Number.isInteger(year) || year < 2000 || year > 9999) throw new Error("KASI public holiday year is invalid");
@@ -146,8 +149,8 @@ export async function fetchKasiPublicHolidayCalendarObservation({
     const request = fetchImpl
       ? (options) => fetchImpl(url, options)
       : (options) => nativeHttpsGet(url, options, httpsRequestImpl);
-    const { response, attemptCount } = await fetchKasiMonth(request);
-    const { raw, xml, dates } = await readKasiMonthResponse(response, { year, month, attemptCount });
+    const fetched = await fetchKasiMonth(request, { sleepImpl, retryBudget });
+    const { raw, xml, dates } = readKasiMonthResponse(fetched, { year, month });
     for (const date of dates) holidays.add(date);
     observations.push({ year, month, raw, xml, sha256: createHash("sha256").update(raw).digest("hex"),
       retrievedAt: new Date().toISOString() });
@@ -155,14 +158,8 @@ export async function fetchKasiPublicHolidayCalendarObservation({
   return { holidays, months: observations };
 }
 
-async function readKasiMonthResponse(response, { year, month, attemptCount }) {
+function readKasiMonthResponse({ response, raw, attemptCount }, { year, month }) {
     if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
-    let raw;
-    try {
-      raw = Buffer.from(await response.arrayBuffer());
-    } catch (error) {
-      throw transportFailure(error, attemptCount);
-    }
     let xml;
     try { xml = new TextDecoder("utf-8", { fatal: true }).decode(raw); }
     catch (error) { throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount); }
@@ -175,21 +172,46 @@ async function readKasiMonthResponse(response, { year, month, attemptCount }) {
     return { raw, xml, dates };
 }
 
-async function fetchKasiMonth(request) {
-  const transportAttempts = [];
-  for (let attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
-    try {
-      const options = { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml, text/xml" } };
-      const response = await request(options);
-      return { response, attemptCount };
-    } catch (error) {
-      const attempt = closedTransportAttempt(error, attemptCount);
-      if (attempt !== null) transportAttempts.push(attempt);
-      const failure = transportFailure(error, attemptCount, transportAttempts);
-      if (failure.failureCategory !== "NETWORK_CONNECT_TIMEOUT" || attemptCount !== 1) throw failure;
-    }
+// data.go.kr 공통 오류 envelope의 resultCode 99(UNKNOWN_ERROR)는 TAGO와 같은 일시 오류다. 다른 resultCode(22·23 쿼터, 30 인증 등)는 재시도하지 않는다.
+const TRANSIENT_PROVIDER_RESULT_CODE = "99";
+function isTransientProviderBody(raw) {
+  try {
+    return scalar(singleElement(new TextDecoder("utf-8", { fatal: true }).decode(raw), "header"), "resultCode") === TRANSIENT_PROVIDER_RESULT_CODE;
+  } catch {
+    return false;
   }
-  throw new Error("KASI public holiday request did not complete");
+}
+
+/**
+ * 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, resultCode 99, 연결·요청·본문 timeout 등 전송 오류)면 같은 요청을 다시 보낸다(#1099).
+ * 쿼터·인증·형식 오류는 재시도하지 않는다. 한도(5번)를 다 쓰면 마지막 응답/오류를 기존 분류(KASI_HTTP·KASI_SCHEMA·NETWORK_*)로 드러낸다.
+ */
+async function fetchKasiMonth(request, { sleepImpl, retryBudget }) {
+  const transportAttempts = [];
+  let attemptCount = 0;
+  let outcome;
+  try {
+    outcome = await withTransientRetry(async ({ attemptNumber }) => {
+      attemptCount = attemptNumber;
+      try {
+        const options = { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml, text/xml" } };
+        const response = await request(options);
+        if (!response?.ok) return { response, raw: null };
+        return { response, raw: Buffer.from(await response.arrayBuffer()) };
+      } catch (error) {
+        const attempt = closedTransportAttempt(error, attemptNumber);
+        if (attempt !== null) transportAttempts.push(attempt);
+        throw error;
+      }
+    }, {
+      isTransientResult: ({ response, raw }) => isTransientStatus(response?.status) || (raw !== null && isTransientProviderBody(raw)),
+      sleep: sleepImpl,
+      budget: retryBudget,
+    });
+  } catch (error) {
+    throw transportFailure(error, attemptCount, transportAttempts);
+  }
+  return { ...outcome, attemptCount };
 }
 
 function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }

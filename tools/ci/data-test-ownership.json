@@ -272,6 +272,10 @@
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1097",
       "title": "[CI] 정기 workflow가 차단 PR 때문에 잃은 슬롯을 차단 해소 뒤 자동으로 다시 dispatch"
     },
+    "data1099": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1099",
+      "title": "[Fix] 수집기가 공급자 일시 오류(408·5xx·전송 오류·본문 timeout)를 재시도하지 않아 run 전체가 실패"
+    },
     "data870": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/870",
       "title": "[Refactor] 데이터 파이프라인 운영 방식 전환: 자동 갱신·개발/발행 게이트 분리·생성 산출물 축소"
@@ -439,6 +443,7 @@
     {"path":"tools/ci/automation-status-publish-workflow.test.mjs","semanticOwner":"data1084","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/redispatch-blocked-workflows.test.mjs","semanticOwner":"data1097","classes":["required-pr"],"durationMs":80},
     {"path":"tools/ci/automation-blocked-redispatch-workflow.test.mjs","semanticOwner":"data1097","classes":["required-pr"],"durationMs":20},
+    {"path":"tools/datapack/lib/transient-retry.test.mjs","semanticOwner":"data1099","classes":["required-pr"],"durationMs":60},
     {"path":"tools/ci/data-test-discovery.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":31},
     {"path":"tools/ci/decide-current-capital-topology-refresh.test.mjs","semanticOwner":"data636","classes":["required-pr"],"durationMs":178},
     {"path":"tools/ci/decide-current-kric-facility-refresh.test.mjs","semanticOwner":"data629","classes":["required-pr"],"durationMs":35},

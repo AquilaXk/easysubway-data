@@ -3,6 +3,8 @@
 // 어느 단계든 기대한 형태가 아니면 명시적으로 실패하며 이전·추정 URL이나 본문으로 대체하지 않는다.
 import { createHash } from "node:crypto";
 
+import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./transient-retry.mjs";
+
 const ORIGIN = "https://www.data.go.kr";
 const USER_AGENT = "easysubway-datapack-collector/1.0";
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -85,31 +87,45 @@ export function parseDataGoDownloadAction(html, datasetId) {
   return [...actions.values()][0];
 }
 
-async function requestGet(fetchImpl, url, headers, label) {
-  const response = await fetchImpl(url, {
-    method: "GET",
-    redirect: "error",
-    headers: { "User-Agent": USER_AGENT, ...headers },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`data.go.kr ${label} HTTP ${response.status}`);
-  return response;
+// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
+// 인증·쿼터·내용 오류(HTTP 4xx, 허용 밖 content-type 등)는 재시도하지 않는다. 한도를 다 쓰면 마지막 HTTP 오류나 전송 오류를 그대로 던진다.
+async function requestGet(fetchImpl, url, headers, label, read, { sleepImpl, retryBudget } = {}) {
+  let outcome;
+  try {
+    outcome = await withTransientRetry(async () => {
+      const response = await fetchImpl(url, {
+        method: "GET",
+        redirect: "error",
+        headers: { "User-Agent": USER_AGENT, ...headers },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        try { await response.body?.cancel(); } catch { /* best effort */ }
+        return { response };
+      }
+      return { response, value: await read(response) };
+    }, { isTransientResult: ({ response }) => isTransientStatus(response.status), sleep: sleepImpl, budget: retryBudget });
+  } catch (error) {
+    throw unwrapTransientRetryFailure(error);
+  }
+  if (!outcome.response.ok) throw new Error(`data.go.kr ${label} HTTP ${outcome.response.status}`);
+  return outcome.value;
 }
 
-export async function resolveDataGoFileDownload(fetchImpl, datasetId) {
+export async function resolveDataGoFileDownload(fetchImpl, datasetId, retry = {}) {
   const detailUrl = dataGoDetailUrl(datasetId);
-  const detail = await requestGet(fetchImpl, detailUrl, {}, `${datasetId} detail`);
-  const action = parseDataGoDownloadAction(await detail.text(), datasetId);
+  const detailHtml = await requestGet(fetchImpl, detailUrl, {}, `${datasetId} detail`, (response) => response.text(), retry);
+  const action = parseDataGoDownloadAction(detailHtml, datasetId);
   const lookupUrl = new URL("/tcs/dss/selectFileDataDownload.do", ORIGIN);
   lookupUrl.searchParams.set("publicDataPk", action.publicDataPk);
   lookupUrl.searchParams.set("publicDataDetailPk", action.publicDataDetailPk);
   lookupUrl.searchParams.set("atchFileId", "");
   lookupUrl.searchParams.set("fileDetailSn", action.fileDetailSn);
   lookupUrl.searchParams.set("publicDataTyCode", PUBLIC_DATA_TYPE_CODE);
-  const lookup = await requestGet(fetchImpl, lookupUrl.toString(), { Referer: detailUrl }, `${datasetId} download lookup`);
+  const lookupText = await requestGet(fetchImpl, lookupUrl.toString(), { Referer: detailUrl }, `${datasetId} download lookup`, (response) => response.text(), retry);
   let body;
   try {
-    body = JSON.parse(await lookup.text());
+    body = JSON.parse(lookupText);
   } catch {
     throw new Error(`data.go.kr ${datasetId} download lookup is not JSON`);
   }
@@ -145,17 +161,18 @@ async function readLimitedBody(response, datasetId, maxBytes) {
   return Buffer.concat(chunks);
 }
 
-export async function downloadDataGoFile(fetchImpl, datasetId, { maxBytes = MAX_DATA_GO_FILE_BYTES } = {}) {
-  const { detailUrl, downloadUrl } = await resolveDataGoFileDownload(fetchImpl, datasetId);
+export async function downloadDataGoFile(fetchImpl, datasetId, { maxBytes = MAX_DATA_GO_FILE_BYTES, ...retry } = {}) {
+  const { detailUrl, downloadUrl } = await resolveDataGoFileDownload(fetchImpl, datasetId, retry);
   if (!isCanonicalDataGoDownloadUrl(downloadUrl)) {
     throw new Error(`data.go.kr ${datasetId} download URL is invalid`);
   }
-  const response = await requestGet(fetchImpl, downloadUrl, { Referer: detailUrl }, `${datasetId} file`);
-  const contentType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-  if (!ALLOWED_DATA_GO_FILE_TYPES.includes(contentType)) {
-    throw new Error(`data.go.kr ${datasetId} file content-type is not allowed`);
-  }
-  const bytes = await readLimitedBody(response, datasetId, maxBytes);
+  const bytes = await requestGet(fetchImpl, downloadUrl, { Referer: detailUrl }, `${datasetId} file`, async (response) => {
+    const contentType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    if (!ALLOWED_DATA_GO_FILE_TYPES.includes(contentType)) {
+      throw new Error(`data.go.kr ${datasetId} file content-type is not allowed`);
+    }
+    return readLimitedBody(response, datasetId, maxBytes);
+  }, retry);
   if (bytes.byteLength === 0) throw new Error(`data.go.kr ${datasetId} file is empty`);
   // 허용된 content-type으로 내려온 오류 페이지(HTML)도 데이터 파일로 받지 않는다.
   if (HTML_DOCUMENT_START.test(bytes.subarray(0, 512).toString("utf8").replace(/^\ufeff/u, "").trimStart())) {
@@ -165,8 +182,8 @@ export async function downloadDataGoFile(fetchImpl, datasetId, { maxBytes = MAX_
 }
 
 // 같은 수집기의 FILE을 모두 받는다. 하나라도 실패하면 전체가 실패하고, provenance는 datasetIds 순서를 따른다.
-export async function downloadDataGoFiles(fetchImpl, datasetIds) {
-  const downloads = await Promise.all(datasetIds.map((datasetId) => downloadDataGoFile(fetchImpl, datasetId)));
+export async function downloadDataGoFiles(fetchImpl, datasetIds, retry = {}) {
+  const downloads = await Promise.all(datasetIds.map((datasetId) => downloadDataGoFile(fetchImpl, datasetId, retry)));
   return {
     bytes: downloads.map(({ bytes }) => bytes),
     downloadProvenance: downloads.map(({ datasetId, detailUrl, downloadUrl, rawSha256 }) => (

@@ -273,22 +273,32 @@ function safeFailureCategory(value) {
   return categories.has(value) ? value : "KASI_FAILURE";
 }
 
+// #1099: KASI는 일시 오류를 첫 시도 뒤 최대 5번 다시 보내므로 시도는 1~6번이다.
+const KASI_MAX_ATTEMPTS = 6;
+
 function safeAttemptCount(value) {
-  return value === 1 || value === 2 ? value : 1;
+  return Number.isSafeInteger(value) && value >= 1 && value <= KASI_MAX_ATTEMPTS ? value : 1;
 }
 
 function safeTransportAttempts(value) {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 2) return [];
+  if (!Array.isArray(value) || value.length < 1 || value.length > KASI_MAX_ATTEMPTS) return [];
   for (let index = 0; index < value.length; index += 1) {
     if (!Object.hasOwn(value, index)) return [];
   }
   const phases = new Set(["DNS_LOOKUP", "TCP_CONNECT", "TLS_HANDSHAKE", "RESPONSE_HEADERS", "UNKNOWN"]);
-  return value.map((attempt, index) => ({
-    attemptCount: attempt?.attemptCount === index + 1 ? attempt.attemptCount : index + 1,
-    failurePhase: phases.has(attempt?.failurePhase) ? attempt.failurePhase : "UNKNOWN",
-    ipv4AttemptCount: safeFamilyAttemptCount(attempt?.ipv4AttemptCount),
-    ipv6AttemptCount: safeFamilyAttemptCount(attempt?.ipv6AttemptCount),
-  }));
+  // 진단은 전송 오류로 끝난 시도만 담는다. attemptCount는 실제 시도 번호이고 순서대로 늘어야 한다. 어긋나면 자리 번호(index + 1)로 닫는다.
+  let previous = 0;
+  return value.map((attempt, index) => {
+    const claimed = attempt?.attemptCount;
+    const attemptCount = Number.isSafeInteger(claimed) && claimed > previous && claimed <= KASI_MAX_ATTEMPTS ? claimed : Math.min(KASI_MAX_ATTEMPTS, Math.max(index + 1, previous + 1));
+    previous = attemptCount;
+    return {
+      attemptCount,
+      failurePhase: phases.has(attempt?.failurePhase) ? attempt.failurePhase : "UNKNOWN",
+      ipv4AttemptCount: safeFamilyAttemptCount(attempt?.ipv4AttemptCount),
+      ipv6AttemptCount: safeFamilyAttemptCount(attempt?.ipv6AttemptCount),
+    };
+  });
 }
 
 function safeFamilyAttemptCount(value) {

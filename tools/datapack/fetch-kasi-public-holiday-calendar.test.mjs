@@ -5,11 +5,15 @@ import { mkdtemp, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 import { readKasiHolidayCalendarFiles, collectKasiHolidayCalendarFiles, collectKasiHolidayCalendarWindowFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
+
+// 재시도 대기와 예산을 테스트마다 격리한다(실제 1·2·4·8·16초를 기다리지 않고, 프로세스 공용 예산을 소모하지 않는다).
+const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
 
 test("KASI calendar는 유효한 year·months에서 malformed credential을 request URL·provider 호출 전에 거부한다", async () => {
   let calls = 0;
-  await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "invalid%ZZ", year: 2026, months: [7], fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(), serviceKey: "invalid%ZZ", year: 2026, months: [7], fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 
@@ -88,7 +92,7 @@ test("retained KASI month는 설날·추석 이름의 공휴일을 명절 날짜
 test("KASI observation retains reusable monthly XML without an extra request", async () => {
   let calls = 0;
   const xml = holidayXml([{ date: "20400102", holiday: "Y" }]);
-  const result = await fetchKasiPublicHolidayCalendarObservation({ serviceKey: "test-key", year: 2040, months: [1, 1],
+  const result = await fetchKasiPublicHolidayCalendarObservation({ ...retryFast(), serviceKey: "test-key", year: 2040, months: [1, 1],
     fetchImpl: async () => { calls += 1; return { ok: true, arrayBuffer: async () => Buffer.from(xml) }; } });
   assert.equal(calls, 1);
   assert.deepEqual([...result.holidays], ["20400102"]);
@@ -104,7 +108,7 @@ test("KASI observation retains reusable monthly XML without an extra request", a
 test("KASI observation hashes and retains the exact BOM-prefixed response bytes", async () => {
   const xml = holidayXml([{ date: "20400102", holiday: "Y" }]);
   const raw = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(xml)]);
-  const observation = await fetchKasiPublicHolidayCalendarObservation({ serviceKey: "test-key", year: 2040, months: [1],
+  const observation = await fetchKasiPublicHolidayCalendarObservation({ ...retryFast(), serviceKey: "test-key", year: 2040, months: [1],
     fetchImpl: async () => ({ ok: true, arrayBuffer: async () => raw }) });
   assert.deepEqual(observation.months[0].raw, raw);
   assert.equal(observation.months[0].sha256, createHash("sha256").update(raw).digest("hex"));
@@ -119,7 +123,7 @@ test("KASI observation hashes and retains the exact BOM-prefixed response bytes"
 
 test("KASI rejects malformed UTF-8 before it writes a success manifest", async () => {
   const raw = Buffer.from([0xc3, 0x28]);
-  await assert.rejects(fetchKasiPublicHolidayCalendarObservation({ serviceKey: "test-key", year: 2040, months: [1],
+  await assert.rejects(fetchKasiPublicHolidayCalendarObservation({ ...retryFast(), serviceKey: "test-key", year: 2040, months: [1],
     fetchImpl: async () => ({ ok: true, arrayBuffer: async () => raw }) }), { failureCategory: "KASI_SCHEMA", attemptCount: 1 });
   const root = await mkdtemp(path.join(tmpdir(), "kasi-utf8-test-"));
   try {
@@ -154,7 +158,7 @@ test("KASI collection writes reusable files once and rejects an existing output 
 
 test("KASI 기본 전송은 내장 HTTPS request seam으로 정확한 GET 요청을 한 번 종료한다", async () => {
   const requests = [];
-  const holidays = await fetchKasiPublicHolidayCalendar({
+  const holidays = await fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -238,7 +242,7 @@ test("KASI native HTTPS non-2xx·stream·request·abort failure는 fail closed�
     [nativeFailure({ requestError: Object.assign(new Error("abort"), { name: "AbortError" }), secureConnected: true }), /NETWORK_REQUEST_TIMEOUT$/],
   ];
   for (const [httpsRequestImpl, expectation] of cases) {
-    await assert.rejects(fetchKasiPublicHolidayCalendar({
+    await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
       serviceKey: "test-key",
       year: 2026,
       months: [7],
@@ -253,7 +257,8 @@ test("KASI native HTTPS의 explicit DNS·TLS 오류도 closed phase와 family co
       error: Object.assign(new Error("raw dns provider.invalid"), { code: "ENOTFOUND" }),
       beforeError() {},
       failureCategory: "NETWORK_DNS",
-      transportAttempt: { attemptCount: 1, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 },
+      // ENOTFOUND는 고정된 공식 호스트의 DNS 일시 실패라 재시도 대상이다(#1099): 첫 시도 + 5번.
+      transportAttempts: [1, 2, 3, 4, 5, 6].map((attemptCount) => ({ attemptCount, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 })),
     },
     {
       error: Object.assign(new Error("raw tls provider.invalid"), { code: "CERT_HAS_EXPIRED" }),
@@ -263,12 +268,13 @@ test("KASI native HTTPS의 explicit DNS·TLS 오류도 closed phase와 family co
         socketListeners.get("connect")?.();
       },
       failureCategory: "NETWORK_TLS",
-      transportAttempt: { attemptCount: 1, failurePhase: "TLS_HANDSHAKE", ipv4AttemptCount: 1, ipv6AttemptCount: 0 },
+      // 인증서 오류는 같은 요청을 다시 보내도 풀리지 않으므로 재시도하지 않는다.
+      transportAttempts: [{ attemptCount: 1, failurePhase: "TLS_HANDSHAKE", ipv4AttemptCount: 1, ipv6AttemptCount: 0 }],
     },
   ];
-  for (const { error, beforeError, failureCategory, transportAttempt } of cases) {
+  for (const { error, beforeError, failureCategory, transportAttempts } of cases) {
     let calls = 0;
-    await assert.rejects(fetchKasiPublicHolidayCalendar({
+    await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
       serviceKey: "test-key",
       year: 2026,
       months: [7],
@@ -295,17 +301,18 @@ test("KASI native HTTPS의 explicit DNS·TLS 오류도 closed phase와 family co
       },
     }), (failure) => {
       assert.equal(failure.failureCategory, failureCategory);
-      assert.deepEqual(failure.transportAttempts, [transportAttempt]);
+      assert.deepEqual(failure.transportAttempts, transportAttempts);
+      assert.equal(failure.attemptCount, transportAttempts.length);
       assert.doesNotMatch(JSON.stringify(failure.transportAttempts), /198\.51\.100|provider\.invalid|raw/);
       return true;
     });
-    assert.equal(calls, 1);
+    assert.equal(calls, transportAttempts.length);
   }
 });
 
 test("KASI native HTTPS는 TLS secureConnect 전 AbortError만 connect timeout으로 한 번 재시도한다", async () => {
   let calls = 0;
-  const holidays = await fetchKasiPublicHolidayCalendar({
+  const holidays = await fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -342,9 +349,9 @@ test("KASI native HTTPS는 TLS secureConnect 전 AbortError만 connect timeout�
   assert.deepEqual([...holidays], ["20260717"]);
 });
 
-test("KASI native HTTPS 최종 connect timeout은 두 attempt의 closed DNS·TCP·TLS phase와 family count만 보존한다", async () => {
+test("KASI native HTTPS 최종 connect timeout은 여섯 attempt의 closed DNS·TCP·TLS phase와 family count만 보존한다", async () => {
   let calls = 0;
-  await assert.rejects(fetchKasiPublicHolidayCalendar({
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -364,7 +371,7 @@ test("KASI native HTTPS 최종 connect timeout은 두 attempt의 closed DNS·TCP
             requestListeners.get("socket")?.(socket);
             socketListeners.get("lookup")?.(null, "198.51.100.7", calls === 1 ? 6 : 4, "provider.invalid");
             socketListeners.get("connectionAttempt")?.("198.51.100.7", 443, calls === 1 ? 6 : 4);
-            if (calls === 2) socketListeners.get("connect")?.();
+            if (calls >= 2) socketListeners.get("connect")?.();
             requestListeners.get("error")?.(Object.assign(new Error("raw provider.invalid 198.51.100.7 secret-key"), {
               name: "AbortError",
               code: "ABORT_ERR",
@@ -376,19 +383,19 @@ test("KASI native HTTPS 최종 connect timeout은 두 attempt의 closed DNS·TCP
     },
   }), (error) => {
     assert.equal(error.failureCategory, "NETWORK_CONNECT_TIMEOUT");
-    assert.equal(error.attemptCount, 2);
+    assert.equal(error.attemptCount, 6);
     assert.deepEqual(error.transportAttempts, [
       { attemptCount: 1, failurePhase: "TCP_CONNECT", ipv4AttemptCount: 0, ipv6AttemptCount: 1 },
-      { attemptCount: 2, failurePhase: "TLS_HANDSHAKE", ipv4AttemptCount: 1, ipv6AttemptCount: 0 },
+      ...[2, 3, 4, 5, 6].map((attemptCount) => ({ attemptCount, failurePhase: "TLS_HANDSHAKE", ipv4AttemptCount: 1, ipv6AttemptCount: 0 })),
     ]);
     assert.doesNotMatch(JSON.stringify(error.transportAttempts), /198\.51\.100|provider\.invalid|secret-key|raw/);
     return true;
   });
-  assert.equal(calls, 2);
+  assert.equal(calls, 6);
 });
 
-test("KASI native HTTPS는 lookup 전 두 abort를 DNS_LOOKUP phase로 닫는다", async () => {
-  await assert.rejects(fetchKasiPublicHolidayCalendar({
+test("KASI native HTTPS는 lookup 전 abort를 시도마다 DNS_LOOKUP phase로 닫는다", async () => {
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -407,17 +414,14 @@ test("KASI native HTTPS는 lookup 전 두 abort를 DNS_LOOKUP phase로 닫는다
       return request;
     },
   }), (error) => {
-    assert.deepEqual(error.transportAttempts, [
-      { attemptCount: 1, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 },
-      { attemptCount: 2, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 },
-    ]);
+    assert.deepEqual(error.transportAttempts, [1, 2, 3, 4, 5, 6].map((attemptCount) => ({ attemptCount, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 })));
     return true;
   });
 });
 
-test("KASI native HTTPS는 TLS secureConnect 뒤 AbortError를 request timeout으로 fail closed하고 재시도하지 않는다", async () => {
+test("KASI native HTTPS는 TLS secureConnect 뒤 AbortError도 request timeout으로 같은 요청을 5번 다시 보낸 뒤 fail closed한다", async () => {
   let calls = 0;
-  await assert.rejects(fetchKasiPublicHolidayCalendar({
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -438,20 +442,18 @@ test("KASI native HTTPS는 TLS secureConnect 뒤 AbortError를 request timeout�
     },
   }), (error) => {
     assert.equal(error.failureCategory, "NETWORK_REQUEST_TIMEOUT");
-    assert.equal(error.attemptCount, 1);
-    assert.deepEqual(error.transportAttempts, [
-      { attemptCount: 1, failurePhase: "RESPONSE_HEADERS", ipv4AttemptCount: 0, ipv6AttemptCount: 0 },
-    ]);
+    assert.equal(error.attemptCount, 6);
+    assert.deepEqual(error.transportAttempts, [1, 2, 3, 4, 5, 6].map((attemptCount) => ({ attemptCount, failurePhase: "RESPONSE_HEADERS", ipv4AttemptCount: 0, ipv6AttemptCount: 0 })));
     return true;
   });
-  assert.equal(calls, 1);
+  assert.equal(calls, 6);
 });
 
-test("KASI native HTTPS는 non-2xx 응답을 즉시 KASI_HTTP으로 종료하고 body를 drain한다", async () => {
+test("KASI native HTTPS는 5xx 응답을 다시 요청하고 한도 뒤 KASI_HTTP으로 종료하며 응답마다 body를 drain한다", async () => {
   let resumed = 0;
   let endListenerRegistered = false;
   let bodyCollected = false;
-  await assert.rejects(fetchKasiPublicHolidayCalendar({
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -477,14 +479,14 @@ test("KASI native HTTPS는 non-2xx 응답을 즉시 KASI_HTTP으로 종료하고
       return request;
     },
   }), /KASI public holiday request failed: HTTP_503$/);
-  assert.equal(resumed, 1);
+  assert.equal(resumed, 6);
   assert.equal(endListenerRegistered, false);
   assert.equal(bodyCollected, false);
 });
 
 test("KASI 공휴일 달력은 요청 월 전체를 HTTPS 정본에서 가져와 휴일만 반환한다", async () => {
   const requests = [];
-  const holidays = await fetchKasiPublicHolidayCalendar({
+  const holidays = await fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7, 8],
@@ -517,7 +519,7 @@ test("KASI 공휴일 달력은 요청 월 전체를 HTTPS 정본에서 가져와
 
 test("KASI 공휴일 달력은 percent-encoded portal key를 한 번만 decode해 전송한다", async () => {
   let receivedKey;
-  await fetchKasiPublicHolidayCalendar({
+  await fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "abc%2Bdef%3D%3D",
     year: 2026,
     months: [7],
@@ -529,9 +531,9 @@ test("KASI 공휴일 달력은 percent-encoded portal key를 한 번만 decode�
   assert.equal(receivedKey, "abc+def==");
 });
 
-test("KASI calendar는 connect timeout만 즉시 한 번 재시도한다", async () => {
+test("KASI calendar는 connect timeout을 다시 요청해 성공하면 그 결과를 쓴다", async () => {
   let calls = 0;
-  const holidays = await fetchKasiPublicHolidayCalendar({
+  const holidays = await fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -545,9 +547,9 @@ test("KASI calendar는 connect timeout만 즉시 한 번 재시도한다", async
   assert.deepEqual([...holidays], ["20260717"]);
 });
 
-test("KASI calendar는 두 번째 connect timeout 후 closed attempt metadata를 유지한다", async () => {
+test("KASI calendar는 connect timeout이 끝까지 이어지면 여섯 번째 시도 뒤 closed attempt metadata를 유지한다", async () => {
   let calls = 0;
-  await assert.rejects(fetchKasiPublicHolidayCalendar({
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "test-key",
     year: 2026,
     months: [7],
@@ -557,21 +559,28 @@ test("KASI calendar는 두 번째 connect timeout 후 closed attempt metadata를
     },
   }), (error) => {
     assert.equal(error.failureCategory, "NETWORK_CONNECT_TIMEOUT");
-    assert.equal(error.attemptCount, 2);
+    assert.equal(error.attemptCount, 6);
     return true;
   });
-  assert.equal(calls, 2);
+  assert.equal(calls, 6);
 });
 
-test("KASI calendar는 connect timeout 밖의 HTTP·schema·body failure를 재시도하지 않는다", async () => {
+test("KASI calendar는 권한·쿼터·형식 오류를 재시도하지 않는다(HTTP 401·403·429, resultCode 22·23·30·31, XML 형식)", async () => {
+  const envelope = (code) => new Response(`<response><header><resultCode>${code}</resultCode></header></response>`);
   const cases = [
-    async () => new Response("denied", { status: 403 }),
-    async () => new Response("not xml"),
-    async () => ({ ok: true, arrayBuffer: async () => { throw Object.assign(new Error("raw body error"), { code: "ECONNRESET" }); } }),
+    [async () => new Response("denied", { status: 401 }), /HTTP_401/],
+    [async () => new Response("denied", { status: 403 }), /HTTP_403/],
+    [async () => new Response("slow down", { status: 429 }), /HTTP_429/],
+    [async () => envelope("22"), /provider resultCode 22/],
+    [async () => envelope("23"), /provider resultCode 23/],
+    [async () => envelope("30"), /provider resultCode 30/],
+    [async () => envelope("31"), /provider resultCode 31/],
+    [async () => new Response("not xml"), /response schema is invalid/],
   ];
-  for (const fetchImpl of cases) {
+  for (const [fetchImpl, expectation] of cases) {
     let calls = 0;
-    await assert.rejects(fetchKasiPublicHolidayCalendar({
+    const waits = [];
+    await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(waits),
       serviceKey: "test-key",
       year: 2026,
       months: [7],
@@ -579,13 +588,128 @@ test("KASI calendar는 connect timeout 밖의 HTTP·schema·body failure를 재�
         calls += 1;
         return fetchImpl(...args);
       },
-    }));
-    assert.equal(calls, 1);
+    }), expectation);
+    assert.equal(calls, 1, String(expectation));
+    assert.deepEqual(waits, []);
   }
 });
 
+// #1099: 2026-10-09T17:07Z source-reverification run 37963968732가 korail-planned-timetable/calendar에서 KASI 연결 타임아웃 두 번으로 전체가 실패했다.
+test("KASI 연결 타임아웃이 두 번 이어져도 같은 요청을 다시 보내 성공하면 달력을 쓴다(run 37963968732 재현)", async () => {
+  let calls = 0;
+  const waits = [];
+  const budget = createTransientRetryBudget();
+  const holidays = await fetchKasiPublicHolidayCalendar({ sleepImpl: async (ms) => { waits.push(ms); }, retryBudget: budget,
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls <= 2) throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+      return new Response(holidayXml([{ date: "20260717", holiday: "Y" }]));
+    },
+  });
+  assert.deepEqual([...holidays], ["20260717"]);
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [1_000, 2_000]);
+  assert.equal(budget.waitedMs, 3_000);
+});
+
+test("KASI HTTP 5xx와 resultCode 99는 같은 요청을 다시 보낸 뒤 성공하면 그 결과를 쓴다", async () => {
+  const sequence = [
+    new Response("busy", { status: 503 }),
+    new Response("bad gateway", { status: 502 }),
+    new Response("<response><header><resultCode>99</resultCode><resultMsg>UNKNOWN_ERROR.</resultMsg></header></response>"),
+    new Response(holidayXml([{ date: "20260717", holiday: "Y" }])),
+  ];
+  const waits = [];
+  let calls = 0;
+  const observation = await fetchKasiPublicHolidayCalendarObservation({ ...retryFast(waits),
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => { calls += 1; return sequence.shift(); },
+  });
+  assert.equal(calls, 4);
+  assert.deepEqual(waits, [1_000, 2_000, 4_000]);
+  assert.deepEqual([...observation.holidays], ["20260717"]);
+  // 실패한 시도의 본문은 증거에 들어가지 않는다: 보관 원문은 성공한 응답 그대로다.
+  assert.equal(observation.months.length, 1);
+  assert.match(observation.months[0].xml, /<locdate>20260717<\/locdate>/);
+  assert.doesNotMatch(observation.months[0].xml, /UNKNOWN_ERROR/);
+});
+
+test("KASI 본문 수신 중 timeout·연결 끊김도 같은 요청을 다시 보낸다", async () => {
+  const outcomes = [
+    () => { throw Object.assign(new TypeError("terminated"), { cause: Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }) }); },
+    () => { throw Object.assign(new Error("reset"), { code: "ECONNRESET" }); },
+  ];
+  let calls = 0;
+  const holidays = await fetchKasiPublicHolidayCalendar({ ...retryFast(),
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => {
+      calls += 1;
+      const next = outcomes.shift();
+      if (next === undefined) return new Response(holidayXml([{ date: "20260717", holiday: "Y" }]));
+      return { ok: true, arrayBuffer: async () => next() };
+    },
+  });
+  assert.equal(calls, 3);
+  assert.deepEqual([...holidays], ["20260717"]);
+
+  let bodyCalls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(),
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => { bodyCalls += 1; return { ok: true, arrayBuffer: async () => { throw Object.assign(new Error("body timeout"), { code: "UND_ERR_BODY_TIMEOUT" }); } }; },
+  }), (error) => {
+    assert.equal(error.failureCategory, "NETWORK_REQUEST_TIMEOUT");
+    assert.equal(error.attemptCount, 6);
+    return true;
+  });
+  assert.equal(bodyCalls, 6);
+});
+
+test("KASI HTTP 5xx가 끝까지 이어지면 1·2·4·8·16초 대기 뒤 KASI_HTTP으로 끝나고 이전 값으로 채우지 않는다", async () => {
+  const waits = [];
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(waits),
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => { calls += 1; return new Response("busy", { status: 503 }); },
+  }), (error) => {
+    assert.equal(error.failureCategory, "KASI_HTTP");
+    assert.equal(error.attemptCount, 6);
+    assert.match(error.message, /HTTP_503$/);
+    return true;
+  });
+  assert.equal(calls, 6);
+  assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000]);
+});
+
+test("KASI 재시도 대기 예산(5분)을 넘기는 대기는 하지 않고 마지막 전송 오류 분류로 끝난다", async () => {
+  const waits = [];
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ sleepImpl: async (ms) => { waits.push(ms); }, retryBudget: createTransientRetryBudget(2_500),
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => { calls += 1; throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }); },
+  }), (error) => {
+    assert.equal(error.failureCategory, "NETWORK_CONNECT_TIMEOUT");
+    assert.equal(error.attemptCount, 2);
+    return true;
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(waits, [1_000]);
+});
+
 test("KASI 공휴일 달력은 권한·HTTP·XML·resultCode·월 범위 불일치를 fail closed한다", async () => {
-  const run = (response) => fetchKasiPublicHolidayCalendar({
+  const run = (response) => fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "secret-key",
     year: 2026,
     months: [7],
@@ -595,19 +719,19 @@ test("KASI 공휴일 달력은 권한·HTTP·XML·resultCode·월 범위 불일�
   await assert.rejects(run(new Response("<response><header><resultCode>30</resultCode></header></response>")), /KASI public holiday provider resultCode 30/);
   await assert.rejects(run(new Response("not xml")), /KASI public holiday response schema is invalid/);
   await assert.rejects(run(new Response(holidayXml([{ date: "20260801", holiday: "Y" }]))), /KASI public holiday response month coverage is invalid/);
-  await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "", year: 2026, months: [7] }), /DATA_GO_KR_SERVICE_KEY/);
-  await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "one\nline", year: 2026, months: [7] }), /DATA_GO_KR_SERVICE_KEY/);
-  await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "secret-key", year: 2026, months: [7], fetchImpl: async () => { throw new Error("network"); } }), /NETWORK/);
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(), serviceKey: "", year: 2026, months: [7] }), /DATA_GO_KR_SERVICE_KEY/);
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(), serviceKey: "one\nline", year: 2026, months: [7] }), /DATA_GO_KR_SERVICE_KEY/);
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(), serviceKey: "secret-key", year: 2026, months: [7], fetchImpl: async () => { throw new Error("network"); } }), /NETWORK/);
 });
 
 test("KASI transport 오류는 원문을 노출하지 않고 closed category로 분류한다", async () => {
-  const runFetch = (error) => fetchKasiPublicHolidayCalendar({
+  const runFetch = (error) => fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "secret-key",
     year: 2026,
     months: [7],
     fetchImpl: async () => { throw error; },
   });
-  const runBody = (error) => fetchKasiPublicHolidayCalendar({
+  const runBody = (error) => fetchKasiPublicHolidayCalendar({ ...retryFast(),
     serviceKey: "secret-key",
     year: 2026,
     months: [7],
@@ -663,9 +787,9 @@ test("KASI transport 오류는 원문을 노출하지 않고 closed category로 
 
 test("KASI 공휴일 달력은 totalCount=0의 empty/self-closing items만 유효한 빈 월로 인정한다", async () => {
   const empty = `<?xml version="1.0"?><response><header><resultCode>00</resultCode></header><body><items/><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>0</totalCount></body></response>`;
-  assert.deepEqual([...await fetchKasiPublicHolidayCalendar({ serviceKey: "test-key", year: 2026, months: [7], fetchImpl: async () => new Response(empty) })], []);
+  assert.deepEqual([...await fetchKasiPublicHolidayCalendar({ ...retryFast(), serviceKey: "test-key", year: 2026, months: [7], fetchImpl: async () => new Response(empty) })], []);
   const missingItems = empty.replace("<items/>", "").replace("<totalCount>0</totalCount>", "<totalCount>1</totalCount>");
-  await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "test-key", year: 2026, months: [7], fetchImpl: async () => new Response(missingItems) }), /schema is invalid/);
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ ...retryFast(), serviceKey: "test-key", year: 2026, months: [7], fetchImpl: async () => new Response(missingItems) }), /schema is invalid/);
 });
 
 test("#919 전국 후보 공휴일 목록(HOLIDAYS_2026)은 KASI 2026년 특일 정보 보관 원문의 공휴일과 같다", async () => {
