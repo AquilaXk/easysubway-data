@@ -5,11 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { classifyRecipeFailure, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
+import { classifyRecipeFailure, dependencyGroups, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
+import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 controller. DUE로 판정된 recipe를 의존 순서로 실행하고 recipe마다 커밋한다.
 // 수집 실패는 SOURCE_FETCH_FAILED, 등록 실패는 SOURCE_REGISTRATION_FAILED, 원장·증거 변화가 정책을 넘으면 SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA로 멈춘다.
-// 이전·추정 값으로 대체하지 않는다. 앞 recipe의 커밋은 남지만 PR은 만들어지지 않는다(workflow가 controller 실패로 멈춘다).
+// 이전·추정 값으로 대체하지 않는다.
+// #1102: recipe 하나의 실패가 나머지 recipe의 등록까지 버리지 않는다. 의존 묶음(topology와 그에 결속되는 recipe)은 전부 등록되거나 전부 되돌려지고(부분 등록은
+// 결속이 어긋난 상태를 남긴다), 독립 묶음은 서로 영향이 없다. 실패는 failures로 드러나고 workflow가 PR을 만든 뒤 마지막에 job을 실패시킨다.
 const INVENTORY = "tools/datapack/source-inventory.json";
 const LEDGER = "tools/datapack/release/source-snapshots.json";
 const GOVERNANCE = "tools/datapack/source-governance-policy.json";
@@ -106,27 +109,139 @@ test("실행 순서는 목록 순서가 아니라 recipe 표 순서(의존 순�
   assert.deepEqual(order, ["first", "second"]);
 });
 
-test("수집 단계 실패는 SOURCE_FETCH_FAILED, 등록·입력 조립 실패는 SOURCE_REGISTRATION_FAILED로 드러나고 이후 recipe는 실행하지 않는다", async (t) => {
+test("수집 단계 실패는 SOURCE_FETCH_FAILED, 등록·입력 조립 실패는 SOURCE_REGISTRATION_FAILED로 드러나고 모든 recipe가 실패하면 첫 실패로 멈춘다", async (t) => {
   const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
-  const ran = [];
-  const make = (kind, message) => ({
-    first: stepsOf("register", async (ctx) => { ran.push("first"); await writeFile(path.join(ctx.repositoryRoot, "tools/datapack/sources/first.json"), "{}\n"); }),
-    second: stepsOf(kind, async () => { ran.push("second"); throw new Error(message); }),
-    third: stepsOf("register", async () => { ran.push("third"); }),
-  });
-  const recipes = [meta("first"), meta("second"), meta("third")];
-  const run = (kind, message) => runSourceReverification(options(root, { recipes, steps: make(kind, message), recipeIds: ["first", "second", "third"] }));
+  const before = git(root, "rev-parse", "HEAD");
+  const run = (kind, message) => runSourceReverification(options(root, { recipes: [meta("second")], steps: { second: stepsOf(kind, async () => { throw new Error(message); }) }, recipeIds: ["second"] }));
   await assert.rejects(run("collect", "Gwangju route topology HTTP 503"), /^Error: SOURCE_FETCH_FAILED: second\/only: Gwangju route topology HTTP 503$/u);
-  assert.deepEqual(ran, ["first", "second"]);
-  assert.equal(commitSubjects(root, 1)[0], "[Data] first 재확인", "앞 recipe의 커밋은 남지만 PR은 만들어지지 않는다");
-  await rm(path.join(root, "tools/datapack/sources/first.json"));
-  git(root, "reset", "-q", "--hard", "HEAD~1");
   await assert.rejects(run("register", "Gwangju topology OCI publication failed"), /^Error: SOURCE_REGISTRATION_FAILED: second\/only: Gwangju topology OCI publication failed$/u);
-  git(root, "reset", "-q", "--hard", "HEAD~1");
   await assert.rejects(run("glue", "previous snapshot is missing"), /^Error: SOURCE_REGISTRATION_FAILED: second\/only: previous snapshot is missing$/u);
-  git(root, "reset", "-q", "--hard", "HEAD~1");
   // 이미 이름 붙은 이상 코드는 그대로 드러낸다.
   await assert.rejects(run("collect", "SOURCE_FETCH_FAILED: object is missing"), /^Error: SOURCE_FETCH_FAILED: second\/only: object is missing$/u);
+  assert.equal(git(root, "rev-parse", "HEAD"), before);
+});
+
+const writeSnapshot = (name) => async (ctx) => writeFile(path.join(ctx.repositoryRoot, `tools/datapack/sources/${name}.json`), "{}\n");
+const failing = (kind, message) => stepsOf(kind, async () => { throw new Error(message); });
+
+// #1102: 독립 recipe 하나의 실패가 나머지의 등록을 버리지 않는다. 실패한 recipe는 failures로 드러나고 그 recipe의 부분 출력은 남지 않는다.
+test("독립 recipe 하나가 실패해도 나머지 recipe는 등록하고 실패는 failures로 드러난다", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const ran = [];
+  const recipes = [meta("first"), meta("second"), meta("third")];
+  const steps = {
+    first: stepsOf("register", async (ctx) => { ran.push("first"); await writeSnapshot("first")(ctx); }),
+    second: stepsOf("collect", async (ctx) => {
+      ran.push("second");
+      // 실패 전에 남긴 부분 출력(새 snapshot 파일과 수정한 정책·원장)은 되돌려져야 한다.
+      await writeSnapshot("second-partial")(ctx);
+      await writeFile(path.join(ctx.repositoryRoot, GOVERNANCE), "{\"v\":2}\n");
+      throw new Error("KASI public holiday request failed: NETWORK_CONNECT_TIMEOUT");
+    }),
+    third: stepsOf("register", async (ctx) => { ran.push("third"); await writeSnapshot("third")(ctx); }),
+  };
+  const result = await runSourceReverification(options(root, { recipes, steps, recipeIds: ["first", "second", "third"] }));
+  assert.deepEqual(ran, ["first", "second", "third"]);
+  assert.deepEqual(result.steps.map(({ id }) => id), ["first", "third"]);
+  assert.deepEqual(result.failures, [{ recipeId: "second", code: "SOURCE_FETCH_FAILED", detail: "second/only: KASI public holiday request failed: NETWORK_CONNECT_TIMEOUT" }]);
+  assert.deepEqual(commitSubjects(root, 3), ["[Data] third 재확인", "[Data] first 재확인", "base"]);
+  assert.equal(git(root, "status", "--porcelain"), "", "실패한 recipe의 부분 출력은 남지 않는다");
+  assert.equal(await readFile(path.join(root, GOVERNANCE), "utf8"), "{}\n");
+  assert.deepEqual(git(root, "ls-files", "tools/datapack/sources").split("\n").sort(), ["tools/datapack/sources/existing.json", "tools/datapack/sources/first.json", "tools/datapack/sources/third.json"]);
+});
+
+// 의존 묶음은 전부 아니면 전무다: 의존 대상(topology)만 등록되고 그에 결속되는 recipe가 실패하면 결속이 어긋난 상태가 남고, 그 recipe는 의존 대상 없이는 DUE가 되지 않는다.
+test("의존 묶음의 뒤쪽 recipe가 실패하면 앞쪽 등록도 되돌려 묶음 전체를 실패로 드러낸다", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const recipes = [meta("topology"), meta("accessibility", ["topology"]), meta("other")];
+  const steps = {
+    topology: stepsOf("register", writeSnapshot("topology")),
+    accessibility: failing("register", "Gwangju accessibility registration failed"),
+    other: stepsOf("register", writeSnapshot("other")),
+  };
+  const result = await runSourceReverification(options(root, { recipes, steps, recipeIds: ["topology", "accessibility", "other"] }));
+  assert.deepEqual(result.steps.map(({ id }) => id), ["other"]);
+  assert.deepEqual(result.failures, [
+    { recipeId: "topology", code: "REVERIFICATION_GROUP_ROLLED_BACK", detail: "topology was registered but its dependent accessibility failed, so the whole group was rolled back" },
+    { recipeId: "accessibility", code: "SOURCE_REGISTRATION_FAILED", detail: "accessibility/only: Gwangju accessibility registration failed" },
+  ]);
+  assert.deepEqual(commitSubjects(root, 2), ["[Data] other 재확인", "base"]);
+  assert.equal(git(root, "status", "--porcelain"), "");
+  assert.equal(git(root, "ls-files", "tools/datapack/sources").includes("topology.json"), false);
+});
+
+test("의존 대상이 실패하면 그에 결속되는 recipe는 실행하지 않고 건너뛴 것으로 드러낸다", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const ran = [];
+  const recipes = [meta("topology"), meta("accessibility", ["topology"]), meta("other")];
+  const steps = {
+    topology: stepsOf("collect", async () => { ran.push("topology"); throw new Error("Gwangju route topology HTTP 503"); }),
+    accessibility: stepsOf("register", async () => { ran.push("accessibility"); }),
+    other: stepsOf("register", async (ctx) => { ran.push("other"); await writeSnapshot("other")(ctx); }),
+  };
+  const result = await runSourceReverification(options(root, { recipes, steps, recipeIds: ["topology", "accessibility", "other"] }));
+  assert.deepEqual(ran, ["topology", "other"]);
+  assert.deepEqual(result.steps.map(({ id }) => id), ["other"]);
+  assert.deepEqual(result.failures, [
+    { recipeId: "topology", code: "SOURCE_FETCH_FAILED", detail: "topology/only: Gwangju route topology HTTP 503" },
+    { recipeId: "accessibility", code: "REVERIFICATION_DEPENDENCY_FAILED", detail: "accessibility was not run because its dependency topology failed" },
+  ]);
+});
+
+test("원장·증거 게이트와 출력 범위 위반도 그 recipe만 되돌리고 나머지는 등록한다", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const recipes = [meta("scoped"), meta("drifted"), meta("fine")];
+  const steps = {
+    scoped: stepsOf("register", async (ctx) => { await writeSnapshot("scoped")(ctx); await writeFile(path.join(ctx.repositoryRoot, "tools/datapack/release/candidate-build-spec.json"), "{}\n"); }),
+    drifted: stepsOf("register", rewriteLedger([gwangju("gwangju-1", { rawSha256: SHA("e") })])),
+    fine: stepsOf("register", writeSnapshot("fine")),
+  };
+  const result = await runSourceReverification(options(root, { recipes, steps, policy: STRICT, recipeIds: ["scoped", "drifted", "fine"] }));
+  assert.deepEqual(result.steps.map(({ id }) => id), ["fine"]);
+  assert.deepEqual(result.failures.map(({ recipeId, code }) => [recipeId, code]), [["scoped", "REVERIFICATION_OUTPUT_SCOPE"], ["drifted", "SOURCE_SHA_DRIFT"]]);
+  assert.equal(git(root, "status", "--porcelain"), "");
+  assert.deepEqual(commitSubjects(root, 2), ["[Data] fine 재확인", "base"]);
+});
+
+test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: topology와 그에 결속되는 recipe 셋, 나머지는 독립)", () => {
+  assert.deepEqual(dependencyGroups(REVERIFICATION_RECIPES).map((group) => group.map(({ id }) => id)), [
+    ["kric-capital-timetable"],
+    ["korail-topology", "korail-planned-timetable"],
+    ["gwangju-topology", "gwangju-accessibility"],
+    ["busan-topology"],
+    ["daejeon-topology", "daejeon-accessibility"],
+    ["daegu-sources"],
+  ]);
+  // 여러 의존 대상을 가진 recipe는 그 대상들의 묶음을 하나로 합친다.
+  const merged = dependencyGroups([meta("a"), meta("b"), meta("c", ["a", "b"]), meta("d")]);
+  assert.deepEqual(merged.map((group) => group.map(({ id }) => id)), [["a", "b", "c"], ["d"]]);
+});
+
+test("모든 recipe가 실패하면 등록할 것이 없으므로 첫 실패 오류로 멈추고 나머지 실패를 덧붙인다", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const before = git(root, "rev-parse", "HEAD");
+  const recipes = [meta("first"), meta("second")];
+  await assert.rejects(
+    runSourceReverification(options(root, { recipes, steps: { first: failing("collect", "KASI public holiday request failed: NETWORK_CONNECT_TIMEOUT"), second: failing("register", "OCI publication failed") }, recipeIds: ["first", "second"] })),
+    /^Error: SOURCE_FETCH_FAILED: first\/only: KASI public holiday request failed: NETWORK_CONNECT_TIMEOUT \| also failed: second \(SOURCE_REGISTRATION_FAILED\)$/u,
+  );
+  assert.equal(git(root, "rev-parse", "HEAD"), before);
+  assert.equal(git(root, "status", "--porcelain"), "");
+});
+
+test("작업 디렉터리가 저장소 안이면 실패한 recipe를 되돌릴 때 지워질 수 있으므로 시작하지 않는다", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  let ran = 0;
+  await assert.rejects(runSourceReverification(options(root, { operationRoot: path.join(root, "operation"), recipes: [meta("first")], steps: { first: stepsOf("register", async () => { ran += 1; }) }, recipeIds: ["first"] })),
+    /^Error: REVERIFICATION_ARGUMENTS: the operation root must be outside the repository$/u);
+  // "..cache"처럼 점 두 개로 시작하는 이름의 저장소 안 디렉터리도 저장소 안이다(부모 세그먼트 ..와 다르다).
+  for (const inside of [path.join(root, "..cache", "op"), path.join(root, "..", path.basename(root), "op"), root]) {
+    await assert.rejects(runSourceReverification(options(root, { operationRoot: inside, recipes: [meta("first")], steps: { first: stepsOf("register", async () => { ran += 1; }) }, recipeIds: ["first"] })),
+      /^Error: REVERIFICATION_ARGUMENTS: the operation root must be outside the repository$/u, inside);
+  }
+  // 저장소 밖(형제 디렉터리, 부모 아래)은 시작한다.
+  await runSourceReverification(options(root, { operationRoot: path.join(root, "..", `op-outside-${path.basename(root)}`), recipes: [meta("first")], steps: { first: stepsOf("register", writeSnapshot("outside")) }, recipeIds: ["first"] }));
+  assert.equal(ran, 0);
 });
 
 test("수집·등록을 한 번에 하는 단계는 수집기 오류 코드로 실패 종류를 가른다", () => {
@@ -281,7 +396,7 @@ test("증거 비교는 직전 증거가 없으면 FIRST, 증거를 지우면 BIN
 test("실행 기록은 recipe 결과를 그대로 증거 단계로 돌려준다(단계 id = recipe id)", async (t) => {
   const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const result = await runSourceReverification(options(root, { recipes: [meta("first")], steps: { first: stepsOf("register", async ({ repositoryRoot }) => writeFile(path.join(repositoryRoot, "tools/datapack/sources/a.json"), "{}\n")) }, recipeIds: ["first"] }));
-  assert.deepEqual(JSON.parse(JSON.stringify(result)), { steps: [{ id: "first", changed: true, paths: ["tools/datapack/sources/a.json"] }], evidenceSources: [] });
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { steps: [{ id: "first", changed: true, paths: ["tools/datapack/sources/a.json"] }], evidenceSources: [], failures: [] });
   const text = await readFile(path.join(root, "tools/datapack/sources/a.json"), "utf8");
   assert.equal(text, "{}\n");
 });

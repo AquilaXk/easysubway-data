@@ -158,6 +158,21 @@ test("App 토큰 발급과 PR 생성은 push한 뒤에만 돌고 PR 생성만 Ap
   assert.equal((yml.match(/gh pr create/gu) ?? []).length, 1);
 });
 
+// #1102: recipe 하나가 실패해도 나머지 recipe의 등록은 PR로 올라간다. 실패한 recipe는 PR 뒤(또는 PR이 만들어지지 않았어도) 마지막에 job을 실패시켜 #926 실패 이슈로 드러낸다.
+test("실패한 recipe는 PR 생성 뒤에 보고하고(always) 그 step이 실패해도 PR이 된 claim은 지우지 않는다", () => {
+  const report = step("Report recipes that failed");
+  assert.equal(ifCondition(report.block), "${{ always() && steps.reverify.outcome == 'success' }}");
+  assert.match(report.block, /\n        run: \|\n          set -euo pipefail\n(?:          #[^\n]*\n)*          node tools\/ci\/source-reverification-failures\.mjs --result "\$\{REVERIFICATION_RESULT\}"$/u);
+  assert.doesNotMatch(report.block, /continue-on-error|GH_TOKEN|secrets\./u);
+  before("Create source reverification pull request", report.name);
+  before(report.name, "Remove this run's claim unless it became a pull request");
+  before(report.name, "Report refresh failure as an issue");
+  // create-pr가 성공했으면 이 step이 실패해도 정리 step은 claim을 지우지 않는다(조건은 create-pr 결과만 본다).
+  assert.match(step("Remove this run's claim unless it became a pull request").block, /steps\.create-pr\.outcome != 'success'/u);
+  // 보고 대상은 controller가 쓴 result.json이다. PR 본문 입력과 같은 파일이다.
+  assert.match(step("Reverify due P7D sources").block, /REVERIFICATION_RESULT=%s/u);
+});
+
 // 이 run이 만든 claim은 PR이 되지 않았으면 실패·취소·시간 초과·대기 어느 경우에도 남기지 않는다(always()).
 test("이 run의 claim은 PR이 되지 않으면 always()로 정리하고 PR이 열렸으면 PR과 함께 닫는다", () => {
   const cleanup = step("Remove this run's claim unless it became a pull request");

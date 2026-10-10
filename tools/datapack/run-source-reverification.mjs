@@ -4,7 +4,14 @@
 // seq127(#940)·seq128(#976)에서 에이전트가 손으로 실행한 "수집 → OCI 게시 → 원장 등록" 절차를 원천별 recipe로 실행한다.
 // DUE 판정(tools/ci/decide-source-reverification.mjs)이 고른 recipe를 의존 순서로 돌리고 recipe마다 한 커밋으로 쌓는다.
 //
-// 이상은 체인을 멈추고 이름 붙은 코드로 드러난다(이전·추정 값으로 대체하지 않는다):
+// 이상은 이름 붙은 코드로 드러난다(이전·추정 값으로 대체하지 않는다). #1102: recipe 하나가 실패해도 나머지 recipe의 등록은 남는다.
+//   - 독립 recipe의 실패는 그 recipe만 되돌리고(작업 트리·로컬 커밋) result.failures에 코드와 함께 담는다. 나머지는 계속 실행한다.
+//   - 의존 묶음(dependsOn으로 이어진 recipe: topology와 그에 결속되는 recipe)은 전부 등록되거나 전부 되돌려진다. 의존 대상만 등록되면 결속이 어긋난 채
+//     남고 의존 recipe는 의존 대상이 다시 DUE가 되기 전에는 고쳐지지 않는다. 실패하면 묶음의 앞쪽 등록은 REVERIFICATION_GROUP_ROLLED_BACK,
+//     실행하지 않은 뒤쪽은 REVERIFICATION_DEPENDENCY_FAILED로 드러난다.
+//   - 등록된 recipe가 하나도 없으면 첫 실패 오류로 멈춘다(나머지 실패를 덧붙인다). 실패한 recipe는 원장이 그대로라 다음 정기 실행이 다시 시도한다.
+//   - workflow는 성공한 recipe로 PR을 만든 뒤 failures가 있으면 마지막에 job을 실패시킨다(tools/ci/source-reverification-failures.mjs).
+// 코드:
 //   SOURCE_FETCH_FAILED         공급자에서 원본을 받지 못했다(전송·HTTP·형식).
 //   SOURCE_REGISTRATION_FAILED  OCI 게시·원장 등록·입력 조립이 실패했거나 recipe가 아무 등록 결과도 만들지 않았다.
 //   SOURCE_SHA_DRIFT            원본 sha가 고정과 다르거나, 원장·증거 변화가 정책(tools/ci/source-ledger-change-policy.json)을 넘었다.
@@ -554,27 +561,104 @@ function recipeContext({ recipe, repositoryRoot, operationRoot, env, shared, lib
   };
 }
 
+const GROUP_ROLLED_BACK = "REVERIFICATION_GROUP_ROLLED_BACK";
+const DEPENDENCY_FAILED = "REVERIFICATION_DEPENDENCY_FAILED";
+const RECIPE_FAILED = "REVERIFICATION_RECIPE_FAILED";
+const NAMED_FAILURE = /^([A-Z][A-Z0-9_]+): ([\s\S]*)$/u;
+
+/** 의존으로 이어진 recipe끼리 묶는다. 묶음과 묶음 안의 순서는 recipe 표 순서다. */
+export function dependencyGroups(ordered) {
+  const groupOf = new Map();
+  const groups = [];
+  for (const recipe of ordered) {
+    const linked = [...new Set(recipe.dependsOn.map((id) => groupOf.get(id)))];
+    let group = linked[0];
+    if (group === undefined) {
+      group = [];
+      groups.push(group);
+    }
+    for (const other of linked.slice(1)) {
+      group.push(...other);
+      groups.splice(groups.indexOf(other), 1);
+      for (const member of other) groupOf.set(member.id, group);
+    }
+    group.push(recipe);
+    groupOf.set(recipe.id, group);
+  }
+  return groups.map((group) => ordered.filter((recipe) => group.includes(recipe)));
+}
+
+function failureOf(recipe, error) {
+  const named = NAMED_FAILURE.exec(String(error?.message ?? error));
+  return { recipeId: recipe.id, code: named ? named[1] : RECIPE_FAILED, detail: named ? named[2] : String(error?.message ?? error) };
+}
+
+// 되돌릴 때 operation root가 저장소 안이면 함께 지워질 수 있다. 실패한 recipe의 로컬 커밋과 작업 트리 변경은 묶음 시작 커밋으로 되돌린다.
+async function rollbackTo(repositoryRoot, commit) {
+  await git(repositoryRoot, ["reset", "--hard", commit]);
+  await git(repositoryRoot, ["clean", "-fd"]);
+}
+
+function stopError(failures) {
+  const first = failures.find(({ code }) => code !== GROUP_ROLLED_BACK && code !== DEPENDENCY_FAILED);
+  const others = failures.filter((entry) => entry !== first);
+  const suffix = others.length === 0 ? "" : ` | also failed: ${others.map(({ recipeId, code }) => `${recipeId} (${code})`).join(", ")}`;
+  return new Error(`${first.code}: ${first.detail}${suffix}`);
+}
+
 export async function runSourceReverification({
   repositoryRoot = ROOT, operationRoot, recipeIds, recipes = REVERIFICATION_RECIPES, steps = RECIPE_STEPS, env = process.env,
   policy = null, ledgerPath = LEDGER_PATH, now = () => new Date(), execute = null, lib = defaultLib,
 } = {}) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !path.isAbsolute(operationRoot ?? "")) fail("REVERIFICATION_ARGUMENTS: repository and operation roots must be absolute");
+  const relativeOperationRoot = path.relative(path.resolve(repositoryRoot), path.resolve(operationRoot));
+  // 부모 세그먼트(..)만 저장소 밖이다. "..cache"처럼 점 두 개로 시작하는 이름의 하위 디렉터리는 저장소 안이다.
+  const outsideRepository = relativeOperationRoot === ".." || relativeOperationRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeOperationRoot);
+  if (!outsideRepository) fail("REVERIFICATION_ARGUMENTS: the operation root must be outside the repository");
   const ordered = orderedRecipes(recipeIds, recipes);
   if ((await changedEntries(repositoryRoot)).length > 0) fail("REVERIFICATION_WORKTREE_DIRTY: the reverification needs a clean worktree");
   const ledgerPolicy = parseLedgerChangePolicy(policy ?? JSON.parse(await readFile(path.join(ROOT, POLICY_PATH), "utf8")));
-  const base = { repositoryRoot, operationRoot, env, shared: new Map(), lib, now: typeof now === "function" ? now : () => new Date(now), execute: execute ?? defaultExecute(repositoryRoot, env) };
+  const common = { repositoryRoot, operationRoot, env, lib, now: typeof now === "function" ? now : () => new Date(now), execute: execute ?? defaultExecute(repositoryRoot, env) };
   const results = [];
   const evidenceSources = [];
+  const failures = [];
   await mkdir(operationRoot, { recursive: true });
-  for (const recipe of ordered) {
-    const recipeSteps = steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`);
-    const ctx = recipeContext({ recipe, ...base });
-    await mkdir(ctx.operationDir, { recursive: true }); // NOSONAR -- recipe는 앞 recipe의 커밋 위에서 순서대로 실행한다
-    const { result, evidenceRows } = await runRecipe({ recipe, recipeSteps, ctx, policy: ledgerPolicy, ledgerPath }); // NOSONAR -- 위와 같다
-    evidenceSources.push(...evidenceRows);
-    results.push(result);
+  for (const group of dependencyGroups(ordered)) {
+    const groupStart = (await git(repositoryRoot, ["rev-parse", "HEAD"])).trim();
+    const base = { ...common, shared: new Map() };
+    const groupResults = [];
+    const groupEvidence = [];
+    let failedId = null;
+    for (const recipe of group) {
+      if (failedId !== null) {
+        // 묶음 안에서 실패가 났으면 나머지는 실행하지 않는다. 실패한 recipe에 의존하면 그 사실을 이유로 남긴다.
+        const reason = recipe.dependsOn.includes(failedId) ? `its dependency ${failedId}` : `${failedId} of its dependency group`;
+        failures.push({ recipeId: recipe.id, code: DEPENDENCY_FAILED, detail: `${recipe.id} was not run because ${reason} failed` });
+        continue;
+      }
+      const recipeSteps = steps[recipe.id] ?? fail(`REVERIFICATION_RECIPE_UNKNOWN: ${recipe.id} has no steps`);
+      const ctx = recipeContext({ recipe, ...base });
+      try {
+        await mkdir(ctx.operationDir, { recursive: true }); // NOSONAR -- recipe는 앞 recipe의 커밋 위에서 순서대로 실행한다
+        const { result, evidenceRows } = await runRecipe({ recipe, recipeSteps, ctx, policy: ledgerPolicy, ledgerPath }); // NOSONAR -- 위와 같다
+        groupResults.push(result);
+        groupEvidence.push(...evidenceRows);
+      } catch (error) {
+        await rollbackTo(repositoryRoot, groupStart); // NOSONAR -- 실패한 recipe의 변경은 다음 recipe 전에 되돌린다
+        for (const done of groupResults) {
+          failures.push({ recipeId: done.id, code: GROUP_ROLLED_BACK, detail: `${done.id} was registered but its dependent ${recipe.id} failed, so the whole group was rolled back` });
+        }
+        groupResults.length = 0;
+        groupEvidence.length = 0;
+        failures.push(failureOf(recipe, error));
+        failedId = recipe.id;
+      }
+    }
+    results.push(...groupResults);
+    evidenceSources.push(...groupEvidence);
   }
-  return { steps: results, evidenceSources };
+  if (results.length === 0 && failures.length > 0) throw stopError(failures);
+  return { steps: results, evidenceSources, failures };
 }
 
 function parseArgs(argv) {
