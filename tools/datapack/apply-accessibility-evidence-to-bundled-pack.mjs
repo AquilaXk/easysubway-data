@@ -54,9 +54,12 @@ const CANONICAL_PROVENANCE_PROPERTIES = Object.freeze([
   "transitStopTimes", "officialOdFareQuotes",
 ]);
 
-/** 번들 팩 gzip: level 9·mtime 0·OS 표지 255. 같은 입력이면 같은 바이트(Node 24.19.0 번들 zlib). */
+/**
+ * 번들 팩 gzip: level 9·OS 표지 255. 같은 입력이면 같은 바이트(Node 24.19.0 번들 zlib).
+ * Node zlib은 gzip 헤더 MTIME을 옵션과 무관하게 항상 0으로 쓰므로 mtime 옵션을 따로 두지 않는다.
+ */
 export function gzipBundledPack(sqliteBytes) {
-  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9 });
   gzipBytes[9] = 255;
   return gzipBytes;
 }
