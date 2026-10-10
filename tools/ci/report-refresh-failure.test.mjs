@@ -230,6 +230,7 @@ test("every scheduled source refresh workflow reports its own failure as an issu
     "automation-blocked-redispatch.yml",
     "automation-pr-automerge.yml",
     "automation-pr-behind-recreate.yml",
+    "automation-pr-ci-rerun.yml",
     "current-capital-topology-refresh.yml",
     "current-capital-topology-registration.yml",
     "data-workflow-scheduler-watchdog.yml",
