@@ -11,7 +11,7 @@ import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 // #984(#969 남은 단계 1): P7D 원천 재확인 controller. DUE로 판정된 recipe를 의존 순서로 실행하고 recipe마다 커밋한다.
 // 수집 실패는 SOURCE_FETCH_FAILED, 등록 실패는 SOURCE_REGISTRATION_FAILED, 원장·증거 변화가 정책을 넘으면 SOURCE_SHA_DRIFT·SOURCE_COUNT_DELTA로 멈춘다.
 // 이전·추정 값으로 대체하지 않는다.
-// #1100: recipe 하나의 실패가 나머지 recipe의 등록까지 버리지 않는다. 의존 묶음(topology와 그에 결속되는 recipe)은 전부 등록되거나 전부 되돌려지고(부분 등록은
+// #1102: recipe 하나의 실패가 나머지 recipe의 등록까지 버리지 않는다. 의존 묶음(topology와 그에 결속되는 recipe)은 전부 등록되거나 전부 되돌려지고(부분 등록은
 // 결속이 어긋난 상태를 남긴다), 독립 묶음은 서로 영향이 없다. 실패는 failures로 드러나고 workflow가 PR을 만든 뒤 마지막에 job을 실패시킨다.
 const INVENTORY = "tools/datapack/source-inventory.json";
 const LEDGER = "tools/datapack/release/source-snapshots.json";
@@ -124,7 +124,7 @@ test("수집 단계 실패는 SOURCE_FETCH_FAILED, 등록·입력 조립 실패�
 const writeSnapshot = (name) => async (ctx) => writeFile(path.join(ctx.repositoryRoot, `tools/datapack/sources/${name}.json`), "{}\n");
 const failing = (kind, message) => stepsOf(kind, async () => { throw new Error(message); });
 
-// #1100: 독립 recipe 하나의 실패가 나머지의 등록을 버리지 않는다. 실패한 recipe는 failures로 드러나고 그 recipe의 부분 출력은 남지 않는다.
+// #1102: 독립 recipe 하나의 실패가 나머지의 등록을 버리지 않는다. 실패한 recipe는 failures로 드러나고 그 recipe의 부분 출력은 남지 않는다.
 test("독립 recipe 하나가 실패해도 나머지 recipe는 등록하고 실패는 failures로 드러난다", async (t) => {
   const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const ran = [];
@@ -234,6 +234,13 @@ test("작업 디렉터리가 저장소 안이면 실패한 recipe를 되돌릴 �
   let ran = 0;
   await assert.rejects(runSourceReverification(options(root, { operationRoot: path.join(root, "operation"), recipes: [meta("first")], steps: { first: stepsOf("register", async () => { ran += 1; }) }, recipeIds: ["first"] })),
     /^Error: REVERIFICATION_ARGUMENTS: the operation root must be outside the repository$/u);
+  // "..cache"처럼 점 두 개로 시작하는 이름의 저장소 안 디렉터리도 저장소 안이다(부모 세그먼트 ..와 다르다).
+  for (const inside of [path.join(root, "..cache", "op"), path.join(root, "..", path.basename(root), "op"), root]) {
+    await assert.rejects(runSourceReverification(options(root, { operationRoot: inside, recipes: [meta("first")], steps: { first: stepsOf("register", async () => { ran += 1; }) }, recipeIds: ["first"] })),
+      /^Error: REVERIFICATION_ARGUMENTS: the operation root must be outside the repository$/u, inside);
+  }
+  // 저장소 밖(형제 디렉터리, 부모 아래)은 시작한다.
+  await runSourceReverification(options(root, { operationRoot: path.join(root, "..", `op-outside-${path.basename(root)}`), recipes: [meta("first")], steps: { first: stepsOf("register", writeSnapshot("outside")) }, recipeIds: ["first"] }));
   assert.equal(ran, 0);
 });
 

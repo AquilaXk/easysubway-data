@@ -612,7 +612,9 @@ export async function runSourceReverification({
 } = {}) {
   if (!path.isAbsolute(repositoryRoot ?? "") || !path.isAbsolute(operationRoot ?? "")) fail("REVERIFICATION_ARGUMENTS: repository and operation roots must be absolute");
   const relativeOperationRoot = path.relative(path.resolve(repositoryRoot), path.resolve(operationRoot));
-  if (relativeOperationRoot === "" || (!relativeOperationRoot.startsWith("..") && !path.isAbsolute(relativeOperationRoot))) fail("REVERIFICATION_ARGUMENTS: the operation root must be outside the repository");
+  // 부모 세그먼트(..)만 저장소 밖이다. "..cache"처럼 점 두 개로 시작하는 이름의 하위 디렉터리는 저장소 안이다.
+  const outsideRepository = relativeOperationRoot === ".." || relativeOperationRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeOperationRoot);
+  if (!outsideRepository) fail("REVERIFICATION_ARGUMENTS: the operation root must be outside the repository");
   const ordered = orderedRecipes(recipeIds, recipes);
   if ((await changedEntries(repositoryRoot)).length > 0) fail("REVERIFICATION_WORKTREE_DIRTY: the reverification needs a clean worktree");
   const ledgerPolicy = parseLedgerChangePolicy(policy ?? JSON.parse(await readFile(path.join(ROOT, POLICY_PATH), "utf8")));
