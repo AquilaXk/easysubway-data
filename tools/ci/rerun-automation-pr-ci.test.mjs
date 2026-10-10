@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AUTOMATION_PR_ACTIONS_BOT, AUTOMATION_PR_APP } from "./automation-pr-policy.mjs";
-import { RERUN_COMMENT_JOB_LIMIT, main, rerunAutomationPullRequestCi, rerunMarker } from "./rerun-automation-pr-ci.mjs";
+import { RERUN_COMMENT_JOB_LIMIT, main, rerunAutomationPullRequestCi, rerunMarker, unresolvedFailureOf } from "./rerun-automation-pr-ci.mjs";
 
 // #1115: 자동화 PR의 required CI가 일시 오류로 실패하면 실패한 job을 정확히 한 번 다시 실행한다.
 // 사례(2026-10-10): automation-pr-policy.test.mjs의 `Unable to deserialize cloned data`(test runner 일시 오류)와 Docker Hub 429(actionlint 이미지 pull, exit 125).
@@ -239,4 +239,46 @@ test("main은 재실행을 gh api POST rerun-failed-jobs 한 번으로, 코멘�
   assert.deepEqual(posts[1].args.slice(-1), [`repos/${REPOSITORY}/issues/${PULL_NUMBER}/comments`]);
   assert.ok(posts[1].args.includes("--input"), "코멘트 본문은 인자가 아니라 stdin JSON으로 보낸다");
   assert.ok(JSON.parse(posts[1].body).body.startsWith(rerunMarker(RUN_ID)));
+});
+
+test("timed_out으로 끝난 job도 실패 job으로 보고 정확히 한 번 재실행한다(그 job만 나쁠 때도)", async () => {
+  const { state, input } = fixture({ jobs: [job("Data contracts (shard 2/4)", "timed_out", 21), job("Data contracts (shard 1/4)", "success", 22), job("Automation PR gates", "cancelled", 23)] });
+  const result = await rerunAutomationPullRequestCi(input);
+  assert.deepEqual(result, { state: "RERUN", pullRequest: PULL_NUMBER, failedJobs: ["Data contracts (shard 2/4)"] });
+  assert.deepEqual(state.reruns, [RUN_ID]);
+  assert.match(state.comments[0].body, /shard 2\/4/u);
+  assert.doesNotMatch(state.comments[0].body, /Automation PR gates/u, "취소된 job은 실패 job으로 적지 않는다");
+});
+
+test("라벨러가 건너뛴 첫 시도 실패가 재실행 없이 남는 결과(STALE, ALREADY_RECORDED, 작성자가 자동화가 아닌 PR)는 미해결 실패로 분류한다", () => {
+  assert.equal(unresolvedFailureOf({ state: "STALE" }), "STALE");
+  assert.equal(unresolvedFailureOf({ state: "ALREADY_RECORDED" }), "ALREADY_RECORDED");
+  assert.equal(unresolvedFailureOf({ state: "NOT_APPLICABLE", reason: "PULL_NOT_AUTOMATION" }), "NOT_APPLICABLE:PULL_NOT_AUTOMATION");
+  // 재실행했거나, 두 번째 시도이거나, 라벨러도 대상으로 보지 않는 경우에는 남는 실패 상태가 없다.
+  assert.equal(unresolvedFailureOf({ state: "RERUN", pullRequest: 1, failedJobs: [] }), null);
+  assert.equal(unresolvedFailureOf({ state: "SECOND_ATTEMPT" }), null);
+  for (const reason of ["NO_OPEN_PULL", "RUN_NOT_FAILED", "RUN_NOT_AUTOMATION_PULL_REQUEST_CI"]) {
+    assert.equal(unresolvedFailureOf({ state: "NOT_APPLICABLE", reason }), null, reason);
+  }
+});
+
+test("main은 재실행하지 않고 실패가 남는 결과에서 이름 있는 코드로 실패해 #926 실패 이슈 경로로 드러낸다", async () => {
+  const gh = ({ runBody = run(), pullBody = pull(), comments = [] } = {}) => async (args) => {
+    const endpoint = args.at(-1);
+    if (args.includes("POST")) throw new Error(`unexpected write ${endpoint}`);
+    if (endpoint === `repos/${REPOSITORY}/actions/runs/${RUN_ID}`) return JSON.stringify(runBody);
+    if (endpoint === `repos/${REPOSITORY}/commits/${HEAD_SHA}/pulls`) return JSON.stringify([{ number: PULL_NUMBER, state: "open", base: { ref: "main" } }]);
+    if (endpoint === `repos/${REPOSITORY}/pulls/${PULL_NUMBER}`) return JSON.stringify(pullBody);
+    if (endpoint.startsWith(`repos/${REPOSITORY}/issues/${PULL_NUMBER}/comments?`)) return JSON.stringify(comments);
+    throw new Error(`unexpected gh ${args.join(" ")}`);
+  };
+  const argv = ["--repository", REPOSITORY, "--run-id", String(RUN_ID)];
+  const stale = pull({ head: { sha: "b".repeat(40), ref: BRANCH, repo: { full_name: REPOSITORY } } });
+  await assert.rejects(main(argv, { runGh: gh({ pullBody: stale }), log: () => {} }), /^Error: CI_RERUN_FAILURE_UNRESOLVED: STALE/u);
+  await assert.rejects(main(argv, { runGh: gh({ pullBody: pull({ user: humanUser }) }), log: () => {} }), /^Error: CI_RERUN_FAILURE_UNRESOLVED: NOT_APPLICABLE:PULL_NOT_AUTOMATION/u);
+  const recorded = [{ user: identity(AUTOMATION_PR_ACTIONS_BOT), body: `${rerunMarker(RUN_ID)}\n기록` }];
+  await assert.rejects(main(argv, { runGh: gh({ comments: recorded }), log: () => {} }), /^Error: CI_RERUN_FAILURE_UNRESOLVED: ALREADY_RECORDED/u);
+  // 대상이 아닌 결과는 조용히 끝난다.
+  assert.equal((await main(argv, { runGh: gh({ runBody: run({ run_attempt: 2 }) }), log: () => {} })).state, "SECOND_ATTEMPT");
+  assert.equal((await main(argv, { runGh: gh({ runBody: run({ status: "completed", conclusion: "success" }) }), log: () => {} })).state, "NOT_APPLICABLE");
 });

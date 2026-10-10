@@ -7,7 +7,9 @@
 //   2. head sha에 연결된 열린 PR이 정확히 하나이고, 그 PR의 head가 run의 head와 같고(STALE 아님), 작성자가 App easysubway-release-chain[bot]
 //      또는 github-actions[bot]이며(사람 PR 제외) 브랜치가 자동화 단계의 claim 브랜치다.
 //   3. 같은 run에 대한 기록 코멘트가 github-actions[bot]에게 아직 없다(이벤트 재전달에도 한 번만).
-//   4. 실패한 job이 하나 이상이다. 없으면 조용히 넘기지 않고 CI_RERUN_NO_FAILED_JOB으로 실패한다.
+//   4. 실패한 job(결론 failure 또는 timed_out)이 하나 이상이다. 없으면 조용히 넘기지 않고 CI_RERUN_NO_FAILED_JOB으로 실패한다.
+// 자동 병합 라벨러는 이 도구와 같은 조건(변수 켜짐, 첫 시도, failure)에서 첫 시도 실패를 건너뛴다. 그러니 재실행하지 않기로 했는데 실패가 어디에도 남지 않는 결과
+// (STALE, ALREADY_RECORDED, 작성자가 자동화가 아닌 PR)는 이 도구가 이름 있는 코드(CI_RERUN_FAILURE_UNRESOLVED)로 실패해 #926 실패 이슈로 드러낸다.
 // 재실행은 `rerun-failed-jobs`(실패한 job과 그 의존 job만) 한 번이고, 그 뒤에 PR 코멘트로 첫 시도의 실패 job을 남긴다. 재실행 요청이 실패하면 코멘트를 남기지 않는다.
 // 두 번째 시도도 실패하면 이 도구는 아무것도 하지 않는다: 자동 병합 라벨러가 지금처럼 AUTOMATION_PR_CI 위반으로 실패해 실패 이슈(#926)가 되고,
 // 다음 정기 실행의 refresh-pr-required-ci가 AUTOMATION_PR_CI_FAILED로 드러낸다. 진짜(결정적) 실패는 이 도구 때문에 숨겨지지 않는다.
@@ -30,6 +32,10 @@ const CI_WORKFLOW_PATH = ".github/workflows/ci.yml";
 const JOB_NAME_MAX_CHARS = 120;
 const COMMENT_PAGES = 5;
 const GITHUB_JSON = "Accept: application/vnd.github+json";
+// run 결론이 failure로 집계되는 job 결론. 시간 초과(이미지 pull 정지, 러너 멈춤)도 같은 부류의 일시 오류다.
+const FAILED_JOB_CONCLUSIONS = new Set(["failure", "timed_out"]);
+// 재실행하지 않았는데도 라벨러가 이미 건너뛴 첫 시도 실패가 남는 NOT_APPLICABLE 사유. 그 밖의 사유(닫힌 PR, 실패가 아닌 결론, claim 브랜치가 아님)는 남는 실패 상태가 없다.
+const UNRESOLVED_NOT_APPLICABLE = new Set(["PULL_NOT_AUTOMATION"]);
 
 function fail(code, detail = "") {
   throw new Error(detail ? `CI_RERUN_${code}: ${detail}` : `CI_RERUN_${code}`);
@@ -105,13 +111,20 @@ export async function rerunAutomationPullRequestCi({ repository, runId, api, rer
 
   const jobs = await api(`repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`);
   if (!Array.isArray(jobs?.jobs)) fail("JOBS_INVALID", `run ${runId}`);
-  const failed = jobs.jobs.filter((item) => item?.conclusion === "failure");
+  const failed = jobs.jobs.filter((item) => FAILED_JOB_CONCLUSIONS.has(item?.conclusion));
   if (failed.length === 0) fail("NO_FAILED_JOB", `run ${runId} failed but no job concluded with failure`);
 
   await rerunFailedJobs(runId);
   log(`reran the failed jobs of run ${runId} once (pull request #${number}): ${failed.map((item) => item.name).join(", ")}`);
   await comment(number, commentBody({ runId, runUrl: run.html_url, failed }));
   return { state: "RERUN", pullRequest: number, failedJobs: failed.map((item) => String(item.name)) };
+}
+
+/** 재실행 없이 끝났는데 라벨러가 건너뛴 첫 시도 실패가 남는 결과의 사유. 남는 실패가 없으면 null이다. */
+export function unresolvedFailureOf(result) {
+  if (result.state === "STALE" || result.state === "ALREADY_RECORDED") return result.state;
+  if (result.state === "NOT_APPLICABLE" && UNRESOLVED_NOT_APPLICABLE.has(result.reason)) return `${result.state}:${result.reason}`;
+  return null;
 }
 
 function parseArgs(argv) {
@@ -141,6 +154,8 @@ export async function main(argv, { runGh = defaultRunGh, log = console.log } = {
     log,
   });
   log(`automation pull request CI rerun: ${result.state}${result.reason ? ` (${result.reason})` : ""}`);
+  const unresolved = unresolvedFailureOf(result);
+  if (unresolved !== null) fail("FAILURE_UNRESOLVED", `${unresolved}: the first-attempt CI failure of run ${runId} was skipped by the labeler but not rerun`);
   return result;
 }
 
