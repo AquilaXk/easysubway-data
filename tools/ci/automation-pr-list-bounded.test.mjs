@@ -14,8 +14,9 @@ const read = (file) => readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
 const joined = (text) => text.replace(/\\\n\s*/gu, " ");
 const commands = (text, pattern) => joined(text).split("\n").filter((line) => pattern.test(line));
 
-// 판정이 쓰는 수집기 호출 수(workflow 9개, 호출 13곳).
+// 판정이 쓰는 수집기 호출 수(workflow 10개, 호출 14곳).
 const COLLECTOR_CALLS = Object.freeze({
+  "automation-blocked-redispatch.yml": 1,
   "current-capital-topology-refresh.yml": 1,
   "current-capital-topology-registration.yml": 2,
   "itx-current-promotion.yml": 1,
@@ -39,12 +40,12 @@ test("workflow의 PR 목록 조회는 전 상태(all·closed·merged)를 상한�
   }
 });
 
-test("판정 workflow 9개는 열린 PR + claim 브랜치별 PR 수집기를 13곳에서 쓴다", () => {
+test("판정 workflow 10개는 열린 PR + claim 브랜치별 PR 수집기를 14곳에서 쓴다", () => {
   for (const file of workflowFiles) {
     const count = commands(read(file), /node tools\/ci\/collect-automation-prs\.mjs/u).length;
     assert.equal(count, COLLECTOR_CALLS[file] ?? 0, `${file}: 수집기 호출 수`);
   }
-  assert.equal(Object.values(COLLECTOR_CALLS).reduce((sum, count) => sum + count, 0), 13);
+  assert.equal(Object.values(COLLECTOR_CALLS).reduce((sum, count) => sum + count, 0), 14);
 });
 
 test("수집기 호출은 같은 step에서 먼저 받은 ls-remote 출력과 열린 PR 상한 1000을 쓴다", () => {

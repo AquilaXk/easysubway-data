@@ -120,7 +120,7 @@ jobs:
         env:
           BLOCKED_BY: ${{ steps.decision.outputs.blocked_by }}
         run: |
-          echo "::notice title=ITX promotion::waiting for pending automation pull request(s) ${BLOCKED_BY}; the next daily run decides again."
+          echo "::notice title=ITX promotion::waiting for pending automation pull request(s) ${BLOCKED_BY}; automation-blocked-redispatch.yml runs this workflow again once they are merged or closed."
       - name: Prepare current ITX promotion
         if: ${{ steps.decision.outputs.state == 'COLLECT' }}
         env:
