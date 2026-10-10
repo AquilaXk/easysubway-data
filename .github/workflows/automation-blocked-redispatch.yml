@@ -1,0 +1,67 @@
+name: Automation Blocked Redispatch
+
+# 차단 PR 때문에 잃은 정기 슬롯을 차단이 풀린 뒤 자동으로 다시 dispatch한다(#1097, #870 전체 자동화, QA 결정 2026-10-09: 사람은 이상이 날 때만 개입).
+# - 정기 workflow 넷(ITX 승격·등록·재확인·재결속)은 다른 원장 쓰기 자동화 PR이 열려 있으면 BLOCKED_BY_PENDING_PR로 끝난다. 이 종료는 success라
+#   다음 주기까지 아무도 다시 깨우지 않는다(ITX는 24시간 뒤). 이 workflow가 그 막힌 run을 찾아, 판정 도구와 같은 함수로 차단 대상이 비었는지 다시 계산하고
+#   비었으면 github.token으로 한 번 dispatch한다. 또 막히면 재dispatch된 run이 다시 막힌 run이 되어 같은 절차를 탄다. 직렬화(쓰기 workflow 사이의 순서)는 그대로다.
+# - 상한: 진행 중인 run이 있으면 기다리고, 같은 workflow를 24시간 안에 3번 넘게 깨우지 않는다. 상한에 닿으면 job이 실패해 실패 이슈(#926)로 admin에 드러난다.
+# - 후보 갱신은 대상이 아니다. github.token dispatch는 정기 역할을 받지 못하고 스케줄러가 2시간마다 다시 깨운다.
+# - 15분마다와 Automerge Queue 완료(병합은 github.token이라 PR closed·push 이벤트가 없다)에서 돈다. 읽기는 API뿐이고 쓰기는 workflow dispatch(actions: write) 하나다.
+#   PR 코드는 가져오거나 실행하지 않는다. 재dispatch된 workflow의 정기 실행 변수(DATAPACK_SCHEDULED_*)는 그대로 지켜진다(봇 dispatch는 변수가 true일 때만 실행).
+# - 정기·workflow_run 실행은 저장소 변수 DATAPACK_AUTOMATION_REDISPATCH가 true일 때만 돈다(기본 꺼짐, 코드가 켜지 않는다). 변수는 QA 보고 뒤 별도 설정 변경으로만 켠다. 사람 dispatch는 항상 돈다.
+on:
+  schedule:
+    - cron: "11,26,41,56 * * * *"
+  workflow_run:
+    workflows: ["Automerge Queue"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: automation-blocked-redispatch
+  cancel-in-progress: false
+
+jobs:
+  redispatch:
+    name: Redispatch blocked automation
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DATAPACK_AUTOMATION_REDISPATCH == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+      pull-requests: read
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Collect the automation pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 판정 workflow와 같은 입력이다: 열린 PR 전체와 automation/* 브랜치별 PR(전 상태).
+          collect_root="${RUNNER_TEMP}/automation-blocked-redispatch/${GITHUB_RUN_ID}"
+          mkdir -p "${collect_root}"
+          git ls-remote --heads origin "refs/heads/automation/*" > "${collect_root}/automation-branches.txt"
+          node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${collect_root}/automation-branches.txt" --pr-limit 1000 --output "${collect_root}/prs.json"
+          printf 'REDISPATCH_ROOT=%s\n' "${collect_root}" >> "${GITHUB_ENV}"
+      - name: Redispatch the workflows that ended blocked
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node tools/ci/redispatch-blocked-workflows.mjs --repository "${GITHUB_REPOSITORY}" --refs "${REDISPATCH_ROOT}/automation-branches.txt" --prs "${REDISPATCH_ROOT}/prs.json"
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow automation-blocked-redispatch.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
