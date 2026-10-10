@@ -6,8 +6,8 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  EXPIRED_SOURCE_GRACE_MS,
   EXPIRING_SOURCE_LIMIT,
+  REFRESH_RUN_MAX_AGE_MS,
   SNAPSHOT_MAX_BYTES,
   STATUS_STAGES,
   buildAutomationStatus,
@@ -319,22 +319,70 @@ test("인벤토리를 주지 않으면 snapshot에 expiringSources가 없다: �
   assert.equal(Object.hasOwn(snapshot, "expiringSources"), false);
   const withInventory = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf() });
   assert.deepEqual(Object.keys(withInventory), [
-    "schemaVersion", "artifactKind", "generatedAt", "activeDatapack", "stages", "failureIssues", "stuck", "candidateInFlight", "expiringSources",
+    "schemaVersion", "artifactKind", "generatedAt", "activeDatapack", "stages", "failureIssues", "stuck", "candidateInFlight", "expiringSources", "expiringSourcesTotalCount",
   ]);
   assert.deepEqual(withInventory.expiringSources, []);
 });
 
-test("만료가 이른 순서로 최대 10개를 싣고, 같은 시각이면 sourceId 순이다. 항목은 backend 계약의 여섯 키뿐이다", () => {
-  const sources = Array.from({ length: 14 }, (_, index) => evidenceSource(`source-${String(index).padStart(2, "0")}`, 30 - index));
-  sources.push(evidenceSource("aaa-tie", 17), evidenceSource("zzz-tie", 17));
+test("같은 심각도 안에서는 만료가 이른 순서이고 같은 시각이면 sourceId 순이다. 항목은 backend 계약의 여섯 키뿐이다", () => {
+  const sources = [evidenceSource("zzz-tie", 17), evidenceSource("source-b", 18), evidenceSource("aaa-tie", 17), evidenceSource("source-a", 30)];
   const list = expiring({ sourceInventory: inventoryOf(...sources) });
-  assert.equal(list.length, EXPIRING_SOURCE_LIMIT);
-  assert.equal(EXPIRING_SOURCE_LIMIT, 10);
-  assert.deepEqual(list.map((item) => item.sourceId), [
-    "aaa-tie", "source-13", "zzz-tie", "source-12", "source-11", "source-10", "source-09", "source-08", "source-07", "source-06",
+  assert.deepEqual(list.map((item) => item.sourceId), ["aaa-tie", "zzz-tie", "source-b", "source-a"]);
+  assert.deepEqual(Object.keys(list[0]), ["sourceId", "name", "evidence", "freshUntil", "refreshStage", "refreshState"]);
+  assert.deepEqual(list[0], { sourceId: "aaa-tie", name: "자료 aaa-tie", evidence: "scheduleAdmissionEvidence", freshUntil: iso(17), refreshStage: null, refreshState: "NONE" });
+});
+
+// 소유 단계가 있고 단계 run이 성공이면 refreshState가 OK인 원천들(재확인 recipe 소유 일곱 개).
+const OK_OWNED_IDS = [
+  "seoul-metro-accessibility", "kric-station-convenience-standard", "daegu-line1-train-timetable", "daegu-line2-train-timetable", "daegu-line3-train-timetable",
+  "gwangju-transportation-accessibility", "daejeon-transportation-accessibility",
+];
+const capitalFailing = () => refreshRunsOf({ "capital-topology-refresh": [run(9, { created_at: hoursAgo(1), conclusion: "failure" })] });
+
+test("목록은 심각도 순으로 먼저 정렬해 상위 10개를 남긴다: 만료 > 6시간 안의 FAILED·BLOCKED·NONE > 12시간 안 > 먼 FAILED·BLOCKED·NONE > 먼 OK. 자르기 전 개수는 expiringSourcesTotalCount다", () => {
+  const sources = [
+    ...OK_OWNED_IDS.map((id, index) => evidenceSource(id, 2 + index)), // 12시간 안의 OK(주의 후보)
+    evidenceSource("none-far", 400), evidenceSource("none-near", 3), evidenceSource("expired-old", -240), evidenceSource("expired-new", -1),
+    evidenceSource("incheon-line1-train-timetable", 5), // 소유 단계가 있고 최근 run이 실패 -> FAILED
+    { ...evidenceSource("daejeon-station-distance-fare", 300) }, // 먼 OK
+  ];
+  const snapshot = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf(...sources), refreshRuns: capitalFailing() });
+  assert.equal(snapshot.expiringSourcesTotalCount, 13);
+  assert.equal(snapshot.expiringSources.length, EXPIRING_SOURCE_LIMIT);
+  assert.deepEqual(snapshot.expiringSources.map((item) => [item.sourceId, item.refreshState]), [
+    ["expired-old", "NONE"], ["expired-new", "NONE"], ["none-near", "NONE"], ["incheon-line1-train-timetable", "FAILED"],
+    ["seoul-metro-accessibility", "OK"], ["kric-station-convenience-standard", "OK"], ["daegu-line1-train-timetable", "OK"], ["daegu-line2-train-timetable", "OK"],
+    ["daegu-line3-train-timetable", "OK"], ["gwangju-transportation-accessibility", "OK"],
   ]);
-  assert.deepEqual(Object.keys(list[1]), ["sourceId", "name", "evidence", "freshUntil", "refreshStage", "refreshState"]);
-  assert.deepEqual(list[1], { sourceId: "source-13", name: "자료 source-13", evidence: "scheduleAdmissionEvidence", freshUntil: iso(17), refreshStage: null, refreshState: "NONE" });
+});
+
+test("12시간 밖에서는 FAILED·BLOCKED·NONE이 OK보다 먼저 남는다(열두 개 fixture)", () => {
+  const owned = [...OK_OWNED_IDS, "busan-transportation-route-topology", "gwangju-transportation-route-topology", "daejeon-station-distance-fare"];
+  const sources = [
+    ...owned.map((id, index) => evidenceSource(id, 100 + index)), // 먼 OK 열 개, 가장 일찍 만료돼도
+    evidenceSource("incheon-line1-train-timetable", 500), evidenceSource("none-far", 400),
+  ];
+  const snapshot = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf(...sources), refreshRuns: capitalFailing() });
+  assert.equal(snapshot.expiringSourcesTotalCount, 12);
+  assert.deepEqual(snapshot.expiringSources.slice(0, 2).map((item) => [item.sourceId, item.refreshState]), [["none-far", "NONE"], ["incheon-line1-train-timetable", "FAILED"]]);
+  assert.equal(snapshot.expiringSources.length, 10);
+  assert.deepEqual(snapshot.expiringSources.slice(2).map((item) => [item.sourceId, item.refreshState]), owned.slice(0, 8).map((id) => [id, "OK"]));
+});
+
+test("12시간 안에 만료되는 OK 근거는 먼 NONE 근거에 밀려 잘리지 않는다(backend의 주의 판정이 보아야 한다)", () => {
+  const sources = [
+    ...Array.from({ length: 10 }, (_, index) => evidenceSource(`none-far-${String(index).padStart(2, "0")}`, 1000 + index)),
+    evidenceSource("seoul-metro-accessibility", 2),
+  ];
+  const [first, second] = expiring({ sourceInventory: inventoryOf(...sources) });
+  assert.deepEqual([first.sourceId, first.refreshState, second.sourceId], ["seoul-metro-accessibility", "OK", "none-far-00"]);
+});
+
+test("totalCount는 잘리지 않았으면 목록 개수와 같고, 대상 원천이 없으면 0이다", () => {
+  const few = buildAutomationStatus({ ...emptyInputs(), refreshRuns: refreshRunsOf(), sourceInventory: inventoryOf(evidenceSource("a", 2), evidenceSource("b", 3)) });
+  assert.equal(few.expiringSourcesTotalCount, 2);
+  const none = buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf() });
+  assert.deepEqual([none.expiringSources, none.expiringSourcesTotalCount], [[], 0]);
 });
 
 test("원천 하나에 근거가 여럿이면 가장 이른 freshUntil 하나만 싣고 근거 종류는 원천 항목 아래 최상위 키다", () => {
@@ -355,12 +403,12 @@ test("productionUseAllowed가 아닌 원천과 freshUntil이 없는 원천은 �
   assert.deepEqual(list.map((item) => item.sourceId), ["used"]);
 });
 
-test("이미 만료된 근거는 만료 24시간 안에서만 싣는다(만료 순간에 신호가 사라지지 않게, 오래된 만료가 목록을 채우지 않게)", () => {
-  assert.equal(EXPIRED_SOURCE_GRACE_MS, 24 * 3_600_000);
+test("이미 만료된 근거는 언제 만료됐든 싣는다(숨기지 않는다). productionUseAllowed가 아니면 싣지 않는다", () => {
   const list = expiring({ sourceInventory: inventoryOf(
-    evidenceSource("just-expired", -0.01), evidenceSource("expired-23h", -23), evidenceSource("expired-24h", -24), evidenceSource("expired-week", -168), evidenceSource("future", 1),
+    evidenceSource("just-expired", -0.01), evidenceSource("expired-23h", -23), evidenceSource("expired-24h", -24), evidenceSource("expired-week", -168),
+    evidenceSource("expired-year", -9000), evidenceSource("expired-disallowed", -5, { productionUseAllowed: false }), evidenceSource("future", 1),
   ) });
-  assert.deepEqual(list.map((item) => item.sourceId), ["expired-23h", "just-expired", "future"]);
+  assert.deepEqual(list.map((item) => item.sourceId), ["expired-year", "expired-week", "expired-24h", "expired-23h", "just-expired", "future"]);
 });
 
 test("갱신 단계는 소유 표(REFRESH_STAGES, 재확인 recipe)에서 오고, 소유자가 없으면 NONE이다", () => {
@@ -375,8 +423,8 @@ test("갱신 단계는 소유 표(REFRESH_STAGES, 재확인 recipe)에서 오고
   assert.equal(stages.get("kric-nationwide-timetable-file"), "gwangju-timetable-refresh");
   const list = expiring({ sourceInventory: inventoryOf(evidenceSource("incheon-line1-train-timetable", 2), evidenceSource("busan-transportation-timetable", 3)) });
   assert.deepEqual(list.map((item) => [item.sourceId, item.refreshStage, item.refreshState]), [
-    ["incheon-line1-train-timetable", "capital-topology-refresh", "OK"],
     ["busan-transportation-timetable", null, "NONE"],
+    ["incheon-line1-train-timetable", "capital-topology-refresh", "OK"],
   ]);
 });
 
@@ -395,15 +443,19 @@ test("갱신 작업 상태: 그 단계 workflow의 가장 최근에 끝난 run�
     assert.equal(states({ runs: { "capital-topology-refresh": failed(2, conclusion) } })["incheon-line1-train-timetable"], "FAILED", conclusion);
   }
   assert.equal(states({ runs: { "capital-topology-refresh": failed(2) } })["seoul-metro-accessibility"], "OK");
-  // 취소·성공·건너뜀은 실패가 아니다.
-  for (const conclusion of ["cancelled", "skipped", "success", "neutral"]) {
-    assert.equal(states({ runs: { "capital-topology-refresh": failed(2, conclusion) } })["incheon-line1-train-timetable"], "OK", conclusion);
-  }
+  assert.equal(states({ runs: { "capital-topology-refresh": failed(2, "success") } })["incheon-line1-train-timetable"], "OK");
   // 가장 최근에 끝난 run만 본다: 옛 실패 뒤에 성공이 있으면 OK이고, 진행 중인 run은 건너뛴다.
   const newerSuccess = [run(5, { created_at: hoursAgo(2), conclusion: "failure" }), run(6, { created_at: hoursAgo(1), conclusion: "success" })];
   assert.equal(states({ runs: { "capital-topology-refresh": newerSuccess } })["incheon-line1-train-timetable"], "OK");
   const newerFailure = [run(5, { created_at: hoursAgo(2), conclusion: "success" }), run(6, { created_at: hoursAgo(1), conclusion: "failure" })];
   assert.equal(states({ runs: { "capital-topology-refresh": newerFailure } })["incheon-line1-train-timetable"], "FAILED");
+  // 취소·건너뜀·neutral·진행 중은 건너뛰고 그 앞의 success 또는 failure로 정한다(동시성으로 취소된 재실행이 실패를 가리지 못한다).
+  for (const skippedConclusion of ["cancelled", "skipped", "neutral"]) {
+    const afterFailure = [run(5, { created_at: hoursAgo(3), conclusion: "failure" }), run(6, { created_at: hoursAgo(1), conclusion: skippedConclusion })];
+    assert.equal(states({ runs: { "capital-topology-refresh": afterFailure } })["incheon-line1-train-timetable"], "FAILED", skippedConclusion);
+    const afterSuccess = [run(5, { created_at: hoursAgo(3), conclusion: "success" }), run(6, { created_at: hoursAgo(1), conclusion: skippedConclusion })];
+    assert.equal(states({ runs: { "capital-topology-refresh": afterSuccess } })["incheon-line1-train-timetable"], "OK", skippedConclusion);
+  }
   const runningOnTop = [run(5, { created_at: hoursAgo(3), conclusion: "failure" }), run(6, { created_at: hoursAgo(0.1), status: "in_progress", conclusion: null })];
   assert.equal(states({ runs: { "capital-topology-refresh": runningOnTop } })["incheon-line1-train-timetable"], "FAILED");
   // 열린 실패 이슈는 사람이 닫을 때까지 열려 있어 지금 실패 중이라는 뜻이 아니다: 최근 run이 성공이면 OK다.
@@ -442,6 +494,21 @@ test("refreshWorkflowsOf: 갱신 단계 id를 그 단계 workflow 파일로 옮�
   assert.equal(workflows["gwangju-timetable-refresh"], "retained-gwangju-timetable-refresh.yml");
 });
 
+test("판정할 success 또는 failure run이 48시간 안에 없으면 FAILED다(정기 실행이 멈춘 단계): 빈 목록, 오래된 성공, 건너뜀·취소뿐인 경우", () => {
+  assert.equal(REFRESH_RUN_MAX_AGE_MS, 48 * 3_600_000);
+  const inventory = inventoryOf(evidenceSource("incheon-line1-train-timetable", 30));
+  const stateWith = (runs) => expiring({ sourceInventory: inventory, refreshRuns: refreshRunsOf({ "capital-topology-refresh": runs }) })[0].refreshState;
+  assert.equal(stateWith([]), "FAILED");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(47), conclusion: "success" })]), "OK");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(49), conclusion: "success" })]), "FAILED");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(48), conclusion: "success" })]), "FAILED", "정확히 48시간은 밖이다");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(1), conclusion: "skipped" }), run(2, { created_at: hoursAgo(2), conclusion: "cancelled" })]), "FAILED");
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(1), status: "in_progress", conclusion: null })]), "FAILED");
+  // 창 안의 성공이 창 밖의 실패보다 우선한다(오래된 실패는 보지 않는다).
+  assert.equal(stateWith([run(1, { created_at: hoursAgo(60), conclusion: "failure" }), run(2, { created_at: hoursAgo(10), conclusion: "success" })]), "OK");
+  assert.throws(() => stateWith([run(1, { created_at: "not-a-time", conclusion: "success" })]), /STATUS_RUNS_INVALID/u);
+});
+
 test("수집: 갱신 workflow를 주면 단계마다 끝난 run 목록을 읽고, 안 주면 읽지 않는다. 응답이 목록이 아니면 실패한다", async () => {
   const requested = [];
   const apis = {
@@ -464,8 +531,8 @@ test("수집: 갱신 workflow를 주면 단계마다 끝난 run 목록을 읽고
   const withRuns = await collectAutomationStatus({ ...base, refreshWorkflows: { "capital-topology-refresh": "current-capital-topology-refresh.yml", "source-reverification": "source-reverification.yml" } });
   assert.deepEqual(Object.keys(withRuns.refreshRuns), ["capital-topology-refresh", "source-reverification"]);
   assert.deepEqual(requested.slice(before).filter((endpoint) => endpoint.includes("status=completed")), [
-    `repos/${REPOSITORY}/actions/workflows/current-capital-topology-refresh.yml/runs?per_page=10&status=completed&branch=main`,
-    `repos/${REPOSITORY}/actions/workflows/source-reverification.yml/runs?per_page=10&status=completed&branch=main`,
+    `repos/${REPOSITORY}/actions/workflows/current-capital-topology-refresh.yml/runs?per_page=30&status=completed&branch=main`,
+    `repos/${REPOSITORY}/actions/workflows/source-reverification.yml/runs?per_page=30&status=completed&branch=main`,
   ]);
   await assert.rejects(collectAutomationStatus({
     ...base, apis: { ...apis, data: async (endpoint) => (endpoint.includes("/actions/workflows/") ? { not: "a list" } : apis.data(endpoint)) },
@@ -509,14 +576,21 @@ test("실제 source-inventory.json으로 만들어도 backend 계약(키·형식
     const snapshot = buildAutomationStatus({ ...emptyInputs(), now: at, sourceInventory: inventory, refreshRuns: refreshRunsOf() });
     const list = snapshot.expiringSources;
     assert.ok(list.length <= EXPIRING_SOURCE_LIMIT);
-    assert.deepEqual([...list].sort((left, right) => Date.parse(left.freshUntil) - Date.parse(right.freshUntil) || (left.sourceId < right.sourceId ? -1 : 1)), list);
+    const rank = (item) => {
+      const remaining = Date.parse(item.freshUntil) - at.getTime();
+      if (remaining <= 0) return 0;
+      if (remaining <= 6 * 3_600_000 && item.refreshState !== "OK") return 1;
+      if (remaining <= 12 * 3_600_000) return 2;
+      return item.refreshState === "OK" ? 4 : 3;
+    };
+    assert.deepEqual([...list].sort((left, right) => rank(left) - rank(right) || Date.parse(left.freshUntil) - Date.parse(right.freshUntil) || (left.sourceId < right.sourceId ? -1 : 1)), list);
+    assert.ok(snapshot.expiringSourcesTotalCount >= list.length);
     assert.equal(new Set(list.map((item) => item.sourceId)).size, list.length);
     for (const item of list) {
       assert.deepEqual(Object.keys(item), ["sourceId", "name", "evidence", "freshUntil", "refreshStage", "refreshState"]);
       assert.match(item.sourceId, /^[a-z0-9][a-z0-9-]{0,99}$/u);
       assert.match(item.evidence, /^[A-Za-z][A-Za-z0-9]{0,63}$/u);
       assert.ok(item.name.length >= 1 && [...item.name].length <= 200);
-      assert.ok(Date.parse(item.freshUntil) > at.getTime() - EXPIRED_SOURCE_GRACE_MS);
       assert.equal(item.refreshState === "NONE", item.refreshStage === null);
       assert.ok(["OK", "FAILED", "BLOCKED", "NONE"].includes(item.refreshState));
     }

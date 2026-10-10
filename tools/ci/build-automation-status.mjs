@@ -36,8 +36,8 @@ const IN_FLIGHT_STAGES = new Set(["candidate", "rc", "compat", "promotion", "pub
 
 /** snapshot에 싣는 곧 만료되는 원천 근거의 최대 개수(만료가 이른 순서). */
 export const EXPIRING_SOURCE_LIMIT = 10;
-/** 이미 만료된 근거를 목록에 두는 기간. 만료 순간에 신호가 사라지지 않게 하되 오래전에 만료된 근거가 "다음 만료" 목록을 채우지 않게 한다. */
-export const EXPIRED_SOURCE_GRACE_MS = 24 * 3_600_000;
+/** 갱신 작업 상태를 정하는 데 쓰는 run의 최대 나이. 이 안에 success 또는 failure run이 없으면 정기 실행이 멈춘 단계로 보고 FAILED다. */
+export const REFRESH_RUN_MAX_AGE_MS = 48 * 3_600_000;
 const SOURCE_ID = /^[a-z0-9][a-z0-9-]{0,99}$/u;
 const EVIDENCE_KEY = /^[A-Za-z][A-Za-z0-9]{0,63}$/u;
 const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
@@ -176,15 +176,23 @@ function earliestFreshness(source) {
 const FAILED_RUN_CONCLUSIONS = new Set(["failure", "timed_out", "startup_failure"]);
 
 /**
- * 근거를 갱신하는 작업의 상태. 그 단계 workflow의 가장 최근에 끝난 run이 실패했으면 FAILED, 막힌 PR·주인 없는 claim·재생성 상한이 그 단계이면 BLOCKED, 아니면 OK다.
+ * 근거를 갱신하는 작업의 상태. 그 단계 workflow의 run 중 취소·건너뜀·neutral·진행 중을 건너뛰고 48시간 안에서 가장 최근의 success 또는 failure(failure·timed_out·startup_failure)로 정한다.
+ * 그런 run이 없으면 정기 실행이 멈춘 단계이므로 FAILED다. 실패가 아니면 막힌 PR·주인 없는 claim·재생성 상한이 그 단계일 때 BLOCKED, 아니면 OK다.
  * 열린 실패 이슈는 쓰지 않는다: 이슈는 사람이 닫을 때까지 열려 있어 지금 실패 중인지를 말해 주지 못한다.
  */
-function refreshStateOf(stage, refreshRuns, stuck) {
+function refreshStateOf(stage, refreshRuns, stuck, now) {
   if (stage === undefined) return "NONE";
   const runs = refreshRuns[stage];
   if (!Array.isArray(runs)) throw statusError("RUNS_INVALID", `no run list for refresh stage ${stage}`);
-  const [latest] = runs.filter((run) => run?.status === "completed").sort(newest);
-  if (latest !== undefined && FAILED_RUN_CONCLUSIONS.has(latest.conclusion)) return "FAILED";
+  const decisive = [];
+  for (const run of runs) {
+    if (run?.status !== "completed" || (run.conclusion !== "success" && !FAILED_RUN_CONCLUSIONS.has(run.conclusion))) continue;
+    const created = instant(run.created_at);
+    if (!Number.isFinite(created)) throw statusError("RUNS_INVALID", `${stage} refresh run ${String(run.id)} has no valid created_at`);
+    if (created > now.getTime() - REFRESH_RUN_MAX_AGE_MS) decisive.push(run);
+  }
+  const [latest] = decisive.sort(newest);
+  if (latest === undefined || FAILED_RUN_CONCLUSIONS.has(latest.conclusion)) return "FAILED";
   const prefix = AUTOMATION_STAGE_PREFIXES[stage];
   const blocked = stuck.pulls.some((pull) => pull.stage === stage)
     || stuck.claims.some((claim) => claim.branch.startsWith(prefix))
@@ -193,16 +201,28 @@ function refreshStateOf(stage, refreshRuns, stuck) {
 }
 
 const compareText = (left, right) => (left < right ? -1 : Number(left > right));
-const byExpiry = (left, right) => Date.parse(left.freshUntil) - Date.parse(right.freshUntil) || compareText(left.sourceId, right.sourceId);
 
-/** 원천 하나의 목록 항목. 대상이 아니면(사용 불가, 근거 없음, 오래전 만료) null이고, 값이 어긋나면 채우지 않고 실패한다. */
+/**
+ * 심각도 순위(작을수록 먼저 남는다). backend가 렌더 시각으로 내리는 판정(이미 만료 = 이상, 6시간 안 + FAILED·BLOCKED·NONE = 이상, 12시간 안 = 주의)에 필요한 근거가
+ * 먼 근거에 밀려 잘리지 않게 순서를 잡는다: 0 이미 만료, 1 6시간 안의 FAILED·BLOCKED·NONE, 2 12시간 안, 3 그보다 먼 FAILED·BLOCKED·NONE, 4 그보다 먼 OK.
+ */
+const SOURCE_FAILURE_WINDOW_MS = 6 * 3_600_000;
+const SOURCE_WARNING_WINDOW_MS = 12 * 3_600_000;
+const severityRank = (item, nowMillis) => {
+  const remaining = Date.parse(item.freshUntil) - nowMillis;
+  if (remaining <= 0) return 0;
+  if (remaining <= SOURCE_FAILURE_WINDOW_MS && item.refreshState !== "OK") return 1;
+  if (remaining <= SOURCE_WARNING_WINDOW_MS) return 2;
+  return item.refreshState === "OK" ? 4 : 3;
+};
+
+/** 원천 하나의 목록 항목. 대상이 아니면(사용 불가, 근거 없음) null이고, 값이 어긋나면 채우지 않고 실패한다. 만료된 근거도 언제 만료됐든 싣는다. */
 function expiringSourceOf(source, { now, refreshStages, refreshRuns, stuck }) {
   if (source.productionUseAllowed !== true) return null;
   const freshness = earliestFreshness(source);
   if (freshness === null) return null;
   if (!SOURCE_ID.test(source.id)) throw inventoryError(`source id ${source.id} does not match the snapshot contract`);
   if (!EVIDENCE_KEY.test(freshness.evidence)) throw inventoryError(`source ${source.id} evidence key ${freshness.evidence} does not match the snapshot contract`);
-  if (freshness.millis <= now.getTime() - EXPIRED_SOURCE_GRACE_MS) return null;
   const refreshStage = refreshStages.get(source.id);
   return {
     sourceId: source.id,
@@ -210,13 +230,13 @@ function expiringSourceOf(source, { now, refreshStages, refreshRuns, stuck }) {
     evidence: freshness.evidence,
     freshUntil: new Date(freshness.millis).toISOString(),
     refreshStage: refreshStage ?? null,
-    refreshState: refreshStateOf(refreshStage, refreshRuns, stuck),
+    refreshState: refreshStateOf(refreshStage, refreshRuns, stuck, now),
   };
 }
 
 /**
- * 곧 만료되는 원천 근거를 만료가 이른 순서(같은 시각이면 sourceId 순)로 최대 EXPIRING_SOURCE_LIMIT개 만든다.
- * 사용 가능한(productionUseAllowed) 원천만 대상이고, 만료된 지 EXPIRED_SOURCE_GRACE_MS가 지난 근거는 뺀다. 값이 어긋나면 채우지 않고 실패한다.
+ * 곧 만료되는 원천 근거 후보를 모두 만든 뒤 심각도 순(만료 > FAILED·BLOCKED·NONE > OK), 같은 심각도 안에서는 만료가 이른 순서(같은 시각이면 sourceId 순)로 정렬해
+ * 상위 EXPIRING_SOURCE_LIMIT개를 남긴다. 자르기 전 후보 개수를 함께 돌려준다. 사용 가능한(productionUseAllowed) 원천만 대상이고 값이 어긋나면 채우지 않고 실패한다.
  */
 function buildExpiringSources({ inventory, now, refreshRuns, stuck }) {
   if (inventory === null || typeof inventory !== "object" || !Array.isArray(inventory.sources)) throw inventoryError("inventory has no sources array");
@@ -230,7 +250,10 @@ function buildExpiringSources({ inventory, now, refreshRuns, stuck }) {
     const candidate = expiringSourceOf(source, context);
     if (candidate !== null) candidates.push(candidate);
   }
-  return candidates.toSorted(byExpiry).slice(0, EXPIRING_SOURCE_LIMIT);
+  const nowMillis = now.getTime();
+  const bySeverity = (left, right) => severityRank(left, nowMillis) - severityRank(right, nowMillis)
+    || Date.parse(left.freshUntil) - Date.parse(right.freshUntil) || compareText(left.sourceId, right.sourceId);
+  return { expiringSources: candidates.toSorted(bySeverity).slice(0, EXPIRING_SOURCE_LIMIT), expiringSourcesTotalCount: candidates.length };
 }
 
 /**
@@ -296,7 +319,7 @@ export function buildAutomationStatus({
   };
   // 선택 필드: 인벤토리를 주었을 때만 싣는다(backend가 받기 전에는 주지 않는다).
   if (sourceInventory !== undefined) {
-    snapshot.expiringSources = buildExpiringSources({ inventory: sourceInventory, now, refreshRuns, stuck: snapshot.stuck });
+    Object.assign(snapshot, buildExpiringSources({ inventory: sourceInventory, now, refreshRuns, stuck: snapshot.stuck }));
   }
   return snapshot;
 }
@@ -313,10 +336,10 @@ export function refreshWorkflowsOf(refreshStages = new Set(sourceRefreshStages()
   return Object.fromEntries([...refreshStages].toSorted(compareText).map((stage) => [stage, AUTOMATION_STAGE_WORKFLOWS[stage]]));
 }
 
-/** 갱신 단계마다 그 workflow의 끝난 run 목록(최근 10개, main)을 읽는다. 응답이 목록이 아니면 채우지 않고 실패한다. */
+/** 갱신 단계마다 그 workflow의 끝난 run 목록(최근 30개, main)을 읽는다. 응답이 목록이 아니면 채우지 않고 실패한다. */
 async function collectRefreshRuns({ refreshWorkflows, api, repository }) {
   const entries = await Promise.all(Object.entries(refreshWorkflows).map(async ([stage, workflow]) => {
-    const response = await api(`repos/${repository}/actions/workflows/${workflow}/runs?per_page=10&status=completed&branch=main`);
+    const response = await api(`repos/${repository}/actions/workflows/${workflow}/runs?per_page=30&status=completed&branch=main`);
     if (!Array.isArray(response?.workflow_runs)) throw statusError("RUNS_INVALID", `${stage} refresh response is not a run list`);
     return [stage, response.workflow_runs];
   }));
