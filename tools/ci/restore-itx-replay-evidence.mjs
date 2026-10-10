@@ -16,6 +16,8 @@ import { lstat, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+
 export const ITX_REPLAY_WORKFLOW_PATH = ".github/workflows/itx-current-promotion.yml";
 export const ITX_REPLAY_EVIDENCE_FILES = Object.freeze([
   "freshness.json",
@@ -86,7 +88,7 @@ export function verifyItxReplaySource({ sourceRunId, repository, run, jobs, file
   verifyRun({ sourceRunId, repository, run });
   verifyJobs({ sourceRunId, jobs });
 
-  const names = Object.keys(files).sort();
+  const names = Object.keys(files).sort(codepointCompare);
   if (JSON.stringify(names) !== JSON.stringify(ITX_REPLAY_EVIDENCE_FILES) || names.some((name) => !Buffer.isBuffer(files[name]))) {
     fail("ITX_REPLAY_ARTIFACT_INVALID", `artifact files must be exactly ${ITX_REPLAY_EVIDENCE_FILES.join(", ")}`);
   }
