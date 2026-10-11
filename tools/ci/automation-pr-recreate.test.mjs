@@ -10,11 +10,14 @@ import { evaluateGithubExpression } from "./github-expression.mjs";
 import { REFRESH_STAGE_IDS } from "./refresh-stage-contracts.mjs";
 import {
   RECREATE_DAILY_LIMIT,
+  RECREATE_MODE,
+  STAGE_RECREATE_MODE,
   STAGE_REDISPATCH,
   main,
   planBehindRecreation,
   recreateBehindPullRequests,
 } from "./automation-pr-recreate.mjs";
+import { isReplayRunId } from "./decide-itx-current-promotion.mjs";
 import { REFRESH_WORKFLOWS } from "./report-refresh-failure.mjs";
 import { assertFailureReportLast, assertNoExpressionInRunScripts, ifCondition, loadWorkflow } from "./refresh-workflow-contract-helpers.mjs";
 
@@ -33,17 +36,32 @@ const BRANCHES = {
   "kric-facility-refresh": "automation/629-kric-facility-refresh-9103",
   "seoul-accessibility-refresh": "automation/639-seoul-accessibility-refresh-9104",
 };
+const TOPOLOGY_FILES_WITH_ITX = [
+  "tools/datapack/sources/capital-route-topology-20261006.json",
+  "tools/datapack/itx-current-network-edge-admission-20261006.json",
+  "tools/datapack/source-inventory.json",
+];
+const TOPOLOGY_FILES_WITHOUT_ITX = TOPOLOGY_FILES_WITH_ITX.filter((file) => !file.includes("itx-current-network-edge-admission"));
 const sha = (digit) => String(digit).repeat(40);
-const open = (number, branch, { user = AUTOMATION_PR_APP, repo = REPOSITORY, head = sha(number % 10) } = {}) => ({ number, state: "open", user, head: { ref: branch, sha: head, repo: { full_name: repo } }, base: { ref: "main" } });
+const open = (number, branch, { user = AUTOMATION_PR_APP, repo = REPOSITORY, head = sha(number % 10), createdAt = "2026-10-01T00:00:00Z" } = {}) => ({ number, state: "open", user, created_at: createdAt, head: { ref: branch, sha: head, repo: { full_name: repo } }, base: { ref: "main" } });
 const closed = (number, branch, hoursAgo, { merged = false, user = AUTOMATION_PR_APP } = {}) => ({
   number, state: "closed", user, head: { ref: branch, sha: sha(number % 10), repo: { full_name: REPOSITORY } },
   closed_at: new Date(NOW.getTime() - hoursAgo * 3600_000).toISOString(), merged_at: merged ? new Date(NOW.getTime() - hoursAgo * 3600_000).toISOString() : null,
 });
 
-function fakeApi({ openPulls = [], closedPulls = [], behind = {} }) {
+// #1127: ITX 승격 PR은 닫기 전에 원본 run의 artifact(itx-current-promotion-<run id>)가 살아 있는지 읽는다. 기본은 모든 run에 살아 있는 artifact가 하나 있다.
+const liveArtifact = (runId, overrides = {}) => ({ id: 1, name: `itx-current-promotion-${runId}`, expired: false, ...overrides });
+function fakeApi({ openPulls = [], closedPulls = [], behind = {}, artifacts = (runId) => [liveArtifact(runId)], files = {} }) {
   const calls = [];
   const api = async (endpoint) => {
     calls.push(endpoint);
+    const filesMatch = /^repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/files\?per_page=100&page=1$/u.exec(endpoint);
+    if (filesMatch) return (files[Number(filesMatch[1])] ?? []).map((filename) => ({ filename, status: "added" }));
+    const artifactMatch = /^repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)\/artifacts\?name=(itx-current-promotion-\d+)$/u.exec(endpoint);
+    if (artifactMatch) {
+      const list = artifacts(Number(artifactMatch[1]));
+      return { total_count: list.length, artifacts: list };
+    }
     if (endpoint === `repos/${REPOSITORY}/pulls?state=open&base=main&per_page=100&page=1`) return openPulls;
     if (endpoint === `repos/${REPOSITORY}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100&page=1`) return closedPulls;
     const match = /^repos\/[^/]+\/[^/]+\/compare\/main\.\.\.([0-9a-f]{40})\?per_page=1$/u.exec(endpoint);
@@ -59,7 +77,7 @@ function recorder() {
     writes,
     closePullRequest: async (input) => { writes.push(["close", input.number]); },
     deleteBranch: async (branch) => { writes.push(["delete", branch]); },
-    dispatchWorkflow: async (workflow) => { writes.push(["dispatch", workflow]); },
+    dispatchWorkflow: async (workflow, inputs = {}) => { writes.push(["dispatch", workflow]); if (Object.keys(inputs).length > 0) writes.push(["dispatch-inputs", workflow, inputs]); },
   };
 }
 
@@ -77,7 +95,7 @@ test("뒤처진 자동화 PR만 계획에 오른다: App 작성·단계 claim �
     ],
     behind: { ...behind, [sha(4)]: 9, [sha(5)]: 9, [sha(6)]: 9, [sha(7)]: 9 },
   });
-  const plan = await planBehindRecreation({ repository: REPOSITORY, api, now: NOW });
+  const plan = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW });
   assert.deepEqual(plan.actions.map(({ number, branch, stage }) => ({ number, branch, stage })), [
     { number: 1, branch: BRANCHES.registration, stage: "registration" },
     { number: 2, branch: BRANCHES["derivative-rebinding"], stage: "derivative-rebinding" },
@@ -88,16 +106,16 @@ test("뒤처진 자동화 PR만 계획에 오른다: App 작성·단계 claim �
 });
 
 test("재생성은 PR 닫기 -> 브랜치 삭제 -> workflow 재실행 순서이고 같은 workflow는 한 번만 부른다", async () => {
-  const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["itx-promotion"])], behind: { [sha(1)]: 1, [sha(2)]: 1 } });
+  const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["derivative-rebinding"])], behind: { [sha(1)]: 1, [sha(2)]: 1 } });
   const writer = recorder();
-  await recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer });
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer });
   assert.deepEqual(writer.writes, [
     ["close", 1], ["delete", BRANCHES.registration], ["dispatch", "current-capital-topology-registration.yml"],
-    ["close", 2], ["delete", BRANCHES["itx-promotion"]], ["dispatch", "itx-current-promotion.yml"],
+    ["close", 2], ["delete", BRANCHES["derivative-rebinding"]], ["dispatch", "source-derivative-rebinding.yml"],
   ]);
   const duplicate = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(8, BRANCHES.registration)], behind: { [sha(1)]: 1, [sha(8)]: 1 } });
   const again = recorder();
-  await recreateBehindPullRequests({ repository: REPOSITORY, api: duplicate.api, now: NOW, ...again });
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api: duplicate.api, now: NOW, ...again });
   assert.equal(again.writes.filter(([kind]) => kind === "dispatch").length, 1);
 });
 
@@ -108,7 +126,7 @@ test("후보 갱신 단계는 dispatch하지 않는다: 정기 역할은 schedul
   });
   const { api } = fakeApi({ openPulls: [open(1, BRANCHES["candidate-refresh"])], behind: { [sha(1)]: 1 } });
   const writer = recorder();
-  await recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer });
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer });
   assert.deepEqual(writer.writes, [["close", 1], ["delete", BRANCHES["candidate-refresh"]]]);
   // dispatch하는 workflow는 필수 입력이 없다(입력 없이 dispatch가 성립해야 한다).
   // 후보 갱신은 입력이 선택(#1032: 스케줄러 App이 입력 없이 깨운다)이지만 recreate의 dispatch 행위자(github-actions[bot])는 App이 아니라 사람 경로로 판정돼 입력 없이는 실패한다.
@@ -129,7 +147,7 @@ test("정기 갱신 4종: 뒤처진 PR은 닫히고 브랜치가 지워지고 �
   const behind = Object.fromEntries(stages.map((_, index) => [sha(index + 1), 2]));
   const { api } = fakeApi({ openPulls: pulls, behind });
   const writer = recorder();
-  await recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer });
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer });
   assert.deepEqual(writer.writes, stages.flatMap((stage, index) => [["close", 20 + index], ["delete", BRANCHES[stage]], ["dispatch", AUTOMATION_STAGE_WORKFLOWS[stage]]]));
   assert.deepEqual(writer.writes.filter(([kind]) => kind === "dispatch").map(([, workflow]) => workflow), [
     "retained-gwangju-timetable-refresh.yml", "current-capital-topology-refresh.yml", "kric-current-facility-refresh.yml", "seoul-current-accessibility-refresh.yml",
@@ -137,12 +155,12 @@ test("정기 갱신 4종: 뒤처진 PR은 닫히고 브랜치가 지워지고 �
   // 최신인 갱신 PR은 건드리지 않고, 사람이 같은 접두사로 연 PR도 건드리지 않는다.
   const quiet = fakeApi({ openPulls: [open(30, BRANCHES["kric-facility-refresh"]), open(31, BRANCHES["seoul-accessibility-refresh"], { user: HUMAN, head: sha(5) })], behind: { [sha(5)]: 9 } });
   const untouched = recorder();
-  await recreateBehindPullRequests({ repository: REPOSITORY, api: quiet.api, now: NOW, ...untouched });
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api: quiet.api, now: NOW, ...untouched });
   assert.deepEqual(untouched.writes, []);
   // 같은 단계가 하루 3회를 넘게 닫히면 갱신 단계도 루프 상한으로 멈추고 이상으로 보고한다.
   const loop = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6) })], closedPulls: [1, 2, 3].map((n) => closed(50 + n, BRANCHES["capital-topology-refresh"], n)), behind: { [sha(6)]: 1 } });
   const stopped = recorder();
-  await assert.rejects(recreateBehindPullRequests({ repository: REPOSITORY, api: loop.api, now: NOW, ...stopped }), /AUTOMATION_PR_RECREATE_LOOP: capital-topology-refresh/u);
+  await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api: loop.api, now: NOW, ...stopped }), /AUTOMATION_PR_RECREATE_LOOP: capital-topology-refresh/u);
   assert.deepEqual(stopped.writes, []);
 });
 
@@ -188,20 +206,20 @@ test("recreate의 dispatch(github-actions[bot])는 변수 게이트와 충돌하
 test("반증: 같은 단계가 하루 3회를 넘게 닫히면 닫지 않고 이상으로 보고한다(루프 상한)", async () => {
   assert.equal(RECREATE_DAILY_LIMIT, 3);
   const recent = [closed(11, BRANCHES.registration, 1), closed(12, BRANCHES.registration, 5), closed(13, BRANCHES.registration, 23)];
-  const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["itx-promotion"])], closedPulls: recent, behind: { [sha(1)]: 1, [sha(2)]: 1 } });
-  const plan = await planBehindRecreation({ repository: REPOSITORY, api, now: NOW });
+  const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["candidate-refresh"])], closedPulls: recent, behind: { [sha(1)]: 1, [sha(2)]: 1 } });
+  const plan = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW });
   assert.deepEqual(plan.actions.map(({ number }) => number), [2], "other stages are unaffected");
   assert.deepEqual(plan.anomalies.map(({ stage, number, closures }) => ({ stage, number, closures })), [{ stage: "registration", number: 1, closures: 3 }]);
   const writer = recorder();
-  await assert.rejects(recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer }), /AUTOMATION_PR_RECREATE_LOOP: registration/u);
-  assert.deepEqual(writer.writes, [["close", 2], ["delete", BRANCHES["itx-promotion"]], ["dispatch", "itx-current-promotion.yml"]], "allowed stages still recreate before the report");
+  await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer }), /AUTOMATION_PR_RECREATE_LOOP: registration/u);
+  assert.deepEqual(writer.writes, [["close", 2], ["delete", BRANCHES["candidate-refresh"]]], "allowed stages still recreate before the report");
   // 두 번 닫혔으면 세 번째는 허용한다(경계). 병합된 PR·24시간 지난 PR·사람이 작성한 PR은 세지 않는다.
   const edge = fakeApi({
     openPulls: [open(1, BRANCHES.registration)],
     closedPulls: [closed(11, BRANCHES.registration, 1), closed(12, BRANCHES.registration, 2), closed(13, BRANCHES.registration, 3, { merged: true }), closed(14, BRANCHES.registration, 25), closed(15, BRANCHES.registration, 1, { user: HUMAN }), closed(16, BRANCHES["itx-promotion"], 1)],
     behind: { [sha(1)]: 1 },
   });
-  const plan2 = await planBehindRecreation({ repository: REPOSITORY, api: edge.api, now: NOW });
+  const plan2 = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: edge.api, now: NOW });
   assert.equal(plan2.actions.length, 1);
   assert.deepEqual(plan2.anomalies, []);
   // 한 번에 같은 단계 PR이 여럿이면 실행 중에도 센다(3개째까지만).
@@ -210,26 +228,26 @@ test("반증: 같은 단계가 하루 3회를 넘게 닫히면 닫지 않고 이
     closedPulls: [],
     behind: { [sha(1)]: 1, [sha(2)]: 1, [sha(3)]: 1, [sha(4)]: 1 },
   });
-  const plan3 = await planBehindRecreation({ repository: REPOSITORY, api: many.api, now: NOW });
+  const plan3 = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: many.api, now: NOW });
   assert.equal(plan3.actions.length, 3);
   assert.equal(plan3.anomalies.length, 1);
 });
 
 test("반증: 쓰기가 하나라도 실패하면 이후 쓰기를 하지 않고 그대로 실패한다. 이전 상태로 덮지 않는다", async () => {
-  const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["itx-promotion"])], behind: { [sha(1)]: 1, [sha(2)]: 1 } });
+  const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["derivative-rebinding"])], behind: { [sha(1)]: 1, [sha(2)]: 1 } });
   for (const failing of ["closePullRequest", "deleteBranch", "dispatchWorkflow"]) {
     const writer = recorder();
     writer[failing] = async () => { throw new Error(`${failing} failed`); };
-    await assert.rejects(recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...writer }), new RegExp(`${failing} failed`, "u"));
-    assert.ok(!writer.writes.some(([, target]) => target === 2 || target === BRANCHES["itx-promotion"]), `${failing}: later stage untouched`);
+    await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer }), new RegExp(`${failing} failed`, "u"));
+    assert.ok(!writer.writes.some(([, target]) => target === 2 || target === BRANCHES["derivative-rebinding"]), `${failing}: later stage untouched`);
   }
   // 닫기가 실패하면 브랜치를 지우지 않는다(열린 PR의 브랜치를 지우면 PR이 깨진다).
   const closeFails = recorder();
   closeFails.closePullRequest = async () => { throw new Error("close failed"); };
-  await assert.rejects(recreateBehindPullRequests({ repository: REPOSITORY, api, now: NOW, ...closeFails }), /close failed/u);
+  await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...closeFails }), /close failed/u);
   assert.deepEqual(closeFails.writes, []);
-  await assert.rejects(planBehindRecreation({ repository: REPOSITORY, api: async () => { throw new Error("HTTP 502"); }, now: NOW }), /HTTP 502/u);
-  await assert.rejects(planBehindRecreation({ repository: REPOSITORY, api: async (endpoint) => (endpoint.includes("compare") ? { behind_by: "x" } : [open(1, BRANCHES.registration)]), now: NOW }), /AUTOMATION_PR_INPUT/u);
+  await assert.rejects(planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: async () => { throw new Error("HTTP 502"); }, now: NOW }), /HTTP 502/u);
+  await assert.rejects(planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: async (endpoint) => (endpoint.includes("compare") ? { behind_by: "x" } : [open(1, BRANCHES.registration)]), now: NOW }), /AUTOMATION_PR_INPUT/u);
   await assert.rejects(planBehindRecreation({ repository: "bad repo", api, now: NOW }), /AUTOMATION_PR_INPUT/u);
 });
 
@@ -311,4 +329,223 @@ test("실패하면 마지막 step이 #926 경로로 이슈를 연다", () => {
   assertFailureReportLast({ yml, step, file: FILE });
   assert.ok(Object.hasOwn(REFRESH_WORKFLOWS, FILE));
   assert.doesNotMatch(code, /continue-on-error|\|\| true|\|\| exit 0/u);
+});
+
+// ---------------------------------------------------------------------------
+// #1127: 하루 한 번만 받을 수 있는 수집분을 들고 있는 단계는 닫는 순간 그날 수집분을 잃는다.
+// ---------------------------------------------------------------------------
+test("단계마다 재생성 방식이 정해져 있다: ITX 승격은 보관 capture 재생, 같은 KST 날 ITX를 수집할 수 있는 수도권 topology 갱신은 대기, 나머지는 닫고 재실행", () => {
+  assert.deepEqual(Object.keys(STAGE_RECREATE_MODE).sort(), Object.keys(AUTOMATION_STAGE_WORKFLOWS).sort(), "빠진 단계가 없다");
+  assert.deepEqual({ ...STAGE_RECREATE_MODE }, {
+    registration: RECREATE_MODE.CLOSE, "derivative-rebinding": RECREATE_MODE.CLOSE, "candidate-refresh": RECREATE_MODE.CLOSE,
+    "itx-promotion": RECREATE_MODE.REPLAY, "source-reverification": RECREATE_MODE.CLOSE,
+    "gwangju-timetable-refresh": RECREATE_MODE.CLOSE, "capital-topology-refresh": RECREATE_MODE.HOLD_SAME_KST_DAY,
+    "kric-facility-refresh": RECREATE_MODE.CLOSE, "seoul-accessibility-refresh": RECREATE_MODE.CLOSE,
+  });
+  // 공급자 호출을 하루 한 번으로 묶는 예산 가드(guard-itx-current-collection-budget)에 등록된 수집 workflow는 모두 닫지 않는 방식이다.
+  const guard = readFileSync(path.resolve(import.meta.dirname, "guard-itx-current-collection-budget.mjs"), "utf8");
+  const guarded = [...guard.matchAll(/workflowFile: "([^"]+)"/gu)].map((match) => match[1]).filter((workflow) => workflow !== "itx-current-collection.yml");
+  assert.deepEqual(guarded.sort(), ["current-capital-topology-refresh.yml", "itx-current-promotion.yml"]);
+  for (const workflow of guarded) {
+    const stage = Object.keys(AUTOMATION_STAGE_WORKFLOWS).find((candidate) => AUTOMATION_STAGE_WORKFLOWS[candidate] === workflow);
+    assert.notEqual(STAGE_RECREATE_MODE[stage], RECREATE_MODE.CLOSE, `${stage}: 하루 한 번 수집분을 들고 있어 단순히 닫으면 그날 수집분을 잃는다`);
+  }
+});
+
+test("뒤처진 ITX 승격 PR은 닫고 같은 수집분을 replay_run_id로 재생해 최신 main 위에 다시 만든다 (공급자 재호출 없음)", async () => {
+  const { api, calls } = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"])], behind: { [sha(2)]: 4 } });
+  const plan = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW });
+  assert.deepEqual(plan.actions.map(({ number, stage, replayRunId }) => ({ number, stage, replayRunId })), [{ number: 2, stage: "itx-promotion", replayRunId: "9002" }]);
+  assert.ok(calls.includes(`repos/${REPOSITORY}/actions/runs/9002/artifacts?name=itx-current-promotion-9002`), "닫기 전에 원본 artifact를 읽는다");
+  const writer = recorder();
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer });
+  assert.deepEqual(writer.writes, [
+    ["close", 2], ["delete", BRANCHES["itx-promotion"]], ["dispatch", "itx-current-promotion.yml"], ["dispatch-inputs", "itx-current-promotion.yml", { replay_run_id: "9002" }],
+  ]);
+  // 재생 run이 다시 뒤처져도 그 PR의 branch 접미사(재생 run id)가 다음 재생의 원본이 된다.
+  const chained = fakeApi({ openPulls: [open(3, "automation/977-itx-promotion-38070000000")], behind: { [sha(3)]: 1 } });
+  const again = recorder();
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api: chained.api, now: NOW, ...again });
+  assert.deepEqual(again.writes.at(-1), ["dispatch-inputs", "itx-current-promotion.yml", { replay_run_id: "38070000000" }]);
+});
+
+test("반증: 재생할 원본 artifact가 없거나 만료됐거나 둘 이상이면 PR을 닫지 않고 이상으로 보고한다 (닫으면 그날 수집분을 잃는다)", async () => {
+  for (const [label, artifacts] of [
+    ["없음", () => []],
+    ["만료", (runId) => [liveArtifact(runId, { expired: true })]],
+    ["둘", (runId) => [liveArtifact(runId), liveArtifact(runId, { id: 2 })]],
+    ["이름 다름", () => [{ id: 1, name: "other", expired: false }]],
+  ]) {
+    const { api } = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"]), open(1, BRANCHES.registration)], behind: { [sha(1)]: 1, [sha(2)]: 1 }, artifacts });
+    const plan = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW });
+    assert.deepEqual(plan.actions.map(({ stage }) => stage), ["registration"], label);
+    assert.deepEqual(plan.anomalies.map(({ stage, number, reason }) => ({ stage, number, reason })), [{ stage: "itx-promotion", number: 2, reason: "ITX_REPLAY_SOURCE_MISSING" }], label);
+    const writer = recorder();
+    await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer }), /ITX_REPLAY_SOURCE_MISSING: itx-promotion PR #2/u, label);
+    assert.ok(!writer.writes.some(([, target]) => target === 2), `${label}: ITX PR은 건드리지 않는다`);
+  }
+  // branch 접미사가 run id가 아니면 원본을 알 수 없으므로 닫지 않는다.
+  const bad = fakeApi({ openPulls: [open(2, "automation/977-itx-promotion-12345678901234567890")], behind: { [sha(2)]: 1 } });
+  const plan = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: bad.api, now: NOW });
+  assert.deepEqual(plan.actions, []);
+  assert.equal(plan.anomalies[0].reason, "ITX_REPLAY_SOURCE_MISSING");
+  // artifact 조회가 실패하면 추정하지 않고 그대로 실패한다.
+  await assert.rejects(planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: async (endpoint) => { if (endpoint.includes("/artifacts?")) throw new Error("HTTP 502"); return fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"])], behind: { [sha(2)]: 1 } }).api(endpoint); }, now: NOW }), /HTTP 502/u);
+});
+
+test("재생 dispatch가 실패하면 원본 run id를 담아 실패한다: 같은 입력으로 다시 dispatch하면 복구된다", async () => {
+  const { api } = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"])], behind: { [sha(2)]: 1 } });
+  const writer = recorder();
+  writer.dispatchWorkflow = async () => { throw new Error("HTTP 500"); };
+  await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer }), /ITX_REPLAY_DISPATCH_FAILED: replay_run_id=9002 .*HTTP 500/u);
+});
+
+test("수도권 topology 갱신 PR은 같은 KST 날 만들어졌으면 닫지 않고 기다린다 (그날 ITX 수집분을 들고 있을 수 있다). 다음 KST 날부터는 닫고 다시 만든다", async () => {
+  // NOW=2026-10-06T12:00Z(KST 21:00)이고 KST 날 시작은 2026-10-05T15:00Z다.
+  const sameDay = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6), createdAt: "2026-10-05T15:00:00Z" })], behind: { [sha(6)]: 2 }, files: { 40: TOPOLOGY_FILES_WITH_ITX } });
+  const plan = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: sameDay.api, now: NOW });
+  assert.deepEqual(plan.actions, []);
+  assert.deepEqual(plan.anomalies, []);
+  assert.deepEqual(plan.deferred.map(({ stage, number, reason }) => ({ stage, number, reason })), [{ stage: "capital-topology-refresh", number: 40, reason: "SAME_KST_DAY_ITX_COLLECTION" }]);
+  const writer = recorder();
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api: sameDay.api, now: NOW, ...writer });
+  assert.deepEqual(writer.writes, []);
+  const previousDay = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6), createdAt: "2026-10-05T14:59:59Z" })], behind: { [sha(6)]: 2 }, files: { 40: TOPOLOGY_FILES_WITH_ITX } });
+  assert.equal((await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: previousDay.api, now: NOW })).actions.length, 1);
+  // 대기는 닫기 횟수에 들지 않고 CLI의 targets에도 들지 않는다(닫을 일이 없으면 App 토큰도 받지 않는다).
+  const directory = await mkdtemp(path.join(os.tmpdir(), "automation-pr-recreate-"));
+  try {
+    const output = path.join(directory, "output.txt");
+    const logs = [];
+    await main(["plan", "--repository", REPOSITORY, "--github-output", output], { api: sameDay.api, now: NOW, log: (line) => logs.push(line) });
+    assert.equal(await readFile(output, "utf8"), "targets=0\n");
+    assert.match(logs.join("\n"), /대기 1건/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  // created_at을 읽을 수 없으면 추정하지 않고 실패한다.
+  const noDate = fakeApi({ openPulls: [{ ...open(40, BRANCHES["capital-topology-refresh"], { head: sha(6) }), created_at: undefined }], behind: { [sha(6)]: 2 }, files: { 40: TOPOLOGY_FILES_WITH_ITX } });
+  await assert.rejects(planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: noDate.api, now: NOW }), /AUTOMATION_PR_INPUT/u);
+});
+
+test("워크플로: 재생 입력 dispatch를 위해 actions: write 하나만 쓰고 artifact는 REST 조회로만 읽는다 (다운로드·PR 코드 실행 없음)", () => {
+  assert.match(yml, /\n    permissions:\n      actions: write\n/u);
+  const header = yml.split("\n").filter((line) => line.startsWith("#")).join("\n");
+  assert.match(header, /replay_run_id/u);
+  assert.match(header, /#1127/u);
+});
+
+// ---------------------------------------------------------------------------
+// #1131 리뷰: 닫기와 재생이 어긋나 수집분을 잃는 경로를 없앤다.
+// ---------------------------------------------------------------------------
+const ITX_PLAN = (overrides = {}) => planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, now: NOW, ...overrides });
+
+test("F1: 다른 원장 쓰기 PR이 열려 있으면 ITX 재생을 미룬다. PR은 닫지 않고 형제 단계만 진행한다 (뒤처진 registration + 뒤처진 ITX)", async () => {
+  const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["itx-promotion"])], behind: { [sha(1)]: 1, [sha(2)]: 1 } });
+  const plan = await ITX_PLAN({ api });
+  assert.deepEqual(plan.actions.map(({ stage }) => stage), ["registration"]);
+  assert.deepEqual(plan.deferred.map(({ stage, number, reason, blockedBy }) => ({ stage, number, reason, blockedBy })), [
+    { stage: "itx-promotion", number: 2, reason: "ITX_REPLAY_WAITS_FOR_LEDGER_WRITERS", blockedBy: [1] },
+  ]);
+  assert.deepEqual(plan.anomalies, []);
+  const writer = recorder();
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer });
+  assert.deepEqual(writer.writes, [["close", 1], ["delete", BRANCHES.registration], ["dispatch", "current-capital-topology-registration.yml"]], "ITX PR과 브랜치는 그대로이고 replay dispatch가 없다");
+});
+
+test("F1: 최신인 원장 쓰기 PR과 대기 중인 topology PR도 ITX 재생을 막는다. 원장 쓰기가 아닌 후보 갱신 PR은 막지 않는다", async () => {
+  for (const [label, others, files] of [
+    ["최신 kric PR", [open(3, BRANCHES["kric-facility-refresh"])], {}],
+    ["대기 중인 topology PR", [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6), createdAt: "2026-10-05T16:00:00Z" })], { 40: TOPOLOGY_FILES_WITH_ITX }],
+  ]) {
+    const { api } = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"]), ...others], behind: { [sha(2)]: 1, [sha(6)]: 1 }, files });
+    const plan = await ITX_PLAN({ api });
+    assert.deepEqual(plan.actions, [], label);
+    assert.equal(plan.deferred.find(({ stage }) => stage === "itx-promotion")?.reason, "ITX_REPLAY_WAITS_FOR_LEDGER_WRITERS", label);
+  }
+  const free = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"]), open(4, BRANCHES["candidate-refresh"], { head: sha(4) })], behind: { [sha(2)]: 1, [sha(4)]: 1 } });
+  const plan = await ITX_PLAN({ api: free.api });
+  assert.deepEqual(plan.actions.map(({ stage }) => stage), ["candidate-refresh", "itx-promotion"], "재생은 실행의 마지막이다");
+  const writer = recorder();
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api: free.api, now: NOW, ...writer });
+  assert.deepEqual(writer.writes, [
+    ["close", 4], ["delete", BRANCHES["candidate-refresh"]],
+    ["close", 2], ["delete", BRANCHES["itx-promotion"]], ["dispatch", "itx-current-promotion.yml"], ["dispatch-inputs", "itx-current-promotion.yml", { replay_run_id: "9002" }],
+  ]);
+});
+
+test("F1: 앞선 쓰기가 실패하면 ITX PR은 닫히지 않은 채 남는다 (재생 dispatch가 마지막)", async () => {
+  const { api } = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"]), open(4, BRANCHES["candidate-refresh"], { head: sha(4) })], behind: { [sha(2)]: 1, [sha(4)]: 1 } });
+  for (const failing of ["closePullRequest", "deleteBranch"]) {
+    const writer = recorder();
+    writer[failing] = async () => { throw new Error(`${failing} failed`); };
+    await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api, now: NOW, ...writer }), new RegExp(`${failing} failed`, "u"));
+    assert.ok(!writer.writes.some(([, target]) => target === 2 || target === BRANCHES["itx-promotion"]), `${failing}: ITX PR은 건드리지 않는다`);
+  }
+});
+
+test("F2: 재생 run을 받는 변수 DATAPACK_SCHEDULED_ITX_PROMOTION이 true가 아니면 ITX PR을 닫지 않고 이상으로 실패한다", async () => {
+  const { api } = fakeApi({ openPulls: [open(2, BRANCHES["itx-promotion"]), open(4, BRANCHES["candidate-refresh"], { head: sha(4) })], behind: { [sha(2)]: 1, [sha(4)]: 1 } });
+  for (const itxPromotionEnabled of [false, undefined]) {
+    const plan = await planBehindRecreation({ itxPromotionEnabled, repository: REPOSITORY, api, now: NOW });
+    assert.deepEqual(plan.actions.map(({ stage }) => stage), ["candidate-refresh"]);
+    assert.deepEqual(plan.anomalies.map(({ stage, number, reason }) => ({ stage, number, reason })), [{ stage: "itx-promotion", number: 2, reason: "ITX_REPLAY_GATE_DISABLED" }]);
+    const writer = recorder();
+    await assert.rejects(recreateBehindPullRequests({ itxPromotionEnabled, repository: REPOSITORY, api, now: NOW, ...writer }), /ITX_REPLAY_GATE_DISABLED: itx-promotion PR #2/u);
+    assert.ok(!writer.writes.some(([, target]) => target === 2 || target === BRANCHES["itx-promotion"]));
+  }
+  // 변수 값은 workflow env로 넘겨받는다: "true"만 켠다.
+  const directory = await mkdtemp(path.join(os.tmpdir(), "automation-pr-recreate-"));
+  try {
+    for (const [value, expected] of [["true", "targets=2\n"], ["false", "targets=2\n"], [undefined, "targets=2\n"]]) {
+      const output = path.join(directory, `output-${String(value)}.txt`);
+      const logs = [];
+      await main(["plan", "--repository", REPOSITORY, "--github-output", output], { api, now: NOW, env: value === undefined ? {} : { DATAPACK_SCHEDULED_ITX_PROMOTION: value }, log: (line) => logs.push(line) });
+      assert.equal(await readFile(output, "utf8"), expected);
+      assert.match(logs.join("\n"), value === "true" ? /상한 도달·원본 없음 0건/u : /상한 도달·원본 없음 1건/u, String(value));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("F2: workflow가 변수를 plan과 run step에 env로 넘긴다", () => {
+  for (const name of ["Plan the behind automation pull requests", "Close behind automation pull requests and request a fresh run"]) {
+    assert.match(step(name).block, /\n          DATAPACK_SCHEDULED_ITX_PROMOTION: \$\{\{ vars\.DATAPACK_SCHEDULED_ITX_PROMOTION \}\}\n/u, name);
+  }
+  assertNoExpressionInRunScripts({ steps, file: FILE });
+});
+
+test("F3: 같은 KST 날의 topology PR도 ITX admission 파일을 담고 있지 않으면 닫고 다시 만든다", async () => {
+  const withIt = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6), createdAt: "2026-10-05T16:00:00Z" })], behind: { [sha(6)]: 2 }, files: { 40: TOPOLOGY_FILES_WITH_ITX } });
+  assert.deepEqual((await ITX_PLAN({ api: withIt.api })).deferred.map(({ number }) => number), [40]);
+  const without = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6), createdAt: "2026-10-05T16:00:00Z" })], behind: { [sha(6)]: 2 }, files: { 40: TOPOLOGY_FILES_WITHOUT_ITX } });
+  const plan = await ITX_PLAN({ api: without.api });
+  assert.deepEqual(plan.deferred, []);
+  assert.deepEqual(plan.actions.map(({ number, stage }) => ({ number, stage })), [{ number: 40, stage: "capital-topology-refresh" }]);
+  const writer = recorder();
+  await recreateBehindPullRequests({ itxPromotionEnabled: true, repository: REPOSITORY, api: without.api, now: NOW, ...writer });
+  assert.deepEqual(writer.writes, [["close", 40], ["delete", BRANCHES["capital-topology-refresh"]], ["dispatch", "current-capital-topology-refresh.yml"]]);
+  // 파일 이름이 비슷한 다른 파일(날짜 형식·경로 다름)은 ITX admission이 아니다.
+  const lookalike = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6), createdAt: "2026-10-05T16:00:00Z" })], behind: { [sha(6)]: 2 }, files: { 40: ["tools/datapack/itx-current-network-edge-admission-2026.json", "docs/itx-current-network-edge-admission-20261006.json"] } });
+  assert.equal((await ITX_PLAN({ api: lookalike.api })).actions.length, 1);
+  // 이전 KST 날에 만든 PR은 admission을 담아도(예산이 되살아났다) 닫는다. 파일 목록은 읽지 않는다.
+  const old = fakeApi({ openPulls: [open(40, BRANCHES["capital-topology-refresh"], { head: sha(6) })], behind: { [sha(6)]: 2 }, files: { 40: TOPOLOGY_FILES_WITH_ITX } });
+  assert.equal((await ITX_PLAN({ api: old.api })).actions.length, 1);
+  assert.ok(!old.calls.some((entry) => entry.includes("/files")));
+});
+
+test("F4: 재생 run id는 판정 도구와 같은 규칙(안전한 정수)으로 검사해 닫기 전에 거른다", async () => {
+  for (const suffix of ["9007199254740993", "9007199254740992", "99999999999999999999"]) {
+    const branch = `automation/977-itx-promotion-${suffix}`;
+    const { api } = fakeApi({ openPulls: [open(2, branch)], behind: { [sha(2)]: 1 } });
+    const plan = await ITX_PLAN({ api });
+    assert.deepEqual(plan.actions, [], suffix);
+    assert.equal(plan.anomalies[0]?.reason, "ITX_REPLAY_SOURCE_MISSING", suffix);
+  }
+  const { api, calls } = fakeApi({ openPulls: [open(2, "automation/977-itx-promotion-9007199254740991")], behind: { [sha(2)]: 1 } });
+  assert.equal((await ITX_PLAN({ api })).actions[0].replayRunId, "9007199254740991");
+  assert.ok(calls.some((entry) => entry.includes("/runs/9007199254740991/artifacts")));
+  assert.equal(isReplayRunId("9007199254740991"), true);
+  assert.equal(isReplayRunId("9007199254740992"), false);
 });
