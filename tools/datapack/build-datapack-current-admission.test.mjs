@@ -331,7 +331,10 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(artifactFreshness.citedSourceFreshUntil, earliestCited.freshnessExpiresAt);
   // network 창은 topology admission·Incheon admission·ITX·수도권 노선 admission·접근성 증거 창의 최솟값이다(#1145).
   // 보고값(networkFreshUntil)을 입력으로 쓰지 않고, 각 창을 커밋된 입력(spec, 후보가 고정한 inventory, ITX 원천 파일, 후보 station-line 입력)에서 직접 고른다.
-  // 그래서 생산이 구성 창 하나를 빠뜨리거나 더 이르게 계산해도 기대값과 어긋나 드러난다.
+  // 그래서 생산이 구성 창을 더 이르게 계산하거나 최솟값을 정하는(binding) 창을 빠뜨리면 기대값과 어긋나 드러난다.
+  // 한계: 최솟값이 아닌 창을 빠뜨리는 변이는 출력이 같아 이 테스트로 관측되지 않는다(후보 데이터에서 topology·수도권 노선 창이 동률 최솟값이다).
+  // 각 창을 차례로 최솟값으로 만드는 입력 변형은 inventory·station-line 입력이 build spec의 sha와 authority로 결속돼 있어 파생 산출물 재결속까지 다시 만들어야 해서 하지 않았다.
+  // 후보가 바뀌어 다른 창이 최솟값이 되면 그 창은 그때부터 검증된다.
   const topologyFreshUntil = new Date(buildSpec.networkEdgeEvidence.capitalTopologyAdmission.freshUntil).toISOString();
   const committedInventory = JSON.parse(await readFile(path.join(candidateRoot, buildSpec.networkEdgeEvidence.sourceInventory.path), "utf8"));
   const incheonSources = committedInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");

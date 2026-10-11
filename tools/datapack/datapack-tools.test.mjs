@@ -18250,34 +18250,39 @@ test("official OD fare validator는 pack inventory에 없는 source를 거부한
   }
 });
 
-// #1134: 관측 시각을 당기는 분기는 ITX 승격 PR의 입력에서만 실행됐다(main 입력의 관측 시각은 만료 전이다). 순수 시계 도출을 직접 검증해
-// main 입력에서도 분기와 경계(>=)가 항상 확인된다. 기대값은 입력 산술에서 직접 계산한다.
-test("합성 ITX 시계: 관측 시각이 고정 원천 만료를 넘으면 고정 원천 직후로 당기고 관측·build 시각이 모두 만료 전이다", () => {
+// #1134: 관측 시각을 당기는 분기는 ITX 승격 PR의 입력에서만 실행됐다(main 입력의 관측 시각은 만료 전이다). 순수 시계 도출과 헬퍼 연결부를 직접 검증해
+// main 입력에서도 분기와 경계(>=)가 항상 확인된다. 기대값은 도출 함수의 산식이 아니라 입력(고정 원천 수집 시각, 만료)에서 유도한 불변식이다.
+test("합성 ITX 시계: 관측 시각이 고정 원천 만료를 넘으면 고정 원천 수집 뒤로 당기고 관측·build 시각이 모두 만료 전이다", () => {
   const expiry = Date.parse("2026-10-10T07:22:23.648Z");
-  const pinnedBuild = expiry - 24 * 3_600_000 + 1_000; // 고정 원천 수집 직후
-  for (const observedAfter of [0, 1, 1_000, 8 * 3_600_000]) {
-    const observedAtMillis = expiry + observedAfter;
-    const clock = deriveItxSyntheticClock({ observedAtMillis, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
-    assert.equal(clock.rewound, true, `observed ${observedAfter}ms after expiry`);
-    assert.equal(clock.observedAtMillis, pinnedBuild - 1_000);
-    assert.equal(clock.buildMillis, pinnedBuild);
-    for (const [label, value] of [["observedAt", clock.observedAtMillis], ["buildNow", clock.buildMillis]]) {
-      assert.ok(value < expiry, `${label} must be inside the fresh interval`);
-      assert.ok(value >= pinnedBuild - 1_000, `${label} must not precede the pinned capture`);
-    }
+  const pinnedCapture = expiry - 24 * 3_600_000; // P1D 증거: 만료는 수집 24시간 뒤
+  const pinnedBuild = pinnedCapture + ITX_SYNTHETIC_CLOCK_STEP_MS; // build는 고정 원천 수집 직후
+  for (const observedAfterExpiry of [0, 1, ITX_SYNTHETIC_CLOCK_STEP_MS, 8 * 3_600_000]) {
+    const clock = deriveItxSyntheticClock({ observedAtMillis: expiry + observedAfterExpiry, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
+    assert.equal(clock.rewound, true, `observed ${observedAfterExpiry}ms after expiry`);
+    assert.ok(clock.observedAtMillis >= pinnedCapture && clock.observedAtMillis <= pinnedBuild, "rewound observation sits right after the pinned capture, not later");
+    assert.ok(clock.observedAtMillis < clock.buildMillis, "build must follow the observation");
+    assert.ok(clock.buildMillis >= pinnedBuild, "build must not precede the pinned capture step");
+    assert.ok(clock.observedAtMillis < expiry && clock.buildMillis < expiry, "both must be inside the fresh interval");
   }
 });
 
-test("합성 ITX 시계: 관측 시각 +1초가 만료와 같으면 당기고 1ms 전이면 그대로 둔다(경계)", () => {
+test("합성 ITX 시계: 관측 시각 + 한 걸음이 만료와 같으면 당기고 1ms 전이면 그대로 둔다(경계)", () => {
   const expiry = Date.parse("2026-10-10T07:22:23.648Z");
   const pinnedBuild = expiry - 3_600_000;
-  const atBoundary = deriveItxSyntheticClock({ observedAtMillis: expiry - 1_000, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
-  assert.deepEqual(atBoundary, { rewound: true, observedAtMillis: pinnedBuild - 1_000, buildMillis: pinnedBuild });
-  const justBefore = deriveItxSyntheticClock({ observedAtMillis: expiry - 1_001, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
-  assert.deepEqual(justBefore, { rewound: false, observedAtMillis: expiry - 1_001, buildMillis: expiry - 1 });
-  // 관측이 고정 원천보다 먼저면 build 시각은 고정 원천 직후이고 관측 시각은 건드리지 않는다.
-  const early = deriveItxSyntheticClock({ observedAtMillis: pinnedBuild - 5_000, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
-  assert.deepEqual(early, { rewound: false, observedAtMillis: pinnedBuild - 5_000, buildMillis: pinnedBuild });
+  const derive = (observedAtMillis) => deriveItxSyntheticClock({ observedAtMillis, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
+  const atBoundary = derive(expiry - ITX_SYNTHETIC_CLOCK_STEP_MS);
+  assert.equal(atBoundary.rewound, true);
+  assert.ok(atBoundary.observedAtMillis < expiry - ITX_SYNTHETIC_CLOCK_STEP_MS, "rewound observation moves before the boundary");
+  assert.ok(atBoundary.buildMillis < expiry);
+  const justBefore = derive(expiry - ITX_SYNTHETIC_CLOCK_STEP_MS - 1);
+  assert.equal(justBefore.rewound, false);
+  assert.equal(justBefore.observedAtMillis, expiry - ITX_SYNTHETIC_CLOCK_STEP_MS - 1, "an observation inside the interval is kept as is");
+  assert.ok(justBefore.buildMillis > justBefore.observedAtMillis && justBefore.buildMillis < expiry);
+  // 관측이 고정 원천 build보다 먼저면 관측은 건드리지 않고 build는 고정 원천 뒤에 둔다.
+  const early = derive(pinnedBuild - 5 * ITX_SYNTHETIC_CLOCK_STEP_MS);
+  assert.equal(early.rewound, false);
+  assert.equal(early.observedAtMillis, pinnedBuild - 5 * ITX_SYNTHETIC_CLOCK_STEP_MS);
+  assert.ok(early.buildMillis >= pinnedBuild && early.buildMillis < expiry);
 });
 
 test("합성 ITX 시계: 고정 원천 직후 build 시각도 만료 전에 둘 수 없으면 실패한다 (신선한 척하지 않는다)", () => {
@@ -18286,12 +18291,65 @@ test("합성 ITX 시계: 고정 원천 직후 build 시각도 만료 전에 둘 
   assert.throws(() => deriveItxSyntheticClock({ observedAtMillis: expiry - 10_000, pinnedBuildMillis: expiry + 5_000, pinnedTimetableExpiryMillis: expiry }), /pinned timetable freshness interval/u);
 });
 
-// 합성 ITX 후보의 관측 시각과 build 시각을 정한다(#1132, #1134). 관측 시각 +1초가 고정된 P1D 증거의 만료 이상이면 고정 원천 직후로 당기고,
-// 아니면 그대로 둔다. 어느 쪽이든 관측 시각, build 시각이 모두 그 만료 전이어야 하고 만들 수 없으면 실패한다.
+// 헬퍼 연결부: 당긴 관측 시각이 source, completeness 두 문서에 쓰이고 build 시계가 만료 전인지 헬퍼 전체를 호출해 확인한다.
+// 관측 시각을 만료 뒤로 주입하므로 ITX 승격 PR이 아닌 main 입력에서도 연결부가 실행된다.
+async function pinnedIncheonTimetableWindows() {
+  const buildSpec = JSON.parse(await readCandidateFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const inventory = JSON.parse(await readCandidateFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
+  const windows = inventory.sources.filter(({ id }) => id === "incheon-line1-train-timetable" || id === "incheon-line2-train-timetable")
+    .map(({ scheduleAdmissionEvidence }) => ({ capturedAt: Date.parse(scheduleAdmissionEvidence.capturedAt), freshUntil: Date.parse(scheduleAdmissionEvidence.freshUntil) }));
+  assert.equal(windows.length, 2, "both pinned Incheon timetable sources must exist");
+  assert.ok(windows.every(({ capturedAt, freshUntil }) => Number.isFinite(capturedAt) && Number.isFinite(freshUntil)));
+  return { latestCapture: Math.max(...windows.map(({ capturedAt }) => capturedAt)), expiry: Math.min(...windows.map(({ freshUntil }) => freshUntil)) };
+}
+
+test("합성 ITX 입력 헬퍼: 만료를 지난 관측을 주입하면 source·completeness 관측 시각과 build 시계가 모두 고정 원천 신선 구간 안으로 당겨진다", async () => {
+  const { latestCapture, expiry } = await pinnedIncheonTimetableWindows();
+  const injected = new Date(expiry + 8 * 3_600_000).toISOString();
+  const workspace = await mkdtemp(path.join(tmpdir(), "itx-synthetic-clock-rewind-"));
+  try {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, { observedAtOverride: injected });
+    const fixtureDirectory = path.join(inputs.repositoryRoot, "tools/datapack/fixtures/current-itx");
+    const source = JSON.parse(await readFile(path.join(fixtureDirectory, "itx-source.json"), "utf8"));
+    const completeness = JSON.parse(await readFile(path.join(fixtureDirectory, "itx-completeness.json"), "utf8"));
+    const buildNow = Date.parse(inputs.env.EASYSUBWAY_DATAPACK_BUILD_NOW);
+    assert.notEqual(source.observedAt, injected, "the injected observation after the expiry must be rewound");
+    assert.equal(completeness.observedAt, source.observedAt, "completeness and source observations must agree");
+    for (const [label, value] of [["source.observedAt", Date.parse(source.observedAt)], ["completeness.observedAt", Date.parse(completeness.observedAt)]]) {
+      assert.ok(value >= latestCapture && value < expiry, `${label} must be inside the pinned fresh interval`);
+    }
+    assert.ok(buildNow > Date.parse(source.observedAt) && buildNow < expiry, "build clock must follow the observation and precede the expiry");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("합성 ITX 입력 헬퍼: 만료 전 관측을 주입하면 당기지 않고 그대로 쓴다", async () => {
+  const { latestCapture, expiry } = await pinnedIncheonTimetableWindows();
+  const injected = new Date(latestCapture + 60_000).toISOString();
+  assert.ok(Date.parse(injected) + ITX_SYNTHETIC_CLOCK_STEP_MS < expiry);
+  const workspace = await mkdtemp(path.join(tmpdir(), "itx-synthetic-clock-kept-"));
+  try {
+    const inputs = await writeCurrentItxReleaseInputs(workspace, { observedAtOverride: injected });
+    const source = JSON.parse(await readFile(path.join(inputs.repositoryRoot, "tools/datapack/fixtures/current-itx/itx-source.json"), "utf8"));
+    assert.equal(source.observedAt, injected);
+    const buildNow = Date.parse(inputs.env.EASYSUBWAY_DATAPACK_BUILD_NOW);
+    assert.ok(buildNow > Date.parse(injected) && buildNow < expiry);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+// 합성 ITX 시계의 한 걸음: 관측은 직전 시각(고정 원천 수집, 관측)보다 이 간격만큼 뒤에 일어난 것으로 본다. 도출 함수와 그 테스트가 같은 값을 쓴다.
+const ITX_SYNTHETIC_CLOCK_STEP_MS = 1_000;
+
+// 합성 ITX 후보의 관측 시각과 build 시각을 정한다(#1132, #1134). 이 함수와 테스트는 합성 fixture의 위생만 지킨다(생산 동작은 검증하지 않는다).
+// 관측 시각 + 한 걸음이 고정된 P1D 증거의 만료 이상이면 관측을 고정 원천 수집 직후(pinnedBuildMillis의 한 걸음 앞)로 당기고, 아니면 그대로 둔다.
+// 어느 쪽이든 관측 시각, build 시각이 모두 그 만료 전이어야 하고 만들 수 없으면 실패한다.
 function deriveItxSyntheticClock({ observedAtMillis, pinnedBuildMillis, pinnedTimetableExpiryMillis }) {
-  const rewound = observedAtMillis + 1_000 >= pinnedTimetableExpiryMillis;
-  const derivedObservedAtMillis = rewound ? pinnedBuildMillis - 1_000 : observedAtMillis;
-  const buildMillis = Math.max(pinnedBuildMillis, derivedObservedAtMillis + 1_000);
+  const rewound = observedAtMillis + ITX_SYNTHETIC_CLOCK_STEP_MS >= pinnedTimetableExpiryMillis;
+  const derivedObservedAtMillis = rewound ? pinnedBuildMillis - ITX_SYNTHETIC_CLOCK_STEP_MS : observedAtMillis;
+  const buildMillis = Math.max(pinnedBuildMillis, derivedObservedAtMillis + ITX_SYNTHETIC_CLOCK_STEP_MS);
   if (buildMillis >= pinnedTimetableExpiryMillis) {
     throw new Error("fixture current build clock is not inside the pinned timetable freshness interval");
   }
@@ -18300,7 +18358,7 @@ function deriveItxSyntheticClock({ observedAtMillis, pinnedBuildMillis, pinnedTi
 
 async function writeCurrentItxReleaseInputs(
   workspace,
-  { mutateFixture, mutateTopologyEvidence, mutateCompleteness, mutateCurrentSourceContext } = {},
+  { mutateFixture, mutateTopologyEvidence, mutateCompleteness, mutateCurrentSourceContext, observedAtOverride } = {},
 ) {
   const repositoryRoot = await writeTransitionFreeCandidateRoot(workspace);
   const currentIdentity = {
@@ -18448,7 +18506,8 @@ async function writeCurrentItxReleaseInputs(
     verifiedAt: candidateTopology.capturedAt,
     freshUntil: candidateTopology.freshUntil,
   }]));
-  let sourceObservedAt = source.observedAt;
+  // observedAtOverride: 관측 시각을 주입한다. 승격 PR 입력이 아니어도 시각 당김 연결부를 실행하게 한다(#1134).
+  let sourceObservedAt = observedAtOverride ?? source.observedAt;
   const sourceFreshUntil = source.freshUntil;
   const incheonSources = currentInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
   if (incheonSources.length !== 1) throw new Error("fixture current Incheon topology admission is required");
