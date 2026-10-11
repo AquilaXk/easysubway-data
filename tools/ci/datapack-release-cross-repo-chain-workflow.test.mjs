@@ -184,13 +184,31 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
   const runRecord = (actor, overrides = {}) => ({
     path: ".github/workflows/datapack-release.yml", event: "workflow_dispatch", head_branch: "main",
     head_repository: { full_name: "AquilaXk/easysubway-data" }, display_title: "Data Pack Release (release-candidate)",
-    conclusion: "success", head_sha: headSha, triggering_actor: { login: actor }, ...overrides,
+    conclusion: "success", head_sha: headSha, created_at: "2026-10-11T04:30:00Z", triggering_actor: { login: actor }, ...overrides,
   });
   // 가짜 gh: artifact 조회는 payload를, 그 밖의 run 조회는 run 기록을 답한다. 판정은 이벤트 값이 아니라 이 API 응답이 근거다.
-  const ghWith = (record, payload, starter = "github-actions[bot]") => `case "$*" in\n*"/artifacts"*) cat <<'JSON'\n${JSON.stringify(payload)}\nJSON\n;;\n*"/runs/5555"*) echo '${starter}' ;;\n*) cat <<'JSON'\n${JSON.stringify(record)}\nJSON\n;;\nesac`;
+  // 같은 RC로 이미 시작된 체인 run(F3)은 목록 API(prior)와 그 run의 job 목록(jobs, run id별)으로 답한다.
+  const ghWith = (record, payload, starter = "github-actions[bot]", prior = [], jobs = {}) => `case "$*" in
+*"/artifacts"*) cat <<'JSON'
+${JSON.stringify(payload)}
+JSON
+;;
+*"datapack-release-cross-repo-chain.yml/runs"*) cat <<'JSON'
+${JSON.stringify({ workflow_runs: prior })}
+JSON
+;;
+${Object.entries(jobs).map(([id, list]) => `*"/runs/${id}/jobs"*) cat <<'JSON'\n${JSON.stringify({ jobs: list })}\nJSON\n;;`).join("\n")}
+*"/runs/5555"*) echo '${starter}' ;;
+*) cat <<'JSON'
+${JSON.stringify(record)}
+JSON
+;;
+esac`;
   const ghAs = (actor, payload) => ghWith(runRecord(actor), payload);
   const gh = (payload) => ghAs("github-actions[bot]", payload);
   const ok = { total_count: 1, artifacts: [artifact()] };
+  const chainRun = (id, status, conclusion = null, title = `chain rc=${runId}`) => ({ id, status, conclusion, display_title: title });
+  const withPrior = (prior, jobs = {}) => ghWith(runRecord("github-actions[bot]"), ok, "github-actions[bot]", prior, jobs);
   const started = `rc=true\nrun_id=${runId}\nhead_sha=${headSha}\n`;
   const candidate = await runStep("Identify the release-candidate run", env, gh(ok));
   assert.equal(candidate.status, 0, candidate.stderr);
@@ -244,6 +262,39 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
       assert.equal(result.output, "", label);
     }
   }
+  // F3: 같은 RC로 이미 진행된(성공했거나 진행 중인) 체인 run이 있으면 시작하지 않고 실패로 드러낸다. 두 시작 경로 모두 같다.
+  const releaseChainJob = (conclusion) => [{ name: "Identify the release-candidate run", conclusion: "success" }, { name: "Release chain", conclusion }];
+  for (const [label, scenarioEnv] of [["workflow_run", env], ["workflow_dispatch", dispatchEnv]]) {
+    for (const [name, prior, jobs] of [
+      ["earlier run in progress", [chainRun(5000, "in_progress")], {}],
+      ["earlier run queued", [chainRun(5001, "queued")], {}],
+      ["earlier run waiting on the chain lock", [chainRun(5002, "pending")], {}],
+      ["completed run whose chain succeeded", [chainRun(5003, "completed", "success")], { 5003: releaseChainJob("success") }],
+    ]) {
+      const duplicate = await runStep("Identify the release-candidate run", scenarioEnv, withPrior(prior, jobs));
+      assert.notEqual(duplicate.status, 0, `${label}: ${name}`);
+      assert.equal(duplicate.output, "", `${label}: ${name}`);
+      assert.match(duplicate.stderr, /duplicate/u, `${label}: ${name}`);
+    }
+    for (const [name, prior, jobs] of [
+      ["no earlier run", [], {}],
+      ["a later run in progress loses the tie, this earlier run wins", [chainRun(6000, "in_progress")], {}],
+      ["completed run whose chain job was skipped", [chainRun(5003, "completed", "success")], { 5003: releaseChainJob("skipped") }],
+      ["completed run that failed", [chainRun(5004, "completed", "failure")], {}],
+      ["completed run that was cancelled", [chainRun(5005, "completed", "cancelled")], {}],
+      ["another release candidate's chain run", [chainRun(5006, "in_progress", null, "chain rc=1")], {}],
+      ["a run without the chain title", [chainRun(5007, "in_progress", null, "Data Pack Release Cross-Repository Chain")], {}],
+    ]) {
+      const fresh = await runStep("Identify the release-candidate run", scenarioEnv, withPrior(prior, jobs));
+      assert.equal(fresh.status, 0, `${label}: ${name}: ${fresh.stderr}`);
+      assert.equal(fresh.output, started, `${label}: ${name}`);
+    }
+  }
+  // 이전 chain run 조회는 RC가 시작된 시각 이후로 한정하고, 목록을 못 읽으면 중복이 없다고 가정하지 않고 실패한다.
+  const lookupFails = await runStep("Identify the release-candidate run", env, `case "$*" in\n*"datapack-release-cross-repo-chain.yml/runs"*) echo boom >&2; exit 1 ;;\n*) ${ghWith(runRecord("github-actions[bot]"), ok)} ;;\nesac`);
+  assert.notEqual(lookupFails.status, 0);
+  assert.equal(lookupFails.output, "");
+  assert.match(stepScript("Identify the release-candidate run"), /-f "created=>=\$\{rc_created\}"/u);
   const movedHead = await runStep("Identify the release-candidate run", { ...env, EVENT_HEAD_SHA: "b".repeat(40) }, gh(ok));
   assert.notEqual(movedHead.status, 0);
   assert.equal(movedHead.output, "");
@@ -276,6 +327,11 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
   assert.match(jobBlock("chain"), /\n      RC_RUN_ID: \$\{\{ needs\.identify\.outputs\.run_id \}\}\n      RC_RUN_SHA: \$\{\{ needs\.identify\.outputs\.head_sha \}\}\n/u);
   assert.match(yml, /- uses: actions\/checkout@[0-9a-f]{40}\n        with:\n          persist-credentials: false\n/u);
   assert.doesNotMatch(yml, /ref: \$\{\{ github\.event\.workflow_run/u);
+});
+
+test("every chain run is named by the release-candidate run it was started for, so a duplicate start is detectable (data#1158 F2/F3)", () => {
+  assert.match(yml, /\nrun-name: \$\{\{ format\('chain rc=\{0\}', github\.event\.workflow_run\.id \|\| inputs\.rc_run_id\) \}\}\n/u);
+  assert.ok(yml.indexOf("\nrun-name:") < yml.indexOf("\non:\n"));
 });
 
 test("missing app credentials fail before any token or dispatch step, naming the secrets", async () => {

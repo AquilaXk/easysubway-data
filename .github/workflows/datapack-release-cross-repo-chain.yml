@@ -1,5 +1,9 @@
 name: Data Pack Release Cross-Repository Chain
 
+# run 이름에 이 체인이 시작된 RC run id를 남긴다(data#1158). RC chain은 이 이름으로 dispatch한 체인 run을 정확히 찾고(runner 시계에 기대지 않는다),
+# identify는 같은 RC로 이미 진행된 체인 run이 있는지 이 이름으로 찾아 중복 시작을 거부한다.
+run-name: ${{ format('chain rc={0}', github.event.workflow_run.id || inputs.rc_run_id) }}
+
 # release-candidate(RC)가 성공하면 사람 없이 끝까지 잇는다(data#1084, #870, QA 결정 2026-10-09):
 #   hub 호환성(release-artifacts.yml) → hub 승격(datapack-promotion.yml) → data production-publish → platform 배포(PREVIEW → DEPLOY) → 공개 검증
 #   검증이 실패하면 직전 활성 release로 PREVIEW → DEPLOY를 다시 실행(전진 재활성화)하고 이상으로 드러낸다.
@@ -84,6 +88,7 @@ jobs:
           record="${RUNNER_TEMP}/release-candidate-run.json"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" > "${record}"
           field() { jq -r "${1} // \"\"" "${record}"; }
+          [[ "${GITHUB_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "GITHUB_RUN_ID is invalid" >&2; exit 1; }
           [[ "$(field .path)" == ".github/workflows/datapack-release.yml" && "$(field .event)" == "workflow_dispatch" && "$(field .head_branch)" == "main" \
             && "$(field .head_repository.full_name)" == "${GITHUB_REPOSITORY}" && "$(field .display_title)" == "Data Pack Release (release-candidate)" \
             && "$(field .conclusion)" == "success" ]] \
@@ -111,6 +116,28 @@ jobs:
           fi
           # publish 경로와 같은 검증기: 정확히 하나, 같은 run id·head sha, 만료되지 않음. 어긋나면 실패한다.
           node tools/ci/require-workflow-artifact.mjs "${response}" "${name}" "${RUN_ID}" "${head_sha}"
+          # 같은 RC에 체인은 한 번만 시작한다(workflow_run·workflow_dispatch 공통). 같은 RC로 이미 진행된(성공했거나 진행 중인) 체인 run이 있으면
+          # 시작하지 않고 실패로 드러낸다. 실패·취소·건너뛴 run은 진행된 것으로 세지 않는다. 동시에 시작된 둘은 먼저 만들어진 run(작은 id)이 이긴다.
+          # 목록을 읽지 못하면 중복이 없다고 가정하지 않고 실패한다.
+          rc_created="$(field .created_at)"
+          [[ "${rc_created}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]] || { echo "release-candidate run created_at is invalid" >&2; exit 1; }
+          prior="$(gh api --paginate --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/datapack-release-cross-repo-chain.yml/runs" -f "created=>=${rc_created}" -f per_page=100 \
+            | jq -r --arg title "chain rc=${RUN_ID}" --argjson self "${GITHUB_RUN_ID}" '.workflow_runs[] | select(.display_title == $title and .id != $self) | [.id, .status, (.conclusion // "")] | @tsv')"
+          while IFS=$'\t' read -r other_id other_status other_conclusion; do
+            [[ -n "${other_id}" ]] || continue
+            started=false
+            if [[ "${other_status}" != "completed" ]]; then
+              [[ "${other_id}" -lt "${GITHUB_RUN_ID}" ]] && started=true
+            elif [[ "${other_conclusion}" == "success" ]]; then
+              chain_jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${other_id}/jobs" | jq -r '[.jobs[] | select(.name == "Release chain" and .conclusion == "success")] | length')"
+              [[ "${chain_jobs}" =~ ^[0-9]+$ ]] || { echo "chain run ${other_id} job list is invalid" >&2; exit 1; }
+              [[ "${chain_jobs}" -gt 0 ]] && started=true
+            fi
+            if [[ "${started}" == "true" ]]; then
+              echo "duplicate start refused: the release chain already ran or is running for release-candidate run ${RUN_ID} (chain run ${other_id}, ${other_status})" >&2
+              exit 1
+            fi
+          done <<< "${prior}"
           {
             echo "rc=true"
             echo "run_id=${RUN_ID}"
