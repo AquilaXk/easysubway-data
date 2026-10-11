@@ -9101,7 +9101,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "P1D",
       "observedDataUpdatedAt": "2026-09-07",
-      "retrievedAt": "2026-10-10",
+      "retrievedAt": "2026-10-11",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터 이용허락범위 제한없음",
@@ -9144,15 +9144,15 @@
         "issue": 457,
         "materializer": "tools/datapack/materialize-korail-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-korail-route-topology.test.mjs",
-        "snapshotId": "korail-metropolitan-timetable-file-500abc739ee6985decd47517a06b406c48f11a2c627150112967234eeb4b01d3",
-        "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-500abc739ee6985decd47517a06b406c48f11a2c627150112967234eeb4b01d3.json",
-        "capturedAt": "2026-10-10T19:17:25.314Z",
-        "freshUntil": "2026-10-17T19:17:25.314Z",
+        "snapshotId": "korail-metropolitan-timetable-file-98b8c4b0f74649ce6c95dea47148ebcb4b109f2c9b937dd8575f54f03c58974a",
+        "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-98b8c4b0f74649ce6c95dea47148ebcb4b109f2c9b937dd8575f54f03c58974a.json",
+        "capturedAt": "2026-10-11T20:49:10.318Z",
+        "freshUntil": "2026-10-18T20:49:10.318Z",
         "stationCount": 8,
         "edgeCount": 14,
         "excludedTransferCount": 0,
         "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-        "contentSha256": "500abc739ee6985decd47517a06b406c48f11a2c627150112967234eeb4b01d3"
+        "contentSha256": "98b8c4b0f74649ce6c95dea47148ebcb4b109f2c9b937dd8575f54f03c58974a"
       },
       "admissionEvidence": {
         "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
