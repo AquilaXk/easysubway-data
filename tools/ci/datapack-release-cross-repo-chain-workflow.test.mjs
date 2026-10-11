@@ -11,14 +11,14 @@ const yml = readFileSync(new URL("../../.github/workflows/datapack-release-cross
 // F3: 기본은 꺼짐이다. 메인 세션이 설정 변경을 적용한 뒤 저장소 변수를 'true'로 켤 때만 job이 실행된다.
 // 시작 경로는 둘이다(data#1158). (1) 사람이 띄운 RC의 workflow_run, (2) RC chain이 GITHUB_TOKEN으로 띄운 RC는 workflow_run을 만들지 않으므로
 // RC chain이 RC 완료 뒤 이 workflow를 workflow_dispatch한다. (2)는 이 run을 시작한 행위자가 허용 목록일 때만 인정한다.
+// 행위자 판정은 forgeable한 github 컨텍스트가 아니라 identify step이 API로 다시 읽은 값으로 한다(SonarCloud githubactions:S8232).
 const RC_GUARD = "    if: ${{ "
   + "vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && ("
   + "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' "
   + "&& github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository "
   + "&& github.event.workflow_run.path == '.github/workflows/datapack-release.yml' "
   + "&& github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)') "
-  + "|| (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' "
-  + "&& (github.triggering_actor == 'github-actions[bot]' || github.triggering_actor == 'AquilaXk'))) }}";
+  + "|| (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) }}";
 const FAILURE_GUARD = "    if: ${{ "
   + "vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && "
   + "github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'workflow_dispatch' "
@@ -96,6 +96,8 @@ test("the chain reacts only to a main workflow_dispatch Data Pack Release run of
   assert.match(jobBlock("chain"), new RegExp(`\\n${CHAIN_GUARD.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\n`, "u"));
   assert.doesNotMatch(yml, /ref: \$\{\{ github\.event\.workflow_run/u);
   assert.doesNotMatch(yml, /continue-on-error/u);
+  // 행위자는 forgeable한 컨텍스트 값이 아니라 API로 다시 읽은 기록으로만 판정한다(SonarCloud githubactions:S8232).
+  assert.doesNotMatch(yml, /\$\{\{[^}]*github\.(triggering_)?actor/u);
 });
 
 test("each app token is scoped to one repository with least privilege and never reaches a run script as an expression", () => {
@@ -172,7 +174,9 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
   const runId = 37109648483;
   const headSha = "a".repeat(40);
   // workflow_run 경로는 이벤트의 head_sha를 함께 주고, workflow_dispatch 경로는 비운다(둘 다 API로 다시 읽은 값으로 판정한다).
-  const env = { GITHUB_REPOSITORY: "AquilaXk/easysubway-data", RUN_ID: String(runId), EVENT_HEAD_SHA: headSha, GH_TOKEN: "test" };
+  // GITHUB_RUN_ID는 이 체인 run 자신이다(RC run과 다른 번호). workflow_dispatch 경로만 이 run의 시작 행위자를 API로 읽는다.
+  const env = { GITHUB_REPOSITORY: "AquilaXk/easysubway-data", GITHUB_RUN_ID: "5555", EVENT_NAME: "workflow_run", RUN_ID: String(runId), EVENT_HEAD_SHA: headSha, GH_TOKEN: "test" };
+  const dispatchEnv = { ...env, EVENT_NAME: "workflow_dispatch", EVENT_HEAD_SHA: "" };
   const artifact = (overrides = {}) => ({
     id: 11269456267, name: `easysubway-datapack-candidate-${runId}`, expired: false,
     workflow_run: { id: runId, head_sha: headSha }, ...overrides,
@@ -183,7 +187,7 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
     conclusion: "success", head_sha: headSha, triggering_actor: { login: actor }, ...overrides,
   });
   // 가짜 gh: artifact 조회는 payload를, 그 밖의 run 조회는 run 기록을 답한다. 판정은 이벤트 값이 아니라 이 API 응답이 근거다.
-  const ghWith = (record, payload) => `case "$*" in\n*"/artifacts"*) cat <<'JSON'\n${JSON.stringify(payload)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(record)}\nJSON\n;;\nesac`;
+  const ghWith = (record, payload, starter = "github-actions[bot]") => `case "$*" in\n*"/artifacts"*) cat <<'JSON'\n${JSON.stringify(payload)}\nJSON\n;;\n*"/runs/5555"*) echo '${starter}' ;;\n*) cat <<'JSON'\n${JSON.stringify(record)}\nJSON\n;;\nesac`;
   const ghAs = (actor, payload) => ghWith(runRecord(actor), payload);
   const gh = (payload) => ghAs("github-actions[bot]", payload);
   const ok = { total_count: 1, artifacts: [artifact()] };
@@ -193,9 +197,21 @@ test("only a run with exactly one unexpired RC candidate artifact of the same ru
   assert.equal(candidate.output, started);
   assert.match(candidate.summary, /37109648483/u);
   // workflow_dispatch 경로: 이벤트 값 없이 입력 run id만으로 같은 판정을 한다. head_sha는 API 기록에서 온다.
-  const handedOver = await runStep("Identify the release-candidate run", { ...env, EVENT_HEAD_SHA: "" }, gh(ok));
+  const handedOver = await runStep("Identify the release-candidate run", dispatchEnv, gh(ok));
   assert.equal(handedOver.status, 0, handedOver.stderr);
   assert.equal(handedOver.output, started);
+  const handedOverByOwner = await runStep("Identify the release-candidate run", dispatchEnv, ghWith(runRecord("github-actions[bot]"), ok, "AquilaXk"));
+  assert.equal(handedOverByOwner.output, started);
+  // 체인 run을 시작한 행위자가 허용 목록 밖이면 RC가 완전해도 체인을 시작하지 않는다(job `if`가 아니라 API로 읽은 값으로 판정한다).
+  for (const starter of ["write-collaborator", "AquilaXk-evil", "aquilaxk", "github-actions", "easysubway-release-chain[bot]", ""]) {
+    const denied = await runStep("Identify the release-candidate run", dispatchEnv, ghWith(runRecord("github-actions[bot]"), ok, starter));
+    assert.equal(denied.status, 0, `${starter}: ${denied.stderr}`);
+    assert.equal(denied.output, "rc=false\n", starter);
+    assert.match(denied.summary, /허용되지 않은 행위자가 dispatch/u, starter);
+    // workflow_run 경로는 이 run의 시작 행위자를 보지 않는다(시스템이 띄운 run이다). RC run의 행위자만 판정한다.
+    const viaEvent = await runStep("Identify the release-candidate run", env, ghWith(runRecord("github-actions[bot]"), ok, starter));
+    assert.equal(viaEvent.output, started, starter);
+  }
   const owner = await runStep("Identify the release-candidate run", env, ghAs("AquilaXk", ok));
   assert.equal(owner.output, started);
   // 허용 목록 밖 행위자(유사 이름·대소문자·빈 값 포함)가 dispatch한 RC는 후보 artifact가 완전해도 체인을 시작하지 않는다.
