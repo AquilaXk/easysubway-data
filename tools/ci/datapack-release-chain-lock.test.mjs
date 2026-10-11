@@ -68,7 +68,7 @@ test("RC chain은 RC run이 끝날 때까지 job을 유지해 잠금 구간을 R
   const hold = stepBody(rcChain, "Hold the merge lock until the release candidate run finishes");
   assert.match(hold, /if: \$\{\{ steps\.supersede\.outputs\.current == 'true' \}\}/u);
   assert.match(hold, /RC_RUN_ID: \$\{\{ steps\.dispatch\.outputs\.rc_run_id \}\}/u);
-  assert.ok(rcChain.trimEnd().endsWith(hold.trimEnd()), "hold is the last step");
+  assert.ok(rcChain.indexOf(hold) < rcChain.indexOf("      - name: Hand the release candidate run over to the release chain\n"), "the handover follows the hold");
   assert.doesNotMatch(runBlock(hold), /\$\{\{/u);
   const script = runBlock(hold);
   const finished = await runBash(script, { env: { RC_RUN_ID: "7001" }, ghScript: 'echo completed' });
@@ -79,6 +79,123 @@ test("RC chain은 RC run이 끝날 때까지 job을 유지해 잠금 구간을 R
   assert.match(invalid.stderr, /invalid/u);
   const apiFailure = await runBash(script, { env: { RC_RUN_ID: "7001" }, ghScript: "echo boom >&2; exit 1" });
   assert.notEqual(apiFailure.status, 0);
+});
+
+// data#1158: GITHUB_TOKEN으로 dispatch한 RC는 workflow_run을 만들지 않으므로 RC chain이 RC 완료 뒤 체인을 직접 dispatch한다.
+// 체인 run이 실제로 생긴 것을 확인하고 끝나야 automerge 잠금(두 workflow의 진행 중 run)이 RC에서 체인까지 끊기지 않는다.
+const HANDOVER = "Hand the release candidate run over to the release chain";
+const FAILURE_REPORT = "Report a release candidate handover failure";
+
+test("RC chain은 RC가 성공하면 체인 workflow를 dispatch하고 rc_run_id로 묶인 그 run이 생긴 것을 확인한 뒤 끝난다 (data#1158)", async () => {
+  const handover = stepBody(rcChain, HANDOVER);
+  assert.ok(rcChain.indexOf(handover) < rcChain.indexOf(`      - name: ${FAILURE_REPORT}\n`), "the failure report follows the handover");
+  assert.match(handover, /if: \$\{\{ steps\.supersede\.outputs\.current == 'true' && vars\.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' \}\}/u);
+  assert.match(handover, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
+  assert.match(handover, /RC_RUN_ID: \$\{\{ steps\.dispatch\.outputs\.rc_run_id \}\}/u);
+  assert.doesNotMatch(runBlock(handover), /\$\{\{/u);
+  // dispatch 권한과 실패 이슈 권한: actions write, issues write, contents read.
+  assert.match(rcChain, /\npermissions:\n  actions: write\n  contents: read\n  issues: write\n/u);
+  const script = runBlock(handover);
+  // 체인 run은 시계가 아니라 이름(chain rc=<rc_run_id>)으로 찾는다.
+  assert.doesNotMatch(script, /created=|dispatched_after|date -u/u);
+  assert.match(script, /--arg title "chain rc=\$\{RC_RUN_ID\}"/u);
+
+  const run = async ({ conclusion, chainRuns = [{ id: 9001, display_title: "chain rc=7001", created_at: "2026-10-11T05:00:00Z" }], runId = "7001", dispatchFails = false }) => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "chain-handover-"));
+    try {
+      const log = path.join(directory, "calls");
+      const sleeps = path.join(directory, "sleeps");
+      await writeFile(log, "");
+      await writeFile(sleeps, "");
+      await writeFile(path.join(directory, "gh"), `#!/bin/bash
+echo "gh $*" >> "${log}"
+case "$*" in
+  "workflow run "*) ${dispatchFails ? 'echo "HTTP 422" >&2; exit 1' : "exit 0"} ;;
+  *"/actions/runs/7001"*) echo "${conclusion}" ;;
+  *"datapack-release-cross-repo-chain.yml/runs"*) cat <<'JSON'
+${JSON.stringify({ workflow_runs: chainRuns })}
+JSON
+;;
+  *) echo "unexpected gh call: $*" >&2; exit 2 ;;
+esac
+`);
+      await writeFile(path.join(directory, "sleep"), `#!/bin/bash\necho "$1" >> "${sleeps}"\n`);
+      for (const name of ["gh", "sleep"]) await chmod(path.join(directory, name), 0o755);
+      const result = spawnSync("/bin/bash", ["-e", "-c", script], {
+        encoding: "utf8", env: { PATH: `${directory}:${process.env.PATH}`, HOME: process.env.HOME, GITHUB_REPOSITORY: "AquilaXk/easysubway-data", RC_RUN_ID: runId },
+      });
+      const calls = (await readFile(log, "utf8")).split("\n").filter(Boolean);
+      const slept = (await readFile(sleeps, "utf8")).split("\n").filter(Boolean).length;
+      return { ...result, calls, slept };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  };
+
+  const success = await run({ conclusion: "success" });
+  assert.equal(success.status, 0, success.stderr);
+  assert.ok(success.calls.includes("gh workflow run datapack-release-cross-repo-chain.yml --repo AquilaXk/easysubway-data --ref main -f rc_run_id=7001"));
+  assert.match(success.stdout, /9001/u);
+  // 다른 RC나 이름이 다른 dispatch run이 같은 시각에 있어도 확인으로 인정하지 않는다.
+  const others = await run({ conclusion: "success", chainRuns: [{ id: 9100, display_title: "chain rc=7002", created_at: "2026-10-11T05:00:00Z" }, { id: 9101, display_title: "Data Pack Release Cross-Repository Chain", created_at: "2026-10-11T05:00:01Z" }] });
+  assert.notEqual(others.status, 0);
+  assert.match(others.stderr, /release chain run was not found/u);
+  assert.equal(others.slept, 20);
+  // 이름이 맞는 run이 여럿이면 가장 먼저 만들어진 것을 센다.
+  const many = await run({ conclusion: "success", chainRuns: [{ id: 9300, display_title: "chain rc=7001", created_at: "2026-10-11T05:00:09Z" }, { id: 9200, display_title: "chain rc=7001", created_at: "2026-10-11T05:00:01Z" }] });
+  assert.match(many.stdout, /9200/u);
+
+  // RC가 성공이 아니면(failure·timed_out·startup_failure·cancelled·빈 값) 체인을 시작하지 않고 실패한다. 보고는 마지막 step이 맡는다.
+  for (const conclusion of ["failure", "timed_out", "startup_failure", "cancelled", "skipped", ""]) {
+    const stopped = await run({ conclusion });
+    assert.notEqual(stopped.status, 0, conclusion);
+    assert.equal(stopped.calls.some((call) => call.startsWith("gh workflow run")), false, conclusion);
+    assert.match(stopped.stderr, /the release chain is not started/u, conclusion);
+  }
+  // dispatch 실패와 체인 run 미발견도 성공으로 넘기지 않는다.
+  const dispatchFailed = await run({ conclusion: "success", dispatchFails: true });
+  assert.notEqual(dispatchFailed.status, 0);
+  const missing = await run({ conclusion: "success", chainRuns: [] });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /release chain run was not found/u);
+  assert.equal(missing.slept, 20);
+  const invalid = await run({ conclusion: "success", runId: "x" });
+  assert.notEqual(invalid.status, 0);
+  assert.match(invalid.stderr, /invalid/u);
+  assert.equal(invalid.calls.length, 0);
+});
+
+// F1: RC가 dispatch된 뒤 체인이 시작되지 못하는 모든 경우(RC 실패·timed_out·startup_failure·취소, 60분 대기 timeout, dispatch 실패, 체인 run 미발견)를
+// 체인 실패 이슈(#926)로 올린다. 취소도 포함한다: 무인 원칙에서 이 RC의 발행이 시작되지 못했다는 사실은 사람이 알아야 하는 상태이고, 다음 후보가 올 때까지
+// 아무도 알아채지 못하기 때문이다(사람이 일부러 취소했다면 이슈를 닫으면 된다).
+test("RC chain은 RC dispatch 뒤 체인이 시작되지 못한 모든 실패를 체인 실패 이슈로 올린다 (data#1158 F1)", async () => {
+  const report = stepBody(rcChain, FAILURE_REPORT);
+  assert.ok(rcChain.trimEnd().endsWith(report.trimEnd()), "the failure report is the last step");
+  // failure()만으로는 RC를 dispatch하지 못한 경우(main 이동 등 정상 경쟁)까지 올리므로 dispatch가 성공한 뒤의 실패로 한정한다.
+  assert.match(report, /if: \$\{\{ failure\(\) && steps\.dispatch\.outcome == 'success' && vars\.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' \}\}/u);
+  assert.match(report, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
+  assert.match(report, /RC_RUN_ID: \$\{\{ steps\.dispatch\.outputs\.rc_run_id \}\}/u);
+  const script = runBlock(report);
+  assert.doesNotMatch(script, /\$\{\{/u);
+  const directory = await mkdtemp(path.join(os.tmpdir(), "chain-report-"));
+  try {
+    const log = path.join(directory, "calls");
+    await writeFile(log, "");
+    await writeFile(path.join(directory, "node"), `#!/bin/bash\necho "node $*" >> "${log}"\n`);
+    await chmod(path.join(directory, "node"), 0o755);
+    const run = (env) => spawnSync("/bin/bash", ["-e", "-c", script], { encoding: "utf8", env: { PATH: `${directory}:${process.env.PATH}`, HOME: process.env.HOME, GITHUB_REPOSITORY: "AquilaXk/easysubway-data", GITHUB_RUN_ID: "8800", ...env } });
+    const ok = run({ RC_RUN_ID: "7001" });
+    assert.equal(ok.status, 0, ok.stderr);
+    // 실패한 RC run과 이 RC chain run을 모두 기록한다(RC 실패는 RC run, 대기 timeout·dispatch 실패는 RC chain run에 원인이 있다).
+    assert.deepEqual((await readFile(log, "utf8")).split("\n").filter(Boolean), [
+      "node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository AquilaXk/easysubway-data --run-id 7001",
+      "node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository AquilaXk/easysubway-data --run-id 8800",
+    ]);
+    const invalid = run({ RC_RUN_ID: "x" });
+    assert.notEqual(invalid.status, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 // 유지 시간은 계약이다: 반복 횟수 x 대기 시간이 RC 전체(최대 60분)를 덮어야 하고, job 제한(75분) 안이어야 한다. 줄이면(seq 1 1 등) 잠금이 RC 중간에 풀린다.
