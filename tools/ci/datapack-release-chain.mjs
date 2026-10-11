@@ -586,7 +586,7 @@ export async function runChainStage({ stage, statePath, env = process.env, repos
     const runId = requiredEnv(env, "RC_RUN_ID", DECIMAL);
     const sha = requiredEnv(env, "RC_RUN_SHA", SHA);
     const context = await buildContext(env, { repositoryRoot, gh });
-    // 체크아웃(= workflow_run 시점의 기본 브랜치)과 원격 main이 모두 RC 커밋이어야 한다. 도구와 입력 파일이 RC와 같은 커밋에서 온다.
+    // 체크아웃(= workflow_run·workflow_dispatch 시점의 기본 브랜치)과 원격 main이 모두 RC 커밋이어야 한다. 도구와 입력 파일이 RC와 같은 커밋에서 온다.
     if (requiredEnv(env, "GITHUB_SHA", SHA) !== sha || await mainSha(context, REPOSITORIES.data, context.tokens.data) !== sha) {
       fail("CHAIN_MAIN_MOVED", `data main is not the release candidate commit ${sha}`);
     }

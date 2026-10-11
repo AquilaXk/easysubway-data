@@ -5,6 +5,9 @@ name: Data Pack Release Candidate Chain
 # modeArgs는 저장소 파일에서만 만든다. release request가 spec에 결속되지 않으면 dispatch하지 않고 실패한다.
 # RC가 끝날 때까지 이 job을 유지한다(data#1084). 이 job이 진행 중인 동안 automerge-queue가 병합을 미루므로, RC부터 발행 체인까지
 # data main이 RC 커밋에서 움직이지 않는다(발행은 candidate head_sha == main을 요구한다).
+# RC는 GITHUB_TOKEN으로 dispatch하므로 끝나도 workflow_run 이벤트가 만들어지지 않는다(workflow_dispatch·repository_dispatch만 예외, data#1158,
+# https://docs.github.com/en/actions/using-workflows/triggering-a-workflow). 그래서 RC가 끝나면 이 job이 발행 체인(datapack-release-cross-repo-chain.yml)을
+# 직접 dispatch하고 그 run이 생긴 것을 확인한 뒤 끝난다. 이 job이 끝나는 시점에는 체인 run이 이미 진행 중이라 병합 잠금이 끊기지 않는다.
 on:
   push:
     branches: [main]
@@ -15,6 +18,7 @@ on:
 permissions:
   actions: write
   contents: read
+  issues: write
 
 concurrency:
   group: datapack-release-candidate-chain-${{ github.workflow }}-${{ github.ref }}
@@ -121,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${RC_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "the dispatched RC run id is invalid" >&2; exit 1; }
-          # RC의 성공·실패는 여기서 판정하지 않는다. 성공은 발행 체인이, 실패는 체인의 실패 보고 job이 이어받는다. 이 step은 잠금 구간만 유지한다.
+          # RC의 성공·실패는 여기서 판정하지 않는다. 이 step은 잠금 구간만 유지하고, 결과는 다음 step이 이어받는다.
           for _ in $(seq 1 360); do
             status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RC_RUN_ID}" --jq '.status')"
             if [[ "${status}" == "completed" ]]; then
@@ -132,3 +136,33 @@ jobs:
           done
           echo "release-candidate run ${RC_RUN_ID} did not finish within 60 minutes" >&2
           exit 1
+      # 성공한 RC만 체인으로 넘긴다. 체인 workflow는 입력 run id를 믿지 않고 API로 RC run을 다시 읽어 판정한다.
+      # RC가 실패하면 체인을 시작하지 않고 체인 실패 이슈(#926 경로)에 그 RC run을 기록한 뒤 이 job을 실패시킨다.
+      # 취소된 RC는 사람이 멈춘 run이라 이슈를 만들지 않고 job만 실패시킨다.
+      # 체인이 꺼져 있으면(DATAPACK_CROSS_REPO_CHAIN_ENABLED가 true가 아니면) 넘기지도 보고하지도 않는다.
+      - name: Hand the release candidate run over to the release chain
+        if: ${{ steps.supersede.outputs.current == 'true' && vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_RUN_ID: ${{ steps.dispatch.outputs.rc_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "${RC_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "the dispatched RC run id is invalid" >&2; exit 1; }
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RC_RUN_ID}" --jq '.conclusion // ""')"
+          if [[ "${conclusion}" == "failure" ]]; then
+            node tools/ci/report-refresh-failure.mjs --workflow datapack-release-cross-repo-chain.yml --repository "${GITHUB_REPOSITORY}" --run-id "${RC_RUN_ID}"
+          fi
+          if [[ "${conclusion}" != "success" ]]; then
+            echo "release-candidate run ${RC_RUN_ID} concluded '${conclusion}'; the release chain is not started" >&2
+            exit 1
+          fi
+          dispatched_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run datapack-release-cross-repo-chain.yml --repo "${GITHUB_REPOSITORY}" --ref main -f rc_run_id="${RC_RUN_ID}"
+          chain_run_id=""
+          for _ in $(seq 1 20); do
+            chain_run_id="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/datapack-release-cross-repo-chain.yml/runs" -f event=workflow_dispatch -f branch=main -f "created=>=${dispatched_after}" -f per_page=20 --jq '[.workflow_runs[] | select(.triggering_actor.login == "github-actions[bot]")] | sort_by(.created_at) | if length > 0 then (.[0].id | tostring) else "" end')"
+            [[ -n "${chain_run_id}" ]] && break
+            sleep 6
+          done
+          [[ -n "${chain_run_id}" ]] || { echo "the release chain run was not found after the dispatch" >&2; exit 1; }
+          echo "release chain run ${chain_run_id} started for the release-candidate run ${RC_RUN_ID}; the merge lock continues in that run."
