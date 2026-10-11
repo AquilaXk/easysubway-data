@@ -14,9 +14,8 @@ import { copySyntheticCurrentPublicRouteMapRepository, nextSyntheticCurrentStati
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const bytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
-async function compositionFixture(t) {
-  const capturedAt = "2026-07-12T15:00:00.000Z"; const rawBytes = Buffer.from("raw");
-  const observation = { manifest: { sourceId: "seoul-metro-transfer-distance-duration", capturedAt, rawSha256: sha(rawBytes), contentSha256: sha("content"), schemaSha256: sha("schema"), endpointSha256: sha("endpoint"), rowCount: 145, freshnessDate: "2025-12-31", credentialRedacted: true }, manifestBytes: Buffer.from("manifest"), observationBytes: Buffer.from("observation"), rawBytes };
+async function compositionFixture(t, { approvalDelayMs = 0 } = {}) {
+  const sourceId = "seoul-metro-transfer-distance-duration"; const rawBytes = Buffer.from("raw");
   const root = process.cwd();
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "transfer-public-successor-"));
   t.after(() => rm(fixtureRoot, { recursive: true, force: true }));
@@ -33,7 +32,6 @@ async function compositionFixture(t) {
   const publicTopology = load(`tools/datapack/sources/${publicTopologySnapshotId}.json`).value;
   assert.equal(publicTopology.lines.length, 22);
   assert.equal(publicTopology.lines.reduce((count, line) => count + line.edgeCount, 0), 1_438);
-  const sourceId = observation.manifest.sourceId;
   const transferSource = inventory.value.sources.find(({ id }) => id === sourceId);
   transferSource.requiredForProductionPack = false;
   delete transferSource.capabilities.transfer;
@@ -48,6 +46,25 @@ async function compositionFixture(t) {
   );
   scope.value.productionSourceSet.optionalAccessibilitySourceIds.push(sourceId);
   scope.value.productionSourceSet.excludedFromV1SupportClaims.push(sourceId);
+  const selectedRows = candidate.value.sourceSnapshotIds.map((snapshotId) => {
+    const matches = ledger.value.filter((row) => row.snapshotId === snapshotId);
+    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
+    return matches[0];
+  });
+  const basisAt = Math.max(...selectedRows.flatMap((entry) => [
+    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
+  ].filter(Boolean).map(Date.parse)));
+  const freshUntil = Math.min(...selectedRows.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
+  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 + approvalDelayMs < freshUntil);
+  const approvedAt = new Date(basisAt + 1_000 + approvalDelayMs).toISOString();
+  // 수집·보관 시각은 고정 달력 리터럴이 아니라 데이터에서 파생된 승인 시각과 정책의 보관 일수에서 독립 계산한다.
+  const approvedMillis = Date.parse(approvedAt);
+  const capturedAt = new Date(approvedMillis - 60 * 60 * 1000).toISOString();
+  const storedAt = new Date(approvedMillis - 60 * 60 * 1000 + 1_000).toISOString();
+  const retentionDays = governance.value.retentionClasses.find(({ id }) => id === "standard-90d").retentionDays;
+  const rawRetentionExpiresAt = new Date(Date.parse(capturedAt) + retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  const capturedStamp = capturedAt.replaceAll(/[-:.]/gu, "");
+  const observation = { manifest: { sourceId, capturedAt, rawSha256: sha(rawBytes), contentSha256: sha("content"), schemaSha256: sha("schema"), endpointSha256: sha("endpoint"), rowCount: 145, freshnessDate: "2025-12-31", credentialRedacted: true }, manifestBytes: Buffer.from("manifest"), observationBytes: Buffer.from("observation"), rawBytes };
   const metrics = load("tools/datapack/release/current-transfer-topology-metrics.json", root).value;
   metrics.canonicalIdentity.canonicalPackSha256 = sha(pack.body);
   metrics.sourceIdentity = { ...metrics.sourceIdentity, sourceId: observation.manifest.sourceId, endpointSha256: observation.manifest.endpointSha256, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawSnapshotSha256: sha(rawBytes), rawSha256: observation.manifest.rawSha256, contentSha256: observation.manifest.contentSha256, schemaSha256: observation.manifest.schemaSha256, rowCount: 145, capturedAt, freshnessDate: "2025-12-31" };
@@ -63,17 +80,6 @@ async function compositionFixture(t) {
   assert.equal(applicability.productionUseAllowed, false); assert.equal(applicability.candidateBinding, null);
   assert.deepEqual(applicability.canonicalIdentity, metrics.canonicalIdentity); assert.deepEqual(applicability.sourceIdentity, metrics.sourceIdentity);
   assert.equal(applicability.stateSummary.APPLICABLE_TRANSFER_ENDPOINT, 160); assert.equal(applicability.stateSummary.NOT_APPLICABLE_IN_CANONICAL_PAIR_SET, 538); // #872 S2
-  const selectedRows = candidate.value.sourceSnapshotIds.map((snapshotId) => {
-    const matches = ledger.value.filter((row) => row.snapshotId === snapshotId);
-    assert.equal(matches.length, 1, `selected source snapshot identity: ${snapshotId}`);
-    return matches[0];
-  });
-  const basisAt = Math.max(...selectedRows.flatMap((entry) => [
-    entry.retrievedAt, entry.sourceUpdatedAt, entry.capturedAt, entry.rawReceipt?.storedAt,
-  ].filter(Boolean).map(Date.parse)));
-  const freshUntil = Math.min(...selectedRows.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt)));
-  assert.ok(Number.isFinite(basisAt) && Number.isFinite(freshUntil) && basisAt + 1_000 < freshUntil);
-  const approvedAt = new Date(basisAt + 1_000).toISOString();
   candidate.value.sourceSnapshots = candidate.value.sourceSnapshotIds.map((snapshotId) => deriveReleaseProjection({ snapshot: ledger.value.find((row) => row.snapshotId === snapshotId), sourceInventory: inventory.value, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, nowMillis: Date.parse(approvedAt) }));
   const selectedSnapshotIds = new Set(candidate.value.sourceSnapshotIds);
   candidate.value.sourceSnapshotSetHash = sha(Buffer.from(JSON.stringify(
@@ -85,8 +91,8 @@ async function compositionFixture(t) {
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate.value, null, 2)}\n`);
   const scopeBytes = Buffer.from(`${JSON.stringify(scope.value, null, 2)}\n`);
   const ledgerBytes = Buffer.from(`${JSON.stringify(ledger.value, null, 2)}\n`);
-  const rawObjectSha256 = sha(rawBytes); const objectKey = `source-raw/seoul-metro-transfer-distance-duration/20260712/${rawObjectSha256}.json`;
-  const receipt = { schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: observation.manifest.sourceId, snapshotId: "seoul-metro-transfer-distance-duration-20260712T150000000Z", snapshotRawSha256: observation.manifest.rawSha256, capturedAt, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, rawObjectSha256, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, capturedDate: "20260712", byteSize: rawBytes.length, storedAt: "2026-07-12T15:00:01.000Z", rawRetentionExpiresAt: "2026-10-10T15:00:00.000Z" };
+  const rawObjectSha256 = sha(rawBytes); const objectKey = `source-raw/seoul-metro-transfer-distance-duration/${capturedStamp.slice(0, 8)}/${rawObjectSha256}.json`;
+  const receipt = { schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: observation.manifest.sourceId, snapshotId: `seoul-metro-transfer-distance-duration-${capturedStamp}`, snapshotRawSha256: observation.manifest.rawSha256, capturedAt, manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes), rawObjectUri: `oci://axvym6vk8g7i/easysubway-datapacks/${objectKey}`, rawObjectSha256, ociNamespace: "axvym6vk8g7i", bucket: "easysubway-datapacks", objectKey, capturedDate: capturedStamp.slice(0, 8), byteSize: rawBytes.length, storedAt, rawRetentionExpiresAt };
   return { observation, receipt, metrics, metricsBytes: bytes(metrics), applicability, applicabilityBytes: bytes(applicability), inventory: inventory.value, inventoryBytes, scope: scope.value, scopeBytes, ledger: ledger.value, ledgerBytes, candidate: candidate.value, candidateBytes, governancePolicy: governance.value, governancePolicyBytes: governance.body, freshnessPolicy: freshness.value, freshnessPolicyBytes: freshness.body, canonicalPack: pack.value, canonicalPackBytes: pack.body, approvedAt };
 }
 
@@ -167,12 +173,18 @@ test("actual composition preserves scope-selected predecessors and appends termi
   ]);
   assert.equal(candidate.sourceSnapshots.at(-1).sourceId, "seoul-metro-transfer-distance-duration");
   const ledger = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-snapshots.json")).bytes);
-  assert.equal(ledger.at(-1).observedAt, "2026-07-12T15:00:00.000Z");
+  assert.equal(ledger.at(-1).observedAt, input.observation.manifest.capturedAt);
   const inventory = JSON.parse(outputs.find(({ relative }) => relative.endsWith("source-inventory.json")).bytes);
   assert.deepEqual(deriveReleaseProjection({ snapshot: ledger.at(-1), sourceInventory: inventory, governancePolicy: input.governancePolicy, governancePolicyBytes: input.governancePolicyBytes, freshnessPolicy: input.freshnessPolicy, nowMillis: Date.parse(input.approvedAt) }), candidate.sourceSnapshots.at(-1));
   const scope = JSON.parse(outputs.find(({ relative }) => relative.endsWith("production-datapack-scope.json")).bytes);
   assert.equal(scope.productionSourceSet.optionalAccessibilitySourceIds.includes("seoul-metro-transfer-distance-duration"), false);
   assert.equal(scope.productionSourceSet.excludedFromV1SupportClaims.includes("seoul-metro-transfer-distance-duration"), false);
+});
+
+test("승인 시각이 선택 원천 시계보다 하루 늦어도 등록이 성공한다(고정 수집 시각 금지)", async (t) => {
+  const input = await compositionFixture(t, { approvalDelayMs: 24 * 60 * 60 * 1000 });
+  const outputs = buildTransferRegistrationOutputs(input);
+  assert.equal(outputs.length, 5);
 });
 
 test("transfer registration은 candidate의 public 노선도와 다른 canonical content를 거부한다", async (t) => {
