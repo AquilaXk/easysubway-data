@@ -43,7 +43,7 @@ test("트리거는 CI 완료(workflow_run) 하나다. pull_request_target·push�
   assert.doesNotMatch(code, /pull_request_target/u);
 });
 
-test("job은 변수가 true이고 같은 저장소의 automation/ 브랜치 PR CI 완료일 때만 돌고 권한은 job에만 있다", () => {
+test("job은 변수가 true이고 같은 저장소의 automation/ 브랜치 PR CI 완료일 때만 돌고(재실행될 첫 시도 실패는 제외, #1115) 권한은 job에만 있다", () => {
   assert.match(yml, /\npermissions: \{\}\n/u);
   assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
   assert.match(yml, /\n    permissions:\n      actions: read\n      checks: read\n      contents: read\n      issues: write\n      pull-requests: read\n/u);
@@ -51,7 +51,7 @@ test("job은 변수가 true이고 같은 저장소의 automation/ 브랜치 PR C
   const condition = /\n    if: (\$\{\{[^\n]*\}\})\n/u.exec(yml)?.[1];
   assert.equal(
     condition,
-    "${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository }}",
+    "${{ vars.DATAPACK_AUTOMATION_AUTOMERGE == 'true' && github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository && !(vars.DATAPACK_AUTOMATION_CI_RERUN == 'true' && github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1) }}",
   );
   assert.match(yml, /\n    name: Automation PR automerge\n/u);
   assert.match(yml, /\nconcurrency:\n  group: automation-pr-automerge-\$\{\{ github\.event\.workflow_run\.head_branch \}\}\n  cancel-in-progress: false\n/u);

@@ -1,0 +1,56 @@
+name: Automation PR CI Rerun
+
+# 자동화 PR의 required CI가 일시 오류로 실패하면 실패한 job을 정확히 한 번 다시 실행한다(#1115, #870 전체 자동화, QA 결정 2026-10-09: 사람은 이상이 날 때만 개입).
+# - 사례(2026-10-10): test runner 일시 오류(`Unable to deserialize cloned data`)와 Docker Hub 429(actionlint 이미지 pull, exit 125)로 CI가 실패해 후보 갱신 등이 AUTOMATION_PR_CI_FAILED로 멈췄고, 사람이 `gh run rerun --failed`를 해야 풀렸다.
+# - 대상: 이 저장소의 automation/ 브랜치 pull_request CI가 첫 시도(run_attempt 1)에서 failure로 끝난 경우뿐이다. 작성자가 App easysubway-release-chain[bot] 또는 github-actions[bot]이 아닌 PR(사람 PR)과 fork PR은 대상이 아니다.
+#   조건은 도구(tools/ci/rerun-automation-pr-ci.mjs)가 API로 다시 확인한다(head 일치, 열린 PR 하나, 작성자 신원, 이미 기록된 run인지).
+# - 재실행은 한 번이다. 두 번째 시도는 이 workflow가 건드리지 않는다: 두 번째도 실패하면 자동 병합 라벨러가 AUTOMATION_PR_CI 위반으로 실패하고(실패 이슈 #926) 다음 정기 실행이 AUTOMATION_PR_CI_FAILED로 드러낸다.
+#   진짜(결정적) 실패는 숨겨지지 않는다. 첫 시도의 실패 job은 PR 코멘트와 run 이력에 남는다.
+#   라벨러가 건너뛴 첫 시도 실패를 재실행하지 않기로 한 경우(head가 바뀜, 이미 기록됨, 작성자가 자동화가 아님)에는 이 job이 실패해 같은 #926 실패 이슈 경로로 드러낸다.
+# - 신뢰 모델: PR 코드는 가져오거나 실행하지 않는다(workflow_run의 기본 checkout은 기본 브랜치다). PR 데이터는 API로만 읽는다. 쓰기는 실패 job 재실행(actions: write)과 PR 코멘트(issues: write) 둘뿐이고 github.token을 쓴다.
+# - 저장소 변수 DATAPACK_AUTOMATION_CI_RERUN이 true일 때만 돈다(기본 꺼짐, 코드가 켜지 않는다). 변수는 QA 보고 뒤 별도 설정 변경으로만 켠다.
+#   같은 변수가 true이면 자동 병합 라벨러(automation-pr-automerge.yml)는 첫 시도 실패를 건너뛴다(재실행될 일시 오류마다 실패 이슈가 남지 않게).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: automation-pr-ci-rerun-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  rerun:
+    name: Rerun the failed CI jobs once
+    if: ${{ vars.DATAPACK_AUTOMATION_CI_RERUN == 'true' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1 && startsWith(github.event.workflow_run.head_branch, 'automation/') && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+      pull-requests: read
+    timeout-minutes: 10
+    steps:
+      # workflow_run의 기본 checkout은 기본 브랜치의 최신 커밋이다. PR head·merge ref는 가져오지 않는다.
+      - name: Checkout the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Rerun the failed jobs once and record it on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          node tools/ci/rerun-automation-pr-ci.mjs --repository "${GITHUB_REPOSITORY}" --run-id "${RUN_ID}"
+      - name: Report refresh failure as an issue
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/report-refresh-failure.mjs --workflow automation-pr-ci-rerun.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
