@@ -329,12 +329,26 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   const freshnessPolicy = JSON.parse(await readFile(path.join(candidateRoot, "release/product-gates/datapack-freshness-sla.json"), "utf8"));
   const classIdOf = new Map(freshnessPolicy.sourceClasses.flatMap(({ id, sourceIds }) => (sourceIds ?? []).map((sourceId) => [sourceId, id])));
   assert.equal(artifactFreshness.citedSourceFreshUntil, earliestCited.freshnessExpiresAt);
-  // network 창은 topology·Incheon·ITX·수도권 admission·접근성 창의 최솟값이다. 독립적으로 고를 수 있는 창(ITX 원천 파일, spec의 topology admission)은
-  // 보고된 network 창보다 이르면 안 되고, 보고값 자체는 승인 창 중 하나와 같아야 한다.
+  // network 창은 topology admission·Incheon admission·ITX·수도권 노선 admission·접근성 증거 창의 최솟값이다(#1145).
+  // 보고값(networkFreshUntil)을 입력으로 쓰지 않고, 각 창을 커밋된 입력(spec, 후보가 고정한 inventory, ITX 원천 파일, 후보 station-line 입력)에서 직접 고른다.
+  // 그래서 생산이 구성 창 하나를 빠뜨리거나 더 이르게 계산해도 기대값과 어긋나 드러난다.
   const topologyFreshUntil = new Date(buildSpec.networkEdgeEvidence.capitalTopologyAdmission.freshUntil).toISOString();
-  const independentNetworkMillis = [Date.parse(itxFreshUntil), Date.parse(topologyFreshUntil)];
-  const networkMillis = Date.parse(artifactFreshness.networkFreshUntil);
-  assert.ok(networkMillis <= Math.min(...independentNetworkMillis), "network window must not exceed the ITX or topology admission window");
+  const committedInventory = JSON.parse(await readFile(path.join(candidateRoot, buildSpec.networkEdgeEvidence.sourceInventory.path), "utf8"));
+  const incheonSources = committedInventory.sources.filter(({ id }) => id === "incheon-transit-station-info");
+  assert.equal(incheonSources.length, 1, "Incheon station-info source must exist once in the pinned inventory");
+  const incheonFreshUntil = incheonSources[0].topologyAdmissionEvidence.freshUntil;
+  const capitalTopologySourceId = JSON.parse(await readFile(path.join(candidateRoot, buildSpec.networkEdgeEvidence.capitalTopologyCandidate.path), "utf8")).sourceId;
+  const capitalLineFreshUntil = committedInventory.sources
+    .filter(({ routeMapAdmissionEvidence }) => routeMapAdmissionEvidence?.topologySourceId === capitalTopologySourceId)
+    .map(({ routeMapAdmissionEvidence }) => (routeMapAdmissionEvidence.currentTopologyAdmission ?? routeMapAdmissionEvidence).freshUntil);
+  assert.ok(capitalLineFreshUntil.length > 0, "capital line admissions must exist in the pinned inventory");
+  const stationLineInput = JSON.parse(await readFile(path.join(candidateRoot, "tools/datapack/release/nationwide-station-line-input.json"), "utf8"));
+  assert.ok(stationLineInput.evidenceRows.length > 0, "accessibility evidence rows must exist");
+  const accessibilityFreshUntil = stationLineInput.evidenceRows.map(({ freshUntil }) => freshUntil);
+  const independentNetworkMillis = [itxFreshUntil, topologyFreshUntil, incheonFreshUntil, ...capitalLineFreshUntil, ...accessibilityFreshUntil].map((value) => Date.parse(value));
+  assert.ok(independentNetworkMillis.every(Number.isFinite), "every network window input must be a valid time");
+  const networkMillis = Math.min(...independentNetworkMillis);
+  assert.equal(artifactFreshness.networkFreshUntil, new Date(networkMillis).toISOString());
   // 시간표 원천 중 spec 인용 행은 spec 행의 만료와 같아야 한다. 목록이 비면 every가 공허하게 통과하므로 비어 있지 않음을 먼저 단언한다.
   assert.ok(artifactFreshness.timetableSources.length > 0, "timetable sources must be reported");
   for (const reported of artifactFreshness.timetableSources) {

@@ -18250,6 +18250,54 @@ test("official OD fare validator는 pack inventory에 없는 source를 거부한
   }
 });
 
+// #1134: 관측 시각을 당기는 분기는 ITX 승격 PR의 입력에서만 실행됐다(main 입력의 관측 시각은 만료 전이다). 순수 시계 도출을 직접 검증해
+// main 입력에서도 분기와 경계(>=)가 항상 확인된다. 기대값은 입력 산술에서 직접 계산한다.
+test("합성 ITX 시계: 관측 시각이 고정 원천 만료를 넘으면 고정 원천 직후로 당기고 관측·build 시각이 모두 만료 전이다", () => {
+  const expiry = Date.parse("2026-10-10T07:22:23.648Z");
+  const pinnedBuild = expiry - 24 * 3_600_000 + 1_000; // 고정 원천 수집 직후
+  for (const observedAfter of [0, 1, 1_000, 8 * 3_600_000]) {
+    const observedAtMillis = expiry + observedAfter;
+    const clock = deriveItxSyntheticClock({ observedAtMillis, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
+    assert.equal(clock.rewound, true, `observed ${observedAfter}ms after expiry`);
+    assert.equal(clock.observedAtMillis, pinnedBuild - 1_000);
+    assert.equal(clock.buildMillis, pinnedBuild);
+    for (const [label, value] of [["observedAt", clock.observedAtMillis], ["buildNow", clock.buildMillis]]) {
+      assert.ok(value < expiry, `${label} must be inside the fresh interval`);
+      assert.ok(value >= pinnedBuild - 1_000, `${label} must not precede the pinned capture`);
+    }
+  }
+});
+
+test("합성 ITX 시계: 관측 시각 +1초가 만료와 같으면 당기고 1ms 전이면 그대로 둔다(경계)", () => {
+  const expiry = Date.parse("2026-10-10T07:22:23.648Z");
+  const pinnedBuild = expiry - 3_600_000;
+  const atBoundary = deriveItxSyntheticClock({ observedAtMillis: expiry - 1_000, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
+  assert.deepEqual(atBoundary, { rewound: true, observedAtMillis: pinnedBuild - 1_000, buildMillis: pinnedBuild });
+  const justBefore = deriveItxSyntheticClock({ observedAtMillis: expiry - 1_001, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
+  assert.deepEqual(justBefore, { rewound: false, observedAtMillis: expiry - 1_001, buildMillis: expiry - 1 });
+  // 관측이 고정 원천보다 먼저면 build 시각은 고정 원천 직후이고 관측 시각은 건드리지 않는다.
+  const early = deriveItxSyntheticClock({ observedAtMillis: pinnedBuild - 5_000, pinnedBuildMillis: pinnedBuild, pinnedTimetableExpiryMillis: expiry });
+  assert.deepEqual(early, { rewound: false, observedAtMillis: pinnedBuild - 5_000, buildMillis: pinnedBuild });
+});
+
+test("합성 ITX 시계: 고정 원천 직후 build 시각도 만료 전에 둘 수 없으면 실패한다 (신선한 척하지 않는다)", () => {
+  const expiry = Date.parse("2026-10-10T07:22:23.648Z");
+  assert.throws(() => deriveItxSyntheticClock({ observedAtMillis: expiry + 1, pinnedBuildMillis: expiry, pinnedTimetableExpiryMillis: expiry }), /pinned timetable freshness interval/u);
+  assert.throws(() => deriveItxSyntheticClock({ observedAtMillis: expiry - 10_000, pinnedBuildMillis: expiry + 5_000, pinnedTimetableExpiryMillis: expiry }), /pinned timetable freshness interval/u);
+});
+
+// 합성 ITX 후보의 관측 시각과 build 시각을 정한다(#1132, #1134). 관측 시각 +1초가 고정된 P1D 증거의 만료 이상이면 고정 원천 직후로 당기고,
+// 아니면 그대로 둔다. 어느 쪽이든 관측 시각, build 시각이 모두 그 만료 전이어야 하고 만들 수 없으면 실패한다.
+function deriveItxSyntheticClock({ observedAtMillis, pinnedBuildMillis, pinnedTimetableExpiryMillis }) {
+  const rewound = observedAtMillis + 1_000 >= pinnedTimetableExpiryMillis;
+  const derivedObservedAtMillis = rewound ? pinnedBuildMillis - 1_000 : observedAtMillis;
+  const buildMillis = Math.max(pinnedBuildMillis, derivedObservedAtMillis + 1_000);
+  if (buildMillis >= pinnedTimetableExpiryMillis) {
+    throw new Error("fixture current build clock is not inside the pinned timetable freshness interval");
+  }
+  return { rewound, observedAtMillis: derivedObservedAtMillis, buildMillis };
+}
+
 async function writeCurrentItxReleaseInputs(
   workspace,
   { mutateFixture, mutateTopologyEvidence, mutateCompleteness, mutateCurrentSourceContext } = {},
@@ -18476,11 +18524,16 @@ async function writeCurrentItxReleaseInputs(
     if (scheduleAdmissionEvidence?.freshUntil === undefined) throw new Error(`fixture current ${id} timetable admission freshness is invalid`);
     return clockMillis(scheduleAdmissionEvidence.freshUntil);
   }));
-  if (clockMillis(sourceObservedAt) + 1_000 >= pinnedTimetableExpiryMillis) {
-    sourceObservedAt = new Date(pinnedBuildMillis - 1_000).toISOString();
+  const syntheticClock = deriveItxSyntheticClock({
+    observedAtMillis: clockMillis(sourceObservedAt),
+    pinnedBuildMillis,
+    pinnedTimetableExpiryMillis,
+  });
+  if (syntheticClock.rewound) {
+    sourceObservedAt = new Date(syntheticClock.observedAtMillis).toISOString();
     completeness.observedAt = sourceObservedAt;
   }
-  const buildNow = new Date(Math.max(pinnedBuildMillis, clockMillis(sourceObservedAt) + 1_000)).toISOString();
+  const buildNow = new Date(syntheticClock.buildMillis).toISOString();
   Object.assign(completeness.sourceTimetableArtifact, {
     artifactId: sourceArtifactId,
     freshUntil: sourceFreshUntil,
