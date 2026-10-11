@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "7b594074f3e59b73f5c524684d6d7e804b2b56dd9f890a699c54afcb3431e3dc"
+        "sha256": "db432219213e3f76d78041e9f8d527b4f71d4f700df0f8ac42c34028e3d6b349"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,14 +27,14 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "a1f0127d27a77f48b58c619473c7ac05afb3db0732b8629bc9c491d01bf60f6b"
+        "sha256": "5757b436785ca5840a3a65fb21e05de152ea0f5694e666ce729e7956ae9f752e"
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "50be50ec3bc5e9868bc68c532905bcf3bd86141a2d24036f6d5dc2d008c35559",
-        "fanInSha256": "f7af346e36637a7e7d1a56e1b05404730d4e960ac80b178a481e8c88286e7670",
+        "sha256": "6d848ac5ba9651d1c910b71331e68d5132295eb434eb0edcdad0cd00bf730b70",
+        "fanInSha256": "5a42492962cd44cca50792ba55633314a183a5e2b1e21b3883a995301cc448d7",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
-        "sourceSetSha256": "7074112ba3a9e91e00ce51afc1c1cf89821576aa4cee9eed4ee6679abfc718f2",
+        "sourceSetSha256": "ab94ffbfd9b3cba72e424f85ec9c9b40409bc16538081d26a497b33ee83ff4fd",
         "regionalMatrixSha256": "5dacb9428eb6277ae6ae768c646267a0eb96697262f3cf0cb76e49b01b515126"
       }
     }
@@ -5836,22 +5836,12 @@
           ]
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "incheon-line2-train-timetable",
-              "observedDataUpdatedAt": "2025-06-30",
-              "retrievedAt": "2026-10-10",
-              "admissionEvidence": [
-                {
-                  "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-10T14:18:37.214Z",
-                  "freshUntil": "2026-10-11T14:18:37.214Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 459,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",
@@ -6542,22 +6532,12 @@
           ]
         },
         "freshnessLineage": {
-          "state": "EVIDENCED",
-          "refs": [
-            {
-              "sourceId": "incheon-line1-train-timetable",
-              "observedDataUpdatedAt": "2025-04-12",
-              "retrievedAt": "2026-10-10",
-              "admissionEvidence": [
-                {
-                  "kind": "scheduleAdmissionEvidence",
-                  "capturedAt": "2026-10-10T14:18:37.214Z",
-                  "freshUntil": "2026-10-11T14:18:37.214Z"
-                }
-              ],
-              "currentHead": null
-            }
-          ]
+          "state": "PENDING",
+          "reason": "CURRENT_SOURCE_SNAPSHOT_HEAD_REQUIRED",
+          "owner": {
+            "issue": 459,
+            "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/459"
+          }
         },
         "admissionLineage": {
           "state": "PENDING",

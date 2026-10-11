@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261011-seq130",
-  "candidateBuildSpecSha256": "fcbb937a76d1755f0c603be66423194425044f467e501f56ba0e966bf4fbf931",
-  "preparationSha256": "a65dde93510de60db926070cb7e940c73b79afe83abdebb3537a7b730e31e586",
-  "fanInSha256": "50be50ec3bc5e9868bc68c532905bcf3bd86141a2d24036f6d5dc2d008c35559",
+  "candidateId": "nationwide-candidate-20261011-seq131",
+  "candidateBuildSpecSha256": "eaba9cfd77d0d30c4a39ba54f01d9e4c26e2fe4f0951a96a8ffc2a14614fcc50",
+  "preparationSha256": "7f49d34d56e941ca5ed0a47f6b370ea91e80e46ab7bf29081f16db807c8d9173",
+  "fanInSha256": "6d848ac5ba9651d1c910b71331e68d5132295eb434eb0edcdad0cd00bf730b70",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "50be50ec3bc5e9868bc68c532905bcf3bd86141a2d24036f6d5dc2d008c35559",
+      "sha256": "6d848ac5ba9651d1c910b71331e68d5132295eb434eb0edcdad0cd00bf730b70",
       "byteSize": 36074
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "a1f0127d27a77f48b58c619473c7ac05afb3db0732b8629bc9c491d01bf60f6b",
-      "byteSize": 4065298
+      "sha256": "5757b436785ca5840a3a65fb21e05de152ea0f5694e666ce729e7956ae9f752e",
+      "byteSize": 4090052
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "7b594074f3e59b73f5c524684d6d7e804b2b56dd9f890a699c54afcb3431e3dc",
+      "sha256": "db432219213e3f76d78041e9f8d527b4f71d4f700df0f8ac42c34028e3d6b349",
       "byteSize": 418562
     },
     {
@@ -193,8 +193,8 @@
       "byteSize": 29394372
     },
     {
-      "path": "tools/datapack/sources/kric-station-convenience-standard-20261010T125110163Z.json",
-      "sha256": "1c8ebf4cf2cf9dd2187148a9f125d0458da735c62c90f1572dcfaf361e5c8cd1",
+      "path": "tools/datapack/sources/kric-station-convenience-standard-20261011T135328529Z.json",
+      "sha256": "08813ed29574dab30fa0ae01177fc4ef2e84875e3833d5ead56350c650111fcd",
       "byteSize": 774800
     },
     {

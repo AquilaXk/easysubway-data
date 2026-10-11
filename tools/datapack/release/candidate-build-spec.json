@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "nationwide-candidate-20261011-seq130",
-  "publishedAt": "2026-10-11T04:29:40.876Z",
-  "releaseSequence": 130,
-  "builderGitSha": "b1b1c20ccf53ad62f87c526d427973c7be9884aa",
+  "candidateId": "nationwide-candidate-20261011-seq131",
+  "publishedAt": "2026-10-11T14:29:36.651Z",
+  "releaseSequence": 131,
+  "builderGitSha": "17abb70ea27136428acc7db6d7c476fc158247a8",
   "builderVersion": "build-datapack.mjs@26",
   "fixturePath": "tools/datapack/release/nationwide-production-canonical-pack.json",
-  "fixtureSha256": "494f401631bf10f96c9e21ed9341dd1b3c4a8df069f9707c8d07b46e368ee345",
+  "fixtureSha256": "81938ee64b2c6fc85ec88ddebdba9fd8f4e59dd6c0c031a8267343c66faca320",
   "assemblySourceIds": [
     "busan-transportation-accessibility",
     "busan-transportation-route-topology",
@@ -51,8 +51,6 @@
     "busan-transportation-timetable-20261002",
     "daejeon-train-timetable-20261002",
     "kric-subway-timetable-station-lines-20261003",
-    "seoul-metro-accessibility-20261010T122312423Z",
-    "kric-station-convenience-standard-20261010T125110163Z",
     "capital-route-topology-20261010",
     "korail-metropolitan-timetable-file-500abc739ee6985decd47517a06b406c48f11a2c627150112967234eeb4b01d3",
     "korail-metropolitan-planned-timetable-12036025dc5b1c70b6838e26b9ade9e5de9d987f25af0e038c6af8d8adfc6293",
@@ -67,7 +65,9 @@
     "daegu-line3-route-topology-96b1bb5db24bd3ee3e0136d3bff8d42b345879babd1477732448714cf4081fff",
     "daegu-line3-train-timetable-4765dcda4eb02c531a4f6e8c7f588d96e141a1c709655614dba654e4fe23fbfd",
     "busan-transportation-route-topology-2497c224df9aa83e22220f01103514acac9ca3ab5ee371cf82bad3b095c635fb",
-    "kric-nationwide-timetable-file-f7215ac8e43c15f40162b86fb1b27d405ac7d32a7098462b86dbd622c14a2e74"
+    "kric-nationwide-timetable-file-f7215ac8e43c15f40162b86fb1b27d405ac7d32a7098462b86dbd622c14a2e74",
+    "seoul-metro-accessibility-20261011T131142024Z",
+    "kric-station-convenience-standard-20261011T135328529Z"
   ],
   "sourceSnapshots": [
     {
@@ -276,40 +276,6 @@
       "governancePolicyVersion": "2026-08-29",
       "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
       "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215"
-    },
-    {
-      "snapshotId": "seoul-metro-accessibility-20261010T122312423Z",
-      "sourceId": "seoul-metro-accessibility",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20261010/7e122a5173d640cce71b77fea9eade168960094784674c05c470b2503c38eb77.json",
-      "rawSha256": "7e122a5173d640cce71b77fea9eade168960094784674c05c470b2503c38eb77",
-      "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
-      "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2027-01-08T12:23:12.423Z",
-      "rawRetentionExpiresAt": "2027-01-08T12:23:12.423Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
-    },
-    {
-      "snapshotId": "kric-station-convenience-standard-20261010T125110163Z",
-      "sourceId": "kric-station-convenience-standard",
-      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20261010/cd8a8c4d949685f8939d477b52ca98ce90b84f46810562a9e0d6ffb3959d82e6.json",
-      "rawSha256": "cd8a8c4d949685f8939d477b52ca98ce90b84f46810562a9e0d6ffb3959d82e6",
-      "redactedRequestFingerprint": "be79e602355ab8d57ecf74d62b1576d21839f6292b9b29b39c0ed5a5a2194c52",
-      "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2027-01-08T12:51:10.163Z",
-      "rawRetentionExpiresAt": "2027-01-08T12:51:10.163Z",
-      "governancePolicyVersion": "2026-08-29",
-      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
     },
     {
       "snapshotId": "capital-route-topology-20261010",
@@ -640,10 +606,44 @@
           "sha256": "3589310b90ac708e84a9d67562f7cb2fe5dc0f034677717267fe94502b283269"
         }
       ]
+    },
+    {
+      "snapshotId": "seoul-metro-accessibility-20261011T131142024Z",
+      "sourceId": "seoul-metro-accessibility",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/seoul-metro-accessibility/20261011/a01643904d1ef91870a7ea20e44473c324ab06b8d15a6c4d0c0f87474811e624.json",
+      "rawSha256": "a01643904d1ef91870a7ea20e44473c324ab06b8d15a6c4d0c0f87474811e624",
+      "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
+      "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2027-01-09T13:11:42.024Z",
+      "rawRetentionExpiresAt": "2027-01-09T13:11:42.024Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303"
+    },
+    {
+      "snapshotId": "kric-station-convenience-standard-20261011T135328529Z",
+      "sourceId": "kric-station-convenience-standard",
+      "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/source-raw/kric-station-convenience-standard/20261011/730275a737974be5b482fb08bc1253c8d45f4f91c91392ea0b0e7ba79aac5b5f.json",
+      "rawSha256": "730275a737974be5b482fb08bc1253c8d45f4f91c91392ea0b0e7ba79aac5b5f",
+      "redactedRequestFingerprint": "be79e602355ab8d57ecf74d62b1576d21839f6292b9b29b39c0ed5a5a2194c52",
+      "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2027-01-09T13:53:28.529Z",
+      "rawRetentionExpiresAt": "2027-01-09T13:53:28.529Z",
+      "governancePolicyVersion": "2026-08-29",
+      "governancePolicySha256": "50017641cd3fe409644228b70f39eac0a10319d67da2215f58926b6df63541e7",
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
     }
   ],
-  "sourceSnapshotSetHash": "b00008bb6d13deba0b432abb8c51107f7b5184419e786e1341374227fe4a774b",
-  "sourceInventorySha256": "22f7767b74100b8e62e69fab98243c9e973bde0504a093e25b0b432c8c8009ed",
+  "sourceSnapshotSetHash": "2f1502893bbbc02a7454e837d8a664cb3d4770527c86129a5d0a81ea7f875f26",
+  "sourceInventorySha256": "54cf2ddda8159b61da93ef55faf408584cb9c45878a6d3fe9fea16588c57f763",
   "productionScope": {
     "path": "release/product-gates/production-datapack-scope.json",
     "sha256": "38274318946d2aadad192bd54b947c09f4a61c8587535898573079988d7570e6"
@@ -697,7 +697,7 @@
     },
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "7b594074f3e59b73f5c524684d6d7e804b2b56dd9f890a699c54afcb3431e3dc"
+      "sha256": "db432219213e3f76d78041e9f8d527b4f71d4f700df0f8ac42c34028e3d6b349"
     }
   },
   "officialOdFareEvidence": {
