@@ -18504,8 +18504,12 @@ async function writeCurrentItxReleaseInputs(
     sha256: sha256(sourceBytes),
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil: sourceFreshUntil,
+    // 합성 원천은 후보가 고정한 contract의 승격 근거(승인 모드의 승인 sha 또는 게이트 모드의 영수증)를 이어받을 수 없다. 원천 바이트가 달라지기 때문이다.
+    // 고정 contract가 승인 모드든 게이트 모드든(#1135 이후 후보) 같은 합성 입력이 되도록 승인 모드 근거를 직접 구성한다(#1150).
+    // 게이트 모드의 영수증 재계산은 itx-promotion-authority.test.mjs가 따로 검증한다.
     promotion: {
-      ...contract.sourceTimetableArtifact.promotion,
+      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+      approvalUrl: "https://github.com/AquilaXk/easysubway-data/issues/636#issuecomment-1",
       approvedArtifactSha256: sha256(sourceBytes),
     },
   });
