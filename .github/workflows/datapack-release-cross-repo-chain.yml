@@ -1,5 +1,9 @@
 name: Data Pack Release Cross-Repository Chain
 
+# run 이름에 이 체인이 시작된 RC run id를 남긴다(data#1158). RC chain은 이 이름으로 dispatch한 체인 run을 정확히 찾고(runner 시계에 기대지 않는다),
+# identify는 같은 RC로 이미 진행된 체인 run이 있는지 이 이름으로 찾아 중복 시작을 거부한다.
+run-name: ${{ format('chain rc={0}', github.event.workflow_run.id || inputs.rc_run_id) }}
+
 # release-candidate(RC)가 성공하면 사람 없이 끝까지 잇는다(data#1084, #870, QA 결정 2026-10-09):
 #   hub 호환성(release-artifacts.yml) → hub 승격(datapack-promotion.yml) → data production-publish → platform 배포(PREVIEW → DEPLOY) → 공개 검증
 #   검증이 실패하면 직전 활성 release로 PREVIEW → DEPLOY를 다시 실행(전진 재활성화)하고 이상으로 드러낸다.
@@ -10,10 +14,22 @@ name: Data Pack Release Cross-Repository Chain
 # data 안의 발행 dispatch는 GITHUB_TOKEN(actions: write)으로 한다.
 # 기본은 꺼짐이다. 저장소 변수 DATAPACK_CROSS_REPO_CHAIN_ENABLED가 true일 때만 job이 실행된다(설정 변경 뒤 메인 세션이 마지막에 켠다).
 # 체인 진행 중에는 automerge-queue가 병합을 미룬다(이 workflow와 RC chain의 queued·in_progress run이 잠금이다, 변수·라벨 없음).
+# 시작 경로는 둘이다(data#1158).
+#   1. workflow_run: 사람이 직접 띄운 RC가 끝나면 시작한다.
+#   2. workflow_dispatch(rc_run_id): RC chain이 GITHUB_TOKEN으로 띄운 RC가 끝나면 RC chain이 직접 dispatch한다.
+#      GitHub는 GITHUB_TOKEN이 일으킨 run이 끝나도 workflow_run 이벤트를 만들지 않는다(workflow_dispatch·repository_dispatch만 예외, 문서:
+#      https://docs.github.com/en/actions/using-workflows/triggering-a-workflow). 그래서 무인 RC는 1번으로 체인을 시작할 수 없다.
+# 어느 경로든 RC run은 입력·이벤트 값이 아니라 API로 다시 읽은 기록으로 판정한다.
 on:
   workflow_run:
     workflows: ["Data Pack Release"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      rc_run_id:
+        description: "Release-candidate Data Pack Release run ID handed over by the candidate chain"
+        required: true
+        type: string
 
 permissions: {}
 
@@ -22,8 +38,11 @@ jobs:
     # RC run은 RC chain이 GITHUB_TOKEN으로 dispatch한다(행위자 github-actions[bot]). 수동 dispatch는 저장소 소유자만 인정한다.
     # 환경 승인을 없앤 대신, 쓰기 권한이 있는 다른 계정이 직접 띄운 RC로 발행·배포 체인이 시작되지 않게 막는다.
     # 행위자는 workflow_run 이벤트 값이 아니라 API로 다시 읽은 run의 triggering_actor로 판정한다(이벤트 값을 신뢰 근거로 쓰지 않는다).
+    # workflow_dispatch로 시작한 이 run 자신의 행위자도 같은 허용 목록(RC chain의 github-actions[bot], 소유자)이어야 한다.
+    # 이 행위자도 job `if`의 github 컨텍스트가 아니라 step에서 API로 다시 읽은 값으로 판정한다(SonarCloud githubactions:S8232).
+    # identify는 비밀과 쓰기 권한이 없고, chain job은 identify의 rc 출력이 true일 때만 돈다.
     name: Identify the release-candidate run
-    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)' }}
+    if: ${{ vars.DATAPACK_CROSS_REPO_CHAIN_ENABLED == 'true' && ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.path == '.github/workflows/datapack-release.yml' && github.event.workflow_run.display_title == 'Data Pack Release (release-candidate)') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -31,11 +50,14 @@ jobs:
       contents: read
     outputs:
       rc: ${{ steps.rc.outputs.rc }}
+      run_id: ${{ steps.rc.outputs.run_id }}
+      head_sha: ${{ steps.rc.outputs.head_sha }}
     env:
-      RUN_ID: ${{ github.event.workflow_run.id }}
-      RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      EVENT_NAME: ${{ github.event_name }}
+      RUN_ID: ${{ github.event.workflow_run.id || inputs.rc_run_id }}
+      EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      # workflow_run은 기본 브랜치(main) 문맥에서 돈다. 검증 도구만 읽고 upstream run의 코드는 checkout하지 않는다.
+      # workflow_run과 workflow_dispatch 모두 기본 브랜치(main) 문맥에서 돈다. 검증 도구만 읽고 upstream run의 코드는 checkout하지 않는다.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -49,8 +71,32 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "workflow_run id is invalid" >&2; exit 1; }
-          [[ "${RUN_HEAD_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo "workflow_run head_sha is invalid" >&2; exit 1; }
-          actor="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.triggering_actor.login')"
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            # 직접 dispatch한 행위자: RC chain의 GITHUB_TOKEN(github-actions[bot])과 저장소 소유자만 체인을 시작할 수 있다.
+            starter="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.triggering_actor.login')"
+            case "${starter}" in
+              "github-actions[bot]"|"AquilaXk") ;;
+              *)
+                echo "rc=false" >> "${GITHUB_OUTPUT}"
+                echo "이 체인 run을 허용되지 않은 행위자가 dispatch해 체인을 시작하지 않는다." >> "${GITHUB_STEP_SUMMARY}"
+                exit 0 ;;
+            esac
+          fi
+          # 이벤트의 head_sha는 workflow_run 경로에만 있다. 있으면 API 기록과 같아야 한다.
+          [[ -z "${EVENT_HEAD_SHA}" || "${EVENT_HEAD_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo "workflow_run head_sha is invalid" >&2; exit 1; }
+          # 두 경로 모두 RC run을 API로 다시 읽어 판정한다. 입력으로 받은 run id가 RC가 아니면 건너뛰지 않고 실패한다(잘못된 handover는 이상이다).
+          record="${RUNNER_TEMP}/release-candidate-run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" > "${record}"
+          field() { jq -r "${1} // \"\"" "${record}"; }
+          [[ "${GITHUB_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo "GITHUB_RUN_ID is invalid" >&2; exit 1; }
+          [[ "$(field .path)" == ".github/workflows/datapack-release.yml" && "$(field .event)" == "workflow_dispatch" && "$(field .head_branch)" == "main" \
+            && "$(field .head_repository.full_name)" == "${GITHUB_REPOSITORY}" && "$(field .display_title)" == "Data Pack Release (release-candidate)" \
+            && "$(field .conclusion)" == "success" ]] \
+            || { echo "Data Pack Release run ${RUN_ID} is not a successful main release-candidate run of this repository" >&2; exit 1; }
+          head_sha="$(field .head_sha)"
+          [[ "${head_sha}" =~ ^[a-f0-9]{40}$ ]] || { echo "release-candidate run head_sha is invalid" >&2; exit 1; }
+          [[ -z "${EVENT_HEAD_SHA}" || "${EVENT_HEAD_SHA}" == "${head_sha}" ]] || { echo "workflow_run head_sha differs from the run record" >&2; exit 1; }
+          actor="$(field .triggering_actor.login)"
           case "${actor}" in
             "github-actions[bot]"|"AquilaXk") ;;
             *)
@@ -69,9 +115,35 @@ jobs:
             exit 0
           fi
           # publish 경로와 같은 검증기: 정확히 하나, 같은 run id·head sha, 만료되지 않음. 어긋나면 실패한다.
-          node tools/ci/require-workflow-artifact.mjs "${response}" "${name}" "${RUN_ID}" "${RUN_HEAD_SHA}"
-          echo "rc=true" >> "${GITHUB_OUTPUT}"
-          echo "Data Pack Release run ${RUN_ID}(head ${RUN_HEAD_SHA})은 RC 후보 artifact가 있어 발행·배포 체인을 시작한다." >> "${GITHUB_STEP_SUMMARY}"
+          node tools/ci/require-workflow-artifact.mjs "${response}" "${name}" "${RUN_ID}" "${head_sha}"
+          # 같은 RC에 체인은 한 번만 시작한다(workflow_run·workflow_dispatch 공통). 같은 RC로 이미 진행된(성공했거나 진행 중인) 체인 run이 있으면
+          # 시작하지 않고 실패로 드러낸다. 실패·취소·건너뛴 run은 진행된 것으로 세지 않는다. 동시에 시작된 둘은 먼저 만들어진 run(작은 id)이 이긴다.
+          # 목록을 읽지 못하면 중복이 없다고 가정하지 않고 실패한다.
+          rc_created="$(field .created_at)"
+          [[ "${rc_created}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]] || { echo "release-candidate run created_at is invalid" >&2; exit 1; }
+          prior="$(gh api --paginate --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/datapack-release-cross-repo-chain.yml/runs" -f "created=>=${rc_created}" -f per_page=100 \
+            | jq -r --arg title "chain rc=${RUN_ID}" --argjson self "${GITHUB_RUN_ID}" '.workflow_runs[] | select(.display_title == $title and .id != $self) | [.id, .status, (.conclusion // "")] | @tsv')"
+          while IFS=$'\t' read -r other_id other_status other_conclusion; do
+            [[ -n "${other_id}" ]] || continue
+            started=false
+            if [[ "${other_status}" != "completed" ]]; then
+              [[ "${other_id}" -lt "${GITHUB_RUN_ID}" ]] && started=true
+            elif [[ "${other_conclusion}" == "success" ]]; then
+              chain_jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${other_id}/jobs" | jq -r '[.jobs[] | select(.name == "Release chain" and .conclusion == "success")] | length')"
+              [[ "${chain_jobs}" =~ ^[0-9]+$ ]] || { echo "chain run ${other_id} job list is invalid" >&2; exit 1; }
+              [[ "${chain_jobs}" -gt 0 ]] && started=true
+            fi
+            if [[ "${started}" == "true" ]]; then
+              echo "duplicate start refused: the release chain already ran or is running for release-candidate run ${RUN_ID} (chain run ${other_id}, ${other_status})" >&2
+              exit 1
+            fi
+          done <<< "${prior}"
+          {
+            echo "rc=true"
+            echo "run_id=${RUN_ID}"
+            echo "head_sha=${head_sha}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Data Pack Release run ${RUN_ID}(head ${head_sha})은 RC 후보 artifact가 있어 발행·배포 체인을 시작한다." >> "${GITHUB_STEP_SUMMARY}"
 
   chain:
     name: Release chain
@@ -88,8 +160,8 @@ jobs:
       contents: read
       issues: write
     env:
-      RC_RUN_ID: ${{ github.event.workflow_run.id }}
-      RC_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+      RC_RUN_ID: ${{ needs.identify.outputs.run_id }}
+      RC_RUN_SHA: ${{ needs.identify.outputs.head_sha }}
       CHAIN_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
       CHAIN_DATAPACK_BASE_URL: ${{ vars.OCI_SERVER_ROUTE_PUBLIC_BASE_URL }}
     steps:

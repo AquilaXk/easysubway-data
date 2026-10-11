@@ -1,0 +1,444 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "itx-promotion-gate-receipt",
+  "policyId": "itx-promotion-gate-v1",
+  "anomalyPolicyVersion": "itx-snapshot-anomaly-v1",
+  "status": "PASS",
+  "candidate": {
+    "artifactId": "itx-cheongchun-source-timetable-20261010151222895",
+    "sha256": "0126ba241e0975e7cb3c292c3def245c7c8c78228a811610052fa2d46f8acb5a",
+    "observedAt": "2026-10-10T15:12:22.895Z",
+    "freshUntil": "2026-10-18T00:00:00+09:00"
+  },
+  "previous": {
+    "artifactId": "itx-cheongchun-source-timetable-20261004151519524",
+    "sha256": "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189"
+  },
+  "baseline": {
+    "artifactId": "itx-cheongchun-source-timetable-20261004151519524",
+    "sha256": "32ad533e0c5d66794b2626cf6616c826e446f0120de7e4989eb961ee59fe5189"
+  },
+  "source": {
+    "rawCaptureSha256": "f0b86b2841eb24ee30a3024c0772d04c1ce42f2e363f88ada9e29dccfdd1d698",
+    "captureContentSha256": "bcdc9e1a0085bbc5259f07c934801cd934a2f9065cf18188a749ca4f7cb77638",
+    "replayEvidenceHash": "a39bd90d3bf0fe9f649f0bf878a34e977f60e03eccf8b9125f70b9426dc4dab0",
+    "providerRecordCount": 1893
+  },
+  "policy": {
+    "schemaVersion": 1,
+    "artifactKind": "itx-promotion-gate-policy",
+    "policyId": "itx-promotion-gate-v1",
+    "anomalyPolicyVersion": "itx-snapshot-anomaly-v1",
+    "dayCds": [
+      "8",
+      "7",
+      "9"
+    ],
+    "limits": {
+      "stationSetDelta": 0,
+      "odSetDelta": 0,
+      "tripCountDeltaPermille": 0,
+      "tripMembershipDeltaPermille": 0,
+      "stopPatternChangedTripsPermille": 0,
+      "timetableTupleRemovedPermille": 0,
+      "timetableTupleAddedPermille": 0,
+      "firstDepartureShiftSeconds": 0,
+      "lastDepartureShiftSeconds": 240,
+      "providerErrorRecords": 0
+    },
+    "measuredBasis": {
+      "snapshots": 10,
+      "transitions": 9,
+      "stableTransitions": 5,
+      "changedTransitions": 4,
+      "observedMax": {
+        "stationSetDelta": 0,
+        "odSetDelta": 0,
+        "tripCountDelta": 0,
+        "tripMembershipDelta": 0,
+        "firstDepartureShiftSeconds": 0,
+        "lastDepartureShiftSeconds": 240
+      },
+      "changedDayMinPermille": {
+        "stopPatternChangedTrips": 442,
+        "timetableTupleRemoved": 72,
+        "timetableTupleAdded": 57
+      },
+      "note": "limits are the observed maxima of the approved history (permille of the previous approved snapshot, rounded down); every change the history ever contained besides the 240 second last departure shift is above them, and the same limits are applied against the last owner-approved baseline to catch accumulated drift"
+    }
+  },
+  "checks": [
+    {
+      "id": "STATION_COVERAGE",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "OD_COVERAGE",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "TRIP_COUNT",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "previous": 36,
+        "current": 36,
+        "delta": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "TRIP_MEMBERSHIP",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "previous": 36,
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "each": 0
+      }
+    },
+    {
+      "id": "STOP_PATTERN",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "previous": 36,
+        "changed": 0
+      },
+      "limit": {
+        "changed": 0
+      }
+    },
+    {
+      "id": "TUPLE_REMOVED",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "previous": 280,
+        "count": 0
+      },
+      "limit": {
+        "count": 0
+      }
+    },
+    {
+      "id": "TUPLE_ADDED",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "previous": 280,
+        "count": 0
+      },
+      "limit": {
+        "count": 0
+      }
+    },
+    {
+      "id": "FIRST_DEPARTURE_SHIFT",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "previous": 20280,
+        "current": 20280,
+        "shiftSeconds": 0
+      },
+      "limit": {
+        "shiftSeconds": 0
+      }
+    },
+    {
+      "id": "LAST_DEPARTURE_SHIFT",
+      "dayCd": "8",
+      "status": "PASS",
+      "observed": {
+        "previous": 86640,
+        "current": 86640,
+        "shiftSeconds": 0
+      },
+      "limit": {
+        "shiftSeconds": 240
+      }
+    },
+    {
+      "id": "STATION_COVERAGE",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "OD_COVERAGE",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "TRIP_COUNT",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "previous": 52,
+        "current": 52,
+        "delta": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "TRIP_MEMBERSHIP",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "previous": 52,
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "each": 0
+      }
+    },
+    {
+      "id": "STOP_PATTERN",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "previous": 52,
+        "changed": 0
+      },
+      "limit": {
+        "changed": 0
+      }
+    },
+    {
+      "id": "TUPLE_REMOVED",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "previous": 364,
+        "count": 0
+      },
+      "limit": {
+        "count": 0
+      }
+    },
+    {
+      "id": "TUPLE_ADDED",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "previous": 364,
+        "count": 0
+      },
+      "limit": {
+        "count": 0
+      }
+    },
+    {
+      "id": "FIRST_DEPARTURE_SHIFT",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "previous": 21960,
+        "current": 21960,
+        "shiftSeconds": 0
+      },
+      "limit": {
+        "shiftSeconds": 0
+      }
+    },
+    {
+      "id": "LAST_DEPARTURE_SHIFT",
+      "dayCd": "7",
+      "status": "PASS",
+      "observed": {
+        "previous": 85500,
+        "current": 85500,
+        "shiftSeconds": 0
+      },
+      "limit": {
+        "shiftSeconds": 240
+      }
+    },
+    {
+      "id": "STATION_COVERAGE",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "OD_COVERAGE",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "TRIP_COUNT",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "previous": 52,
+        "current": 52,
+        "delta": 0
+      },
+      "limit": {
+        "delta": 0
+      }
+    },
+    {
+      "id": "TRIP_MEMBERSHIP",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "previous": 52,
+        "added": 0,
+        "removed": 0
+      },
+      "limit": {
+        "each": 0
+      }
+    },
+    {
+      "id": "STOP_PATTERN",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "previous": 52,
+        "changed": 0
+      },
+      "limit": {
+        "changed": 0
+      }
+    },
+    {
+      "id": "TUPLE_REMOVED",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "previous": 364,
+        "count": 0
+      },
+      "limit": {
+        "count": 0
+      }
+    },
+    {
+      "id": "TUPLE_ADDED",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "previous": 364,
+        "count": 0
+      },
+      "limit": {
+        "count": 0
+      }
+    },
+    {
+      "id": "FIRST_DEPARTURE_SHIFT",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "previous": 21960,
+        "current": 21960,
+        "shiftSeconds": 0
+      },
+      "limit": {
+        "shiftSeconds": 0
+      }
+    },
+    {
+      "id": "LAST_DEPARTURE_SHIFT",
+      "dayCd": "9",
+      "status": "PASS",
+      "observed": {
+        "previous": 85500,
+        "current": 85500,
+        "shiftSeconds": 0
+      },
+      "limit": {
+        "shiftSeconds": 240
+      }
+    },
+    {
+      "id": "COMMITTED_BINDING",
+      "status": "PASS",
+      "observed": {
+        "failures": []
+      },
+      "limit": {}
+    },
+    {
+      "id": "COMMITTED_FETCH",
+      "status": "PASS",
+      "observed": {
+        "failures": []
+      },
+      "limit": {}
+    },
+    {
+      "id": "SOURCE_BINDING",
+      "status": "PASS",
+      "observed": {
+        "failures": []
+      },
+      "limit": {}
+    },
+    {
+      "id": "FETCH_ERRORS",
+      "status": "PASS",
+      "observed": {
+        "failures": [],
+        "providerErrorRecords": 0
+      },
+      "limit": {
+        "providerErrorRecords": 0
+      }
+    }
+  ],
+  "blockedCheckIds": []
+}

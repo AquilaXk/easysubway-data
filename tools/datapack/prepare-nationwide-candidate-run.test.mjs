@@ -23,6 +23,33 @@ const sha256 = (val) => createHash("sha256").update(val).digest("hex");
 // #942: 후보 재현 검사는 커밋된 후보가 고정한 입력 바이트로 한다(원천만 등록한 PR에서도 같은 결과).
 const pinnedRead = await candidatePinnedReader();
 
+const WEEKDAY_FIELD_BY_UTC_DAY = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+// 휴일 = 토·일·공휴일(QA 2026-10-03). 공휴일에는 평일·토요일 서비스를 빼고(2), 휴일 서비스를 더한다(1).
+// 휴일 서비스(일요일 운행)가 그 요일에 이미 운행하면 예외를 만들지 않는다. 인천 휴일 서비스만 원천 구현상
+// (materialize-incheon-timetable.mjs) 이미 운행하는 날에도 공휴일마다 1행을 싣는다.
+function expectedCalendarExceptions(calendar, holidayDates) {
+  const isHoliday = calendar.sunday === true;
+  const alwaysAddsHoliday = isHoliday && calendar.serviceId.startsWith("incheon-line");
+  const rows = [];
+  for (const date of holidayDates) {
+    if (date < calendar.startDate || date > calendar.endDate) continue;
+    const weekday = WEEKDAY_FIELD_BY_UTC_DAY[new Date(Date.UTC(+date.slice(0, 4), +date.slice(4, 6) - 1, +date.slice(6, 8))).getUTCDay()];
+    if (!isHoliday && calendar[weekday]) rows.push({ serviceId: calendar.serviceId, date, exceptionType: 2 });
+    if (isHoliday && (alwaysAddsHoliday || !calendar[weekday])) rows.push({ serviceId: calendar.serviceId, date, exceptionType: 1 });
+  }
+  return rows;
+}
+
+test("달력 예외 기대값 유도는 이동 창의 시작일과 끝날 공휴일을 모두 포함한다", () => {
+  const window = { startDate: "20261012", endDate: "20261016" }; // 월~금
+  const weekday = { serviceId: "w", monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false, ...window };
+  const holiday = { serviceId: "h", monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: true, ...window };
+  const holidays = ["20261009", "20261012", "20261016", "20261017"]; // 창 밖 앞·시작일·끝날·창 밖 뒤
+  assert.deepEqual(expectedCalendarExceptions(weekday, holidays).map(({ date, exceptionType }) => `${date}:${exceptionType}`), ["20261012:2", "20261016:2"]);
+  assert.deepEqual(expectedCalendarExceptions(holiday, holidays).map(({ date, exceptionType }) => `${date}:${exceptionType}`), ["20261012:1", "20261016:1"]);
+});
+
 test("prepareNationwideCandidate enforces two-person rule strictly", async () => {
   // Missing requester
   await assert.rejects(
@@ -399,7 +426,31 @@ test("prepareNationwideCandidate dynamically generates authentic nationwide cand
   // #919: 부산 40·대구 노선별 40(×3)·대전 32, 모두 192행의 KASI 공휴일 예외를 더한다.
   // #938: 광주 보관본 계약 창이 20261004~20261011로 옮겨 10-03(토→휴일) 예외 2행이 창 밖으로 빠진다.
   // #971: 광주 보관본 계약 창이 20261006~20261013으로 옮겨 10-05(대체공휴일) 예외 4행이 창 밖으로 빠진다.
-  assert.strictEqual(pack.serviceCalendarDates.length, 392);
+  // #1140: 달력 예외 기대값은 생산 팩의 예외 행이 아니라 보관된 KASI 공휴일 원문(retainedKasiHolidayDates)과
+  // 각 서비스의 요일 정의·창에서 유도한다. 개수 리터럴이 없어 연도·창이 바뀌어도 고칠 곳이 없다.
+  const holidayDates = retainedKasiHolidayDates();
+  const holidayYear = holidayDates[0].slice(0, 4);
+  assert.ok(holidayDates.every((date) => date.startsWith(holidayYear)), "KASI 보관본은 한 해 목록이어야 한다");
+  const yearWindow = { startDate: `${holidayYear}0101`, endDate: `${holidayYear}1231` };
+  // 이동 창 서비스는 광주 KRIC 보관본(service-S2901-*)과 코레일 계획 시간표뿐이다. 나머지는 모두 연간 창이어야 한다.
+  const isMovingWindowCalendar = ({ serviceId, sourceId }) =>
+    serviceId.startsWith("service-S2901-") || sourceId === "korail-metropolitan-planned-timetable";
+  const movingCalendars = pack.serviceCalendars.filter(isMovingWindowCalendar);
+  const yearWideCalendars = pack.serviceCalendars.filter((calendar) => !isMovingWindowCalendar(calendar));
+  assert.deepEqual(movingCalendars.filter(({ serviceId }) => serviceId.startsWith("service-S2901-")).map(({ serviceId }) => serviceId).sort(),
+    ["service-S2901-토요일", "service-S2901-평일", "service-S2901-휴일"]);
+  assert.strictEqual(movingCalendars.filter(({ sourceId }) => sourceId === "korail-metropolitan-planned-timetable").length, 2);
+  assert.ok(yearWideCalendars.length > 0);
+  for (const calendar of yearWideCalendars) {
+    assert.deepEqual({ startDate: calendar.startDate, endDate: calendar.endDate }, yearWindow, `${calendar.serviceId} 연간 창이 잘렸다`);
+  }
+  for (const calendar of movingCalendars) {
+    assert.ok(calendar.startDate >= yearWindow.startDate && calendar.endDate <= yearWindow.endDate, `${calendar.serviceId} 이동 창이 해당 연도 밖이다`);
+  }
+  const expectedExceptions = pack.serviceCalendars.flatMap((calendar) => expectedCalendarExceptions(calendar, holidayDates));
+  const exceptionKey = ({ serviceId, date, exceptionType }) => `${serviceId}|${date}|${exceptionType}`;
+  assert.deepEqual(pack.serviceCalendarDates.map(exceptionKey).sort(), expectedExceptions.map(exceptionKey).sort());
+  assert.strictEqual(pack.serviceCalendarDates.length, expectedExceptions.length);
 
   // Station car door hints expanded nationwide. #854: 계약 밖 KRIC 행은 격리 증거로 옮겨지고
   // 팩에 남은 행과 격리 행의 합은 격리 전 435행과 같다.
