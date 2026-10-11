@@ -318,19 +318,46 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   assert.equal(provenance.candidateBuild.releaseSequence, buildSpec.releaseSequence);
   // #913 후속·#916 리뷰 F2: 전국 발행 빌드의 팩 만료는 network 창, 시간표 원천, spec 인용 원천 전체의 최솟값이다.
   // 기대값은 production 계산을 다시 부르지 않고 커밋된 spec 원천 행과 승인된 ITX 원천 파일에서 직접 고른다.
-  // #971: 커밋된 후보에서 network 창(ITX-청춘 승인 원천 freshUntil)이 spec 인용 원천(P7D)보다 이르다. 후보 만료는 ITX 창이 정한다.
+  // 데이터 독립: 어느 원천(network 창, spec 인용 원천, 시간표 원천)이 가장 이른지는 후보 데이터에 따라 바뀐다(#971 ITX, 이후 KRIC 시간표).
+  // 그래서 각 창을 커밋된 파일에서 독립적으로 고르고, 기대 만료(최솟값)와 decidedBy를 직접 계산해 단언한다.
   const artifactFreshness = provenance.candidateBuild.artifactFreshness;
   const earliestCited = [...buildSpec.sourceSnapshots]
     .sort((left, right) => Date.parse(left.freshnessExpiresAt) - Date.parse(right.freshnessExpiresAt))[0];
   const itxContract = JSON.parse(await readFile(path.join(candidateRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
   const itxSource = JSON.parse(await readFile(path.join(candidateRoot, itxContract.sourceTimetableArtifact.artifactPath), "utf8"));
   const itxFreshUntil = new Date(itxSource.freshUntil).toISOString();
+  const freshnessPolicy = JSON.parse(await readFile(path.join(candidateRoot, "release/product-gates/datapack-freshness-sla.json"), "utf8"));
+  const classIdOf = new Map(freshnessPolicy.sourceClasses.flatMap(({ id, sourceIds }) => (sourceIds ?? []).map((sourceId) => [sourceId, id])));
   assert.equal(artifactFreshness.citedSourceFreshUntil, earliestCited.freshnessExpiresAt);
-  assert.ok(Date.parse(itxFreshUntil) < Date.parse(earliestCited.freshnessExpiresAt), "ITX window is the binding network window");
-  assert.equal(artifactFreshness.networkFreshUntil, itxFreshUntil);
-  assert.equal(manifest.expiresAt, itxFreshUntil);
-  assert.equal(artifactFreshness.freshUntil, itxFreshUntil);
-  assert.deepEqual(artifactFreshness.decidedBy, [{ kind: "network" }]);
+  // network 창은 topology·Incheon·ITX·수도권 admission·접근성 창의 최솟값이다. 독립적으로 고를 수 있는 창(ITX 원천 파일, spec의 topology admission)은
+  // 보고된 network 창보다 이르면 안 되고, 보고값 자체는 승인 창 중 하나와 같아야 한다.
+  const topologyFreshUntil = new Date(buildSpec.networkEdgeEvidence.capitalTopologyAdmission.freshUntil).toISOString();
+  const independentNetworkMillis = [Date.parse(itxFreshUntil), Date.parse(topologyFreshUntil)];
+  const networkMillis = Date.parse(artifactFreshness.networkFreshUntil);
+  assert.ok(networkMillis <= Math.min(...independentNetworkMillis), "network window must not exceed the ITX or topology admission window");
+  // 시간표 원천 중 spec 인용 행은 spec 행의 만료와 같아야 한다. 목록이 비면 every가 공허하게 통과하므로 비어 있지 않음을 먼저 단언한다.
+  assert.ok(artifactFreshness.timetableSources.length > 0, "timetable sources must be reported");
+  for (const reported of artifactFreshness.timetableSources) {
+    const specRow = buildSpec.sourceSnapshots.find(({ snapshotId }) => snapshotId === reported.sourceSnapshotId);
+    if (specRow) {
+      assert.equal(specRow.sourceId, reported.sourceId, reported.sourceSnapshotId);
+      assert.equal(reported.freshnessExpiresAt, specRow.freshnessExpiresAt, reported.sourceSnapshotId);
+    }
+  }
+  const timetableMillis = artifactFreshness.timetableSources.map(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt));
+  const expectedMillis = Math.min(networkMillis, Date.parse(earliestCited.freshnessExpiresAt), ...timetableMillis);
+  const expectedFreshUntil = new Date(expectedMillis).toISOString();
+  const expectedDecidedBy = [
+    ...(networkMillis === expectedMillis ? [{ kind: "network" }] : []),
+    ...artifactFreshness.timetableSources.filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === expectedMillis)
+      .map(({ sourceId, sourceSnapshotId }) => ({ kind: "timetable", sourceId, sourceSnapshotId })),
+    ...buildSpec.sourceSnapshots.filter(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) === expectedMillis)
+      .map(({ snapshotId, sourceId }) => ({ kind: "cited-source", sourceSnapshotId: snapshotId, sourceClassId: classIdOf.get(sourceId) })),
+  ];
+  assert.ok(expectedDecidedBy.length > 0, "at least one window must decide the expiry");
+  assert.equal(manifest.expiresAt, expectedFreshUntil);
+  assert.equal(artifactFreshness.freshUntil, expectedFreshUntil);
+  assert.deepEqual(artifactFreshness.decidedBy, expectedDecidedBy);
   // 가장 이른 인용 원천은 후보 spec의 인용 행에서 고르되, spec이 스스로를 증명하지 않도록 원장 행과 대조한다(#1053).
   // 예전에는 원천 id(capital-route-topology)를 하드코딩해 원천 id가 바뀌면 드러나게 했다. 그 값은 후보를 다시 만들 때마다 달라져
   // 자동 후보 PR이 테스트를 고칠 수 없는 required-pr를 막았다. 이제 같은 의도는 다음에서 보장된다.
@@ -349,12 +376,6 @@ test("candidate build spec release identity는 wall clock과 workflow run number
   }
   const ledgerEarliest = Math.min(...buildSpec.sourceSnapshots.map(({ snapshotId }) => Date.parse(ledgerById.get(snapshotId).freshnessExpiresAt)));
   assert.equal(Date.parse(earliestCited.freshnessExpiresAt), ledgerEarliest);
-  // 시간표 원천은 모두 팩 만료보다 늦다(시간표 창이 만료를 정하지 않는다). 목록이 비면 every가 공허하게 통과하므로 비어 있지 않음을 먼저 단언한다.
-  assert.ok(artifactFreshness.timetableSources.length > 0, "timetable sources must be reported");
-  const earliestTimetableSource = [...artifactFreshness.timetableSources]
-    .sort((left, right) => Date.parse(left.freshnessExpiresAt) - Date.parse(right.freshnessExpiresAt))[0];
-  assert.equal(earliestTimetableSource.sourceId, "kric-nationwide-timetable-file");
-  assert.ok(artifactFreshness.timetableSources.every(({ freshnessExpiresAt }) => Date.parse(freshnessExpiresAt) > Date.parse(manifest.expiresAt)));
   // 검증 전용 빌드(dev 채널)는 시간표 신선도를 계산하지 않고 사유를 남긴다.
   assert.deepEqual(validationOnlyProvenance.candidateBuild.artifactFreshness,
     { timetableFreshness: "SKIPPED", skipReason: "VALIDATION_ONLY_BUILD", freshUntil: validationOnlyManifest.expiresAt });
