@@ -10,6 +10,7 @@ import { evaluateGithubExpression } from "./github-expression.mjs";
 import { REFRESH_STAGE_IDS } from "./refresh-stage-contracts.mjs";
 import {
   RECREATE_DAILY_LIMIT,
+  RECREATE_STARVATION_LIMIT,
   RECREATE_MODE,
   STAGE_RECREATE_MODE,
   STAGE_REDISPATCH,
@@ -51,7 +52,9 @@ const closed = (number, branch, hoursAgo, { merged = false, user = AUTOMATION_PR
 
 // #1127: ITX 승격 PR은 닫기 전에 원본 run의 artifact(itx-current-promotion-<run id>)가 살아 있는지 읽는다. 기본은 모든 run에 살아 있는 artifact가 하나 있다.
 const liveArtifact = (runId, overrides = {}) => ({ id: 1, name: `itx-current-promotion-${runId}`, expired: false, ...overrides });
-function fakeApi({ openPulls = [], closedPulls = [], behind = {}, artifacts = (runId) => [liveArtifact(runId)], files = {} }) {
+// #1147: 닫힘 상한은 "현재 main tip이 생긴 뒤" 닫힌 횟수만 센다. 기본 tip은 24시간 창보다 훨씬 오래돼 창만 상한을 정한다.
+const hoursBeforeNow = (hours) => new Date(NOW.getTime() - hours * 3600_000).toISOString();
+function fakeApi({ openPulls = [], closedPulls = [], behind = {}, artifacts = (runId) => [liveArtifact(runId)], files = {}, tipCommittedAt = hoursBeforeNow(72) }) {
   const calls = [];
   const api = async (endpoint) => {
     calls.push(endpoint);
@@ -62,6 +65,7 @@ function fakeApi({ openPulls = [], closedPulls = [], behind = {}, artifacts = (r
       const list = artifacts(Number(artifactMatch[1]));
       return { total_count: list.length, artifacts: list };
     }
+    if (endpoint === `repos/${REPOSITORY}/commits/main`) return { sha: sha(8), commit: { committer: { date: tipCommittedAt } } };
     if (endpoint === `repos/${REPOSITORY}/pulls?state=open&base=main&per_page=100&page=1`) return openPulls;
     if (endpoint === `repos/${REPOSITORY}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100&page=1`) return closedPulls;
     const match = /^repos\/[^/]+\/[^/]+\/compare\/main\.\.\.([0-9a-f]{40})\?per_page=1$/u.exec(endpoint);
@@ -231,6 +235,100 @@ test("반증: 같은 단계가 하루 3회를 넘게 닫히면 닫지 않고 이
   const plan3 = await planBehindRecreation({ itxPromotionEnabled: true, repository: REPOSITORY, api: many.api, now: NOW });
   assert.equal(plan3.actions.length, 3);
   assert.equal(plan3.anomalies.length, 1);
+});
+
+test("상한은 같은 main tip에서 닫힌 횟수만 센다: tip 뒤에 닫힌 PR만 세고, main이 전진했으면 이전 닫힘은 세지 않는다 (#1147)", async () => {
+  const recentClosures = [closed(11, BRANCHES.registration, 1), closed(12, BRANCHES.registration, 5), closed(13, BRANCHES.registration, 23)];
+  const plan = (tipCommittedAt, closedPulls = recentClosures) => planBehindRecreation({
+    repository: REPOSITORY, now: NOW,
+    api: fakeApi({ openPulls: [open(1, BRANCHES.registration)], closedPulls, behind: { [sha(1)]: 1 }, tipCommittedAt }).api,
+  });
+  // 원인이 main에서 고쳐져(사람 PR 병합) tip이 바뀌었으면 이전 3회는 세지 않는다. 사람이 PR을 닫을 필요가 없다.
+  const advanced = await plan(hoursBeforeNow(0.5));
+  assert.equal(advanced.actions.length, 1);
+  assert.deepEqual(advanced.anomalies, []);
+  // tip 뒤에 닫힌 것만 센다: tip이 3시간 전이면 1시간 전 닫힘 하나만 해당한다.
+  const partial = await plan(hoursBeforeNow(3));
+  assert.equal(partial.actions.length, 1);
+  assert.deepEqual(partial.anomalies, []);
+  // 같은 tip에서 3회 닫혔으면 루프로 본다(무한 루프 방지 유지): tip이 24시간 안에 있고 그 뒤 3회 닫혔다.
+  const sameTipLoop = await plan(hoursBeforeNow(10), [closed(11, BRANCHES.registration, 1), closed(12, BRANCHES.registration, 2), closed(13, BRANCHES.registration, 3)]);
+  assert.deepEqual(sameTipLoop.actions, []);
+  assert.deepEqual(sameTipLoop.anomalies.map(({ stage, closures, reason }) => ({ stage, closures, reason })), [{ stage: "registration", closures: 3, reason: "LOOP" }]);
+  // tip이 24시간보다 오래돼도 24시간 창은 그대로다: 25시간 전 닫힘은 세지 않고 창 안의 3회만 센다.
+  const oldTip = await plan(hoursBeforeNow(100), [...recentClosures, closed(14, BRANCHES.registration, 25)]);
+  assert.deepEqual(oldTip.anomalies.map(({ closures }) => closures), [3]);
+  // tip과 같은 시각에 닫힌 PR은 tip 뒤가 아니다(경계). 바로 뒤에 닫힌 PR은 센다.
+  const atTip = await plan(hoursBeforeNow(2), [closed(11, BRANCHES.registration, 2), closed(12, BRANCHES.registration, 2), closed(13, BRANCHES.registration, 2)]);
+  assert.equal(atTip.actions.length, 1);
+  const afterTip = await plan(hoursBeforeNow(2.001), [closed(11, BRANCHES.registration, 2), closed(12, BRANCHES.registration, 2), closed(13, BRANCHES.registration, 2)]);
+  assert.deepEqual(afterTip.anomalies.map(({ closures }) => closures), [3]);
+  // 실행 중에 닫는 PR도 같은 tip의 횟수로 센다.
+  const many = fakeApi({
+    openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES.registration), open(3, BRANCHES.registration), open(4, BRANCHES.registration)],
+    behind: { [sha(1)]: 1, [sha(2)]: 1, [sha(3)]: 1, [sha(4)]: 1 }, tipCommittedAt: hoursBeforeNow(0.5),
+  });
+  const manyPlan = await planBehindRecreation({ repository: REPOSITORY, api: many.api, now: NOW });
+  assert.deepEqual([manyPlan.actions.length, manyPlan.anomalies.length], [3, 1]);
+});
+
+test("main tip의 커밋 시각을 읽을 수 없으면 상한을 풀지 않고 실패한다 (추정·기본값 없음)", async () => {
+  for (const [label, response] of [["no commit", {}], ["no date", { commit: { committer: {} } }], ["invalid date", { commit: { committer: { date: "not-a-date" } } }]]) {
+    const base = fakeApi({ openPulls: [open(1, BRANCHES.registration)], closedPulls: [closed(11, BRANCHES.registration, 1)], behind: { [sha(1)]: 1 } });
+    const api = async (endpoint) => (endpoint === `repos/${REPOSITORY}/commits/main` ? response : base.api(endpoint));
+    await assert.rejects(planBehindRecreation({ repository: REPOSITORY, api, now: NOW }), /AUTOMATION_PR_INPUT/u, label);
+  }
+});
+
+test("main tip의 커밋 시각이 now보다 미래이면 상한을 끄지 않고 실패한다: 시계 오차는 5분까지만 받는다 (#1147 리뷰 F2)", async () => {
+  const closures = [closed(11, BRANCHES.registration, 1), closed(12, BRANCHES.registration, 2), closed(13, BRANCHES.registration, 3)];
+  const plan = (tipCommittedAt) => planBehindRecreation({
+    repository: REPOSITORY, now: NOW,
+    api: fakeApi({ openPulls: [open(1, BRANCHES.registration)], closedPulls: closures, behind: { [sha(1)]: 1 }, tipCommittedAt }).api,
+  });
+  const afterNow = (minutes) => new Date(NOW.getTime() + minutes * 60_000).toISOString();
+  // 미래 tip은 모든 닫힘을 세지 않게 만들어 루프 방지를 조용히 끈다. 허용 오차를 넘으면 실패해야 한다.
+  await assert.rejects(plan(afterNow(5.001)), /AUTOMATION_PR_INPUT.*future/u);
+  await assert.rejects(plan(afterNow(600)), /AUTOMATION_PR_INPUT.*future/u);
+  // 오차 안(5분)이면 받는다: 그 tip 뒤에 닫힌 PR이 없으므로 닫힘 3회는 세지 않는다.
+  const withinSkew = await plan(afterNow(5));
+  assert.equal(withinSkew.actions.length, 1);
+  assert.deepEqual(withinSkew.anomalies, []);
+  // 지금과 같은 시각의 tip은 받는다.
+  assert.equal((await plan(NOW.toISOString())).actions.length, 1);
+});
+
+test("starvation: tip과 관계없이 24시간 안에 같은 단계가 RECREATE_STARVATION_LIMIT회 닫혔으면 별도 이상으로 보고한다 (#1147 리뷰 F3)", async () => {
+  assert.equal(RECREATE_STARVATION_LIMIT, 8);
+  // main이 방금 전진했으므로 같은 tip 닫힘은 0회지만, 24시간 안에 이미 8회 닫혔다.
+  const closedWithin = (count) => Array.from({ length: count }, (_, index) => closed(100 + index, BRANCHES.registration, 1 + index * 2.5));
+  const run = (count, extra = []) => {
+    const { api } = fakeApi({ openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES["derivative-rebinding"])], closedPulls: [...closedWithin(count), ...extra], behind: { [sha(1)]: 1, [sha(2)]: 1 }, tipCommittedAt: hoursBeforeNow(0.5) });
+    return { api, plan: planBehindRecreation({ repository: REPOSITORY, api, now: NOW }) };
+  };
+  const seven = await run(7).plan;
+  assert.deepEqual(seven.anomalies, []);
+  assert.equal(seven.actions.length, 2);
+  const eight = await run(8).plan;
+  assert.deepEqual(eight.anomalies.map(({ stage, number, closures, reason }) => ({ stage, number, closures, reason })), [{ stage: "registration", number: 1, closures: 8, reason: "STARVATION" }]);
+  assert.deepEqual(eight.actions.map(({ number }) => number), [2], "other stages are unaffected");
+  // 24시간이 지난 닫힘, 병합된 PR, 사람이 작성한 PR, 다른 단계는 세지 않는다.
+  const notCounted = await run(7, [closed(200, BRANCHES.registration, 25), closed(201, BRANCHES.registration, 1, { merged: true }), closed(202, BRANCHES.registration, 1, { user: HUMAN }), closed(203, BRANCHES["derivative-rebinding"], 1)]).plan;
+  assert.deepEqual(notCounted.anomalies, []);
+  // 보고 문구는 같은 tip 루프와 구분된다.
+  const starved = run(8);
+  await assert.rejects(recreateBehindPullRequests({ repository: REPOSITORY, api: starved.api, now: NOW, ...recorder() }), (error) => /AUTOMATION_PR_RECREATE_STARVATION: registration PR #1/u.test(error.message) && !/AUTOMATION_PR_RECREATE_LOOP/u.test(error.message));
+  // 같은 tip 루프가 먼저 판정된다: 같은 tip에서 3회 닫혔으면 8회에 못 미쳐도 루프로 보고하고 문구에 LOOP가 있다.
+  const { api: loopApi } = fakeApi({ openPulls: [open(1, BRANCHES.registration)], closedPulls: [closed(11, BRANCHES.registration, 1), closed(12, BRANCHES.registration, 2), closed(13, BRANCHES.registration, 3)], behind: { [sha(1)]: 1 }, tipCommittedAt: hoursBeforeNow(10) });
+  await assert.rejects(recreateBehindPullRequests({ repository: REPOSITORY, api: loopApi, now: NOW, ...recorder() }), (error) => /AUTOMATION_PR_RECREATE_LOOP/u.test(error.message) && !/STARVATION/u.test(error.message));
+  // 실행 중에 닫는 PR도 24시간 합계에 든다: 6회 닫힌 단계에서 열린 PR 3개 중 2개까지만 닫고 3번째는 8회째에 막힌다.
+  const many = fakeApi({
+    openPulls: [open(1, BRANCHES.registration), open(2, BRANCHES.registration), open(3, BRANCHES.registration)],
+    closedPulls: closedWithin(6), behind: { [sha(1)]: 1, [sha(2)]: 1, [sha(3)]: 1 }, tipCommittedAt: hoursBeforeNow(0.5),
+  });
+  const manyPlan = await planBehindRecreation({ repository: REPOSITORY, api: many.api, now: NOW });
+  assert.deepEqual([manyPlan.actions.length, manyPlan.anomalies.length], [2, 1]);
+  assert.equal(manyPlan.anomalies[0].reason, "STARVATION");
 });
 
 test("반증: 쓰기가 하나라도 실패하면 이후 쓰기를 하지 않고 그대로 실패한다. 이전 상태로 덮지 않는다", async () => {
@@ -548,4 +646,14 @@ test("F4: 재생 run id는 판정 도구와 같은 규칙(안전한 정수)으�
   assert.ok(calls.some((entry) => entry.includes("/runs/9007199254740991/artifacts")));
   assert.equal(isReplayRunId("9007199254740991"), true);
   assert.equal(isReplayRunId("9007199254740992"), false);
+});
+
+test("워크플로 머리말은 상한의 의미(같은 main tip에서 24시간 안에 RECREATE_DAILY_LIMIT회, 별도 starvation 상한)를 코드와 같게 설명한다 (#1147 리뷰 F1)", () => {
+  const header = yml.split("\n").slice(0, yml.split("\n").findIndex((line) => line === "on:")).filter((line) => line.startsWith("#")).join("\n");
+  assert.match(header, new RegExp(`같은 단계가 같은 main tip에서 24시간 안에 ${RECREATE_DAILY_LIMIT}회를 넘게 닫히면`, "u"));
+  assert.match(header, /main이 전진하면.*이전 닫힘은 세지 않으므로 사람이 PR을 닫지 않아도 상한이 풀린다/su);
+  assert.match(header, new RegExp(`tip과 관계없이 24시간 안에 ${RECREATE_STARVATION_LIMIT}회`, "u"));
+  assert.match(header, /AUTOMATION_PR_RECREATE_STARVATION/u);
+  // 옛 의미("main tip" 없이 24시간 안에 3회)로 되돌린 문구는 허용하지 않는다.
+  assert.doesNotMatch(header, /같은 단계가 24시간 안에/u);
 });
