@@ -81,12 +81,16 @@ function admittedFreshUntilDay(contract) {
 // GitHub run id는 안전한 양의 정수다. 앞자리 0·부호·공백을 받지 않는다.
 const RUN_ID = /^[1-9][0-9]{0,15}$/u;
 
+/** 재생할 원본 run id가 유효한가. 판정 도구와 뒤처진 PR 재생성 계획(automation-pr-recreate)이 같은 규칙을 쓴다. */
+export function isReplayRunId(value) {
+  return typeof value === "string" && RUN_ID.test(value) && Number.isSafeInteger(Number(value));
+}
+
 export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false, itxCollectedToday = false, replayRunId } = {}) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(pullRequests) || !Array.isArray(branches)
     || !validRepository(repository) || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1
     || typeof force !== "boolean" || typeof itxCollectedToday !== "boolean"
-    || (replayRunId !== undefined && !(typeof replayRunId === "string" && RUN_ID.test(replayRunId)))
-    || (replayRunId !== undefined && !Number.isSafeInteger(Number(replayRunId)))) fail("ITX_PROMOTION_INPUT_INVALID");
+    || (replayRunId !== undefined && !isReplayRunId(replayRunId))) fail("ITX_PROMOTION_INPUT_INVALID");
   const { millis: freshUntilMillis, day: expiryDay } = admittedFreshUntilDay(contract);
   const today = kstDay(now);
   const daysUntilExpiry = expiryDay - today;

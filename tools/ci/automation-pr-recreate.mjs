@@ -20,6 +20,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { isReplayRunId } from "./decide-itx-current-promotion.mjs";
+import { LEDGER_WRITER_WORKFLOWS } from "./refresh-open-pr-age.mjs";
 import {
   AUTOMATION_STAGE_WORKFLOWS,
   REPOSITORY_PATTERN,
@@ -54,7 +56,10 @@ export const STAGE_RECREATE_MODE = Object.freeze({
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const kstDayStart = (now) => Math.floor((now.getTime() + KST_OFFSET_MS) / DAY_MS) * DAY_MS - KST_OFFSET_MS;
-const REPLAY_RUN_SUFFIX = /-([1-9][0-9]{0,15})$/u;
+const REPLAY_RUN_SUFFIX = /-([1-9][0-9]*)$/u;
+// 수도권 topology 갱신 PR이 그날 ITX 수집분을 들고 있다는 표지: ITX admission 파일을 새로 만든다(current-capital-topology-refresh의 TOPOLOGY_ITX_ADMISSION_PATH).
+const ITX_ADMISSION_FILE = /^tools\/datapack\/itx-current-network-edge-admission-\d{8}\.json$/u;
+const ITX_PROMOTION_STAGE = "itx-promotion";
 
 /** 닫은 뒤 같은 단계 workflow를 dispatch할 수 있는가. 후보 갱신은 dispatch에 사람 역할이 필수라 정기 실행이 다시 만든다. */
 export const STAGE_REDISPATCH = Object.freeze({
@@ -67,7 +72,9 @@ const message = (error) => (error instanceof Error ? error.message : String(erro
 
 const anomalyMessage = ({ stage, number, closures, reason }) => (reason === "ITX_REPLAY_SOURCE_MISSING"
   ? `ITX_REPLAY_SOURCE_MISSING: ${stage} PR #${number}가 뒤처졌지만 재생할 원본 run의 artifact(itx-current-promotion-<run id>)가 없거나 만료돼 닫지 않는다. 닫으면 그날 받은 수집분을 잃는다. 사람이 확인해야 한다.`
-  : `AUTOMATION_PR_RECREATE_LOOP: ${stage} PR #${number}가 뒤처졌지만 24시간 안에 이미 ${closures}회 닫혀 더 닫지 않는다. 원인을 사람이 확인해야 한다.`);
+  : reason === "ITX_REPLAY_GATE_DISABLED"
+    ? `ITX_REPLAY_GATE_DISABLED: ${stage} PR #${number}가 뒤처졌지만 저장소 변수 DATAPACK_SCHEDULED_ITX_PROMOTION이 true가 아니라 재생 run이 건너뛰어진다. 닫으면 그날 받은 수집분을 잃으므로 닫지 않는다. 변수를 켜거나 PR을 사람이 처리해야 한다.`
+    : `AUTOMATION_PR_RECREATE_LOOP: ${stage} PR #${number}가 뒤처졌지만 24시간 안에 이미 ${closures}회 닫혀 더 닫지 않는다. 원인을 사람이 확인해야 한다.`);
 
 async function replaySourceAlive({ repository, api, runId }) {
   const name = `itx-current-promotion-${runId}`;
@@ -81,7 +88,7 @@ async function replaySourceAlive({ repository, api, runId }) {
  * 닫을 PR, 상한·원본 부재로 닫지 못하는 단계, 닫지 않고 기다릴 PR을 계산한다. 읽기만 한다.
  * @returns {Promise<{ actions: { number: number, branch: string, stage: string, workflow: string, replayRunId?: string }[], anomalies: { stage: string, number: number, closures: number, reason: string }[], deferred: { stage: string, number: number, reason: string }[] }>}
  */
-export async function planBehindRecreation({ repository, api, now = new Date() }) {
+export async function planBehindRecreation({ repository, api, now = new Date(), itxPromotionEnabled = false }) {
   if (typeof repository !== "string" || !REPOSITORY_PATTERN.test(repository)) throw inputError("repository");
   const openPulls = await readPages(api, `repos/${repository}/pulls?state=open&base=${MAIN}`, { limit: 3 });
   const closedPulls = await readPages(api, `repos/${repository}/pulls?state=closed&base=${MAIN}&sort=updated&direction=desc`, { limit: 1, overflow: "return" });
@@ -93,6 +100,13 @@ export async function planBehindRecreation({ repository, api, now = new Date() }
     const closedAt = Date.parse(pull?.closed_at);
     if (stage !== null && (pull.merged_at ?? null) === null && Number.isFinite(closedAt) && now.getTime() - closedAt < WINDOW_MS) closures.set(stage, (closures.get(stage) ?? 0) + 1);
   }
+
+  // 재생 run은 다른 원장 쓰기 PR이 열려 있으면 ITX_PROMOTION_REPLAY_BLOCKED로 실패한다. 그때 PR은 이미 닫힌 뒤라서, 열린 원장 쓰기 PR이 있는 동안은 ITX 재생을 미룬다.
+  // 뒤처진 형제 PR도 같은 실행에서 닫고 다시 dispatch하므로 열린 PR로 센다(재dispatch한 형제가 재생 판정보다 먼저 PR을 열 수 있다).
+  const otherLedgerWriters = openPulls.filter((pull) => {
+    const stage = ours(pull);
+    return stage !== null && stage !== ITX_PROMOTION_STAGE && LEDGER_WRITER_WORKFLOWS.includes(AUTOMATION_STAGE_WORKFLOWS[stage]);
+  }).map(({ number }) => number);
 
   const actions = [];
   const anomalies = [];
@@ -107,7 +121,8 @@ export async function planBehindRecreation({ repository, api, now = new Date() }
     if (mode === RECREATE_MODE.HOLD_SAME_KST_DAY) {
       const createdAt = Date.parse(pull.created_at);
       if (!Number.isFinite(createdAt)) throw inputError(`created_at of #${pull.number}`);
-      if (createdAt >= kstDayStart(now)) {
+      // 그날 만들어졌고 ITX admission을 실제로 담고 있을 때만 대기한다. ITX를 수집하지 않은 topology PR은 평소처럼 닫고 다시 만든다.
+      if (createdAt >= kstDayStart(now) && await carriesItxCollection({ repository, api, number: pull.number })) {
         deferred.push({ stage, number: pull.number, reason: "SAME_KST_DAY_ITX_COLLECTION" });
         continue;
       }
@@ -119,22 +134,38 @@ export async function planBehindRecreation({ repository, api, now = new Date() }
     }
     let replayRunId;
     if (mode === RECREATE_MODE.REPLAY) {
+      // 재생 run은 DATAPACK_SCHEDULED_ITX_PROMOTION이 true일 때만 github-actions[bot] dispatch를 받는다. 꺼져 있으면 dispatch는 성공해도 job이 건너뛰어져 조용히 수집분을 잃는다.
+      if (!itxPromotionEnabled) {
+        anomalies.push({ stage, number: pull.number, closures: used, reason: "ITX_REPLAY_GATE_DISABLED" });
+        continue;
+      }
       replayRunId = REPLAY_RUN_SUFFIX.exec(pull.head.ref)?.[1];
       // 닫으면 그날 수집분은 이 artifact에만 남는다. 읽을 수 없으면 닫지 않는다.
-      if (replayRunId === undefined || !(await replaySourceAlive({ repository, api, runId: replayRunId }))) {
+      if (!isReplayRunId(replayRunId) || !(await replaySourceAlive({ repository, api, runId: replayRunId }))) {
         anomalies.push({ stage, number: pull.number, closures: used, reason: "ITX_REPLAY_SOURCE_MISSING" });
+        continue;
+      }
+      if (otherLedgerWriters.length > 0) {
+        deferred.push({ stage, number: pull.number, reason: "ITX_REPLAY_WAITS_FOR_LEDGER_WRITERS", blockedBy: otherLedgerWriters });
         continue;
       }
     }
     closures.set(stage, used + 1);
     actions.push({ number: pull.number, branch: pull.head.ref, stage, workflow: AUTOMATION_STAGE_WORKFLOWS[stage], ...(replayRunId === undefined ? {} : { replayRunId }) });
   }
-  return { actions, anomalies, deferred };
+  // 재생 dispatch는 실행의 마지막이다. 앞선 쓰기가 실패하면 ITX PR은 닫히지 않은 채 남는다.
+  const ordered = [...actions.filter(({ replayRunId }) => replayRunId === undefined), ...actions.filter(({ replayRunId }) => replayRunId !== undefined)];
+  return { actions: ordered, anomalies, deferred };
+}
+
+async function carriesItxCollection({ repository, api, number }) {
+  const files = await readPages(api, `repos/${repository}/pulls/${number}/files`, { limit: 3 });
+  return files.some((file) => ITX_ADMISSION_FILE.test(file?.filename ?? ""));
 }
 
 /** 계획대로 닫고, 브랜치를 지우고, 단계 workflow를 다시 실행한다. 상한에 닿은 단계가 있으면 나머지를 마친 뒤 실패로 보고한다. */
-export async function recreateBehindPullRequests({ repository, api, closePullRequest, deleteBranch, dispatchWorkflow, now = new Date(), log = () => {} }) {
-  const { actions, anomalies, deferred } = await planBehindRecreation({ repository, api, now });
+export async function recreateBehindPullRequests({ repository, api, closePullRequest, deleteBranch, dispatchWorkflow, now = new Date(), log = () => {}, itxPromotionEnabled = false }) {
+  const { actions, anomalies, deferred } = await planBehindRecreation({ repository, api, now, itxPromotionEnabled });
   for (const { stage, number, reason } of deferred) log(`held #${number} (${stage}): ${reason}; not closed so the day's one-time collection is not lost`);
   const dispatched = new Set();
   for (const action of actions) {
@@ -174,11 +205,13 @@ async function ghApi(endpoint) {
   return JSON.parse(stdout);
 }
 
-export async function main(argv, { api = ghApi, now = new Date(), log = (line) => process.stdout.write(`${line}\n`) } = {}) {
+export async function main(argv, { api = ghApi, now = new Date(), env = process.env, log = (line) => process.stdout.write(`${line}\n`) } = {}) {
+  // 재생 run을 받는 workflow의 변수 게이트. 값은 workflow env로 넘겨받는다.
+  const itxPromotionEnabled = env.DATAPACK_SCHEDULED_ITX_PROMOTION === "true";
   const [command, ...rest] = argv;
   if (command === "plan") {
     const values = parseOptions(rest, ["repository", "github-output"]);
-    const { actions, anomalies, deferred } = await planBehindRecreation({ repository: values.repository, api, now });
+    const { actions, anomalies, deferred } = await planBehindRecreation({ repository: values.repository, api, now, itxPromotionEnabled });
     writeOutputs(values["github-output"], { targets: actions.length + anomalies.length });
     log(`뒤처진 자동화 PR: 닫을 ${actions.length}건, 상한 도달·원본 없음 ${anomalies.length}건, 대기 ${deferred.length}건`);
   } else if (command === "run") {
@@ -191,6 +224,7 @@ export async function main(argv, { api = ghApi, now = new Date(), log = (line) =
       api,
       now,
       log,
+      itxPromotionEnabled,
       closePullRequest: ({ number, comment }) => gh(["pr", "close", String(number), "--repo", repository, "--comment", comment], closeToken),
       // 브랜치 이름은 plan이 단계 claim 접두사(automationStageForBranch)로 거른 값뿐이다.
       deleteBranch: async (branch) => {
