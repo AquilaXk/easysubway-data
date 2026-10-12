@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "9015ffae00d5bd7214ec34eca5ac3b11926e50a2",
+  "builderGitSha": "1d45d983b7fbf2bf816c0dbe9983e04886cf0ac9",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "17a368cd57a0773729104b8f054327263dfa242cc942b7cc26b3b61c3bc28709"
+    "value": "57d0f581db4051885e24cefeef0e8c417ccca2891ada253cd715c1b45de5e99a"
   },
   "sourceInventorySha256": {
-    "value": "98c1e877d374e25b3e7d71d7527c3683b7129bcba9c8e8fe3d2353a811a8ad57"
+    "value": "da15e155f36aa1d55888ac3fa7c490d5063df4d16232b9e4a03f17647271756e"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "93c830f79acdb9b2e8bcdb3010d8952777132b1b147b763c74357615da907e74"
+    "sha256": "e3cce7b02b9cc150e1202d25c74338ebd16a18a147b4c6f1724e12b795a2cc1b"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261011-seq132"
+      "value": "nationwide-candidate-20261012-seq133"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261011-seq132"
+      "value": "release-request-nationwide-candidate-20261012-seq133"
     }
   },
   "perSourceEvidence": [
@@ -149,18 +149,6 @@
       "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
       "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
       "perSourceSnapshotSetHash": "160e4f02778a184dbb062f6f16d46d4d987e4d420f02884fa6ce0db37bd9ccc6"
-    },
-    {
-      "sourceId": "kric-nationwide-timetable-file",
-      "snapshotId": "kric-nationwide-timetable-file-f7215ac8e43c15f40162b86fb1b27d405ac7d32a7098462b86dbd622c14a2e74",
-      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "admissionRecordSha256s": [
-        {
-          "kind": "retainedScheduleAdmissionEvidence",
-          "sha256": "d9db17d1bba2c49ec880242152d433a028271a2f41963a9fccd95e965a66c047"
-        }
-      ],
-      "perSourceSnapshotSetHash": "0776be209c2ea00cdfef2e1492e89f3cb0f959bdab587dfdd94c755cd8e9ffc2"
     },
     {
       "sourceId": "seoul-metro-accessibility",
@@ -343,6 +331,18 @@
         }
       ],
       "perSourceSnapshotSetHash": "0d773c0ac291378fb71fd60a7ad1a24b2054079fdce63814c8718bc0b575a299"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "snapshotId": "kric-nationwide-timetable-file-227a40afd5332a6f78c372cfd3022c2fe5f78c7275e38dd5dace6c07eeae702d",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "9a1794af1fc82aa09bc643703e04101420e74edbe8b772e4265b9172acc44b51"
+        }
+      ],
+      "perSourceSnapshotSetHash": "dae1a8a7e15f42d4b147428f8b56c2bac74dfbbdb04ff451ec349d8668e17343"
     }
   ],
   "officialOdFareEvidence": {
