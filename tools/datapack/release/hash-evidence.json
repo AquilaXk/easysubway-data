@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "ed355a4424b5dcf5dd2a2acf7dfde6ba2adc78ec",
+  "builderGitSha": "1512c0527cbdaa6dbd055251ad8aa2b4321739f2",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "d18638cf70e3db555aa3d8c6d2de85a4f31578e8c393bfd90060ae639d326d1b"
+    "value": "158ad5e307bd924767f8b7e0bb4223ebd085650e6d5efa17098314ed3e42a887"
   },
   "sourceInventorySha256": {
-    "value": "b476daecf814321d78533322577ffcc13bcff1adfb9129ac7ed11e49bb8c61e2"
+    "value": "362663de2b598b3c0d1a50c4f61bad366653bafe534cff58a1c400ae7660d352"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "db4d5a36a6c814c3807ddc1bc2b6bdc07aca4286eeb0fb2ded1bc6092d0fc6f0"
+    "sha256": "224361868052fc6580a4f531de24fab565559cfaeaa9c76324bd2ad1a5413b7a"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261013-seq136"
+      "value": "nationwide-candidate-20261013-seq137"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261013-seq136"
+      "value": "release-request-nationwide-candidate-20261013-seq137"
     }
   },
   "perSourceEvidence": [
@@ -149,18 +149,6 @@
       "rawSha256": "3a8c462a06c9d790b9778cb8aff75f1d3fef83b423ec8f6eb00881aeda7acfb9",
       "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
       "perSourceSnapshotSetHash": "160e4f02778a184dbb062f6f16d46d4d987e4d420f02884fa6ce0db37bd9ccc6"
-    },
-    {
-      "sourceId": "kric-nationwide-timetable-file",
-      "snapshotId": "kric-nationwide-timetable-file-227a40afd5332a6f78c372cfd3022c2fe5f78c7275e38dd5dace6c07eeae702d",
-      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-      "admissionRecordSha256s": [
-        {
-          "kind": "retainedScheduleAdmissionEvidence",
-          "sha256": "1a1e5634ff2429adaa051a33b51fc3dd8f8e7c81cfe9148e672dac8be31bfc62"
-        }
-      ],
-      "perSourceSnapshotSetHash": "dae1a8a7e15f42d4b147428f8b56c2bac74dfbbdb04ff451ec349d8668e17343"
     },
     {
       "sourceId": "capital-route-topology",
@@ -343,6 +331,18 @@
       "rawSha256": "1528750448080c22409b414a1a5519c86d57c801f2f2a0638725dd6f2e7c8e32",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "perSourceSnapshotSetHash": "d1a968e334a6278248380510c61e60a47f0425456ab6b91582146b1c9e44c6d1"
+    },
+    {
+      "sourceId": "kric-nationwide-timetable-file",
+      "snapshotId": "kric-nationwide-timetable-file-a07978f04438fd3990d5c9e5350e3d2ce82f03d2585bc193e81c8bca6f18eefa",
+      "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+      "admissionRecordSha256s": [
+        {
+          "kind": "retainedScheduleAdmissionEvidence",
+          "sha256": "bf090db439f1979281fef473a8e5a1320a1aab947e6ad6d8037733a697671518"
+        }
+      ],
+      "perSourceSnapshotSetHash": "3942153a78a67455fe2b79cabcbc2b06cb8c319948812f797c6c1d6ba929df75"
     }
   ],
   "officialOdFareEvidence": {
