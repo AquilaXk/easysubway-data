@@ -283,6 +283,49 @@ test("#1067 prBaseCanonicalPackReader는 이벤트 파일의 base 커밋에서 �
   assert.deepEqual(repo.mergeBaseDepths, [400]);
 });
 
+const compareBytes = (left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right));
+const sortValue = (value) => Array.isArray(value)
+  ? value.map(sortValue)
+  : value && typeof value === "object"
+    ? Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, sortValue(value[key])]))
+    : value;
+const canonicalJson = (value) => JSON.stringify(sortValue(value));
+
+function matchesDeclaredMetricsBytes(bytes, expectedArtifactSha256) {
+  if (typeof expectedArtifactSha256 !== "string" || !/^[0-9a-f]{64}$/u.test(expectedArtifactSha256)) return false;
+  let parsed;
+  try {
+    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || parsed.artifactSha256 !== expectedArtifactSha256) return false;
+  const { artifactSha256: _ignored, ...withoutHash } = parsed;
+  return sha256(canonicalJson(withoutHash)) === expectedArtifactSha256 && bytes.equals(Buffer.from(`${canonicalJson(parsed)}\n`));
+}
+
+test("#1040 지표 바이트 선택은 선언된 artifactSha256 문자열뿐 아니라 바이트 자체의 정규 직렬화·자기 해시 일치까지 검증한다", async () => {
+  const input = await activeTransferInputs();
+  const expectedSha = input.applicability.transferTopologyMetricsIdentity.artifactSha256;
+  assert.equal(matchesDeclaredMetricsBytes(input.metricsBytes, expectedSha), true);
+  // artifactSha256 문자열은 그대로 둔 채 다른 필드를 바꾼 바이트는 선언과 일치하지 않는다(작업 트리가 오염됐을 때 고정 입력으로 넘어간다).
+  const tamperedMetrics = structuredClone(input.metrics);
+  tamperedMetrics.metrics[0].distanceMeters += 1;
+  const tamperedBytes = Buffer.from(`${canonicalJson(tamperedMetrics)}\n`);
+  assert.equal(JSON.parse(tamperedBytes).artifactSha256, expectedSha);
+  assert.equal(matchesDeclaredMetricsBytes(tamperedBytes, expectedSha), false);
+  // 공백·개행만 바뀐 비정규 바이트도 거부한다.
+  assert.equal(matchesDeclaredMetricsBytes(Buffer.from(`${canonicalJson(input.metrics)} \n`), expectedSha), false);
+  const picked = await declaredBytes({
+    label: "transfer topology metrics artifactSha256",
+    relative: "tools/datapack/release/current-transfer-topology-metrics.json",
+    workingTree: async () => tamperedBytes,
+    readPinned: async () => input.metricsBytes,
+    matches: (bytes) => matchesDeclaredMetricsBytes(bytes, expectedSha),
+  });
+  assert.deepEqual(picked, input.metricsBytes);
+});
+
 async function activeTransferInputs() {
   const workingTree = (relative) => readFile(new URL(`../../${relative}`, import.meta.url));
   const readJson = async (relative) => JSON.parse(await readFile(new URL(relative, import.meta.url), "utf8"));
@@ -300,7 +343,7 @@ async function activeTransferInputs() {
   });
   const metricsBytes = await declaredBytes({
     label: "transfer topology metrics artifactSha256", relative: "tools/datapack/release/current-transfer-topology-metrics.json", readPinned, workingTree,
-    matches: (bytes) => JSON.parse(bytes).artifactSha256 === applicability.transferTopologyMetricsIdentity?.artifactSha256,
+    matches: (bytes) => matchesDeclaredMetricsBytes(bytes, applicability.transferTopologyMetricsIdentity?.artifactSha256),
   });
   const canonicalPack = JSON.parse(canonicalPackBytes);
   const metrics = JSON.parse(metricsBytes);

@@ -52,7 +52,16 @@ function admission(inventory) {
   if (value?.status !== "ADMITTED" || !isCapitalRouteTopologySnapshotId(value.topologySnapshotId) || !Number.isFinite(freshUntilMillis)) {
     fail("REGISTRATION_ADMISSION_MISSING", "the protected capital topology admission is missing or malformed");
   }
-  return { snapshotId: value.topologySnapshotId, freshUntilMillis };
+  if (value.reviewedAt !== undefined) {
+    try { requiredUtcInstant(value.reviewedAt, "reviewedAt"); } catch {
+      fail("REGISTRATION_ADMISSION_MISSING", `reviewedAt is malformed (${String(value.reviewedAt)})`);
+    }
+  }
+  return {
+    snapshotId: value.topologySnapshotId,
+    freshUntilMillis,
+    ...(value.reviewedAt !== undefined ? { reviewedAt: value.reviewedAt } : {}),
+  };
 }
 
 /**
@@ -61,8 +70,12 @@ function admission(inventory) {
  */
 export function capitalTopologyRegistrationState({ inventory, ledger } = {}) {
   if (!Array.isArray(ledger)) fail("REGISTRATION_INPUT_INVALID");
-  const { snapshotId } = admission(inventory);
-  return { registered: ledger.some((entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshotId), snapshotId };
+  const { snapshotId, reviewedAt } = admission(inventory);
+  return {
+    registered: ledger.some((entry) => entry?.sourceId === SOURCE_ID && entry.snapshotId === snapshotId),
+    snapshotId,
+    ...(reviewedAt !== undefined ? { reviewedAt } : {}),
+  };
 }
 
 // PR 없는 claim의 처지를 producer run(claim 브랜치 이름의 run id)으로 가린다(이슈 #973).

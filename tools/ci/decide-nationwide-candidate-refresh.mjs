@@ -41,6 +41,8 @@ import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs
 
 export const CANDIDATE_REFRESH_WORKFLOW = "nationwide-candidate-refresh.yml";
 export const CANDIDATE_REFRESH_CLAIM_PREFIX = REFRESH_CLAIM_PREFIXES[CANDIDATE_REFRESH_WORKFLOW];
+export const REGISTRATION_WAIT_LIMIT = LEDGER_WRITER_WAIT_LIMIT;
+export const REGISTRATION_WAIT_LIMIT_MS = isoDurationMs(REGISTRATION_WAIT_LIMIT);
 const EVENTS = Object.freeze(["schedule", "workflow_dispatch"]);
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE_INVENTORY_PATH = "tools/datapack/source-inventory.json";
@@ -55,9 +57,12 @@ export function parseCandidateRefreshBranches(text) {
   return parsePrefixedBranches(text, CANDIDATE_REFRESH_CLAIM_PREFIX, (detail) => fail("CANDIDATE_REFRESH_BRANCH_INVALID", detail));
 }
 
-export async function decideNationwideCandidateRefresh({ manifest, readLocal, pullRequests, branches, automationBranches, repository, event, actor, ledgerWriterWait, registration } = {}) {
+export async function decideNationwideCandidateRefresh({ manifest, readLocal, pullRequests, branches, automationBranches, repository, event, actor, triggeringActor, ledgerWriterWait, registration } = {}) {
   if (!Array.isArray(pullRequests) || !Array.isArray(branches) || !Array.isArray(automationBranches) || typeof readLocal !== "function"
     || !validRepository(repository) || !EVENTS.includes(event)) fail("CANDIDATE_REFRESH_INPUT_INVALID");
+  if (event === "workflow_dispatch" && triggeringActor !== undefined && triggeringActor !== "" && actor !== triggeringActor) {
+    fail("CANDIDATE_REFRESH_ACTOR_MISMATCH", `actor=${String(actor)} triggering_actor=${String(triggeringActor)}`);
+  }
 
   const own = ownPullRequestsByBranch(pullRequests, CANDIDATE_REFRESH_CLAIM_PREFIX, repository, (branch) => fail("CANDIDATE_REFRESH_PR_DUPLICATE", branch));
   const open = [...own.values()].filter(({ state }) => state === "OPEN");
@@ -88,14 +93,23 @@ export async function decideNationwideCandidateRefresh({ manifest, readLocal, pu
   let decision = blockedBy.length > 0 ? { state: "BLOCKED_BY_PENDING_PR", stalePaths, blockedBy, cleanupBranches } : { state: "STALE", stalePaths, cleanupBranches };
   // 기다릴 원장 쓰기 자동화가 없어도 보호 admission의 topology가 아직 등록되지 않았으면 후보를 만들지 않는다. registration을 주지 않으면 보지 않는다.
   if (decision.state === "STALE" && registration !== undefined) {
-    const { registered, snapshotId } = capitalTopologyRegistrationState(registration);
-    if (!registered) decision = { state: "BLOCKED_BY_PENDING_REGISTRATION", stalePaths, registrationSnapshotId: snapshotId, cleanupBranches };
+    const { registered, snapshotId, reviewedAt } = capitalTopologyRegistrationState(registration);
+    if (!registered) {
+      const waitNow = registration.now ?? ledgerWriterWait?.now;
+      const maxAgeMs = registration.maxAgeMs ?? ledgerWriterWait?.maxAgeMs ?? REGISTRATION_WAIT_LIMIT_MS;
+      if (reviewedAt !== undefined && waitNow instanceof Date && Number.isFinite(waitNow.getTime())) {
+        if (waitNow.getTime() - Date.parse(reviewedAt) > maxAgeMs) {
+          fail("CANDIDATE_REFRESH_REGISTRATION_STUCK", `${snapshotId} admitted at ${reviewedAt} is still unregistered after ${REGISTRATION_WAIT_LIMIT}`);
+        }
+      }
+      decision = { state: "BLOCKED_BY_PENDING_REGISTRATION", stalePaths, registrationSnapshotId: snapshotId, cleanupBranches };
+    }
   }
   return pending.expired?.length > 0 ? { ...decision, expiredBlockers: pending.expired } : decision;
 }
 
 function parseArgs(argv) {
-  const keys = new Map([["--event", "event"], ["--actor", "actor"], ["--repository", "repository"], ["--prs", "prs"], ["--branches", "branches"], ["--automation-branches", "automationBranches"], ["--manifest", "manifest"], ["--github-output", "githubOutput"]]);
+  const keys = new Map([["--event", "event"], ["--actor", "actor"], ["--triggering-actor", "triggeringActor"], ["--repository", "repository"], ["--prs", "prs"], ["--branches", "branches"], ["--automation-branches", "automationBranches"], ["--manifest", "manifest"], ["--github-output", "githubOutput"]]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const key = keys.get(argv[index]);
@@ -127,7 +141,7 @@ export async function main(argv, { repositoryRoot = ROOT, log = console.log, run
   const result = await decideNationwideCandidateRefresh({
     manifest, readLocal: (relative) => readFile(path.resolve(repositoryRoot, relative)),
     pullRequests, branches: parseCandidateRefreshBranches(await readFile(values.branches, "utf8")), automationBranches,
-    repository: values.repository, event: values.event, actor: values.actor, ledgerWriterWait, registration,
+    repository: values.repository, event: values.event, actor: values.actor, triggeringActor: values.triggeringActor, ledgerWriterWait, registration,
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {

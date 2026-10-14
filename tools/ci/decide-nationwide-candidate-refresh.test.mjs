@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { CANDIDATE_INPUT_MANIFEST_PATH, buildCandidateInputManifest } from "../datapack/lib/candidate-input-bundle.mjs";
-import { CANDIDATE_REFRESH_CLAIM_PREFIX, decideNationwideCandidateRefresh, main, parseCandidateRefreshBranches } from "./decide-nationwide-candidate-refresh.mjs";
+import { CANDIDATE_REFRESH_CLAIM_PREFIX, REGISTRATION_WAIT_LIMIT, REGISTRATION_WAIT_LIMIT_MS, decideNationwideCandidateRefresh, main, parseCandidateRefreshBranches } from "./decide-nationwide-candidate-refresh.mjs";
 
 // #969 P5: 전국 후보 갱신은 입력이 바뀌었을 때만 한다. 후보가 읽은 입력 매니페스트가 지금 작업 트리와 같으면 CURRENT다.
 // 매일 무조건 sequence를 올려 후보 PR을 만들던 정기 실행을 변경 판정(STALE)·열린 PR(OPEN_PR)·원장 쓰기 PR 대기로 바꾼다.
@@ -46,12 +46,19 @@ test("사람 dispatch는 CURRENT여도 FORCED로 진행한다(명시 요청)", a
 
 // #1032: 스케줄러 App의 dispatch는 정기 실행의 대체 경로다. 2시간마다 깨워도 입력이 같으면 후보를 만들지 않는다(FORCED가 아니다).
 test("스케줄러 App의 dispatch는 정기 실행과 같이 판정한다: CURRENT는 아무것도 하지 않고 STALE만 진행한다", async () => {
-  const app = { event: "workflow_dispatch", actor: "easysubway-release-chain[bot]" };
+  const app = { event: "workflow_dispatch", actor: "easysubway-release-chain[bot]", triggeringActor: "easysubway-release-chain[bot]" };
   assert.deepEqual(await run(app), { state: "CURRENT", cleanupBranches: [] });
   assert.deepEqual(await run({ ...app, readLocal: reader({ ...FILES, "a.json": "A2" }) }), { state: "STALE", stalePaths: ["a.json"], cleanupBranches: [] });
   assert.equal((await run({ ...app, pullRequests: [pr("OPEN", 1)], branches: [`${CANDIDATE_REFRESH_CLAIM_PREFIX}1`] })).state, "OPEN_PR");
   // 비슷한 이름의 다른 행위자는 스케줄러가 아니다.
   for (const actor of ["easysubway-release-chain", "github-actions[bot]", "", undefined]) assert.equal((await run({ event: "workflow_dispatch", actor })).state, "FORCED", String(actor));
+  // #1040: dispatch에서 actor와 triggeringActor가 다르면(재실행 등) 판정하지 않고 실패한다.
+  for (const pair of [
+    { actor: "easysubway-release-chain[bot]", triggeringActor: "AquilaXk" },
+    { actor: "AquilaXk", triggeringActor: "easysubway-release-chain[bot]" },
+  ]) {
+    await assert.rejects(run({ event: "workflow_dispatch", ...pair }), /CANDIDATE_REFRESH_ACTOR_MISMATCH/u, JSON.stringify(pair));
+  }
 });
 
 test("이 workflow의 열린 PR이 있으면 CURRENT·STALE과 무관하게 OPEN_PR이고 dispatch도 새로 만들지 않는다", async () => {
@@ -142,12 +149,14 @@ test("나이를 알 수 없는 대상은 기다리고, 상한 설정이 없으�
   assert.deepEqual(await run({ pullRequests: [GWANGJU_PR], ...wait({ [GWANGJU_PR.headRefName]: ago(9 * HOUR) }) }), { state: "CURRENT", cleanupBranches: [] });
 });
 
-// #1032: 보호 admission의 topology가 원장에 등록되기 전에 후보를 만들면 후보의 capitalTopologyAdmission(옛 reverification)이 inventory admission과 어긋나
-// PR CI의 후보 build 테스트가 실패하고, 그 후보 PR이 열려 있는 동안 후보 갱신이 막힌다. 등록이 끝나기 전에는 후보를 만들지 않는다.
-const REGISTERED_INVENTORY = (snapshotId) => ({ sources: [{ id: "seoul-metro-route-map-positions", routeMapAdmissionEvidence: { currentTopologyAdmission: { status: "ADMITTED", topologySnapshotId: snapshotId, freshUntil: "2026-10-14T20:10:18.488Z" } } }] });
-const registration = (ledgerSnapshots) => ({ registration: { inventory: REGISTERED_INVENTORY("capital-route-topology-20261007"), ledger: ledgerSnapshots.map((snapshotId) => ({ sourceId: "capital-route-topology", snapshotId })) } });
+// #1032, #1040: 보호 admission의 topology가 원장에 등록되기 전에 후보를 만들면 후보의 capitalTopologyAdmission(옛 reverification)이 inventory admission과 어긋나
+// PR CI의 후보 build 테스트가 실패하고, 그 후보 PR이 열려 있는 동안 후보 갱신이 막힌다. 등록이 끝나기 전에는 후보를 만들지 않되, 상한(PT2H)을 넘기면 실패한다.
+const REGISTERED_INVENTORY = (snapshotId, reviewedAt = "2026-10-07T22:30:00.000Z") => ({ sources: [{ id: "seoul-metro-route-map-positions", routeMapAdmissionEvidence: { currentTopologyAdmission: { status: "ADMITTED", topologySnapshotId: snapshotId, ...(reviewedAt === undefined ? {} : { reviewedAt }), freshUntil: "2026-10-14T20:10:18.488Z" } } }] });
+const registration = (ledgerSnapshots, reviewedAt) => ({ registration: { inventory: REGISTERED_INVENTORY("capital-route-topology-20261007", reviewedAt), ledger: ledgerSnapshots.map((snapshotId) => ({ sourceId: "capital-route-topology", snapshotId })) } });
 
 test("등록되지 않은 topology admission이 있으면 STALE이어도 후보를 만들지 않고 기다린다. 원장 쓰기 PR이 있으면 그 대기가 먼저다", async () => {
+  assert.equal(REGISTRATION_WAIT_LIMIT, "PT2H");
+  assert.equal(REGISTRATION_WAIT_LIMIT_MS, 2 * HOUR);
   assert.deepEqual(await run({ ...STALE, ...registration(["capital-route-topology-20261005"]) }), {
     state: "BLOCKED_BY_PENDING_REGISTRATION", stalePaths: ["a.json"], registrationSnapshotId: "capital-route-topology-20261007", cleanupBranches: [],
   });
@@ -156,9 +165,14 @@ test("등록되지 않은 topology admission이 있으면 STALE이어도 후보�
   assert.equal((await run({ ...STALE, ...registration(["capital-route-topology-20261005", "capital-route-topology-20261007"]) })).state, "STALE");
   assert.equal((await run({ ...registration(["capital-route-topology-20261005"]) })).state, "CURRENT");
   // 멈춘 원장 쓰기 대상을 기다리지 않는 규칙과 함께 쓰면 expiredBlockers가 유지된다.
-  const expired = await run({ ...STALE, pullRequests: [GWANGJU_PR], ...wait({ [GWANGJU_PR.headRefName]: ago(3 * HOUR) }), ...registration(["capital-route-topology-20261005"]) });
+  const expired = await run({ ...STALE, pullRequests: [GWANGJU_PR], ...wait({ [GWANGJU_PR.headRefName]: ago(3 * HOUR) }), ...registration(["capital-route-topology-20261005"], ago(2 * HOUR)) });
   assert.equal(expired.state, "BLOCKED_BY_PENDING_REGISTRATION");
   assert.deepEqual(expired.expiredBlockers.map(({ blocker }) => blocker), [1019]);
+  // #1040: 보호 admission이 들어온 뒤 대기 상한(PT2H)이 넘도록 원장에 등록되지 않았으면 조용히 건너뛰지 않고 실패한다.
+  await assert.rejects(
+    run({ ...STALE, ...wait({}), ...registration(["capital-route-topology-20261005"], ago(2 * HOUR + 1)) }),
+    /CANDIDATE_REFRESH_REGISTRATION_STUCK: capital-route-topology-20261007 admitted at 2026-10-07T20:59:59\.999Z is still unregistered after PT2H/u,
+  );
   // 사람 dispatch의 FORCED는 입력이 같을 때의 명시 요청이므로 등록 대기를 하지 않는다.
   assert.equal((await run({ event: "workflow_dispatch", ...registration(["capital-route-topology-20261005"]) })).state, "FORCED");
 });
@@ -180,7 +194,7 @@ test("CLI는 git에서 읽은 브랜치 커밋 시각으로 상한을 적용하�
   await writeFile(file("automation.txt"), `${sha40}\trefs/heads/${GWANGJU_PR.headRefName}\n${sha40}\trefs/heads/${SEOUL_CLAIM}\n`);
   const times = { [GWANGJU_PR.headRefName]: "2026-10-07T19:19:20+00:00", [SEOUL_CLAIM]: "2026-10-07T19:16:40+00:00" };
   const runGit = async (args) => times[args.at(-1).replace("refs/remotes/origin/", "")] ?? "";
-  const args = ["--event", "workflow_dispatch", "--actor", "easysubway-release-chain[bot]", "--repository", REPOSITORY, "--prs", file("prs.json"), "--branches", file("branches.txt"), "--automation-branches", file("automation.txt"), "--github-output", file("out.txt")];
+  const args = ["--event", "workflow_dispatch", "--actor", "easysubway-release-chain[bot]", "--triggering-actor", "easysubway-release-chain[bot]", "--repository", REPOSITORY, "--prs", file("prs.json"), "--branches", file("branches.txt"), "--automation-branches", file("automation.txt"), "--github-output", file("out.txt")];
   const result = await main(args, { repositoryRoot: root, log: () => {}, runGit, now: () => NOW });
   assert.equal(result.state, "STALE");
   const output = Object.fromEntries((await readFile(file("out.txt"), "utf8")).split("\n").filter(Boolean).map((line) => line.split(/=(.*)/su).slice(0, 2)));
@@ -197,4 +211,12 @@ test("CLI는 git에서 읽은 브랜치 커밋 시각으로 상한을 적용하�
   const waitingOutput = Object.fromEntries((await readFile(file("out.txt"), "utf8")).split("\n").filter(Boolean).map((line) => line.split(/=(.*)/su).slice(0, 2)));
   assert.equal(waitingOutput.state, "BLOCKED_BY_PENDING_REGISTRATION");
   assert.equal(waitingOutput.registration_snapshot, "capital-route-topology-20261007");
+  // #1040: 대기 상한(PT2H)을 넘긴 미등록 admission은 실패한다.
+  await writeFile(path.join(root, "tools/datapack/source-inventory.json"), JSON.stringify(REGISTERED_INVENTORY("capital-route-topology-20261007", "2026-10-07T19:00:00.000Z")));
+  await assert.rejects(main(args.slice(0, -2), { repositoryRoot: root, log: () => {}, runGit, now: () => NOW }), /CANDIDATE_REFRESH_REGISTRATION_STUCK/u);
+  // #1040: --actor와 --triggering-actor가 다르면 거부한다.
+  await assert.rejects(
+    main(["--event", "workflow_dispatch", "--actor", "easysubway-release-chain[bot]", "--triggering-actor", "AquilaXk", "--repository", REPOSITORY, "--prs", file("prs.json"), "--branches", file("branches.txt"), "--automation-branches", file("automation.txt")], { repositoryRoot: root, log: () => {}, runGit, now: () => NOW }),
+    /CANDIDATE_REFRESH_ACTOR_MISMATCH/u,
+  );
 });

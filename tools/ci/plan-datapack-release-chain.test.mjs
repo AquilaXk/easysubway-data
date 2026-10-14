@@ -209,15 +209,21 @@ test("CLI writes the candidate refresh plan to GitHub output and the modeArgs to
       "approved_by=data-release-authority",
       "",
     ].join("\n"));
-    // #1032: 스케줄러 App의 dispatch는 --actor로 행위자를 받아 입력 없이 정기 역할을 쓴다.
+    // #1032, #1040: 스케줄러 App의 dispatch는 --actor와 --triggering-actor로 행위자를 받아 입력 없이 정기 역할을 쓴다.
     const appOutput = path.join(root, "github-output-app.txt");
     await runPlanDatapackReleaseChain({
       argv: ["candidate-refresh", "--release-sequence", "", "--requested-by", "", "--approved-by", "", "--event", "workflow_dispatch",
-        "--actor", "easysubway-release-chain[bot]", "--github-output", appOutput],
+        "--actor", "easysubway-release-chain[bot]", "--triggering-actor", "easysubway-release-chain[bot]", "--github-output", appOutput],
       repositoryRoot: root,
       now: () => now,
     });
     assert.match(await readFile(appOutput, "utf8"), /^evaluated_at=2026-10-04T04:31:38\.280Z\nrelease_sequence=128\nrequested_by=datapack-scheduled-refresh\napproved_by=datapack-release-gates\n$/u);
+    await assert.rejects(runPlanDatapackReleaseChain({
+      argv: ["candidate-refresh", "--release-sequence", "", "--requested-by", "", "--approved-by", "", "--event", "workflow_dispatch",
+        "--actor", "easysubway-release-chain[bot]", "--triggering-actor", "AquilaXk", "--github-output", appOutput],
+      repositoryRoot: root,
+      now: () => now,
+    }), /CANDIDATE_REFRESH_ROLE_EVENT[\s\S]*actor and triggering_actor mismatch/u);
     const modeArgsOutput = path.join(root, "mode-args.json");
     await runPlanDatapackReleaseChain({ argv: ["release-candidate-mode-args", "--output", modeArgsOutput], repositoryRoot: root });
     assert.equal(JSON.parse(await readFile(modeArgsOutput, "utf8")).releaseRequestId, `release-request-${spec.candidateId}`);
@@ -276,8 +282,8 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
   // #969: 권한은 job에만 주고(issues 쓰기는 실패 보고용) workflow dispatch 권한(actions: write)은 여전히 없다.
   assert.match(yml, /\n    permissions:\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
   assert.doesNotMatch(yml, /actions: write/u);
-  // #1032: 정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true일 때만 돈다. 사람 dispatch는 항상 돈다.
-  assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.triggering_actor != 'easysubway-release-chain\[bot\]'\) \|\| vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true'\) \}\}/u);
+  // #1032, #1040: 정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true이고 actor와 triggering_actor가 모두 App일 때만 돈다. 사람 dispatch는 두 값 모두 App이 아닐 때만 돈다.
+  assert.match(yml, /if: \$\{\{ github\.ref == 'refs\/heads\/main' && \(\(github\.event_name == 'workflow_dispatch' && github\.actor != 'easysubway-release-chain\[bot\]' && github\.triggering_actor != 'easysubway-release-chain\[bot\]'\) \|\| \(vars\.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && \(github\.event_name != 'workflow_dispatch' \|\| \(github\.actor == 'easysubway-release-chain\[bot\]' && github\.triggering_actor == 'easysubway-release-chain\[bot\]'\)\)\)\) \}\}/u);
   assert.match(yml, /cancel-in-progress: false/u);
   assert.match(yml, /persist-credentials: false/u);
   // dispatch 입력은 env로만 run에 들어간다(셸 주입 차단).
@@ -286,10 +292,11 @@ test("nationwide candidate refresh workflow runs in CI on main and opens one aut
     assert.doesNotMatch(run, /\$\{\{\s*(inputs|github\.event\.inputs)\./u);
   }
   const plan = stepBody(yml, "Validate candidate refresh inputs");
-  assert.match(plan, /node tools\/ci\/plan-datapack-release-chain\.mjs candidate-refresh --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}" --event "\$\{EVENT_NAME\}" --actor "\$\{ACTOR\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(plan, /node tools\/ci\/plan-datapack-release-chain\.mjs candidate-refresh --release-sequence "\$\{RELEASE_SEQUENCE\}" --requested-by "\$\{REQUESTED_BY\}" --approved-by "\$\{APPROVED_BY\}" --event "\$\{EVENT_NAME\}" --actor "\$\{ACTOR\}" --triggering-actor "\$\{TRIGGERING_ACTOR\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
   assert.match(plan, /EVENT_NAME: \$\{\{ github\.event_name \}\}/u);
   // 행위자는 GitHub 컨텍스트에서만 받는다(입력으로 받지 않는다).
-  assert.match(plan, /ACTOR: \$\{\{ github\.triggering_actor \}\}/u);
+  assert.match(plan, /ACTOR: \$\{\{ github\.actor \}\}/u);
+  assert.match(plan, /TRIGGERING_ACTOR: \$\{\{ github\.triggering_actor \}\}/u);
   const gate = stepBody(yml, "Record the candidate gate run");
   assert.match(gate, /node tools\/ci\/plan-datapack-release-chain\.mjs gate-run --output "\$\{RUNNER_TEMP\}\/candidate-gate-run\.json"/u);
   const refresh = stepBody(yml, "Refresh nationwide candidate");
@@ -513,7 +520,7 @@ test("#929 D3 a scheduled run derives the fixed roles and the next sequence and 
 });
 
 test("#1032 a dispatch started by the scheduler App derives the scheduled roles and takes no person input", () => {
-  const app = { committedBuildSpec: committedSpec, now, event: "workflow_dispatch", actor: "easysubway-release-chain[bot]" };
+  const app = { committedBuildSpec: committedSpec, now, event: "workflow_dispatch", actor: "easysubway-release-chain[bot]", triggeringActor: "easysubway-release-chain[bot]" };
   assert.deepEqual(planNationwideCandidateRefresh({ releaseSequence: "", requestedBy: "", approvedBy: "", ...app }), {
     evaluatedAt: "2026-10-04T04:31:38.280Z", releaseSequence: 127,
     requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates",
@@ -523,6 +530,13 @@ test("#1032 a dispatch started by the scheduler App derives the scheduled roles 
   // App은 사람 승인을 입력으로 가져올 수 없다. 사람 역할도 정기 역할도 입력이 섞이면 실패한다.
   for (const input of [{ releaseSequence: "128" }, { requestedBy: "data-operator-lead", approvedBy: "data-release-authority" }, { requestedBy: "datapack-scheduled-refresh", approvedBy: "datapack-release-gates" }]) {
     assert.throws(() => planNationwideCandidateRefresh({ ...app, ...input }), /CANDIDATE_REFRESH_SCHEDULED_INPUT/u, JSON.stringify(input));
+  }
+  // #1040: App이 시작한 run을 사람이 재실행(triggering_actor != actor)하면 정기 경로로도 사람 경로로도 받지 않는다.
+  for (const pair of [
+    { actor: "easysubway-release-chain[bot]", triggeringActor: "AquilaXk" },
+    { actor: "AquilaXk", triggeringActor: "easysubway-release-chain[bot]" },
+  ]) {
+    assert.throws(() => planNationwideCandidateRefresh({ ...app, ...pair }), /CANDIDATE_REFRESH_ROLE_EVENT[\s\S]*actor and triggering_actor mismatch/u, JSON.stringify(pair));
   }
 });
 

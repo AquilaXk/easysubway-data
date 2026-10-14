@@ -14,7 +14,13 @@ import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, ass
 export const KRIC_SUBWAY_TIMETABLE_ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable";
 const DAY_CDS = Object.freeze(["7", "8", "9"]);
 const ACCEPTED_RESULT_CODES = new Set(["00", "03"]);
-const REQUEST_TIMEOUT_MS = 30_000;
+// #997: 헤더 대기(연결·TLS·응답 헤더)와 본문 전체 수신 시간을 분리한다.
+// 헤더가 도착하면 헤더 타이머를 끄고, 본문은 관측 상한(90,000B)과 하한 처리량(1,500B/s)에서 유도한 별도 시간 안에 읽는다.
+export const HEADER_TIMEOUT_MS = 30_000;
+export const REQUEST_TIMEOUT_MS = HEADER_TIMEOUT_MS;
+export const OBSERVED_RESPONSE_BYTES = 90_000;
+export const MIN_BODY_THROUGHPUT_BYTES_PER_SECOND = 1_500;
+export const BODY_TIMEOUT_MS = 60_000;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /** 요청 URL에 실릴 수 있는 키 표현 전부(원문, percent 인코딩, form 인코딩). */
@@ -30,10 +36,54 @@ export function formatCollectionError(error, env = process.env) {
   return text;
 }
 
+async function readResponseBytes(response, label, bodyTimeoutMs) {
+  let bodyTimer = null;
+  let cancelStream = () => response.body?.cancel?.();
+  try {
+    return await Promise.race([
+      (async () => {
+        if (typeof response.body?.getReader === "function") {
+          const reader = response.body.getReader();
+          cancelStream = () => reader.cancel();
+          const chunks = [];
+          let total = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) return Buffer.concat(chunks, total);
+            const chunk = Buffer.from(value);
+            total += chunk.byteLength;
+            chunks.push(chunk);
+          }
+        }
+        return Buffer.from(await response.arrayBuffer());
+      })(),
+      new Promise((_, reject) => {
+        bodyTimer = setTimeout(() => {
+          Promise.resolve().then(() => cancelStream()).catch(() => {});
+          reject(Object.assign(new Error(`KRIC_TIMEOUT: ${label}`), { kricTimeout: true }));
+        }, bodyTimeoutMs);
+        bodyTimer.unref?.();
+      }),
+    ]);
+  } catch (error) {
+    if (error?.kricTimeout === true || error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error(`KRIC_TIMEOUT: ${label}`);
+    }
+    throw new Error(`KRIC_FETCH_FAILED: ${label}`);
+  } finally {
+    clearTimeout(bodyTimer);
+  }
+}
+
 export async function collectKricStationTimetables({
   bindings = KRIC_API_STATION_TIMETABLE_BINDINGS, serviceKey, fetchImpl = fetch, now = () => new Date(),
+  headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey.trim() === "") throw new Error("KRIC_SERVICE_KEY_REQUIRED");
+  if (!Number.isSafeInteger(headerTimeoutMs) || headerTimeoutMs < 1
+    || !Number.isSafeInteger(bodyTimeoutMs) || bodyTimeoutMs < 1) {
+    throw new Error("KRIC_TIMEOUT_INVALID");
+  }
   const forms = credentialForms(serviceKey);
   const responses = [];
   let capturedAt = null;
@@ -47,15 +97,26 @@ export async function collectKricStationTimetables({
         for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
         capturedAt ??= now().toISOString();
         // 전송 오류 문구에는 요청 URL(키 포함)이 들어갈 수 있어 원문을 버리고 식별자만 남긴다.
+        const controller = new AbortController();
+        let headerTimedOut = false;
+        const headerTimer = setTimeout(() => {
+          headerTimedOut = true;
+          controller.abort();
+        }, headerTimeoutMs);
+        headerTimer.unref?.();
         let response;
-        let bytes;
         try {
-          response = await fetchImpl(url.href, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-          if (response.status === 200) bytes = Buffer.from(await response.arrayBuffer());
-        } catch {
+          response = await fetchImpl(url.href, { redirect: "error", signal: controller.signal });
+        } catch (error) {
+          if (headerTimedOut || error?.name === "TimeoutError" || error?.name === "AbortError") {
+            throw new Error(`KRIC_TIMEOUT: ${label}`);
+          }
           throw new Error(`KRIC_FETCH_FAILED: ${label}`);
+        } finally {
+          clearTimeout(headerTimer);
         }
         if (response.status !== 200) throw new Error(`KRIC_HTTP_FAILED: ${label} status=${response.status}`);
+        const bytes = await readResponseBytes(response, label, bodyTimeoutMs);
         if (forms.some((form) => bytes.includes(Buffer.from(form)))) throw new Error(`CREDENTIAL_LEAK: ${label}`);
         let parsed;
         try { parsed = JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`KRIC_RESPONSE_NOT_JSON: ${label}`); }

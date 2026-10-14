@@ -43,12 +43,15 @@ function requireNationwide(buildSpec, code) {
   if (buildSpec?.productionScopeId !== NATIONWIDE_SCOPE_ID) fail(code, String(buildSpec?.productionScopeId));
 }
 
-export function planNationwideCandidateRefresh({ releaseSequence, requestedBy, approvedBy, committedBuildSpec, now, event, actor }) {
+export function planNationwideCandidateRefresh({ releaseSequence, requestedBy, approvedBy, committedBuildSpec, now, event, actor, triggeringActor }) {
   requireNationwide(committedBuildSpec, "CANDIDATE_REFRESH_SCOPE");
   const committed = committedBuildSpec.releaseSequence;
   if (!Number.isSafeInteger(committed) || committed < 1) fail("CANDIDATE_REFRESH_RELEASE_SEQUENCE", "committed sequence is invalid");
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CANDIDATE_REFRESH_CLOCK");
-  if (SCHEDULED_ROLE_EVENTS.includes(event) || (event === PERSON_ROLE_EVENT && actor === SCHEDULER_APP_LOGIN)) {
+  if (event === PERSON_ROLE_EVENT && triggeringActor !== undefined && triggeringActor !== "" && actor !== triggeringActor) {
+    fail("CANDIDATE_REFRESH_ROLE_EVENT", `actor and triggering_actor mismatch (actor: ${String(actor)}, triggering_actor: ${String(triggeringActor)})`);
+  }
+  if (SCHEDULED_ROLE_EVENTS.includes(event) || (event === PERSON_ROLE_EVENT && actor === SCHEDULER_APP_LOGIN && (triggeringActor === undefined || triggeringActor === "" || triggeringActor === SCHEDULER_APP_LOGIN))) {
     // 정기 실행과 스케줄러 App의 dispatch는 사람 입력을 받지 않는다. 입력이 섞이면 누가 무엇을 정했는지 흐려지므로 실패한다.
     if ([releaseSequence, requestedBy, approvedBy].some((value) => value !== undefined && value !== "")) {
       fail("CANDIDATE_REFRESH_SCHEDULED_INPUT", `${event} run takes no release sequence or role input`);
@@ -64,7 +67,7 @@ export function planNationwideCandidateRefresh({ releaseSequence, requestedBy, a
     if (typeof role !== "string" || !ROLE.test(role)) fail("CANDIDATE_REFRESH_ROLE", JSON.stringify(role));
   }
   if (requestedBy.toLowerCase() === approvedBy.toLowerCase()) fail("CANDIDATE_REFRESH_TWO_PERSON_RULE", requestedBy);
-  const roleViolations = releaseRoleEventViolations({ requestedBy, approvedBy, event, actor });
+  const roleViolations = releaseRoleEventViolations({ requestedBy, approvedBy, event, actor, triggeringActor });
   if (roleViolations.length > 0) fail("CANDIDATE_REFRESH_ROLE_EVENT", roleViolations.join("; "));
   return { evaluatedAt: now.toISOString(), releaseSequence: Number(releaseSequence), requestedBy, approvedBy };
 }
@@ -147,12 +150,12 @@ function absoluteOutput(value) {
 export async function runPlanDatapackReleaseChain({ argv = process.argv.slice(2), repositoryRoot = ROOT, now = () => new Date(), env = process.env } = {}) {
   const [command, ...rest] = argv;
   if (command === "candidate-refresh") {
-    const values = options(rest, ["release-sequence", "requested-by", "approved-by", "event", "github-output"], ["actor"]);
+    const values = options(rest, ["release-sequence", "requested-by", "approved-by", "event", "github-output"], ["actor", "triggering-actor"]);
     const output = absoluteOutput(values["github-output"]);
     const committedBuildSpec = JSON.parse(await readFile(path.join(repositoryRoot, RELEASE_CANDIDATE_PATHS.buildSpecPath), "utf8"));
     const plan = planNationwideCandidateRefresh({
       releaseSequence: values["release-sequence"], requestedBy: values["requested-by"], approvedBy: values["approved-by"],
-      committedBuildSpec, now: now(), event: values.event, actor: values.actor,
+      committedBuildSpec, now: now(), event: values.event, actor: values.actor, triggeringActor: values["triggering-actor"],
     });
     await appendFile(output, [
       `evaluated_at=${plan.evaluatedAt}`,

@@ -7,6 +7,11 @@ import test from "node:test";
 
 import {
   ALLOWED_DATA_GO_FILE_TYPES,
+  BODY_TIMEOUT_MS,
+  HEADER_TIMEOUT_MS,
+  MIN_BODY_THROUGHPUT_BYTES_PER_SECOND,
+  OBSERVED_FILE_BYTES,
+  REQUEST_TIMEOUT_MS,
   downloadDataGoFile,
   isCanonicalDataGoDownloadUrl,
   parseDataGoDownloadAction,
@@ -388,4 +393,73 @@ test("FILE 요청이 HTTP 503에서 재시도 예산이 소진되면 마지막 �
   const busy = flaky(fetchImpl, { match: (url) => url.pathname === "/cmm/cmm/fileDownload.do", failures: Array.from({ length: 10 }, () => () => new Response("busy", { status: 503 })) });
   await assert.rejects(downloadDataGoFile(busy.fetchImpl, "15065526", { sleepImpl: async () => {}, retryBudget: createTransientRetryBudget(2_500) }), /15065526 file HTTP 503/);
   assert.equal(busy.counts.total, 2);
+});
+
+test("#997 헤더 timeout과 본문 수신 한도를 분리하고 본문 데드라인 초과는 재시도 없이 TIMEOUT으로 실패한다", { timeout: 5_000 }, async () => {
+  assert.equal(HEADER_TIMEOUT_MS, 60_000);
+  assert.equal(REQUEST_TIMEOUT_MS, HEADER_TIMEOUT_MS);
+  assert.equal(OBSERVED_FILE_BYTES, 1_663_202);
+  assert.equal(MIN_BODY_THROUGHPUT_BYTES_PER_SECOND, 15_000);
+  assert.equal(BODY_TIMEOUT_MS, 120_000);
+
+  const { fetchImpl } = await realPortal();
+
+  // (1) 헤더 응답 직후 타이머가 해제되어 본문이 headerTimeoutMs보다 느려도 bodyTimeoutMs 안이면 성공한다.
+  const slowFile = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return fetchImpl(url, init);
+    const payload = new TextEncoder().encode("상선,csv\n1,2\n");
+    const body = new ReadableStream({
+      async start(controller) {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        init.signal?.throwIfAborted();
+        controller.enqueue(payload);
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  const downloaded = await downloadDataGoFile(slowFile, "15065526", { headerTimeoutMs: 30, bodyTimeoutMs: 2_000 });
+  assert.equal(Buffer.from(downloaded.bytes).toString("utf8"), "상선,csv\n1,2\n");
+
+  // (2) 본문 스트림이 멈춰 bodyTimeoutMs를 넘기면 재시도 없이 data.go.kr ... TIMEOUT으로 실패한다.
+  let fileCalls = 0;
+  let cancelled = false;
+  const waits = [];
+  const stalledFile = async (url, init) => {
+    if (new URL(url).pathname !== "/cmm/cmm/fileDownload.do") return fetchImpl(url, init);
+    fileCalls += 1;
+    const body = new ReadableStream({
+      pull() { return new Promise(() => {}); },
+      cancel() { cancelled = true; },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  await assert.rejects(
+    downloadDataGoFile(stalledFile, "15065526", { headerTimeoutMs: 500, bodyTimeoutMs: 40, ...retryFast(waits) }),
+    /data\.go\.kr 15065526 file TIMEOUT/u,
+  );
+  assert.equal(fileCalls, 1);
+  assert.equal(cancelled, true);
+  assert.deepEqual(waits, []);
+
+  // (3) 헤더 timeout은 일시 오류로 재시도한 뒤 성공한다.
+  let detailCalls = 0;
+  const headerFlaky = async (url, init) => {
+    if (new URL(url).pathname.endsWith("/fileData.do")) {
+      detailCalls += 1;
+      if (detailCalls === 1) return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+    }
+    return fetchImpl(url, init);
+  };
+  const retryWaits = [];
+  const afterHeaderRetry = await downloadDataGoFile(headerFlaky, "15065526", { headerTimeoutMs: 25, bodyTimeoutMs: 1_000, ...retryFast(retryWaits) });
+  assert.equal(detailCalls, 2);
+  assert.deepEqual(retryWaits, [1_000]);
+  assert.equal(Buffer.from(afterHeaderRetry.bytes).toString("utf8"), "상선,csv\n1,2\n");
+
+  // (4) 유효하지 않은 timeout 인자는 거부한다.
+  for (const bad of [0, -1, 1.5, "60"]) {
+    await assert.rejects(resolveDataGoFileDownload(fetchImpl, "15065526", { headerTimeoutMs: bad }), /headerTimeoutMs/u);
+    await assert.rejects(downloadDataGoFile(fetchImpl, "15065526", { bodyTimeoutMs: bad }), /bodyTimeoutMs/u);
+  }
 });
