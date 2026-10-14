@@ -122,7 +122,7 @@
           "licenseStatus": "redistributable",
           "redistributionAllowed": true,
           "updateFrequency": "realtime",
-          "updatedAt": "2026-10-13T00:00:00.000Z",
+          "updatedAt": "2026-10-14T00:00:00.000Z",
           "fields": [
             "bgngFlr",
             "bgngFlrGrndUdgdSe",
@@ -346,12 +346,12 @@
           "accessibilityStatus": "NO_OFFICIAL_FEED",
           "reliabilityScore": 90,
           "sourceId": "seoul-metro-accessibility",
-          "sourceSnapshotId": "seoul-metro-accessibility-20261013T044214211Z",
+          "sourceSnapshotId": "seoul-metro-accessibility-20261014T003405906Z",
           "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "NOT_VERIFIED",
-          "lastVerifiedAt": "2026-10-13T04:42:14.211Z",
-          "evidenceHash": "09e9d58e6e428d2e1b19c89da10df8cf6e2228e4fc049418e2c7d5298269a7da"
+          "lastVerifiedAt": "2026-10-14T00:34:05.906Z",
+          "evidenceHash": "d284ea8bcaa8727b6a12f3b5e1dd626eda50713710b5e9b9fb91bc12b78250ea"
         },
         {
           "id": "edge-exit-sangnoksu-seoul-4",
@@ -366,12 +366,12 @@
           "accessibilityStatus": "NO_OFFICIAL_FEED",
           "reliabilityScore": 90,
           "sourceId": "seoul-metro-accessibility",
-          "sourceSnapshotId": "seoul-metro-accessibility-20261013T044214211Z",
+          "sourceSnapshotId": "seoul-metro-accessibility-20261014T003405906Z",
           "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "NOT_VERIFIED",
-          "lastVerifiedAt": "2026-10-13T04:42:14.211Z",
-          "evidenceHash": "1af21dd58c495c644c20bb73b505f3f34244339fbdde68ead07e766bf1efbb68"
+          "lastVerifiedAt": "2026-10-14T00:34:05.906Z",
+          "evidenceHash": "bfa323f30adca278d7dd626085e3218cc0230e505a8cbd49e2498c1301fdba9f"
         },
         {
           "id": "edge-entry-sadang-seoul-4",
@@ -386,12 +386,12 @@
           "accessibilityStatus": "UNKNOWN",
           "reliabilityScore": 90,
           "sourceId": "seoul-metro-accessibility",
-          "sourceSnapshotId": "seoul-metro-accessibility-20261013T044214211Z",
+          "sourceSnapshotId": "seoul-metro-accessibility-20261014T003405906Z",
           "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "NOT_VERIFIED",
-          "lastVerifiedAt": "2026-10-13T04:42:14.211Z",
-          "evidenceHash": "22f4a0ba62cfa957b7f31d4dcff7a0c80b7b1c16ef44611292f788ec33fbcf8c"
+          "lastVerifiedAt": "2026-10-14T00:34:05.906Z",
+          "evidenceHash": "32f669a6025e48dbff44951569580929d21f351ade0fe85366e77c503862fe7d"
         },
         {
           "id": "edge-exit-sadang-seoul-4",
@@ -406,12 +406,12 @@
           "accessibilityStatus": "UNKNOWN",
           "reliabilityScore": 90,
           "sourceId": "seoul-metro-accessibility",
-          "sourceSnapshotId": "seoul-metro-accessibility-20261013T044214211Z",
+          "sourceSnapshotId": "seoul-metro-accessibility-20261014T003405906Z",
           "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "NOT_VERIFIED",
-          "lastVerifiedAt": "2026-10-13T04:42:14.211Z",
-          "evidenceHash": "b356b0ad68bc8ca8dca4a3d64ef3e269b73f66c1c0b85f393937073d73be54c5"
+          "lastVerifiedAt": "2026-10-14T00:34:05.906Z",
+          "evidenceHash": "180a87e9905481b21782126b0198eac23ed11496d7a7e440c7375f402726747f"
         }
       ],
       "routeMapPositions": [],
@@ -643,16 +643,16 @@
           "facilityType": "ACCESSIBILITY_STATUS_PROBE",
           "evidenceKind": "NOT_EXISTS",
           "sourceId": "seoul-metro-accessibility",
-          "sourceSnapshotId": "seoul-metro-accessibility-20261013T044214211Z",
+          "sourceSnapshotId": "seoul-metro-accessibility-20261014T003405906Z",
           "providerRecordHash": "c1da7c506dd301574f4055c171f2d318cce83e9a8dfb21cc075f37322827966e",
-          "evidenceHash": "7684700740667048c1ddee0b16db64ec4d1a944c628156e882ee37a3613ffef5",
+          "evidenceHash": "dabadb23c27ad8f27fab26316a19c7a5e90d8cc9c1236eccee1495ee477f1afa",
           "provenanceKind": "OFFICIAL_SOURCE",
           "installationStatus": "NOT_COVERED",
           "operationalStatus": "NOT_COVERED",
           "statusMeaning": "FEED_ABSENCE_RECORD",
           "confidence": 100,
-          "verifiedAt": "2026-10-13T04:42:14.211Z",
-          "retrievedAt": "2026-10-13T04:42:14.211Z",
+          "verifiedAt": "2026-10-14T00:34:05.906Z",
+          "retrievedAt": "2026-10-14T00:34:05.906Z",
           "strictRouteEligible": false,
           "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED"
         },
@@ -662,16 +662,16 @@
           "facilityType": "ACCESSIBILITY_STATUS_PROBE",
           "evidenceKind": "EXISTS",
           "sourceId": "seoul-metro-accessibility",
-          "sourceSnapshotId": "seoul-metro-accessibility-20261013T044214211Z",
+          "sourceSnapshotId": "seoul-metro-accessibility-20261014T003405906Z",
           "providerRecordHash": "dbfa06b15368fd658047ea9d0684f7586141c0402a2dcbaa4d33c037f1f49ab8",
-          "evidenceHash": "08311d1d046daf170999fa67ff3b7b16665f956c92dfa1bb935759f4bba41f3e",
+          "evidenceHash": "bd1b9161b75f416c786c87030884ce16753b19467f62d66b2d282f8fd7cd463f",
           "provenanceKind": "OFFICIAL_SOURCE",
           "installationStatus": "INSTALLED",
           "operationalStatus": "AVAILABLE",
           "statusMeaning": "REALTIME_OPERATION",
           "confidence": 100,
-          "verifiedAt": "2026-10-13T04:42:14.211Z",
-          "retrievedAt": "2026-10-13T04:42:14.211Z",
+          "verifiedAt": "2026-10-14T00:34:05.906Z",
+          "retrievedAt": "2026-10-14T00:34:05.906Z",
           "strictRouteEligible": false,
           "strictRouteEligibleReason": "STATUS_PROBE_NOT_ROUTE_EVIDENCE"
         }
