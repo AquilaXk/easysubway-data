@@ -8430,6 +8430,7 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
   const productionSource = {
     id: "kric-train-operation-organ",
     displayName: "열차운영기관정보",
+    userDisplayName: "열차운영기관정보",
     owner: "국가철도공단",
     provider: "국가철도공단",
     sourceSystem: "KRIC OpenAPI",
@@ -8688,6 +8689,7 @@ test("source admission pipeline은 custom candidates를 최종 inventory 검증�
   const productionSource = {
     id: "kric-train-operation-organ",
     displayName: "열차운영기관정보",
+    userDisplayName: "열차운영기관정보",
     owner: "국가철도공단",
     provider: "국가철도공단",
     sourceSystem: "KRIC OpenAPI",
@@ -15767,6 +15769,7 @@ async function testOnlyInventoryPath(outputDir) {
     ...baseline,
     id: TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
     displayName: "Test-only capital accessibility fixture",
+    userDisplayName: "테스트 전용 수도권 접근성 자료",
     owner: "EasySubway deterministic test",
     provider: "EasySubway deterministic test",
     providerDepartment: "test only",
@@ -19586,7 +19589,7 @@ test("admin review record 생성기는 runbook 필수 필드를 exporter 해시�
     };
     await writeFile(quotaPath, JSON.stringify(quota));
     const prodPath = path.join(workspace, "prod.json");
-    await writeFile(prodPath, JSON.stringify({ id: "seoulmetro-station-line-info", displayName: "테스트" }));
+    await writeFile(prodPath, JSON.stringify({ id: "seoulmetro-station-line-info", displayName: "테스트", userDisplayName: "테스트" }));
 
     const { stdout } = await runAdminReviewBuilder([
       "--candidate", "seoulmetro-station-line-info",
@@ -19744,6 +19747,7 @@ test("build-admin-review-record 산출물은 run-source-admission-pipeline을 �
     JSON.stringify({
       id: "kric-train-operation-organ",
       displayName: "열차운영기관정보",
+      userDisplayName: "열차운영기관정보",
       owner: "국가철도공단",
       provider: "국가철도공단",
       sourceSystem: "KRIC OpenAPI",
