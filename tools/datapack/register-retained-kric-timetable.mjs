@@ -83,7 +83,9 @@ export async function buildRetainedKricTimetableRegistrationOutputs({ repository
   const licenseEvidence = { type: candidate.evidence.license, provider: candidate.evidence.provider,
     evidenceUrl: candidate.evidence.licenseEvidenceUrl, redistributionAllowed: true };
   const inventorySource = {
-    id: SOURCE_ID, displayName: candidate.displayName, owner: candidate.evidence.provider, provider: candidate.evidence.provider,
+    id: SOURCE_ID, displayName: candidate.displayName,
+    userDisplayName: candidate.userDisplayName ?? "전국 도시철도 운행정보",
+    owner: candidate.evidence.provider, provider: candidate.evidence.provider,
     providerDepartment: candidate.evidence.providerDepartment, sourceSystem: "국가철도공단 철도산업정보센터", datasetUrl: candidate.detailUrl,
     datasetKind: "official-static-file", coverage: "광주 1호선 retained official timetable admission",
     coverageScope: { ...structuredClone(topology.coverageScope), sourceDomains: ["schedule_timetable"] },

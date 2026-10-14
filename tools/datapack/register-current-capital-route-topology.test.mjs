@@ -192,7 +192,7 @@ test("publishes exactly the protected topology bytes and builds an initial regis
   ]);
   const source = JSON.parse(outputs[0].bytes).sources.find(({ id }) => id === "capital-route-topology");
   const snapshot = JSON.parse(outputs[1].bytes).at(-1);
-  for (const key of ["id", "displayName", "owner", "provider", "providerDepartment", "sourceSystem", "datasetUrl", "datasetKind", "coverage"]) {
+  for (const key of ["id", "displayName", "userDisplayName", "owner", "provider", "providerDepartment", "sourceSystem", "datasetUrl", "datasetKind", "coverage"]) {
     assert.equal(typeof source[key], "string", `generated inventory ${key}`);
     assert.notEqual(source[key], "", `generated inventory ${key}`);
   }

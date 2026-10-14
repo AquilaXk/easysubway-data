@@ -107,6 +107,23 @@ async function main() {
           `(nationwide gaps recorded: ${report.summary.missingRequirements})`,
       );
     }
+    if (!args.allowGaps && candidateManifest !== null) {
+      const missingScheduleLineIds = [
+        ...new Set(
+          (report.releaseScopeRequirements ?? [])
+            .filter(
+              (entry) =>
+                entry.sourceDomain === "schedule_timetable" &&
+                entry.status !== "covered" &&
+                entry.status !== "SUPPORTED",
+            )
+            .map((entry) => entry.lineId || entry.operatorId),
+        ),
+      ].sort(compareStrings);
+      if (missingScheduleLineIds.length > 0) {
+        throw new Error(`in-scope schedule_timetable coverage gaps remain: ${missingScheduleLineIds.join(", ")}`);
+      }
+    }
     return;
   }
 

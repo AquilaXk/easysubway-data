@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { promisify } from "node:util";
+import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import {
   assertClaimedStationLinesHaveRouteEndpoints,
+  assertLaunchScopeLinesHaveTimetableTrips,
   assertServerRouteCoverageConsumed,
   isAuthorizedServerRouteCoverageGap,
   parseArgs,
@@ -12,6 +20,10 @@ import {
   parseServerRouteCoverageEvidence,
   resolveRoutePresenceScope,
 } from "./validate-datapack.mjs";
+
+const execFileAsync = promisify(execFile);
+const repositoryRoot = path.resolve(import.meta.dirname, "../..");
+const pinnedReadPromise = candidatePinnedReader({ root: repositoryRoot });
 
 // #866 PR-B: 인정 경로는 capital@1·213·30·456 상수가 아니라 pack의 비RIDE 간선에서 분모를 유도한다.
 // D1: 환승(역 안·역 밖)은 양끝 TRANSFER cell이 닫혀야 한다.
@@ -239,6 +251,227 @@ test("server route coverage evidence는 provenance와 --require-production이 �
   assert.doesNotThrow(() => assertServerRouteCoverageConsumed(null));
   assert.doesNotThrow(() => assertServerRouteCoverageConsumed({ consumptionCount: 1 }));
   assert.throws(() => assertServerRouteCoverageConsumed({ consumptionCount: 0 }), /not consumed exactly once/);
+});
+
+test("#900 전국 출시 범위 노선은 transit_trips·transit_stop_times가 모두 있어야 통과하고 0-trip 노선은 차단한다", async () => {
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec(`
+      CREATE TABLE lines (id TEXT PRIMARY KEY);
+      CREATE TABLE transit_routes (id TEXT PRIMARY KEY, line_id TEXT NOT NULL);
+      CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL);
+      CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, line_id TEXT NOT NULL);
+    `);
+    database.exec(`
+      INSERT INTO lines (id) VALUES ('seoul-4'), ('seoul-1'), ('arex');
+      INSERT INTO transit_routes (id, line_id) VALUES ('route-seoul-4', 'seoul-4'), ('route-seoul-1', 'seoul-1'), ('route-arex', 'arex');
+      INSERT INTO transit_trips (id, route_id) VALUES ('trip-seoul-4-1', 'route-seoul-4');
+      INSERT INTO transit_stop_times (trip_id, line_id) VALUES ('trip-seoul-4-1', 'seoul-4');
+    `);
+    const pack = {
+      id: "nationwide",
+      version: "1",
+      lines: [{ id: "seoul-4" }, { id: "seoul-1" }],
+      verifiedAccessibilityScope: { includedLineIds: ["seoul-4", "arex", "shinbundang"] },
+    };
+
+    assert.throws(
+      () => assertLaunchScopeLinesHaveTimetableTrips({ database, pack }),
+      /launch-scope line timetable presence nationwide flag is required/,
+    );
+    assert.doesNotThrow(() => assertLaunchScopeLinesHaveTimetableTrips({ database, pack, nationwide: false }));
+    assert.throws(
+      () => assertLaunchScopeLinesHaveTimetableTrips({ database, pack, nationwide: true }),
+      /nationwide@1 launch-scope line has 0 transit_trips: 3 \(arex, seoul-1, shinbundang\)/,
+    );
+
+    database.exec(`
+      INSERT INTO lines (id) VALUES ('shinbundang');
+      INSERT INTO transit_routes (id, line_id) VALUES ('route-shinbundang', 'shinbundang');
+      INSERT INTO transit_trips (id, route_id) VALUES
+        ('trip-seoul-1-1', 'route-seoul-1'),
+        ('trip-arex-1', 'route-arex'),
+        ('trip-shinbundang-1', 'route-shinbundang');
+      INSERT INTO transit_stop_times (trip_id, line_id) VALUES
+        ('trip-seoul-1-1', 'seoul-1'),
+        ('trip-arex-1', 'arex');
+    `);
+    // shinbundang은 trip은 있으나 stop_times가 0건이므로 차단된다.
+    assert.throws(
+      () => assertLaunchScopeLinesHaveTimetableTrips({ database, pack, nationwide: true }),
+      /nationwide@1 launch-scope line has 0 transit_trips: 1 \(shinbundang\)/,
+    );
+
+    database.exec(`INSERT INTO transit_stop_times (trip_id, line_id) VALUES ('trip-shinbundang-1', 'shinbundang');`);
+    assert.doesNotThrow(() => assertLaunchScopeLinesHaveTimetableTrips({ database, pack, nationwide: true }));
+  } finally {
+    database.close();
+  }
+
+  // seq 124 재현 픽스처(capital-production-canonical-pack.json)의 33개 0-trip 노선 상태를 전국 게이트에서 차단한다.
+  const pinnedRead = await pinnedReadPromise;
+  const seq124Doc = await candidatePinnedJson(pinnedRead, "tools/datapack/release/capital-production-canonical-pack.json");
+  const seq124Pack = seq124Doc.packs ? seq124Doc.packs[0] : seq124Doc;
+  const seq124Db = new DatabaseSync(":memory:");
+  try {
+    seq124Db.exec(`
+      CREATE TABLE lines (id TEXT PRIMARY KEY);
+      CREATE TABLE transit_routes (id TEXT PRIMARY KEY, line_id TEXT NOT NULL);
+      CREATE TABLE transit_trips (id TEXT PRIMARY KEY, route_id TEXT NOT NULL);
+      CREATE TABLE transit_stop_times (trip_id TEXT NOT NULL, line_id TEXT NOT NULL);
+    `);
+    const insertLine = seq124Db.prepare("INSERT OR IGNORE INTO lines (id) VALUES (?)");
+    for (const line of seq124Doc.lines ?? seq124Pack.lines ?? []) insertLine.run(line.id);
+    const insertRoute = seq124Db.prepare("INSERT OR IGNORE INTO transit_routes (id, line_id) VALUES (?, ?)");
+    for (const route of seq124Doc.transitRoutes ?? seq124Pack.transitRoutes ?? []) insertRoute.run(route.id, route.lineId ?? route.line_id);
+    const insertTrip = seq124Db.prepare("INSERT OR IGNORE INTO transit_trips (id, route_id) VALUES (?, ?)");
+    for (const trip of seq124Doc.transitTrips ?? seq124Pack.transitTrips ?? []) insertTrip.run(trip.id, trip.routeId ?? trip.route_id);
+    const insertStopTime = seq124Db.prepare("INSERT INTO transit_stop_times (trip_id, line_id) VALUES (?, ?)");
+    for (const stopTime of seq124Doc.transitStopTimes ?? seq124Pack.transitStopTimes ?? []) {
+      insertStopTime.run(stopTime.tripId ?? stopTime.trip_id, stopTime.lineId ?? stopTime.line_id);
+    }
+    assert.throws(
+      () => assertLaunchScopeLinesHaveTimetableTrips({
+        database: seq124Db,
+        pack: {
+          id: "capital",
+          version: "1",
+          lines: seq124Doc.lines ?? seq124Pack.lines ?? [],
+          verifiedAccessibilityScope: seq124Doc.verifiedAccessibilityScope ?? seq124Pack.verifiedAccessibilityScope,
+        },
+        nationwide: true,
+      }),
+      /capital@1 launch-scope line has 0 transit_trips: 33 \(line-051552e50435, line-0ffaa95b1b5d, .*seoul-2, shinbundang\)/,
+    );
+  } finally {
+    seq124Db.close();
+  }
+});
+
+test("#900 report-coverage-gaps는 RELEASE_EVIDENCE_PENDING 후보 준비 범위에서도 --manifest 검증 시 schedule_timetable 누락을 차단한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-900-coverage-gap-"));
+  try {
+    const targets = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+    const regionNames = new Map(targets.regions.map((region) => [region.id, region.displayName]));
+    const inventory = {
+      schemaVersion: 1,
+      region: "nationwide",
+      artifactKind: "production-source-inventory",
+      retrievedAt: "2026-06-22",
+      sources: targets.activeLineScopes.flatMap((scope) =>
+        targets.requiredSourceDomains.map((domain) => ({
+          id: `${scope.regionId}-${scope.operatorId}-${scope.lineId}-${domain.id}`,
+          displayName: `${regionNames.get(scope.regionId)} ${scope.operatorId} ${scope.lineId} ${domain.id}`,
+          owner: "테스트 운영기관",
+          provider: "테스트 운영기관",
+          providerDepartment: "테스트",
+          sourceSystem: "테스트",
+          datasetUrl: `https://example.invalid/${scope.regionId}/${scope.operatorId}/${scope.lineId}/${domain.id}`,
+          datasetKind: "fixture-only",
+          coverageScope: {
+            regionIds: [scope.regionId],
+            operatorIds: [scope.operatorId],
+            lineIds: [scope.lineId],
+            sourceDomains: [domain.id],
+          },
+          requiredForProductionPack: true,
+          updateFrequency: "daily",
+          observedDataUpdatedAt: "2026-06-22",
+          retrievedAt: "2026-06-22",
+          license: {
+            type: "KOGL-1",
+            name: "공공누리 1유형",
+            attribution: "테스트",
+            commercialUseAllowed: true,
+            derivativeWorkAllowed: true,
+            redistributionAllowed: true,
+            evidenceUrl: "https://example.invalid/license",
+          },
+          capabilities: {
+            schedule: { status: "UNSUPPORTED", productionUseAllowed: false, coverageStatus: "NOT_PROVIDED_BY_SOURCE", updateFrequency: "daily", unsupportedNotes: "none" },
+            realtime: { status: "UNSUPPORTED", productionUseAllowed: false, liveEtaEligible: false, rateLimitStatus: "NOT_APPLICABLE", coverageStatus: "NOT_PROVIDED_BY_SOURCE", updateFrequency: "daily", unsupportedNotes: "none" },
+            facility: { status: "UNSUPPORTED", productionUseAllowed: false, coverageStatus: "NOT_PROVIDED_BY_SOURCE", updateFrequency: "daily", unsupportedNotes: "none" },
+          },
+          fieldsProvided: domain.requiredFields,
+        })),
+      ),
+    };
+    const scheduleSrc = inventory.sources.find(
+      (source) =>
+        source.coverageScope.operatorIds?.includes("daejeon-transportation") &&
+        source.coverageScope.lineIds?.includes("line-7051a9c2525c") &&
+        source.coverageScope.sourceDomains?.includes("schedule_timetable"),
+    );
+    delete scheduleSrc.coverageScope.lineIds;
+
+    const manifestObj = {
+      manifestVersion: 2,
+      activePack: { id: "capital", version: "1" },
+      packs: [{ id: "capital", version: "1", artifactKind: "production", sqliteSha256: "a".repeat(64) }],
+    };
+    const manifestBytes = Buffer.from(`${JSON.stringify(manifestObj, null, 2)}\n`);
+    const provenanceObj = {
+      schemaVersion: 1,
+      artifactKind: "datapack-field-provenance",
+      manifestSha256: sha256(manifestBytes),
+      packs: [{
+        id: "capital",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "a".repeat(64),
+        records: inventory.sources.flatMap((source) =>
+          source.fieldsProvided.map((field) => ({
+            entityType: "station_line",
+            entityId: `${source.id}:${field}`,
+            field,
+            sourceId: source.id,
+            verifiedAt: "2026-06-22T00:00:00.000Z",
+            derivationKind: "OFFICIAL",
+            coverageScope: {
+              regionIds: source.coverageScope.regionIds,
+              operatorIds: source.coverageScope.operatorIds,
+              ...(source.coverageScope.lineIds ? { lineIds: source.coverageScope.lineIds } : {}),
+              sourceDomains: source.coverageScope.sourceDomains,
+            },
+          })),
+        ),
+      }],
+    };
+    const scopeObj = {
+      decision: { currentLaunchDecision: "NO_GO", blocker: "RELEASE_EVIDENCE_PENDING" },
+      verifiedAccessibilityScope: {
+        id: "daejeon_pilot_candidate_scope",
+        regionIds: ["daejeon"],
+        includedOperatorIds: ["daejeon-transportation"],
+        includedLineIds: ["line-7051a9c2525c"],
+      },
+    };
+    const inventoryPath = path.join(workspace, "inventory.json");
+    const manifestPath = path.join(workspace, "current.json");
+    const provenancePath = path.join(workspace, "current.provenance.json");
+    const scopePath = path.join(workspace, "scope.json");
+    const outputPath = path.join(workspace, "gap-report.json");
+    await writeFile(inventoryPath, JSON.stringify(inventory));
+    await writeFile(manifestPath, manifestBytes);
+    await writeFile(provenancePath, JSON.stringify(provenanceObj));
+    await writeFile(scopePath, JSON.stringify(scopeObj));
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--output", outputPath,
+        "--release-scope", scopePath,
+        "--inventory", inventoryPath,
+        "--provenance", provenancePath,
+        "--manifest", manifestPath,
+        "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      ], { cwd: repositoryRoot }),
+      /in-scope schedule_timetable coverage gaps remain: line-7051a9c2525c/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 function authorizationArgs(report, shape) {

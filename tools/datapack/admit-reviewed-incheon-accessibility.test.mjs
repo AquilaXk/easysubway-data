@@ -41,6 +41,7 @@ function sealedProductionSource(source, snapshot, topologySnapshot) {
     membershipLineages: snapshot.membershipLineages,
   };
   delete productionSource.registrationEvidence;
+  delete productionSource.userDisplayName;
   productionSource.admissionEvidence = {
     quotaEvidence: structuredClone(source.admissionEvidence.quotaEvidence),
   };

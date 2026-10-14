@@ -265,9 +265,11 @@ function validateAdminReview({ adminReview, candidateId, sample, snapshot, args 
 }
 
 function admitSource({ inventory, productionSource, licenseEvidenceHash }) {
+  const existing = inventory.sources.find((source) => source.id === productionSource.id);
   const sources = inventory.sources.filter((source) => source.id !== productionSource.id);
   sources.push({
     ...productionSource,
+    userDisplayName: productionSource.userDisplayName ?? existing?.userDisplayName ?? productionSource.displayName,
     admissionEvidence: {
       ...(productionSource.admissionEvidence ?? {}),
       licenseEvidenceHash,

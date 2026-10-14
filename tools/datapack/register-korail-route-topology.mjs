@@ -41,7 +41,9 @@ export async function buildKorailTopologyRegistrationOutputs({ repositoryRoot, s
   const provider = candidate.evidence?.provider;
   if (typeof provider !== "string" || provider === "") fail("CANDIDATE");
   const inventorySource = {
-    id: SOURCE_ID, displayName: candidate.displayName, owner: provider, provider,
+    id: SOURCE_ID, displayName: candidate.displayName,
+    userDisplayName: candidate.userDisplayName ?? (/[가-힣]/u.test(candidate.displayName) ? candidate.displayName : "한국철도공사 광역전철 시각표 — 대경선"),
+    owner: provider, provider,
     providerDepartment: "", sourceSystem: "공공데이터포털", datasetUrl: candidate.detailUrl,
     datasetKind: "fileData", coverage: candidate.displayName,
     coverageScope: { ...candidate.coverageScope, sourceDomains: [candidate.domain] },

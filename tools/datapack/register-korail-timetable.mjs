@@ -195,7 +195,9 @@ export async function prepareKorailTimetableRegistration({ repositoryRoot, sourc
 
 function inventorySource({ candidate, input, snapshot, topologySource, scheduleCadence }) {
   const provider = candidate.evidence.provider;
-  return { id: SOURCE_ID, displayName: candidate.displayName, owner: provider, provider, providerDepartment: "", sourceSystem: topologySource.sourceSystem,
+  return { id: SOURCE_ID, displayName: candidate.displayName,
+    userDisplayName: candidate.userDisplayName ?? (/[가-힣]/u.test(candidate.displayName) ? candidate.displayName : "한국철도공사 광역전철 계획 시각표 — 대경선"),
+    owner: provider, provider, providerDepartment: "", sourceSystem: topologySource.sourceSystem,
     datasetUrl: candidate.detailUrl, datasetKind: "official-static-file", coverage: candidate.evidence.coverage,
     coverageScope: { ...structuredClone(candidate.coverageScope), sourceDomains: [candidate.domain] }, requiredForProductionPack: true, productionUseAllowed: true,
     updateFrequency: scheduleCadence, observedDataUpdatedAt: snapshot.originalCapturedAt.slice(0, 10), retrievedAt: snapshot.originalCapturedAt.slice(0, 10),

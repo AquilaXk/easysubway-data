@@ -18,6 +18,33 @@ import {
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
 } from "./collect-molit-railway-transfer-movement.mjs";
 
+export const SOURCE_USER_DISPLAY_NAME_FORBIDDEN_SUBSTRINGS = Object.freeze([
+  "pilot",
+  "파일럿",
+  "검증",
+  "게이트",
+  "구간만 구현",
+  "승격 전",
+  "fallback",
+  "best-effort",
+  "placeholder",
+  "membership",
+  "admission",
+  "canary",
+  "route_map_positions",
+  "KRIC 1294",
+  "historical",
+  "diagnostic",
+  "FILE source set",
+  "_20260630",
+  "_",
+  "raw snapshot",
+  "retained",
+  "admitted",
+  "current",
+  "production",
+]);
+
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
 const candidatesPath = optionValue("--candidates") ?? "tools/datapack/source-candidates.json";
@@ -118,6 +145,24 @@ function validateSharedQuotaStores(sources) {
   }
 }
 
+export function validateSourceUserDisplayName(
+  userDisplayName,
+  label = "userDisplayName",
+  forbiddenTerms = SOURCE_USER_DISPLAY_NAME_FORBIDDEN_SUBSTRINGS,
+) {
+  const value = assertString(userDisplayName, label);
+  if (!/[가-힣]/u.test(value)) {
+    throw new Error(`${label} must contain Korean user-facing copy`);
+  }
+  const lower = value.toLowerCase();
+  for (const term of forbiddenTerms) {
+    if (typeof term === "string" && term.length > 0 && lower.includes(term.toLowerCase())) {
+      throw new Error(`${label} must not contain forbidden internal term: ${term}`);
+    }
+  }
+  return value;
+}
+
 function validateSource(source, label) {
   if (!source || typeof source !== "object" || Array.isArray(source)) {
     throw new Error(`${label} must be an object`);
@@ -125,6 +170,7 @@ function validateSource(source, label) {
 
   const id = assertString(source.id, `${label}.id`);
   assertString(source.displayName, `${id}.displayName`);
+  validateSourceUserDisplayName(source.userDisplayName, `${id}.userDisplayName`);
   assertString(source.owner, `${id}.owner`);
   assertString(source.provider, `${id}.provider`);
   assertString(source.sourceSystem, `${id}.sourceSystem`);

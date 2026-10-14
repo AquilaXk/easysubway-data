@@ -1,0 +1,673 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "candidate-pinned-input-read-allowlist",
+  "entries": [
+    {
+      "testFile": "tools/ci/automation-pr-policy.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "CI 자동화·재검증 정책 테스트가 작업 트리 설정·인벤토리·SLA 계약을 기본 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/ci/build-automation-status.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "CI 자동화·재검증 정책 테스트가 작업 트리 설정·인벤토리·SLA 계약을 기본 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/ci/decide-source-reverification.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "CI 자동화·재검증 정책 테스트가 작업 트리 설정·인벤토리·SLA 계약을 기본 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/ci/mobile-fixture-staging-workflow.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json"
+      ],
+      "reason": "CI 자동화·재검증 정책 테스트가 작업 트리 설정·인벤토리·SLA 계약을 기본 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/activate-current-source-set.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "tools/datapack/release/capital-production-canonical-pack.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/admit-reviewed-incheon-accessibility.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/apply-capital-route-topology-to-bundled-pack.test.mjs",
+      "paths": [
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json"
+      ],
+      "reason": "ITX 청춘 커버리지 계약 및 승격 게이트 자체의 현재 작업 트리 계약을 검증하거나 변조 테스트 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/build-accessibility-source-coverage-report.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/build-datapack-current-admission.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "tools/datapack/release/capital-production-canonical-pack.json",
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/build-facility-source-admission.test.mjs",
+      "paths": [
+        "tools/datapack/release/source-snapshots.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/build-nationwide-coverage-tally.test.mjs",
+      "paths": [
+        "tools/datapack/nationwide-coverage-targets.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/build-public-static-network-v2-observations.test.mjs",
+      "paths": [
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/build-seoul-measured-transfer-metrics.test.mjs",
+      "paths": [
+        "tools/datapack/release/capital-production-canonical-pack.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/build-server-timetable-snapshot.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json",
+        "tools/datapack/release/source-snapshots.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-busan-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-capital-route-topology.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-daegu-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-daejeon-accessibility.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-daejeon-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-gwangju-accessibility.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-gwangju-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-incheon-accessibility.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-kric-capital-light-rail-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-kric-capital-wide-rail-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-molit-railway-transfer-movement.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-seoul-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-seoul9-phase1-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/collect-seoul9-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/datapack-tools.test.mjs",
+      "paths": [
+        "tools/datapack/fixtures/admin-review-overrides.json",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "tools/datapack/official-od-fare-admission.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/emit-artifact-components.test.mjs",
+      "paths": [
+        "tools/datapack/release/source-snapshots.json"
+      ],
+      "reason": "#1007: copySyntheticCurrentPublicRouteMapRepository가 작업 트리 원장 head로 롤포워드한 합성 저장소의 평가 시각 창을 계산한다."
+    },
+    {
+      "testFile": "tools/datapack/evaluate-current-molit-transfer-freshness.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/evaluate-route-accessibility-edges.test.mjs",
+      "paths": [
+        "tools/datapack/release/capital-production-canonical-pack.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/freshness-policy.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/itx-cheongchun-coverage-contract.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json",
+        "tools/datapack/nationwide-coverage-targets.json"
+      ],
+      "reason": "ITX 청춘 커버리지 계약 및 승격 게이트 자체의 현재 작업 트리 계약을 검증하거나 변조 테스트 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/itx-promotion-gate.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json"
+      ],
+      "reason": "ITX 청춘 커버리지 계약 및 승격 게이트 자체의 현재 작업 트리 계약을 검증하거나 변조 테스트 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/lib/itx-promotion-authority.test.mjs",
+      "paths": [
+        "tools/datapack/itx-cheongchun-coverage-contract.json"
+      ],
+      "reason": "ITX 청춘 커버리지 계약 및 승격 게이트 자체의 현재 작업 트리 계약을 검증하거나 변조 테스트 템플릿으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/lib/regional-timetable-integrator.test.mjs",
+      "paths": [
+        "tools/datapack/release/capital-production-canonical-pack.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/lib/route-map-admission-freshness.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-busan-accessibility.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-busan-route-topology.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-busan-timetable.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-daegu-accessibility.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-daegu-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-daegu-timetable.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-daejeon-accessibility.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-daejeon-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-daejeon-timetable.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-gwangju-accessibility.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-gwangju-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-gwangju-timetable.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-incheon-accessibility.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-incheon-station-info.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-incheon-timetable.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-kric-capital-wide-rail-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-seoul-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/release/capital-production-canonical-pack.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-seoul-station-code-membership.test.mjs",
+      "paths": [
+        "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-seoul9-phase1-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-seoul9-route-map-positions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json",
+        "tools/datapack/sources/capital-route-topology-20260724.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/materialize-test-fixture.test.mjs",
+      "paths": [
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/nationwide-public-api-coverage-evidence.test.mjs",
+      "paths": [
+        "tools/datapack/release/nationwide-requirement-ownership.json",
+        "tools/datapack/reports/nationwide-coverage-tally.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/parse-korail-metropolitan-timetable.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/plan-kric-nationwide-timetable-collection.test.mjs",
+      "paths": [
+        "tools/datapack/reports/nationwide-coverage-tally.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/prepare-retained-gwangju-contract.test.mjs",
+      "paths": [
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/project-canonical-route-map-provenance.test.mjs",
+      "paths": [
+        "tools/datapack/release/capital-production-canonical-pack.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/publish-kric-station-timetables-raw.test.mjs",
+      "paths": [
+        "tools/datapack/source-governance-policy.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/purge-expired-source-raw.test.mjs",
+      "paths": [
+        "tools/datapack/release/source-snapshots.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/rebind-capital-route-map-admissions.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/regional-timetable-official-stop-times.test.mjs",
+      "paths": [
+        "tools/datapack/release/capital-production-canonical-pack.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/register-current-capital-route-topology.test.mjs",
+      "paths": [
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/register-current-seoul-accessibility-snapshot.test.mjs",
+      "paths": [
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs",
+      "paths": [
+        "tools/datapack/release/capital-production-canonical-pack.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/register-kric-subway-timetable.test.mjs",
+      "paths": [
+        "tools/datapack/release/source-snapshots.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/register-seoul-metro-transfer-car-door-duration.test.mjs",
+      "paths": [
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/revalidate-current-molit-transfer-source.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/route-map-coverage-scope.test.mjs",
+      "paths": [
+        "tools/datapack/nationwide-coverage-targets.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/run-current-incheon-accessibility-registration.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/run-public-static-network-v2-operation.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/source-governance.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-governance-policy.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/source-operation.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/source-reverification-recipes.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "원천 수집·물질화·등록·재바인딩 단위 테스트가 임시 격리 픽스처 구성을 위한 기본 템플릿 또는 현재 원장 계약으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/test-fixtures/current-public-route-map-successor.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/release/source-snapshots.json",
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/validate-datapack-server-route-coverage.test.mjs",
+      "paths": [
+        "tools/datapack/nationwide-coverage-targets.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/validate-source-inventory-transfer.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    },
+    {
+      "testFile": "tools/datapack/validate-source-snapshot-freshness.test.mjs",
+      "paths": [
+        "release/product-gates/datapack-freshness-sla.json",
+        "tools/datapack/source-governance-policy.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "현재 작업 트리의 원천 인벤토리·거버넌스·신선도 SLA·커버리지 목표 계약 자체를 직접 검증한다."
+    }
+  ]
+}

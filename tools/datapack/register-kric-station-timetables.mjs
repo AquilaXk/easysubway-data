@@ -167,7 +167,9 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
     || !isDeepStrictEqual(candidate[0].coverageScope?.lineIds, KRIC_API_STATION_TIMETABLE_BINDINGS.map(({ lineId }) => lineId))
     || !termsSource) fail("CANDIDATE");
   const source = {
-    id: STATION_LINES_SOURCE_ID, displayName: candidate[0].displayName, owner: termsSource.owner, provider: termsSource.provider,
+    id: STATION_LINES_SOURCE_ID, displayName: candidate[0].displayName,
+    userDisplayName: candidate[0].userDisplayName ?? candidate[0].displayName,
+    owner: termsSource.owner, provider: termsSource.provider,
     providerDepartment: termsSource.providerDepartment, sourceSystem: termsSource.sourceSystem, datasetUrl: termsSource.datasetUrl,
     datasetKind: "open-api", coverage: candidate[0].evidence.coverage,
     coverageScope: { ...structuredClone(candidate[0].coverageScope), sourceDomains: ["schedule_timetable"] },
