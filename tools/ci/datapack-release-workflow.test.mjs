@@ -659,7 +659,7 @@ test("production-publish의 release request 입력은 리포 파일 전용이고
     "Data Pack Release / Finalize production decision",
   ]) {
     const step = yml.match(
-      new RegExp(`- name: ${stepName.replace(/\//g, "\\/")}[\\s\\S]*?\\n\\s+- name:`),
+      new RegExp(`- name: ${stepName.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}[\\s\\S]*?\\n\\s+- name:`),
     )?.[0];
     assert.ok(step, `${stepName} 스텝을 찾지 못함`);
     assert.match(

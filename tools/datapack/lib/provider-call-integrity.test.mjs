@@ -80,7 +80,7 @@ test("DATA_GO_KR_SERVICE_KEY 정상화 오류는 자격증명이나 형상 정�
   const encoded = encodeURIComponent(raw);
 
   assert.throws(
-    () => normalizeDataGoKrServiceKey(encoded.replace("%2B", "%20")),
+    () => normalizeDataGoKrServiceKey(encoded.replaceAll("%2B", "%20")),
     (error) => {
       assert.equal(error.message, "DATA_GO_KR_SERVICE_KEY is invalid");
       assert.doesNotMatch(error.message, /DUMMY|%20|length|class|fingerprint/i);
@@ -190,7 +190,7 @@ test("provider credential shape는 값이 아니라 길이·문자 클래스·�
   // anti-cheat-allow: circular-oracle -- 동일 자격증명 입력에 대한 fingerprint 산출 결정론성 검증
   assert.equal(shape.fingerprint, providerCredentialShape(CREDENTIAL).fingerprint);
   assert.notEqual(shape.fingerprint, providerCredentialShape(`${CREDENTIAL}x`).fingerprint);
-  assert.doesNotMatch(JSON.stringify(shape), new RegExp(CREDENTIAL.replace(/\$/g, "\\$")));
+  assert.equal(JSON.stringify(shape).includes(CREDENTIAL), false);
 });
 
 test("provider credential 사전 검사는 절단·따옴표 유실·셸 확장을 호출 전에 막는다", () => {

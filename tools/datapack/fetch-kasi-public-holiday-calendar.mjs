@@ -430,7 +430,7 @@ function categoryFor({ name, code }) {
   return "NETWORK_UNKNOWN";
 }
 
-function decodeXml(value) { return value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'"); }
+export function decodeXml(value) { return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&amp;/g, "&"); }
 function safeStatus(value) { return Number.isInteger(value) && value >= 100 && value <= 599 ? value : "UNKNOWN"; }
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value ?? "") ? value : "UNKNOWN"; }
 
