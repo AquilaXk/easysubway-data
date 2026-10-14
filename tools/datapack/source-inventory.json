@@ -7,6 +7,7 @@
     {
       "id": "busan-transportation-accessibility",
       "displayName": "부산교통공사_부산도시철도 장애인 편의시설 정보",
+      "userDisplayName": "부산교통공사 부산도시철도 장애인 편의시설 정보",
       "owner": "부산교통공사",
       "provider": "부산교통공사",
       "providerDepartment": "영업처",
@@ -101,6 +102,7 @@
     {
       "id": "busan-transportation-official-od-fares",
       "displayName": "부산교통공사_운임정보·사이버스테이션",
+      "userDisplayName": "부산교통공사 운임정보·사이버스테이션",
       "owner": "부산광역시",
       "provider": "부산교통공사",
       "providerDepartment": "IT지원단",
@@ -171,6 +173,7 @@
     {
       "id": "busan-transportation-route-topology",
       "displayName": "부산교통공사_도시철도 역간 거리·소요시간",
+      "userDisplayName": "부산교통공사 도시철도 역간 거리·소요시간",
       "owner": "부산교통공사",
       "provider": "부산교통공사",
       "providerDepartment": "영업처",
@@ -286,6 +289,7 @@
     {
       "id": "busan-transportation-timetable",
       "displayName": "부산교통공사_부산 도시철도 열차시각표 조회 서비스",
+      "userDisplayName": "부산교통공사 부산 도시철도 열차시각표 조회 서비스",
       "owner": "부산교통공사",
       "provider": "부산교통공사",
       "providerDepartment": "IT지원단",
@@ -379,6 +383,7 @@
     {
       "id": "busan-transportation-urban-rail-station-info",
       "displayName": "부산교통공사_도시철도역사정보",
+      "userDisplayName": "부산교통공사 도시철도역사정보",
       "owner": "부산교통공사",
       "provider": "부산교통공사",
       "providerDepartment": "IT지원단",
@@ -449,6 +454,7 @@
     {
       "id": "daegu-line1-route-topology",
       "displayName": "대구교통공사 1호선 역 구간정보",
+      "userDisplayName": "대구교통공사 1호선 역 구간정보",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "정보통신처",
@@ -557,6 +563,7 @@
     {
       "id": "daegu-line1-train-timetable",
       "displayName": "대구교통공사 1호선 열차시각표",
+      "userDisplayName": "대구교통공사 1호선 열차시각표",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "정보통신처",
@@ -653,6 +660,7 @@
     {
       "id": "daegu-line2-route-topology",
       "displayName": "대구교통공사 2호선 역 구간정보",
+      "userDisplayName": "대구교통공사 2호선 역 구간정보",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "정보통신처",
@@ -761,6 +769,7 @@
     {
       "id": "daegu-line2-train-timetable",
       "displayName": "대구교통공사 2호선 열차시각표",
+      "userDisplayName": "대구교통공사 2호선 열차시각표",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "정보통신처",
@@ -857,6 +866,7 @@
     {
       "id": "daegu-line3-route-topology",
       "displayName": "대구교통공사 3호선 역 구간정보",
+      "userDisplayName": "대구교통공사 3호선 역 구간정보",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "정보통신처",
@@ -965,6 +975,7 @@
     {
       "id": "daegu-line3-train-timetable",
       "displayName": "대구교통공사 3호선 열차시각표",
+      "userDisplayName": "대구교통공사 3호선 열차시각표",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "정보통신처",
@@ -1061,6 +1072,7 @@
     {
       "id": "daegu-transportation-accessibility",
       "displayName": "대구교통공사 역사별 장애인 편의시설 현황",
+      "userDisplayName": "대구교통공사 역사별 장애인 편의시설 현황",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "정보통신처",
@@ -1174,6 +1186,7 @@
     {
       "id": "daegu-transportation-route-map-positions",
       "displayName": "대구교통공사_1·2·3호선 역별 출구별 위치정보",
+      "userDisplayName": "대구교통공사 1·2·3호선 역별 출구별 위치정보",
       "owner": "대구교통공사",
       "provider": "대구교통공사",
       "providerDepartment": "AX정보팀",
@@ -1300,6 +1313,7 @@
     {
       "id": "daejeon-station-distance-fare",
       "displayName": "대전교통공사_역간 소요시간/거리/요금 조회 서비스",
+      "userDisplayName": "대전교통공사 역간 소요시간/거리/요금 조회 서비스",
       "owner": "대전교통공사",
       "provider": "대전교통공사",
       "providerDepartment": "대전교통공사",
@@ -1407,6 +1421,7 @@
     {
       "id": "daejeon-train-timetable",
       "displayName": "대전교통공사_열차시각표 조회 서비스",
+      "userDisplayName": "대전교통공사 열차시각표 조회 서비스",
       "owner": "대전교통공사",
       "provider": "대전교통공사",
       "providerDepartment": "대전교통공사",
@@ -1497,6 +1512,7 @@
     {
       "id": "daejeon-transportation-accessibility",
       "displayName": "대전교통공사 역사별 엘리베이터·에스컬레이터 현황",
+      "userDisplayName": "대전교통공사 역사별 엘리베이터·에스컬레이터 현황",
       "owner": "대전교통공사",
       "provider": "대전교통공사",
       "providerDepartment": "대전교통공사",
@@ -1600,6 +1616,7 @@
     {
       "id": "daejeon-transportation-route-map-positions",
       "displayName": "국가철도공단 전체 도시철도역사정보 (대전교통공사)",
+      "userDisplayName": "국가철도공단 전체 도시철도역사정보 (대전교통공사)",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도데이터개방포털",
@@ -1706,6 +1723,7 @@
     {
       "id": "gwangju-transportation-accessibility",
       "displayName": "광주교통공사 역사별 엘리베이터·에스컬레이터 현황",
+      "userDisplayName": "광주교통공사 역사별 엘리베이터·에스컬레이터 현황",
       "owner": "광주교통공사",
       "provider": "광주교통공사",
       "providerDepartment": "광주교통공사",
@@ -1809,6 +1827,7 @@
     {
       "id": "gwangju-transportation-route-map-positions",
       "displayName": "광주교통공사_문화노선도 현황",
+      "userDisplayName": "광주교통공사 문화노선도 현황",
       "owner": "광주교통공사",
       "provider": "광주교통공사",
       "providerDepartment": "광주교통공사",
@@ -1915,6 +1934,7 @@
     {
       "id": "gwangju-transportation-route-topology",
       "displayName": "광주교통공사 도시철도 운행정보",
+      "userDisplayName": "광주교통공사 도시철도 운행정보",
       "owner": "광주교통공사",
       "provider": "광주교통공사",
       "providerDepartment": "IT전략팀",
@@ -2022,6 +2042,7 @@
     {
       "id": "incheon-line1-train-timetable",
       "displayName": "인천교통공사 1호선 열차시각표",
+      "userDisplayName": "인천교통공사 1호선 열차시각표",
       "owner": "인천교통공사",
       "provider": "인천교통공사",
       "providerDepartment": "인천교통공사",
@@ -2115,6 +2136,7 @@
     {
       "id": "incheon-line2-train-timetable",
       "displayName": "인천교통공사 2호선 열차시각표",
+      "userDisplayName": "인천교통공사 2호선 열차시각표",
       "owner": "인천교통공사",
       "provider": "인천교통공사",
       "providerDepartment": "인천교통공사",
@@ -2208,6 +2230,7 @@
     {
       "id": "incheon-transit-accessibility",
       "displayName": "인천교통공사 역사별 엘리베이터·에스컬레이터·휠체어리프트 현황",
+      "userDisplayName": "인천교통공사 역사별 엘리베이터·에스컬레이터·휠체어리프트 현황",
       "owner": "인천교통공사",
       "provider": "인천교통공사",
       "providerDepartment": "인천교통공사",
@@ -2334,6 +2357,7 @@
     {
       "id": "incheon-transit-station-info",
       "displayName": "인천교통공사_도시철도역사정보",
+      "userDisplayName": "인천교통공사 도시철도역사정보",
       "owner": "인천교통공사",
       "provider": "인천교통공사",
       "providerDepartment": "인천교통공사",
@@ -2501,6 +2525,7 @@
     {
       "id": "kric-airport-railroad-route-map-positions",
       "displayName": "국가철도공단_공항철도_역위치",
+      "userDisplayName": "국가철도공단 공항철도 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -2626,6 +2651,7 @@
     {
       "id": "kric-disabled-toilet",
       "displayName": "국가철도공단_역사별 장애인 화장실 위치",
+      "userDisplayName": "국가철도공단 역사별 장애인 화장실 위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -2702,6 +2728,7 @@
     {
       "id": "kric-elevator-car-number",
       "displayName": "국가철도공단_엘리베이터 인접 승강장 차량번호",
+      "userDisplayName": "국가철도공단 엘리베이터 인접 승강장 차량번호",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -2779,6 +2806,7 @@
     {
       "id": "kric-everline-route-map-positions",
       "displayName": "국가철도공단_용인에버라인_역위치",
+      "userDisplayName": "국가철도공단 용인에버라인 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -2905,6 +2933,7 @@
     {
       "id": "kric-gimpo-goldline-route-map-positions",
       "displayName": "국가철도공단_김포골드라인_역사정보(KRIC 1294)",
+      "userDisplayName": "국가철도공단 김포골드라인 역사정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3030,6 +3059,7 @@
     {
       "id": "kric-gtx-a-route-map-positions",
       "displayName": "국가철도공단_GTX-A_역사정보_route_map_positions",
+      "userDisplayName": "국가철도공단 GTX-A 역사정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3157,6 +3187,7 @@
     {
       "id": "kric-gyeongchun-route-map-positions",
       "displayName": "국가철도공단_경춘선_역위치",
+      "userDisplayName": "국가철도공단 경춘선 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3291,6 +3322,7 @@
     {
       "id": "kric-gyeonggang-route-map-positions",
       "displayName": "국가철도공단_경강선_역위치",
+      "userDisplayName": "국가철도공단 경강선 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3423,6 +3455,7 @@
     {
       "id": "kric-gyeongui-jungang-route-map-positions",
       "displayName": "국가철도공단_경의중앙선_역위치",
+      "userDisplayName": "국가철도공단 경의중앙선 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3548,6 +3581,7 @@
     {
       "id": "kric-metropolitan-rail-station-info",
       "displayName": "국가철도공단_도시광역철도_역사정보",
+      "userDisplayName": "국가철도공단 도시광역철도 역사정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3634,6 +3668,7 @@
     {
       "id": "kric-platform-train-distance",
       "displayName": "국가철도공단_승강장 열차 간격",
+      "userDisplayName": "국가철도공단 승강장 열차 간격",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3710,6 +3745,7 @@
     {
       "id": "kric-safety-platform",
       "displayName": "국가철도공단_안전발판 설치정보",
+      "userDisplayName": "국가철도공단 안전발판 설치정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3786,6 +3822,7 @@
     {
       "id": "kric-seohae-route-map-positions",
       "displayName": "국가철도공단_서해선_역사정보_route_map_positions",
+      "userDisplayName": "국가철도공단 서해선 역사정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -3914,6 +3951,7 @@
     {
       "id": "kric-seoul-metro-line9-1-route-map-positions",
       "displayName": "국가철도공단_수도권9호선_역위치(1단계)",
+      "userDisplayName": "국가철도공단 수도권9호선 역위치(1단계)",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4039,6 +4077,7 @@
     {
       "id": "kric-shinbundang-route-map-positions",
       "displayName": "국가철도공단_신분당선_역위치",
+      "userDisplayName": "국가철도공단 신분당선 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4166,6 +4205,7 @@
     {
       "id": "kric-sillim-route-map-positions",
       "displayName": "국가철도공단_신림선_역사정보(KRIC 1294)",
+      "userDisplayName": "국가철도공단 신림선 역사정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4291,6 +4331,7 @@
     {
       "id": "kric-station-convenience-standard",
       "displayName": "편의정보(표준)",
+      "userDisplayName": "편의정보(표준)",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4408,6 +4449,7 @@
     {
       "id": "kric-station-elevator",
       "displayName": "국가철도공단_역사별 엘리베이터 현황",
+      "userDisplayName": "국가철도공단 역사별 엘리베이터 현황",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4518,6 +4560,7 @@
     {
       "id": "kric-station-elevator-movement",
       "displayName": "국가철도공단_역사별 엘리베이터 이동동선",
+      "userDisplayName": "국가철도공단 역사별 엘리베이터 이동동선",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4629,6 +4672,7 @@
     {
       "id": "kric-station-escalator",
       "displayName": "국가철도공단_역사별 에스컬레이터 현황",
+      "userDisplayName": "국가철도공단 역사별 에스컬레이터 현황",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4738,6 +4782,7 @@
     {
       "id": "kric-station-info",
       "displayName": "역사별 정보",
+      "userDisplayName": "역사별 정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4847,6 +4892,7 @@
     {
       "id": "kric-station-movement-detailed",
       "displayName": "출입구-승강장 이동경로",
+      "userDisplayName": "출입구-승강장 이동경로",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -4948,6 +4994,7 @@
     {
       "id": "kric-station-movement-standard",
       "displayName": "출입구-승강장 이동경로(표준)",
+      "userDisplayName": "출입구-승강장 이동경로(표준)",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5049,6 +5096,7 @@
     {
       "id": "kric-station-platform",
       "displayName": "역사별 승강장 정보",
+      "userDisplayName": "역사별 승강장 정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5155,6 +5203,7 @@
     {
       "id": "kric-station-transfer-info",
       "displayName": "역사별 환승정보",
+      "userDisplayName": "역사별 환승정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5255,6 +5304,7 @@
     {
       "id": "kric-subway-route-info",
       "displayName": "도시철도 전체노선정보",
+      "userDisplayName": "도시철도 전체노선정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5356,6 +5406,7 @@
     {
       "id": "kric-subway-timetable",
       "displayName": "국가철도공단_도시철도 열차운행시각표",
+      "userDisplayName": "국가철도공단 도시철도 열차운행시각표",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5458,6 +5509,7 @@
     {
       "id": "kric-suin-bundang-route-map-positions",
       "displayName": "국가철도공단_수인분당선_역위치",
+      "userDisplayName": "국가철도공단 수인분당선 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5583,6 +5635,7 @@
     {
       "id": "kric-train-operation-organ",
       "displayName": "열차운영기관정보",
+      "userDisplayName": "열차운영기관정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5678,6 +5731,7 @@
     {
       "id": "kric-transfer-movement-detailed",
       "displayName": "환승 이동경로",
+      "userDisplayName": "환승 이동경로",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5778,6 +5832,7 @@
     {
       "id": "kric-ui-sinseol-route-map-positions",
       "displayName": "국가철도공단_우이신설선_역사정보",
+      "userDisplayName": "국가철도공단 우이신설선 역사정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -5905,6 +5960,7 @@
     {
       "id": "kric-uijeongbu-route-map-positions",
       "displayName": "국가철도공단_의정부경전철_역위치",
+      "userDisplayName": "국가철도공단 의정부경전철 역위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -6030,6 +6086,7 @@
     {
       "id": "kric-wheelchair-lift-location",
       "displayName": "국가철도공단_역사별 휠체어리프트 위치",
+      "userDisplayName": "국가철도공단 역사별 휠체어리프트 위치",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -6138,6 +6195,7 @@
     {
       "id": "kric-wheelchair-lift-movement",
       "displayName": "국가철도공단_역사별 휠체어리프트 이동동선",
+      "userDisplayName": "국가철도공단 역사별 휠체어리프트 이동동선",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -6249,6 +6307,7 @@
     {
       "id": "molit-tago-subway-info",
       "displayName": "국토교통부_(TAGO)_지하철정보",
+      "userDisplayName": "국토교통부(TAGO) 지하철정보",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "모빌리티총괄과",
@@ -6594,6 +6653,7 @@
         ]
       },
       "displayName": "국토교통부_도시철도 전체노선",
+      "userDisplayName": "국토교통부 도시철도 전체노선",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "도시철도 담당부서",
@@ -6705,6 +6765,7 @@
     {
       "id": "molit-urban-rail-full-route-daegu-line1-membership",
       "displayName": "국토교통부_도시철도 전체노선 대구 1호선 membership admission",
+      "userDisplayName": "국토교통부 도시철도 전체노선 (대구 1호선)",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "도시철도 담당부서",
@@ -6792,6 +6853,7 @@
     {
       "id": "molit-urban-rail-full-route-daegu-line2-membership",
       "displayName": "국토교통부_도시철도 전체노선 대구 2호선 membership admission",
+      "userDisplayName": "국토교통부 도시철도 전체노선 (대구 2호선)",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "도시철도 담당부서",
@@ -6879,6 +6941,7 @@
     {
       "id": "molit-urban-rail-full-route-daegu-line3-membership",
       "displayName": "국토교통부_도시철도 전체노선 대구 3호선 membership admission",
+      "userDisplayName": "국토교통부 도시철도 전체노선 (대구 3호선)",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "도시철도 담당부서",
@@ -6966,6 +7029,7 @@
     {
       "id": "molit-urban-rail-full-route-daejeon-membership",
       "displayName": "국토교통부_도시철도 전체노선 대전 1호선 membership admission",
+      "userDisplayName": "국토교통부 도시철도 전체노선 (대전 1호선)",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "도시철도 담당부서",
@@ -7053,6 +7117,7 @@
     {
       "id": "molit-urban-rail-full-route-gwangju-membership",
       "displayName": "국토교통부_도시철도 전체노선 광주 1호선 membership admission",
+      "userDisplayName": "국토교통부 도시철도 전체노선 (광주 1호선)",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "도시철도 담당부서",
@@ -7140,6 +7205,7 @@
     {
       "id": "seoul-metro-accessibility",
       "displayName": "서울교통공사_교통약자이용정보(승강기 운행상황)",
+      "userDisplayName": "서울교통공사 교통약자이용정보(승강기 운행상황)",
       "owner": "서울특별시",
       "provider": "서울교통공사",
       "providerDepartment": "정보운영센터",
@@ -7267,6 +7333,7 @@
     {
       "id": "seoul-metro-fast-exit-car-door",
       "displayName": "서울교통공사_빠른하차정보",
+      "userDisplayName": "서울교통공사 빠른하차정보",
       "owner": "서울교통공사",
       "provider": "서울교통공사",
       "providerDepartment": "공공데이터 담당부서",
@@ -7374,6 +7441,7 @@
     {
       "id": "seoul-metro-line9-23-route-map-positions",
       "displayName": "서울교통공사_9호선 2·3단계 역사 좌표(위경도) 정보",
+      "userDisplayName": "서울교통공사 9호선 2·3단계 역사 좌표(위경도) 정보",
       "owner": "서울교통공사",
       "provider": "서울교통공사",
       "providerDepartment": "토목처",
@@ -7500,6 +7568,7 @@
     {
       "id": "seoul-metro-official-od-fare-canary",
       "displayName": "서울교통공사_실시간운임정보 검증 canary",
+      "userDisplayName": "서울교통공사 실시간 운임정보",
       "owner": "서울특별시",
       "provider": "서울교통공사",
       "providerDepartment": "데이터팀",
@@ -7570,6 +7639,7 @@
     {
       "id": "seoul-metro-official-od-fares",
       "displayName": "서울교통공사_실시간운임정보",
+      "userDisplayName": "서울교통공사 실시간운임정보",
       "owner": "서울특별시",
       "provider": "서울교통공사",
       "providerDepartment": "데이터팀",
@@ -7641,6 +7711,7 @@
     {
       "id": "seoul-metro-route-map-positions",
       "displayName": "서울교통공사_1_8호선 역사 좌표(위경도) 정보",
+      "userDisplayName": "서울교통공사 1~8호선 역사 좌표(위경도) 정보",
       "owner": "서울교통공사",
       "provider": "서울교통공사",
       "providerDepartment": "토목처",
@@ -7862,6 +7933,7 @@
     {
       "id": "seoul-metro-transfer-distance-duration",
       "displayName": "서울교통공사_환승역거리 소요시간",
+      "userDisplayName": "서울교통공사 환승역거리 소요시간",
       "owner": "서울교통공사",
       "provider": "서울교통공사",
       "providerDepartment": "공공데이터 담당부서",
@@ -7999,6 +8071,7 @@
     {
       "id": "seoul-realtime-arrival-station-info",
       "displayName": "서울시 지하철 실시간 도착정보 역정보",
+      "userDisplayName": "서울시 지하철 실시간 도착정보 역정보",
       "owner": "서울특별시",
       "provider": "서울특별시",
       "providerDepartment": "교통정보과",
@@ -8109,6 +8182,7 @@
     {
       "id": "seoul-subway-hourly-boarding",
       "displayName": "서울시 지하철 호선별 역별 시간대별 승하차 인원 정보",
+      "userDisplayName": "서울시 지하철 호선별 역별 시간대별 승하차 인원 정보",
       "owner": "서울특별시",
       "provider": "서울특별시",
       "providerDepartment": "교통실 교통기획관 교통정책과",
@@ -8175,6 +8249,7 @@
     {
       "id": "seoul-topis-realtime-train-position",
       "displayName": "서울시 지하철 실시간 열차 위치정보",
+      "userDisplayName": "서울시 지하철 실시간 열차 위치정보",
       "owner": "서울특별시",
       "provider": "서울특별시",
       "providerDepartment": "교통정보과",
@@ -8282,6 +8357,7 @@
     {
       "id": "seoulmetro-cyberstation-route-map",
       "displayName": "서울교통공사 노선도 historical diagnostic",
+      "userDisplayName": "서울교통공사 노선도",
       "owner": "서울교통공사",
       "provider": "서울교통공사",
       "providerDepartment": "정보운영센터",
@@ -8379,6 +8455,7 @@
     {
       "id": "seoulmetro-station-line-info",
       "displayName": "서울교통공사_노선별 지하철역 정보",
+      "userDisplayName": "서울교통공사 노선별 지하철역 정보",
       "owner": "서울특별시",
       "provider": "서울교통공사",
       "providerDepartment": "정보운영센터",
@@ -8478,6 +8555,7 @@
     {
       "id": "molit-railway-transfer-movement",
       "displayName": "국토교통부_철도역 환승 이동경로 정보",
+      "userDisplayName": "국토교통부 철도역 환승 이동경로 정보",
       "owner": "국토교통부",
       "provider": "국토교통부",
       "providerDepartment": "철도정책과",
@@ -8553,6 +8631,7 @@
     {
       "id": "capital-route-topology",
       "displayName": "수도권 도시철도 노선별 역간거리 FILE source set",
+      "userDisplayName": "수도권 도시철도 노선별 역간거리",
       "owner": "국가철도공단·국토교통부",
       "provider": "data.go.kr official FILE",
       "providerDepartment": "복수 공식 제공부서",
@@ -8669,6 +8748,7 @@
     {
       "id": "kric-nationwide-timetable-file",
       "displayName": "전체_도시철도운행정보_20260630",
+      "userDisplayName": "전국 도시철도 운행정보",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",
@@ -9096,6 +9176,7 @@
     {
       "id": "korail-metropolitan-timetable-file",
       "displayName": "한국철도공사 광역전철 시각표 — 대경선",
+      "userDisplayName": "한국철도공사 광역전철 시각표 — 대경선",
       "owner": "한국철도공사",
       "provider": "한국철도공사",
       "providerDepartment": "",
@@ -9181,6 +9262,7 @@
     {
       "id": "korail-metropolitan-planned-timetable",
       "displayName": "한국철도공사 광역전철 계획 시각표 — 대경선",
+      "userDisplayName": "한국철도공사 광역전철 계획 시각표 — 대경선",
       "owner": "한국철도공사",
       "provider": "한국철도공사",
       "providerDepartment": "",
@@ -9276,6 +9358,7 @@
     {
       "id": "seoul-metro-transfer-car-door-duration",
       "displayName": "서울교통공사_서울 도시철도 환승정보",
+      "userDisplayName": "서울교통공사 서울 도시철도 환승정보",
       "owner": "서울교통공사",
       "provider": "서울교통공사",
       "providerDepartment": "정보운영센터",
@@ -9366,6 +9449,7 @@
     {
       "id": "kric-subway-timetable-station-lines",
       "displayName": "도시철도 열차운행시각표 — 역별 수집 노선(GTX-A·에버라인·의정부·김포골드·부산김해)",
+      "userDisplayName": "도시철도 열차운행시각표 — 역별 수집 노선(GTX-A·에버라인·의정부·김포골드·부산김해)",
       "owner": "국가철도공단",
       "provider": "국가철도공단",
       "providerDepartment": "철도산업정보센터",

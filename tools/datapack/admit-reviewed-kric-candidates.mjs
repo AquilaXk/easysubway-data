@@ -124,6 +124,7 @@ function buildInventorySource({ candidate, ledgerEvidence }) {
   const baseSource = {
     id: candidate.id,
     displayName: candidate.displayName,
+    userDisplayName: candidate.userDisplayName ?? candidate.displayName,
     owner: "국가철도공단",
     provider: "국가철도공단",
     providerDepartment: "철도산업정보센터",

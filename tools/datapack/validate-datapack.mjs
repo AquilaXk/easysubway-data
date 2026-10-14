@@ -246,7 +246,7 @@ function validateSqlite(
 
     validateNoRealtimePayloadTables(database, pack);
     validateNetworkEdgeReferences(database, pack);
-    validateTransitSchedule(database, pack);
+    validateTransitSchedule(database, pack, routePresence);
     validateFareTables(database, pack);
     validateOfficialOdFareQuotes(database, pack, officialOdFareAdmission);
     validateStationPathways(database, pack);
@@ -425,7 +425,7 @@ function validateNetworkEdgeTypes(database, pack) {
   }
 }
 
-function validateTransitSchedule(database, pack) {
+function validateTransitSchedule(database, pack, routePresence = null) {
   if (!hasTable(database, "transit_trips")) {
     return;
   }
@@ -520,6 +520,59 @@ function validateTransitSchedule(database, pack) {
         throw new Error(`${pack.id}@${pack.version} transit_frequencies time range is invalid: ${frequency.trip_id}`);
       }
     }
+  }
+
+  if (routePresence !== null) {
+    assertLaunchScopeLinesHaveTimetableTrips({ database, pack, nationwide: routePresence.nationwide });
+  }
+}
+
+export function assertLaunchScopeLinesHaveTimetableTrips({ database, pack, nationwide }) {
+  if (typeof nationwide !== "boolean") {
+    throw new Error("launch-scope line timetable presence nationwide flag is required");
+  }
+  if (!nationwide) return;
+  const launchScopeLineIds = [
+    ...new Set([
+      ...(hasTable(database, "lines")
+        ? database.prepare("SELECT id FROM lines ORDER BY id").all().map((row) => row.id)
+        : []),
+      ...(pack.lines ?? []).map((line) => line.id),
+      ...(pack.verifiedAccessibilityScope?.includedLineIds ?? []),
+    ]),
+  ].sort();
+  const tripCountByLine = new Map(
+    database
+      .prepare(
+        `
+        SELECT r.line_id AS line_id, COUNT(t.id) AS trip_count
+        FROM transit_routes r
+        JOIN transit_trips t ON t.route_id = r.id
+        GROUP BY r.line_id
+      `,
+      )
+      .all()
+      .map((row) => [row.line_id, Number(row.trip_count)]),
+  );
+  const stopTimeCountByLine = new Map(
+    database
+      .prepare(
+        `
+        SELECT line_id, COUNT(*) AS stop_time_count
+        FROM transit_stop_times
+        GROUP BY line_id
+      `,
+      )
+      .all()
+      .map((row) => [row.line_id, Number(row.stop_time_count)]),
+  );
+  const missingLineIds = launchScopeLineIds.filter(
+    (lineId) => (tripCountByLine.get(lineId) ?? 0) === 0 || (stopTimeCountByLine.get(lineId) ?? 0) === 0,
+  );
+  if (missingLineIds.length > 0) {
+    throw new Error(
+      `${pack.id}@${pack.version} launch-scope line has 0 transit_trips: ${missingLineIds.length} (${missingLineIds.join(", ")})`,
+    );
   }
 }
 

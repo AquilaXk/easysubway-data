@@ -24,6 +24,7 @@ import {
 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { projectedItxDirectionalPairs } from "./build-datapack.mjs";
 import { buildItxCurrentTopologyAdmission } from "./build-itx-current-topology-admission.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -1144,10 +1145,10 @@ test("topology 증거의 역·운행역·방향 간선 수는 원천 stationSequ
 });
 
 test("production canonical fixture는 OWNER-approved current directed edge를 exact 투영한다", async () => {
+  const readPinned = await candidatePinnedReader({ root });
   const [{ source }, fixture] = await Promise.all([
     trackedLegacyDocuments(),
-    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
-      .then(JSON.parse),
+    candidatePinnedJson(readPinned, "tools/datapack/release/capital-production-canonical-pack.json"),
   ]);
   const expected = deriveTopology(source).edges
     .map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`)
@@ -1161,10 +1162,10 @@ test("production canonical fixture는 OWNER-approved current directed edge를 ex
 });
 
 test("canonical fixture projection은 OWNER-approved current edge를 결정적으로 교체한다", async () => {
+  const readPinned = await candidatePinnedReader({ root });
   const [{ source }, fixture] = await Promise.all([
     trackedLegacyDocuments(),
-    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
-      .then(JSON.parse),
+    candidatePinnedJson(readPinned, "tools/datapack/release/capital-production-canonical-pack.json"),
   ]);
   const topology = deriveTopology(source);
   const first = structuredClone(fixture);
@@ -1178,13 +1179,13 @@ test("canonical fixture projection은 OWNER-approved current edge를 결정적�
 });
 
 test("canonical fixture topology projection은 resultant network edge floor를 동기화한다", async () => {
+  const readPinned = await candidatePinnedReader({ root });
   const [source, fixture] = await Promise.all([
     readFile(path.join(
       root,
       "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
     ), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
-      .then(JSON.parse),
+    candidatePinnedJson(readPinned, "tools/datapack/release/capital-production-canonical-pack.json"),
   ]);
   const topology = deriveTopology(source);
   const pack = fixture.packs.find(({ id }) => id === "capital");

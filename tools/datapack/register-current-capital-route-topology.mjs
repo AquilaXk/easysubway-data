@@ -250,6 +250,7 @@ export async function buildCurrentCapitalRouteTopologyRegistrationOutputs({ repo
   const source = {
     id: admission.sourceId,
     displayName: admission.candidate.displayName,
+    userDisplayName: sourceMatches[0]?.userDisplayName ?? "수도권 도시철도 노선별 역간거리",
     owner: admission.metadata.owner,
     provider: admission.metadata.provider,
     providerDepartment: admission.metadata.providerDepartment,

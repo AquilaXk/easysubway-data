@@ -39,6 +39,7 @@ import {
   materializeStationLineAccessibility,
 } from "./materialize-station-line-accessibility.mjs";
 import { copySyntheticCurrentPublicRouteMapRepository } from "./test-fixtures/current-public-route-map-successor.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import { currentTopologyAdmissionClock } from "./test-fixtures/current-topology-admission-clock.mjs";
 import { createIndependentSourceGovernanceFixture } from "./test-fixtures/independent-source-governance.mjs";
 
@@ -236,16 +237,20 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const stationElevatorPaths = await writeStationElevatorFixtureInputs(fixtureRoot, temp);
   const stationPlatformGaps = await writeStationPlatformGapFixtureInputs(fixtureRoot);
   // #925: 운영 빌드 경로는 커밋된 MOLIT 환승 이동경로 스냅샷·KRIC 코드 카탈로그로 환승 계단 상태를 판정한다.
+  const readPinned = await candidatePinnedReader();
   for (const relative of [
     "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz",
     "tools/datapack/sources/molit-railway-transfer-movement-20260811.csv.gz.json",
+  ]) await writeFile(path.join(fixtureRoot, relative), await readPinned(relative));
+  await cp(
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-  ]) await cp(relative, path.join(fixtureRoot, relative));
+    path.join(fixtureRoot, "tools/datapack/sources/kric-provider-code-catalog-20260228.json"),
+  );
   // 합성 fixture inventory는 고정 원천 집합만 담으므로, 운영 inventory의 MOLIT 잠금 행을 그대로 옮기고 build spec의 inventory hash를 다시 묶는다.
   {
     const inventoryPath = path.join(fixtureRoot, "tools/datapack/source-inventory.json");
     const fixtureInventory = JSON.parse(await readFile(inventoryPath, "utf8"));
-    const molitSource = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8")).sources
+    const molitSource = (await candidatePinnedJson(readPinned, "tools/datapack/source-inventory.json")).sources
       .find(({ id }) => id === "molit-railway-transfer-movement");
     fixtureInventory.sources = [...fixtureInventory.sources.filter(({ id }) => id !== molitSource.id), molitSource];
     await writeFile(inventoryPath, `${JSON.stringify(fixtureInventory, null, 2)}\n`);
@@ -1078,7 +1083,8 @@ async function writeStationElevatorFixtureInputs(fixtureRoot, temp) {
 async function writeStationPlatformGapFixtureInputs(fixtureRoot) {
   const sources = path.join(fixtureRoot, "tools/datapack/sources");
   await mkdir(sources, { recursive: true });
-  const realMembership = JSON.parse(await readFile("tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json", "utf8"));
+  const readPinned = await candidatePinnedReader();
+  const realMembership = await candidatePinnedJson(readPinned, "tools/datapack/sources/seoul-station-code-membership-20260909T041501Z.json");
   const realCsv = Buffer.from(realMembership.snapshot.rawBytesBase64, "base64");
   const header = realCsv.subarray(0, realCsv.indexOf(0x0a) + 1);
   const csvBytes = Buffer.concat([header, Buffer.from("0201,GA,GA,2,201,,\n")]);

@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { assertExactDerivedReciprocals, currentTransferLineIds, main } from "./build-current-transfer-topology-metrics.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
+import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 // #872 S2: 서울교통공사 1~8호선과 상대 노선 전체 매핑. 원천 행 → (역, 출발 노선, 도착 노선)은 정본 팩 식별자로만 정한다.
 const LINE = {
@@ -144,9 +145,10 @@ test("KRIC provider catalog raw hash는 artifact identity와 self hash에 결속
 
 // #872 S2: 커밋된 지표는 전국 정본 팩의 역·노선 식별자로만 이루어지고, 원천이 덮는 쌍 전체(102)를 쓴다.
 test("커밋된 환승 지표는 전국 정본 팩 역-노선 식별자와 일치하고 원천이 덮는 쌍 전체를 쓴다", async () => {
+  const readPinned = await candidatePinnedReader();
   const [metrics, nationwide] = await Promise.all([
-    readFile(new URL("./release/current-transfer-topology-metrics.json", import.meta.url), "utf8").then(JSON.parse),
-    readFile(new URL("./release/nationwide-production-canonical-pack.json", import.meta.url), "utf8").then(JSON.parse),
+    candidatePinnedJson(readPinned, "tools/datapack/release/current-transfer-topology-metrics.json"),
+    candidatePinnedJson(readPinned, "tools/datapack/release/nationwide-production-canonical-pack.json"),
   ]);
   const pack = nationwide.packs.find(({ id }) => id === nationwide.manifest.activePack.id);
   const stationLines = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
@@ -171,7 +173,8 @@ test("커밋된 환승 지표는 전국 정본 팩 역-노선 식별자와 일�
 // #876(메인 결정 B): 실측 환승시간(15098252)과 겹치는 방향은 시간 = 실측, 거리 = 서울교통공사 공식 거리이고, 경로 행의 원천은
 // 시간 원천(실측)이며 레코드 hash는 두 원천 레코드 hash의 결속이다. 겹치지 않는 방향은 서울교통공사 값 그대로다.
 test("전국 발행 경로는 환승 지표 204방향 전체를 route edge로, OFFICIAL_SOURCE 140방향을 경로 행으로 쓴다", async () => {
-  const read = (relative) => readFile(new URL(relative, import.meta.url), "utf8").then(JSON.parse);
+  const readPinned = await candidatePinnedReader();
+  const read = (relative) => candidatePinnedJson(readPinned, `tools/datapack/${relative.replace(/^\.\//u, "")}`);
   const [metrics, route, nationwide, busan, measured] = await Promise.all([read("./release/current-transfer-topology-metrics.json"), read("./release/nationwide-route-edge-input.json"), read("./release/nationwide-production-canonical-pack.json"), read("./release/current-busan-transfer-metrics.json"), read("./release/current-seoul-measured-transfer-metrics.json")]);
   const pack = nationwide.packs.find(({ id: packId }) => packId === nationwide.manifest.activePack.id);
   const transfers = new Map(route.routeEdges.filter(({ edgeType }) => edgeType === "IN_STATION_TRANSFER").map((edge) => [edge.edgeId, edge]));

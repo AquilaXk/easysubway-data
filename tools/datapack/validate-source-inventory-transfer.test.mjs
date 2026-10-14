@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateCapabilities, validateProductionTransferArtifacts, validateTransferAdmissionEvidence } from "./validate-source-inventory.mjs";
+import {
+  validateCapabilities,
+  validateProductionTransferArtifacts,
+  validateSourceUserDisplayName,
+  validateTransferAdmissionEvidence,
+} from "./validate-source-inventory.mjs";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -223,3 +228,75 @@ test("production scope CLI rejects missing required sources and accepts an exact
   await writeFile(fixturePath, JSON.stringify(scope));
   await rejectsMissing(fixturePath, omittedId);
 });
+
+test("#950 source-inventory schema와 모든 등록 원천은 내부 거버넌스 토큰이 없는 한국어 userDisplayName을 필수 포함하고 검증기가 오염을 거부한다", async (t) => {
+  const schema = JSON.parse(readFileSync(path.join(repositoryRoot, "contracts/datapack/source-inventory.schema.json"), "utf8"));
+  const item = schema.properties.sources.items;
+  assert.ok(item.required.includes("userDisplayName"));
+  assert.deepEqual(item.properties.userDisplayName, { type: "string", minLength: 1 });
+
+  const inventory = JSON.parse(readFileSync(path.join(repositoryRoot, "tools/datapack/source-inventory.json"), "utf8"));
+  for (const source of inventory.sources) {
+    assert.doesNotThrow(() => validateSourceUserDisplayName(source.userDisplayName, source.id), source.id);
+  }
+
+  for (const [id, expectedUserDisplayName] of [
+    ["kric-gimpo-goldline-route-map-positions", "국가철도공단 김포골드라인 역사정보"],
+    ["kric-gtx-a-route-map-positions", "국가철도공단 GTX-A 역사정보"],
+    ["kric-seohae-route-map-positions", "국가철도공단 서해선 역사정보"],
+    ["kric-sillim-route-map-positions", "국가철도공단 신림선 역사정보"],
+    ["molit-urban-rail-full-route-daegu-line1-membership", "국토교통부 도시철도 전체노선 (대구 1호선)"],
+    ["molit-urban-rail-full-route-daegu-line2-membership", "국토교통부 도시철도 전체노선 (대구 2호선)"],
+    ["molit-urban-rail-full-route-daegu-line3-membership", "국토교통부 도시철도 전체노선 (대구 3호선)"],
+    ["molit-urban-rail-full-route-daejeon-membership", "국토교통부 도시철도 전체노선 (대전 1호선)"],
+    ["molit-urban-rail-full-route-gwangju-membership", "국토교통부 도시철도 전체노선 (광주 1호선)"],
+    ["seoul-metro-official-od-fare-canary", "서울교통공사 실시간 운임정보"],
+    ["seoulmetro-cyberstation-route-map", "서울교통공사 노선도"],
+    ["capital-route-topology", "수도권 도시철도 노선별 역간거리"],
+    ["kric-nationwide-timetable-file", "전국 도시철도 운행정보"],
+    ["seoul-metro-route-map-positions", "서울교통공사 1~8호선 역사 좌표(위경도) 정보"],
+    ["molit-tago-subway-info", "국토교통부(TAGO) 지하철정보"],
+  ]) {
+    const source = inventory.sources.find((entry) => entry.id === id);
+    assert.ok(source, id);
+    assert.equal(source.userDisplayName, expectedUserDisplayName, id);
+  }
+
+  for (const invalidValue of [
+    "",
+    "   ",
+    "Seoul Metro Transfer Info",
+    "철도산업정보센터 운영기관·노선·역코드 membership 파일",
+    "코레일 역간 소요시간 admission 포함",
+    "한국철도공사 경춘선 ITX-청춘 열차시각표 (일반열차 canary)",
+    "대구교통공사 역사 좌표 route_map_positions",
+    "수도권 노선도 KRIC 1294 역코드 대조",
+    "인천교통공사 1·2호선 역사 접근성 시설 검증 원천",
+    "수도권 역사 위치 historical 원천",
+    "수도권 역사 위치 diagnostic 원천",
+    "철도산업정보센터 current FILE source set",
+    "전체 도시철도운행정보 _20260630",
+    "국토교통부_철도역 환승 이동경로 정보",
+    "서울교통공사 pilot 원천",
+    "서울교통공사 게이트 원천",
+    "서울교통공사 구간만 구현 원천",
+    "서울교통공사 raw snapshot 원천",
+    "서울교통공사 retained 원천",
+    "서울교통공사 admitted 원천",
+    "서울교통공사 production 원천",
+  ]) {
+    assert.throws(() => validateSourceUserDisplayName(invalidValue, "fixture.userDisplayName"), /userDisplayName/u, invalidValue);
+  }
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "user-display-name-cli-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const brokenInventory = structuredClone(inventory);
+  brokenInventory.sources[0].userDisplayName = "서울교통공사 검증 원천";
+  const brokenPath = path.join(root, "broken-inventory.json");
+  await writeFile(brokenPath, JSON.stringify(brokenInventory, null, 2));
+  await assert.rejects(
+    execFileAsync(process.execPath, ["tools/datapack/validate-source-inventory.mjs", "--inventory", brokenPath], { cwd: repositoryRoot }),
+    /userDisplayName must not contain forbidden internal term/u,
+  );
+});
+
