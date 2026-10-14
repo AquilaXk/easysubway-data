@@ -28,7 +28,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
       - name: Prepare current topology refresh paths
@@ -390,7 +390,7 @@ jobs:
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body-file "${TOPOLOGY_OPERATION_ROOT}/pull-request-body.md"
       - name: Upload sanitized decision metadata
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: current-capital-topology-refresh-${{ github.run_id }}
           path: ${{ runner.temp }}/current-capital-topology-refresh/decision.json
@@ -398,7 +398,7 @@ jobs:
           retention-days: 14
       - name: Upload sanitized ITX review evidence
         if: ${{ always() && steps.decision.outputs.itx_refresh_required == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: current-capital-topology-refresh-itx-review-${{ github.run_id }}
           path: |
