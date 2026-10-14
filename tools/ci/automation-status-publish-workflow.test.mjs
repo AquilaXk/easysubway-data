@@ -35,8 +35,9 @@ test("job은 읽기 권한만 갖고, 서비스 토큰이 든 production-datapac
 
 test("서비스 토큰은 게시 step의 env로만 들어가고 run 스크립트에는 expression이 없다", () => {
   const publish = stepBody("Collect and publish the automation status");
-  assert.match(publish, /EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: \$\{\{ secrets\.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN \}\}/u);
-  assert.equal(yml.split("secrets.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN").length - 1, 1);
+  assert.match(publish, /EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN: \$\{\{ secrets\.EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN \}\}/u);
+  assert.equal(yml.split("secrets.EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN").length - 1, 1);
+  assert.doesNotMatch(yml, /EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN/u);
   assert.match(publish, /DEPLOY_PUBLIC_API_BASE_URL: \$\{\{ vars\.DEPLOY_PUBLIC_API_BASE_URL \}\}/u);
   assert.match(publish, /CHAIN_DATAPACK_BASE_URL: \$\{\{ vars\.OCI_SERVER_ROUTE_PUBLIC_BASE_URL \}\}/u);
   assert.match(publish, /APP_READ_TOKEN: \$\{\{ steps\.read-token\.outputs\.token \}\}/u);
