@@ -38,7 +38,7 @@ concurrency:
 jobs:
   refresh:
     name: Nationwide candidate refresh
-    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.triggering_actor != 'easysubway-release-chain[bot]') || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}
+    if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.actor != 'easysubway-release-chain[bot]' && github.triggering_actor != 'easysubway-release-chain[bot]') || (vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && (github.event_name != 'workflow_dispatch' || (github.actor == 'easysubway-release-chain[bot]' && github.triggering_actor == 'easysubway-release-chain[bot]')))) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -61,7 +61,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          ACTOR: ${{ github.triggering_actor }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/nationwide-candidate-refresh-decision/${GITHUB_RUN_ID}"
@@ -69,7 +70,7 @@ jobs:
           git ls-remote --heads origin "refs/heads/automation/927-nationwide-candidate-refresh-*" > "${decision_root}/branches.txt"
           git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/automation-branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
-          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --actor "${ACTOR}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/decide-nationwide-candidate-refresh.mjs --event "${EVENT_NAME}" --actor "${ACTOR}" --triggering-actor "${TRIGGERING_ACTOR}" --repository "${GITHUB_REPOSITORY}" --prs "${decision_root}/prs.json" --branches "${decision_root}/branches.txt" --automation-branches "${decision_root}/automation-branches.txt" --github-output "${GITHUB_OUTPUT}"
       - name: Note candidate refresh proceeding past stuck source automation
         if: ${{ steps.decision.outputs.expired_blockers != '' }}
         env:
@@ -144,10 +145,11 @@ jobs:
           REQUESTED_BY: ${{ inputs.requestedBy }}
           APPROVED_BY: ${{ inputs.approvedBy }}
           EVENT_NAME: ${{ github.event_name }}
-          ACTOR: ${{ github.triggering_actor }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
-          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --event "${EVENT_NAME}" --actor "${ACTOR}" --github-output "${GITHUB_OUTPUT}"
+          node tools/ci/plan-datapack-release-chain.mjs candidate-refresh --release-sequence "${RELEASE_SEQUENCE}" --requested-by "${REQUESTED_BY}" --approved-by "${APPROVED_BY}" --event "${EVENT_NAME}" --actor "${ACTOR}" --triggering-actor "${TRIGGERING_ACTOR}" --github-output "${GITHUB_OUTPUT}"
       - name: Record the candidate gate run
         if: ${{ steps.decision.outputs.state == 'STALE' || steps.decision.outputs.state == 'FORCED' }}
         run: |

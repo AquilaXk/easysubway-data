@@ -34,7 +34,7 @@ function isExactScheduledPair({ requestedBy, approvedBy }) {
   return requestedBy === SCHEDULED_RELEASE_ROLES.requestedBy && approvedBy === SCHEDULED_RELEASE_ROLES.approvedBy;
 }
 
-export function releaseRoleEventViolations({ requestedBy, approvedBy, event, actor }) {
+export function releaseRoleEventViolations({ requestedBy, approvedBy, event, actor, triggeringActor }) {
   const scheduled = isExactScheduledPair({ requestedBy, approvedBy });
   if (!scheduled && (isReserved(requestedBy) || isReserved(approvedBy))) {
     return ["scheduled roles must be used as the exact pair (requestedBy datapack-scheduled-refresh, approvedBy datapack-release-gates)"];
@@ -42,10 +42,16 @@ export function releaseRoleEventViolations({ requestedBy, approvedBy, event, act
   if (scheduled) {
     if (SCHEDULED_ROLE_EVENTS.includes(event)) return [];
     if (event !== PERSON_ROLE_EVENT) return [`scheduled roles are allowed only for the schedule event or a scheduler App workflow_dispatch (event: ${String(event)})`];
+    if (triggeringActor !== undefined && triggeringActor !== "" && (actor !== SCHEDULER_APP_LOGIN || triggeringActor !== SCHEDULER_APP_LOGIN)) {
+      return [`scheduled roles on workflow_dispatch require the scheduler App ${SCHEDULER_APP_LOGIN} as both actor and triggering_actor (actor: ${String(actor)}, triggering_actor: ${String(triggeringActor)})`];
+    }
     return actor === SCHEDULER_APP_LOGIN ? [] : [`scheduled roles on workflow_dispatch require the scheduler App ${SCHEDULER_APP_LOGIN} as actor (actor: ${String(actor)})`];
   }
   // 사람 역할: 로컬 실행(event 없음)과 사람 dispatch만 받는다. 스케줄러 App은 사람 승인을 대신할 수 없다.
-  if (actor === SCHEDULER_APP_LOGIN) return ["person roles cannot be requested by the scheduler App"];
+  if (actor === SCHEDULER_APP_LOGIN || triggeringActor === SCHEDULER_APP_LOGIN) return ["person roles cannot be requested by the scheduler App"];
+  if (event === PERSON_ROLE_EVENT && triggeringActor !== undefined && triggeringActor !== "" && actor !== undefined && actor !== "" && actor !== triggeringActor) {
+    return [`person roles on workflow_dispatch require actor and triggering_actor to match (actor: ${String(actor)}, triggering_actor: ${String(triggeringActor)})`];
+  }
   return event === undefined || event === null || event === PERSON_ROLE_EVENT
     ? []
     : [`person roles require workflow_dispatch (event: ${String(event)})`];
@@ -91,6 +97,9 @@ export function gateRunFromEnvironment(env = process.env) {
   if (env.GITHUB_WORKFLOW_REF !== `${GATE_RUN_REPOSITORY}/${GATE_RUN_WORKFLOW_PATH}@refs/heads/main`) fail("workflow ref");
   const runId = /^[1-9]\d*$/u.test(env.GITHUB_RUN_ID ?? "") ? Number(env.GITHUB_RUN_ID) : Number.NaN;
   const runAttempt = /^[1-9]\d*$/u.test(env.GITHUB_RUN_ATTEMPT ?? "") ? Number(env.GITHUB_RUN_ATTEMPT) : Number.NaN;
+  if (env.GITHUB_EVENT_NAME === PERSON_ROLE_EVENT && env.GITHUB_ACTOR !== undefined && env.GITHUB_ACTOR !== "" && env.GITHUB_ACTOR !== env.GITHUB_TRIGGERING_ACTOR) {
+    fail(`actor mismatch (actor: ${String(env.GITHUB_ACTOR)}, triggering_actor: ${String(env.GITHUB_TRIGGERING_ACTOR)})`);
+  }
   const gateRun = {
     repository: env.GITHUB_REPOSITORY,
     workflowPath: GATE_RUN_WORKFLOW_PATH,

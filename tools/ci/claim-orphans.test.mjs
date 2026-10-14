@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { MAX_CLAIM_BRANCHES } from "./collect-automation-prs.mjs";
 import {
-  CLAIM_OWNERS, VERIFIED_PRE_PUBLICATION_RUNS, classifyUnboundClaim, isClosedOutClaim, claimRunId, collectClaimEvidence, isGhNotFound, main, planUnboundClaims,
+  ACTIVE_CLAIM_GRACE_MINUTES, CLAIM_OWNERS, VERIFIED_PRE_PUBLICATION_RUNS, classifyUnboundClaim, isClosedOutClaim, claimRunId, collectClaimEvidence, isGhNotFound, main, planUnboundClaims,
 } from "./claim-orphans.mjs";
 
 // #995: PR 없는 claim 브랜치(고아)는 만든 run과 게시 증거로 가른다.
@@ -263,11 +263,11 @@ test("고아마다 gh run view를 한 번씩 부르고 PR이 있는 claim은 조
   });
   assert.deepEqual(result, [{
     branch: orphan, runId: "37399282636",
-    run: { found: true, status: "completed", conclusion: "failure", workflowName: "Retained Gwangju Timetable Refresh", headBranch: "main", steps: stepsBeforePublish(GWANGJU) },
+    run: { found: true, status: "completed", conclusion: "failure", workflowName: "Retained Gwangju Timetable Refresh", headBranch: "main", createdAt: null, startedAt: null, steps: stepsBeforePublish(GWANGJU) },
     commits: { aheadBy: 1, subjects: [GWANGJU_CLAIM], changedFiles: 0 }, artifacts: [],
   }]);
   const runViews = github.calls.filter(([a, b]) => a === "run" && b === "view");
-  assert.deepEqual(runViews, [["run", "view", "37399282636", "--repo", REPOSITORY, "--json", "status,conclusion,workflowName,headBranch,jobs"]]);
+  assert.deepEqual(runViews, [["run", "view", "37399282636", "--repo", REPOSITORY, "--json", "status,conclusion,workflowName,headBranch,createdAt,startedAt,jobs"]]);
   assert.equal(github.calls.some(([a, b]) => a === "run" && b === "list"), false, "끝난 run 이력 목록(gh run list)을 받지 않는다");
   assert.equal(github.calls.some((args) => args.includes(String(5))), false, "PR이 있는 claim은 run도 조회하지 않는다");
   assert.equal(github.calls.length, 2, "receipt artifact가 없는 workflow는 artifact를 조회하지 않는다");
@@ -426,3 +426,43 @@ test("닫힌 claim은 claim 제목 + Abandon 제목 두 커밋이고 변경 파�
   const result = classifyUnboundClaim(KRIC, evidence(KRIC, 61, { commits: { aheadBy: 2, subjects: [claim, abandon], changedFiles: 2 } }));
   assert.equal(result.kind, "RECOVERABLE");
 });
+
+test("#997 owner 표의 timeoutMinutes는 workflow 파일의 timeout-minutes와 같다", async () => {
+  assert.equal(ACTIVE_CLAIM_GRACE_MINUTES, 15);
+  for (const [workflowFile, owner] of Object.entries(CLAIM_OWNERS)) {
+    const text = await readFile(new URL(`../../.github/workflows/${workflowFile}`, import.meta.url), "utf8");
+    assert.ok(Number.isSafeInteger(owner.timeoutMinutes) && owner.timeoutMinutes > 0, `${workflowFile}: timeoutMinutes`);
+    assert.ok(text.includes(`    timeout-minutes: ${owner.timeoutMinutes}\n`), `${workflowFile}: timeout-minutes: ${owner.timeoutMinutes}`);
+  }
+});
+
+test("#997 진행 중인 run이 workflow timeout + 15분 안이면 ACTIVE이고 넘으면 CLAIM_ORPHAN_ACTIVE_TOO_LONG으로 실패한다", () => {
+  const now = new Date("2026-10-08T12:00:00Z");
+  const within = evidence(GWANGJU, 201, {
+    run: finished(GWANGJU, { status: "in_progress", conclusion: null, startedAt: "2026-10-08T11:00:00Z", createdAt: "2026-10-08T10:59:00Z" }),
+  });
+  assert.equal(classifyUnboundClaim(GWANGJU, within, { now }).kind, "ACTIVE", "45m + 15m = 60m 경계는 ACTIVE다");
+
+  const stuck = evidence(GWANGJU, 202, {
+    run: finished(GWANGJU, { status: "in_progress", conclusion: null, startedAt: "2026-10-08T10:59:59Z", createdAt: "2026-10-08T10:59:00Z" }),
+  });
+  assert.throws(() => classifyUnboundClaim(GWANGJU, stuck, { now }), /CLAIM_ORPHAN_ACTIVE_TOO_LONG/u);
+  assert.throws(
+    () => planUnboundClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claimBranches: [branch(GWANGJU, 202)], pullRequests: [], evidence: [stuck], now }),
+    /CLAIM_ORPHAN_ACTIVE_TOO_LONG/u,
+  );
+
+  // startedAt이 아직 없는 queued run은 createdAt으로 경과 시간을 본다.
+  const queuedStuck = evidence("current-capital-topology-registration.yml", 203, {
+    run: finished("current-capital-topology-registration.yml", { status: "queued", conclusion: null, startedAt: null, createdAt: "2026-10-08T11:29:59Z" }),
+  });
+  assert.throws(() => classifyUnboundClaim("current-capital-topology-registration.yml", queuedStuck, { now }), /CLAIM_ORPHAN_ACTIVE_TOO_LONG/u, "15m + 15m = 30m 초과");
+
+  // 잘못된 타임스탬프나 시각은 추정하지 않고 실패한다.
+  const badTime = evidence(GWANGJU, 204, {
+    run: finished(GWANGJU, { status: "in_progress", conclusion: null, startedAt: "not-a-date" }),
+  });
+  assert.throws(() => classifyUnboundClaim(GWANGJU, badTime, { now }), /CLAIM_ORPHAN_EVIDENCE_INVALID/u);
+  assert.throws(() => classifyUnboundClaim(GWANGJU, within, { now: new Date("invalid") }), /CLAIM_ORPHAN_INPUT_INVALID/u);
+});
+

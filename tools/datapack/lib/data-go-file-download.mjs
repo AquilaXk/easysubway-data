@@ -7,7 +7,13 @@ import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } fr
 
 const ORIGIN = "https://www.data.go.kr";
 const USER_AGENT = "easysubway-datapack-collector/1.0";
-const REQUEST_TIMEOUT_MS = 60_000;
+// #997: 헤더 대기(연결·TLS·응답 헤더)와 본문 전체 수신 시간을 분리한다.
+// 헤더가 도착하면 헤더 타이머를 끄고, 본문은 관측 최대 파일 크기(1,663,202B)와 하한 처리량(15,000B/s)에서 유도한 별도 시간 안에 읽는다.
+export const HEADER_TIMEOUT_MS = 60_000;
+export const REQUEST_TIMEOUT_MS = HEADER_TIMEOUT_MS;
+export const OBSERVED_FILE_BYTES = 1_663_202;
+export const MIN_BODY_THROUGHPUT_BYTES_PER_SECOND = 15_000;
+export const BODY_TIMEOUT_MS = 120_000;
 // 포털 script_fileDetail.js의 fn_fileDataDown이 고정해 보내는 공공데이터 유형 코드.
 const PUBLIC_DATA_TYPE_CODE = "PR0051";
 const DATASET_ID_PATTERN = /^[1-9]\d{0,11}$/u;
@@ -21,7 +27,7 @@ export const ALLOWED_DATA_GO_FILE_TYPES = Object.freeze([
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
-// 지금 원천의 최대 파일은 300KB 미만이다. 포털 응답이 바뀌어도 메모리를 무한히 쓰지 않는다.
+// 지금 원천의 최대 파일은 2MB 미만이다. 포털 응답이 바뀌어도 메모리를 무한히 쓰지 않는다.
 export const MAX_DATA_GO_FILE_BYTES = 16 * 1024 * 1024;
 const HTML_DOCUMENT_START = /^(?:<!doctype\s+html|<html[\s>])/iu;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
@@ -35,6 +41,13 @@ function requireDatasetId(datasetId) {
     throw new TypeError("data.go.kr dataset id is invalid");
   }
   return datasetId;
+}
+
+function requireTimeoutMs(value, name) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`data.go.kr ${name} is invalid`);
+  }
+  return value;
 }
 
 export function dataGoDetailUrl(datasetId) {
@@ -87,23 +100,56 @@ export function parseDataGoDownloadAction(html, datasetId) {
   return [...actions.values()][0];
 }
 
-// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
-// 인증·쿼터·내용 오류(HTTP 4xx, 허용 밖 content-type 등)는 재시도하지 않는다. 한도를 다 쓰면 마지막 HTTP 오류나 전송 오류를 그대로 던진다.
-async function requestGet(fetchImpl, url, headers, label, read, { sleepImpl, retryBudget } = {}) {
+async function readWithBodyDeadline(response, label, bodyTimeout, read) {
+  let cancelStream = () => response.body?.cancel?.();
+  const registerCancel = (fn) => { cancelStream = fn; };
+  let bodyTimer = null;
+  try {
+    return await Promise.race([
+      read(response, registerCancel),
+      new Promise((_, reject) => {
+        bodyTimer = setTimeout(() => {
+          Promise.resolve().then(() => cancelStream()).catch(() => {});
+          reject(new Error(`data.go.kr ${label} TIMEOUT`));
+        }, bodyTimeout);
+        bodyTimer.unref?.();
+      }),
+    ]);
+  } finally {
+    clearTimeout(bodyTimer);
+  }
+}
+
+// 요청과 본문 읽기(read)를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·헤더 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).
+// 본문 수신 시간 초과(TIMEOUT)·인증·쿼터·내용 오류(HTTP 4xx, 허용 밖 content-type 등)는 재시도하지 않는다. 한도를 다 쓰면 마지막 HTTP 오류나 전송 오류를 그대로 던진다.
+async function requestGet(
+  fetchImpl, url, headers, label, read,
+  { sleepImpl, retryBudget, headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS } = {},
+) {
+  const headerTimeout = requireTimeoutMs(headerTimeoutMs, "headerTimeoutMs");
+  const bodyTimeout = requireTimeoutMs(bodyTimeoutMs, "bodyTimeoutMs");
   let outcome;
   try {
     outcome = await withTransientRetry(async () => {
-      const response = await fetchImpl(url, {
-        method: "GET",
-        redirect: "error",
-        headers: { "User-Agent": USER_AGENT, ...headers },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
+      const controller = new AbortController();
+      const headerTimer = setTimeout(() => controller.abort(), headerTimeout);
+      headerTimer.unref?.();
+      let response;
+      try {
+        response = await fetchImpl(url, {
+          method: "GET",
+          redirect: "error",
+          headers: { "User-Agent": USER_AGENT, ...headers },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(headerTimer);
+      }
       if (!response.ok) {
         try { await response.body?.cancel(); } catch { /* best effort */ }
         return { response };
       }
-      return { response, value: await read(response) };
+      return { response, value: await readWithBodyDeadline(response, label, bodyTimeout, read) };
     }, { isTransientResult: ({ response }) => isTransientStatus(response.status), sleep: sleepImpl, budget: retryBudget });
   } catch (error) {
     throw unwrapTransientRetryFailure(error);
@@ -146,12 +192,27 @@ export async function resolveDataGoFileDownload(fetchImpl, datasetId, retry = {}
   return { datasetId, detailUrl, downloadUrl: downloadUrl.toString() };
 }
 
-async function readLimitedBody(response, datasetId, maxBytes) {
+async function readLimitedBody(response, datasetId, maxBytes, registerCancel) {
   const exceeds = () => new Error(`data.go.kr ${datasetId} file exceeds ${maxBytes} bytes`);
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) throw exceeds();
   const chunks = [];
   let received = 0;
+  if (typeof response.body?.getReader === "function") {
+    const reader = response.body.getReader();
+    registerCancel?.(() => reader.cancel());
+    while (true) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      received += chunk.byteLength;
+      if (received > maxBytes) {
+        try { await reader.cancel(); } catch { /* best effort */ }
+        throw exceeds();
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
   // 본문 중간에서 상한을 넘으면 반복을 중단해 나머지 스트림을 받지 않는다.
   for await (const chunk of response.body ?? []) {
     received += chunk.byteLength;
@@ -166,12 +227,12 @@ export async function downloadDataGoFile(fetchImpl, datasetId, { maxBytes = MAX_
   if (!isCanonicalDataGoDownloadUrl(downloadUrl)) {
     throw new Error(`data.go.kr ${datasetId} download URL is invalid`);
   }
-  const bytes = await requestGet(fetchImpl, downloadUrl, { Referer: detailUrl }, `${datasetId} file`, async (response) => {
+  const bytes = await requestGet(fetchImpl, downloadUrl, { Referer: detailUrl }, `${datasetId} file`, async (response, registerCancel) => {
     const contentType = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
     if (!ALLOWED_DATA_GO_FILE_TYPES.includes(contentType)) {
       throw new Error(`data.go.kr ${datasetId} file content-type is not allowed`);
     }
-    return readLimitedBody(response, datasetId, maxBytes);
+    return readLimitedBody(response, datasetId, maxBytes, registerCancel);
   }, retry);
   if (bytes.byteLength === 0) throw new Error(`data.go.kr ${datasetId} file is empty`);
   // 허용된 content-type으로 내려온 오류 페이지(HTML)도 데이터 파일로 받지 않는다.

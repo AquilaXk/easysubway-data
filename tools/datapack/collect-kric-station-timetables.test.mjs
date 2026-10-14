@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  BODY_TIMEOUT_MS,
+  HEADER_TIMEOUT_MS,
   KRIC_SUBWAY_TIMETABLE_ENDPOINT,
+  MIN_BODY_THROUGHPUT_BYTES_PER_SECOND,
+  OBSERVED_RESPONSE_BYTES,
+  REQUEST_TIMEOUT_MS,
   collectKricStationTimetables,
   formatCollectionError,
   responsesFromCollection,
@@ -127,4 +132,59 @@ test("키는 percent·form 인코딩 형태로 응답에 섞여도 막고, fetch
   for (const form of [special, ...encodedForms]) assert.equal(error.message.includes(form), false);
   const printed = formatCollectionError(new Error(`boom ${special} ${encodedForms[0]} ${encodedForms[1]}`), { KRIC_SERVICE_KEY: special });
   assert.equal(printed, "boom [REDACTED] [REDACTED] [REDACTED]");
+});
+
+test("#997 헤더 timeout과 본문 수신 한도를 분리하고 시간 초과 시 시크릿 노출 없이 KRIC_TIMEOUT으로 실패한다", { timeout: 5_000 }, async () => {
+  assert.equal(HEADER_TIMEOUT_MS, 30_000);
+  assert.equal(REQUEST_TIMEOUT_MS, HEADER_TIMEOUT_MS);
+  assert.equal(OBSERVED_RESPONSE_BYTES, 90_000);
+  assert.equal(MIN_BODY_THROUGHPUT_BYTES_PER_SECOND, 1_500);
+  assert.equal(BODY_TIMEOUT_MS, 60_000);
+
+  // (1) 헤더 응답 뒤 본문이 headerTimeoutMs보다 느려도 bodyTimeoutMs 안에 오면 성공한다.
+  const baseFetch = fakeFetch().impl;
+  const slowArtifact = await collectKricStationTimetables({
+    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 30, bodyTimeoutMs: 2_000,
+    fetchImpl: async (url, init) => {
+      const res = await baseFetch(url, init);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      const body = new ReadableStream({
+        async start(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          init.signal?.throwIfAborted();
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal(slowArtifact.responses.length, 6);
+
+  // (2) 헤더 timeout은 KRIC_TIMEOUT으로 실패하고 키를 노출하지 않는다.
+  const headerErr = await collectKricStationTimetables({
+    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 25, bodyTimeoutMs: 1_000,
+    fetchImpl: (url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error(`timeout ${url}`)))),
+  }).catch((caught) => caught);
+  assert.match(headerErr.message, /^KRIC_TIMEOUT: T1 T01 dayCd=7$/u);
+  assert.equal(headerErr.message.includes(KEY), false);
+
+  // (3) 본문 수신 데드라인 초과는 reader를 취소하고 KRIC_TIMEOUT으로 실패한다.
+  let cancelled = false;
+  const bodyErr = await collectKricStationTimetables({
+    bindings: [BINDING], serviceKey: KEY, now: clock(), headerTimeoutMs: 500, bodyTimeoutMs: 35,
+    fetchImpl: async () => new Response(new ReadableStream({
+      pull() { return new Promise(() => {}); },
+      cancel() { cancelled = true; },
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+  }).catch((caught) => caught);
+  assert.match(bodyErr.message, /^KRIC_TIMEOUT: T1 T01 dayCd=7$/u);
+  assert.equal(bodyErr.message.includes(KEY), false);
+  assert.equal(cancelled, true);
+
+  // (4) 잘못된 timeout 인자는 거부한다.
+  for (const bad of [0, -1, 1.5, "30"]) {
+    await assert.rejects(collectKricStationTimetables({ bindings: [BINDING], serviceKey: KEY, headerTimeoutMs: bad, fetchImpl: baseFetch, now: clock() }), /KRIC_TIMEOUT_INVALID/u);
+    await assert.rejects(collectKricStationTimetables({ bindings: [BINDING], serviceKey: KEY, bodyTimeoutMs: bad, fetchImpl: baseFetch, now: clock() }), /KRIC_TIMEOUT_INVALID/u);
+  }
 });

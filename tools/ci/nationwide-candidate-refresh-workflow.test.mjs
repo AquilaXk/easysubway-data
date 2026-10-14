@@ -26,32 +26,36 @@ test("권한은 job에만 주고 issues 쓰기는 실패 보고용이다(workflo
   assert.doesNotMatch(yml, /actions: write/u);
 });
 
-test("정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true일 때만 돌고, 사람 dispatch는 항상 돈다(#1032)", () => {
-  const condition = "${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.triggering_actor != 'easysubway-release-chain[bot]') || vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true') }}";
+test("정기 실행과 스케줄러 App의 dispatch는 저장소 변수가 true일 때만 돌고, 사람 dispatch는 항상 돈다(#1032, #1040)", () => {
+  const condition = "${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.actor != 'easysubway-release-chain[bot]' && github.triggering_actor != 'easysubway-release-chain[bot]') || (vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && (github.event_name != 'workflow_dispatch' || (github.actor == 'easysubway-release-chain[bot]' && github.triggering_actor == 'easysubway-release-chain[bot]')))) }}";
   assert.equal(yml.match(/\n    if: ([^\n]+)\n/u)?.[1], condition);
   const runs = (context) => evaluateGithubExpression(condition, context);
   const APP = "easysubway-release-chain[bot]";
   const main = { ref: "refs/heads/main" };
   for (const vars of [{}, { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "false" }, { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "true" }]) {
-    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", triggering_actor: "AquilaXk" }, vars }), true, `사람 dispatch ${JSON.stringify(vars)}`);
+    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", actor: "AquilaXk", triggering_actor: "AquilaXk" }, vars }), true, `사람 dispatch ${JSON.stringify(vars)}`);
+    // #1040: App이 시작한 run을 사람이 재실행(actor=APP, triggering_actor=사람)하거나 반대로 어긋난 경우는 어떤 변수 상태에서도 돌지 않는다.
+    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", actor: APP, triggering_actor: "AquilaXk" }, vars }), false, `재실행 불일치 ${JSON.stringify(vars)}`);
+    assert.equal(runs({ github: { ...main, event_name: "workflow_dispatch", actor: "AquilaXk", triggering_actor: APP }, vars }), false, `역방향 불일치 ${JSON.stringify(vars)}`);
   }
   for (const event_name of ["schedule", "workflow_dispatch"]) {
-    const github = { ...main, event_name, triggering_actor: event_name === "schedule" ? "AquilaXk" : APP };
+    const github = { ...main, event_name, actor: event_name === "schedule" ? "AquilaXk" : APP, triggering_actor: event_name === "schedule" ? "AquilaXk" : APP };
     assert.equal(runs({ github, vars: {} }), false, `${event_name} 변수 없음`);
     assert.equal(runs({ github, vars: { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "false" } }), false, `${event_name} 변수 false`);
     assert.equal(runs({ github, vars: { DATAPACK_SCHEDULED_CANDIDATE_REFRESH: "true" } }), true, `${event_name} 변수 true`);
   }
-  assert.equal(runs({ github: { ref: "refs/heads/feature", event_name: "workflow_dispatch", triggering_actor: "AquilaXk" }, vars: {} }), false, "main이 아닌 ref");
+  assert.equal(runs({ github: { ref: "refs/heads/feature", event_name: "workflow_dispatch", actor: "AquilaXk", triggering_actor: "AquilaXk" }, vars: {} }), false, "main이 아닌 ref");
 });
 
-test("dispatch 입력은 선택이다: 스케줄러 App은 입력 없이 깨우고 사람 입력 검증은 plan 단계가 한다(#1032)", () => {
+test("dispatch 입력은 선택이다: 스케줄러 App은 입력 없이 깨우고 사람 입력 검증은 plan 단계가 한다(#1032, #1040)", () => {
   for (const input of ["releaseSequence", "requestedBy", "approvedBy"]) {
     assert.match(yml, new RegExp(`\\n      ${input}:\\n(?:        [^\\n]+\\n)*?        required: false\\n`, "u"), input);
     assert.doesNotMatch(yml, new RegExp(`\\n      ${input}:\\n(?:        [^\\n]+\\n)*?        required: true\\n`, "u"), input);
   }
   const { block } = step("Validate candidate refresh inputs");
-  assert.match(block, /\n          ACTOR: \$\{\{ github\.triggering_actor \}\}\n/u);
-  assert.match(block, /--event "\$\{EVENT_NAME\}" --actor "\$\{ACTOR\}" --github-output/u);
+  assert.match(block, /\n          ACTOR: \$\{\{ github\.actor \}\}\n/u);
+  assert.match(block, /\n          TRIGGERING_ACTOR: \$\{\{ github\.triggering_actor \}\}\n/u);
+  assert.match(block, /--event "\$\{EVENT_NAME\}" --actor "\$\{ACTOR\}" --triggering-actor "\$\{TRIGGERING_ACTOR\}" --github-output/u);
 });
 
 test("판정 step이 입력 검증·후보 생성보다 먼저 돌고 열린 PR·브랜치·매니페스트만 읽는다", () => {
@@ -68,8 +72,9 @@ test("판정 step이 입력 검증·후보 생성보다 먼저 돌고 열린 PR�
   assert.doesNotMatch(block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/927-nationwide-candidate-refresh-\*" > /u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
-  assert.match(block, /ACTOR: \$\{\{ github\.triggering_actor \}\}/u);
-  assert.match(block, /node tools\/ci\/decide-nationwide-candidate-refresh\.mjs --event "\$\{EVENT_NAME\}" --actor "\$\{ACTOR\}" --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /ACTOR: \$\{\{ github\.actor \}\}/u);
+  assert.match(block, /TRIGGERING_ACTOR: \$\{\{ github\.triggering_actor \}\}/u);
+  assert.match(block, /node tools\/ci\/decide-nationwide-candidate-refresh\.mjs --event "\$\{EVENT_NAME\}" --actor "\$\{ACTOR\}" --triggering-actor "\$\{TRIGGERING_ACTOR\}" --repository "\$\{GITHUB_REPOSITORY\}" --prs "[^"]+" --branches "[^"]+" --automation-branches "[^"]+" --github-output "\$\{GITHUB_OUTPUT\}"/u);
 });
 
 test("후보 생성·범위 검증·push·App 토큰·PR 생성은 STALE 또는 FORCED일 때만 돈다", () => {

@@ -32,28 +32,39 @@ import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { defaultRunGh } from "./report-refresh-failure.mjs";
 
 // claim 브랜치를 provider 접근 전에 만드는 갱신 workflow.
+// - timeoutMinutes: workflow 파일의 timeout-minutes. 진행 중인 run이 이 시간 + ACTIVE_CLAIM_GRACE_MINUTES를 넘으면 무한 대기 대신 실패한다(#997).
 // - publicationSteps: OCI 게시를 하는 step 이름(첫 이름이 현재, 나머지는 분리 전). null이면 이 workflow는 OCI에 게시하지 않는다. undefined면 이 workflow의 판정은 자기 의미를 쓴다(등록·재확인).
 // - receiptArtifact: 게시 step이 시작된 run이 남기는 보존 증거 artifact 이름(KRIC). 출력 커밋이 증거인 workflow(광주·서울·topology)는 없다.
 // - abandonedSubject: 소유 workflow가 "닫았다"고 남기는 커밋 제목.
+export const ACTIVE_CLAIM_GRACE_MINUTES = 15;
 const owner = (workflowFile, workflowName, claimSubject, extra = {}) => Object.freeze({ prefix: REFRESH_CLAIM_PREFIXES[workflowFile], workflowName, claimSubject, ...extra });
 export const CLAIM_OWNERS = Object.freeze({
   "retained-gwangju-timetable-refresh.yml": owner("retained-gwangju-timetable-refresh.yml", "Retained Gwangju Timetable Refresh", "Claim retained Gwangju timetable refresh", {
+    timeoutMinutes: 45,
     publicationSteps: Object.freeze(["Publish and register retained Gwangju timetable", "Refresh due retained Gwangju timetable"]),
   }),
   "seoul-current-accessibility-refresh.yml": owner("seoul-current-accessibility-refresh.yml", "Seoul Current Accessibility Refresh", "Claim Seoul accessibility refresh", {
+    timeoutMinutes: 45,
     publicationSteps: Object.freeze(["Publish and register Seoul accessibility snapshot", "Collect and bind current snapshot"]),
   }),
   "kric-current-facility-refresh.yml": owner("kric-current-facility-refresh.yml", "KRIC Current Facility Refresh", "Claim KRIC facility refresh", {
+    timeoutMinutes: 45,
     publicationSteps: Object.freeze(["KRIC current facility refresh / Publish and register current snapshot", "KRIC current facility refresh / Collect and bind current snapshot"]),
     abandonedSubject: "Abandon KRIC facility refresh claim",
     receiptArtifact: (runId) => `kric-current-facility-refresh-${runId}`,
   }),
   // 수도권 topology 갱신은 입력을 git 커밋으로만 남기고 OCI에 게시하지 않는다.
-  "current-capital-topology-refresh.yml": owner("current-capital-topology-refresh.yml", "Current Capital Topology Refresh", "Claim current topology refresh", { publicationSteps: null }),
+  "current-capital-topology-refresh.yml": owner("current-capital-topology-refresh.yml", "Current Capital Topology Refresh", "Claim current topology refresh", {
+    timeoutMinutes: 45,
+    publicationSteps: null,
+  }),
   "current-capital-topology-registration.yml": owner("current-capital-topology-registration.yml", "Current Capital Topology Registration", "Claim capital topology registration", {
+    timeoutMinutes: 15,
     receiptArtifact: (runId) => `current-capital-topology-registration-${runId}`,
   }),
-  "source-reverification.yml": owner("source-reverification.yml", "Source Reverification", "Claim source reverification"),
+  "source-reverification.yml": owner("source-reverification.yml", "Source Reverification", "Claim source reverification", {
+    timeoutMinutes: 90,
+  }),
 });
 
 // 분리 전 합쳐진 step에서 실패한 옛 run은 수집 단계 실패와 게시 이후 실패를 step으로 가를 수 없다. 로그로 게시 전 실패가 확인된 run만 여기에 둔다.
@@ -93,6 +104,7 @@ export function isGhNotFound(error) {
 const byText = (left, right) => (left < right ? -1 : Number(left > right));
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
+const isOptionalTimestamp = (value) => value === undefined || value === null || (typeof value === "string" && Number.isFinite(Date.parse(value)));
 
 function assertEvidence(claimOwner, evidence) {
   const invalid = (detail) => fail("CLAIM_ORPHAN_EVIDENCE_INVALID", detail);
@@ -102,6 +114,7 @@ function assertEvidence(claimOwner, evidence) {
   if (!isObject(run) || typeof run.found !== "boolean") invalid(`${evidence.branch} run`);
   if (run.found && (!RUN_STATUSES.includes(run.status) || typeof run.workflowName !== "string" || typeof run.headBranch !== "string"
     || !(run.conclusion === null || typeof run.conclusion === "string")
+    || !isOptionalTimestamp(run.createdAt) || !isOptionalTimestamp(run.startedAt)
     || !Array.isArray(run.steps) || run.steps.some((item) => !isObject(item) || typeof item.name !== "string" || typeof item.status !== "string"
       || !(item.conclusion === null || typeof item.conclusion === "string")))) invalid(`${evidence.branch} run state`);
   if (!isObject(commits) || !isCount(commits.aheadBy) || !isCount(commits.changedFiles)
@@ -145,12 +158,23 @@ function publicationStarted(claimOwner, claimRun, branch) {
  * PR 없는 claim 하나의 처지를 정한다.
  * @returns {{ branch: string, runId: string, kind: "ACTIVE"|"RECOVERABLE"|"ABANDONED", reason: string }}
  */
-export function classifyUnboundClaim(workflowFile, evidence) {
+export function classifyUnboundClaim(workflowFile, evidence, { now = new Date() } = {}) {
+  const currentMs = now instanceof Date ? now.getTime() : NaN;
+  if (!Number.isFinite(currentMs)) fail("CLAIM_ORPHAN_INPUT_INVALID", "decision time");
   const claimOwner = assertEvidence(ownerOf(workflowFile), evidence);
   const { branch, runId, run, commits, artifacts } = evidence;
   const result = (kind, reason) => ({ branch, runId, kind, reason });
   assertClaimRunOwner(workflowFile, branch, run);
-  if (run.found && run.status !== "completed") return result("ACTIVE", "RUN_IN_PROGRESS");
+  if (run.found && run.status !== "completed") {
+    const anchor = run.startedAt ?? run.createdAt ?? null;
+    if (anchor !== null) {
+      const limitMinutes = claimOwner.timeoutMinutes + ACTIVE_CLAIM_GRACE_MINUTES;
+      if (currentMs - Date.parse(anchor) > limitMinutes * 60_000) {
+        fail("CLAIM_ORPHAN_ACTIVE_TOO_LONG", `${branch}: producer run ${runId} (${run.status}) has been active since ${anchor}, exceeding ${limitMinutes}m`);
+      }
+    }
+    return result("ACTIVE", "RUN_IN_PROGRESS");
+  }
   if (isClosedOutClaim(workflowFile, commits)) return result("ABANDONED", "CLAIM_CLOSED_OUT");
   // 빈 claim 하나뿐인 브랜치만 "출력 커밋이 없다"고 본다. 개수·제목·내용 중 하나라도 다르면 내용이 있는 브랜치라 지우지 않는다.
   // 빈 claim이라는 것만으로는 게시되지 않았다는 증거가 아니다. 게시는 출력 커밋보다 먼저 일어난다(아래 step 판정).
@@ -182,7 +206,7 @@ function assertClaimBranches(workflowFile, claimBranches) {
  * claim 브랜치 중 PR이 없는 것(고아)을 증거로 가른다. PR이 어떤 상태로든 있으면 고아가 아니다(그 PR의 처리는 소유 workflow 몫이다).
  * @returns {{ active: string[], recoverable: string[], abandoned: string[] }} 각각 오름차순 브랜치 이름
  */
-export function planUnboundClaims({ workflowFile, repository, claimBranches, pullRequests, evidence } = {}) {
+export function planUnboundClaims({ workflowFile, repository, claimBranches, pullRequests, evidence, now = new Date() } = {}) {
   assertClaimBranches(workflowFile, claimBranches);
   const bound = boundBranches(workflowFile, repository, pullRequests);
   if (!Array.isArray(evidence)) fail("CLAIM_ORPHAN_INPUT_INVALID", "evidence");
@@ -191,7 +215,7 @@ export function planUnboundClaims({ workflowFile, repository, claimBranches, pul
   for (const branch of claimBranches.filter((name) => !bound.has(name))) {
     const matches = evidence.filter((entry) => entry?.branch === branch);
     if (matches.length !== 1) fail("CLAIM_ORPHAN_EVIDENCE_MISSING", `${branch} has ${matches.length} evidence records`);
-    groups[classifyUnboundClaim(workflowFile, matches[0]).kind].push(branch);
+    groups[classifyUnboundClaim(workflowFile, matches[0], { now }).kind].push(branch);
   }
   for (const group of Object.values(groups)) group.sort(byText);
   return plan;
@@ -212,10 +236,23 @@ async function ghJson(runGh, args, describe) {
  */
 export async function lookupClaimRun(runGh, repository, runId) {
   try {
-    const run = await ghJson(runGh, ["run", "view", runId, "--repo", repository, "--json", "status,conclusion,workflowName,headBranch,jobs"], `run ${runId}`);
+    const run = await ghJson(
+      runGh,
+      ["run", "view", runId, "--repo", repository, "--json", "status,conclusion,workflowName,headBranch,createdAt,startedAt,jobs"],
+      `run ${runId}`,
+    );
     const steps = (Array.isArray(run?.jobs) ? run.jobs : []).flatMap((job) => (Array.isArray(job?.steps) ? job.steps : []))
       .map(({ name, status, conclusion }) => ({ name, status, conclusion: conclusion === "" ? null : (conclusion ?? null) }));
-    return { found: true, status: run?.status, conclusion: run?.conclusion ?? null, workflowName: run?.workflowName, headBranch: run?.headBranch, steps };
+    return {
+      found: true,
+      status: run?.status,
+      conclusion: run?.conclusion ?? null,
+      workflowName: run?.workflowName,
+      headBranch: run?.headBranch,
+      createdAt: run?.createdAt ?? null,
+      startedAt: run?.startedAt ?? null,
+      steps,
+    };
   } catch (error) {
     // 기록이 없는 run은 { found: false }다. 권한·서버·네트워크 오류는 추정하지 않고 실패한다.
     if (isGhNotFound(error)) return { found: false };
