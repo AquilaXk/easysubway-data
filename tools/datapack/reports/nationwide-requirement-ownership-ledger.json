@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "32980c0a04113621a697c3cb4b195a79d58b9165b3187705c2c3f50fdeee0928"
+        "sha256": "6e223c31ef59b07ed276f4f1b6e237ff5afe1176687d3b4d6e7f6edd10e80367"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -31,10 +31,10 @@
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "b0090769f3c4e5225acb6cc7f8238eab22ac8a94e8961583ab0e2ce5732ecc88",
-        "fanInSha256": "9db8d1556d1836b618f9457cdfd33845df6cf0bdf41742b4fa1d63e020c2d10a",
+        "sha256": "44367a6e76288f5468fd63e9a4aefa954e4857403732e72b1312fc9b7126b118",
+        "fanInSha256": "cf28b39d6214443585a6c22b928550488444981dc9094a00f07c2751243aea5e",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
-        "sourceSetSha256": "53f42f4a7f2ac9855e110bbd40336044d25f99af9b03046f250d80f107e397d1",
+        "sourceSetSha256": "e58cca294d46e4333d78f99bbc10ebd58eb1ce2179affbcc1a7177a1704021d8",
         "regionalMatrixSha256": "5dacb9428eb6277ae6ae768c646267a0eb96697262f3cf0cb76e49b01b515126"
       }
     }
