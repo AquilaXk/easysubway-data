@@ -199,8 +199,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "realtime",
-      "observedDataUpdatedAt": "2026-10-13",
-      "retrievedAt": "2026-10-13",
+      "observedDataUpdatedAt": "2026-10-14",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 제1유형",
@@ -247,10 +247,10 @@
         "issue": 2319,
         "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-busan-route-topology.test.mjs",
-        "snapshotId": "busan-transportation-route-topology-abf9cf2d18a7b1c319c7a6dc1b73f8156112b077ca80db49d4809305829df995",
-        "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-abf9cf2d18a7b1c319c7a6dc1b73f8156112b077ca80db49d4809305829df995.json",
-        "capturedAt": "2026-10-13T00:42:55.311Z",
-        "freshUntil": "2026-10-20T00:42:55.311Z",
+        "snapshotId": "busan-transportation-route-topology-c549f3027055be9cf564cfe791dc6461097c9663f08bbdb544ec7a2bf814af46",
+        "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-c549f3027055be9cf564cfe791dc6461097c9663f08bbdb544ec7a2bf814af46.json",
+        "capturedAt": "2026-10-14T01:21:09.171Z",
+        "freshUntil": "2026-10-21T01:21:09.171Z",
         "stationCount": 114,
         "edgeCount": 220,
         "excludedTransferCount": 18,
@@ -261,8 +261,8 @@
         "issue": 2363,
         "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-busan-route-topology.test.mjs",
-        "snapshotId": "busan-transportation-route-topology-abf9cf2d18a7b1c319c7a6dc1b73f8156112b077ca80db49d4809305829df995",
-        "verifiedAt": "2026-10-13T00:42:55.311Z",
+        "snapshotId": "busan-transportation-route-topology-c549f3027055be9cf564cfe791dc6461097c9663f08bbdb544ec7a2bf814af46",
+        "verifiedAt": "2026-10-14T01:21:09.171Z",
         "stationCount": 114,
         "lineIds": [
           "line-ab1a041f6266",
@@ -276,7 +276,7 @@
         "mappingSha256": "494648057aa006842743d4729b5118b33325283e45380b1703e25f543ed59d26",
         "stationCodesSha256": "63545c48047eca5563c6c6f4f0e4c7eb19aa80e1ebf4766edfc82a357c2a2ebf",
         "stationCodeSourceId": "busan-transportation-route-topology",
-        "stationCodeSnapshotId": "busan-transportation-route-topology-abf9cf2d18a7b1c319c7a6dc1b73f8156112b077ca80db49d4809305829df995",
+        "stationCodeSnapshotId": "busan-transportation-route-topology-c549f3027055be9cf564cfe791dc6461097c9663f08bbdb544ec7a2bf814af46",
         "stationCodeContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
       },
       "admissionEvidence": {
@@ -475,7 +475,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2026-07-07",
-      "retrievedAt": "2026-10-13",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -520,10 +520,10 @@
         "issue": 2407,
         "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-        "snapshotId": "daegu-line1-route-topology-89f983c6177d8f050d16569141774ee3ea41ddfe0e6f65df79b0e4876dda2325",
-        "snapshotPath": "tools/datapack/sources/daegu-line1-route-topology-89f983c6177d8f050d16569141774ee3ea41ddfe0e6f65df79b0e4876dda2325.json",
-        "capturedAt": "2026-10-13T00:43:42.849Z",
-        "freshUntil": "2026-10-20T00:43:42.849Z",
+        "snapshotId": "daegu-line1-route-topology-d0274c94c2e412374bdf5270e98ea7259911efb5bdd059ab1155b7dc76c3ca7a",
+        "snapshotPath": "tools/datapack/sources/daegu-line1-route-topology-d0274c94c2e412374bdf5270e98ea7259911efb5bdd059ab1155b7dc76c3ca7a.json",
+        "capturedAt": "2026-10-14T01:24:11.315Z",
+        "freshUntil": "2026-10-21T01:24:11.315Z",
         "stationCount": 35,
         "edgeCount": 68,
         "excludedTransferCount": 0,
@@ -547,7 +547,7 @@
         "mappingSha256": "50810515863d5566cb968d5d07bbd35f5b2f6434436a21d43e2506da7beb3312",
         "stationCodesSha256": "2a9169367a78c7d63b99dbd3a66f95b661f54c984330564a7fa19c2ddddcb17b",
         "stationCodeSourceId": "daegu-line1-route-topology",
-        "stationCodeSnapshotId": "daegu-line1-route-topology-89f983c6177d8f050d16569141774ee3ea41ddfe0e6f65df79b0e4876dda2325",
+        "stationCodeSnapshotId": "daegu-line1-route-topology-d0274c94c2e412374bdf5270e98ea7259911efb5bdd059ab1155b7dc76c3ca7a",
         "stationCodeContentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f"
       },
       "admissionEvidence": {
@@ -582,7 +582,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2024-10-07",
-      "retrievedAt": "2026-10-13",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -626,10 +626,10 @@
         "issue": 2407,
         "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-        "snapshotId": "daegu-line1-train-timetable-bcec257b2df5baabd5724e76260ec58b2cbaedf39537a1205a3476898fea3e2d",
-        "snapshotPath": "tools/datapack/sources/daegu-line1-train-timetable-bcec257b2df5baabd5724e76260ec58b2cbaedf39537a1205a3476898fea3e2d.json",
-        "capturedAt": "2026-10-13T00:43:42.849Z",
-        "freshUntil": "2026-10-14T00:43:42.849Z",
+        "snapshotId": "daegu-line1-train-timetable-3e042877800a29f145449e603ae0ac268e89748697d17b56760658ca9c5dc08f",
+        "snapshotPath": "tools/datapack/sources/daegu-line1-train-timetable-3e042877800a29f145449e603ae0ac268e89748697d17b56760658ca9c5dc08f.json",
+        "capturedAt": "2026-10-14T01:24:11.315Z",
+        "freshUntil": "2026-10-15T01:24:11.315Z",
         "rowCount": 408,
         "departureCount": 27514,
         "tripCount": 824,
@@ -637,7 +637,7 @@
         "rawSha256": "98fcb58f09a9e4f57d25ec853de05f9911a0ba01e0d184e57fe9b209d2d8c671",
         "rowsSha256": "a3a59473840b3b03c29e7ac207ce9cefa4440aab124bd27c9bdc7ad5faff700d",
         "topologySourceId": "daegu-line1-route-topology",
-        "topologySnapshotId": "daegu-line1-route-topology-89f983c6177d8f050d16569141774ee3ea41ddfe0e6f65df79b0e4876dda2325",
+        "topologySnapshotId": "daegu-line1-route-topology-d0274c94c2e412374bdf5270e98ea7259911efb5bdd059ab1155b7dc76c3ca7a",
         "topologyContentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f",
         "rawUpSha256": "892b8d397ef917a07851d4a2b33d375a6973df4c19ddadbaff52137f84c9d4e0",
         "rawDownSha256": "3c858a4f8f0ba792635f5bc03fd6e0e7450eb7c853147972529d72cf5ae45c43",
@@ -679,7 +679,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2026-07-07",
-      "retrievedAt": "2026-10-13",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -724,10 +724,10 @@
         "issue": 2407,
         "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-        "snapshotId": "daegu-line2-route-topology-5a09f594abe2375204d85098b11b0db8b0d5c1b42264fb1c988156b71121133c",
-        "snapshotPath": "tools/datapack/sources/daegu-line2-route-topology-5a09f594abe2375204d85098b11b0db8b0d5c1b42264fb1c988156b71121133c.json",
-        "capturedAt": "2026-10-13T00:43:42.849Z",
-        "freshUntil": "2026-10-20T00:43:42.849Z",
+        "snapshotId": "daegu-line2-route-topology-cce4ae03c65ddf505c3988d37f819e496b810a5a0fac4028088c802c1220a08a",
+        "snapshotPath": "tools/datapack/sources/daegu-line2-route-topology-cce4ae03c65ddf505c3988d37f819e496b810a5a0fac4028088c802c1220a08a.json",
+        "capturedAt": "2026-10-14T01:24:11.315Z",
+        "freshUntil": "2026-10-21T01:24:11.315Z",
         "stationCount": 29,
         "edgeCount": 56,
         "excludedTransferCount": 0,
@@ -751,7 +751,7 @@
         "mappingSha256": "9ce93ff604ead4a3e49ddde6d5300e17b7544fe0924994b3bf45cc791cd76129",
         "stationCodesSha256": "b89277686bb18cc3c09b22b967cf21c290fa1c34a975260f401528cd248321ca",
         "stationCodeSourceId": "daegu-line2-route-topology",
-        "stationCodeSnapshotId": "daegu-line2-route-topology-5a09f594abe2375204d85098b11b0db8b0d5c1b42264fb1c988156b71121133c",
+        "stationCodeSnapshotId": "daegu-line2-route-topology-cce4ae03c65ddf505c3988d37f819e496b810a5a0fac4028088c802c1220a08a",
         "stationCodeContentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00"
       },
       "admissionEvidence": {
@@ -786,7 +786,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2024-10-10",
-      "retrievedAt": "2026-10-13",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -830,10 +830,10 @@
         "issue": 2407,
         "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-        "snapshotId": "daegu-line2-train-timetable-ed4a935f9345d324ddb949d02227f0f4ff0119ae9bd97b4a9fa5a779eaccd6a5",
-        "snapshotPath": "tools/datapack/sources/daegu-line2-train-timetable-ed4a935f9345d324ddb949d02227f0f4ff0119ae9bd97b4a9fa5a779eaccd6a5.json",
-        "capturedAt": "2026-10-13T00:43:42.849Z",
-        "freshUntil": "2026-10-14T00:43:42.849Z",
+        "snapshotId": "daegu-line2-train-timetable-72c3f2ecb197018bb31863f0db9e2ed2a6220889519309c9ae5beac3c927f091",
+        "snapshotPath": "tools/datapack/sources/daegu-line2-train-timetable-72c3f2ecb197018bb31863f0db9e2ed2a6220889519309c9ae5beac3c927f091.json",
+        "capturedAt": "2026-10-14T01:24:11.315Z",
+        "freshUntil": "2026-10-15T01:24:11.315Z",
         "rowCount": 336,
         "departureCount": 23816,
         "tripCount": 828,
@@ -841,7 +841,7 @@
         "rawSha256": "1639bc648e4fbe02cfadc007a6c9c89801494bcc34eaefe28dd3aa5639080fcc",
         "rowsSha256": "01e36f3d7b09cd186eee4cb7861447b44b48ca79dbe20600edf4bd3165736788",
         "topologySourceId": "daegu-line2-route-topology",
-        "topologySnapshotId": "daegu-line2-route-topology-5a09f594abe2375204d85098b11b0db8b0d5c1b42264fb1c988156b71121133c",
+        "topologySnapshotId": "daegu-line2-route-topology-cce4ae03c65ddf505c3988d37f819e496b810a5a0fac4028088c802c1220a08a",
         "topologyContentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00",
         "rawUpSha256": "000c341909c1628f0664b50beef60d232cfae21e38b474467689fddf3b7ad1d8",
         "rawDownSha256": "3b0189ee63f54f313284d0ead497da9a1bb804e7c60499f2c18cf2b27c972dde",
@@ -883,7 +883,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2026-07-07",
-      "retrievedAt": "2026-10-13",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -928,10 +928,10 @@
         "issue": 2407,
         "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-        "snapshotId": "daegu-line3-route-topology-a5ab3936ae2fa6df50460be995e764650b32ca6bb7163a5b6def4b5c943c6b6e",
-        "snapshotPath": "tools/datapack/sources/daegu-line3-route-topology-a5ab3936ae2fa6df50460be995e764650b32ca6bb7163a5b6def4b5c943c6b6e.json",
-        "capturedAt": "2026-10-13T00:43:42.849Z",
-        "freshUntil": "2026-10-20T00:43:42.849Z",
+        "snapshotId": "daegu-line3-route-topology-fdb9ef7293e1637c4334796dfd42259cf917f899618e269e443da821dd32d8b8",
+        "snapshotPath": "tools/datapack/sources/daegu-line3-route-topology-fdb9ef7293e1637c4334796dfd42259cf917f899618e269e443da821dd32d8b8.json",
+        "capturedAt": "2026-10-14T01:24:11.315Z",
+        "freshUntil": "2026-10-21T01:24:11.315Z",
         "stationCount": 30,
         "edgeCount": 58,
         "excludedTransferCount": 0,
@@ -955,7 +955,7 @@
         "mappingSha256": "d67b2e8d505fc8202c0b2522118a2254b8a143d4df52f859b281625ddee69c0d",
         "stationCodesSha256": "ccbdac20980dd1135646a6dfdc97b0251df0df36af56de76a2fb14f1a0051afe",
         "stationCodeSourceId": "daegu-line3-route-topology",
-        "stationCodeSnapshotId": "daegu-line3-route-topology-a5ab3936ae2fa6df50460be995e764650b32ca6bb7163a5b6def4b5c943c6b6e",
+        "stationCodeSnapshotId": "daegu-line3-route-topology-fdb9ef7293e1637c4334796dfd42259cf917f899618e269e443da821dd32d8b8",
         "stationCodeContentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653"
       },
       "admissionEvidence": {
@@ -990,7 +990,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
       "observedDataUpdatedAt": "2024-10-07",
-      "retrievedAt": "2026-10-13",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -1034,10 +1034,10 @@
         "issue": 2407,
         "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
-        "snapshotId": "daegu-line3-train-timetable-3a41bb2d6b33cf5e6213148b39fe89a7f4d79ef1aa907ab7600a282cf5629b11",
-        "snapshotPath": "tools/datapack/sources/daegu-line3-train-timetable-3a41bb2d6b33cf5e6213148b39fe89a7f4d79ef1aa907ab7600a282cf5629b11.json",
-        "capturedAt": "2026-10-13T00:43:42.849Z",
-        "freshUntil": "2026-10-14T00:43:42.849Z",
+        "snapshotId": "daegu-line3-train-timetable-f0cb318d11bc5e7465e187bb69c8551ffbbb448c30ae34ddddc0aae9f507dd08",
+        "snapshotPath": "tools/datapack/sources/daegu-line3-train-timetable-f0cb318d11bc5e7465e187bb69c8551ffbbb448c30ae34ddddc0aae9f507dd08.json",
+        "capturedAt": "2026-10-14T01:24:11.315Z",
+        "freshUntil": "2026-10-15T01:24:11.315Z",
         "rowCount": 348,
         "departureCount": 26640,
         "tripCount": 888,
@@ -1045,7 +1045,7 @@
         "rawSha256": "4d80acce97c2c474a2279561b1fc9662762f81e237b2dd02fb481fb2f30b2f61",
         "rowsSha256": "752089ea25cc854f34be4b63db013ca396c0628c81324595ef9f46787246cfca",
         "topologySourceId": "daegu-line3-route-topology",
-        "topologySnapshotId": "daegu-line3-route-topology-a5ab3936ae2fa6df50460be995e764650b32ca6bb7163a5b6def4b5c943c6b6e",
+        "topologySnapshotId": "daegu-line3-route-topology-fdb9ef7293e1637c4334796dfd42259cf917f899618e269e443da821dd32d8b8",
         "topologyContentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653",
         "rawUpSha256": "092c4041cffaea99c9dff56671dda2d0de025ced143d1effdcff95c89cb1d42b",
         "rawDownSha256": "a2a3d8ad68decc30222d431eb437799d011cdf3d7f60bff8db2f417300b20bd5",
@@ -1245,9 +1245,9 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-daegu-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-daegu-route-map-positions.test.mjs",
-        "snapshotId": "daegu-transportation-route-map-positions-3a5b07167c3dfdbc31fa2825323ad1e1ecaada96125042ac92827853f6b1a26b",
-        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-3a5b07167c3dfdbc31fa2825323ad1e1ecaada96125042ac92827853f6b1a26b.json",
-        "snapshotSha256": "3a5b07167c3dfdbc31fa2825323ad1e1ecaada96125042ac92827853f6b1a26b",
+        "snapshotId": "daegu-transportation-route-map-positions-8b4476bd9523d278fc13cbe305f0489e431befc9dc757970f40e6e0d7e00e4df",
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-8b4476bd9523d278fc13cbe305f0489e431befc9dc757970f40e6e0d7e00e4df.json",
+        "snapshotSha256": "8b4476bd9523d278fc13cbe305f0489e431befc9dc757970f40e6e0d7e00e4df",
         "capturedAt": "2026-07-24T03:00:00.000Z",
         "stationCount": 91,
         "rawStationCount": 91,
@@ -1272,28 +1272,28 @@
         },
         "observedDataUpdatedAt": "2024-10-14",
         "topologySourceId": "daegu-transportation-route-map-topology-lineage",
-        "topologySnapshotId": "daegu-transportation-route-map-topology-lineage-aea9b3da14547bc40ff4314a0d34e60be80bafac8912ca1c59bb6beb69998d93",
+        "topologySnapshotId": "daegu-transportation-route-map-topology-lineage-bf582b10525e56fd3e73e8f5d8321972f5b87715e8be6468e083c6738c0cd797",
         "topologyLineages": [
           {
             "sourceId": "daegu-line1-route-topology",
-            "snapshotId": "daegu-line1-route-topology-89f983c6177d8f050d16569141774ee3ea41ddfe0e6f65df79b0e4876dda2325",
+            "snapshotId": "daegu-line1-route-topology-d0274c94c2e412374bdf5270e98ea7259911efb5bdd059ab1155b7dc76c3ca7a",
             "contentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f",
             "lineId": "line-5b8d9b05e7e6"
           },
           {
             "sourceId": "daegu-line2-route-topology",
-            "snapshotId": "daegu-line2-route-topology-5a09f594abe2375204d85098b11b0db8b0d5c1b42264fb1c988156b71121133c",
+            "snapshotId": "daegu-line2-route-topology-cce4ae03c65ddf505c3988d37f819e496b810a5a0fac4028088c802c1220a08a",
             "contentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00",
             "lineId": "line-e2938a4cc492"
           },
           {
             "sourceId": "daegu-line3-route-topology",
-            "snapshotId": "daegu-line3-route-topology-a5ab3936ae2fa6df50460be995e764650b32ca6bb7163a5b6def4b5c943c6b6e",
+            "snapshotId": "daegu-line3-route-topology-fdb9ef7293e1637c4334796dfd42259cf917f899618e269e443da821dd32d8b8",
             "contentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653",
             "lineId": "line-0ffaa95b1b5d"
           }
         ],
-        "topologyContentSha256": "aea9b3da14547bc40ff4314a0d34e60be80bafac8912ca1c59bb6beb69998d93",
+        "topologyContentSha256": "bf582b10525e56fd3e73e8f5d8321972f5b87715e8be6468e083c6738c0cd797",
         "freshUntil": "2027-07-24T03:00:00.000Z"
       }
     },
@@ -1325,8 +1325,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "realtime",
-      "observedDataUpdatedAt": "2026-10-13",
-      "retrievedAt": "2026-10-13",
+      "observedDataUpdatedAt": "2026-10-14",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -1371,10 +1371,10 @@
         "issue": 2326,
         "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
-        "snapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
-        "snapshotPath": "tools/datapack/sources/daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a.json",
-        "capturedAt": "2026-10-13T00:43:22.978Z",
-        "freshUntil": "2026-10-20T00:43:22.978Z",
+        "snapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
+        "snapshotPath": "tools/datapack/sources/daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e.json",
+        "capturedAt": "2026-10-14T01:23:50.884Z",
+        "freshUntil": "2026-10-21T01:23:50.884Z",
         "stationCount": 22,
         "edgeCount": 42,
         "excludedTransferCount": 0,
@@ -1397,7 +1397,7 @@
         "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
         "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
         "stationCodeSourceId": "daejeon-station-distance-fare",
-        "stationCodeSnapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
+        "stationCodeSnapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
         "stationCodeContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       },
       "admissionEvidence": {
@@ -1487,7 +1487,7 @@
         "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
         "rowsSha256": "5888ab731dbe76b9b4791c30224664a12c37a25da50c5423d4266bc3c02c44a9",
         "topologySourceId": "daejeon-station-distance-fare",
-        "topologySnapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
+        "topologySnapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
         "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       },
       "admissionEvidence": {
@@ -1568,10 +1568,10 @@
         "issue": 2476,
         "materializer": "tools/datapack/materialize-daejeon-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-accessibility.test.mjs",
-        "snapshotId": "daejeon-transportation-accessibility-29576163aa1e539d44f71b3a51e0eba0b42f17c57f7de78dae91340368a88c62-20261013",
-        "snapshotPath": "tools/datapack/sources/daejeon-transportation-accessibility-29576163aa1e539d44f71b3a51e0eba0b42f17c57f7de78dae91340368a88c62-20261013.json",
-        "capturedAt": "2026-10-13T00:43:36.333Z",
-        "freshUntil": "2026-10-14T00:43:36.333Z",
+        "snapshotId": "daejeon-transportation-accessibility-ff3b34405b198e162e326a8506c2accbfd0537bdb74ab4df6956a6bda8ffa930-20261014",
+        "snapshotPath": "tools/datapack/sources/daejeon-transportation-accessibility-ff3b34405b198e162e326a8506c2accbfd0537bdb74ab4df6956a6bda8ffa930-20261014.json",
+        "capturedAt": "2026-10-14T01:24:05.376Z",
+        "freshUntil": "2026-10-15T01:24:05.376Z",
         "stationCount": 22,
         "rowCount": 22,
         "facilityCount": 44,
@@ -1582,12 +1582,12 @@
           "15041361"
         ],
         "topologySourceId": "daejeon-station-distance-fare",
-        "topologySnapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
+        "topologySnapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
         "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
         "topologyLineages": [
           {
             "sourceId": "daejeon-station-distance-fare",
-            "snapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
+            "snapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
             "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
             "lineId": "line-7051a9c2525c"
           }
@@ -1669,9 +1669,9 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-daejeon-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-map-positions.test.mjs",
-        "snapshotId": "daejeon-transportation-route-map-positions-1315760ba035fc6b024962cf0ac84cddedb64541cb3265947cd28ffee8c7f9eb",
-        "snapshotPath": "tools/datapack/sources/daejeon-transportation-route-map-positions-1315760ba035fc6b024962cf0ac84cddedb64541cb3265947cd28ffee8c7f9eb.json",
-        "snapshotSha256": "1315760ba035fc6b024962cf0ac84cddedb64541cb3265947cd28ffee8c7f9eb",
+        "snapshotId": "daejeon-transportation-route-map-positions-dc320df3701cf085d802aea2218e7b5c16711e5470847494ac2275c47e15c4eb",
+        "snapshotPath": "tools/datapack/sources/daejeon-transportation-route-map-positions-dc320df3701cf085d802aea2218e7b5c16711e5470847494ac2275c47e15c4eb.json",
+        "snapshotSha256": "dc320df3701cf085d802aea2218e7b5c16711e5470847494ac2275c47e15c4eb",
         "capturedAt": "2026-07-25T03:00:00.000Z",
         "stationCount": 22,
         "rawStationCount": 22,
@@ -1690,12 +1690,12 @@
         },
         "observedDataUpdatedAt": "2026-06-25",
         "topologySourceId": "daejeon-station-distance-fare",
-        "topologySnapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
+        "topologySnapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
         "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
         "topologyLineages": [
           {
             "sourceId": "daejeon-station-distance-fare",
-            "snapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
+            "snapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
             "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
             "lineId": "line-7051a9c2525c"
           }
@@ -1777,10 +1777,10 @@
         "issue": 2479,
         "materializer": "tools/datapack/materialize-gwangju-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-accessibility.test.mjs",
-        "snapshotId": "gwangju-transportation-accessibility-669cd2c104f6e2a97841e0635a116fcec2691a7ef80e2cf4c1aec830ac0eca52-20261013",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-669cd2c104f6e2a97841e0635a116fcec2691a7ef80e2cf4c1aec830ac0eca52-20261013.json",
-        "capturedAt": "2026-10-13T00:42:53.503Z",
-        "freshUntil": "2026-10-14T00:42:53.503Z",
+        "snapshotId": "gwangju-transportation-accessibility-6ed211f18ac4290031ab1a77166ea3228dcb7ecd1050ca7dd814fa191cfc612c-20261014",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-accessibility-6ed211f18ac4290031ab1a77166ea3228dcb7ecd1050ca7dd814fa191cfc612c-20261014.json",
+        "capturedAt": "2026-10-14T01:21:07.269Z",
+        "freshUntil": "2026-10-15T01:21:07.269Z",
         "stationCount": 20,
         "rowCount": 20,
         "facilityCount": 36,
@@ -1791,12 +1791,12 @@
           "15041362"
         ],
         "topologySourceId": "gwangju-transportation-route-topology",
-        "topologySnapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
+        "topologySnapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
         "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
         "topologyLineages": [
           {
             "sourceId": "gwangju-transportation-route-topology",
-            "snapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
+            "snapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
             "contentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
             "lineId": "line-e57a361e8892"
           }
@@ -1878,9 +1878,9 @@
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-gwangju-route-map-positions.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-route-map-positions.test.mjs",
-        "snapshotId": "gwangju-transportation-route-map-positions-615ee134341ec08e4512931e6d243127da06ce04adc1c3dc27ae41edea951fa4",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-map-positions-615ee134341ec08e4512931e6d243127da06ce04adc1c3dc27ae41edea951fa4.json",
-        "snapshotSha256": "615ee134341ec08e4512931e6d243127da06ce04adc1c3dc27ae41edea951fa4",
+        "snapshotId": "gwangju-transportation-route-map-positions-c9b8faa8958dba147869836b55bbd6576bee2c451c40571204d040dd371f9c14",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-map-positions-c9b8faa8958dba147869836b55bbd6576bee2c451c40571204d040dd371f9c14.json",
+        "snapshotSha256": "c9b8faa8958dba147869836b55bbd6576bee2c451c40571204d040dd371f9c14",
         "capturedAt": "2026-07-25T02:00:00.000Z",
         "stationCount": 20,
         "rawStationCount": 20,
@@ -1899,12 +1899,12 @@
         },
         "observedDataUpdatedAt": "2022-12-02",
         "topologySourceId": "gwangju-transportation-route-topology",
-        "topologySnapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
+        "topologySnapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
         "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
         "topologyLineages": [
           {
             "sourceId": "gwangju-transportation-route-topology",
-            "snapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
+            "snapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
             "contentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a",
             "lineId": "line-e57a361e8892"
           }
@@ -1940,8 +1940,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily admission refresh",
-      "observedDataUpdatedAt": "2026-10-13",
-      "retrievedAt": "2026-10-13",
+      "observedDataUpdatedAt": "2026-10-14",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -1986,10 +1986,10 @@
         "issue": 2383,
         "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
-        "snapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
-        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5.json",
-        "capturedAt": "2026-10-13T00:42:37.412Z",
-        "freshUntil": "2026-10-20T00:42:37.412Z",
+        "snapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413.json",
+        "capturedAt": "2026-10-14T01:20:50.586Z",
+        "freshUntil": "2026-10-21T01:20:50.586Z",
         "stationCount": 20,
         "edgeCount": 38,
         "excludedTransferCount": 0,
@@ -2012,7 +2012,7 @@
         "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
         "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
         "stationCodeSourceId": "gwangju-transportation-route-topology",
-        "stationCodeSnapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
+        "stationCodeSnapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
         "stationCodeContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
       },
       "admissionEvidence": {
@@ -4313,8 +4313,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily",
-      "observedDataUpdatedAt": "2026-10-13",
-      "retrievedAt": "2026-10-13",
+      "observedDataUpdatedAt": "2026-10-14",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -4385,7 +4385,7 @@
           "productionUseAllowed": true,
           "unlockStatus": "not_required"
         },
-        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20261013T041744987Z registration verified.",
+        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20261014T004954331Z registration verified.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
       },
       "accessibilityAdmissionEvidence": {
@@ -4393,15 +4393,15 @@
         "decision": "APPROVED",
         "productionUseAllowed": true,
         "licenseEvidenceHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
-        "snapshotId": "kric-station-convenience-standard-20261013T041744987Z",
-        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20261013T041744987Z.json",
-        "capturedAt": "2026-10-13T04:17:44.987Z",
-        "observedAt": "2026-10-13T04:17:44.987Z",
-        "freshUntil": "2026-10-14T04:17:44.987Z",
+        "snapshotId": "kric-station-convenience-standard-20261014T004954331Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20261014T004954331Z.json",
+        "capturedAt": "2026-10-14T00:49:54.331Z",
+        "observedAt": "2026-10-14T00:49:54.331Z",
+        "freshUntil": "2026-10-15T00:49:54.331Z",
         "rawSha256": "51d72d972269e48554975669b24b0b8ce67c063f45ca5804969af5dd36f2df25",
         "contentSha256": "712c23d11287e26b01952879c0161f6d20ab5637392885e18c7f1ac465edaf26",
         "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-        "snapshotFileSha256": "847b856b1d1da923f791c2deee79db17b8ba82c3126ab361c1a040321cb85718",
+        "snapshotFileSha256": "cbaffb61310ca25c175a28f45a3246785e2075faf64d43bced7526e523c445aa",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST_WITH_UNVERIFIED_EVIDENCE_BLOCKED"
       }
     },
@@ -6785,7 +6785,7 @@
         "mappingSha256": "50810515863d5566cb968d5d07bbd35f5b2f6434436a21d43e2506da7beb3312",
         "stationCodesSha256": "2a9169367a78c7d63b99dbd3a66f95b661f54c984330564a7fa19c2ddddcb17b",
         "stationCodeSourceId": "daegu-line1-route-topology",
-        "stationCodeSnapshotId": "daegu-line1-route-topology-89f983c6177d8f050d16569141774ee3ea41ddfe0e6f65df79b0e4876dda2325",
+        "stationCodeSnapshotId": "daegu-line1-route-topology-d0274c94c2e412374bdf5270e98ea7259911efb5bdd059ab1155b7dc76c3ca7a",
         "stationCodeContentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f"
       }
     },
@@ -6872,7 +6872,7 @@
         "mappingSha256": "9ce93ff604ead4a3e49ddde6d5300e17b7544fe0924994b3bf45cc791cd76129",
         "stationCodesSha256": "b89277686bb18cc3c09b22b967cf21c290fa1c34a975260f401528cd248321ca",
         "stationCodeSourceId": "daegu-line2-route-topology",
-        "stationCodeSnapshotId": "daegu-line2-route-topology-5a09f594abe2375204d85098b11b0db8b0d5c1b42264fb1c988156b71121133c",
+        "stationCodeSnapshotId": "daegu-line2-route-topology-cce4ae03c65ddf505c3988d37f819e496b810a5a0fac4028088c802c1220a08a",
         "stationCodeContentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00"
       }
     },
@@ -6959,7 +6959,7 @@
         "mappingSha256": "d67b2e8d505fc8202c0b2522118a2254b8a143d4df52f859b281625ddee69c0d",
         "stationCodesSha256": "ccbdac20980dd1135646a6dfdc97b0251df0df36af56de76a2fb14f1a0051afe",
         "stationCodeSourceId": "daegu-line3-route-topology",
-        "stationCodeSnapshotId": "daegu-line3-route-topology-a5ab3936ae2fa6df50460be995e764650b32ca6bb7163a5b6def4b5c943c6b6e",
+        "stationCodeSnapshotId": "daegu-line3-route-topology-fdb9ef7293e1637c4334796dfd42259cf917f899618e269e443da821dd32d8b8",
         "stationCodeContentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653"
       }
     },
@@ -7046,7 +7046,7 @@
         "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
         "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
         "stationCodeSourceId": "daejeon-station-distance-fare",
-        "stationCodeSnapshotId": "daejeon-station-distance-fare-1d3cc12762f00fe0276034d204294c6e3c4b4dc589b074fffb4e9c583252e34a",
+        "stationCodeSnapshotId": "daejeon-station-distance-fare-827aa24ff6ffcb79b1e600ac4edcf807660fd2f0954797da7aaae8682bd8c07e",
         "stationCodeContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       }
     },
@@ -7133,7 +7133,7 @@
         "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
         "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
         "stationCodeSourceId": "gwangju-transportation-route-topology",
-        "stationCodeSnapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
+        "stationCodeSnapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
         "stationCodeContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
       }
     },
@@ -8745,7 +8745,7 @@
         "observedAt": "2026-10-13T06:52:46.629Z",
         "retainedContractSha256": "2259bdc9436bf1f29152bdfa103b2d1e8e729285dddd925c3ae8ede46e114acd",
         "topologySourceId": "gwangju-transportation-route-topology",
-        "topologySnapshotId": "gwangju-transportation-route-topology-0b6b4334047168beddad085550d76204f3cd6d3d593abb251968ea78e7b4e4f5",
+        "topologySnapshotId": "gwangju-transportation-route-topology-f28c6adc810e2170e9efe6c67d81d597366b9c8d511febd1b953087067fd5413",
         "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
       },
       "admissionEvidence": {
@@ -8905,7 +8905,7 @@
             "schedule_timetable"
           ]
         },
-        "observedAt": "2026-10-13T00:41:29.625Z",
+        "observedAt": "2026-10-14T01:18:54.412Z",
         "reverifications": [
           {
             "observedAt": "2026-10-02T15:57:05.773Z",
@@ -8946,6 +8946,11 @@
             "observedAt": "2026-10-13T00:41:29.625Z",
             "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
             "collectionReceiptSha256": "9c440550998051e1d6ae7040b6dbeedd954b0b1bbc0e99e7a2b687e02fb8adb1"
+          },
+          {
+            "observedAt": "2026-10-14T01:18:54.412Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "c0d5c7cabcaa2d9549f98e4b25f7196a66624a0fdf3e854f7291c8c7446850e3"
           }
         ]
       },
@@ -9033,7 +9038,7 @@
             "schedule_timetable"
           ]
         },
-        "observedAt": "2026-10-13T00:41:29.625Z",
+        "observedAt": "2026-10-14T01:18:54.412Z",
         "reverifications": [
           {
             "observedAt": "2026-10-03T00:11:32.831Z",
@@ -9069,6 +9074,11 @@
             "observedAt": "2026-10-13T00:41:29.625Z",
             "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
             "collectionReceiptSha256": "9c440550998051e1d6ae7040b6dbeedd954b0b1bbc0e99e7a2b687e02fb8adb1"
+          },
+          {
+            "observedAt": "2026-10-14T01:18:54.412Z",
+            "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
+            "collectionReceiptSha256": "c0d5c7cabcaa2d9549f98e4b25f7196a66624a0fdf3e854f7291c8c7446850e3"
           }
         ]
       },
@@ -9111,7 +9121,7 @@
       "productionUseAllowed": true,
       "updateFrequency": "P1D",
       "observedDataUpdatedAt": "2026-09-07",
-      "retrievedAt": "2026-10-13",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터 이용허락범위 제한없음",
@@ -9154,15 +9164,15 @@
         "issue": 457,
         "materializer": "tools/datapack/materialize-korail-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-korail-route-topology.test.mjs",
-        "snapshotId": "korail-metropolitan-timetable-file-37f6cf1b42b6281a60c9e111b36c39eb1c87278bb6a14f798b46b06cf0a77ac7",
-        "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-37f6cf1b42b6281a60c9e111b36c39eb1c87278bb6a14f798b46b06cf0a77ac7.json",
-        "capturedAt": "2026-10-13T00:42:32.860Z",
-        "freshUntil": "2026-10-20T00:42:32.860Z",
+        "snapshotId": "korail-metropolitan-timetable-file-44653356f448f39c2ec8870fd334470c6f8891f758153c76d7144f96b23762c4",
+        "snapshotPath": "tools/datapack/sources/korail-metropolitan-timetable-file-44653356f448f39c2ec8870fd334470c6f8891f758153c76d7144f96b23762c4.json",
+        "capturedAt": "2026-10-14T01:20:45.728Z",
+        "freshUntil": "2026-10-21T01:20:45.728Z",
         "stationCount": 8,
         "edgeCount": 14,
         "excludedTransferCount": 0,
         "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-        "contentSha256": "37f6cf1b42b6281a60c9e111b36c39eb1c87278bb6a14f798b46b06cf0a77ac7"
+        "contentSha256": "44653356f448f39c2ec8870fd334470c6f8891f758153c76d7144f96b23762c4"
       },
       "admissionEvidence": {
         "licenseEvidenceHash": "5ba64bc87bdc3fa867ffd53894ef2637260ca233a30bdef71e855b2401526d04"
@@ -9195,8 +9205,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "P30D",
-      "observedDataUpdatedAt": "2026-10-13",
-      "retrievedAt": "2026-10-13",
+      "observedDataUpdatedAt": "2026-10-14",
+      "retrievedAt": "2026-10-14",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "unrestricted",
@@ -9242,20 +9252,20 @@
         "issue": 454,
         "materializer": "tools/datapack/materialize-korail-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-korail-timetable.test.mjs",
-        "snapshotId": "korail-metropolitan-planned-timetable-b0c4bccba5133f559a9047dc0712d006d9c1d5338917672b0ae37a318955c23a",
-        "snapshotPath": "tools/datapack/sources/korail-metropolitan-planned-timetable-b0c4bccba5133f559a9047dc0712d006d9c1d5338917672b0ae37a318955c23a.json",
-        "capturedAt": "2026-10-13T00:42:32.860Z",
-        "freshUntil": "2026-11-12T00:42:32.860Z",
+        "snapshotId": "korail-metropolitan-planned-timetable-c0121ed3f5de0ed95e230c0ff99bf9920b6ce73286d766c99ec31a8ce064f596",
+        "snapshotPath": "tools/datapack/sources/korail-metropolitan-planned-timetable-c0121ed3f5de0ed95e230c0ff99bf9920b6ce73286d766c99ec31a8ce064f596.json",
+        "capturedAt": "2026-10-14T01:20:45.728Z",
+        "freshUntil": "2026-11-13T01:20:45.728Z",
         "rowCount": 1488,
         "departureCount": 1488,
         "tripCount": 194,
         "stopTimeCount": 1488,
         "rawSha256": "c28dcdcc504edf22db4267434ba3c8743ec275c997d976ccd3b6063df903187e",
-        "rowsSha256": "9d5f6a8d2c27ce923430d022965bb3e7acdd708ea1462eb9f6a12fc8890b2855",
+        "rowsSha256": "0977327197f3fea8306ddf1e2736f95636e28cc52b3bb788b384746dbe26d8df",
         "topologySourceId": "korail-metropolitan-timetable-file",
-        "topologySnapshotId": "korail-metropolitan-timetable-file-37f6cf1b42b6281a60c9e111b36c39eb1c87278bb6a14f798b46b06cf0a77ac7",
-        "topologyContentSha256": "37f6cf1b42b6281a60c9e111b36c39eb1c87278bb6a14f798b46b06cf0a77ac7",
-        "contentSha256": "b0c4bccba5133f559a9047dc0712d006d9c1d5338917672b0ae37a318955c23a",
+        "topologySnapshotId": "korail-metropolitan-timetable-file-44653356f448f39c2ec8870fd334470c6f8891f758153c76d7144f96b23762c4",
+        "topologyContentSha256": "44653356f448f39c2ec8870fd334470c6f8891f758153c76d7144f96b23762c4",
+        "contentSha256": "c0121ed3f5de0ed95e230c0ff99bf9920b6ce73286d766c99ec31a8ce064f596",
         "tripsSha256": "71f33d17e7fe784af33d5e1cda18840b02993c03d9bded7bfef5c2dcb3d8adfe"
       },
       "admissionEvidence": {
