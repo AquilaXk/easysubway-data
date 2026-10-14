@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261014-seq140",
-  "candidateBuildSpecSha256": "dec06957d1e1acd3578b0fe94701639a4ec40cabbe2a5eaccab88822035d685b",
-  "preparationSha256": "b9b7ca95a7e8e5d2a021a52ef13764c633c5c3614aceed2d2b6957b24881ab09",
-  "fanInSha256": "b0090769f3c4e5225acb6cc7f8238eab22ac8a94e8961583ab0e2ce5732ecc88",
+  "candidateId": "nationwide-candidate-20261014-seq141",
+  "candidateBuildSpecSha256": "7b8c0ad9b86d20205e1f5dc454b306080c85e634ea79609b44a92499d75014c1",
+  "preparationSha256": "878c84cae224796c01082005d1ec60ec6a12aed6ad8f88f700d39c163e51df46",
+  "fanInSha256": "44367a6e76288f5468fd63e9a4aefa954e4857403732e72b1312fc9b7126b118",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "b0090769f3c4e5225acb6cc7f8238eab22ac8a94e8961583ab0e2ce5732ecc88",
+      "sha256": "44367a6e76288f5468fd63e9a4aefa954e4857403732e72b1312fc9b7126b118",
       "byteSize": 36074
     },
     {
@@ -89,8 +89,8 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "32980c0a04113621a697c3cb4b195a79d58b9165b3187705c2c3f50fdeee0928",
-      "byteSize": 420230
+      "sha256": "6e223c31ef59b07ed276f4f1b6e237ff5afe1176687d3b4d6e7f6edd10e80367",
+      "byteSize": 426790
     },
     {
       "path": "tools/datapack/sources/busan-transportation-accessibility-ba05d3ff5501f5e47c0d0398fd03f084a74aede650465895503057881dd27a3e-20261002.json",
