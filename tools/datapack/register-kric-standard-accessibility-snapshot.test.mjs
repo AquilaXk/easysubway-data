@@ -11,7 +11,11 @@ import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { parseKricStandardAccessibilitySnapshotRegistrationArgs, registerKricStandardAccessibilitySnapshot, runKricStandardAccessibilitySnapshotRegistration } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
-import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import {
+  buildCurrentCapitalFacilityCollectionPlan,
+  canonicalCurrentCapitalFacilityCollectionPlanJson,
+  selectCurrentKricRouteRostersPath,
+} from "./build-current-capital-facility-collection-plan.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { CURRENT_CAPITAL_BASE_SOURCE_IDS, selectedSourceHeadAt } from "./test-fixtures/selected-source-head-clock.mjs";
@@ -262,7 +266,7 @@ async function fullRegistrationInputs(values, { mixed = false } = {}) {
     "tools/datapack/release/capital-production-canonical-pack.json",
     "tools/datapack/nationwide-coverage-targets.json",
     "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-    "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+    await selectCurrentKricRouteRostersPath({ repositoryRoot: root }),
     "tools/datapack/source-inventory.json",
   ].map((relative) => readFile(path.join(root, relative))));
   const plan = buildCurrentCapitalFacilityCollectionPlan({

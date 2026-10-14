@@ -9,12 +9,15 @@ import {
   admittedIncheonTopologyEvidence,
   materializeIncheonNetworkEdges,
 } from "./build-datapack.mjs";
+import { selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildKricAccessibilityRoster } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
   canonicalKricExitPathCollectionPlanJson,
   planKricExitPathCollection,
 } from "./plan-kric-exit-path-collection.mjs";
+
+export { selectCurrentKricRouteRostersPath };
 
 const INPUT_KEYS = [
   "canonicalPackBytes",
@@ -400,6 +403,16 @@ function validateRouteRosters(value, targets) {
   for (const scope of value.providerScopes) {
     assertKeys(scope, PROVIDER_SCOPE_KEYS, "provider scope keys");
     for (const key of PROVIDER_SCOPE_KEYS) requiredString(scope[key], `provider scope ${key}`);
+  }
+  for (const roster of value.rosters) {
+    if (!Array.isArray(roster?.stations)) continue;
+    for (const station of roster.stations) {
+      if ((station?.railOprIsttCd === "BS" || roster?.mreaWideCd === "02")
+        && typeof station?.stinCd === "string"
+        && /^\d{3}$/u.test(station.stinCd.trim())) {
+        throw new Error(`KRIC Busan station code must use 4-digit format: ${roster.lnCd}/${station.stinCd}`);
+      }
+    }
   }
   return value;
 }

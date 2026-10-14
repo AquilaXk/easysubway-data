@@ -207,8 +207,11 @@ function run(fixture, overrides = {}) {
 }
 
 function runWithFileSizeLimit(fixture) {
-  return spawnSync("/bin/sh", [
-    "-c", "ulimit -f 0; exec \"$@\"", "sh", process.execPath, ...commandArguments(fixture),
+  return spawnSync("python3", [
+    "-c",
+    "import os, resource, sys; resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0)); os.execv(sys.argv[1], sys.argv[1:])",
+    process.execPath,
+    ...commandArguments(fixture),
   ], { encoding: "utf8" });
 }
 

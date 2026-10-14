@@ -962,3 +962,64 @@ test("계획 시간표 행은 재확인 시각 없이 연장된 신선도 값을
   const input = await currentGateInput(({ selected }) => { delete selected.reverifiedUnchangedAt; });
   assert.throws(() => validateSourceSnapshotFreshness(input), /SOURCE_FRESHNESS_DERIVATION_MISMATCH: unchanged reverification freshness/);
 });
+
+test("일반 클래스 스냅샷은 admissionEvidence·admissionRecordSha256s·serviceEffectiveUntil이 있어도 파생값보다 늦은 신선도 값을 거부한다(#871)", async () => {
+  for (const extensionField of [
+    { admissionEvidence: { verified: true } },
+    { admissionRecordSha256s: ["a".repeat(64)] },
+    { serviceEffectiveUntil: "2099-01-01T00:00:00Z" },
+  ]) {
+    const extended = input({
+      ...extensionField,
+      freshnessExpiresAt: "2026-08-12T00:00:00Z",
+    });
+    assert.throws(
+      () => validateSourceSnapshotFreshness(extended),
+      /SOURCE_FRESHNESS_DERIVATION_MISMATCH/,
+    );
+  }
+
+  const baseGate = await currentGateInput();
+  const admissionSources = baseGate.snapshots.filter((snapshot) =>
+    baseGate.buildSpec.sourceSnapshotIds.includes(snapshot.snapshotId)
+    && snapshot.sourceId !== KORAIL_PLANNED
+    && snapshot.admissionEvidence != null);
+  assert.equal(admissionSources.length, 18);
+  for (const target of admissionSources) {
+    const gateInput = await currentGateInput(({ snapshots }) => {
+      const row = snapshots.find(({ snapshotId }) => snapshotId === target.snapshotId);
+      row.freshnessExpiresAt = new Date(Date.parse(row.freshnessExpiresAt) + 86_400_000).toISOString();
+    });
+    const specRow = gateInput.buildSpec.sourceSnapshots.find(({ snapshotId }) => snapshotId === target.snapshotId);
+    specRow.freshnessExpiresAt = gateInput.snapshots.find(({ snapshotId }) => snapshotId === target.snapshotId).freshnessExpiresAt;
+    assert.throws(
+      () => validateSourceSnapshotFreshness(gateInput),
+      /SOURCE_FRESHNESS_DERIVATION_MISMATCH/,
+      `expected ${target.sourceId} to reject extended freshnessExpiresAt`,
+    );
+  }
+});
+
+test("buildSpec.sourceSnapshots의 freshnessExpiresAt이 snapshot보다 크면 admissionEvidence 유무와 무관하게 거부한다(#871)", async () => {
+  for (const overrides of [
+    {},
+    { admissionEvidence: { verified: true } },
+  ]) {
+    const value = input(overrides);
+    value.buildSpec.sourceSnapshots[0].freshnessExpiresAt = "2026-08-12T00:00:00Z";
+    assert.throws(
+      () => validateSourceSnapshotFreshness(value),
+      /source snapshot provenance does not match verification evidence/,
+    );
+  }
+
+  const gateInput = await currentGateInput();
+  gateInput.buildSpec.sourceSnapshots[0].freshnessExpiresAt = new Date(
+    Date.parse(gateInput.buildSpec.sourceSnapshots[0].freshnessExpiresAt) + 86_400_000,
+  ).toISOString();
+  assert.throws(
+    () => validateSourceSnapshotFreshness(gateInput),
+    /source snapshot provenance does not match verification evidence/,
+  );
+});
+

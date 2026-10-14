@@ -1,4 +1,10 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
+
+export { selectCurrentKricRouteRostersPath };
 
 const CANDIDATE_ID = "kric-subway-timetable-exp";
 const OPERATION = "subwayTimetableExp";
@@ -26,11 +32,45 @@ const EXPECTED_SCOPES = Object.freeze([
   scope("seoul-metro", "seoul-4", "S1", "4"),
   scope("incheon-transit", "line-15b3b8a93259", "IC", "7"),
 ]);
+const BUSAN_SCOPES = Object.freeze([
+  busanScope("line-ab1a041f6266", "1"),
+  busanScope("line-eb7b47920390", "2"),
+  busanScope("line-d74614a04530", "3"),
+  busanScope("line-d812a5bc1e5f", "4"),
+]);
+
+export async function planCurrentKricNationwideTimetableCollection({
+  repositoryRoot,
+  tally,
+  sourceCandidates,
+} = {}) {
+  if (typeof repositoryRoot !== "string" || repositoryRoot.trim() === "") {
+    throw new Error("repositoryRoot is required");
+  }
+  const rosterPath = await selectCurrentKricRouteRostersPath({ repositoryRoot });
+  const [resolvedTally, resolvedCandidates, rosterArtifact] = await Promise.all([
+    tally ?? readFile(path.join(repositoryRoot, "tools/datapack/reports/nationwide-coverage-tally.json"), "utf8").then(JSON.parse),
+    sourceCandidates ?? readFile(path.join(repositoryRoot, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, rosterPath), "utf8").then(JSON.parse),
+  ]);
+  return {
+    ...planKricNationwideTimetableCollection({
+      tally: resolvedTally,
+      rosterArtifact,
+      sourceCandidates: resolvedCandidates,
+    }),
+    rosterPath,
+  };
+}
 
 export function planKricNationwideTimetableCollection({ tally, rosterArtifact, sourceCandidates } = {}) {
-  const { knownRequirementKeys } = validateTally(tally);
+  const { knownRequirementKeys, requiredScopes } = validateTally(tally);
   const candidate = validateCandidate(sourceCandidates);
-  const { providerScopes, knownProviderKeys } = validateProviderScopes(rosterArtifact, knownRequirementKeys);
+  const { providerScopes, knownProviderKeys } = validateProviderScopes(
+    rosterArtifact,
+    knownRequirementKeys,
+    requiredScopes,
+  );
   const selectedStations = selectOwnedStations(rosterArtifact, providerScopes, knownProviderKeys);
   const requests = selectedStations.flatMap((station) => DAY_CDS.map((dayCd) => requestFor(station, dayCd)));
   requests.sort((left, right) => codepointCompare(left.requestKey, right.requestKey));
@@ -60,11 +100,14 @@ function validateTally(tally) {
     throw new Error("timetable tally identity is invalid");
   }
   const expectedByKey = new Map(EXPECTED_SCOPES.map((value) => [scopeKey(value), value]));
+  const busanByKey = new Map(BUSAN_SCOPES.map((value) => [scopeKey(value), value]));
   const seen = new Set();
+  const missingBusanKeys = new Set();
   const knownRequirementKeys = new Set();
   for (const entry of tally.launchRequired.requirements) {
-    if (entry?.regionId !== "capital" || !TARGET_OPERATOR_IDS.includes(entry.operatorId)
-      || entry.sourceDomain !== "schedule_timetable") continue;
+    const isCapitalTarget = entry?.regionId === "capital" && TARGET_OPERATOR_IDS.includes(entry.operatorId);
+    const isBusanTarget = entry?.regionId === "busan" && entry?.operatorId === "busan-transportation";
+    if ((!isCapitalTarget && !isBusanTarget) || entry.sourceDomain !== "schedule_timetable") continue;
     const key = scopeKey(entry);
     if (knownRequirementKeys.has(key)) throw new Error(`duplicate timetable requirement: ${key}`);
     knownRequirementKeys.add(key);
@@ -80,17 +123,26 @@ function validateTally(tally) {
       continue;
     }
     if (entry.status !== "MISSING") throw new Error(`timetable requirement status is invalid: ${key}`);
-    seen.add(key);
-    if (!expectedByKey.has(key)) throw new Error(`unknown timetable requirement: ${key}`);
-    if (entry.status !== "MISSING" || entry.missingKind !== "NO_ADMITTED_SOURCE" || entry.requiredFieldCount !== 3
+    if (entry.missingKind !== "NO_ADMITTED_SOURCE" || entry.requiredFieldCount !== 3
       || !sameStrings(entry.unadmittedFields, REQUIRED_FIELDS)) {
       throw new Error(`timetable requirement is not current missing: ${key}`);
     }
+    if (isBusanTarget) {
+      if (!busanByKey.has(key)) throw new Error(`unknown timetable requirement: ${key}`);
+      missingBusanKeys.add(key);
+      continue;
+    }
+    seen.add(key);
+    if (!expectedByKey.has(key)) throw new Error(`unknown timetable requirement: ${key}`);
   }
   if (seen.size !== EXPECTED_SCOPES.length || [...expectedByKey.keys()].some((key) => !seen.has(key))) {
     throw new Error(`exact ${EXPECTED_SCOPES.length} timetable requirements are required`);
   }
-  return { knownRequirementKeys };
+  const requiredScopes = [
+    ...EXPECTED_SCOPES,
+    ...BUSAN_SCOPES.filter((value) => missingBusanKeys.has(scopeKey(value))),
+  ];
+  return { knownRequirementKeys, requiredScopes };
 }
 
 function validateCandidate(sourceCandidates) {
@@ -113,17 +165,25 @@ function validateCandidate(sourceCandidates) {
   return candidate;
 }
 
-function validateProviderScopes(rosterArtifact, knownRequirementKeys) {
+function validateProviderScopes(rosterArtifact, knownRequirementKeys, requiredScopes = EXPECTED_SCOPES) {
   if (rosterArtifact?.schemaVersion !== 1 || rosterArtifact.artifactKind !== "kric-nationwide-route-rosters"
     || rosterArtifact.sourceId !== "kric-subway-route-info" || rosterArtifact.targetVersion !== TARGET_VERSION
     || rosterArtifact.credentialRedacted !== true || !Array.isArray(rosterArtifact.providerScopes) || !Array.isArray(rosterArtifact.rosters)) {
     throw new Error("timetable roster identity is invalid");
   }
+  for (const roster of rosterArtifact.rosters) {
+    if (!Array.isArray(roster?.stations)) continue;
+    assertBusanFourDigitStationCodes(roster);
+  }
   const actual = new Map();
   const knownProviderKeys = new Set();
-  const expectedByKey = new Map(EXPECTED_SCOPES.map((expected) => [scopeKey(expected), expected]));
+  const expectedByKey = new Map(requiredScopes.map((expected) => [scopeKey(expected), expected]));
   for (const value of rosterArtifact.providerScopes) {
-    const targetOwned = value?.regionId === "capital" && TARGET_OPERATOR_IDS.includes(value?.operatorId);
+    const isCapitalTarget = value?.regionId === "capital" && TARGET_OPERATOR_IDS.includes(value?.operatorId);
+    const isBusanTarget = value?.regionId === "busan" && value?.operatorId === "busan-transportation"
+      && nonBlank(value?.lineId)
+      && (expectedByKey.has(scopeKey(value)) || knownRequirementKeys.has(scopeKey(value)));
+    const targetOwned = isCapitalTarget || isBusanTarget;
     if (targetOwned) {
       for (const field of ["regionId", "operatorId", "lineId", "mreaWideCd", "railOprIsttCd", "lnCd"]) {
         if (!nonBlank(value[field])) throw new Error(`invalid target-owned provider scope: ${field}`);
@@ -141,16 +201,16 @@ function validateProviderScopes(rosterArtifact, knownRequirementKeys) {
     if (!nonBlank(value?.mreaWideCd) || !nonBlank(value?.railOprIsttCd) || !nonBlank(value?.lnCd)) continue;
     knownProviderKeys.add(providerKey(value));
   }
-  if (actual.size !== EXPECTED_SCOPES.length) {
-    throw new Error(`exact ${EXPECTED_SCOPES.length} timetable provider scopes are required`);
+  if (actual.size !== requiredScopes.length) {
+    throw new Error(`exact ${requiredScopes.length} timetable provider scopes are required`);
   }
-  for (const expected of EXPECTED_SCOPES) {
+  for (const expected of requiredScopes) {
     const value = actual.get(scopeKey(expected));
     if (!value || value.mreaWideCd !== expected.mreaWideCd || value.lnCd !== expected.lnCd || value.railOprIsttCd !== expected.railOprIsttCd) {
       throw new Error(`timetable provider scope mismatch: ${scopeKey(expected)}`);
     }
   }
-  return { providerScopes: EXPECTED_SCOPES.map((expected) => actual.get(scopeKey(expected))), knownProviderKeys };
+  return { providerScopes: requiredScopes.map((expected) => actual.get(scopeKey(expected))), knownProviderKeys };
 }
 
 function selectOwnedStations(rosterArtifact, providerScopes, knownProviderKeys) {
@@ -162,10 +222,7 @@ function selectOwnedStations(rosterArtifact, providerScopes, knownProviderKeys) 
     const key = `${roster.mreaWideCd}:${roster.lnCd}`;
     if (!selectedRosterKeys.has(key)) continue;
     if (rostersByRequest.has(key)) throw new Error(`duplicate timetable roster: ${key}`);
-    if (roster?.schemaVersion !== 1 || roster.artifactKind !== "kric-route-roster" || roster.sourceId !== "kric-subway-route-info"
-      || roster.resultCode !== "00" || !Array.isArray(roster.stations)) {
-      throw new Error(`invalid timetable roster: ${key}`);
-    }
+    validateSelectedRoster(roster, key);
     rostersByRequest.set(key, roster);
   }
   const selected = [];
@@ -195,6 +252,26 @@ function selectOwnedStations(rosterArtifact, providerScopes, knownProviderKeys) 
   return selected.sort((left, right) => codepointCompare(stationKeyFor(left), stationKeyFor(right)));
 }
 
+function validateSelectedRoster(roster, key) {
+  if (roster?.schemaVersion !== 1 || roster.artifactKind !== "kric-route-roster" || roster.sourceId !== "kric-subway-route-info"
+    || roster.resultCode !== "00" || !Array.isArray(roster.stations)) {
+    throw new Error(`invalid timetable roster: ${key}`);
+  }
+  assertBusanFourDigitStationCodes(roster);
+}
+
+function assertBusanFourDigitStationCodes(roster) {
+  for (const station of roster.stations) {
+    if ((station?.railOprIsttCd === "BS" || roster?.mreaWideCd === "02")
+      && typeof station?.stinCd === "string"
+      && /^\d{3}$/u.test(station.stinCd.trim())) {
+      throw new Error(
+        `KRIC Busan station code must use 4-digit format: ${roster.mreaWideCd ?? ""}/${station.lnCd ?? roster.lnCd ?? ""}/${station.stinCd.trim()}`,
+      );
+    }
+  }
+}
+
 function requestFor(station, dayCd) {
   const params = { format: "json", railOprIsttCd: station.railOprIsttCd, lnCd: station.lnCd, stinCd: station.stinCd, dayCd };
   return {
@@ -207,6 +284,10 @@ function requestFor(station, dayCd) {
 
 function scope(operatorId, lineId, railOprIsttCd, lnCd) {
   return { regionId: "capital", operatorId, lineId, mreaWideCd: "01", railOprIsttCd, lnCd };
+}
+
+function busanScope(lineId, lnCd) {
+  return { regionId: "busan", operatorId: "busan-transportation", lineId, mreaWideCd: "02", railOprIsttCd: "BS", lnCd };
 }
 
 function scopeKey({ regionId, operatorId, lineId } = {}) {

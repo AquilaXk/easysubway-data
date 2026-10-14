@@ -4,7 +4,11 @@ import test from "node:test";
 import { cp, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { buildCurrentCapitalFacilityCollectionPlan, canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
+import {
+  buildCurrentCapitalFacilityCollectionPlan,
+  canonicalCurrentCapitalFacilityCollectionPlanJson,
+  selectCurrentKricRouteRostersPath,
+} from "./build-current-capital-facility-collection-plan.mjs";
 import { KRIC_ACCESSIBILITY_OPERATIONS, writeKricStandardAccessibilityObservation } from "./collect-kric-accessibility-snapshots.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
@@ -13,6 +17,7 @@ import { collectCurrentCapitalFacilityOperation, durableCreateBytes, main, parse
 import { CURRENT_CAPITAL_BASE_SOURCE_IDS, selectedSourceHeadAt } from "./test-fixtures/selected-source-head-clock.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
+const CURRENT_ROUTE_ROSTERS_PATH = await selectCurrentKricRouteRostersPath({ repositoryRoot: REPOSITORY_ROOT });
 const CURRENT_SOURCE_HEAD_AT = await selectedSourceHeadAt(path.join(REPOSITORY_ROOT, "tools/datapack"));
 const NOW = new Date(CURRENT_SOURCE_HEAD_AT + 120_000);
 const OCI_ENV = Object.freeze({ EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o" });
@@ -30,7 +35,7 @@ const FIXTURE_INPUTS = [
   "tools/datapack/reports/nationwide-coverage-tally.json",
   "release/product-gates/production-datapack-scope.json",
   "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
-  "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json",
+  CURRENT_ROUTE_ROSTERS_PATH,
 ];
 function exactMainExec(file, args) {
   if (file !== "git") throw new Error(`unexpected command: ${file}`);
@@ -161,7 +166,7 @@ async function finalizeFixture(t, { prepared = false, observationFreshUntil } = 
   const load = (relative) => readFile(path.join(root, relative));
   const [canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes] = await Promise.all([
     load("tools/datapack/release/capital-production-canonical-pack.json"), load("tools/datapack/nationwide-coverage-targets.json"),
-    load("tools/datapack/sources/kric-provider-code-catalog-20260228.json"), load("tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"), load("tools/datapack/source-inventory.json"),
+    load("tools/datapack/sources/kric-provider-code-catalog-20260228.json"), load(CURRENT_ROUTE_ROSTERS_PATH), load("tools/datapack/source-inventory.json"),
   ]);
   const plan = buildCurrentCapitalFacilityCollectionPlan({ canonicalPackBytes, coverageTargetsBytes, providerCodeCatalogBytes, routeRostersBytes, sourceInventoryBytes });
   const snapshot = nextSnapshot(plan, observationFreshUntil); const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);

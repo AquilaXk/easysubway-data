@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
-import { planKricNationwideTimetableCollection } from "./plan-kric-nationwide-timetable-collection.mjs";
+import {
+  planCurrentKricNationwideTimetableCollection,
+  planKricNationwideTimetableCollection,
+  selectCurrentKricRouteRostersPath,
+} from "./plan-kric-nationwide-timetable-collection.mjs";
 
 const KORAIL_LINES = [
   ["line-051552e50435", "WS"], ["line-41a8c75ec9d8", "3"], ["line-472a81add377", "1"], ["line-54a7b980b7c3", "K2"],
@@ -20,7 +26,7 @@ function inputs() {
   const missingProviderScopes = [
     ...KORAIL_LINES.map(([lineId, lnCd]) => scope("korail", lineId, "KR", lnCd)),
     ...SEOUL_LINES.map(([lineId, lnCd]) => scope("seoul-metro", lineId, "S1", lnCd)),
-    ...INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd)),
+    ...INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", "7")),
   ];
   const admittedProviderScopes = ADMITTED_INCHEON_LINES.map(([lineId, lnCd]) => scope("incheon-transit", lineId, "IC", lnCd));
   const providerScopes = [...missingProviderScopes, ...admittedProviderScopes];
@@ -107,6 +113,73 @@ test("#454 planner는 selector/candidate/roster identity와 selected provider st
   const blankSelectedStation = inputs();
   blankSelectedStation.rosterArtifact.rosters[0].stations[0].stinCd = " ";
   assert.throws(() => planKricNationwideTimetableCollection(blankSelectedStation), /invalid timetable roster station/);
+});
+
+test("#869 현재 roster 선택 함수로 부산 1~4호선 4자리 역 코드 시간표 수집 계획을 생성하고 구 3자리 코드는 거부한다", async () => {
+  const repositoryRoot = path.resolve(import.meta.dirname, "../..");
+  const [tally, sourceCandidates, legacyRoster] = await Promise.all([
+    readFile(path.join(repositoryRoot, "tools/datapack/reports/nationwide-coverage-tally.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/source-candidates.json"), "utf8").then(JSON.parse),
+    readFile(path.join(repositoryRoot, "tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json"), "utf8").then(JSON.parse),
+  ]);
+  const busanMissingTally = structuredClone(tally);
+  for (const req of busanMissingTally.launchRequired.requirements) {
+    if (req.regionId === "busan" && req.operatorId === "busan-transportation" && req.sourceDomain === "schedule_timetable") {
+      req.status = "MISSING";
+      req.missingKind = "NO_ADMITTED_SOURCE";
+      req.admissionRatio = 0;
+      req.admittedFieldCount = 0;
+      req.admittedSourceIds = [];
+      req.unadmittedFields = ["service_calendar", "trip", "stop_time"];
+    }
+  }
+  const planned = await planCurrentKricNationwideTimetableCollection({
+    repositoryRoot,
+    tally: busanMissingTally,
+    sourceCandidates,
+  });
+  assert.equal(planned.rosterPath, await selectCurrentKricRouteRostersPath({ repositoryRoot }));
+  assert.equal(planned.rosterPath, "tools/datapack/sources/kric-nationwide-route-rosters-20261001T050420765Z.json");
+  assert.equal(planned.providerScopeCount, 21);
+
+  const busanRequests = planned.requests.filter(({ params }) => params.railOprIsttCd === "BS");
+  assert.equal(busanRequests.length, 114 * 3);
+  const byLine = new Map();
+  for (const { params } of busanRequests) {
+    assert.match(params.stinCd, /^\d{4}$/u);
+    const set = byLine.get(params.lnCd) ?? new Set();
+    set.add(params.stinCd);
+    byLine.set(params.lnCd, set);
+  }
+  const range = (start, end) => Array.from({ length: end - start + 1 }, (_, index) => String(start + index).padStart(4, "0"));
+  assert.deepEqual([...byLine.get("1")].sort(), range(95, 134));
+  assert.deepEqual([...byLine.get("2")].sort(), range(201, 243));
+  assert.deepEqual([...byLine.get("3")].sort(), range(301, 317));
+  assert.deepEqual([...byLine.get("4")].sort(), range(401, 414));
+
+  assert.throws(
+    () => planKricNationwideTimetableCollection({
+      tally: busanMissingTally,
+      rosterArtifact: legacyRoster,
+      sourceCandidates,
+    }),
+    /KRIC Busan station code must use 4-digit format/,
+  );
+
+  const syntheticLegacy = inputs();
+  syntheticLegacy.rosterArtifact.rosters.push({
+    schemaVersion: 1,
+    artifactKind: "kric-route-roster",
+    sourceId: "kric-subway-route-info",
+    resultCode: "00",
+    mreaWideCd: "02",
+    lnCd: "1",
+    stations: [{ mreaWideCd: "02", railOprIsttCd: "BS", lnCd: "1", stinCd: "101" }],
+  });
+  assert.throws(
+    () => planKricNationwideTimetableCollection(syntheticLegacy),
+    /KRIC Busan station code must use 4-digit format/,
+  );
 });
 
 function scope(operatorId, lineId, railOprIsttCd, lnCd) {
