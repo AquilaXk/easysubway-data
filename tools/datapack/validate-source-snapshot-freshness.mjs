@@ -82,7 +82,7 @@ export function validateSourceSnapshotFreshness({
       false,
     );
     if (JSON.stringify(evidencePolicyProvenance) !== JSON.stringify(buildPolicyProvenance)) {
-      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance");
+      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance does not match verification evidence");
     }
   }
   const snapshotSetHash = sha256(JSON.stringify(selectedSnapshots));
@@ -138,16 +138,8 @@ export function validateSourceSnapshotFreshness({
       if (storedMillis !== expectedMillis) {
         throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: unchanged reverification freshness");
       }
-    } else {
-      if (storedMillis < derivedMillis) {
-        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
-      }
-      const hasExtension = (snapshot.admissionEvidence != null
-        || Array.isArray(snapshot.admissionRecordSha256s)
-        || snapshot.serviceEffectiveUntil != null);
-      if (storedMillis > derivedMillis && !hasExtension) {
-        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
-      }
+    } else if (storedMillis !== derivedMillis) {
+      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
     }
     const stale = evaluatedMillis >= storedMillis;
     return {
@@ -513,6 +505,9 @@ function bindGovernanceProvenance(snapshots, buildSnapshots) {
       if (Date.parse(candidateExpiresAt) < Date.parse(snapshot.freshnessExpiresAt)) {
         throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: freshness regression");
       }
+      if (Date.parse(candidateExpiresAt) > Date.parse(snapshot.freshnessExpiresAt)) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance does not match verification evidence");
+      }
       return { ...snapshot, freshnessExpiresAt: candidateExpiresAt };
     }
 
@@ -520,10 +515,13 @@ function bindGovernanceProvenance(snapshots, buildSnapshots) {
       if (buildSnapshot.governancePolicyVersion !== snapshot.governancePolicyVersion
         || buildSnapshot.governancePolicySha256 !== snapshot.governancePolicySha256
         || buildSnapshot.rawRetentionExpiresAt !== snapshot.rawRetentionExpiresAt) {
-        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance");
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance does not match verification evidence");
       }
       if (Date.parse(buildSnapshot.freshnessExpiresAt) < Date.parse(snapshot.freshnessExpiresAt)) {
         throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: freshness regression");
+      }
+      if (Date.parse(buildSnapshot.freshnessExpiresAt) > Date.parse(snapshot.freshnessExpiresAt)) {
+        throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance does not match verification evidence");
       }
       return { ...snapshot, freshnessExpiresAt: buildSnapshot.freshnessExpiresAt };
     }
@@ -535,6 +533,12 @@ function bindGovernanceProvenance(snapshots, buildSnapshots) {
     if (buildSnapshot.governancePolicyVersion !== approvedBinding.governancePolicyVersion
       || buildSnapshot.governancePolicySha256 !== approvedBinding.governancePolicySha256) {
       throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: governance policy binding");
+    }
+    if (Date.parse(buildSnapshot.freshnessExpiresAt) < Date.parse(snapshot.freshnessExpiresAt)) {
+      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: freshness regression");
+    }
+    if (Date.parse(buildSnapshot.freshnessExpiresAt) > Date.parse(snapshot.freshnessExpiresAt)) {
+      throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: source snapshot provenance does not match verification evidence");
     }
     return { ...snapshot, ...approvedBinding, freshnessExpiresAt: buildSnapshot.freshnessExpiresAt };
   });

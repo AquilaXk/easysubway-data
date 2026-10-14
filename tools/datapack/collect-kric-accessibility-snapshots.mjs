@@ -551,6 +551,13 @@ export function buildKricAccessibilityRoster({ activeLineScopes, fixture, canoni
     if (!roster || roster.resultCode !== "00" || !Array.isArray(roster.stations)) {
       throw new Error(`KRIC route roster missing: ${scope.mreaWideCd}/${scope.lnCd}`);
     }
+    for (const station of roster.stations) {
+      if ((station?.railOprIsttCd === "BS" || roster.mreaWideCd === "02")
+        && typeof station?.stinCd === "string"
+        && /^\d{3}$/u.test(station.stinCd.trim())) {
+        throw new Error(`KRIC Busan station code must use 4-digit format: ${station.lnCd}/${station.stinCd}`);
+      }
+    }
     for (const station of roster.stations.filter(({ railOprIsttCd }) => railOprIsttCd === scope.railOprIsttCd)) {
       const matches = [...new Map([
         ...(canonicalByLineAndName.get(`${scope.lineId}\0${normalizeStationName(station.stinNm)}`) ?? []),

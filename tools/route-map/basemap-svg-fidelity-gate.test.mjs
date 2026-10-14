@@ -229,11 +229,18 @@ function makeLabel(text, node, role, cssFontSizeByRole) {
 /** <text> 안의 표시 텍스트(부기 캡션 class="station-sub" 제외). */
 function renderedText(text, node) {
   const slice = text.slice(node.index, findElementEnd(text, node.index, "text"));
-  return slice
-    .replace(/<tspan\b[^>]*class="[^"]*station-sub[^"]*"[^>]*>[\s\S]*?<\/tspan>/g, "")
-    .replace(/^<text\b[^>]*>/, "")
-    .replace(/<\/text>$/, "")
-    .replace(/<[^>]+>/g, "")
+  let stripped = slice;
+  for (;;) {
+    const next = stripped
+      .replace(/<tspan\b[^>]*class="[^"]*station-sub[^"]*"[^>]*>[\s\S]*?<\/tspan>/g, "")
+      .replace(/^<text\b[^>]*>/, "")
+      .replace(/<\/text>$/, "")
+      .replace(/<[^>]+>/g, "");
+    if (next === stripped) break;
+    stripped = next;
+  }
+  return stripped
+    .replace(/[<>]/g, "")
     .replace(/\s+/g, "")
     .trim();
 }

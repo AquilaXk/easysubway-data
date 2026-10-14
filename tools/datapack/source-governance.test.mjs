@@ -697,6 +697,83 @@ test("freshness 임의 미래값과 expiry 동일 경계는 release를 차단한
   );
 });
 
+test("evaluateSourceGovernance는 admissionEvidence·admissionRecordSha256s·serviceEffectiveUntil이 있어도 파생값과 다른 신선도를 거부하고 재확인 기준 필드를 검증한다(#871)", () => {
+  const input = governanceInput();
+  for (const extensionField of [
+    { admissionEvidence: { verified: true } },
+    { admissionRecordSha256s: ["a".repeat(64)] },
+    { serviceEffectiveUntil: "2099-01-01T00:00:00Z" },
+  ]) {
+    assert.deepEqual(
+      evaluateSourceGovernance({
+        ...input,
+        snapshot: {
+          ...input.snapshot,
+          ...extensionField,
+          freshnessExpiresAt: "2026-08-01T00:00:00Z",
+        },
+      }).reasonCodes,
+      ["SOURCE_FRESHNESS_POLICY_MISSING"],
+    );
+  }
+
+  const plannedPolicy = governancePolicy();
+  plannedPolicy.sources[0].sourceClassId = "planned_timetable";
+  const plannedFreshnessPolicy = {
+    clockSkewSeconds: 0,
+    sourceClasses: [{
+      id: "planned_timetable",
+      sourceIds: ["source-a"],
+      basisField: "serviceEffectiveAt",
+      maximumReverificationCadence: "P30D",
+      futureBasisAllowed: true,
+      providerValidityEndField: "serviceEffectiveUntil",
+      unchangedReverificationBasisField: "reverifiedUnchangedAt",
+    }],
+  };
+  const plannedSnapshot = {
+    ...input.snapshot,
+    retrievedAt: "2026-07-10T00:00:00Z",
+    rawRetentionExpiresAt: "2026-10-08T00:00:00.000Z",
+    serviceEffectiveAt: "2026-06-01T00:00:00Z",
+    serviceEffectiveUntil: "2026-09-01T00:00:00Z",
+    reverifiedUnchangedAt: "2026-07-10T00:00:00Z",
+    freshnessExpiresAt: "2026-08-09T00:00:00.000Z",
+    admissionEvidence: { verified: true },
+  };
+  assert.equal(
+    evaluateSourceGovernance({
+      ...input,
+      policy: plannedPolicy,
+      freshnessPolicy: plannedFreshnessPolicy,
+      snapshot: plannedSnapshot,
+      evaluationAt: "2026-07-15T00:00:00Z",
+    }).decision,
+    "GO",
+  );
+  assert.deepEqual(
+    evaluateSourceGovernance({
+      ...input,
+      policy: plannedPolicy,
+      freshnessPolicy: plannedFreshnessPolicy,
+      snapshot: { ...plannedSnapshot, freshnessExpiresAt: "2026-08-10T00:00:00.000Z" },
+      evaluationAt: "2026-07-15T00:00:00Z",
+    }).reasonCodes,
+    ["SOURCE_FRESHNESS_POLICY_MISSING"],
+  );
+  assert.deepEqual(
+    evaluateSourceGovernance({
+      ...input,
+      policy: plannedPolicy,
+      freshnessPolicy: plannedFreshnessPolicy,
+      snapshot: { ...plannedSnapshot, serviceEffectiveUntil: "2026-07-14T00:00:00Z" },
+      evaluationAt: "2026-07-15T00:00:00Z",
+    }).reasonCodes,
+    ["SOURCE_SNAPSHOT_EXPIRED"],
+  );
+});
+
+
 test("license review 기한·terms/provider/endpoint 변경을 REVIEW_REQUIRED로 만든다", () => {
   const input = governanceInput();
   assert.deepEqual(

@@ -854,10 +854,17 @@ function normalizedStationNameForMap(name) {
 }
 
 function normalizeHtmlText(value) {
-  return String(value)
-    .replace(/<br\s*\/?>/gi, "")
-    .replace(/<span class="blind">[\s\S]*?<\/span>/g, "")
-    .replace(/<[^>]+>/g, "")
+  let text = String(value);
+  for (;;) {
+    const next = text
+      .replace(/<br\s*\/?>/gi, "")
+      .replace(/<span class="blind">[\s\S]*?<\/span>/g, "")
+      .replace(/<[^>]+>/g, "");
+    if (next === text) break;
+    text = next;
+  }
+  return text
+    .replace(/[<>]/g, "")
     .replace(/&middot;/g, "·")
     .replace(/&nbsp;/g, " ")
     .replace(/\s+/g, "")

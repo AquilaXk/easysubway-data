@@ -13,14 +13,14 @@ import {
 } from "./build-datapack.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
-const { buildCurrentKricExitCollectionPlan, main } = currentPlan;
+const { buildCurrentKricExitCollectionPlan, main, selectCurrentKricRouteRostersPath } = currentPlan;
 const datapackRoot = fileURLToPath(new URL(".", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const productionPaths = Object.freeze({
   canonicalPack: path.join(datapackRoot, "release/capital-production-canonical-pack.json"),
   coverageTargets: path.join(datapackRoot, "nationwide-coverage-targets.json"),
   providerCodeCatalog: path.join(datapackRoot, "sources/kric-provider-code-catalog-20260228.json"),
-  routeRosters: path.join(datapackRoot, "sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
+  routeRosters: path.join(repositoryRoot, await selectCurrentKricRouteRostersPath({ repositoryRoot })),
   sourceInventory: path.join(datapackRoot, "source-inventory.json"),
 });
 

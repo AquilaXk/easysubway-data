@@ -10,14 +10,16 @@ import {
   main,
   selectCurrentKricRouteRostersPath,
 } from "./build-current-capital-facility-collection-plan.mjs";
+import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 
 const datapackRoot = import.meta.dirname;
+const repositoryRoot = path.resolve(datapackRoot, "../..");
 const paths = Object.freeze({
   canonicalPack: path.join(datapackRoot, "release/capital-production-canonical-pack.json"),
   coverageTargets: path.join(datapackRoot, "nationwide-coverage-targets.json"),
   providerCodeCatalog: path.join(datapackRoot, "sources/kric-provider-code-catalog-20260228.json"),
-  routeRosters: path.join(datapackRoot, "sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
+  routeRosters: path.resolve(repositoryRoot, await selectCurrentKricRouteRostersPath({ repositoryRoot })),
   sourceInventory: path.join(datapackRoot, "source-inventory.json"),
 });
 
@@ -170,7 +172,6 @@ test("candidate root의 다섯 정본 입력을 canonical FACILITY plan으로 �
   await main(["--repository-root", path.resolve(datapackRoot, "../.."), "--output", output], { log: () => {} });
 
   // main은 선택 함수가 고른 현재 roster를 쓴다(#862).
-  const repositoryRoot = path.resolve(datapackRoot, "../..");
   const currentRosters = await readFile(path.join(repositoryRoot, await selectCurrentKricRouteRostersPath({ repositoryRoot })));
   const expected = canonicalCurrentCapitalFacilityCollectionPlanJson(
     buildCurrentCapitalFacilityCollectionPlan({ ...await readInput(), routeRostersBytes: currentRosters }),
@@ -219,15 +220,34 @@ function rehash(plan) {
 
 // #862: KRIC가 역 코드를 바꾸면(2026-10 신분당선) 새 roster를 받아야 한다. FACILITY 도구는 roster 경로를
 // 상수로 고정하지 않고, 한 선택 함수가 sources/의 roster 중 capturedAt이 가장 늦은 것을 고른다.
-test("FACILITY operation·계획·probe는 roster 경로를 고정하지 않고 선택 함수로 현재 roster를 고른다(#862)", async () => {
+test("FACILITY·EXIT·시간표 계획 도구는 roster 경로를 고정하지 않고 선택 함수로 현재 roster를 고르며 구 3자리 부산 코드를 거부한다(#862, #869)", async () => {
   for (const tool of [
     "build-current-capital-facility-collection-plan.mjs",
     "run-current-capital-facility-operation.mjs",
     "probe-kric-facility-provider-tuples.mjs",
+    "build-current-kric-exit-collection-plan.mjs",
+    "plan-kric-nationwide-timetable-collection.mjs",
   ]) {
     const source = await readFile(path.join(datapackRoot, tool), "utf8");
     assert.doesNotMatch(source, /kric-nationwide-route-rosters-\d{8}T/u, `${tool} pins a roster file`);
   }
+  const input = await readInput();
+  const inventory = JSON.parse(input.sourceInventoryBytes);
+  const incheonSnapshotPath = inventory.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .topologyAdmissionEvidence.snapshotPath;
+  const incheonTopologyBytes = await readFile(path.join(repositoryRoot, incheonSnapshotPath));
+  const legacyRouteRostersBytes = await readFile(
+    path.join(datapackRoot, "sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
+  );
+  assert.throws(
+    () => buildCurrentKricExitCollectionPlan({
+      ...input,
+      routeRostersBytes: legacyRouteRostersBytes,
+      incheonTopologyBytes,
+    }, { now: new Date(JSON.parse(incheonTopologyBytes).capturedAt) }),
+    /KRIC Busan station code must use 4-digit format/,
+  );
+
   const root = await mkdtemp(path.join(os.tmpdir(), "facility-roster-select-"));
   try {
     const sources = path.join(root, "tools/datapack/sources");

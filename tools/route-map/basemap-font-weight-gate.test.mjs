@@ -62,10 +62,15 @@ function bundledPretendardWeights() {
  * inlineSimpleClassStyles가 이미 속성으로 인라인했다).
  */
 export function appliedFontWeights(normalizedSvg) {
-  const withoutStyleBlocks = normalizedSvg.replace(
-    /<style\b[^>]*>[\s\S]*?<\/style>/g,
-    "",
-  );
+  let withoutStyleBlocks = normalizedSvg;
+  for (;;) {
+    const next = withoutStyleBlocks.replace(
+      /<style\b[^>]*>[\s\S]*?<\/style>/g,
+      "",
+    );
+    if (next === withoutStyleBlocks) break;
+    withoutStyleBlocks = next;
+  }
   const counts = new Map();
   for (const tag of withoutStyleBlocks.matchAll(/<[A-Za-z][\w:.-]*\b[^>]*>/g)) {
     // #2068 paint-order 분해가 만든 halo 사본은 같은 오너 요소의 stroke 레이어라

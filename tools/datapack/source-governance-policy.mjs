@@ -416,32 +416,32 @@ function evaluateFreshness({ entry, snapshot, freshnessPolicy, evaluationAt, rea
     return;
   }
   try {
-    const derivedExpiresAt = deriveFreshnessExpiresAt({
+    const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
+    const providerValidUntil = sourceClass.providerValidityEndField
+      ? snapshot?.[sourceClass.providerValidityEndField]
+      : undefined;
+    if (providerValidUntil != null
+      && evaluatedMillis >= requiredUtcInstant(providerValidUntil, sourceClass.providerValidityEndField)) {
+      reasonCodes.add("SOURCE_SNAPSHOT_EXPIRED");
+      return;
+    }
+    const reverificationField = typeof sourceClass.unchangedReverificationBasisField === "string"
+      ? sourceClass.unchangedReverificationBasisField
+      : null;
+    const basisAt = reverificationField != null
+      && typeof snapshot?.[reverificationField] === "string"
+      && snapshot[reverificationField].trim() !== ""
+      ? snapshot[reverificationField]
+      : snapshot?.[sourceClass.basisField];
+    const result = deriveFreshness({
       policy: freshnessPolicy,
       sourceClassId: entry.sourceClassId,
-      basisAt: snapshot?.[sourceClass.basisField],
-      providerValidUntil: sourceClass.providerValidityEndField
-        ? snapshot?.[sourceClass.providerValidityEndField]
-        : undefined,
+      basisAt,
+      providerValidUntil,
+      storedExpiresAt: snapshot?.freshnessExpiresAt,
       evaluationAt,
     });
-    const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
-    const derivedMillis = requiredUtcInstant(derivedExpiresAt, "freshnessExpiresAt");
-    const storedMillis = requiredUtcInstant(snapshot?.freshnessExpiresAt, "storedExpiresAt");
-    if (storedMillis < derivedMillis) {
-      reasonCodes.add("SOURCE_FRESHNESS_POLICY_MISSING");
-      return;
-    }
-    const hasExtension = (snapshot?.admissionEvidence != null
-      || Array.isArray(snapshot?.admissionRecordSha256s)
-      || snapshot?.serviceEffectiveUntil != null);
-    if (storedMillis > derivedMillis && !hasExtension) {
-      reasonCodes.add("SOURCE_FRESHNESS_POLICY_MISSING");
-      return;
-    }
-    if (evaluatedMillis >= storedMillis) {
-      reasonCodes.add("SOURCE_SNAPSHOT_EXPIRED");
-    }
+    for (const reasonCode of result.reasonCodes) reasonCodes.add(reasonCode);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     reasonCodes.add(message.startsWith("SOURCE_SNAPSHOT_EXPIRED")

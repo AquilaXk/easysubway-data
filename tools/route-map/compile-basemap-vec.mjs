@@ -1292,7 +1292,12 @@ export function applyStylesheet(svgText) {
   // 전개가 끝난 `<style>` 블록은 컴파일 입력에서 지운다 — 컴파일러가 읽지 않는
   // 원본 CSS가 남아 있으면 "요소 선언이 정본"이라는 이 단계의 계약이 흐려지고,
   // 뒤따르는 단계(font-weight 확정 등)가 죽은 텍스트까지 훑는다.
-  return result.replace(/\s*<style\b[^>]*>[\s\S]*?<\/style>/g, "");
+  for (;;) {
+    const next = result.replace(/\s*<style\b[^>]*>[\s\S]*?<\/style>/g, "");
+    if (next === result) break;
+    result = next;
+  }
+  return result;
 }
 
 // compiled-map-coordinate-layer 래퍼의 `scale(k)`에서 k를 파싱한다(없으면 1).
@@ -1953,10 +1958,16 @@ function firstCoordinateToken(value) {
 }
 
 function ownerLabelTextContent(textBlock) {
-  return textBlock
+  let stripped = textBlock
     .replace(/^<text\b[^>]*>/, "")
-    .replace(/<\/text>$/, "")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<\/text>$/, "");
+  for (;;) {
+    const next = stripped.replace(/<[^>]+>/g, "");
+    if (next === stripped) break;
+    stripped = next;
+  }
+  return stripped
+    .replace(/[<>]/g, "")
     .replace(/\s+/g, "")
     .trim();
 }
@@ -2524,7 +2535,13 @@ function chunkTextOf(svgText, node) {
   if (node.openTag.endsWith("/>")) return "";
   const innerStart = node.start + node.openTag.length;
   const innerEnd = Math.max(node.end - `</${node.name}>`.length, innerStart);
-  return svgText.slice(innerStart, innerEnd).replace(/<[^>]*>/g, "");
+  let stripped = svgText.slice(innerStart, innerEnd);
+  for (;;) {
+    const next = stripped.replace(/<[^>]*>/g, "");
+    if (next === stripped) break;
+    stripped = next;
+  }
+  return stripped.replace(/[<>]/g, "");
 }
 
 /** 요소의 **직접** 문자 데이터(자식 요소 내용 제외). */
