@@ -420,15 +420,15 @@ function execGh(args, token) {
   });
 }
 
-const ghApi = (token) => async (endpoint) => JSON.parse(await execGh(["api", "--method", "GET", "-H", "Accept: application/vnd.github+json", endpoint], token));
+const ghApi = (token, exec = execGh) => async (endpoint) => JSON.parse(await exec(["api", "--method", "GET", "-H", "Accept: application/vnd.github+json", endpoint], token));
 
-async function main(env = process.env) {
+export async function main(env = process.env, { execGhImpl = execGh, fetchImpl = fetch } = {}) {
   const repository = env.GITHUB_REPOSITORY;
   const owner = repository?.split("/")[0];
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository ?? "") || owner !== "AquilaXk") throw statusError("ENV_INVALID", "GITHUB_REPOSITORY");
   const repositories = { data: repository, hub: "AquilaXk/easysubway", platform: "AquilaXk/easysubway-platform" };
-  const dataApi = ghApi(env.GH_TOKEN);
-  const appApi = ghApi(env.APP_READ_TOKEN);
+  const dataApi = ghApi(env.GH_TOKEN, execGhImpl);
+  const appApi = ghApi(env.APP_READ_TOKEN, execGhImpl);
   const manifestBase = env.CHAIN_DATAPACK_BASE_URL;
   if (typeof manifestBase !== "string" || !manifestBase.startsWith("https://")) throw statusError("ENV_INVALID", "CHAIN_DATAPACK_BASE_URL");
   const sourceInventory = await loadSourceInventory({ env });
@@ -437,12 +437,12 @@ async function main(env = process.env) {
     refreshWorkflows: sourceInventory === undefined ? undefined : refreshWorkflowsOf(),
     repositories,
     apis: { data: dataApi, hub: appApi, platform: appApi },
-    listFailureIssues: async () => JSON.parse(await execGh([
+    listFailureIssues: async () => JSON.parse(await execGhImpl([
       "issue", "list", "--repo", repository, "--state", "open", "--limit", "100", "--search", `"${FAILURE_TITLE}" in:title`,
       "--json", "number,title,url,createdAt,author",
     ], env.GH_TOKEN)),
     fetchManifest: async () => {
-      const response = await fetch(`${withoutTrailingSlashes(manifestBase)}/catalog/current.json`, { signal: AbortSignal.timeout(20_000) });
+      const response = await fetchImpl(`${withoutTrailingSlashes(manifestBase)}/catalog/current.json`, { signal: AbortSignal.timeout(20_000) });
       if (!response.ok) throw statusError("MANIFEST_INVALID", `manifest request answered ${response.status}`);
       return response.json();
     },
@@ -454,7 +454,7 @@ async function main(env = process.env) {
     await writeFile(path.join(tempDirectory, "automation-status.json"), `${JSON.stringify(snapshot, null, 2)}\n`);
   }
   if (env.AUTOMATION_STATUS_DRY_RUN === "true") return snapshot;
-  await postAutomationStatus({ snapshot, apiBaseUrl: env.DEPLOY_PUBLIC_API_BASE_URL, token: env.EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN });
+  await postAutomationStatus({ snapshot, apiBaseUrl: env.DEPLOY_PUBLIC_API_BASE_URL, token: env.EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN, fetchImpl });
   return snapshot;
 }
 

@@ -13,6 +13,7 @@ import {
   buildAutomationStatus,
   collectAutomationStatus,
   loadSourceInventory,
+  main,
   postAutomationStatus,
   refreshWorkflowsOf,
   sourceRefreshStages,
@@ -240,6 +241,47 @@ test("게시: backend 주소와 서비스 토큰이 있어야 하고, 응답이 
   await assert.rejects(postAutomationStatus({ snapshot, apiBaseUrl: "http://api.example.invalid", token: "t", fetchImpl: fetchOk }), /STATUS_POST_ARGUMENTS/u);
   await assert.rejects(postAutomationStatus({ snapshot: { ...snapshot, padding: "x".repeat(SNAPSHOT_MAX_BYTES) }, apiBaseUrl: "https://api.example.invalid", token: "t", fetchImpl: fetchOk }), /STATUS_SNAPSHOT_TOO_LARGE/u);
   assert.equal(STATUS_STAGES.length, 9);
+});
+
+test("main: EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN으로만 게시하고 EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN은 쓰지 않는다", async () => {
+  const posted = [];
+  const execGhImpl = async (args) => {
+    if (args[0] === "issue") return "[]";
+    const endpoint = args.at(-1);
+    if (endpoint.includes("/actions/workflows/")) return JSON.stringify({ workflow_runs: [] });
+    if (endpoint.includes("/pulls?")) return "[]";
+    if (endpoint.includes("/git/matching-refs/")) return "[]";
+    if (endpoint.includes("/commits/")) return JSON.stringify({ commit: { committer: { date: hoursAgo(1) } } });
+    throw new Error(`unexpected gh args: ${args.join(" ")}`);
+  };
+  const fetchImpl = async (url, init) => {
+    if (url === "https://datapack.example.invalid/catalog/current.json") {
+      return { ok: true, status: 200, json: async () => manifest };
+    }
+    posted.push({ url, init });
+    return { ok: true, status: 202 };
+  };
+  const baseEnv = {
+    GITHUB_REPOSITORY: REPOSITORY,
+    GH_TOKEN: "gh-read-token",
+    APP_READ_TOKEN: "app-read-token",
+    CHAIN_DATAPACK_BASE_URL: "https://datapack.example.invalid",
+    DEPLOY_PUBLIC_API_BASE_URL: "https://api.example.invalid",
+    EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN: "legacy-workflow-token",
+  };
+  await assert.rejects(
+    main(baseEnv, { execGhImpl, fetchImpl }),
+    /STATUS_POST_ARGUMENTS/u,
+  );
+  assert.equal(posted.length, 0);
+
+  await main(
+    { ...baseEnv, EASYSUBWAY_DATAPACK_AUTOMATION_STATUS_TOKEN: "dedicated-status-token" },
+    { execGhImpl, fetchImpl },
+  );
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].url, "https://api.example.invalid/admin/api/datapack/automation-status");
+  assert.equal(posted[0].init.headers.authorization, "Bearer dedicated-status-token");
 });
 
 test("fork PR·사람·위장 계정이 자동화 브랜치 이름을 써도 자동화 PR로 세지 않고 snapshot에 싣지 않는다", () => {
