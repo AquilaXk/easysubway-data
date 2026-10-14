@@ -13,10 +13,6 @@ const TEST_PATH_PATTERN = /\.test\.[^/]+$/;
 export const MAX_WORKERS_LIMIT = 4;
 // 한 파일이 이 시간보다 길면(기록된 durationMs 기준) top-level test 이름으로 나눠 병렬 실행한다.
 export const PARTITION_TARGET_MS = 120_000;
-// 직렬 그룹: 한 테스트를 병렬 pool 앞에서 혼자 실행한다. prepare-nationwide-candidate-run은 #884 이후
-// writeFiles: false로 돌아 추적 파일을 쓰지 않으므로 지금은 방어용 직렬 슬롯일 뿐이다(삭제·skip하지 않는다).
-// 추적 파일 불변은 ci.yml의 clean-tree step이 보장한다. 이 그룹의 제거는 후속 이슈에서 다룬다.
-export const EXCLUSIVE_TESTS = ['tools/datapack/prepare-nationwide-candidate-run.test.mjs'];
 const TOP_LEVEL_REPORTER = fileURLToPath(new URL('./data-test-top-level-reporter.mjs', import.meta.url));
 const SUPPORTED_TEST_PATTERN = /\.test\.mjs$/;
 const GIT_EXECUTABLE = '/usr/bin/git';
@@ -338,12 +334,12 @@ export function extractTopLevelTestNames(source) {
 // 파일의 partition은 항상 같은 job 안에 모이고, 그 job이 이름 집합을 대조한다.
 export function buildExecutionGroups(
   entries,
-  { maxWorkers, sources, partitionTargetMs = PARTITION_TARGET_MS, exclusivePaths = EXCLUSIVE_TESTS },
+  { maxWorkers, sources, partitionTargetMs = PARTITION_TARGET_MS },
 ) {
   return entries.map(({ path, durationMs }) => {
     const group = { path, durationMs, partitions: null };
     const wanted = Math.min(maxWorkers, Math.ceil(durationMs / partitionTargetMs));
-    if (maxWorkers < 2 || wanted < 2 || exclusivePaths.includes(path)) return group;
+    if (maxWorkers < 2 || wanted < 2) return group;
     if (typeof sources?.[path] !== 'string') throw new Error(`missing test source: ${path}`);
     const { names } = extractTopLevelTestNames(sources[path]);
     if (names === null || names.length < 2) return group;
@@ -1035,7 +1031,7 @@ export function verifyRepository({
   executionProfile = null,
   fixtureClass = null,
 }) {
-  const verification = validateOwnership(
+  return validateOwnership(
     repositoryInputs({
       repoRoot,
       manifestPath,
@@ -1046,16 +1042,6 @@ export function verifyRepository({
       fixtureClass,
     }),
   );
-  // 직렬 그룹 목록이 실제 소유 테스트를 가리키지 않으면(이름 변경·삭제) 병렬 충돌 방지가 조용히
-  // 사라진다. 저장소 검증에서 닫힌 상태로 실패한다.
-  const owned = new Set(verification.tests.map(({ path }) => path));
-  const stale = EXCLUSIVE_TESTS.filter((path) => !owned.has(path));
-  if (stale.length > 0) {
-    throw new OwnershipValidationError(
-      stale.map((path) => ({ code: 'EXCLUSIVE_TEST_NOT_OWNED', path, detail: 'serial group entry is not an owned test' })),
-    );
-  }
-  return verification;
 }
 
 export function selectExecutionTests(tests, className, executionProfile, defaultProfile) {
@@ -1177,7 +1163,6 @@ export async function runExecutionGroups({
   repoRoot,
   groups,
   maxWorkers,
-  exclusivePaths = EXCLUSIVE_TESTS,
   output = process.stdout,
 }) {
   const units = planWorkerUnits(groups).map((unit) => ({
@@ -1197,12 +1182,7 @@ export async function runExecutionGroups({
     output.write(`\n===== ${unitLabel(unit)} (${result.durationMs}ms, exit ${result.code}) =====\n${result.log}`);
     return { unit, ...result };
   };
-  // 직렬 그룹은 다른 어떤 unit과도 겹치지 않게 pool 앞에서 하나씩 실행한다.
-  const exclusive = units.filter(({ path }) => exclusivePaths.includes(path));
-  const results = [];
-  for (const unit of exclusive) results.push(await execute(unit));
-  const queue = [...units.filter((unit) => !exclusive.includes(unit)), ...remainders];
-  results.push(...(await runPool(queue, maxWorkers, execute)));
+  const results = await runPool([...units, ...remainders], maxWorkers, execute);
   const errors = [];
   for (const result of results) {
     if (!result.ok) errors.push(`${unitLabel(result.unit)} failed (code ${result.code}, signal ${result.signal})`);

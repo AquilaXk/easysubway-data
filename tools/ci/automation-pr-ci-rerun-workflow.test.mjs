@@ -38,11 +38,11 @@ test("job은 같은 저장소의 automation/ 브랜치 pull_request CI가 첫 �
   assert.match(yml, /\n    name: Rerun the failed CI jobs once\n/u);
 });
 
-test("권한은 job에만 있고 재실행(actions: write)·PR 코멘트(issues: write)·읽기뿐이다. 비밀과 App 토큰을 쓰지 않는다", () => {
+test("권한은 job에만 있고 재실행(actions: write)·PR 코멘트(pull-requests: write)·실패 이슈(issues: write)·읽기뿐이다. 비밀과 App 토큰을 쓰지 않는다", () => {
   assert.match(yml, /\npermissions: \{\}\n/u);
   assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
-  assert.match(yml, /\n    permissions:\n      actions: write\n      contents: read\n      issues: write\n      pull-requests: read\n/u);
-  assert.doesNotMatch(code, /secrets\.|create-github-app-token|contents: write|pull-requests: write|environment:/u);
+  assert.match(yml, /\n    permissions:\n      actions: write\n      contents: read\n      issues: write\n      pull-requests: write\n/u);
+  assert.doesNotMatch(code, /secrets\.|create-github-app-token|contents: write|environment:/u);
   assert.match(yml, /\n    runs-on: ubuntu-latest\n/u);
   assert.match(yml, /\n    timeout-minutes: 10\n/u);
   assert.doesNotMatch(yml, /\n  [A-Z_]+: /u, "no workflow-level env");

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   buildDurationShards,
-  EXCLUSIVE_TESTS,
   buildExecutionGroups,
   combineDurationEvidence,
   extractTopLevelTestNames,
@@ -662,39 +661,50 @@ test('execution groups split only long statically complete files into disjoint n
   );
 });
 
-test('serial-group tests run alone before the parallel pool and must stay owned', async () => {
-  assert.deepEqual(EXCLUSIVE_TESTS, ['tools/datapack/prepare-nationwide-candidate-run.test.mjs']);
-  const repoRoot = mkdtempSync(join(tmpdir(), 'data-test-exclusive-'));
-  const journal = join(repoRoot, 'journal.log');
-  const body = (name, ms) =>
-    `import test from "node:test";\nimport { appendFileSync } from "node:fs";\ntest("${name}", async () => {\n  appendFileSync(${JSON.stringify(journal)}, "start ${name}\\n");\n  await new Promise((done) => setTimeout(done, ${ms}));\n  appendFileSync(${JSON.stringify(journal)}, "end ${name}\\n");\n});\n`;
-  writeFileSync(join(repoRoot, 'writer.test.mjs'), body('writer', 300));
-  for (const name of ['a', 'b', 'c']) writeFileSync(join(repoRoot, `${name}.test.mjs`), body(name, 200));
-  const groups = ['writer', 'a', 'b', 'c'].map((name) => ({ path: `${name}.test.mjs`, durationMs: 10, partitions: null }));
+test('execution groups and worker pool treat all tests as parallel and partitionable without serial exceptions', async () => {
+  assert.doesNotMatch(discoverySource, /EXCLUSIVE_TESTS|EXCLUSIVE_TEST_NOT_OWNED|exclusivePaths/);
+  const nationwidePath = 'tools/datapack/prepare-nationwide-candidate-run.test.mjs';
+  const repoRoot = mkdtempSync(join(tmpdir(), 'data-test-no-serial-'));
+  mkdirSync(join(repoRoot, 'tools/datapack'), { recursive: true });
+  const nationwideSource = [
+    'import test from "node:test";',
+    'test("one", () => {});',
+    'test("two", () => {});',
+  ].join('\n');
+  writeFileSync(join(repoRoot, nationwidePath), nationwideSource);
+  writeFileSync(join(repoRoot, 'peer.test.mjs'), 'import test from "node:test";\ntest("peer", () => {});\n');
+  const sources = {
+    [nationwidePath]: nationwideSource,
+    'peer.test.mjs': 'import test from "node:test";\ntest("peer", () => {});\n',
+  };
+  const groups = buildExecutionGroups(
+    [
+      { path: nationwidePath, durationMs: 999_999 },
+      { path: 'peer.test.mjs', durationMs: 10 },
+    ],
+    {
+      maxWorkers: 4,
+      sources,
+      partitionTargetMs: 1,
+    },
+  );
+  assert.deepEqual(groups[0].partitions, [
+    { index: 1, names: ['one'] },
+    { index: 2, names: ['two'] },
+  ]);
   const result = await runExecutionGroups({
     repoRoot,
     groups,
     maxWorkers: 3,
-    exclusivePaths: ['writer.test.mjs'],
     output: { write: () => true },
   });
   assert.equal(result.ok, true, result.errors.join('\n'));
-  const lines = readFileSync(journal, 'utf8').trim().split('\n');
-  assert.deepEqual(lines.slice(0, 2), ['start writer', 'end writer'], 'the serial-group test must not overlap any other test');
-  assert.equal(lines.length, 8);
-  const longWriter = {
-    'writer.test.mjs': ['import test from "node:test";', 'test("one", () => {});', 'test("two", () => {});'].join('\n'),
-  };
-  assert.equal(
-    buildExecutionGroups([{ path: 'writer.test.mjs', durationMs: 999_999 }], {
-      maxWorkers: 4,
-      sources: longWriter,
-      partitionTargetMs: 1,
-      exclusivePaths: ['writer.test.mjs'],
-    })[0].partitions,
-    null,
-    'serial-group tests are never partitioned',
-  );
+  assert.deepEqual(result.executed, [
+    'peer.test.mjs\tpeer',
+    `${nationwidePath}\tone`,
+    `${nationwidePath}\ttwo`,
+  ]);
+  assert.equal(result.units.length, 3);
 });
 
 test('partition coverage requires the exact static name multiset and an empty remainder', () => {

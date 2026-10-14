@@ -83,7 +83,7 @@ export async function publishSeoulTransferRawArtifact({ observationDirectory, re
   if (now.valueOf() >= Date.parse(rawRetentionExpiresAt)) throw new Error("transfer raw retention has expired");
   const receipt = validateSeoulTransferRawReceipt({
     schemaVersion: 1, artifactKind: "seoul-transfer-raw-object-receipt", sourceId: SOURCE_ID,
-    snapshotId: `${SOURCE_ID}-${observation.manifest.capturedAt.replaceAll(/[-:.]/gu, "").replace("Z", "Z")}`,
+    snapshotId: `${SOURCE_ID}-${observation.manifest.capturedAt.replaceAll(/[-:.]/gu, "")}`,
     snapshotRawSha256: observation.manifest.rawSha256, capturedAt: observation.manifest.capturedAt,
     manifestSha256: sha(observation.manifestBytes), observationSha256: sha(observation.observationBytes),
     rawObjectUri: `oci://${OCI_NAMESPACE}/${OCI_BUCKET}/${objectKey}`, rawObjectSha256,

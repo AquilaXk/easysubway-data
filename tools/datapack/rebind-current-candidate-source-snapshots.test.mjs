@@ -100,7 +100,7 @@ function kricSnapshot(membership) {
   });
   return {
     schemaVersion: 1, artifactKind: "kric-accessibility-snapshot", sourceId: operation.sourceId,
-    snapshotId: `kric-station-convenience-standard-${capturedAt.replaceAll(/[-:.]/g, "").replace("Z", "Z")}`, capturedAt, observedAt: capturedAt,
+    snapshotId: `kric-station-convenience-standard-${capturedAt.replaceAll(/[-:.]/g, "")}`, capturedAt, observedAt: capturedAt,
     freshUntil: new Date(Date.parse(capturedAt) + 24 * 60 * 60 * 1_000).toISOString(), providerResultCode: "00", schemaStatus: "PASS",
     absenceEvidenceMode: "EXHAUSTIVE_LIST", credentialRedacted: true, queries, queryCount: queries.length,
     rowCount: 0,

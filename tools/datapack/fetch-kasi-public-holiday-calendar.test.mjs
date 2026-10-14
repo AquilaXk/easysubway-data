@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
-import { readKasiHolidayCalendarFiles, collectKasiHolidayCalendarFiles, collectKasiHolidayCalendarWindowFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { decodeXml, readKasiHolidayCalendarFiles, collectKasiHolidayCalendarFiles, collectKasiHolidayCalendarWindowFiles, fetchKasiPublicHolidayCalendar, fetchKasiPublicHolidayCalendarObservation, parseRetainedKasiHolidayMonth } from "./fetch-kasi-public-holiday-calendar.mjs";
 
 // 재시도 대기와 예산을 테스트마다 격리한다(실제 1·2·4·8·16초를 기다리지 않고, 프로세스 공용 예산을 소모하지 않는다).
 const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
@@ -817,4 +817,9 @@ test("KASI HTTP 503에서 재시도 예산이 소진되면 마지막 응답의 K
     return true;
   });
   assert.equal(calls, 2);
+});
+
+test("KASI XML 디코더는 엔티티를 한 번만 풀고 이중 인코딩된 엔티티(&amp;lt;·&amp;quot;·&amp;#39;)를 두 번 치환하지 않는다", () => {
+  assert.equal(decodeXml("&lt;&gt;&quot;&#39;&amp;"), "<>\"'&");
+  assert.equal(decodeXml("&amp;lt;&amp;gt;&amp;quot;&amp;#39;&amp;amp;"), "&lt;&gt;&quot;&#39;&amp;");
 });
