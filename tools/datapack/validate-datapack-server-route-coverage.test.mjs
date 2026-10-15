@@ -348,7 +348,7 @@ test("#900 전국 출시 범위 노선은 transit_trips·transit_stop_times가 �
   }
 });
 
-test("#900 report-coverage-gaps는 RELEASE_EVIDENCE_PENDING 후보 준비 범위에서도 --manifest 검증 시 schedule_timetable 누락을 차단한다", async () => {
+test("#1262 report-coverage-gaps는 --manifest 검증에서 schedule_timetable 공백을 던지지 않고 report에 기록한다(시간표 0건 차단은 assertLaunchScopeLinesHaveTimetableTrips 몫)", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-900-coverage-gap-"));
   try {
     const targets = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
@@ -456,19 +456,27 @@ test("#900 report-coverage-gaps는 RELEASE_EVIDENCE_PENDING 후보 준비 범위
     await writeFile(provenancePath, JSON.stringify(provenanceObj));
     await writeFile(scopePath, JSON.stringify(scopeObj));
 
-    await assert.rejects(
-      execFileAsync(process.execPath, [
-        "tools/datapack/report-coverage-gaps.mjs",
-        "--output", outputPath,
-        "--release-scope", scopePath,
-        "--inventory", inventoryPath,
-        "--provenance", provenancePath,
-        "--manifest", manifestPath,
-        "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
-        "--targets", "tools/datapack/nationwide-coverage-targets.json",
-      ], { cwd: repositoryRoot }),
-      /in-scope schedule_timetable coverage gaps remain: line-7051a9c2525c/,
+    // 시간표 존재 차단은 validate-datapack의 assertLaunchScopeLinesHaveTimetableTrips가 후보 sqlite를 직접 세어 맡는다.
+    // 이 도구는 field provenance 기준 공백을 막지 않고 숨기지도 않는다: 종료 코드 0, report에 MISSING으로 남는다.
+    await execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--output", outputPath,
+      "--release-scope", scopePath,
+      "--inventory", inventoryPath,
+      "--provenance", provenancePath,
+      "--manifest", manifestPath,
+      "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+    ], { cwd: repositoryRoot });
+    const report = JSON.parse(await readFile(outputPath, "utf8"));
+    const scheduleGap = report.releaseScopeRequirements.find(
+      (entry) => entry.sourceDomain === "schedule_timetable" && entry.lineId === "line-7051a9c2525c",
     );
+    assert.ok(scheduleGap, "출시 범위 schedule_timetable 요구가 report에 있어야 한다");
+    assert.notEqual(scheduleGap.status, "covered");
+    assert.notEqual(scheduleGap.status, "SUPPORTED");
+    assert.ok(scheduleGap.missingFields.length > 0, "공백 필드가 report에 기록돼야 한다");
+    assert.ok(report.summary.missingRequirements > 0, "전국 공백 수치가 report에 기록돼야 한다");
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
