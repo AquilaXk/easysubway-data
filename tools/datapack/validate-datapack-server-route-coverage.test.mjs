@@ -10,6 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { isNationwideCandidateId } from "./build-current-release-candidate-accessibility-input.mjs";
 import {
   assertClaimedStationLinesHaveRouteEndpoints,
   assertLaunchScopeLinesHaveTimetableTrips,
@@ -477,9 +478,30 @@ test("#1262 report-coverage-gaps는 --manifest 검증에서 schedule_timetable �
     assert.notEqual(scheduleGap.status, "SUPPORTED");
     assert.ok(scheduleGap.missingFields.length > 0, "공백 필드가 report에 기록돼야 한다");
     assert.ok(report.summary.missingRequirements > 0, "전국 공백 수치가 report에 기록돼야 한다");
+    assert.ok(report.summary.releaseScope.missingRequirements > 0, "in-scope 공백 수치가 report에 기록돼야 한다");
+    assert.ok(
+      report.summary.releaseScope.missingRequirements <= report.summary.missingRequirements,
+      "in-scope 공백 수치는 전국 수치와 분리 기록되며 전국 수치를 넘지 않는다",
+    );
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+// #1262 리뷰 F2: 시간표 0건 차단(assertLaunchScopeLinesHaveTimetableTrips)은 nationwide 플래그가 켜질 때만 동작하고,
+// 그 플래그는 후보 id가 isNationwideCandidateId를 만족할 때만 켜진다. 후보 id 접두가 바뀌면 게이트가 조용히 꺼지므로 고정한다.
+test("#1262 현재 후보 build spec·release request의 후보 id는 전국 후보 판정을 만족해 시간표 DB 게이트가 켜진다", async () => {
+  const pinnedRead = await pinnedReadPromise;
+  const buildSpec = await candidatePinnedJson(pinnedRead, "tools/datapack/release/candidate-build-spec.json");
+  const releaseRequest = await candidatePinnedJson(pinnedRead, "tools/datapack/release/release-request.json");
+  assert.equal(isNationwideCandidateId(buildSpec.candidateId), true, `build spec candidateId: ${buildSpec.candidateId}`);
+  assert.equal(releaseRequest.candidateId, buildSpec.candidateId);
+  assert.deepEqual(resolveRoutePresenceScope({
+    requireProduction: true,
+    provenance: { candidateId: buildSpec.candidateId },
+    legacyFixtureProduction: false,
+    nationwideArtifact: false,
+  }), { nationwide: true });
 });
 
 function authorizationArgs(report, shape) {
