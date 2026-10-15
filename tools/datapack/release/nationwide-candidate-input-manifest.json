@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261015-seq144",
-  "candidateBuildSpecSha256": "c7bbb9435799f8a13a3a6e9bb40cb7502e443d9cf2690add6bc97c706a591aa6",
-  "preparationSha256": "ec3157479608eb7a0475a28de5a4058896f8b63112d4bdd206f2b97cef1d6dc5",
-  "fanInSha256": "6514d9e7043d73d74711afaad3502895f6690b98d6b996cdbce9c6fd50a672cf",
+  "candidateId": "nationwide-candidate-20261015-seq145",
+  "candidateBuildSpecSha256": "45dc4d52445f74c7e5b2dc848dca16625b7fd516ef6e1525435a9669b1952114",
+  "preparationSha256": "ff45b5925b927ce1ef94a16d1d1c6f451480e719aaa2436c1346165692948b04",
+  "fanInSha256": "53697d6bb189ae4e670b5537e7d7431418ad2e46cde4ba170ac060da5d25b03e",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "6514d9e7043d73d74711afaad3502895f6690b98d6b996cdbce9c6fd50a672cf",
+      "sha256": "53697d6bb189ae4e670b5537e7d7431418ad2e46cde4ba170ac060da5d25b03e",
       "byteSize": 36074
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "a9bed09171b1ef373e12d680ab4f8a91c05aa174c5f88205996da019eefc0290",
-      "byteSize": 4354676
+      "sha256": "3f1d4e6e7de2167b7463f5d119f87e762c593e67fb64690ad36d7400ba3e8f44",
+      "byteSize": 4364978
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "d2d6be87ab288452625ab84084566bd39653a5ed4ace9275079144912fe7c9c6",
+      "sha256": "22d475943c5b017f23d22a1b9f68c4c112cba9531a184ccacbf4e08ce8e89966",
       "byteSize": 427346
     },
     {
@@ -183,8 +183,8 @@
       "byteSize": 16241401
     },
     {
-      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-4af60548b013e4ae4fd700690018f7c7eaa98bdf50bc326bf0f15c98adb2dc90.json",
-      "sha256": "784b7b25bb3b73c7e5a111e1673d0c2e4d53c8c53157dbd4e3774edfd05ff8c3",
+      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-3fc4741956a4d633da0952bba514750d498a798be37eddfcbfe0524db11fe77c.json",
+      "sha256": "0188f91482e09af47344f6385d7e17edbe98473dc7b2bc03d9775bec5bc5d69e",
       "byteSize": 10060125
     },
     {
