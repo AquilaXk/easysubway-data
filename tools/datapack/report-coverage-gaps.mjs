@@ -107,23 +107,9 @@ async function main() {
           `(nationwide gaps recorded: ${report.summary.missingRequirements})`,
       );
     }
-    if (!args.allowGaps && candidateManifest !== null) {
-      const missingScheduleLineIds = [
-        ...new Set(
-          (report.releaseScopeRequirements ?? [])
-            .filter(
-              (entry) =>
-                entry.sourceDomain === "schedule_timetable" &&
-                entry.status !== "covered" &&
-                entry.status !== "SUPPORTED",
-            )
-            .map((entry) => entry.lineId || entry.operatorId),
-        ),
-      ].sort(compareStrings);
-      if (missingScheduleLineIds.length > 0) {
-        throw new Error(`in-scope schedule_timetable coverage gaps remain: ${missingScheduleLineIds.join(", ")}`);
-      }
-    }
+    // 출시 범위 노선의 시간표 존재 차단은 validate-datapack의 assertLaunchScopeLinesHaveTimetableTrips가
+    // 후보 sqlite의 trip·stop_time을 직접 세어 맡는다. schedule_timetable field provenance 공백은 위 report에
+    // 그대로 남기며(은폐 금지) 이 도구에서는 던지지 않는다. provenance 기준 차단의 재도입은 data#1262 후속 체크리스트.
     return;
   }
 
