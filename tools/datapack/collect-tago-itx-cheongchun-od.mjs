@@ -14,16 +14,18 @@ const NON_PAGINATED_OPERATIONS = new Set(["GetVhcleKndList", "GetCtyCodeList"]);
 const PAGINATED_OPERATIONS = new Set(["GetCtyAcctoTrainSttnList", "GetStrtpntAlocFndTrainInfo"]);
 const TAGO_DAILY_REQUEST_LIMIT = 10_000;
 const TAGO_MAX_RETRY_AFTER_SECONDS = 60;
-// 일시 오류(resultCode 99, HTTP 408·5xx, 전송 오류)는 같은 요청을 지수 백오프(1·2·4·8·16초)로 최대 5번 다시 보낸다(data#1089).
+// 일시 오류(resultCode 99, HTTP 408·5xx, 전송 오류)는 같은 요청을 지수 백오프(1·2·4·8·16·32·64·64초, 합계 191초)로 최대 8번 다시 보낸다(data#1089, data#1267).
 // 같은 원천에 같은 요청을 다시 보낼 뿐이라 fallback이 아니며, 한도를 다 쓰고도 실패하면 기존처럼 오류로 끝난다.
+// 8번·191초의 근거(data#1267): run 38781966262에서 공급자 장애가 첫 99부터 정상 복귀까지 대기 합계 108초 이상 이어졌고, 5번·31초로는 토요일 OD 1개의 두 조회일이 모두 99로 남았다.
 // 한 요청(페이지) 안에서 세 종류가 한도를 함께 쓴다. 시도마다 requestBudget(일일 10,000건)을 차감한다.
-const TAGO_TRANSIENT_RETRY_LIMIT = 5;
+const TAGO_TRANSIENT_RETRY_LIMIT = 8;
 const TAGO_TRANSIENT_RESULT_CODE = "99";
-// run 전체(같은 requestBudget을 쓰는 운행일들)의 재시도 대기 합계 상한. 장애가 계속돼도 workflow timeout(45분 이상)을 넘지 않게 한다.
-// 최악 시간 = 대기 5분 + 시도 수(대기 횟수 + 영향받은 요청 수, 약 70) × 요청 timeout 15초 ≈ 22분. 넘기 전에 일자 수집을 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 멈춘다.
-const TAGO_RETRY_WAIT_BUDGET_MILLISECONDS = 300_000;
+// run 전체(같은 requestBudget을 쓰는 운행일들)의 재시도 대기 합계 상한. 장애가 계속돼도 가장 짧은 workflow timeout(45분)을 넘지 않게 한다.
+// 이어지는 장애에서 한 요청이 한도를 다 쓰면 191초가 들므로 상한 안에서 요청 약 4개가 끝까지 실패한 뒤 일자 수집을 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 멈춘다.
+// 최악 시간 = 대기 15분 + 시도 수(대기 횟수 + 영향받은 요청 수, 약 50) × 요청 timeout 15초 ≈ 28분.
+const TAGO_RETRY_WAIT_BUDGET_MILLISECONDS = 900_000;
 const TAGO_RETRY_TIME_BUDGET_EXHAUSTED = "TAGO_RETRY_TIME_BUDGET_EXHAUSTED";
-const transientBackoffMilliseconds = (retryIndex) => 1_000 * 2 ** retryIndex;
+const transientBackoffMilliseconds = (retryIndex) => 1_000 * 2 ** Math.min(retryIndex, 6);
 const tagoRateLimitStates = new WeakMap();
 export const ITX_ADMISSION_LOOKAHEAD_DAYS = 14;
 const CANONICAL_STATIONS = Object.freeze({
