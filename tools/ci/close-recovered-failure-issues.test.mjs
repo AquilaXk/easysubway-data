@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   MANUAL_CLOSE_WORKFLOWS,
@@ -428,4 +430,38 @@ test("main은 회복을 닫으면 notice로 알린다", async () => {
   const lines = [];
   await main(["--repository", repository], { runGh: github.runGh, log: (line) => lines.push(line) });
   assert.ok(lines.some((line) => line.startsWith("::notice title=Recovered failure issue::#1248") && line.includes(runUrl(1001))));
+});
+
+// 진입점 판정이 깨지면 main이 실행되지 않고 exit 0으로 끝난다(운영 run 38918526410). 실제 child process로 확인한다.
+test("CLI는 잘못된 인자에 exit 1과 ARGUMENTS를 stderr로 낸다", () => {
+  const script = fileURLToPath(new URL("./close-recovered-failure-issues.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script, "--repository", "not-a-repository"], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /ARGUMENTS/);
+  assert.equal(result.stdout, "");
+});
+
+// gh는 고정 절대경로로만 찾으므로 PATH stub이 먹지 않는다. 사전 로드 코드가 child_process.spawn과 파일 존재 확인을 대체해 이슈 0건을 돌려준다.
+const STUB_GH_NO_ISSUES = `
+import childProcess from "node:child_process";
+import fs from "node:fs";
+import { EventEmitter } from "node:events";
+import { syncBuiltinESMExports } from "node:module";
+fs.existsSync = () => true;
+fs.statSync = () => ({ isFile: () => true });
+childProcess.spawn = () => {
+  const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), stdin: { end() {} } });
+  setImmediate(() => { child.stdout.emit("data", "[]"); child.emit("close", 0); });
+  return child;
+};
+syncBuiltinESMExports();
+`;
+
+test("CLI는 이슈 0건이어도 exit 0과 실행 증거 요약 줄을 stdout으로 낸다", () => {
+  const script = fileURLToPath(new URL("./close-recovered-failure-issues.mjs", import.meta.url));
+  const preload = `data:text/javascript,${encodeURIComponent(STUB_GH_NO_ISSUES)}`;
+  const result = spawnSync(process.execPath, ["--import", preload, script, "--repository", repository], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /검사한 실패 이슈 0건, 닫은 이슈 0건/);
+  assert.equal(result.stderr, "");
 });

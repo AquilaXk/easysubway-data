@@ -856,6 +856,7 @@
     {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["required-pr","deterministic-release"],"executionProfile":"mobile-v19","durationMs":35800},
     {"path":"tools/datapack/verify-release-request-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":193},
     {"path":"tools/lib/hash.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/lib/is-main-module.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":50},
     {"path":"tools/lib/is-object.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":50},
     {"path":"tools/release/validate-promotion-request.test.mjs","semanticOwner":"data54","classes":["required-pr"],"durationMs":856},
     {"path":"tools/route-map/add-daegu-buksam-catalog.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":7},
