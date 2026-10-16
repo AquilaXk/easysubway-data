@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
+import { sha256 } from "../lib/hash.mjs";
 
 // 공식 노선 색(route-map-line-colors.json)을 capital 팩의 lines.color에 반영한다.
 // 위키에서 확정된 노선만 교체하고, 미확정 노선은 데이터팩 노선도(원본 SVG)에서
@@ -145,10 +145,6 @@ async function updateIndex(indexPath, compressedBytes, sqliteBytes) {
   capital.sqliteSha256 = sha256(sqliteBytes);
   capital.byteSize = compressedBytes.length;
   await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 // CLI로 직접 실행할 때만 main을 돌린다(import 시 실행 안 함).

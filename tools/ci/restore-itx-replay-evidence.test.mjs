@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { ITX_REPLAY_EVIDENCE_FILES, main, verifyItxReplaySource } from "./restore-itx-replay-evidence.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #1127: 하루 한 번만 받을 수 있는 ITX 수집분을 이전 run의 artifact에서 되살릴 때의 거부 사례를 고정한다.
 // 이 도구는 공급자를 부르지 않는다. 이전 run이 실제로 수집·게이트 통과한 증거만 되살리고, 하나라도 어긋나면 추정하지 않고 실패한다.
@@ -15,7 +15,6 @@ const ARTIFACT_ID = "itx-cheongchun-source-timetable-20261010151222895";
 const ADMITTED_ID = "itx-cheongchun-source-timetable-20261004151519524";
 const FRESH_UNTIL = "2026-10-18T00:00:00+09:00";
 const NOW = new Date("2026-10-10T17:30:00Z");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const bytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 function evidence(overrides = {}) {

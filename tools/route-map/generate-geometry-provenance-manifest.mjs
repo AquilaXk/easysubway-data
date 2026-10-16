@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -9,6 +8,7 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { normalizeSvgForCompile } from "./compile-basemap-vec.mjs";
 import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
 import { FULL_CANVAS_DECOR_IDS, inkBBoxOf, viewBoxOf } from "./svg-ink-bbox.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const REGIONS = [
   { id: "seoul", region: "수도권", source: "easy-subway-sma-v4" },
@@ -29,7 +29,6 @@ const GEOMETRY_SCHEMA_KEYS = [
   "stationNodes",
 ];
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const compareRows = (a, b) =>
   compareText(String(a.station_id), String(b.station_id)) ||
