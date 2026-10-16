@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "32150b8deacc7e3de6ff32f71d1160470cc9398e",
+  "builderGitSha": "0c701af35d9924d0696e2ea6a9645894e4e602df",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -12,7 +12,7 @@
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
     },
     "facilityEvidenceLedgerHash": {
-      "value": "710134de2d98e44ebc110c19cc0545bf223be297b6182caf3a1d18922424c165",
+      "value": "3e0e842243752cd25b52401eb9c63b75f33d12ab9f0980039b0e31395b03d185",
       "exporterKind": "facility-evidence",
       "rowCount": 919,
       "ledgerSource": "tools/datapack/release/nationwide-production-canonical-pack.json"
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "ad3e18b2746b674e54daa0660d12a5276ff74e627b91dc78deff2baacfad0d0b"
+    "value": "3ee53f6547c79fbaddacadbdaa26662e6cc2860f85fe76271d91dda9031062b4"
   },
   "sourceInventorySha256": {
-    "value": "04010ba6f26a1f323728f00690c9f15bde700a6b8ccec9e202ea26bfaf6a1b65"
+    "value": "edb6a26e4d9ddde0df780ebf1f0c2c429484e18d7aa7f33f1a3ce8efeb5a1b2c"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "58c1ecf7b86cda285b2fe9294999a1525164ff6ab89ad6e7bc4e679d8741d880"
+    "sha256": "bc9758380f83265b86195c639b453d8a82381b1be3e23deba8620e203053c873"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261015-seq146"
+      "value": "nationwide-candidate-20261016-seq147"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261015-seq146"
+      "value": "release-request-nationwide-candidate-20261016-seq147"
     }
   },
   "perSourceEvidence": [
@@ -58,7 +58,7 @@
       "snapshotId": "seoul-metro-transfer-distance-duration-20260815T094038817Z",
       "rawSha256": "3d872c9ac390426b5e0e26fa1916ae9d9a44b70077b632d3c85cb8e82381f7cf",
       "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
-      "perSourceSnapshotSetHash": "1820ba8c68fc9ac96189300d79f08e23e228e48bb11ece947f8bf9cb496b506b"
+      "perSourceSnapshotSetHash": "d95b9b64109480852891c1d9bf8025dada542e6ff34b25893ac2c4623973ce74"
     },
     {
       "sourceId": "incheon-transit-accessibility",
@@ -307,18 +307,6 @@
       "perSourceSnapshotSetHash": "e5391089fc40db5d7527dc946bb63daecefbcf376fa6f3be5213f4a17b958966"
     },
     {
-      "sourceId": "capital-route-topology",
-      "snapshotId": "capital-route-topology-20261015",
-      "rawSha256": "f509b75da204f47d35bd1de1acb39a75a81abf69400fc630c58d891bd89e32be",
-      "admissionRecordSha256s": [
-        {
-          "kind": "capitalTopologyAdmissionEvidence",
-          "sha256": "14ee4777273781ae455d4e3e50bf7e0e9ec0a9b84d2e4afc56484f275850b26c"
-        }
-      ],
-      "perSourceSnapshotSetHash": "fe83a44b496f5a3cdb140712b114b683b26c821b870a2020c1156d0ebf3d9dc0"
-    },
-    {
       "sourceId": "kric-nationwide-timetable-file",
       "snapshotId": "kric-nationwide-timetable-file-2b64f83f579c366c3dbbef537d3974a2531422f3d5ee8b3e8fd671612b57ed38",
       "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
@@ -343,6 +331,18 @@
       "rawSha256": "96e22364bfa3b57e2225ad3db48647c2d7b1d1ec446b2c83090693405d7b3d98",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "perSourceSnapshotSetHash": "c90a66e8417ef5c89ae49aa188288d7bdcad8d9a776b14e2e4c3e19fab5e296f"
+    },
+    {
+      "sourceId": "capital-route-topology",
+      "snapshotId": "capital-route-topology-20261016",
+      "rawSha256": "bcfe51730a6effdb0ca263ed6525c90e156025d408ed86eac3b335084227837b",
+      "admissionRecordSha256s": [
+        {
+          "kind": "capitalTopologyAdmissionEvidence",
+          "sha256": "0df08b88f8fa6a0b30a41855656940896896bd78072f18ea83b8fa99321f4c51"
+        }
+      ],
+      "perSourceSnapshotSetHash": "d5c1bb912aac3552c93cd589dea3a600f236a56df95f2fa157a41a4ced659d04"
     }
   ],
   "officialOdFareEvidence": {
