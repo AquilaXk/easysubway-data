@@ -13,7 +13,7 @@ import { execFileAsync, sha256 } from "./test-fixtures/datapack-tools-support.mj
 import { rsaSha256Signature } from "./test-fixtures/datapack-tools-signing.mjs";
 import {
   productionEnv,
-  buildCurrentProductionArtifact,
+  cloneCurrentProductionArtifact,
   representativeRouteRegressionPayload,
 } from "./test-fixtures/datapack-tools-production-build.mjs";
 
@@ -355,7 +355,7 @@ test("#918 운행일 경계(03:00)를 가로지르는 trip은 변환 뒤 시각�
 });
 
 test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database }) => {
     const facility = database.prepare("SELECT id FROM facilities ORDER BY id LIMIT 1").get();
     assert.ok(facility, "current production artifact requires one facility");
@@ -380,7 +380,7 @@ test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE
 });
 
 test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route eligibility를 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     const evidence = database.prepare(`
       SELECT station_id, line_id, facility_type
@@ -420,7 +420,7 @@ test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route elig
 });
 
 test("데이터팩 검증기는 production verified edge coverage report를 출력한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
 
   const { stdout } = await execFileAsync(
     process.execPath,
@@ -440,7 +440,7 @@ test("데이터팩 검증기는 production verified edge coverage report를 출�
 });
 
 test("#873 데이터팩 검증기는 current production 팩에서 환승 간선이 authority와 어긋나면 TRANSFER coverage gap으로 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     const result = database.prepare(`
       DELETE FROM network_edges
@@ -456,7 +456,7 @@ test("#873 데이터팩 검증기는 current production 팩에서 환승 간선�
 });
 
 test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에서 제외한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   const { stdout } = await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     ...currentProductionValidationArgs(artifact),
@@ -467,7 +467,7 @@ test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에
 });
 
 test("데이터팩 검증기는 current production RIDE의 비현실적 속도를 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database }) => {
     const result = database.prepare(`
       UPDATE network_edges
@@ -491,7 +491,7 @@ test("데이터팩 검증기는 current production RIDE의 비현실적 속도�
 });
 
 test("데이터팩 검증기는 strict coverage gap 뒤의 production provenance 오류를 숨기지 않는다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     const station = database.prepare("SELECT id FROM stations ORDER BY id LIMIT 1").get();
     const sourceId = pack.sourceInventory[0].id;
@@ -534,7 +534,7 @@ test("데이터팩 검증기는 strict coverage gap 뒤의 production provenance
 });
 
 test("데이터팩 검증기는 production pathway edge 증거 누락을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     const station = database.prepare("SELECT id FROM stations ORDER BY id LIMIT 1").get();
     const sourceId = pack.sourceInventory[0].id;
@@ -581,7 +581,7 @@ test("데이터팩 검증기는 검증된 상태 accessibility edge의 미검증
   // #1996: 검증된 상태(AVAILABLE/UNDER_MAINTENANCE/NO_OFFICIAL_FEED) edge는 provenance 요건(VERIFIED 등)을
   // 여전히 강제한다. verification_status가 PENDING이면 거부한다. (UNKNOWN은 provenance 후보가 아니라 coverage
   // gap 경로로 차단된다.)
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     const source = pack.sourceInventory.find(({ coverageScope }) => (
       coverageScope?.sourceDomains?.includes("accessibility_facilities")
@@ -619,7 +619,7 @@ test("데이터팩 검증기는 검증된 상태 accessibility edge의 미검증
 });
 
 test("데이터팩 검증기는 출처 없는 production positive edge를 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database }) => {
     const result = database.prepare(`
       UPDATE network_edges
@@ -643,7 +643,7 @@ test("데이터팩 검증기는 출처 없는 production positive edge를 거부
 });
 
 test("데이터팩 검증기는 exact UNKNOWN edge만 provenance 예외로 허용한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await execFileAsync(process.execPath, [
     "tools/datapack/validate-datapack.mjs",
     ...currentProductionValidationArgs(artifact),
@@ -671,7 +671,7 @@ test("데이터팩 검증기는 exact UNKNOWN edge만 provenance 예외로 허�
 });
 
 test("데이터팩 검증기는 production manifest의 최소 row 기준 누락을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionManifest(artifact, (manifest) => {
     delete manifest.packs[0].minimumTableRows;
   });
@@ -690,7 +690,7 @@ test("데이터팩 검증기는 production manifest의 최소 row 기준 누락�
 });
 
 test("데이터팩 검증기는 production manifest의 0 row 기준을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionManifest(artifact, (manifest) => {
     manifest.packs[0].minimumTableRows = {
       stations: 0,
@@ -715,7 +715,7 @@ test("데이터팩 검증기는 production manifest의 0 row 기준을 거부한
 });
 
 test("데이터팩 검증기는 production sourceInventory coverageScope 누락을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionManifest(artifact, (manifest) => {
     delete manifest.packs[0].sourceInventory[0].coverageScope;
   });
@@ -734,7 +734,7 @@ test("데이터팩 검증기는 production sourceInventory coverageScope 누락�
 });
 
 test("데이터팩 검증기는 sourceInventory coverageScope.lineIds 중복을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionManifest(artifact, (manifest) => {
     const source = manifest.packs[0].sourceInventory.find(({ coverageScope }) => coverageScope?.lineIds?.length);
     assert.ok(source, "current production artifact requires a line-scoped source");
@@ -755,7 +755,7 @@ test("데이터팩 검증기는 sourceInventory coverageScope.lineIds 중복을 
 });
 
 test("데이터팩 검증기는 production pack의 realtime payload table을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database }) => {
     database.exec(`
       CREATE TABLE realtime_station_arrivals (
@@ -781,7 +781,7 @@ test("데이터팩 검증기는 production pack의 realtime payload table을 거
 });
 
 test("데이터팩 검증기는 production HTTPS URL과 staged artifact path 불일치를 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   const outputDir = artifact.output;
   const manifestPath = path.join(outputDir, "current.json");
   const pristineManifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -885,7 +885,7 @@ test("데이터팩 검증기는 production HTTPS URL과 staged artifact path 불
 });
 
 test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line source 우회를 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     materializeCurrentAvailableEntryEvidence(database, pack, { sourceSupportsAccessibility: false });
   });
@@ -903,7 +903,7 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line sou
 });
 
 test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line operational evidence 누락을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     materializeCurrentAvailableEntryEvidence(database, pack);
   });
@@ -921,7 +921,7 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line ope
 });
 
 test("station status probe는 production strict route evidence로 승격되지 않는다 (#2609)", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     materializeCurrentAvailableEntryEvidence(database, pack, {
       stationStatusProbeEvidence: true,
@@ -942,7 +942,7 @@ test("station status probe는 production strict route evidence로 승격되지 �
 });
 
 test("데이터팩 검증기는 AVAILABLE accessibility edge의 승인된 이동 경로 누락을 거부한다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     materializeCurrentAvailableEntryEvidence(database, pack, { strictFacilityEvidence: true });
   });
@@ -960,7 +960,7 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 승인된 이동
 });
 
 test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경로로 인정하지 않는다", async (context) => {
-  const artifact = await buildCurrentProductionArtifact(context);
+  const artifact = await cloneCurrentProductionArtifact(context);
   await mutateCurrentProductionSqlite(artifact, ({ database, pack }) => {
     materializeCurrentAvailableEntryEvidence(database, pack, {
       strictFacilityEvidence: true,
