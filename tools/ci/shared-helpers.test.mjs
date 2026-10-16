@@ -25,7 +25,9 @@ for (const { label, input, expected } of SHA256_CASES) {
 }
 
 test("sha256: 같은 바이트의 문자열과 Buffer 입력은 같은 해시를 낸다", () => {
-  assert.equal(sha256("한글"), sha256(Buffer.from("한글", "utf8")));
+  const expected = "bd87f9bb68b67d2fa1cb82b6751820e946d5b1316d25d5fd96512fb4be44a2a8";
+  assert.equal(sha256("한글"), expected);
+  assert.equal(sha256(Buffer.from("한글", "utf8")), expected);
 });
 
 const IS_OBJECT_CASES = [
