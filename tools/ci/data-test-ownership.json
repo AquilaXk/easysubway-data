@@ -681,6 +681,8 @@
     {"path":"tools/datapack/run-retained-gwangju-timetable-refresh.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":18},
     {"path":"tools/ci/retained-gwangju-refresh-delivery.test.mjs","semanticOwner":"data504","classes":["required-pr"],"durationMs":3},
     {"path":"tools/ci/report-refresh-failure.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":40},
+    {"path":"tools/ci/close-recovered-failure-issues.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":30},
+    {"path":"tools/ci/close-recovered-failure-issues-workflow.test.mjs","semanticOwner":"data870","classes":["required-pr"],"durationMs":10},
     {"path":"tools/ci/refresh-open-pr-age.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":40},
     {"path":"tools/ci/refresh-pr-required-ci.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":20},
     {"path":"tools/ci/refresh-workflow-pull-request-lifecycle.test.mjs","semanticOwner":"data939","classes":["required-pr"],"durationMs":20},
