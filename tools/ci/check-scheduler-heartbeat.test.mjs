@@ -194,6 +194,7 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
     "itx-current-promotion.yml",
     "kric-current-facility-refresh.yml",
     "nationwide-candidate-refresh.yml",
+    "recovered-failure-issues-close.yml",
     "retained-gwangju-timetable-refresh.yml",
     "seoul-current-accessibility-refresh.yml",
     "source-derivative-rebinding.yml",
@@ -214,5 +215,7 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
   const expiry = Object.fromEntries(actual.workflows.filter(({ workflow }) => workflow === "datapack-expiry-alert.yml").map((item) => [item.runName, parseMaxAge(item.maxAge)]));
   assert.deepEqual(expiry, { "Data Pack Expiry Alert (datapack-expiry)": hours(9), "Data Pack Expiry Alert (provider-approval)": hours(27) });
   assert.equal(maxAge["source-derivative-rebinding.yml"], hours(13));
-  assert.equal(maxAge["itx-current-promotion.yml"], hours(27));
+  // 외부 스케줄러는 ITX 승격을 3시간마다(platform#258), 회복된 실패 이슈 닫기를 매시간 dispatch한다. 같은 규칙으로 주기의 두 배보다 1시간 크게(3시간은 두 배보다 1시간 크게) 잡는다.
+  assert.equal(maxAge["itx-current-promotion.yml"], hours(7));
+  assert.equal(maxAge["recovered-failure-issues-close.yml"], hours(3));
 });
