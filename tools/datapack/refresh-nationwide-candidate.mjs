@@ -53,6 +53,7 @@ const REQUEST_PATH = "tools/datapack/release/release-request.json";
 const HASH_EVIDENCE_PATH = "tools/datapack/release/hash-evidence.json";
 const SOURCE_SNAPSHOTS_PATH = "tools/datapack/release/source-snapshots.json";
 const FRESHNESS_POLICY_PATH = "release/product-gates/datapack-freshness-sla.json";
+const GOVERNANCE_POLICY_PATH = "tools/datapack/source-governance-policy.json";
 const OVERRIDES_PATH = "tools/datapack/fixtures/admin-review-overrides.json";
 const LEDGER_FIELDS = Object.freeze([
   ["approvedAliasLedgerHash", "alias"],
@@ -247,6 +248,7 @@ export async function runNationwideCandidateRefreshStep({ name, repositoryRoot, 
         "--inventory", "tools/datapack/source-inventory.json",
         "--source-snapshots", SOURCE_SNAPSHOTS_PATH,
         "--freshness-policy", FRESHNESS_POLICY_PATH,
+        "--governance-policy", GOVERNANCE_POLICY_PATH,
         "--evaluated-at", evaluatedAt,
         "--output", output,
       ]);

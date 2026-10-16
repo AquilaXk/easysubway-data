@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildCurrentFiveRegionSourceFanIn,
+  REPRODUCTION_GOVERNANCE,
   canonicalCurrentFiveRegionSourceFanInJson,
   CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH,
   nativeAdmissionRecordForHead,
@@ -81,6 +82,8 @@ function currentFanIn(inputs) {
     sourceSnapshots,
     inputBytes: Object.fromEntries(["targets", "tally", "ownership", "inventory", "sourceSnapshots"].map((name) => [name, inputBytes[name]])),
     evaluatedAt: validated.evaluatedAt,
+    // 커밋된 fan-in은 CLI가 거버넌스 정책을 확인해 만든 바이트다. 여기서는 그 바이트를 다시 만들 뿐 새 이월을 인정하지 않는다.
+    governance: REPRODUCTION_GOVERNANCE,
   });
   if (canonicalCurrentFiveRegionSourceFanInJson(reconstructed)
     !== canonicalCurrentFiveRegionSourceFanInJson(validated)) throw new Error("fan-in reconstruction mismatch");

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import {
   buildCurrentFiveRegionSourceFanIn,
+  REPRODUCTION_GOVERNANCE,
 } from "./build-current-five-region-source-fan-in.mjs";
 import { assertCandidateInputsCurrent } from "./lib/candidate-input-bundle.mjs";
 import { committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
@@ -60,6 +61,8 @@ test("(b) 현재 입력으로 buildCurrentFiveRegionSourceFanIn을 돌린 결과
     ...Object.fromEntries(inputNames.map((name) => [name, records[name].value])),
     inputBytes: Object.fromEntries(inputNames.map((name) => [name, records[name].bytes])),
     evaluatedAt: committedFanIn.evaluatedAt,
+    // 커밋된 fan-in은 CLI가 거버넌스 정책을 확인해 만든 바이트다. 같은 바이트를 다시 만들 뿐이다.
+    governance: REPRODUCTION_GOVERNANCE,
   };
 
   const reconstructed = buildCurrentFiveRegionSourceFanIn(input);

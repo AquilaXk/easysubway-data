@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { buildNationwideRequirementOwnershipLedger, resolveNationwideRequirementOwner } from "./build-nationwide-requirement-ownership-ledger.mjs";
-import { fixtureLedgerInput, independentFiveRegionFixture } from "./test-fixtures/five-region-source-input.mjs";
+import { buildCurrentFiveRegionSourceFanIn, canonicalCurrentFiveRegionSourceFanInJson } from "./build-current-five-region-source-fan-in.mjs";
+import { fixtureBytes, fixtureLedgerInput, independentFiveRegionFixture } from "./test-fixtures/five-region-source-input.mjs";
 
 test("owner work selection preserves overrides without candidate or GO inputs", () => {
   const rules = [
@@ -93,3 +94,30 @@ test("#6 derives GO only when every launch lineage axis is evidenced", () => {
 function hash(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
+
+// #1289: 소유권 원장은 CLI가 거버넌스 정책을 확인해 만든 fan-in 바이트(이월 근거 포함)를 정책 입력 없이 다시 만들어 대조한다.
+test("#1289 reconstructs a fan-in that carries a forward admission without a governance policy input", () => {
+  const input = independentFiveRegionFixture();
+  const sourceId = "kric-subway-timetable-station-lines";
+  const [source] = input.inventory.sources;
+  const [base] = input.sourceSnapshots;
+  const schemaFingerprint = "b".repeat(64);
+  const approvedRow = { ...base, sourceId, snapshotId: `${sourceId}-20261003`, schemaFingerprint };
+  const headRow = { ...approvedRow, snapshotId: `${sourceId}-20261016`, previousSnapshotId: approvedRow.snapshotId,
+    rawSha256: "e".repeat(64), rawObjectUri: `oci://fixture-namespace/fixture-bucket/${sourceId}-head.json` };
+  input.sourceSnapshots = [approvedRow, headRow];
+  for (const row of input.tally.launchRequired.requirements) row.admittedSourceIds = [sourceId];
+  source.id = sourceId;
+  source.capabilities = { schedule: { productionUseAllowed: true } };
+  source.admissionEvidence = { ...source.admissionEvidence, sourceId, snapshotId: approvedRow.snapshotId, schemaFingerprint, licenseEvidenceHash: "f".repeat(64) };
+  source.scheduleAdmissionEvidence = { issue: 903, materializer: "fixture-materializer", verificationTest: "fixture-test", snapshotId: headRow.snapshotId,
+    snapshotPath: `tools/datapack/sources/${headRow.snapshotId}.json`, capturedAt: "2040-01-01T00:00:00.000Z", rawSha256: headRow.rawSha256 };
+  const inputBytes = Object.fromEntries(["targets", "tally", "ownership", "inventory", "sourceSnapshots"].map((name) => [name, fixtureBytes(input[name])]));
+  const governancePolicy = { sources: [{ sourceId, licenseReview: { termsHash: "f".repeat(64), nextReviewAt: "2041-01-01T00:00:00Z" } }] };
+  const fanIn = buildCurrentFiveRegionSourceFanIn({ ...input, inputBytes, governancePolicy });
+  assert.equal(fanIn.selectedSources[0].carriedAdmission.chainLength, 2);
+  const ledger = buildNationwideRequirementOwnershipLedger({
+    ...input, fanIn, inputBytes: { ...inputBytes, fanIn: Buffer.from(`${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`) },
+  });
+  assert.equal(ledger.provenance.inputs.fanIn.fanInSha256, fanIn.fanInSha256);
+});
