@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   MANUAL_CLOSE_WORKFLOWS,
+  MAX_JOB_LOOKUPS_PER_SWEEP,
   MAX_RUN_PAGES,
   RECOVERY_PROOF,
   RECOVERY_COMMENT_MARKER,
@@ -267,19 +268,69 @@ test("run 범위는 마지막 실패 run의 생성 시각부터다", async () =>
 test("상한 페이지 수에 닿았는데 증거가 없으면 NO_RECOVERY_PROOF로 넘기지 않고 SCAN_TRUNCATED로 드러낸다", async () => {
   const { runs, jobs } = accumulatedRuns(1001, MAX_RUN_PAGES * PAGE_SIZE + 20, [1003]);
   const github = fakeGitHub({ issues: [botIssue(1248)], runs: { [topology]: runs }, jobs });
-  const results = await run(github);
+  // job 조회 예산이 먼저 바닥나지 않도록 상한 페이지의 run 수보다 크게 준다(예산과 페이지 상한은 서로 다른 자원의 한도다).
+  const results = await closeRecoveredFailureIssues({ repository, runGh: github.runGh, jobLookupBudget: MAX_RUN_PAGES * PAGE_SIZE });
   assert.deepEqual(github.closed, []);
   assert.equal(outcome(results, 1248).reason, "SCAN_TRUNCATED");
   assert.equal(callsTo(github, /\/workflows\/[^/]+\/runs$/u).length, MAX_RUN_PAGES);
   const lines = [];
-  await main(["--repository", repository], { runGh: github.runGh, log: (line) => lines.push(line) });
-  assert.ok(lines.some((line) => line.startsWith("::warning title=Recovered failure issue::#1248")));
+  await main(["--repository", repository], { runGh: github.runGh, log: (line) => lines.push(line), jobLookupBudget: MAX_RUN_PAGES * PAGE_SIZE });
+  assert.ok(lines.some((line) => line.startsWith("::warning title=Recovered failure issue::#1248") && line.includes("SCAN_TRUNCATED")));
 });
 
 test("상한 안에서 찾은 증거는 상한에 닿았어도 인정한다", async () => {
   const { runs, jobs } = accumulatedRuns(1001, MAX_RUN_PAGES * PAGE_SIZE + 20, [1100]);
   const github = fakeGitHub({ issues: [botIssue(1248)], runs: { [topology]: runs }, jobs });
   assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1100));
+});
+
+const jobLookups = (github) => callsTo(github, /\/runs\/\d+\/jobs$/u).length;
+const GWANGJU = "retained-gwangju-timetable-refresh.yml";
+
+test("job 조회가 실행당 예산을 다 쓰면 판정을 멈추고 대상 이슈를 경고로 드러내며, 종료 코드는 0이다", async () => {
+  const { runs, jobs } = accumulatedRuns(1001, MAX_JOB_LOOKUPS_PER_SWEEP + 50, [1001 + MAX_JOB_LOOKUPS_PER_SWEEP + 10]);
+  const github = fakeGitHub({ issues: [botIssue(1248)], runs: { [topology]: runs }, jobs });
+  const lines = [];
+  assert.equal(await main(["--repository", repository], { runGh: github.runGh, log: (line) => lines.push(line) }), 0);
+  assert.deepEqual(github.closed, []);
+  assert.equal(jobLookups(github), MAX_JOB_LOOKUPS_PER_SWEEP, "예산을 넘겨 조회하지 않는다");
+  assert.ok(lines.some((line) => line.startsWith("::warning title=Recovered failure issue::#1248") && line.includes("JOB_LOOKUP_BUDGET_EXHAUSTED")));
+});
+
+test("예산을 쓴 뒤 남은 이슈는 조회 없이 예산 소진으로 드러내고, 조회가 필요 없는 판정은 계속한다", async () => {
+  const { runs, jobs } = accumulatedRuns(1001, MAX_JOB_LOOKUPS_PER_SWEEP + 50, []);
+  const github = fakeGitHub({
+    issues: [botIssue(1248), botIssue(1255, { workflowFile: GWANGJU, failedRunId: 900 }), botIssue(1276, { workflowFile: reverification, failures: [{ recipeId: "korail-topology", code: "SOURCE_EXPECTATION_CHANGED" }] })],
+    runs: { [topology]: runs, [GWANGJU]: [successRun(901)] },
+    jobs: { ...jobs, 901: [job([["Create retained timetable draft pull request", "success"]])] },
+  });
+  const results = await run(github);
+  assert.deepEqual(github.closed, []);
+  assert.equal(outcome(results, 1248).reason, "JOB_LOOKUP_BUDGET_EXHAUSTED");
+  assert.equal(outcome(results, 1255).reason, "JOB_LOOKUP_BUDGET_EXHAUSTED");
+  assert.equal(outcome(results, 1276).reason, "BLOCKED_RECIPE");
+  assert.equal(jobLookups(github), MAX_JOB_LOOKUPS_PER_SWEEP);
+  assert.equal(callsTo(github, new RegExp(`/workflows/${GWANGJU}/runs$`, "u")).length, 0, "소진 뒤에는 run도 조회하지 않는다");
+});
+
+test("예산 안에서 찾은 증거는 정상으로 닫는다: 마지막 조회에서 찾아도 닫힌다", async () => {
+  const { runs, jobs } = accumulatedRuns(1001, MAX_JOB_LOOKUPS_PER_SWEEP + 50, [1000 + MAX_JOB_LOOKUPS_PER_SWEEP]);
+  const github = fakeGitHub({ issues: [botIssue(1248)], runs: { [topology]: runs }, jobs });
+  assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1000 + MAX_JOB_LOOKUPS_PER_SWEEP));
+  assert.equal(jobLookups(github), MAX_JOB_LOOKUPS_PER_SWEEP);
+});
+
+test("예산은 이슈마다가 아니라 실행 전체에서 나눠 쓴다: 앞 이슈가 쓴 만큼 뒤 이슈의 조회가 줄어든다", async () => {
+  const first = accumulatedRuns(1001, 60, []);
+  const second = accumulatedRuns(2001, 60, [2060]);
+  const github = fakeGitHub({
+    issues: [botIssue(1248), botIssue(1255, { workflowFile: GWANGJU, failedRunId: 2000 })],
+    runs: { [topology]: first.runs, [GWANGJU]: second.runs.map((candidate) => candidate) },
+    jobs: { ...first.jobs, ...Object.fromEntries(second.runs.map(({ id }) => [id, id === 2060 ? [job([["Create retained timetable draft pull request", "success"]])] : nothingToDo])) },
+  });
+  const results = await run(github);
+  assert.equal(outcome(results, 1255).reason, "JOB_LOOKUP_BUDGET_EXHAUSTED");
+  assert.equal(jobLookups(github), MAX_JOB_LOOKUPS_PER_SWEEP);
 });
 
 test("마지막 실패 run을 읽지 못하면 그 이슈만 이상으로 남기고 다른 이슈 처리는 계속한다", async () => {
