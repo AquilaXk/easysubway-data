@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261016-seq149",
-  "candidateBuildSpecSha256": "9d562f0e6ca58ac6c38664601de4db8465b9ae6a5e3bd3defebd2a66dee0eca1",
-  "preparationSha256": "e925d2227dac4837971650450e95965a2dacd83c1b6fd862124db111c6f4b4f0",
-  "fanInSha256": "2f1dd38de150630e6bfd4929b9aa7dcfa46a64d149d97bd3ca09032c8d768b12",
+  "candidateId": "nationwide-candidate-20261016-seq150",
+  "candidateBuildSpecSha256": "31841cb0a61dc9a17b22574d4752b42b96df685b1806c052c4aab14ccf93bbb1",
+  "preparationSha256": "48c5ee3f2b11ebeb75cfd90c5c778c5cbd442cec842c5e661f0669ca2a77da08",
+  "fanInSha256": "153e37d48c3b638191ee2f47891190d1c3a511c151641df95e1e8e56ac2a308b",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -19,12 +19,12 @@
     },
     {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-      "sha256": "a1e6f6c90a1638e6bb5e544a4699a65787d91befdb2eaaffca4567cd40bd5236",
+      "sha256": "4b57b7eab2c930125676a7c822d881796a6ebb2d2dc6a1ddf64f5b74871f706a",
       "byteSize": 14856
     },
     {
-      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261010151222895.json",
-      "sha256": "1caafe9e2700d43913bbe59eb24e770e25939839909073241b0bce02185b584a",
+      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261016200049829.json",
+      "sha256": "27e66f8c71e2464ad9d7a6409cc423f1bb5a541e879d3f29299fc94102e40c0c",
       "byteSize": 2200
     },
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "2f1dd38de150630e6bfd4929b9aa7dcfa46a64d149d97bd3ca09032c8d768b12",
+      "sha256": "153e37d48c3b638191ee2f47891190d1c3a511c151641df95e1e8e56ac2a308b",
       "byteSize": 36442
     },
     {
