@@ -4,13 +4,14 @@ import test from "node:test";
 
 import {
   MANUAL_CLOSE_WORKFLOWS,
-  MAX_SCANNED_RUNS,
+  MAX_RUN_PAGES,
   RECOVERY_PROOF,
   RECOVERY_COMMENT_MARKER,
   closeRecoveredFailureIssues,
   main,
 } from "./close-recovered-failure-issues.mjs";
 import { REPORTABLE_WORKFLOW_FILES, planRefreshFailureReport } from "./report-refresh-failure.mjs";
+import { parseWorkflow } from "./workflow-secret-classification.mjs";
 
 // #1287: 같은 workflow가 마지막 보고 실패 run보다 나중에 대상 단계까지 성공했을 때만 실패 이슈를 닫는다. 추정으로 닫지 않는다.
 const repository = "AquilaXk/easysubway-data";
@@ -30,10 +31,18 @@ function botIssue(number, { workflowFile = topology, failedRunId = 1000, failure
 const job = (steps) => ({ name: "refresh", conclusion: "success", steps: steps.map(([name, conclusion]) => ({ name, conclusion })) });
 const delivered = [job([["Decide whether current topology refresh is due", "success"], [DELIVERY_STEP, "success"]])];
 const nothingToDo = [job([["Decide whether current topology refresh is due", "success"], [DELIVERY_STEP, "skipped"]])];
-const successRun = (id) => ({ id, conclusion: "success", html_url: runUrl(id) });
+// run id가 커질수록 늦게 생긴다: 생성 시각은 id초 뒤다.
+const createdAt = (id) => new Date(start.getTime() + id * 1000).toISOString();
+const successRun = (id) => ({ id, conclusion: "success", html_url: runUrl(id), created_at: createdAt(id) });
+const PAGE_SIZE = 100;
+// 실패 이후 성공 run이 쌓인 API 응답(최근 순). proofIds의 run만 대상 단계가 success다.
+const accumulatedRuns = (firstId, count, proofIds) => {
+  const ids = Array.from({ length: count }, (_, index) => firstId + count - 1 - index);
+  return { runs: ids.map(successRun), jobs: Object.fromEntries(ids.map((id) => [id, proofIds.includes(id) ? delivered : nothingToDo])) };
+};
 
-// issue list/close와 Actions run·job 조회만 흉내 내는 저장소. 닫기 호출을 기록하고 선택한 이슈에서는 닫기를 실패시킨다.
-function fakeGitHub({ issues = [], runs = {}, jobs = {}, failClose = [] }) {
+// issue list/close와 Actions run·job 조회만 흉내 내는 저장소. run 목록은 created 범위와 페이징을 지키고, 닫기 호출을 기록하며 선택한 이슈에서는 닫기를 실패시킨다.
+function fakeGitHub({ issues = [], runs = {}, jobs = {}, failClose = [], unreadableRuns = [] }) {
   const calls = [];
   const closed = [];
   const runGh = async (args) => {
@@ -46,14 +55,27 @@ function fakeGitHub({ issues = [], runs = {}, jobs = {}, failClose = [] }) {
       return "";
     }
     const path = args.find((arg) => arg.startsWith("repos/"));
+    const query = Object.fromEntries(args.flatMap((arg, index) => (args[index - 1] === "-f" ? [[arg.slice(0, arg.indexOf("=")), arg.slice(arg.indexOf("=") + 1)]] : [])));
     const workflowRuns = /\/actions\/workflows\/([^/]+)\/runs$/u.exec(path);
-    if (workflowRuns) return JSON.stringify({ workflow_runs: runs[workflowRuns[1]] ?? [] });
+    if (workflowRuns) {
+      const since = query.created.replace(/^>=/u, "");
+      const inRange = (runs[workflowRuns[1]] ?? []).filter((candidate) => candidate.created_at >= since);
+      const page = Number(query.page);
+      return JSON.stringify({ total_count: inRange.length, workflow_runs: inRange.slice((page - 1) * Number(query.per_page), page * Number(query.per_page)) });
+    }
     const runJobs = /\/actions\/runs\/(\d+)\/jobs$/u.exec(path);
     if (runJobs) return JSON.stringify({ jobs: jobs[runJobs[1]] ?? [] });
+    const singleRun = /\/actions\/runs\/(\d+)$/u.exec(path);
+    if (singleRun) {
+      if (unreadableRuns.includes(Number(singleRun[1]))) throw new Error("gh api failed: HTTP 404");
+      return JSON.stringify({ created_at: createdAt(Number(singleRun[1])) });
+    }
     return assert.fail(`unexpected gh call ${args.join(" ")}`);
   };
   return { calls, closed, runGh };
 }
+
+const callsTo = (github, pattern) => github.calls.filter((args) => pattern.test(args.find((arg) => String(arg).startsWith("repos/")) ?? ""));
 
 const run = (github) => closeRecoveredFailureIssues({ repository, runGh: github.runGh });
 const outcome = (results, number) => results.find((result) => result.issueNumber === number);
@@ -74,15 +96,6 @@ test("마지막 실패 run보다 나중에 대상 단계까지 성공한 run이 
   assert.deepEqual(outcome(results, 1248), { issueNumber: 1248, workflowFile: topology, action: "closed", reason: "RECOVERED", runUrl: runUrl(1001) });
 });
 
-test("가장 최근의 증거 run을 쓰고, 증거가 없는 더 최근 성공 run은 건너뛴다", async () => {
-  const github = fakeGitHub({
-    issues: [botIssue(1248)],
-    runs: { [topology]: [successRun(1004), successRun(1003), successRun(1002), successRun(1001)] },
-    jobs: { 1004: nothingToDo, 1003: nothingToDo, 1002: delivered, 1001: delivered },
-  });
-  assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1002));
-});
-
 test("실패 run보다 앞서 시작한 성공 run은 회복이 아니다", async () => {
   const github = fakeGitHub({ issues: [botIssue(1248, { failedRunId: 1000 })], runs: { [topology]: [successRun(1000), successRun(999)] }, jobs: { 1000: delivered, 999: delivered } });
   const results = await run(github);
@@ -90,14 +103,27 @@ test("실패 run보다 앞서 시작한 성공 run은 회복이 아니다", asyn
   assert.equal(outcome(results, 1248).reason, "NO_RECOVERY_PROOF");
 });
 
-test("본문 상태 블록과 댓글에 기록된 가장 최근 실패 run이 기준이다", async () => {
+const NOTICE_MARKER = "<!-- easysubway-refresh-failure-comment -->";
+
+test("본문 상태 블록과 봇이 단 알림 댓글에 기록된 가장 최근 실패 run이 기준이다", async () => {
   const later = botIssue(1248, { failedRunId: 1000 });
   later.body = later.body.replace(`  - ${runUrl(1000)}`, `  - ${runUrl(1010)}\n  - ${runUrl(1000)}`);
-  later.comments = [{ body: `다시 실패했다.\n- 실패 run: ${runUrl(1020)}`, createdAt: start.toISOString(), author: BOT }];
-  const github = fakeGitHub({ issues: [later], runs: { [topology]: [successRun(1015), successRun(1021)] }, jobs: { 1015: delivered, 1021: delivered } });
+  later.comments = [{ body: `${NOTICE_MARKER}\n다시 실패했다.\n- 실패 run: ${runUrl(1020)}`, createdAt: start.toISOString(), author: { login: "github-actions" } }];
+  const github = fakeGitHub({ issues: [later], runs: { [topology]: [successRun(1021), successRun(1015)] }, jobs: { 1015: delivered, 1021: delivered } });
   assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1021));
   const onlyBefore = fakeGitHub({ issues: [later], runs: { [topology]: [successRun(1015)] }, jobs: { 1015: delivered } });
   assert.deepEqual(await run(onlyBefore).then(() => onlyBefore.closed), []);
+});
+
+test("사람 댓글, 알림 표지 없는 댓글, 이전 자동 종료 댓글의 run URL은 기준에 끼지 않는다", async () => {
+  const issue = botIssue(1248, { failedRunId: 1000 });
+  issue.comments = [
+    { body: `${NOTICE_MARKER}\n- 실패 run: ${runUrl(1900)}`, createdAt: start.toISOString(), author: { login: "AquilaXk" } },
+    { body: `봇 같은 말투\n- 실패 run: ${runUrl(1901)}`, createdAt: start.toISOString(), author: { login: "github-actions" } },
+    { body: `<!-- easysubway-refresh-failure-recovered -->\n- 성공 run: ${runUrl(1902)}`, createdAt: start.toISOString(), author: { login: "github-actions" } },
+  ];
+  const github = fakeGitHub({ issues: [issue], runs: { [topology]: [successRun(1001)] }, jobs: { 1001: delivered } });
+  assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1001));
 });
 
 test("목록에 섞인 성공이 아닌 run은 단계가 success여도 증거가 아니다", async () => {
@@ -214,14 +240,59 @@ test("닫기 API가 실패하면 조용히 넘기지 않고 close-failed로 드�
   assert.match(outcome(results, 1248).error, /HTTP 502/u);
 });
 
-test("최근 성공 run 상한 안에 증거가 없으면 닫지 않는다", async () => {
-  const runs = Array.from({ length: MAX_SCANNED_RUNS + 1 }, (_, index) => successRun(2000 - index));
-  const jobs = Object.fromEntries(runs.map(({ id }) => [id, nothingToDo]));
-  jobs[runs.at(-1).id] = delivered;
+test("여러 증명 run이 있으면 가장 이른 run을 인용한다: API가 최근 순으로 줘도 정렬은 오름차순이다", async () => {
+  const github = fakeGitHub({
+    issues: [botIssue(1248)],
+    runs: { [topology]: [1005, 1004, 1003, 1002, 1001].map(successRun) },
+    jobs: { 1005: delivered, 1004: nothingToDo, 1003: delivered, 1002: nothingToDo, 1001: nothingToDo },
+  });
+  assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1003));
+  assert.deepEqual(callsTo(github, /\/runs\/\d+\/jobs$/u).map((args) => args.find((arg) => arg.includes("/jobs")).match(/runs\/(\d+)/u)[1]), ["1001", "1002", "1003"], "이른 run부터 조회하고 증거에서 멈춘다");
+});
+
+test("실패 뒤 성공 run이 한 페이지(100개)를 넘게 쌓여도 앞쪽에 있는 증명 run을 찾는다", async () => {
+  const { runs, jobs } = accumulatedRuns(1001, 2 * PAGE_SIZE + 50, [1003]);
   const github = fakeGitHub({ issues: [botIssue(1248)], runs: { [topology]: runs }, jobs });
+  assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1003));
+  const pages = callsTo(github, /\/workflows\/[^/]+\/runs$/u).map((args) => args.find((arg) => arg.startsWith("page=")));
+  assert.deepEqual(pages, ["page=1", "page=2", "page=3"]);
+});
+
+test("run 범위는 마지막 실패 run의 생성 시각부터다", async () => {
+  const github = fakeGitHub({ issues: [botIssue(1248, { failedRunId: 1000 })], runs: { [topology]: [] } });
   await run(github);
+  assert.ok(callsTo(github, /\/workflows\/[^/]+\/runs$/u)[0].includes(`created=>=${createdAt(1000)}`));
+});
+
+test("상한 페이지 수에 닿았는데 증거가 없으면 NO_RECOVERY_PROOF로 넘기지 않고 SCAN_TRUNCATED로 드러낸다", async () => {
+  const { runs, jobs } = accumulatedRuns(1001, MAX_RUN_PAGES * PAGE_SIZE + 20, [1003]);
+  const github = fakeGitHub({ issues: [botIssue(1248)], runs: { [topology]: runs }, jobs });
+  const results = await run(github);
   assert.deepEqual(github.closed, []);
-  assert.equal(github.calls.filter((args) => String(args.find((arg) => String(arg).includes("/jobs")) ?? "").length > 0).length, MAX_SCANNED_RUNS);
+  assert.equal(outcome(results, 1248).reason, "SCAN_TRUNCATED");
+  assert.equal(callsTo(github, /\/workflows\/[^/]+\/runs$/u).length, MAX_RUN_PAGES);
+  const lines = [];
+  await main(["--repository", repository], { runGh: github.runGh, log: (line) => lines.push(line) });
+  assert.ok(lines.some((line) => line.startsWith("::warning title=Recovered failure issue::#1248")));
+});
+
+test("상한 안에서 찾은 증거는 상한에 닿았어도 인정한다", async () => {
+  const { runs, jobs } = accumulatedRuns(1001, MAX_RUN_PAGES * PAGE_SIZE + 20, [1100]);
+  const github = fakeGitHub({ issues: [botIssue(1248)], runs: { [topology]: runs }, jobs });
+  assert.equal(outcome(await run(github), 1248).runUrl, runUrl(1100));
+});
+
+test("마지막 실패 run을 읽지 못하면 그 이슈만 이상으로 남기고 다른 이슈 처리는 계속한다", async () => {
+  const github = fakeGitHub({
+    issues: [botIssue(1248, { failedRunId: 1000 }), botIssue(1255, { workflowFile: "retained-gwangju-timetable-refresh.yml", failedRunId: 900 })],
+    runs: { [topology]: [successRun(1001)], "retained-gwangju-timetable-refresh.yml": [successRun(901)] },
+    jobs: { 1001: delivered, 901: [job([["Create retained timetable draft pull request", "success"]])] },
+    unreadableRuns: [1000],
+  });
+  const results = await run(github);
+  assert.equal(outcome(results, 1248).reason, "FAILURE_RUN_UNREADABLE");
+  assert.match(outcome(results, 1248).error, /HTTP 404/u);
+  assert.deepEqual(github.closed.map(({ number }) => number), [1255]);
 });
 
 test("수동 종료 workflow의 이슈는 run을 조회하지 않고 남긴다", async () => {
@@ -241,7 +312,7 @@ test("실패 run이 하나도 기록되지 않은 이슈는 추정하지 않고 
   assert.equal(outcome(results, 1248).reason, "NO_RECORDED_FAILURE_RUN");
 });
 
-test("같은 workflow의 이슈가 여럿이면 각각 자기 기준으로 판정하고 run 목록은 한 번만 읽는다", async () => {
+test("같은 workflow의 이슈가 여럿이면 각각 자기 기준으로 판정한다", async () => {
   const github = fakeGitHub({
     issues: [botIssue(1248, { failedRunId: 1000 }), botIssue(1249, { failedRunId: 1500 })],
     runs: { [topology]: [successRun(1001)] },
@@ -249,7 +320,6 @@ test("같은 workflow의 이슈가 여럿이면 각각 자기 기준으로 판�
   });
   await run(github);
   assert.deepEqual(github.closed.map(({ number }) => number), [1248]);
-  assert.equal(github.calls.filter((args) => args.some((arg) => String(arg).endsWith(`/workflows/${topology}/runs`))).length, 1);
 });
 
 test("열린 실패 이슈가 없으면 Actions API를 부르지 않는다", async () => {
@@ -266,12 +336,25 @@ test("보고 대상 workflow는 모두 회복 판정 기준이나 수동 종료 
   for (const reason of Object.values(MANUAL_CLOSE_WORKFLOWS)) assert.ok(reason.length > 0);
 });
 
-test("회복 판정 단계 이름은 실제 workflow에 있는 step이다(이름이 바뀌면 판정이 조용히 멈추지 않고 여기서 실패한다)", () => {
+const stepCount = (jobText, stepName) => jobText.split("\n").filter((line) => line === `      - name: ${stepName}`).length;
+
+test("회복 판정의 대안은 실제 workflow의 한 job 안에 있고 그 job에서 step 이름이 유일하다(구조가 바뀌면 판정이 조용히 멈추지 않고 여기서 실패한다)", () => {
   for (const [workflowFile, alternatives] of Object.entries(RECOVERY_PROOF)) {
     assert.ok(alternatives.length > 0 && alternatives.every((steps) => steps.length > 0), workflowFile);
-    const yml = readFileSync(new URL(`../../.github/workflows/${workflowFile}`, import.meta.url), "utf8");
-    for (const stepName of alternatives.flat()) assert.ok(yml.includes(`      - name: ${stepName}\n`), `${workflowFile}: ${stepName}`);
+    const { jobs } = parseWorkflow(readFileSync(new URL(`../../.github/workflows/${workflowFile}`, import.meta.url), "utf8"));
+    for (const steps of alternatives) {
+      const owners = jobs.filter(({ text }) => steps.some((name) => stepCount(text, name) > 0));
+      assert.equal(owners.length, 1, `${workflowFile}: ${steps.join(" + ")}는 한 job에 있어야 한다`);
+      for (const name of steps) assert.equal(stepCount(owners[0].text, name), 1, `${workflowFile}/${owners[0].name}: ${name}`);
+    }
   }
+});
+
+test("구조 검사 반례: 대안의 step이 두 job에 나뉘거나 한 job에 이름이 겹치면 걸린다", () => {
+  const yml = "jobs:\n  a:\n    steps:\n      - name: One\n      - name: One\n  b:\n    steps:\n      - name: Two\n";
+  const { jobs } = parseWorkflow(yml);
+  assert.equal(jobs.filter(({ text }) => ["One", "Two"].some((name) => stepCount(text, name) > 0)).length, 2);
+  assert.equal(stepCount(jobs[0].text, "One"), 2);
 });
 
 test("main은 결과를 annotation으로 쓰고, 닫기 실패는 경고로만 드러내 종료 코드를 바꾸지 않는다", async () => {

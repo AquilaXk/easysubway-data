@@ -50,6 +50,8 @@ const STATUS_END = "<!-- refresh-failure-status:end -->";
 const COMMENT_MARKER = "<!-- easysubway-refresh-failure-comment -->";
 // gh JSON에서 GITHUB_TOKEN(github-actions[bot])이 만든 이슈의 작성자 login
 const BOT_LOGIN = "app/github-actions";
+// 같은 토큰이 단 댓글의 작성자 login은 이슈와 달리 app/ 접두사가 없다.
+const BOT_COMMENT_LOGIN = "github-actions";
 
 function fail(code, detail = "") {
   throw new Error(detail ? `REFRESH_FAILURE_REPORT_${code}: ${detail}` : `REFRESH_FAILURE_REPORT_${code}`);
@@ -156,10 +158,14 @@ function planOrphanComment({ input, orphan, issue, status, issueComments, report
   };
 }
 
-/** 이슈 본문과 댓글에 적힌 실패 run id(Actions run id는 저장소 안에서 생성 순서대로 커진다). 하나도 없으면 빈 배열이다. */
+/**
+ * 봇이 쓴 이슈 본문(상태 블록 포함)과 이 도구가 단 알림 댓글에 적힌 실패 run id. 하나도 없으면 빈 배열이다.
+ * 사람 댓글과 다른 도구의 댓글은 읽지 않는다. Actions run id는 GitHub 전역에서 생성 순서대로 커지므로 가장 큰 값이 가장 최근 실패다.
+ * 호출자는 failureIssuesOf가 거른 봇 이슈만 넘긴다.
+ */
 export function recordedRunIdsOf(issue) {
-  const texts = [issue.body ?? "", ...comments(issue).map(({ body }) => body)];
-  return texts.flatMap((text) => [...text.matchAll(RUN_URL_ID)].map(([, id]) => Number(id)));
+  const notices = comments(issue).filter(({ author, body }) => author?.login === BOT_COMMENT_LOGIN && body.includes(COMMENT_MARKER));
+  return [issue.body ?? "", ...notices.map(({ body }) => body)].flatMap((text) => [...text.matchAll(RUN_URL_ID)].map(([, id]) => Number(id)));
 }
 
 /** 이 도구(workflow 토큰)가 만든, 제목 규칙이 같은 workflow 실패 이슈(번호순). 사람이 표지를 인용한 이슈는 무시한다. */

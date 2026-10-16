@@ -14,6 +14,7 @@ import {
   defaultRunGh,
   failureIssuesOf,
   planRefreshFailureReport,
+  recordedRunIdsOf,
   refreshFailureMarker,
   reportRefreshFailure,
   resolveGh,
@@ -449,4 +450,15 @@ test("CLI의 --failures 파일은 기대 관측 변경 실패만 표지로 옮�
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("recordedRunIdsOf는 봇이 쓴 본문과 봇의 알림 댓글에 적힌 run만 읽는다 (#1287)", async () => {
+  const github = fakeGitHub();
+  await report(github, 11, start);
+  await report(github, 12, new Date(start.getTime() + COMMENT_INTERVAL_MS));
+  const [issue] = github.issues;
+  assert.deepEqual([...new Set(recordedRunIdsOf(issue))].sort(), [11, 12]);
+  const withHuman = { ...issue, comments: [...issue.comments, { author: { login: "AquilaXk" }, body: `${runUrl(99)}`, createdAt: start.toISOString() }] };
+  assert.deepEqual([...new Set(recordedRunIdsOf(withHuman))].sort(), [11, 12]);
+  assert.deepEqual(recordedRunIdsOf({ ...issue, body: "본문에 run이 없다", comments: [] }), []);
 });

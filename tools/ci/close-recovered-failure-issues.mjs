@@ -50,7 +50,8 @@ export const MANUAL_CLOSE_WORKFLOWS = Object.freeze({
 });
 
 export const RECOVERY_COMMENT_MARKER = "<!-- easysubway-refresh-failure-recovered -->";
-export const MAX_SCANNED_RUNS = 30;
+// 마지막 실패 run 이후의 성공 run을 이 페이지 수까지 읽는다(한 페이지 100개). 2시간 주기 workflow로 약 41일치다. 넘으면 SCAN_TRUNCATED로 드러낸다.
+export const MAX_RUN_PAGES = 5;
 const RUNS_PER_PAGE = 100;
 const ANNOTATION_TITLE = "Recovered failure issue";
 
@@ -85,25 +86,33 @@ function recoveryComment({ workflowFile, proof, successUrl, failureUrl }) {
   ].join("\n");
 }
 
-function makeProofFinder({ repository, runGh }) {
-  const successRunsByWorkflow = new Map();
-  const successRuns = (workflowFile) => {
-    if (!successRunsByWorkflow.has(workflowFile)) {
-      successRunsByWorkflow.set(workflowFile, apiGet(runGh, `repos/${repository}/actions/workflows/${workflowFile}/runs`, ["status=success", "branch=main", `per_page=${RUNS_PER_PAGE}`]));
-    }
-    return successRunsByWorkflow.get(workflowFile);
-  };
-  /** 마지막 실패 run보다 나중의 성공 run 중 가장 최근의 증거. 최근 MAX_SCANNED_RUNS개만 본다. */
-  return async function findProof(workflowFile, lastFailureRunId) {
-    const { workflow_runs: runs } = await successRuns(workflowFile);
-    const candidates = runs.filter(({ id, conclusion }) => conclusion === "success" && id > lastFailureRunId).sort((left, right) => right.id - left.id).slice(0, MAX_SCANNED_RUNS);
-    for (const candidate of candidates) {
-      const { jobs } = await apiGet(runGh, `repos/${repository}/actions/runs/${candidate.id}/jobs`, [`per_page=${RUNS_PER_PAGE}`]);
-      const proof = provenSteps(workflowFile, jobs);
-      if (proof) return { proof, successUrl: candidate.html_url };
-    }
-    return null;
-  };
+// 마지막 실패 run 이후 생긴 main의 성공 run을 전부 읽는다(생성 시각 범위 + 페이징). 상한에 닿으면 truncated로 알린다.
+async function listSuccessRunsSince({ repository, runGh, workflowFile, since }) {
+  const runs = [];
+  for (let page = 1; page <= MAX_RUN_PAGES; page += 1) {
+    const { workflow_runs: pageRuns, total_count: total } = await apiGet(
+      runGh, `repos/${repository}/actions/workflows/${workflowFile}/runs`,
+      ["status=success", "branch=main", `created=>=${since}`, `per_page=${RUNS_PER_PAGE}`, `page=${page}`],
+    );
+    runs.push(...pageRuns);
+    if (pageRuns.length < RUNS_PER_PAGE || runs.length >= total) return { runs, truncated: false };
+  }
+  return { runs, truncated: true };
+}
+
+/**
+ * 마지막 실패 run 이후 성공 run 중 대상 단계가 증명된 run. 가장 이른 증명 run을 인용한다:
+ * 회복이 실제로 일어난 시점이라 이후 run이 쌓여도 같은 run이 인용되고, 보통 실패 직후라 job 조회도 적다.
+ */
+async function findProof({ repository, runGh, workflowFile, lastFailureRunId, since }) {
+  const { runs, truncated } = await listSuccessRunsSince({ repository, runGh, workflowFile, since });
+  const candidates = runs.filter(({ id, conclusion }) => conclusion === "success" && id > lastFailureRunId).sort((left, right) => left.id - right.id);
+  for (const candidate of candidates) {
+    const { jobs } = await apiGet(runGh, `repos/${repository}/actions/runs/${candidate.id}/jobs`, [`per_page=${RUNS_PER_PAGE}`]);
+    const proof = provenSteps(workflowFile, jobs);
+    if (proof) return { found: { proof, successUrl: candidate.html_url }, truncated };
+  }
+  return { found: null, truncated };
 }
 
 async function closeWithEvidence({ repository, runGh, issue, workflowFile, found, lastFailureRunId }) {
@@ -119,7 +128,14 @@ async function closeWithEvidence({ repository, runGh, issue, workflowFile, found
   return { ...base, action: "closed", reason: "RECOVERED" };
 }
 
-async function settle({ repository, runGh, findProof, issue, workflowFile }) {
+// 실패 run의 생성 시각. 읽지 못하면 이슈만 이상으로 남기고 다른 이슈 처리는 계속한다.
+async function failureRunCreatedAt({ repository, runGh, runId }) {
+  const { created_at: createdAt } = await apiGet(runGh, `repos/${repository}/actions/runs/${runId}`);
+  if (typeof createdAt !== "string") fail("API_RESPONSE", `run ${runId} has no created_at`);
+  return createdAt;
+}
+
+async function settle({ repository, runGh, issue, workflowFile }) {
   const kept = (reason, extra = {}) => ({ issueNumber: issue.number, workflowFile, action: "kept", reason, ...extra });
   if (Object.hasOwn(MANUAL_CLOSE_WORKFLOWS, workflowFile)) return kept("MANUAL_CLOSE");
   const recipes = blockedRecipeIdsOf(issue.body ?? "");
@@ -127,9 +143,15 @@ async function settle({ repository, runGh, findProof, issue, workflowFile }) {
   const failureRunIds = recordedRunIdsOf(issue);
   if (failureRunIds.length === 0) return kept("NO_RECORDED_FAILURE_RUN");
   const lastFailureRunId = Math.max(...failureRunIds);
-  const found = await findProof(workflowFile, lastFailureRunId);
-  if (!found) return kept("NO_RECOVERY_PROOF");
-  return closeWithEvidence({ repository, runGh, issue, workflowFile, found, lastFailureRunId });
+  let since;
+  try {
+    since = await failureRunCreatedAt({ repository, runGh, runId: lastFailureRunId });
+  } catch (error) {
+    return kept("FAILURE_RUN_UNREADABLE", { error: error.message });
+  }
+  const { found, truncated } = await findProof({ repository, runGh, workflowFile, lastFailureRunId, since });
+  if (found) return closeWithEvidence({ repository, runGh, issue, workflowFile, found, lastFailureRunId });
+  return kept(truncated ? "SCAN_TRUNCATED" : "NO_RECOVERY_PROOF");
 }
 
 /**
@@ -138,11 +160,10 @@ async function settle({ repository, runGh, findProof, issue, workflowFile }) {
  */
 export async function closeRecoveredFailureIssues({ repository, runGh = defaultRunGh }) {
   const openIssues = await listOpenIssues(repository, runGh);
-  const findProof = makeProofFinder({ repository, runGh });
   const results = [];
   for (const workflowFile of REPORTABLE_WORKFLOW_FILES) {
     for (const issue of failureIssuesOf({ openIssues, workflowFile })) {
-      results.push(await settle({ repository, runGh, findProof, issue, workflowFile }));
+      results.push(await settle({ repository, runGh, issue, workflowFile }));
     }
   }
   return results;
@@ -151,11 +172,19 @@ export async function closeRecoveredFailureIssues({ repository, runGh = defaultR
 // workflow 명령은 한 줄이다. 줄바꿈과 `%`는 명령 이스케이프 규칙대로 바꾼다.
 const annotation = (level, message) => `::${level} title=${ANNOTATION_TITLE}::${message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`;
 
+// 닫지 못한 이유 중 사람이 봐야 하는 이상. 나머지(대기, 표지, 증거 없음)는 정상 상태라 로그로만 남긴다.
+const ANOMALY_MESSAGES = Object.freeze({
+  NO_RECORDED_FAILURE_RUN: "이슈에 기록된 실패 run이 없어 회복을 판정하지 못했다.",
+  FAILURE_RUN_UNREADABLE: "기록된 마지막 실패 run을 읽지 못해 회복을 판정하지 못했다",
+  SCAN_TRUNCATED: `실패 이후 성공 run이 ${MAX_RUN_PAGES * RUNS_PER_PAGE}개를 넘어 일부만 확인했고 증거를 찾지 못했다. 회복을 판정하지 못했다.`,
+});
+
 function describe(result) {
   const subject = `#${result.issueNumber} (${result.workflowFile})`;
   if (result.action === "closed") return annotation("notice", `${subject}: 성공 run ${result.runUrl}으로 회복을 확인해 닫았다.`);
   if (result.action === "close-failed") return annotation("warning", `${subject}: 회복을 확인했지만 닫지 못했다(성공 run ${result.runUrl}): ${result.error}`);
-  if (result.reason === "NO_RECORDED_FAILURE_RUN") return annotation("warning", `${subject}: 이슈에 기록된 실패 run이 없어 회복을 판정하지 못했다.`);
+  const anomaly = ANOMALY_MESSAGES[result.reason];
+  if (anomaly) return annotation("warning", `${subject}: ${anomaly}${result.error ? `: ${result.error}` : ""}`);
   return `${subject}: 닫지 않았다 (${result.reason})`;
 }
 
