@@ -88,6 +88,25 @@ test("의존은 앞선 recipe만 가리키고(순환 없음) 의존 recipe는 �
   assert.deepEqual(recipeById("daejeon-accessibility").dependsOn, ["daejeon-topology"]);
 });
 
+// #1122: 수집기가 24시간 근거(freshUntil)를 싣는 부산·대전·대구 원천 4건은 만료 기준을 따로 갖지 않고, 결속된 topology recipe가 돌 때 함께 다시 등록된다.
+// 이 recipe가 없으면 근거가 2026-10-03부터 만료된 채 남는다(refreshStage NONE). 날짜·개수가 아니라 소유 구조를 고정한다.
+const TOPOLOGY_BOUND_RECIPES = [
+  ["busan-accessibility", "busan-transportation-accessibility", "busan-topology"],
+  ["busan-timetable", "busan-transportation-timetable", "busan-topology"],
+  ["daejeon-timetable", "daejeon-train-timetable", "daejeon-topology"],
+  ["daegu-accessibility", "daegu-transportation-accessibility", "daegu-sources"],
+];
+
+test("부산·대전·대구 24시간 근거 원천은 결속된 topology recipe가 돌 때 함께 재등록하는 recipe가 맡는다 (#1122)", () => {
+  for (const [recipeId, sourceId, topologyRecipeId] of TOPOLOGY_BOUND_RECIPES) {
+    const recipe = recipeById(recipeId);
+    assert.deepEqual(recipe.sourceIds, [sourceId], recipeId);
+    assert.deepEqual(recipe.dependsOn, [topologyRecipeId], recipeId);
+    assert.equal(recipe.due, null, recipeId);
+    assert.deepEqual(Object.keys(recipe.inventoryChanges), [sourceId], recipeId);
+  }
+});
+
 test("recipe의 원천은 모두 inventory와 신선도 정책 어딘가에 있다", async () => {
   const [inventory, policy] = await Promise.all([readJson("tools/datapack/source-inventory.json"), readJson("release/product-gates/datapack-freshness-sla.json")]);
   const inventoryIds = new Set(inventory.sources.map(({ id }) => id));

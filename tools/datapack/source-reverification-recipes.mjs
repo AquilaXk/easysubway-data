@@ -6,6 +6,8 @@
 // - 정책(release/product-gates/datapack-freshness-sla.json)의 P7D 원천은 모두 P7D_SOURCE_COVERAGE에 있어야 한다.
 //   recipe가 맡거나(recipe), 이미 자기 workflow가 있거나(external), 막힌 사유가 있다(blocked). 빠진 원천이 생기면 테스트가 실패한다.
 // - recipe는 자기 만료 기준(due)을 갖거나, 의존 대상(dependsOn)이 돌 때 함께 돈다. 둘 다 갖거나 둘 다 없을 수 없다.
+// - 수집기가 근거마다 freshUntil(수집 시각 + 24시간)을 싣는 원천은 반드시 recipe(또는 자기 workflow)가 소유해야 한다(#1122). 소유자가 없으면 근거가
+//   만료된 채 남아 관리자 화면의 이상(refreshStage NONE)이 영구히 사라지지 않는다. 부산 접근성·시간표, 대전 시간표, 대구 접근성은 이 이유로 결속된 topology recipe에 딸린다.
 // - 순서는 SOURCE_REVERIFICATION_RECIPE_IDS(경로·증거 계약)와 같다. 의존하는 recipe는 의존 대상 뒤에 온다.
 import { SOURCE_REVERIFICATION_RECIPE_IDS } from "../ci/source-reverification-paths.mjs";
 
@@ -83,6 +85,22 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     due: ledgerHead("busan-transportation-route-topology"),
   },
   {
+    id: "busan-accessibility",
+    message: "[Data] 부산 접근성 시설을 새 topology head에 다시 결속해 등록",
+    sourceIds: ["busan-transportation-accessibility"],
+    dependsOn: ["busan-topology"],
+    inventoryChanges: changes({ "busan-transportation-accessibility": ACCESSIBILITY_FIELDS }),
+    due: null,
+  },
+  {
+    id: "busan-timetable",
+    message: "[Data] 부산 시간표를 다시 수집해 새 topology head에 결속해 등록",
+    sourceIds: ["busan-transportation-timetable"],
+    dependsOn: ["busan-topology"],
+    inventoryChanges: changes({ "busan-transportation-timetable": SCHEDULE_FIELDS }),
+    due: null,
+  },
+  {
     id: "daejeon-topology",
     message: "[Data] 대전 topology를 다시 수집해 등록",
     sourceIds: ["daejeon-station-distance-fare"],
@@ -102,6 +120,14 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     due: null,
   },
   {
+    id: "daejeon-timetable",
+    message: "[Data] 대전 시간표를 다시 수집해 새 topology head에 결속해 등록",
+    sourceIds: ["daejeon-train-timetable"],
+    dependsOn: ["daejeon-topology"],
+    inventoryChanges: changes({ "daejeon-train-timetable": SCHEDULE_FIELDS }),
+    due: null,
+  },
+  {
     id: "daegu-sources",
     message: "[Data] 대구 1~3호선 topology·시간표 파일을 다시 받아 등록",
     // 여섯 원천은 한 번에 등록한다(등록기가 여섯 개를 묶는다). 만료 기준은 P7D인 topology 셋이다.
@@ -114,6 +140,14 @@ export const REVERIFICATION_RECIPES = Object.freeze([
       ...Object.fromEntries(DAEGU_LINES.map((line) => [`molit-urban-rail-full-route-daegu-line${line}-membership`, MEMBERSHIP_FIELDS])),
     }),
     due: ledgerHead(...DAEGU_TOPOLOGY_SOURCE_IDS),
+  },
+  {
+    id: "daegu-accessibility",
+    message: "[Data] 대구 접근성 시설을 새 topology head에 다시 결속해 등록",
+    sourceIds: ["daegu-transportation-accessibility"],
+    dependsOn: ["daegu-sources"],
+    inventoryChanges: changes({ "daegu-transportation-accessibility": ACCESSIBILITY_FIELDS }),
+    due: null,
   },
 ]);
 

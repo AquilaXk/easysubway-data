@@ -346,6 +346,8 @@ const iso = (hoursFromNow) => new Date(now.getTime() + hoursFromNow * 3_600_000)
 const evidenceSource = (id, freshUntilHours, { evidence = "scheduleAdmissionEvidence", displayName = `자료 ${id}`, productionUseAllowed = true } = {}) => ({
   id, displayName, productionUseAllowed, [evidence]: { freshUntil: iso(freshUntilHours), snapshotId: `${id}-1` },
 });
+// 갱신 소유자가 없는 원천을 보이는 합성 id. 실제 원천 id를 쓰면 그 원천이 소유자를 얻는 순간 이 테스트가 깨진다(#1122).
+const UNOWNED_SOURCE_ID = "synthetic-source-without-refresh-owner";
 const inventoryOf = (...sources) => ({ schemaVersion: 1, sources });
 // 갱신 단계마다 가장 최근에 끝난 run이 성공인 목록. 테스트가 단계별로 덮어쓴다.
 const REFRESH_STAGES_IN_USE = [...new Set(sourceRefreshStages().values())].sort();
@@ -460,24 +462,53 @@ test("갱신 단계는 소유 표(REFRESH_STAGES, 재확인 recipe)에서 오고
   assert.equal(stages.get("seoul-metro-accessibility"), "seoul-accessibility-refresh");
   assert.equal(stages.get("kric-station-convenience-standard"), "kric-facility-refresh");
   assert.equal(stages.get("daegu-line1-train-timetable"), "source-reverification");
-  assert.equal(stages.get("busan-transportation-timetable"), undefined);
+  // #1122: 부산·대전·대구의 24시간 근거 원천 4건은 재확인 recipe가 소유한다. 소유자가 없는 원천은 아래 합성 id로 보인다.
+  for (const sourceId of ["busan-transportation-accessibility", "busan-transportation-timetable", "daejeon-train-timetable", "daegu-transportation-accessibility"]) {
+    assert.equal(stages.get(sourceId), "source-reverification", sourceId);
+  }
+  assert.equal(stages.get(UNOWNED_SOURCE_ID), undefined);
   // 한 원천이 두 소유 표에 있으면 REFRESH_STAGES가 먼저다.
   assert.equal(stages.get("kric-nationwide-timetable-file"), "gwangju-timetable-refresh");
-  const list = expiring({ sourceInventory: inventoryOf(evidenceSource("incheon-line1-train-timetable", 2), evidenceSource("busan-transportation-timetable", 3)) });
+  const list = expiring({ sourceInventory: inventoryOf(evidenceSource("incheon-line1-train-timetable", 2), evidenceSource(UNOWNED_SOURCE_ID, 3)) });
   assert.deepEqual(list.map((item) => [item.sourceId, item.refreshStage, item.refreshState]), [
-    ["busan-transportation-timetable", null, "NONE"],
+    [UNOWNED_SOURCE_ID, null, "NONE"],
     ["incheon-line1-train-timetable", "capital-topology-refresh", "OK"],
   ]);
+});
+
+// #1122: 필수·사용 가능 원천이 freshUntil 근거를 싣는데 갱신 소유자가 없으면 근거가 만료된 채 관리자 화면의 이상으로만 남는다.
+// 새 원천이 소유자 없이 들어오면 여기서 CI가 막는다. 예외는 사유와 함께 표로 두고, 예외가 더는 필요 없어지면(소유자가 생기거나 필수가 아니게 되면) 표에서 지우게 한다.
+const OWNERLESS_REQUIRED_SOURCES = Object.freeze({
+  "kric-subway-timetable-station-lines": "필수 원천이지만 갱신 단계가 없다(근거는 수집일 + 정책 클래스 기간에 만료). #1122 후속 체크리스트에서 갱신 경로를 만든다.",
+});
+
+function* freshUntilOf(value) {
+  if (Array.isArray(value)) for (const item of value) yield* freshUntilOf(item);
+  else if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "freshUntil") yield child;
+      else yield* freshUntilOf(child);
+    }
+  }
+}
+
+test("필수·사용 가능 원천의 freshUntil 근거는 모두 갱신 소유자가 있다(예외는 사유와 함께 표로 둔다) (#1122)", () => {
+  const { sources } = JSON.parse(readFileSync(new URL("../datapack/source-inventory.json", import.meta.url), "utf8"));
+  const stages = sourceRefreshStages();
+  const required = sources.filter((source) => source.requiredForProductionPack === true && source.productionUseAllowed === true && [...freshUntilOf(source)].length > 0);
+  const ownerless = required.filter(({ id }) => !stages.has(id)).map(({ id }) => id).sort();
+  assert.deepEqual(ownerless, Object.keys(OWNERLESS_REQUIRED_SOURCES).sort());
+  for (const reason of Object.values(OWNERLESS_REQUIRED_SOURCES)) assert.ok(reason.length > 20);
 });
 
 test("갱신 작업 상태: 그 단계 workflow의 가장 최근에 끝난 run이 실패면 FAILED, 막힌 PR·주인 없는 claim·재생성 상한이 그 단계이면 BLOCKED, 아니면 OK (2026-10-10 인천 사례)", () => {
   const inventory = inventoryOf(
     evidenceSource("incheon-line1-train-timetable", 2), evidenceSource("seoul-metro-accessibility", 3),
-    evidenceSource("kric-station-convenience-standard", 4), evidenceSource("daegu-line1-train-timetable", 5), evidenceSource("busan-transportation-timetable", 6),
+    evidenceSource("kric-station-convenience-standard", 4), evidenceSource("daegu-line1-train-timetable", 5), evidenceSource(UNOWNED_SOURCE_ID, 6),
   );
   const states = ({ runs = {}, ...inputs } = {}) => Object.fromEntries(expiring({ sourceInventory: inventory, refreshRuns: refreshRunsOf(runs), ...inputs }).map((item) => [item.sourceId, item.refreshState]));
   assert.deepEqual(states(), {
-    "incheon-line1-train-timetable": "OK", "seoul-metro-accessibility": "OK", "kric-station-convenience-standard": "OK", "daegu-line1-train-timetable": "OK", "busan-transportation-timetable": "NONE",
+    "incheon-line1-train-timetable": "OK", "seoul-metro-accessibility": "OK", "kric-station-convenience-standard": "OK", "daegu-line1-train-timetable": "OK", [UNOWNED_SOURCE_ID]: "NONE",
   });
   // 인천 사례: 갱신 PR의 CI가 실패해 수도권 topology 갱신 workflow의 최근 run이 실패했다.
   const failed = (id, conclusion = "failure") => [run(id, { created_at: hoursAgo(1), conclusion })];
@@ -515,7 +546,7 @@ test("갱신 작업 상태: 그 단계 workflow의 가장 최근에 끝난 run�
   // 실패가 막힘보다 앞선다.
   assert.equal(states({ runs: { "capital-topology-refresh": failed(2) }, openPulls: [stuckPull] })["incheon-line1-train-timetable"], "FAILED");
   // 자동 갱신 경로가 없는 원천은 다른 단계의 실패와 무관하게 NONE이다.
-  assert.equal(states({ runs: { "capital-topology-refresh": failed(2) } })["busan-transportation-timetable"], "NONE");
+  assert.equal(states({ runs: { "capital-topology-refresh": failed(2) } })[UNOWNED_SOURCE_ID], "NONE");
 });
 
 test("갱신 단계의 run 목록이 없으면 OK로 채우지 않고 실패한다", () => {
@@ -523,7 +554,7 @@ test("갱신 단계의 run 목록이 없으면 OK로 채우지 않고 실패한�
   assert.throws(() => buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventory }), /STATUS_RUNS_INVALID.*capital-topology-refresh/u);
   assert.throws(() => buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventory, refreshRuns: { "capital-topology-refresh": "nope" } }), /STATUS_RUNS_INVALID/u);
   // 소유 단계가 없는 원천만 있으면 단계 run 목록이 필요 없다.
-  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf(evidenceSource("busan-transportation-timetable", 2)) }).expiringSources.map((item) => item.refreshState), ["NONE"]);
+  assert.deepEqual(buildAutomationStatus({ ...emptyInputs(), sourceInventory: inventoryOf(evidenceSource(UNOWNED_SOURCE_ID, 2)) }).expiringSources.map((item) => item.refreshState), ["NONE"]);
 });
 
 test("refreshWorkflowsOf: 갱신 단계 id를 그 단계 workflow 파일로 옮긴다(소유 표에 쓰이는 단계만)", () => {

@@ -7,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { SOURCE_REVERIFICATION_RECIPE_IDS } from "../ci/source-reverification-paths.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { RECIPE_STEPS } from "./run-source-reverification.mjs";
 import { prepareKorailTimetableRegistration } from "./register-korail-timetable.mjs";
@@ -151,6 +152,43 @@ test("광주·대전 접근성은 data.go.kr --download 모드로 받고 새 top
   ]);
 });
 
+// #1122: 24시간 근거를 싣는 원천 4건. 수집 범위와 결속 대상은 이미 등록된 topology 증거(inventory)에서 읽고, 등록은 기존 등록기가 한다.
+const topologySnapshotPath = async (ctx, sourceId) => abs((await ctx.readJson(INVENTORY)).sources.find(({ id }) => id === sourceId).topologyAdmissionEvidence.snapshotPath);
+
+test("부산 접근성·시간표는 등록된 부산 topology snapshot을 범위로 수집하고 새 topology head에 결속해 등록한다 (#1122)", async () => {
+  const accessibility = await record("busan-accessibility");
+  const a = (name) => path.join(accessibility.operationDir, name);
+  const scope = await topologySnapshotPath(accessibility.ctx, "busan-transportation-route-topology");
+  assert.deepEqual(accessibility.calls, [
+    { script: "collect-busan-accessibility.mjs", args: ["--scope-snapshot", scope, "--output", a("accessibility.json")], env: {} },
+    { script: "register-regional-accessibility.mjs", args: ["publish-register", "--snapshot", a("accessibility.json"), "--receipt", a("raw-receipt.json"), "--expected-head", HEAD], env: {} },
+  ]);
+  const timetable = await record("busan-timetable");
+  const t = (name) => path.join(timetable.operationDir, name);
+  assert.deepEqual(timetable.calls, [
+    { script: "collect-busan-timetable.mjs", args: ["--scope-snapshot", scope, "--output", t("timetable.json")], env: {} },
+    { script: "register-busan-timetable.mjs", args: ["publish-register", "--snapshot", t("timetable.json"), "--receipt", t("raw-receipt.json"), "--expected-head", HEAD], env: {} },
+  ]);
+});
+
+test("대전 시간표는 출력 경로와 원천 id를 환경 변수로 받는 수집기로 받고 새 topology head에 결속해 등록한다 (#1122)", async () => {
+  const { calls, operationDir } = await record("daejeon-timetable");
+  const file = (name) => path.join(operationDir, name);
+  assert.deepEqual(calls, [
+    { script: "probe-daejeon-coverage-api.mjs", args: [], env: { DAEJEON_API_PROBE_SOURCE_ID: "daejeon-train-timetable", DAEJEON_API_PROBE_OUTPUT: file("timetable.json") } },
+    { script: "register-daejeon-timetable.mjs", args: ["publish-register", "--snapshot", file("timetable.json"), "--receipt", file("raw-receipt.json"), "--expected-head", HEAD], env: {} },
+  ]);
+});
+
+test("대구 접근성은 등록된 대구 topology snapshot 디렉터리와 inventory로 --download 수집하고 새 topology head에 결속해 등록한다 (#1122)", async () => {
+  const { calls, operationDir } = await record("daegu-accessibility");
+  const file = (name) => path.join(operationDir, name);
+  assert.deepEqual(calls, [
+    { script: "collect-daegu-accessibility.mjs", args: ["--download", "--sources-dir", abs("tools/datapack/sources"), "--inventory", abs(INVENTORY), "--output", file("accessibility.json")], env: {} },
+    { script: "register-regional-accessibility.mjs", args: ["publish-register", "--snapshot", file("accessibility.json"), "--receipt", file("raw-receipt.json"), "--expected-head", HEAD], env: {} },
+  ]);
+});
+
 test("대구 여섯 원천은 --download로 한 번에 받고 snapshot의 capturedAt과 원천별 영수증 경로로 한 번에 등록한다", async () => {
   const { calls, operationDir } = await record("daegu-sources");
   const file = (name) => path.join(operationDir, name);
@@ -285,10 +323,11 @@ test("코레일 계획 시각표는 topology recipe 없이 단독으로 돌 수 
 // 인자 계약: 기록한 모든 명령을 실제 도구에 넘긴다. 네트워크는 막고(fetch 차단) 환경은 비운다. 인자 오류로 거부되면 실패다.
 test("recipe가 만든 모든 명령은 실제 도구의 인자 파서가 받아들인다(수집·게시는 실행하지 않는다)", async () => {
   const shared = new Map();
-  const recipes = ["kric-capital-timetable", "korail-topology", "korail-planned-timetable", "gwangju-topology", "gwangju-accessibility", "busan-topology", "daejeon-topology", "daejeon-accessibility", "daegu-sources"];
+  const recipes = SOURCE_REVERIFICATION_RECIPE_IDS;
   const all = [];
   for (const recipeId of recipes) all.push(...(await record(recipeId, { shared })).calls.map((call) => ({ recipeId, ...call })));
-  assert.equal(all.length, 16);
+  // 모든 recipe가 명령을 하나 이상 만든다(recipe가 늘어도 이 검사가 그 명령까지 인자 파서에 넘긴다).
+  assert.deepEqual([...new Set(all.map(({ recipeId }) => recipeId))], [...recipes]);
   for (const { recipeId, script, args, env } of all) {
     const result = spawnSync(process.execPath, ["--import", NETWORK_BLOCK, path.join(root, "tools/datapack", script), ...args], {
       cwd: root, env: { PATH: process.env.PATH, ...env }, encoding: "utf8", timeout: 60_000,

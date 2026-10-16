@@ -203,14 +203,14 @@ test("원장·증거 게이트와 출력 범위 위반도 그 recipe만 되돌�
   assert.deepEqual(commitSubjects(root, 2), ["[Data] fine 재확인", "base"]);
 });
 
-test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: topology와 그에 결속되는 recipe 셋, 나머지는 독립)", () => {
+test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: topology와 그에 결속되는 recipe, 나머지는 독립)", () => {
   assert.deepEqual(dependencyGroups(REVERIFICATION_RECIPES).map((group) => group.map(({ id }) => id)), [
     ["kric-capital-timetable"],
     ["korail-topology", "korail-planned-timetable"],
     ["gwangju-topology", "gwangju-accessibility"],
-    ["busan-topology"],
-    ["daejeon-topology", "daejeon-accessibility"],
-    ["daegu-sources"],
+    ["busan-topology", "busan-accessibility", "busan-timetable"],
+    ["daejeon-topology", "daejeon-accessibility", "daejeon-timetable"],
+    ["daegu-sources", "daegu-accessibility"],
   ]);
   // 여러 의존 대상을 가진 recipe는 그 대상들의 묶음을 하나로 합친다.
   const merged = dependencyGroups([meta("a"), meta("b"), meta("c", ["a", "b"]), meta("d")]);
