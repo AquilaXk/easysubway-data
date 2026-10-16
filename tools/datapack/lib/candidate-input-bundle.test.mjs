@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -18,9 +17,9 @@ import {
   parseCandidateInputManifest,
   publishCandidateInputObjects,
 } from "./candidate-input-bundle.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #942: 후보가 만들어질 때 읽은 입력 바이트를 경로·sha256 매니페스트로 고정하고, 바이트는 OCI 공개 읽기 경로에서 받는다.
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const BASE_URL = "https://objectstorage.example.test/n/ns/b/bucket/o";
 // 디스크 캐시는 프로세스 사이에서 공유되므로, 받기 횟수를 세는 테스트는 매번 빈 캐시 디렉터리를 쓴다.
 function freshCacheDirectory() {

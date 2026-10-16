@@ -11,7 +11,6 @@
 // 승격 병합 뒤 전국 후보 준비 단계가 새 원천으로 다시 묶는다(#942).
 // 출력 팩은 mobile 레포에 커밋하지 않는다. CI staging이 같은 입력 fixture에서 같은 팩을 파생하고 증거와 대조한다.
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,9 +19,9 @@ import { promisify } from "node:util";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { deriveApprovedItxTopologyEvidencePath } from "./activate-current-source-set.mjs";
 import { verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const CONTRACT = "tools/datapack/itx-cheongchun-coverage-contract.json";
 const EVIDENCE = "tools/datapack/itx-cheongchun-topology-evidence.json";
 export const ALIGNMENT_FIXTURES = Object.freeze([

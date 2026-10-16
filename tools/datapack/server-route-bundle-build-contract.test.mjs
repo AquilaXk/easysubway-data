@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const contract = JSON.parse(readFileSync("contracts/datapack/server-route-bundle-build-contract.json", "utf8"));
 const schema = JSON.parse(readFileSync("contracts/datapack/server-route-bundle-build-contract.schema.json", "utf8"));
@@ -152,6 +152,3 @@ function deepEqual(left, right) {
   }
 }
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}

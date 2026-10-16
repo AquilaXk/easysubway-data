@@ -12,6 +12,7 @@ import {
   runDaejeonAccessibilityCollector,
 } from "./collect-daejeon-accessibility.mjs";
 import { createDataGoPortalFetch } from "./lib/data-go-test-portal.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const ELEVATOR_CSV = path.join(root, "tools/datapack/fixtures/daejeon-accessibility-raw/data-go-15041384.csv");
@@ -176,8 +177,6 @@ test("대전 accessibility collector CLI는 absolute output 경로를 강제한�
     "--output", "relative.json",
   ]), /usage: collect-daejeon-accessibility/);
 });
-
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 async function downloadCliArgs(output) {
   const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));

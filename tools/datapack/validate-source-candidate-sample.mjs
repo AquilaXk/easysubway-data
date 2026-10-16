@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { sha256 } from "../lib/hash.mjs";
 
 function parseArgs(argv) {
   const args = {
@@ -177,10 +177,6 @@ function assertSha256(value, label) {
   if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
     throw new Error(`${label} must be a sha256 hex string`);
   }
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function main() {

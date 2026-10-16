@@ -15,12 +15,12 @@
 // - 동일 역명 중복 FILE 행은 이름 dedupe한다. 서로 다른 역의 동일 위경도는 quarantine하지 않는다.
 // - KRIC 공식 lat/lon 컬럼 스왑 오류 정규화(발명 아님):
 //   if lon∈[33,43] and lat∈[124,132]: swap. 그 외 한반도 범위 밖이면 fail/quarantine.
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ARTIFACT_KIND = "capital-wide-rail-route-map-positions-snapshot";
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
@@ -903,10 +903,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

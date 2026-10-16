@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +13,7 @@ import {
   validateProductionTransferArtifacts,
   validateTransferAdmissionEvidence,
 } from "./validate-source-inventory.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -54,8 +54,6 @@ test("active Seoul TRANSFER metrics와 applicability는 current pre-candidate co
     NOT_APPLICABLE_IN_CANONICAL_PAIR_SET: 538,
   });
 });
-
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 // #1038: applicability는 pack과 지표에서 다시 만들 수 있어야 한다. 어떤 pack·지표에서 만들었는지는 applicability가 스스로 선언한다.
 // 원천 갱신 PR은 pack만 바꾸므로 applicability가 후보가 고정한 옛 pack·지표를 선언하고, 재결속 PR은 pack·지표·applicability를 함께 새 바이트로

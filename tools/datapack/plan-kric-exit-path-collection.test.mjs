@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
   canonicalKricExitPathCollectionPlanJson,
   planKricExitPathCollection,
 } from "./plan-kric-exit-path-collection.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 test("candidate directed LOCAL RIDE edge를 합성 reverse 없이 next-station query로 전개한다", () => {
   const input = validInput();
@@ -284,6 +284,3 @@ function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

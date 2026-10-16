@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +10,7 @@ import {
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const CALLBACK_RECONCILIATION_SOURCE_ISSUE = 2057;
@@ -325,10 +325,6 @@ function rejectSensitiveFields(value, pathParts = []) {
 
 function jsonBytes(value) {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function compareAscii(left, right) {

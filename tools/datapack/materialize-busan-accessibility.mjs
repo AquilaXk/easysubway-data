@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { observedBusanAccessibilityRows } from "./collect-busan-accessibility.mjs";
 import { busanRouteTopologyContentHash } from "./collect-busan-route-topology.mjs";
 import { normalizedStationName } from "./materialize-busan-route-topology.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "busan-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "busan-transportation-route-topology";
@@ -356,8 +356,6 @@ function compactSeoulDate(value) {
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
 }
-
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 function parseArgs(argv) {
   const expected = [

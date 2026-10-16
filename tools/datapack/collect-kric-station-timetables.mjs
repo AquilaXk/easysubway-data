@@ -5,11 +5,11 @@
 // serviceKey는 요청 URL에만 쓰고 산출물·로그에 남기지 않는다.
 //
 // 실행: KRIC_SERVICE_KEY=... node tools/datapack/collect-kric-station-timetables.mjs --output <absolute new file>
-import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const KRIC_SUBWAY_TIMETABLE_ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable";
 const DAY_CDS = Object.freeze(["7", "8", "9"]);
@@ -21,7 +21,6 @@ export const REQUEST_TIMEOUT_MS = HEADER_TIMEOUT_MS;
 export const OBSERVED_RESPONSE_BYTES = 90_000;
 export const MIN_BODY_THROUGHPUT_BYTES_PER_SECOND = 1_500;
 export const BODY_TIMEOUT_MS = 60_000;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /** 요청 URL에 실릴 수 있는 키 표현 전부(원문, percent 인코딩, form 인코딩). */
 export function credentialForms(serviceKey) {

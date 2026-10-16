@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -9,6 +8,7 @@ import {
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -258,10 +258,6 @@ function requiredSafePathSegment(value, label) {
     throw new Error(`${label} must be a safe object key segment`);
   }
   return value;
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 main().catch((error) => {

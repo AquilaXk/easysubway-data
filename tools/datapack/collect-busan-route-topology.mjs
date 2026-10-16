@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +7,7 @@ import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15001019/openapi.do";
@@ -659,10 +659,6 @@ function validDate(value, label) {
 
 export function busanRouteTopologyContentHash(edges, scope) {
   return sha256(JSON.stringify({ scope, edges }));
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function safeToken(value) {

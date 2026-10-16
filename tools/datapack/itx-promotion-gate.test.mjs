@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -15,10 +14,10 @@ import {
   runItxPromotionGateCli,
 } from "./itx-promotion-gate.mjs";
 import { createProviderResponseRecorder, providerResponseCaptureBytes } from "./provider-response-capture.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const POLICY = parseItxPromotionGatePolicy(JSON.parse(await readFile(new URL("./itx-promotion-gate-policy.json", import.meta.url), "utf8")));
 const SOURCES = new URL("./sources/", import.meta.url);
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 // ---------------------------------------------------------------------------
 // 합성 snapshot: 평일(8) 40편 x 7정차 = 280 tuple, 토(7)·일(9) 52편 x 7정차 = 364 tuple. 역은 18개다.

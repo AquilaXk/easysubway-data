@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { sha256 } from "../lib/hash.mjs";
 
 const HEADER = [
   "전철역코드", "전철역명", "전철명명(영문)", "호선", "외부코드", "전철명명(중문)", "전철명명(일문)",
@@ -9,10 +9,6 @@ const HEADER = [
 const REQUIRED_COLUMNS = [0, 1, 3, 4];
 const REQUIRED_KEYS = ["STATION_CD", "STATION_NM", "LINE_NUM", "FR_CODE"];
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function canonicalUtc(value, label) {
   if (typeof value !== "string" || !ISO_INSTANT.test(value) || new Date(value).toISOString() !== value) {

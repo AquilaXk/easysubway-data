@@ -21,6 +21,7 @@ import {
   purgeReportSha256,
 } from "./source-raw-purge-attestation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ALLOWED_ARGS = new Set([
   "ledger",
@@ -757,10 +758,6 @@ function requiredArg(args, name) {
 function requiredText(value, label) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   return value;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

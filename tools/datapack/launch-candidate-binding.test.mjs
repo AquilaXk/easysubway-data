@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   bindAuthoritativeLaunchEvidence,
   buildLaunchCandidateBinding,
 } from "./launch-candidate-binding.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (raw) => createHash("sha256").update(raw).digest("hex");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function boundArtifacts({ candidateId = "candidate-a", manifestVersion = "1" } = {}) {

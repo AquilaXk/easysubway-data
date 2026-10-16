@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,8 +16,8 @@ import { bindBuildSpecToCurrentItx } from "./test-fixtures/current-itx-bound-bui
 
 const root = path.resolve(import.meta.dirname, "../..");
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
+import { sha256 } from "../lib/hash.mjs";
 stageLocalMobileFixture({ repositoryRoot: root });
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const topologyEvidencePath = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
 const currentTopologyEvidence = JSON.parse(await readFile(topologyEvidencePath, "utf8"));
 // #979: 커밋된 spec의 ITX pin은 게시된 후보 입력을 가리키므로 승격 PR에서는 작업 트리 원천과 다를 수 있다. 현재 contract 기준으로 pin을 다시 계산한 사본을 쓴다.

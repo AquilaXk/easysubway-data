@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { DAEGU_LINES, daeguSourceSnapshotIdentity, loadAdmittedDaeguTopologySnapshots } from "./collect-daegu-datapack-sources.mjs";
 import { validateDaeguRouteMapPositionsSnapshot } from "./collect-daegu-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daegu-transportation-route-map-positions";
 const PACK_ID = "nationwide-daegu-route-map";
@@ -235,10 +235,6 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function compactSeoulDate(value) {

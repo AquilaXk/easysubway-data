@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,12 +13,12 @@ import {
   validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
 import { carriedAdmissionLineage } from "./lib/carried-admission.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const EVALUATED_AT = "2026-09-03T00:00:00.000Z";
 const REGIONS = ["busan", "capital", "daegu", "daejeon", "gwangju"];
 const SHA = "a".repeat(64);
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function bytes(value) {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);

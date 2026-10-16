@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { sha256 } from "../lib/hash.mjs";
 
 const TABLES = Object.freeze([
   ["operators", "operators"],
@@ -354,10 +354,6 @@ function quoteIdentifier(value) {
 
 function assertSha256(value, label) {
   if (!/^[0-9a-f]{64}$/.test(value ?? "")) throw new Error(`${label} must be lowercase sha256`);
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function parseArgs(argv) {

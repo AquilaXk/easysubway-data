@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateBusanRouteMapConnectorEvidence } from "./collect-busan-route-map-connectors.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "busan-transportation-route-map-positions";
 const SOURCE_URL = "https://www2.humetro.busan.kr/homepage/cyberstation/map.do";
@@ -360,10 +360,6 @@ function comparePositions(left, right) {
 
 function compareStrings(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

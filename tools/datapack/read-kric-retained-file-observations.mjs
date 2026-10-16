@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -7,11 +6,11 @@ import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { buildKricRetainedFilePendingHandoff } from "./build-kric-retained-file-pending-handoff.mjs";
 import { objectStorageClient } from "./publish-object-storage.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const MAXIMUM_BUNDLE_BYTES = 64 * 1024;
 const SOURCE_IDS = ["kric-nationwide-timetable-file", "kric-current-station-line-file"];
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (!value || typeof value !== "object") return value;

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../lib/hash.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const DORASAN = Object.freeze({
@@ -39,8 +39,6 @@ const BUSAN_RECEIPT = Object.freeze({
   reviewedBy: "Owner",
   reviewSource: "https://github.com/AquilaXk/easysubway-data/issues/309",
 });
-
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
 

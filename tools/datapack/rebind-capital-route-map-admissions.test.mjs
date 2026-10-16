@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -11,8 +10,8 @@ import {
   collectSeoulRouteMapPositions,
 } from "./collect-seoul-route-map-positions.mjs";
 import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const root = path.resolve(import.meta.dirname, "../..");
 const positionPath = "tools/datapack/sources/official-route-map.json";
 const topologySnapshotId = "capital-route-topology-20260809";

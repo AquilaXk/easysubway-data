@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +10,7 @@ import { promisify } from "node:util";
 import { buildApplicability, main } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { currentTransferLineIds } from "./build-current-transfer-topology-metrics.mjs";
 import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const [LINE_A, LINE_B, LINE_C] = currentTransferLineIds();
@@ -190,7 +190,6 @@ function rehashMetrics(metrics) { metrics.artifactSha256 = sha256(canonicalJson(
 
 function compareMetric(left, right) { return [left.stationId, left.fromLineId, left.toLineId].join("\0").localeCompare([right.stationId, right.fromLineId, right.toLineId].join("\0")); }
 function without(value, key) { const { [key]: _ignored, ...result } = value; return result; }
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(sortValue(value))}\n`); }
 function canonicalJson(value) { return JSON.stringify(sortValue(value)); }
 function sortValue(value) { if (Array.isArray(value)) return value.map(sortValue); if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortValue(value[key])])); return value; }

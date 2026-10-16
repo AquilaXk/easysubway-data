@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // KRIC 전국 도시철도 운행정보 파일(id=900)의 코레일 행은 "열차 × 정차역" 한 행이며 정차 순서 열이 없다.
 // 열차번호+요일구분으로 묶고 원천 행 순서를 정차 순서로 쓰되, 시각 순서(자정 넘김 포함)와 일치할 때만
@@ -66,8 +66,6 @@ function binding(routeNumber, routeName, lineId, aliases, expressQuarantine) {
     expressQuarantine: Object.freeze(expressQuarantine),
   });
 }
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /** 고정 대상 행 집합의 결정적 해시. 행 내용 해시를 정렬해 묶는다. */
 export function rowSetSha256(records) {

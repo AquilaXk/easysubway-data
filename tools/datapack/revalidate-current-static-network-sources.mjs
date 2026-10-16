@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SEOUL_SOURCE_ID = "seoulmetro-station-line-info";
 const SOURCE_IDS = Object.freeze([SEOUL_SOURCE_ID]);
@@ -26,10 +27,6 @@ const SEOUL_REDACTED_REQUEST = Object.freeze({
   lineNumber: "4호선",
 });
 const SHA256 = /^[0-9a-f]{64}$/u;
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function fail(code) {
   throw new Error(`STATIC_SOURCE_REVALIDATION_${code}`);

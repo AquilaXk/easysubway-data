@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -27,13 +26,13 @@ import {
   SEOUL_TRANSFER_REBIND_PATHS,
   writeSeoulTransferRebindRepository,
 } from "./test-fixtures/seoul-transfer-rebind-repository.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 // #1038: 후보와 대조하는 입력(원장·inventory·ITX 계약 등)은 작업 트리가 아니라 후보가 고정한 바이트로 읽는다. 재결속 PR은 후보가 고정한
 // 선택된 원장 행을 다시 쓰므로 작업 트리와 대조하면 후보를 다시 만들기 전까지 항상 어긋난다(#943: PR CI는 후보 내부 일관성만 본다).
 // 고정 입력이 작업 트리와 같으면(일반 PR) 작업 공간이 저장소 루트 그대로다. 도구 코드는 계속 이 PR의 것(root)을 쓴다.
 const candidateWorkspace = candidateWorkspaceAccess();
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const VALID_ARGS = [
   "--evaluated-at", "2026-10-01T00:00:00.000Z",

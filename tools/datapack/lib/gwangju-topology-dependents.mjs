@@ -1,15 +1,11 @@
-import { createHash } from "node:crypto";
 
 import { collectGwangjuAccessibility } from "../collect-gwangju-accessibility.mjs";
 import { collectGwangjuRouteMapPositions } from "../collect-gwangju-route-map-positions.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const ACCESSIBILITY_SOURCE_ID = "gwangju-transportation-accessibility";
 const MAP_SOURCE_ID = "gwangju-transportation-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function snapshotBinding(sourceId, snapshot) {
   const bytes = Buffer.from(JSON.stringify(snapshot));

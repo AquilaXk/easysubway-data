@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -11,6 +10,7 @@ import {
   validateKricExitPathRawCollection,
 } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const CAPTURED_AT = "2026-08-11T00:00:00.000Z";
 const SERVICE_KEY = "test-kric-secret-never-output";
@@ -615,6 +615,3 @@ function compareQueries(left, right) {
     || compareBytes(left.queryId, right.queryId);
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -8,6 +7,7 @@ import {
   canonicalFacilityAccessibilityAdmissionJson,
 } from "./build-facility-accessibility-admission.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const CAPTURED_AT = "2026-08-13T20:00:00.000Z";
 const FRESH_UNTIL = "2026-08-15T20:00:00.000Z";
@@ -447,6 +447,3 @@ function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

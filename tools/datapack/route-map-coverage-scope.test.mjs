@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
 import { parseMolitLineOperatorRosters } from "./build-molit-nationwide-fixture.mjs";
 import { ROUTE_MAP_DOMAIN, auditRouteMapCoverageScopes } from "./route-map-coverage-scope.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const MOLIT_ROSTER_PATH = "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv";
@@ -111,8 +111,6 @@ async function loadAuditInputs() {
     rawSourcesByPath,
   };
 }
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 // topology를 고쳐도 무결성 검사를 통과시키려면 선언 해시를 같이 다시 계산해야 한다.
 // 표기 방향 판정 자체를 시험할 때만 쓴다.

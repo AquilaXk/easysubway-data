@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -30,11 +29,11 @@ import { materializeSeoul9Phase1RouteMapPositions } from "./materialize-seoul9-p
 import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "./collect-daegu-datapack-sources.mjs";
 import { daeguMembershipSnapshotIdentity } from "./materialize-daegu-timetable.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../..");
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const SHA256 = /^[a-f0-9]{64}$/u;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /** Projects only Daegu source evidence onto explicitly supplied retained inputs. */
 export function projectHistoricalDaeguMaterializeInventory({ inventory, topologySnapshots, timetableSnapshots, mappings }) {

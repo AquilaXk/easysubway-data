@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../lib/hash.mjs";
 
 const CANDIDATE_KEYS = [
   "candidateId",
@@ -265,6 +265,3 @@ function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

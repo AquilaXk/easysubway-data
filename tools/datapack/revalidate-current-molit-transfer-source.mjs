@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -13,6 +13,7 @@ import {
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #862: ODCloud uddi는 판마다 바뀐다. 상수가 아니라 source-candidates requestUrl을 엄격한 형식으로 검증해 쓴다.
 const ENDPOINT_PATTERN = /^https:\/\/api\.odcloud\.kr\/api\/15130556\/v1\/uddi:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u;
@@ -60,10 +61,6 @@ const ENVELOPE_KEYS = Object.freeze([
 
 function fail(code) {
   throw new Error(`MOLIT_TRANSFER_REVALIDATION_${code}`);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function compareText(left, right) {

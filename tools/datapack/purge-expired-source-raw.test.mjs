@@ -15,6 +15,7 @@ import {
 } from "./purge-expired-source-raw.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { verifyPurgeAttestation } from "./source-raw-purge-attestation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -1210,6 +1211,3 @@ function policyFixture(sourceIds) {
   };
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

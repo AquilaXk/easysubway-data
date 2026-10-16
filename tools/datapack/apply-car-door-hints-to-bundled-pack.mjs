@@ -4,7 +4,7 @@
 // 누락되어 실사용자에게 힌트가 보이지 않았다(#2066/#2039 맥락). 이 스크립트는 시간 데이터가
 // 아니라 admission·검증 완료된 정적 힌트 행을 번들 팩에 idempotent하게 반입한다.
 // 입력 catalog user_version은 보존하며, production --check에서는 bundled schema v19를 요구한다.
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +15,7 @@ import {
   assertRouteServiceEvidenceUnchanged,
   routeServiceEvidenceSnapshot,
 } from "./lib/route-service-evidence-preservation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const BUNDLED_CATALOG_USER_VERSION = 19;
@@ -23,10 +24,6 @@ const FACILITY_TYPES = new Set(["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"]);
 function option(name, fallback) {
   const index = process.argv.indexOf(name);
   return index < 0 ? fallback : process.argv[index + 1];
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function validateHints(hints) {

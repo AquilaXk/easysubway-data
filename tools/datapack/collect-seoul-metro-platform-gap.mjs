@@ -1,18 +1,14 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DEFAULT_ENDPOINT = "http://openapi.seoul.go.kr:8088/{serviceKey}/json/TbSubwayLineInfo";
 const PAGE_SIZE = 1000;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function canonicalUtc(value, label) {
   if (typeof value !== "string" || !ISO_INSTANT.test(value) || isNaN(Date.parse(value))) {

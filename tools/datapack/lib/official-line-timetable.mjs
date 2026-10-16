@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #899: 공식 원천 시간표를 노선 단위로 팩에 적재하는 원천 중립 적재기.
 // provider(원천별 parser)가 정규화 trip을 넘기면, 이 모듈이 팩 역 정체성·노선 위상과 대조해
@@ -32,7 +32,6 @@ export const OFFICIAL_SERVICE_DAY_KINDS = Object.freeze({
 });
 const WEEKDAY_FIELDS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const SERVICE_PATTERNS = new Set(["LOCAL", "EXPRESS"]);
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`OFFICIAL_LINE_TIMETABLE_${code}${detail ? `: ${detail}` : ""}`); };
 
 /**

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../../lib/hash.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 
@@ -127,6 +127,3 @@ function isRecord(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

@@ -24,7 +24,6 @@
 //   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>
 //   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), KRIC 서비스 키(역별 시간표), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -36,6 +35,7 @@ import { isSourceReverificationAllowedPath, SOURCE_EXPECTATION_CHANGED, SOURCE_R
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { credentialForms } from "./collect-kric-station-timetables.mjs";
 import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -72,7 +72,6 @@ function compare(left, right) {
   if (left < right) return -1;
   return left > right ? 1 : 0;
 }
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const jsonText = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const kstDate = (date) => KST_FORMAT.formatToParts(date).filter(({ type }) => type !== "literal").map(({ value }) => value).join("");
 const utcDate = (date) => date.toISOString().slice(0, 10).replaceAll("-", "");

@@ -16,13 +16,13 @@
 // - FILE 역명 alias(에버라인 운동장·송담대→용인중앙시장)는 공식 rename join만 허용한다.
 // - KRIC 공식 lat/lon 컬럼 스왑 오류 정규화(발명 아님):
 //   if lon∈[33,43] and lat∈[124,132]: swap. 그 외 한반도 범위 밖이면 fail/quarantine.
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ARTIFACT_KIND = "capital-light-rail-route-map-positions-snapshot";
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
@@ -1113,10 +1113,6 @@ function requiredTopologySnapshotId(value) {
     throw new Error("capital light-rail topology snapshotId is required");
   }
   return value;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

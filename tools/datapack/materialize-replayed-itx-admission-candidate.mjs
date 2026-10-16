@@ -11,6 +11,7 @@ import {
 } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { inspectItxCurrentCollectionEvidenceCli } from "./inspect-itx-current-collection-evidence.mjs";
 import { createProviderResponseReplay } from "./provider-response-capture.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const OFFLINE_PROVIDER_KEY = "offline-provider-replay-key";
@@ -227,10 +228,6 @@ function replayAdmissionProvenance({ capture, replayEvidence }) {
 function evidenceHash(value) {
   const { evidenceHash: _ignored, ...withoutHash } = value ?? {};
   return createHash("sha256").update(JSON.stringify(withoutHash)).digest("hex");
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function candidateArgs(argv) {

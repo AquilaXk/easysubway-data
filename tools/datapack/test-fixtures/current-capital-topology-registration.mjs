@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { readCurrentCapitalRouteTopologyAdmission } from "../register-current-capital-route-topology.mjs";
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+import { sha256 } from "../../lib/hash.mjs";
 
 export async function createFixtureCapitalTopologyReceipt({ repositoryRoot, now, receiptPath }) {
   if (typeof receiptPath !== "string" || !path.isAbsolute(receiptPath)) {

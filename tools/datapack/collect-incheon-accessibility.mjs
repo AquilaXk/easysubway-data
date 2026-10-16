@@ -15,6 +15,7 @@ import {
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ELEVATOR_DATASET_ID = "15083478";
 const ESCALATOR_DATASET_ID = "15010199";
@@ -583,10 +584,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

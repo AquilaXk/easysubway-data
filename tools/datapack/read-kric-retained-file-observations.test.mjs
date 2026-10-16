@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import test from "node:test";
 import { readIndexedKricStopFields } from "./read-kric-retained-file-observations.mjs";
@@ -50,8 +49,8 @@ function indexedRecord() {
 
 import { buildKricRetainedFilePendingHandoff } from "./build-kric-retained-file-pending-handoff.mjs";
 import { readKricRetainedFileObservations } from "./read-kric-retained-file-observations.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : !value || typeof value !== "object" ? value : Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right)).map((key) => [key, canonical(value[key])]));
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(canonical(value))}\n`);
 

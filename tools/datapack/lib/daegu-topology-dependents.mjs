@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import { DAEGU_LINES, daeguSourceSnapshotIdentity } from "../collect-daegu-datapack-sources.mjs";
@@ -7,9 +6,9 @@ import {
   validateDaeguRouteMapPositionsSnapshot,
 } from "../collect-daegu-route-map-positions.mjs";
 import { daeguRouteMapTopologyLineageIdentity } from "../materialize-daegu-route-map-positions.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const MAP_SOURCE_ID = "daegu-transportation-route-map-positions";
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function source(inventory, sourceId, evidenceKey) {
   const matches = inventory?.sources?.filter(({ id }) => id === sourceId) ?? [];

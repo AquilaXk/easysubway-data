@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isMainModule } from "../lib/is-main-module.mjs";
@@ -10,6 +9,7 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric-timetable-publication.mjs";
 import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
 import { loadCurrentMolitGwangjuStationMappings } from "./current-molit-observation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SEOUL_DATE_FORMATTER = new Intl.DateTimeFormat("en", {
   timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
@@ -126,7 +126,6 @@ function validDate(value) {
 }
 function monthKey(date) { return Number(date.slice(0, 4)) * 12 + Number(date.slice(4, 6)) - 1; }
 function utf16Compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 // workflow는 보관 입력의 위치만 넘긴다. candidate와 topology는 실행 checkout의 inventory에서 선택한다.
 export async function runRetainedGwangjuContractPreparation(argv, {

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,6 +18,7 @@ import {
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { CURRENT_CAPITAL_BASE_SOURCE_IDS, selectedSourceHeadAt } from "./test-fixtures/selected-source-head-clock.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const registryPaths = [
@@ -40,8 +40,6 @@ const operation = {
   responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
   tupleIdentityFields: [],
 };
-
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 async function snapshotFor(kricRoster, now = new Date(CURRENT_SOURCE_HEAD_AT + 60_000)) {
   return (await collectKricAccessibilitySnapshots({

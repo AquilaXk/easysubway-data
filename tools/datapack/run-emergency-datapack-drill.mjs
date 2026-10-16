@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const REQUIRED_PATCH_TABLES = ["facilities", "network_edges", "transit_stop_times"];
@@ -12,10 +12,6 @@ const execFileAsync = promisify(execFile);
 function argValue(args, name) {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function requireObject(value, name) {

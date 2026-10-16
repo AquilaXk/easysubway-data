@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -9,6 +8,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { CANDIDATES_PATH, sanitizeErrorMessage } from "./lib/source-candidate-evidence-collector.mjs";
 import { validateAuthenticatedTransferObservation } from "./build-current-transfer-topology-metrics.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const EXPECTED_ROW_COUNT = 145;
@@ -383,7 +383,6 @@ async function publishAtomicDirectory(output, runnerTemp, entries) {
 }
 
 function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`, "utf8"); }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function requiredAbsolutePath(value, label) { if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error(`${label} must be an absolute path`); return path.resolve(value); }
 function requiredDate(value) { if (!(value instanceof Date) || Number.isNaN(value.valueOf())) throw new Error("now must be a valid date"); return value.toISOString(); }
 function sanitize(error, raw, normalized) { const first = sanitizeErrorMessage(error, raw); return normalized === raw ? first : sanitizeErrorMessage(new Error(first), normalized); }

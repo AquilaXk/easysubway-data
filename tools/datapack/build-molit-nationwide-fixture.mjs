@@ -13,6 +13,7 @@ import { assertCurrentMolitFullRouteCompleteness } from "./lib/static-network-su
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { retiredLineIds } from "./project-retired-transit-lines.mjs";
 import { parseSeoulMetroLineData } from "./lib/seoulmetro-line-data-parser.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const sourceId = "molit-urban-rail-full-route";
 const kricProviderCodeCatalogSourceId = "kric-provider-code-catalog-20260228";
@@ -1550,10 +1551,6 @@ function sourceInventoryEntries(sourceShaById) {
       fields: ["station_name", "station_coordinate", "route_path"],
     },
   ];
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function hash(value) {

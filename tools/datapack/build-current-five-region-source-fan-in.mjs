@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { carriedAdmissionGovernanceViolation, carriedAdmissionLineage } from "./lib/carried-admission.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH =
   "tools/datapack/release/current-five-region-source-fan-in.json";
@@ -34,7 +34,6 @@ const TALLY_STATUSES = new Set([
 ]);
 
 const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function canonicalObject(value) {
   if (Array.isArray(value)) return value.map(canonicalObject);

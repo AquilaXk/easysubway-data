@@ -15,7 +15,6 @@
 // - 승인 역할은 명시 인자로만 받는다. 환경 변수나 이전 후보의 승인으로 채우지 않는다. 요청자와 승인자는 달라야 한다.
 // - 깨끗한 worktree에서만 실행한다. builder git SHA가 실제 코드를 가리켜야 하기 때문이다.
 // - 어느 단계든 실패하거나 결속 검증이 어긋나면 모든 출력을 실행 전 바이트로 되돌리고 실패로 끝낸다.
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -43,11 +42,11 @@ import { releaseRequestBindingViolations } from "./verify-release-request-bindin
 import { CANDIDATE_RELEASE_OUTPUTS } from "./lib/source-registration-transaction.mjs";
 import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
 import { CANDIDATE_INPUT_MANIFEST_PATH } from "./lib/candidate-input-bundle.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const SPEC_PATH = "tools/datapack/release/candidate-build-spec.json";
 const REQUEST_PATH = "tools/datapack/release/release-request.json";
 const HASH_EVIDENCE_PATH = "tools/datapack/release/hash-evidence.json";

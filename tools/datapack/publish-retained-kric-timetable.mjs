@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -11,6 +10,7 @@ import { prepareRetainedKricTimetablePublication } from "./prepare-retained-kric
 import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 
@@ -160,10 +160,6 @@ function ociLocation(env) {
   const match = /^\/p\/[^/]+\/n\/([^/]+)\/b\/([^/]+)\/o\/?$/u.exec(url.pathname);
   if (match == null) throw new Error("OCI preauthenticated object URL is invalid");
   return { namespace: match[1], bucket: match[2] };
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function sanitizedPublicationError(error) {

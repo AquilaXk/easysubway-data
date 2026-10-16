@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { TextDecoder } from "node:util";
 
 import { DAEGU_LINES, daeguSourceSnapshotIdentity, loadAdmittedDaeguTopologySnapshots, normalizedStationName } from "./collect-daegu-datapack-sources.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daegu-transportation-route-map-positions";
 const ARTIFACT_KIND = "daegu-route-map-positions-snapshot";
@@ -485,10 +486,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function sha1(value) {

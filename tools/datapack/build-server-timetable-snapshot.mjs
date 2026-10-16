@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { isMainModule } from "../lib/is-main-module.mjs";
-import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +12,7 @@ import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
@@ -1030,10 +1030,6 @@ function parseJson(bytes, label) {
 
 function lowercaseSha(value) {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function main() {

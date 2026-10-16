@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // 대구교통공사 1·2·3호선 공식 topology·시각표 snapshot을 production datapack으로 결정론적으로 materialize한다.
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +9,7 @@ import { parseMolitDaeguStationMappings } from "./build-molit-nationwide-fixture
 import { readSelectedSourceSnapshot } from "./lib/source-admission-input.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { topologySnapshotFreshnessMillis as topologyWindowMillis } from "./lib/topology-freshness-cutover.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ISSUE = 2407;
 const MATERIALIZER = "tools/datapack/materialize-daegu-timetable.mjs";
@@ -629,7 +629,6 @@ function compactSeoulDate(value) {
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
 }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 function parseArgs(argv) {
   const expected = ["--base-fixture", "--sources-dir", "--inventory", "--station-map", "--output"];

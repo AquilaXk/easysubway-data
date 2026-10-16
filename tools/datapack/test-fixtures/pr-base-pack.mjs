@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { packMarkerOnlyViolations } from "../../ci/refresh-stage-contracts.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #1067: 수도권 topology 갱신이 pack의 출처 표식만 바꾼 뒤의 계약 테스트가 쓰는 갱신 전 pack 읽기.
 // 갱신은 canonical pack의 출처 표식만 바꾸고(#1063이 구조 diff로 허용), applicability·지표는 이후 파생 재결속이 다시 묶는다.
@@ -21,7 +21,6 @@ const SHA1 = /^[0-9a-f]{40}$/u;
 const ZERO_SHA1 = /^0{40}$/u;
 // 선언 시점(마지막 파생 재결속)부터 base까지의 first-parent 이력 길이 상한. 하루에 수십 커밋이 병합되므로 며칠 분이다.
 export const PACK_HISTORY_DEPTH = 400;
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 const gitBuffer = async (cwd, args) => (await execFileAsync("git", args, { cwd, maxBuffer: 512 * 1024 * 1024, encoding: "buffer" })).stdout;
 

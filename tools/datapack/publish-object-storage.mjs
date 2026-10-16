@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { createHash, createHmac } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { lstat, open, readFile, unlink } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const emptySha256 = sha256(Buffer.alloc(0));
 const CURRENT_LIVE_CHAIN_OCI_PAR = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/p\/[^\/?#\s]+\/n\/axvym6vk8g7i\/b\/easysubway-datapacks\/o\/?$/u;
@@ -792,10 +793,6 @@ function cacheControlForKey(key) {
 
 function amzTimestamp(date) {
   return date.toISOString().replace(/[:-]|\.\d{3}/g, "");
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

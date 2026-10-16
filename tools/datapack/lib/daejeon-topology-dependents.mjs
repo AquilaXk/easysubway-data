@@ -1,13 +1,11 @@
-import { createHash } from "node:crypto";
 
 import { collectDaejeonAccessibility } from "../collect-daejeon-accessibility.mjs";
 import { collectDaejeonRouteMapPositions } from "../collect-daejeon-route-map-positions.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const ACCESSIBILITY_SOURCE_ID = "daejeon-transportation-accessibility";
 const MAP_SOURCE_ID = "daejeon-transportation-route-map-positions";
 const TIMETABLE_SOURCE_ID = "daejeon-train-timetable";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function selectedSource(inventory, sourceId, evidenceKey) {
   const matches = inventory?.sources?.filter(({ id }) => id === sourceId) ?? [];

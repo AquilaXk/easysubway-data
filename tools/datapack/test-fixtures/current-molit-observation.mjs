@@ -1,10 +1,8 @@
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { after } from "node:test";
 import os from "node:os";
 import path from "node:path";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+import { sha256 } from "../../lib/hash.mjs";
 
 export async function createCurrentMolitObservationFixture(normalizedProjection = [
   { region_code: "01", region_name: "수도권", operator_name: "운영사", line_name: "1호선", station_name: "가역", station_sequence: 1 },

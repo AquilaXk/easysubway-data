@@ -19,13 +19,13 @@
 //
 // 석남: 인천2호선은 drop ID(station-37866f28b417), 7호선은 keep ID
 // (station-57db2f1fb4f6). 이름 정규화만으로는 구분되지 않으므로 lineId로 분기한다.
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "incheon-transit-station-info";
 const ARTIFACT_KIND = "incheon-station-info-snapshot";
@@ -761,10 +761,6 @@ function isStrictDataDate(value) {
 
 function dataDateStartUtc(value) {
   return Date.parse(`${value}T00:00:00.000Z`);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function usage() {

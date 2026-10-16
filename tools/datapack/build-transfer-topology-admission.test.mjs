@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -8,6 +7,7 @@ import {
   canonicalTransferTopologyAdmissionJson,
 } from "./build-transfer-topology-admission.mjs";
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const CAPTURED_AT = "2026-08-09T00:00:00.000Z";
 const FRESH_UNTIL = "2026-08-11T00:00:00.000Z";
@@ -551,10 +551,6 @@ function sortedContentSha256(rows) {
 
 function metadataFileSha256(metadata) {
   return sha256(`${JSON.stringify(metadata, null, 2)}\n`);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function compareBytes(left, right) {

@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { classifyKricTransportFailure } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const QUERY_KEYS = [
   "queryId", "routeEdgeId", "providerOperatorId", "providerLineId",
@@ -706,6 +706,3 @@ function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(String(left)), Buffer.from(String(right)));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

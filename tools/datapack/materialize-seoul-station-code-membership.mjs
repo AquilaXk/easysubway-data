@@ -1,13 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { collectSeoulStationLineInfo } from "./collect-seoul-station-line-info.mjs";
 import { projectSeoulStationLineMembership } from "./project-seoul-station-line-membership.mjs";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+import { sha256 } from "../lib/hash.mjs";
 
 // Freezes the admitted Seoul station-line membership projection (STATION_CD per LINE_NUM bound to
 // the MOLIT roster line id and canonical station name) so the sync pack build can consume it offline.

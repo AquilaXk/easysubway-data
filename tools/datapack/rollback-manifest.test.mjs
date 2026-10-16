@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash, createSign, generateKeyPairSync } from "node:crypto";
+import { createSign, generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
 
 import { canonicalJson, withoutSignature } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, "../..");
@@ -518,6 +519,3 @@ function bytes(value) {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
@@ -19,13 +18,13 @@ import {
   verifyDataGoDownloadProvenance,
 } from "./data-go-file-download.mjs";
 import { createTransientRetryBudget } from "./transient-retry.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #1099: 일시 오류는 같은 요청을 1·2·4·8·16초 대기로 최대 5번 다시 보낸다. 재시도 대기와 예산은 테스트마다 격리한다.
 const retryFast = (waits = []) => ({ sleepImpl: async (milliseconds) => { waits.push(milliseconds); }, retryBudget: createTransientRetryBudget() });
 
 const fixtureDir = path.resolve(import.meta.dirname, "../fixtures/data-go-file-download");
 const read = (name) => readFile(path.join(fixtureDir, name), "utf8");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 // 포털 detail 페이지(JSON-LD 없는 1호선 상선, JSON-LD 있는 접근성)와 selectFileDataDownload.do 실제 응답을 재생한다.
 async function portalFetch({ pages = {}, selects = {}, files = {}, calls = [] } = {}) {
