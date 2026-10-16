@@ -161,7 +161,7 @@ const PRIVATE_KEY_LITERAL = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 // 비공개키 리터럴 가드에서 제외하는 파일. 경로마다 사유를 적고, 가드 테스트가 목록이 낡지 않았는지(여전히 추적되고
 // 실제로 리터럴을 담고 있는지) 함께 확인한다.
 const PRIVATE_KEY_LITERAL_ALLOWLIST = new Map([
-  ["tools/datapack/datapack-tools.test.mjs", "서명 라이브러리 테스트 전용 RSA fixture 키(운영 키와 무관, 지문 불일치)"],
+  ["tools/datapack/test-fixtures/datapack-tools-signing.mjs", "서명 라이브러리 테스트 전용 RSA fixture 키(운영 키와 무관, 지문 불일치)"],
 ]);
 
 function findPrivateKeyLiterals(repoRoot, allowlist) {
