@@ -38,9 +38,11 @@ export const CHAIN_WORKFLOWS = Object.freeze({
 export const CHAIN_ROLLBACK_NOTE = "- 검증 실패로 롤백했다면 서버의 활성 FINAL은 직전 release이지만 공개 manifest(catalog/current.json)는 새 release 번호에 남는다. 실패 run 요약과 chain-state artifact의 `rollback.manifestMismatch`를 확인하고 공개 manifest를 정리해야 복구가 끝난다.";
 const chainNote = (workflowFile) => (Object.hasOwn(CHAIN_WORKFLOWS, workflowFile) ? [CHAIN_ROLLBACK_NOTE] : []);
 const REPORTABLE_WORKFLOWS = Object.freeze({ ...REFRESH_WORKFLOWS, ...CHAIN_WORKFLOWS });
+export const REPORTABLE_WORKFLOW_FILES = Object.freeze(Object.keys(REPORTABLE_WORKFLOWS));
 
-const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
+export const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const RUN_ID = /^[1-9]\d{0,19}$/u;
+const RUN_URL_ID = /\/actions\/runs\/([1-9]\d{0,14})\b/gu;
 export const COMMENT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const MAX_RECORDED_RUNS = 20;
 const STATUS_START = "<!-- refresh-failure-status:start -->";
@@ -154,6 +156,12 @@ function planOrphanComment({ input, orphan, issue, status, issueComments, report
   };
 }
 
+/** 이슈 본문과 댓글에 적힌 실패 run id(Actions run id는 저장소 안에서 생성 순서대로 커진다). 하나도 없으면 빈 배열이다. */
+export function recordedRunIdsOf(issue) {
+  const texts = [issue.body ?? "", ...comments(issue).map(({ body }) => body)];
+  return texts.flatMap((text) => [...text.matchAll(RUN_URL_ID)].map(([, id]) => Number(id)));
+}
+
 /** 이 도구(workflow 토큰)가 만든, 제목 규칙이 같은 workflow 실패 이슈(번호순). 사람이 표지를 인용한 이슈는 무시한다. */
 export function failureIssuesOf({ openIssues, workflowFile }) {
   if (!Object.hasOwn(REPORTABLE_WORKFLOWS, workflowFile ?? "")) fail("WORKFLOW");
@@ -233,7 +241,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       "",
       "### 완료 조건",
       "- 실패 원인을 이 이슈에 적고 고친다.",
-      "- 다음 run이 성공한 것을 확인하고 이 이슈를 닫는다.",
+      "- 다음 run이 성공하면 `recovered-failure-issues-close.yml`이 성공 run URL을 남기고 이 이슈를 자동으로 닫는다(표지가 남은 이슈와 PR 단위 workflow의 이슈는 사람이 닫는다).",
       "",
       "### 실패 상태",
       statusBlock([input.runUrl], reportedAt, mergedBlocks([], failures)),
@@ -306,21 +314,25 @@ async function readFailures(file, readText) {
   return failures;
 }
 
+/** 저장소의 열린 이슈(최대 1000개). 보고와 자동 종료가 같은 필드를 읽는다. */
+export async function listOpenIssues(repository, runGh) {
+  try {
+    return JSON.parse(await runGh([
+      "issue", "list", "--repo", repository, "--state", "open", "--limit", "1000", "--json", "number,title,body,author,createdAt,comments",
+    ]));
+  } catch (error) {
+    if (error instanceof SyntaxError) fail("ISSUES");
+    throw error;
+  }
+}
+
 export async function reportRefreshFailure({
   argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date(), orphan, readText = (file) => readFile(file, "utf8"),
 } = {}) {
   const { failuresPath, ...args } = parseArgs(argv);
   const input = validated(args);
   const failures = await readFailures(failuresPath, readText);
-  let openIssues;
-  try {
-    openIssues = JSON.parse(await runGh([
-      "issue", "list", "--repo", input.repository, "--state", "open", "--limit", "1000", "--json", "number,title,body,author,createdAt,comments",
-    ]));
-  } catch (error) {
-    if (error instanceof SyntaxError) fail("ISSUES");
-    throw error;
-  }
+  const openIssues = await listOpenIssues(input.repository, runGh);
   const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures });
   if (plan.action === "create") {
     await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);

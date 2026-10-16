@@ -1,0 +1,39 @@
+name: Recovered Failure Issues Close
+
+# 회복된 원천 자동 갱신 실패 이슈를 닫는다(#1287, #870: 사람은 이상이 날 때만 개입한다).
+# - 매시간 열린 봇 실패 이슈(report-refresh-failure가 만든 것)를 읽고, 같은 workflow가 마지막 보고 실패 run 이후 대상 단계까지 성공했으면 성공 run URL을 코멘트로 남기고 닫는다.
+# - 무엇을 성공으로 볼지는 workflow마다 tools/ci/close-recovered-failure-issues.mjs의 RECOVERY_PROOF가 정한다. 건너뛴 단계는 회복이 아니다.
+# - 사람이 연 이슈와 recipe 표지(reverification-blocked)가 남은 이슈는 닫지 않는다. 닫기 호출이 실패하면 job은 경고 annotation으로 드러내고 성공으로 끝난다.
+# - 갱신 workflow 자체는 건드리지 않는다. 원래 job의 결과는 이 workflow가 바꾸지 못한다.
+on:
+  schedule:
+    - cron: "13 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: recovered-failure-issues-close
+  cancel-in-progress: false
+
+jobs:
+  close:
+    name: Close the failure issues whose workflow recovered
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+      - name: Close the recovered failure issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/close-recovered-failure-issues.mjs --repository "${GITHUB_REPOSITORY}"
