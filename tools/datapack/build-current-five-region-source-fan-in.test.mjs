@@ -13,7 +13,7 @@ import {
   canonicalCurrentFiveRegionSourceFanInJson,
   validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
-import { MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH } from "./lib/carried-admission.mjs";
+import { carriedAdmissionLineage } from "./lib/carried-admission.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const EVALUATED_AT = "2026-09-03T00:00:00.000Z";
@@ -740,11 +740,28 @@ test("#1289 a verified carried-forward approval admits the new head and records 
   assert.equal(Object.hasOwn(buildCurrentFiveRegionSourceFanIn(fixture()).selectedSources[0], "carriedAdmission"), false);
 });
 
-test("#1289 the carried-forward chain depth is capped by a named constant", () => {
-  const atCap = carriedForwardFixture({ intermediateSnapshots: MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH - 1 });
-  assert.equal(buildCurrentFiveRegionSourceFanIn(atCap).selectedSources[0].carriedAdmission.chain.length, MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH + 1);
-  const overCap = carriedForwardFixture({ intermediateSnapshots: MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH });
-  assert.throws(() => buildCurrentFiveRegionSourceFanIn(overCap), /admission carry-forward mismatch for kric-subway-timetable-station-lines: CHAIN_TOO_DEEP/);
+// 무인 갱신은 원장 head + P1D에 매일 새 snapshot을 등록한다. 이월의 시간 한도는 약관 nextReviewAt 하나이고 체인 깊이는 한도가 아니다.
+const DAILY_REGISTRATIONS_PER_YEAR = 365;
+
+test("#1289 a year of daily registrations stays carried forward until the governance review deadline", () => {
+  const fanIn = buildCurrentFiveRegionSourceFanIn(carriedForwardFixture({ intermediateSnapshots: DAILY_REGISTRATIONS_PER_YEAR }));
+  assert.equal(fanIn.selectedSources[0].carriedAdmission.chain.length, DAILY_REGISTRATIONS_PER_YEAR + 2);
+  assert.doesNotThrow(() => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy: carriedGovernance() }));
+  assert.throws(() => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy: carriedGovernance({ nextReviewAt: EVALUATED_AT }) }),
+    /admission carry-forward mismatch for kric-subway-timetable-station-lines: REVIEW_EXPIRED/);
+});
+
+test("#1289 a cyclic snapshot lineage is rejected instead of walked forever", () => {
+  const { sourceSnapshots } = carriedForwardFixture({ intermediateSnapshots: 2 });
+  const [approvedRow, , lastMiddle, head] = sourceSnapshots;
+  // 첫 행이 마지막 중간 행을 가리키는 순환 계보에서, 승인 snapshot에 닿기 전에 같은 행을 다시 만난다.
+  const cyclic = [{ ...approvedRow, previousSnapshotId: lastMiddle.snapshotId }, ...sourceSnapshots.slice(1)];
+  const lineage = carriedAdmissionLineage({
+    sourceId: CARRY_SOURCE_ID, approved: { decision: "APPROVED", sourceId: CARRY_SOURCE_ID, snapshotId: "not-in-lineage",
+      schemaFingerprint: CARRY_SCHEMA, licenseEvidenceHash: CARRY_TERMS, rawSha256: CARRY_APPROVED_RAW },
+    ledger: cyclic, head: { ...head }, schemaFingerprint: CARRY_SCHEMA,
+  });
+  assert.deepEqual(lineage, { violation: "LINEAGE_CYCLE" });
 });
 
 test("#1289 an approval that cannot be carried forward keeps failing explicitly", () => {

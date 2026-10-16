@@ -11,12 +11,6 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 export const CARRY_FORWARD_ADMISSION_SOURCE_IDS = Object.freeze([STATION_LINES_TIMETABLE_SOURCE_ID]);
 
 /**
- * 한 번의 사람 승인이 무인 이월로 이어질 수 있는 후속 snapshot 수의 상한이다.
- * planned_timetable 재확인 주기(P30D)로 약관 검토 주기(1년)를 채워도 12~13번이라 2배 여유를 둔다.
- */
-export const MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH = 24;
-
-/**
  * 현재 head에서 previousSnapshotId로 거슬러 승인된 snapshot에 닿는지 판정한다.
  * 이월할 수 있으면 { chain }(head부터 승인 snapshot까지의 snapshotId), 아니면 { violation }을 돌려준다.
  * ledger는 호출자가 계보를 검증한 원장(validateLineage·terminalHead)이어야 한다. 한 원천의 행만 서로 이어진다는 전제를 여기서 다시 확인하지 않는다.
@@ -27,12 +21,16 @@ export function carriedAdmissionLineage({ sourceId, approved, ledger, head, sche
   if (!SHA256.test(approved.licenseEvidenceHash ?? "")) return { violation: "LICENSE_EVIDENCE_MISSING" };
   if (!SHA256.test(schemaFingerprint ?? "") || approved.schemaFingerprint !== schemaFingerprint) return { violation: "SCHEMA_CHANGED" };
   const bySnapshotId = new Map(ledger.map((row) => [row.snapshotId, row]));
+  // 이월의 시간 한도는 약관 nextReviewAt(사람 재검토) 하나다. 무인 갱신이 매일 snapshot을 쌓으므로 체인 깊이는 정책 한도가 아니다.
+  // 탐색은 방문 집합이 막으므로 원장 행 수를 넘지 못한다.
   const chain = [];
-  for (let row = head; row && !chain.includes(row.snapshotId); row = bySnapshotId.get(row.previousSnapshotId)) {
+  const visited = new Set();
+  for (let row = head; row; row = bySnapshotId.get(row.previousSnapshotId)) {
+    if (visited.has(row.snapshotId)) return { violation: "LINEAGE_CYCLE" };
+    visited.add(row.snapshotId);
     chain.push(row.snapshotId);
     if (row.snapshotId !== approved.snapshotId) continue;
-    if (row.rawSha256 !== approved.rawSha256) return { violation: "APPROVED_RAW_MISMATCH" };
-    return chain.length - 1 > MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH ? { violation: "CHAIN_TOO_DEEP" } : { chain };
+    return row.rawSha256 === approved.rawSha256 ? { chain } : { violation: "APPROVED_RAW_MISMATCH" };
   }
   return { violation: "NOT_ANCESTOR" };
 }

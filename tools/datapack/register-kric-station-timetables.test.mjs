@@ -8,7 +8,6 @@ import path from "node:path";
 import test from "node:test";
 
 import { collectKricStationTimetables } from "./collect-kric-station-timetables.mjs";
-import { MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH } from "./lib/carried-admission.mjs";
 import { KRIC_API_STATION_TIMETABLE_BINDINGS } from "./lib/kric-station-timetable-api-trips.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY } from "./lib/kric-station-row-timetable-trips.mjs";
 import { STATION_LINES_SOURCE_ID, buildKricStationTimetableRegistrationOutputs, registerKricStationTimetables, validateRegistrationOutputs } from "./register-kric-station-timetables.mjs";
@@ -308,29 +307,25 @@ test("거버넌스 nextReviewAt이 지나면 승인 이월 등록을 거부한�
   await registerAt(next.now);
 });
 
-// #1289: 이월 체인의 상한은 fan-in과 같은 판정이다. 새로 등록할 head까지 세어, fan-in이 거부할 head는 등록하지 않는다.
-test("승인 이월 체인이 상한(MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH)을 넘기는 head는 등록하지 않는다 (#1289)", async (t) => {
+// #1289: 무인 갱신은 매일 snapshot을 등록하므로 이월 체인 깊이는 한도가 아니다. 일일 등록 1년치가 쌓여도 등록은 이어지고, 시한은 거버넌스 nextReviewAt 하나다.
+test("승인 이월은 일일 등록 1년치 체인 뒤에도 이어진다 (#1289)", async (t) => {
   const { root, files, now } = await fixture(t);
   await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
   const registered = await snapshotOf(root);
   const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
   await withoutReview(next.files, next.input);
-  // 승인 snapshot 뒤에 합성 후속 행을 이어 붙여, 새 head가 승인 snapshot에서 정확히 depth 단계 떨어지게 만든다.
-  const registerWithChainDepth = async (depth) => {
-    for (const relative of OUTPUTS) await writeFile(path.join(root, relative), registered[relative]);
-    const ledgerFile = path.join(root, OUTPUTS[1]);
-    const ledger = JSON.parse(registered[OUTPUTS[1]]);
-    for (let index = 1; index < depth; index += 1) {
-      const previous = ledger.at(-1);
-      const row = { ...previous, snapshotId: `${STATION_LINES_SOURCE_ID}-synthetic-${index}`, previousSnapshotId: previous.snapshotId,
-        rawSha256: sha(`synthetic-${index}`), retrievedAt: new Date(Date.parse(previous.retrievedAt) + 60 * 1000).toISOString() };
-      ledger.push({ ...row, diffSummary: buildSnapshotDiff(previous, row) });
-    }
-    await writeFile(ledgerFile, `${JSON.stringify(ledger, null, 2)}\n`);
-    return registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
-  };
-  await registerWithChainDepth(MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH);
-  await assert.rejects(registerWithChainDepth(MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH + 1), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD/u);
+  const ledger = JSON.parse(registered[OUTPUTS[1]]);
+  for (let index = 1; index <= 365; index += 1) {
+    const previous = ledger.at(-1);
+    const row = { ...previous, snapshotId: `${STATION_LINES_SOURCE_ID}-synthetic-${index}`, previousSnapshotId: previous.snapshotId,
+      rawSha256: sha(`synthetic-${index}`), retrievedAt: new Date(Date.parse(previous.retrievedAt) + 1000).toISOString() };
+    ledger.push({ ...row, diffSummary: buildSnapshotDiff(previous, row) });
+  }
+  await writeFile(path.join(root, OUTPUTS[1]), `${JSON.stringify(ledger, null, 2)}\n`);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
+  const finalLedger = JSON.parse(await readFile(path.join(root, OUTPUTS[1]), "utf8"));
+  assert.equal(finalLedger.at(-1).snapshotId, next.receipt.snapshotId);
+  assert.equal(finalLedger.filter(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID).length, 367);
 });
 
 // 이월 모드는 입력 개수로 추론하지 않고 명시한 값으로 전달·판정한다.

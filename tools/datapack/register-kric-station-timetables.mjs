@@ -4,7 +4,7 @@
 // 원장 행·inventory·정책 항목(governance·freshness)·파생 스냅샷을 한 트랜잭션으로 등록한다.
 // 검토 admission과 governance 항목은 이 도구가 만들지 않는다(입력 파일로만 받는다).
 // 후속 등록(#1122, 무인 갱신)은 reviewAdmissionPath를 null로 두어 이전에 승인된 admissionEvidence를 그대로 이월할 수 있다.
-// 이월은 승인된 스키마(schemaFingerprint)·약관 해시(licenseEvidenceHash)가 그대로이고, 승인된 snapshot이 원장 head에서 상한(MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH) 안으로 이어질 때만 허용하며
+// 이월은 승인된 스키마(schemaFingerprint)·약관 해시(licenseEvidenceHash)가 그대로이고, 승인된 snapshot이 원장 head에서 이어질 때만 허용하며
 // 아니면 REVIEW_CARRY_FORWARD로 거부한다. 판정은 5권역 fan-in과 같은 lib/carried-admission.mjs를 쓴다. 이월의 시간 한도는 약관 거버넌스 항목의 nextReviewAt 하나다(지나면 GOVERNANCE_REVIEW_EXPIRED로 거부).
 // 약관은 실시간으로 확인하지 않고 이 저장소의 거버넌스 항목 해시로만 본다.
 // 같은 KRIC OpenAPI 데이터셋(id=162)·같은 이용약관임을 기존 kric-subway-timetable governance 항목과 비교해 고정한다.
