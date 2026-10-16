@@ -1,5 +1,5 @@
-import { rmSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { constants as fsConstants, rmSync } from "node:fs";
+import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -58,9 +58,7 @@ async function currentReleaseCandidateArtifact() {
   return currentReleaseCandidateArtifactPromise;
 }
 
-export async function buildCurrentProductionArtifact(context, { buildEnv = {} } = {}) {
-  const outputRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-output-"));
-  context.after(() => rm(outputRoot, { recursive: true, force: true }));
+async function buildProductionArtifactInto(outputRoot, buildEnv) {
   const { buildSpec, buildSpecPath, files } = await currentReleaseCandidateArtifact();
   const candidateRoot = await currentCandidateRoot();
   const output = path.join(outputRoot, "pack");
@@ -83,6 +81,38 @@ export async function buildCurrentProductionArtifact(context, { buildEnv = {} } 
   const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
   assert.deepEqual(manifest.packs.map(({ artifactKind }) => artifactKind), ["production"]);
   return { output, repositoryRoot: candidateRoot, routeCoverageAuthority: files.authority };
+}
+
+export async function buildCurrentProductionArtifact(context, { buildEnv = {} } = {}) {
+  const outputRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-output-"));
+  context.after(() => rm(outputRoot, { recursive: true, force: true }));
+  return buildProductionArtifactInto(outputRoot, buildEnv);
+}
+
+// 기본 빌드 입력의 production 팩(약 385MB, 빌드 약 30초)은 결정적이다. 변조하지 않는 원본을 프로세스당 한 번만 만들고
+// 테스트마다 복사본을 받아 그 복사본만 변조한다. 원본은 어떤 테스트도 직접 건드리지 않는다.
+let pristineProductionArtifactPromise = null;
+
+async function pristineProductionArtifact() {
+  pristineProductionArtifactPromise ??= (async () => {
+    const outputRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-pristine-"));
+    process.once("exit", () => rmSync(outputRoot, { recursive: true, force: true }));
+    return buildProductionArtifactInto(outputRoot, {});
+  })();
+  return pristineProductionArtifactPromise;
+}
+
+// 복사 가능한 파일시스템에서는 reflink로 복제해 비용이 거의 없고, 아니면 일반 복사로 내려간다(둘 다 독립 파일).
+export async function cloneArtifactOutput(context, artifact) {
+  const outputRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-clone-"));
+  context.after(() => rm(outputRoot, { recursive: true, force: true }));
+  const output = path.join(outputRoot, "pack");
+  await cp(artifact.output, output, { recursive: true, mode: fsConstants.COPYFILE_FICLONE });
+  return { ...artifact, output };
+}
+
+export async function cloneCurrentProductionArtifact(context) {
+  return cloneArtifactOutput(context, await pristineProductionArtifact());
 }
 
 export function representativeRouteRegressionPayload(routes) {
