@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -132,6 +132,30 @@ export function detectDirectPinnedInputReadsInSource({ testFile, source, pinnedP
   return [...detected].sort();
 }
 
+const RELATIVE_IMPORT_PATTERN = /\bfrom\s+["'](\.{1,2}\/[^"']+)["']/gu;
+
+// 테스트가 import하는 test-fixtures 헬퍼(그 헬퍼가 다시 import하는 헬퍼 포함)의 직접 읽기도 그 테스트의 읽기로 센다.
+// 읽기를 헬퍼로 옮겨도 가드를 피해 갈 수 없게 한다.
+export function detectPinnedInputReadsThroughFixtureHelpers({ repositoryRoot, testFile, source, pinnedPaths }) {
+  const detected = new Set();
+  const visited = new Set();
+  const pending = [{ file: testFile, source }];
+  while (pending.length > 0) {
+    const { file, source: fileSource } = pending.pop();
+    for (const match of stripComments(fileSource).matchAll(RELATIVE_IMPORT_PATTERN)) {
+      const helper = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1]));
+      if (!helper.includes('/test-fixtures/') || visited.has(helper) || !existsSync(path.join(repositoryRoot, helper))) continue;
+      visited.add(helper);
+      const helperSource = readFileSync(path.join(repositoryRoot, helper), 'utf8');
+      for (const read of detectDirectPinnedInputReadsInSource({ testFile: helper, source: helperSource, pinnedPaths })) {
+        detected.add(read);
+      }
+      pending.push({ file: helper, source: helperSource });
+    }
+  }
+  return [...detected].sort();
+}
+
 export function auditCandidatePinnedInputReads({
   repositoryRoot = DEFAULT_REPOSITORY_ROOT,
   ownershipPath = path.join(repositoryRoot, OWNERSHIP_RELATIVE_PATH),
@@ -207,11 +231,12 @@ export function auditCandidatePinnedInputReads({
   for (const testFile of requiredPrTests) {
     if (testFile === "tools/ci/guard-candidate-pinned-input-reads.test.mjs") continue;
     const source = readFileSync(path.join(repositoryRoot, testFile), "utf8");
-    const detectedPaths = detectDirectPinnedInputReadsInSource({
-      testFile,
-      source,
-      pinnedPaths: pinnedSet,
-    });
+    const detectedPaths = [
+      ...new Set([
+        ...detectDirectPinnedInputReadsInSource({ testFile, source, pinnedPaths: pinnedSet }),
+        ...detectPinnedInputReadsThroughFixtureHelpers({ repositoryRoot, testFile, source, pinnedPaths: pinnedSet }),
+      ]),
+    ].sort();
     const allowedPaths = allowlistByFile.get(testFile) ?? new Set();
 
     for (const detectedPath of detectedPaths) {

@@ -143,6 +143,85 @@ test("auditCandidatePinnedInputReads rejects unallowlisted direct reads, blank r
   );
 });
 
+test("auditCandidatePinnedInputReads counts reads made by test-fixtures helpers, including nested ones, for the importing test", (t) => {
+  const tmpRoot = realpathSync(mkdtempSync(path.join(os.tmpdir(), "guard-pinned-helper-reads-")));
+  t.after(() => {
+    rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  mkdirSync(path.join(tmpRoot, "tools/ci"), { recursive: true });
+  mkdirSync(path.join(tmpRoot, "tools/datapack/release"), { recursive: true });
+  mkdirSync(path.join(tmpRoot, "tools/datapack/test-fixtures"), { recursive: true });
+
+  writeFileSync(
+    path.join(tmpRoot, "tools/datapack/release/nationwide-candidate-input-manifest.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: "nationwide-candidate-input-manifest",
+      files: [{ path: "tools/datapack/source-inventory.json", sha256: "a".repeat(64), byteSize: 10 }],
+    }),
+  );
+  writeFileSync(
+    path.join(tmpRoot, "tools/ci/data-test-ownership.json"),
+    JSON.stringify({
+      version: 1,
+      tests: [
+        { path: "tools/datapack/via-helper.test.mjs", classes: ["required-pr"] },
+        { path: "tools/datapack/via-nested-helper.test.mjs", classes: ["required-pr"] },
+        { path: "tools/datapack/allowlisted-via-helper.test.mjs", classes: ["required-pr"] },
+      ],
+    }),
+  );
+  writeFileSync(
+    path.join(tmpRoot, "tools/datapack/test-fixtures/reading-helper.mjs"),
+    [
+      'import { readFile } from "node:fs/promises";',
+      'import path from "node:path";',
+      'const root = path.resolve(import.meta.dirname, "../../..");',
+      'export const readInventory = () => readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8");',
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    path.join(tmpRoot, "tools/datapack/test-fixtures/wrapping-helper.mjs"),
+    'export { readInventory } from "./reading-helper.mjs";\nimport { readInventory } from "./reading-helper.mjs";\nexport const wrapped = readInventory;\n',
+  );
+  const importingTest = (helper) => `import { readInventory } from "./test-fixtures/${helper}.mjs";\nawait readInventory();\n`;
+  writeFileSync(path.join(tmpRoot, "tools/datapack/via-helper.test.mjs"), importingTest("reading-helper"));
+  writeFileSync(path.join(tmpRoot, "tools/datapack/via-nested-helper.test.mjs"), importingTest("wrapping-helper"));
+  writeFileSync(path.join(tmpRoot, "tools/datapack/allowlisted-via-helper.test.mjs"), importingTest("reading-helper"));
+  writeFileSync(
+    path.join(tmpRoot, "tools/ci/candidate-pinned-input-read-allowlist.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      entries: [
+        {
+          testFile: "tools/datapack/allowlisted-via-helper.test.mjs",
+          paths: ["tools/datapack/source-inventory.json"],
+          reason: "헬퍼를 거쳐 현재 작업 트리 계약 입력으로 읽는다.",
+        },
+      ],
+    }),
+  );
+
+  const violations = auditCandidatePinnedInputReads({ repositoryRoot: tmpRoot });
+  assert.deepEqual(
+    violations.map(({ code, testFile, path: readPath }) => ({ code, testFile, path: readPath })),
+    [
+      {
+        code: "UNALLOWLISTED_PINNED_INPUT_READ",
+        testFile: "tools/datapack/via-helper.test.mjs",
+        path: "tools/datapack/source-inventory.json",
+      },
+      {
+        code: "UNALLOWLISTED_PINNED_INPUT_READ",
+        testFile: "tools/datapack/via-nested-helper.test.mjs",
+        path: "tools/datapack/source-inventory.json",
+      },
+    ],
+  );
+});
+
 test("auditCandidatePinnedInputReads passes on the repository required-pr suite", () => {
   const violations = auditCandidatePinnedInputReads();
   assert.deepEqual(
