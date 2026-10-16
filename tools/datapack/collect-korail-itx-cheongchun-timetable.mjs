@@ -76,6 +76,7 @@ export async function collectKorailItxCheongchunCompleteness({
   collectRosterImpl = collectTagoItxCheongchunRoster,
   collectTimetableImpl = null,
   stationCatalogSnapshot = null,
+  waitImpl = undefined,
 } = {}) {
   serviceKey = normalizeDataGoKrServiceKey(serviceKey);
   const selectedServiceDates = validateItxServiceDates(serviceDates, { now, replay });
@@ -98,6 +99,7 @@ export async function collectKorailItxCheongchunCompleteness({
       roster = await collectRosterImpl({
         serviceKey, serviceDate, kricServiceDayCode: dayCd, canonicalStations, fetchImpl, now,
         requestBudget: tagoRequestBudget,
+        ...(waitImpl === undefined ? {} : { waitImpl }),
       });
       failureStage = "OD_MATERIALIZATION";
       if (roster.completedOdCount !== roster.expectedOdCount || roster.failedOdCount !== 0) {

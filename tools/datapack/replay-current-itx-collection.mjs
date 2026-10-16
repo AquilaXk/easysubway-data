@@ -46,6 +46,8 @@ export async function runReplayCurrentItxCollectionCli({
       collectImpl: (options) => collectKorailItxCheongchunCompleteness({
         ...options,
         collectTimetableImpl: collectKorailItxCheongchunPlan,
+        // 보관한 응답을 재생할 뿐이라 재시도 대기는 기다리지 않는다. 대기 예산 계산은 그대로 하므로 수집 때와 같은 판정이 난다.
+        waitImpl: async () => {},
       }),
     });
     replay.assertExhausted();

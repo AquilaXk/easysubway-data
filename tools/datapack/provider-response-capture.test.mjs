@@ -357,3 +357,20 @@ test("continuation은 aggregate body budget 0을 정확히 유지한다", async 
   await assert.rejects(nonempty.fetchImpl(liveRequest), /provider capture body limit exceeded/);
   assert.throws(() => nonempty.captureArtifact(), /pending requests/);
 });
+
+test("기본 기록 상한은 run 단위 최악 TAGO 요청 수(정상 약 1,900건 + 재시도 최대 900건)를 덮고 그 위에서는 닫는다 (data#1267)", async () => {
+  const recorder = createProviderResponseRecorder({
+    observedAt: OBSERVED_AT,
+    selectedServiceDates: SERVICE_DATES,
+    fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+  });
+  // 실패 run 38781966262는 1,929건을 기록했다. 옛 상한 2,000건에서는 재시도가 71건만 더 늘어도 기록이 먼저 막혀 전송 오류로 보였다.
+  for (let index = 0; index < 4_000; index += 1) await recorder.fetchImpl(request("GetStrtpntAlocFndTrainInfo"));
+  await assert.rejects(recorder.fetchImpl(request("GetStrtpntAlocFndTrainInfo")), /provider capture record limit exceeded/);
+
+  const capture = recorder.captureArtifact();
+  assert.equal(capture.requestCount, 4_000);
+  const replay = createProviderResponseReplay({ captureBytes: providerResponseCaptureBytes(capture) });
+  for (let index = 0; index < 4_000; index += 1) await replay.fetchImpl(request("GetStrtpntAlocFndTrainInfo"));
+  replay.assertExhausted();
+});
