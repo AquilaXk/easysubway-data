@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { isMainModule } from "../lib/is-main-module.mjs";
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-subway-timetable";
 const SOURCE_ARTIFACT_IDS = new Set([SOURCE_ID, "kric-subway-route-info"]);
@@ -210,9 +210,6 @@ function uniqueBy(rows, keyFn) {
   return [...new Map(rows.map((row) => [keyFn(row), row])).values()];
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 export function validateKricLine4PilotCollectionArtifact(artifact) {
   if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {

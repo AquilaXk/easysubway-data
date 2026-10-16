@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,6 +15,7 @@ import {
 } from "./collect-molit-railway-transfer-movement.mjs";
 import { evaluateCurrentMolitTransferFreshness } from "./evaluate-current-molit-transfer-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "molit-railway-transfer-movement";
 const ABSENCE_MODE = "EXHAUSTIVE_OFFICIAL_FILE";
@@ -663,9 +663,6 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));

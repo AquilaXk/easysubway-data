@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { defaultRunGh } from "./report-refresh-failure.mjs";
+import { isObject } from "../lib/is-object.mjs";
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const WORKFLOW_FILE = /^[a-z0-9][a-z0-9-]*\.yml$/u;
@@ -29,7 +30,6 @@ function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
 }
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const exactKeys = (value, keys) => isObject(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 
 export function parseMaxAge(value) {

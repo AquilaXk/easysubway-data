@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { projectKricStationLineMembership } from "./project-kric-station-line-membership.mjs";
+import { sha256 } from "../lib/hash.mjs";
 const SOURCE_ID = "kric-current-station-line-file";
 const RECEIPT_KIND = "kric-current-station-line-file-receipt";
 
@@ -65,6 +65,3 @@ function canonicalJsonProperty(key, value) {
   return `${JSON.stringify(key)}:${canonicalJson(value)}`;
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

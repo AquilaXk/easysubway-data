@@ -24,7 +24,6 @@
 //   INVENTORY_GATE  inventory가 소유 항목·소유 필드 밖에서 바뀌었다(inventoryScopeViolations). 증거 전후 변화가 정책 한도를 넘었다.
 //   REFRESH_GATE    inventory 증거·snapshot 파일·원장 행·입력 파일이 서로 결속되지 않았다. topology는 제거가 있거나(자동 경로 불허) snapshot 신원이 본문과 다르다.
 //   PACK_CONTENT    canonical·reviewed pack이 출처 표식(sourceSnapshotId·updatedAt·lastVerifiedAt·reviewedAt, KRIC·서울 증거 행은 verifiedAt·retrievedAt·evidenceHash 포함) 밖에서 바뀌었거나 표식 값이 새 snapshot·증거 시각·입력 파일과 다르다.
-import { createHash } from "node:crypto";
 
 import { compareCapitalRouteTopologies, requireCurrentSourceSeparatedCapitalTopology } from "../datapack/collect-capital-route-topology.mjs";
 import { latestEvidenceObservedDates } from "../datapack/import-official-sources.mjs";
@@ -32,6 +31,8 @@ import { materializeAccessibilitySourceInput, seoulEdgeEvidenceHash, seoulStatus
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
+import { isObject } from "../lib/is-object.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
@@ -48,9 +49,7 @@ const STAMP = String.raw`[0-9]{8}T[0-9]{9}Z`;
 const snapshotFamily = (name, stamp, status = "added") => family(name, new RegExp(String.raw`^${escapeRegex(SNAPSHOT_DIR)}/${escapeRegex(name)}-${stamp}\.json$`, "u"), status);
 
 const sortCodepoint = (values) => [...values].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const message = (error) => (error instanceof Error ? error.message : String(error));
-const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 const HEX64 = /^[0-9a-f]{64}$/u;
 
 function canonicalJson(value) {

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { sortJson } from "./lib/ledger-admission-cli.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const APPROVED_AT = "2026-07-13T22:30:00+09:00";
@@ -306,9 +306,6 @@ function assertValidatedLiveSample(candidate) {
   }
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 async function main() {
   const candidatesPath = path.join(root, "tools/datapack/source-candidates.json");

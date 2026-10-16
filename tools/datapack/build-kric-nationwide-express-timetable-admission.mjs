@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { planKricNationwideTimetableCollection } from "./plan-kric-nationwide-timetable-collection.mjs";
 import { parseCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const CANDIDATE_ID = "kric-subway-timetable-exp";
 const SOURCE_ID = "kric-subway-timetable";
@@ -324,9 +324,6 @@ function canonicalField(key, value) {
   return `${JSON.stringify(key)}:${canonicalJson(value)}`;
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function utcMillis(value) {
   const millis = value instanceof Date ? value.getTime() : Date.parse(value);

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { currentTransferLineIds } from "./build-current-transfer-topology-metrics.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const APPLICABLE = "APPLICABLE_TRANSFER_ENDPOINT";
 const NOT_APPLICABLE = "NOT_APPLICABLE_IN_CANONICAL_PAIR_SET";
@@ -185,7 +185,6 @@ function canonicalBytes(value) { return Buffer.from(`${canonicalJson(value)}\n`)
 function canonicalJson(value) { return JSON.stringify(sortValue(value)); }
 function sortValue(value) { if (Array.isArray(value)) return value.map(sortValue); if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, sortValue(value[key])])); return value; }
 function without(value, key) { const { [key]: _ignored, ...result } = value; return result; }
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function nonBlank(value) { return typeof value === "string" && value.trim() !== ""; }
 function validSha256(value) { return typeof value === "string" && /^[0-9a-f]{64}$/u.test(value); }
 function validUtcInstant(value) { return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) && !Number.isNaN(Date.parse(value)); }

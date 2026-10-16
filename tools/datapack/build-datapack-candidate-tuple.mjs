@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { link, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { sha256 } from "../lib/hash.mjs";
 
 const names = new Set(["root", "repo-root", "build-spec", "manifest", "provenance", "output", "now"]);
 
@@ -124,7 +124,6 @@ function hash(value, label) { const result = required(value, label); if (!/^[a-f
 function utc(value, label) { const result = required(value, label); const parsed = Date.parse(result); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(result) || !Number.isFinite(parsed) || new Date(parsed).toISOString() !== result) throw new Error(`${label} must be canonical UTC milliseconds`); return result; }
 function instant(value, label) { const parsed = Date.parse(utc(value, label)); return parsed; }
 function gitSha(value, label) { const result = required(value, label); if (!/^[a-f0-9]{40}$/.test(result)) throw new Error(`${label} must be a full lowercase git sha`); return result; }
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right));
 
 if (import.meta.url === `file://${process.argv[1]}`) {

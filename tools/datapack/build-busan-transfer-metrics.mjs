@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -10,6 +9,7 @@ import {
   canonicalStationMappingHash,
   parseCanonicalBusanStationMappings,
 } from "./materialize-busan-route-topology.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #872 S3(QA 결정 2026-10-02): 부산교통공사 원천(busan-transportation-route-topology, data.go.kr 15001019)의
 // 환승 행(exchange=Y)을 공식 환승 거리·시간으로 쓴다.
@@ -219,7 +219,6 @@ function canonicalObject(value) {
   return value;
 }
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 async function main(argv) {
   if (argv.length !== 2 || argv[0] !== "--output" || !path.isAbsolute(argv[1])) {

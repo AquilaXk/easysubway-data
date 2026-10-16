@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +7,7 @@ import { routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalCurrentStationLineInputJson } from "./build-current-station-line-accessibility.mjs";
 import { applyCandidateNetworkEdgeProjection } from "./build-datapack.mjs";
 import { canonicalStationLineAccessibilityJson } from "./materialize-station-line-accessibility.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const BUILD_SPEC_FILE = "tools/datapack/release/candidate-build-spec.json";
 const CANONICAL_PACK_FILE = "tools/datapack/release/capital-production-canonical-pack.json";
@@ -154,6 +154,5 @@ function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Bu
 function compareStationLines(left, right) { return compareBytes(left.stationId, right.stationId) || compareBytes(left.lineId, right.lineId) || compareBytes(left.operatorId, right.operatorId); }
 function nonBlank(value) { return typeof value === "string" && value.trim() !== ""; }
 function sha(value) { return typeof value === "string" && /^[0-9a-f]{64}$/u.test(value); }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 const invokedAsScript = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedAsScript) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

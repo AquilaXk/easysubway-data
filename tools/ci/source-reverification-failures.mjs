@@ -9,6 +9,7 @@
 // 사용: node tools/ci/source-reverification-failures.mjs --result <controller result.json>
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { isObject } from "../lib/is-object.mjs";
 
 const RECIPE_ID = /^[a-z][a-z0-9-]{0,63}$/u;
 const CODE = /^[A-Z][A-Z0-9_]{1,63}$/u;
@@ -20,7 +21,6 @@ function invalid(detail) {
   return new Error(`REVERIFICATION_RESULT_INVALID: ${detail}`);
 }
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 // workflow 명령은 한 줄이다. 제어 문자는 공백으로 바꾸고 `%`는 명령 이스케이프와 겹치지 않게 이스케이프한다.
 const annotationText = (value) => value.replaceAll(CONTROL, " ").replaceAll("%", "%25").slice(0, DETAIL_MAX);

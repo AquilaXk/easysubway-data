@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const REQUIRED_FACILITY_TYPES = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
 const FACILITY_TYPES = new Set([...REQUIRED_FACILITY_TYPES, "ACCESSIBILITY_STATUS_PROBE"]);
@@ -454,6 +454,3 @@ function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

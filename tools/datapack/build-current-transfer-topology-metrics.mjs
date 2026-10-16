@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { sha256 } from "../lib/hash.mjs";
 
 const CANONICAL_PACK_FILE = "tools/datapack/release/capital-production-canonical-pack.json";
 const SOURCE_CANDIDATES_FILE = "tools/datapack/source-candidates.json";
@@ -298,6 +298,5 @@ function assertKeys(value, keys, label) { if (!value || typeof value !== "object
 function nonBlank(value) { return typeof value === "string" && value.trim() !== ""; }
 function validDate(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)); }
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 const invokedAsScript = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (invokedAsScript) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { parseKricCurrentStationLineWorkbook } from "./collect-kric-nationwide-timetable-file.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-current-station-line-file";
 const RECEIPT_KIND = "kric-current-station-line-file-receipt";
@@ -10,7 +10,6 @@ const OBSERVATION_KIND = "kric-current-station-line-observation";
 const OUTPUT_PREFIX = "kric-current-station-line-file-";
 const SHA256 = /^[a-f0-9]{64}$/u;
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code) => { throw new Error(`KRIC_CURRENT_STATION_LINE_OBSERVATION_${code}`); };
 
 // This producer is intentionally evidence-only. It does not project KRIC

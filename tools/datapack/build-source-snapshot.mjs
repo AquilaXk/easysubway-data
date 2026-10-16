@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { deriveFreshness } from "./freshness-policy.mjs";
@@ -11,6 +10,7 @@ import {
 } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DEFAULT_FRESHNESS_POLICY = "release/product-gates/datapack-freshness-sla.json";
 
@@ -278,9 +278,6 @@ function requiredText(value, label) {
   return value.trim();
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 main().catch((error) => {
   console.error(error.message);

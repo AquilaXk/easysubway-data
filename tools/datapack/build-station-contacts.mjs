@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildStationBindings, numeric } from "./normalize-seoul-metro-congestion.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const STATION_CONTACT_SOURCE_ID = "seoul-metro-station-contact";
 export const STATION_CONTACT_INPUTS_PATH = "tools/datapack/release/station-contact-inputs.json";
@@ -11,9 +11,6 @@ export const PRODUCTION_USE_SCOPE = "MOBILE_STATION_CATALOG_CONTACT";
 
 const PHONE_PATTERN = /^0\d{1,2}-\d{3,4}-\d{4}$/;
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 export function normalizePhoneNumber(value) {
   if (typeof value !== "string") return null;

@@ -1,15 +1,12 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function requiredSha256(value, label) {
   if (!SHA256.test(value ?? "")) throw new Error(`${label} must be sha256`);

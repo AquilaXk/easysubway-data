@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const CANDIDATE_KEYS = [
   "candidateId", "stationSetSha256", "sourceSetSha256", "mappingContractVersion", "materializerVersion",
@@ -692,6 +692,3 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

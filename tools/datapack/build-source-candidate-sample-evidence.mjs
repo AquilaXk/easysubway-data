@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 function parseArgs(argv) {
   const args = { candidates: "tools/datapack/source-candidates.json" };
@@ -182,9 +182,6 @@ function sortJson(value) {
   );
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));

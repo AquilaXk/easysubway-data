@@ -6,7 +6,7 @@
  * 수도권 전 노선 적용은 apply-capital-route-topology-to-bundled-pack.mjs 를 사용한다.
  * 이 스크립트는 line-1 단독 스냅샷/회귀 테스트용으로 유지한다.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -21,6 +21,7 @@ import {
   SOURCE_ID,
   normalizeStationName,
 } from "./collect-capital-line1-route-topology.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const DEFAULT_SNAPSHOT = "tools/datapack/sources/capital-line1-route-topology-20260724.json";
@@ -36,9 +37,6 @@ function option(name, fallback) {
   return index < 0 ? fallback : process.argv[index + 1];
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function repositoryPath(value) {
   return path.resolve(root, value);

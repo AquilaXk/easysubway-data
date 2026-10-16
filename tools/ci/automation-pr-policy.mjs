@@ -49,6 +49,7 @@ import {
   nationwideCandidateRefreshViolations,
   readNationwideCandidateRefreshState,
 } from "../datapack/refresh-nationwide-candidate.mjs";
+import { isObject } from "../lib/is-object.mjs";
 
 const execFileAsync = promisify(execFile);
 const GIT = "/usr/bin/git";
@@ -110,7 +111,6 @@ const COMMIT = /^[0-9a-f]{40}$/u;
 export const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const MAIN = "main";
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const sortCodepoint = (values) => [...values].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 const message = (error) => (error instanceof Error ? error.message : String(error));
 
