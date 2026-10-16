@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
 import { planRefreshFailureReport } from "./report-refresh-failure.mjs";
 import {
   SOURCE_REVERIFICATION_CLAIM_PREFIX,
@@ -292,21 +293,42 @@ test("claim 목록은 재확인 claim ref만 받는다", () => {
   assert.throws(() => parseSourceReverificationClaims(`${sha}\trefs/heads/${SOURCE_REVERIFICATION_CLAIM_PREFIX}5\n${sha}\trefs/heads/${SOURCE_REVERIFICATION_CLAIM_PREFIX}5\n`), /REVERIFICATION_CLAIM_INVALID/u);
 });
 
-// 커밋된 저장소 상태는 어떤 시각에도 판정 가능해야 한다(리터럴로 head를 고정하지 않는다, #942).
-test("저장소의 실제 원장·inventory·정책은 이상 없이 판정된다", async () => {
+// 모든 원천이 DUE면 recipe 전체가 의존 순서로 돈다. 기대 순서는 recipe 표와 독립된 리터럴이고, 시각은 고정 NOW다.
+const ALL_RECIPES_IN_DEPENDENCY_ORDER = Object.freeze([
+  "kric-capital-timetable", "kric-station-timetable", "korail-topology", "korail-planned-timetable", "gwangju-topology", "gwangju-accessibility", "busan-topology", "busan-accessibility", "busan-timetable",
+  "daejeon-topology", "daejeon-accessibility", "daejeon-timetable", "daegu-sources", "daegu-accessibility",
+]);
+
+test("모든 원천이 DUE면 모든 recipe가 의존 순서로 전부 돈다", () => {
+  const stale = dueAgo(2 * DAY);
+  const result = decideSourceReverification(input({ inventory: inventoryAt(stale), ledger: ledgerAt(stale) }));
+  assert.equal(result.state, "RUN");
+  assert.deepEqual(result.recipes, ALL_RECIPES_IN_DEPENDENCY_ORDER);
+  // 리터럴이 recipe 표의 dependsOn 위상 순서를 어기지 않는지는 표에서 따로 확인한다.
+  const position = new Map(result.recipes.map((id, index) => [id, index]));
+  for (const { id, dependsOn } of REVERIFICATION_RECIPES) {
+    for (const dependency of dependsOn) assert.ok(position.get(dependency) < position.get(id), `${dependency} -> ${id}`);
+  }
+});
+
+// 커밋된 저장소 상태는 어떤 시각에도 판정 가능해야 한다(#942). 기준 시각은 고정 값이라 실행 시각에 묶이지 않는다.
+// 수집 시각보다 이른 기준 시각은 clock skew로 거부되는 것이 맞아, 실데이터 기준 시각은 실데이터의 모든 만료보다 늦은 값을 쓴다.
+// 이 전제에서 모든 행은 DUE이고 모든 recipe가 돈다. 행이나 recipe가 빠지거나 판정이 뒤집히면 여기서 깨진다.
+const REAL_DATA_CLOCK = new Date("2099-01-01T00:00:00.000Z");
+// recipe 표의 due 선언에서 유도한 기대 행 수: ledger-head는 원천마다 한 행, inventory-evidence는 recipe당 한 행이다.
+const expectedDueRowCount = (recipes) => recipes.reduce((count, { due }) => count + (due?.kind === "ledger-head" ? due.sourceIds.length : due ? 1 : 0), 0);
+
+test("저장소의 실제 원장·inventory·정책은 고정된 먼 미래 시각에 모든 행이 DUE이고 모든 recipe가 돈다", async () => {
   const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
   const readJson = async (relative) => JSON.parse(await readFile(path.join(root, relative), "utf8"));
   const [inventory, ledger, policy] = await Promise.all([readJson("tools/datapack/source-inventory.json"), readJson("tools/datapack/release/source-snapshots.json"), readJson("release/product-gates/datapack-freshness-sla.json")]);
-  const table = sourceReverificationDue({ inventory, ledger, policy, now: new Date() });
-  assert.deepEqual(table.map(({ recipeId }) => recipeId).sort(), [
-    "busan-topology", "daegu-sources", "daegu-sources", "daegu-sources", "daejeon-topology", "gwangju-topology", "korail-topology", "kric-capital-timetable", "kric-station-timetable",
-  ]);
-  const result = decideSourceReverification({ inventory, ledger, policy, pullRequests: [], automationBranches: [], runs: [], openIssues: [], repository: REPOSITORY, now: new Date("2099-01-01T00:00:00.000Z"), limits: { pullRequests: 1000, runs: 200, issues: 1000 } });
+  const table = sourceReverificationDue({ inventory, ledger, policy, now: REAL_DATA_CLOCK });
+  assert.ok(table.every(({ freshUntil }) => Date.parse(freshUntil) < REAL_DATA_CLOCK.getTime()), "2099는 실데이터의 모든 freshUntil보다 늦다");
+  assert.equal(table.length, expectedDueRowCount(REVERIFICATION_RECIPES));
+  assert.ok(table.every(({ state }) => state === "DUE"), JSON.stringify(table.filter(({ state }) => state !== "DUE")));
+  const result = decideSourceReverification(input({ inventory, ledger, policy, now: REAL_DATA_CLOCK }));
   assert.equal(result.state, "RUN");
-  assert.deepEqual(result.recipes, [
-    "kric-capital-timetable", "kric-station-timetable", "korail-topology", "korail-planned-timetable", "gwangju-topology", "gwangju-accessibility", "busan-topology", "busan-accessibility", "busan-timetable",
-    "daejeon-topology", "daejeon-accessibility", "daejeon-timetable", "daegu-sources", "daegu-accessibility",
-  ]);
+  assert.deepEqual([...result.recipes].sort(), REVERIFICATION_RECIPES.map(({ id }) => id).sort());
 });
 
 test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
