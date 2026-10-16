@@ -204,7 +204,7 @@ export async function main(argv, { runGh = defaultRunGh, log = console.log, jobL
   return 0;
 }
 
-if (isMainModule()) {
+if (isMainModule(import.meta.url)) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }).catch((error) => {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;

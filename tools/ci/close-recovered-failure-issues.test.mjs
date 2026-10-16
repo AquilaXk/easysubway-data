@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   MANUAL_CLOSE_WORKFLOWS,
@@ -428,4 +430,13 @@ test("main은 회복을 닫으면 notice로 알린다", async () => {
   const lines = [];
   await main(["--repository", repository], { runGh: github.runGh, log: (line) => lines.push(line) });
   assert.ok(lines.some((line) => line.startsWith("::notice title=Recovered failure issue::#1248") && line.includes(runUrl(1001))));
+});
+
+// 진입점 판정이 깨지면 main이 실행되지 않고 exit 0으로 끝난다(운영 run 38918526410). 실제 child process로 확인한다.
+test("CLI는 잘못된 인자에 exit 1과 ARGUMENTS를 stderr로 낸다", () => {
+  const script = fileURLToPath(new URL("./close-recovered-failure-issues.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script, "--repository", "not-a-repository"], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /ARGUMENTS/);
+  assert.equal(result.stdout, "");
 });
