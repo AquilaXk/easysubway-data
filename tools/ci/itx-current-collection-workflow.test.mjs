@@ -350,8 +350,9 @@ test("probe는 같은 KST 날 다른 workflow가 collector에 들어갔는지만
       (runsByFile[ctx.file] ??= []).push(probeRun(id, ctx.file, event));
       jobsByRun[id] = [probeJob(id, ctx.job, ctx.step, conclusion)];
     });
+    // 실패한 run의 증거 artifact는 없다고 본다(내려받기 실패): 요청 수를 증명할 수 없는 실패는 오늘 더 수집하지 않는 쪽이다.
     const result = await probeItxCollectionToday({
-      env: budgetEnv({ GITHUB_EVENT_NAME: "schedule" }), now, fetchImpl: probeFetch({ runsByFile, jobsByRun }),
+      env: budgetEnv({ GITHUB_EVENT_NAME: "schedule" }), now, fetchImpl: probeFetch({ runsByFile, jobsByRun }), downloadArtifact: async () => { throw new Error("no artifact"); },
     });
     assert.equal(result.collectedToday, expected, name);
   }

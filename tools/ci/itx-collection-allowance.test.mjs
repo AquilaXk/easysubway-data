@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_MAX_RECORDS } from "../datapack/provider-response-capture.mjs";
+import { TAGO_DAILY_REQUEST_LIMIT } from "../datapack/collect-tago-itx-cheongchun-od.mjs";
+import { DEFAULT_CONTINUATION_MAX_LIVE_REQUESTS, DEFAULT_MAX_RECORDS } from "../datapack/provider-response-capture.mjs";
 import {
   ITX_COLLECTION_OUTCOME,
+  ITX_CONTINUATION_REQUEST_RESERVE,
   ITX_DAILY_REQUEST_BUDGET,
+  ITX_MANUAL_CHECK_REQUEST_RESERVE,
   ITX_MAX_COLLECTIONS_PER_DAY,
   ITX_MIN_RETRY_GAP_MS,
   ITX_PROVIDER_DAILY_LIMIT,
@@ -25,11 +28,12 @@ const failed = (runId, overrides = {}) => ({
 });
 const evaluate = (entries, overrides = {}) => evaluateItxCollectionAllowance({ entries, now: NOW, ...overrides });
 
-test("상수: 일일 예산은 공급자 한도 10,000건 미만이고 최악 요청 수는 capture 기록 상한이다", () => {
-  assert.equal(ITX_PROVIDER_DAILY_LIMIT, 10_000);
+test("상수는 한 출처에서 계산한다: 공급자 한도는 수집기, 최악 요청 수는 capture 기록 상한, 이어받기는 이어받기 상한", () => {
+  assert.equal(ITX_PROVIDER_DAILY_LIMIT, TAGO_DAILY_REQUEST_LIMIT);
   assert.equal(ITX_WORST_CASE_COLLECTION_REQUESTS, DEFAULT_MAX_RECORDS);
-  assert.equal(ITX_WORST_CASE_COLLECTION_REQUESTS, 4_000);
-  assert.equal(ITX_DAILY_REQUEST_BUDGET, 9_000);
+  assert.equal(ITX_CONTINUATION_REQUEST_RESERVE, DEFAULT_CONTINUATION_MAX_LIVE_REQUESTS);
+  // 일일 예산 + 이어받기 상한 + 사람 확인 예비분이 공급자 한도와 정확히 같다.
+  assert.equal(ITX_DAILY_REQUEST_BUDGET + ITX_CONTINUATION_REQUEST_RESERVE + ITX_MANUAL_CHECK_REQUEST_RESERVE, ITX_PROVIDER_DAILY_LIMIT);
   assert.ok(ITX_DAILY_REQUEST_BUDGET < ITX_PROVIDER_DAILY_LIMIT);
   // 예산 안에서 최악 수집 하나는 항상 들어간다. 아니면 첫 시도조차 막힌다.
   assert.ok(ITX_WORST_CASE_COLLECTION_REQUESTS <= ITX_DAILY_REQUEST_BUDGET);
@@ -65,14 +69,22 @@ test("시도 횟수 상한: 상한 직전까지 허용하고 상한에 닿으면
   assert.match(exhausted.detail, /3/u);
 });
 
+test("허용된 수집은 최악이어도 이어받기·사람 확인 예비분을 포함해 공급자 한도를 넘지 못한다 (모든 사용량에서 확인)", () => {
+  for (let used = 0; used <= ITX_PROVIDER_DAILY_LIMIT; used += 1) {
+    if (evaluate([failed(1, { requestCount: used })]).allowed) {
+      assert.ok(used + ITX_WORST_CASE_COLLECTION_REQUESTS + ITX_CONTINUATION_REQUEST_RESERVE + ITX_MANUAL_CHECK_REQUEST_RESERVE <= ITX_PROVIDER_DAILY_LIMIT, String(used));
+    }
+  }
+});
+
 test("요청 예산: 사용량 + 최악 수집 요청 수가 예산을 넘는 순간 ITX_DAILY_REQUEST_BUDGET_EXHAUSTED로 실패한다 (경계 포함)", () => {
   const edge = ITX_DAILY_REQUEST_BUDGET - ITX_WORST_CASE_COLLECTION_REQUESTS;
   assert.equal(evaluate([failed(1, { requestCount: edge })]).allowed, true);
   const over = evaluate([failed(1, { requestCount: edge + 1 })]);
   assert.deepEqual({ allowed: over.allowed, kind: over.kind, reason: over.reason }, { allowed: false, kind: "FAIL", reason: "ITX_DAILY_REQUEST_BUDGET_EXHAUSTED" });
-  assert.match(over.detail, /5001/u);
+  assert.match(over.detail, new RegExp(String(edge + 1), "u"));
   // 시도 두 번의 합으로도 넘는다.
-  assert.equal(evaluate([failed(1, { requestCount: 2_500 }), failed(2, { requestCount: 2_501 })]).reason, "ITX_DAILY_REQUEST_BUDGET_EXHAUSTED");
+  assert.equal(evaluate([failed(1, { requestCount: edge / 2 }), failed(2, { requestCount: edge / 2 + 1 })]).reason, "ITX_DAILY_REQUEST_BUDGET_EXHAUSTED");
 });
 
 test("최소 간격: 마지막 시도가 끝난 지 간격이 지나기 전에는 ITX_RETRY_TOO_SOON으로 대기한다 (경계 포함)", () => {
@@ -91,7 +103,7 @@ test("최소 간격: 마지막 시도가 끝난 지 간격이 지나기 전에�
 test("사람 force(skipRetryGap)는 최소 간격만 건너뛴다. 상한·예산·증거 규칙은 그대로다", () => {
   const recent = failed(1, { endedAt: new Date(NOW.getTime() - 60_000).toISOString() });
   assert.equal(evaluate([recent], { skipRetryGap: true }).allowed, true);
-  assert.equal(evaluate([failed(1, { requestCount: 5_001 })], { skipRetryGap: true }).reason, "ITX_DAILY_REQUEST_BUDGET_EXHAUSTED");
+  assert.equal(evaluate([failed(1, { requestCount: ITX_DAILY_REQUEST_BUDGET - ITX_WORST_CASE_COLLECTION_REQUESTS + 1 })], { skipRetryGap: true }).reason, "ITX_DAILY_REQUEST_BUDGET_EXHAUSTED");
   const attempts = Array.from({ length: ITX_MAX_COLLECTIONS_PER_DAY }, (_, index) => failed(index + 1, { requestCount: 1 }));
   assert.equal(evaluate(attempts, { skipRetryGap: true }).reason, "ITX_DAILY_ATTEMPTS_EXHAUSTED");
   assert.equal(evaluate([failed(1, { requestCount: null })], { skipRetryGap: true }).reason, "ITX_COLLECTION_EVIDENCE_MISSING");

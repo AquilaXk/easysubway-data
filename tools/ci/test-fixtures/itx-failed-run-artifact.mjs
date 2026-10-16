@@ -1,5 +1,7 @@
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { createProviderResponseRecorder, providerResponseCaptureBytes } from "../../datapack/provider-response-capture.mjs";
-import { buildZip } from "./zip-archive.mjs";
 
 const SERVICE_DATES = Object.freeze({ "7": "20261017", "8": "20261019", "9": "20261018" });
 const REQUEST_URL = (index) => `https://apis.data.go.kr/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo?serviceKey=synthetic-key&_type=json&pageNo=${index}`;
@@ -20,17 +22,16 @@ export async function captureBytes({ requestCount, transportFailures = 0 }) {
   return providerResponseCaptureBytes(recorder.captureArtifact());
 }
 
-/** itx-current-promotion 실패 run이 올리는 artifact ZIP(freshness.json·itx-result.json·provider-response-capture.json). */
-export async function failedRunArtifactZip({ requestCount, transportFailures = 0 }) {
-  return buildZip([
-    { name: "freshness.json", data: `${JSON.stringify({ schemaVersion: 1, artifactKind: "itx-admission-service-dates", timezone: "Asia/Seoul", serviceDates: SERVICE_DATES })}\n` },
-    { name: "itx-result.json", data: "{}\n" },
-    { name: "provider-response-capture.json", data: await captureBytes({ requestCount, transportFailures }) },
-  ], { dataDescriptor: true });
+const kasiFailureReceipt = { schemaVersion: 1, artifactKind: "itx-current-collection-preflight", status: "FAILED", operation: "KASI_PUBLIC_HOLIDAY_CALENDAR", failureCategory: "KASI_HTTP", attemptCount: 6 };
+
+/** itx-current-promotion 실패 run이 올리는 artifact 내용(freshness.json·itx-result.json·provider-response-capture.json)을 directory에 쓴다. */
+export async function writeFailedRunArtifact(directory, { requestCount, transportFailures = 0 }) {
+  await writeFile(path.join(directory, "freshness.json"), `${JSON.stringify({ schemaVersion: 1, artifactKind: "itx-admission-service-dates", timezone: "Asia/Seoul", serviceDates: SERVICE_DATES })}\n`);
+  await writeFile(path.join(directory, "itx-result.json"), "{}\n");
+  await writeFile(path.join(directory, "provider-response-capture.json"), await captureBytes({ requestCount, transportFailures }));
 }
 
 /** KASI 휴일 조회가 실패해 공급자(TAGO)를 부르기 전에 끝난 run의 artifact. capture는 없고 freshness.json이 실패 영수증이다. */
-export function kasiFailureArtifactZip() {
-  const receipt = { schemaVersion: 1, artifactKind: "itx-current-collection-preflight", status: "FAILED", operation: "KASI_PUBLIC_HOLIDAY_CALENDAR", failureCategory: "KASI_HTTP", attemptCount: 6 };
-  return buildZip([{ name: "freshness.json", data: `${JSON.stringify(receipt, null, 2)}\n` }], { dataDescriptor: true });
+export async function writeKasiFailureArtifact(directory) {
+  await writeFile(path.join(directory, "freshness.json"), `${JSON.stringify(kasiFailureReceipt, null, 2)}\n`);
 }

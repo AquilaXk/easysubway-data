@@ -89,7 +89,7 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   assert.ok(yml.indexOf("Prepare current ITX collection") < yml.indexOf("Collect current ITX timetable once"));
   assert.match(prepareItx, /DATA_GO_KR_SERVICE_KEY must be a nonempty single line/);
   assert.match(prepareItx, /emit-station-catalog-pack\.mjs/);
-  assert.match(prepareItx, /guard-itx-current-collection-budget\.mjs --output "\$\{TOPOLOGY_OPERATION_ROOT\}\/freshness\.json"/);
+  assert.match(prepareItx, /guard-itx-current-collection-budget\.mjs --output "\$\{TOPOLOGY_OPERATION_ROOT\}\/freshness\.json" --allow-after-failure/);
   assert.doesNotMatch(collectItx, /DATA_GO_KR_SERVICE_KEY must be a nonempty single line|emit-station-catalog-pack\.mjs|guard-itx-current-collection-budget\.mjs/);
   assert.match(prepareItx, /steps\.decision\.outputs\.itx_refresh_required == 'true'/);
   assert.match(collectItx, /steps\.decision\.outputs\.itx_refresh_required == 'true'[\s\S]*set \+e[\s\S]*collector_status=\$\?[\s\S]*\[\[ "\$\{collector_status\}" == "0" \|\| "\$\{collector_status\}" == "1" \]\][\s\S]*build-itx-current-topology-admission\.mjs/);
@@ -120,8 +120,9 @@ test("topology refresh workflow is a pinned, main-only, durable claim automation
   const uploadItx = stepBody("Upload sanitized ITX review evidence");
   assert.match(uploadItx, /steps\.decision\.outputs\.itx_refresh_required == 'true'/);
   assert.match(uploadItx, /current-capital-topology-refresh-itx-review-\$\{\{ github\.run_id \}\}/);
-  assert.match(uploadItx, /itx-result\.json[\s\S]*itx-completeness\.json[\s\S]*retention-days: 14/);
-  assert.doesNotMatch(uploadItx, /provider-response|credential|secret|raw-response/i);
+  // #1298: 실패한 날의 공급자 요청 수 증거(capture)와 KASI 실패 영수증도 올린다. 승격 판정이 이 artifact로 쓴 요청 수를 읽는다.
+  assert.match(uploadItx, /itx-result\.json[\s\S]*itx-completeness\.json[\s\S]*provider-response-capture\.json[\s\S]*freshness\.json[\s\S]*retention-days: 14/);
+  assert.doesNotMatch(uploadItx, /credential|secret|raw-response/i);
   assert.match(yml, /secrets\.DATA_GO_KR_SERVICE_KEY/);
   assert.match(yml, /Refs #636, #625/); assert.doesNotMatch(yml, /oci:|aws|retry|fallback|automerge|git push origin main/i);
 });

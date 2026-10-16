@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 // 한 run의 TAGO 요청은 정상 약 1,900건(운행일 3개 × 약 630건 + Korail 계획)이고, 재시도 한 번은 최소 1초 대기 뒤 요청 1건이라 run 대기 예산(900초) 안에서
 // 재시도는 많아야 900건이다(data#1267). 상한이 이보다 낮으면 장애 때 기록이 먼저 막혀 전송 오류로 보이므로 최악 요청 수보다 높게 둔다. 일일 한도 10,000건은 requestBudget이 지킨다.
 export const DEFAULT_MAX_RECORDS = 4_000;
+// 이어받기 수집(createProviderResponseContinuation)이 새로 보낼 수 있는 요청 수의 기본 상한.
+export const DEFAULT_CONTINUATION_MAX_LIVE_REQUESTS = 18;
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024 * 1024;
 const ALLOWED_ORIGIN = "https://apis.data.go.kr";
 
@@ -114,7 +116,7 @@ export function createProviderResponseContinuation({
   fetchImpl = fetch,
   observedAt,
   allowLiveRequest,
-  maxLiveRequests = 18,
+  maxLiveRequests = DEFAULT_CONTINUATION_MAX_LIVE_REQUESTS,
   maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
 } = {}) {
   const capture = parseProviderResponseCapture(captureBytes);

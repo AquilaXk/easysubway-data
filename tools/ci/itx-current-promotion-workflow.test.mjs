@@ -151,7 +151,7 @@ test("공급자 키는 수집 step에서만 받고 형식을 먼저 검사한다
 test("예산 가드는 같은 KST 날의 성공·진행 중 수집을 막고 실패한 수집만 예산 안에서 다시 허용하며 collector step 이름이 가드의 등록과 같다", () => {
   const guard = step("Guard KST quota window").block;
   assert.match(guard, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
-  assert.match(guard, /node tools\/ci\/guard-itx-current-collection-budget\.mjs --output "\$\{ITX_OPERATION_ROOT\}\/freshness\.json" --allow-failed-retry/u);
+  assert.match(guard, /node tools\/ci\/guard-itx-current-collection-budget\.mjs --output "\$\{ITX_OPERATION_ROOT\}\/freshness\.json" --allow-after-failure/u);
 });
 
 test("수집은 collector를 한 번만 부르고 게이트는 수집 결과·capture·replay·정책으로 판정한다", () => {

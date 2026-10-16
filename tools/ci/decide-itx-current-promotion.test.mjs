@@ -166,11 +166,11 @@ test("시도 상한·요청 예산을 넘으면 새 reason 코드로 실패해 �
   const now = kst("2026-10-10", "12:00:00");
   const attempts = [1, 2, 3].map((runId) => failedToday(runId, { requestCount: 100 }));
   assert.throws(() => decide({ now, collectionEntries: attempts }), /^Error: ITX_DAILY_ATTEMPTS_EXHAUSTED: /u);
-  assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: 5_001 })] }), /^Error: ITX_DAILY_REQUEST_BUDGET_EXHAUSTED: /u);
+  assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: 5_483 })] }), /^Error: ITX_DAILY_REQUEST_BUDGET_EXHAUSTED: /u);
   assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: null })] }), /^Error: ITX_COLLECTION_EVIDENCE_MISSING: /u);
   // 사람 force로도 상한·예산·증거 규칙은 건너뛰지 못한다.
   assert.throws(() => decide({ now, collectionEntries: attempts, force: true }), /ITX_DAILY_ATTEMPTS_EXHAUSTED/u);
-  assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: 5_001 })], force: true }), /ITX_DAILY_REQUEST_BUDGET_EXHAUSTED/u);
+  assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: 5_483 })], force: true }), /ITX_DAILY_REQUEST_BUDGET_EXHAUSTED/u);
 });
 
 test("재생은 공급자를 부르지 않으므로 소진된 예산·상한과 무관하게 진행하고, 열린 다른 PR 규칙은 그대로다", () => {
