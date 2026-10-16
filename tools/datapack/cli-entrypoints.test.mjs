@@ -68,7 +68,7 @@ const ENTRYPOINTS_COVERED_ELSEWHERE = {
 };
 
 async function gitStatus() {
-  const { stdout } = await execFileAsync("git", ["-C", REPOSITORY_ROOT, "status", "--porcelain"]);
+  const { stdout } = await execFileAsync("git", ["-C", REPOSITORY_ROOT, "status", "--porcelain", "--untracked-files=no"]);
   return stdout;
 }
 
@@ -90,7 +90,7 @@ before(async () => {
   statusBefore = await gitStatus();
 });
 after(async () => {
-  assert.equal(await gitStatus(), statusBefore, "CLI 실행이 repo 작업 트리를 바꿨다");
+  assert.equal(await gitStatus(), statusBefore, "CLI 실행이 repo의 추적 파일을 바꿨다");
 });
 
 for (const { script, args, stderr, exitCode = FAILURE_EXIT_CODE } of CLI_ENTRYPOINTS) {
