@@ -4,7 +4,9 @@
 // 원장 행·inventory·정책 항목(governance·freshness)·파생 스냅샷을 한 트랜잭션으로 등록한다.
 // 검토 admission과 governance 항목은 이 도구가 만들지 않는다(입력 파일로만 받는다).
 // 후속 등록(#1122, 무인 갱신)은 reviewAdmissionPath를 null로 두어 이전에 승인된 admissionEvidence를 그대로 이월할 수 있다.
-// 승인된 스키마(schemaFingerprint)와 약관(licenseEvidenceHash)에서 벗어나면 이월하지 않고 REVIEW_CARRY_FORWARD로 거부한다.
+// 이월은 승인된 스키마(schemaFingerprint)·약관 해시(licenseEvidenceHash)가 그대로이고, 승인된 snapshot이 원장 head에서 이어질 때만 허용하며
+// 아니면 REVIEW_CARRY_FORWARD로 거부한다. 이월의 시간 한도는 약관 거버넌스 항목의 nextReviewAt 하나다(지나면 GOVERNANCE_REVIEW_EXPIRED로 거부).
+// 약관은 실시간으로 확인하지 않고 이 저장소의 거버넌스 항목 해시로만 본다.
 // 같은 KRIC OpenAPI 데이터셋(id=162)·같은 이용약관임을 기존 kric-subway-timetable governance 항목과 비교해 고정한다.
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -39,8 +41,8 @@ const RECEIPT_KEYS = Object.freeze([
 const REVIEW_KEYS = Object.freeze([
   "schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawSha256", "byteSize", "decision", "approvedBy", "approvedAt",
 ]);
-const REVIEW_INPUT_COUNT = 4;
-const CARRY_FORWARD_INPUT_COUNT = REVIEW_INPUT_COUNT - 1;
+// 승인 모드별 등록 입력 파일 수: 공통 3개(입력·수집본·receipt)에 검토 파일 모드만 검토 파일이 더해진다.
+const ADMISSION_INPUT_COUNT = Object.freeze({ REVIEW_FILE: 4, CARRY_FORWARD: 3 });
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const fail = (code) => { throw new Error(`KRIC_STATION_REGISTRATION_${code}`); };
@@ -70,11 +72,23 @@ function parseReviewAdmission({ reviewFile, snapshotId, rawSha256, byteSize, art
 }
 
 // 이전 승인이 가리키는 스키마·약관 그대로일 때만 이월한다. 이월한 값은 승인 당시 snapshot을 가리키는 채로 남는다(새 snapshot을 사람이 승인했다고 쓰지 않는다).
-function carriedAdmissionEvidence({ previousSource, schemaFingerprint, licenseEvidenceHash }) {
+function carriedAdmissionEvidence({ previousSource, previousHead, ledger, schemaFingerprint, licenseEvidenceHash }) {
   const approved = previousSource?.admissionEvidence;
   if (approved?.decision !== "APPROVED" || approved.sourceId !== STATION_LINES_SOURCE_ID
-    || approved.schemaFingerprint !== schemaFingerprint || approved.licenseEvidenceHash !== licenseEvidenceHash) fail("REVIEW_CARRY_FORWARD");
+    || approved.schemaFingerprint !== schemaFingerprint || approved.licenseEvidenceHash !== licenseEvidenceHash
+    || !approvedSnapshotInLineage({ ledger, head: previousHead, approved })) fail("REVIEW_CARRY_FORWARD");
   return structuredClone(approved);
+}
+
+// 승인된 snapshot은 원장 head에서 previousSnapshotId로 거슬러 올라가면 나와야 하고, 그 행의 원본 sha256이 승인 증거와 같아야 한다.
+function approvedSnapshotInLineage({ ledger, head, approved }) {
+  const bySnapshotId = new Map(ledger.map((row) => [row.snapshotId, row]));
+  const visited = new Set();
+  for (let row = head; row && !visited.has(row.snapshotId); row = bySnapshotId.get(row.previousSnapshotId)) {
+    if (row.snapshotId === approved.snapshotId) return row.sourceId === STATION_LINES_SOURCE_ID && row.rawSha256 === approved.rawSha256;
+    visited.add(row.snapshotId);
+  }
+  return false;
 }
 
 export async function buildKricStationTimetableRegistrationOutputs({ repositoryRoot = ROOT, sourceInputPath, now = new Date(), expected = KRIC_API_EXPECTED_OBSERVATION } = {}) {
@@ -139,6 +153,7 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
     || receipt.capturedDate !== capturedDate || receipt.rawObjectUri !== `oci://${OCI_NAMESPACE}/${OCI_BUCKET}/${objectKey}`
     || !(storedAt >= instant(artifact.collectedAt)) || !(storedAt <= now.valueOf())
     || receipt.rawRetentionExpiresAt !== rawRetentionExpiresAt || !(instant(rawRetentionExpiresAt) > now.valueOf())) fail("RAW_RECEIPT");
+  const admissionMode = reviewFile === null ? "CARRY_FORWARD" : "REVIEW_FILE";
   const review = reviewFile === null ? null : parseReviewAdmission({ reviewFile, snapshotId, rawSha256, byteSize: collectionFile.bytes.length, artifact, now });
 
   // 4. 파생 스냅샷: 노선 목록·역 집합·요일코드별 행 수를 결속한다.
@@ -200,8 +215,8 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
       verificationTest: "tools/datapack/register-kric-station-timetables.test.mjs", snapshotId, snapshotPath: snapshotRelative,
       capturedAt: artifact.capturedAt, freshUntil: freshnessExpiresAt, lineIds: lines.map(({ lineId }) => lineId),
       tripCount: reconstruction.trips.length, stopTimeCount, rawSha256, tripsSha256, contentSha256 },
-    admissionEvidence: review === null
-      ? carriedAdmissionEvidence({ previousSource, schemaFingerprint, licenseEvidenceHash: governanceEntry.licenseReview.termsHash })
+    admissionEvidence: admissionMode === "CARRY_FORWARD"
+      ? carriedAdmissionEvidence({ previousSource, previousHead, ledger, schemaFingerprint, licenseEvidenceHash: governanceEntry.licenseReview.termsHash })
       : { candidateId: STATION_LINES_SOURCE_ID, sourceId: STATION_LINES_SOURCE_ID, catalogProviderId: CATALOG_PROVIDER_ID,
         snapshotId, decision: review.decision, approvedBy: review.approvedBy, approvedAt: review.approvedAt, rawSha256, schemaFingerprint,
         adminReviewRecordHash: sha(reviewFile.bytes), licenseEvidenceHash: governanceEntry.licenseReview.termsHash },
@@ -211,21 +226,21 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
     : [...inventory.sources, source] };
   validateSourceGovernancePolicy({ policy: registration.policy, inventory: nextInventory, freshnessPolicy: freshness });
   const snapshotBytes = json(snapshot);
-  const inputs = [inputFile, collectionFile, receiptFile, reviewFile].filter(Boolean);
+  const inputs = admissionMode === "REVIEW_FILE" ? [inputFile, collectionFile, receiptFile, reviewFile] : [inputFile, collectionFile, receiptFile];
   const values = [json(nextInventory), json(nextLedger), json(registration.policy), json(freshness)];
   return { snapshot: { relative: snapshotRelative, bytes: snapshotBytes },
-    outputs: OUTPUTS.map((relative, index) => ({ relative, bytes: values[index], prestateBytes: currentBytes[index], inputs })) };
+    outputs: OUTPUTS.map((relative, index) => ({ relative, bytes: values[index], prestateBytes: currentBytes[index], inputs, admissionMode })) };
 }
 
-const transaction = createSourceRegistrationTransaction({
-  label: STATION_LINES_SOURCE_ID,
-  validateOutputs(outputs) {
-    const inputs = outputs?.[0]?.inputs;
-    if (!Array.isArray(outputs) || !isDeepStrictEqual(outputs.map(({ relative }) => relative), [...OUTPUTS])
-      || !Array.isArray(inputs) || ![CARRY_FORWARD_INPUT_COUNT, REVIEW_INPUT_COUNT].includes(inputs.length)
-      || outputs.some((output) => !Buffer.isBuffer(output.bytes) || !Buffer.isBuffer(output.prestateBytes) || output.inputs !== inputs)) fail("OUTPUTS");
-  },
-});
+export function validateRegistrationOutputs(outputs) {
+  const inputs = outputs?.[0]?.inputs;
+  const mode = outputs?.[0]?.admissionMode;
+  if (!Array.isArray(outputs) || !isDeepStrictEqual(outputs.map(({ relative }) => relative), [...OUTPUTS])
+    || !Object.hasOwn(ADMISSION_INPUT_COUNT, mode ?? "") || !Array.isArray(inputs) || inputs.length !== ADMISSION_INPUT_COUNT[mode]
+    || outputs.some((output) => !Buffer.isBuffer(output.bytes) || !Buffer.isBuffer(output.prestateBytes) || output.inputs !== inputs || output.admissionMode !== mode)) fail("OUTPUTS");
+}
+
+const transaction = createSourceRegistrationTransaction({ label: STATION_LINES_SOURCE_ID, validateOutputs: validateRegistrationOutputs });
 
 async function writeDerivedSnapshot(file, bytes) {
   await mkdir(path.dirname(file), { recursive: true });

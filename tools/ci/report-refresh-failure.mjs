@@ -6,7 +6,10 @@
 // - 이 보고는 실패를 덮지 않는다. 갱신 job은 이미 실패했고, 이 단계는 실패를 사람이 보게 할 뿐이다.
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+
+import { REVERIFICATION_BLOCKING_CODES } from "./source-reverification-paths.mjs";
 
 export const REFRESH_WORKFLOWS = Object.freeze({
   "automation-pr-automerge.yml": "자동화 PR 자동 병합 정책(데이터 전용 PR)",
@@ -85,13 +88,31 @@ function instant(value, code) {
   return millis;
 }
 
+// 사람이 기대값을 고쳐야 풀리는 recipe 실패의 표지(#1122). 상태 블록 안에 두고, 이슈가 열려 있는 동안 쌓이기만 한다. 판정이 이 표지의 recipe를 건너뛴다.
+const FAILURE_RECIPE_ID = /^[a-z][a-z0-9-]{0,63}$/u;
+const FAILURE_CODE = /^[A-Z][A-Z0-9_]{1,63}$/u;
+const BLOCK_MARKER = /^<!-- reverification-blocked:([a-z][a-z0-9-]{0,63}):([A-Z][A-Z0-9_]{1,63}) -->$/gmu;
+const blockMarker = ({ recipeId, code }) => `<!-- reverification-blocked:${recipeId}:${code} -->`;
+const blocksOf = (text) => [...text.matchAll(BLOCK_MARKER)].map(([, recipeId, code]) => ({ recipeId, code })).filter(({ code }) => REVERIFICATION_BLOCKING_CODES.includes(code));
+
+/** 이슈 본문에 표지가 남은 막힌 recipe id(중복 없음). */
+export function blockedRecipeIdsOf(body) {
+  return [...new Set(blocksOf(body).map(({ recipeId }) => recipeId))];
+}
+
+function mergedBlocks(existing, failures) {
+  const merged = new Map([...existing, ...failures.filter(({ code }) => REVERIFICATION_BLOCKING_CODES.includes(code))].map((entry) => [blockMarker(entry), entry]));
+  return [...merged.keys()].sort();
+}
+
 // 이슈 본문의 상태 블록: 보고한 실패 run(최근 순)과 마지막 보고 시각. 같은 run을 다시 보고하지 않는 근거다.
-function statusBlock(runUrls, reportedAt) {
+function statusBlock(runUrls, reportedAt, blocks = []) {
   return [
     STATUS_START,
     `- 마지막 실패 보고 시각(UTC): ${reportedAt}`,
     `- 보고한 실패 run(최근 ${MAX_RECORDED_RUNS}개, 최근 순):`,
     ...runUrls.map((url) => `  - ${url}`),
+    ...blocks,
     STATUS_END,
   ].join("\n");
 }
@@ -102,7 +123,7 @@ function readStatus(body) {
   if (begin === -1 || end === -1 || end < begin || body.indexOf(STATUS_START, begin + 1) !== -1) fail("STATUS_BLOCK");
   const block = body.slice(begin, end);
   const runUrls = [...block.matchAll(/^  - (https:\/\/github\.com\/\S+\/actions\/runs\/\d+)$/gmu)].map((match) => match[1]);
-  return { runUrls, replace: (next) => `${body.slice(0, begin)}${next}${body.slice(end + STATUS_END.length)}` };
+  return { runUrls, blocks: blocksOf(block), replace: (next) => `${body.slice(0, begin)}${next}${body.slice(end + STATUS_END.length)}` };
 }
 
 function comments(issue) {
@@ -121,7 +142,7 @@ function planOrphanComment({ input, orphan, issue, status, issueComments, report
   return {
     action: "comment",
     issueNumber: issue.number,
-    ...(recorded ? {} : { issueBody: status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt)) }),
+    ...(recorded ? {} : { issueBody: status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt, mergedBlocks(status.blocks, []))) }),
     duplicateNumbers,
     body: [
       orphanMarker(orphan.branch),
@@ -132,20 +153,30 @@ function planOrphanComment({ input, orphan, issue, status, issueComments, report
   };
 }
 
-export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now, orphan: orphanInput }) {
+/** 이 도구(workflow 토큰)가 만든, 제목 규칙이 같은 workflow 실패 이슈(번호순). 사람이 표지를 인용한 이슈는 무시한다. */
+export function failureIssuesOf({ openIssues, workflowFile }) {
+  if (!Object.hasOwn(REPORTABLE_WORKFLOWS, workflowFile ?? "")) fail("WORKFLOW");
+  if (!Array.isArray(openIssues)) fail("ISSUES");
+  const marker = refreshFailureMarker(workflowFile);
+  const title = failureIssueTitle(workflowFile);
+  return openIssues.filter((issue) => {
+    if (!issue || typeof issue !== "object" || !Number.isSafeInteger(issue.number) || issue.number < 1
+      || typeof (issue.body ?? "") !== "string") fail("ISSUES");
+    return issue.author?.login === BOT_LOGIN && issue.title === title && (issue.body ?? "").includes(marker);
+  }).sort((left, right) => left.number - right.number);
+}
+
+const failureIssueTitle = (workflowFile) => `[Fix] 원천 자동 갱신 실패: ${REPORTABLE_WORKFLOWS[workflowFile]} (${workflowFile})`;
+
+export function planRefreshFailureReport({ repository, workflowFile, runId, openIssues, now, orphan: orphanInput, failures = [] }) {
   const input = validated({ repository, workflowFile, runId });
   const orphan = validatedOrphan(orphanInput);
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) fail("CLOCK");
   if (!Array.isArray(openIssues)) fail("ISSUES");
   const marker = refreshFailureMarker(input.workflowFile);
   const label = REPORTABLE_WORKFLOWS[input.workflowFile];
-  const title = `[Fix] 원천 자동 갱신 실패: ${label} (${input.workflowFile})`;
-  // 이 도구(workflow 토큰)가 만든, 제목 규칙이 같은 이슈만 센다. 사람이 표지를 인용한 이슈는 무시한다.
-  const matching = openIssues.filter((issue) => {
-    if (!issue || typeof issue !== "object" || !Number.isSafeInteger(issue.number) || issue.number < 1
-      || typeof (issue.body ?? "") !== "string") fail("ISSUES");
-    return issue.author?.login === BOT_LOGIN && issue.title === title && (issue.body ?? "").includes(marker);
-  }).sort((left, right) => left.number - right.number);
+  const title = failureIssueTitle(input.workflowFile);
+  const matching = failureIssuesOf({ openIssues, workflowFile: input.workflowFile });
   // 중복이 생겨도 보고를 멈추지 않는다. 가장 오래된 이슈에 계속 기록하고, 실행 결과는 복구 안내와 함께 실패로 끝낸다.
   const duplicateNumbers = matching.slice(1).map(({ number }) => number);
   const reportedAt = now.toISOString();
@@ -157,7 +188,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
     if (status.runUrls.includes(input.runUrl) || issueComments.some(({ body }) => body.includes(input.runUrl))) {
       return { action: "skip", issueNumber: issue.number, duplicateNumbers };
     }
-    const issueBody = status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt));
+    const issueBody = status.replace(statusBlock([input.runUrl, ...status.runUrls].slice(0, MAX_RECORDED_RUNS), reportedAt, mergedBlocks(status.blocks, failures)));
     const lastNotice = Math.max(
       instant(issue.createdAt, "ISSUES"),
       ...issueComments.filter(({ body }) => body.includes(COMMENT_MARKER)).map(({ createdAt }) => instant(createdAt, "ISSUES")),
@@ -194,6 +225,9 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
         ? [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`의 run이 PR 없는 claim 브랜치를 남겼고, 자동으로 삭제했다. 이전 데이터로 대체하지 않았다.`, ...orphanLines(input, orphan), orphanMarker(orphan.branch)]
         : [`- 정기 원천 갱신 workflow \`${input.workflowFile}\`가 실패했다. 이전 데이터로 대체하지 않았다.`, `- 실패 run: ${input.runUrl}`]),
       ...chainNote(input.workflowFile),
+      ...(mergedBlocks([], failures).length > 0
+        ? ["- 공급처 응답이 고정 기대 관측과 달라져 사람이 기대값을 고쳐야 풀리는 recipe가 있다(상태 블록의 표지). 이 이슈가 열려 있는 동안 그 recipe는 다시 수집하지 않는다. 기대값을 고친 뒤 이 이슈를 닫으면 다음 실행이 다시 수집한다."]
+        : []),
       "- 이 이슈는 workflow가 만들었다. 같은 workflow가 다시 실패하면 아래 상태 블록에 run을 쌓고, 하루에 한 번 댓글로 알린다.",
       "",
       "### 완료 조건",
@@ -201,7 +235,7 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
       "- 다음 run이 성공한 것을 확인하고 이 이슈를 닫는다.",
       "",
       "### 실패 상태",
-      statusBlock([input.runUrl], reportedAt),
+      statusBlock([input.runUrl], reportedAt, mergedBlocks([], failures)),
       "",
       "Refs #860",
       "Refs #870",
@@ -210,9 +244,10 @@ export function planRefreshFailureReport({ repository, workflowFile, runId, open
 }
 
 function parseArgs(argv) {
-  const names = new Map([["--workflow", "workflowFile"], ["--repository", "repository"], ["--run-id", "runId"]]);
+  const names = new Map([["--workflow", "workflowFile"], ["--repository", "repository"], ["--run-id", "runId"], ["--failures", "failuresPath"]]);
   const values = {};
-  if (!Array.isArray(argv) || argv.length !== names.size * 2) fail("ARGUMENTS");
+  // --failures(원천 재확인 controller가 쓴 실패 목록)만 선택이다.
+  if (!Array.isArray(argv) || ![names.size * 2 - 2, names.size * 2].includes(argv.length)) fail("ARGUMENTS");
   for (let index = 0; index < argv.length; index += 2) {
     const key = names.get(argv[index]);
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("ARGUMENTS");
@@ -249,9 +284,33 @@ export function defaultRunGh(args, input = null, { resolve: resolveExecutable = 
   });
 }
 
-export async function reportRefreshFailure({ argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date(), orphan } = {}) {
-  const args = parseArgs(argv);
+// controller가 쓴 실패 목록([{ recipeId, code }]). 파일이 없으면 controller가 실패를 하나도 남기지 않은 것이다. 형식이 틀리면 추정하지 않고 실패한다.
+async function readFailures(file, readText) {
+  if (file === undefined) return [];
+  let text;
+  try {
+    text = await readText(file);
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  let failures;
+  try {
+    failures = JSON.parse(text);
+  } catch {
+    return fail("FAILURES", "not JSON");
+  }
+  // 표지는 이슈 본문에 한 줄 주석으로 들어간다. 식별자 형식이 아니면 본문을 깨뜨릴 수 있어 받지 않는다.
+  if (!Array.isArray(failures) || failures.some((entry) => !FAILURE_RECIPE_ID.test(entry?.recipeId) || !FAILURE_CODE.test(entry.code))) fail("FAILURES", "entries must be { recipeId, code }");
+  return failures;
+}
+
+export async function reportRefreshFailure({
+  argv = process.argv.slice(2), runGh = defaultRunGh, now = () => new Date(), orphan, readText = (file) => readFile(file, "utf8"),
+} = {}) {
+  const { failuresPath, ...args } = parseArgs(argv);
   const input = validated(args);
+  const failures = await readFailures(failuresPath, readText);
   let openIssues;
   try {
     openIssues = JSON.parse(await runGh([
@@ -261,7 +320,7 @@ export async function reportRefreshFailure({ argv = process.argv.slice(2), runGh
     if (error instanceof SyntaxError) fail("ISSUES");
     throw error;
   }
-  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan });
+  const plan = planRefreshFailureReport({ ...input, openIssues, now: now(), orphan, failures });
   if (plan.action === "create") {
     await runGh(["issue", "create", "--repo", input.repository, "--title", plan.title, "--body-file", "-"], plan.body);
     return plan;

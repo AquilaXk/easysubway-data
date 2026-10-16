@@ -86,7 +86,7 @@ const ledgerHeadId = (ledger, sourceId) => {
   return rows.find((row) => !referenced.has(row.snapshotId)).snapshotId;
 };
 
-async function record(recipeId, { shared = new Map(), env = { DATA_GO_KR_SERVICE_KEY: "service-key-value" }, mutateRegistered } = {}) {
+async function record(recipeId, { shared = new Map(), env = { DATA_GO_KR_SERVICE_KEY: "service-key-value", KRIC_SERVICE_KEY: "kric-key-value" }, mutateRegistered } = {}) {
   const operationDir = path.join(temporary, `${recipeId}-${Math.random().toString(16).slice(2)}`);
   await mkdir(operationDir, { recursive: true });
   const calls = [];
@@ -117,7 +117,8 @@ test("KRIC 역별 시간표는 수집 → 수집본 sha·크기에 결속한 OCI
   const { calls, operationDir } = await record("kric-station-timetable");
   const file = (name) => path.join(operationDir, name);
   assert.deepEqual(calls, [
-    { script: "collect-kric-station-timetables.mjs", args: ["--output", file("collection.json")], env: {} },
+    // KRIC 키는 수집 단계의 자식 프로세스에만 명시해 전달한다. 게시·등록 단계는 받지 않는다.
+    { script: "collect-kric-station-timetables.mjs", args: ["--output", file("collection.json")], env: { KRIC_SERVICE_KEY: "kric-key-value" } },
     { script: "publish-kric-station-timetables-raw.mjs", args: ["--input", file("collection.json"), "--receipt", file("raw-receipt.json"),
       "--expected-sha256", createHash("sha256").update(FAKE_COLLECTION).digest("hex"), "--expected-byte-size", String(Buffer.byteLength(FAKE_COLLECTION))], env: {} },
     { script: "register-kric-station-timetables.mjs", args: ["--source-input", file("source-input.json"), "--expected-head-sha", HEAD], env: {} },
@@ -128,6 +129,10 @@ test("KRIC 역별 시간표는 수집 → 수집본 sha·크기에 결속한 OCI
     schemaVersion: 1, artifactKind: "kric-station-timetable-registration-input", collectionPath: file("collection.json"), receiptPath: file("raw-receipt.json"),
     reviewAdmissionPath: null, governanceEntry: governance[0],
   });
+});
+
+test("KRIC 역별 시간표는 키가 없으면 수집기를 부르지 않고 실패한다 (#1122)", async () => {
+  await assert.rejects(record("kric-station-timetable", { env: {} }), /the KRIC service key is not set/u);
 });
 
 test("KRIC 역별 시간표 등록 입력 JSON은 등록기의 실제 입력 검증을 통과해 파일 읽기에서야 멈춘다 (#1122)", async () => {

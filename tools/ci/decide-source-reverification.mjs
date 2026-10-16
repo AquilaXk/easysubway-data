@@ -15,14 +15,17 @@
 //   만료(freshUntil)는 연장하지 않는다. 만료 경보 창이 하루보다 먼저 오면 그 시각이 우선이다.
 // 의존 recipe(접근성·계획 시각표)는 의존 대상이 돌 때 함께 돈다.
 //
+// 공급처 기대 관측이 바뀌어 사람이 기대값을 고쳐야 하는 recipe(SOURCE_EXPECTATION_CHANGED)는 이 workflow의 실패 이슈가 열려 있는 동안 건너뛴다(#1122).
+// 같은 원인의 재수집을 2시간마다 되풀이하지 않기 위해서다. 건너뛴 recipe는 blocked로 드러나고, 이슈를 닫으면 다음 실행이 다시 수집한다. 만료를 연장하지 않는다.
+//
 // 이 workflow는 OCI에 게시하기 전에 claim 브랜치를 push한다. PR 없는 claim은 producer run으로 처지를 가린다.
 // 돌고 있으면 기다리고, 끝났거나 기록이 없으면 정리 대상이다(게시는 내용 주소 객체라 같은 원본으로 다시 시작해도 안전하다).
 // 판정할 수 없는 상태(원장 head 없음·갈라짐·증거 누락·열린 PR 중복·다른 workflow의 run을 가리키는 claim 등)는 이상이다.
 // 이상은 REVERIFICATION_* 코드로 실패해 실패 이슈로 드러난다. 이전·추정 값으로 대체하거나 성공으로 덮지 않는다.
 //
 // 사용: node tools/ci/decide-source-reverification.mjs --inventory <file> --ledger <file> --policy <file> --prs <collect-automation-prs.mjs 출력>
-//   --automation-branches <git ls-remote "automation/*" 출력> --runs <gh run list JSON> --repository <owner/repo>
-//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> [--github-output <path>]
+//   --automation-branches <git ls-remote "automation/*" 출력> --runs <gh run list JSON> --issues <gh issue list JSON(열린 이슈, number·title·body·author)> --repository <owner/repo>
+//   --pr-limit <gh pr list --limit> --run-limit <gh run list --limit> --issue-limit <gh issue list --limit> [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
@@ -31,6 +34,7 @@ import { requiredUtcInstant } from "../datapack/lib/utc-instant.mjs";
 import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
 import { activeRuns, ownPullRequestsByBranch, parseAutomationBranches, pendingLedgerWriters, validRepository } from "./automation-pr-state.mjs";
 import { REFRESH_CLAIM_PREFIXES, isoDurationMs } from "./refresh-open-pr-age.mjs";
+import { blockedRecipeIdsOf, failureIssuesOf } from "./report-refresh-failure.mjs";
 
 export const SOURCE_REVERIFICATION_WORKFLOW = "source-reverification.yml";
 export const SOURCE_REVERIFICATION_CLAIM_PREFIX = REFRESH_CLAIM_PREFIXES[SOURCE_REVERIFICATION_WORKFLOW];
@@ -145,6 +149,13 @@ function selectRecipes(dueRows, recipes) {
   return recipes.filter(({ id }) => selected.has(id)).map(({ id }) => id);
 }
 
+// 실패 이슈 표지로 막힌 recipe와 그에 의존하는 recipe(recipe 표 순서 = 의존 순서).
+function blockedRecipeIds({ openIssues, recipes }) {
+  const blocked = new Set(failureIssuesOf({ openIssues, workflowFile: SOURCE_REVERIFICATION_WORKFLOW }).flatMap(({ body }) => blockedRecipeIdsOf(body ?? "")));
+  for (const recipe of recipes) if (recipe.dependsOn.some((dependency) => blocked.has(dependency))) blocked.add(recipe.id);
+  return blocked;
+}
+
 // PR 없는 claim의 처지를 producer run(claim 브랜치 이름의 run id)으로 가린다. 복구는 하지 않는다(정리하고 다시 시작한다).
 function classifyUnboundClaim(branch, runs) {
   const runId = branch.slice(SOURCE_REVERIFICATION_CLAIM_PREFIX.length);
@@ -155,14 +166,15 @@ function classifyUnboundClaim(branch, runs) {
   return found.status === "completed" ? "ABANDONED" : "RUNNING";
 }
 
-function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, repository, now, limits }) {
-  if (!Array.isArray(pullRequests) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
+function assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits }) {
+  if (!Array.isArray(pullRequests) || !Array.isArray(openIssues) || !Array.isArray(automationBranches) || !Array.isArray(runs) || !validRepository(repository)
     || !(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(ledger) || !Array.isArray(inventory?.sources)
-    || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1) fail("REVERIFICATION_INPUT_INVALID");
+    || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1 || !Number.isSafeInteger(limits?.runs) || limits.runs < 1 || !Number.isSafeInteger(limits?.issues) || limits.issues < 1) fail("REVERIFICATION_INPUT_INVALID");
   // 목록 조회에는 개수 상한이 있다. 상한과 같은 개수면 잘렸을 수 있으므로 일부만 보고 판정하지 않는다(#972 리뷰 F3).
   // 상한은 열린 PR에만 적용한다. 목록은 열린 PR 전체와 automation/* 브랜치별 PR(전 상태)이고(collect-automation-prs.mjs), 닫힘·병합 이력은 쌓여도 판정에 영향이 없다(#993).
   if (pullRequests.filter(({ state }) => state === "OPEN").length >= limits.pullRequests) fail("REVERIFICATION_LIST_TRUNCATED", `pull request list reached its limit ${limits.pullRequests}`);
   if (activeRuns(runs).length >= limits.runs) fail("REVERIFICATION_LIST_TRUNCATED", `run list reached its limit ${limits.runs}`);
+  if (openIssues.length >= limits.issues) fail("REVERIFICATION_LIST_TRUNCATED", `issue list reached its limit ${limits.issues}`);
 }
 
 // 이 workflow의 열린 PR과 claim 브랜치의 처지. 정할 수 있으면 state를, 아니면 state 없이 정리 대상 claim만 돌려준다.
@@ -189,25 +201,28 @@ function classifyClaims({ pullRequests, automationBranches, runs, repository }) 
   return { state: null, cleanupClaims };
 }
 
-export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, repository, now, limits, recipes = REVERIFICATION_RECIPES } = {}) {
-  assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, repository, now, limits });
+export function decideSourceReverification({ inventory, ledger, policy, pullRequests, automationBranches, runs, openIssues, repository, now, limits, recipes = REVERIFICATION_RECIPES } = {}) {
+  assertDecisionInput({ inventory, ledger, pullRequests, automationBranches, runs, openIssues, repository, now, limits });
   const dueRows = sourceReverificationDue({ inventory, ledger, policy, now, recipes });
-  const recipeIds = selectRecipes(dueRows, recipes);
-  const due = dueRows.filter(({ state }) => state === "DUE").map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
+  const blockedIds = blockedRecipeIds({ openIssues, recipes });
+  const selected = selectRecipes(dueRows, recipes);
+  const recipeIds = selected.filter((id) => !blockedIds.has(id));
+  const blocked = selected.filter((id) => blockedIds.has(id));
+  const due = dueRows.filter(({ state, recipeId }) => state === "DUE" && !blockedIds.has(recipeId)).map(({ recipeId, sourceId, dueAt }) => ({ recipeId, sourceId, dueAt }));
   const { state, branch, cleanupClaims } = classifyClaims({ pullRequests, automationBranches, runs, repository });
   if (state) return { state, branch, due: [], recipes: [], cleanupClaims };
-  if (recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], cleanupClaims };
+  if (recipeIds.length === 0) return { state: "NOT_DUE", due: [], recipes: [], blocked, cleanupClaims };
   const pending = pendingLedgerWriters({ pullRequests, automationBranches, repository, exceptWorkflow: SOURCE_REVERIFICATION_WORKFLOW });
   const blockedBy = [...pending.pullRequests, ...pending.branches];
   return blockedBy.length > 0
-    ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, due, recipes: recipeIds, cleanupClaims }
-    : { state: "RUN", due, recipes: recipeIds, cleanupClaims };
+    ? { state: "BLOCKED_BY_PENDING_PR", blockedBy, due, recipes: recipeIds, blocked, cleanupClaims }
+    : { state: "RUN", due, recipes: recipeIds, blocked, cleanupClaims };
 }
 
 function parseArgs(argv) {
   const keys = new Map([
-    ["--inventory", "inventory"], ["--ledger", "ledger"], ["--policy", "policy"], ["--prs", "prs"], ["--automation-branches", "automationBranches"], ["--runs", "runs"],
-    ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--github-output", "githubOutput"],
+    ["--inventory", "inventory"], ["--ledger", "ledger"], ["--policy", "policy"], ["--prs", "prs"], ["--automation-branches", "automationBranches"], ["--runs", "runs"], ["--issues", "issues"],
+    ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--run-limit", "runLimit"], ["--issue-limit", "issueLimit"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -215,7 +230,7 @@ function parseArgs(argv) {
     if (!key || Object.hasOwn(values, key) || typeof argv[index + 1] !== "string") fail("REVERIFICATION_INPUT_INVALID", `argument ${String(argv[index])}`);
     values[key] = argv[index + 1];
   }
-  for (const key of ["inventory", "ledger", "policy", "prs", "automationBranches", "runs", "repository", "prLimit", "runLimit"]) {
+  for (const key of ["inventory", "ledger", "policy", "prs", "automationBranches", "runs", "issues", "repository", "prLimit", "runLimit", "issueLimit"]) {
     if (!Object.hasOwn(values, key)) fail("REVERIFICATION_INPUT_INVALID", `missing --${key}`);
   }
   return values;
@@ -229,13 +244,13 @@ export async function main(argv, {
   const result = decideSourceReverification({
     inventory: await readJson(values.inventory), ledger: await readJson(values.ledger), policy: await readJson(values.policy),
     pullRequests: await readJson(values.prs), automationBranches: parseAutomationBranches(await readText(values.automationBranches)), runs: await readJson(values.runs),
-    repository: values.repository, now, limits: { pullRequests: Number(values.prLimit), runs: Number(values.runLimit) },
+    openIssues: await readJson(values.issues), repository: values.repository, now, limits: { pullRequests: Number(values.prLimit), runs: Number(values.runLimit), issues: Number(values.issueLimit) },
   });
   log(JSON.stringify(result));
   if (values.githubOutput) {
     await appendText(values.githubOutput, [
       `state=${result.state}`, `branch=${result.branch ?? ""}`, `recipes=${result.recipes.join(",")}`,
-      `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, "",
+      `cleanup_claims=${result.cleanupClaims.join(",")}`, `blocked_by=${(result.blockedBy ?? []).join(",")}`, `blocked_recipes=${(result.blocked ?? []).join(",")}`, "",
     ].join("\n"));
   }
   return result;

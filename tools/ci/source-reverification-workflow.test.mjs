@@ -44,8 +44,25 @@ test("판정 step이 claim·수집보다 먼저 돌고 PR·run·브랜치 목록
   assert.doesNotMatch(block, /--status "?completed|--status completed/u);
   assert.match(block, /jq -s 'add \| unique_by\(\.databaseId\)' "\$\{decision_root\}"\/runs\/\*\.json > "\$\{decision_root\}\/runs\.json"/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/\*" > /u);
-  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  assert.match(block, /node tools\/ci\/decide-source-reverification\.mjs --inventory tools\/datapack\/source-inventory\.json --ledger tools\/datapack\/release\/source-snapshots\.json --policy release\/product-gates\/datapack-freshness-sla\.json --prs "[^"]+" --automation-branches "[^"]+" --runs "[^"]+" --issues "[^"]+" --repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --github-output "\$\{GITHUB_OUTPUT\}"/u);
   before("Decide which P7D sources are due", "Claim exact main before provider access");
+});
+
+// #1122: 공급처 기대 관측이 바뀐 recipe는 사람이 고칠 때까지 같은 실패를 되풀이한다. 판정이 열린 실패 이슈의 표지를 읽어 건너뛰고, 보고는 controller의 실패 목록으로 표지를 남긴다.
+test("판정은 열린 이슈를 상한 1000으로 읽고, 건너뛴 recipe가 있으면 경고하며, 실패 보고는 controller의 실패 목록을 넘긴다 (#1122)", () => {
+  const { block } = step("Decide which P7D sources are due");
+  assert.match(block, /gh issue list --repo "\$\{GITHUB_REPOSITORY\}" --state open --limit 1000 --json number,title,body,author > "[^"]+"/u);
+  assert.equal((block.match(/gh issue list/gu) ?? []).length, 1);
+  const warn = step("Note recipes skipped because of an open expectation-change failure issue");
+  assert.equal(ifCondition(warn.block), "${{ steps.decision.outputs.blocked_recipes != '' }}");
+  assert.match(warn.block, /\n          BLOCKED_RECIPES: \$\{\{ steps\.decision\.outputs\.blocked_recipes \}\}\n/u);
+  assert.doesNotMatch(warn.block, /secrets\./u);
+  const report = step("Report refresh failure as an issue");
+  assert.match(report.block, /--run-id "\$\{GITHUB_RUN_ID\}" --failures "\$\{RUNNER_TEMP\}\/source-reverification\/\$\{GITHUB_RUN_ID\}\/operation\/failures\.json"/u);
+  // controller가 쓰는 위치와 같다: --operation-root "${operation}/operation", operation="${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}".
+  const reverify = step("Reverify due P7D sources").block;
+  assert.match(reverify, /operation="\$\{RUNNER_TEMP\}\/source-reverification\/\$\{GITHUB_RUN_ID\}"/u);
+  assert.match(reverify, /--operation-root "\$\{operation\}\/operation"/u);
 });
 
 test("OPEN_PR이면 App 토큰 → required CI 보장 → 열린 PR 상한 검사 순서로 돈다", () => {

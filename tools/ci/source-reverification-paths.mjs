@@ -21,6 +21,13 @@ export const SOURCE_REVERIFICATION_RECIPE_IDS = Object.freeze([
 ]);
 
 /**
+ * 공급처 기대 관측(고정 기대 trip 수 등)이 바뀌어 사람이 기대값을 고쳐야 풀리는 실패 코드(#1122).
+ * 이 코드로 실패한 recipe는 실패 이슈가 열려 있는 동안 다시 돌지 않는다(같은 원인의 재수집을 2시간마다 되풀이하지 않는다).
+ */
+export const SOURCE_EXPECTATION_CHANGED = "SOURCE_EXPECTATION_CHANGED";
+export const REVERIFICATION_BLOCKING_CODES = Object.freeze([SOURCE_EXPECTATION_CHANGED]);
+
+/**
  * 재확인이 제자리에서 바꿀 수 있는 원천 등록 결과 파일 셋.
  * 신선도 정책(release/product-gates/datapack-freshness-sla.json)은 일부러 뺐다(#987 리뷰 F4): 등록 도구는 이 파일을 입력으로 읽고
  * 트랜잭션으로 다시 쓰지만, 이미 등록된 원천의 재확인은 바이트가 같아야 한다. dueAt·주기·허용 오차를 정하는 정책이 바뀌면

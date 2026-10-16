@@ -57,7 +57,9 @@ jobs:
             gh run list --repo "${GITHUB_REPOSITORY}" --workflow source-reverification.yml --status "${status}" --limit 200 --json databaseId,status,conclusion,workflowName,headBranch,headSha > "${decision_root}/runs/${status}.json"
           done
           jq -s 'add | unique_by(.databaseId)' "${decision_root}"/runs/*.json > "${decision_root}/runs.json"
-          node tools/ci/decide-source-reverification.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --policy release/product-gates/datapack-freshness-sla.json --prs "${decision_root}/prs.json" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --run-limit 200 --github-output "${GITHUB_OUTPUT}"
+          # #1122: 열린 이슈의 막힌 recipe 표지(공급처 기대 관측 변경)를 읽어 같은 원인의 재수집을 건너뛴다. 목록이 상한과 같은 개수면 잘렸을 수 있어 판정이 실패한다.
+          gh issue list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 --json number,title,body,author > "${decision_root}/issues.json"
+          node tools/ci/decide-source-reverification.mjs --inventory tools/datapack/source-inventory.json --ledger tools/datapack/release/source-snapshots.json --policy release/product-gates/datapack-freshness-sla.json --prs "${decision_root}/prs.json" --automation-branches "${decision_root}/automation-branches.txt" --runs "${decision_root}/runs.json" --issues "${decision_root}/issues.json" --repository "${GITHUB_REPOSITORY}" --pr-limit 1000 --run-limit 200 --issue-limit 1000 --github-output "${GITHUB_OUTPUT}"
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
@@ -101,6 +103,12 @@ jobs:
           CLAIM_BRANCH: ${{ steps.decision.outputs.branch }}
         run: |
           echo "::notice title=Source reverification::the run that created ${CLAIM_BRANCH} is still running; waiting for it to finish."
+      - name: Note recipes skipped because of an open expectation-change failure issue
+        if: ${{ steps.decision.outputs.blocked_recipes != '' }}
+        env:
+          BLOCKED_RECIPES: ${{ steps.decision.outputs.blocked_recipes }}
+        run: |
+          echo "::warning title=Source reverification::${BLOCKED_RECIPES} skipped: the provider's expected observation changed and the failure issue is still open. Update the expected values, then close the issue to resume."
       - name: Note no P7D source is due
         if: ${{ steps.decision.outputs.state == 'NOT_DUE' }}
         run: |
@@ -251,4 +259,5 @@ jobs:
         if: ${{ failure() || cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/ci/report-refresh-failure.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}"
+        # #1122: controller가 남긴 실패 목록(없을 수 있다)에서 기대 관측 변경 실패를 이슈에 표지로 남긴다.
+        run: node tools/ci/report-refresh-failure.mjs --workflow source-reverification.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --failures "${RUNNER_TEMP}/source-reverification/${GITHUB_RUN_ID}/operation/failures.json"

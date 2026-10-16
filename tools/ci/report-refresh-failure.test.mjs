@@ -12,6 +12,7 @@ import {
   GH_CANDIDATES,
   REFRESH_WORKFLOWS,
   defaultRunGh,
+  failureIssuesOf,
   planRefreshFailureReport,
   refreshFailureMarker,
   reportRefreshFailure,
@@ -388,4 +389,64 @@ test("체인 실패 이슈는 롤백 뒤 공개 manifest와 서버 활성 FINAL�
   const again = planRefreshFailureReport({ repository, workflowFile: "datapack-release-cross-repo-chain.yml", runId: "37900000003", openIssues: [created], now: new Date("2026-10-09T00:00:00.000Z") });
   assert.equal(again.action, "comment");
   assert.ok(again.body.includes(CHAIN_ROLLBACK_NOTE));
+});
+
+// #1122: 공급처 기대 관측이 바뀐 recipe는 사람이 기대값을 고칠 때까지 같은 실패를 되풀이한다. 실패 이슈 상태 블록에 막힌 recipe 표지를 남겨 판정이 건너뛰게 한다.
+const reverificationFile = "source-reverification.yml";
+const blockMarker = (recipeId, code) => `<!-- reverification-blocked:${recipeId}:${code} -->`;
+const blocking = { recipeId: "kric-station-timetable", code: "SOURCE_EXPECTATION_CHANGED" };
+const reverificationReport = (runId, now, extra = {}) => planRefreshFailureReport({ repository, workflowFile: reverificationFile, runId: String(runId), now, ...extra });
+
+test("기대 관측 변경 실패는 새 실패 이슈의 상태 블록에 막힌 recipe 표지를 남기고, 다른 코드는 남기지 않는다 (#1122)", () => {
+  const plan = reverificationReport(1, start, { openIssues: [], failures: [blocking, { recipeId: "busan-timetable", code: "SOURCE_FETCH_FAILED" }] });
+  assert.equal(plan.action, "create");
+  const status = plan.body.slice(plan.body.indexOf("<!-- refresh-failure-status:start -->"), plan.body.indexOf("<!-- refresh-failure-status:end -->"));
+  assert.ok(status.includes(blockMarker("kric-station-timetable", "SOURCE_EXPECTATION_CHANGED")));
+  assert.doesNotMatch(plan.body, /reverification-blocked:busan-timetable/u);
+  assert.match(plan.body, /이 이슈를 닫으면 다음 실행이 다시 수집한다/u);
+  assert.doesNotMatch(reverificationReport(1, start, { openIssues: [], failures: [] }).body, /다시 수집하지 않는다/u);
+});
+
+test("이슈가 열려 있는 동안 표지는 유지된다: 표지 없는 후속 실패 보고가 지우지 않고 새 표지는 더해진다 (#1122)", () => {
+  const first = reverificationReport(1, start, { openIssues: [], failures: [blocking] });
+  const issue = { number: 5, title: first.title, body: first.body, author: { login: "app/github-actions" }, createdAt: start.toISOString(), comments: [] };
+  const later = new Date(start.getTime() + hours(2));
+  const plain = reverificationReport(2, later, { openIssues: [issue], failures: [] });
+  assert.ok(plain.issueBody.includes(blockMarker("kric-station-timetable", "SOURCE_EXPECTATION_CHANGED")));
+  const more = reverificationReport(3, later, { openIssues: [{ ...issue, body: plain.issueBody }], failures: [{ recipeId: "korail-topology", code: "SOURCE_EXPECTATION_CHANGED" }] });
+  assert.ok(more.issueBody.includes(blockMarker("kric-station-timetable", "SOURCE_EXPECTATION_CHANGED")));
+  assert.ok(more.issueBody.includes(blockMarker("korail-topology", "SOURCE_EXPECTATION_CHANGED")));
+  assert.equal((more.issueBody.match(/reverification-blocked:kric-station-timetable/gu) ?? []).length, 1);
+});
+
+test("막힌 recipe 표지는 이 workflow의 봇 실패 이슈만 가리킨다 (#1122)", () => {
+  const first = reverificationReport(1, start, { openIssues: [], failures: [blocking] });
+  const issue = { number: 5, title: first.title, body: first.body, author: { login: "app/github-actions" }, createdAt: start.toISOString(), comments: [] };
+  assert.deepEqual(failureIssuesOf({ openIssues: [issue], workflowFile: reverificationFile }).map(({ number }) => number), [5]);
+  assert.deepEqual(failureIssuesOf({ openIssues: [{ ...issue, author: { login: "someone" } }], workflowFile: reverificationFile }), []);
+  assert.deepEqual(failureIssuesOf({ openIssues: [issue], workflowFile: workflowFile }), []);
+});
+
+test("CLI의 --failures 파일은 기대 관측 변경 실패만 표지로 옮기고, 파일이 없으면 실패 없음이며, 형식이 틀리면 실패한다 (#1122)", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "refresh-failures-"));
+  try {
+    const file = path.join(dir, "failures.json");
+    await writeFile(file, JSON.stringify([blocking, { recipeId: "busan-timetable", code: "SOURCE_FETCH_FAILED" }]));
+    const run = (failuresPath) => reportRefreshFailure({
+      argv: ["--workflow", reverificationFile, "--repository", repository, "--run-id", "9", "--failures", failuresPath],
+      runGh: async (args) => (args[1] === "list" ? "[]" : ""), now: () => start,
+    });
+    const withFailures = await run(file);
+    assert.ok(withFailures.body.includes(blockMarker("kric-station-timetable", "SOURCE_EXPECTATION_CHANGED")));
+    assert.doesNotMatch(withFailures.body, /busan-timetable/u);
+    assert.doesNotMatch((await run(path.join(dir, "absent.json"))).body, /reverification-blocked/u);
+    await writeFile(file, "{\"not\":\"a list\"}");
+    await assert.rejects(run(file), /REFRESH_FAILURE_REPORT_FAILURES/u);
+    await writeFile(file, "not json");
+    await assert.rejects(run(file), /REFRESH_FAILURE_REPORT_FAILURES/u);
+    await writeFile(file, JSON.stringify([{ recipeId: "a -->\n<!-- x", code: "SOURCE_EXPECTATION_CHANGED" }]));
+    await assert.rejects(run(file), /REFRESH_FAILURE_REPORT_FAILURES/u);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

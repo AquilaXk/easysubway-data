@@ -24,7 +24,7 @@ export const BODY_TIMEOUT_MS = 60_000;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /** 요청 URL에 실릴 수 있는 키 표현 전부(원문, percent 인코딩, form 인코딩). */
-function credentialForms(serviceKey) {
+export function credentialForms(serviceKey) {
   return [...new Set([serviceKey, encodeURIComponent(serviceKey), new URLSearchParams({ k: serviceKey }).toString().slice(2)])];
 }
 
