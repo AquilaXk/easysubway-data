@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
       - name: Identify the release-candidate run
@@ -168,7 +168,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
       - name: Require cross-repository dispatch app credentials
@@ -190,7 +190,7 @@ jobs:
         run: node tools/ci/datapack-release-chain.mjs plan --state "${RUNNER_TEMP}/chain-state.json"
       - name: Create the hub token
         id: hub-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -209,7 +209,7 @@ jobs:
         run: node tools/ci/datapack-release-chain.mjs publish --state "${RUNNER_TEMP}/chain-state.json"
       - name: Create the platform token
         id: platform-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -218,7 +218,7 @@ jobs:
           permission-actions: write
       - name: Create the backend read token
         id: backend-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -244,7 +244,7 @@ jobs:
       - name: Create the platform token for the rollback
         id: platform-token-rollback
         if: ${{ failure() && steps.deploy.outcome == 'success' && steps.verify.outcome == 'failure' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -258,7 +258,7 @@ jobs:
         run: node tools/ci/datapack-release-chain.mjs rollback --state "${RUNNER_TEMP}/chain-state.json"
       - name: Upload the chain state
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: easysubway-datapack-chain-state-${{ github.run_id }}
           path: ${{ runner.temp }}/chain-state.json
@@ -285,7 +285,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
       # 실패한 release run 자체를 체인 실패 이슈에 쌓는다. 같은 run은 다시 쓰지 않는다.
