@@ -17,7 +17,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 
 import { responsesFromCollection } from "./collect-kric-station-timetables.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
-import { carriedAdmissionGovernanceViolation, carriedAdmissionLineage } from "./lib/carried-admission.mjs";
+import { carriedAdmissionGovernanceViolation, carriedAdmissionLineage, governanceReviewCurrent } from "./lib/carried-admission.mjs";
 import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY } from "./lib/kric-station-row-timetable-trips.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
@@ -76,8 +76,10 @@ function parseReviewAdmission({ reviewFile, snapshotId, rawSha256, byteSize, art
 // 이월한 값은 승인 당시 snapshot을 가리키는 채로 남는다(새 snapshot을 사람이 승인했다고 쓰지 않는다).
 function carriedAdmissionEvidence({ previousSource, ledger, head, schemaFingerprint, governanceEntry, now }) {
   const approved = previousSource?.admissionEvidence;
-  const { violation } = carriedAdmissionLineage({ sourceId: STATION_LINES_SOURCE_ID, approved, ledger, head, schemaFingerprint });
-  if (violation || carriedAdmissionGovernanceViolation({ licenseEvidenceHash: approved.licenseEvidenceHash, governanceEntry, evaluatedAt: now.valueOf() })) fail("REVIEW_CARRY_FORWARD");
+  const { violation: lineageViolation } = carriedAdmissionLineage({ sourceId: STATION_LINES_SOURCE_ID, approved, ledger, head, schemaFingerprint });
+  const violation = lineageViolation
+    ?? carriedAdmissionGovernanceViolation({ licenseEvidenceHash: approved.licenseEvidenceHash, governanceEntry, evaluatedAt: now.valueOf() });
+  if (violation) fail(`REVIEW_CARRY_FORWARD: ${violation}`);
   return structuredClone(approved);
 }
 
@@ -111,7 +113,7 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
   const governanceEntry = input.governanceEntry;
   if (!termsEntry || governanceEntry?.sourceId !== STATION_LINES_SOURCE_ID
     || canonicalJson({ ...governanceEntry, sourceId: TERMS_SOURCE_ID }) !== canonicalJson(termsEntry)) fail("GOVERNANCE_TERMS_MISMATCH");
-  if (!(Date.parse(governanceEntry.licenseReview?.nextReviewAt ?? "") > now.valueOf())) fail("GOVERNANCE_REVIEW_EXPIRED");
+  if (!governanceReviewCurrent(governanceEntry, now.valueOf())) fail("GOVERNANCE_REVIEW_EXPIRED");
 
   const previousSource = inventory.sources.find(({ id }) => id === STATION_LINES_SOURCE_ID) ?? null;
   const heads = validateLineage(ledger).headsBySource;

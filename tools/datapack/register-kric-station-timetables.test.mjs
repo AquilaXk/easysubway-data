@@ -270,7 +270,7 @@ test("후속 등록은 검토 승인 파일 없이 이전 승인을 이월하고
 test("승인을 이월할 수 없으면(첫 등록·미승인·스키마 변경·약관 변경) REVIEW_CARRY_FORWARD로 쓰기 전에 거부한다 (#1122)", async (t) => {
   const { root, files, input, now } = await fixture(t);
   await withoutReview(files, input);
-  await assert.rejects(registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED }), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD/u);
+  await assert.rejects(registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED }), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD: NOT_APPROVED/u);
   const before = await snapshotOf(root);
   await writeFile(files.sourceInputPath, `${JSON.stringify(input, null, 2)}\n`);
   await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
@@ -280,15 +280,16 @@ test("승인을 이월할 수 없으면(첫 등록·미승인·스키마 변경�
   await withoutReview(next.files, next.input);
   const registerNext = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
   // 승인된 snapshot이 원장 head에서 이어지는 행이어야 한다: 원장에 없는 snapshotId, 원장 행과 다른 rawSha256은 이월하지 않는다.
+  // 거부 사유 코드는 오류 메시지에 그대로 남는다.
   const changes = [
-    { decision: "PENDING" }, { schemaFingerprint: "0".repeat(64) }, { licenseEvidenceHash: "0".repeat(64) },
-    { snapshotId: `${STATION_LINES_SOURCE_ID}-19990101` }, { rawSha256: "0".repeat(64) },
+    [{ decision: "PENDING" }, "NOT_APPROVED"], [{ schemaFingerprint: "0".repeat(64) }, "SCHEMA_CHANGED"], [{ licenseEvidenceHash: "0".repeat(64) }, "LICENSE_CHANGED"],
+    [{ snapshotId: `${STATION_LINES_SOURCE_ID}-19990101` }, "NOT_ANCESTOR"], [{ rawSha256: "0".repeat(64) }, "APPROVED_RAW_MISMATCH"],
   ];
-  for (const change of changes) {
+  for (const [change, reason] of changes) {
     const inventory = JSON.parse(registered[OUTPUTS[0]]);
     Object.assign(inventory.sources.find(({ id }) => id === STATION_LINES_SOURCE_ID).admissionEvidence, change);
     await writeFile(path.join(root, OUTPUTS[0]), `${JSON.stringify(inventory, null, 2)}\n`);
-    await assert.rejects(registerNext(), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD/u, JSON.stringify(change));
+    await assert.rejects(registerNext(), new RegExp(`KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD: ${reason}`, "u"), JSON.stringify(change));
     assert.deepEqual(await snapshotOf(root), { ...registered, [OUTPUTS[0]]: await readFile(path.join(root, OUTPUTS[0])) });
   }
 });

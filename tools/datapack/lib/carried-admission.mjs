@@ -12,36 +12,35 @@ export const CARRY_FORWARD_ADMISSION_SOURCE_IDS = Object.freeze([STATION_LINES_T
 
 /**
  * 현재 head에서 previousSnapshotId로 거슬러 승인된 snapshot에 닿는지 판정한다.
- * 이월할 수 있으면 { chain }(head부터 승인 snapshot까지의 snapshotId), 아니면 { violation }을 돌려준다.
- * ledger는 호출자가 계보를 검증한 원장(validateLineage·terminalHead)이어야 한다. 한 원천의 행만 서로 이어진다는 전제를 여기서 다시 확인하지 않는다.
+ * 이월할 수 있으면 { chainLength }(head부터 승인 snapshot까지의 snapshot 수, 둘 포함), 아니면 { violation }을 돌려준다.
+ * 원장에는 여러 원천의 행이 섞여 있으므로 계보는 대상 원천의 행만으로 따라가고, 거치는 모든 행의 sourceId를 확인한다.
  */
 export function carriedAdmissionLineage({ sourceId, approved, ledger, head, schemaFingerprint }) {
   if (!CARRY_FORWARD_ADMISSION_SOURCE_IDS.includes(sourceId)) return { violation: "SOURCE_NOT_ELIGIBLE" };
   if (approved?.decision !== "APPROVED" || approved.sourceId !== sourceId) return { violation: "NOT_APPROVED" };
   if (!SHA256.test(approved.licenseEvidenceHash ?? "")) return { violation: "LICENSE_EVIDENCE_MISSING" };
   if (!SHA256.test(schemaFingerprint ?? "") || approved.schemaFingerprint !== schemaFingerprint) return { violation: "SCHEMA_CHANGED" };
-  const bySnapshotId = new Map(ledger.map((row) => [row.snapshotId, row]));
+  const bySnapshotId = new Map(ledger.filter((row) => row.sourceId === sourceId).map((row) => [row.snapshotId, row]));
   // 이월의 시간 한도는 약관 nextReviewAt(사람 재검토) 하나다. 무인 갱신이 매일 snapshot을 쌓으므로 체인 깊이는 정책 한도가 아니다.
   // 탐색은 방문 집합이 막으므로 원장 행 수를 넘지 못한다.
-  const chain = [];
   const visited = new Set();
   for (let row = head; row; row = bySnapshotId.get(row.previousSnapshotId)) {
+    if (row.sourceId !== sourceId) return { violation: "LINEAGE_SOURCE_MISMATCH" };
     if (visited.has(row.snapshotId)) return { violation: "LINEAGE_CYCLE" };
     visited.add(row.snapshotId);
-    chain.push(row.snapshotId);
     if (row.snapshotId !== approved.snapshotId) continue;
-    return row.rawSha256 === approved.rawSha256 ? { chain } : { violation: "APPROVED_RAW_MISMATCH" };
+    return row.rawSha256 === approved.rawSha256 ? { chainLength: visited.size } : { violation: "APPROVED_RAW_MISMATCH" };
   }
   return { violation: "NOT_ANCESTOR" };
 }
 
-/**
- * 이월한 승인의 약관 결속을 거버넌스 항목으로 판정한다. 위반이 없으면 null이다.
- * evaluatedAt은 판정 시각(UTC 밀리초)이다. 이월의 시간 한도는 약관 항목의 nextReviewAt 하나다.
- */
+/** 약관 재검토 기한(nextReviewAt)이 판정 시각(UTC 밀리초)까지 지나지 않았는지. 이월과 등록의 시간 한도는 이 규칙 하나다. */
+export function governanceReviewCurrent(governanceEntry, evaluatedAt) {
+  return Date.parse(governanceEntry?.licenseReview?.nextReviewAt ?? "") > evaluatedAt;
+}
+
+/** 이월한 승인의 약관 결속을 거버넌스 항목으로 판정한다. 위반이 없으면 null이다. */
 export function carriedAdmissionGovernanceViolation({ licenseEvidenceHash, governanceEntry, evaluatedAt }) {
-  const review = governanceEntry?.licenseReview;
-  if (!SHA256.test(licenseEvidenceHash ?? "") || review?.termsHash !== licenseEvidenceHash) return "LICENSE_CHANGED";
-  if (!(Date.parse(review.nextReviewAt ?? "") > evaluatedAt)) return "REVIEW_EXPIRED";
-  return null;
+  if (!SHA256.test(licenseEvidenceHash ?? "") || governanceEntry?.licenseReview?.termsHash !== licenseEvidenceHash) return "LICENSE_CHANGED";
+  return governanceReviewCurrent(governanceEntry, evaluatedAt) ? null : "REVIEW_EXPIRED";
 }

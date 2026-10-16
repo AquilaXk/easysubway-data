@@ -20,6 +20,7 @@ import { SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { rebindCurrentSeoulTransferSourceAdmission } from "./rebind-current-seoul-transfer-source-admission.mjs";
 import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { fixtureBytes, independentFiveRegionFixture } from "./test-fixtures/five-region-source-input.mjs";
 import {
   rewriteSeoulTransferFixtureCanonicalPack,
   SEOUL_TRANSFER_REBIND_PAR_BASE_URL,
@@ -680,4 +681,29 @@ test("#941 처리되지 않은 예외가 남기는 Node 종료 배너는 실패 
   const message = await runFailingCli(t, "throw new Error('uncaught cause');");
   assert.match(message, /Error: uncaught cause/u);
   noStackFrame(message);
+});
+
+// #1289: fan-in 단계는 거버넌스 정책 경로를 CLI에 넘긴다. 빠지면 CLI가 인자 개수로 실패하고, 경로가 틀리면 정책을 읽지 못해 실패한다.
+test("five-region fan-in step passes the governance policy to the fan-in CLI", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "nationwide-fan-in-step-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const input = independentFiveRegionFixture();
+  const write = async (relative, bytes) => {
+    await mkdir(path.dirname(path.join(repositoryRoot, relative)), { recursive: true });
+    await writeFile(path.join(repositoryRoot, relative), bytes);
+  };
+  await write("tools/datapack/nationwide-coverage-targets.json", input.inputBytes.targets);
+  await write("tools/datapack/reports/nationwide-coverage-tally.json", input.inputBytes.tally);
+  await write("tools/datapack/release/nationwide-requirement-ownership.json", input.inputBytes.ownership);
+  await write("tools/datapack/source-inventory.json", input.inputBytes.inventory);
+  await write("tools/datapack/release/source-snapshots.json", input.inputBytes.sourceSnapshots);
+  await write("release/product-gates/datapack-freshness-sla.json", fixtureBytes({ sourceClasses: [{
+    id: "fixture_class", sourceIds: input.inventory.sources.map(({ id }) => id), basisField: "retrievedAt", reverificationCadence: "P2D" }] }));
+  const step = () => runNationwideCandidateRefreshStep({ name: "five-region fan-in", repositoryRoot, evaluatedAt: input.evaluatedAt });
+  await assert.rejects(step(), /ENOENT.*source-governance-policy\.json|source-governance-policy\.json/u);
+  await write("tools/datapack/source-governance-policy.json", fixtureBytes({ sources: [] }));
+  await step();
+  const fanIn = JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/release/current-five-region-source-fan-in.json"), "utf8"));
+  assert.equal(fanIn.evaluatedAt, input.evaluatedAt);
+  assert.equal(fanIn.selectedSources.length, 1);
 });

@@ -7,10 +7,10 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 import {
-  assertFanInCarriedAdmissionGovernance,
   assertFanInSourceFreshnessPolicy,
   buildCurrentFiveRegionSourceFanIn,
   canonicalCurrentFiveRegionSourceFanInJson,
+  REPRODUCTION_GOVERNANCE,
   validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
 import { carriedAdmissionLineage } from "./lib/carried-admission.mjs";
@@ -703,6 +703,7 @@ function carriedForwardFixture({ intermediateSnapshots = 0 } = {}) {
     freshUntil: "2026-10-02T00:00:00.000Z", lineIds: ["line-1"], tripCount: 2, stopTimeCount: 4,
     rawSha256: CARRY_HEAD_RAW, tripsSha256: "1".repeat(64), contentSha256: "2".repeat(64),
   };
+  input.governancePolicy = carriedGovernance();
   return reserialized(input);
 }
 
@@ -727,15 +728,15 @@ test("#1289 a verified carried-forward approval admits the new head and records 
   assert.equal(head.snapshotId, CARRY_HEAD_ID);
   assert.deepEqual(head.carriedAdmission, {
     approvedSnapshotId: CARRY_APPROVED_ID, approvedRawSha256: CARRY_APPROVED_RAW, schemaFingerprint: CARRY_SCHEMA,
-    licenseEvidenceHash: CARRY_TERMS, chain: [CARRY_HEAD_ID, CARRY_APPROVED_ID],
+    licenseEvidenceHash: CARRY_TERMS, chainLength: 2,
   });
   assert.deepEqual(head.admissionRecordSha256s, [{
     kind: "admissionEvidence",
     sha256: sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(input.inventory.sources[0].admissionEvidence))),
   }]);
-  // 이월은 여러 번 이어진다: 승인 snapshot이 head에서 여러 단계 떨어져도 계보가 chain에 남는다.
+  // 이월은 여러 번 이어진다: 승인 snapshot이 head에서 여러 단계 떨어져도 길이만 남는다(계보 전체는 원장이 가진다).
   const multi = buildCurrentFiveRegionSourceFanIn(carriedForwardFixture({ intermediateSnapshots: 3 })).selectedSources[0];
-  assert.deepEqual(multi.carriedAdmission.chain, [CARRY_HEAD_ID, ...[2, 1, 0].map((index) => `${CARRY_SOURCE_ID}-middle-${index}`), CARRY_APPROVED_ID]);
+  assert.equal(multi.carriedAdmission.chainLength, 5);
   // 현재 snapshot을 직접 승인한 원천에는 이월 근거를 붙이지 않는다.
   assert.equal(Object.hasOwn(buildCurrentFiveRegionSourceFanIn(fixture()).selectedSources[0], "carriedAdmission"), false);
 });
@@ -744,10 +745,14 @@ test("#1289 a verified carried-forward approval admits the new head and records 
 const DAILY_REGISTRATIONS_PER_YEAR = 365;
 
 test("#1289 a year of daily registrations stays carried forward until the governance review deadline", () => {
-  const fanIn = buildCurrentFiveRegionSourceFanIn(carriedForwardFixture({ intermediateSnapshots: DAILY_REGISTRATIONS_PER_YEAR }));
-  assert.equal(fanIn.selectedSources[0].carriedAdmission.chain.length, DAILY_REGISTRATIONS_PER_YEAR + 2);
-  assert.doesNotThrow(() => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy: carriedGovernance() }));
-  assert.throws(() => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy: carriedGovernance({ nextReviewAt: EVALUATED_AT }) }),
+  const daily = carriedForwardFixture({ intermediateSnapshots: DAILY_REGISTRATIONS_PER_YEAR });
+  const [head] = buildCurrentFiveRegionSourceFanIn(daily).selectedSources;
+  assert.equal(head.carriedAdmission.chainLength, DAILY_REGISTRATIONS_PER_YEAR + 2);
+  // 커밋 산출물은 매일 쌓이는 snapshot 수와 무관한 크기다.
+  assert.equal(canonicalCurrentFiveRegionSourceFanInJson(head).length,
+    canonicalCurrentFiveRegionSourceFanInJson(buildCurrentFiveRegionSourceFanIn(carriedForwardFixture()).selectedSources[0]).length + 2);
+  daily.governancePolicy = carriedGovernance({ nextReviewAt: EVALUATED_AT });
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(daily),
     /admission carry-forward mismatch for kric-subway-timetable-station-lines: REVIEW_EXPIRED/);
 });
 
@@ -762,6 +767,23 @@ test("#1289 a cyclic snapshot lineage is rejected instead of walked forever", ()
     ledger: cyclic, head: { ...head }, schemaFingerprint: CARRY_SCHEMA,
   });
   assert.deepEqual(lineage, { violation: "LINEAGE_CYCLE" });
+});
+
+test("#1289 the lineage walk only follows rows of the carried source", () => {
+  const { sourceSnapshots, inventory } = carriedForwardFixture();
+  const approved = inventory.sources[0].admissionEvidence;
+  const walk = (ledger, head = ledger.at(-1)) => carriedAdmissionLineage({
+    sourceId: CARRY_SOURCE_ID, approved, ledger, head, schemaFingerprint: CARRY_SCHEMA,
+  });
+  assert.deepEqual(walk(sourceSnapshots), { chainLength: 2 });
+  // 다른 원천의 행이 같은 snapshotId를 가져도 따라가지 않는다: 승인 행이 다른 원천의 것이면 조상이 아니다.
+  const foreignApproved = sourceSnapshots.map((row) => (row.snapshotId === CARRY_APPROVED_ID ? { ...row, sourceId: "other-source" } : row));
+  assert.deepEqual(walk(foreignApproved, sourceSnapshots.at(-1)), { violation: "NOT_ANCESTOR" });
+  // 같은 snapshotId의 다른 원천 행이 원장 뒤쪽에 있어도 대상 원천의 행을 가리지 못한다.
+  const shadowed = [...sourceSnapshots, { ...sourceSnapshots[0], sourceId: "other-source", rawSha256: "0".repeat(64) }];
+  assert.deepEqual(walk(shadowed, sourceSnapshots.at(-1)), { chainLength: 2 });
+  // head 자체가 다른 원천의 행이면 거부한다.
+  assert.deepEqual(walk(sourceSnapshots, { ...sourceSnapshots.at(-1), sourceId: "other-source" }), { violation: "LINEAGE_SOURCE_MISMATCH" });
 });
 
 test("#1289 an approval that cannot be carried forward keeps failing explicitly", () => {
@@ -798,18 +820,29 @@ test("#1289 an approval that cannot be carried forward keeps failing explicitly"
 });
 
 test("#1289 a carried-forward approval is bound to the license terms and review deadline of the governance policy", () => {
-  const fanIn = buildCurrentFiveRegionSourceFanIn(carriedForwardFixture());
-  assert.doesNotThrow(() => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy: carriedGovernance() }));
-  const violation = (governancePolicy, expected) => assert.throws(
-    () => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy }), expected);
+  const withPolicy = (governancePolicy) => ({ ...carriedForwardFixture(), governancePolicy });
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(withPolicy(carriedGovernance())));
+  const violation = (governancePolicy, expected) => assert.throws(() => buildCurrentFiveRegionSourceFanIn(withPolicy(governancePolicy)), expected);
   violation(carriedGovernance({ termsHash: "0".repeat(64) }), /admission carry-forward mismatch for kric-subway-timetable-station-lines: LICENSE_CHANGED/);
   violation(carriedGovernance({ nextReviewAt: EVALUATED_AT }), /admission carry-forward mismatch for kric-subway-timetable-station-lines: REVIEW_EXPIRED/);
   violation(carriedGovernance({ nextReviewAt: undefined }), /REVIEW_EXPIRED/);
   violation({ sources: [] }, /carried admission governance entry mismatch for kric-subway-timetable-station-lines/);
   violation({ sources: [...carriedGovernance().sources, ...carriedGovernance().sources] }, /carried admission governance entry mismatch/);
   violation({}, /carried admission governance policy shape mismatch/);
-  // 이월이 없는 fan-in은 거버넌스 항목을 요구하지 않는다.
-  assert.doesNotThrow(() => assertFanInCarriedAdmissionGovernance({ fanIn: buildCurrentFiveRegionSourceFanIn(fixture()), governancePolicy: { sources: [] } }));
+  // 이월이 없는 fan-in은 거버넌스 입력을 요구하지 않는다.
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn(fixture()));
+});
+
+test("#1289 the pure builder fails closed on a carried-forward approval without an explicit governance input", () => {
+  const { governancePolicy, ...withoutGovernance } = carriedForwardFixture();
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(withoutGovernance),
+    /admission carry-forward mismatch for kric-subway-timetable-station-lines: GOVERNANCE_INPUT_REQUIRED/);
+  // 재현 모드는 이름을 붙여 명시해야 하고, 정책과 함께 줄 수 없다.
+  const reproduced = buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governance: REPRODUCTION_GOVERNANCE });
+  assert.deepEqual(reproduced, buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governancePolicy }));
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governance: {} }), /governance mode mismatch/);
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governance: REPRODUCTION_GOVERNANCE, governancePolicy }),
+    /governance input is ambiguous/);
 });
 
 test("#1289 the fan-in CLI records a carried-forward approval and refuses to write when the governance check fails", async () => {
@@ -837,7 +870,7 @@ test("#1289 the fan-in CLI records a carried-forward approval and refuses to wri
   };
   const accepted = await run("accepted", carriedGovernance());
   assert.equal(accepted.result.status, 0, accepted.result.stderr);
-  assert.deepEqual(JSON.parse(await readFile(accepted.output, "utf8")).selectedSources[0].carriedAdmission.chain, [CARRY_HEAD_ID, CARRY_APPROVED_ID]);
+  assert.deepEqual(JSON.parse(await readFile(accepted.output, "utf8")).selectedSources[0].carriedAdmission.chainLength, 2);
   const changed = await run("changed", carriedGovernance({ termsHash: "0".repeat(64) }));
   assert.notEqual(changed.result.status, 0);
   assert.match(changed.result.stderr, /LICENSE_CHANGED/);

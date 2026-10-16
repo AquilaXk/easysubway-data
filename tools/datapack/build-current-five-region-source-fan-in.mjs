@@ -156,33 +156,59 @@ function hasNativeSourceAuthority(source) {
 }
 
 // #1289: 무인 갱신(#1276)은 새 snapshot에 옛 snapshot의 사람 승인을 이월한다. 이 승인은 head가 아니라 옛 snapshot을 가리키므로,
-// 등록기와 같은 판정(lib/carried-admission)으로 계보·스키마·원본 해시를 확인해 인정한다. 하나라도 어긋나면 명시적으로 실패한다.
-// 약관 결속과 재검토 기한은 거버넌스 정책이 있어야 보이므로 assertFanInCarriedAdmissionGovernance가 확인한다.
-function carriedForwardApproval({ source, sourceId, snapshot, matching, ledger }) {
+// 등록기와 같은 판정(lib/carried-admission)으로 계보·스키마·원본 해시·약관 결속·재검토 기한을 확인해 인정한다. 하나라도 어긋나면 명시적으로 실패한다.
+// 약관 결속과 기한은 거버넌스 정책 입력(governancePolicy)이 있어야 판정한다. 입력이 없으면 이름 붙인 재현 모드(REPRODUCTION_GOVERNANCE)를 써야만
+// 건너뛸 수 있고, 둘 다 없으면 이월 시점에 실패한다(재현 모드는 이미 검사를 거쳐 만든 fan-in 바이트를 다시 만드는 호출처 전용이다).
+export const REPRODUCTION_GOVERNANCE = Object.freeze({ mode: "REPRODUCTION" });
+
+function carriedGovernanceInput({ governancePolicy, governance }) {
+  if (governancePolicy !== undefined && governance !== undefined) {
+    throw new Error("fan-in carried admission governance input is ambiguous");
+  }
+  if (governance !== undefined && governance.mode !== REPRODUCTION_GOVERNANCE.mode) {
+    throw new Error("fan-in carried admission governance mode mismatch");
+  }
+  if (governancePolicy !== undefined) return { policy: governancePolicy };
+  return governance === undefined ? null : { reproduction: true };
+}
+
+function carriedGovernanceViolation({ governance, sourceId, licenseEvidenceHash, evaluatedAt }) {
+  if (governance === null) return "GOVERNANCE_INPUT_REQUIRED";
+  if (governance.reproduction) return null;
+  if (!Array.isArray(governance.policy?.sources)) throw new Error("fan-in carried admission governance policy shape mismatch");
+  const entries = governance.policy.sources.filter((entry) => entry?.sourceId === sourceId);
+  if (entries.length !== 1) throw new Error(`fan-in carried admission governance entry mismatch for ${sourceId}`);
+  return carriedAdmissionGovernanceViolation({ licenseEvidenceHash, governanceEntry: entries[0], evaluatedAt });
+}
+
+function carriedForwardApproval({ source, sourceId, snapshot, matching, ledger, governance, evaluatedAt }) {
   const approved = source.admissionEvidence;
   if (approved?.decision !== "APPROVED" || approved.snapshotId === snapshot.snapshotId) return null;
   const headEvidence = matching.find(([kind, evidence]) =>
     kind === "scheduleAdmissionEvidence" && evidence.rawSha256 === snapshot.rawSha256);
-  const { chain, violation } = carriedAdmissionLineage({
+  const { chainLength, violation: lineageViolation } = carriedAdmissionLineage({
     sourceId, approved, ledger, head: snapshot, schemaFingerprint: snapshot.schemaFingerprint,
   });
-  const failure = violation ?? (headEvidence === undefined ? "HEAD_EVIDENCE_UNBOUND" : null);
-  if (failure !== null) throw new Error(`admission carry-forward mismatch for ${sourceId}: ${failure}`);
+  const violation = lineageViolation
+    ?? (headEvidence === undefined ? "HEAD_EVIDENCE_UNBOUND" : null)
+    ?? carriedGovernanceViolation({ governance, sourceId, licenseEvidenceHash: approved.licenseEvidenceHash, evaluatedAt });
+  if (violation !== null) throw new Error(`admission carry-forward mismatch for ${sourceId}: ${violation}`);
   return {
     kind: "admissionEvidence",
     evidence: headEvidence[1],
     record: { kind: "admissionEvidence", sha256: sha256(Buffer.from(canonical(approved))) },
+    // 근거는 상수 크기로 남긴다(매일 snapshot이 쌓여도 커밋 산출물이 자라지 않는다). 계보 전체는 원장이 가진다.
     carriedAdmission: {
       approvedSnapshotId: approved.snapshotId,
       approvedRawSha256: approved.rawSha256,
       schemaFingerprint: approved.schemaFingerprint,
       licenseEvidenceHash: approved.licenseEvidenceHash,
-      chain,
+      chainLength,
     },
   };
 }
 
-function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, ledger) {
+function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, { ledger, governance }) {
   const membershipCoverage = source.membershipCoverageEvidence;
   if (membershipCoverage !== undefined && (membershipCoverage.snapshotId !== snapshot.snapshotId
     || membershipCoverage.rawSha256 !== snapshot.rawSha256
@@ -216,7 +242,7 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, ledger) 
     ...native,
   ];
   if (recognized.length === 0) {
-    const carried = carriedForwardApproval({ source, sourceId, snapshot, matching, ledger });
+    const carried = carriedForwardApproval({ source, sourceId, snapshot, matching, ledger, governance, evaluatedAt });
     if (carried === null) throw new Error(`admission approval mismatch for ${sourceId}`);
     recognized.push(carried);
   }
@@ -470,7 +496,7 @@ export function selectCurrentFiveRegionSourceIds({ targets, tally, inventory }) 
   return selectedSourceIds(requiredRows(targets, tally), inventory);
 }
 
-function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
+function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt, governance) {
   if (!Array.isArray(inventory.sources) || !Array.isArray(sourceSnapshots)) {
     throw new Error("source inventory or snapshot ledger mismatch");
   }
@@ -506,7 +532,7 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
     if (instant(effectiveFreshnessExpiresAt, "snapshot freshness") <= evaluatedAt) {
       throw new Error(`snapshot freshness mismatch for ${sourceId}`);
     }
-    const { records: admissions, carriedAdmission } = headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, sourceSnapshots);
+    const { records: admissions, carriedAdmission } = headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, { ledger: sourceSnapshots, governance });
     return {
       sourceId,
       provider: source.provider,
@@ -556,22 +582,6 @@ export function assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourc
     if (!Number.isFinite(storedMillis) || storedMillis > Date.parse(ceiling)) {
       throw new Error(`fan-in freshness exceeds policy for ${sourceId}: ${head.freshnessExpiresAt} > ${ceiling}`);
     }
-  }
-}
-
-// #1289: 이월한 승인은 승인 당시 약관(termsHash) 그대로이고 약관 재검토 기한(nextReviewAt) 안이어야 한다.
-// 판정 시각은 벽시계가 아니라 fan-in 후보 시계(evaluatedAt)이고, 이월이 없는 fan-in은 거버넌스 항목을 요구하지 않는다.
-export function assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy }) {
-  if (!Array.isArray(governancePolicy?.sources)) throw new Error("fan-in carried admission governance policy shape mismatch");
-  const evaluatedAt = instant(fanIn?.evaluatedAt, "fan-in evaluation instant");
-  for (const { sourceId, carriedAdmission } of fanIn?.selectedSources ?? []) {
-    if (!carriedAdmission) continue;
-    const entries = governancePolicy.sources.filter((entry) => entry?.sourceId === sourceId);
-    if (entries.length !== 1) throw new Error(`fan-in carried admission governance entry mismatch for ${sourceId}`);
-    const violation = carriedAdmissionGovernanceViolation({
-      licenseEvidenceHash: carriedAdmission.licenseEvidenceHash, governanceEntry: entries[0], evaluatedAt,
-    });
-    if (violation !== null) throw new Error(`admission carry-forward mismatch for ${sourceId}: ${violation}`);
   }
 }
 
@@ -646,7 +656,7 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
   if (canonical(regionIds) !== canonical(REQUIRED_REGION_IDS)) {
     throw new Error("five-region scope mismatch");
   }
-  const sources = selectedSources(rows, inventory, sourceSnapshots, evaluatedAt);
+  const sources = selectedSources(rows, inventory, sourceSnapshots, evaluatedAt, carriedGovernanceInput(input));
   const scope = {
     targetVersion,
     regionIds,
@@ -707,11 +717,10 @@ async function main() {
     inputBytes: Object.fromEntries(records.map(([name, , inputBytes]) => [name, inputBytes])),
     evaluatedAt: args["evaluated-at"],
   };
-  const fanIn = buildCurrentFiveRegionSourceFanIn(input);
+  const governancePolicy = JSON.parse(await readFile(path.resolve(args["governance-policy"]), "utf8"));
+  const fanIn = buildCurrentFiveRegionSourceFanIn({ ...input, governancePolicy });
   const freshnessPolicy = JSON.parse(await readFile(path.resolve(args["freshness-policy"]), "utf8"));
   assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourceSnapshots: input.sourceSnapshots });
-  const governancePolicy = JSON.parse(await readFile(path.resolve(args["governance-policy"]), "utf8"));
-  assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy });
   await writeFile(path.resolve(args.output), `${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`, {
     flag: "wx",
     mode: 0o600,
