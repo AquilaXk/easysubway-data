@@ -350,19 +350,20 @@ test("probe는 같은 KST 날 다른 workflow가 collector에 들어갔는지만
       (runsByFile[ctx.file] ??= []).push(probeRun(id, ctx.file, event));
       jobsByRun[id] = [probeJob(id, ctx.job, ctx.step, conclusion)];
     });
+    // 실패한 run의 증거 artifact는 없다고 본다(내려받기 실패): 요청 수를 증명할 수 없는 실패는 오늘 더 수집하지 않는 쪽이다.
     const result = await probeItxCollectionToday({
-      env: budgetEnv({ GITHUB_EVENT_NAME: "schedule" }), now, fetchImpl: probeFetch({ runsByFile, jobsByRun }),
+      env: budgetEnv({ GITHUB_EVENT_NAME: "schedule" }), now, fetchImpl: probeFetch({ runsByFile, jobsByRun }), downloadArtifact: async () => { throw new Error("no artifact"); },
     });
     assert.equal(result.collectedToday, expected, name);
   }
 });
 
 test("같은 KST 날 topology 갱신이 먼저 ITX를 수집하면 승격 판정은 probe 결과로 WAIT하고 다음 날 다시 수집한다 (F4)", async () => {
-  const { probeItxCollectionToday } = await loadBudgetGuard();
+  const { probeItxCollectionToday, readItxCollectionLedger } = await loadBudgetGuard();
   const { decideItxCurrentPromotion } = await import("./decide-itx-current-promotion.mjs");
   const contract = { sourceTimetableArtifact: { status: "ADMITTED", freshUntil: "2026-10-12T00:00:00+09:00" } };
-  const decideAt = (now, itxCollectedToday) => decideItxCurrentPromotion({
-    now, contract, pullRequests: [], branches: [], repository: "AquilaXk/easysubway-data", limits: { pullRequests: 1000 }, itxCollectedToday,
+  const decideAt = (now, collectionEntries) => decideItxCurrentPromotion({
+    now, contract, pullRequests: [], branches: [], repository: "AquilaXk/easysubway-data", limits: { pullRequests: 1000 }, collectionEntries,
   });
   // 2026-10-10 03:00 KST: topology 갱신(01:47 KST)이 먼저 collector에 들어갔다.
   const sameDay = new Date("2026-10-09T18:00:00.000Z");
@@ -379,9 +380,10 @@ test("같은 KST 날 topology 갱신이 먼저 ITX를 수집하면 승격 판정
   };
   const probe = await probeItxCollectionToday({ env: budgetEnv({ GITHUB_EVENT_NAME: "schedule", GITHUB_RUN_ID: "9001" }), now: sameDay, fetchImpl });
   assert.equal(probe.collectedToday, true);
-  assert.deepEqual((({ state, reason }) => ({ state, reason }))(decideAt(sameDay, probe.collectedToday)), { state: "WAIT", reason: "ITX_COLLECTED_TODAY" });
-  // 다음 날은 새 KST 날이라 probe가 false이고 수집한다.
-  assert.equal(decideAt(new Date("2026-10-10T18:00:00.000Z"), false).state, "COLLECT");
+  const { entries } = await readItxCollectionLedger({ env: budgetEnv({ GITHUB_EVENT_NAME: "schedule", GITHUB_RUN_ID: "9001" }), now: sameDay, fetchImpl });
+  assert.deepEqual((({ state, reason }) => ({ state, reason }))(decideAt(sameDay, entries)), { state: "WAIT", reason: "ITX_COLLECTED_TODAY" });
+  // 다음 날은 새 KST 날이라 기록이 비고 수집한다.
+  assert.equal(decideAt(new Date("2026-10-10T18:00:00.000Z"), []).state, "COLLECT");
 });
 
 test("probe는 이 run이 같은 KST 날 목록에 없거나 응답이 잘못되면 추정하지 않고 실패한다 (F4)", async () => {

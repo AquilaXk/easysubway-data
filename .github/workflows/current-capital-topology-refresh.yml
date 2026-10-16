@@ -60,7 +60,7 @@ jobs:
             node --input-type=module -e 'import { appendFile } from "node:fs/promises"; const [headSha, ref, mergeBaseSha, commitCount, subjects] = process.argv.slice(1); await appendFile(process.env.CLAIMS_PATH, JSON.stringify({ headSha, ref, mergeBaseSha, commitCount: Number(commitCount), subjects: subjects ? subjects.split("\n") : [] }) + "\n");' "${head_sha}" "${ref}" "${merge_base}" "${commit_count}" "${subjects}"
           done < "${state_root}/claim-refs.txt"
           node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const claims = (await readFile(process.env.CLAIMS_PATH, "utf8")).split("\n").filter(Boolean).map(JSON.parse); await writeFile(process.env.CLAIMS_PATH, JSON.stringify(claims) + "\n", { flag: "w" });'
-          # #977: 같은 KST 날 다른 ITX 수집 workflow가 이미 공급자를 불렀다면 대기 상태로 끝난다(예산 가드 실패로 이슈를 만들지 않는다).
+          # #977, #1298: 같은 KST 날 다른 ITX 수집 workflow가 성공했거나 진행 중이거나, 실패한 뒤 재시도 간격·하루 예산 때문에 수집할 수 없으면 대기 상태로 끝난다(예산 가드 실패로 이슈를 만들지 않는다).
           itx_collected="$(node tools/ci/guard-itx-current-collection-budget.mjs --probe)"
           # #995: PR 없는 claim은 만든 run과 게시 증거로 판정한다. 고아마다 gh run view 한 번이다(끝난 run 이력 목록은 받지 않는다).
           node tools/ci/claim-orphans.mjs --workflow current-capital-topology-refresh.yml --repository "${GITHUB_REPOSITORY}" --refs "${state_root}/claim-refs.txt" --prs "${state_root}/prs.json" --output "${state_root}/claim-evidence.json"
@@ -253,7 +253,8 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${TOPOLOGY_MAIN_SHA}" ]] || { echo "ITX preflight is not running from its claimed main" >&2; exit 1; }
           [[ -n "${DATA_GO_KR_SERVICE_KEY:-}" && "${DATA_GO_KR_SERVICE_KEY}" != *$'\n'* && "${DATA_GO_KR_SERVICE_KEY}" != *$'\r'* ]] || { echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2; exit 1; }
           node tools/datapack/emit-station-catalog-pack.mjs --output "${TOPOLOGY_OPERATION_ROOT}/station-catalog-pack" --catalog-pack-id "itx-current-station-catalog-v1"
-          node tools/ci/guard-itx-current-collection-budget.mjs --output "${TOPOLOGY_OPERATION_ROOT}/freshness.json"
+          # #1298: 승격 workflow와 같은 규칙이다. 같은 KST 날 앞선 수집이 실패뿐이고 하루 시도 상한·요청 예산 안이면 다시 수집한다.
+          node tools/ci/guard-itx-current-collection-budget.mjs --output "${TOPOLOGY_OPERATION_ROOT}/freshness.json" --allow-after-failure
       - name: Collect current ITX timetable once
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.decision.outputs.itx_refresh_required == 'true' && steps.claimed-preflight.outputs.state == 'CLEAR' }}
         env:
@@ -404,6 +405,8 @@ jobs:
           path: |
             ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/itx-result.json
             ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/itx-completeness.json
+            ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/provider-response-capture.json
+            ${{ runner.temp }}/current-capital-topology-refresh/${{ github.run_id }}/freshness.json
           if-no-files-found: ignore
           retention-days: 14
       - name: Remove this failed run's empty topology claim

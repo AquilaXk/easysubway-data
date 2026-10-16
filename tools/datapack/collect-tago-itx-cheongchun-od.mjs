@@ -12,7 +12,7 @@ const BASE = "https://apis.data.go.kr/1613000/TrainInfo";
 const DETAIL_URL = "https://www.data.go.kr/data/15098552/openapi.do";
 const NON_PAGINATED_OPERATIONS = new Set(["GetVhcleKndList", "GetCtyCodeList"]);
 const PAGINATED_OPERATIONS = new Set(["GetCtyAcctoTrainSttnList", "GetStrtpntAlocFndTrainInfo"]);
-const TAGO_DAILY_REQUEST_LIMIT = 10_000;
+export const TAGO_DAILY_REQUEST_LIMIT = 10_000;
 const TAGO_MAX_RETRY_AFTER_SECONDS = 60;
 // 일시 오류(resultCode 99, HTTP 408·5xx, 전송 오류)는 같은 요청을 지수 백오프로 다시 보낸다(data#1089, data#1267).
 // 간격은 1초에서 시작해 두 배씩 늘리다 상한(64초)에서 멈추고, 재시도 한도(8번)만큼 만들어 합계(191초)는 배열에서 계산한다.
