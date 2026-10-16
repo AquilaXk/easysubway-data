@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,6 +10,7 @@ import {
   validateOfficialOdFareEvidence,
 } from "./lib/official-od-fare-evidence.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const REVIEW_KEYS = [
@@ -180,9 +180,6 @@ function assertSha256(value, label) {
   }
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {

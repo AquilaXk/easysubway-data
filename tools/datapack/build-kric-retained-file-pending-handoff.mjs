@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const TIMETABLE_SOURCE_ID = "kric-nationwide-timetable-file";
@@ -26,7 +26,6 @@ const STATION_LINE_RECORD_KEYS = Object.freeze([
 const TIMETABLE_GROUP_KEYS = TIMETABLE_RECORD_KEYS.slice(0, 7);
 const TIMETABLE_IDENTITY_KEYS = TIMETABLE_RECORD_KEYS.slice(0, 8);
 const TIMETABLE_CELL_KEYS = TIMETABLE_RECORD_KEYS.slice(8, 13);
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code) => { throw new Error(`KRIC_RETAINED_FILE_PENDING_HANDOFF_${code}`); };
 
 /** 보관 receipt와 원문 행 검증을 재사용하며 다른 시간표 전체를 읽지 않는다. */

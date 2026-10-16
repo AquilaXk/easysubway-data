@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, link, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 export function canonicalCandidateOciDescriptorBytes(value) {

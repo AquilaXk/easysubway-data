@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { deriveTopology } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { validateTrackedItxTopologyEvidence } from "./build-datapack.mjs";
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -327,9 +327,6 @@ async function admittedItxEdgeSetSha256ForEvidence(buildSpec, topologyEvidence, 
   })));
 }
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function routeEdgeFromSqliteRow(edge) {
   return {

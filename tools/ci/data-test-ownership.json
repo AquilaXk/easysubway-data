@@ -383,6 +383,10 @@
     "data942": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/942",
       "title": "[Fix] PR CI가 커밋된 전국 후보 pin과 현재 원장 head의 일치를 요구해 원천 갱신 PR이 통과하지 못하는 문제"
+    },
+    "data1278": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/1278",
+      "title": "[Refactor] 데이터 도구 핫스팟 클린코드 정비 에픽"
     }
   },
   "workflows": {
@@ -477,6 +481,7 @@
     {"path":"tools/ci/require-workflow-artifact.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":318},
     {"path":"tools/ci/run-affected-tests.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":797},
     {"path":"tools/ci/seoul-current-accessibility-refresh-workflow.test.mjs","semanticOwner":"data639","classes":["required-pr"],"durationMs":2},
+    {"path":"tools/ci/shared-helpers.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":50},
     {"path":"tools/ci/stage-local-mobile-fixture.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":3},
     {"path":"tools/ci/sync-datapack-release-check-secrets.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":265},
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":14329},

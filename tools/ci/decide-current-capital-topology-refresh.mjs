@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { requiresCurrentCapitalTopologyAdmission } from "../datapack/rebind-capital-route-map-admissions.mjs";
 import { planUnboundClaims } from "./claim-orphans.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const WORKFLOW = "current-capital-topology-refresh.yml";
 
@@ -33,7 +33,6 @@ function instant(value, label) {
 function duration(value) { const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/u.exec(value ?? ""); if (!match || match.slice(1).every((item) => item === undefined)) throw new Error("freshness alert threshold is invalid"); const milliseconds = (Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)) * 1000; if (milliseconds < 1) throw new Error("freshness alert threshold is invalid"); return milliseconds; }
 function currentExpiry(inventory, itxExpiry) { const sources = object(inventory, "source inventory").sources; if (!Array.isArray(sources)) throw new Error("source inventory is invalid"); const capital = sources.filter((source) => requiresCurrentCapitalTopologyAdmission(object(source, "source inventory source"))); if (capital.length !== 16 || new Set(capital.map(({ id }) => id)).size !== 16) throw new Error("capital current topology admissions must contain exactly sixteen unique sources"); const expiry = capital.map((source) => instant(source.routeMapAdmissionEvidence?.currentTopologyAdmission?.freshUntil, `${source.id} current topology freshUntil`)); for (const [id, evidence] of INCHEON) { const matches = sources.filter((source) => source.id === id); if (matches.length !== 1) throw new Error(`${id} source identity is invalid`); expiry.push(instant(matches[0][evidence]?.freshUntil, `${id} freshUntil`)); } expiry.push(itxExpiry); return Math.min(...expiry); }
 
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function repositoryFile(repositoryRoot, relative, label) { if (typeof relative !== "string" || path.posix.isAbsolute(relative) || relative.includes("\\") || relative.split("/").some((part) => part === "" || part === "." || part === "..")) throw new Error(`${label} path is invalid`); const root = path.resolve(repositoryRoot); const resolved = path.resolve(root, relative); if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error(`${label} path is invalid`); return resolved; }
 async function currentItxFreshness(candidate, repositoryRoot) {
   object(candidate, "candidate build spec");

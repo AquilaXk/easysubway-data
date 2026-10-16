@@ -14,6 +14,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isObject } from "../lib/value.mjs";
 
 
 const DEFAULT_LEDGER = "tools/datapack/release/source-snapshots.json";
@@ -28,7 +29,6 @@ function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
 }
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const sameKeys = (value, keys) => isObject(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 const isRatio = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 const isCount = (value) => Number.isSafeInteger(value) && value >= 0;

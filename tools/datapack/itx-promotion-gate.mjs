@@ -7,13 +7,14 @@
 //   승인된 이력 snapshot 10개에서 잰 값이다(policy.measuredBasis, 테스트가 이력에서 다시 계산해 대조한다).
 // - 판정은 순수 함수다. 영수증(receipt)을 믿지 않고 승격 도구가 같은 입력으로 다시 계산한다. 같은 입력은 같은 영수증이다.
 // - 실패를 추정치·이전 값으로 덮지 않는다. 입력이 모자라면 PASS가 아니라 BLOCK 또는 오류다.
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
+import { isObject } from "../lib/value.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const ITX_PROMOTION_GATE_POLICY_ID = "itx-promotion-gate-v1";
 export const ITX_ANOMALY_POLICY_VERSION = "itx-snapshot-anomaly-v1";
@@ -36,7 +37,6 @@ function policyInvalid(detail) {
   throw new Error(`ITX_PROMOTION_GATE_POLICY_INVALID: ${detail}`);
 }
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const sameKeys = (value, keys) => isObject(value) && JSON.stringify(Object.keys(value).sort(codepointCompare)) === JSON.stringify([...keys].sort(codepointCompare));
 const nonnegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0;
 
@@ -55,7 +55,6 @@ export function parseItxPromotionGatePolicy(value) {
   return structuredClone(value);
 }
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const stringify = (value) => JSON.stringify(value);
 
 function difference(left, right) {

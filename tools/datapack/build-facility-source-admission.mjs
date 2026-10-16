@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const REQUIRED_TYPES = ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"];
@@ -945,9 +945,6 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function requireBytes(value) {
   if (!(value instanceof Uint8Array) || value.byteLength === 0) {

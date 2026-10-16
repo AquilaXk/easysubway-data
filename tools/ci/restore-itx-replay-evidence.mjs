@@ -11,12 +11,13 @@
 //
 // 사용: node tools/ci/restore-itx-replay-evidence.mjs --source-run-id <run id> --repository <owner/repo> --run <gh api run json> --jobs <gh api jobs json>
 //   --artifact-dir <내려받은 artifact 디렉터리> --contract <coverage contract> --output-root <작업 위치>
-import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { isObject } from "../lib/value.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const ITX_REPLAY_WORKFLOW_PATH = ".github/workflows/itx-current-promotion.yml";
 export const ITX_REPLAY_EVIDENCE_FILES = Object.freeze([
@@ -42,8 +43,6 @@ function fail(code, detail = "") {
   throw new Error(detail ? `${code}: ${detail}` : code);
 }
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function parseJson(buffer, label) {
   try {

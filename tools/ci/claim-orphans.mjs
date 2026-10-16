@@ -30,6 +30,7 @@ import { ownPullRequestsByBranch, parsePrefixedRefs, validRepository } from "./a
 import { MAX_CLAIM_BRANCHES } from "./collect-automation-prs.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import { defaultRunGh } from "./report-refresh-failure.mjs";
+import { isObject } from "../lib/value.mjs";
 
 // claim 브랜치를 provider 접근 전에 만드는 갱신 workflow.
 // - timeoutMinutes: workflow 파일의 timeout-minutes. 진행 중인 run이 이 시간 + ACTIVE_CLAIM_GRACE_MINUTES를 넘으면 무한 대기 대신 실패한다(#997).
@@ -102,7 +103,6 @@ export function isGhNotFound(error) {
 }
 
 const byText = (left, right) => (left < right ? -1 : Number(left > right));
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
 const isOptionalTimestamp = (value) => value === undefined || value === null || (typeof value === "string" && Number.isFinite(Date.parse(value)));
 

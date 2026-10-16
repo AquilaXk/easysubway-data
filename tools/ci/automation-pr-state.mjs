@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { LEDGER_WRITER_WORKFLOWS, REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
+import { isObject } from "../lib/value.mjs";
 
 const execFileAsync = promisify(execFile);
 // PATH 검색 없이 고정 경로의 git을 쓴다(refresh-open-pr-age와 같은 기준).
@@ -74,7 +75,6 @@ export function parseAutomationBranches(text) {
 }
 
 const byText = (left, right) => (left < right ? -1 : Number(left > right));
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const inputInvalid = (detail = "") => { throw new Error(detail ? `AUTOMATION_PR_STATE_INPUT_INVALID: ${detail}` : "AUTOMATION_PR_STATE_INPUT_INVALID"); };
 
 /**

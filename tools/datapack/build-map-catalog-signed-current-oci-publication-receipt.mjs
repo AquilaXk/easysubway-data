@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { lstat, link, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -6,9 +5,9 @@ import { canonicalJson, signingKeyId } from "./lib/manifest-validation.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
 import { validateMapCatalogSignedCurrentPublication } from "./validate-map-catalog-signed-current-publication.mjs";
 import { validateMapCatalogSignedCurrentOciPublicationReceipt } from "./validate-map-catalog-signed-current-oci-publication-receipt.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ALGORITHM = "rsa-sha256-map-catalog-signed-current-v1";
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export async function buildMapCatalogSignedCurrentOciPublicationReceipt({ descriptor, output, target, contentDescriptor, objects, operation, privateKey = signingPrivateKey(), publicKey, now = Date.now(), beforeCreate } = {}) {
   const content = validateMapCatalogSignedCurrentPublication(descriptor, { publicKey, now });

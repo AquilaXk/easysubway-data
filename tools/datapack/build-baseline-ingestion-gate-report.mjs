@@ -21,7 +21,6 @@
 //   --source-inventory tools/datapack/source-inventory.json \
 //   [--kric-standard-movement <kric-transfer-movement-standard.raw.json>] \
 //   --output <report.json>
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,6 +30,7 @@ import { buildTransferBaseline } from "./import-transfer-baseline.mjs";
 import { buildCarDoorHints } from "./import-car-door-hints.mjs";
 import { normalizeTransferDistanceDurationRows } from "./normalize-transfer-distance-duration-rows.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const CAR_DOOR_SOURCE_ID = "seoul-metro-fast-exit-car-door";
@@ -440,9 +440,6 @@ function normalizeKricXmlRow(row) {
   );
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 // desk 게이트 ③: timeSource 구분. baseline edge의 provenance_kind는 OFFICIAL_SOURCE로 고정된다.
 export function buildGateTimeSourceDistinction(transfer, fixtureTransferRules, existingEdges) {

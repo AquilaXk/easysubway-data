@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -7,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { SOURCE_ID, validateSeoulMetroTransferSnapshot } from "./collect-seoul-metro-transfer-car-door-duration.mjs";
 import { collectSeoulStationLineInfo } from "./collect-seoul-station-line-info.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #876(QA 결정 2026-10-02): 서울교통공사_서울 도시철도 환승정보(15098252)의 실측 소요시간을 공식 환승 시간 원천으로 쓴다.
 // - QA 확인: "소요시간"은 실측값이다. 보행속도로 다시 계산하지 않는다. 거리는 원천에 없으므로 null이다(추정 금지).
@@ -271,7 +271,6 @@ function canonicalObject(value) {
   return value;
 }
 function compareBytes(left, right) { return Buffer.compare(Buffer.from(left), Buffer.from(right)); }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 async function main(argv) {
   if (argv.length !== 2 || argv[0] !== "--output" || !path.isAbsolute(argv[1])) {

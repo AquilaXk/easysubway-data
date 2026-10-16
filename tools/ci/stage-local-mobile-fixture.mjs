@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sha256 } from "../lib/hash.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -17,9 +17,6 @@ export function expectedDerivedCapitalGzipSha256(root = ROOT) {
   return evidence.pack.outputSha256;
 }
 
-function sha256(buffer) {
-  return createHash("sha256").update(buffer).digest("hex");
-}
 
 export function stageLocalMobileFixture({ repositoryRoot = ROOT, candidatePaths = null } = {}) {
   const root = path.resolve(repositoryRoot);
