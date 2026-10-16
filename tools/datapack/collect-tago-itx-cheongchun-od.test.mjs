@@ -4,6 +4,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  TAGO_REQUEST_TIMEOUT_MS,
+  TAGO_RETRY_BUDGET_MS,
+  TAGO_TRANSIENT_BACKOFF_CAP_MS,
+  TAGO_TRANSIENT_RETRY_LIMIT,
+  TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS,
+  TAGO_TRANSIENT_RETRY_SCHEDULE_MS,
   buildItxOdMatrix,
   collectTagoItxCheongchunOd,
   collectTagoItxCheongchunRoster,
@@ -13,6 +19,10 @@ import {
 } from "./collect-tago-itx-cheongchun-od.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+// 재시도 한도·간격·예산은 생산 모듈의 export에서 가져온다. 값 자체는 아래 "재시도 정책 불변식" 테스트가 독립 불변식으로 묶는다.
+const BACKOFF = TAGO_TRANSIENT_RETRY_SCHEDULE_MS;
+const MAX_ATTEMPTS = TAGO_TRANSIENT_RETRY_LIMIT + 1;
+const sum = (values) => values.reduce((total, value) => total + value, 0);
 
 test("TAGO ITX roster collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
@@ -1011,7 +1021,7 @@ test("TAGO 429의 absent·invalid·out-of-range Retry-After는 대기나 later O
   }
 });
 
-test("TAGO retry는 최종 503 body를 정리하고 9회(첫 시도 + 재시도 8)에서 종료한다", async () => {
+test("TAGO retry는 최종 503 body를 정리하고 재시도 한도까지(첫 시도 + 재시도)만 시도한다", async () => {
   let attempts = 0;
   let cancellations = 0;
   await assert.rejects(collectTagoItxCheongchunRoster({
@@ -1027,11 +1037,11 @@ test("TAGO retry는 최종 503 body를 정리하고 9회(첫 시도 + 재시도 
       }), { status: 503 });
     },
   }), /^Error: TAGO GetVhcleKndList HTTP 503$/);
-  assert.equal(attempts, 9);
-  assert.equal(cancellations, 9);
+  assert.equal(attempts, MAX_ATTEMPTS);
+  assert.equal(cancellations, MAX_ATTEMPTS);
 });
 
-test("TAGO retry는 최종 transport 실패까지 9회에서 종료한다", async () => {
+test("TAGO retry는 최종 transport 실패까지 재시도 한도에서 종료한다", async () => {
   let attempts = 0;
   const delays = [];
   await assert.rejects(collectTagoItxCheongchunRoster({
@@ -1045,8 +1055,8 @@ test("TAGO retry는 최종 transport 실패까지 9회에서 종료한다", asyn
       throw new Error("socket unavailable");
     },
   }), /^Error: TAGO transport failure$/);
-  assert.equal(attempts, 9);
-  assert.deepEqual(delays, [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 64_000]);
+  assert.equal(attempts, MAX_ATTEMPTS);
+  assert.deepEqual(delays, BACKOFF);
 });
 
 // ---- #1089: TAGO 일시 오류(resultCode 99, HTTP 5xx, 전송 오류) 재시도 ----
@@ -1054,7 +1064,6 @@ test("TAGO retry는 최종 transport 실패까지 9회에서 종료한다", asyn
 const REAL = JSON.parse(readFileSync(new URL("./test-fixtures/tago-itx-run-37970736919-responses.json", import.meta.url), "utf8"));
 const REAL_HEADERS = { "content-type": "application/json;charset=UTF-8" };
 const realBody = (name) => new Response(REAL[name], { status: 200, headers: REAL_HEADERS });
-const BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 64_000];
 
 test("fixture는 실제 실패 run의 응답 바이트와 기록된 sha256이 같다", () => {
   for (const name of ["unknownError99", "gradeList", "cityCodeList"]) {
@@ -1121,14 +1130,14 @@ test("TAGO resultCode 99(UNKNOWN_ERROR) 뒤에 정상 응답이 오면 같은 �
   assert.equal(JSON.stringify(artifact).includes("UNKNOWN_ERROR"), false, "실패한 시도의 본문은 증거에 남기지 않는다");
 });
 
-test("TAGO resultCode 99가 끝까지 이어지면 8번 재시도한 뒤 지금처럼 resultCode 오류로 끝난다", async () => {
+test("TAGO resultCode 99가 끝까지 이어지면 재시도 한도를 다 쓴 뒤 지금처럼 resultCode 오류로 끝난다", async () => {
   const delays = [];
   const calls = [];
   await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
     waitImpl: async (milliseconds) => { delays.push(milliseconds); },
-    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: Array(10).fill("99") } }),
+    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: Array(MAX_ATTEMPTS + 1).fill("99") } }),
   })), /^Error: TAGO GetCtyCodeList provider resultCode 99$/);
-  assert.equal(calls.filter((operation) => operation === "GetCtyCodeList").length, 9);
+  assert.equal(calls.filter((operation) => operation === "GetCtyCodeList").length, MAX_ATTEMPTS);
   assert.deepEqual(delays, BACKOFF);
   assert.equal(calls.includes("GetCtyAcctoTrainSttnList"), false, "실패한 operation 뒤의 호출은 하지 않는다");
 });
@@ -1144,28 +1153,31 @@ test("TAGO 99 이외의 provider 코드는 재시도하지 않는다", async () 
   assert.deepEqual(delays, []);
 });
 
-test("TAGO HTTP 5xx와 전송 오류는 같은 요청을 1·2·4·8·16·32·64·64초 간격으로 8번까지 다시 보낸다", async () => {
+test("TAGO HTTP 5xx와 전송 오류는 같은 요청을 정해진 간격으로 재시도 한도까지 다시 보낸다", async () => {
   for (const kind of ["503", "throw"]) {
     const delays = [];
     const calls = [];
     const artifact = await collectTagoItxCheongchunRoster(rosterInput({
       waitImpl: async (milliseconds) => { delays.push(milliseconds); },
-      fetchImpl: realRosterFetch({ calls, failures: { GetVhcleKndList: Array(8).fill(kind) } }),
+      fetchImpl: realRosterFetch({ calls, failures: { GetVhcleKndList: Array(TAGO_TRANSIENT_RETRY_LIMIT).fill(kind) } }),
     }));
     assert.equal(artifact.completedOdCount, 2, kind);
     assert.deepEqual(delays, BACKOFF, kind);
-    assert.equal(calls.filter((operation) => operation === "GetVhcleKndList").length, 9, kind);
+    assert.equal(calls.filter((operation) => operation === "GetVhcleKndList").length, MAX_ATTEMPTS, kind);
   }
 });
 
 test("TAGO 재시도 한도는 99·5xx·전송 오류가 한 요청 안에서 함께 쓴다", async () => {
+  // 503·99·전송 오류를 돌려가며 쓰고 마지막 시도는 99로 끝난다.
+  const mixedFailures = Array.from({ length: MAX_ATTEMPTS }, (_, index) => ["503", "99", "throw"][index % 3]);
+  mixedFailures[MAX_ATTEMPTS - 1] = "99";
   const delays = [];
   const calls = [];
   await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
     waitImpl: async (milliseconds) => { delays.push(milliseconds); },
-    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: ["503", "99", "throw", "99", "503", "99", "throw", "503", "99", "99"] } }),
+    fetchImpl: realRosterFetch({ calls, failures: { GetCtyCodeList: mixedFailures } }),
   })), /^Error: TAGO GetCtyCodeList provider resultCode 99$/);
-  assert.equal(calls.filter((operation) => operation === "GetCtyCodeList").length, 9);
+  assert.equal(calls.filter((operation) => operation === "GetCtyCodeList").length, MAX_ATTEMPTS);
   assert.deepEqual(delays, BACKOFF);
 });
 
@@ -1179,7 +1191,17 @@ test("TAGO 일일 요청 예산이 바닥나면 재시도하지 않고 예산 �
   assert.equal(calls.length, 3, "예산 3건: 등급 1 + 도시 코드 2(첫 시도와 재시도 1)");
 });
 
-test("재시도 대기 합계는 run 단위 15분 예산을 넘지 않고, 넘기 전에 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 수집을 멈춘다 (F1)", async () => {
+// 독립 oracle: 남은 예산 안에서 간격 배열을 앞에서부터 더해 가며 다음 대기가 남은 예산을 넘기 직전까지 기다리는 시간.
+const waitUntilBudgetStops = (remainingMs) => {
+  let waited = 0;
+  for (const delay of BACKOFF) {
+    if (waited + delay > remainingMs) break;
+    waited += delay;
+  }
+  return waited;
+};
+
+test("재시도 대기 합계는 run 단위 예산을 넘지 않고, 넘기 전에 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 수집을 멈춘다 (F1)", async () => {
   const requestBudget = { limit: 10_000, remaining: 10_000 };
   const delays = [];
   const calls = [];
@@ -1195,7 +1217,7 @@ test("재시도 대기 합계는 run 단위 15분 예산을 넘지 않고, 넘�
       outcomes.push(error);
     }
   }
-  // 1일차: 예산 안에서 OD마다 8번 재시도한 뒤 OD 실패(MISSING 증거)로 남는다. 2·3일차: 예산이 닿기 전에 수집을 멈춘다.
+  // 1일차: 예산 안에서 OD마다 재시도를 다 쓴 뒤 OD 실패(MISSING 증거)로 남는다. 2·3일차: 예산이 닿기 전에 수집을 멈춘다.
   assert.equal(outcomes[0].completedOdCount, 0);
   assert.equal(outcomes[0].failedOdCount, 2);
   assert.ok(outcomes[0].failedOds.every(({ reasonCode }) => reasonCode === "PROVIDER_RESULT_FAILURE"));
@@ -1203,22 +1225,21 @@ test("재시도 대기 합계는 run 단위 15분 예산을 넘지 않고, 넘�
     assert.ok(error instanceof Error);
     assert.equal(error.message, "TAGO_RETRY_TIME_BUDGET_EXHAUSTED");
   }
-  const total = delays.reduce((sum, value) => sum + value, 0);
-  assert.ok(total <= 900_000, `waited ${total}ms`);
-  // 1일차 OD 2개 x 조회일 2개 x 191초 = 764초. 2일차는 127초(1+2+4+8+16+32+64)까지 기다리다 다음 64초가 예산을 넘는 순간,
-  // 3일차는 7초(1+2+4)까지 기다리다 다음 8초가 예산을 넘는 순간 멈춘다. 764 + 127 + 7 = 898초.
-  assert.equal(total, 898_000);
-  // 최악 시간 상한: 시도 수 x 15초(요청 timeout) + 대기 합계가 가장 짧은 workflow timeout(45분)보다 짧다.
-  const odAttempts = calls.filter((operation) => operation === "GetStrtpntAlocFndTrainInfo").length;
-  assert.ok(odAttempts * 15_000 + total < 45 * 60_000);
-  // 같은 run의 이후 호출도 남은 예산(2초)만 쓰고 합계는 끝까지 15분을 넘지 않는다.
+  const total = sum(delays);
+  assert.ok(total <= TAGO_RETRY_BUDGET_MS, `waited ${total}ms`);
+  // 1일차는 OD 2개 x 조회일 2개가 간격 합계를 모두 쓰고, 2·3일차는 남은 예산이 다음 대기를 못 받는 순간까지만 기다린다.
+  const firstDay = 4 * sum(BACKOFF);
+  const secondDay = waitUntilBudgetStops(TAGO_RETRY_BUDGET_MS - firstDay);
+  const thirdDay = waitUntilBudgetStops(TAGO_RETRY_BUDGET_MS - firstDay - secondDay);
+  assert.equal(total, firstDay + secondDay + thirdDay);
+  // 같은 run의 이후 호출도 남은 예산만 쓰고 합계는 끝까지 예산을 넘지 않는다.
   await assert.rejects(collectTagoItxCheongchunRoster(rosterInput({
     requestBudget, waitImpl: async (milliseconds) => { delays.push(milliseconds); }, fetchImpl: outage,
   })), /TAGO_RETRY_TIME_BUDGET_EXHAUSTED/);
-  assert.ok(delays.reduce((sum, value) => sum + value, 0) <= 900_000);
+  assert.ok(sum(delays) <= TAGO_RETRY_BUDGET_MS);
 });
 
-test("재시도 시간 예산은 요청 단위 한도(8회)와 함께 쓰이며 예산 안에서는 기존 동작과 같다", async () => {
+test("재시도 시간 예산은 요청 단위 한도와 함께 쓰이며 예산 안에서는 기존 동작과 같다", async () => {
   const delays = [];
   const requestBudget = { limit: 10_000, remaining: 10_000 };
   const artifact = await collectTagoItxCheongchunRoster(rosterInput({
@@ -1321,7 +1342,7 @@ test("본문을 읽다가 timeout·연결 끊김이 나도 같은 요청을 재�
     waitImpl: async (milliseconds) => { delays.push(milliseconds); },
     fetchImpl: async (url) => { attempts.push(url); return bodyFailure("TimeoutError"); },
   })), /^Error: TAGO transport failure$/);
-  assert.equal(attempts.length, 9);
+  assert.equal(attempts.length, MAX_ATTEMPTS);
   assert.deepEqual(delays, BACKOFF);
 });
 
@@ -1422,13 +1443,13 @@ test("TAGO ITX roster는 OD 일부 실패를 count한 뒤 admission이 거부할
   assert.deepEqual(artifact.failedOds, [{
     departureStationId: "station-b",
     arrivalStationId: "station-a",
-    // D와 D+1 두 창이 각각 첫 시도 + 재시도 8번(#1089, #1267)을 쓴다.
-    requestCount: 18,
+    // D와 D+1 두 창이 각각 첫 시도 + 재시도 전부(#1089, #1267)를 쓴다.
+    requestCount: 2 * MAX_ATTEMPTS,
     reasonCode: "PROVIDER_HTTP_FAILURE",
     failureContext: "operation=GetStrtpntAlocFndTrainInfo,httpStatus=503",
   }]);
-  assert.equal(artifact.quotaSummary.odRequestCount, 20);
-  assert.equal(artifact.quotaSummary.failedOdRequestCount, 18);
+  assert.equal(artifact.quotaSummary.odRequestCount, 2 + 2 * MAX_ATTEMPTS);
+  assert.equal(artifact.quotaSummary.failedOdRequestCount, 2 * MAX_ATTEMPTS);
   assert.equal(
     artifact.quotaSummary.actualRequestCount,
     artifact.quotaSummary.catalogRequestCount + artifact.quotaSummary.odRequestCount,
@@ -2188,29 +2209,75 @@ function validFetch({
 // fixture는 itx-current-promotion run 38781966262(2026-10-15T18:00Z)의 provider-response-capture에서 꺼낸 실제 응답 바이트다.
 // 그 run은 토요일(20261017) 용산→왕십리 OD가 resultCode 99를 두 조회일 모두 6번(첫 시도 + 재시도 5) 받아 OD 1개가 빠졌고 운행일 전체가 MISSING이 됐다.
 const REAL_1267 = JSON.parse(readFileSync(new URL("./test-fixtures/tago-itx-run-38781966262-responses.json", import.meta.url), "utf8"));
-const RETRY_SCHEDULE = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 64_000];
-const RETRY_SCHEDULE_TOTAL = 191_000;
-const RUN_RETRY_WAIT_BUDGET = 900_000;
 const jsonBody = (text) => new Response(text, { status: 200, headers: REAL_HEADERS });
+// 실제 run에서 관측한 값(capture 복호): 첫 99부터 정상 복귀까지 재시도 대기 합계 108초 이상, run 전체 재시도 대기 131초.
+const OBSERVED_OUTAGE_MS = 108_000;
+const OBSERVED_RUN_RETRY_WAIT_MS = 131_000;
+// 같은 run의 수집 step 소요 시간(Actions 기록): 정상일 때 최대 17분 13초(run 38062621511), 장애 밤 60분 37초(run 38781966262).
+const OBSERVED_NORMAL_COLLECT_MS = 18 * 60_000;
+const OBSERVED_DEGRADED_COLLECT_MS = 61 * 60_000;
 
-test("#1267 fixture는 실제 실패 run의 응답 바이트와 기록된 sha256이 같다", () => {
-  const flat = ["unknownError99", "externalApi504", "gradeList", "cityCodeList", "seoulStationList",
-    "yongsanToWangsimni20261016", "yongsanToWangsimni20261017", "wangsimniToYongsan20261016", "wangsimniToYongsan20261017"];
-  for (const name of flat) assert.equal(sha256(REAL_1267[name]), REAL_1267.sha256[name], name);
-  for (const [key, text] of Object.entries(REAL_1267.saturdayOd)) {
-    assert.equal(sha256(text), REAL_1267.sha256.saturdayOd[key], key);
+test("#1267 fixture는 capture record의 bodySha256과 위치(run·artifact·index·요청)에 결속된다", () => {
+  const { provenance } = REAL_1267;
+  assert.equal(provenance.runId, "38781966262");
+  assert.equal(provenance.artifactName, "itx-current-promotion-38781966262");
+  assert.equal(provenance.file, "provider-response-capture.json");
+  assert.match(provenance.captureContentSha256, /^[0-9a-f]{64}$/);
+  assert.equal(provenance.captureRequestCount, 1929);
+  const bodies = new Map([
+    ...["unknownError99", "externalApi504", "gradeList", "cityCodeList", "seoulStationList",
+      "yongsanToWangsimni20261016", "yongsanToWangsimni20261017", "wangsimniToYongsan20261016", "wangsimniToYongsan20261017"]
+      .map((name) => [provenance.records[name], REAL_1267[name], name]).map(([record, text, name]) => [name, { record, text }]),
+    ...Object.entries(REAL_1267.saturdayOd).map(([key, text]) => [key, { record: provenance.saturdayOdRecords[key], text }]),
+  ]);
+  assert.equal(bodies.size, 9 + 12);
+  const indexes = new Set();
+  for (const [name, { record, text }] of bodies) {
+    assert.ok(record, name);
+    assert.equal(sha256(text), record.bodySha256, name);
+    assert.ok(Number.isInteger(record.index) && record.index >= 0 && record.index < provenance.captureRequestCount, name);
+    indexes.add(record.index);
   }
-  assert.equal(REAL_1267.unknownError99, '{"header":{"resultCode":"99","resultMsg":"UNKNOWN_ERROR."}}');
-  assert.equal(REAL_1267.externalApi504, '{"header":{"resultCode":"99","resultMsg":"[504] 외부 API - 호출에 실패했습니다."}}');
-  assert.equal(Object.keys(REAL_1267.saturdayOd).length, 12);
+  assert.equal(indexes.size, bodies.size, "서로 다른 capture record에서 꺼냈다");
+  // 토요일 OD 응답은 capture의 토요일 구간에서, 키와 같은 요청(출발·도착·조회일)의 record에서 꺼냈다.
+  const [from, to] = provenance.saturdayRecordIndexRange;
+  for (const [key, record] of Object.entries(provenance.saturdayOdRecords)) {
+    const [dep, arr, date] = key.split(">");
+    const query = Object.fromEntries(record.query);
+    assert.ok(record.index >= from && record.index <= to, key);
+    assert.equal(record.path, "/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo", key);
+    assert.deepEqual([query.depPlaceId, query.arrPlaceId, query.depPlandTime], [dep, arr, date], key);
+  }
+  // 장애 응답 본문은 실제로 resultCode 99다.
+  assert.equal(JSON.parse(REAL_1267.unknownError99).header.resultCode, "99");
+  assert.equal(JSON.parse(REAL_1267.externalApi504).header.resultCode, "99");
+  assert.match(REAL_1267.externalApi504, /\[504\]/);
+  assert.ok(JSON.stringify(REAL_1267).includes("serviceKey") === false);
+});
+
+test("#1267 재시도 정책 불변식: 간격은 단조 증가 후 상한에서 멈추고, 합계는 관측 장애보다 길며, run 예산은 요청 하나가 쓰는 시간의 여러 배다", () => {
+  assert.equal(BACKOFF.length, TAGO_TRANSIENT_RETRY_LIMIT);
+  assert.ok(TAGO_TRANSIENT_RETRY_LIMIT > 5, "옛 한도(5번)로는 실패 run의 장애를 못 덮는다");
+  assert.ok(BACKOFF.every((delay, index) => index === 0 || delay >= BACKOFF[index - 1]), "단조 증가(비감소)");
+  assert.ok(BACKOFF.every((delay) => delay >= 1_000 && delay <= TAGO_TRANSIENT_BACKOFF_CAP_MS));
+  assert.equal(BACKOFF[0], 1_000);
+  assert.equal(BACKOFF.at(-1), TAGO_TRANSIENT_BACKOFF_CAP_MS, "마지막 간격이 상한이다");
+  assert.ok(BACKOFF.slice(0, -1).some((delay) => delay < TAGO_TRANSIENT_BACKOFF_CAP_MS));
+  assert.equal(TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS, sum(BACKOFF), "요청 하나의 대기 합계는 간격 배열의 합이다");
+  assert.ok(TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS > OBSERVED_OUTAGE_MS, "관측한 장애 길이를 한 요청 안에서 덮는다");
+  assert.ok(TAGO_RETRY_BUDGET_MS >= 4 * TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS, "한도를 다 쓰는 요청 여러 개를 감당한다");
+  assert.ok(TAGO_RETRY_BUDGET_MS >= 4 * OBSERVED_RUN_RETRY_WAIT_MS, "실패 run이 쓴 재시도 대기의 여러 배다");
+  assert.ok(TAGO_REQUEST_TIMEOUT_MS > 0 && TAGO_REQUEST_TIMEOUT_MS <= 30_000);
 });
 
 // 토요일(20261017) 용산·옥수·상봉 roster. 응답은 실제 토요일 운행일 응답 바이트다(운행 없음 00/0건 포함).
-// outage는 해당 operation의 첫 요청 시각부터 lengthMs 동안(가상 시계) 모든 요청에 resultCode 99 본문을 돌려준다. waitImpl이 가상 시계를 움직인다.
-function saturdayProvider({ outage = null } = {}) {
-  const clock = { now: 0 };
+// 가상 시계(clock)는 waitImpl과 느린 시도(attemptMs)만 움직인다.
+// outage는 해당 operation의 첫 요청 시각부터 lengthMs 동안 모든 요청에 resultCode 99 본문을 돌려준다.
+// slowFirstAttempt는 같은 요청의 첫 시도마다 attemptMs를 쓰고 99를 돌려준 뒤 다음 시도부터 정상 응답한다(느린 실패가 반복되는 공급자).
+function saturdayProvider({ outage = null, slowFirstAttempt = null, clock = { now: 0 } } = {}) {
   const delays = [];
   const calls = [];
+  const seen = new Set();
   let outageStartedAt = null;
   const fetchImpl = async (url) => {
     const parsed = new URL(url);
@@ -2218,7 +2285,15 @@ function saturdayProvider({ outage = null } = {}) {
     calls.push({ operation, at: clock.now });
     if (outage && operation === outage.operation) {
       outageStartedAt ??= clock.now;
-      if (clock.now < outageStartedAt + outage.lengthMs) return jsonBody(REAL_1267[outage.body]);
+      if (clock.now < outageStartedAt + outage.lengthMs) {
+        clock.now += outage.attemptMs ?? 0;
+        return jsonBody(REAL_1267[outage.body]);
+      }
+    }
+    if (slowFirstAttempt && operation === slowFirstAttempt.operation && !seen.has(String(url))) {
+      seen.add(String(url));
+      clock.now += slowFirstAttempt.attemptMs;
+      return jsonBody(REAL_1267[slowFirstAttempt.body]);
     }
     if (operation === "GetVhcleKndList") return jsonBody(REAL_1267.gradeList);
     if (operation === "GetCtyCodeList") return jsonBody(REAL_1267.cityCodeList);
@@ -2230,7 +2305,7 @@ function saturdayProvider({ outage = null } = {}) {
     return jsonBody(REAL_1267.saturdayOd[key]);
   };
   const waitImpl = async (milliseconds) => { delays.push(milliseconds); clock.now += milliseconds; };
-  return { fetchImpl, waitImpl, delays, calls, clock };
+  return { fetchImpl, waitImpl, clockImpl: () => clock.now, delays, calls, clock };
 }
 
 const saturdayStations = () => [
@@ -2241,7 +2316,7 @@ const saturdayStations = () => [
 const saturdayInput = (provider, extra = {}) => ({
   serviceKey: "fixture-credential-must-not-leak", serviceDate: "20261017", kricServiceDayCode: "7",
   canonicalStations: saturdayStations(), now: new Date("2026-10-16T00:00:00.000Z"),
-  fetchImpl: provider.fetchImpl, waitImpl: provider.waitImpl, ...extra,
+  fetchImpl: provider.fetchImpl, waitImpl: provider.waitImpl, clockImpl: provider.clockImpl, ...extra,
 });
 
 // 독립 oracle: fixture 본문에서 토요일 서비스일(20261017) 출발 행 수를 직접 센다. 20261018 조회 창의 행은 다음 날이라 제외한다.
@@ -2262,19 +2337,18 @@ test("#1267 장애 없는 토요일 roster는 운행 없음(00, 0건) OD를 결�
   assert.deepEqual(provider.delays, []);
 });
 
-test("#1267 토요일 OD가 장애 구간에 걸려도 같은 요청을 191초까지 기다려 다시 보내 모든 OD를 완료한다", async () => {
-  // 실패 run은 첫 99부터 정상 복귀까지 재시도 대기 합계가 108초 이상이었다. 100초짜리 장애가 첫 OD 요청에서 시작한다.
-  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 100_000, body: "unknownError99" } });
+test("#1267 토요일 OD가 관측한 길이의 장애 구간에 걸려도 같은 요청을 다시 보내 모든 OD를 완료한다", async () => {
+  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: OBSERVED_OUTAGE_MS, body: "unknownError99" } });
   const requestBudget = { limit: 10_000, remaining: 10_000 };
   const artifact = await collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget }));
   assert.equal(artifact.completedOdCount, 6);
   assert.equal(artifact.failedOdCount, 0);
   assert.equal(artifact.failedOds, undefined);
   assert.equal(artifact.itineraries.length, saturdayServiceDayRows().length);
-  // 같은 요청의 재시도일 뿐이다: 모든 대기는 정해진 간격이고, 한 요청 안의 대기 합계는 191초를 넘지 않는다.
+  // 같은 요청의 재시도일 뿐이다: 모든 대기는 정해진 간격이고, 한 요청 안의 대기 합계는 간격 합계를 넘지 않는다.
   assert.ok(provider.delays.length > 0);
-  assert.ok(provider.delays.every((delay) => RETRY_SCHEDULE.includes(delay)));
-  assert.ok(provider.delays.reduce((sum, delay) => sum + delay, 0) <= RETRY_SCHEDULE_TOTAL);
+  assert.ok(provider.delays.every((delay) => BACKOFF.includes(delay)));
+  assert.ok(sum(provider.delays) <= TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS);
   // 회복한 응답의 증거에는 실패한 시도의 본문이 들어가지 않는다. 시도 수는 요청 수와 예산 차감에 모두 드러난다.
   assert.equal(JSON.stringify(artifact).includes("UNKNOWN_ERROR"), false);
   const cityCount = JSON.parse(REAL_1267.cityCodeList).response.body.items.item.length;
@@ -2285,7 +2359,7 @@ test("#1267 토요일 OD가 장애 구간에 걸려도 같은 요청을 191초�
 });
 
 test("#1267 역 목록 요청이 장애 구간에 걸려도 같은 요청을 다시 보내 roster를 끝낸다 (실제 [504] 응답 바이트)", async () => {
-  const provider = saturdayProvider({ outage: { operation: "GetCtyAcctoTrainSttnList", lengthMs: 100_000, body: "externalApi504" } });
+  const provider = saturdayProvider({ outage: { operation: "GetCtyAcctoTrainSttnList", lengthMs: OBSERVED_OUTAGE_MS, body: "externalApi504" } });
   const artifact = await collectTagoItxCheongchunRoster(saturdayInput(provider));
   assert.equal(artifact.completedOdCount, 6);
   assert.equal(artifact.failedOdCount, 0);
@@ -2293,9 +2367,9 @@ test("#1267 역 목록 요청이 장애 구간에 걸려도 같은 요청을 다
   assert.equal(JSON.stringify(artifact).includes("외부 API"), false);
 });
 
-test("#1267 장애가 재시도 간격(191초)보다 길면 지금처럼 OD를 결손으로 남기고 SUPPORTED로 덮지 않는다", async () => {
-  // 장애 길이 250초: 첫 OD는 두 조회일 모두 8번(첫 시도 + 재시도 7)을 받고도 99라 결손이다. 이후 OD부터는 복귀한다.
-  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 250_000, body: "unknownError99" } });
+test("#1267 장애가 한 요청의 재시도 간격 합계보다 길면 지금처럼 OD를 결손으로 남기고 SUPPORTED로 덮지 않는다", async () => {
+  // 첫 OD는 두 조회일 모두 재시도를 다 쓰고도 99라 결손이다. 이후 OD부터는 복귀한다.
+  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 2 * TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS + 60_000, body: "unknownError99" } });
   const artifact = await collectTagoItxCheongchunRoster(saturdayInput(provider));
   assert.ok(artifact.failedOdCount >= 1);
   assert.equal(artifact.completedOdCount + artifact.failedOdCount, artifact.expectedOdCount);
@@ -2306,17 +2380,79 @@ test("#1267 장애가 재시도 간격(191초)보다 길면 지금처럼 OD를 �
   assert.ok(artifact.itineraries.every(({ departureStationId, arrivalStationId }) => !failedKeys.has(`${departureStationId}>${arrivalStationId}`)));
 });
 
-test("#1267 끝나지 않는 장애는 run 단위 대기 예산(15분) 안에서 멈추고 예산을 넘겨 기다리지 않는다", async () => {
+test("#1267 끝나지 않는 장애는 run 단위 재시도 예산 안에서 멈추고 예산을 넘겨 기다리지 않는다", async () => {
   const requestBudget = { limit: 10_000, remaining: 10_000 };
   const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 10 * 3_600_000, body: "unknownError99" } });
   await assert.rejects(collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget })), /^Error: TAGO_RETRY_TIME_BUDGET_EXHAUSTED$/);
-  const total = provider.delays.reduce((sum, delay) => sum + delay, 0);
-  assert.ok(total <= RUN_RETRY_WAIT_BUDGET, `waited ${total}ms`);
-  assert.ok(total > RUN_RETRY_WAIT_BUDGET - RETRY_SCHEDULE[RETRY_SCHEDULE.length - 1], "다음 대기가 예산을 넘는 순간에만 멈춘다");
-  // 최악 시간 상한: 시도 수 × 15초(요청 timeout) + 대기 합계가 가장 짧은 workflow timeout(45분)보다 짧다.
-  const attempts = provider.calls.filter(({ operation }) => operation === "GetStrtpntAlocFndTrainInfo").length;
-  assert.ok(attempts * 15_000 + total < 45 * 60_000, `${attempts} attempts`);
+  const total = sum(provider.delays);
+  assert.ok(total <= TAGO_RETRY_BUDGET_MS, `waited ${total}ms`);
+  assert.ok(total > TAGO_RETRY_BUDGET_MS - BACKOFF.at(-1), "다음 대기가 예산을 넘는 순간에만 멈춘다");
   // 일일 한도: 이 run이 쓴 요청은 시도마다 차감되고 10,000건 한도의 3분의 1도 쓰지 않는다.
   assert.equal(requestBudget.limit - requestBudget.remaining, provider.calls.length);
   assert.ok(provider.calls.length < 10_000 / 3);
+});
+
+// F2: run 재시도 예산은 대기뿐 아니라 일시 오류로 끝난 시도가 쓴 경과 시간(벽시계)도 센다.
+// 최악 재시도 시간 = 예산 + 한도를 다 쓴 요청마다 세지 않는 마지막 시도 하나(요청 timeout). 한도를 다 쓰는 요청은 간격 합계 이상의 예산을 쓰므로 최대 floor(예산 / 합계)개다.
+const worstRetryAddedMs = () => TAGO_RETRY_BUDGET_MS
+  + (Math.floor(TAGO_RETRY_BUDGET_MS / TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS) + 1) * TAGO_REQUEST_TIMEOUT_MS;
+
+test("#1267 느린 실패가 반복되면 대기가 아니라 경과 시간 기준으로 예산이 닿아 수집을 멈춘다 (가상 시계)", async () => {
+  const clock = { now: 0 };
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const waits = [];
+  const outcomes = [];
+  // 모든 OD 요청의 첫 시도가 요청 timeout만큼 걸린 뒤 99로 끝나고, 재시도 한 번(1초 대기)이면 정상이다. 대기만 세면 이 패턴은 예산(수백 초)에 거의 닿지 않는다.
+  for (let day = 0; day < 12; day += 1) {
+    const provider = saturdayProvider({ slowFirstAttempt: { operation: "GetStrtpntAlocFndTrainInfo", attemptMs: TAGO_REQUEST_TIMEOUT_MS, body: "unknownError99" }, clock });
+    try {
+      outcomes.push(await collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget })));
+    } catch (error) {
+      outcomes.push(error);
+      waits.push(...provider.delays);
+      break;
+    }
+    waits.push(...provider.delays);
+  }
+  const stopped = outcomes.at(-1);
+  assert.ok(stopped instanceof Error, "예산이 닿기 전에 12일치 수집이 모두 끝났다");
+  assert.equal(stopped.message, "TAGO_RETRY_TIME_BUDGET_EXHAUSTED");
+  assert.ok(outcomes.length > 1, "예산이 닿기 전에 최소 하루치는 회복했다");
+  // 대기 합계만으로는 예산의 일부밖에 안 되지만(1초 x 재시도 수), 경과 시간까지 합하면 예산 가까이 쓴다.
+  assert.ok(sum(waits) < TAGO_RETRY_BUDGET_MS / 4, `waited only ${sum(waits)}ms`);
+  assert.ok(clock.now <= worstRetryAddedMs(), `retry-added time ${clock.now}ms`);
+  assert.ok(clock.now > TAGO_RETRY_BUDGET_MS - TAGO_REQUEST_TIMEOUT_MS - BACKOFF[0], "경과 시간까지 합해 예산을 거의 다 쓰고서야 멈춘다");
+});
+
+test("#1267 느린 99가 계속돼도 가상 시계의 재시도 시간은 최악 상한을 넘지 않는다", async () => {
+  const requestBudget = { limit: 10_000, remaining: 10_000 };
+  const provider = saturdayProvider({ outage: { operation: "GetStrtpntAlocFndTrainInfo", lengthMs: 10 * 3_600_000, attemptMs: TAGO_REQUEST_TIMEOUT_MS, body: "unknownError99" } });
+  await assert.rejects(collectTagoItxCheongchunRoster(saturdayInput(provider, { requestBudget })), /^Error: TAGO_RETRY_TIME_BUDGET_EXHAUSTED$/);
+  assert.ok(provider.clock.now <= worstRetryAddedMs(), `retry-added time ${provider.clock.now}ms`);
+  assert.ok(provider.clock.now > TAGO_RETRY_BUDGET_MS - TAGO_REQUEST_TIMEOUT_MS - BACKOFF.at(-1));
+});
+
+test("#1267 최악 재시도 시간은 이 수집기를 쓰는 workflow의 실제 timeout 안에 든다", () => {
+  const workflowTimeoutMs = (file) => {
+    const text = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), "utf8");
+    assert.match(text, /run-current-itx-collection\.mjs/, `${file} runs the current ITX collector`);
+    const minutes = [...text.matchAll(/^\s+timeout-minutes:\s*(\d+)\s*$/gm)].map(([, value]) => Number(value));
+    assert.equal(minutes.length, 1, `${file} has exactly one job timeout`);
+    return minutes[0] * 60_000;
+  };
+  const timeouts = {
+    "itx-current-promotion.yml": workflowTimeoutMs("itx-current-promotion.yml"),
+    "itx-current-collection.yml": workflowTimeoutMs("itx-current-collection.yml"),
+    "current-capital-topology-refresh.yml": workflowTimeoutMs("current-capital-topology-refresh.yml"),
+  };
+  const worstAdded = worstRetryAddedMs();
+  // 정상 공급자에서 수집 step이 걸린 시간(최대 17분 13초)에 재시도 최악 시간을 더해도 가장 짧은 timeout(45분)보다 짧다.
+  for (const [file, timeout] of Object.entries(timeouts)) {
+    assert.ok(OBSERVED_NORMAL_COLLECT_MS + worstAdded < timeout, `${file}: ${(OBSERVED_NORMAL_COLLECT_MS + worstAdded) / 60_000} min vs ${timeout / 60_000} min`);
+  }
+  // 장애 밤처럼 요청 자체가 느려 수집 step이 60분 넘게 걸린 경우는 90분 timeout의 승격 workflow만 담을 수 있고, 재시도 최악 시간을 더해도 남는다.
+  // 오프라인 replay(대기 없음)와 게이트·PR 단계에 쓸 남은 시간이 10분 이상이다.
+  const promotion = timeouts["itx-current-promotion.yml"];
+  assert.ok(OBSERVED_DEGRADED_COLLECT_MS + worstAdded + 10 * 60_000 < promotion, `${(OBSERVED_DEGRADED_COLLECT_MS + worstAdded) / 60_000} min vs ${promotion / 60_000} min`);
+  assert.deepEqual(Object.values(timeouts).toSorted((left, right) => left - right), [45, 60, 90].map((minutes) => minutes * 60_000));
 });
