@@ -181,7 +181,8 @@ test("모든 recipe는 소유 원천마다 갱신 대상 필드를 명시하고 
 // 필드 집합에 admissionEvidence를 넣지 않았으므로 license 해시가 어긋나면 이 검사와 재확인 PR의 범위 게이트가 함께 멈춘다(사람이 라이선스 변경을 본다).
 const BUSAN_ACCESSIBILITY_FIELDS = { wl_i: "0", wl_o: "0", el_i: "2", el_o: "1", es: "3", blindroad: "1", ourbridge: "1", helptake: "2", toilet: "1", toilet_gubun: "분리" };
 
-async function registrarWrite(recipeId) {
+// sourceId는 독립 표(TOPOLOGY_BOUND_RECIPES)에서 받는다. recipe 표에서 꺼내 쓰면 기대값이 생산 함수에서 나온 순환 oracle이 된다.
+async function registrarWrite(recipeId, sourceId) {
   const base = await readJson("tools/datapack/source-inventory.json");
   const source = (id) => base.sources.find((entry) => entry.id === id);
   const candidates = (await readJson("tools/datapack/source-candidates.json")).candidates;
@@ -189,16 +190,14 @@ async function registrarWrite(recipeId) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "recipe-scope-"));
   try {
     const snapshotPath = path.join(dir, "snapshot.json");
-    const prepare = async (fn, input) => ({ sourceId: recipeById(recipeId).sourceIds[0], prepared: await fn({ repositoryRoot: root, snapshotPath, ...input }) });
+    const prepare = async (fn, input) => ({ prepared: await fn({ repositoryRoot: root, snapshotPath, ...input }) });
     if (recipeId === "daejeon-timetable" || recipeId === "busan-timetable") {
-      const sourceId = recipeById(recipeId).sourceIds[0];
       const evidence = source(sourceId).scheduleAdmissionEvidence;
       await writeFile(snapshotPath, await readFile(path.join(root, evidence.snapshotPath)));
       const now = new Date(Date.parse(evidence.capturedAt) + 3_600_000);
       return { base, ...(await prepare(recipeId === "busan-timetable" ? prepareBusanTimetableRegistration : prepareDaejeonTimetableRegistration, { now })) };
     }
     if (recipeId === "busan-accessibility") {
-      const sourceId = "busan-transportation-accessibility";
       const now = reviewedPlusHour(sourceId);
       const topology = await readJson(source("busan-transportation-route-topology").topologyAdmissionEvidence.snapshotPath);
       const snapshot = await collectBusanAccessibility({
@@ -212,7 +211,7 @@ async function registrarWrite(recipeId) {
       await writeFile(snapshotPath, JSON.stringify(snapshot));
       return { base, ...(await prepare(prepareRegionalAccessibilityRegistration, { now })) };
     }
-    const now = reviewedPlusHour("daegu-transportation-accessibility");
+    const now = reviewedPlusHour(sourceId);
     const snapshot = collectDaeguAccessibility({
       facilitiesBytes: await readFile(path.join(root, "tools/datapack/fixtures/daegu-accessibility-raw/data-go-15149872.csv")),
       topologySnapshots: await loadAdmittedDaeguTopologySnapshots(path.join(root, "tools/datapack/sources"), base), now,
@@ -235,15 +234,15 @@ function staleBase(base, sourceId) {
   return stale;
 }
 
-for (const [recipeId] of TOPOLOGY_BOUND_RECIPES) {
+for (const [recipeId, ownedSourceId] of TOPOLOGY_BOUND_RECIPES) {
   test(`${recipeId}: 등록기가 실제로 쓰는 inventory 변경은 recipe의 갱신 필드 범위 안이다 (#1122)`, async () => {
-    const { base: current, sourceId, prepared } = await registrarWrite(recipeId);
-    const base = staleBase(current, sourceId);
+    const { base: current, prepared } = await registrarWrite(recipeId, ownedSourceId);
+    const base = staleBase(current, ownedSourceId);
     // 비어 있는 증명이 되지 않게: 등록기가 직전 상태의 근거를 실제로 다시 썼다.
-    assert.notDeepEqual(prepared.inventory.sources.find(({ id }) => id === sourceId), base.sources.find(({ id }) => id === sourceId));
+    assert.notDeepEqual(prepared.inventory.sources.find(({ id }) => id === ownedSourceId), base.sources.find(({ id }) => id === ownedSourceId));
     assert.deepEqual(inventoryChangeViolations({ base, head: prepared.inventory, recipeIds: [recipeId] }), []);
     // 범위 게이트가 이 쓰기를 실제로 본다: 갱신 필드를 비우면 같은 쓰기가 위반으로 잡힌다.
-    assert.ok(inventoryScopeViolations({ base, head: prepared.inventory, allowed: new Map([[sourceId, new Set()]]) }).length > 0);
+    assert.ok(inventoryScopeViolations({ base, head: prepared.inventory, allowed: new Map([[ownedSourceId, new Set()]]) }).length > 0);
   });
 }
 
