@@ -100,7 +100,8 @@ function dueEntry({ recipe, sourceId, basisAt, freshUntil, windows, nowMillis })
 function ledgerDueEntries({ recipe, ledger, policy, windows, nowMillis }) {
   return recipe.due.sourceIds.map((sourceId) => {
     const head = ledgerHead(ledger, sourceId);
-    return dueEntry({ recipe, sourceId, basisAt: head[classOf(policy, sourceId).basisField], freshUntil: head.freshUntil, windows, nowMillis });
+    // 만료는 모든 원장 행이 싣는 정책 파생 값(freshnessExpiresAt)이다. freshUntil은 일부 행에만 있다(KRIC 역별 시간표 행에는 없다, #1122).
+    return dueEntry({ recipe, sourceId, basisAt: head[classOf(policy, sourceId).basisField], freshUntil: head.freshnessExpiresAt, windows, nowMillis });
   });
 }
 

@@ -21,7 +21,7 @@
 //
 // 사용(깨끗한 작업 트리, origin/main의 후손 HEAD에서):
 //   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>
-//   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
+//   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), KRIC 서비스 키(역별 시간표), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -55,7 +55,8 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 // 이 controller는 공급자를 직접 부르는 runner가 아니다. 키는 환경으로 하위 수집기(각자 키 형상을 먼저 검사한다)와 KASI 수집 함수에 넘기기만 한다.
 // 자격 증명 coverage는 연속된 env 토큰으로 runner를 찾으므로 provider-call-integrity와 같은 방식으로 이름을 조립한다.
 const DATA_GO_CREDENTIAL_ENV = ["DATA", "GO", "KR", "SERVICE", "KEY"].join("_");
-const SECRET_ENV = Object.freeze([DATA_GO_CREDENTIAL_ENV, "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
+const KRIC_CREDENTIAL_ENV = ["KRIC", "SERVICE", "KEY"].join("_");
+const SECRET_ENV = Object.freeze([DATA_GO_CREDENTIAL_ENV, KRIC_CREDENTIAL_ENV, "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
 const DAY_MS = 86_400_000;
 const KST_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
 
@@ -364,7 +365,32 @@ async function verifyDaeguRegistration(ctx) {
   }
 }
 
+const STATION_TIMETABLE_SOURCE_ID = "kric-subway-timetable-station-lines";
+
+// KRIC 역별 시간표: 수집본의 sha·크기에 결속해 OCI에 게시하고, 이전에 승인된 거버넌스 항목·승인 증거로 등록한다(사람 검토 파일 없음, 승인 이월은 등록기가 검증한다).
+const KRIC_STATION_TIMETABLE_STEPS = [
+  step("collect", "collect", async (ctx) => {
+    await ctx.execute("collect-kric-station-timetables.mjs", ["--output", ctx.file("collection.json")]);
+  }),
+  step("publish", "register", async (ctx) => {
+    const bytes = await readFile(ctx.file("collection.json"));
+    await ctx.execute("publish-kric-station-timetables-raw.mjs", [
+      "--input", ctx.file("collection.json"), "--receipt", ctx.file("raw-receipt.json"), "--expected-sha256", sha256(bytes), "--expected-byte-size", String(bytes.length),
+    ]);
+  }),
+  step("source-input", "glue", async (ctx) => {
+    await writeFile(ctx.file("source-input.json"), jsonText({
+      schemaVersion: 1, artifactKind: "kric-station-timetable-registration-input", collectionPath: ctx.file("collection.json"),
+      receiptPath: ctx.file("raw-receipt.json"), reviewAdmissionPath: null, governanceEntry: await governanceEntry(ctx, STATION_TIMETABLE_SOURCE_ID),
+    }), { flag: "wx" });
+  }),
+  step("register", "register", async (ctx) => {
+    await ctx.execute("register-kric-station-timetables.mjs", ["--source-input", ctx.file("source-input.json"), "--expected-head-sha", await ctx.head()]);
+  }),
+];
+
 export const RECIPE_STEPS = Object.freeze({
+  "kric-station-timetable": KRIC_STATION_TIMETABLE_STEPS,
   "kric-capital-timetable": [
     // 한 도구가 KRIC 파일을 받고(KRIC_TIMETABLE_FILE_*) 수도권·코레일 projection 증거를 등록한다. OCI 게시는 없다(원본 보관은 광주 보관본 workflow의 몫).
     step("register", "collect-register", async (ctx) => {

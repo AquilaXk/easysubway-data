@@ -11,6 +11,7 @@ import { collectKricStationTimetables } from "./collect-kric-station-timetables.
 import { KRIC_API_STATION_TIMETABLE_BINDINGS } from "./lib/kric-station-timetable-api-trips.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY } from "./lib/kric-station-row-timetable-trips.mjs";
 import { STATION_LINES_SOURCE_ID, registerKricStationTimetables } from "./register-kric-station-timetables.mjs";
+import { inventoryChangeViolations, inventoryScopeViolations } from "./source-reverification-recipes.mjs";
 import { syntheticExpectedObservation, syntheticKricStationFetch } from "./test-fixtures/kric-station-timetable-synthetic.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -233,6 +234,51 @@ test("후속 등록은 원장에 한 행만 덧붙여 이전 head를 잇고, 정
   const sources = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8")).sources.filter(({ id }) => id === STATION_LINES_SOURCE_ID);
   assert.equal(sources.length, 1);
   assert.equal(sources[0].admissionEvidence.snapshotId, next.receipt.snapshotId);
+});
+
+// #1122: 무인 갱신은 사람 검토 파일을 만들지 않는다. 후속 등록은 이전에 승인된 admissionEvidence를 그대로 이월하되,
+// 승인된 스키마(schemaFingerprint)와 승인된 약관(licenseEvidenceHash)에서 벗어나면 등록하지 않는다.
+const withoutReview = async (files, input) => writeFile(files.sourceInputPath, `${JSON.stringify({ ...input, reviewAdmissionPath: null }, null, 2)}\n`);
+
+test("후속 등록은 검토 승인 파일 없이 이전 승인을 이월하고 inventory 쓰기는 recipe의 갱신 필드 범위 안이다 (#1122)", async (t) => {
+  const { root, files, receipt, now } = await fixture(t);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  const base = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  await withoutReview(next.files, next.input);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
+  const head = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
+  const sourceOf = (inventory) => inventory.sources.find(({ id }) => id === STATION_LINES_SOURCE_ID);
+  assert.deepEqual(sourceOf(head).admissionEvidence, sourceOf(base).admissionEvidence);
+  assert.equal(sourceOf(head).scheduleAdmissionEvidence.snapshotId, next.receipt.snapshotId);
+  assert.notEqual(sourceOf(head).scheduleAdmissionEvidence.freshUntil, sourceOf(base).scheduleAdmissionEvidence.freshUntil);
+  assert.deepEqual(inventoryChangeViolations({ base, head, recipeIds: ["kric-station-timetable"] }), []);
+  // 범위 게이트가 이 쓰기를 실제로 본다: 갱신 필드를 비우면 같은 쓰기가 위반으로 잡힌다.
+  assert.ok(inventoryScopeViolations({ base, head, allowed: new Map([[STATION_LINES_SOURCE_ID, new Set()]]) }).length > 0);
+  const ledger = JSON.parse(await readFile(path.join(root, OUTPUTS[1]), "utf8"));
+  assert.equal(ledger.at(-1).snapshotId, next.receipt.snapshotId);
+  assert.equal(ledger.at(-1).previousSnapshotId, receipt.snapshotId);
+});
+
+test("승인을 이월할 수 없으면(첫 등록·미승인·스키마 변경·약관 변경) REVIEW_CARRY_FORWARD로 쓰기 전에 거부한다 (#1122)", async (t) => {
+  const { root, files, input, now } = await fixture(t);
+  await withoutReview(files, input);
+  await assert.rejects(registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED }), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD/u);
+  const before = await snapshotOf(root);
+  await writeFile(files.sourceInputPath, `${JSON.stringify(input, null, 2)}\n`);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  const registered = await snapshotOf(root);
+  assert.notDeepEqual(registered, before);
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  await withoutReview(next.files, next.input);
+  const registerNext = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
+  for (const change of [{ decision: "PENDING" }, { schemaFingerprint: "0".repeat(64) }, { licenseEvidenceHash: "0".repeat(64) }]) {
+    const inventory = JSON.parse(registered[OUTPUTS[0]]);
+    Object.assign(inventory.sources.find(({ id }) => id === STATION_LINES_SOURCE_ID).admissionEvidence, change);
+    await writeFile(path.join(root, OUTPUTS[0]), `${JSON.stringify(inventory, null, 2)}\n`);
+    await assert.rejects(registerNext(), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD/u, JSON.stringify(change));
+    assert.deepEqual(await snapshotOf(root), { ...registered, [OUTPUTS[0]]: await readFile(path.join(root, OUTPUTS[0])) });
+  }
 });
 
 test("같은 스냅샷 재등록은 SNAPSHOT_COLLISION, 원장·inventory·정책 상태가 어긋나면 SUCCESSOR_STATE로 쓰기 전에 거부한다", async (t) => {

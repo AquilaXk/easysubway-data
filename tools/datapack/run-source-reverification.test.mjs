@@ -122,6 +122,17 @@ test("수집 단계 실패는 SOURCE_FETCH_FAILED, 등록·입력 조립 실패�
   assert.equal(git(root, "rev-parse", "HEAD"), before);
 });
 
+// #1122: KRIC 역별 시간표 수집기는 KRIC 키를 환경으로 받는다. 단계 오류에 키 값이 실려도 실패 이슈로 나가는 문구에는 남지 않는다.
+test("단계 오류 문구에 환경의 KRIC 키 값이 실려 있어도 드러나는 실패 문구에서 가려진다 (#1122)", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const key = "kric-test-key-0123456789";
+  await assert.rejects(
+    runSourceReverification(options(root, { env: { KRIC_SERVICE_KEY: key }, recipes: [meta("second")], recipeIds: ["second"],
+      steps: { second: stepsOf("collect", async () => { throw new Error(`KRIC_HTTP_FAILED: A X108 status=500 ${key}`); }) } })),
+    (error) => error.message.includes("KRIC_HTTP_FAILED") && !error.message.includes(key) && error.message.includes("***"),
+  );
+});
+
 const writeSnapshot = (name) => async (ctx) => writeFile(path.join(ctx.repositoryRoot, `tools/datapack/sources/${name}.json`), "{}\n");
 const failing = (kind, message) => stepsOf(kind, async () => { throw new Error(message); });
 
@@ -236,6 +247,7 @@ test("원장·증거 게이트와 출력 범위 위반도 그 recipe만 되돌�
 test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: topology와 그에 결속되는 recipe, 나머지는 독립)", () => {
   assert.deepEqual(dependencyGroups(REVERIFICATION_RECIPES).map((group) => group.map(({ id }) => id)), [
     ["kric-capital-timetable"],
+    ["kric-station-timetable"],
     ["korail-topology", "korail-planned-timetable"],
     ["gwangju-topology", "gwangju-accessibility"],
     ["busan-topology", "busan-accessibility", "busan-timetable"],

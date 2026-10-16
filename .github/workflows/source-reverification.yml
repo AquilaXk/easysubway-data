@@ -146,6 +146,7 @@ jobs:
         env:
           DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
+          KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
           RECIPES: ${{ steps.decision.outputs.recipes }}
         run: |
           set -euo pipefail

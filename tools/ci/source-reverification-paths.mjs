@@ -5,6 +5,7 @@
 /** 실행 순서이기도 하다. 의존하는 recipe(접근성·계획 시각표)는 의존 대상 뒤에 온다. */
 export const SOURCE_REVERIFICATION_RECIPE_IDS = Object.freeze([
   "kric-capital-timetable",
+  "kric-station-timetable",
   "korail-topology",
   "korail-planned-timetable",
   "gwangju-topology",

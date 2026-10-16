@@ -20,6 +20,7 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const iso = (millis) => new Date(millis).toISOString();
 
+const STATION_LINES_SOURCE_ID = "kric-subway-timetable-station-lines";
 const POLICY = Object.freeze({
   monitoring: { alertBeforePackExpiry: "PT6H" },
   scheduledPipeline: { cadence: "P1D" },
@@ -28,6 +29,7 @@ const POLICY = Object.freeze({
       "korail-metropolitan-timetable-file", "gwangju-transportation-route-topology", "busan-transportation-route-topology", "daejeon-station-distance-fare",
       "daegu-line1-route-topology", "daegu-line2-route-topology", "daegu-line3-route-topology"] },
     { id: "official_static_timetable_confirmation", basisField: "observedAt", reverificationCadence: "P7D", futureBasisAllowed: false, providerValidityEndField: "serviceEffectiveUntil", sourceIds: ["kric-nationwide-timetable-file"] },
+    { id: "planned_timetable", basisField: "serviceEffectiveAt", maximumReverificationCadence: "P30D", futureBasisAllowed: true, sourceIds: [STATION_LINES_SOURCE_ID] },
   ],
 });
 const TOPOLOGY_SOURCES = POLICY.sourceClasses[0].sourceIds;
@@ -37,7 +39,12 @@ const row = (sourceId, basisMillis, overrides = {}) => ({
   sourceId, snapshotId: `${sourceId}-1`, previousSnapshotId: null, retrievedAt: iso(basisMillis), capturedAt: iso(basisMillis),
   freshUntil: iso(basisMillis + 7 * DAY), freshnessExpiresAt: iso(basisMillis + 7 * DAY), ...overrides,
 });
-const ledgerAt = (basisMillis, extra = []) => [...TOPOLOGY_SOURCES.map((sourceId) => row(sourceId, basisMillis)), ...extra];
+// KRIC 역별 시간표의 실제 원장 행 형상: 기준은 serviceEffectiveAt이고 만료는 freshnessExpiresAt(정책 P30D)뿐이다. freshUntil 필드는 없다.
+const stationLinesRow = (basisMillis) => ({
+  sourceId: STATION_LINES_SOURCE_ID, snapshotId: `${STATION_LINES_SOURCE_ID}-1`, previousSnapshotId: null,
+  retrievedAt: iso(basisMillis), serviceEffectiveAt: iso(basisMillis), freshnessExpiresAt: iso(basisMillis + 30 * DAY),
+});
+const ledgerAt = (basisMillis, extra = []) => [...TOPOLOGY_SOURCES.map((sourceId) => row(sourceId, basisMillis)), stationLinesRow(basisMillis), ...extra];
 const inventoryAt = (observedMillis) => ({ sources: [{
   id: "kric-nationwide-timetable-file",
   capitalScheduleAdmissionEvidence: { observedAt: iso(observedMillis) },
@@ -83,6 +90,24 @@ test("만료 경보 창(alertBeforePackExpiry)이 P1D보다 이르면 그 시각
   assert.equal(decideSourceReverification(input({ ledger: ledgerAt(FRESH).map((entry) => (entry.sourceId === later.sourceId ? later : entry)) })).state, "NOT_DUE");
 });
 
+// #1122: 원장 행의 만료는 모든 행이 싣는 freshnessExpiresAt이다. freshUntil은 일부 행에만 있어 그 필드에 기대면 KRIC 역별 시간표 head를 판정하지 못한다.
+test("freshnessExpiresAt만 싣는 head(KRIC 역별 시간표)도 기준 + P1D가 지나면 DUE이고 독립 recipe 하나만 돈다", () => {
+  const stale = ledgerAt(FRESH).map((entry) => (entry.sourceId === STATION_LINES_SOURCE_ID ? stationLinesRow(dueAgo(DAY + HOUR)) : entry));
+  const result = decideSourceReverification(input({ ledger: stale }));
+  assert.equal(result.state, "RUN");
+  assert.deepEqual(result.recipes, ["kric-station-timetable"]);
+  assert.deepEqual(result.due, [{ recipeId: "kric-station-timetable", sourceId: STATION_LINES_SOURCE_ID, dueAt: iso(dueAgo(DAY + HOUR) + DAY) }]);
+});
+
+test("KRIC 역별 시간표는 만료가 6시간 안이면 기준 + P1D보다 먼저 DUE가 되고 만료를 연장하지 않는다", () => {
+  const expiring = ledgerAt(FRESH).map((entry) => (entry.sourceId === STATION_LINES_SOURCE_ID
+    ? { ...stationLinesRow(dueAgo(2 * HOUR)), freshnessExpiresAt: iso(NOW.getTime() + 5 * HOUR) } : entry));
+  const [entry] = sourceReverificationDue({ inventory: inventoryAt(FRESH), ledger: expiring, policy: POLICY, now: NOW }).filter(({ sourceId }) => sourceId === STATION_LINES_SOURCE_ID);
+  assert.equal(entry.state, "DUE");
+  assert.equal(entry.dueAt, iso(NOW.getTime() - HOUR));
+  assert.equal(entry.freshUntil, iso(NOW.getTime() + 5 * HOUR));
+});
+
 test("의존 recipe는 자기 만료 기준 없이 의존 대상이 DUE일 때 함께 돌고, 실행 순서는 의존 순서다", () => {
   const staleLedger = ledgerAt(FRESH).map((entry) => (["korail-metropolitan-timetable-file", "daejeon-station-distance-fare"].includes(entry.sourceId) ? row(entry.sourceId, dueAgo(2 * DAY)) : entry));
   const result = decideSourceReverification(input({ ledger: staleLedger }));
@@ -107,7 +132,7 @@ test("KRIC 시간표 projection은 inventory 증거의 observedAt을 기준으�
 
 test("판정 표는 recipe별 원천의 기준 시각·만료·dueAt을 그대로 돌려준다", () => {
   const table = sourceReverificationDue({ inventory: inventoryAt(FRESH), ledger: ledgerAt(FRESH), policy: POLICY, now: NOW });
-  assert.equal(table.length, 8);
+  assert.equal(table.length, 9);
   const gwangju = table.find(({ sourceId }) => sourceId === "gwangju-transportation-route-topology");
   assert.deepEqual(gwangju, { recipeId: "gwangju-topology", sourceId: "gwangju-transportation-route-topology", basisAt: iso(FRESH), freshUntil: iso(FRESH + 7 * DAY), dueAt: iso(FRESH + DAY), state: "CURRENT" });
 });
@@ -116,7 +141,10 @@ test("원장 head가 없거나 갈라졌거나 만료 시각이 없으면 판정
   assert.throws(() => decideSourceReverification(input({ ledger: ledgerAt(FRESH).filter(({ sourceId }) => sourceId !== "busan-transportation-route-topology") })), /^Error: REVERIFICATION_SOURCE_UNREGISTERED: busan-transportation-route-topology/u);
   const forked = [...ledgerAt(FRESH), row("busan-transportation-route-topology", FRESH, { snapshotId: "busan-transportation-route-topology-2" })];
   assert.throws(() => decideSourceReverification(input({ ledger: forked })), /^Error: REVERIFICATION_LEDGER_BROKEN: busan-transportation-route-topology/u);
-  assert.throws(() => decideSourceReverification(input({ ledger: ledgerAt(FRESH).map((entry) => (entry.sourceId === "busan-transportation-route-topology" ? { ...entry, freshUntil: "내일" } : entry)) })), /^Error: REVERIFICATION_LEDGER_BROKEN: busan-transportation-route-topology/u);
+  assert.throws(() => decideSourceReverification(input({ ledger: ledgerAt(FRESH).map((entry) => (entry.sourceId === "busan-transportation-route-topology" ? { ...entry, freshnessExpiresAt: "내일" } : entry)) })), /^Error: REVERIFICATION_LEDGER_BROKEN: busan-transportation-route-topology/u);
+  // 만료 필드가 없는 head는 연장하거나 건너뛰지 않고 이상으로 실패한다(KRIC 역별 시간표 행).
+  const { freshnessExpiresAt: omitted, ...withoutExpiry } = stationLinesRow(FRESH);
+  assert.throws(() => decideSourceReverification(input({ ledger: ledgerAt(FRESH).map((entry) => (entry.sourceId === STATION_LINES_SOURCE_ID ? withoutExpiry : entry)) })), /^Error: REVERIFICATION_LEDGER_BROKEN: kric-subway-timetable-station-lines/u);
   assert.throws(() => decideSourceReverification(input({ inventory: { sources: [] } })), /^Error: REVERIFICATION_EVIDENCE_MISSING: kric-nationwide-timetable-file/u);
   assert.throws(() => decideSourceReverification(input({ inventory: { sources: [{ id: "kric-nationwide-timetable-file", capitalScheduleAdmissionEvidence: { observedAt: iso(FRESH) } }] } })), /^Error: REVERIFICATION_EVIDENCE_MISSING: kric-nationwide-timetable-file/u);
   assert.throws(() => decideSourceReverification(input({ policy: { ...POLICY, scheduledPipeline: { cadence: "weekly" } } })), /REVERIFICATION_POLICY_INVALID/u);
@@ -220,12 +248,12 @@ test("저장소의 실제 원장·inventory·정책은 이상 없이 판정된�
   const [inventory, ledger, policy] = await Promise.all([readJson("tools/datapack/source-inventory.json"), readJson("tools/datapack/release/source-snapshots.json"), readJson("release/product-gates/datapack-freshness-sla.json")]);
   const table = sourceReverificationDue({ inventory, ledger, policy, now: new Date() });
   assert.deepEqual(table.map(({ recipeId }) => recipeId).sort(), [
-    "busan-topology", "daegu-sources", "daegu-sources", "daegu-sources", "daejeon-topology", "gwangju-topology", "korail-topology", "kric-capital-timetable",
+    "busan-topology", "daegu-sources", "daegu-sources", "daegu-sources", "daejeon-topology", "gwangju-topology", "korail-topology", "kric-capital-timetable", "kric-station-timetable",
   ]);
   const result = decideSourceReverification({ inventory, ledger, policy, pullRequests: [], automationBranches: [], runs: [], repository: REPOSITORY, now: new Date("2099-01-01T00:00:00.000Z"), limits: { pullRequests: 1000, runs: 200 } });
   assert.equal(result.state, "RUN");
   assert.deepEqual(result.recipes, [
-    "kric-capital-timetable", "korail-topology", "korail-planned-timetable", "gwangju-topology", "gwangju-accessibility", "busan-topology", "busan-accessibility", "busan-timetable",
+    "kric-capital-timetable", "kric-station-timetable", "korail-topology", "korail-planned-timetable", "gwangju-topology", "gwangju-accessibility", "busan-topology", "busan-accessibility", "busan-timetable",
     "daejeon-topology", "daejeon-accessibility", "daejeon-timetable", "daegu-sources", "daegu-accessibility",
   ]);
 });
@@ -242,7 +270,7 @@ test("CLI는 판정을 GITHUB_OUTPUT 값으로 남긴다", async () => {
   assert.equal(result.state, "BLOCKED_BY_PENDING_PR");
   assert.equal(written.length, 1);
   assert.equal(written[0][0], "out.txt");
-  assert.match(written[0][1], /^state=BLOCKED_BY_PENDING_PR\nbranch=\nrecipes=korail-topology,korail-planned-timetable,gwangju-topology,/u);
+  assert.match(written[0][1], /^state=BLOCKED_BY_PENDING_PR\nbranch=\nrecipes=kric-station-timetable,korail-topology,korail-planned-timetable,gwangju-topology,/u);
   assert.match(written[0][1], /\ncleanup_claims=\nblocked_by=automation\/456-capital-topology-registration-1\n$/u);
   assert.equal(JSON.parse(logs[0]).state, "BLOCKED_BY_PENDING_PR");
   await assert.rejects(main(["--inventory", "inv.json"], { now: NOW, log() {}, readText: async () => "{}" }), /REVERIFICATION_INPUT_INVALID/u);

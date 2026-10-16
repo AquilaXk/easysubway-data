@@ -114,6 +114,15 @@ test("부산·대전·대구 24시간 근거 원천은 결속된 topology recipe
   }
 });
 
+// #1122: KRIC 역별 시간표는 결속된 topology가 없어 자기 만료 기준(원장 head)을 갖는 독립 recipe가 맡는다. 이 recipe가 없으면 근거가 수집일 + 30일에 만료된 채 남는다.
+test("KRIC 역별 시간표는 원장 head를 만료 기준으로 갖는 독립 recipe가 맡고 시간표 근거 필드만 갱신한다 (#1122)", () => {
+  const recipe = recipeById("kric-station-timetable");
+  assert.deepEqual(recipe.sourceIds, ["kric-subway-timetable-station-lines"]);
+  assert.deepEqual(recipe.dependsOn, []);
+  assert.deepEqual(recipe.due, { kind: "ledger-head", sourceIds: ["kric-subway-timetable-station-lines"] });
+  assert.deepEqual(recipe.inventoryChanges, { "kric-subway-timetable-station-lines": ["observedDataUpdatedAt", "retrievedAt", "scheduleAdmissionEvidence"] });
+});
+
 test("recipe의 원천은 모두 inventory와 신선도 정책 어딘가에 있다", async () => {
   const [inventory, policy] = await Promise.all([readJson("tools/datapack/source-inventory.json"), readJson("release/product-gates/datapack-freshness-sla.json")]);
   const inventoryIds = new Set(inventory.sources.map(({ id }) => id));

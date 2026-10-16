@@ -101,12 +101,14 @@ test("controller는 claim 뒤에만 돌고 비밀은 이 step의 env로만 받�
   assert.match(block, /\n        id: reverify\n/u);
   assert.match(block, /\n          DATA_GO_KR_SERVICE_KEY: \$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}\n/u);
   assert.match(block, /\n          EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: \$\{\{ secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL \}\}\n/u);
+  assert.match(block, /\n          KRIC_SERVICE_KEY: \$\{\{ secrets\.KRIC_SERVICE_KEY \}\}\n/u);
   assert.match(block, /\n          RECIPES: \$\{\{ steps\.decision\.outputs\.recipes \}\}\n/u);
   assert.match(block, /git config user\.name "github-actions\[bot\]"/u);
   assert.match(block, /\[\[ "\$\(git rev-parse origin\/main\)" == "\$\{REVERIFICATION_MAIN_SHA\}" \]\]/u);
   assert.match(block, /node tools\/datapack\/run-source-reverification\.mjs --operation-root "\$\{operation\}\/operation" --recipes "\$\{RECIPES\}" > "\$\{operation\}\/result\.json"/u);
   assert.equal((yml.match(/secrets\.DATA_GO_KR_SERVICE_KEY/gu) ?? []).length, 1, "the service key is only used by the controller step");
   assert.equal((yml.match(/secrets\.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL/gu) ?? []).length, 1, "the OCI base URL is only used by the controller step");
+  assert.equal((yml.match(/secrets\.KRIC_SERVICE_KEY/gu) ?? []).length, 1, "the KRIC service key is only used by the controller step");
 });
 
 // #975 리뷰 F5: controller의 커밋 전체가 원장 변화 게이트를 통과해야 PR이 된다. 증거 본문은 base/head 커밋에 결속된다.

@@ -40,6 +40,16 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     }),
   },
   {
+    // KRIC 역별 시간표(GTX-A·에버라인·의정부·김포골드·부산김해)는 결속된 topology가 없어 자기 원장 head를 만료 기준으로 갖는다(#1122).
+    // 사람 검토 파일 없이 이전 승인을 이월해 등록하고, 근거(freshUntil)는 수집 시각 기준으로만 새로 만든다. 만료된 근거를 연장하지 않는다.
+    id: "kric-station-timetable",
+    message: "[Data] KRIC 역별 시간표를 다시 수집해 등록",
+    sourceIds: ["kric-subway-timetable-station-lines"],
+    dependsOn: [],
+    inventoryChanges: changes({ "kric-subway-timetable-station-lines": SCHEDULE_FIELDS }),
+    due: ledgerHead("kric-subway-timetable-station-lines"),
+  },
+  {
     id: "korail-topology",
     message: "[Data] 코레일 광역 시간표 topology를 같은 원본으로 재확인해 등록",
     sourceIds: ["korail-metropolitan-timetable-file"],

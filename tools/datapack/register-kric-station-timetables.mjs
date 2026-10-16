@@ -3,6 +3,8 @@
 // 역별 수집기(collect-kric-station-timetables.mjs) 수집본, OCI 원본 게시 receipt, 명시적 검토 admission 파일을 받아
 // 원장 행·inventory·정책 항목(governance·freshness)·파생 스냅샷을 한 트랜잭션으로 등록한다.
 // 검토 admission과 governance 항목은 이 도구가 만들지 않는다(입력 파일로만 받는다).
+// 후속 등록(#1122, 무인 갱신)은 reviewAdmissionPath를 null로 두어 이전에 승인된 admissionEvidence를 그대로 이월할 수 있다.
+// 승인된 스키마(schemaFingerprint)와 약관(licenseEvidenceHash)에서 벗어나면 이월하지 않고 REVIEW_CARRY_FORWARD로 거부한다.
 // 같은 KRIC OpenAPI 데이터셋(id=162)·같은 이용약관임을 기존 kric-subway-timetable governance 항목과 비교해 고정한다.
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -37,6 +39,8 @@ const RECEIPT_KEYS = Object.freeze([
 const REVIEW_KEYS = Object.freeze([
   "schemaVersion", "artifactKind", "sourceId", "snapshotId", "rawSha256", "byteSize", "decision", "approvedBy", "approvedAt",
 ]);
+const REVIEW_INPUT_COUNT = 4;
+const CARRY_FORWARD_INPUT_COUNT = REVIEW_INPUT_COUNT - 1;
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const json = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const fail = (code) => { throw new Error(`KRIC_STATION_REGISTRATION_${code}`); };
@@ -54,6 +58,25 @@ async function externalFile(file, code, root) {
   return { absolute: resolved, bytes: await readFile(resolved) };
 }
 
+function parseReviewAdmission({ reviewFile, snapshotId, rawSha256, byteSize, artifact, now }) {
+  const review = parse(reviewFile.bytes, "REVIEW_ADMISSION");
+  const approvedAt = instant(review?.approvedAt);
+  if (!exactKeys(review, REVIEW_KEYS) || review.schemaVersion !== 1 || review.artifactKind !== "kric-subway-timetable-review-admission"
+    || review.sourceId !== STATION_LINES_SOURCE_ID || review.snapshotId !== snapshotId || review.rawSha256 !== rawSha256
+    || review.byteSize !== byteSize || review.decision !== "APPROVED"
+    || typeof review.approvedBy !== "string" || review.approvedBy.trim() === ""
+    || !(approvedAt >= instant(artifact.collectedAt)) || !(approvedAt <= now.valueOf())) fail("REVIEW_ADMISSION");
+  return review;
+}
+
+// 이전 승인이 가리키는 스키마·약관 그대로일 때만 이월한다. 이월한 값은 승인 당시 snapshot을 가리키는 채로 남는다(새 snapshot을 사람이 승인했다고 쓰지 않는다).
+function carriedAdmissionEvidence({ previousSource, schemaFingerprint, licenseEvidenceHash }) {
+  const approved = previousSource?.admissionEvidence;
+  if (approved?.decision !== "APPROVED" || approved.sourceId !== STATION_LINES_SOURCE_ID
+    || approved.schemaFingerprint !== schemaFingerprint || approved.licenseEvidenceHash !== licenseEvidenceHash) fail("REVIEW_CARRY_FORWARD");
+  return structuredClone(approved);
+}
+
 export async function buildKricStationTimetableRegistrationOutputs({ repositoryRoot = ROOT, sourceInputPath, now = new Date(), expected = KRIC_API_EXPECTED_OBSERVATION } = {}) {
   const root = path.resolve(repositoryRoot);
   if (!(now instanceof Date) || Number.isNaN(now.valueOf())) fail("TIME");
@@ -65,7 +88,7 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
   if (!exactKeys(input, INPUT_KEYS) || input.schemaVersion !== 1 || input.artifactKind !== "kric-station-timetable-registration-input") fail("SOURCE_INPUT");
   const collectionFile = await externalFile(input.collectionPath, "COLLECTION", root);
   const receiptFile = await externalFile(input.receiptPath, "RAW_RECEIPT", root);
-  const reviewFile = await externalFile(input.reviewAdmissionPath, "REVIEW_ADMISSION", root);
+  const reviewFile = input.reviewAdmissionPath === null ? null : await externalFile(input.reviewAdmissionPath, "REVIEW_ADMISSION", root);
 
   // 1. 수집본 재구성: 고정 바인딩의 노선·역 집합 전부와 요일코드별 응답이 있어야 한다(실패는 lib 오류 그대로).
   const artifact = parse(collectionFile.bytes, "COLLECTION");
@@ -116,13 +139,7 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
     || receipt.capturedDate !== capturedDate || receipt.rawObjectUri !== `oci://${OCI_NAMESPACE}/${OCI_BUCKET}/${objectKey}`
     || !(storedAt >= instant(artifact.collectedAt)) || !(storedAt <= now.valueOf())
     || receipt.rawRetentionExpiresAt !== rawRetentionExpiresAt || !(instant(rawRetentionExpiresAt) > now.valueOf())) fail("RAW_RECEIPT");
-  const review = parse(reviewFile.bytes, "REVIEW_ADMISSION");
-  const approvedAt = instant(review?.approvedAt);
-  if (!exactKeys(review, REVIEW_KEYS) || review.schemaVersion !== 1 || review.artifactKind !== "kric-subway-timetable-review-admission"
-    || review.sourceId !== STATION_LINES_SOURCE_ID || review.snapshotId !== snapshotId || review.rawSha256 !== rawSha256
-    || review.byteSize !== collectionFile.bytes.length || review.decision !== "APPROVED"
-    || typeof review.approvedBy !== "string" || review.approvedBy.trim() === ""
-    || !(approvedAt >= instant(artifact.collectedAt)) || !(approvedAt <= now.valueOf())) fail("REVIEW_ADMISSION");
+  const review = reviewFile === null ? null : parseReviewAdmission({ reviewFile, snapshotId, rawSha256, byteSize: collectionFile.bytes.length, artifact, now });
 
   // 4. 파생 스냅샷: 노선 목록·역 집합·요일코드별 행 수를 결속한다.
   const lines = KRIC_API_STATION_TIMETABLE_BINDINGS.map(({ lnCd, lineId, stations }) => {
@@ -183,16 +200,18 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
       verificationTest: "tools/datapack/register-kric-station-timetables.test.mjs", snapshotId, snapshotPath: snapshotRelative,
       capturedAt: artifact.capturedAt, freshUntil: freshnessExpiresAt, lineIds: lines.map(({ lineId }) => lineId),
       tripCount: reconstruction.trips.length, stopTimeCount, rawSha256, tripsSha256, contentSha256 },
-    admissionEvidence: { candidateId: STATION_LINES_SOURCE_ID, sourceId: STATION_LINES_SOURCE_ID, catalogProviderId: CATALOG_PROVIDER_ID,
-      snapshotId, decision: review.decision, approvedBy: review.approvedBy, approvedAt: review.approvedAt, rawSha256, schemaFingerprint,
-      adminReviewRecordHash: sha(reviewFile.bytes), licenseEvidenceHash: governanceEntry.licenseReview.termsHash },
+    admissionEvidence: review === null
+      ? carriedAdmissionEvidence({ previousSource, schemaFingerprint, licenseEvidenceHash: governanceEntry.licenseReview.termsHash })
+      : { candidateId: STATION_LINES_SOURCE_ID, sourceId: STATION_LINES_SOURCE_ID, catalogProviderId: CATALOG_PROVIDER_ID,
+        snapshotId, decision: review.decision, approvedBy: review.approvedBy, approvedAt: review.approvedAt, rawSha256, schemaFingerprint,
+        adminReviewRecordHash: sha(reviewFile.bytes), licenseEvidenceHash: governanceEntry.licenseReview.termsHash },
   };
   const nextInventory = { ...inventory, sources: previousSource
     ? inventory.sources.map((entry) => (entry.id === STATION_LINES_SOURCE_ID ? source : entry))
     : [...inventory.sources, source] };
   validateSourceGovernancePolicy({ policy: registration.policy, inventory: nextInventory, freshnessPolicy: freshness });
   const snapshotBytes = json(snapshot);
-  const inputs = [inputFile, collectionFile, receiptFile, reviewFile];
+  const inputs = [inputFile, collectionFile, receiptFile, reviewFile].filter(Boolean);
   const values = [json(nextInventory), json(nextLedger), json(registration.policy), json(freshness)];
   return { snapshot: { relative: snapshotRelative, bytes: snapshotBytes },
     outputs: OUTPUTS.map((relative, index) => ({ relative, bytes: values[index], prestateBytes: currentBytes[index], inputs })) };
@@ -203,7 +222,7 @@ const transaction = createSourceRegistrationTransaction({
   validateOutputs(outputs) {
     const inputs = outputs?.[0]?.inputs;
     if (!Array.isArray(outputs) || !isDeepStrictEqual(outputs.map(({ relative }) => relative), [...OUTPUTS])
-      || !Array.isArray(inputs) || inputs.length !== 4
+      || !Array.isArray(inputs) || ![CARRY_FORWARD_INPUT_COUNT, REVIEW_INPUT_COUNT].includes(inputs.length)
       || outputs.some((output) => !Buffer.isBuffer(output.bytes) || !Buffer.isBuffer(output.prestateBytes) || output.inputs !== inputs)) fail("OUTPUTS");
   },
 });
