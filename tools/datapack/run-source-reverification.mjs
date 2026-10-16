@@ -13,6 +13,7 @@
 //   - workflow는 성공한 recipe로 PR을 만든 뒤 failures가 있으면 마지막에 job을 실패시킨다(tools/ci/source-reverification-failures.mjs).
 // 코드:
 //   SOURCE_FETCH_FAILED         공급자에서 원본을 받지 못했다(전송·HTTP·형식).
+//   SOURCE_EXPECTATION_CHANGED  공급자 응답이 고정 기대 관측(노선별 trip 수 등)과 달라졌다. 사람이 기대값을 고쳐야 풀린다. 실패 이슈가 열려 있는 동안 판정이 그 recipe를 건너뛴다(#1122).
 //   SOURCE_REGISTRATION_FAILED  OCI 게시·원장 등록·입력 조립이 실패했거나 recipe가 아무 등록 결과도 만들지 않았다.
 //   SOURCE_SHA_DRIFT            원본 sha가 고정과 다르거나, 원장·증거 변화가 정책(tools/ci/source-ledger-change-policy.json)을 넘었다.
 //   SOURCE_COUNT_DELTA          행 수 변화가 정책 한도를 넘거나 커버리지가 줄었다.
@@ -21,7 +22,7 @@
 //
 // 사용(깨끗한 작업 트리, origin/main의 후손 HEAD에서):
 //   node tools/datapack/run-source-reverification.mjs --operation-root <absolute directory> --recipes <id,id,...>
-//   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
+//   환경: data.go.kr 서비스 키(부산·대전 topology·KASI 공휴일), KRIC 서비스 키(역별 시간표), EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL(OCI 게시)
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -31,8 +32,9 @@ import { promisify } from "node:util";
 
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "../ci/source-ledger-gate.mjs";
 import { ledgerHead } from "../ci/decide-source-reverification.mjs";
-import { isSourceReverificationAllowedPath, SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS } from "../ci/source-reverification-paths.mjs";
+import { isSourceReverificationAllowedPath, SOURCE_EXPECTATION_CHANGED, SOURCE_REVERIFICATION_REGISTRATION_OUTPUTS } from "../ci/source-reverification-paths.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
+import { credentialForms } from "./collect-kric-station-timetables.mjs";
 import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -51,11 +53,13 @@ const KORAIL_PLANNED_SOURCE_ID = "korail-metropolitan-planned-timetable";
 const SNAPSHOT_FILE = /^tools\/datapack\/sources\/[^/]+\.json$/u;
 const KNOWN_CODE = /^(SOURCE_FETCH_FAILED|SOURCE_REGISTRATION_FAILED|SOURCE_SHA_DRIFT|SOURCE_COUNT_DELTA|BINDING_MISMATCH): /u;
 const KORAIL_SHA_DRIFT = /KORAIL_METROPOLITAN_TIMETABLE_FILE_SHA256/u;
+const EXPECTATION_CHANGED = /EXPECTED_OBSERVATION_CHANGED/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 // 이 controller는 공급자를 직접 부르는 runner가 아니다. 키는 환경으로 하위 수집기(각자 키 형상을 먼저 검사한다)와 KASI 수집 함수에 넘기기만 한다.
 // 자격 증명 coverage는 연속된 env 토큰으로 runner를 찾으므로 provider-call-integrity와 같은 방식으로 이름을 조립한다.
 const DATA_GO_CREDENTIAL_ENV = ["DATA", "GO", "KR", "SERVICE", "KEY"].join("_");
-const SECRET_ENV = Object.freeze([DATA_GO_CREDENTIAL_ENV, "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
+const KRIC_CREDENTIAL_ENV = ["KRIC", "SERVICE", "KEY"].join("_");
+const SECRET_ENV = Object.freeze([DATA_GO_CREDENTIAL_ENV, KRIC_CREDENTIAL_ENV, "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL"]);
 const DAY_MS = 86_400_000;
 const KST_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
 
@@ -81,6 +85,8 @@ const utcDate = (date) => date.toISOString().slice(0, 10).replaceAll("-", "");
 export function classifyRecipeFailure(step, message) {
   // 코레일 수집기는 원본 sha를 고정해서 받는다. sha가 다르면 원본이 바뀐 것이지 수집이 실패한 것이 아니다.
   if (KORAIL_SHA_DRIFT.test(message)) return "SOURCE_SHA_DRIFT";
+  // 고정 기대 관측과 달라진 것은 공급자 변경이지 전송 실패가 아니다(수집기와 등록기가 같은 검사를 한다).
+  if (EXPECTATION_CHANGED.test(message)) return SOURCE_EXPECTATION_CHANGED;
   if (step.kind === "collect") return "SOURCE_FETCH_FAILED";
   if (step.kind === "collect-register") return step.fetchErrorPattern?.test(message) ? "SOURCE_FETCH_FAILED" : "SOURCE_REGISTRATION_FAILED";
   return "SOURCE_REGISTRATION_FAILED";
@@ -94,7 +100,9 @@ function redact(detail, env) {
   let result = String(detail).replace(ANSI_ESCAPE, "");
   for (const name of SECRET_ENV) {
     const value = env?.[name];
-    if (typeof value === "string" && value.length >= 8) result = result.split(value).join("***");
+    if (typeof value !== "string" || value.length < 8) continue;
+    // 요청 URL에 실릴 수 있는 표현 전부(원문·percent 인코딩·form 인코딩)를 가린다.
+    for (const form of credentialForms(value)) result = result.split(form).join("***");
   }
   result = result.replace(/([\w-]{0,32}key)=([^&\s'"|]+)/giu, "$1=***").replace(/\/p\/[^/\s]+\//gu, "/p/***/");
   return result.length > FAILURE_DETAIL_MAX_LENGTH ? result.slice(-FAILURE_DETAIL_MAX_LENGTH) : result;
@@ -364,7 +372,34 @@ async function verifyDaeguRegistration(ctx) {
   }
 }
 
+const STATION_TIMETABLE_SOURCE_ID = "kric-subway-timetable-station-lines";
+
+// KRIC 역별 시간표: 수집본의 sha·크기에 결속해 OCI에 게시하고, 이전에 승인된 거버넌스 항목·승인 증거로 등록한다(사람 검토 파일 없음, 승인 이월은 등록기가 검증한다).
+const KRIC_STATION_TIMETABLE_STEPS = [
+  step("collect", "collect", async (ctx) => {
+    const serviceKey = ctx.env[KRIC_CREDENTIAL_ENV];
+    if (typeof serviceKey !== "string" || serviceKey === "") fail("the KRIC service key is not set");
+    await ctx.execute("collect-kric-station-timetables.mjs", ["--output", ctx.file("collection.json")], { env: { [KRIC_CREDENTIAL_ENV]: serviceKey } });
+  }),
+  step("publish", "register", async (ctx) => {
+    const bytes = await readFile(ctx.file("collection.json"));
+    await ctx.execute("publish-kric-station-timetables-raw.mjs", [
+      "--input", ctx.file("collection.json"), "--receipt", ctx.file("raw-receipt.json"), "--expected-sha256", sha256(bytes), "--expected-byte-size", String(bytes.length),
+    ]);
+  }),
+  step("source-input", "glue", async (ctx) => {
+    await writeFile(ctx.file("source-input.json"), jsonText({
+      schemaVersion: 1, artifactKind: "kric-station-timetable-registration-input", collectionPath: ctx.file("collection.json"),
+      receiptPath: ctx.file("raw-receipt.json"), reviewAdmissionPath: null, governanceEntry: await governanceEntry(ctx, STATION_TIMETABLE_SOURCE_ID),
+    }), { flag: "wx" });
+  }),
+  step("register", "register", async (ctx) => {
+    await ctx.execute("register-kric-station-timetables.mjs", ["--source-input", ctx.file("source-input.json"), "--expected-head-sha", await ctx.head()]);
+  }),
+];
+
 export const RECIPE_STEPS = Object.freeze({
+  "kric-station-timetable": KRIC_STATION_TIMETABLE_STEPS,
   "kric-capital-timetable": [
     // 한 도구가 KRIC 파일을 받고(KRIC_TIMETABLE_FILE_*) 수도권·코레일 projection 증거를 등록한다. OCI 게시는 없다(원본 보관은 광주 보관본 workflow의 몫).
     step("register", "collect-register", async (ctx) => {
@@ -509,11 +544,13 @@ const defaultLib = Object.freeze({
   collectKasiHolidayCalendarWindowFiles: async (input) => (await import("./fetch-kasi-public-holiday-calendar.mjs")).collectKasiHolidayCalendarWindowFiles(input),
 });
 
-function defaultExecute(repositoryRoot, env) {
+// KRIC 키는 상속시키지 않는다. 수집 단계가 extra env로 명시할 때만 그 자식 프로세스가 받는다.
+export function defaultExecute(repositoryRoot, env) {
+  const inherited = Object.fromEntries(Object.entries(env).filter(([name]) => name !== KRIC_CREDENTIAL_ENV));
   return async (script, args, { env: extra = {} } = {}) => {
     try {
       const { stdout } = await execFileAsync(process.execPath, [path.join(repositoryRoot, "tools/datapack", script), ...args], {
-        cwd: repositoryRoot, env: { ...env, ...extra }, maxBuffer: 256 * 1024 * 1024,
+        cwd: repositoryRoot, env: { ...inherited, ...extra }, maxBuffer: 256 * 1024 * 1024,
       });
       return { stdout };
     } catch (error) {
@@ -588,6 +625,7 @@ function recipeContext({ recipe, repositoryRoot, operationRoot, env, shared, lib
   };
 }
 
+const FAILURES_FILE = "failures.json";
 const GROUP_ROLLED_BACK = "REVERIFICATION_GROUP_ROLLED_BACK";
 const DEPENDENCY_FAILED = "REVERIFICATION_DEPENDENCY_FAILED";
 const RECIPE_FAILED = "REVERIFICATION_RECIPE_FAILED";
@@ -684,6 +722,8 @@ export async function runSourceReverification({
     results.push(...groupResults);
     evidenceSources.push(...groupEvidence);
   }
+  // 실패 이슈 보고가 읽는 실패 목록. controller가 멈춰도(등록된 recipe 없음) 남는다. 실패가 없으면 만들지 않는다.
+  if (failures.length > 0) await writeFile(path.join(operationRoot, FAILURES_FILE), jsonText(failures.map(({ recipeId, code }) => ({ recipeId, code }))));
   if (results.length === 0 && failures.length > 0) throw stopError(failures);
   return { steps: results, evidenceSources, failures };
 }

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { classifyRecipeFailure, dependencyGroups, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
+import { classifyRecipeFailure, defaultExecute, dependencyGroups, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
 import { reportReverificationFailures } from "../ci/source-reverification-failures.mjs";
 import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 
@@ -122,6 +122,59 @@ test("수집 단계 실패는 SOURCE_FETCH_FAILED, 등록·입력 조립 실패�
   assert.equal(git(root, "rev-parse", "HEAD"), before);
 });
 
+// #1122: KRIC 역별 시간표 수집기는 KRIC 키를 환경으로 받는다. 단계 오류에 키 값이 어떤 인코딩으로 실려도 실패 이슈로 나가는 문구에는 남지 않는다.
+// 수집기가 요청 URL에 실릴 수 있는 세 표현(원문·percent 인코딩·form 인코딩)을 검사하는 것과 같은 범위를 가린다.
+const KRIC_TEST_KEY = "kric/key+value==x y";
+const KEY_FORMS = { 원문: KRIC_TEST_KEY, "percent 인코딩": encodeURIComponent(KRIC_TEST_KEY), "form 인코딩": new URLSearchParams({ k: KRIC_TEST_KEY }).toString().slice(2) };
+
+for (const [name, form] of Object.entries(KEY_FORMS)) {
+  test(`단계 오류 문구에 KRIC 키가 ${name}으로 실려 있어도 드러나는 실패 문구에서 가려진다 (#1122)`, async (t) => {
+    const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+    await assert.rejects(
+      runSourceReverification(options(root, { env: { KRIC_SERVICE_KEY: KRIC_TEST_KEY }, recipes: [meta("second")], recipeIds: ["second"],
+        steps: { second: stepsOf("collect", async () => { throw new Error(`KRIC_HTTP_FAILED: A X108 status=500 detail ${form} end`); }) } })),
+      (error) => error.message.includes("KRIC_HTTP_FAILED") && error.message.includes("detail *** end") && !Object.values(KEY_FORMS).some((variant) => error.message.includes(variant)),
+    );
+  });
+}
+
+// 키는 수집 단계의 자식 프로세스에만 전달한다. 등록·게시 같은 다른 자식 프로세스는 상속하지 않는다.
+test("기본 실행기는 KRIC 키를 상속시키지 않고 명시한 단계의 환경으로만 전달한다 (#1122)", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "reverification-execute-")); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, "tools/datapack"), { recursive: true });
+  await writeFile(path.join(root, "tools/datapack/print-env.mjs"), "process.stdout.write(JSON.stringify(Object.keys(process.env).filter((name) => name.startsWith('KRIC'))));\n");
+  const execute = defaultExecute(root, { PATH: process.env.PATH, KRIC_SERVICE_KEY: KRIC_TEST_KEY });
+  assert.deepEqual(JSON.parse((await execute("print-env.mjs", [])).stdout), []);
+  assert.deepEqual(JSON.parse((await execute("print-env.mjs", [], { env: { KRIC_SERVICE_KEY: KRIC_TEST_KEY } })).stdout), ["KRIC_SERVICE_KEY"]);
+});
+
+// #1122: 공급처 기대 관측이 바뀐 것은 전송 실패가 아니라 사람이 기대값을 고쳐야 풀리는 이상이다. 별도 코드로 드러나 판정이 같은 원인의 재수집을 건너뛴다.
+test("기대 관측 변경은 단계 종류와 상관없이 SOURCE_EXPECTATION_CHANGED로 분류하고, 다른 수집 실패는 SOURCE_FETCH_FAILED로 남는다 (#1122)", () => {
+  const changed = "EXPECTED_OBSERVATION_CHANGED: line-8604048b6430 weekdayTrips 401";
+  assert.equal(classifyRecipeFailure({ kind: "collect" }, changed), "SOURCE_EXPECTATION_CHANGED");
+  assert.equal(classifyRecipeFailure({ kind: "register" }, changed), "SOURCE_EXPECTATION_CHANGED");
+  assert.equal(classifyRecipeFailure({ kind: "collect" }, "KRIC_HTTP_FAILED: A X108 dayCd=8 status=500"), "SOURCE_FETCH_FAILED");
+});
+
+test("등록하지 못한 recipe는 operation root의 failures.json에 코드와 함께 남고, 실패가 없으면 파일을 만들지 않는다 (#1122)", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const operationRoot = path.join(root, "..", `op-failures-${path.basename(root)}`); t.after(() => rm(operationRoot, { recursive: true, force: true }));
+  const recipes = [meta("first"), meta("second")];
+  const changed = failing("collect", "EXPECTED_OBSERVATION_CHANGED: line-x weekdayTrips 1");
+  const stepsWith = (snapshot, second) => ({ first: stepsOf("register", writeSnapshot(snapshot)), second });
+  const failuresFile = path.join(operationRoot, "failures.json");
+  await runSourceReverification(options(root, { recipes, steps: stepsWith("clean", stepsOf("collect", async () => {})), recipeIds: ["first"], operationRoot }));
+  await assert.rejects(readFile(failuresFile, "utf8"), { code: "ENOENT" });
+  // 일부만 실패해도 나머지는 등록되고 실패는 파일에 남는다.
+  const partial = await runSourceReverification(options(root, { recipes, steps: stepsWith("partial", changed), recipeIds: ["first", "second"], operationRoot: `${operationRoot}-partial` }));
+  assert.deepEqual(partial.failures.map(({ recipeId, code }) => ({ recipeId, code })), [{ recipeId: "second", code: "SOURCE_EXPECTATION_CHANGED" }]);
+  assert.deepEqual(JSON.parse(await readFile(path.join(`${operationRoot}-partial`, "failures.json"), "utf8")), [{ recipeId: "second", code: "SOURCE_EXPECTATION_CHANGED" }]);
+  await rm(`${operationRoot}-partial`, { recursive: true, force: true });
+  // 등록된 recipe가 하나도 없어 controller가 멈춰도 같은 파일이 남는다(실패 이슈 보고가 읽는다).
+  await assert.rejects(runSourceReverification(options(root, { recipes: [meta("second")], steps: { second: changed }, recipeIds: ["second"], operationRoot })), /^Error: SOURCE_EXPECTATION_CHANGED: second\/only: /u);
+  assert.deepEqual(JSON.parse(await readFile(failuresFile, "utf8")), [{ recipeId: "second", code: "SOURCE_EXPECTATION_CHANGED" }]);
+});
+
 const writeSnapshot = (name) => async (ctx) => writeFile(path.join(ctx.repositoryRoot, `tools/datapack/sources/${name}.json`), "{}\n");
 const failing = (kind, message) => stepsOf(kind, async () => { throw new Error(message); });
 
@@ -236,6 +289,7 @@ test("원장·증거 게이트와 출력 범위 위반도 그 recipe만 되돌�
 test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: topology와 그에 결속되는 recipe, 나머지는 독립)", () => {
   assert.deepEqual(dependencyGroups(REVERIFICATION_RECIPES).map((group) => group.map(({ id }) => id)), [
     ["kric-capital-timetable"],
+    ["kric-station-timetable"],
     ["korail-topology", "korail-planned-timetable"],
     ["gwangju-topology", "gwangju-accessibility"],
     ["busan-topology", "busan-accessibility", "busan-timetable"],

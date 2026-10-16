@@ -480,9 +480,7 @@ test("갱신 단계는 소유 표(REFRESH_STAGES, 재확인 recipe)에서 오고
 
 // #1122: 필수·사용 가능 원천이 freshUntil 근거를 싣는데 갱신 소유자가 없으면 근거가 만료된 채 관리자 화면의 이상으로만 남는다.
 // 새 원천이 소유자 없이 들어오면 여기서 CI가 막는다. 예외는 사유와 추적 이슈(#<번호>)를 함께 둔 표로만 허용하고, 예외가 더는 필요 없어지면(소유자가 생기거나 필수가 아니게 되면) 표에서 지우게 한다.
-const OWNERLESS_REQUIRED_SOURCES = Object.freeze({
-  "kric-subway-timetable-station-lines": "필수 원천이지만 갱신 단계가 없다(근거는 수집일 + 정책 클래스 기간에 만료). #1122 후속 체크리스트에서 갱신 경로를 만든다.",
-});
+const OWNERLESS_REQUIRED_SOURCES = Object.freeze({});
 // freshUntil 근거를 싣지 않는 필수 원천. 근거 객체가 사라진 원천이 조용히 검사 밖으로 빠지지 않도록 현재 목록을 고정하고, 늘면 CI가 막는다.
 const REQUIRED_WITHOUT_FRESH_UNTIL = Object.freeze({
   "incheon-transit-accessibility": "freshUntil 근거가 없고 신선도는 정책 클래스 기간(P90D)으로 판정한다. 등록 근거 #622.",

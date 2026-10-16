@@ -10,7 +10,8 @@ import test from "node:test";
 import { collectKricStationTimetables } from "./collect-kric-station-timetables.mjs";
 import { KRIC_API_STATION_TIMETABLE_BINDINGS } from "./lib/kric-station-timetable-api-trips.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY } from "./lib/kric-station-row-timetable-trips.mjs";
-import { STATION_LINES_SOURCE_ID, registerKricStationTimetables } from "./register-kric-station-timetables.mjs";
+import { STATION_LINES_SOURCE_ID, buildKricStationTimetableRegistrationOutputs, registerKricStationTimetables, validateRegistrationOutputs } from "./register-kric-station-timetables.mjs";
+import { inventoryChangeViolations, inventoryScopeViolations } from "./source-reverification-recipes.mjs";
 import { syntheticExpectedObservation, syntheticKricStationFetch } from "./test-fixtures/kric-station-timetable-synthetic.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
@@ -233,6 +234,99 @@ test("후속 등록은 원장에 한 행만 덧붙여 이전 head를 잇고, 정
   const sources = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8")).sources.filter(({ id }) => id === STATION_LINES_SOURCE_ID);
   assert.equal(sources.length, 1);
   assert.equal(sources[0].admissionEvidence.snapshotId, next.receipt.snapshotId);
+});
+
+// #1122: 무인 갱신은 사람 검토 파일을 만들지 않는다. 후속 등록은 이전에 승인된 admissionEvidence를 그대로 이월하되,
+// 승인된 스키마(schemaFingerprint)와 승인된 약관(licenseEvidenceHash)에서 벗어나면 등록하지 않는다.
+const withoutReview = async (files, input) => writeFile(files.sourceInputPath, `${JSON.stringify({ ...input, reviewAdmissionPath: null }, null, 2)}\n`);
+
+test("후속 등록은 검토 승인 파일 없이 이전 승인을 이월하고 inventory 쓰기는 recipe의 갱신 필드 범위 안이다 (#1122)", async (t) => {
+  const { root, files, receipt, now } = await fixture(t);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  const base = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  await withoutReview(next.files, next.input);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
+  const head = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
+  const sourceOf = (inventory) => inventory.sources.find(({ id }) => id === STATION_LINES_SOURCE_ID);
+  assert.deepEqual(sourceOf(head).admissionEvidence, sourceOf(base).admissionEvidence);
+  assert.equal(sourceOf(head).scheduleAdmissionEvidence.snapshotId, next.receipt.snapshotId);
+  assert.notEqual(sourceOf(head).scheduleAdmissionEvidence.freshUntil, sourceOf(base).scheduleAdmissionEvidence.freshUntil);
+  assert.deepEqual(inventoryChangeViolations({ base, head, recipeIds: ["kric-station-timetable"] }), []);
+  // 범위 게이트가 이 쓰기를 실제로 본다: 갱신 필드를 비우면 같은 쓰기가 위반으로 잡힌다.
+  assert.ok(inventoryScopeViolations({ base, head, allowed: new Map([[STATION_LINES_SOURCE_ID, new Set()]]) }).length > 0);
+  const ledger = JSON.parse(await readFile(path.join(root, OUTPUTS[1]), "utf8"));
+  assert.equal(ledger.at(-1).snapshotId, next.receipt.snapshotId);
+  assert.equal(ledger.at(-1).previousSnapshotId, receipt.snapshotId);
+  // 이월은 여러 번 이어진다: 승인된 snapshot은 원장 head에서 두 단계 떨어져도 원장 계보로 이어진다.
+  const third = await inputSet(t, root, COLLECTED_START + 48 * 60 * 60 * 1000);
+  await withoutReview(third.files, third.input);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: third.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: third.now, expected: EXPECTED });
+  const final = JSON.parse(await readFile(path.join(root, OUTPUTS[0]), "utf8"));
+  assert.deepEqual(sourceOf(final).admissionEvidence, sourceOf(base).admissionEvidence);
+  assert.equal(sourceOf(final).scheduleAdmissionEvidence.snapshotId, third.receipt.snapshotId);
+});
+
+test("승인을 이월할 수 없으면(첫 등록·미승인·스키마 변경·약관 변경) REVIEW_CARRY_FORWARD로 쓰기 전에 거부한다 (#1122)", async (t) => {
+  const { root, files, input, now } = await fixture(t);
+  await withoutReview(files, input);
+  await assert.rejects(registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED }), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD/u);
+  const before = await snapshotOf(root);
+  await writeFile(files.sourceInputPath, `${JSON.stringify(input, null, 2)}\n`);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  const registered = await snapshotOf(root);
+  assert.notDeepEqual(registered, before);
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  await withoutReview(next.files, next.input);
+  const registerNext = () => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: next.now, expected: EXPECTED });
+  // 승인된 snapshot이 원장 head에서 이어지는 행이어야 한다: 원장에 없는 snapshotId, 원장 행과 다른 rawSha256은 이월하지 않는다.
+  const changes = [
+    { decision: "PENDING" }, { schemaFingerprint: "0".repeat(64) }, { licenseEvidenceHash: "0".repeat(64) },
+    { snapshotId: `${STATION_LINES_SOURCE_ID}-19990101` }, { rawSha256: "0".repeat(64) },
+  ];
+  for (const change of changes) {
+    const inventory = JSON.parse(registered[OUTPUTS[0]]);
+    Object.assign(inventory.sources.find(({ id }) => id === STATION_LINES_SOURCE_ID).admissionEvidence, change);
+    await writeFile(path.join(root, OUTPUTS[0]), `${JSON.stringify(inventory, null, 2)}\n`);
+    await assert.rejects(registerNext(), /KRIC_STATION_REGISTRATION_REVIEW_CARRY_FORWARD/u, JSON.stringify(change));
+    assert.deepEqual(await snapshotOf(root), { ...registered, [OUTPUTS[0]]: await readFile(path.join(root, OUTPUTS[0])) });
+  }
+});
+
+// 이월의 시간 한도는 약관 거버넌스 항목의 nextReviewAt 하나다(사람 재검토 시한). 시한이 지나면 이월하지 않고 등록 단계 실패로 드러난다.
+test("거버넌스 nextReviewAt이 지나면 승인 이월 등록을 거부한다 (#1122)", async (t) => {
+  const { root, files, now } = await fixture(t);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  const registered = await snapshotOf(root);
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  await withoutReview(next.files, next.input);
+  const { nextReviewAt } = next.input.governanceEntry.licenseReview;
+  const registerAt = (at) => registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: next.files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now: at, expected: EXPECTED });
+  await assert.rejects(registerAt(new Date(Date.parse(nextReviewAt))), /KRIC_STATION_REGISTRATION_GOVERNANCE_REVIEW_EXPIRED/u);
+  assert.deepEqual(await snapshotOf(root), registered);
+  await registerAt(next.now);
+});
+
+// 이월 모드는 입력 개수로 추론하지 않고 명시한 값으로 전달·판정한다.
+test("등록 출력은 승인 모드를 명시하고 모드와 입력 파일 수가 어긋나면 OUTPUTS로 거부한다 (#1122)", async (t) => {
+  const { root, files, now } = await fixture(t);
+  const build = (sourceInputPath, at) => buildKricStationTimetableRegistrationOutputs({ repositoryRoot: root, sourceInputPath, now: at, expected: EXPECTED });
+  const review = await build(files.sourceInputPath, now);
+  assert.deepEqual(review.outputs.map(({ admissionMode }) => admissionMode), OUTPUTS.map(() => "REVIEW_FILE"));
+  assert.equal(review.outputs[0].inputs.length, 4);
+  validateRegistrationOutputs(review.outputs);
+  await registerKricStationTimetables({ repositoryRoot: root, sourceInputPath: files.sourceInputPath, expectedHeadSha: HEAD, gitRunner, now, expected: EXPECTED });
+  const next = await inputSet(t, root, COLLECTED_START + 24 * 60 * 60 * 1000);
+  await withoutReview(next.files, next.input);
+  const carry = await build(next.files.sourceInputPath, next.now);
+  assert.deepEqual(carry.outputs.map(({ admissionMode }) => admissionMode), OUTPUTS.map(() => "CARRY_FORWARD"));
+  assert.equal(carry.outputs[0].inputs.length, 3);
+  validateRegistrationOutputs(carry.outputs);
+  const withInputs = (outputs, inputs) => outputs.map((output) => ({ ...output, inputs }));
+  assert.throws(() => validateRegistrationOutputs(withInputs(carry.outputs, review.outputs[0].inputs)), /KRIC_STATION_REGISTRATION_OUTPUTS/u);
+  assert.throws(() => validateRegistrationOutputs(withInputs(review.outputs, carry.outputs[0].inputs)), /KRIC_STATION_REGISTRATION_OUTPUTS/u);
+  assert.throws(() => validateRegistrationOutputs(carry.outputs.map((output) => ({ ...output, admissionMode: undefined }))), /KRIC_STATION_REGISTRATION_OUTPUTS/u);
+  assert.throws(() => validateRegistrationOutputs([carry.outputs[0], { ...carry.outputs[1], admissionMode: "REVIEW_FILE" }, ...carry.outputs.slice(2)]), /KRIC_STATION_REGISTRATION_OUTPUTS/u);
 });
 
 test("같은 스냅샷 재등록은 SNAPSHOT_COLLISION, 원장·inventory·정책 상태가 어긋나면 SUCCESSOR_STATE로 쓰기 전에 거부한다", async (t) => {

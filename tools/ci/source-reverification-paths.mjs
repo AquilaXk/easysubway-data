@@ -5,6 +5,7 @@
 /** 실행 순서이기도 하다. 의존하는 recipe(접근성·계획 시각표)는 의존 대상 뒤에 온다. */
 export const SOURCE_REVERIFICATION_RECIPE_IDS = Object.freeze([
   "kric-capital-timetable",
+  "kric-station-timetable",
   "korail-topology",
   "korail-planned-timetable",
   "gwangju-topology",
@@ -18,6 +19,13 @@ export const SOURCE_REVERIFICATION_RECIPE_IDS = Object.freeze([
   "daegu-sources",
   "daegu-accessibility",
 ]);
+
+/**
+ * 공급처 기대 관측(고정 기대 trip 수 등)이 바뀌어 사람이 기대값을 고쳐야 풀리는 실패 코드(#1122).
+ * 이 코드로 실패한 recipe는 실패 이슈가 열려 있는 동안 다시 돌지 않는다(같은 원인의 재수집을 2시간마다 되풀이하지 않는다).
+ */
+export const SOURCE_EXPECTATION_CHANGED = "SOURCE_EXPECTATION_CHANGED";
+export const REVERIFICATION_BLOCKING_CODES = Object.freeze([SOURCE_EXPECTATION_CHANGED]);
 
 /**
  * 재확인이 제자리에서 바꿀 수 있는 원천 등록 결과 파일 셋.
