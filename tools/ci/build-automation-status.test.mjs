@@ -18,6 +18,8 @@ import {
   refreshWorkflowsOf,
   sourceRefreshStages,
 } from "./build-automation-status.mjs";
+import { REVERIFICATION_RECIPES } from "../datapack/source-reverification-recipes.mjs";
+import { REFRESH_STAGES } from "./refresh-stage-contracts.mjs";
 
 const now = new Date("2026-10-10T03:00:00.000Z");
 const manifest = { releaseSequence: 129, publishedAt: "2026-10-09T10:29:36.200Z", expiresAt: "2026-10-11T15:00:00.000Z" };
@@ -477,10 +479,18 @@ test("갱신 단계는 소유 표(REFRESH_STAGES, 재확인 recipe)에서 오고
 });
 
 // #1122: 필수·사용 가능 원천이 freshUntil 근거를 싣는데 갱신 소유자가 없으면 근거가 만료된 채 관리자 화면의 이상으로만 남는다.
-// 새 원천이 소유자 없이 들어오면 여기서 CI가 막는다. 예외는 사유와 함께 표로 두고, 예외가 더는 필요 없어지면(소유자가 생기거나 필수가 아니게 되면) 표에서 지우게 한다.
+// 새 원천이 소유자 없이 들어오면 여기서 CI가 막는다. 예외는 사유와 추적 이슈(#<번호>)를 함께 둔 표로만 허용하고, 예외가 더는 필요 없어지면(소유자가 생기거나 필수가 아니게 되면) 표에서 지우게 한다.
 const OWNERLESS_REQUIRED_SOURCES = Object.freeze({
   "kric-subway-timetable-station-lines": "필수 원천이지만 갱신 단계가 없다(근거는 수집일 + 정책 클래스 기간에 만료). #1122 후속 체크리스트에서 갱신 경로를 만든다.",
 });
+// freshUntil 근거를 싣지 않는 필수 원천. 근거 객체가 사라진 원천이 조용히 검사 밖으로 빠지지 않도록 현재 목록을 고정하고, 늘면 CI가 막는다.
+const REQUIRED_WITHOUT_FRESH_UNTIL = Object.freeze({
+  "incheon-transit-accessibility": "freshUntil 근거가 없고 신선도는 정책 클래스 기간(P90D)으로 판정한다. 등록 근거 #622.",
+  "molit-urban-rail-full-route": "연 단위 정적 기준 파일이라 freshUntil 근거가 없고 정책 클래스 기간(P30D)으로 판정한다. 등록 근거 #1397.",
+  "capital-route-topology": "freshUntil은 원장 행에 있고 inventory 근거에는 없다(P7D, 자기 workflow가 갱신). 등록 근거 #456.",
+  "kric-nationwide-timetable-file": "관측 시각(observedAt) 기준 projection 근거라 freshUntil이 없다(P7D, 재확인 recipe와 보관본 workflow). 등록 근거 #899.",
+});
+const TRACKING_ISSUE = /#[1-9]\d*/u;
 
 function* freshUntilOf(value) {
   if (Array.isArray(value)) for (const item of value) yield* freshUntilOf(item);
@@ -492,13 +502,27 @@ function* freshUntilOf(value) {
   }
 }
 
-test("필수·사용 가능 원천의 freshUntil 근거는 모두 갱신 소유자가 있다(예외는 사유와 함께 표로 둔다) (#1122)", () => {
+test("필수·사용 가능 원천의 freshUntil 근거는 모두 갱신 소유자가 있고 소유자는 그 근거 필드를 갱신 대상으로 선언한다 (#1122)", () => {
   const { sources } = JSON.parse(readFileSync(new URL("../datapack/source-inventory.json", import.meta.url), "utf8"));
   const stages = sourceRefreshStages();
-  const required = sources.filter((source) => source.requiredForProductionPack === true && source.productionUseAllowed === true && [...freshUntilOf(source)].length > 0);
-  const ownerless = required.filter(({ id }) => !stages.has(id)).map(({ id }) => id).sort();
-  assert.deepEqual(ownerless, Object.keys(OWNERLESS_REQUIRED_SOURCES).sort());
-  for (const reason of Object.values(OWNERLESS_REQUIRED_SOURCES)) assert.ok(reason.length > 20);
+  const required = sources.filter((source) => source.requiredForProductionPack === true && source.productionUseAllowed === true);
+  const evidenceKeysOf = (source) => Object.keys(source).filter((key) => [...freshUntilOf(source[key])].length > 0);
+  const withEvidence = required.filter((source) => evidenceKeysOf(source).length > 0);
+  // 근거 객체가 사라진 필수 원천은 여기서 드러난다: freshUntil이 없는 필수 원천은 표에 있는 것뿐이다.
+  assert.deepEqual(required.filter((source) => evidenceKeysOf(source).length === 0).map(({ id }) => id).sort(), Object.keys(REQUIRED_WITHOUT_FRESH_UNTIL).sort());
+  assert.deepEqual(withEvidence.filter(({ id }) => !stages.has(id)).map(({ id }) => id).sort(), Object.keys(OWNERLESS_REQUIRED_SOURCES).sort());
+  // 소유자가 있어도 freshUntil을 담은 근거 필드를 갱신 대상으로 선언하지 않으면 근거가 옛 값으로 남는다.
+  const declaredFields = (id) => {
+    const stage = stages.get(id);
+    if (stage === "source-reverification") return REVERIFICATION_RECIPES.find((recipe) => recipe.sourceIds.includes(id)).inventoryChanges[id];
+    return REFRESH_STAGES[stage].owned[id];
+  };
+  for (const source of withEvidence.filter(({ id }) => stages.has(id))) {
+    for (const key of evidenceKeysOf(source)) assert.ok(declaredFields(source.id).includes(key), `${source.id}: the owner does not declare ${key}`);
+  }
+  for (const table of [OWNERLESS_REQUIRED_SOURCES, REQUIRED_WITHOUT_FRESH_UNTIL]) {
+    for (const [id, reason] of Object.entries(table)) assert.match(reason, TRACKING_ISSUE, `${id}: an exception needs a tracking issue (#<number>)`);
+  }
 });
 
 test("갱신 작업 상태: 그 단계 workflow의 가장 최근에 끝난 run이 실패면 FAILED, 막힌 PR·주인 없는 claim·재생성 상한이 그 단계이면 BLOCKED, 아니면 OK (2026-10-10 인천 사례)", () => {

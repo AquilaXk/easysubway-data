@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,12 @@ import {
 } from "../ci/source-reverification-paths.mjs";
 import { P7D_SOURCE_COVERAGE, REVERIFICATION_RECIPES, inventoryChangeViolations, inventoryScopeViolations, p7dSourceIds, recipeById } from "./source-reverification-recipes.mjs";
 import { RECIPE_STEPS } from "./run-source-reverification.mjs";
+import { collectBusanAccessibility } from "./collect-busan-accessibility.mjs";
+import { collectDaeguAccessibility } from "./collect-daegu-accessibility.mjs";
+import { loadAdmittedDaeguTopologySnapshots } from "./collect-daegu-datapack-sources.mjs";
+import { prepareBusanTimetableRegistration } from "./register-busan-timetable.mjs";
+import { prepareDaejeonTimetableRegistration } from "./register-daejeon-timetable.mjs";
+import { prepareRegionalAccessibilityRegistration } from "./register-regional-accessibility.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 recipe 표. 정책의 P7D 원천은 모두 recipe·외부 workflow·막힌 사유 중 하나를 가져야 하고,
 // 빠진 원천이 생기면 CI가 실패한다(커버리지 표를 코드로 둔다).
@@ -167,6 +174,78 @@ test("모든 recipe는 소유 원천마다 갱신 대상 필드를 명시하고 
     "kric-nationwide-timetable-file", "molit-urban-rail-full-route-gwangju-membership",
   ]);
 });
+
+// #1122: 새 recipe 4개의 inventoryChanges가 등록기가 실제로 쓰는 필드를 덮는지 실제 등록기로 증명한다(표 모양만 보지 않는다).
+// 네트워크와 OCI 없이: 시간표는 inventory가 가리키는 보관 snapshot을 그 관측 시각 + 1시간에 재생하고, 접근성은 현재 topology head 범위로 합성 응답·fixture CSV에서 snapshot을 만든다.
+// 시각은 모두 저장소 데이터에서 읽어 주입한다(시계에 의존하지 않는다). 등록기는 admissionEvidence(라이선스 해시)도 다시 쓰지만 license가 같으면 값이 같아 변하지 않는다.
+// 필드 집합에 admissionEvidence를 넣지 않았으므로 license 해시가 어긋나면 이 검사와 재확인 PR의 범위 게이트가 함께 멈춘다(사람이 라이선스 변경을 본다).
+const BUSAN_ACCESSIBILITY_FIELDS = { wl_i: "0", wl_o: "0", el_i: "2", el_o: "1", es: "3", blindroad: "1", ourbridge: "1", helptake: "2", toilet: "1", toilet_gubun: "분리" };
+
+async function registrarWrite(recipeId) {
+  const base = await readJson("tools/datapack/source-inventory.json");
+  const source = (id) => base.sources.find((entry) => entry.id === id);
+  const candidates = (await readJson("tools/datapack/source-candidates.json")).candidates;
+  const reviewedPlusHour = (id) => new Date(Date.parse(candidates.find((entry) => entry.id === id).registrationMetadata.governance.licenseReview.reviewedAt) + 3_600_000);
+  const dir = await mkdtemp(path.join(os.tmpdir(), "recipe-scope-"));
+  try {
+    const snapshotPath = path.join(dir, "snapshot.json");
+    const prepare = async (fn, input) => ({ sourceId: recipeById(recipeId).sourceIds[0], prepared: await fn({ repositoryRoot: root, snapshotPath, ...input }) });
+    if (recipeId === "daejeon-timetable" || recipeId === "busan-timetable") {
+      const sourceId = recipeById(recipeId).sourceIds[0];
+      const evidence = source(sourceId).scheduleAdmissionEvidence;
+      await writeFile(snapshotPath, await readFile(path.join(root, evidence.snapshotPath)));
+      const now = new Date(Date.parse(evidence.capturedAt) + 3_600_000);
+      return { base, ...(await prepare(recipeId === "busan-timetable" ? prepareBusanTimetableRegistration : prepareDaejeonTimetableRegistration, { now })) };
+    }
+    if (recipeId === "busan-accessibility") {
+      const sourceId = "busan-transportation-accessibility";
+      const now = reviewedPlusHour(sourceId);
+      const topology = await readJson(source("busan-transportation-route-topology").topologyAdmissionEvidence.snapshotPath);
+      const snapshot = await collectBusanAccessibility({
+        serviceKey: "a".repeat(40), stationScopes: topology.scope, now,
+        fetchImpl: async (url) => {
+          const station = topology.scope.find(({ stationCode }) => stationCode === new URL(url).searchParams.get("scode"));
+          const fields = Object.entries({ sname: station.stationName, ...BUSAN_ACCESSIBILITY_FIELDS }).map(([name, value]) => `<${name}>${value}</${name}>`).join("");
+          return new Response(`<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>00</resultCode><resultMsg>정상</resultMsg></header><body>${fields}</body></response>`, { headers: { "content-type": "application/xml" } });
+        },
+      });
+      await writeFile(snapshotPath, JSON.stringify(snapshot));
+      return { base, ...(await prepare(prepareRegionalAccessibilityRegistration, { now })) };
+    }
+    const now = reviewedPlusHour("daegu-transportation-accessibility");
+    const snapshot = collectDaeguAccessibility({
+      facilitiesBytes: await readFile(path.join(root, "tools/datapack/fixtures/daegu-accessibility-raw/data-go-15149872.csv")),
+      topologySnapshots: await loadAdmittedDaeguTopologySnapshots(path.join(root, "tools/datapack/sources"), base), now,
+    });
+    await writeFile(snapshotPath, JSON.stringify(snapshot));
+    return { base, ...(await prepare(prepareRegionalAccessibilityRegistration, { now })) };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// 등록기가 쓰기 전 상태를 "옛 topology head에 결속된 직전 등록본"으로 만든다(재확인이 실제로 고치는 상태). 이 직전 상태 대비 등록기의 쓰기가 갱신 필드 안인지 본다.
+function staleBase(base, sourceId) {
+  const stale = structuredClone(base);
+  const row = stale.sources.find(({ id }) => id === sourceId);
+  const key = ["accessibilityAdmissionEvidence", "scheduleAdmissionEvidence"].find((name) => row[name] !== undefined);
+  row[key].topologySnapshotId = "stale-topology-head";
+  // 시간표 등록기만 관측 일자(retrievedAt)를 다시 쓴다. 접근성 등록기는 근거 객체만 쓴다.
+  if (key === "scheduleAdmissionEvidence") row.retrievedAt = "2000-01-01";
+  return stale;
+}
+
+for (const [recipeId] of TOPOLOGY_BOUND_RECIPES) {
+  test(`${recipeId}: 등록기가 실제로 쓰는 inventory 변경은 recipe의 갱신 필드 범위 안이다 (#1122)`, async () => {
+    const { base: current, sourceId, prepared } = await registrarWrite(recipeId);
+    const base = staleBase(current, sourceId);
+    // 비어 있는 증명이 되지 않게: 등록기가 직전 상태의 근거를 실제로 다시 썼다.
+    assert.notDeepEqual(prepared.inventory.sources.find(({ id }) => id === sourceId), base.sources.find(({ id }) => id === sourceId));
+    assert.deepEqual(inventoryChangeViolations({ base, head: prepared.inventory, recipeIds: [recipeId] }), []);
+    // 범위 게이트가 이 쓰기를 실제로 본다: 갱신 필드를 비우면 같은 쓰기가 위반으로 잡힌다.
+    assert.ok(inventoryScopeViolations({ base, head: prepared.inventory, allowed: new Map([[sourceId, new Set()]]) }).length > 0);
+  });
+}
 
 test("inventory 변경 검사: 소유하지 않은 항목의 변화와 소유 항목의 허용 밖 필드 변화를 항목별 사유로 돌려준다", () => {
   const base = { sources: [{ id: "a", x: 1 }, { id: "gwangju-transportation-route-topology", datasetUrl: "u", retrievedAt: "1" }] };

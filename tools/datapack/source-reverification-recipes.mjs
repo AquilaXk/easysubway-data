@@ -84,6 +84,10 @@ export const REVERIFICATION_RECIPES = Object.freeze([
     inventoryChanges: changes({ "busan-transportation-route-topology": TOPOLOGY_FIELDS }),
     due: ledgerHead("busan-transportation-route-topology"),
   },
+  // 결속 묶음(topology와 그에 딸린 recipe)은 전부 등록되거나 전부 되돌려진다(run-source-reverification.mjs의 dependencyGroups, #1102).
+  // 딸린 원천은 topology head(topologySnapshotId·topologyContentSha256)에 결속돼 있어, topology만 새로 등록되고 딸린 원천이 옛 head에 남으면 결속이 어긋난다(#1103과 같은 이유).
+  // 그래서 부산 시간표처럼 무거운 수집이 실패하면 topology 등록도 함께 되돌려지고, 그 롤백은 REVERIFICATION_GROUP_ROLLED_BACK으로 실패 이슈에 드러난다.
+  // topology의 P7D 만료 전에 관리자 화면에 이상으로 보이게 하려는 의도된 동작이다. 부분 등록으로 숨기지 않는다.
   {
     id: "busan-accessibility",
     message: "[Data] 부산 접근성 시설을 새 topology head에 다시 결속해 등록",
