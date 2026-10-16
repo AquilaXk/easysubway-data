@@ -206,16 +206,31 @@ test("실제 정책 파일은 닫힌 형식이고 정책의 workflow는 정기 �
     assert.match(yml, /\n  workflow_dispatch:/u, `${workflow} accepts workflow_dispatch`);
     parseMaxAge(maxAge);
   }
-  // 정기 주기의 두 배보다 크게 잡아 스케줄러가 한 번 늦은 것만으로는 알리지 않는다(2시간 workflow는 5시간).
-  const maxAge = Object.fromEntries(actual.workflows.filter(({ runName }) => runName === undefined).map((item) => [item.workflow, parseMaxAge(item.maxAge)]));
+  // 하루 안에 여러 번 도는 항목은 maxAge를 정기 주기의 두 배에 1시간을 더해 잡는다. 스케줄러가 한 번 늦은 것만으로는 알리지 않는다(2시간 주기는 5시간, 3시간 주기는 7시간).
+  // cron은 각 workflow의 GitHub schedule 백업 값이다. platform의 contracts/release/platform-data-workflow-scheduler-contract.json은 이 값을 githubCron으로 옮겨 적으므로
+  // 여기서 cron을 바꾸면 그 계약의 주기와 분도 같이 바꿔야 한다(AquilaXk/easysubway-platform#258).
+  const DATAPACK_EXPIRY = "datapack-expiry-alert.yml";
+  const SUB_DAILY = [
+    { workflow: "current-capital-topology-refresh.yml", cadenceHours: 2, cron: "47 */2 * * *" },
+    { workflow: "current-capital-topology-registration.yml", cadenceHours: 2, cron: "5 */2 * * *" },
+    { workflow: DATAPACK_EXPIRY, runName: "Data Pack Expiry Alert (datapack-expiry)", cadenceHours: 4, cron: "23 */4 * * *" },
+    { workflow: "itx-current-promotion.yml", cadenceHours: 3, cron: "0 */3 * * *" },
+    { workflow: "kric-current-facility-refresh.yml", cadenceHours: 2, cron: "17 */2 * * *" },
+    { workflow: "nationwide-candidate-refresh.yml", cadenceHours: 2, cron: "29 */2 * * *" },
+    { workflow: "recovered-failure-issues-close.yml", cadenceHours: 1, cron: "13 * * * *" },
+    { workflow: "retained-gwangju-timetable-refresh.yml", cadenceHours: 2, cron: "43 */2 * * *" },
+    { workflow: "seoul-current-accessibility-refresh.yml", cadenceHours: 2, cron: "31 */2 * * *" },
+    { workflow: "source-derivative-rebinding.yml", cadenceHours: 6, cron: "41 */6 * * *" },
+    { workflow: "source-reverification.yml", cadenceHours: 2, cron: "23 */2 * * *" },
+  ];
   const hours = (value) => value * 3_600_000;
-  for (const workflow of ["current-capital-topology-refresh.yml", "current-capital-topology-registration.yml", "kric-current-facility-refresh.yml", "nationwide-candidate-refresh.yml", "retained-gwangju-timetable-refresh.yml", "seoul-current-accessibility-refresh.yml", "source-reverification.yml"]) {
-    assert.equal(maxAge[workflow], hours(5), workflow);
+  for (const { workflow, runName, cadenceHours, cron } of SUB_DAILY) {
+    const label = runName ?? workflow;
+    const item = actual.workflows.find((candidate) => candidate.workflow === workflow && candidate.runName === runName);
+    assert.equal(parseMaxAge(item.maxAge), hours(2 * cadenceHours + 1), label);
+    assert.ok(readFileSync(path.join(root, ".github/workflows", workflow), "utf8").includes(`- cron: "${cron}"`), `${label} keeps the GitHub schedule cron ${cron}`);
   }
-  const expiry = Object.fromEntries(actual.workflows.filter(({ workflow }) => workflow === "datapack-expiry-alert.yml").map((item) => [item.runName, parseMaxAge(item.maxAge)]));
-  assert.deepEqual(expiry, { "Data Pack Expiry Alert (datapack-expiry)": hours(9), "Data Pack Expiry Alert (provider-approval)": hours(27) });
-  assert.equal(maxAge["source-derivative-rebinding.yml"], hours(13));
-  // 외부 스케줄러는 ITX 승격을 3시간마다(platform#258), 회복된 실패 이슈 닫기를 매시간 dispatch한다. 같은 규칙으로 주기의 두 배보다 1시간 크게(3시간은 두 배보다 1시간 크게) 잡는다.
-  assert.equal(maxAge["itx-current-promotion.yml"], hours(7));
-  assert.equal(maxAge["recovered-failure-issues-close.yml"], hours(3));
+  // 하루 한 번 도는 항목은 정기 주기에 3시간을 더한다.
+  const expiry = Object.fromEntries(actual.workflows.filter(({ workflow }) => workflow === DATAPACK_EXPIRY).map((item) => [item.runName, parseMaxAge(item.maxAge)]));
+  assert.equal(expiry["Data Pack Expiry Alert (provider-approval)"], hours(27));
 });
