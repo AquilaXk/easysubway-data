@@ -176,10 +176,11 @@ async function registerWithHead(ctx, script, args) {
   await ctx.execute(script, [...args, "--expected-head", await ctx.head()]);
 }
 
-function regionalAccessibilitySteps({ collectScript, collectArgs }) {
+// download: 수집기가 --download 모드를 요구하는가(data.go.kr 파일데이터). 부산 접근성 수집기는 오픈API를 직접 불러 그 플래그가 없다.
+function regionalAccessibilitySteps({ collectScript, collectArgs, download = true }) {
   return [
     step("collect", "collect", async (ctx) => {
-      await ctx.execute(collectScript, ["--download", ...(await collectArgs(ctx)), "--output", ctx.file("accessibility.json")]);
+      await ctx.execute(collectScript, [...(download ? ["--download"] : []), ...(await collectArgs(ctx)), "--output", ctx.file("accessibility.json")]);
     }),
     step("register", "register", async (ctx) => {
       await registerWithHead(ctx, "register-regional-accessibility.mjs", ["publish-register", "--snapshot", ctx.file("accessibility.json"), "--receipt", ctx.file("raw-receipt.json")]);
@@ -295,9 +296,10 @@ const KORAIL_PLANNED_STEPS = [
   }),
 ];
 
-async function daejeonTopologySnapshotPath(ctx) {
-  const evidence = (await sourceByKey(ctx, "daejeon-station-distance-fare")).topologyAdmissionEvidence;
-  if (!text(evidence?.snapshotPath)) fail("Daejeon topology admission evidence is missing");
+// 직전 단계가 등록한 topology 증거가 가리키는 snapshot. 그 topology head에 결속하는 수집기(범위·결속 대상)가 읽는다.
+async function topologySnapshotPath(ctx, topologySourceId) {
+  const evidence = (await sourceByKey(ctx, topologySourceId)).topologyAdmissionEvidence;
+  if (!text(evidence?.snapshotPath)) fail(`topology admission evidence is missing: ${topologySourceId}`);
   return abs(ctx, evidence.snapshotPath);
 }
 
@@ -399,6 +401,19 @@ export const RECIPE_STEPS = Object.freeze({
       ]);
     }),
   ],
+  "busan-accessibility": regionalAccessibilitySteps({
+    collectScript: "collect-busan-accessibility.mjs",
+    collectArgs: async (ctx) => ["--scope-snapshot", await topologySnapshotPath(ctx, "busan-transportation-route-topology")],
+    download: false,
+  }),
+  "busan-timetable": [
+    step("collect", "collect", async (ctx) => {
+      await ctx.execute("collect-busan-timetable.mjs", ["--scope-snapshot", await topologySnapshotPath(ctx, "busan-transportation-route-topology"), "--output", ctx.file("timetable.json")]);
+    }),
+    step("register", "register", async (ctx) => {
+      await registerWithHead(ctx, "register-busan-timetable.mjs", ["publish-register", "--snapshot", ctx.file("timetable.json"), "--receipt", ctx.file("raw-receipt.json")]);
+    }),
+  ],
   "daejeon-topology": [
     step("collect", "collect", async (ctx) => {
       await ctx.execute("collect-daejeon-route-topology.mjs", [], { env: { DAEJEON_TOPOLOGY_OUTPUT: ctx.file("topology.json") } });
@@ -409,8 +424,16 @@ export const RECIPE_STEPS = Object.freeze({
   ],
   "daejeon-accessibility": regionalAccessibilitySteps({
     collectScript: "collect-daejeon-accessibility.mjs",
-    collectArgs: async (ctx) => ["--topology-snapshot", await daejeonTopologySnapshotPath(ctx), "--inventory", abs(ctx, INVENTORY_PATH), "--molit-csv", abs(ctx, MOLIT_STATION_CSV)],
+    collectArgs: async (ctx) => ["--topology-snapshot", await topologySnapshotPath(ctx, "daejeon-station-distance-fare"), "--inventory", abs(ctx, INVENTORY_PATH), "--molit-csv", abs(ctx, MOLIT_STATION_CSV)],
   }),
+  "daejeon-timetable": [
+    step("collect", "collect", async (ctx) => {
+      await ctx.execute("probe-daejeon-coverage-api.mjs", [], { env: { DAEJEON_API_PROBE_SOURCE_ID: "daejeon-train-timetable", DAEJEON_API_PROBE_OUTPUT: ctx.file("timetable.json") } });
+    }),
+    step("register", "register", async (ctx) => {
+      await registerWithHead(ctx, "register-daejeon-timetable.mjs", ["publish-register", "--snapshot", ctx.file("timetable.json"), "--receipt", ctx.file("raw-receipt.json")]);
+    }),
+  ],
   "daegu-sources": [
     step("collect", "collect", async (ctx) => {
       await mkdir(ctx.file("collected"));
@@ -431,6 +454,10 @@ export const RECIPE_STEPS = Object.freeze({
     }),
     step("verify", "register", verifyDaeguRegistration),
   ],
+  "daegu-accessibility": regionalAccessibilitySteps({
+    collectScript: "collect-daegu-accessibility.mjs",
+    collectArgs: async (ctx) => ["--sources-dir", abs(ctx, "tools/datapack/sources"), "--inventory", abs(ctx, INVENTORY_PATH)],
+  }),
 });
 
 // ---------------------------------------------------------------------------

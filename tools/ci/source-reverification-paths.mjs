@@ -10,9 +10,13 @@ export const SOURCE_REVERIFICATION_RECIPE_IDS = Object.freeze([
   "gwangju-topology",
   "gwangju-accessibility",
   "busan-topology",
+  "busan-accessibility",
+  "busan-timetable",
   "daejeon-topology",
   "daejeon-accessibility",
+  "daejeon-timetable",
   "daegu-sources",
+  "daegu-accessibility",
 ]);
 
 /**
