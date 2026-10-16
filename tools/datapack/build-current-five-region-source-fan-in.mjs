@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { carriedAdmissionGovernanceViolation, carriedAdmissionLineage } from "./lib/carried-admission.mjs";
 
 export const CURRENT_FIVE_REGION_SOURCE_FAN_IN_PATH =
   "tools/datapack/release/current-five-region-source-fan-in.json";
@@ -154,7 +155,34 @@ function hasNativeSourceAuthority(source) {
   return source.requiredForProductionPack === true && isProductionUseAllowed(source);
 }
 
-function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
+// #1289: 무인 갱신(#1276)은 새 snapshot에 옛 snapshot의 사람 승인을 이월한다. 이 승인은 head가 아니라 옛 snapshot을 가리키므로,
+// 등록기와 같은 판정(lib/carried-admission)으로 계보·스키마·원본 해시를 확인해 인정한다. 하나라도 어긋나면 명시적으로 실패한다.
+// 약관 결속과 재검토 기한은 거버넌스 정책이 있어야 보이므로 assertFanInCarriedAdmissionGovernance가 확인한다.
+function carriedForwardApproval({ source, sourceId, snapshot, matching, ledger }) {
+  const approved = source.admissionEvidence;
+  if (approved?.decision !== "APPROVED" || approved.snapshotId === snapshot.snapshotId) return null;
+  const headEvidence = matching.find(([kind, evidence]) =>
+    kind === "scheduleAdmissionEvidence" && evidence.rawSha256 === snapshot.rawSha256);
+  const { chain, violation } = carriedAdmissionLineage({
+    sourceId, approved, ledger, head: snapshot, schemaFingerprint: snapshot.schemaFingerprint,
+  });
+  const failure = violation ?? (headEvidence === undefined ? "HEAD_EVIDENCE_UNBOUND" : null);
+  if (failure !== null) throw new Error(`admission carry-forward mismatch for ${sourceId}: ${failure}`);
+  return {
+    kind: "admissionEvidence",
+    evidence: headEvidence[1],
+    record: { kind: "admissionEvidence", sha256: sha256(Buffer.from(canonical(approved))) },
+    carriedAdmission: {
+      approvedSnapshotId: approved.snapshotId,
+      approvedRawSha256: approved.rawSha256,
+      schemaFingerprint: approved.schemaFingerprint,
+      licenseEvidenceHash: approved.licenseEvidenceHash,
+      chain,
+    },
+  };
+}
+
+function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, ledger) {
   const membershipCoverage = source.membershipCoverageEvidence;
   if (membershipCoverage !== undefined && (membershipCoverage.snapshotId !== snapshot.snapshotId
     || membershipCoverage.rawSha256 !== snapshot.rawSha256
@@ -187,7 +215,11 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     ...approved.map(([kind, evidence]) => ({ kind, evidence, record: null })),
     ...native,
   ];
-  if (recognized.length === 0) throw new Error(`admission approval mismatch for ${sourceId}`);
+  if (recognized.length === 0) {
+    const carried = carriedForwardApproval({ source, sourceId, snapshot, matching, ledger });
+    if (carried === null) throw new Error(`admission approval mismatch for ${sourceId}`);
+    recognized.push(carried);
+  }
 
   const bound = recognized.filter(({ evidence }) =>
     evidence.rawSha256 === snapshot.rawSha256
@@ -226,10 +258,13 @@ function headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt) {
     if (hasFutureObservation) throw new Error(`admission future observation mismatch for ${sourceId}`);
     throw new Error(`admission freshness mismatch for ${sourceId}`);
   }
-  return current.map(({ kind, evidence, record }) => record ?? {
-    kind,
-    sha256: sha256(Buffer.from(canonical(evidence))),
-  }).sort((left, right) => compare(left.kind, right.kind));
+  return {
+    records: current.map(({ kind, evidence, record }) => record ?? {
+      kind,
+      sha256: sha256(Buffer.from(canonical(evidence))),
+    }).sort((left, right) => compare(left.kind, right.kind)),
+    carriedAdmission: current.find(({ carriedAdmission }) => carriedAdmission)?.carriedAdmission ?? null,
+  };
 }
 
 function validNativeScheduleAdmission(source, evidence, snapshot, sourceId) {
@@ -471,7 +506,7 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
     if (instant(effectiveFreshnessExpiresAt, "snapshot freshness") <= evaluatedAt) {
       throw new Error(`snapshot freshness mismatch for ${sourceId}`);
     }
-    const admissions = headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt);
+    const { records: admissions, carriedAdmission } = headAdmissionEvidence(source, sourceId, snapshot, evaluatedAt, sourceSnapshots);
     return {
       sourceId,
       provider: source.provider,
@@ -487,6 +522,7 @@ function selectedSources(rows, inventory, sourceSnapshots, evaluatedAt) {
       snapshotRecordSha256: sha256(Buffer.from(canonical(snapshot))),
       licenseRecordSha256: sha256(Buffer.from(canonical(license))),
       admissionRecordSha256s: admissions,
+      ...(carriedAdmission === null ? {} : { carriedAdmission }),
     };
   });
 }
@@ -520,6 +556,22 @@ export function assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourc
     if (!Number.isFinite(storedMillis) || storedMillis > Date.parse(ceiling)) {
       throw new Error(`fan-in freshness exceeds policy for ${sourceId}: ${head.freshnessExpiresAt} > ${ceiling}`);
     }
+  }
+}
+
+// #1289: 이월한 승인은 승인 당시 약관(termsHash) 그대로이고 약관 재검토 기한(nextReviewAt) 안이어야 한다.
+// 판정 시각은 벽시계가 아니라 fan-in 후보 시계(evaluatedAt)이고, 이월이 없는 fan-in은 거버넌스 항목을 요구하지 않는다.
+export function assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy }) {
+  if (!Array.isArray(governancePolicy?.sources)) throw new Error("fan-in carried admission governance policy shape mismatch");
+  const evaluatedAt = instant(fanIn?.evaluatedAt, "fan-in evaluation instant");
+  for (const { sourceId, carriedAdmission } of fanIn?.selectedSources ?? []) {
+    if (!carriedAdmission) continue;
+    const entries = governancePolicy.sources.filter((entry) => entry?.sourceId === sourceId);
+    if (entries.length !== 1) throw new Error(`fan-in carried admission governance entry mismatch for ${sourceId}`);
+    const violation = carriedAdmissionGovernanceViolation({
+      licenseEvidenceHash: carriedAdmission.licenseEvidenceHash, governanceEntry: entries[0], evaluatedAt,
+    });
+    if (violation !== null) throw new Error(`admission carry-forward mismatch for ${sourceId}: ${violation}`);
   }
 }
 
@@ -622,7 +674,7 @@ export function buildCurrentFiveRegionSourceFanIn(input = {}) {
 }
 
 function argumentsFrom(argv) {
-  const names = ["targets", "tally", "ownership", "inventory", "source-snapshots", "freshness-policy", "evaluated-at", "output"];
+  const names = ["targets", "tally", "ownership", "inventory", "source-snapshots", "freshness-policy", "governance-policy", "evaluated-at", "output"];
   if (argv.length !== names.length * 2) throw new Error("five-region fan-in arguments mismatch");
   const result = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -658,6 +710,8 @@ async function main() {
   const fanIn = buildCurrentFiveRegionSourceFanIn(input);
   const freshnessPolicy = JSON.parse(await readFile(path.resolve(args["freshness-policy"]), "utf8"));
   assertFanInSourceFreshnessPolicy({ fanIn, freshnessPolicy, sourceSnapshots: input.sourceSnapshots });
+  const governancePolicy = JSON.parse(await readFile(path.resolve(args["governance-policy"]), "utf8"));
+  assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy });
   await writeFile(path.resolve(args.output), `${canonicalCurrentFiveRegionSourceFanInJson(fanIn)}\n`, {
     flag: "wx",
     mode: 0o600,

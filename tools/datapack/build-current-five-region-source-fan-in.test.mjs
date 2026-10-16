@@ -7,11 +7,13 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 import {
+  assertFanInCarriedAdmissionGovernance,
   assertFanInSourceFreshnessPolicy,
   buildCurrentFiveRegionSourceFanIn,
   canonicalCurrentFiveRegionSourceFanInJson,
   validateCurrentFiveRegionSourceFanIn,
 } from "./build-current-five-region-source-fan-in.mjs";
+import { MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH } from "./lib/carried-admission.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const EVALUATED_AT = "2026-09-03T00:00:00.000Z";
@@ -467,9 +469,12 @@ test("#687 CLI creates one canonical output and never overwrites it", async () =
   const output = path.join(temporary, "fan-in.json");
   const policyPath = path.join(temporary, "freshness-policy.json");
   await writeFile(policyPath, bytes(policyFor(buildCurrentFiveRegionSourceFanIn(input))));
+  const governancePath = path.join(temporary, "governance-policy.json");
+  await writeFile(governancePath, bytes({ sources: [] }));
   const args = [
     path.join(ROOT, "tools/datapack/build-current-five-region-source-fan-in.mjs"),
     "--freshness-policy", policyPath,
+    "--governance-policy", governancePath,
     "--targets", paths.targets,
     "--tally", paths.tally,
     "--ownership", paths.ownership,
@@ -641,9 +646,12 @@ test("#929 D1 the fan-in CLI refuses to write without a policy class for every s
   }
   const policyPath = path.join(temporary, "freshness-policy.json");
   await writeFile(policyPath, bytes({ sourceClasses: [] }));
+  const governancePath = path.join(temporary, "governance-policy.json");
+  await writeFile(governancePath, bytes({ sources: [] }));
   const output = path.join(temporary, "fan-in.json");
   const base = [
     path.join(ROOT, "tools/datapack/build-current-five-region-source-fan-in.mjs"),
+    "--governance-policy", governancePath,
     "--targets", paths.targets, "--tally", paths.tally, "--ownership", paths.ownership,
     "--inventory", paths.inventory, "--source-snapshots", paths.sourceSnapshots,
     "--evaluated-at", EVALUATED_AT, "--output", output,
@@ -654,4 +662,167 @@ test("#929 D1 the fan-in CLI refuses to write without a policy class for every s
   assert.notEqual(missingClass.status, 0);
   assert.match(missingClass.stderr, /fan-in freshness policy missing for/);
   await assert.rejects(stat(output), { code: "ENOENT" });
+});
+
+// #1289: #1276의 무인 갱신은 새 snapshot에 사람 승인(admissionEvidence)을 이월한다. 승인은 옛 snapshot을 가리키고,
+// 새 head에는 native 형식이 아닌 scheduleAdmissionEvidence만 묶인다. 실제 main의 KRIC 역별 시간표 상태를 그대로 옮긴 fixture다.
+const CARRY_SOURCE_ID = "kric-subway-timetable-station-lines";
+const CARRY_APPROVED_ID = `${CARRY_SOURCE_ID}-20261003`;
+const CARRY_HEAD_ID = `${CARRY_SOURCE_ID}-20261016`;
+const CARRY_APPROVED_RAW = "c".repeat(64);
+const CARRY_HEAD_RAW = "b".repeat(64);
+const CARRY_SCHEMA = "e".repeat(64);
+const CARRY_TERMS = "f".repeat(64);
+
+function carriedForwardFixture({ intermediateSnapshots = 0 } = {}) {
+  const input = fixture();
+  const [template] = input.sourceSnapshots;
+  for (const row of input.tally.launchRequired.requirements) row.admittedSourceIds = [CARRY_SOURCE_ID];
+  const ledgerRow = (snapshotId, previousSnapshotId, rawSha256) => ({
+    ...template, sourceId: CARRY_SOURCE_ID, snapshotId, previousSnapshotId, rawSha256,
+    rawObjectUri: `oci://namespace/bucket/source/${rawSha256}.json`, schemaFingerprint: CARRY_SCHEMA,
+  });
+  const middleIds = Array.from({ length: intermediateSnapshots }, (_, index) => `${CARRY_SOURCE_ID}-middle-${index}`);
+  const rows = [CARRY_APPROVED_ID, ...middleIds, CARRY_HEAD_ID];
+  input.sourceSnapshots = rows.map((snapshotId, index) => ledgerRow(
+    snapshotId, index === 0 ? null : rows[index - 1],
+    snapshotId === CARRY_APPROVED_ID ? CARRY_APPROVED_RAW : snapshotId === CARRY_HEAD_ID ? CARRY_HEAD_RAW : sha256(snapshotId)));
+  const source = input.inventory.sources[0];
+  source.id = CARRY_SOURCE_ID;
+  source.capabilities = { schedule: { productionUseAllowed: true } };
+  source.admissionEvidence = {
+    candidateId: CARRY_SOURCE_ID, sourceId: CARRY_SOURCE_ID, catalogProviderId: "provider:kric-subway-timetable",
+    snapshotId: CARRY_APPROVED_ID, decision: "APPROVED", approvedBy: "data-release-authority",
+    approvedAt: "2026-08-20T00:00:00.000Z", rawSha256: CARRY_APPROVED_RAW, schemaFingerprint: CARRY_SCHEMA,
+    adminReviewRecordHash: "d".repeat(64), licenseEvidenceHash: CARRY_TERMS,
+  };
+  source.scheduleAdmissionEvidence = {
+    issue: 903, materializer: "tools/datapack/lib/kric-station-timetable-api-trips.mjs",
+    verificationTest: "tools/datapack/register-kric-station-timetables.test.mjs", snapshotId: CARRY_HEAD_ID,
+    snapshotPath: `tools/datapack/sources/${CARRY_HEAD_ID}.json`, capturedAt: "2026-09-02T00:00:00.000Z",
+    freshUntil: "2026-10-02T00:00:00.000Z", lineIds: ["line-1"], tripCount: 2, stopTimeCount: 4,
+    rawSha256: CARRY_HEAD_RAW, tripsSha256: "1".repeat(64), contentSha256: "2".repeat(64),
+  };
+  return reserialized(input);
+}
+
+function reserialized(input) {
+  for (const key of ["tally", "inventory", "sourceSnapshots"]) input.inputBytes[key] = bytes(input[key]);
+  return input;
+}
+
+function carriedMutation(mutate, options) {
+  const input = carriedForwardFixture(options);
+  mutate(input);
+  return reserialized(input);
+}
+
+const carriedGovernance = (overrides = {}) => ({
+  sources: [{ sourceId: CARRY_SOURCE_ID, licenseReview: { status: "APPROVED", termsHash: CARRY_TERMS, nextReviewAt: "2027-07-09T00:00:00Z", ...overrides } }],
+});
+
+test("#1289 a verified carried-forward approval admits the new head and records its lineage", () => {
+  const input = carriedForwardFixture();
+  const [head] = buildCurrentFiveRegionSourceFanIn(input).selectedSources;
+  assert.equal(head.snapshotId, CARRY_HEAD_ID);
+  assert.deepEqual(head.carriedAdmission, {
+    approvedSnapshotId: CARRY_APPROVED_ID, approvedRawSha256: CARRY_APPROVED_RAW, schemaFingerprint: CARRY_SCHEMA,
+    licenseEvidenceHash: CARRY_TERMS, chain: [CARRY_HEAD_ID, CARRY_APPROVED_ID],
+  });
+  assert.deepEqual(head.admissionRecordSha256s, [{
+    kind: "admissionEvidence",
+    sha256: sha256(Buffer.from(canonicalCurrentFiveRegionSourceFanInJson(input.inventory.sources[0].admissionEvidence))),
+  }]);
+  // 이월은 여러 번 이어진다: 승인 snapshot이 head에서 여러 단계 떨어져도 계보가 chain에 남는다.
+  const multi = buildCurrentFiveRegionSourceFanIn(carriedForwardFixture({ intermediateSnapshots: 3 })).selectedSources[0];
+  assert.deepEqual(multi.carriedAdmission.chain, [CARRY_HEAD_ID, ...[2, 1, 0].map((index) => `${CARRY_SOURCE_ID}-middle-${index}`), CARRY_APPROVED_ID]);
+  // 현재 snapshot을 직접 승인한 원천에는 이월 근거를 붙이지 않는다.
+  assert.equal(Object.hasOwn(buildCurrentFiveRegionSourceFanIn(fixture()).selectedSources[0], "carriedAdmission"), false);
+});
+
+test("#1289 the carried-forward chain depth is capped by a named constant", () => {
+  const atCap = carriedForwardFixture({ intermediateSnapshots: MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH - 1 });
+  assert.equal(buildCurrentFiveRegionSourceFanIn(atCap).selectedSources[0].carriedAdmission.chain.length, MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH + 1);
+  const overCap = carriedForwardFixture({ intermediateSnapshots: MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH });
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(overCap), /admission carry-forward mismatch for kric-subway-timetable-station-lines: CHAIN_TOO_DEEP/);
+});
+
+test("#1289 an approval that cannot be carried forward keeps failing explicitly", () => {
+  const cases = [
+    ["승인 snapshot이 원장에 없다", (input) => { input.inventory.sources[0].admissionEvidence.snapshotId = `${CARRY_SOURCE_ID}-19990101`; }, "NOT_ANCESTOR"],
+    ["승인 snapshot이 다른 원천의 행이라 head의 조상이 아니다", (input) => {
+      input.sourceSnapshots.push({ ...input.sourceSnapshots[0], sourceId: "other-source", snapshotId: "other-source-1" });
+      input.inventory.sources[0].admissionEvidence.snapshotId = "other-source-1";
+    }, "NOT_ANCESTOR"],
+    ["승인 당시 rawSha256이 원장 행과 다르다", (input) => { input.inventory.sources[0].admissionEvidence.rawSha256 = "0".repeat(64); }, "APPROVED_RAW_MISMATCH"],
+    ["스키마가 승인 시점과 다르다", (input) => { input.sourceSnapshots[1].schemaFingerprint = "0".repeat(64); }, "SCHEMA_CHANGED"],
+    ["승인 증거와 원장 head 모두 스키마 해시가 없다", (input) => {
+      delete input.inventory.sources[0].admissionEvidence.schemaFingerprint;
+      for (const row of input.sourceSnapshots) delete row.schemaFingerprint;
+    }, "SCHEMA_CHANGED"],
+    ["승인 증거에 약관 해시가 없다", (input) => { delete input.inventory.sources[0].admissionEvidence.licenseEvidenceHash; }, "LICENSE_EVIDENCE_MISSING"],
+    ["승인 증거가 다른 원천의 것이다", (input) => { input.inventory.sources[0].admissionEvidence.sourceId = "other-source"; }, "NOT_APPROVED"],
+    ["현재 head에 묶인 scheduleAdmissionEvidence가 없다", (input) => { input.inventory.sources[0].scheduleAdmissionEvidence.rawSha256 = "0".repeat(64); }, "HEAD_EVIDENCE_UNBOUND"],
+  ];
+  for (const [name, mutate, violation] of cases) {
+    assert.throws(() => buildCurrentFiveRegionSourceFanIn(carriedMutation(mutate)),
+      new RegExp(`admission carry-forward mismatch for ${CARRY_SOURCE_ID}: ${violation}`), name);
+  }
+  const notApproved = carriedMutation((input) => { input.inventory.sources[0].admissionEvidence.decision = "PENDING"; });
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(notApproved), /admission approval mismatch/);
+  // 이월은 등록기가 무인 갱신하는 원천에만 허용한다.
+  const notEligible = carriedMutation((input) => {
+    input.inventory.sources[0].id = "other-source";
+    input.inventory.sources[0].admissionEvidence.sourceId = "other-source";
+    for (const row of input.sourceSnapshots) row.sourceId = "other-source";
+    for (const row of input.tally.launchRequired.requirements) row.admittedSourceIds = ["other-source"];
+  });
+  assert.throws(() => buildCurrentFiveRegionSourceFanIn(notEligible), /admission carry-forward mismatch for other-source: SOURCE_NOT_ELIGIBLE/);
+});
+
+test("#1289 a carried-forward approval is bound to the license terms and review deadline of the governance policy", () => {
+  const fanIn = buildCurrentFiveRegionSourceFanIn(carriedForwardFixture());
+  assert.doesNotThrow(() => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy: carriedGovernance() }));
+  const violation = (governancePolicy, expected) => assert.throws(
+    () => assertFanInCarriedAdmissionGovernance({ fanIn, governancePolicy }), expected);
+  violation(carriedGovernance({ termsHash: "0".repeat(64) }), /admission carry-forward mismatch for kric-subway-timetable-station-lines: LICENSE_CHANGED/);
+  violation(carriedGovernance({ nextReviewAt: EVALUATED_AT }), /admission carry-forward mismatch for kric-subway-timetable-station-lines: REVIEW_EXPIRED/);
+  violation(carriedGovernance({ nextReviewAt: undefined }), /REVIEW_EXPIRED/);
+  violation({ sources: [] }, /carried admission governance entry mismatch for kric-subway-timetable-station-lines/);
+  violation({ sources: [...carriedGovernance().sources, ...carriedGovernance().sources] }, /carried admission governance entry mismatch/);
+  violation({}, /carried admission governance policy shape mismatch/);
+  // 이월이 없는 fan-in은 거버넌스 항목을 요구하지 않는다.
+  assert.doesNotThrow(() => assertFanInCarriedAdmissionGovernance({ fanIn: buildCurrentFiveRegionSourceFanIn(fixture()), governancePolicy: { sources: [] } }));
+});
+
+test("#1289 the fan-in CLI records a carried-forward approval and refuses to write when the governance check fails", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "five-region-source-fan-in-carry-"));
+  const input = carriedForwardFixture();
+  const paths = {};
+  for (const [name, value] of Object.entries(input.inputBytes)) {
+    paths[name] = path.join(temporary, `${name}.json`);
+    await writeFile(paths[name], value);
+  }
+  const policyPath = path.join(temporary, "freshness-policy.json");
+  await writeFile(policyPath, bytes(policyFor(buildCurrentFiveRegionSourceFanIn(input))));
+  const run = async (name, governancePolicy) => {
+    const governancePath = path.join(temporary, `${name}-governance.json`);
+    await writeFile(governancePath, bytes(governancePolicy));
+    const output = path.join(temporary, `${name}-fan-in.json`);
+    const result = spawnSync(process.execPath, [
+      path.join(ROOT, "tools/datapack/build-current-five-region-source-fan-in.mjs"),
+      "--targets", paths.targets, "--tally", paths.tally, "--ownership", paths.ownership,
+      "--inventory", paths.inventory, "--source-snapshots", paths.sourceSnapshots,
+      "--freshness-policy", policyPath, "--governance-policy", governancePath,
+      "--evaluated-at", EVALUATED_AT, "--output", output,
+    ], { encoding: "utf8" });
+    return { result, output };
+  };
+  const accepted = await run("accepted", carriedGovernance());
+  assert.equal(accepted.result.status, 0, accepted.result.stderr);
+  assert.deepEqual(JSON.parse(await readFile(accepted.output, "utf8")).selectedSources[0].carriedAdmission.chain, [CARRY_HEAD_ID, CARRY_APPROVED_ID]);
+  const changed = await run("changed", carriedGovernance({ termsHash: "0".repeat(64) }));
+  assert.notEqual(changed.result.status, 0);
+  assert.match(changed.result.stderr, /LICENSE_CHANGED/);
+  await assert.rejects(stat(changed.output), { code: "ENOENT" });
 });

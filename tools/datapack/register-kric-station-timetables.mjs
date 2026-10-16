@@ -4,8 +4,8 @@
 // 원장 행·inventory·정책 항목(governance·freshness)·파생 스냅샷을 한 트랜잭션으로 등록한다.
 // 검토 admission과 governance 항목은 이 도구가 만들지 않는다(입력 파일로만 받는다).
 // 후속 등록(#1122, 무인 갱신)은 reviewAdmissionPath를 null로 두어 이전에 승인된 admissionEvidence를 그대로 이월할 수 있다.
-// 이월은 승인된 스키마(schemaFingerprint)·약관 해시(licenseEvidenceHash)가 그대로이고, 승인된 snapshot이 원장 head에서 이어질 때만 허용하며
-// 아니면 REVIEW_CARRY_FORWARD로 거부한다. 이월의 시간 한도는 약관 거버넌스 항목의 nextReviewAt 하나다(지나면 GOVERNANCE_REVIEW_EXPIRED로 거부).
+// 이월은 승인된 스키마(schemaFingerprint)·약관 해시(licenseEvidenceHash)가 그대로이고, 승인된 snapshot이 원장 head에서 상한(MAXIMUM_CARRY_FORWARD_CHAIN_DEPTH) 안으로 이어질 때만 허용하며
+// 아니면 REVIEW_CARRY_FORWARD로 거부한다. 판정은 5권역 fan-in과 같은 lib/carried-admission.mjs를 쓴다. 이월의 시간 한도는 약관 거버넌스 항목의 nextReviewAt 하나다(지나면 GOVERNANCE_REVIEW_EXPIRED로 거부).
 // 약관은 실시간으로 확인하지 않고 이 저장소의 거버넌스 항목 해시로만 본다.
 // 같은 KRIC OpenAPI 데이터셋(id=162)·같은 이용약관임을 기존 kric-subway-timetable governance 항목과 비교해 고정한다.
 import { createHash } from "node:crypto";
@@ -17,6 +17,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 
 import { responsesFromCollection } from "./collect-kric-station-timetables.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { carriedAdmissionGovernanceViolation, carriedAdmissionLineage } from "./lib/carried-admission.mjs";
 import { KRIC_API_EXPECTED_OBSERVATION, KRIC_API_STATION_TIMETABLE_BINDINGS, assertExpectedApiObservation, buildApiStationTimetableTrips } from "./lib/kric-station-timetable-api-trips.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY } from "./lib/kric-station-row-timetable-trips.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
@@ -71,24 +72,13 @@ function parseReviewAdmission({ reviewFile, snapshotId, rawSha256, byteSize, art
   return review;
 }
 
-// 이전 승인이 가리키는 스키마·약관 그대로일 때만 이월한다. 이월한 값은 승인 당시 snapshot을 가리키는 채로 남는다(새 snapshot을 사람이 승인했다고 쓰지 않는다).
-function carriedAdmissionEvidence({ previousSource, previousHead, ledger, schemaFingerprint, licenseEvidenceHash }) {
+// 이전 승인이 가리키는 스키마·약관 그대로이고 승인 snapshot이 새 head의 조상일 때만 이월한다(판정은 5권역 fan-in과 공유한다).
+// 이월한 값은 승인 당시 snapshot을 가리키는 채로 남는다(새 snapshot을 사람이 승인했다고 쓰지 않는다).
+function carriedAdmissionEvidence({ previousSource, ledger, head, schemaFingerprint, governanceEntry, now }) {
   const approved = previousSource?.admissionEvidence;
-  if (approved?.decision !== "APPROVED" || approved.sourceId !== STATION_LINES_SOURCE_ID
-    || approved.schemaFingerprint !== schemaFingerprint || approved.licenseEvidenceHash !== licenseEvidenceHash
-    || !approvedSnapshotInLineage({ ledger, head: previousHead, approved })) fail("REVIEW_CARRY_FORWARD");
+  const { violation } = carriedAdmissionLineage({ sourceId: STATION_LINES_SOURCE_ID, approved, ledger, head, schemaFingerprint });
+  if (violation || carriedAdmissionGovernanceViolation({ licenseEvidenceHash: approved.licenseEvidenceHash, governanceEntry, evaluatedAt: now.valueOf() })) fail("REVIEW_CARRY_FORWARD");
   return structuredClone(approved);
-}
-
-// 승인된 snapshot은 원장 head에서 previousSnapshotId로 거슬러 올라가면 나와야 하고, 그 행의 원본 sha256이 승인 증거와 같아야 한다.
-function approvedSnapshotInLineage({ ledger, head, approved }) {
-  const bySnapshotId = new Map(ledger.map((row) => [row.snapshotId, row]));
-  const visited = new Set();
-  for (let row = head; row && !visited.has(row.snapshotId); row = bySnapshotId.get(row.previousSnapshotId)) {
-    if (row.snapshotId === approved.snapshotId) return row.sourceId === STATION_LINES_SOURCE_ID && row.rawSha256 === approved.rawSha256;
-    visited.add(row.snapshotId);
-  }
-  return false;
 }
 
 export async function buildKricStationTimetableRegistrationOutputs({ repositoryRoot = ROOT, sourceInputPath, now = new Date(), expected = KRIC_API_EXPECTED_OBSERVATION } = {}) {
@@ -216,7 +206,7 @@ export async function buildKricStationTimetableRegistrationOutputs({ repositoryR
       capturedAt: artifact.capturedAt, freshUntil: freshnessExpiresAt, lineIds: lines.map(({ lineId }) => lineId),
       tripCount: reconstruction.trips.length, stopTimeCount, rawSha256, tripsSha256, contentSha256 },
     admissionEvidence: admissionMode === "CARRY_FORWARD"
-      ? carriedAdmissionEvidence({ previousSource, previousHead, ledger, schemaFingerprint, licenseEvidenceHash: governanceEntry.licenseReview.termsHash })
+      ? carriedAdmissionEvidence({ previousSource, ledger: nextLedger, head: row, schemaFingerprint, governanceEntry, now })
       : { candidateId: STATION_LINES_SOURCE_ID, sourceId: STATION_LINES_SOURCE_ID, catalogProviderId: CATALOG_PROVIDER_ID,
         snapshotId, decision: review.decision, approvedBy: review.approvedBy, approvedAt: review.approvedAt, rawSha256, schemaFingerprint,
         adminReviewRecordHash: sha(reviewFile.bytes), licenseEvidenceHash: governanceEntry.licenseReview.termsHash },
