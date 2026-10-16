@@ -29,8 +29,8 @@ test("정기 실행 변수는 코드가 켜지 않고 QA 보고 뒤 별도 설�
   assert.doesNotMatch(code, /DATAPACK_SCHEDULED_ITX_PROMOTION[^\n]*(?:=|:)\s*['"]?true['"]?\s*$/mu);
 });
 
-test("트리거: 매일 03:00 KST 정기 실행과 사람 dispatch(force 입력). push 트리거는 없다", () => {
-  assert.match(yml, /^on:\n  schedule:\n    - cron: "0 18 \* \* \*"\n  workflow_dispatch:\n    inputs:\n      force_collect:\n        description: [^\n]+\n        required: false\n        default: false\n        type: boolean\n      replay_run_id:\n        description: [^\n]+\n        required: false\n        default: ""\n        type: string\n\npermissions: \{\}/mu);
+test("트리거: 3시간마다 정기 실행(실패한 날 같은 날 재수집)과 사람 dispatch(force 입력). push 트리거는 없다", () => {
+  assert.match(yml, /^on:\n  schedule:\n    - cron: "0 \*\/3 \* \* \*"\n  workflow_dispatch:\n    inputs:\n      force_collect:\n        description: [^\n]+\n        required: false\n        default: false\n        type: boolean\n      replay_run_id:\n        description: [^\n]+\n        required: false\n        default: ""\n        type: string\n\npermissions: \{\}/mu);
   assert.doesNotMatch(code, /\n  push:|\n  pull_request:|\n  pull_request_target:|\n  workflow_run:/u);
 });
 
@@ -68,10 +68,12 @@ test("판정 step이 공급자 접근·쓰기보다 먼저 돌고 PR·브랜치 
   assert.doesNotMatch(block, /gh pr list[^\n]*--state all --limit/u);
   assert.match(block, /git ls-remote --heads origin "refs\/heads\/automation\/977-itx-promotion-\*" > /u);
   assert.match(block, /node tools\/ci\/decide-itx-current-promotion\.mjs --contract tools\/datapack\/itx-cheongchun-coverage-contract\.json /u);
-  assert.match(block, /--repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --force "\$\{force\}" --itx-collected-today "\$\{itx_collected\}" --replay-run-id "\$\{REPLAY_RUN_ID\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
-  // F4: 같은 KST 날 다른 workflow가 이미 ITX를 수집했는지 공급자 호출 전에 본다. 수집했다면 WAIT로 정상 종료한다.
+  assert.match(block, /--repository "\$\{GITHUB_REPOSITORY\}" --pr-limit 1000 --force "\$\{force\}" --itx-collection-ledger "\$\{decision_root\}\/itx-collection-ledger\.json" --replay-run-id "\$\{REPLAY_RUN_ID\}" --github-output "\$\{GITHUB_OUTPUT\}"/u);
+  // F4 + #1298: 같은 KST 날 ITX 수집 기록(성공·진행 중·실패와 실제 요청 수)을 공급자 호출 전에 읽어 판정에 넘긴다. 성공했으면 WAIT, 실패만 했으면 예산 안에서 재수집한다.
   assert.match(block, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
-  assert.match(block, /itx_collected="\$\(node tools\/ci\/guard-itx-current-collection-budget\.mjs --probe\)"/u);
+  assert.match(block, /node tools\/ci\/guard-itx-current-collection-budget\.mjs --ledger "\$\{decision_root\}\/itx-collection-ledger\.json"\n/u);
+  assert.doesNotMatch(block, /--probe|--itx-collected-today/u);
+  assert.ok(block.indexOf("guard-itx-current-collection-budget.mjs --ledger") < block.indexOf("decide-itx-current-promotion.mjs"));
   assert.doesNotMatch(block, /DATA_GO_KR_SERVICE_KEY/u);
 });
 
@@ -146,10 +148,10 @@ test("공급자 키는 수집 step에서만 받고 형식을 먼저 검사한다
   assert.doesNotMatch(yml, /::add-mask::/u);
 });
 
-test("예산 가드는 같은 KST 날의 다른 수집을 막고 collector step 이름이 가드의 등록과 같다", () => {
+test("예산 가드는 같은 KST 날의 성공·진행 중 수집을 막고 실패한 수집만 예산 안에서 다시 허용하며 collector step 이름이 가드의 등록과 같다", () => {
   const guard = step("Guard KST quota window").block;
   assert.match(guard, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
-  assert.match(guard, /node tools\/ci\/guard-itx-current-collection-budget\.mjs --output "\$\{ITX_OPERATION_ROOT\}\/freshness\.json"/u);
+  assert.match(guard, /node tools\/ci\/guard-itx-current-collection-budget\.mjs --output "\$\{ITX_OPERATION_ROOT\}\/freshness\.json" --allow-failed-retry/u);
 });
 
 test("수집은 collector를 한 번만 부르고 게이트는 수집 결과·capture·replay·정책으로 판정한다", () => {

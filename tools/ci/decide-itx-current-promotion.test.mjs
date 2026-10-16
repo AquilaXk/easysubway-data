@@ -15,6 +15,7 @@ import {
   parseItxPromotionBranches,
   weekdayFreshUntilIfCollected,
 } from "./decide-itx-current-promotion.mjs";
+import { ITX_MIN_RETRY_GAP_MS } from "./itx-collection-allowance.mjs";
 import { LEDGER_WRITER_WORKFLOWS, REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 const REPOSITORY = "AquilaXk/easysubway-data";
@@ -46,6 +47,9 @@ const pr = (overrides = {}) => ({
   headRepository: { nameWithOwner: REPOSITORY },
   ...overrides,
 });
+
+const SUCCEEDED_TODAY = [{ runId: 7001, workflowFile: "current-capital-topology-refresh.yml", outcome: "SUCCEEDED", endedAt: null, requestCount: null }];
+const failedToday = (runId, overrides = {}) => ({ runId, workflowFile: "itx-current-promotion.yml", outcome: "FAILED", endedAt: "2026-10-09T18:30:00.000Z", requestCount: 810, ...overrides });
 
 test("신선도 규칙에서 계산한 요일별 확보 기간: 일·월 7일, 화 6일, 수 5일, 목 4일, 금·토 3일", () => {
   // 2026-10-04는 일요일이다. 첫 평일·토·일 운행일 중 가장 늦은 날의 다음 날 00:00 KST가 freshUntil이다.
@@ -121,21 +125,57 @@ test("사람 dispatch의 force는 수집할 때가 아니어도 수집하게 하
   assert.throws(() => decide({ now: kst("2026-10-06"), force: "yes" }), /ITX_PROMOTION_INPUT_INVALID/u);
 });
 
-test("같은 KST 날 다른 workflow가 이미 ITX를 수집했으면 수집할 때여도 WAIT로 정상 종료한다 (F4, 이상 아님)", () => {
+test("같은 KST 날 다른 workflow가 이미 ITX를 수집(성공·진행 중)했으면 수집할 때여도 WAIT로 정상 종료한다 (F4, 이상 아님)", () => {
   for (const [name, overrides] of [
     ["SAFETY_LEAD", { now: kst("2026-10-10") }],
     ["EXPIRED", { now: kst("2026-10-12", "03:00:00") }],
     ["FORCED", { now: kst("2026-10-06"), force: true }],
   ]) {
-    const result = decide({ ...overrides, itxCollectedToday: true });
+    const result = decide({ ...overrides, collectionEntries: SUCCEEDED_TODAY });
     assert.deepEqual({ state: result.state, reason: result.reason }, { state: "WAIT", reason: "ITX_COLLECTED_TODAY" }, name);
   }
   // 수집할 때가 아니면 그대로 NOT_DUE, 열린 PR이 있으면 그대로 OPEN_PR이다.
-  assert.equal(decide({ now: kst("2026-10-06"), itxCollectedToday: true }).reason, "NOT_DUE");
-  assert.equal(decide({ now: kst("2026-10-10"), itxCollectedToday: true, pullRequests: [pr()] }).state, "OPEN_PR");
+  assert.equal(decide({ now: kst("2026-10-06"), collectionEntries: SUCCEEDED_TODAY }).reason, "NOT_DUE");
+  assert.equal(decide({ now: kst("2026-10-10"), collectionEntries: SUCCEEDED_TODAY, pullRequests: [pr()] }).state, "OPEN_PR");
   // 다음 날에는 다시 수집한다.
-  assert.equal(decide({ now: kst("2026-10-11"), itxCollectedToday: false }).state, "COLLECT");
-  assert.throws(() => decide({ now: kst("2026-10-10"), itxCollectedToday: "yes" }), /ITX_PROMOTION_INPUT_INVALID/u);
+  assert.equal(decide({ now: kst("2026-10-11"), collectionEntries: [] }).state, "COLLECT");
+  assert.throws(() => decide({ now: kst("2026-10-10"), collectionEntries: "yes" }), /ITX_PROMOTION_INPUT_INVALID/u);
+  assert.throws(() => decide({ now: kst("2026-10-10"), collectionEntries: [{ runId: 1, outcome: "OK" }] }), /ITX_PROMOTION_INPUT_INVALID/u);
+});
+
+// #1298: 실패한 수집은 그날을 소진하지 않는다. 같은 KST 날 하루 공급자 호출 예산 안에서 다시 수집한다.
+test("같은 날 수집이 실패만 했으면 간격이 지난 뒤 같은 사유(SAFETY_LEAD)로 다시 수집한다", () => {
+  const lastEnd = new Date(failedToday(1).endedAt).getTime();
+  const at = (offsetMs) => new Date(lastEnd + offsetMs);
+  const collect = decide({ now: at(ITX_MIN_RETRY_GAP_MS), collectionEntries: [failedToday(1)] });
+  assert.deepEqual((({ state, reason }) => ({ state, reason }))(collect), { state: "COLLECT", reason: "SAFETY_LEAD" });
+  const early = decide({ now: at(ITX_MIN_RETRY_GAP_MS - 1), collectionEntries: [failedToday(1)] });
+  assert.deepEqual({ state: early.state, reason: early.reason }, { state: "WAIT", reason: "ITX_RETRY_TOO_SOON" });
+  // 사람 force는 최소 간격만 건너뛴다.
+  assert.equal(decide({ now: at(60_000), collectionEntries: [failedToday(1)], force: true }).state, "COLLECT");
+});
+
+test("수집할 때가 아니면(NOT_DUE) 실패 기록의 증거가 없어도 판정하지 않고 대기한다. 열린 PR과 재생도 앞선다", () => {
+  const unreadable = [failedToday(1, { requestCount: null })];
+  assert.equal(decide({ now: kst("2026-10-06"), collectionEntries: unreadable }).reason, "NOT_DUE");
+  assert.equal(decide({ now: kst("2026-10-10"), collectionEntries: unreadable, pullRequests: [pr()] }).state, "OPEN_PR");
+  assert.equal(decide({ now: kst("2026-10-10"), collectionEntries: unreadable, replayRunId: "38062621511" }).reason, "REPLAY");
+});
+
+test("시도 상한·요청 예산을 넘으면 새 reason 코드로 실패해 실패 보고로 드러난다. 증거가 없어도 실패한다", () => {
+  const now = kst("2026-10-10", "12:00:00");
+  const attempts = [1, 2, 3].map((runId) => failedToday(runId, { requestCount: 100 }));
+  assert.throws(() => decide({ now, collectionEntries: attempts }), /^Error: ITX_DAILY_ATTEMPTS_EXHAUSTED: /u);
+  assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: 5_001 })] }), /^Error: ITX_DAILY_REQUEST_BUDGET_EXHAUSTED: /u);
+  assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: null })] }), /^Error: ITX_COLLECTION_EVIDENCE_MISSING: /u);
+  // 사람 force로도 상한·예산·증거 규칙은 건너뛰지 못한다.
+  assert.throws(() => decide({ now, collectionEntries: attempts, force: true }), /ITX_DAILY_ATTEMPTS_EXHAUSTED/u);
+  assert.throws(() => decide({ now, collectionEntries: [failedToday(1, { requestCount: 5_001 })], force: true }), /ITX_DAILY_REQUEST_BUDGET_EXHAUSTED/u);
+});
+
+test("재생은 공급자를 부르지 않으므로 소진된 예산·상한과 무관하게 진행하고, 열린 다른 PR 규칙은 그대로다", () => {
+  const exhausted = [1, 2, 3].map((runId) => failedToday(runId));
+  assert.equal(decide({ now: kst("2026-10-10", "12:00:00"), collectionEntries: exhausted, replayRunId: "38062621511" }).reason, "REPLAY");
 });
 
 // #1127: 하루 한 번만 받을 수 있는 수집분이 승격 PR과 함께 사라졌을 때, 보관 capture를 재생해 승격한다. 재생은 공급자를 부르지 않는다.
@@ -145,13 +185,13 @@ test("재생 요청은 수집할 때가 아니어도, 같은 KST 날 이미 수�
     (({ state, reason, replayRunId }) => ({ state, reason, replayRunId }))(notDue),
     { state: "COLLECT", reason: "REPLAY", replayRunId: "38062621511" },
   );
-  const collectedToday = decide({ now: kst("2026-10-10"), itxCollectedToday: true, replayRunId: "38062621511" });
+  const collectedToday = decide({ now: kst("2026-10-10"), collectionEntries: SUCCEEDED_TODAY, replayRunId: "38062621511" });
   assert.deepEqual(
     (({ state, reason, replayRunId }) => ({ state, reason, replayRunId }))(collectedToday),
     { state: "COLLECT", reason: "REPLAY", replayRunId: "38062621511" },
   );
   // 재생이 아니면 같은 조건은 그대로 WAIT이다.
-  assert.equal(decide({ now: kst("2026-10-10"), itxCollectedToday: true }).reason, "ITX_COLLECTED_TODAY");
+  assert.equal(decide({ now: kst("2026-10-10"), collectionEntries: SUCCEEDED_TODAY }).reason, "ITX_COLLECTED_TODAY");
   assert.equal(decide({ now: kst("2026-10-10") }).replayRunId, undefined);
 });
 
@@ -294,6 +334,13 @@ test("CLI는 판정을 GITHUB_OUTPUT에 쓴다", async () => {
     await writeFile(path.join(dir, "contract.json"), JSON.stringify(contractWith("2026-10-12")));
     await writeFile(path.join(dir, "prs.json"), "[]");
     await writeFile(path.join(dir, "branches.txt"), "");
+    const writeLedger = async (name, entries) => {
+      const file = path.join(dir, name);
+      await writeFile(file, JSON.stringify({ schemaVersion: 1, quotaWindow: "2026-10-10", entries }));
+      return file;
+    };
+    const collectedLedger = await writeLedger("ledger-collected.json", SUCCEEDED_TODAY);
+    const failedLedger = await writeLedger("ledger-failed.json", [failedToday(1)]);
     const output = path.join(dir, "output.txt");
     const logs = [];
     const forced = await main([
@@ -316,24 +363,36 @@ test("CLI는 판정을 GITHUB_OUTPUT에 쓴다", async () => {
     assert.equal(logs.length, 1);
     const waiting = await main([
       "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
-      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "true",
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collection-ledger", collectedLedger,
     ], { now: kst("2026-10-10"), log: () => {} });
     assert.deepEqual({ state: waiting.state, reason: waiting.reason }, { state: "WAIT", reason: "ITX_COLLECTED_TODAY" });
     await assert.rejects(main([
       "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
-      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "maybe",
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collection-ledger", path.join(dir, "missing.json"),
+    ], { now: kst("2026-10-10"), log: () => {} }), /ENOENT/u);
+    const malformed = path.join(dir, "ledger-malformed.json");
+    await writeFile(malformed, JSON.stringify({ schemaVersion: 2, entries: [] }));
+    await assert.rejects(main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collection-ledger", malformed,
     ], { now: kst("2026-10-10"), log: () => {} }), /ITX_PROMOTION_INPUT_INVALID/u);
+    // 실패한 날은 간격이 지난 시각에 다시 수집한다(2026-10-10 03:30 KST 이후 2시간).
+    const retried = await main([
+      "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collection-ledger", failedLedger,
+    ], { now: new Date("2026-10-09T20:30:00.000Z"), log: () => {} });
+    assert.deepEqual({ state: retried.state, reason: retried.reason }, { state: "COLLECT", reason: "SAFETY_LEAD" });
     await assert.rejects(main(["--contract", path.join(dir, "contract.json")], { now: kst("2026-10-10") }), /ITX_PROMOTION_INPUT_INVALID/u);
     // #1127: --replay-run-id는 재생 모드를 연다. 빈 문자열은 입력 없음(정기 실행)과 같다.
     const replaying = await main([
       "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
-      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "true", "--replay-run-id", "38062621511", "--github-output", output,
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collection-ledger", collectedLedger, "--replay-run-id", "38062621511", "--github-output", output,
     ], { now: kst("2026-10-10"), log: () => {} });
     assert.deepEqual({ state: replaying.state, reason: replaying.reason }, { state: "COLLECT", reason: "REPLAY" });
     assert.match(await readFile(output, "utf8"), /state=COLLECT\nreason=REPLAY\nbranch=\npr_number=\nblocked_by=\ndays_until_expiry=2\nlapsed=false\nreplay_run_id=38062621511\n$/u);
     const empty = await main([
       "--contract", path.join(dir, "contract.json"), "--prs", path.join(dir, "prs.json"), "--branches", path.join(dir, "branches.txt"),
-      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collected-today", "true", "--replay-run-id", "",
+      "--repository", REPOSITORY, "--pr-limit", "1000", "--itx-collection-ledger", collectedLedger, "--replay-run-id", "",
     ], { now: kst("2026-10-10"), log: () => {} });
     assert.equal(empty.reason, "ITX_COLLECTED_TODAY");
     await assert.rejects(main([

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // ITX-청춘 원천 시간표 수집·승격 시점 판정(#977, #870 전체 자동화 3단계).
 //
-// 이 판정은 공급자(TAGO·KORAIL)를 부르기 전에 돈다. 공급자 호출은 KST 하루 한 번으로 제한되고 한 번에 수천 건을 쓰므로
-// 매일 정기 실행해도 필요한 날에만 수집하고, 아니면 아무것도 하지 않고 PR도 열지 않는다(멱등).
+// 이 판정은 공급자(TAGO·KORAIL)를 부르기 전에 돈다. 공급자 호출은 KST 하루 예산(itx-collection-allowance)으로 제한되고 한 번에 수천 건을 쓰므로
+// 정기 실행해도 필요한 날에만 수집하고, 아니면 아무것도 하지 않고 PR도 열지 않는다(멱등).
 //
 // 신선도 규칙(collect-korail-itx-cheongchun-timetable freshUntil): 수집일(KST)부터 첫 평일·토·일 운행일 중 가장 늦은 날의
 // 다음 날 00:00 KST. 그래서 수집 요일이 확보 기간을 정한다.
@@ -12,7 +12,7 @@
 //   SAFETY_LEAD  만료까지 2일 이하다. 이득이 작아도 수집한다. 그날 실패해도 하루 재시도 여유가 남는다.
 //   BEST_DAY     오늘이 최대 확보일(7일)이고 이번 수집이 만료를 3일 이상 늘린다.
 //   FORCED       사람 dispatch가 force를 줬다(수집할 때가 아니어도 수집한다). 열린 PR·대기·이상 규칙은 그대로다.
-//   REPLAY       이전 run이 받아 둔 수집분(보관 capture)을 다시 승격한다(#1127). 공급자를 부르지 않으므로 하루 한 번 제한(ITX_COLLECTED_TODAY)과
+//   REPLAY       이전 run이 받아 둔 수집분(보관 capture)을 다시 승격한다(#1127). 공급자를 부르지 않으므로 하루 호출 예산(수집 기록)과
 //                수집 시점 규칙을 보지 않는다. 열린 PR·중복·닫힌 PR·고아 브랜치 규칙은 그대로다.
 //                대기 PR이 있으면 기다리지 않고 ITX_PROMOTION_REPLAY_BLOCKED로 실패한다(재생 요청은 이 dispatch에만 있다). 복원 가능 여부는 후속 step이 검증한다.
 // 결과는 대개 주 3회(금·토·일)다. 시뮬레이션 테스트가 끊김 없음과 실패 한 번 내성을 고정한다.
@@ -20,17 +20,22 @@
 //   OPEN_PR                 이 workflow의 열린 승격 PR이 있다. 새로 수집하지 않고 CI·방치 상한만 본다.
 //   WAIT                    수집할 때가 아니다.
 //   COLLECT                 수집·게이트·승격 PR을 진행한다.
-//   WAIT(ITX_COLLECTED_TODAY) 수집할 때지만 같은 KST 날 다른 workflow가 이미 ITX를 수집했다(공급자 호출은 하루 한 번). 이상이 아니다.
+// 수집할 때여도 같은 KST 날의 수집 기록(collectionEntries)이 하루 공급자 호출 예산 규칙(itx-collection-allowance)을 정한다(#1298).
+//   WAIT(ITX_COLLECTED_TODAY) 같은 KST 날 이미 수집에 성공했거나 수집이 진행 중이다. 이상이 아니다.
+//   WAIT(ITX_RETRY_TOO_SOON)  같은 날 수집이 실패만 했고 마지막 시도가 끝난 지 최소 간격이 안 지났다. 사람 force는 이 간격만 건너뛴다.
+//   실패(ITX_DAILY_ATTEMPTS_EXHAUSTED·ITX_DAILY_REQUEST_BUDGET_EXHAUSTED·ITX_COLLECTION_EVIDENCE_MISSING)  하루 시도 상한·요청 예산을 다 썼거나 쓴 요청 수를 증명할 수 없다.
+//                             실패 보고와 관리자 자동화 상태로 드러난다. force도 건너뛰지 못한다.
 //   BLOCKED_BY_PENDING_PR   수집할 때지만 다른 자동화 PR이 열려 있다. 대기다. 만료 1일 전이면 이상이다.
 // 판정할 수 없는 상태(PR 중복·PR 없는 브랜치·닫힌 PR·잘못된 입력)는 실패해 실패 이슈로 드러난다. 추정하지 않는다.
 //
 // 사용: node tools/ci/decide-itx-current-promotion.mjs --contract <coverage contract> --prs <collect-automation-prs.mjs 출력>
-//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--itx-collected-today true|false]
+//   --branches <git ls-remote 출력> --repository <owner/repo> --pr-limit <gh pr list --limit> [--force true|false] [--itx-collection-ledger <guard-itx-current-collection-budget --ledger 출력>]
 //   [--replay-run-id <재생할 원본 run id>] [--github-output <path>]
 import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import { ownPullRequestsByBranch, parsePrefixedRefs, pendingLedgerWriterPullRequests, validRepository } from "./automation-pr-state.mjs";
+import { ITX_COLLECTION_LEDGER_SCHEMA_VERSION, evaluateItxCollectionAllowance, isItxCollectionEntries } from "./itx-collection-allowance.mjs";
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 
 export const ITX_PROMOTION_WORKFLOW = "itx-current-promotion.yml";
@@ -86,10 +91,10 @@ export function isReplayRunId(value) {
   return typeof value === "string" && RUN_ID.test(value) && Number.isSafeInteger(Number(value));
 }
 
-export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false, itxCollectedToday = false, replayRunId } = {}) {
+export function decideItxCurrentPromotion({ now, contract, pullRequests, branches, repository, limits, force = false, collectionEntries = [], replayRunId } = {}) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime()) || !Array.isArray(pullRequests) || !Array.isArray(branches)
     || !validRepository(repository) || !Number.isSafeInteger(limits?.pullRequests) || limits.pullRequests < 1
-    || typeof force !== "boolean" || typeof itxCollectedToday !== "boolean"
+    || typeof force !== "boolean" || !isItxCollectionEntries(collectionEntries)
     || (replayRunId !== undefined && !isReplayRunId(replayRunId))) fail("ITX_PROMOTION_INPUT_INVALID");
   const { millis: freshUntilMillis, day: expiryDay } = admittedFreshUntilDay(contract);
   const today = kstDay(now);
@@ -123,8 +128,13 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
   if (reason === null && force) reason = "FORCED";
   if (reason === null) return { ...base, state: "WAIT", reason: "NOT_DUE" };
 
-  // 같은 KST 날 다른 workflow(topology 갱신·수동 수집)가 이미 공급자를 불렀다면 오늘은 수집할 수 없다. 이상이 아니라 대기다(내일 다시 판정한다).
-  if (itxCollectedToday && replayRunId === undefined) return { ...base, state: "WAIT", reason: "ITX_COLLECTED_TODAY" };
+  // 같은 KST 날 다른 workflow(topology 갱신·수동 수집)가 이미 수집에 성공했거나 수집 중이면 오늘은 수집하지 않는다(대기). 실패만 했다면 예산 안에서 다시 수집한다.
+  // 상한·예산을 넘었거나 쓴 요청 수를 모르면 실패해 드러낸다. 재생은 공급자를 부르지 않으므로 이 규칙을 보지 않는다.
+  if (replayRunId === undefined) {
+    const allowance = evaluateItxCollectionAllowance({ entries: collectionEntries, now, skipRetryGap: force });
+    if (allowance.kind === "FAIL") fail(allowance.reason, allowance.detail);
+    if (allowance.kind === "WAIT") return { ...base, state: "WAIT", reason: allowance.reason };
+  }
   const blockedBy = pendingLedgerWriterPullRequests(pullRequests, repository, ITX_PROMOTION_WORKFLOW);
   if (blockedBy.length > 0) {
     // 재생은 이 dispatch의 replay_run_id에만 실려 있다. 기다리다 blocked-redispatch가 입력 없이 다시 돌리면 ITX_COLLECTED_TODAY로 대기해 수집분을 잃으므로 조용히 기다리지 않고 실패로 드러낸다(같은 입력으로 다시 dispatch하면 된다).
@@ -138,7 +148,7 @@ export function decideItxCurrentPromotion({ now, contract, pullRequests, branche
 
 function parseArgs(argv) {
   const keys = new Map([
-    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--force", "force"], ["--itx-collected-today", "itxCollectedToday"], ["--replay-run-id", "replayRunId"], ["--github-output", "githubOutput"],
+    ["--contract", "contract"], ["--prs", "prs"], ["--branches", "branches"], ["--repository", "repository"], ["--pr-limit", "prLimit"], ["--force", "force"], ["--itx-collection-ledger", "itxCollectionLedger"], ["--replay-run-id", "replayRunId"], ["--github-output", "githubOutput"],
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -159,6 +169,13 @@ function booleanOption(value, name) {
   return fail("ITX_PROMOTION_INPUT_INVALID", `${name} must be true or false`);
 }
 
+async function readCollectionEntries(file) {
+  if (file === undefined) return [];
+  const ledger = JSON.parse(await readFile(file, "utf8"));
+  if (ledger?.schemaVersion !== ITX_COLLECTION_LEDGER_SCHEMA_VERSION || !isItxCollectionEntries(ledger.entries)) fail("ITX_PROMOTION_INPUT_INVALID", "the collection ledger is malformed");
+  return ledger.entries;
+}
+
 export async function main(argv, { now = new Date(), log = console.log } = {}) {
   const values = parseArgs(argv);
   const readJson = async (file) => JSON.parse(await readFile(file, "utf8"));
@@ -170,7 +187,7 @@ export async function main(argv, { now = new Date(), log = console.log } = {}) {
     repository: values.repository,
     limits: { pullRequests: Number(values.prLimit) },
     force: booleanOption(values.force, "--force"),
-    itxCollectedToday: booleanOption(values.itxCollectedToday, "--itx-collected-today"),
+    collectionEntries: await readCollectionEntries(values.itxCollectionLedger),
     // 빈 문자열은 입력 없음(정기 실행·재생이 아닌 dispatch)이다.
     replayRunId: values.replayRunId === "" ? undefined : values.replayRunId,
   });
