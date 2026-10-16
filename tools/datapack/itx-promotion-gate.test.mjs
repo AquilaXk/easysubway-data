@@ -433,6 +433,56 @@ test("수집 오류는 차단된다: 실패한 provider 응답·전송 실패·O
   }
 });
 
+// data#1267 (QA 결정): providerErrorRecords 0은 fail-closed로 둔다. HTTP 200이 아닌 시도는 재시도로 회복해 수집이 SUPPORTED로 끝나도 승격을 막는다.
+// resultCode 99는 HTTP 200으로 오므로 회복하면 통과한다. 이 차이를 완화하려면 별도 QA 결정이 필요하다.
+async function recoveredCapture(firstAttempt) {
+  const services = { "7": "20261017", "8": "20261016", "9": "20261018" };
+  let calls = 0;
+  const recorder = createProviderResponseRecorder({
+    observedAt: "2026-10-04T15:15:19.524Z",
+    selectedServiceDates: services,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        if (firstAttempt === "transport") throw new Error("socket unavailable");
+        return firstAttempt();
+      }
+      return new Response('{"response":{"header":{"resultCode":"00"}}}', { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  const url = "https://apis.data.go.kr/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo?_type=json&depPlaceId=NAT010032&arrPlaceId=NAT130104&depPlandTime=20261016";
+  try { await recorder.fetchImpl(url); } catch { /* 첫 시도의 전송 오류는 재시도로 회복한다 */ }
+  await recorder.fetchImpl(url);
+  return recorder.captureArtifact().records;
+}
+
+test("재시도로 회복한 비200 응답(5xx·전송 오류)도 승격을 막고, 회복한 200/99 응답은 막지 않는다 (fail-closed 유지, data#1267)", async () => {
+  const gateWith = (records) => {
+    const input = gateInput();
+    input.capture = captureFor(input.candidate, { records });
+    return evaluateItxPromotionGate(input);
+  };
+  const cases = {
+    "회복한 HTTP 503": () => new Response("temporary", { status: 503 }),
+    "회복한 HTTP 408": () => new Response("timeout", { status: 408 }),
+    "회복한 전송 오류": "transport",
+  };
+  for (const [name, firstAttempt] of Object.entries(cases)) {
+    const receipt = gateWith(await recoveredCapture(firstAttempt));
+    assert.equal(receipt.status, "BLOCK", name);
+    const fetchErrors = receipt.checks.find(({ id }) => id === "FETCH_ERRORS");
+    assert.equal(fetchErrors.status, "BLOCK", name);
+    assert.deepEqual(fetchErrors.observed.failures, ["PROVIDER_ERROR_RECORDS"], name);
+    assert.equal(fetchErrors.observed.providerErrorRecords, 1, name);
+    assert.equal(fetchErrors.limit.providerErrorRecords, 0, name);
+  }
+  const recovered99 = gateWith(await recoveredCapture(() => new Response('{"header":{"resultCode":"99","resultMsg":"UNKNOWN_ERROR."}}', { status: 200, headers: { "content-type": "application/json" } })));
+  assert.equal(recovered99.status, "PASS");
+  assert.equal(recovered99.checks.find(({ id }) => id === "FETCH_ERRORS").observed.providerErrorRecords, 0);
+  // 정책 한도 자체가 0으로 고정돼 있다(완화는 정책 변경이므로 별도 QA 결정이다).
+  assert.equal(POLICY.limits.providerErrorRecords, 0);
+});
+
 test("지표 차단은 영수증 BLOCK으로 이어지고 차단된 check id가 남는다", () => {
   const input = gateInput({ mutate: ({ sets }) => { sets["8"] = daySets("8", { trains: 36 }); } });
   const receipt = evaluateItxPromotionGate(input);

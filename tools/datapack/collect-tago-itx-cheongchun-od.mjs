@@ -14,16 +14,29 @@ const NON_PAGINATED_OPERATIONS = new Set(["GetVhcleKndList", "GetCtyCodeList"]);
 const PAGINATED_OPERATIONS = new Set(["GetCtyAcctoTrainSttnList", "GetStrtpntAlocFndTrainInfo"]);
 const TAGO_DAILY_REQUEST_LIMIT = 10_000;
 const TAGO_MAX_RETRY_AFTER_SECONDS = 60;
-// 일시 오류(resultCode 99, HTTP 408·5xx, 전송 오류)는 같은 요청을 지수 백오프(1·2·4·8·16초)로 최대 5번 다시 보낸다(data#1089).
+// 일시 오류(resultCode 99, HTTP 408·5xx, 전송 오류)는 같은 요청을 지수 백오프로 다시 보낸다(data#1089, data#1267).
+// 간격은 1초에서 시작해 두 배씩 늘리다 상한(64초)에서 멈추고, 재시도 한도(8번)만큼 만들어 합계(191초)는 배열에서 계산한다.
 // 같은 원천에 같은 요청을 다시 보낼 뿐이라 fallback이 아니며, 한도를 다 쓰고도 실패하면 기존처럼 오류로 끝난다.
+// 8번·191초의 근거(data#1267): run 38781966262에서 공급자 장애가 첫 99부터 정상 복귀까지 대기 합계 108초 이상 이어졌고, 5번·31초로는 토요일 OD 1개의 두 조회일이 모두 99로 남았다.
 // 한 요청(페이지) 안에서 세 종류가 한도를 함께 쓴다. 시도마다 requestBudget(일일 10,000건)을 차감한다.
-const TAGO_TRANSIENT_RETRY_LIMIT = 5;
+export const TAGO_TRANSIENT_RETRY_LIMIT = 8;
+export const TAGO_TRANSIENT_BACKOFF_CAP_MS = 64_000;
+export const TAGO_TRANSIENT_RETRY_SCHEDULE_MS = Object.freeze(Array.from(
+  { length: TAGO_TRANSIENT_RETRY_LIMIT },
+  (_, retryIndex) => Math.min(1_000 * 2 ** retryIndex, TAGO_TRANSIENT_BACKOFF_CAP_MS),
+));
+export const TAGO_TRANSIENT_RETRY_REQUEST_WAIT_MS = TAGO_TRANSIENT_RETRY_SCHEDULE_MS.reduce((total, delay) => total + delay, 0);
 const TAGO_TRANSIENT_RESULT_CODE = "99";
-// run 전체(같은 requestBudget을 쓰는 운행일들)의 재시도 대기 합계 상한. 장애가 계속돼도 workflow timeout(45분 이상)을 넘지 않게 한다.
-// 최악 시간 = 대기 5분 + 시도 수(대기 횟수 + 영향받은 요청 수, 약 70) × 요청 timeout 15초 ≈ 22분. 넘기 전에 일자 수집을 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 멈춘다.
-const TAGO_RETRY_WAIT_BUDGET_MILLISECONDS = 300_000;
+// 요청 timeout. 요청 하나가 응답 없이 끝나는 데 걸리는 최대 시간이다.
+export const TAGO_REQUEST_TIMEOUT_MS = 15_000;
+// run 전체(같은 requestBudget을 쓰는 운행일들)의 재시도 시간 예산. 재시도 대기뿐 아니라 일시 오류로 끝난 시도가 쓴 경과 시간(벽시계)도 센다(#1101의 공통 정책과 같은 방식).
+// 느린 실패(요청 timeout 15초 뒤 99, 1초 대기 뒤 성공)가 반복돼도 재시도가 늘리는 실행 시간은 예산(15분)과 한도를 다 쓴 요청마다 세지 않는 마지막 시도 하나를 넘지 않는다.
+// 한도를 다 쓰는 요청은 간격 합계(191초) 이상의 예산을 쓰므로 최대 4개라, 최악 재시도 시간 = 15분 + 5 x 15초 = 16분 15초다.
+// 이 값에 수집 step 자체의 소요 시간을 더한다. 이 수집기를 쓰는 workflow의 timeout은 current-capital-topology-refresh 45분, itx-current-collection 60분, itx-current-promotion 90분이다.
+// 정상 공급자에서 수집 step은 최대 17분 13초라 ≈ 34분으로 셋 모두 안이다. 요청이 느린 장애 밤(run 38781966262)에는 step 자체가 60분 37초 걸렸고 ≈ 77분이라 90분 workflow만 담는다(테스트가 workflow 파일에서 timeout을 읽어 단정한다).
+// 넘기 전에 일자 수집을 TAGO_RETRY_TIME_BUDGET_EXHAUSTED로 멈춘다.
+export const TAGO_RETRY_BUDGET_MS = 900_000;
 const TAGO_RETRY_TIME_BUDGET_EXHAUSTED = "TAGO_RETRY_TIME_BUDGET_EXHAUSTED";
-const transientBackoffMilliseconds = (retryIndex) => 1_000 * 2 ** retryIndex;
 const tagoRateLimitStates = new WeakMap();
 export const ITX_ADMISSION_LOOKAHEAD_DAYS = 14;
 const CANONICAL_STATIONS = Object.freeze({
@@ -307,6 +320,7 @@ export async function collectTagoItxCheongchunRoster({
   now = new Date(),
   requestBudget = { limit: TAGO_DAILY_REQUEST_LIMIT, remaining: TAGO_DAILY_REQUEST_LIMIT },
   waitImpl = wait,
+  clockImpl = Date.now,
 } = {}) {
   const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
@@ -330,6 +344,7 @@ export async function collectTagoItxCheongchunRoster({
     throw new Error("requestBudget must stay within the 10000-request daily limit");
   }
 
+  tagoRateLimitState(requestBudget).now = clockImpl;
   const trainGrades = await fetchAll("GetVhcleKndList", {}, key, fetchImpl, requestBudget, waitImpl);
   const gradeRows = trainGrades.rows.filter((row) => normalize(row.vehiclekndnm) === "itx청춘");
   if (gradeRows.length !== 1) throw new Error("TAGO ITX-청춘 train grade is missing or ambiguous");
@@ -680,9 +695,10 @@ async function fetchWithRetry(operation, url, fetchImpl, requestBudget, waitImpl
         if (requestBudget.remaining <= 0) throw new Error("TAGO_QUOTA_BUDGET_EXHAUSTED");
         requestBudget.remaining -= 1;
       }
+      rateLimitState.attemptStartedAt = rateLimitState.now();
       response = await fetchImpl(url, {
         redirect: "error",
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(TAGO_REQUEST_TIMEOUT_MS),
         headers: { accept: "application/json" },
       });
       attemptCount += 1;
@@ -722,20 +738,27 @@ class TagoRateLimitedError extends Error {
   }
 }
 
-// 일시 오류 재시도 대기: 한 요청 안의 횟수(retryState)와 run 전체의 대기 시간 예산(rateLimitState.retryWaitMs)을 함께 차감한다.
+// 일시 오류 재시도 대기: 한 요청 안의 횟수(retryState)와 run 전체의 재시도 시간 예산(rateLimitState.retrySpentMs)을 함께 차감한다.
+// 예산은 방금 일시 오류로 끝난 시도의 경과 시간(벽시계)과 이어질 대기를 센다. 정상으로 끝난 시도의 시간은 세지 않는다.
 async function waitForTransientRetry(retryState, rateLimitState, waitImpl) {
-  const delay = transientBackoffMilliseconds(retryState.used);
-  if (rateLimitState.retryWaitMs + delay > TAGO_RETRY_WAIT_BUDGET_MILLISECONDS) throw new Error(TAGO_RETRY_TIME_BUDGET_EXHAUSTED);
-  rateLimitState.retryWaitMs += delay;
+  const delay = TAGO_TRANSIENT_RETRY_SCHEDULE_MS[retryState.used];
+  rateLimitState.retrySpentMs += Math.max(0, rateLimitState.now() - rateLimitState.attemptStartedAt);
+  if (rateLimitState.retrySpentMs + delay > TAGO_RETRY_BUDGET_MS) throw new Error(TAGO_RETRY_TIME_BUDGET_EXHAUSTED);
+  rateLimitState.retrySpentMs += delay;
   retryState.used += 1;
   await waitImpl(delay);
 }
 
+// now는 시계(테스트용 주입), attemptStartedAt은 마지막으로 나간 시도의 시작 시각이다.
+function newTagoRateLimitState() {
+  return { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0, retrySpentMs: 0, now: Date.now, attemptStartedAt: 0 };
+}
+
 function tagoRateLimitState(requestBudget) {
-  if (!requestBudget) return { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0, retryWaitMs: 0 };
+  if (!requestBudget) return newTagoRateLimitState();
   let state = tagoRateLimitStates.get(requestBudget);
   if (!state) {
-    state = { cooldownUsed: false, stopped: false, operation: null, attemptCount: 0, retryWaitMs: 0 };
+    state = newTagoRateLimitState();
     tagoRateLimitStates.set(requestBudget, state);
   }
   return state;

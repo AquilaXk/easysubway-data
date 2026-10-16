@@ -128,3 +128,39 @@ test("replay는 다른 process가 생성한 requested output을 삭제하지 않
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("replay는 보관한 응답을 재생할 뿐이라 TAGO 재시도 대기를 기다리지 않는다 (data#1267)", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-provider-replay-wait-"));
+  const capture = path.join(directory, "capture.json");
+  const output = path.join(directory, "replay.json");
+  await writeFile(capture, await capturedBytes());
+  let rosterOptions;
+  try {
+    await runReplayCurrentItxCollectionCli({
+      argv: ["--capture", capture, "--output", output, "--station-catalog-pack", path.join(directory, "station-catalog-pack")],
+      repositoryRoot: directory,
+      runCompletenessImpl: async (options) => {
+        for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) await options.fetchImpl(request(operation));
+        // 수집기 래퍼가 roster 수집기에 넘기는 waitImpl만 본다. roster 단계에서 멈추는 stub으로 다음 단계는 타지 않는다.
+        await options.collectImpl({
+          serviceKey: "offline-provider-replay-key",
+          serviceDates: SERVICE_DATES,
+          stationCatalogPackPath: path.join(directory, "station-catalog-pack"),
+          stationCatalogSnapshot: { canonical: { rosterStations: [] } },
+          fetchImpl: options.fetchImpl,
+          now: options.now,
+          replay: true,
+          collectRosterImpl: async (received) => { rosterOptions = received; throw new Error("stop after roster options"); },
+        });
+        await writeFile(options.argv.at(-1), `${JSON.stringify({ validationMode: "REPLAY" })}\n`);
+        return { artifact: { validationMode: "REPLAY", selectedServiceDates: SERVICE_DATES }, candidate: null, exitCode: 0 };
+      },
+    });
+    assert.equal(typeof rosterOptions.waitImpl, "function");
+    const startedAt = Date.now();
+    await rosterOptions.waitImpl(64_000);
+    assert.ok(Date.now() - startedAt < 1_000, "재생은 재시도 대기를 실제로 기다리지 않는다");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
