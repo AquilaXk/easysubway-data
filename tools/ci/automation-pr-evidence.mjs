@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import { parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
 import { REFRESH_STAGES, REFRESH_STAGE_IDS, isRefreshStage, refreshPathShapeViolation } from "./refresh-stage-contracts.mjs";
 import { SOURCE_REVERIFICATION_RECIPE_IDS, isSourceReverificationAllowedPath } from "./source-reverification-paths.mjs";
-import { isObject } from "../lib/value.mjs";
+import { isObject } from "../lib/is-object.mjs";
 
 export const AUTOMATION_PR_EVIDENCE_MARKER = "easysubway-automation-pr:v1";
 export const AUTOMATION_PR_STAGES = Object.freeze(["registration", "candidate-refresh", "derivative-rebinding", "itx-promotion", "source-reverification", ...REFRESH_STAGE_IDS]);

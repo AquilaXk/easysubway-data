@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
-import { isObject } from "../lib/value.mjs";
+import { isObject } from "../lib/is-object.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 export const ITX_PROMOTION_GATE_POLICY_ID = "itx-promotion-gate-v1";

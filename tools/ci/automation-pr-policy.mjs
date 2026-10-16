@@ -49,7 +49,7 @@ import {
   nationwideCandidateRefreshViolations,
   readNationwideCandidateRefreshState,
 } from "../datapack/refresh-nationwide-candidate.mjs";
-import { isObject } from "../lib/value.mjs";
+import { isObject } from "../lib/is-object.mjs";
 
 const execFileAsync = promisify(execFile);
 const GIT = "/usr/bin/git";

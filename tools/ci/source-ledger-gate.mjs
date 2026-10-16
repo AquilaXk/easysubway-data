@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { isObject } from "../lib/value.mjs";
+import { isObject } from "../lib/is-object.mjs";
 
 
 const DEFAULT_LEDGER = "tools/datapack/release/source-snapshots.json";

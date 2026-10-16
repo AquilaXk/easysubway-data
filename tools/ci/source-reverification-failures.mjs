@@ -9,7 +9,7 @@
 // 사용: node tools/ci/source-reverification-failures.mjs --result <controller result.json>
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { isObject } from "../lib/value.mjs";
+import { isObject } from "../lib/is-object.mjs";
 
 const RECIPE_ID = /^[a-z][a-z0-9-]{0,63}$/u;
 const CODE = /^[A-Z][A-Z0-9_]{1,63}$/u;

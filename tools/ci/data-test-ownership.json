@@ -7,6 +7,7 @@
   "roots": [
     "tools/ci",
     "tools/datapack",
+    "tools/lib",
     "tools/release",
     "tools/route-map",
     "tools/routes"
@@ -481,7 +482,6 @@
     {"path":"tools/ci/require-workflow-artifact.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":318},
     {"path":"tools/ci/run-affected-tests.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":797},
     {"path":"tools/ci/seoul-current-accessibility-refresh-workflow.test.mjs","semanticOwner":"data639","classes":["required-pr"],"durationMs":2},
-    {"path":"tools/ci/shared-helpers.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":50},
     {"path":"tools/ci/stage-local-mobile-fixture.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":3},
     {"path":"tools/ci/sync-datapack-release-check-secrets.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":265},
     {"path":"tools/datapack/activate-current-source-set.test.mjs","semanticOwner":"data447","classes":["required-pr"],"durationMs":14329},
@@ -847,6 +847,8 @@
     {"path":"tools/datapack/validate-timetable-ride-consistency.test.mjs","semanticOwner":"data9","classes":["deterministic-release"],"durationMs":null},
     {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["required-pr","deterministic-release"],"executionProfile":"mobile-v19","durationMs":35800},
     {"path":"tools/datapack/verify-release-request-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":193},
+    {"path":"tools/lib/hash.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":50},
+    {"path":"tools/lib/is-object.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":50},
     {"path":"tools/release/validate-promotion-request.test.mjs","semanticOwner":"data54","classes":["required-pr"],"durationMs":856},
     {"path":"tools/route-map/add-daegu-buksam-catalog.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":7},
     {"path":"tools/route-map/add-station-catalog-entries.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":8},

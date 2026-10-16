@@ -16,7 +16,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { isObject } from "../lib/value.mjs";
+import { isObject } from "../lib/is-object.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 export const ITX_REPLAY_WORKFLOW_PATH = ".github/workflows/itx-current-promotion.yml";

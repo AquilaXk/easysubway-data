@@ -31,7 +31,7 @@ import { materializeAccessibilitySourceInput, seoulEdgeEvidenceHash, seoulStatus
 import { inventoryScopeViolations } from "../datapack/source-reverification-recipes.mjs";
 import { validateLineage } from "../datapack/source-snapshot-policy.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "./source-ledger-gate.mjs";
-import { isObject } from "../lib/value.mjs";
+import { isObject } from "../lib/is-object.mjs";
 import { sha256 } from "../lib/hash.mjs";
 
 const LEDGER_PATH = "tools/datapack/release/source-snapshots.json";
