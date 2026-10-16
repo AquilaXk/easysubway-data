@@ -67,7 +67,7 @@ test("기준 시각이 최근이면 아무것도 DUE가 아니다(NOT_DUE)", () 
 test("기준 시각 + scheduledPipeline.cadence(P1D)가 지난 원천이 DUE다. 만료는 연장하지 않는다", () => {
   const result = decideSourceReverification(input({ ledger: ledgerAt(FRESH).map((entry) => (entry.sourceId === "busan-transportation-route-topology" ? row(entry.sourceId, dueAgo(DAY + HOUR)) : entry)) }));
   assert.equal(result.state, "RUN");
-  assert.deepEqual(result.recipes, ["busan-topology"]);
+  assert.deepEqual(result.recipes, ["busan-topology", "busan-accessibility", "busan-timetable"]);
   assert.deepEqual(result.due.map(({ recipeId, sourceId }) => [recipeId, sourceId]), [["busan-topology", "busan-transportation-route-topology"]]);
   assert.equal(result.due[0].dueAt, iso(dueAgo(DAY + HOUR) + DAY));
 });
@@ -86,13 +86,13 @@ test("만료 경보 창(alertBeforePackExpiry)이 P1D보다 이르면 그 시각
 test("의존 recipe는 자기 만료 기준 없이 의존 대상이 DUE일 때 함께 돌고, 실행 순서는 의존 순서다", () => {
   const staleLedger = ledgerAt(FRESH).map((entry) => (["korail-metropolitan-timetable-file", "daejeon-station-distance-fare"].includes(entry.sourceId) ? row(entry.sourceId, dueAgo(2 * DAY)) : entry));
   const result = decideSourceReverification(input({ ledger: staleLedger }));
-  assert.deepEqual(result.recipes, ["korail-topology", "korail-planned-timetable", "daejeon-topology", "daejeon-accessibility"]);
+  assert.deepEqual(result.recipes, ["korail-topology", "korail-planned-timetable", "daejeon-topology", "daejeon-accessibility", "daejeon-timetable"]);
   assert.deepEqual(result.due.map(({ recipeId }) => recipeId), ["korail-topology", "daejeon-topology"]);
 });
 
 test("대구는 세 노선 topology 중 하나만 DUE여도 여섯 원천을 함께 등록하는 recipe가 돈다", () => {
   const result = decideSourceReverification(input({ ledger: ledgerAt(FRESH).map((entry) => (entry.sourceId === "daegu-line2-route-topology" ? row(entry.sourceId, dueAgo(2 * DAY)) : entry)) }));
-  assert.deepEqual(result.recipes, ["daegu-sources"]);
+  assert.deepEqual(result.recipes, ["daegu-sources", "daegu-accessibility"]);
   assert.equal(result.due[0].sourceId, "daegu-line2-route-topology");
 });
 
@@ -225,7 +225,8 @@ test("저장소의 실제 원장·inventory·정책은 이상 없이 판정된�
   const result = decideSourceReverification({ inventory, ledger, policy, pullRequests: [], automationBranches: [], runs: [], repository: REPOSITORY, now: new Date("2099-01-01T00:00:00.000Z"), limits: { pullRequests: 1000, runs: 200 } });
   assert.equal(result.state, "RUN");
   assert.deepEqual(result.recipes, [
-    "kric-capital-timetable", "korail-topology", "korail-planned-timetable", "gwangju-topology", "gwangju-accessibility", "busan-topology", "daejeon-topology", "daejeon-accessibility", "daegu-sources",
+    "kric-capital-timetable", "korail-topology", "korail-planned-timetable", "gwangju-topology", "gwangju-accessibility", "busan-topology", "busan-accessibility", "busan-timetable",
+    "daejeon-topology", "daejeon-accessibility", "daejeon-timetable", "daegu-sources", "daegu-accessibility",
   ]);
 });
 

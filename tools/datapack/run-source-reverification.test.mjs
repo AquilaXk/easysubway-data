@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { classifyRecipeFailure, dependencyGroups, evaluateEvidenceChange, runSourceReverification } from "./run-source-reverification.mjs";
+import { reportReverificationFailures } from "../ci/source-reverification-failures.mjs";
 import { REVERIFICATION_RECIPES } from "./source-reverification-recipes.mjs";
 
 // #984(#969 남은 단계 1): P7D 원천 재확인 controller. DUE로 판정된 recipe를 의존 순서로 실행하고 recipe마다 커밋한다.
@@ -170,6 +171,35 @@ test("의존 묶음의 뒤쪽 recipe가 실패하면 앞쪽 등록도 되돌려 
   assert.equal(git(root, "ls-files", "tools/datapack/sources").includes("topology.json"), false);
 });
 
+// #1122: 실제 recipe 표의 부산 묶음. 시간표 수집이 실패하면 topology·접근성 등록도 되돌려지고, 롤백이 실패 이슈 경로(source-reverification-failures)까지 이름 붙은 코드로 드러난다.
+test("부산 시간표가 실패하면 실제 recipe 표 기준으로 topology·접근성 등록도 되돌려지고 REVERIFICATION_GROUP_ROLLED_BACK이 실패 주석으로 드러난다 (#1122)", async (t) => {
+  const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+  const busan = ["busan-topology", "busan-accessibility", "busan-timetable"];
+  const steps = {
+    "busan-topology": stepsOf("register", writeSnapshot("busan-topology")),
+    "busan-accessibility": stepsOf("register", writeSnapshot("busan-accessibility")),
+    "busan-timetable": failing("collect", "Busan timetable HTTP 503"),
+    "gwangju-topology": stepsOf("register", writeSnapshot("gwangju-topology")),
+  };
+  const before = git(root, "rev-parse", "HEAD");
+  // 부산 묶음만 돌면 등록된 것이 없으므로 첫 실패로 멈추고 나머지 실패를 덧붙인다. 작업 트리는 묶음 시작 커밋 그대로다.
+  await assert.rejects(
+    runSourceReverification(options(root, { recipes: REVERIFICATION_RECIPES, steps, recipeIds: busan })),
+    /^Error: SOURCE_FETCH_FAILED: busan-timetable\/only: Busan timetable HTTP 503 \| also failed: busan-topology \(REVERIFICATION_GROUP_ROLLED_BACK\), busan-accessibility \(REVERIFICATION_GROUP_ROLLED_BACK\)$/u,
+  );
+  assert.equal(git(root, "rev-parse", "HEAD"), before);
+  assert.equal(git(root, "status", "--porcelain"), "");
+  // 독립 묶음이 하나라도 등록되면 결과로 돌아오고, workflow가 마지막에 부르는 실패 보고 도구가 롤백 주석을 단다.
+  const result = await runSourceReverification(options(root, { recipes: REVERIFICATION_RECIPES, steps, recipeIds: ["gwangju-topology", ...busan] }));
+  assert.deepEqual(result.steps.map(({ id }) => id), ["gwangju-topology"]);
+  assert.deepEqual(result.failures.map(({ recipeId, code }) => [recipeId, code]), [
+    ["busan-topology", "REVERIFICATION_GROUP_ROLLED_BACK"], ["busan-accessibility", "REVERIFICATION_GROUP_ROLLED_BACK"], ["busan-timetable", "SOURCE_FETCH_FAILED"],
+  ]);
+  assert.equal(git(root, "ls-files", "tools/datapack/sources").includes("busan-"), false);
+  assert.throws(() => reportReverificationFailures(result), (error) => /^REVERIFICATION_RECIPES_FAILED: 3 recipe\(s\) were not registered \(1 registered\)/u.test(error.message)
+    && error.annotations.some((line) => line.startsWith("::error title=Source reverification::busan-topology: REVERIFICATION_GROUP_ROLLED_BACK: ")));
+});
+
 test("의존 대상이 실패하면 그에 결속되는 recipe는 실행하지 않고 건너뛴 것으로 드러낸다", async (t) => {
   const root = await fixtureRepository(); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const ran = [];
@@ -203,14 +233,14 @@ test("원장·증거 게이트와 출력 범위 위반도 그 recipe만 되돌�
   assert.deepEqual(commitSubjects(root, 2), ["[Data] fine 재확인", "base"]);
 });
 
-test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: topology와 그에 결속되는 recipe 셋, 나머지는 독립)", () => {
+test("의존 묶음은 recipe 표의 dependsOn으로 정해진다(실제 표: topology와 그에 결속되는 recipe, 나머지는 독립)", () => {
   assert.deepEqual(dependencyGroups(REVERIFICATION_RECIPES).map((group) => group.map(({ id }) => id)), [
     ["kric-capital-timetable"],
     ["korail-topology", "korail-planned-timetable"],
     ["gwangju-topology", "gwangju-accessibility"],
-    ["busan-topology"],
-    ["daejeon-topology", "daejeon-accessibility"],
-    ["daegu-sources"],
+    ["busan-topology", "busan-accessibility", "busan-timetable"],
+    ["daejeon-topology", "daejeon-accessibility", "daejeon-timetable"],
+    ["daegu-sources", "daegu-accessibility"],
   ]);
   // 여러 의존 대상을 가진 recipe는 그 대상들의 묶음을 하나로 합친다.
   const merged = dependencyGroups([meta("a"), meta("b"), meta("c", ["a", "b"]), meta("d")]);
