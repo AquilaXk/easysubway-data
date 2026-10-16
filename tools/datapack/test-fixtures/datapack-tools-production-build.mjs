@@ -1,8 +1,9 @@
-import { constants as fsConstants, rmSync } from "node:fs";
+import { constants as fsConstants } from "node:fs";
 import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { after } from "node:test";
 import { main as buildDatapack } from "../build-datapack.mjs";
 import {
   main as buildCurrentReleaseCandidateAccessibilityInput,
@@ -24,9 +25,22 @@ const currentProductionBuildEnv = {
 
 // #866 PR-C: production 게이트 회귀는 수도권 live chain 합성 저장소 대신 release workflow와 같은 RC 경로로 만든다.
 // 커밋된 전국 후보 build spec → build-current-release-candidate-accessibility-input(전국 후보 준비가 sha로 결속한
-// 전국 입력, authority D1) → build-datapack(override·authority) 순서다. RC 입력은 결정적이므로 프로세스당 한 번 만들고
-// 팩은 테스트마다 새로 빌드한다(각 테스트가 자기 출력만 변조한다).
+// 전국 입력, authority D1) → build-datapack(override·authority) 순서다. RC 입력은 결정적이므로 프로세스당 한 번 만든다.
+// 팩은 buildCurrentProductionArtifact가 호출마다 새로 빌드하고, cloneCurrentProductionArtifact는 기본 입력의 팩을
+// 프로세스당 한 번만 빌드해 테스트마다 복사본을 준다(어느 쪽이든 각 테스트가 자기 출력만 변조한다).
 let currentReleaseCandidateArtifactPromise = null;
+
+// 프로세스당 한 번 만드는 공유 산출물(RC 입력, 원본 팩)은 test 파일이 끝나면 node:test after 훅이 지운다.
+// 이 훅은 모듈을 가져오는 시점(root)에 한 번만 등록되고, 테스트 통과·실패 모두에서 실행된다.
+// 임시 위치는 GitHub runner가 job 단위로 회수하는 RUNNER_TEMP를 우선한다.
+const fileScopedDirectories = new Set();
+after(() => Promise.all([...fileScopedDirectories].map((directory) => rm(directory, { recursive: true, force: true }))));
+
+export async function createFileScopedDirectory(prefix) {
+  const directory = await mkdtemp(path.join(process.env.RUNNER_TEMP ?? tmpdir(), prefix));
+  fileScopedDirectories.add(directory);
+  return directory;
+}
 
 // #942: 커밋된 후보의 production 빌드 재현은 후보가 고정한 입력 바이트를 담은 작업 공간에서 한다(원천만 등록한 PR에서도 같은 결과).
 // #954: 현재 ITX·Incheon 후보 빌드 입력도 같은 작업 공간에서 읽는다(원천 갱신 PR이 바꾼 작업 트리 inventory·canonical pack과 섞지 않는다).
@@ -35,8 +49,7 @@ export const { root: currentCandidateRoot, read: readCandidateFile } = candidate
 async function currentReleaseCandidateArtifact() {
   currentReleaseCandidateArtifactPromise ??= (async () => {
     const candidateRoot = await currentCandidateRoot();
-    const directory = await mkdtemp(path.join(tmpdir(), "easysubway-current-rc-artifact-"));
-    process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
+    const directory = await createFileScopedDirectory("easysubway-current-rc-artifact-");
     const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
     const buildSpec = JSON.parse(await readFile(path.join(candidateRoot, buildSpecPath), "utf8"));
     const files = {
@@ -95,8 +108,7 @@ let pristineProductionArtifactPromise = null;
 
 async function pristineProductionArtifact() {
   pristineProductionArtifactPromise ??= (async () => {
-    const outputRoot = await mkdtemp(path.join(tmpdir(), "easysubway-current-production-artifact-pristine-"));
-    process.once("exit", () => rmSync(outputRoot, { recursive: true, force: true }));
+    const outputRoot = await createFileScopedDirectory("easysubway-current-production-artifact-pristine-");
     return buildProductionArtifactInto(outputRoot, {});
   })();
   return pristineProductionArtifactPromise;

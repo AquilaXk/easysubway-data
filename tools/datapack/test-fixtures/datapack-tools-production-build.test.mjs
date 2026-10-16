@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { cloneArtifactOutput } from "./datapack-tools-production-build.mjs";
+
+const execFileAsync = promisify(execFile);
+const fixtureUrl = new URL("./datapack-tools-production-build.mjs", import.meta.url).href;
 
 // #1278: validate-datapack 테스트는 변조하지 않은 production 팩 하나를 공유하고 테스트마다 복사본만 변조한다.
 // 복사본 변조가 원본과 다른 복사본으로 새지 않아야 테스트 사이에 결합이 생기지 않는다.
@@ -47,3 +53,37 @@ test("#1278 production 팩 복사본의 변조는 원본과 다른 복사본에 
   assert.deepEqual(await readTree(pristine.output), pristineFiles);
   assert.deepEqual(await readTree(second.output), pristineFiles);
 });
+
+// 공유 산출물은 모듈이 root에 등록하는 after 훅이 지운다. 별도 test 파일 프로세스로 실행해 훅이 도는지 확인한다.
+const fileScopedProbe = `
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import test from "node:test";
+const { createFileScopedDirectory } = await import(process.env.FIXTURE_URL);
+test("probe", async () => {
+  const directory = await createFileScopedDirectory("easysubway-file-scoped-probe-");
+  await writeFile(process.env.PROBE_RESULT, directory);
+  assert.ok(existsSync(directory));
+  assert.equal(process.env.PROBE_OUTCOME, "pass");
+});
+`;
+
+for (const outcome of ["pass", "fail"]) {
+  test(`#1278 파일 단위 공유 산출물은 test가 ${outcome === "pass" ? "통과" : "실패"}해도 파일 종료 때 지워진다`, async (context) => {
+    const directory = await mkdtemp(path.join(tmpdir(), "easysubway-file-scoped-probe-run-"));
+    context.after(() => rm(directory, { recursive: true, force: true }));
+    const probePath = path.join(directory, "probe.test.mjs");
+    const resultPath = path.join(directory, "created-directory.txt");
+    await writeFile(probePath, fileScopedProbe);
+    const { NODE_TEST_CONTEXT: _parentRunner, ...env } = process.env;
+    const run = execFileAsync(process.execPath, [probePath], {
+      env: { ...env, FIXTURE_URL: fixtureUrl, PROBE_RESULT: resultPath, PROBE_OUTCOME: outcome === "pass" ? "pass" : "forced-failure" },
+    });
+    if (outcome === "pass") await run;
+    else await assert.rejects(run);
+    const created = await readFile(resultPath, "utf8");
+    assert.match(path.basename(created), /^easysubway-file-scoped-probe-/);
+    assert.equal(existsSync(created), false);
+  });
+}
