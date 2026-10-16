@@ -242,6 +242,37 @@
       "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
     },
     {
+      "testFile": "tools/datapack/build-datapack.test.mjs",
+      "paths": [
+        "tools/datapack/official-od-fare-admission.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/report-coverage-gaps.test.mjs",
+      "paths": [
+        "tools/datapack/nationwide-coverage-targets.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/validate-source-inventory.test.mjs",
+      "paths": [
+        "tools/datapack/official-od-fare-admission.json",
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
+      "testFile": "tools/datapack/import-official-sources.test.mjs",
+      "paths": [
+        "tools/datapack/source-inventory.json"
+      ],
+      "reason": "단위·계약 테스트가 임시 변조 픽스처 템플릿 또는 현재 작업 트리 계약 검증 입력으로 읽는다."
+    },
+    {
       "testFile": "tools/datapack/emit-artifact-components.test.mjs",
       "paths": [
         "tools/datapack/release/source-snapshots.json"
