@@ -200,7 +200,10 @@ function describe(result) {
 /** 종료 코드를 돌려준다. 닫기 실패는 경고로만 드러내고 0이다. */
 export async function main(argv, { runGh = defaultRunGh, log = console.log, jobLookupBudget } = {}) {
   if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== "--repository" || !REPOSITORY.test(argv[1])) fail("ARGUMENTS", "usage: close-recovered-failure-issues.mjs --repository <owner/name>");
-  for (const result of await closeRecoveredFailureIssues({ repository: argv[1], runGh, jobLookupBudget })) log(describe(result));
+  const results = await closeRecoveredFailureIssues({ repository: argv[1], runGh, jobLookupBudget });
+  for (const result of results) log(describe(result));
+  // 이슈가 0건이어도 실행 흔적을 남긴다. 진입점이 동작하지 않아도 로그가 비어 성공으로 보였던 결함(#1287)을 로그로 구분한다.
+  log(`검사한 실패 이슈 ${results.length}건, 닫은 이슈 ${results.filter((result) => result.action === "closed").length}건 (${argv[1]})`);
   return 0;
 }
 

@@ -19,8 +19,8 @@ test("argv[1]이 다른 모듈이거나 없으면 false", () => {
 });
 
 // lib 자신의 URL이 기본값이면 호출부가 항상 false를 받아 CLI가 아무것도 하지 않고 성공한다(#1287).
-test("metaUrl이 없거나 문자열이 아니면 던진다", () => {
-  for (const metaUrl of [undefined, null, 42, {}]) {
+test("metaUrl이 file: URL 문자열이 아니면 던진다", () => {
+  for (const metaUrl of [undefined, null, 42, {}, "", SCRIPT, "https://example.com/a.mjs"]) {
     assert.throws(() => isMainModule(metaUrl, SCRIPT), /IS_MAIN_MODULE_META_URL/);
   }
   assert.throws(() => isMainModule(), /IS_MAIN_MODULE_META_URL/);
