@@ -577,6 +577,7 @@
     {"path":"tools/datapack/catalog-raw-sql-tables.test.mjs","semanticOwner":"data100","classes":["required-pr"],"durationMs":9},
     {"path":"tools/datapack/check-manifest-acceptance-floor.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":133},
     {"path":"tools/datapack/check-timetable-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":25},
+    {"path":"tools/datapack/cli-entrypoints.test.mjs","semanticOwner":"data1278","classes":["required-pr"],"durationMs":1250},
     {"path":"tools/datapack/collect-busan-accessibility.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":95},
     {"path":"tools/datapack/collect-busan-route-map-connectors.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":4},
     {"path":"tools/datapack/collect-busan-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":74},
