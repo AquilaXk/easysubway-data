@@ -748,9 +748,10 @@ test("#1289 a year of daily registrations stays carried forward until the govern
   const daily = carriedForwardFixture({ intermediateSnapshots: DAILY_REGISTRATIONS_PER_YEAR });
   const [head] = buildCurrentFiveRegionSourceFanIn(daily).selectedSources;
   assert.equal(head.carriedAdmission.chainLength, DAILY_REGISTRATIONS_PER_YEAR + 2);
-  // 커밋 산출물은 매일 쌓이는 snapshot 수와 무관한 크기다.
-  assert.equal(canonicalCurrentFiveRegionSourceFanInJson(head).length,
-    canonicalCurrentFiveRegionSourceFanInJson(buildCurrentFiveRegionSourceFanIn(carriedForwardFixture()).selectedSources[0]).length + 2);
+  // 커밋 산출물의 근거는 매일 쌓이는 snapshot 수와 무관한 상수 크기(배열 없음)다.
+  assert.deepEqual(Object.keys(head.carriedAdmission).sort(),
+    ["approvedRawSha256", "approvedSnapshotId", "chainLength", "licenseEvidenceHash", "schemaFingerprint"]);
+  assert.equal(Object.values(head.carriedAdmission).some((value) => typeof value === "object"), false);
   daily.governancePolicy = carriedGovernance({ nextReviewAt: EVALUATED_AT });
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(daily),
     /admission carry-forward mismatch for kric-subway-timetable-station-lines: REVIEW_EXPIRED/);
@@ -835,11 +836,15 @@ test("#1289 a carried-forward approval is bound to the license terms and review 
 
 test("#1289 the pure builder fails closed on a carried-forward approval without an explicit governance input", () => {
   const { governancePolicy, ...withoutGovernance } = carriedForwardFixture();
+  assert.doesNotThrow(() => buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governancePolicy }));
   assert.throws(() => buildCurrentFiveRegionSourceFanIn(withoutGovernance),
     /admission carry-forward mismatch for kric-subway-timetable-station-lines: GOVERNANCE_INPUT_REQUIRED/);
   // 재현 모드는 이름을 붙여 명시해야 하고, 정책과 함께 줄 수 없다.
   const reproduced = buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governance: REPRODUCTION_GOVERNANCE });
-  assert.deepEqual(reproduced, buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governancePolicy }));
+  assert.deepEqual(reproduced.selectedSources[0].carriedAdmission, {
+    approvedSnapshotId: CARRY_APPROVED_ID, approvedRawSha256: CARRY_APPROVED_RAW, schemaFingerprint: CARRY_SCHEMA,
+    licenseEvidenceHash: CARRY_TERMS, chainLength: 2,
+  });
   assert.throws(() => buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governance: {} }), /governance mode mismatch/);
   assert.throws(() => buildCurrentFiveRegionSourceFanIn({ ...withoutGovernance, governance: REPRODUCTION_GOVERNANCE, governancePolicy }),
     /governance input is ambiguous/);
