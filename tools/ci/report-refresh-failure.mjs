@@ -9,6 +9,7 @@ import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { REVERIFICATION_BLOCKING_CODES } from "./source-reverification-paths.mjs";
 
 export const REFRESH_WORKFLOWS = Object.freeze({
@@ -102,7 +103,7 @@ export function blockedRecipeIdsOf(body) {
 
 function mergedBlocks(existing, failures) {
   const merged = new Map([...existing, ...failures.filter(({ code }) => REVERIFICATION_BLOCKING_CODES.includes(code))].map((entry) => [blockMarker(entry), entry]));
-  return [...merged.keys()].sort();
+  return [...merged.keys()].sort(codepointCompare);
 }
 
 // 이슈 본문의 상태 블록: 보고한 실패 run(최근 순)과 마지막 보고 시각. 같은 run을 다시 보고하지 않는 근거다.

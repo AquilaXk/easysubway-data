@@ -546,7 +546,7 @@ const defaultLib = Object.freeze({
 
 // KRIC 키는 상속시키지 않는다. 수집 단계가 extra env로 명시할 때만 그 자식 프로세스가 받는다.
 export function defaultExecute(repositoryRoot, env) {
-  const { [KRIC_CREDENTIAL_ENV]: omitted, ...inherited } = env;
+  const inherited = Object.fromEntries(Object.entries(env).filter(([name]) => name !== KRIC_CREDENTIAL_ENV));
   return async (script, args, { env: extra = {} } = {}) => {
     try {
       const { stdout } = await execFileAsync(process.execPath, [path.join(repositoryRoot, "tools/datapack", script), ...args], {
