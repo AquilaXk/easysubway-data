@@ -159,10 +159,8 @@ test("주입한 서명 키로만 production manifest를 서명한다", () => {
 const PRIVATE_KEY_LITERAL = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 
 // 비공개키 리터럴 가드에서 제외하는 파일. 경로마다 사유를 적고, 가드 테스트가 목록이 낡지 않았는지(여전히 추적되고
-// 실제로 리터럴을 담고 있는지) 함께 확인한다.
-const PRIVATE_KEY_LITERAL_ALLOWLIST = new Map([
-  ["tools/datapack/test-fixtures/datapack-tools-signing.mjs", "서명 라이브러리 테스트 전용 RSA fixture 키(운영 키와 무관, 지문 불일치)"],
-]);
+// 실제로 리터럴을 담고 있는지) 함께 확인한다. 서명 테스트 키는 실행 시 생성하므로 현재 제외 파일이 없다.
+const PRIVATE_KEY_LITERAL_ALLOWLIST = new Map();
 
 function findPrivateKeyLiterals(repoRoot, allowlist) {
   const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, maxBuffer: 256 * 1024 * 1024 })
