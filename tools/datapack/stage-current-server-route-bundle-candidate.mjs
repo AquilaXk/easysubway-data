@@ -11,7 +11,8 @@ import {
   bindNationwideCandidatePreparation,
 } from "./nationwide-candidate-input-binding.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
-import { canonicalJson, selectEffectiveDataPack, sha256, stagedPackPath } from "./lib/manifest-validation.mjs";
+import { canonicalJson, selectEffectiveDataPack, stagedPackPath } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 

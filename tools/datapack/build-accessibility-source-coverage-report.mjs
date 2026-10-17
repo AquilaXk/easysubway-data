@@ -112,7 +112,7 @@ export function buildAccessibilitySourceCoverageReport({
       violations.artifactIdentity.push(`${artifact.artifactId}:DUPLICATE_ARTIFACT_ID`);
     }
     artifactIds.add(artifact.artifactId);
-    if (!sha256(artifact.sqliteSha256)) {
+    if (!isSha256Hex(artifact.sqliteSha256)) {
       violations.artifactIdentity.push(`${artifact.artifactId}:SQLITE_SHA256_INVALID`);
     }
     for (const claim of artifact.claims ?? []) {
@@ -225,7 +225,7 @@ export function buildStationDomainSourceGate({
     || typeof identity.snapshotId !== "string" || identity.snapshotId === ""
     || !Number.isInteger(identity.rowCount) || identity.rowCount < 0
     || ["rawSha256", "gzipSha256", "metadataFileSha256", "sourceInventoryFileSha256",
-      "sourceInventorySha256", "candidateBuildSpecSourceInventorySha256"].some((key) => !sha256(identity[key]))) {
+      "sourceInventorySha256", "candidateBuildSpecSourceInventorySha256"].some((key) => !isSha256Hex(identity[key]))) {
     throw new Error("MOLIT transfer snapshot identity is invalid");
   }
   transferTuplePartition.identity = identity;
@@ -954,7 +954,7 @@ function validateSource(source, snapshotsByIdentity, policiesByIdentity, evaluat
     validateRegionalSource(source, regionalSnapshot, policiesByIdentity, evaluatedMillis, violations);
     return;
   }
-  if (evidence && (!sha256(evidence.licenseEvidenceHash)
+  if (evidence && (!isSha256Hex(evidence.licenseEvidenceHash)
     || evidence.licenseEvidenceHash !== source.admissionEvidence?.licenseEvidenceHash)) {
     violations.license.push(`${source.id}:LICENSE_EVIDENCE_MISMATCH`);
   }
@@ -988,8 +988,8 @@ function validateSource(source, snapshotsByIdentity, policiesByIdentity, evaluat
     "snapshotFileSha256",
     "absenceEvidenceMode",
   ].some((key) => snapshot[key] !== evidence[key])
-    || !sha256(evidence.rawSha256)
-    || !sha256(evidence.contentSha256))) {
+    || !isSha256Hex(evidence.rawSha256)
+    || !isSha256Hex(evidence.contentSha256))) {
     violations.snapshot.push(`${source.id}:SNAPSHOT_IDENTITY_MISMATCH`);
   }
   if (registration && (!snapshot
@@ -1003,8 +1003,8 @@ function validateSource(source, snapshotsByIdentity, policiesByIdentity, evaluat
     || registration.rowCount !== snapshot.rowCount
     || registration.coverageCount !== snapshot.stationCount
     || registration.claimBindingCount !== snapshot.claimBindings?.length
-    || !sha256(registration.rawObjectSha256)
-    || !sha256(registration.adminReviewRecordHash))) {
+    || !isSha256Hex(registration.rawObjectSha256)
+    || !isSha256Hex(registration.adminReviewRecordHash))) {
     violations.snapshot.push(`${source.id}:REGISTERED_SNAPSHOT_IDENTITY_MISMATCH`);
   }
   const policy = policiesByIdentity.get(`${source.id}\0${snapshotId}`);
@@ -1039,8 +1039,8 @@ function validateClaim(artifact, claim, sources, snapshotsByIdentity, violations
   const provenanceMissing = !source
     || !claim.sourceId
     || claim.sourceSnapshotId !== expectedSnapshotId
-    || !sha256(claim.providerRecordHash)
-    || !sha256(claim.evidenceHash);
+    || !isSha256Hex(claim.providerRecordHash)
+    || !isSha256Hex(claim.evidenceHash);
   let valid = true;
   if (provenanceMissing) {
     violations.provenance.push(`${claimId}:PROVENANCE_MISSING`);
@@ -1147,7 +1147,7 @@ function validateRegionalSource(source, snapshot, policiesByIdentity, evaluatedM
   const evidence = source.accessibilityAdmissionEvidence;
   const policy = policiesByIdentity.get(`${source.id}\0${evidence.snapshotId}`);
   const licenseEvidenceHash = source.admissionEvidence?.licenseEvidenceHash;
-  if (!sha256(licenseEvidenceHash) || policy?.admissionEvidence?.licenseEvidenceHash !== licenseEvidenceHash) {
+  if (!isSha256Hex(licenseEvidenceHash) || policy?.admissionEvidence?.licenseEvidenceHash !== licenseEvidenceHash) {
     violations.license.push(`${source.id}:LICENSE_EVIDENCE_MISMATCH`);
   }
   if (source.capabilities?.facility?.status !== "SUPPORTED"
@@ -1162,7 +1162,7 @@ function validateRegionalSource(source, snapshot, policiesByIdentity, evaluatedM
   }
   if (["snapshotPath", "capturedAt", "freshUntil", "rawSha256", "rowsSha256", "stationCount", "rowCount"]
     .some((key) => snapshot[key] !== evidence[key])
-    || !sha256(evidence.rawSha256)
+    || !isSha256Hex(evidence.rawSha256)
     || !Array.isArray(snapshot.rows)
     || digest(JSON.stringify(snapshot.rows)) !== evidence.rowsSha256
     || policy?.capturedAt !== evidence.capturedAt
@@ -1245,7 +1245,7 @@ function normalizeStationName(value) {
   return String(value ?? "").normalize("NFKC").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
-function sha256(value) {
+function isSha256Hex(value) {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 

@@ -9,13 +9,13 @@ import { zstdDecompressSync } from "node:zlib";
 
 import {
   canonicalJson,
-  sha256,
   signingKeyId,
   signingPublicKey,
   validateArtifactComponentManifest,
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   buildServerRouteBundleFinal,
   canonicalServerRouteBundleFinalJson,

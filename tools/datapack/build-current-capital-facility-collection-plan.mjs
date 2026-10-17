@@ -4,7 +4,8 @@ import { lstat, open, readFile, readdir, realpath, unlink } from "node:fs/promis
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { KRIC_STATION_TUPLE_MAPPINGS } from "./collect-kric-accessibility-snapshots.mjs";
 import { providerLineScopesFor, validateKricProviderCodeCatalogIdentity } from "./build-molit-nationwide-fixture.mjs";
 

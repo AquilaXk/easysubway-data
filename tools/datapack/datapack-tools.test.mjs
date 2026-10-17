@@ -34,7 +34,8 @@ import {
   projectItxTopologyIntoCanonicalFixture,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
-import { execFileAsync, sha256 } from "./test-fixtures/datapack-tools-support.mjs";
+import { execFileAsync } from "./test-fixtures/datapack-tools-support.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { testPrivateKeyPem, testPublicKeyPem, rsaSha256Signature } from "./test-fixtures/datapack-tools-signing.mjs";
 import {
   productionEnv,

@@ -11,7 +11,8 @@ import {
 } from "./build-datapack.mjs";
 import { selectCurrentKricRouteRostersPath } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildKricAccessibilityRoster } from "./collect-kric-accessibility-snapshots.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   canonicalKricExitPathCollectionPlanJson,
   planKricExitPathCollection,

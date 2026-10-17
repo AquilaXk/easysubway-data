@@ -1,5 +1,4 @@
 // #1692: 객체스토리지 PUT 공유 I/O — rollback-manifest·publish-rollout가 함께 사용.
-import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
@@ -7,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync } from "node:zlib";
+import { sha256 } from "../../lib/hash.mjs";
 import {
   requiredString,
   signingPublicKey,
@@ -43,10 +43,6 @@ export function objectUrl(baseUrl, key) {
   url.pathname = `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
   return url;
 }
-
-// ─── SHA-256 헬퍼 ─────────────────────────────────────────────────────────────
-
-export function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 // ─── 참조 팩 존재·sha256 대조 (fail-closed) ──────────────────────────────────
 // preauth(OCI PAR) 대상은 HEAD/meta sha를 신뢰할 수 없어 GET 본문 sha256을 직접 대조한다.

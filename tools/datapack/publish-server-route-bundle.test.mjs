@@ -10,8 +10,8 @@ import test from "node:test";
 
 import {
   canonicalJson,
-  sha256,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   buildServerRouteBundleFinal,
   canonicalServerRouteBundleFinalJson,

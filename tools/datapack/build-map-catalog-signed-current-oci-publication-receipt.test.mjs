@@ -6,7 +6,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildMapCatalogSignedCurrentOciPublicationReceipt } from "./build-map-catalog-signed-current-oci-publication-receipt.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { rsaSha256Signature } from "./lib/manifest-signing.mjs";
 
 const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });

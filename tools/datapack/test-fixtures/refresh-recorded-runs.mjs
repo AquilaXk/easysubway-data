@@ -1,8 +1,8 @@
 // 기록된 실제 갱신 PR(refresh-recorded-runs.json)에서 base·head 트리를 합성하는 테스트 helper(#1012).
 // 계약 테스트·정책 테스트·emitter 테스트가 같은 합성을 쓴다. 값은 기록된 실제 값이고, 파일 본문은 검증에 쓰이는 필드만 합성한다.
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import { sha256 } from "../../lib/hash.mjs";
 import { ARTIFACT_KIND, CAPITAL_MAP_LINE_IDS, SOURCE_ID as CAPITAL_SOURCE_ID } from "../collect-capital-route-topology.mjs";
 
 export const RECORDED = JSON.parse(readFileSync(new URL("./refresh-recorded-runs.json", import.meta.url), "utf8")).runs;
@@ -13,7 +13,6 @@ export const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 export const CANONICAL_PACK_PATH = "tools/datapack/release/capital-production-canonical-pack.json";
 export const INPUT_PATH = "tools/datapack/inputs/capital-pilot-production-source-input.json";
 
-export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 export const runsOf = (stage) => RECORDED.filter((run) => run.stage === stage);
 export const filenames = (run) => run.files.map(({ filename }) => filename).sort((left, right) => (left < right ? -1 : Number(left > right)));
 

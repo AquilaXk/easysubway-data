@@ -1,6 +1,7 @@
-import { createHash, createPublicKey, createVerify } from "node:crypto";
+import { createPublicKey, createVerify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { sha256 } from "../../lib/hash.mjs";
 import { usesLocalPlaceholderHost } from "../production-url-policy.mjs";
 
 const productionMinimumTableRowNames = [
@@ -10,10 +11,6 @@ const productionMinimumTableRowNames = [
   "facilities",
   "station_facility_evidence",
 ];
-
-export function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 export function verifyRsaSha256Signature(publicKey, value, signature) {
   return createVerify("RSA-SHA256").update(value).verify(publicKey, Buffer.from(signature, "base64url"));

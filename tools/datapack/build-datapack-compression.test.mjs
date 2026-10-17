@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -15,8 +15,6 @@ const root = path.resolve(import.meta.dirname, "../..");
 // 이 상한은 "비효율 전략 회귀 차단"용 효율 계약이다. level 6·Z_FILTERED처럼 level 9와 몇 퍼센트 안쪽인 설정은
 // 통과하도록 의도했다. level 9·기본 전략·mtime 0·OS 255 자체는 아래 바이트 동일성 테스트가 따로 고정한다.
 const MAX_RATIO_VS_DEFAULT_LEVEL_9 = 1.05;
-
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 async function buildFixturePack() {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-compression-"));

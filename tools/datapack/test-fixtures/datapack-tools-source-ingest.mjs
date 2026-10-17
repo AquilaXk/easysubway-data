@@ -1,7 +1,8 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { execFileAsync, sha256 } from "./datapack-tools-support.mjs";
+import { execFileAsync } from "./datapack-tools-support.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 

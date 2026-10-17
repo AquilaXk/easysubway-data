@@ -1,7 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { canonicalJson, sha256 as manifestSha256, withoutSignature } from "./lib/manifest-validation.mjs";
+import { canonicalJson, withoutSignature } from "./lib/manifest-validation.mjs";
+import { sha256 as manifestSha256 } from "../lib/hash.mjs";
 import { rsaSha256Signature } from "./lib/manifest-signing.mjs";
 
 import {

@@ -3,12 +3,12 @@
 // gz 팩을 임시 sqlite로 열고, 수정 후 다시 gz로 써 넣으며 index.json의
 // sha/byteSize를 갱신하는 절차를 한곳에 모은다 — octolinearize/converge/
 // project-nodes/snap 도구가 같은 보일러플레이트를 복제하지 않도록.
-import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { sha256 } from "../lib/hash.mjs";
 
 /** 리포지토리 루트(도구는 tools/route-map/ 아래에 있다). */
 export const repoRoot = path.resolve(import.meta.dirname, "../..");
@@ -21,10 +21,6 @@ function resolveWithinRepo(relPath) {
   }
   return resolved;
 }
-
-/** 버퍼의 sha256 hex 문자열. */
-export const sha256 = (buffer) =>
-  createHash("sha256").update(buffer).digest("hex");
 
 /**
  * gz 팩을 임시 sqlite 파일로 풀어 [DatabaseSync] 핸들과 경로를 연다.
