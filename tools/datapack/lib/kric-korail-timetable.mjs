@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import {
@@ -7,6 +6,7 @@ import {
   KORAIL_STATION_ROW_BINDINGS,
   buildKorailStationRowTrips,
 } from "./kric-station-row-timetable-trips.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #903: KRIC 전체_도시철도운행정보(파일 id 900)의 코레일 역별 행(서해·경춘·수인분당·경의중앙·경강·동해)을
 // 수도권 projection과 같은 수집 실행에서 별도 snapshot으로 커밋하고, 공용 적재기(materializeOfficialLineTimetables)
@@ -38,7 +38,6 @@ const RECORD_FIELDS = Object.freeze([
   "weekdayType", "stationName", "arrivalTime", "departureTime", "dataReferenceDate", "sourceRowNumber", "sourceRowSha256",
 ]);
 const SHA256 = /^[a-f0-9]{64}$/u;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`KRIC_KORAIL_TIMETABLE_${code}${detail ? `: ${detail}` : ""}`); };
 const routes = () => KORAIL_STATION_ROW_BINDINGS.map(({ routeNumber, routeName, lineId }) => ({ routeNumber, routeName, lineId }));
 

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 
 import {
   canonicalJson,
@@ -8,13 +7,13 @@ import {
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
 import { validateMapCatalogSignedCurrentPublication } from "./validate-map-catalog-signed-current-publication.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ALGORITHM = "rsa-sha256-map-catalog-signed-current-v1";
 const SHA = /^[a-f0-9]{64}$/u;
 const GIT_SHA = /^[a-f0-9]{40}$/u;
 const MAP_PATHS = ["manifest.json", "payload/interchange-layout.json", "payload/line-styles.json", "payload/metropolitan.svg", "payload/stations-layout.json"];
 const CATALOG_PATHS = ["manifest.json", "payload/catalog.sqlite"];
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export function canonicalMapCatalogSignedCurrentOciPublicationReceiptJson(value, options) {
   return canonicalJson(validateMapCatalogSignedCurrentOciPublicationReceipt(value, options));

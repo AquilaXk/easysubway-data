@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { collectCurrentSeoulTransferDistanceDurationSnapshot, reconstructSeoulTransferObservationFromRawSnapshot } from "./collect-current-seoul-transfer-distance-duration-snapshot.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SERVICE_KEY = "test/key+with-symbol";
 const CAPTURED_AT = new Date("2026-08-15T00:00:00.000Z");
@@ -254,5 +255,4 @@ function transferCandidatesDocument() {
 }
 function jsonResponse(value) { return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } }); }
 function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`, "utf8"); }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 async function readChild(stream) { const chunks = []; stream.on("data", (chunk) => chunks.push(chunk)); await once(stream, "end"); return Buffer.concat(chunks).toString("utf8"); }

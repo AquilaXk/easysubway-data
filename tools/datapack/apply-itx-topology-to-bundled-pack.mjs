@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +14,7 @@ import {
 import { canonicalRideEdgeSetSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { hasCurrentItxPromotionIdentity, isCurrentItxPromotionMode, verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 // 출력 팩 바이트는 SQLite 엔진 버전에 묶인다(패치 버전이 달라도 파일 크기와 해시가 달라진다). emit-station-catalog-pack과 같은 런타임만 쓴다.
@@ -123,10 +124,6 @@ const ROUTE_SERVICE_V18_MIXED_EVIDENCE_LAYOUT = Object.freeze([
 function option(name, fallback) {
   const index = process.argv.indexOf(name);
   return index < 0 ? fallback : process.argv[index + 1];
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function repositoryPath(value, repositoryRoot = root) {

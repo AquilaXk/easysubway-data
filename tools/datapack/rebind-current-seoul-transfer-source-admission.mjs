@@ -16,7 +16,7 @@
 // - 출력은 환승 원천 admission 5개 경로뿐이다. 후보 spec·release request·hash evidence는 이어서
 //   refresh-nationwide-candidate가 다시 만든다.
 // - 대체값·이전 값·추정치로 실패를 덮지 않는다.
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -29,6 +29,7 @@ import { reconstructSeoulTransferObservationFromRawSnapshot } from "./collect-cu
 import { preauthenticatedObjectStorageClient, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
 import { validateSeoulTransferRawReceipt } from "./publish-seoul-transfer-raw.mjs";
 import { registerSeoulTransferSourceSnapshot } from "./register-seoul-transfer-source-snapshot.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -44,7 +45,6 @@ const PATHS = Object.freeze({
 const DESCRIPTOR_PATH = /^tools\/datapack\/sources\/seoul-metro-transfer-distance-duration-[0-9]{8}T[0-9]{9}Z\.json$/u;
 const TOPOLOGY_BINDING_KEYS = Object.freeze(["canonicalPackSha256", "metricsArtifactSha256", "applicabilityArtifactSha256"]);
 const INPUT_CONTRACT_BINDING_KEYS = Object.freeze(["sourceCandidateSha256", "kricProviderCatalogSha256"]);
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const lineBytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
 const prettyBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 

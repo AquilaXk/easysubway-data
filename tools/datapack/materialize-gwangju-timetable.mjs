@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +7,7 @@ import { parseMolitGwangjuStationMappings } from "./build-molit-nationwide-fixtu
 import { selectRetainedKricTimetable } from "./build-kric-retained-file-pending-handoff.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { topologySnapshotFreshnessMillis } from "./lib/topology-freshness-cutover.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
@@ -940,7 +940,6 @@ function compactSeoulDate(value) {
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
 }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 // 등록 시 보존한 contract를 사용해야 달력 재조회로 admission identity가 바뀌지 않는다.
 export function restoreAdmittedGwangjuTimetable({ observationBytes, inventory, snapshots }) {

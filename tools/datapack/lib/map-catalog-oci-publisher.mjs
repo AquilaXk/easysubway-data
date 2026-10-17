@@ -1,8 +1,6 @@
-import { createHash } from "node:crypto";
 
 import { createCandidateOciClient } from "../publish-candidate-oci-artifact.mjs";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+import { sha256 } from "../../lib/hash.mjs";
 
 export function createMapCatalogOciPublisher({ target, credentials, transport } = {}) {
   validateTarget(target);

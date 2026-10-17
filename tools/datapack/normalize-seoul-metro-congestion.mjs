@@ -1,10 +1,8 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { collectSeoulStationLineInfo } from "./collect-seoul-station-line-info.mjs";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+import { sha256 } from "../lib/hash.mjs";
 
 export function numeric(value) {
   if (value == null) return "";

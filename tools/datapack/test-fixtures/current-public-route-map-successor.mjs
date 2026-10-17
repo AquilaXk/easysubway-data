@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -33,6 +32,7 @@ import { requiresCurrentCapitalTopologyAdmission } from "../rebind-capital-route
 import { nativeAdmissionRecordForHead } from "../build-current-five-region-source-fan-in.mjs";
 import { selectCurrentKricRouteRostersPath } from "../build-current-capital-facility-collection-plan.mjs";
 import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, capitalRouteTopologySnapshotVersion } from "../lib/capital-route-topology-snapshot-id.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 // #862: FACILITY 도구와 같은 선택 함수로 현재 KRIC roster를 고른다(고정 경로 금지).
 const CURRENT_ROUTE_ROSTERS_PATH = await selectCurrentKricRouteRostersPath({ repositoryRoot: path.resolve(import.meta.dirname, "../../..") });
 
@@ -83,7 +83,6 @@ const SHA_KEYS = Object.freeze([
   "semanticOutputSha256", "outputSchemaSha256", "layoutArtifactSha256",
 ]);
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 function bindSyntheticReleaseArtifacts({

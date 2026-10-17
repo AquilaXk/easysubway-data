@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../lib/hash.mjs";
 
 const GOVERNANCE_POLICY_VERSION = "2026-07-15";
 const GOVERNANCE_POLICY_SHA256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
@@ -21,6 +21,3 @@ export function approvedLegacyGovernanceBinding(snapshot) {
   };
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

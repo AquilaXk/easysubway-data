@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateBusanRouteTopologySnapshot } from "./collect-busan-route-topology.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "busan-transportation-route-topology";
 const OPERATOR_ID = "busan-transportation";
@@ -311,10 +311,6 @@ function canonicalStationMappingEntries(mappings, scope) {
 
 export function normalizedStationName(value) {
   return value.normalize("NFKC").replace(/\([^()]*\)$/, "").replace(/[^\p{L}\p{N}]/gu, "").replace(/역$/, "").toLowerCase();
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

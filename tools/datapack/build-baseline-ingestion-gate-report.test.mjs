@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -8,6 +7,7 @@ import {
   buildKricMovementContext,
   buildRosterFromPack,
 } from "./build-baseline-ingestion-gate-report.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const pack = {
   stations: [
@@ -56,10 +56,6 @@ const pack = {
     { id: "transfer-gangnam", sourceId: "seoul-metro-transfer-distance-duration", pathwayEdgeId: null },
   ],
 };
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function kricStep() {
   return {

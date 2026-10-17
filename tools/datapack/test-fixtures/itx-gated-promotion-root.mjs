@@ -1,15 +1,14 @@
 // 소비자 테스트용: 저장소의 현재 승인 원천 파일을 임시 저장소 루트로 복사하고, 그 원천을 게이트 승격으로 승격한 것처럼
 // 영수증·정책·contract를 만든다(후보=직전=기준선 = 같은 원천이라 모든 지표가 0이다). 영수증은 실제 게이트가 계산한다.
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { evaluateItxPromotionGate, itxPromotionGateReceiptBytes, parseItxPromotionGatePolicy } from "../itx-promotion-gate.mjs";
 import { itxPromotionReceiptPath } from "../lib/itx-promotion-authority.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export async function createGatedPromotionRoot({ policyOverride = null } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-gated-root-"));

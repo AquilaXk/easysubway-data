@@ -1,9 +1,9 @@
 // data.go.kr 파일데이터 공식 다운로드 흐름(키·활용신청 없음).
 // detail 페이지의 다운로드 버튼 → /tcs/dss/selectFileDataDownload.do → /cmm/cmm/fileDownload.do.
 // 어느 단계든 기대한 형태가 아니면 명시적으로 실패하며 이전·추정 URL이나 본문으로 대체하지 않는다.
-import { createHash } from "node:crypto";
 
 import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./transient-retry.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const ORIGIN = "https://www.data.go.kr";
 const USER_AGENT = "easysubway-datapack-collector/1.0";
@@ -31,10 +31,6 @@ export const ALLOWED_DATA_GO_FILE_TYPES = Object.freeze([
 export const MAX_DATA_GO_FILE_BYTES = 16 * 1024 * 1024;
 const HTML_DOCUMENT_START = /^(?:<!doctype\s+html|<html[\s>])/iu;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function requireDatasetId(datasetId) {
   if (typeof datasetId !== "string" || !DATASET_ID_PATTERN.test(datasetId)) {

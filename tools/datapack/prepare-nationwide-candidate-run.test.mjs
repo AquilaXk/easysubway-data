@@ -17,9 +17,9 @@ import { CANDIDATE_INPUT_MANIFEST_PATH, assertCandidateInputsCurrent, createCand
 import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
 
 import { admitOutOfStationTransferLinks, officialTransferEndpointRecords, packOutOfStationTransferLinks, applyMeasuredTransferTimePrecedence, assertCandidateClockAfterRawStorage, prepareNationwideCandidate, resolveSeoulMeasuredTransferMetrics, formatPlatformInfo, gwangjuFacilityState, regionalFacilityTypeCounts, busanFacilityState, officialTransferMetricsByDirection, resolveBusanTransferMetrics, resolveMolitTransferSnapshot, resolveNationwideCandidateInputSnapshots } from "./prepare-nationwide-candidate-run.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const sha256 = (val) => createHash("sha256").update(val).digest("hex");
 // #942: 후보 재현 검사는 커밋된 후보가 고정한 입력 바이트로 한다(원천만 등록한 PR에서도 같은 결과).
 const pinnedRead = await candidatePinnedReader();
 

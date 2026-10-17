@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { KRIC_API_STATION_TIMETABLE_BINDINGS } from "./kric-station-timetable-api-trips.mjs";
 import { canonicalJson } from "./manifest-validation.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #903: kric-subway-timetable-station-lines 등록기가 커밋한 파생 스냅샷(역별 KRIC API 재구성 trip)을
 // 공용 적재기(materializeOfficialLineTimetables) 입력으로 바꾼다. 스냅샷 내용 해시를 다시 확인하고 trip은 바꾸지 않는다.
@@ -15,7 +15,6 @@ const ROUTE_NAMES = Object.freeze({ A: "GTX-A", E1: "에버라인", U1: "의정�
 const SERVICE_DAY_KIND = Object.freeze({ WEEKDAY: "WEEKDAY", SATURDAY_SUNDAY_HOLIDAY: "WEEKEND_HOLIDAY" });
 // 격리 행은 providerTripKey의 KRIC dayCd로 운행일을 정한다. 8=평일, 9=휴일(토·일·공휴일, QA 확정 정책). 그 밖의 값은 실패한다.
 const SERVICE_DAY_KIND_BY_DAY_CD = Object.freeze({ 8: "WEEKDAY", 9: "WEEKEND_HOLIDAY" });
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`KRIC_STATION_LINES_TIMETABLE_${code}${detail ? `: ${detail}` : ""}`); };
 
 /** 파생 스냅샷 자기 결속(snapshotId·contentSha256·trip 해시)과 inventory evidence 결속을 확인한다. */

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // 대구교통공사 역사별 장애인 편의시설 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15149872)만 사용한다.
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,6 +15,7 @@ import {
 import { writeFileReplacing } from "./lib/staged-output.mjs";
 import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DATASET_ID = "15149872";
 const DETAIL_URL = `https://www.data.go.kr/data/${DATASET_ID}/fileData.do`;
@@ -213,10 +213,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function retainedRawSource(datasetId, bytes) {

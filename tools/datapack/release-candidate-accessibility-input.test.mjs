@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,6 +11,7 @@ import {
   syncCanonicalAccessibilityEvidence,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { candidatePinnedWorkspace } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const BUILD_SPEC = "tools/datapack/release/candidate-build-spec.json";
@@ -19,10 +19,6 @@ const PREPARATION = "tools/datapack/release/nationwide-candidate-preparation.jso
 
 function readRepoJson(relativePath) {
   return JSON.parse(readFileSync(resolve(root, relativePath), "utf8"));
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 // #866 PR-B: release-candidate 입력은 전국 후보 준비(nationwide-candidate-preparation.json)가

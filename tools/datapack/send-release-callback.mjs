@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalCallbackMessage } from "./build-release-callback.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const CALLBACK_RETRY_DELAYS_SECONDS = [60, 480, 3600];
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const httpClass = (status) => `${Math.floor(status / 100)}XX`;
 const retryable = (status) => status === 408 || status === 429 || status >= 500;
 

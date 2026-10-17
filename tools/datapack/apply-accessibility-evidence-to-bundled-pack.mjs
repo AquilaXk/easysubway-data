@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +11,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
 import { readProductionSourceSet } from "./validate-candidate-source-set.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 function getTargetStationIds(pack) {
@@ -71,7 +72,6 @@ function option(name, fallback) {
   return index < 0 ? fallback : process.argv[index + 1];
 }
 
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function epoch(value) { return Math.floor(Date.parse(value) / 1000); }
 
 function applyEvidence(sqlitePath, pack) {

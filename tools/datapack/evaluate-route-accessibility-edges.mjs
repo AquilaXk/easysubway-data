@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { canonicalStationLineAccessibilityPayloadJson } from "./materialize-station-line-accessibility.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const INPUT_KEYS = ["candidate", "evaluationAt", "stationLines", "routeEdges", "materialization"];
 const CANDIDATE_KEYS = [
@@ -564,6 +564,3 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

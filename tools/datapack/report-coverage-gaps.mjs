@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
 const DEFAULT_RELEASE_SCOPE_TARGETS = "tools/datapack/capital-pilot-coverage-targets.json";
@@ -1323,10 +1323,6 @@ function validateProvenanceRecord(record, label) {
 
 function coverageKey(sourceId, regionId, operatorId, lineId, sourceDomain, field) {
   return `${sourceId}:${regionId}:${operatorId}:${lineId}:${sourceDomain}:${field}`;
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function validateKnownValues(values, knownValues, label, valueLabel) {

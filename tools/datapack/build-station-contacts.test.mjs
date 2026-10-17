@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,10 +12,7 @@ import {
   loadStationContactInputs,
   normalizePhoneNumber,
 } from "./build-station-contacts.mjs";
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
+import { sha256 } from "../lib/hash.mjs";
 
 // 서울교통공사 역코드 membership 결속 결과("<호선>:<역번호>" → 팩 역·노선)를 손으로 적은 fixture
 const FIXTURE_BINDINGS = new Map([

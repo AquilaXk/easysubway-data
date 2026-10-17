@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile as readFileBytes, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,12 +9,12 @@ import { buildCurrentFiveRegionSourceFanIn, REPRODUCTION_GOVERNANCE } from "./bu
 import { CANDIDATE_INPUT_MANIFEST_PATH, buildCandidateInputManifest, serializeCandidateInputManifest } from "./lib/candidate-input-bundle.mjs";
 import { CANDIDATE_OUTPUT_PATHS, candidatePinnedReader, candidatePinnedWorkspace, candidateWorkspacePath, committedCandidateInputManifest } from "./test-fixtures/candidate-pinned-inputs.mjs";
 import { NATIONWIDE_CANDIDATE_REFRESH_OUTPUTS } from "./refresh-nationwide-candidate.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #942: PR CI(required-pr)는 커밋된 전국 후보의 내부 pin 일관성만 검사한다.
 // 후보가 읽은 입력은 매니페스트가 sha256으로 고정하고, 그 바이트로 fan-in·spec 결속을 다시 계산한다.
 // 고정 입력이 지금 작업 트리와 같은지(currency)는 release-pin-drift.test.mjs(deterministic-release)가 RC·publish에서 검사한다.
 const root = path.resolve(import.meta.dirname, "../..");
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const FAN_IN_PATH = "tools/datapack/release/current-five-region-source-fan-in.json";
 const BUILD_SPEC_PATH = "tools/datapack/release/candidate-build-spec.json";
 const PREPARATION_PATH = "tools/datapack/release/nationwide-candidate-preparation.json";

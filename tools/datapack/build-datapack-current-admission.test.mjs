@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -45,9 +45,9 @@ import { retainPreAuthorityRideEdges } from "./apply-accessibility-evidence-to-b
 import { materializeStationLineAccessibility } from "./materialize-station-line-accessibility.mjs";
 import { main as buildCurrentReleaseCandidateAccessibilityInput } from "./build-current-release-candidate-accessibility-input.mjs";
 import { buildSyntheticNationwideReleaseCandidate } from "./test-fixtures/synthetic-nationwide-release-candidate.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
 const PUBLIC_ROUTE_MAP_SOURCE_ID = "seoul-metro-route-map-positions";
 

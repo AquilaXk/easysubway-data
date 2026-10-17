@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import path from "node:path";
@@ -9,12 +8,12 @@ import { buildKricCurrentStationLineObservation } from "./build-kric-current-sta
 import { buildKricNationwideTimetableObservation } from "./build-kric-nationwide-timetable-observation.mjs";
 import { buildKricRetainedFilePendingHandoff } from "./build-kric-retained-file-pending-handoff.mjs";
 import { objectStorageClient } from "./publish-object-storage.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const GIT_SHA = /^[a-f0-9]{40}$/u;
 const MAXIMUM_WORKBOOK_BYTES = 128 * 1024 * 1024;
 const MAXIMUM_RECEIPT_BYTES = 64 * 1024;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : !value || typeof value !== "object" ? value : Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right)).map((key) => [key, canonical(value[key])]));
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(canonical(value))}\n`);
 const fail = (code) => { throw new Error(`KRIC_RETAINED_FILE_OPERATION_${code}`); };

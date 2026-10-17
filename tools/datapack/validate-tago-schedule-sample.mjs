@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const REQUIRED_FIELDS = [
   "subwayRouteId",
@@ -590,10 +590,6 @@ function rejectCredentialLeak(rawText, parsed, pathParts = []) {
 
 function sortObject(value) {
   return Object.fromEntries(Object.entries(value).sort(([left], [right]) => codepointCompare(left, right)));
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function main() {

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateSeoul9RouteMapPositionsSnapshot } from "./collect-seoul9-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "seoul-metro-line9-23-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
@@ -388,10 +388,6 @@ function normalizeStationName(value) {
     .replace(/\s+/g, "")
     .replace(/\([^()]*\)$/, "")
     .replace(/역$/, "");
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

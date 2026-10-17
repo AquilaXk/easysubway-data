@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { lstat, link, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +24,7 @@ import {
 } from "./lib/itx-promotion-authority.mjs";
 import { evaluateItxPromotionGate, itxPromotionGateReceiptBytes, parseItxPromotionGatePolicy } from "./itx-promotion-gate.mjs";
 import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
+import { sha256 } from "../lib/hash.mjs";
 const API_ORIGIN = "https://apis.data.go.kr";
 const DETAIL_URL = "https://www.data.go.kr/data/15125762/openapi.do";
 const LINE_ID = "line-54a7b980b7c3";
@@ -2770,7 +2771,6 @@ function normalizeStationName(value) { return String(value ?? "").replace(/\([^)
 function requiredString(value, label) { if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`); return value; }
 function safeToken(value) { const text = String(value ?? "UNKNOWN"); return /^[A-Za-z0-9._/+:-]{1,64}$/.test(text) ? text : "UNKNOWN"; }
 function safeLabel(value) { const text = String(value ?? "UNKNOWN"); return /^[\p{L}\p{N} ._()+/-]{1,64}$/u.test(text) ? text : "UNKNOWN"; }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function canonicalJsonBytes(value) { return Buffer.from(`${JSON.stringify(value, null, 2)}\n`); }
 function naturalCompare(left, right) { return String(left).localeCompare(String(right), "ko", { numeric: true }); }
 function parseArgs(argv) {

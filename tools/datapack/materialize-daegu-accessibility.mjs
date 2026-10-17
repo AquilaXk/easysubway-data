@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { DAEGU_LINES, daeguSourceSnapshotIdentity, loadAdmittedDaeguTopologySnapshots } from "./collect-daegu-datapack-sources.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daegu-transportation-accessibility";
 const PACK_ID = "nationwide-daegu-accessibility";
@@ -339,8 +339,6 @@ function compactSeoulDate(value) {
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
 }
-
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 function parseArgs(argv) {
   const expected = [

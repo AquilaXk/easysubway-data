@@ -8,7 +8,6 @@
 //
 // 빈 시각 칸은 해당 열차가 정차하지 않음(단기·미정차)으로 해석하고 시간을 발명하지 않는다.
 // 7호선 FILE/행은 범위 밖이다.
-import { createHash } from "node:crypto";
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,6 +18,7 @@ import {
   I210_SEOHAE_GU_OFFICE_RENAME,
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
 const ARTIFACT_KIND = "incheon-train-timetable-snapshot";
@@ -434,10 +434,6 @@ function compactSeoulDate(value) {
     timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

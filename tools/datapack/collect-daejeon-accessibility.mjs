@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // 대전교통공사 1호선 엘리베이터·에스컬레이터 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15041384·15041361)만 사용한다.
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,6 +10,7 @@ import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
 import { writeFileReplacing } from "./lib/staged-output.mjs";
 import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ELEVATOR_DATASET_ID = "15041384";
 const ESCALATOR_DATASET_ID = "15041361";
@@ -324,10 +324,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function retainedRawSource(datasetId, bytes) {

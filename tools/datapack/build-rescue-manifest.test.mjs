@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { createHash, createSign, generateKeyPairSync } from "node:crypto";
+import { createSign, generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 
 import { buildRescueManifest } from "./build-rescue-manifest.mjs";
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
@@ -342,6 +343,3 @@ function bytes(value) {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -16,10 +16,6 @@ const CURRENT_TOPOLOGY_VERIFIER_PATH = path.join(
   "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
 );
 const DEPLOYED_EVIDENCE_ARTIFACT_KIND = "itx-cheongchun-mobile-topology-evidence";
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function parseArgs(argv) {
   const args = {};

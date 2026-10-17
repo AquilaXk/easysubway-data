@@ -5,7 +5,6 @@
 // Day model: 토요일 전용 FILE이 없어 WEEK + HOLI만 admit한다.
 // HOLI service에 saturday=true를 두어 토요일에 휴일 시각표를 재사용한다(대전 패턴).
 // 토요일 전용 시각을 발명하지 않는다.
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,6 +12,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { INCHEON_TIMETABLE_LINES } from "./collect-incheon-timetable.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ISSUE = 2488;
 const MATERIALIZER = "tools/datapack/materialize-incheon-timetable.mjs";
@@ -483,10 +483,6 @@ function compactSeoulDate(value) {
     timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

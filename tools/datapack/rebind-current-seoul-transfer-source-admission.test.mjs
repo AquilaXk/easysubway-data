@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -21,8 +20,8 @@ import {
   writeSeoulTransferRebindRepository,
 } from "./test-fixtures/seoul-transfer-rebind-repository.mjs";
 import { validateProductionTransferArtifacts, validateTransferAdmissionEvidence } from "./validate-source-inventory.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const env = { EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: SEOUL_TRANSFER_REBIND_PAR_BASE_URL };
 const NOW = new Date("2026-10-02T09:00:00.000Z");
 

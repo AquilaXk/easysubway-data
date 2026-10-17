@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -17,6 +16,7 @@ import {
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_ADMITTED_RAW_SHA256,
   MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
 } from "./collect-molit-railway-transfer-movement.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const SOURCE_USER_DISPLAY_NAME_FORBIDDEN_SUBSTRINGS = Object.freeze([
   "pilot",
@@ -613,10 +613,6 @@ function assertExactKeys(value, expectedKeys, label) {
   if (JSON.stringify(Object.keys(value).sort(compareStrings)) !== JSON.stringify([...expectedKeys].sort(compareStrings))) {
     throw new Error(`${label} must contain only approved fields`);
   }
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function validateAdmissionEvidence(evidence, candidate, source, sourceId) {

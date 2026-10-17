@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, realpath, rename, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -8,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { publishCapitalRouteTopologyRaw } from "./publish-capital-route-topology-raw.mjs";
 import { assertSelectedHeadPreflight } from "./publish-seoul-transfer-raw.mjs";
 import { readCurrentCapitalRouteTopologyAdmission, registerCurrentCapitalRouteTopology } from "./register-current-capital-route-topology.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const RAW = "capital-route-topology.raw.json";
@@ -17,7 +17,6 @@ const JOURNAL = "capital-route-topology-registration.json";
 const TARGETS = ["tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json", "tools/datapack/source-governance-policy.json", "release/product-gates/datapack-freshness-sla.json"];
 const SHA = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function absolute(value, label) { if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error(`${label} must be absolute`); return path.resolve(value); }
 function parse(bytes, label) { try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); } }

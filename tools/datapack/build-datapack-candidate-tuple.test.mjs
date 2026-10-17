@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { sha256 } from "../lib/hash.mjs";
 
 const script = path.resolve("tools/datapack/build-datapack-candidate-tuple.mjs");
 const schema = JSON.parse(readFileSync("contracts/release/datapack-candidate-tuple.schema.json", "utf8"));
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 test("production raw manifest/provenance identity에서 Hub와 같은 exact candidate tuple을 결정론적으로 만든다", () => {
   const fixture = createFixture();

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -10,6 +10,7 @@ import { molitRailwayTransferMovementEditionFromSnapshotId } from "./collect-mol
 
 import { evaluateFreshnessExtension, freshnessPolicySha256 } from "./freshness-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "molit-railway-transfer-movement";
 const SOURCE_CLASS_ID = "annual_official_file";
@@ -42,10 +43,6 @@ const PROVIDER_OBSERVATION_KEYS = [
 
 function fail(code) {
   throw new Error(`MOLIT_TRANSFER_FRESHNESS_${code}`);
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function exactKeys(value, keys) {

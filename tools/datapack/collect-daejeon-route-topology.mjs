@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { probeDaejeonCoverageApi } from "./probe-daejeon-coverage-api.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daejeon-station-distance-fare";
 export const DAEJEON_TOPOLOGY_ENDPOINT = "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01";
@@ -76,10 +76,6 @@ export async function collectDaejeonRouteTopology({
 function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   return value;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function main() {

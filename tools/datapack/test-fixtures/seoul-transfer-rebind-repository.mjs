@@ -1,7 +1,6 @@
 // 서울교통공사 환승 거리·시간 증거를 수도권 정본 팩에 결속한 합성 저장소다(#866).
 // 실제 원천 행 대신 합성 145행을 쓰고, 제외·예외 행은 지표 생성기가 고정한 실제 값(연번·행)과 같다.
 // 정본 팩·지표·applicability·descriptor·inventory·원장·OCI receipt는 현재 생성기로 만들어 서로 정확히 결속한다.
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { buildApplicability } from "../build-current-capital-transfer-topology-applicability.mjs";
 import { rebuildAuthenticatedTransferTopologyMetrics } from "../build-current-transfer-topology-metrics.mjs";
 import { registerSeoulTransferSourceSnapshot } from "../register-seoul-transfer-source-snapshot.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 export const SEOUL_TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -35,7 +35,6 @@ const FILLER_STATION_COUNT = 65;
 const CAPTURED_AT = "2026-08-15T09:40:38.817Z";
 const STORED_AT = "2026-08-16T00:16:05.177Z";
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const lineBytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`);
 const prettyBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const sortValue = (value) => {

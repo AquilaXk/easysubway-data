@@ -13,12 +13,12 @@ import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./s
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 import { validateCurrentCapitalFacilityPlanAndCanonicalPack } from "./build-current-capital-facility-source-admission.mjs";
 import { readRegularSnapshot } from "./build-current-kric-exit-collection-plan.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const SEOUL_SOURCE_ID = "seoul-metro-accessibility";
 const SHA256 = /^[0-9a-f]{64}$/;
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 async function syncedWrite(file, bytes) {
   const handle = await open(file, "w");

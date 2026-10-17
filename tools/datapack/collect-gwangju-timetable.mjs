@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "gwangju-transportation-timetable";
 const ENDPOINT = "https://apis.data.go.kr/B551232/grtcTimetable/timetable";
@@ -270,7 +270,6 @@ function compareRows(left, right) {
     .localeCompare(OUTPUT_FIELDS.map((field) => right[field]).join(":"), "en");
 }
 function compareText(left, right) { return left.localeCompare(right, "en"); }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 async function main(args = process.argv.slice(2)) {
   if (args.length !== 2 || args[0] !== "--output") {

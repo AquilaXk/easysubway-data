@@ -563,10 +563,12 @@ test("generated hash-evidence commands use and enforce the exact candidate snaps
       now: await nextSyntheticCurrentStaticNetworkNow(repository),
     });
     await mkdir(path.join(directory, "tools/datapack/lib"), { recursive: true });
+    await mkdir(path.join(directory, "tools/lib"), { recursive: true });
     await Promise.all([
       "tools/datapack/source-snapshot-policy.mjs",
       "tools/datapack/legacy-source-governance.mjs",
       "tools/datapack/lib/utc-instant.mjs",
+      "tools/lib/hash.mjs",
     ].map(async (relativePath) => writeFile(
       path.join(directory, relativePath),
       await readFile(path.join(repository, relativePath)),

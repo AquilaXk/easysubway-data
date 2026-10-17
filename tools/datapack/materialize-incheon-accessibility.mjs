@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "incheon-transit-accessibility";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
@@ -730,8 +730,6 @@ function compactSeoulDate(value) {
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
 }
-
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 function isSha256(value) { return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value); }
 

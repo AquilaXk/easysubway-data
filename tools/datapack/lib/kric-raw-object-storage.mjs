@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { publishImmutableObjectPlan } from "../publish-object-storage.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const OCI_NAMESPACE = "axvym6vk8g7i";
@@ -159,10 +160,6 @@ function requiredAbsolutePath(value, label) {
   const text = requiredText(value, label);
   if (!path.isAbsolute(text)) throw new Error(`${label} must be absolute`);
   return text;
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 export async function writeKricRawReceipt(receiptPath, receipt, { mode } = {}) {

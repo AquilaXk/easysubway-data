@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #942: 전국 후보가 만들어질 때 읽은 저장소 입력을 경로·sha256 매니페스트로 고정한다.
 // 바이트는 저장소에 다시 커밋하지 않고 OCI에 content-addressed 객체로 둔다(#870 항목 3).
@@ -27,7 +28,6 @@ const MANIFEST_KEYS = [
 const FILE_KEYS = ["path", "sha256", "byteSize"];
 const SHA256 = /^[a-f0-9]{64}$/u;
 
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const sameKeys = (value, keys) => value !== null && typeof value === "object" && !Array.isArray(value)
   && JSON.stringify(Object.keys(value).sort(compare)) === JSON.stringify([...keys].sort(compare));

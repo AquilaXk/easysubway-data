@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 
 import { deriveFreshness, deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const LEGACY_GOVERNANCE_POLICY_SHA256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
@@ -632,10 +632,6 @@ function requiredHttpsUrl(value, label) {
   }
   if (url.protocol !== "https:") throw new Error(`${label} must use HTTPS`);
   return value;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function compareText(left, right) {

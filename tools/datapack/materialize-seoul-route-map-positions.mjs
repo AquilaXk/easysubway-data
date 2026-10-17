@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,6 +8,7 @@ import {
   validateSeoulRouteMapPositionsSnapshot,
 } from "./collect-seoul-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "seoul-metro-route-map-positions";
 const RETIRED_SOURCE_ID = "seoulmetro-cyberstation-route-map";
@@ -433,10 +433,6 @@ function ensureRequiredTransferSource(pack, inventory) {
 
 function normalizeStationName(value) {
   return String(value).normalize("NFKC").replace(/\s+/g, "").replace(/\([^()]*\)$/, "");
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

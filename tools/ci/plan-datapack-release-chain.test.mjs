@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import os from "node:os";
@@ -14,8 +13,8 @@ import {
   readReleaseCandidateModeArgs,
   runPlanDatapackReleaseChain,
 } from "./plan-datapack-release-chain.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const committedSpec = { productionScopeId: "nationwide_routing_android_v1", releaseSequence: 126 };
 const now = new Date("2026-10-04T04:31:38.280Z");
 

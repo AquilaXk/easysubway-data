@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "gwangju-transportation-route-topology";
 export const GWANGJU_ROUTE_TOPOLOGY_ENDPOINT =
@@ -176,7 +176,6 @@ function validDate(value, label) {
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
 }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
 // 요청과 본문 읽기를 한 번의 시도로 묶어 일시 오류(HTTP 408·5xx, 연결·요청·본문 timeout, 소켓 끊김)면 같은 요청을 다시 보낸다(#1099).

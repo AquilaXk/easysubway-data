@@ -69,6 +69,7 @@ import {
   RETAINED_GWANGJU_PROJECTION_SOURCE_ID,
   validateRetainedGwangjuProjection,
 } from "./lib/kric-retained-gwangju-projection.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export { CAPITAL_TIMETABLE_REPORT_PATH, OFFICIAL_STOP_TIMES_PATH };
 // 팩 JSON 밖 결정적 gzip 파일로 싣는 공식 원천 시간표. trip이 원천 공통 provenance와 행 hash를 가진 원천만 둔다.
@@ -81,7 +82,6 @@ export const OFFICIAL_LINE_TIMETABLE_REPORT_PATH = "tools/datapack/release/natio
 const OFFICIAL_LINE_CALENDAR = Object.freeze({ startDate: "20260101", endDate: "20261231", maxQuarantineRatio: 0.05 });
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 // station_car_door_hints 계약: catalog-schema.sql CHECK(대상 시설·칸 1~10·문 1~4)와

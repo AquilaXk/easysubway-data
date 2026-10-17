@@ -23,6 +23,7 @@ import { inflateRawSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 
 import { parseSharedStrings } from "./parse-kric-code-catalog.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DATASET_ID = "32";
 const DETAIL_URL = "https://data.kric.go.kr/rips/M_01_01/detail.do?id=32";
@@ -574,10 +575,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function sha1(value) {

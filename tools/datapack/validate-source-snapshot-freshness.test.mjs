@@ -23,6 +23,7 @@ import {
 } from "./test-fixtures/current-public-route-map-successor.mjs";
 import { buildSnapshotDiff } from "./source-snapshot-policy.mjs";
 import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const evaluationAt = "2026-07-15T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
@@ -283,10 +284,6 @@ function verifiedPurgeEvidence(report) {
 function bindPurgeReport(value, report) {
   value.purgeReport = report;
   value.purgeAttestation = purgeAttestations.get(report);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function bindInventory(value) {

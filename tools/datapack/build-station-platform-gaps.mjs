@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildStationBindings, numeric } from "./normalize-seoul-metro-congestion.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const PLATFORM_GAP_SOURCE_ID = "seoul-metro-platform-gap";
 export const STATION_PLATFORM_GAP_INPUTS_PATH = "tools/datapack/release/station-platform-gap-inputs.json";
@@ -13,10 +13,6 @@ const DIRECTIONS = new Map([["상선", "UP"], ["하선", "DOWN"]]);
 const GAP_GRADES = new Map([["좁음", "NARROW"], ["보통", "NORMAL"], ["넓음", "WIDE"]]);
 const HEIGHT_DIFF_GRADES = new Map([["낮음", "LOW"], ["보통", "NORMAL"], ["높음", "HIGH"]]);
 const CURVED_FLAGS = new Map([["직선", 0], ["곡선", 1]]);
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 // 승강장 위치는 원문 그대로 보존한다. 끝이 정확히 "N-M"(칸-문)일 때만 칸·문 번호를 채운다.
 export function parsePlatformPosition(value) {

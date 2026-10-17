@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15001020/openapi.do";
@@ -288,7 +288,6 @@ function requiredText(value, label) {
 }
 
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function sleep(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
 async function main(args = process.argv.slice(2)) {

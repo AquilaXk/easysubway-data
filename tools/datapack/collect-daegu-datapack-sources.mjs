@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // 대구교통공사 1·2·3호선 공식 파일데이터(역 구간정보·열차시각표)를 결정론적 snapshot으로 수집한다.
 // 원문은 공공데이터포털 CSV(파일별 EUC-KR/UTF-8 BOM 혼재)이며, 차량기지·비영업 행은 exact tuple로 격리한다.
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +9,7 @@ import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs
 import { writeFilesCreateOnly } from "./lib/staged-output.mjs";
 import { verifyDataGoDownloadProvenance } from "./lib/data-go-file-download.mjs";
 import { loadDataGoInputs, parseDownloadModeArgs, resolveCapturedAt } from "./lib/download-mode-cli.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_PREFIX = Object.freeze({ "평일": "WEEK", "토요일": "SAT", "휴일": "HOLI" });
@@ -109,10 +109,6 @@ function kilometersToMeters(value) {
   const meters = Math.round(Number(value) * 1_000);
   if (!Number.isInteger(meters) || meters <= 0) throw new Error(`invalid distance km: ${value}`);
   return meters;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function retainedRawSource(datasetId, bytes) {

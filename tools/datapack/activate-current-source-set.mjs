@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   lstat, mkdir, mkdtemp, open, readFile, rename, rm, rmdir, writeFile,
 } from "node:fs/promises";
@@ -79,6 +79,7 @@ import {
 } from "./rebind-capital-route-map-admissions.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { CAPITAL_ROUTE_TOPOLOGY_SNAPSHOT_PATH_PATTERN, CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN, capitalRouteTopologySnapshotIdMatchesCapturedAt, capitalRouteTopologySnapshotVersion, capitalTopologyReverificationPathForSnapshotId, isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MOLIT_V2_FIELDS = Object.freeze([
@@ -163,10 +164,6 @@ const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
 function isAllowedActivationOutput(relativePath) {
   return allowedOutputPaths.has(relativePath)
     || CAPITAL_TOPOLOGY_REVERIFICATION_PATH_PATTERN.test(relativePath ?? "");
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function canonicalJsonSha256(value) {

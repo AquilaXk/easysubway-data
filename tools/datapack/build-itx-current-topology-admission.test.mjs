@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { buildItxCurrentTopologyAdmission } from "./build-itx-current-topology-admission.mjs";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+import { sha256 } from "../lib/hash.mjs";
 
 function sequence(directionId, stationIds) {
   return {

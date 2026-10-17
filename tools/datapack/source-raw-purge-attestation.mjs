@@ -1,11 +1,6 @@
-import {
-  createHash,
-  createPrivateKey,
-  createPublicKey,
-  sign,
-  verify,
-} from "node:crypto";
+import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const ALGORITHM = "Ed25519";
 
@@ -197,6 +192,3 @@ function publicKeyFingerprint(publicKey) {
   return sha256(publicKey.export({ type: "spki", format: "der" }));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

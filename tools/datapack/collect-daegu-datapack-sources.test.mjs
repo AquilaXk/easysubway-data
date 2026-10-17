@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -16,9 +15,9 @@ import {
   daeguDependentRebindOutputPlan,
 } from "./register-daegu-datapack-sources.mjs";
 import { buildDaeguTopologyDependents } from "./lib/daegu-topology-dependents.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const readSnapshot = async (name) => JSON.parse(await readFile(path.join(root, "tools/datapack/sources", name), "utf8"));
 
 test("Daegu snapshot output is content-addressed and create-once", async (t) => {

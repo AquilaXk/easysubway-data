@@ -7,12 +7,12 @@
  *
  * 수도권 전 노선은 collect-capital-route-topology.mjs 가 이 모듈의 line-1 파서를 재사용한다.
  */
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const SOURCE_ID = "capital-line1-route-topology";
 export const DATASET_ID = "15041460";
@@ -322,10 +322,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} must be a valid date`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function option(name, fallback = null) {

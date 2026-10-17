@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 
 import { canonicalJson } from "./manifest-validation.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #913: 광주 1호선 시간표는 원장 head가 결속한 KRIC 보관본(kric-nationwide-timetable-file,
 // retainedScheduleAdmissionEvidence)에서 만든다. 보관본 관측(observation.json, 약 231MB)은 저장소에 두지 않으므로,
@@ -12,7 +12,6 @@ export const RETAINED_GWANGJU_PROJECTION_EVIDENCE_KEY = "retainedGwangjuProjecti
 export const RETAINED_GWANGJU_PROJECTION_KIND = "kric-retained-gwangju-timetable-projection";
 const SNAPSHOT_PREFIX = `${RETAINED_GWANGJU_PROJECTION_SOURCE_ID}-gwangju-`;
 const SHA256 = /^[a-f0-9]{64}$/u;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`RETAINED_GWANGJU_PROJECTION_${code}${detail ? `: ${detail}` : ""}`); };
 
 function content({ retainedEvidence, observationRawObjectSha256, routeNumber, records }) {

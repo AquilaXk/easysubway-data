@@ -38,7 +38,6 @@
  *
  * topologyGaps: 없음 (공식 순번/역간거리로 24개 수도권 지도 노선 모두 포함)
  */
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
 import path from "node:path";
@@ -59,6 +58,7 @@ import {
 } from "./collect-capital-line1-route-topology.mjs";
 import { topologySnapshotFreshUntil } from "./lib/topology-freshness-cutover.mjs";
 import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export { decodeOfficialCsv, normalizeStationName };
 
@@ -1929,10 +1929,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} must be a valid date`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function option(name, fallback = null) {
