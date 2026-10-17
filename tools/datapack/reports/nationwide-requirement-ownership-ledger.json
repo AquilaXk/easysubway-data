@@ -19,7 +19,7 @@
       },
       "inventory": {
         "path": "tools/datapack/source-inventory.json",
-        "sha256": "f17fa139b4e8c86fcedf5be481f366d4b8c3d1a4ad372d618ab4a539d51f6c5c"
+        "sha256": "a1f3c449e69a4b8583d0a6d2b50749d4950917d8b3c56bca79498d140f9aeb60"
       },
       "ownership": {
         "path": "tools/datapack/release/nationwide-requirement-ownership.json",
@@ -27,14 +27,14 @@
       },
       "sourceSnapshots": {
         "path": "tools/datapack/release/source-snapshots.json",
-        "sha256": "f32a9b5ec7acda696b13c299db1c5b51e19426365f61eb52f61db4baf0240a7a"
+        "sha256": "12bbdb7f20c4dbe6c3e4c03fb2b6fc8b65b8a0f891a3b5b05b7130ec8571d0ae"
       },
       "fanIn": {
         "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-        "sha256": "bbdcff3028fb83a0834f65b750ddc03da471a3a7571e222684c057a3e4e91f12",
-        "fanInSha256": "49a863e43bf16478fa64fe6691af9385b69e192dd8d630a9143374432f018d0f",
+        "sha256": "eaa5a764be30f656f71b8b28d897fab760b8620f9922f80c2746e6ee8d804bb0",
+        "fanInSha256": "0e9b3430a8f390952a78dd15ac4c6d4f4acf0137ed17ae60d50722fa43e1b380",
         "scopeSha256": "90c96778b58985429a700bcbe18e162cf6a5564aec12809304c1aa27219b00f6",
-        "sourceSetSha256": "6e10fabe40573b0457cb33b79a1aa708f5db7db1e0bce3b78302c82d98efabcc",
+        "sourceSetSha256": "dc646e6d53e42d71eb2c312dc0a7720f15b75fd8de2e05f9a472502a270bda9e",
         "regionalMatrixSha256": "5dacb9428eb6277ae6ae768c646267a0eb96697262f3cf0cb76e49b01b515126"
       }
     }
@@ -30735,7 +30735,7 @@
             {
               "sourceId": "kric-nationwide-timetable-file",
               "observedDataUpdatedAt": "2026-07-06",
-              "retrievedAt": "2026-10-16",
+              "retrievedAt": "2026-10-17",
               "admissionEvidence": [
                 {
                   "kind": "retainedScheduleAdmissionEvidence",
@@ -30759,8 +30759,8 @@
                 }
               ],
               "currentHead": {
-                "snapshotId": "kric-nationwide-timetable-file-7049f5ea6006df55aababa3aace95eaafcc703c00a5d86a417534e32a89beb25",
-                "freshnessExpiresAt": "2026-10-23T12:43:39.423Z"
+                "snapshotId": "kric-nationwide-timetable-file-c1c729f22e0e67631a26d9f4f992e86f4e2664d45e6eda5604b72a908aede1bc",
+                "freshnessExpiresAt": "2026-10-24T14:43:33.671Z"
               }
             }
           ]
@@ -30774,13 +30774,13 @@
               "admissions": [
                 {
                   "kind": "retainedScheduleAdmissionEvidence",
-                  "snapshotId": "kric-nationwide-timetable-file-7049f5ea6006df55aababa3aace95eaafcc703c00a5d86a417534e32a89beb25",
+                  "snapshotId": "kric-nationwide-timetable-file-c1c729f22e0e67631a26d9f4f992e86f4e2664d45e6eda5604b72a908aede1bc",
                   "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
                   "recordsSha256": "a0cb4d3f89bdcb2710d3bf54691a1a2854e82affe18b764f30f4d2454fdc0a7c",
-                  "observationIdentitySha256": "7049f5ea6006df55aababa3aace95eaafcc703c00a5d86a417534e32a89beb25",
-                  "receiptSha256": "a8acf1776f96e80627a4afe3c9c521036576051169ab3b648f7fe5a4d8298ea4",
-                  "observedAt": "2026-10-16T12:43:39.423Z",
-                  "retainedContractSha256": "20011cfa2d3a53fa4c9f1bd63cdb54810a97a8579812c31b05c96f5d4e1c3464",
+                  "observationIdentitySha256": "c1c729f22e0e67631a26d9f4f992e86f4e2664d45e6eda5604b72a908aede1bc",
+                  "receiptSha256": "e542c2a2b292d69febf69fa21e7c48a9449ae758f37228c1637b4a0baa0da2cb",
+                  "observedAt": "2026-10-17T14:43:33.671Z",
+                  "retainedContractSha256": "bf46c7438f0e7dc6bda2b41cb2123caf305a4af9d071bd66a5e2b229c47be82f",
                   "topologySourceId": "gwangju-transportation-route-topology",
                   "topologySnapshotId": "gwangju-transportation-route-topology-f16c85f4c538942a4e70a52d2d1286a9ec8326759a6cca75d22e9de1caef7e3c",
                   "topologyContentSha256": "da091f53c84771b0e0924d054e118557e58cea95e960be5614c29fe33846643a"
@@ -31161,9 +31161,9 @@
           "refs": [
             {
               "sourceId": "kric-nationwide-timetable-file",
-              "snapshotId": "kric-nationwide-timetable-file-7049f5ea6006df55aababa3aace95eaafcc703c00a5d86a417534e32a89beb25",
+              "snapshotId": "kric-nationwide-timetable-file-c1c729f22e0e67631a26d9f4f992e86f4e2664d45e6eda5604b72a908aede1bc",
               "rawSha256": "218f76dd53c4b9e1f248a8e07ab6879763495958714ee377761944e40cd94bc4",
-              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/sources/kric-nationwide-timetable-file/a5144b0d5d7d2ffab148fdbac3378ad906ea17aa631439eae3a7502ff1011383/observation.json"
+              "rawObjectUri": "oci://axvym6vk8g7i/easysubway-datapacks/sources/kric-nationwide-timetable-file/2070f16edf52d5d6de2764658c8afaac5bfcab769614a3cbff98f5dbaab0de4b/observation.json"
             }
           ]
         },

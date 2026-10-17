@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261017-seq153",
-  "candidateBuildSpecSha256": "23f000ebeb50d634c5d6c44c627fea076ab127802e6e9761a441b65b6f961eab",
-  "preparationSha256": "67a46c3753d48591cf9bcac27e4643fa630eeff59d32eedcf8a0468f8d644829",
-  "fanInSha256": "bbdcff3028fb83a0834f65b750ddc03da471a3a7571e222684c057a3e4e91f12",
+  "candidateId": "nationwide-candidate-20261017-seq154",
+  "candidateBuildSpecSha256": "6b6b4bca5e723ee7397e1e38ab58014b680dd45374626140f0da97e15e8cbf6d",
+  "preparationSha256": "acd5cec201aed5ed2d9a0daa45a1a98c36534f293c31d3708e49b33afd975c0f",
+  "fanInSha256": "eaa5a764be30f656f71b8b28d897fab760b8620f9922f80c2746e6ee8d804bb0",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -19,12 +19,12 @@
     },
     {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-      "sha256": "4b57b7eab2c930125676a7c822d881796a6ebb2d2dc6a1ddf64f5b74871f706a",
+      "sha256": "8007478e314f1a8ff323fe103746ca8ff98a61ffc2722c7f7ee384bf5706e7bb",
       "byteSize": 14856
     },
     {
-      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261016200049829.json",
-      "sha256": "27e66f8c71e2464ad9d7a6409cc423f1bb5a541e879d3f29299fc94102e40c0c",
+      "path": "tools/datapack/itx-cheongchun-topology-evidence-20261017150040720.json",
+      "sha256": "d58f7fbc0c74a3bd8628e3cbf99cf85b863f9da4350089a1fd28feddb923961b",
       "byteSize": 2200
     },
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "bbdcff3028fb83a0834f65b750ddc03da471a3a7571e222684c057a3e4e91f12",
+      "sha256": "eaa5a764be30f656f71b8b28d897fab760b8620f9922f80c2746e6ee8d804bb0",
       "byteSize": 36442
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "f32a9b5ec7acda696b13c299db1c5b51e19426365f61eb52f61db4baf0240a7a",
-      "byteSize": 4529568
+      "sha256": "12bbdb7f20c4dbe6c3e4c03fb2b6fc8b65b8a0f891a3b5b05b7130ec8571d0ae",
+      "byteSize": 4539870
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "f17fa139b4e8c86fcedf5be481f366d4b8c3d1a4ad372d618ab4a539d51f6c5c",
+      "sha256": "a1f3c449e69a4b8583d0a6d2b50749d4950917d8b3c56bca79498d140f9aeb60",
       "byteSize": 428458
     },
     {
@@ -183,8 +183,8 @@
       "byteSize": 16241401
     },
     {
-      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-e52d7aa795f3d999cf91f6bfd24485dcd437d5b60dfd5a2f8fd057fbf7a7f039.json",
-      "sha256": "d1b25d0610e4cbd56e0912551f5b8e20c9cf7f8cc18a9423cc895fab24087ace",
+      "path": "tools/datapack/sources/kric-nationwide-timetable-file-gwangju-60a0f1c125c557311652f54a4038875276ab46b4d005d2dfcb0a4474296cbfe2.json",
+      "sha256": "ccd872e76efebced72bf4e17675a262e51957e80317851f95aa810ab985bf67a",
       "byteSize": 10060125
     },
     {
