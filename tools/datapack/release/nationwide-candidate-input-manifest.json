@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-input-manifest",
-  "candidateId": "nationwide-candidate-20261017-seq152",
-  "candidateBuildSpecSha256": "05a59de5bd1176e49ac9c78c0136ba6092e7db9040ab7a39731fe6a3a2ebab66",
-  "preparationSha256": "3f09b7a5099af20409c0d9affb7a827fe961d4f45d72a70cf055a52e2f02a9ee",
-  "fanInSha256": "50d2ecc30f38223726133866db91dbdb737b0aa7ea5a93c5348dfaab19549cba",
+  "candidateId": "nationwide-candidate-20261017-seq153",
+  "candidateBuildSpecSha256": "23f000ebeb50d634c5d6c44c627fea076ab127802e6e9761a441b65b6f961eab",
+  "preparationSha256": "67a46c3753d48591cf9bcac27e4643fa630eeff59d32eedcf8a0468f8d644829",
+  "fanInSha256": "bbdcff3028fb83a0834f65b750ddc03da471a3a7571e222684c057a3e4e91f12",
   "objectKeyPrefix": "candidate-inputs/sha256/",
   "files": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "tools/datapack/release/current-five-region-source-fan-in.json",
-      "sha256": "50d2ecc30f38223726133866db91dbdb737b0aa7ea5a93c5348dfaab19549cba",
+      "sha256": "bbdcff3028fb83a0834f65b750ddc03da471a3a7571e222684c057a3e4e91f12",
       "byteSize": 36442
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "tools/datapack/release/source-snapshots.json",
-      "sha256": "3cb263d3e294fa1119040d231962b156b5e0114c8f8ad134dc5a7d886be3a7ce",
-      "byteSize": 4526600
+      "sha256": "f32a9b5ec7acda696b13c299db1c5b51e19426365f61eb52f61db4baf0240a7a",
+      "byteSize": 4529568
     },
     {
       "path": "tools/datapack/reports/nationwide-coverage-tally.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "14065eb2619392eb5ca6983edbde23f0d8afe86a2c823b68f983cee58c582de9",
+      "sha256": "f17fa139b4e8c86fcedf5be481f366d4b8c3d1a4ad372d618ab4a539d51f6c5c",
       "byteSize": 428458
     },
     {
@@ -198,8 +198,8 @@
       "byteSize": 774800
     },
     {
-      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261016.json",
-      "sha256": "acc999700bf9cda196c1cf11e502c16df5564576fa113005855b9bb789dfdb43",
+      "path": "tools/datapack/sources/kric-subway-timetable-station-lines-20261017.json",
+      "sha256": "edf148e8b86de0755c739394b3a3e628ad37720f31eceecd3d841e0cf8919ec1",
       "byteSize": 10461819
     },
     {

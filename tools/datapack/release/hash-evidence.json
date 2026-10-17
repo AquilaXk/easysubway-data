@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "builderGitSha": "6839dce23ccb2dea65ef8e1e88e2fe0a1c72ea2c",
+  "builderGitSha": "240edad7805c576eed75fa8c4437d9a41c219af7",
   "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "nationwide_routing_android_v1",
   "ledgerHashes": {
@@ -31,14 +31,14 @@
     }
   },
   "sourceSnapshotSetHash": {
-    "value": "5160deebaf522d36d95c8fb8f097c6cb0b8257cf7e42518cb5a7b3f53feb0e4e"
+    "value": "4bd7d8b5b168f5aa54fde5b251eca6b2dad3ed1496bac0ce40e4ecd92b41ae4e"
   },
   "sourceInventorySha256": {
-    "value": "def05bb5b23b904d0c02d91bde401bc0b5de14d8e00b46e1cddc13ab1e7c2572"
+    "value": "cd6f3085cbe21eb92b16e413d968a9ab9ee95772529574d7e334d0516b739d03"
   },
   "fixturePath": {
     "value": "tools/datapack/release/nationwide-production-canonical-pack.json",
-    "sha256": "98238313e2126edf33c00f993771e0b47653aee50af850fa9ea150f36332a7bc"
+    "sha256": "562fc588205f21e3f968e7e39e59f3b064f67b94c6e4e12d5086215157d31219"
   },
   "overrides": {
     "path": "tools/datapack/fixtures/admin-review-overrides.json",
@@ -46,10 +46,10 @@
   },
   "identifiers": {
     "candidateId": {
-      "value": "nationwide-candidate-20261017-seq152"
+      "value": "nationwide-candidate-20261017-seq153"
     },
     "approvalId": {
-      "value": "release-request-nationwide-candidate-20261017-seq152"
+      "value": "release-request-nationwide-candidate-20261017-seq153"
     }
   },
   "perSourceEvidence": [
@@ -94,13 +94,6 @@
       "rawSha256": "6e6060813eb9d029d5ffc0259a59553b37bfbd902fe1e03ff8246da3453bc29b",
       "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
       "perSourceSnapshotSetHash": "43e3b3330a325a2c2aaceab784b35db60d9e4e646778386dbd02c138f158f9c8"
-    },
-    {
-      "sourceId": "kric-subway-timetable-station-lines",
-      "snapshotId": "kric-subway-timetable-station-lines-20261016",
-      "rawSha256": "d540089e65d9dfa256f6bd880e93b75bc311b55a52f8bcd69e5e490d26e988ad",
-      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
-      "perSourceSnapshotSetHash": "6f52df5789d7d392ed1246d60419e55f6b571924dd10c9a649a133e4d2b965ab"
     },
     {
       "sourceId": "kric-nationwide-timetable-file",
@@ -343,6 +336,13 @@
         }
       ],
       "perSourceSnapshotSetHash": "ff7dd1da3bf3d595ebac611b387a4ef6a070ecfbebc72178a6fbf1e348cc5d89"
+    },
+    {
+      "sourceId": "kric-subway-timetable-station-lines",
+      "snapshotId": "kric-subway-timetable-station-lines-20261017",
+      "rawSha256": "b7b01828739a9dec39fc79c3858b7c2568ec8ce2fd3575c0d782609ec62bca32",
+      "adminReviewRecordHash": "da17800ea0a5957348ba08dca927b7759f15ad7cc53def517ca29a09a690b215",
+      "perSourceSnapshotSetHash": "ea225756d82e2f7a6c12e27ce174e38f43b056af904524c601bebdf3cb93c135"
     }
   ],
   "officialOdFareEvidence": {
