@@ -27,7 +27,7 @@ export function validateKorailTimetableFileReceipt(receipt, { rawSha256, rawByte
     || !Number.isSafeInteger(rawByteLength) || rawByteLength < 4
     || typeof receipt.capturedAt !== "string" || !Number.isFinite(Date.parse(receipt.capturedAt))
     || new Date(receipt.capturedAt).toISOString() !== receipt.capturedAt) fail("RECEIPT");
-  sha256(rawSha256);
+  requireSha256Hex(rawSha256);
   officialKorailUrl(receipt.officialUrl);
   return structuredClone(receipt);
 }
@@ -37,7 +37,7 @@ export async function collectKorailMetropolitanTimetableFile({
   headerTimeoutMs = HEADER_TIMEOUT_MS, bodyTimeoutMs = BODY_TIMEOUT_MS,
 } = {}) {
   const officialUrl = officialKorailUrl(url);
-  const expected = sha256(expectedSha256);
+  const expected = requireSha256Hex(expectedSha256);
   const output = absoluteOutputDirectory(outputDirectory);
   const headerTimeout = timeoutMs(headerTimeoutMs);
   const bodyTimeout = timeoutMs(bodyTimeoutMs);
@@ -106,7 +106,7 @@ function officialKorailUrl(value) {
   return parsed.href;
 }
 
-function sha256(value) {
+function requireSha256Hex(value) {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/u.test(value)) fail("SHA256");
   return value;
 }

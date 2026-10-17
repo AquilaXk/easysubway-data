@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { sha256 } from "../lib/hash.mjs";
 import { createGatedPromotionRoot } from "./test-fixtures/itx-gated-promotion-root.mjs";
 import { assertLagIsContentEquivalent } from "./test-fixtures/ledger-lag-equivalence.mjs";
 import { latestEvidenceObservedDates, packSourceInventoryEntry } from "./import-official-sources.mjs";
@@ -54,8 +54,6 @@ const TEST_GOVERNANCE_POLICY_BINDING = Object.freeze({
   governancePolicySha256: "9".repeat(64),
 });
 const CURRENT_V2_TEST_NOW = (await currentTopologyAdmissionClock(root)).inWindow;
-
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 async function currentV2HeadsFixture() {
   const [ledger, inventory] = await Promise.all([

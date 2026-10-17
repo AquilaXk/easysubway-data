@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { canonicalJson, sha256, withoutSignature } from "./lib/manifest-validation.mjs";
+import { canonicalJson, withoutSignature } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const script = path.resolve("tools/datapack/build-data-component-manifest.mjs");
 const gitSha = "a".repeat(40);

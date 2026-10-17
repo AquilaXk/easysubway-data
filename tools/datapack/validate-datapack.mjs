@@ -8,7 +8,6 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   validateManifest,
   canonicalJson,
-  sha256,
   verifyRsaSha256Signature,
   signingPublicKey,
   stagedPackPath,
@@ -16,6 +15,7 @@ import {
   requiredSha256,
   requiredRepresentativeRoutePatterns,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   officialOdFareAdmissionsBySource,
   officialOdFareQuoteSetHash,

@@ -5,10 +5,10 @@
 import {
   request,
   objectUrl,
-  sha256,
   verifyReferencedPacks,
   putCurrentAndVerify,
 } from "./lib/object-storage-publish.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   validateManifest,
 } from "./lib/manifest-validation.mjs";

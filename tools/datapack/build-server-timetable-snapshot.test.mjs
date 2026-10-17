@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { sha256 } from "../lib/hash.mjs";
 
 import { buildServerTimetableSnapshot } from "./build-server-timetable-snapshot.mjs";
 
@@ -27,10 +27,6 @@ const stationCatalogPackIdentity = Object.freeze({
   payloadSha256: "2".repeat(64),
   manifestSha256: "3".repeat(64),
 });
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function currentSeoulAccessibilitySnapshot(snapshots, reviewedPack) {
   const snapshotIds = new Set(reviewedPack.packs.flatMap(

@@ -21,9 +21,9 @@
 //   - override:              manual override ledger 파일(apply-admin-review-overrides.mjs 계약)
 //                            — fixture 원장과 달리 배열(facilityStatusUpdates) 순서를 보존한다(순서가 의미를 갖는 데이터).
 //   - licenseEvidence:       source-inventory.json 해당 source.license 블록
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { sha256 } from "../lib/hash.mjs";
 import {
   compareStrings,
   parseArgs,
@@ -265,10 +265,6 @@ function canonicalizeRows(rows) {
   return rows.map((row) => JSON.stringify(sortJson(row))).sort(compareStrings);
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
-
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     await main();
@@ -278,4 +274,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 }
 
-export { exportLedgerHash, buildFareStationLineMappingLedger, canonicalizeRows, sortJson, sha256 };
+export { exportLedgerHash, buildFareStationLineMappingLedger, canonicalizeRows, sortJson };

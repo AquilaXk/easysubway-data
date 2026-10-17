@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { sha256 } from "./datapack-tools-support.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 export function completeCoverageInventory(targets) {
   const scopes = targets.schemaVersion === 2

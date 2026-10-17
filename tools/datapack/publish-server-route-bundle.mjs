@@ -8,8 +8,8 @@ import { promisify } from "node:util";
 
 import {
   canonicalJson,
-  sha256,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 import {
   assertServerRouteOciClientIdentity,

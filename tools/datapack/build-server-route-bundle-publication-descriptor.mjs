@@ -16,10 +16,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   canonicalJson,
-  sha256,
   validateArtifactComponentManifest,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   buildServerRouteBundleFinal,
   validateServerRouteBundleFinal,

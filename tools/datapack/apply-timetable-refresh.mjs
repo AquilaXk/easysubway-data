@@ -16,7 +16,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const MAX_BUFFER = 64 * 1024 * 1024;

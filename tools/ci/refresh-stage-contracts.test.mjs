@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { CANONICAL_PACK_PATH, INPUT_PATH, INVENTORY_PATH, LEDGER_PATH, PACK_STAMP_KEYS, POLICY, RECORDED, REPLAY, REVIEWED_PACK_PATH, buildCapitalSnapshot, packSourcesOf, filenames, recordedTrees, replayMutations, runsOf, sha256, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
+import { CANONICAL_PACK_PATH, INPUT_PATH, INVENTORY_PATH, LEDGER_PATH, PACK_STAMP_KEYS, POLICY, RECORDED, REPLAY, REVIEWED_PACK_PATH, buildCapitalSnapshot, packSourcesOf, filenames, recordedTrees, replayMutations, runsOf, sourceInputOf } from "../datapack/test-fixtures/refresh-recorded-runs.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 import { REFRESH_CLAIM_PREFIXES } from "./refresh-open-pr-age.mjs";
 import {

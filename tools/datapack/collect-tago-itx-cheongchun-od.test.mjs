@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { sha256 } from "../lib/hash.mjs";
 
 import {
   TAGO_REQUEST_TIMEOUT_MS,
@@ -18,7 +18,6 @@ import {
   validateItxServiceDates,
 } from "./collect-tago-itx-cheongchun-od.mjs";
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 // 재시도 한도·간격·예산은 생산 모듈의 export에서 가져온다. 값 자체는 아래 "재시도 정책 불변식" 테스트가 독립 불변식으로 묶는다.
 const BACKOFF = TAGO_TRANSIENT_RETRY_SCHEDULE_MS;
 const MAX_ATTEMPTS = TAGO_TRANSIENT_RETRY_LIMIT + 1;

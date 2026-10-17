@@ -5,7 +5,8 @@ import { pathToFileURL } from "node:url";
 
 import { buildServerRouteBundleFinalEvidence } from "./build-server-route-bundle-final.mjs";
 import { routeRequiredCellStateSummary } from "./evaluate-route-accessibility-edges.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 

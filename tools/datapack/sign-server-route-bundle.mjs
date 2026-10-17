@@ -5,13 +5,13 @@ import { fileURLToPath } from "node:url";
 
 import {
   canonicalJson,
-  sha256,
   signingKeyId,
   signingPublicKey,
   validateArtifactComponentManifest,
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
 
 const COMPONENTS = ["accessibility", "fare", "timetable", "topology"];

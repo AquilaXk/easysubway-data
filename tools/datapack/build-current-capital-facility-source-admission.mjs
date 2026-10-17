@@ -1,6 +1,7 @@
 import { canonicalCurrentCapitalFacilityCollectionPlanJson } from "./build-current-capital-facility-collection-plan.mjs";
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { deriveReleaseProjection } from "./rebind-current-candidate-source-snapshots.mjs";
 import { approvedGovernanceBindingTransition, isApprovedCurrentOrPriorGovernanceBinding, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";

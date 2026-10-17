@@ -7,7 +7,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildServerRouteBundlePublicationDescriptor } from "./build-server-route-bundle-publication-descriptor.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { buildServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
 import {
   assertServerRouteOciClientIdentity,

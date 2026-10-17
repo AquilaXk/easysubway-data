@@ -1,5 +1,6 @@
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   isLegacyTopologyBasis,
   LEGACY_TOPOLOGY_REVERIFICATION_CADENCE,

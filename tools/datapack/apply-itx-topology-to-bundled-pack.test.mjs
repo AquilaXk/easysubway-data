@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
+import { sha256 } from "../lib/hash.mjs";
 import {
   admittedTopologySource,
   applyTopology,
@@ -42,10 +43,6 @@ const OWNER_APPROVED_CURRENT_TOPOLOGY = Object.freeze({
   edgeCount: currentEvidence.topology.edgeCount,
   unpairedEdgeCount: 0,
 });
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 const stationCatalogPackIdentity = Object.freeze({
   artifactKind: "station-catalog-pack",

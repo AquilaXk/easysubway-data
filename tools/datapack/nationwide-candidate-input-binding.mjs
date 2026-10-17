@@ -6,7 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
-import { sha256 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const NATIONWIDE_CANDIDATE_PREPARATION_PATH = "tools/datapack/release/nationwide-candidate-preparation.json";
 const PREPARATION_KEYS = [
