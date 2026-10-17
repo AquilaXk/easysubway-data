@@ -28,7 +28,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24.19.0"
       - name: Prepare current topology refresh paths
@@ -88,7 +88,7 @@ jobs:
       - name: Mint App token for the open refresh pull request
         id: app-token-open
         if: ${{ steps.decision.outputs.state == 'OPEN_PR' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -128,7 +128,7 @@ jobs:
       - name: Mint App token for the refresh pull request
         id: app-token-recover
         if: ${{ steps.decision.outputs.state == 'RECOVER_CLAIM' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -373,7 +373,7 @@ jobs:
       - name: Mint App token for the refresh pull request
         id: app-token-pr
         if: ${{ (steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' || steps.decision.outputs.state == 'REUSE_CLAIM') && steps.claimed-preflight.outputs.state == 'CLEAR' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
         with:
           client-id: ${{ secrets.EASYSUBWAY_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EASYSUBWAY_RELEASE_APP_PRIVATE_KEY }}
@@ -391,7 +391,7 @@ jobs:
           GH_TOKEN="${APP_PR_TOKEN}" gh pr create --repo "${GITHUB_REPOSITORY}" --draft --base main --head "${TOPOLOGY_BRANCH}" --title "Refresh current capital topology inputs" --body-file "${TOPOLOGY_OPERATION_ROOT}/pull-request-body.md"
       - name: Upload sanitized decision metadata
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: current-capital-topology-refresh-${{ github.run_id }}
           path: ${{ runner.temp }}/current-capital-topology-refresh/decision.json
@@ -399,7 +399,7 @@ jobs:
           retention-days: 14
       - name: Upload sanitized ITX review evidence
         if: ${{ always() && steps.decision.outputs.itx_refresh_required == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: current-capital-topology-refresh-itx-review-${{ github.run_id }}
           path: |
