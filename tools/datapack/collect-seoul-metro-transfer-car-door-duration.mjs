@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { sha256 } from "../lib/hash.mjs";
 
 // #876(QA 결정 2026-10-02): 서울교통공사_서울 도시철도 환승정보(data.go.kr 15098252) 원문 파일 수집기.
 // - 키 없이 받는 공식 CSV 파일이다. 원문 바이트를 그대로 보존하고(rawBytesBase64), 같은 파서로 다시 읽어 검증한다.
@@ -179,8 +179,6 @@ function instant(value) {
   }
   return date.toISOString();
 }
-
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 async function main(argv) {
   if (argv.length !== 2 || argv[0] !== "--output" || !path.isAbsolute(argv[1])) {

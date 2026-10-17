@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,9 +8,9 @@ import test from "node:test";
 import { evaluateReleaseDecision } from "./decide-datapack-release.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { GATE_RUN_REPOSITORY, GATE_RUN_WORKFLOW_PATH, SCHEDULED_RELEASE_ROLES } from "./lib/scheduled-release-authority.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const hash = (value) => value.repeat(64);
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 const cliPath = path.join(import.meta.dirname, "verify-release-request-binding.mjs");
 

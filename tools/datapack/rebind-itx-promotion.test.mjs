@@ -2,7 +2,6 @@
 // 실제 공급자 호출·dispatch 없이, 커밋된 HEAD의 격리 worktree에 합성 수집을 승격한 뒤 재결속 도구와 CI의 fixture 파생 경로를 그대로 돌린다.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync } from "node:zlib";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -14,9 +13,9 @@ import { promoteItxSourceCandidate } from "./collect-korail-itx-cheongchun-timet
 import { ALIGNMENT_FIXTURES, rebindItxPromotion } from "./rebind-itx-promotion.mjs";
 import { verifyCurrentItxPromotion } from "./lib/itx-promotion-authority.mjs";
 import { synthesizeNextItxCollection } from "./test-fixtures/itx-synthetic-collection.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const json = (file) => JSON.parse(readFileSync(file, "utf8"));
 const CONTRACT = "tools/datapack/itx-cheongchun-coverage-contract.json";
 const EVIDENCE = "tools/datapack/itx-cheongchun-topology-evidence.json";

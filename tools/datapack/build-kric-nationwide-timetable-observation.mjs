@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import { lstat, open } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { crc32, createInflateRaw } from "node:zlib";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const RECEIPT_KIND = "kric-nationwide-timetable-file-receipt";
@@ -24,7 +24,6 @@ const MAXIMUM_ROW_BYTES = 128 * 1024;
 const MAXIMUM_CELL_TEXT = 32 * 1024;
 const MAXIMUM_SHARED_STRINGS = 500_000;
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code) => { throw new Error(`KRIC_NATIONWIDE_TIMETABLE_OBSERVATION_${code}`); };
 
 // This producer is deliberately source-native evidence. It never derives a

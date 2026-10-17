@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,8 +8,8 @@ import { releaseRequestBindingViolations } from "./verify-release-request-bindin
 import { CANDIDATE_RELEASE_OUTPUTS, createCandidateReleaseTransaction } from "./lib/source-registration-transaction.mjs";
 import { assertNationwideAssemblyInputs } from "./lib/nationwide-assembly-binding.mjs";
 import { nativeAdmissionRecordForHead } from "./build-current-five-region-source-fan-in.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const jsonBytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 // locale에 따라 release bytes가 달라지지 않도록 기존 문자열 코드 순서를 유지한다.
 const compareIdentity = (left, right) => left < right ? -1 : left > right ? 1 : 0;

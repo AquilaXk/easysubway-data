@@ -20,7 +20,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { parseArgs, readJsonFile, requireArg, requiredArray, sortJson } from "./lib/ledger-admission-cli.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { buildRosterIndex } from "./lib/station-roster.mjs";
 
 // upbdnbSe(상하행구분) → 표준 direction. 매핑 불가 값은 quarantine.

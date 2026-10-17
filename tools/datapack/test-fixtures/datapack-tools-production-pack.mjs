@@ -1,4 +1,4 @@
-import { sha256 } from "./datapack-tools-support.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 import {
   TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
   TEST_ACCESSIBILITY_SNAPSHOT_ID,

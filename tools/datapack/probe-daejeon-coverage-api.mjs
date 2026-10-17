@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +7,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { isTransientStatus, unwrapTransientRetryFailure, withTransientRetry } from "./lib/transient-retry.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
   "daejeon-train-timetable": Object.freeze({
@@ -204,10 +204,6 @@ function xmlScalar(raw, field) {
 function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   return value;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function main() {

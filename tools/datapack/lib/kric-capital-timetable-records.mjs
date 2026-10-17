@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #899: KRIC 전체_도시철도운행정보(파일 id 900)에서 정차 순서를 열차별로 명시한 수도권 노선만 읽는다.
 // 이 모듈은 원천 행을 원천 중립 정규화 trip(lib/official-line-timetable.mjs 입력)으로 바꾼다.
@@ -117,7 +117,6 @@ const ABSENT_TIME = /^ *: *$/u;
 const TIME = /^(\d{1,2}):(\d{2})$/u;
 // 원천 운행일은 첫차(04시 이후)부터다. 24시 미만으로 적은 00~03시 시각은 전날 운행일의 심야 시각이다.
 const SERVICE_DAY_START_HOUR = 4;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`KRIC_CAPITAL_TIMETABLE_${code}${detail ? `: ${detail}` : ""}`); };
 
 const SNAPSHOT_KEYS = Object.freeze([

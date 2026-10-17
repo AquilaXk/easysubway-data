@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +9,7 @@ import {
   validateCapitalWideRailRouteMapPositionsSnapshot,
 } from "./collect-kric-capital-wide-rail-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
 const TOPOLOGY_SNAPSHOT_ID = "capital-route-topology-20260724";
@@ -360,10 +360,6 @@ function normalizeStationName(value) {
     .replace(/\s+/g, "")
     .replace(/\([^()]*\)$/, "")
     .replace(/역$/, "");
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

@@ -23,7 +23,7 @@ export function buildReleaseCallback(e) {
     if (typeof value !== "string" || value.length === 0) throw new Error(`${name} is required`);
     return value;
   };
-  const sha256 = (name) => {
+  const requiredSha256 = (name) => {
     const value = required(name);
     if (!/^[a-f0-9]{64}$/.test(value)) throw new Error(`${name} must be a lowercase SHA-256`);
     return value;
@@ -46,10 +46,10 @@ export function buildReleaseCallback(e) {
     releaseSequence,
     channel,
     workflowRunUrl: required("WORKFLOW_RUN_URL"),
-    manifestSha256: sha256("MANIFEST_SHA256"),
-    sqliteSha256: sha256("SQLITE_SHA256"),
-    gzipSha256: sha256("GZIP_SHA256"),
-    evidenceBundleSha256: sha256("EVIDENCE_BUNDLE_SHA256"),
+    manifestSha256: requiredSha256("MANIFEST_SHA256"),
+    sqliteSha256: requiredSha256("SQLITE_SHA256"),
+    gzipSha256: requiredSha256("GZIP_SHA256"),
+    evidenceBundleSha256: requiredSha256("EVIDENCE_BUNDLE_SHA256"),
     validatorStatus: gate("VALIDATOR_STATUS"),
     routeRegressionStatus: gate("ROUTE_REGRESSION_STATUS"),
     publishStatus: gate("PUBLISH_STATUS"),

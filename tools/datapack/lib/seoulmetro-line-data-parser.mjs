@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../../lib/hash.mjs";
 
 const MAX_BYTES = 1_000_000;
 const MAX_NESTING = 64;
@@ -110,9 +110,6 @@ function optionalString(value, label) {
   return value;
 }
 function fail(label) { throw new Error(`SeoulMetro line data ${label} is invalid`); }
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function normalizeTrailingCommas(value) {
   let out = ""; let quote = false; let escaped = false; let stringLength = 0;

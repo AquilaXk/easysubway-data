@@ -15,7 +15,7 @@
  */
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { resolve, join, relative } from 'node:path';
+import { resolve, join, relative, posix, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expandExternalStopTimes } from '../datapack/lib/external-stop-times.mjs';
@@ -193,6 +193,29 @@ export function checkHollowAssertions(repoRoot = REPO_ROOT) {
 // ============================================================================
 // Gate: Circular Oracle (Anti-Cheat Modeled after EasyConvert)
 // ============================================================================
+
+// 범용 공용 helper(검증 대상 production 함수가 아닌 입력 변환 도구)만 이름 단위로 허용한다.
+// 테스트가 이 helper로 기대값을 만들어도 검증 대상 출력과 순환하지 않는다.
+// 모듈 전체가 아니라 export 이름을 고정하므로 같은 모듈의 다른 export는 계속 순환 검사 대상이다.
+const SHARED_HELPER_EXPORTS = new Map([
+  ['tools/lib/hash.mjs', new Set(['sha256'])],
+  ['tools/lib/is-object.mjs', new Set(['isObject'])],
+]);
+
+/** `foo.test.mjs`의 검증 대상 모듈 경로(`foo.mjs`)를 repo 상대 posix 경로로 돌려준다. */
+function testSubjectModule(testRel) {
+  return testRel.replace(/\.test\.mjs$/, '.mjs');
+}
+
+/**
+ * 테스트가 import한 이름이 공용 helper이며 이 테스트의 검증 대상이 아닌지 판별한다.
+ * 공용 helper 자신의 테스트(예: hash.test.mjs)는 순환 검사를 그대로 받는다.
+ */
+function isSharedHelperImport(testRel, importPath, importedName) {
+  const modulePath = posix.join(posix.dirname(testRel), importPath);
+  return SHARED_HELPER_EXPORTS.get(modulePath)?.has(importedName) === true && testSubjectModule(testRel) !== modulePath;
+}
+
 export function checkCircularOracles(repoRoot = REPO_ROOT) {
   const violations = [];
   const toolsDir = resolve(repoRoot, 'tools');
@@ -214,6 +237,7 @@ export function checkCircularOracles(repoRoot = REPO_ROOT) {
   }
 
   function checkFileCircularOracles(content, rel, fileViolations) {
+    const testRelPosix = rel.split(sep).join('/');
     const importedProdFns = new Set();
     const importRegex = /import\s*\{([^}]+)\}\s*from\s*['"](\.{1,2}\/[^'"]+)['"]/gs;
     let importMatch;
@@ -227,12 +251,9 @@ export function checkCircularOracles(repoRoot = REPO_ROOT) {
       for (const spec of specs) {
         const trimmed = spec.trim();
         if (!trimmed) continue;
-        if (trimmed.includes(' as ')) {
-          const parts = trimmed.split(/\s+as\s+/);
-          importedProdFns.add(parts[1].trim());
-        } else {
-          importedProdFns.add(trimmed);
-        }
+        const [importedName, localName = importedName] = trimmed.split(/\s+as\s+/).map((part) => part.trim());
+        if (isSharedHelperImport(testRelPosix, importPath, importedName)) continue;
+        importedProdFns.add(localName);
       }
     }
     if (importedProdFns.size === 0) return;

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { sha256 } from "../lib/hash.mjs";
 
 const TEST_PATH_PATTERN = /\.test\.[^/]+$/;
 // GitHub hosted runner는 4 vCPU다. 한 job 안에서 그보다 많은 test 프로세스를 돌리지 않는다.
@@ -47,10 +47,6 @@ class OwnershipValidationError extends Error {
 
 function issue(issues, code, path, detail) {
   issues.push({ code, path, detail });
-}
-
-function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
 }
 
 function isPathInsideRoot(path, root) {

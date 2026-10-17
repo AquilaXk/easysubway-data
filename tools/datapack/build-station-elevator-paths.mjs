@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +7,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { validateKricExitPathObservation } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { validateSeoulAccessibilityObservation } from "./collect-seoul-accessibility-evidence.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #834 QA 결정(2026-09-30): 이동경로는 KRIC stationMovement(표준), 엘리베이터 시설은 서울교통공사 getFcElvtr,
 // 역·노선 매핑은 채택된 KRIC 편의시설 표준 snapshot의 canonicalMappings만 쓴다. 이름 조인·순번·텍스트 추정은 하지 않는다.
@@ -538,10 +538,6 @@ function compareNumericStrings(left, right) {
     return leftNumber - rightNumber;
   }
   return codepointCompare(left, right);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function main(argv) {

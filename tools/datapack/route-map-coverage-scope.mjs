@@ -18,7 +18,7 @@
 // lineIds claim은 routeMapAdmissionEvidence.snapshotPath가 가리키는 admitted snapshot으로만
 // 역 집합을 실측한다. snapshot 없는 과거 pack 승계·candidate 재기술은 current 성공 근거가 아니다.
 
-import { createHash } from "node:crypto";
+import { sha256 } from "../lib/hash.mjs";
 
 export const ROUTE_MAP_DOMAIN = "route_map_positions";
 
@@ -85,10 +85,6 @@ function isSubsequence(short, long) {
     }
   }
   return index === short.length;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 // 노선 topology snapshot은 세 형태다: capital처럼 lines[] 묶음, 단일 lineId,

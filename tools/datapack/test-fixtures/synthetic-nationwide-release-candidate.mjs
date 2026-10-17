@@ -1,11 +1,11 @@
 // 합성 전국 release-candidate 입력(#866 PR-B).
 // 실제 커밋 데이터는 원천 갱신에 따라 authority 조건(환승 양끝 TRANSFER cell 닫힘)을 만족하지 못할 수 있다.
 // 생산 게이트 회귀는 이 합성 fixture로 고정한다. live chain 모듈을 import하지 않는다.
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { canonicalRideEdgeSetSha256, routeEdgeSha256 } from "../evaluate-route-accessibility-edges.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 export const SYNTHETIC_NATIONWIDE_CAPTURED_AT = "2026-10-01T00:00:00.000Z";
 const FRESH_UNTIL = "2026-10-08T00:00:00.000Z";
@@ -308,6 +308,3 @@ function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

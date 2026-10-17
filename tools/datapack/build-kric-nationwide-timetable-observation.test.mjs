@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { buildKricNationwideTimetableObservation } from "./build-kric-nationwide-timetable-observation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const HEADER = ["열차번호", "노선번호", "노선명", "운행구간기점명", "운행구간종점명", "운행유형", "요일구분", "운행구간정거장", "정거장도착시각", "정가장출발시각", "운행속도", "운영기관전화번호", "데이터기준일자"];
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 async function fixture(entries = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "kric-timetable-observation-"));

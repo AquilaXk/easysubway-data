@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +11,7 @@ import {
 } from "./evaluate-current-molit-transfer-freshness.mjs";
 import { freshnessPolicySha256 } from "./freshness-policy.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const observedAt = "2026-08-14T04:53:59.000Z";
 const evaluationAt = "2026-08-14T05:00:00.000Z";
@@ -22,10 +22,6 @@ const BOUND = JSON.parse(await readFile("tools/datapack/source-inventory.json", 
 const metadataPath = BOUND.metadataPath;
 const gzipPath = metadataPath.replace(/\.json$/u, "");
 const policyPath = "release/product-gates/datapack-freshness-sla.json";
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function evidenceFixture(metadata, metadataBytes, rawByteSize, overrides = {}) {
   const payload = {

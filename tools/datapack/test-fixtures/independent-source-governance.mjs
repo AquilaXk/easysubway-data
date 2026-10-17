@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -6,6 +5,7 @@ import path from "node:path";
 import { deriveFreshnessExpiresAt } from "../freshness-policy.mjs";
 import { buildAppendOnlyGovernancePolicyRegistration, deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 import { requiredUtcInstant } from "../lib/utc-instant.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // 실제 이력 결속을 유지하면서 테스트 대상 source만 아직 등록되지 않은 상태로 만든다.
 export function governanceBeforeSource(current, sourceId) {
@@ -235,6 +235,3 @@ function utcMillis(value, label) {
   return requiredUtcInstant(value, label);
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,6 +11,7 @@ import { gunzipSync } from "node:zlib";
 import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 import { verifyProductionPackArtifactIntegrity } from "./verify-production-pack-artifact-identity.mjs";
 import { candidateWorkspaceAccess } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -29,7 +30,6 @@ const env = {
 };
 const verifierEnv = { ...process.env };
 delete verifierEnv.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const DEPLOYED_ASSET_PATH = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
 const DEPLOYED_INDEX_PATH = path.join(root, "apps/mobile/assets/datapacks/index.json");
 const DEPLOYED_EVIDENCE_PATH = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");

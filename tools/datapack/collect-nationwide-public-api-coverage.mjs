@@ -15,7 +15,6 @@
 //     throw하므로, 계획과 resolutions는 반드시 같은 커밋에서 함께 재발행한다(= live 재크롤 필요).
 //   - 재발행 시 파일명 날짜를 올리고 datapack-release.yml 참조 경로, release gate refreshBinding
 //     SHA-256 pin, tally ledger(build-nationwide-coverage-tally.mjs)를 같은 커밋에서 갱신한다.
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -23,6 +22,7 @@ import { pathToFileURL } from "node:url";
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const PUBLIC_API_ORIGINS = new Set([
   "https://api.odcloud.kr",
@@ -845,10 +845,6 @@ function isCredentialName(name) {
 function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   return value;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

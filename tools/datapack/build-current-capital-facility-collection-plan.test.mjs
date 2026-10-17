@@ -11,7 +11,8 @@ import {
   selectCurrentKricRouteRostersPath,
 } from "./build-current-capital-facility-collection-plan.mjs";
 import { buildCurrentKricExitCollectionPlan } from "./build-current-kric-exit-collection-plan.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const datapackRoot = import.meta.dirname;
 const repositoryRoot = path.resolve(datapackRoot, "../..");

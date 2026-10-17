@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,12 +14,10 @@ import {
   writeCurrentStaticSourceChangeAdmission,
   writeCurrentStaticSourceRevalidation,
 } from "./revalidate-current-static-network-sources.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const observedAt = "2026-08-13T10:30:00.000Z";
 const execFileAsync = promisify(execFile);
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function projectedRows() {
   return {

@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 // #899: 공식 원천 시간표(trip·stop_time)를 커밋된 전국 팩 JSON 밖의 결정적 gzip 파일로 둔다.
 // 팩 JSON이 GitHub 파일 한도(100MB) 안에서 여유를 갖게 하고, 원천 단위로 같은 provenance를 행마다 복제하지 않는다.
@@ -33,7 +33,6 @@ const CONTENT_KEYS = Object.freeze(["schemaVersion", "artifactKind", "tripColumn
 const SECTION_KEYS = Object.freeze(["header", "stopTimeProvenance", "trips", "stopTimes"]);
 const STOP_TIME_PROVENANCE = Object.freeze({ TRIP_INHERITED: "TRIP_INHERITED", ROW_COPY: "ROW_COPY" });
 const GZIP_LEVEL = 9;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, detail = "") => { throw new Error(`EXTERNAL_STOP_TIMES_${code}${detail ? `: ${detail}` : ""}`); };
 const sameKeys = (object, keys) => Object.keys(object).length === keys.length && keys.every((key) => Object.hasOwn(object, key));
 

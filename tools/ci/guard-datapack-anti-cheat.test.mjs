@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   checkCircularMocking,
+  checkCircularOracles,
   checkSilentPassBypasses,
   checkHollowAssertions,
   checkProductionCheats,
@@ -238,3 +239,87 @@ test('checkCircularOracles detects direct and indirect circular test assertions'
   assert.ok(violations.every((v) => v.gate === 'ANTI-CIRCULAR-ORACLE'));
 });
 
+
+const ASSERT_IMPORT = 'import assert from "node:assert/strict";\n';
+
+/** 임시 repo 루트에 tools/ 아래 테스트 파일들을 만들고 순환 오라클 가드 결과를 돌려준다. */
+function circularOracleViolationsFor(t, testFiles) {
+  const tmpRoot = mkdtempSync(join(tmpdir(), 'anti-cheat-shared-helper-'));
+  t.after(() => rmSync(tmpRoot, { recursive: true, force: true }));
+  for (const [rel, source] of Object.entries(testFiles)) {
+    const fullPath = join(tmpRoot, rel);
+    mkdirSync(join(fullPath, '..'), { recursive: true });
+    writeFileSync(fullPath, source);
+  }
+  return checkCircularOracles(tmpRoot);
+}
+
+test('checkCircularOracles does not treat the shared tools/lib sha256 helper as the function under test', (t) => {
+  const violations = circularOracleViolationsFor(t, {
+    'tools/datapack/build-thing.test.mjs':
+      'import { sha256 } from "../lib/hash.mjs";\n' +
+      'import { buildThing } from "./build-thing.mjs";\n' +
+      ASSERT_IMPORT +
+      'const bytes = Buffer.from("abc");\n' +
+      'const expected = sha256(bytes);\n' +
+      'assert.equal(buildThing(bytes).sha256, 42);\n' +
+      'assert.equal(sha256(bytes), expected);\n' +
+      'assert.equal(buildThing(bytes).sha256, sha256(bytes));\n',
+  });
+  assert.deepEqual(violations, []);
+});
+
+test('checkCircularOracles does not treat the shared tools/lib isObject helper as the function under test', (t) => {
+  const violations = circularOracleViolationsFor(t, {
+    'tools/datapack/shape.test.mjs':
+      'import { isObject } from "../lib/is-object.mjs";\n' +
+      ASSERT_IMPORT +
+      'const value = {};\n' +
+      'const expected = isObject(value);\n' +
+      'assert.equal(isObject(value), expected);\n',
+  });
+  assert.deepEqual(violations, []);
+});
+
+test('checkCircularOracles still flags a circular oracle built from the shared helper own test subject', (t) => {
+  const violations = circularOracleViolationsFor(t, {
+    'tools/lib/hash.test.mjs':
+      'import { sha256 } from "./hash.mjs";\n' + ASSERT_IMPORT + 'assert.equal(sha256("a"), sha256("a"));\n',
+    'tools/lib/is-object.test.mjs':
+      'import { isObject } from "./is-object.mjs";\n' + ASSERT_IMPORT + 'assert.equal(isObject({}), isObject({}));\n',
+  });
+  assert.deepEqual(
+    violations.map((violation) => violation.target.replace(/\\/g, '/')).sort(),
+    ['tools/lib/hash.test.mjs', 'tools/lib/is-object.test.mjs'],
+  );
+});
+
+test('checkCircularOracles keeps flagging production functions next to the shared helper and same-named non-lib exports', (t) => {
+  const violations = circularOracleViolationsFor(t, {
+    'tools/datapack/mixed.test.mjs':
+      'import { sha256 } from "../lib/hash.mjs";\n' +
+      'import { buildThing } from "./build-thing.mjs";\n' +
+      ASSERT_IMPORT +
+      'const built = buildThing(1);\n' +
+      'assert.equal(buildThing(1), built);\n' +
+      'assert.equal(sha256("a"), sha256("a"));\n',
+    'tools/datapack/local-sha.test.mjs':
+      'import { sha256 } from "./lib/manifest-validation.mjs";\n' +
+      ASSERT_IMPORT +
+      'const expected = sha256("a");\n' +
+      'assert.equal(sha256("a"), expected);\n',
+    'tools/datapack/other-lib.test.mjs':
+      'import { normalize } from "../lib/hash.mjs";\n' +
+      ASSERT_IMPORT +
+      'const expected = normalize("a");\n' +
+      'assert.equal(normalize("a"), expected);\n',
+  });
+  assert.deepEqual(
+    violations.map((violation) => [violation.target.replace(/\\/g, '/'), violation.message.match(/function "([^"]+)"/)[1]]).sort(),
+    [
+      ['tools/datapack/local-sha.test.mjs', 'sha256'],
+      ['tools/datapack/mixed.test.mjs', 'buildThing'],
+      ['tools/datapack/other-lib.test.mjs', 'normalize'],
+    ],
+  );
+});

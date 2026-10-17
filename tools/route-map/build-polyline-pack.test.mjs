@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { sha256 } from "../lib/hash.mjs";
 
 import {
   buildPolylinePack,
@@ -21,8 +21,6 @@ import {
 //  ① 닫힌 순환 노선(2호선): 사각 루프, 고정 정점 4·중간역 8.
 //  ② 방사 직선 노선(4호선): 세로 직선, anchor "센터"를 2호선과 공유.
 //  ③ 분기 노선(7호선): 가로 본선 + 세로 지선 1개.
-
-const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
 // 2호선 사각 루프: 코너 4개 고정, 변마다 중간역 2개(총 8).
 const L2_CORNERS = [

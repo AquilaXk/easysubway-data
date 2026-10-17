@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DOMAINS = ["FACILITY", "EXIT", "TRANSFER"];
 const STATES = [
@@ -344,6 +344,3 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

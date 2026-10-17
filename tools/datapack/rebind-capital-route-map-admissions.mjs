@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,6 +12,7 @@ import {
 } from "./collect-seoul-route-map-positions.mjs";
 import { requirePublicStaticNetworkV2Admission } from "./public-static-network-v2-admission.mjs";
 import { isCapitalRouteTopologySnapshotId } from "./lib/capital-route-topology-snapshot-id.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -39,10 +39,6 @@ const STATION_ALIASES = Object.freeze({
   뚝섬유원지: "자양",
   하남검단산: "하남검단산역",
 });
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function canonicalStationName(value) {
   const normalized = normalizeStationName(value);

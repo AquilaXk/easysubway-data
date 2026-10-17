@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { sha256 } from "../lib/hash.mjs";
 
 const script = path.resolve("tools/release/validate-promotion-request.mjs");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 test("raw evidence와 서로 다른 candidate/promotion run identity를 검증한다", () => {
   const fixture = createFixture();

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,6 +10,7 @@ import {
 } from "./materialize-daejeon-route-topology.mjs";
 import { DAEJEON_COVERAGE_OPERATIONS } from "./probe-daejeon-coverage-api.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daejeon-train-timetable";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
@@ -462,10 +462,6 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

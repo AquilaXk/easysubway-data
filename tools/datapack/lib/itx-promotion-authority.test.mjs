@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,10 +17,10 @@ import {
   itxPromotionReceiptPath,
   verifyItxGatePromotion,
 } from "./itx-promotion-authority.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const POLICY = parseItxPromotionGatePolicy(JSON.parse(await readFile(path.join(repositoryRoot, "tools/datapack/itx-promotion-gate-policy.json"), "utf8")));
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const ARTIFACT_ID = "itx-cheongchun-source-timetable-20261010000000000";
 const PREVIOUS_ID = "itx-cheongchun-source-timetable-20261003000000000";
 

@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { HOLIDAY_INCLUDES_SATURDAY_POLICY, LOCAL_QUARANTINE_RATIO_LIMIT } from "./kric-station-row-timetable-trips.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 export { HOLIDAY_INCLUDES_SATURDAY_POLICY };
 
@@ -80,8 +80,6 @@ export function assertExpectedApiObservation({ trips, quarantine }, { expected =
   }
   if (lineIds === null && trips.length !== expected.totalTrips) changed(`totalTrips ${trips.length}`);
 }
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /** KRIC API 시각(HHMMSS)을 초로 바꾼다. null은 해당 시각 없음이다. */
 export function parseKricApiClock(raw) {

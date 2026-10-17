@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { DAEJEON_TOPOLOGY_ENDPOINT } from "./collect-daejeon-route-topology.mjs";
 import { topologySnapshotFreshnessMillis } from "./lib/topology-freshness-cutover.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daejeon-station-distance-fare";
 const MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-daejeon-membership";
@@ -349,10 +349,6 @@ function packSource(source, snapshot) {
     fields: [...source.fieldsProvided],
     coverageScope: structuredClone(source.coverageScope),
   };
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

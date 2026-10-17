@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { prepareRetainedGwangjuContract, runRetainedGwangjuContractPreparation } from "./prepare-retained-gwangju-contract.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const candidate = JSON.parse(await readFile("tools/datapack/source-candidates.json", "utf8"))
   .candidates.find(({ id }) => id === "kric-nationwide-timetable-file");
 const cell = (value) => ({ value, cellType: "inlineStr", styleId: null });

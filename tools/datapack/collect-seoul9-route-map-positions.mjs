@@ -10,12 +10,12 @@
 // - FILE stationCode(역번호)=926–938은 provenance/stationCode로 유지한다.
 //   pack station_code 26–38과는 역명 정규화로만 결속하며, 위경도 투영(projectLatLon)은 금지한다.
 // - topology(capital-route-topology)는 정규화 역명 존재 검증에만 쓴다(stationCode 없음).
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { decodeOfficialCsv } from "./collect-daegu-datapack-sources.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DATASET_ID = "15099317";
 const DETAIL_URL = `https://www.data.go.kr/data/${DATASET_ID}/fileData.do`;
@@ -475,10 +475,6 @@ function validDate(value, label) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
   return date;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

@@ -1,5 +1,4 @@
 import { createServer } from "node:http";
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -13,10 +12,10 @@ import {
   publishImmutableObjectPlan,
   requireCurrentCapitalLiveChainOciParBaseUrl,
 } from "./publish-object-storage.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const OCI_PAR = "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted-token/n/axvym6vk8g7i/b/easysubway-datapacks/o/";
 
 test("current live-chain은 exact OCI PAR만 허용하며 generic/AWS 경로를 거부한다", () => {

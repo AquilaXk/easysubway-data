@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
+import { sha256 } from "../lib/hash.mjs";
 
 // region별 기대 역 point/노선 수 — QA 회귀 방지용 고정값. 새 region을 enrich할 때
 // 여기에 등록해야 exact-count 검증이 동작한다. (segment path 수는 positions-lines로
@@ -423,10 +423,6 @@ async function updateIndex(indexPath, compressedBytes, sqliteBytes) {
 async function writeJson(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 // CLI로 직접 실행할 때만 main을 돌린다. import(테스트에서 expectedCountsByRegion

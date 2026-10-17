@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { canonicalJson, withoutSignature, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson, withoutSignature } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
 
 function fixtureSignaturePayload(pack) {

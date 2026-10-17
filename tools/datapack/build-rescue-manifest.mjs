@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import {
   canonicalJson,
   requiredSha256,
-  sha256,
   validateManifest,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
 
 export function buildRescueManifest(input) {

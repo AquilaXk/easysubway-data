@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,12 +9,12 @@ import {
   writeSeoulAccessibilityObservation,
 } from "./collect-seoul-accessibility-evidence.mjs";
 import { publishSeoulAccessibilityRawArtifact } from "./publish-seoul-accessibility-raw.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const OCI_ENV = Object.freeze({
   EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: "https://objectstorage.ap-seoul-1.oraclecloud.com/p/redacted/n/axvym6vk8g7i/b/easysubway-datapacks/o",
 });
 const STORED_AT = new Date("2026-08-14T00:01:00.000Z");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "easysubway-seoul-raw-publisher-"));

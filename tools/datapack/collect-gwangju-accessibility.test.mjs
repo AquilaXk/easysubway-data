@@ -12,6 +12,7 @@ import {
   parseGwangjuAccessibilityCsv,
   runGwangjuAccessibilityCollector,
 } from "./collect-gwangju-accessibility.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const ELEVATOR_CSV = path.join(root, "tools/datapack/fixtures/gwangju-accessibility-raw/data-go-15041385.csv");
@@ -219,7 +220,6 @@ test("광주 accessibility collector CLI는 absolute output 경로를 강제한�
   ]), /collector arguments mismatch/);
 });
 
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const provenanceOf = (datasetId, bytes) => ({
   datasetId,
   detailUrl: `https://www.data.go.kr/data/${datasetId}/fileData.do`,

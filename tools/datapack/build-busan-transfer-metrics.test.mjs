@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -14,9 +13,9 @@ import {
 } from "./build-busan-transfer-metrics.mjs";
 import { extractBusanTransferRows } from "./collect-busan-route-topology.mjs";
 import { candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 // #872 S3(QA 결정 2026-10-02): 부산교통공사 원천(busan-transportation-route-topology)의 exchange=Y 환승 행을
 // 공식 환승 거리·시간으로 쓴다. 매핑은 역 코드로만 하고, 1~4호선 내부 환승만 대상이다.

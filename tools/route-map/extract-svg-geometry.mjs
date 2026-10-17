@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -8,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 // v2: <text> 라벨에 더해 노선 track geometry(line/polyline/polygon/path)를
@@ -60,10 +60,6 @@ function parseArgs(argv) {
   if (positionals.length !== 1) throw new Error("Exactly one SVG file is required.");
   if (!options.region.trim()) throw new Error("--region is required.");
   return { ...options, svgFile: positionals[0] };
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 // 로케일 비의존 결정적 정렬용 코드 유닛 비교. localeCompare(ICU/로케일 의존) 대체.

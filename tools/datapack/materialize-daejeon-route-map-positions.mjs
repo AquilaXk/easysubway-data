@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateDaejeonRouteMapPositionsSnapshot } from "./collect-daejeon-route-map-positions.mjs";
 import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daejeon-transportation-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
@@ -242,10 +242,6 @@ function compactSeoulDate(value) {
     timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

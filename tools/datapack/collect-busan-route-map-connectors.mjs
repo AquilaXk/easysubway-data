@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_BASE_URL = "https://www2.humetro.busan.kr/homepage/default/img/cyber-station/";
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -212,10 +212,6 @@ function compareAssetPaths(left, right) {
 function isIsoInstant(value) {
   if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return false;
   return new Date(value).toISOString() === value;
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {

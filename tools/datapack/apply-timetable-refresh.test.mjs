@@ -7,7 +7,8 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 
 import { applyTimetableRefresh } from "./apply-timetable-refresh.mjs";
-import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 

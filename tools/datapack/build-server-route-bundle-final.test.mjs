@@ -19,8 +19,8 @@ import {
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import {
   canonicalJson,
-  sha256,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   validateServerRouteBundleFinal,
 } from "./lib/server-route-bundle-final.mjs";

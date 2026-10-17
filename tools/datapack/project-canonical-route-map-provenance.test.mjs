@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
 import { projectCanonicalRouteMapProvenance } from "./project-canonical-route-map-provenance.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -22,7 +22,6 @@ const BUSAN_RECEIPT = {
   reviewSource: "https://github.com/AquilaXk/easysubway-data/issues/309",
 };
 
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function json(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
 
 async function inputs() {

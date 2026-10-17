@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -7,6 +6,7 @@ import { buildNationwideRequirementOwnershipLedger } from "./build-nationwide-re
 import { nativeAdmissionRecordForHead } from "./build-current-five-region-source-fan-in.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
 const PRODUCTION_SCOPE_PATH = "release/product-gates/production-datapack-scope.json";
@@ -20,10 +20,6 @@ export const NATIONWIDE_CANDIDATE_INPUT_PATHS = Object.freeze({
   fanIn: "tools/datapack/release/current-five-region-source-fan-in.json",
   ownershipLedger: "tools/datapack/reports/nationwide-requirement-ownership-ledger.json",
 });
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function parseExactBytes(value, label) {
   if (!Buffer.isBuffer(value)) throw new Error(`${label} must be a Buffer`);

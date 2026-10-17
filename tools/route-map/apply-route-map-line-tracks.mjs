@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
+import { sha256 } from "../lib/hash.mjs";
 
 // build-route-map-line-tracks가 만든 tracks.json(들)을 capital 팩의
 // route_map_line_tracks 테이블에 기록한다. 라이선스 메타데이터는 같은
@@ -131,10 +131,6 @@ async function updateIndex(indexPath, compressedBytes, sqliteBytes) {
   capital.sqliteSha256 = sha256(sqliteBytes);
   capital.byteSize = compressedBytes.length;
   await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 async function main() {

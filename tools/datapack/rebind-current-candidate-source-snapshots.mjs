@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, rename, rmdir, unlink } from "node:fs/promises";
@@ -14,6 +14,7 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { releaseRequestBindingViolations } from "./verify-release-request-binding.mjs";
 import { readProductionScopeSourceIds, readProductionSourceSet } from "./validate-candidate-source-set.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
@@ -58,7 +59,6 @@ const PATHS = Object.freeze({
   transaction: "tools/datapack/.candidate-source-rebind-transaction.json",
 });
 
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function parse(bytes, label) {
   try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error(`${label} is invalid JSON`); }
 }

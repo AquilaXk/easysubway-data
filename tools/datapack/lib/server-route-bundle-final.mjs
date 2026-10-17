@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "../../lib/hash.mjs";
 
 const INPUT_KEYS = ["candidate", "gates"];
 const FINAL_KEYS = [
@@ -189,10 +189,6 @@ function canonicalObject(value) {
 
 function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function compareBytes(left, right) {

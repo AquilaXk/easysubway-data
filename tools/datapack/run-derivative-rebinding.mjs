@@ -16,7 +16,6 @@
 // 사용(깨끗한 작업 트리에서): node tools/datapack/run-derivative-rebinding.mjs --operation-root <absolute empty directory>
 //   환경: EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL (OCI 읽기)
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,6 +24,7 @@ import { promisify } from "node:util";
 import { preauthenticatedObjectStorageClient, requireCurrentCapitalLiveChainOciParBaseUrl } from "./publish-object-storage.mjs";
 import { evaluateLedgerChange, parseLedgerChangePolicy } from "../ci/source-ledger-gate.mjs";
 import { runNodeScript } from "./refresh-nationwide-candidate.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -35,7 +35,6 @@ const RETAINED_SOURCE_ID = "kric-nationwide-timetable-file";
 const POLICY_PATH = "tools/ci/source-ledger-change-policy.json";
 const OCI_OBJECT_URI = /^oci:\/\/axvym6vk8g7i\/easysubway-datapacks\/(.+)$/u;
 const CODED = /^[A-Z][A-Z0-9_]+: /u;
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function fail(message) {
   throw new Error(message);

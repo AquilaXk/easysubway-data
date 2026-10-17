@@ -82,6 +82,7 @@ import { serviceDayStopTimes } from "./lib/service-day-seconds.mjs";
 import { networkEdgeStairColumns } from "./lib/network-edge-stair-columns.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -5839,10 +5840,6 @@ function timestamp(value) {
     throw new Error(`invalid timestamp: ${value}`);
   }
   return Math.floor(millis / 1000);
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

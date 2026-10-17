@@ -2036,7 +2036,8 @@ jobs:
           DATAPACK_ROOT="${datapack_root}" SOURCE_SQLITE="${source_sqlite}" node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from "node:fs";
           import { gunzipSync } from "node:zlib";
-          import { selectEffectiveDataPack, sha256, stagedPackPath } from "./tools/datapack/lib/manifest-validation.mjs";
+          import { selectEffectiveDataPack, stagedPackPath } from "./tools/datapack/lib/manifest-validation.mjs";
+          import { sha256 } from "./tools/lib/hash.mjs";
           const root = process.env.DATAPACK_ROOT;
           const manifest = JSON.parse(readFileSync(`${root}/current.json`, "utf8"));
           const active = selectEffectiveDataPack(manifest);

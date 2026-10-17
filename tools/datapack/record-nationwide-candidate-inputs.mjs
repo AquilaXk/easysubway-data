@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -16,6 +15,7 @@ import {
 import { prepareNationwideCandidate } from "./prepare-nationwide-candidate-run.mjs";
 import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
 import { preauthenticatedObjectStorageClient } from "./publish-object-storage.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #942: 전국 후보가 읽은 저장소 입력을 매니페스트로 기록하고(record), 그 바이트를 OCI 공개 읽기 경로에 올린다(publish).
 // record는 커밋된 preparation과 같은 조건으로 prepare를 쓰기 없이 다시 실행해 읽은 경로를 모은다. 다시 만든 preparation이
@@ -35,8 +35,6 @@ export const ADDITIONAL_PINNED_INPUT_PATHS = Object.freeze([
   "tools/datapack/reports/nationwide-coverage-tally.json",
   "tools/datapack/source-governance-policy.json",
 ]);
-
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function withoutBuilderGitSha(preparation) {
   const copy = structuredClone(preparation);

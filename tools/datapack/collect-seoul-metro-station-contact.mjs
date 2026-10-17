@@ -1,20 +1,16 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const DEFAULT_ENDPOINT = "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false";
 const DEFAULT_INF_ID = "OA-12035";
 const DEFAULT_SEQ = "11";
 const DEFAULT_INF_SEQ = "1";
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function canonicalUtc(value, label) {
   if (typeof value !== "string" || !ISO_INSTANT.test(value) || isNaN(Date.parse(value))) {

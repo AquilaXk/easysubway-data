@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,6 +17,7 @@ import {
   collectSeoulMetroCongestion,
 } from "./collect-seoul-metro-congestion.mjs";
 import { buildSqlitePack } from "./build-datapack.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SCHEMA_PATH = path.resolve(import.meta.dirname, "schema/catalog-schema.sql");
 const CANONICAL_PACK_PATH = path.resolve(import.meta.dirname, "release/nationwide-production-canonical-pack.json");
@@ -365,8 +365,6 @@ test("malformed DATA_GO_KR_SERVICE_KEY는 provider 호출과 output 전에 거�
   );
   assert.equal(calls, 0);
 });
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 test("F1 마곡·발산·암사역사공원은 승인된 역번호 membership으로 현재 팩 station_id를 얻는다", async () => {
   const stationBindings = await loadBindings();

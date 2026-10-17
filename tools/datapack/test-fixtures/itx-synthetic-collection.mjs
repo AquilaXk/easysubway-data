@@ -1,16 +1,15 @@
 // #979: 다음 주 ITX 수집을 합성한다. 현재 승인 원천·완전성 증거의 날짜를 7일(요일 유지) 뒤로 옮기고 해시를 다시 맞춘 뒤,
 // 실제 후보 생성기(buildItxSourceCandidate)로 후보를 만든다. 실제 공급자 호출 없이 승격 → 재결속 전 구간을 돌려 보는 시뮬레이션과 테스트가 쓴다.
 // 합성 capture·replay는 게이트 결속 검사에 필요한 최소 형태다(공급자 응답은 비어 있다).
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildItxSourceCandidate, evaluateItxSnapshotAnomaly } from "../collect-korail-itx-cheongchun-timetable.mjs";
 import { emitStationCatalogPack } from "../emit-station-catalog-pack.mjs";
 import { createProviderResponseRecorder, providerResponseCaptureBytes } from "../provider-response-capture.mjs";
+import { sha256 } from "../../lib/hash.mjs";
 
 const DAY_MS = 86_400_000;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function shiftIsoDate(value, days) {
   const [year, month, day] = value.split("-").map(Number);

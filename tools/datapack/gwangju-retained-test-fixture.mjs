@@ -1,14 +1,13 @@
-import { createHash } from "node:crypto";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import {
   materializeGwangjuTimetable,
   projectRetainedGwangjuTimetable,
 } from "./materialize-gwangju-timetable.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "kric-nationwide-timetable-file";
 const ROUTE_NUMBER = "S2901";
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function nativeCell(value) {
   return { value, cellType: "inlineStr", styleId: null };

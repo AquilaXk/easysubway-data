@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +7,7 @@ import test from "node:test";
 import { assertExactDerivedReciprocals, currentTransferLineIds, main } from "./build-current-transfer-topology-metrics.mjs";
 import { buildApplicability } from "./build-current-capital-transfer-topology-applicability.mjs";
 import { candidatePinnedJson, candidatePinnedReader } from "./test-fixtures/candidate-pinned-inputs.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 // #872 S2: 서울교통공사 1~8호선과 상대 노선 전체 매핑. 원천 행 → (역, 출발 노선, 도착 노선)은 정본 팩 식별자로만 정한다.
 const LINE = {
@@ -334,7 +334,6 @@ function rawSnapshot(rows) { const page = (number, data) => { const envelope = {
 function duration(distance) { const seconds = Math.round(distance / 1.2); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
 function without(value, key) { const { [key]: _ignored, ...rest } = value; return rest; }
 function sortValue(value) { if (Array.isArray(value)) return value.map(sortValue); if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortValue(value[key])])); return value; }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(sortValue(value))}\n`); }
 function snapshotBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`); }
 function sortRows(rows) { return [...rows].sort((left, right) => Buffer.compare(Buffer.from(["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"].map((field) => left[field]).join("\0")), Buffer.from(["연번", "호선", "환승역명", "환승노선", "환승거리", "환승소요시간"].map((field) => right[field]).join("\0")))); }

@@ -10,9 +10,9 @@ import {
   putCurrentAndVerify,
   putImmutableAndVerify,
   request,
-  sha256,
   validateReferencedPacksForRescue,
 } from "./lib/object-storage-publish.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 async function main() {
   const startedAtMs = Date.now();

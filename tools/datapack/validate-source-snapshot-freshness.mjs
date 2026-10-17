@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -18,6 +17,7 @@ import {
   verifyPurgeAttestation,
 } from "./source-raw-purge-attestation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const buildProvenanceStringFields = [
   "snapshotId",
@@ -583,10 +583,6 @@ function canonicalPolicyProvenance(snapshots, label, includeGovernance) {
   }))
     .sort((left, right) => codepointCompare(left.snapshotId, right.snapshotId))
     .map((entry) => entry.provenance);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

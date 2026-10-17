@@ -5,7 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { SEOUL_ROUTE_MAP_SOURCE_OPERATOR_IDS } from "./materialize-seoul-route-map-positions.mjs";
 import { stageLocalMobileFixture } from "../ci/stage-local-mobile-fixture.mjs";
-import { execFileAsync, sha256 } from "./test-fixtures/datapack-tools-support.mjs";
+import { execFileAsync } from "./test-fixtures/datapack-tools-support.mjs";
+import { sha256 } from "../lib/hash.mjs";
 import {
   completeCoverageInventory,
   completeCoverageProvenance,

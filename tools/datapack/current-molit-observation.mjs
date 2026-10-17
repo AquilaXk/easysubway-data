@@ -1,15 +1,14 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { parseCurrentMolitGwangjuStationMappings, parseCurrentMolitLineOperatorRosters } from "./build-molit-nationwide-fixture.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const GWANGJU_TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
 const GWANGJU_MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-gwangju-membership";
 const SHA256 = /^[a-f0-9]{64}$/u;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 /**
  * Resolves the one admitted current MOLIT observation from its inventory

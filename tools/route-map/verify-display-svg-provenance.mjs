@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sourceDir = "tools/route-map/route-map-defs/svg-sources";
@@ -15,10 +15,6 @@ const canonicalMaps = new Map([
   ["daejeon", "easy-subway-daejeon-v3.svg"],
   ["gwangju", "easy-subway-gwangju-v3.svg"],
 ]);
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 function assertNoExternalSubresources(bytes, label) {
   const svg = bytes.toString("utf8");

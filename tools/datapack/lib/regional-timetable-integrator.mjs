@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
 
 import { fileURLToPath } from "node:url";
 
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 import { readRetainedKasiHolidayDatesSync } from "../fetch-kasi-public-holiday-calendar.mjs";
-
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+import { sha256 } from "../../lib/hash.mjs";
 
 /**
  * Regional Timetable Integrator for Non-Capital Transit Authorities:

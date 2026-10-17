@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "daejeon-transportation-accessibility";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
@@ -330,8 +330,6 @@ function compactSeoulDate(value) {
   }).formatToParts(new Date(value)).map(({ type, value: part }) => [type, part]));
   return `${parts.year}${parts.month}${parts.day}`;
 }
-
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 function parseArgs(argv) {
   const expected = [

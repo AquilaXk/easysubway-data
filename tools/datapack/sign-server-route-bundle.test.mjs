@@ -8,11 +8,11 @@ import test from "node:test";
 
 import {
   canonicalJson,
-  sha256,
   validateArtifactComponentManifest,
   verifyRsaSha256Signature,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/sign-server-route-bundle.mjs");
 const COMPONENTS = ["accessibility", "fare", "timetable", "topology"];

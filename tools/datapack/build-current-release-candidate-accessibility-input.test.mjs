@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -30,6 +29,7 @@ import {
   syntheticNationwideTransferEndpoints,
   writeSyntheticNationwideRepository,
 } from "./test-fixtures/synthetic-nationwide-release-candidate.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 test("release authority selects the exact manifest pack without a Capital name pin", async () => {
   const input = await fullInput();
@@ -798,6 +798,3 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}

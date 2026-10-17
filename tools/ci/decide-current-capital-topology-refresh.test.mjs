@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { sha256 } from "../lib/hash.mjs";
 
 const modulePath = new URL("./decide-current-capital-topology-refresh.mjs", import.meta.url);
 const repo = "AquilaXk/easysubway-data";
 const sha = "0123456789abcdef0123456789abcdef01234567";
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const currentTopologyAdmission = {
   schemaVersion: 1,
   artifactKind: "capital-route-map-current-topology-admission",

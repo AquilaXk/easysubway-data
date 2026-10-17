@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // 실행 시 --date YYYY-MM-DD, 검증된 KRIC 운행일 코드 --kric-day-cd 7|8|9,
 // credential 비포함 absolute --output 경로를 함께 전달한다.
-import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const BASE = "https://apis.data.go.kr/1613000/TrainInfo";
 const DETAIL_URL = "https://www.data.go.kr/data/15098552/openapi.do";
@@ -1112,7 +1112,6 @@ function normalize(value) { return String(value ?? "").toLocaleLowerCase("ko-KR"
 function requiredString(value, label) { if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`); return value; }
 function safeCode(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value) ? value : "UNKNOWN"; }
 function safeLabel(value) { const text = String(value ?? "").normalize("NFC"); return /^[\p{L}\p{N}._-]{1,32}$/u.test(text) ? text : "UNKNOWN"; }
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function naturalCompare(left, right) { return left.localeCompare(right, "ko", { numeric: true }); }
 function stringCompare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
 function parseArgs(argv) { const result = {}; for (let i = 0; i < argv.length; i += 2) result[argv[i]?.replace(/^--/, "")] = argv[i + 1]; return result; }

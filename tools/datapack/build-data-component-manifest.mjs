@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { selectEffectiveDataPack, stagedPackPath, validateManifest } from "./lib/manifest-validation.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const requiredArguments = new Set([
   "root", "manifest", "provenance", "repository", "git-sha", "workflow-run-id",
@@ -223,10 +223,6 @@ function matched(value, label, pattern) {
 function nonEmpty(value, label) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} must be a non-empty string`);
   return value.trim();
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function jsonBytes(value) {

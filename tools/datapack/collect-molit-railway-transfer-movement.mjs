@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 export const MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID = "molit-railway-transfer-movement";
 // #862: 판(edition)은 상수가 아니라 공식 파일명(…_YYYYMMDD.csv)에서 유도한다.
@@ -195,8 +195,6 @@ function required(value, label) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   return value;
 }
-
-function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   runMolitRailwayTransferMovementCollector(process.argv.slice(2)).catch((error) => {

@@ -77,7 +77,8 @@ import {
   segmentAngleDeg,
   verticesToPath,
 } from "./audit-octolinearity.mjs";
-import { cleanupPackDir, repoRoot, sha256 } from "./pack-io.mjs";
+import { cleanupPackDir, repoRoot } from "./pack-io.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 /** 기본 라벨폭(px) — 세그먼트 예산 최소 간격. 롤모델 실측 근거. */
 export const DEFAULT_MIN_GAP = 26;

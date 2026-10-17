@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -8,11 +7,11 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { requireOciParBaseUrl } from "./lib/kric-raw-object-storage.mjs";
 import { preauthenticatedObjectStorageClient } from "./publish-object-storage.mjs";
 import { RAW_PUBLICATION_MODE, planRawObjectPublication, verifyReusedRawObject } from "./lib/same-raw-reverification.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const SOURCE_ID = "korail-metropolitan-timetable-file";
 const CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const PAR_PATH = /^\/p\/[^/]+\/n\/([^/]+)\/b\/([^/]+)\/o\/?$/u;
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export async function publishKorailTimetableRaw({ preparation, collectionDirectory, operationDirectory,
   previousHead = null, env = process.env, client = null, clock = () => new Date() } = {}) {

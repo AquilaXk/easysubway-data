@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,6 +10,7 @@ import {
   loadCurrentFacilitySourceAdmissionInput,
 } from "./build-facility-source-admission.mjs";
 import { validateLineage } from "./source-snapshot-policy.mjs";
+import { sha256 } from "../lib/hash.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CURRENT_CAPITAL_BASE_SOURCE_IDS = Object.freeze([
@@ -497,10 +497,6 @@ function sourceSnapshotEntry(input) {
   const snapshotId = input.candidateBuildSpec.sourceSnapshots
     .find(({ sourceId }) => sourceId === "kric-station-convenience-standard")?.snapshotId;
   return input.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function selectedSourceEvaluationAt() {
