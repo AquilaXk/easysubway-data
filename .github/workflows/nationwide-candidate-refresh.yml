@@ -41,6 +41,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && github.actor != 'easysubway-release-chain[bot]' && github.triggering_actor != 'easysubway-release-chain[bot]') || (vars.DATAPACK_SCHEDULED_CANDIDATE_REFRESH == 'true' && (github.event_name != 'workflow_dispatch' || (github.actor == 'easysubway-release-chain[bot]' && github.triggering_actor == 'easysubway-release-chain[bot]')))) }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
       pull-requests: write
       issues: write
@@ -67,6 +68,7 @@ jobs:
           set -euo pipefail
           decision_root="${RUNNER_TEMP}/nationwide-candidate-refresh-decision/${GITHUB_RUN_ID}"
           mkdir -p "${decision_root}"
+          node tools/ci/reclaim-stale-claims.mjs --repository "${GITHUB_REPOSITORY}"
           git ls-remote --heads origin "refs/heads/automation/927-nationwide-candidate-refresh-*" > "${decision_root}/branches.txt"
           git ls-remote --heads origin "refs/heads/automation/*" > "${decision_root}/automation-branches.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${decision_root}/automation-branches.txt" --pr-limit 1000 --output "${decision_root}/prs.json"
@@ -200,6 +202,7 @@ jobs:
           # 후보 생성은 길다. 그 사이 원장을 쓰는 자동화(열린 PR·PR 전의 claim 브랜치)가 시작됐으면 이 결과를 올리지 않고 다음 실행에 맡긴다(#974 리뷰 F2).
           recheck_root="${RUNNER_TEMP}/nationwide-candidate-refresh-recheck/${GITHUB_RUN_ID}"
           mkdir -p "${recheck_root}"
+          node tools/ci/reclaim-stale-claims.mjs --repository "${GITHUB_REPOSITORY}"
           git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${recheck_root}/automation-branches.txt" --pr-limit 1000 --output "${recheck_root}/prs.json"
           node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --max-age "PT2H" --github-output "${GITHUB_OUTPUT}"

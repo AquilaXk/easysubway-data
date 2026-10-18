@@ -22,7 +22,7 @@ test("트리거: 2시간마다 정기 폴링과 사람 dispatch(2인 역할 입�
 test("권한은 job에만 주고 issues 쓰기는 실패 보고용이다(workflow dispatch 권한은 없다)", () => {
   assert.match(yml, /\npermissions: \{\}\n/u);
   assert.equal((yml.match(/\n    permissions:\n/gu) ?? []).length, 1);
-  assert.match(yml, /\n    permissions:\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
+  assert.match(yml, /\n    permissions:\n      actions: read\n      contents: write\n      pull-requests: write\n      issues: write\n/u);
   assert.doesNotMatch(yml, /actions: write/u);
 });
 

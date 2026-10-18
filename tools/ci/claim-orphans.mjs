@@ -150,7 +150,8 @@ export function isClosedOutClaim(workflowFile, commits) {
 function publicationStarted(claimOwner, claimRun, branch) {
   const found = claimRun.steps.filter(({ name }) => claimOwner.publicationSteps.includes(name));
   if (found.length === 0) fail("CLAIM_ORPHAN_STEPS_UNAVAILABLE", `${branch}: producer run has no ${claimOwner.publicationSteps[0]} step record`);
-  // 끝난 run에서 건너뛰어지지 않은 step은 실행됐다(성공·실패·취소·시간 초과). 취소된 run의 미시작 step도 시작된 것으로 본다(지우지 않는 쪽).
+  // 끝난 run에서 건너뛰어지지 않은 step은 실행됐다(성공·실패·취소·시간 초과). 취소 시점에 실행 중이던 step은 cancelled이므로 시작된 것으로 본다(지우지 않는 쪽).
+  // 취소·시간 초과로 시작하지 못한 뒤쪽 step은 cancelled가 아니라 skipped로 기록된다(실제 run 기록으로 확인, tools/ci/fixtures/claim-orphans). 그래서 수집 중 취소된 run의 claim은 회수된다.
   return found.some(({ conclusion }) => conclusion !== null && conclusion !== "skipped");
 }
 

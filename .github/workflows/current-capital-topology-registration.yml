@@ -235,6 +235,7 @@ jobs:
           # 이 workflow는 게시 증거(receipt artifact)를 남기고 실패하면 다음 실행이 그 증거로 PR만 다시 만든다. 기다림도 그 복구 경로로 끝낸다.
           recheck_root="${RUNNER_TEMP}/current-capital-topology-registration/recheck-${GITHUB_RUN_ID}"
           mkdir -p "${recheck_root}"
+          node tools/ci/reclaim-stale-claims.mjs --repository "${GITHUB_REPOSITORY}"
           git ls-remote --heads origin "refs/heads/automation/*" > "${recheck_root}/automation-branches.txt"
           node tools/ci/collect-automation-prs.mjs --repository "${GITHUB_REPOSITORY}" --refs "${recheck_root}/automation-branches.txt" --pr-limit 1000 --output "${recheck_root}/prs.json"
           node tools/ci/ledger-writers-idle.mjs --repository "${GITHUB_REPOSITORY}" --prs "${recheck_root}/prs.json" --automation-branches "${recheck_root}/automation-branches.txt" --except-workflow current-capital-topology-registration.yml --github-output "${recheck_root}/idle.txt"

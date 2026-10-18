@@ -471,3 +471,102 @@ test("#1064 CLI는 --expected-sha를 받고 --self-run-id가 있으면 필수다
   assert.equal((await main([...base, "--self-run-id", "5104", "--expected-sha", CLAIM_SHA], dependencies))[0].action, "removed_orphan");
   await rm(directory, { recursive: true, force: true });
 });
+
+// #1326: OCI에 게시하는 workflow(광주·서울·KRIC)도 수집 단계에서 실패한 자기 run의 빈 claim을 같은 run에서 지운다.
+// 빈 claim 하나만으로는 게시가 없었다는 증거가 못 되므로, 같은 job의 게시 step 결과(steps.<id>.outcome)를 증거로 받는다. skipped일 때만 게시가 시작되지 않은 것이다.
+const PUBLISHING_WORKFLOWS = Object.freeze(["retained-gwangju-timetable-refresh.yml", "seoul-current-accessibility-refresh.yml", "kric-current-facility-refresh.yml"]);
+const publishingHarness = (workflow, runId, harnessOptions = {}) => {
+  const branch = branchOf(runId, workflow);
+  const h = harness({
+    runs: { [runId]: finishedRun(workflow, { status: "in_progress", conclusion: null }) },
+    remote: { [branch]: SHA },
+    compare: { [branch]: { aheadBy: 1, changedFiles: 0, messages: [CLAIM_OWNERS[workflow].claimSubject] } },
+    ...harnessOptions,
+  });
+  return { branch, h };
+};
+const runPublishingSelf = (workflow, branch, h, runId, publicationOutcome, options = {}) => removeOrphanClaims({
+  workflowFile: workflow, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log,
+  selfRunId: String(runId), expectedSha: SHA, publicationOutcome, ...options,
+});
+
+for (const workflow of PUBLISHING_WORKFLOWS) {
+  test(`#1326 ${workflow}: 게시 step이 건너뛰어진 자기 run의 빈 claim은 보고한 뒤 지운다`, async () => {
+    const { branch, h } = publishingHarness(workflow, 6001);
+    const result = await runPublishingSelf(workflow, branch, h, 6001, "skipped");
+    assert.deepEqual(result, [{ branch, action: "removed_orphan", reported: "skip" }]);
+    assert.deepEqual(h.reports, [{ workflowFile: workflow, repository: REPOSITORY, runId: "6001" }]);
+    const order = h.events.map(([kind, second]) => `${kind}:${second}`);
+    assert.ok(order.indexOf("report:6001") < order.indexOf("git:push"), "보고가 삭제보다 먼저다");
+    assert.deepEqual(h.events.at(-1), ["git", "push", `--force-with-lease=refs/heads/${branch}:${SHA}`, "origin", `:refs/heads/${branch}`]);
+    assert.equal(h.events.some(([kind, second]) => kind === "gh" && second === "run"), false, "자기 run은 gh run view로 조회하지 않는다");
+  });
+}
+
+test("#1326 반증: 게시 step이 시작됐거나(success·failure·cancelled) 결과를 모르면 자기 run의 claim도 지우지 않는다", async () => {
+  for (const outcome of ["success", "failure", "cancelled", undefined]) {
+    const { branch, h } = publishingHarness(GWANGJU, 6002);
+    await assert.rejects(runPublishingSelf(GWANGJU, branch, h, 6002, outcome), /CLAIM_ORPHAN_REMOVE_REFUSED.*publishes/u, String(outcome));
+    assert.deepEqual(h.reports, [], String(outcome));
+    assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false, String(outcome));
+  }
+});
+
+test("#1326 반증: 게시 step 결과가 있어도 claim이 비어 있지 않거나 PR이 있으면 지우지 않는다", async () => {
+  const branch = branchOf(6003);
+  const carried = publishingHarness(GWANGJU, 6003, { compare: { [branch]: { aheadBy: 2, changedFiles: 4, messages: [CLAIM_OWNERS[GWANGJU].claimSubject, "Refresh retained Gwangju timetable"] } } });
+  await assert.rejects(runPublishingSelf(GWANGJU, carried.branch, carried.h, 6003, "skipped"), /CLAIM_ORPHAN_REMOVE_REFUSED.*not an empty or closed-out claim/u);
+  const bound = publishingHarness(GWANGJU, 6003, { prs: { [branch]: [pr(9, "OPEN", branch)] } });
+  await assert.rejects(runPublishingSelf(GWANGJU, bound.branch, bound.h, 6003, "skipped"), /CLAIM_ORPHAN_REMOVE_REFUSED/u);
+  for (const { h } of [carried, bound]) {
+    assert.deepEqual(h.reports, []);
+    assert.equal(h.events.some(([kind, second]) => kind === "git" && second === "push"), false);
+  }
+});
+
+test("#1326 반증: 게시 결과 증거는 자기 run 모드에서만 쓴다. 다른 run의 claim은 기록한 step 결과로만 판정한다", async () => {
+  const { branch, h } = publishingHarness(GWANGJU, 6004);
+  await assert.rejects(runPublishingSelf(GWANGJU, branch, h, 6005, "skipped"), /CLAIM_ORPHAN_REMOVE_REFUSED.*producer run 6004 is still in_progress/u);
+  assert.deepEqual(h.reports, []);
+});
+
+test("#1326 CLI는 --publication-outcome을 받고 알 수 없는 값은 거부한다", async () => {
+  const { branch, h } = publishingHarness(GWANGJU, 6006);
+  const directory = await mkdtemp(path.join(tmpdir(), "remove-claims-outcome-"));
+  const refsFile = path.join(directory, "claims.txt");
+  await writeFile(refsFile, refsOf(h.remote));
+  const base = ["--workflow", GWANGJU, "--repository", REPOSITORY, "--claims", branch, "--refs", refsFile, "--self-run-id", "6006", "--expected-sha", SHA];
+  const dependencies = { runGh: h.runGh, runGit: h.runGit, report: h.report, log: h.log };
+  await assert.rejects(main([...base, "--publication-outcome", "maybe"], dependencies), /CLAIM_ORPHAN_INPUT_INVALID.*publication outcome/u);
+  await assert.rejects(main([...base, "--publication-outcome", "skipped", "--publication-outcome", "skipped"], dependencies), /CLAIM_ORPHAN_INPUT_INVALID/u);
+  assert.equal((await main([...base, "--publication-outcome", "skipped"], dependencies))[0].action, "removed_orphan");
+  await rm(directory, { recursive: true, force: true });
+});
+
+// #1328 리뷰 F5: 기다리는 workflow 4곳과 소유 workflow가 같은 claim을 동시에 지울 수 있다. 졌다면(원격 브랜치가 사라졌다면) 이미 정리된 것이다.
+// sha가 움직여서 lease가 거부된 경우는 여전히 실패다.
+test("#1328 F5 삭제 push가 실패했을 때 원격 브랜치가 이미 없으면 absent로 끝난다(경쟁에서 진 삭제)", async () => {
+  const branch = branchOf(6101);
+  const h = harness({ runs: { 6101: finishedRun() }, remote: { [branch]: SHA } });
+  let deleted = false;
+  const runGit = async (args) => {
+    if (args[0] === "push") { deleted = true; throw new Error("error: failed to push some refs (stale info)"); }
+    return deleted ? "" : h.runGit(args);
+  };
+  const result = await removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit, report: h.report, log: h.log });
+  assert.deepEqual(result, [{ branch, action: "absent", reported: "skip" }]);
+  assert.equal(h.logs.some((line) => line.includes("Orphan claim removed")), false, "지우지 않았으므로 삭제 notice를 남기지 않는다");
+});
+
+test("#1328 F5 삭제 push가 실패했고 원격 sha가 움직였거나 그대로면 실패다(lease 거부는 구분한다)", async () => {
+  const branch = branchOf(6102);
+  for (const sha of [SHA, "f".repeat(40)]) {
+    const h = harness({ runs: { 6102: finishedRun() }, remote: { [branch]: SHA } });
+    let pushed = false;
+    const runGit = async (args) => {
+      if (args[0] === "push") { pushed = true; throw new Error("error: failed to push some refs (stale info)"); }
+      return pushed ? `${sha}\trefs/heads/${branch}\n` : h.runGit(args);
+    };
+    await assert.rejects(removeOrphanClaims({ workflowFile: GWANGJU, repository: REPOSITORY, claims: [branch], refsText: refsOf(h.remote), runGh: h.runGh, runGit, report: h.report, log: h.log }), /stale info/u, sha);
+  }
+});

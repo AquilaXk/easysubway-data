@@ -368,11 +368,15 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${branch}"
           git commit --allow-empty -m "Claim KRIC facility refresh"
+          claim_head="$(git rev-parse HEAD)"
           gh auth setup-git
           git push origin "${branch}"
           git switch --detach "${main_sha}"
-          printf 'KRIC_REFRESH_BRANCH=%s\n' "${branch}" >> "${GITHUB_ENV}"
-          printf 'KRIC_REFRESH_MAIN_SHA=%s\n' "${main_sha}" >> "${GITHUB_ENV}"
+          {
+            printf 'KRIC_REFRESH_BRANCH=%s\n' "${branch}"
+            printf 'KRIC_REFRESH_CLAIM_SHA=%s\n' "${claim_head}"
+            printf 'KRIC_REFRESH_MAIN_SHA=%s\n' "${main_sha}"
+          } >> "${GITHUB_ENV}"
 
       - name: KRIC current facility refresh / Validate provider configuration
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -406,6 +410,7 @@ jobs:
           node tools/datapack/run-current-capital-facility-operation.mjs --phase collect --operation-root "${KRIC_REFRESH_OPERATION_ROOT}"
 
       - name: KRIC current facility refresh / Publish and register current snapshot
+        id: publish
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
@@ -495,6 +500,16 @@ jobs:
             ${{ runner.temp }}/kric-current-facility-refresh/${{ github.run_id }}/raw-receipt.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: KRIC current facility refresh / Release this failed run's claim
+        if: ${{ failure() && env.KRIC_REFRESH_BRANCH != '' && env.KRIC_REFRESH_CLAIM_SHA != '' && steps.publish.outcome == 'skipped' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLICATION_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          set -euo pipefail
+          # #1326: 게시 step이 건너뛰어진(게시된 것이 없는) 실패 run은 자기 빈 claim을 같은 run에서 푼다. 삭제 규칙은 도구가 정한다.
+          node tools/ci/release-own-claim.mjs --workflow kric-current-facility-refresh.yml --repository "${GITHUB_REPOSITORY}" --run-id "${GITHUB_RUN_ID}" --branch "${KRIC_REFRESH_BRANCH}" --claim-sha "${KRIC_REFRESH_CLAIM_SHA}" --publication-outcome "${PUBLICATION_OUTCOME}"
+
       - name: KRIC current facility refresh / Report refresh failure as an issue
         if: ${{ failure() }}
         env:
