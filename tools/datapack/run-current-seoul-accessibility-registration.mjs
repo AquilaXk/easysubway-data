@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import {
+  MAX_REQUEST_ATTEMPTS,
   collectSeoulAccessibilityObservation,
   seoulObservationOutputRoot,
   validateSeoulAccessibilitySnapshotIdentity,
@@ -104,7 +105,7 @@ const PHASES = Object.freeze(["all", "collect", "publish"]);
 export async function runCurrentSeoulAccessibilityRegistration({
   observationName,
   receiptPath,
-  requestAttempts = 2,
+  requestAttempts = MAX_REQUEST_ATTEMPTS,
   repositoryRoot = ROOT,
   env = process.env,
   deps = {},
@@ -120,7 +121,7 @@ export async function runCurrentSeoulAccessibilityRegistration({
     snapshotId = (await operations.readObservationManifest(outputRoot)).snapshotId;
   } else {
     const previousSnapshot = await readCurrentSeoulSnapshot(operations, root);
-    if (!Number.isSafeInteger(requestAttempts) || ![1, 2].includes(requestAttempts)) throw new Error("Seoul accessibility request attempts are invalid");
+    if (!Number.isSafeInteger(requestAttempts) || requestAttempts < 1 || requestAttempts > MAX_REQUEST_ATTEMPTS) throw new Error("Seoul accessibility request attempts are invalid");
     const observation = await operations.collect({ serviceKey, previousSnapshot, requestAttempts });
     if (observation?.snapshot?.sourceId !== SOURCE_ID || typeof observation.snapshot.snapshotId !== "string") throw new Error("current Seoul accessibility observation is invalid");
     outputRoot = await operations.observationRoot(name);

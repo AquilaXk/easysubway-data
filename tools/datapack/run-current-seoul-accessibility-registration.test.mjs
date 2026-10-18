@@ -64,7 +64,12 @@ test("runner passes the scheduled single-attempt contract only when requested", 
   assert.equal(events[2][3], 1);
   const direct = await fixture(t); const directEvents = [];
   await runCurrentSeoulAccessibilityRegistration(options(direct, dependencies(directEvents)));
-  assert.equal(directEvents[2][3], 2);
+  assert.equal(directEvents[2][3], 3);
+  for (const requestAttempts of [0, 4, 1.5]) {
+    const invalid = await fixture(t); const invalidEvents = [];
+    await assert.rejects(runCurrentSeoulAccessibilityRegistration({ ...options(invalid, dependencies(invalidEvents)), requestAttempts }), /request attempts are invalid/);
+    assert.equal(invalidEvents.some(([name]) => name === "collect"), false);
+  }
 });
 
 test("malformed DATA_GO_KR_SERVICE_KEY stops every delegate before the current head read", async (t) => {

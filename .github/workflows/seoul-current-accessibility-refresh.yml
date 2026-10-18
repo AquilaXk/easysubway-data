@@ -169,9 +169,10 @@ jobs:
           EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL: ${{ secrets.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL }}
         run: |
           set -euo pipefail
+          # #1326: 일시 오류(timeout·연결 reset·HTTP 429/502/503/504)는 수집기가 같은 GET을 최대 3번 시도하고 소진하면 그대로 실패한다. workflow는 재시도를 감싸지 않는다.
           # #995: 공급자 수집과 observation 기록까지만 한다. OCI에는 아무것도 올리지 않는다(이 step이 실패하면 게시된 것이 없다).
           [[ "$(git rev-parse HEAD)" == "${SEOUL_REFRESH_MAIN_SHA}" ]] || { echo "Seoul refresh operation is not running from its claimed main" >&2; exit 1; }
-          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --request-attempts 1 --phase collect
+          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --phase collect
       - name: Publish and register Seoul accessibility snapshot
         id: publish
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
@@ -182,7 +183,7 @@ jobs:
           set -euo pipefail
           # #995: 수집 step이 남긴 observation을 OCI에 게시하고 원장에 등록한다. 이 step이 시작되면 게시됐을 수 있다(claim 정리가 이 step 이름으로 판정한다: claim-orphans.mjs).
           [[ "$(git rev-parse HEAD)" == "${SEOUL_REFRESH_MAIN_SHA}" ]] || { echo "Seoul refresh operation is not running from its claimed main" >&2; exit 1; }
-          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --request-attempts 1 --phase publish
+          node tools/datapack/run-current-seoul-accessibility-registration.mjs --observation-name "refresh-${GITHUB_RUN_ID}" --receipt "${SEOUL_REFRESH_RECEIPT}" --phase publish
       - name: Finalize claimed refresh branch
         if: ${{ steps.decision.outputs.state == 'DUE' || steps.decision.outputs.state == 'EXPIRED' }}
         env:
