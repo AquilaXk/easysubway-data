@@ -2,8 +2,10 @@
 //   1. 요청이 timeout으로 한 번 실패한 뒤 성공하면 재시도 없던 수집과 같은 결과를 낸다.
 //   2. 본문 수신 중 timeout으로 한 번 실패한 뒤 성공해도 같다(재시도 단위가 요청 + 본문 읽기여야 한다).
 //   3. 비일시 오류(HTTP 403)는 재시도하지 않고 즉시 실패한다.
+// defineKricResultCodeRetryTests는 KRIC resultCode 표(일시 01·02·04·05·99, 그 밖은 즉시 실패)를 수집기들이 함께 쓰게 한다.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { inspect } from "node:util";
 
 export const abortedByTimeout = () => Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
 
@@ -53,5 +55,65 @@ export function defineSourceCollectionRetryTests({ name, run, delegate, headers,
     const { fetchImpl, state } = fetchWithFirstFailure(delegate, "forbidden", headers);
     await assert.rejects(run({ fetchImpl, sleepImpl: noSleep }), httpError);
     assert.equal(state.failedRequestCalls, 1, "403을 받은 요청은 다시 보내지 않는다");
+  });
+}
+
+/** 오류의 메시지와 inspect 출력(cause·속성 포함)에 비밀 값이 없는지 확인한다. */
+export function assertErrorOmitsSecrets(error, secrets) {
+  const surfaces = [String(error?.message), inspect(error, { depth: 6, showHidden: true })];
+  for (const secret of secrets) {
+    for (const surface of surfaces) assert.equal(surface.includes(secret), false, `오류에 비밀 값이 실리면 안 된다: ${secret.slice(0, 3)}...`);
+  }
+}
+
+// [resultCode, 일시 여부]. 일시 코드는 KRIC 공용 코드표(isTransientKricResultCode)가 정한다.
+export const KRIC_RESULT_CODE_ROWS = Object.freeze([
+  ["01", true], ["02", true], ["04", true], ["05", true], ["99", true],
+  ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["30", false], ["31", false], ["32", false], ["33", false], ["41", false],
+]);
+const EXHAUSTED_TRANSIENT_RESULT_CODE = "99";
+
+/** 첫 요청(URL)을 보낸 횟수를 세는 fetch. respond(callNumber, url)이 응답을 만든다. */
+function countingFetch(respond) {
+  const state = { firstUrl: undefined, firstUrlCalls: 0 };
+  const fetchImpl = async (...args) => {
+    const url = String(args[0]);
+    state.firstUrl ??= url;
+    if (url === state.firstUrl) state.firstUrlCalls += 1;
+    return respond(state.firstUrlCalls, args);
+  };
+  return { fetchImpl, state };
+}
+
+/**
+ * KRIC resultCode 재시도 계약을 수집기들이 한 표로 검증한다.
+ *   - 일시 코드: 첫 요청이 코드를 받은 뒤 성공하면 assertRecovered, 첫 요청은 정확히 2번 보낸다.
+ *   - 일시 코드 소진: 계속 99를 받으면 3번만 보내고 assertFinal에 맡긴다(수집기의 명시 실패 또는 호출자에게 넘기는 응답).
+ *   - 그 밖의 코드: 한 번만 보내고 assertFinal에 맡긴다.
+ * @param {object} options
+ * @param {string} options.name 수집기 이름(테스트 제목).
+ * @param {(resultCode: string) => Response} options.rejectedResponse 해당 resultCode를 담은 응답.
+ * @param {Function} options.delegate 성공 응답을 만드는 fetch.
+ * @param {(io: { fetchImpl: Function }) => Promise<unknown>} options.run 수집기를 실행한다(대기는 즉시 지나가게 주입).
+ * @param {(result: unknown) => void} options.assertRecovered 재시도 뒤 성공한 결과를 확인한다.
+ * @param {(outcome: Promise<unknown>, resultCode: string) => Promise<void>} options.assertFinal 재시도를 더 하지 않고 끝난 결과를 확인한다.
+ */
+export function defineKricResultCodeRetryTests({ name, rejectedResponse, delegate, run, assertRecovered, assertFinal }) {
+  for (const [resultCode, transient] of KRIC_RESULT_CODE_ROWS) {
+    test(`${name}: resultCode ${resultCode}는 ${transient ? "재시도 뒤 성공한다" : "재시도 없이 끝난다"}`, async () => {
+      const { fetchImpl, state } = countingFetch((call, args) => (call === 1 ? rejectedResponse(resultCode) : delegate(...args)));
+      if (transient) {
+        assertRecovered(await run({ fetchImpl }));
+        assert.equal(state.firstUrlCalls, 2);
+      } else {
+        await assertFinal(run({ fetchImpl }), resultCode);
+        assert.equal(state.firstUrlCalls, 1);
+      }
+    });
+  }
+  test(`${name}: 일시 resultCode ${EXHAUSTED_TRANSIENT_RESULT_CODE}가 계속되면 3회 시도 뒤 끝난다`, async () => {
+    const { fetchImpl, state } = countingFetch(() => rejectedResponse(EXHAUSTED_TRANSIENT_RESULT_CODE));
+    await assertFinal(run({ fetchImpl }), EXHAUSTED_TRANSIENT_RESULT_CODE);
+    assert.equal(state.firstUrlCalls, 3);
   });
 }

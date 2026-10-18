@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { collectKricRouteRoster } from "./collect-kric-route-roster.mjs";
-import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineKricResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const noSleep = async () => {};
@@ -83,25 +83,14 @@ test("KRIC route roster는 다른 운영기관이 같은 역코드를 쓰는 sha
   ]);
 });
 
-// 표 기반: [resultCode, 일시 여부]. 일시 코드는 한 번 실패한 뒤 성공하면 정상 수집하고, 그 밖의 코드는 한 번만 요청하고 provider resultCode 오류로 실패한다.
-const RESULT_CODE_ROWS = [
-  ["01", true], ["02", true], ["04", true], ["05", true], ["99", true],
-  ["10", false], ["12", false], ["30", false], ["41", false],
-];
-for (const [resultCode, transient] of RESULT_CODE_ROWS) {
-  test(`KRIC route roster: resultCode ${resultCode}는 ${transient ? "재시도 뒤 성공한다" : "재시도 없이 실패한다"}`, async () => {
-    let calls = 0;
-    const firstRejected = async () => { calls += 1; return calls === 1 ? xmlResponse(resultCode, "") : xmlResponse("00"); };
-    const collect = () => collectKricRouteRoster({ mreaWideCd: "01", lnCd: "K2", serviceKey: "key", fetchImpl: firstRejected, ...retryOptions() });
-    if (transient) {
-      assert.equal((await collect()).stationCount, 1);
-      assert.equal(calls, 2);
-    } else {
-      await assert.rejects(collect(), new RegExp(`provider resultCode ${resultCode}`, "u"));
-      assert.equal(calls, 1);
-    }
-  });
-}
+defineKricResultCodeRetryTests({
+  name: "KRIC route roster",
+  rejectedResponse: (resultCode) => xmlResponse(resultCode, ""),
+  delegate: async () => xmlResponse("00"),
+  run: ({ fetchImpl }) => collectKricRouteRoster({ mreaWideCd: "01", lnCd: "K2", serviceKey: "key", fetchImpl, ...retryOptions() }),
+  assertRecovered: (roster) => assert.equal(roster.stationCount, 1),
+  assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`provider resultCode ${resultCode}`, "u")),
+});
 
 test("KRIC route roster: HTTP 503은 3회까지 시도한 뒤 HTTP 오류로 실패하고 오류에 키가 없다", async () => {
   let calls = 0;

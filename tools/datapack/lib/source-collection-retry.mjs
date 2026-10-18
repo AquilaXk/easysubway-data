@@ -103,6 +103,7 @@ const discardBody = (response) => { Promise.resolve(response?.body?.cancel?.()).
  * @param {(result: T) => boolean} [options.isTransientResult] 상태 코드 말고도 일시로 볼 결과(예: 200이지만 공급자가 일시 오류 본문을 준 경우).
  * @param {(error: unknown) => boolean} [options.isTransientError] 던져진 오류가 일시 오류인가. 기본은 isTransientTransportError.
  * @param {number} [options.maxAttempts] 최대 시도 수(1~SOURCE_COLLECTION_RETRY_POLICY.maxAttempts, 기본은 그 값). 범위 밖이면 거부한다. 요청 수 × 최악 대기가 job timeout을 넘는 수집기만 줄인다.
+ * @param {number} [options.minDelayMs] 재시도 대기의 하한(기본 0). 수집기가 요청 사이 간격을 정해 두었다면 재시도도 그 간격 아래로 내려가지 않게 한다. Retry-After가 cap을 넘으면 하한과 무관하게 fail-closed다.
  * @param {string} [options.label] Retry-After 초과 오류 메시지의 원천 이름.
  * @param {() => number} [options.random] [0, 1)을 돌려주는 난수(테스트용 주입).
  * @param {(event: object) => void} [options.onRetry] 재시도 직전 알림(응답 본문은 이미 취소했다).
@@ -112,6 +113,7 @@ export function withSourceCollectionRetry(attempt, {
   isTransientResult = () => false,
   isTransientError = isTransientTransportError,
   maxAttempts = SOURCE_COLLECTION_RETRY_POLICY.maxAttempts,
+  minDelayMs = 0,
   label = "source collection",
   random,
   sleep,
@@ -121,6 +123,9 @@ export function withSourceCollectionRetry(attempt, {
   const { baseDelayMs, capDelayMs, maxUnhintedRateLimitRetries } = SOURCE_COLLECTION_RETRY_POLICY;
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > SOURCE_COLLECTION_RETRY_POLICY.maxAttempts) {
     throw new Error(`SOURCE_COLLECTION_RETRY_ARGUMENTS: maxAttempts must be an integer from 1 to ${SOURCE_COLLECTION_RETRY_POLICY.maxAttempts}`);
+  }
+  if (!Number.isSafeInteger(minDelayMs) || minDelayMs < 0) {
+    throw new Error("SOURCE_COLLECTION_RETRY_ARGUMENTS: minDelayMs must be a non-negative integer");
   }
   let unhintedRateLimits = 0;
   const isTransientResponse = (response) => {
@@ -132,9 +137,9 @@ export function withSourceCollectionRetry(attempt, {
   const delayMs = ({ retryIndex, result }) => {
     const response = result === undefined ? undefined : responseOf(result);
     const retryAfter = retryAfterOf(response);
-    if (retryAfter === undefined) return fullJitterBackoffMs(retryIndex, { baseMs: baseDelayMs, capMs: capDelayMs, random });
+    if (retryAfter === undefined) return Math.max(minDelayMs, fullJitterBackoffMs(retryIndex, { baseMs: baseDelayMs, capMs: capDelayMs, random }));
     if (retryAfter > capDelayMs) throw new RetryAfterExceedsCapError(label, response.status, retryAfter, capDelayMs, result);
-    return retryAfter;
+    return Math.max(minDelayMs, retryAfter);
   };
   return withTransientRetry(attempt, {
     isTransientResult: (result) => isTransientResponse(responseOf(result)) || isTransientResult(result),

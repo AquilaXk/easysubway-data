@@ -17,7 +17,7 @@ import {
   buildRawResponseRecord,
   buildServicePatternObservation,
   filterRowsByTrainNumbers,
-  fetchKricRequestWithCredentialRedaction,
+  fetchKricRequest,
   fetchWithRetry,
   redactKricCredential,
   selectKricPilotReconstructionRows,
@@ -31,7 +31,7 @@ import {
 } from "./collect-kric-line4-timetables.mjs";
 import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
-import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { assertErrorOmitsSecrets, defineKricResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 
 const ROSTER = {
   lnCd: "4",
@@ -627,23 +627,34 @@ test("KRIC 오류 진단은 raw·percent-encoded credential을 모두 제거한�
   assert.equal(redacted, "raw=[KEY]&encoded=[KEY]");
 });
 
-test("KRIC probe fetch 실패는 cause URL의 credential도 제거한다", async () => {
+test("KRIC 요청은 어떤 오류 경로에서도 URL·키를 메시지와 inspect 출력에 싣지 않는다", async () => {
   const key = "abc+def/ghi=";
   const request = {
     endpoint: "https://provider.invalid/timetable",
     params: { railOprIsttCd: "S1", dayCd: "8", lnCd: "4", stinCd: "433" },
   };
+  const leakingTransport = (url) => Object.assign(new Error(`fetch failed ${url}`, { cause: new Error(url) }), { code: "ECONNRESET" });
+  const paths = {
+    "전송 오류(소진)": (url) => { throw leakingTransport(url); },
+    "분류 못 한 오류": (url) => { throw new Error(`boom ${url}`, { cause: new Error(url) }); },
+    "HTTP 503(소진)": () => new Response("down", { status: 503 }),
+    "HTTP 403": () => new Response("forbidden", { status: 403 }),
+    "Retry-After가 cap 초과": () => new Response("slow", { status: 503, headers: { "retry-after": "999" } }),
+  };
+  for (const [label, respond] of Object.entries(paths)) {
+    const error = await fetchKricRequest(request, key, { fetchImpl: async (url) => respond(String(url)), sleep: async () => {} }).catch((caught) => caught);
+    assert.ok(error instanceof Error, label);
+    assertErrorOmitsSecrets(error, [key, encodeURIComponent(key), "provider.invalid"]);
+  }
+});
+
+test("KRIC 4호선 시각표 수집기: 분류하지 못한 전송 오류는 재시도하지 않고 NETWORK_UNKNOWN으로 실패한다", async () => {
+  let calls = 0;
   await assert.rejects(
-    () => fetchKricRequestWithCredentialRedaction(request, key, {
-      sleep: async () => {},
-      fetchImpl: async (url) => {
-        throw new Error("provider request failed", { cause: new Error(url) });
-      },
-    }),
-    (error) => error.message.includes("KRIC timetable request failed")
-      && !error.message.includes(key)
-      && !error.message.includes(encodeURIComponent(key)),
+    fetchKricRequest(retryRequest, "key", { fetchImpl: async () => { calls += 1; throw new Error("boom"); }, sleep: async () => {} }),
+    /^Error: KRIC timetable transport failure: NETWORK_UNKNOWN$/,
   );
+  assert.equal(calls, 1);
 });
 
 test("ITX materialization은 TAGO OD의 양 끝역·열차번호·시각이 모두 일치해야 한다", () => {
@@ -703,33 +714,28 @@ const retryRequest = {
 };
 const retryBody = (resultCode) => JSON.stringify({ header: { resultCode }, body: [] });
 const retryDelegate = async () => new Response(retryBody("00"), { status: 200 });
-const collectRequest = (fetchImpl, sleep = async () => {}) => fetchKricRequestWithCredentialRedaction(retryRequest, "key", { fetchImpl, sleep });
+const collectRequest = (fetchImpl, sleep = async () => {}) => fetchKricRequest(retryRequest, "key", { fetchImpl, sleep });
 
 defineSourceCollectionRetryTests({
   name: "KRIC 4호선 시각표 수집기",
-  httpError: /KRIC timetable request failed: KRIC timetable HTTP 403/u,
+  httpError: /KRIC timetable HTTP 403/u,
   delegate: retryDelegate,
   run: ({ fetchImpl, sleepImpl }) => collectRequest(fetchImpl, sleepImpl),
 });
 
-// 표 기반: [resultCode, 일시 여부]. 일시 코드는 한 번 실패한 뒤 성공하면 정상 수집하고, 그 밖의 코드는 응답을 그대로 돌려줘 호출자의 분류 경로로 넘긴다(재시도 없음).
-const RESULT_CODE_ROWS = [
-  ["01", true], ["02", true], ["04", true], ["05", true], ["99", true],
-  ["10", false], ["12", false], ["30", false], ["41", false],
-];
-for (const [resultCode, transient] of RESULT_CODE_ROWS) {
-  test(`KRIC 4호선 시각표 수집기: resultCode ${resultCode}는 ${transient ? "재시도 뒤 성공한다" : "재시도 없이 그대로 돌려준다"}`, async () => {
-    let calls = 0;
-    const firstRejected = async () => { calls += 1; return new Response(retryBody(calls === 1 ? resultCode : "00"), { status: 200 }); };
-    const text = await collectRequest(firstRejected);
-    assert.equal(JSON.parse(text).header.resultCode, transient ? "00" : resultCode);
-    assert.equal(calls, transient ? 2 : 1);
-  });
-}
+// 재시도를 더 하지 않고 끝나면 응답을 그대로 돌려줘 호출자의 분류 경로(classifyKricTimetablePayload)로 넘긴다.
+defineKricResultCodeRetryTests({
+  name: "KRIC 4호선 시각표 수집기",
+  rejectedResponse: (resultCode) => new Response(retryBody(resultCode), { status: 200 }),
+  delegate: retryDelegate,
+  run: ({ fetchImpl }) => collectRequest(fetchImpl),
+  assertRecovered: (text) => assert.equal(JSON.parse(text).header.resultCode, "00"),
+  assertFinal: async (outcome, resultCode) => assert.equal(JSON.parse(await outcome).header.resultCode, resultCode),
+});
 
 test("KRIC 4호선 시각표 수집기: HTTP 503은 3회까지 시도한 뒤 키 없는 HTTP 오류로 실패한다", async () => {
   let calls = 0;
   const error = await collectRequest(async () => { calls += 1; return new Response("down", { status: 503 }); }).catch((caught) => caught);
-  assert.equal(error.message, "KRIC timetable request failed: KRIC timetable HTTP 503");
+  assert.equal(error.message, "KRIC timetable HTTP 503");
   assert.equal(calls, 3);
 });

@@ -77,7 +77,8 @@ export async function collectKricExitPathProviderSnapshot({
     throw new TypeError("KRIC EXIT collector dependencies are invalid");
   }
 
-  const retry = { sleep: retrySleepImpl, budget: retryBudget, random: retryRandomImpl };
+  // 재시도도 요청 간격 아래로 내려가지 않게 대기 하한을 간격으로 둔다.
+  const retry = { sleep: retrySleepImpl, budget: retryBudget, random: retryRandomImpl, minDelayMs: requestIntervalMs };
   const results = [];
   for (let index = 0; index < queryPlan.length; index += 1) {
     if (index > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);

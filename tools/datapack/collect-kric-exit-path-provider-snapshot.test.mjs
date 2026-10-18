@@ -11,7 +11,7 @@ import {
 } from "./collect-kric-exit-path-provider-snapshot.mjs";
 import { planKricExitPathCollection } from "./plan-kric-exit-path-collection.mjs";
 import { sha256 } from "../lib/hash.mjs";
-import { defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
+import { defineKricResultCodeRetryTests, defineSourceCollectionRetryTests } from "./lib/source-collection-retry-test-support.mjs";
 import { createTransientRetryBudget } from "./lib/transient-retry.mjs";
 
 const CAPTURED_AT = "2026-08-11T00:00:00.000Z";
@@ -506,27 +506,28 @@ defineSourceCollectionRetryTests({
   run: ({ fetchImpl, sleepImpl }) => collectWithRetry(fetchImpl, sleepImpl),
 });
 
-// 표 기반: [resultCode, 일시 여부]. 일시 코드는 한 번 실패한 뒤 성공하면 정상 수집하고, 그 밖의 코드는 한 번만 요청하고 실패한다.
-const RESULT_CODE_ROWS = [
-  ["01", true], ["02", true], ["04", true], ["05", true], ["99", true],
-  ["10", false], ["12", false], ["30", false], ["41", false],
-];
-for (const [resultCode, transient] of RESULT_CODE_ROWS) {
-  test(`KRIC EXIT 경로 수집기: resultCode ${resultCode}는 ${transient ? "재시도 뒤 성공한다" : "재시도 없이 실패한다"}`, async () => {
-    let calls = 0;
-    const firstRejected = async (...args) => {
-      calls += 1;
-      return calls === 1 ? jsonResponse(JSON.stringify({ header: { resultCode }, body: [] })) : retryDelegate(...args);
-    };
-    if (transient) {
-      assert.equal((await collectWithRetry(firstRejected)).results.length, 2);
-      assert.equal(calls, 3);
-    } else {
-      await assert.rejects(collectWithRetry(firstRejected), new RegExp(`KRIC EXIT provider result invalid: .*/${resultCode}`, "u"));
-      assert.equal(calls, 1);
-    }
+defineKricResultCodeRetryTests({
+  name: "KRIC EXIT 경로 수집기",
+  rejectedResponse: (resultCode) => jsonResponse(JSON.stringify({ header: { resultCode }, body: [] })),
+  delegate: retryDelegate,
+  run: ({ fetchImpl }) => collectWithRetry(fetchImpl),
+  assertRecovered: (snapshot) => assert.equal(snapshot.results.length, 2),
+  assertFinal: (outcome, resultCode) => assert.rejects(outcome, new RegExp(`KRIC EXIT provider result invalid: .*/${resultCode}`, "u")),
+});
+
+test("KRIC EXIT 경로 수집기: 재시도 대기도 요청 간격 아래로 내려가지 않는다", async () => {
+  const intervalMs = 5_000;
+  const events = [];
+  let calls = 0;
+  await collectKricExitPathProviderSnapshot({
+    collectionPlan: retryPlan, sourceId: "kric-station-movement-standard", serviceKey: SERVICE_KEY, now: new Date(CAPTURED_AT),
+    requestIntervalMs: intervalMs, delayImpl: async (ms) => { events.push(["interval", ms]); },
+    retrySleepImpl: async (ms) => { events.push(["retry", ms]); }, retryBudget: createTransientRetryBudget(), retryRandomImpl: () => 0,
+    fetchImpl: async (...args) => { calls += 1; return calls <= 2 ? new Response("down", { status: 503 }) : retryDelegate(...args); },
   });
-}
+  // 백오프(난수 0)는 0이지만 재시도 대기는 간격 이상이다. 두 번 실패 → 재시도 2번 → 다음 질의 전 간격 1번.
+  assert.deepEqual(events, [["retry", intervalMs], ["retry", intervalMs], ["interval", intervalMs]]);
+});
 
 function validPlan() {
   const stationLines = [stationLine("station-a", "가역"), stationLine("station-b", "나역")];

@@ -849,16 +849,9 @@ export function redactKricCredential(text, key) {
   return redacted;
 }
 
-export async function fetchKricRequestWithCredentialRedaction(request, key, options) {
-  try {
-    return await fetchWithRetry(kricRequestUrl(request, key), options);
-  } catch (error) {
-    const details = [error?.message, error?.cause?.message, error?.cause]
-      .filter(Boolean)
-      .map(String)
-      .join(" | ");
-    throw new Error(`KRIC timetable request failed: ${redactKricCredential(details, key)}`);
-  }
+// 키가 든 요청 URL은 여기서만 만들고, fetchWithRetry의 모든 오류(HTTP·전송·Retry-After)는 URL 없이 분류된 문구만 담는다.
+export function fetchKricRequest(request, key, options) {
+  return fetchWithRetry(kricRequestUrl(request, key), options);
 }
 
 function normalizeTrainNumber(value) {
@@ -949,7 +942,7 @@ async function main() {
       throw new Error("no-data probe --output is required");
     }
     const request = selectServicePatternProbeRequest(plan, args["no-data-probe-request-key"]);
-    const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+    const rawResponse = await fetchKricRequest(request, key);
     const observation = buildTimetableNoDataObservation(
       request,
       rawResponse,
@@ -967,7 +960,7 @@ async function main() {
       plan,
       args["service-pattern-probe-request-key"],
     );
-    const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+    const rawResponse = await fetchKricRequest(request, key);
     const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
     const observation = buildServicePatternObservation(request, rawResponse, rows);
     await writeFile(args.output, `${JSON.stringify(observation, null, 2)}\n`);
@@ -984,7 +977,7 @@ async function main() {
     let failed = 0;
     for (const request of plan.requests) {
       try {
-        const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+        const rawResponse = await fetchKricRequest(request, key);
         const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
         if (rows.length === 0) {
           throw new Error("KRIC operation train diagnostic response rows must be non-empty");
@@ -1040,7 +1033,7 @@ async function main() {
   let failed = 0;
   for (const request of plan.requests) {
     try {
-      const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+      const rawResponse = await fetchKricRequest(request, key);
       const payload = JSON.parse(rawResponse);
       const { classification, rows } = classifyKricTimetablePayload(payload, request, noDataEvidence);
       if (classification === noDataEvidence.classification.state) {
