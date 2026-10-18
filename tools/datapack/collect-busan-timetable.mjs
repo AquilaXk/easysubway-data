@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { sha256 } from "../lib/hash.mjs";
-import { fetchBytesWithSourceRetry, isTransientDataGoKrResultCode } from "./lib/source-collection-retry.mjs";
+import { fetchBytesWithSourceRetry, isTransientBusanHumetroResultCode } from "./lib/source-collection-retry.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_process.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15000522/openapi.do";
@@ -200,14 +200,14 @@ export function normalizeBusanTimetableScope(scope) {
 
 // 요청과 본문 읽기를 한 번의 시도로 묶어 원천 수집 표준 정책으로 재시도한다(lib/source-collection-retry.mjs).
 // 본문 수신 중 timeout도 같은 GET을 다시 보내고(#1333: 본문 timeout 한 번이 부산 그룹 3개 recipe를 롤백했다),
-// 200 응답이어도 공공데이터포털 envelope resultCode가 일시 오류 코드(99·30 등)면 다시 보낸다. 소진하면 마지막 응답이 아래 검증에서 resultCode와 함께 실패한다.
+// 200 응답이어도 부산교통공사 envelope resultCode가 일시 오류 코드(30·99)면 다시 보낸다. 소진하면 마지막 응답이 아래 검증에서 resultCode와 함께 실패한다.
 function fetchWithRetry(url, fetchImpl, sleepImpl, randomImpl) {
   return fetchBytesWithSourceRetry({
     url,
     fetchImpl,
     accept: "application/xml,text/xml",
     label: "Busan timetable",
-    isTransientResult: ({ response, bytes }) => response.ok && isTransientDataGoKrResultCode(providerResultCode(bytes)),
+    isTransientResult: ({ response, bytes }) => response.ok && isTransientBusanHumetroResultCode(providerResultCode(bytes)),
     transportFailure: (failure) => {
       const code = failure?.code ?? failure?.cause?.code ?? "UNKNOWN";
       return new Error(`Busan timetable transport failure; code=${safeToken(String(code))}`);

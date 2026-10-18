@@ -3,7 +3,7 @@
 //   2. 본문 수신 중 timeout으로 한 번 실패한 뒤 성공해도 같다(재시도 단위가 요청 + 본문 읽기여야 한다).
 //   3. 비일시 오류(HTTP 403)는 재시도하지 않고 즉시 실패한다.
 // defineResultCodeRetryTests는 resultCode 표 기반 재시도 계약을 한 곳에 두고, defineKricResultCodeRetryTests(KRIC: 일시 01·02·04·05·99)와
-// defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99), defineBusanHumetroResultCodeRetryTests(부산교통공사: 일시 99만)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
+// defineDataGoKrResultCodeRetryTests(공공데이터포털: 일시 01·02·04·05·30·99), defineBusanHumetroResultCodeRetryTests(부산교통공사: 일시 30·99)가 원천별 행만 넘겨 수집기들이 함께 쓰게 한다.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inspect } from "node:util";
@@ -77,10 +77,10 @@ export const DATA_GO_KR_RESULT_CODE_ROWS = Object.freeze([
   ["01", true], ["02", true], ["04", true], ["05", true], ["30", true], ["99", true],
   ["10", false], ["11", false], ["12", false], ["20", false], ["21", false], ["22", false], ["23", false], ["31", false], ["32", false], ["33", false],
 ]);
-// 부산교통공사 OpenAPI(data.humetro.busan.kr): data.go.kr 게이트웨이가 아니라 99만 일시, 나머지는 즉시 실패한다.
+// 부산교통공사 OpenAPI(data.humetro.busan.kr): data.go.kr 게이트웨이가 아니라 30·99만 일시, 나머지는 즉시 실패한다.
 export const BUSAN_HUMETRO_RESULT_CODE_ROWS = Object.freeze([
-  ["99", true],
-  ["01", false], ["02", false], ["04", false], ["05", false], ["10", false], ["20", false], ["22", false], ["30", false], ["31", false],
+  ["99", true], ["30", true],
+  ["01", false], ["02", false], ["04", false], ["05", false], ["10", false], ["20", false], ["22", false], ["31", false],
 ]);
 const EXHAUSTED_TRANSIENT_RESULT_CODE = "99";
 

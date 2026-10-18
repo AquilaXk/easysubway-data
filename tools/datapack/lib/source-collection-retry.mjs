@@ -67,14 +67,17 @@ const RESULT_CODE_TABLE = Object.freeze([
   { code: "20", name: "SERVICE_ACCESS_DENIED_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
   { code: "21", name: "TEMPORARILY_DISABLE_THE_SERVICEKEY_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
   { code: "22", name: "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
-  { code: "30", name: "SERVICE_KEY_IS_NOT_REGISTERED_ERROR", dataGoKr: "transient", kric: "fatal", humetro: "fatal" },
+  { code: "30", name: "SERVICE_KEY_IS_NOT_REGISTERED_ERROR", dataGoKr: "transient", kric: "fatal", humetro: "transient" },
   { code: "31", name: "DEADLINE_HAS_EXPIRED_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
   { code: "32", name: "UNREGISTERED_IP_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
   { code: "33", name: "UNSIGNED_CALL_ERROR", dataGoKr: "fatal", kric: "fatal", humetro: "fatal" },
   { code: "99", name: "UNKNOWN_ERROR", dataGoKr: "transient", kric: "transient", humetro: "transient" },
 ]);
-//   - humetro: 부산교통공사 OpenAPI(data.humetro.busan.kr). data.go.kr 게이트웨이가 아니라 위 코드표를 적용할 근거가 없다. 공식 오류코드 문서를 찾지 못해
-//     (저장소 조사, 2026-10-18) 응답이 envelope로 내려주는 99(UNKNOWN_ERROR)만 일시로 보고 나머지는 즉시 실패시킨다. 문서나 실측 근거가 생기면 이 열을 고친다.
+//   - humetro: 부산교통공사 OpenAPI(data.humetro.busan.kr). data.go.kr 게이트웨이가 아니라 위 코드표를 적용할 근거가 없고, 공식 오류코드 문서도 찾지 못했다(저장소 조사, 2026-10-18).
+//     그래서 응답이 envelope로 내려주는 99(UNKNOWN_ERROR)와, 실측으로 간헐 발생이 확인된 30만 일시로 보고 나머지는 즉시 실패시킨다.
+//     30 근거: source-reverification run 39119028493(2026-10-18T10:23Z)에서 busan-timetable이 humetro 응답 resultCode 30으로 실패했는데,
+//     같은 key로 02:23·04:47·06:23 run은 통과했다(https://github.com/AquilaXk/easysubway-data/issues/1333 코멘트). 키가 실제로 미등록이면 3회 모두 30이라
+//     소진 뒤 resultCode 30으로 실패하므로 신호는 사라지지 않는다. 문서나 추가 실측 근거가 생기면 이 열을 고친다.
 const transientCodesOf = (origin) => new Set(RESULT_CODE_TABLE.filter((row) => row[origin] === "transient").map(({ code }) => code));
 const TRANSIENT_DATA_GO_KR_RESULT_CODES = transientCodesOf("dataGoKr");
 const TRANSIENT_KRIC_RESULT_CODES = transientCodesOf("kric");
@@ -83,7 +86,7 @@ const TRANSIENT_HUMETRO_RESULT_CODES = transientCodesOf("humetro");
 /** 공공데이터포털 envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
 export const isTransientDataGoKrResultCode = (resultCode) => TRANSIENT_DATA_GO_KR_RESULT_CODES.has(resultCode);
 
-/** 부산교통공사 OpenAPI envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가(99만 일시). */
+/** 부산교통공사 OpenAPI envelope의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가(30·99만 일시). */
 export const isTransientBusanHumetroResultCode = (resultCode) => TRANSIENT_HUMETRO_RESULT_CODES.has(resultCode);
 
 /** KRIC OpenAPI 응답의 resultCode가 같은 요청을 다시 보내면 풀릴 수 있는 일시 오류인가. */
